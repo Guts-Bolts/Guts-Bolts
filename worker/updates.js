@@ -10,6 +10,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'push-the-big-red-button', name: 'Push the Big Red Button', time: 1791842400, tag: 'Engine',
+    summary: 'ClickDetectors: put one in a part or model and players can click it to make things happen.',
+    items: [
+      'Buttons, levers and "click to buy" signs: a ClickDetector fires MouseClick with the player who clicked',
+      'RightMouseClick, MouseHoverEnter and MouseHoverLeave too, and the pointer turns into a hand over it',
+      'Works in multiplayer: the server hears the click and checks the player is close enough',
+      'Tap it on a phone, or aim with a controller and press RT',
+      'Insert one from Studio\'s Insert Object window, and imported games keep theirs',
+    ],
+  },
+  {
     id: 'twin-engines', name: 'Twin Engines', time: 1791831600, tag: 'Server',
     summary: 'The server you can run on your own computer caught up with the main one: Limiteds, trades, votes, icons and more.',
     items: [
