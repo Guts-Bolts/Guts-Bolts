@@ -1109,6 +1109,16 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         }
         put(std::move(fx));
     }
+    else if (auto pt = std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), what); pt != std::end(kParticleClassNames)) {
+        // Particles come out of the part (or Attachment) they're in.
+        if (!parent || (!parent->isPart() && !parent->isAttachment())) {
+            Log::warn("Select a part first: a " + what + " goes inside the part (or Attachment) it comes out of.");
+            return;
+        }
+        auto fx = std::make_unique<SceneNode>(what, NodeKind::Particles);
+        fx->particle = particleDefaults((ParticleType)(pt - std::begin(kParticleClassNames)));
+        put(std::move(fx));
+    }
     else if (what == "RemoteEvent" || what == "RemoteFunction") {
         // Both sides need to find it, so it goes in ReplicatedStorage unless you picked a place.
         if (!parent || parent == m_scene->root()) {
@@ -1247,6 +1257,7 @@ const std::vector<InsertItem>& insertItems() {
         {"MeshPart", Icons::Id::Mesh}, {"SpawnLocation", Icons::Id::Part}, {"TrussPart", Icons::Id::Part}, {"Seat", Icons::Id::Part}, {"Water", Icons::Id::Part}, {"FluidVolume", Icons::Id::Part}, {"WaterSource", Icons::Id::Part}, {"FluidSystem", Icons::Id::Value}, {"FluidEmitter", Icons::Id::Sound}, {"Model", Icons::Id::Model}, {"Folder", Icons::Id::Folder},
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
         {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
+        {"ParticleEmitter", Icons::Id::Particles}, {"Fire", Icons::Id::Particles}, {"Smoke", Icons::Id::Particles}, {"Sparkles", Icons::Id::Particles},
         {"PointLight", Icons::Id::Light}, {"SpotLight", Icons::Id::Light}, {"Sound", Icons::Id::Sound},
         {"Attachment", Icons::Id::Attachment},
         {"BodyVelocity", Icons::Id::Constraint}, {"BodyPosition", Icons::Id::Constraint}, {"BodyGyro", Icons::Id::Constraint},

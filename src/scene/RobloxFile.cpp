@@ -385,6 +385,15 @@ bool readBinary(const std::vector<uint8_t>& data, Document& doc) {
                 }
                 break;
             }
+            case 0x17: {                                           // NumberRange: min, max (kept like a Vector2)
+                for (size_t i = 0; i < n && !r.bad; ++i) {
+                    Value v; v.kind = Value::Vec2;
+                    const float lo = r.f32(), hi = r.f32();
+                    v.q = {lo, hi, 0, 0};
+                    set(i, v);
+                }
+                break;
+            }
             case 0x1A: {                                           // Color3uint8
                 const uint8_t* R = r.take(n); const uint8_t* G = r.take(n); const uint8_t* B = r.take(n);
                 if (!R || !G || !B) break;
@@ -578,6 +587,12 @@ void readXmlItem(const XmlNode& x, Inst* parent, Document& doc, std::map<std::st
                 v.kind = Value::UDim; v.q = {fnum(p->child("S")), fnum(p->child("O")), 0, 0};
             } else if (t == "Vector2") {
                 v.kind = Value::Vec2; v.q = {fnum(p->child("X")), fnum(p->child("Y")), 0, 0};
+            } else if (t == "NumberRange") {   // "min max" (kept like a Vector2)
+                v.kind = Value::Vec2;
+                char* end = nullptr;
+                const float lo = std::strtof(text.c_str(), &end);
+                const float hi = end && *end ? std::strtof(end, nullptr) : lo;
+                v.q = {lo, hi, 0, 0};
             } else if (t == "Color3") {
                 v.kind = Value::Color;
                 if (p->child("R")) v.v = {fnum(p->child("R")), fnum(p->child("G")), fnum(p->child("B"))};
@@ -1073,6 +1088,70 @@ struct Converter {
             }
             node->enabled = in.flag("Enabled", true);
             ++report.other;
+        } else if (c == "ParticleEmitter" || c == "Fire" || c == "Smoke" || c == "Sparkles") {
+            node = std::make_unique<SceneNode>(name, NodeKind::Particles);
+            ParticleType type = ParticleType::ParticleEmitter;
+            for (int i = 0; i < kParticleTypeCount; ++i) if (c == kParticleClassNames[i]) type = (ParticleType)i;
+            ParticleProps& p = node->particle;
+            p = particleDefaults(type);
+            auto color = [&](const char* key, glm::vec3 fb) {
+                const Value* v = in.get(key);
+                return v && v->kind == Value::Color ? glm::clamp(v->v, 0.0f, 1.0f) : fb;
+            };
+            auto range = [&](const char* key, glm::vec2 fb, float scale) {
+                const Value* v = in.get(key);
+                if (v && v->kind == Value::Vec2) return glm::vec2(v->q.x, std::max(v->q.x, v->q.y)) * scale;
+                if (v && v->kind == Value::Num) return glm::vec2((float)v->n) * scale;
+                return fb * scale;
+            };
+            auto numSeq = [&](const char* key, std::vector<NumberKey>& out, float lo, float hi, float scale) {
+                const Value* v = in.get(key);
+                if (!v || v->kind != Value::NumSeq || v->seq.size() < 2) { for (NumberKey& k : out) k.v *= scale; return; }
+                out.clear();
+                for (size_t k = 0; k + 2 <= v->seq.size(); k += 2)
+                    out.push_back({std::clamp(v->seq[k], 0.0f, 1.0f), std::clamp(v->seq[k + 1] * scale, lo, hi)});
+            };
+            switch (type) {
+                case ParticleType::Fire:
+                    p.color1 = color("Color", p.color1);
+                    p.color2 = color("SecondaryColor", p.color2);
+                    p.fxSize = std::clamp((float)in.num("size_xml", in.num("Size", 5.0)) * kImportScale, 2.0f, 30.0f);
+                    p.rise   = std::clamp((float)in.num("heat_xml", in.num("Heat", 9.0)) * kImportScale, -25.0f, 25.0f);
+                    break;
+                case ParticleType::Smoke:
+                    p.color1  = color("Color", p.color1);
+                    p.opacity = std::clamp((float)in.num("opacity_xml", in.num("Opacity", 0.5)), 0.0f, 1.0f);
+                    p.fxSize  = std::clamp((float)in.num("size_xml", in.num("Size", 1.0)) * kImportScale, 0.1f, 100.0f);
+                    p.rise    = std::clamp((float)in.num("riseVelocity_xml", in.num("RiseVelocity", 1.0)) * kImportScale, -25.0f, 25.0f);
+                    break;
+                case ParticleType::Sparkles:
+                    p.color1 = color("SparkleColor", color("Color", p.color1));
+                    break;
+                default: {
+                    p.rate     = std::clamp((float)in.num("Rate", 20.0), 0.0f, 1e6f);
+                    p.lifetime = glm::clamp(range("Lifetime", p.lifetime, 1.0f), 0.0f, 1000.0f);
+                    p.speed    = range("Speed", p.speed, kImportScale);
+                    if (const Value* v = in.get("SpreadAngle"); v && v->kind == Value::Vec2) p.spread = {v->q.x, v->q.y};
+                    p.rotation = range("Rotation", p.rotation, 1.0f);
+                    p.rotSpeed = range("RotSpeed", p.rotSpeed, 1.0f);
+                    if (const Value* v = in.get("Color"); v && v->kind == Value::ColorSeq && v->seq.size() >= 4) {
+                        p.color.clear();
+                        for (size_t k = 0; k + 4 <= v->seq.size(); k += 4)
+                            p.color.push_back({std::clamp(v->seq[k], 0.0f, 1.0f), glm::clamp(glm::vec3(v->seq[k + 1], v->seq[k + 2], v->seq[k + 3]), 0.0f, 1.0f)});
+                    }
+                    numSeq("Size", p.size, 0.0f, 1000.0f, kImportScale);
+                    numSeq("Transparency", p.transparency, 0.0f, 1.0f, 1.0f);
+                    p.texture = particleTexture(in.str("Texture", "rbxasset://textures/particles/sparkles_main.dds"));
+                    p.lightEmission = std::clamp((float)in.num("LightEmission", 0.0), 0.0f, 1.0f);
+                    if (const Value* v = in.get("Acceleration"); v && v->kind == Value::Vec3) p.acceleration = v->v * kImportScale;
+                    p.drag = std::clamp((float)in.num("Drag", 0.0), -100.0f, 100.0f);
+                    p.direction = (Face)std::clamp((int)in.num("EmissionDirection", 1.0), 0, 5);   // NormalId: Right, Top, Back, Left, Bottom, Front
+                    p.locked = in.flag("LockedToPart", false);
+                    break;
+                }
+            }
+            node->enabled = in.flag("Enabled", true);
+            ++report.other;
         } else if (c == "Highlight") {
             node = std::make_unique<SceneNode>(name, NodeKind::Highlight);
             HighlightProps& h = node->highlight;
@@ -1449,6 +1528,7 @@ struct XmlWriter {
             case NodeKind::Highlight:  cls = "Highlight"; break;
             case NodeKind::Trail:      cls = "Trail"; break;
             case NodeKind::Beam:       cls = "Beam"; break;
+            case NodeKind::Particles:  cls = n.particleClass(); break;
             case NodeKind::Light:      cls = n.lightType == LightType::Spot ? "SpotLight" : "PointLight"; break;
             case NodeKind::Sound:      cls = "Sound"; break;
             case NodeKind::Attachment: cls = "Attachment"; break;
@@ -1514,6 +1594,56 @@ struct XmlWriter {
                 seq("WidthScale", e.widthScale);
             }
             boolean("Enabled", n.enabled);
+            break;
+        }
+        case NodeKind::Particles: {
+            const ParticleProps& p = n.particle;
+            boolean("Enabled", n.enabled);
+            if (p.type == ParticleType::Fire) {
+                color3("Color", p.color1);
+                color3("SecondaryColor", p.color2);
+                flt("size_xml", std::clamp(p.fxSize * kExportScale, 2.0f, 30.0f));
+                flt("heat_xml", std::clamp(p.rise * kExportScale, -25.0f, 25.0f));
+                break;
+            }
+            if (p.type == ParticleType::Smoke) {
+                color3("Color", p.color1);
+                flt("opacity_xml", p.opacity);
+                flt("riseVelocity_xml", std::clamp(p.rise * kExportScale, -25.0f, 25.0f));
+                flt("size_xml", std::clamp(p.fxSize * kExportScale, 0.1f, 100.0f));
+                break;
+            }
+            if (p.type == ParticleType::Sparkles) { color3("SparkleColor", p.color1); break; }
+            auto range = [&](const char* name, glm::vec2 r) { o << "<NumberRange name=\"" << name << "\">" << r.x << " " << r.y << " </NumberRange>\n"; };
+            auto seq = [&](const char* name, const std::vector<NumberKey>& keys, float scale) {
+                std::ostringstream c;
+                for (const NumberKey& k : keys) c << k.t << " " << k.v * scale << " 0 ";
+                o << "<NumberSequence name=\"" << name << "\">" << c.str() << "</NumberSequence>\n";
+            };
+            flt("Rate", p.rate);
+            range("Lifetime", p.lifetime);
+            range("Speed", p.speed * kExportScale);
+            vec2("SpreadAngle", p.spread);
+            range("Rotation", p.rotation);
+            range("RotSpeed", p.rotSpeed);
+            {
+                std::ostringstream c;
+                for (const ColorKey& k : p.color) c << k.t << " " << k.c.r << " " << k.c.g << " " << k.c.b << " 0 ";
+                o << "<ColorSequence name=\"Color\">" << c.str() << "</ColorSequence>\n";
+            }
+            seq("Size", p.size, kExportScale);
+            seq("Transparency", p.transparency, 1.0f);
+            // The built-in looks as Roblox's own particle pictures; anything else as it is.
+            const std::string tex = p.texture == "fire"  ? "rbxasset://textures/particles/fire_main.dds"
+                                  : p.texture == "smoke" ? "rbxasset://textures/particles/smoke_main.dds"
+                                  : p.texture.empty() || p.texture == "sparkle" ? "rbxasset://textures/particles/sparkles_main.dds"
+                                  : p.texture;
+            o << "<Content name=\"Texture\"><url>" << esc(tex) << "</url></Content>\n";
+            flt("LightEmission", p.lightEmission);
+            vec3("Acceleration", p.acceleration * kExportScale);
+            flt("Drag", p.drag);
+            token("EmissionDirection", (int)p.direction);
+            boolean("LockedToPart", p.locked);
             break;
         }
         case NodeKind::Highlight:
