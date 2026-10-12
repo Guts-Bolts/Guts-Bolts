@@ -26,7 +26,7 @@ task.spawn(function()
     check(cam.FieldOfView == 60, "FieldOfView starts at the engine's 60", cam.FieldOfView)
     check(cam.CameraSubject == humanoid, "CameraSubject starts as your Humanoid")
     check(me.CameraMode == Enum.CameraMode.Classic, "CameraMode starts Classic", me.CameraMode)
-    check(me.CameraMinZoomDistance == 0.5 and me.CameraMaxZoomDistance == 400, "zoom limits start at 0.5 / 400",
+    check(me.CameraMinZoomDistance == 0.5 and me.CameraMaxZoomDistance == 60, "zoom limits start at 0.5 / 60",
           me.CameraMinZoomDistance .. " " .. me.CameraMaxZoomDistance)
     frames(5)
     check((cam.Focus.Position - head.Position).Magnitude < 2, "Focus is at the head", cam.Focus.Position)
@@ -59,7 +59,7 @@ task.spawn(function()
     check(math.abs(turned - 90) < 1, "in first person the character faces where the camera looks", turned)
     me.CameraMode = Enum.CameraMode.Classic
     me.CameraMinZoomDistance = 0.5
-    me.CameraMaxZoomDistance = 400
+    me.CameraMaxZoomDistance = 60
     frames()
 
     -- Scriptable: the engine leaves it exactly where scripts put it.

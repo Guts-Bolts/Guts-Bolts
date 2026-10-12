@@ -1372,7 +1372,7 @@ player.CameraMaxZoomDistance = 30
   or **LockFirstPerson** (always through your character's eyes: your character is
   hidden except the tool you hold, the mouse is locked in the middle and your
   character faces where you look).
-- `player.CameraMinZoomDistance` / `CameraMaxZoomDistance` (0.5 and 400 to start
+- `player.CameraMinZoomDistance` / `CameraMaxZoomDistance` (0.5 and 60 to start
   with) are how close and how far the mouse wheel, pinch and D-pad can zoom. A
   minimum of 1.2 or more means no first person; a maximum under 1.2 means first
   person only.

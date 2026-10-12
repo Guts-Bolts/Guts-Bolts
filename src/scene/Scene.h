@@ -24,7 +24,7 @@ enum class GoreLevel  { Off, OilAndBolts, Blood };
 struct CameraOptions {
     bool  lockFirstPerson = false;   // Enum.CameraMode.LockFirstPerson (false = Classic)
     float minZoom = 0.5f;            // studs: how close the mouse wheel can come
-    float maxZoom = 400.0f;          // and how far out it can go
+    float maxZoom = 60.0f;           // and how far out it can go
     static constexpr float kLimit = 10000.0f;   // the furthest either can be set to
     bool operator==(const CameraOptions& o) const {
         return lockFirstPerson == o.lockFirstPerson && minZoom == o.minZoom && maxZoom == o.maxZoom;
