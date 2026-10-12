@@ -102,7 +102,8 @@ Status status() { return S().status; }
 const std::string& statusText() { return S().statusText; }
 bool online() { return S().status == Status::Online; }
 
-namespace { bool g_guest = false; }
+namespace { bool g_guest = false; std::string g_testName; }
+void setTestName(const std::string& name) { g_testName = name; }
 void setGuest(bool on) {
     if (g_guest == on) return;
     g_guest = on;
@@ -110,7 +111,10 @@ void setGuest(bool on) {
     connect();   // tell the server our guest name
 }
 bool isGuest() { return g_guest && S().me.value("userId", 0LL) == 0; }
-std::string playerName() { return isGuest() && online() ? guestName() : Profile::get().name; }
+std::string playerName() {
+    if (!g_testName.empty()) return g_testName;
+    return isGuest() && online() ? guestName() : Profile::get().name;
+}
 std::string guestName() {
     // Four digits from the account's public ID, so it doesn't change between games.
     const std::string& id = Account::id();
