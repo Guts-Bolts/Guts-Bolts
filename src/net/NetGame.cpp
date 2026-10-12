@@ -154,6 +154,7 @@ std::string nodeState(const SceneNode* n) {
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
     if (n->isHighlight()) return std::string(buf) + Serializer::highlightToJson(n->highlight, n->enabled).dump();
     if (n->isEffect()) return std::string(buf) + Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam).dump();
+    if (n->isParticles()) return std::string(buf) + Serializer::particleToJson(n->particle, n->enabled).dump();
     return buf;
 }
 
@@ -166,6 +167,7 @@ json nodeUpdate(const SceneNode* n) {
     if (n->isPrompt()) u["pr"] = Serializer::promptToJson(n->prompt, n->enabled);
     if (n->isHighlight()) u["hl"] = Serializer::highlightToJson(n->highlight, n->enabled);
     if (n->isEffect()) u["fx"] = Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam);
+    if (n->isParticles()) u["px"] = Serializer::particleToJson(n->particle, n->enabled);
     return u;
 }
 
@@ -193,6 +195,7 @@ void applyUpdate(SceneNode* n, const json& u) {
     if (n->isPrompt() && u.contains("pr") && u["pr"].is_object()) Serializer::promptFromJson(u["pr"], n->prompt, n->enabled);
     if (n->isHighlight() && u.contains("hl") && u["hl"].is_object()) Serializer::highlightFromJson(u["hl"], n->highlight, n->enabled);
     if (n->isEffect() && u.contains("fx") && u["fx"].is_object()) Serializer::effectFromJson(u["fx"], n->effect, n->enabled);
+    if (n->isParticles() && u.contains("px") && u["px"].is_object()) Serializer::particleFromJson(u["px"], n->particle, n->enabled, true);
 }
 
 glm::vec3 spawnPoint(Scene& scene) {
@@ -418,10 +421,10 @@ std::string charEffects(Scene& scene, SceneNode* root) {
         SceneNode* n = stack.back();
         stack.pop_back();
         for (auto& c : n->children) {
-            if (!c->isHighlight() && !c->isEffect()) { stack.push_back(c.get()); continue; }
+            if (!c->isHighlight() && !c->isEffect() && !c->isParticles()) { stack.push_back(c.get()); continue; }
             json e = {{"in", pathIn(root, n)}, {"n", Serializer::nodeToString(*c)}};
             if (c->isHighlight()) ref(e, "a", "w", c->highlight.adornee);
-            else { ref(e, "a0", "w0", c->effect.a0); ref(e, "a1", "w1", c->effect.a1); }
+            else if (c->isEffect()) { ref(e, "a0", "w0", c->effect.a0); ref(e, "a1", "w1", c->effect.a1); }
             list.push_back(e);
         }
     }
@@ -1548,7 +1551,7 @@ void NetClient::handle(const std::string& text) {
             if (!e.is_object()) continue;
             auto node = Serializer::nodeFromString(e.value("n", std::string()), true);
             SceneNode* in = findPath(root, e.value("in", std::string()));
-            if (!node || !in || (!node->isHighlight() && !node->isEffect())) continue;
+            if (!node || !in || (!node->isHighlight() && !node->isEffect() && !node->isParticles())) continue;
             node->children.clear();
             // What it points at, here.
             auto ref = [&](const char* inside, const char* world) -> uint64_t {
@@ -1560,7 +1563,7 @@ void NetClient::handle(const std::string& text) {
             if (node->isHighlight()) {
                 node->highlight.adornee = ref("a", "w");
                 if (node->highlight.adornee == root->id && in == root) node->highlight.adornee = 0;
-            } else {
+            } else if (node->isEffect()) {
                 node->effect.a0 = ref("a0", "w0");
                 node->effect.a1 = ref("a1", "w1");
             }

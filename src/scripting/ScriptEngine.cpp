@@ -64,6 +64,20 @@ end
 ColorSequence = sequence("ColorSequence", ColorSequenceKeypoint)
 NumberSequence = sequence("NumberSequence", NumberSequenceKeypoint)
 
+-- NumberRange.new(min, max): a ParticleEmitter's Lifetime, Speed, Rotation and RotSpeed
+-- (each particle gets a random number in it). NumberRange.new(n) is just n.
+local rangeMeta = { __type = "NumberRange",
+    __tostring = function(r) return tostring(r.Min) .. " " .. tostring(r.Max) end,
+    __eq = function(a, b) return a.Min == b.Min and a.Max == b.Max end }
+NumberRange = { new = function(min, max)
+    min = tonumber(min)
+    if min == nil then error("NumberRange.new needs a number", 2) end
+    max = max == nil and min or tonumber(max)
+    if max == nil then error("NumberRange.new needs numbers", 2) end
+    if max < min then error("NumberRange.new: the minimum (" .. min .. ") is bigger than the maximum (" .. max .. ")", 2) end
+    return setmetatable({ Min = min, Max = max }, rangeMeta)
+end }
+
 -- Players are tables with an object behind them (__node), so `player.leaderstats`
 -- and `folder.Parent = player` work like Roblox.
 local playerNode, setRespawn = __gb_playerNode, __gb_setRespawn

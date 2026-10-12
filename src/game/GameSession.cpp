@@ -391,6 +391,9 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     const WorldSettings& ws = m_scene->world();
     m_scene->particles().setBlood(ws.bloodColor, ws.bloodAmount, ws.bloodStay);
     m_scene->particles().update(dt, m_scene->world().gravity, m_physics);
+    // ParticleEmitters, Fire, Smoke, Sparkles: every screen makes its own (a game server
+    // with no screen doesn't bother).
+    if (!Mesh::headless) m_scene->particles().runEmitters(*m_scene, dt);
     m_scene->blasts().update(dt, *m_scene, m_physics);   // explosions (the host pushes things; everyone sees them)
 
     // 4. Touched events (after everything has moved).

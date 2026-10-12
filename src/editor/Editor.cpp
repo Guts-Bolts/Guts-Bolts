@@ -174,6 +174,7 @@ void Editor::render(float dt) {
     }
     buildDockspace();
     if (!m_playing) m_animEditor->update(dt, m_viewport->gizmoInUse());   // show the rig posed
+    if (!m_playing) m_scene->particles().runEmitters(*m_scene, dt);       // particle effects show while you edit too
     m_viewport->render(dt);
     // Files dragged from the computer onto Studio.
     if (auto dropped = AppWindow::takeDroppedFiles(); !dropped.empty()) importFiles(dropped, ImGui::GetMousePos(), true);

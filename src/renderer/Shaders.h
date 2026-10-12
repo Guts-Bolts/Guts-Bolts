@@ -623,6 +623,83 @@ void main() {
 }
 )";
 
+// ParticleEmitter / Fire / Smoke / Sparkles particles: camera-facing squares, turned by
+// their Rotation. The built-in pictures are drawn right here (no image files): 0 a soft
+// round glow, 1 a puff of smoke, 2 a lick of flame, 3 a four-pointed sparkle. Or a
+// picture (a ParticleEmitter's Texture). The colour comes out multiplied by its alpha,
+// and LightEmission turns "cover what's behind" into "add light to it".
+inline const char* spriteVert = R"(#version 410 core
+layout(location=0) in vec3 aCenter;
+layout(location=1) in vec2 aCorner;   // -1..1
+layout(location=2) in vec4 aColor;    // rgb, alpha
+layout(location=3) in vec4 aInfo;     // half size, turn (radians), look, glow
+layout(location=4) in float aSeed;
+uniform mat4 uView;
+uniform mat4 uProj;
+out vec2 vCorner;
+out vec4 vColor;
+out vec3 vInfo;    // look, glow, seed
+void main() {
+    vCorner = aCorner;
+    vColor = aColor;
+    vInfo = vec3(aInfo.z, aInfo.w, aSeed);
+    float c = cos(aInfo.y), s = sin(aInfo.y);
+    vec4 p = uView * vec4(aCenter, 1.0);
+    p.xy += mat2(c, s, -s, c) * aCorner * aInfo.x;
+    gl_Position = uProj * p;
+}
+)";
+
+inline const char* spriteFrag = R"(#version 410 core
+in vec2 vCorner;
+in vec4 vColor;
+in vec3 vInfo;
+uniform sampler2D uTex;
+uniform bool  uHasTex;
+uniform vec3  uLight;     // the scene's light (unlit particles still dim at night)
+out vec4 FragColor;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+void main() {
+    int look = int(vInfo.x + 0.5);
+    float glow = vInfo.y, seed = vInfo.z;
+    vec3 col = pow(vColor.rgb, vec3(2.2));
+    float d2 = dot(vCorner, vCorner);
+    float a;
+    if (uHasTex) {
+        vec4 t = texture(uTex, vec2(vCorner.x, -vCorner.y) * 0.5 + 0.5);
+        col *= pow(t.rgb, vec3(2.2));
+        a = t.a;
+    } else if (look == 1) {          // smoke: a lumpy, wispy puff
+        vec2 q = vCorner * 2.1 + vec2(seed * 9.1, seed * 5.3);
+        float n = noise(q) * 0.55 + noise(q * 2.2) * 0.3 + noise(q * 4.5) * 0.15;
+        a = pow(max(0.0, 1.0 - d2), 1.5) * (0.45 + 0.9 * n);
+        col *= 0.85 + 0.3 * n;
+    } else if (look == 2) {          // fire: a soft flame, white-hot in the middle
+        vec2 q = vec2(vCorner.x * 1.3, vCorner.y * 0.9 + 0.15);
+        float r2 = dot(q, q);
+        float n = noise(vCorner * 3.0 + vec2(seed * 7.0, seed * 3.0));
+        a = pow(max(0.0, 1.0 - r2), 1.6) * (0.6 + 0.6 * n);
+        col = mix(col, vec3(1.0, 0.9, 0.6), pow(max(0.0, 1.0 - r2 * 2.5), 2.0) * 0.6);
+    } else if (look == 3) {          // sparkle: a little four-pointed star
+        vec2 q = abs(vCorner);
+        float star = exp(-q.x * 14.0) * exp(-q.y * 2.2) + exp(-q.y * 14.0) * exp(-q.x * 2.2);
+        a = clamp(star + exp(-d2 * 18.0), 0.0, 1.0);
+        col = mix(col, vec3(1.0), exp(-d2 * 30.0) * 0.7);
+    } else {                         // a soft round glow
+        a = pow(max(0.0, 1.0 - d2), 2.0);
+    }
+    a *= vColor.a;
+    if (a < 0.003) discard;
+    col *= mix(uLight, vec3(1.6), glow);
+    FragColor = vec4(col * a, a * (1.0 - glow));
+}
+)";
+
 // Highlights, step 1: the highlighted parts' shape on screen. Red = covered, green =
 // covered and not behind anything else (compared with the scene's depth).
 inline const char* highlightMaskVert = R"(#version 410 core
