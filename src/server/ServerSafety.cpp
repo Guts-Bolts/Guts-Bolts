@@ -270,6 +270,7 @@ void GbServer::loadStaffLog() {
 }
 
 void GbServer::loadReports() {
+    loadTickets();   // (support tickets, ServerSupport.cpp, load with the reports)
     std::string text;
     if (!readFile(m_opts.data / "reports.json", text)) return;
     json all = json::parse(text, nullptr, false);
