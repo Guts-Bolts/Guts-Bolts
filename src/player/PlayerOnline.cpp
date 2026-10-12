@@ -613,11 +613,16 @@ void PlayerApp::drawUploadForm(const std::string& kind) {
     float fieldW = std::min(360.0f, ImGui::GetContentRegionAvail().x - 110);
 
     ImGui::SeparatorText(("Upload a new " + std::string(Online::kindTitle(kind))).c_str());
-    if (kind == "hat" && !verified) {
-        // Hats are for Verified creators; shirts and pants are open to everyone.
+    if (kind == "hat") {
+        // Hats are 3D models made in Studio, so they're uploaded from there (and only by Verified creators).
         ImGui::PushTextWrapPos(0);
-        ImGui::TextColored(ImVec4(0.75f, 0.35f, 0.1f, 1), "Only Verified creators can make hats.");
-        ImGui::TextDisabled("You can still make shirts and pants! Get Verified to make hats too.");
+        if (!verified) {
+            ImGui::TextColored(ImVec4(0.75f, 0.35f, 0.1f, 1), "Only Verified creators can make hats.");
+            ImGui::TextDisabled("You can still make shirts and pants! Get Verified to make hats too.");
+        } else {
+            ImGui::TextWrapped("Hats are made in Studio: build the hat, then use Avatar > Accessories to place it on the "
+                               "head and upload it from there.");
+        }
         ImGui::PopTextWrapPos();
         return;
     }
@@ -626,19 +631,11 @@ void PlayerApp::drawUploadForm(const std::string& kind) {
     ImGui::InputTextWithHint("Name", "Give it a name", &m_createName);
     ImGui::InputTextMultiline("Description", &m_createDesc, ImVec2(fieldW, 60));
     if (clothing) {
-        if (kind == "hat") {
-            const char* styles[] = {"Top Hat", "Cap", "Crown"};
-            int s = std::clamp(m_createStyle - 1, 0, 2);
-            ImGui::SetNextItemWidth(fieldW);
-            if (ImGui::Combo("Style", &s, styles, 3)) m_createStyle = s + 1;
-        }
-        ImGui::SetNextItemWidth(fieldW);
-        ImGui::ColorEdit3("Colour", &m_createColor.x);
-        if (kind != "hat") {
-            // Optional: a picture painted on the clothing template.
+        {
+            // The picture painted on the clothing template.
             bool browse = FileDialog::available();
             ImGui::SetNextItemWidth(browse ? fieldW - 90 : fieldW);
-            ImGui::InputTextWithHint("##cloth", "(optional) C:/pictures/my_shirt.png", &m_createPath);
+            ImGui::InputTextWithHint("##cloth", "C:/pictures/my_shirt.png", &m_createPath);
             if (browse) {
                 ImGui::SameLine();
                 if (ImGui::Button("Browse...", ImVec2(82, 0))) {
@@ -648,7 +645,7 @@ void PlayerApp::drawUploadForm(const std::string& kind) {
             }
             ImGui::SameLine();
             ImGui::TextUnformatted("Picture");
-            ImGui::TextDisabled("A 585 x 559 .png painted on the template. See-through bits show the colour above.");
+            ImGui::TextDisabled("A 585 x 559 .png painted on the template. See-through bits show the body underneath.");
             if (ImGui::SmallButton(kind == "shirt" ? "Save the shirt template" : "Save the pants template")) {
                 std::filesystem::path out = Paths::downloadsFolder() / (kind + "_template.png");
                 std::ofstream f(out, std::ios::binary);
@@ -698,14 +695,7 @@ void PlayerApp::drawUploadForm(const std::string& kind) {
         ImVec2 q = ImGui::GetCursorScreenPos();
         ImGui::Dummy(ImVec2(150, 150));
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        if (clothing) {
-            Catalog::Item preview;
-            preview.type = kind == "hat" ? Catalog::Type::Hat : kind == "shirt" ? Catalog::Type::Shirt : Catalog::Type::Pants;
-            preview.hat = (HatStyle)m_createStyle;
-            preview.color = m_createColor;
-            dl->AddRectFilled(q, ImVec2(q.x + 150, q.y + 150), IM_COL32(255, 255, 255, 255), 6);
-            itemPicture(dl, ImVec2(q.x + 75, q.y + 75), 120, preview);
-        } else {
+        {
             std::string path = cleanPath(m_createPath);
             unsigned tex = path.empty() ? 0 : Textures::get(path);
             int w = 0, h = 0;
@@ -726,17 +716,12 @@ void PlayerApp::drawUploadForm(const std::string& kind) {
     if (Classic::button(m_busy ? "Uploading..." : label.c_str(), Classic::kPlay, ImVec2(200, 34))) {
         json args = {{"kind", kind}, {"name", m_createName}, {"description", m_createDesc}, {"price", canPrice ? m_createPrice : 0}};
         bool ok = true;
-        if (clothing) {
-            args["meta"] = {{"color", {(int)std::lround(m_createColor.r * 255), (int)std::lround(m_createColor.g * 255),
-                                       (int)std::lround(m_createColor.b * 255)}}};
-            if (kind == "hat") args["meta"]["style"] = m_createStyle;
-            args["data"] = "";
+        if (clothing) {   // the template picture
             std::string path = cleanPath(m_createPath);
-            if (kind != "hat" && !path.empty()) {   // the template picture
-                std::error_code ec;
-                if (!std::filesystem::is_regular_file(path, ec)) { m_createMsg = "Couldn't open that picture. Check the path."; ok = false; }
-                else args["data"] = Online::base64Encode(readWholeFile(path));
-            }
+            std::error_code ec;
+            if (path.empty()) { m_createMsg = "Pick your picture made from the " + kind + " template first."; ok = false; }
+            else if (!std::filesystem::is_regular_file(path, ec)) { m_createMsg = "Couldn't open that picture. Check the path."; ok = false; }
+            else args["data"] = Online::base64Encode(readWholeFile(path));
         } else {
             std::string path = cleanPath(m_createPath);
             std::error_code ec;
