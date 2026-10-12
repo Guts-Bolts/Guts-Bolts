@@ -5,8 +5,10 @@
 #include <cstring>
 #include <set>
 
+extern "C" {
 #include <lua.h>
 #include <lauxlib.h>
+}
 
 namespace Luau {
 

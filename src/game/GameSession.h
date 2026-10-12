@@ -90,7 +90,7 @@ private:
     bool giveTo(uint64_t rig, SceneNode* tool);          // a joiner's backpack (false if full)
     void holdTools();                                    // everyone else's held tool, in their hand
     void pickUpTools(const std::vector<TouchEvent>& touches);
-    void reachCheckpoints(const std::vector<TouchEvent>& touches);   // parts called "Checkpoint"
+    void reachCheckpoints(const std::vector<TouchEvent>& touches);   // parts called "Checkpoint" (and SpawnLocations' team change)
     std::vector<std::unique_ptr<SceneNode>> m_starterPack;   // templates (like Roblox's StarterPack)
     std::vector<std::unique_ptr<SceneNode>> m_gear;          // your own gear (only yours, not joiners')
     std::unordered_map<uint64_t, double> m_noPickupUntil;    // just dropped: don't grab it straight back

@@ -18,7 +18,12 @@ void GameSession::start() {
     m_physics.reset();
     m_scene->particles().clear();
     m_scene->blasts().clear();
-    if (Player* p = m_scene->player()) p->beginPlay();
+    if (Player* p = m_scene->player()) {
+        // Player.CharacterRemoving: just before coming back to life (CharacterAdded is below).
+        p->onRespawning = [this, p]() { if (m_scripts.running()) m_scripts.fireCharacter(false, p->rootId()); };
+        p->beginPlay();
+        p->consumeRespawned();   // (arriving isn't a respawn: the scripts hear CharacterAdded once they've started)
+    }
     m_running = true;
     // Sounds marked "Autoplay" (e.g. background music) start with the game.
     m_scene->forEach([](SceneNode* n) {
@@ -128,6 +133,8 @@ void GameSession::reachCheckpoints(const std::vector<TouchEvent>& touches) {
     for (const TouchEvent& t : touches) {
         SceneNode* part = m_scene->findById(t.partId);
         SceneNode* other = m_scene->findById(t.otherId);
+        if (part && other && part->isSpawnLocation() && (other == me || other->parent == me))
+            m_scripts.spawnTouched(me->id, part);   // (AllowTeamChangeOnTouch: onto its team)
         if (!part || !other || part->name != "Checkpoint" || p->checkpoint() == part->id) continue;
         if (other != me && other->parent != me) continue;
         p->setCheckpoint(part->id);
@@ -206,12 +213,14 @@ void GameSession::joinerArrived(uint64_t rig) {
 
 void GameSession::joinerRespawned(uint64_t rig) {
     if (!m_running || m_role == Role::Client) return;
+    m_scripts.fireCharacter(false, rig);   // Player.CharacterRemoving (then CharacterAdded, below)
     for (SceneNode* t : joinerTools(rig)) {
         m_scripts.stopScripts(t);
         m_scene->removeNode(t);
     }
     if (RemoteCharacter* rc = m_scene->findRemote(rig)) rc->toolSlots.clear();
     joinerArrived(rig);
+    m_scripts.fireCharacter(true, rig);
 }
 
 void GameSession::joinerEquip(uint64_t rig, uint64_t toolId) {
@@ -245,6 +254,7 @@ void GameSession::joinerTouched(uint64_t rig, uint64_t partId) {
     RemoteCharacter* rc = m_scene->findRemote(rig);
     SceneNode* part = m_scene->findById(partId);
     if (!m_running || m_role == Role::Client || !rc || !rc->alive || !part) return;
+    if (part->isSpawnLocation()) m_scripts.spawnTouched(rig, part);   // (AllowTeamChangeOnTouch)
     if (part->name != "Handle" || !part->parent || !part->parent->isTool()) return;
     SceneNode* tool = part->parent;
     if (m_scene->isCharacterPart(tool)) return;   // someone's already got it
@@ -264,7 +274,7 @@ void GameSession::stop() {
     m_scene->npcs().end();
     m_scene->water().end();
     m_scene->animator().clear();
-    if (Player* p = m_scene->player()) p->onToolEquip = nullptr;
+    if (Player* p = m_scene->player()) { p->onToolEquip = nullptr; p->onRespawning = nullptr; }
     m_starterPack.clear();
     m_gear.clear();
     Audio::stopAll();
@@ -350,11 +360,14 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         p->update(dt, move, jump, m_physics);
         if (p->isDead()) m_scene->animator().stopRig(p->rootId(), false, *m_scene);   // the body falls apart instead
         if (p->consumeDied()) m_scripts.fireDied(p->rootId());
-        if (!client && p->consumeRespawned()) {
-            // Like Roblox: you come back with just the StarterPack tools.
-            for (SceneNode* t : p->tools()) m_scripts.stopScripts(t);
-            p->clearTools();
-            giveStarterTools();
+        if (p->consumeRespawned()) {
+            if (!client) {
+                // Like Roblox: you come back with just the StarterPack tools.
+                for (SceneNode* t : p->tools()) m_scripts.stopScripts(t);
+                p->clearTools();
+                giveStarterTools();
+            }
+            m_scripts.fireCharacter(true, p->rootId());   // Player.CharacterAdded
         }
     }
 

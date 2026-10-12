@@ -139,6 +139,28 @@ json avatarJson(const Profile& p) {
             {"faceImage", p.faceImage}, {"accessories", p.accessories}};
 }
 
+// Part physics, a SpawnLocation's team and a Model's PrimaryPart (nodeUpdate sends these too).
+json nodeExtras(const SceneNode* n) {
+    json u = json::object();
+    if (n->isPart())
+        u["ph"] = {n->density, n->friction, n->elasticity, n->frictionWeight, n->elasticityWeight};
+    if (n->isSpawnLocation()) u["sp"] = {n->spawnNeutral, vec3(n->teamColor), n->allowTeamChange};
+    if (n->kind == NodeKind::Model) u["pp"] = n->primaryPart;
+    return u;
+}
+void applyExtras(SceneNode* n, const json& u) {
+    if (const json ph = u.value("ph", json()); ph.is_array() && ph.size() == 5 && n->kind == NodeKind::Part) {
+        n->density = ph[0].get<float>(); n->friction = ph[1].get<float>(); n->elasticity = ph[2].get<float>();
+        n->frictionWeight = ph[3].get<float>(); n->elasticityWeight = ph[4].get<float>();
+    }
+    if (const json sp = u.value("sp", json()); sp.is_array() && sp.size() == 3 && n->kind == NodeKind::Part) {
+        n->spawnNeutral = sp[0].get<bool>();
+        n->teamColor = vec3(sp[1]);
+        n->allowTeamChange = sp[2].get<bool>();
+    }
+    if (n->kind == NodeKind::Model && u.contains("pp") && u["pp"].is_number()) n->primaryPart = u["pp"].get<uint64_t>();
+}
+
 // Everything a joined player needs to see about a (non-character) object.
 std::string nodeState(const SceneNode* n) {
     char buf[512];
@@ -150,6 +172,20 @@ std::string nodeState(const SceneNode* n) {
         t.scale.x, t.scale.y, t.scale.z, n->color.r, n->color.g, n->color.b, n->transparency,
         (int)n->visible, (int)n->canCollide, (int)n->enabled, (int)n->material, (int)n->primitiveType,
         n->brightness, n->range, n->spotAngle);
+    std::string extra;   // CustomPhysicalProperties, a SpawnLocation's team, a Model's PrimaryPart
+    if (n->isPart()) {
+        char more[160];
+        std::snprintf(more, sizeof(more), "|%.3f %.3f %.3f %.3f %.3f", n->density, n->friction, n->elasticity,
+                      n->frictionWeight, n->elasticityWeight);
+        extra += more;
+        if (n->isSpawnLocation()) {
+            std::snprintf(more, sizeof(more), "|%d%d %.3f %.3f %.3f", (int)n->spawnNeutral, (int)n->allowTeamChange,
+                          n->teamColor.r, n->teamColor.g, n->teamColor.b);
+            extra += more;
+        }
+    }
+    if (n->kind == NodeKind::Model && n->primaryPart) extra += "|pp" + std::to_string(n->primaryPart);
+    if (!extra.empty()) return std::string(buf) + extra;   // (parts and models: none of the kinds below)
     if (n->isGui()) return std::string(buf) + Serializer::guiToJson(n->gui).dump();   // text, colours, sizes...
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
     if (n->isHighlight()) return std::string(buf) + Serializer::highlightToJson(n->highlight, n->enabled).dump();
@@ -166,6 +202,7 @@ json nodeUpdate(const SceneNode* n) {
     if (n->isPrompt()) u["pr"] = Serializer::promptToJson(n->prompt, n->enabled);
     if (n->isHighlight()) u["hl"] = Serializer::highlightToJson(n->highlight, n->enabled);
     if (n->isEffect()) u["fx"] = Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam);
+    u.update(nodeExtras(n));
     return u;
 }
 
@@ -193,6 +230,7 @@ void applyUpdate(SceneNode* n, const json& u) {
     if (n->isPrompt() && u.contains("pr") && u["pr"].is_object()) Serializer::promptFromJson(u["pr"], n->prompt, n->enabled);
     if (n->isHighlight() && u.contains("hl") && u["hl"].is_object()) Serializer::highlightFromJson(u["hl"], n->highlight, n->enabled);
     if (n->isEffect() && u.contains("fx") && u["fx"].is_object()) Serializer::effectFromJson(u["fx"], n->effect, n->enabled);
+    applyExtras(n, u);
 }
 
 glm::vec3 spawnPoint(Scene& scene) {
@@ -1180,6 +1218,11 @@ void NetServer::sendTick() {
                 c->conn->send(json{{"t", "hum"}, {"h", humanoidJson(rc->humanoid)}}.dump());
                 rc->humanoidDirty = false;
             }
+            if (rc->teamDirty) {   // their team (they spawn themselves, on its SpawnLocations)
+                c->conn->send(json{{"t", "team"}, {"team", rc->team}, {"neutral", rc->neutral},
+                                   {"color", vec3(rc->teamColor)}}.dump());
+                rc->teamDirty = false;
+            }
             for (auto& k : rc->kills)
                 c->conn->send(json{{"t", "kill"}, {"force", k.force}, {"impulse", vec3(k.impulse)}}.dump());
             rc->kills.clear();
@@ -1571,6 +1614,15 @@ void NetClient::handle(const std::string& text) {
     if (t == "passprompt") { m_passPrompt = m.value("pass", std::string()); return; }
     if (t == "hum" && me) {
         humanoidFrom(me->humanoid(), m.value("h", json::object()));
+        return;
+    }
+    if (t == "team" && me) {   // the host's scripts put us on a team
+        const bool neutral = m.value("neutral", true);
+        const glm::vec3 color = vec3(m.value("color", json()));
+        const bool changed = me->neutral() != neutral || me->teamColor() != color;
+        me->setTeam(neutral, color);
+        if (changed && me->aliveTime() < 2.0f) me->placeAtSpawn();   // (just arrived: start on our team's spawn)
+        m_session->scripts().setLocalTeam(m.value("team", (uint64_t)0), neutral, color.r, color.g, color.b);
         return;
     }
     if (t == "kill" && me) {

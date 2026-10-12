@@ -50,6 +50,8 @@ enum class SignalKind : int {
     PromptHoldEnded,     // prompt.PromptButtonHoldEnded
     PromptShown,         // prompt.PromptShown    (inputType)  (on the computer it shows on)
     PromptHidden,        // prompt.PromptHidden   ()
+    CharacterAdded,      // player.CharacterAdded     (character)  (id = the character)
+    CharacterRemoving,   // player.CharacterRemoving  (character)
 };
 
 namespace LuaApi {
