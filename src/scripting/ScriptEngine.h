@@ -151,6 +151,11 @@ public:
     // On a joined player's computer our own character has different ids from the
     // server's copy of it: these swap them (unset: ids are the same everywhere).
     std::function<uint64_t(uint64_t)> idToServer, idFromServer;
+    // Tests only (the app was started with --test-command): pretend the player pointed at or
+    // clicked a part. Lua: __gb_testInput("hover" | "click" | "right" | "pad", part). Returns
+    // whether it was on something clickable. Unset (and no __gb_testInput) otherwise.
+    static bool testHooks;
+    std::function<bool(const std::string& what, uint64_t part)> testInput;
 
     GuiState& gui() { return m_gui; }
     void setPlayerName(const std::string& n) { m_playerName = n; }

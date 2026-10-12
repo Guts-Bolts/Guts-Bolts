@@ -11,6 +11,7 @@
 #include "../core/Paths.h"
 #include "../core/Settings.h"
 #include "../game/GameSession.h"
+#include "../game/ClickDetectors.h"
 #include "../game/Hud.h"
 #include "../game/Profile.h"
 #include "../game/SettingsWindow.h"
@@ -1737,16 +1738,40 @@ void PlayerApp::drawGame(float dt) {
         if (onPrompt) onGuiPrompt = true;
     }
     m_session->guiEvents(guiEvents);
-    if (acceptInput && !onHotbar && !onGui && !onGuiPrompt && (tapped || (!touch && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)))) {
-        ImVec2 m = pointer;
+    // The part at a point on the screen (not our own character).
+    auto partAt = [&](ImVec2 m) -> SceneNode* {
         float nx = (m.x - pos.x) / size.x * 2.0f - 1.0f;
         float ny = 1.0f - (m.y - pos.y) / size.y * 2.0f;
         glm::mat4 inv = glm::inverse(m_camera.projection() * m_camera.view());
         glm::vec4 a = inv * glm::vec4(nx, ny, -1, 1), b = inv * glm::vec4(nx, ny, 1, 1);
         glm::vec3 ro = glm::vec3(a) / a.w, rd = glm::normalize(glm::vec3(b) / b.w - ro);
         const SceneNode* character = m_scene->player() ? m_scene->player()->root() : nullptr;
-        SceneNode* hit = Physics::raycast(*m_scene, ro, rd, nullptr, character);
+        return Physics::raycast(*m_scene, ro, rd, nullptr, character);
+    };
+    const bool toWorld = acceptInput && !onHotbar && !onGui && !onGuiPrompt;
+    // ClickDetectors: what the mouse points at (with a controller, the middle of the screen)
+    // gets MouseHoverEnter / Leave, and the pointer becomes a hand over it.
+    const bool padAim = !touch && Pad::connected() && Pad::inUse();
+    const ImVec2 centre((pos.x + max.x) * 0.5f, (pos.y + max.y) * 0.5f);
+    SceneNode* under = toWorld && (padAim || (!touch && hovered)) ? partAt(padAim ? centre : pointer) : nullptr;
+    std::string cursorIcon;
+    const bool onClickable = m_session->hoverPart(under ? under->id : 0, &cursorIcon);
+    if (onClickable && !padAim) ClickDetectors::showPointer(pointer, cursorIcon);
+    if (toWorld && (tapped || (!touch && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)))) {
+        SceneNode* hit = partAt(pointer);
         m_session->click(hit ? hit->id : 0);
+    }
+    // A right-click (not a right-drag turning the camera): RightMouseClick.
+    if (toWorld && !touch && hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
+        io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] < 6.0f * 6.0f) {
+        SceneNode* hit = partAt(pointer);
+        m_session->rightClick(hit ? hit->id : 0);
+    }
+    // A controller's RT clicks what's in the middle of the screen (when it isn't using a tool).
+    {
+        const bool trigger = padAim && Pad::rightTrigger() > 0.5f;
+        if (trigger && !m_padClick && onClickable && under) m_session->clickDetector(under->id);
+        m_padClick = trigger;
     }
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -1757,6 +1782,7 @@ void PlayerApp::drawGame(float dt) {
     }
     GameGui::draw(dl, pos, max, *m_scene, &m_guiInput);
     GameGui::drawPrompts(dl);
+    if (padAim && toWorld) ClickDetectors::drawAim(dl, centre, onClickable);
     {
         std::vector<GameGui::Event> typed;   // a TextBox being typed in
         GameGui::textInput(*m_scene, typed);
@@ -2356,7 +2382,7 @@ void PlayerApp::drawPauseMenu() {
         key("Right stick", "Look around (click it for Shift Lock)");
         key("A / Cross", "Jump");
         key("LT / L2", "Swimming: dive");
-        key("RT / R2", "Use the tool you're holding");
+        key("RT / R2", "Use the tool you're holding, or click what's in the middle of the screen");
         key("LB / RB", "Last / next tool;  B / Circle puts it away");
         key("X / Square", "Use the prompt you're next to (\"Open\", \"Talk\"...)");
         key("D-pad", "Up and down zoom in and out");

@@ -352,6 +352,7 @@ add_library(gb_engine STATIC
     src/game/Hud.cpp
     src/game/GameGui.cpp
     src/game/Prompts.cpp
+    src/game/ClickDetectors.cpp
     src/game/PlayCamera.cpp
     src/game/SettingsWindow.cpp
     src/game/Profile.cpp
