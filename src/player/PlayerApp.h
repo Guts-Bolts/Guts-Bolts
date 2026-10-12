@@ -116,7 +116,6 @@ private:
     void drawVoiceHud(ImDrawList* dl, ImVec2 min, ImVec2 max, bool touch);
     void drawCatalog();
     void drawItemDialog();
-    void drawCreateItemDialog();
     void drawStaff();
     void drawBolts();
 
@@ -384,8 +383,6 @@ private:
     std::vector<Catalog::Item> m_items;
     int         m_itemType = -1;                   // filter; -1 = everything
     int         m_openItem = -1;                   // item shown in the item dialog
-    bool        m_showCreate = false;
-    Catalog::Item m_newItem;
     std::string m_catalogMsg;
 
     // Account / staff
@@ -421,9 +418,8 @@ private:
     int            m_banDays = 4;                             // index into the ban lengths (last = forever)
     bool           m_warnMode = false;                        // the popup sends a warning, not a ban
     std::string    m_warnAcking;                              // the warning we said "I understand" to
-    int            m_createKind = 0, m_createStyle = 2, m_createPrice = 0, m_giveServerBolts = 100;
+    int            m_createKind = 0, m_createPrice = 0, m_giveServerBolts = 100;
     std::string    m_createName, m_createDesc, m_createPath;
-    glm::vec3      m_createColor{0.9f, 0.2f, 0.2f};
     std::string    m_renameKey, m_renameText;      // My Games row being renamed
     bool           m_renameFocus = false;
     bool           m_gamesDirty = false;           // a game was renamed: re-read the games list

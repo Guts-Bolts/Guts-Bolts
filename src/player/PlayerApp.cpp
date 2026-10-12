@@ -213,7 +213,6 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
     if (m_opts.page == "library") { m_page = Page::Create; m_createKind = kLibraryTab; }
     if (m_opts.page.rfind("asset:", 0) == 0) { m_page = Page::Create; m_createKind = kLibraryTab; }   // (opened once online, below)
     if (m_opts.page == "staff" && Account::iAmStaff()) m_page = Page::Staff;
-    if (m_opts.page == "create-item" && Account::iAmStaff()) { m_page = Page::Catalog; m_showCreate = true; }
     // (--online-play / --private-server / --join-code wait until we're online: see frame())
     // Everyone plays on the main server: a game file (Studio's "Play in Guts&BoltsPlayer")
     // goes into a public server once we're online. Only automated tests play offline / on LAN.
@@ -833,7 +832,6 @@ void PlayerApp::frame(float dt) {
     drawJoinDialog();
     drawServersDialog();
     drawItemDialog();
-    drawCreateItemDialog();
     drawOnlineItemDialog();
     drawOnlineGameDialog();
     drawNotice();
@@ -2610,10 +2608,7 @@ void PlayerApp::drawStaff() {
 
     ImGui::SeparatorText("Catalog");
     ImGui::Text("%d item(s) in the catalog.", (int)m_items.size());
-    if (Classic::button("Create a catalog item", Classic::kBlue, ImVec2(220, 30))) {
-        m_page = Page::Catalog;
-        m_showCreate = true;
-    }
+    ImGui::TextDisabled("New hats are made in Studio's Accessory window; shirts and pants are uploaded from their templates.");
 
     ImGui::SeparatorText("Your staff key");
     ImGui::PushTextWrapPos(0);
@@ -2774,10 +2769,6 @@ void PlayerApp::drawCatalog() {
         if (on ? Classic::button(tabs[i], Classic::kBlue, ImVec2(tabW, 28)) : ImGui::Button(tabs[i], ImVec2(tabW, 28)))
             m_itemType = i - 1;
     }
-    if (Account::iAmStaff()) {
-        if (portraitScreen()) ImGui::Spacing(); else ImGui::SameLine(ImGui::GetContentRegionMax().x - 140);
-        if (Classic::button("Create Item", Classic::kPlay, ImVec2(140, 28))) m_showCreate = true;
-    }
     if (!m_catalogMsg.empty()) ImGui::TextWrapped("%s", m_catalogMsg.c_str());
     ImGui::Separator();
     ImGui::Spacing();
@@ -2904,60 +2895,6 @@ void PlayerApp::drawItemDialog() {
         ImGui::TextDisabled("- earn more on the Bolts page");
     }
     if (!m_buyMsg.empty()) ImGui::TextWrapped("%s", m_buyMsg.c_str());
-    ImGui::EndPopup();
-}
-
-void PlayerApp::drawCreateItemDialog() {
-    if (m_showCreate) {
-        if (Account::iAmStaff()) ImGui::OpenPopup("Create Catalog Item");
-        m_showCreate = false;
-    }
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(fitWidth(600), 0));
-    if (!ImGui::BeginPopupModal("Create Catalog Item", nullptr, ImGuiWindowFlags_NoResize)) return;
-    if (!Account::iAmStaff()) { ImGui::CloseCurrentPopup(); ImGui::EndPopup(); return; }
-
-    Catalog::Item& it = m_newItem;
-    ImGui::BeginGroup();
-    ImGui::SetNextItemWidth(300);
-    ImGui::InputText("Name", &it.name);
-    ImGui::InputTextMultiline("Description", &it.description, ImVec2(300, 70));
-    int type = (int)it.type;
-    const char* types[] = {"Hat", "Shirt", "Pants"};
-    ImGui::SetNextItemWidth(300);
-    if (ImGui::Combo("Type", &type, types, 3)) it.type = (Catalog::Type)type;
-    if (it.type == Catalog::Type::Hat) {
-        int style = std::max(0, (int)it.hat - 1);
-        const char* styles[] = {"Top Hat", "Cap", "Crown"};
-        ImGui::SetNextItemWidth(300);
-        if (ImGui::Combo("Style", &style, styles, 3)) it.hat = (HatStyle)(style + 1);
-        if (it.hat == HatStyle::None) it.hat = HatStyle::Cap;
-    }
-    ImGui::ColorEdit3("Colour", &it.color.x);
-    int price = (int)it.price;
-    ImGui::SetNextItemWidth(300);
-    if (ImGui::InputInt("Price (Bolts)", &price, 5, 50)) it.price = std::clamp(price, 0, 1000000);
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = free");
-    ImGui::EndGroup();
-    ImGui::SameLine(0, 20);
-    ImVec2 p = ImGui::GetCursorScreenPos();
-    ImGui::Dummy(ImVec2(170, 170));
-    ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + 170, p.y + 170), IM_COL32(245, 246, 250, 255), 6);
-    itemPicture(ImGui::GetWindowDrawList(), ImVec2(p.x + 85, p.y + 85), 140, it);
-
-    ImGui::Spacing();
-    ImGui::TextDisabled("The item is signed with your staff key, so nobody else can make or change catalog items.");
-    ImGui::Spacing();
-    if (bigButton("Create", kGreen, ImVec2(140, 34))) {
-        if (Catalog::create(it, m_catalogMsg)) {
-            m_items = Catalog::load();
-            m_newItem = Catalog::Item{};
-            ImGui::CloseCurrentPopup();
-        }
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(100, 34))) ImGui::CloseCurrentPopup();
-    if (!m_catalogMsg.empty()) ImGui::TextWrapped("%s", m_catalogMsg.c_str());
     ImGui::EndPopup();
 }
 

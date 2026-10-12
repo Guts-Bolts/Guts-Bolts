@@ -1685,14 +1685,14 @@ export class GbServerObject extends DurableObject {
         access = str(args, 'access') === 'private' ? 'private' : 'public';
       }
       delete meta.image; delete meta.model;
+      delete meta.color; delete meta.style;   // items don't have a colour: hats are Studio models, clothes are template pictures
       if (isAccessory(kind)) {
-        // Made in Studio: the model and where it sits on the body. (Old-style hats have no data.)
-        if (data.length) {
-          let acc = null;
-          try { acc = JSON.parse(new TextDecoder().decode(data)); } catch { acc = null; }
-          if (!acc || acc.format !== 'gbaccessory' || !acc.node) return fail('That isn\'t a Guts&Bolts accessory. Make it in Studio\'s Accessory window.');
-          meta.model = true;
-        } else if (kind !== 'hat') return fail('Make accessories in Studio\'s Accessory window, then upload them from there.');
+        // Made in Studio: the model and where it sits on the body.
+        if (!data.length) return fail('Make hats and accessories in Studio\'s Accessory window, then upload them from there.');
+        let acc = null;
+        try { acc = JSON.parse(new TextDecoder().decode(data)); } catch { acc = null; }
+        if (!acc || acc.format !== 'gbaccessory' || !acc.node) return fail('That isn\'t a Guts&Bolts accessory. Make it in Studio\'s Accessory window.');
+        meta.model = true;
       }
       if (kind === 'face') {
         if (!pngSize(data)) return fail('Faces must be .png pictures (see-through around the face).');
@@ -1705,7 +1705,8 @@ export class GbServerObject extends DurableObject {
         meta.image = true;
         meta.ext = pngSize(data) ? 'png' : 'jpg';
       }
-      if ((kind === 'shirt' || kind === 'pants') && data.length) {
+      if (kind === 'shirt' || kind === 'pants') {
+        if (!data.length) return fail('Pick a picture made from the ' + kind + ' template.');
         const size = pngSize(data);
         if (!size) return fail('Clothing pictures must be .png files made from the template.');
         if (size[0] !== kTemplateW || size[1] !== kTemplateH)
@@ -2026,7 +2027,6 @@ export class GbServerObject extends DurableObject {
         a.timedFor = a.timedFor || 'set';
       }
       a.meta = a.meta || {};
-      if (Array.isArray(args.color) && args.color.length === 3) a.meta.color = args.color.map((v) => clamp(Number(v) | 0, 0, 255));
       if (a.kind === 'hat' && 'style' in args) a.meta.style = clamp(num(args, 'style'), 1, 3);   // the hat's shape
       const picture = a.kind === 'shirt' || a.kind === 'pants' || a.kind === 'face' || a.kind === 'tshirt';
       if (picture && typeof args.data === 'string' && args.data) {   // a new clothing / face picture

@@ -1679,8 +1679,10 @@ Uploading costs:
 
 Who can make what:
 
-- **Hats** are for Verified creators only. **Shirts and pants** can be made by
-  anyone with an account. Guests can only play games.
+- **Hats** are for Verified creators only, and are made in Studio's Accessory
+  window (see Accessories and faces below). **Shirts and pants** can be made by
+  anyone with an account, and are always a picture painted on the template.
+  Items don't have a colour of their own. Guests can only play games.
 - **Decals and audio are always free**, even from Verified creators: they're
   free-use assets anyone can put in their games.
 
@@ -1717,7 +1719,8 @@ Find things in two places:
 ### Limiteds, resale and trading
 
 - **Edit item:** on an item's page on the website, its creator (or staff) can
-  change its name, description, price, colour, hat shape or clothing picture.
+  change its name, description, price or clothing picture. (Items don't have a
+  colour: hats are Studio models and clothes are pictures.)
 - **Limited items:** only the Guts account can make an item Limited, and only
   its own **accessories and faces** (never shirts, pants, audio, decals or
   models). A Limited has a fixed stock. Each copy gets a number (#1, #2, ...). While there's stock
@@ -1778,14 +1781,15 @@ project really started); it shows on the profile.
 
 ### Clothing templates
 
-Shirts and pants can have a **picture**, like classic Roblox clothing. Get the
+Shirts and pants are a **picture**, like classic Roblox clothing (every shirt
+and pants upload needs one). Get the
 template (the website's Create page links **shirt template** and **pants
 template**; the app's Create page has **Save the template**; they're also in
 `assets/templates/`). It's a 585 x 559 picture with a box for every side of the
 torso and each arm (shirts) or leg (pants): **R** and **L** are the
 character's own right and left. Paint over the boxes, save it as a .png, and
 pick it as the **Picture** when you upload the shirt or pants. Anything you
-leave see-through shows the clothing's colour.
+leave see-through shows the body underneath.
 
 `tools/make_clothing_template.py` redraws the templates; the layout lives in
 `src/scene/PlayerModel.cpp`.
