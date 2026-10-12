@@ -80,6 +80,11 @@ private:
         // ServerSafety.cpp: people you blocked, and how many reports you sent today.
         std::vector<std::string> blocked;
         std::string reportDay; int reportsToday = 0;
+        // ServerItems.cpp / ServerAccounts.cpp (worker/server.js has the same):
+        std::vector<std::string> pastNames;   // usernames they had before (reserved for them)
+        std::vector<std::string> played;      // games they've played (game.vote needs it), oldest first, at most 500
+        long long   publicWeek = 0;           // the week (unix time / 7 days) publicThisWeek counts
+        int         publicThisWeek = 0;       // models made public that week (Verified: no limit)
     };
     struct Asset {
         std::string id, kind, name, description, creator;
@@ -91,6 +96,13 @@ private:
         nlohmann::json badges = nlohmann::json::array();   // games: badges its creator made
         nlohmann::json comments = nlohmann::json::array(); // games: comments under it, newest first (ServerSocial.cpp)
         nlohmann::json days = nlohmann::json::object();    // creator stats: "YYYY-MM-DD" -> {plays, sales, bolts}, last 60 days
+        long long   icon = 0;                    // games: when its icon was last set (0 = none)
+        long long   likes = 0, dislikes = 0;     // games: thumbs up / down
+        nlohmann::json votes = nlohmann::json::object();   // games: account id -> 1 or -1
+        // Limiteds (ServerItems.cpp): a fixed stock of numbered copies, which people resell and trade.
+        bool        limited = false;
+        long long   stock = 0;
+        nlohmann::json copies = nlohmann::json::array();   // {serial, owner, price} (price 0 = not for sale)
     };
 
     struct Post { std::string by, text; long long time = 0; };
@@ -134,6 +146,19 @@ private:
     nlohmann::json op(const std::string& name, User& me, const nlohmann::json& args);
     nlohmann::json groupOp(const std::string& name, User& me, const nlohmann::json& args);   // ServerGroups.cpp
     nlohmann::json accountOp(const std::string& name, User& me, const nlohmann::json& args);  // ServerAccounts.cpp
+    // ServerItems.cpp: editing items, Limiteds (resale and trades), game votes and icons,
+    // model access and the update log. (worker/server.js has the same.)
+    nlohmann::json itemOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json copiesOf(const User& u) const;          // every Limited copy someone holds
+    void           syncOwned(User& u, const Asset& a);     // `owned` follows the copies they hold
+    nlohmann::json limitedJson(const Asset& a) const;      // what the catalog shows about a Limited (null if it isn't one)
+    int            publicModelsLeft(const User& u) const;  // -1 = no limit
+    void           countPublicModel(User& u);
+    static std::string publicModelLimitText();
+    void saveTrades();
+    void loadTrades();
+    void saveUpdates();
+    void loadUpdates();
     void  claimOfficial(User& u);                  // the staff account is user 1, "Guts"
     User* findUsername(const std::string& username);
     // An account key, "@username", or a name as shown in games.
@@ -198,7 +223,8 @@ private:
     void      paySeller(Asset& a, User& buyer, long long share, const std::string& ref);   // to the group, or the creator
     nlohmann::json meJson(const User& u) const;
     nlohmann::json publicUser(const User& u) const;
-    nlohmann::json publicAsset(const Asset& a) const;
+    // me: who's looking (adds their vote on a game, like worker/server.js publicAsset(a, me)).
+    nlohmann::json publicAsset(const Asset& a, const User* me = nullptr) const;
     // Private models and animations: only their creator (and staff) see them.
     bool canSee(const Asset& a, const User& me) const;
     // Paid private servers (ServerRelay.cpp; worker/server.js has the same).
@@ -240,6 +266,10 @@ private:
     std::map<std::string, Asset>::const_iterator findAsset(const std::string& id) const;
     void numberAssets();
     std::map<std::string, Group> m_groups;
+    // Trade offers between players (Limiteds), trades.json: {id, from, to, give, get, status, created, updated}, newest last.
+    nlohmann::json m_trades = nlohmann::json::array();
+    // Updates staff posted (the website's Updates page; the built-in ones are in worker/updates.js), updates.json, newest first.
+    nlohmann::json m_updates = nlohmann::json::array();
     nlohmann::json m_forum = nlohmann::json::object();   // thread id -> thread (forum.json)
     long long      m_forumSaved = 0;
     // What players reported (ServerSafety.cpp): {id, from, kind, target, about, reason, note, copy, at, status, ...}, newest last.
