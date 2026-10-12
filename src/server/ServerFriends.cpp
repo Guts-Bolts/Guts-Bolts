@@ -73,7 +73,7 @@ bool GbServer::isOnline(const User& u) const {
 
 json GbServer::friendOp(const std::string& name, User& me, const json& args) {
     auto person = [&](const User& u) {
-        return json{{"id", u.id}, {"name", u.name}, {"verified", isVerified(u)}};
+        return json{{"id", u.id}, {"userId", u.userId}, {"username", u.username}, {"name", u.name}, {"verified", isVerified(u)}};
     };
 
     if (name == "friends.list") {

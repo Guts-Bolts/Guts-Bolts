@@ -2487,7 +2487,7 @@ export class GbServerObject extends DurableObject {
   }
 
   friendOp(name, me, args) {
-    const person = (u) => ({ id: u.id, name: u.name, verified: this.isVerified(u) });
+    const person = (u) => ({ id: u.id, userId: u.userId, username: u.username, name: u.name, verified: this.isVerified(u) });
     if (name === 'friends.list') {
       const friends = [];
       for (const id of me.friends) {

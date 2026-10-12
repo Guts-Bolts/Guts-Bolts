@@ -18,6 +18,7 @@ export const BUILT_IN_UPDATES = [
       'Staff answers show up on the Support page and in your notifications, and by email if you left one',
       'A Support tickets box on the Staff page to answer, send reset codes and close tickets',
       'Email now says what went wrong when it can\'t send, and staff can send a test email from the Staff page',
+      'Fixed: clicking a friend in "Friends online" on the home page said the user doesn\'t exist',
     ],
   },
   {

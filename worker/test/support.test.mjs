@@ -74,3 +74,13 @@ test('the Staff page says what email needs', () => {
   assert.equal(m.on, false);
   assert.match(m.problem, /BREVO_API_KEY/);
 });
+
+test('the friends list has user numbers, so "Friends online" links open the right profile', () => {
+  const s = makeServer();
+  const bob = s.signUp('bob'), carol = s.signUp('carol');
+  bob.friends.push(carol.id); carol.friends.push(bob.id);
+  const f = s.call(bob, 'friends.list').friends[0];
+  assert.equal(f.userId, carol.userId);
+  assert.equal(f.username, 'carol');
+  assert.ok(s.call(bob, 'profile', { id: String(f.userId) }).ok);
+});

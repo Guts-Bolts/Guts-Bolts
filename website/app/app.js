@@ -575,7 +575,7 @@ pages.home = async () => {
             : html`<p class="small muted">Come back tomorrow for 25 more.</p>`}</div>
         <div class="box"><h2 class="boxhead">Friends online (${onlineFriends.length})</h2>
           ${onlineFriends.length ? html`<div class="list">${onlineFriends.slice(0, 8).map((p) => html`<div>
-              <span class="dot on"></span><a class="grow" href="#/user/${p.userId}">${p.username || p.name}</a></div>`)}</div>`
+              <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
       <div class="home-right">${updateBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
