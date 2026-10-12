@@ -130,6 +130,19 @@ void humanoidFrom(Humanoid& h, const json& j) {
     h.useJumpPower = j.value("useJumpPower", h.useJumpPower);
 }
 
+// A player's camera options (CameraMode and zoom limits).
+json cameraJson(const CameraOptions& o) {
+    return {{"first", o.lockFirstPerson}, {"min", o.minZoom}, {"max", o.maxZoom}};
+}
+CameraOptions cameraFrom(const json& j) {
+    CameraOptions o;
+    if (!j.is_object()) return o;
+    o.lockFirstPerson = j.value("first", false);
+    o.minZoom = std::clamp(j.value("min", o.minZoom), 0.0f, CameraOptions::kLimit);
+    o.maxZoom = std::clamp(j.value("max", o.maxZoom), 0.0f, CameraOptions::kLimit);
+    return o;
+}
+
 json avatarJson(const Profile& p) {
     const BodyColors& c = p.colors;
     return {{"head", vec3(c.head)}, {"torso", vec3(c.torso)}, {"leftArm", vec3(c.leftArm)},
@@ -444,6 +457,7 @@ struct NetServer::Client {
     bool        owner = false;       // owns the game: sees the server's dev console
     unsigned long long logSent = 0;  // Log::count() already sent to them
     std::string toolsSent;           // the tools they carry, as last sent to them
+    std::string cameraSent;          // their camera options (player.CameraMode...), as last sent to them
     std::map<uint64_t, std::string> heldSent;   // what each other character holds, as last sent
     std::map<uint64_t, std::string> fxSent;     // the Highlights / Trails / Beams on each character, as last sent
     double      remoteBudget = 60.0;  // RemoteEvent messages they may still send (refills over time)
@@ -1044,7 +1058,7 @@ std::string NetServer::worldMessage(bool) {
     if (env != m_lastEnv) { msg["env"] = env; m_lastEnv = env; }
     // The camera setting (scripts can change Workspace.Orthographic while playing).
     const WorldSettings& ws = m_scene->world();
-    json cam = {{"ortho", ws.orthographic}, {"size", ws.orthographicSize}};
+    json cam = {{"ortho", ws.orthographic}, {"size", ws.orthographicSize}, {"player", cameraJson(ws.playerCamera)}};
     if (cam.dump() != m_lastCam) { msg["cam"] = cam; m_lastCam = cam.dump(); }
     // The terrain, when a script changed it (joiners get it with the scene). At most
     // twice a second: it can be big, and a script might change it every frame.
@@ -1179,6 +1193,11 @@ void NetServer::sendTick() {
             if (rc->humanoidDirty) {
                 c->conn->send(json{{"t", "hum"}, {"h", humanoidJson(rc->humanoid)}}.dump());
                 rc->humanoidDirty = false;
+            }
+            // Their CameraMode / zoom limits, once a script here changed them.
+            if (rc->cameraSet) {
+                std::string camera = json{{"t", "camopt"}, {"o", cameraJson(rc->camera)}}.dump();
+                if (camera != c->cameraSent) { c->conn->send(camera); c->cameraSent = std::move(camera); }
             }
             for (auto& k : rc->kills)
                 c->conn->send(json{{"t", "kill"}, {"force", k.force}, {"impulse", vec3(k.impulse)}}.dump());
@@ -1491,6 +1510,7 @@ void NetClient::handle(const std::string& text) {
         if (m.contains("cam") && m["cam"].is_object()) {
             m_scene->world().orthographic = m["cam"].value("ortho", false);
             m_scene->world().orthographicSize = std::clamp(m["cam"].value("size", 0.0f), 0.0f, 2000.0f);
+            if (m["cam"].contains("player")) m_scene->world().playerCamera = cameraFrom(m["cam"]["player"]);
         }
         if (m.contains("gui")) {
             GuiState& g = m_session->gui();
@@ -1571,6 +1591,12 @@ void NetClient::handle(const std::string& text) {
     if (t == "passprompt") { m_passPrompt = m.value("pass", std::string()); return; }
     if (t == "hum" && me) {
         humanoidFrom(me->humanoid(), m.value("h", json::object()));
+        return;
+    }
+    if (t == "camopt") {   // the host's scripts changed our player.CameraMode / zoom limits
+        ScriptCamera& sc = m_scene->camera();
+        sc.options = cameraFrom(m.value("o", json::object()));
+        sc.optionsSet = true;
         return;
     }
     if (t == "kill" && me) {

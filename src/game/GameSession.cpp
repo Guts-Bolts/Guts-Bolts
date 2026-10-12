@@ -18,6 +18,7 @@ void GameSession::start() {
     m_physics.reset();
     m_scene->particles().clear();
     m_scene->blasts().clear();
+    m_scene->camera() = ScriptCamera{};   // workspace.CurrentCamera starts fresh: Custom, following you
     if (Player* p = m_scene->player()) p->beginPlay();
     m_running = true;
     // Sounds marked "Autoplay" (e.g. background music) start with the game.
@@ -272,6 +273,7 @@ void GameSession::stop() {
     m_physics.reset();
     m_scene->particles().clear();
     m_scene->blasts().clear();
+    m_scene->camera() = ScriptCamera{};
     m_running = false;
 }
 
