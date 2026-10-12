@@ -10,6 +10,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'lost-and-found', name: 'Lost & Found', time: 1791832000, tag: 'Website',
+    summary: 'Forgot your password and never added an email? Ask staff on the new Support page and get back in.',
+    items: [
+      'A new Support page (link at the bottom of every page): ask staff for help, even when you can\'t log in',
+      'Forgot your password? Staff can send you a reset code right on the Support page, so you can pick a new password',
+      'Staff answers show up on the Support page and in your notifications, and by email if you left one',
+      'A Support tickets box on the Staff page to answer, send reset codes and close tickets',
+      'Email now says what went wrong when it can\'t send, and staff can send a test email from the Staff page',
+    ],
+  },
+  {
     id: 'paint-by-numbers', name: 'Paint by Numbers', time: 1791828000, tag: 'Website',
     summary: 'The useless Colour box is gone from every item: hats come from Studio, and shirts and pants are always a picture.',
     items: [

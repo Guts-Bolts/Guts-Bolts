@@ -13,6 +13,11 @@
 //                safe to keep here.
 //   SERVER_NAME  the name the apps show for this server (default "Guts&Bolts").
 //   GB_SERVER    only to use a server on a computer instead (host:port).
+//   BREVO_API_KEY  (a Secret, not a variable) turns email on: password reset
+//                codes, two-step login codes, support ticket answers. Get one free
+//                at brevo.com (README: "Turning email on").
+//   MAIL_FROM    the address emails come from (one Brevo knows, like
+//                noreply@gutsandbolts.net). Needed with the key.
 {
   "name": "project-guts-and-bolts",
   "main": "worker/index.js",
