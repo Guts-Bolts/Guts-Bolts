@@ -10,6 +10,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'paint-by-numbers', name: 'Paint by Numbers', time: 1791828000, tag: 'Website',
+    summary: 'The useless Colour box is gone from every item: hats come from Studio, and shirts and pants are always a picture.',
+    items: [
+      'No more Colour box when you upload or edit a hat, shirt or pants, on the website or in the app',
+      'Shirts and pants need a picture painted on the template (the template links are right there)',
+      'Hats are made in Studio\'s Accessory window and uploaded from there, like hair and other accessories',
+      'Old items you already own keep looking the same',
+    ],
+  },
+  {
     id: 'we-can-hear-you-unfortunately', name: 'We Can Hear You. Unfortunately', version: '0.7.1', time: 1791353000, tag: 'Player',
     summary: 'Voice chat, terrain, a forum, group games, paid private servers, inventories and a lot more, all in one go.',
     items: [

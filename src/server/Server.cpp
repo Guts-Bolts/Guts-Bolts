@@ -793,6 +793,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         meta.erase("allowGear");
         meta.erase("review");
         meta.erase("reviewNote");
+        meta.erase("color");   // items don't have a colour: hats are Studio models, clothes are template pictures
+        meta.erase("style");
         if (reviewedKind(kind) && !verified && !isStaff(me)) meta["review"] = "pending";
         if (kind == "gear")
             if (std::string problem = Online::gearProblem(data); !problem.empty()) return fail(problem);
@@ -803,7 +805,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         }
         meta.erase("access");
         if (Online::hasAccess(kind)) meta["access"] = str("access") == "private" ? "private" : "public";
-        if (Online::isAccessory(kind) && !data.empty()) {   // made in Studio's Accessory window
+        if (Online::isAccessory(kind)) {   // made in Studio's Accessory window
+            if (data.empty()) return fail("Make hats and accessories in Studio's Accessory window, then upload them from there.");
             json acc = json::parse(data, nullptr, false);
             if (!acc.is_object() || acc.value("format", std::string()) != "gbaccessory")
                 return fail("That isn't a Guts&Bolts accessory. Make it in Studio's Accessory window.");
@@ -828,7 +831,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             meta["image"] = true;
             meta["ext"] = png ? "png" : "jpg";
         }
-        if ((kind == "shirt" || kind == "pants") && !data.empty()) {   // a clothing template picture
+        if (kind == "shirt" || kind == "pants") {   // a clothing template picture
+            if (data.empty()) return fail("Pick a picture made from the " + kind + " template.");
             auto u = [&](size_t i) { return (uint32_t)(unsigned char)data[i]; };
             if (data.size() < 24 || data.compare(1, 3, "PNG") != 0)
                 return fail("Clothing pictures must be .png files made from the template.");
