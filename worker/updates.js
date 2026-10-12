@@ -21,6 +21,18 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'twin-engines', name: 'Twin Engines', time: 1791831600, tag: 'Server',
+    summary: 'The server you can run on your own computer caught up with the main one: Limiteds, trades, votes, icons and more.',
+    items: [
+      'Limiteds work on your own server too: numbered copies, sold-out stock, reselling and trading',
+      'Thumbs up and down on games (after you\'ve played them), and game icons',
+      'Make your Library models public or private (5 public a week unless you\'re Verified)',
+      'Change your username (1000 Bolts) or your password, and staff can post to the Updates page',
+      'Creators and staff can edit catalog items after they\'re made',
+      'Email features say clearly that they need the main server, instead of "Unknown request"',
+    ],
+  },
+  {
     id: 'paint-by-numbers', name: 'Paint by Numbers', time: 1791828000, tag: 'Website',
     summary: 'The useless Colour box is gone from every item: hats come from Studio, and shirts and pants are always a picture.',
     items: [
