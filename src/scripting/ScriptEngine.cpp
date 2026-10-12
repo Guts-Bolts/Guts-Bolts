@@ -8,6 +8,7 @@
 #include <sstream>
 #include <fstream>
 #include "LuaApi.h"
+#include "Luau.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
 #include "../core/Log.h"
@@ -1333,7 +1334,7 @@ int l_moduleLoad(lua_State* L) {
     lua_pop(L, 1);
     std::string chunk = "=" + m->fullName();
     lua_pushboolean(L, 0);
-    if (luaL_loadbuffer(L, m->source.data(), m->source.size(), chunk.c_str()) != LUA_OK) {
+    if (Luau::load(L, m->source, chunk.c_str()) != LUA_OK) {
         table("__gb_modulesLoading");
         lua_pushnil(L);
         lua_rawseti(L, -2, (lua_Integer)m->id);
@@ -2083,7 +2084,7 @@ bool ScriptEngine::runCommand(const std::string& code, std::string& error) {
     bool expr = luaL_loadbuffer(L, asExpr.data(), asExpr.size(), "=CommandBar") == LUA_OK;
     if (!expr) {
         lua_pop(L, 1);
-        if (luaL_loadbuffer(L, code.data(), code.size(), "=CommandBar") != LUA_OK) {
+        if (Luau::load(L, code, "=CommandBar") != LUA_OK) {
             error = lua_tostring(L, -1);
             lua_pop(L, 1);
             return false;
@@ -2139,7 +2140,7 @@ bool ScriptEngine::callRef(int ref, std::string& error) {
 void ScriptEngine::runScript(SceneNode* script) {
     lua_State* L = m_L;
     std::string chunk = "=" + script->fullName();
-    if (luaL_loadbuffer(L, script->source.data(), script->source.size(), chunk.c_str()) != LUA_OK) {
+    if (Luau::load(L, script->source, chunk.c_str()) != LUA_OK) {
         Log::error(lua_tostring(L, -1));
         lua_pop(L, 1);
         return;
@@ -2810,7 +2811,7 @@ void ScriptEngine::applyClockTime() {
 
 bool ScriptEngine::checkSyntax(const std::string& source, std::string& error, int& line) {
     lua_State* L = luaL_newstate();
-    bool ok = luaL_loadbuffer(L, source.data(), source.size(), "=script") == LUA_OK;
+    bool ok = Luau::load(L, source, "=script") == LUA_OK;   // (Luau extras are fine)
     line = 0;
     if (!ok) {
         error = lua_tostring(L, -1);

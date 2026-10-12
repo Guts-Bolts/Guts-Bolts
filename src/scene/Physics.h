@@ -10,6 +10,7 @@
 class Scene;
 class SceneNode;
 class Terrain;
+enum class Material;   // (SceneNode.h)
 
 struct AABB {
     glm::vec3 min{0.0f}, max{0.0f};
@@ -101,6 +102,12 @@ public:
     // How heavy a part is for its size: its Density, or its material's. Water is
     // kWaterDensity: anything lighter floats, anything heavier sinks.
     static float densityOf(const SceneNode* n);
+    // A material's own density, friction and bounciness (what a part without
+    // CustomPhysicalProperties uses). Friction and bounciness of a part: its own, else its material's.
+    struct MaterialPhysics { float density, friction, elasticity; };
+    static MaterialPhysics materialPhysics(Material m);
+    static float frictionOf(const SceneNode* n);
+    static float elasticityOf(const SceneNode* n);
     static constexpr float kWaterDensity = 1.3f;
     // How far `box` must move up to rest on top of a solid part (0 = free).
     float pushUp(const AABB& box) const;

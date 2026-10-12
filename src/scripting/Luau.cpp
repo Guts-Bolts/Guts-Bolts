@@ -5,6 +5,9 @@
 #include <cstring>
 #include <set>
 
+#include <lua.h>
+#include <lauxlib.h>
+
 namespace Luau {
 
 namespace {
@@ -137,7 +140,14 @@ struct Rewriter {
         }
         return i;
     }
-    void blank(size_t a, size_t b) { for (size_t k = a; k < b && k < t.size(); ++k) if (t[k].type != T::End) { t[k].text = t[k].newline ? "\n" : ""; t[k].type = t[k].newline ? T::Space : T::Comment; } }
+    // Removes tokens but keeps their line breaks (so line numbers don't move).
+    void blank(size_t a, size_t b) {
+        for (size_t k = a; k < b && k < t.size(); ++k) {
+            if (t[k].type == T::End) continue;
+            t[k].text = std::string(std::count(t[k].text.begin(), t[k].text.end(), '\n'), '\n');
+            t[k].type = t[k].newline ? T::Space : T::Comment;
+        }
+    }
 
     // Type annotations: local x: T, function params (a: T), return types, casts, type aliases.
     void stripTypes() {
@@ -204,6 +214,11 @@ struct Rewriter {
                     size_t e = skipType(next(c), {}, true);
                     blank(c, e);
                 }
+            }
+            // ::label:: (plain Lua's goto labels) isn't a cast
+            if (isSym(k, "::") && t[next(i)].type == T::Name && isSym(t[next(next(i))], "::")) {
+                i = next(next(i));
+                continue;
             }
             // expr :: Type  (a cast)
             if (isSym(k, "::")) {
@@ -304,6 +319,15 @@ struct Rewriter {
             } else if (k.text == "continue") {
                 size_t n = next(i);
                 if (isSym(t[n], "=") || isSym(t[n], "(") || isSym(t[n], ".") || isSym(t[n], "[") || isSym(t[n], ":")) continue;
+                // `continue` used as a value (a variable called continue): not a statement.
+                if (t[n].type == T::Symbol && !isSym(t[n], ";")) continue;
+                if (isName(t[n], "then") || isName(t[n], "do") || isName(t[n], "and") || isName(t[n], "or")) continue;
+                if (p >= 0 && t[p].type == T::Symbol && !isSym(t[p], ";") && !isSym(t[p], ")") && !isSym(t[p], "]") &&
+                    !isSym(t[p], "}") && !isSym(t[p], "::")) continue;
+                if (p >= 0 && t[p].type == T::Name &&
+                    (t[p].text == "if" || t[p].text == "elseif" || t[p].text == "while" || t[p].text == "until" ||
+                     t[p].text == "return" || t[p].text == "local" || t[p].text == "not" || t[p].text == "and" ||
+                     t[p].text == "or" || t[p].text == "in")) continue;
                 for (auto it = stack.rbegin(); it != stack.rend(); ++it) {
                     if (it->kind == 3) break;
                     if (it->kind == 1 || it->kind == 2) {
@@ -326,6 +350,7 @@ struct Rewriter {
             std::string body = k.text.substr(1, k.text.size() >= 2 ? k.text.size() - 2 : 0);
             std::vector<std::string> parts;
             std::string lit;
+            size_t lines = 0;   // its line breaks go after it instead (so line numbers stay put)
             for (size_t i = 0; i < body.size(); ++i) {
                 if (body[i] == '\\' && i + 1 < body.size()) { lit += body[i]; lit += body[i + 1]; ++i; continue; }
                 if (body[i] == '{') {
@@ -333,18 +358,21 @@ struct Rewriter {
                     size_t j = i + 1;
                     for (; j < body.size() && d; ++j) { if (body[j] == '{') ++d; if (body[j] == '}') --d; }
                     if (!lit.empty()) { parts.push_back("\"" + lit + "\""); lit.clear(); }
-                    parts.push_back("tostring(" + toLua(body.substr(i + 1, j - i - 2)) + ")");
+                    std::string expr = toLua(body.substr(i + 1, j - i - 2));
+                    lines += (size_t)std::count(expr.begin(), expr.end(), '\n');
+                    std::replace(expr.begin(), expr.end(), '\n', ' ');
+                    parts.push_back("tostring(" + expr + ")");
                     i = j - 1;
                     continue;
                 }
                 if (body[i] == '"') { lit += "\\\""; continue; }
-                if (body[i] == '\n') { lit += "\\n"; continue; }
+                if (body[i] == '\n') { lit += "\\n"; ++lines; continue; }
                 lit += body[i];
             }
             if (!lit.empty() || parts.empty()) parts.push_back("\"" + lit + "\"");
             std::string out = "(";
             for (size_t i = 0; i < parts.size(); ++i) out += (i ? " .. " : "") + parts[i];
-            k.text = out + ")";
+            k.text = out + ")" + std::string(lines, '\n');
             k.type = T::String;
             note("string interpolation was rewritten");
         }
@@ -366,6 +394,15 @@ std::string toLua(const std::string& source, std::vector<std::string>* notes) {
     r.compoundAssign();
     r.continues();
     return r.join();
+}
+
+int load(lua_State* L, const std::string& source, const char* chunkName, const char* mode) {
+    int r = luaL_loadbufferx(L, source.data(), source.size(), chunkName, mode);
+    if (r != LUA_ERRSYNTAX) return r;
+    const std::string lua = toLua(source);
+    if (lua == source) return r;               // nothing Luau in it: the real error
+    lua_pop(L, 1);
+    return luaL_loadbufferx(L, lua.data(), lua.size(), chunkName, mode);
 }
 
 } // namespace Luau

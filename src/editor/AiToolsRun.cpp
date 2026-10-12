@@ -14,6 +14,7 @@
 #include "../scene/Player.h"
 #include "../game/GameSession.h"
 #include "../core/Log.h"
+#include "../scripting/Luau.h"
 
 #include <imgui.h>
 
@@ -92,7 +93,7 @@ std::string idOf(const SceneNode* n) { return "#" + std::to_string(n->id); }
 json syntaxOf(const std::string& source, const std::string& name) {
     lua_State* L = luaL_newstate();
     const std::string chunk = "=" + name;
-    int r = luaL_loadbufferx(L, source.data(), source.size(), chunk.c_str(), "t");
+    int r = Luau::load(L, source, chunk.c_str(), "t");   // (Luau extras compile too)
     json out = {{"ok", r == LUA_OK}};
     if (r != LUA_OK) out["error"] = lua_tostring(L, -1) ? lua_tostring(L, -1) : "syntax error";
     lua_close(L);
