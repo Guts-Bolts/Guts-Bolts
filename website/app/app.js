@@ -1346,19 +1346,15 @@ pages.create = async (tab = 'games') => {
     : me.verified ? html`<b>You're Verified!</b> Uploading is free, with no daily limit, and you can sell what you make.`
     : html`Uploading costs a few Bolts (decals 5, clothes 10, audio 20, plugins 20; games are free).
       <span class="muted">${me.uploadsLeft} uploads left today.</span>`;
-  const clothing = ['hat', 'shirt', 'pants'].includes(kind), face = kind === 'face', tee = kind === 'tshirt';
+  const clothing = ['shirt', 'pants'].includes(kind), face = kind === 'face', tee = kind === 'tshirt';
   const accept = { decal: '.png,.jpg,.jpeg', audio: '.mp3,.wav,.ogg,.flac', plugin: '.lua', game: '.gbscene' }[kind] || '';
   const form = html`<h2>${kind === 'game' ? 'Publish a game' : 'Upload a new ' + KINDS[kind]}</h2>
     <form class="form" data-form="upload"><input type="hidden" name="kind" value="${kind}">
       <label>Name</label><input type="text" name="name" maxlength="50" required>
       <label>Description</label><textarea name="description" maxlength="1000"></textarea>
-      ${clothing ? html`${kind === 'hat' ? html`<label>Style</label><select name="style"><option value="1">Top Hat</option>
-          <option value="2" selected>Cap</option><option value="3">Crown</option></select>` : ''}
-        <label>Colour</label><input type="color" name="color" value="#e63333">
-        ${kind !== 'hat' ? html`<label>Picture <span class="muted small">(optional)</span></label>
-          <input type="file" name="picture" accept="image/png">
+      ${clothing ? html`<label>Picture</label><input type="file" name="picture" accept="image/png" required>
           <p class="small muted">A 585 x 559 .png painted on the
-            <a href="templates/${kind}_template.png" download>${kind} template</a>. See-through bits show the colour above.</p>` : ''}`
+            <a href="templates/${kind}_template.png" download>${kind} template</a>. See-through bits show the body underneath.</p>`
       : tee ? html`<label>Picture</label><input type="file" name="file" accept="image/png,image/jpeg" required>
         <p class="small muted">Any .png or .jpg (up to 1024 x 1024). It's worn flat on the front of the torso, over your shirt.
           Square pictures fit best; see-through bits show the shirt underneath.</p>`
@@ -1377,12 +1373,12 @@ pages.create = async (tab = 'games') => {
   const shownForm = hatLocked ? html`<h2>Upload a new Hat</h2><p class="error">Only Verified creators can make hats.</p>
     <p class="muted">You can still make <a href="#/create/shirt">shirts</a> and <a href="#/create/pants">pants</a>!</p>`
     : face && !(signedIn() && me.official) ? html`<p class="error">Only Guts can make faces.</p>`
-    : kind === 'hat' ? html`${form}<p class="small muted">Want a hat that's your own shape? Build it in <b>Studio</b> and use
-      <b>Avatar &gt; Accessories</b> to place it on the head and upload it.</p>` : form;
+    : kind === 'hat' ? html`<h2>Upload a new Hat</h2><p>Hats are made in <b>Studio</b>: build the hat, then use
+      <b>Avatar &gt; Accessories</b> to place it on the head and upload it from there.</p>` : form;
   const row = (a) => html`<div>
       ${a.kind === 'game' ? gameIcon(a, 48) : ''}
       ${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="">` : ''}
-      ${clothing || face ? html`<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#fff">${itemIcon(a)}</div>` : ''}
+      ${clothing || face || kind === 'hat' ? html`<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#fff">${itemIcon(a)}</div>` : ''}
       <div class="grow"><b>${a.kind === 'decal' || a.kind === 'audio' || a.kind === 'plugin' ? html`<a href="#/library/${assetNum(a)}">${a.name}</a>` : a.name}</b><br><span class="small muted">
         ${a.kind === 'game' ? html`${a.plays} plays · ${ACCESS_NAMES[a.access || 'public']}` : html`${a.price > 0 ? bolts(a.price) : 'free'} · ${a.sales} sold`}
         ${a.kind === 'decal' || a.kind === 'audio' ? html` · ID ${assetNum(a)}` : ''}</span></div>
@@ -2985,11 +2981,10 @@ const forms = {
   async upload(f) {
     const kind = f.kind.value, msg = $('#uploadMsg');
     const args = { kind, name: f.name.value, description: f.description.value, price: f.price ? Number(f.price.value) || 0 : 0 };
-    if (['hat', 'shirt', 'pants'].includes(kind)) {
-      const c = f.color.value;
-      args.meta = { color: [1, 3, 5].map((i) => parseInt(c.substr(i, 2), 16)) };
-      if (kind === 'hat') args.meta.style = Number(f.style.value);
-      args.data = f.picture && f.picture.files[0] ? await gb.fileBase64(f.picture.files[0]) : '';
+    if (kind === 'shirt' || kind === 'pants') {
+      const pic = f.picture && f.picture.files[0];
+      if (!pic) { msg.textContent = 'Pick your picture made from the ' + kind + ' template first.'; return; }
+      args.data = await gb.fileBase64(pic);
     } else {
       const file = f.file.files[0];
       if (!file) { msg.textContent = 'Pick a file first.'; return; }
