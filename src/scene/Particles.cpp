@@ -482,8 +482,8 @@ void ParticleSystem::runEmitters(Scene& scene, float dt) {
                 s.vel.z *= 1.0f - std::min(1.0f, 2.0f * dt);
                 s.pos += s.vel * dt;
                 s.color = glm::mix(p.color1, p.color2, std::min(1.0f, t * 1.3f));
-                s.alpha = std::min(1.0f, t * 8.0f) * std::pow(1.0f - t, 1.3f) * 0.95f;
-                s.size  = p.fxSize * 0.55f * s.scale * (1.0f - 0.55f * t);
+                s.alpha = std::min(1.0f, t * 8.0f) * std::pow(1.0f - t, 1.3f) * 0.8f;
+                s.size  = p.fxSize * 0.45f * s.scale * (1.0f - 0.6f * t);
                 s.glow  = 1.0f;
                 s.look  = 2;
                 break;

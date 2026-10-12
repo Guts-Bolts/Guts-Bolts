@@ -684,7 +684,7 @@ void main() {
         float r2 = dot(q, q);
         float n = noise(vCorner * 3.0 + vec2(seed * 7.0, seed * 3.0));
         a = pow(max(0.0, 1.0 - r2), 1.6) * (0.6 + 0.6 * n);
-        col = mix(col, vec3(1.0, 0.9, 0.6), pow(max(0.0, 1.0 - r2 * 2.5), 2.0) * 0.6);
+        col = mix(col, vec3(1.0, 0.85, 0.5), pow(max(0.0, 1.0 - r2 * 2.5), 2.0) * 0.35);
     } else if (look == 3) {          // sparkle: a little four-pointed star
         vec2 q = abs(vCorner);
         float star = exp(-q.x * 14.0) * exp(-q.y * 2.2) + exp(-q.y * 14.0) * exp(-q.x * 2.2);
@@ -695,7 +695,7 @@ void main() {
     }
     a *= vColor.a;
     if (a < 0.003) discard;
-    col *= mix(uLight, vec3(1.6), glow);
+    col *= mix(uLight, vec3(1.25), glow);
     FragColor = vec4(col * a, a * (1.0 - glow));
 }
 )";
