@@ -3,6 +3,7 @@
 #include "../../scene/Player.h"
 
 #include <imgui.h>
+#include <algorithm>
 
 PlayerPanel::PlayerPanel(Scene* scene) : m_scene(scene) {}
 
@@ -120,6 +121,26 @@ void drawGameRules(WorldSettings& w) {
             ImGui::SetTooltip("How many studs tall the screen is. 0 = players zoom with the mouse wheel.\n"
                               "Scripts: workspace.OrthographicSize = 40");
     }
+    // Every player's camera to start with (Roblox's StarterPlayer camera settings).
+    CameraOptions& pc = w.playerCamera;
+    const char* modes[] = {"Classic", "Lock First Person"};
+    int mode = pc.lockFirstPerson ? 1 : 0;
+    if (ImGui::Combo("Camera Mode", &mode, modes, 2)) pc.lockFirstPerson = mode == 1;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Classic: zoom in and out with the mouse wheel (all the way in = first person).\n"
+                          "Lock First Person: players always see through their character's eyes.\n"
+                          "Scripts: player.CameraMode = Enum.CameraMode.LockFirstPerson");
+    ImGui::BeginDisabled(pc.lockFirstPerson);
+    ImGui::DragFloat("Min Zoom Distance", &pc.minZoom, 0.1f, 0.0f, pc.maxZoom, "%.1f studs");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How close players can zoom in. Under 1.2 lets them zoom into first person.\n"
+                          "Scripts: player.CameraMinZoomDistance = 10");
+    ImGui::DragFloat("Max Zoom Distance", &pc.maxZoom, 1.0f, pc.minZoom, CameraOptions::kLimit, "%.0f studs");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How far out players can zoom.\nScripts: player.CameraMaxZoomDistance = 30");
+    ImGui::EndDisabled();
+    pc.minZoom = std::clamp(pc.minZoom, 0.0f, CameraOptions::kLimit);
+    pc.maxZoom = std::clamp(pc.maxZoom, pc.minZoom, CameraOptions::kLimit);
 
     ImGui::SeparatorText("Fall damage");
     ImGui::Checkbox("Fall Damage", &w.fallDamage);

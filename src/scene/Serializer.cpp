@@ -778,6 +778,9 @@ json settingsJson(Scene& scene) {
                   {"bloodAmount", ws.bloodAmount}, {"bloodStay", ws.bloodStay},
                   {"playerCollisions", ws.playerCollisions}, {"voiceChat", ws.voiceChat}, {"maxFluidParticles", ws.maxFluidParticles},
                   {"orthographic", ws.orthographic}, {"orthographicSize", ws.orthographicSize}};
+    if (ws.playerCamera != CameraOptions{})   // (only games that changed them)
+        j["world"]["playerCamera"] = {{"lockFirstPerson", ws.playerCamera.lockFirstPerson},
+                                      {"minZoom", ws.playerCamera.minZoom}, {"maxZoom", ws.playerCamera.maxZoom}};
     if (Player* p = scene.player()) {
         const Humanoid& h = p->humanoid();
         j["player"] = {
@@ -827,6 +830,13 @@ void applySettings(Scene& scene, const json& j) {
         w.bloodColor        = vec(j["world"], "bloodColor", w.bloodColor);
         w.bloodAmount       = get<float>(j["world"], "bloodAmount", w.bloodAmount);
         w.bloodStay         = get<float>(j["world"], "bloodStay", w.bloodStay);
+        if (j["world"].contains("playerCamera") && j["world"]["playerCamera"].is_object()) {
+            const json& pc = j["world"]["playerCamera"];
+            CameraOptions& o = w.playerCamera;
+            o.lockFirstPerson = get<bool>(pc, "lockFirstPerson", o.lockFirstPerson);
+            o.minZoom = std::clamp(get<float>(pc, "minZoom", o.minZoom), 0.0f, CameraOptions::kLimit);
+            o.maxZoom = std::clamp(get<float>(pc, "maxZoom", o.maxZoom), 0.0f, CameraOptions::kLimit);
+        }
     }
     scene.world() = w;
 

@@ -42,6 +42,7 @@ void Camera::fly(float forward, float right, float up) {
 void Camera::resize(int w, int h) { m_w = w; m_h = h; }
 
 glm::vec3 Camera::position() const {
+    if (useCFrame) return glm::vec3(cframe[3]);
     float yr = glm::radians(yaw);
     float pr = glm::radians(pitch);
     const float d = shownDistance();
@@ -53,11 +54,24 @@ glm::vec3 Camera::position() const {
 }
 
 glm::vec3 Camera::forward() const {
+    if (useCFrame) {
+        const glm::vec3 z(cframe[2]);
+        const float len = glm::length(z);
+        return len > 1e-6f ? -z / len : glm::vec3(0, 0, -1);
+    }
     float yr = glm::radians(yaw), pr = glm::radians(pitch);
     return -glm::vec3(std::cos(pr) * std::cos(yr), std::sin(pr), std::cos(pr) * std::sin(yr));
 }
 
 glm::mat4 Camera::view() const {
+    if (useCFrame) {   // a script's CFrame: tilted (rolled) views work too
+        glm::mat4 m = cframe;
+        for (int i = 0; i < 3; ++i) {   // (no scale or shear, whatever it was built from)
+            glm::vec3 c(m[i]);
+            m[i] = glm::vec4(glm::length(c) > 1e-6f ? glm::normalize(c) : glm::vec3(i == 0, i == 1, i == 2), 0.0f);
+        }
+        return glm::inverse(m);
+    }
     // Looks along the orbit direction, so it also works at distance 0 (first person).
     glm::vec3 eye = position();
     return glm::lookAt(eye, eye + forward(), glm::vec3(0,1,0));

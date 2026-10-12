@@ -61,7 +61,11 @@ public:
                                  bool sliding);
 
     // While a session is set, the viewport is in Play mode.
-    void setSession(GameSession* session) { m_session = session; if (!session) m_camera.clip = -1.0f; }
+    // (Stop: the editing camera again, whatever the game's scripts did to it.)
+    void setSession(GameSession* session) {
+        m_session = session;
+        if (!session) { m_camera.clip = -1.0f; m_camera.clearScripted(); m_camera.fov = 60.0f; }
+    }
     void focus() { m_wantFocus = true; }
     void setTeam(TeamCreate* t) { m_team = t; }
     // Called when the connect tool has picked two parts (and the clicked points).

@@ -179,7 +179,7 @@ void ViewportPanel::handleInput(float dt) {
         else if (!io.WantTextInput && !firstPerson &&
                  (ImGui::IsKeyPressed(ImGuiKey_LeftShift, false) || ImGui::IsKeyPressed(ImGuiKey_RightShift, false)))
             m_shiftLock = !m_shiftLock;
-        if ((firstPerson || m_shiftLock) && !io.WantTextInput && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
+        if ((firstPerson || (m_shiftLock && !m_camera.noInput)) && !io.WantTextInput && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
             // First person / Shift Lock: the hidden mouse looks around (Esc / F5 stops playing as usual).
             ImVec2 mid(m_viewMin.x + (m_viewMax.x - m_viewMin.x) * 0.5f, m_viewMin.y + (m_viewMax.y - m_viewMin.y) * 0.5f);
             AppWindow::lockMouse(mid.x, mid.y);
@@ -196,12 +196,12 @@ void ViewportPanel::handleInput(float dt) {
         } else if (ImGui::IsMouseDown(ImGuiMouseButton_Right) || ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
             PlayCamera::turn(m_camera, io.MouseDelta.x, io.MouseDelta.y);
         }
-        if (!GameGui::overScroller(*m_scene, ImGui::GetMousePos())) PlayCamera::zoom(m_camera, io.MouseWheel);   // (else the wheel scrolls the UI)
+        if (!GameGui::overScroller(*m_scene, ImGui::GetMousePos())) PlayCamera::zoom(m_camera, io.MouseWheel, m_scene->cameraOptions());   // (else the wheel scrolls the UI)
         if (Pad::connected() && !io.WantTextInput) {   // a controller: right stick looks, D-pad zooms
             const glm::vec2 rs = Pad::rightStick();
             if (rs.x != 0.0f || rs.y != 0.0f) PlayCamera::turn(m_camera, rs.x * 900.0f * dt, -rs.y * 600.0f * dt);
-            if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, true))   PlayCamera::zoom(m_camera, 1.0f);
-            if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, true)) PlayCamera::zoom(m_camera, -1.0f);
+            if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, true))   PlayCamera::zoom(m_camera, 1.0f, m_scene->cameraOptions());
+            if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, true)) PlayCamera::zoom(m_camera, -1.0f, m_scene->cameraOptions());
         }
         return;
     }
