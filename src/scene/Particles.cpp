@@ -376,14 +376,7 @@ void ParticleSystem::runEmitters(Scene& scene, float dt) {
         int& have = counts[id];
         count = std::min(count, kMaxSpritesPerEmitter - have);
         for (int i = 0; i < count; ++i) {
-            // Full: the one nearest its end (from any emitter) makes way.
-            if ((int)m_sprites.size() >= kMaxSprites) {
-                auto oldest = std::max_element(m_sprites.begin(), m_sprites.end(),
-                                               [](const Sprite& a, const Sprite& b) { return a.age / a.life < b.age / b.life; });
-                --counts[oldest->owner];
-                *oldest = m_sprites.back();
-                m_sprites.pop_back();
-            }
+            if ((int)m_sprites.size() >= kMaxSprites) break;   // full: no more until some have faded
             Sprite s;
             s.owner = id;
             s.seed = rnd(0.0f, 1.0f);

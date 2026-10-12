@@ -797,6 +797,52 @@ beam.Parent = gun
 - `FaceCamera` keeps either one turned towards you.
 - In multiplayer they show for everyone, including ones the server puts on characters.
 
+### Particles: ParticleEmitter, Fire, Smoke and Sparkles
+
+Put one inside a part (Insert Object > Particles, with the part selected) and it
+just works, in Studio while you build and in the game. A **ParticleEmitter** sends
+particles out of anywhere inside the part, or out of one point when it's in an
+**Attachment**. **Fire**, **Smoke** and **Sparkles** are the classic ready-made ones.
+
+```lua
+local embers = Instance.new("ParticleEmitter")
+embers.Rate = 30                                   -- particles a second
+embers.Lifetime = NumberRange.new(1, 2)            -- seconds (each gets a random one)
+embers.Speed = NumberRange.new(4, 8)
+embers.SpreadAngle = Vector2.new(20, 20)           -- degrees each way
+embers.Color = ColorSequence.new(Color3.fromRGB(255, 200, 60), Color3.fromRGB(255, 40, 0))
+embers.Size = NumberSequence.new(0.4, 0)           -- shrinks away
+embers.Transparency = NumberSequence.new(0, 1)
+embers.LightEmission = 1                           -- glows
+embers.Acceleration = Vector3.new(0, 3, 0)
+embers.Parent = torch
+
+embers:Emit(50)    -- 50 at once (an explosion, a hit)
+embers:Clear()     -- all of its particles vanish
+
+local fire = Instance.new("Fire")                  -- Color, SecondaryColor, Size, Heat
+fire.Parent = campfire
+local smoke = Instance.new("Smoke")                -- Color, Opacity, RiseVelocity, Size
+smoke.Parent = chimney
+local sparkles = Instance.new("Sparkles")          -- SparkleColor
+sparkles.Parent = coin
+```
+
+- A ParticleEmitter also has `Enabled`, `Drag` (how quickly they slow down),
+  `EmissionDirection` (`Enum.NormalId.Top` and so on, turned with the part),
+  `Rotation` / `RotSpeed` (NumberRanges, degrees), `LockedToPart` (they move with
+  the part) and `Texture`: a built-in look (`""` a soft glow, `"smoke"`, `"fire"`,
+  `"sparkle"`) or your own picture (`gb:<id>` or a file in the games folder).
+- `NumberRange.new(min, max)` is new for these (`NumberRange.new(5)` is 5 to 5);
+  a plain number works anywhere a NumberRange or NumberSequence is wanted.
+- They're only for looks: every player's computer makes its own particles from the
+  emitter's settings, so they show for everyone in multiplayer (and `:Emit` /
+  `:Clear` from the server happen on everyone's screen) without slowing the game down.
+- At most 1500 particles from one emitter and 6000 in all are out at once (new
+  ones wait until some fade), so a huge `Rate` or `Emit(1000000)` can't freeze anything.
+- Saved in your game, editable in Properties, and they come across from imported
+  Roblox files (and go back out when you export).
+
 ### Your character's moves (the Animate script)
 
 Every character gets a 2011-style **Animate** script: idle, walk, run, jump,

@@ -154,6 +154,28 @@ smoke.Enabled = true
 local copy = fire:Clone()
 check(copy.ClassName == "Fire" and copy.Size == 6 and copy.Heat == 12, "Clone keeps Fire's settings")
 copy:Destroy()
+local peCopy = pe:Clone()
+check(peCopy.ClassName == "ParticleEmitter" and near(peCopy.Lifetime.Max, 2.5) and peCopy.Rate == 60
+      and near(peCopy.Size.Keypoints[1].Value, 0.6) and near(peCopy.LightEmission, 0.8), "Clone keeps a ParticleEmitter's settings")
+peCopy:Destroy()
+
+-- In an Attachment: out of that point, turned with it.
+local att = Instance.new("Attachment")
+att.Position = Vector3.new(0, 0.5, 0)
+att.Parent = emitterPart
+local fromPoint = Instance.new("ParticleEmitter")
+fromPoint.EmissionDirection = Enum.NormalId.Front
+fromPoint.Rate = 15
+fromPoint.Lifetime = NumberRange.new(1)
+fromPoint.Size = NumberSequence.new(0.2)
+fromPoint.Parent = att
+check(fromPoint.EmissionDirection == "Front", "EmissionDirection = Front")
+-- Somewhere nothing can come out of (a folder): no error, just no particles.
+local folder = Instance.new("Folder")
+folder.Parent = workspace
+local idle = Instance.new("Smoke")
+idle.Parent = folder
+check(idle.Parent == folder, "Smoke in a Folder is allowed (it just shows nothing)")
 check(game:GetService("Workspace") ~= nil, "still running")
 
 if #failures == 0 then

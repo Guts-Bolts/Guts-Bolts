@@ -215,7 +215,7 @@ inline const char* const kParticleClassNames[kParticleTypeCount] = {"ParticleEmi
 inline constexpr int kParticleLookCount = 4;
 inline const char* const kParticleLooks[kParticleLookCount] = {"", "smoke", "fire", "sparkle"};   // "" = a soft round glow
 // The most particles there can be at once (all emitters together), and from one emitter,
-// so a huge Rate or Emit(100000) can't freeze the game. The oldest make way.
+// so a huge Rate or Emit(100000) can't freeze the game. New ones wait until some have faded.
 inline constexpr int kMaxSprites = 6000;
 inline constexpr int kMaxSpritesPerEmitter = 1500;
 struct ParticleProps {

@@ -271,7 +271,8 @@ void particleFromJson(const nlohmann::json& j, ParticleProps& p, bool& enabled, 
     const std::string cls = j.value("class", std::string());
     for (int i = 0; i < kParticleTypeCount; ++i) if (cls == kParticleClassNames[i]) type = (ParticleType)i;
     // (Counts carry on; what's still to do here is only what's new since last time.)
-    const int emits = p.emits, clears = p.clears;
+    const int emits = p.emits, clears = p.clears, pendingEmit = p.pendingEmit;
+    const bool pendingClear = p.pendingClear;
     const bool same = update && p.type == type;
     p = particleDefaults(type);
     auto num = [&](const char* key, float fallback, float lo, float hi) {
@@ -304,8 +305,8 @@ void particleFromJson(const nlohmann::json& j, ParticleProps& p, bool& enabled, 
     p.emits = j.value("emits", 0);
     p.clears = j.value("clears", 0);
     if (same) {   // the same object again (another player's update): do what they did since
-        p.pendingEmit = std::clamp(p.emits - emits, 0, kMaxSpritesPerEmitter);
-        p.pendingClear = p.clears != clears;
+        p.pendingEmit = std::clamp(pendingEmit + std::max(0, p.emits - emits), 0, kMaxSpritesPerEmitter);
+        p.pendingClear = pendingClear || p.clears != clears;
     }
     if (type != ParticleType::ParticleEmitter) {
         p.color1  = glm::clamp(color("color", p.color1), 0.0f, 1.0f);
