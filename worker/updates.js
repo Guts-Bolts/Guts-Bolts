@@ -11,7 +11,7 @@
 export const BUILT_IN_UPDATES = [
   {
     id: 'directors-cut', name: 'Director\'s Cut', time: 1791835200, tag: 'Engine',
-    summary: 'Games can now take over the camera: cutscenes, locked first person, zoom limits and more, like in Roblox.',
+    summary: 'Games can now take over the camera: cutscenes, locked first person, zoom limits and more.',
     items: [
       'workspace.CurrentCamera: scripts can read and set its CFrame, FieldOfView, Focus and CameraSubject',
       'CameraType Scriptable hands the camera to your scripts for cutscenes; Fixed keeps it in one spot; Custom is the normal camera',
