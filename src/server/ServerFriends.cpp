@@ -23,7 +23,7 @@ bool GbServer::seesInventory(const User& viewer, const User& u) const {
 }
 
 // The catalog items someone owns, in one group, sorted by name (this server has no
-// purchase order or Limiteds, so "limited" is always empty and serials too).
+// purchase order), with the numbers of the Limited copies they hold.
 nlohmann::json GbServer::inventoryOf(const User& u, const std::string& cat) const {
     std::vector<const Asset*> found;
     for (const std::string& id : u.owned) {
@@ -32,14 +32,19 @@ nlohmann::json GbServer::inventoryOf(const User& u, const std::string& cat) cons
         const std::string& k = it->second.kind;
         if (!Online::isCatalogItem(k)) continue;
         const bool in = cat == "accessories" ? Online::isAccessory(k) : cat == "clothing" ? (k == "shirt" || k == "pants" || k == "tshirt")
-                      : cat == "faces" ? k == "face" : cat == "gear" ? k == "gear" : cat == "limited" ? false : true;
+                      : cat == "faces" ? k == "face" : cat == "gear" ? k == "gear" : cat == "limited" ? it->second.limited : true;
         if (in) found.push_back(&it->second);
     }
     std::sort(found.begin(), found.end(), [](const Asset* a, const Asset* b) { return a->name < b->name; });
     json out = json::array();
     for (const Asset* a : found) {
         json j = publicAsset(*a);
-        j["serials"] = json::array();
+        std::vector<long long> serials;
+        if (a->limited)
+            for (const json& c : a->copies)
+                if (c.value("owner", std::string()) == u.id) serials.push_back(c.value("serial", 0LL));
+        std::sort(serials.begin(), serials.end());
+        j["serials"] = serials;
         out.push_back(j);
     }
     return out;

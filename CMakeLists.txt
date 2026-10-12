@@ -25,6 +25,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerData.cpp
     src/server/ServerSafety.cpp
     src/server/ServerForum.cpp
+    src/server/ServerItems.cpp
     src/online/Protocol.cpp
     src/core/Account.cpp
     src/core/TextFilter.cpp

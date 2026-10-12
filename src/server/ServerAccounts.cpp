@@ -25,6 +25,18 @@ using namespace ServerUtil;
 namespace {
 constexpr int       kMaxWrongPasswords = 5;     // then wait...
 constexpr long long kLockoutSeconds    = 600;   // ...10 minutes
+constexpr long long kRenameCost        = 1000;  // Bolts to change your username
+
+// Days from 1970-01-01 to a date (month 1-12; the day may run past the month's end, like
+// JavaScript's Date.UTC). Howard Hinnant's days_from_civil.
+long long daysFromCivil(long long y, long long m, long long d) {
+    y -= m <= 2;
+    const long long era = (y >= 0 ? y : y - 399) / 400;
+    const long long yoe = y - era * 400;
+    const long long doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5;
+    const long long doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468 + (d - 1);
+}
 } // namespace
 
 void GbServer::claimOfficial(User& u) {
@@ -205,6 +217,75 @@ json GbServer::accountOp(const std::string& name, User& me, const json& args) {
         if (Totp::check(me.totpSecret, str("code"), Online::unixNow()) < 0) return fail("That code isn't right.");
         me.totpSecret.clear();
         me.totpLast = -1;
+        saveUsers();
+        json r = okay(); r["me"] = meJson(me); return r;
+    }
+    // Email (adding one, confirming it, two-step codes, "forgot password"): only the main
+    // (Cloudflare) server can send email, so this one says so instead of "Unknown request."
+    if (name == "account.email" || name == "account.emailVerify" || name == "account.emailRemove" ||
+        name == "account.twoStep" || name == "account.forgot" || name == "account.reset")
+        return fail("This server can't send email.");
+    if (name == "account.joinDate") {
+        // Guts only: set the account's join date (earlier than it really was, e.g. when
+        // the project started). Everyone sees it on the profile. (worker/server.js has the same.)
+        if (!isOfficial(me)) return fail("Only Guts can change a join date.");
+        const std::string date = str("date");
+        bool shape = date.size() == 10 && date[4] == '-' && date[7] == '-';
+        for (size_t i = 0; shape && i < date.size(); ++i)
+            if (i != 4 && i != 7 && !std::isdigit((unsigned char)date[i])) shape = false;
+        long long when = -1;
+        if (shape) {
+            long long y = std::stoll(date.substr(0, 4)), m = std::stoll(date.substr(5, 2)) - 1, d = std::stoll(date.substr(8, 2));
+            y += m >= 0 ? m / 12 : -((11 - m) / 12);   // (a month past December rolls over, like Date.UTC)
+            m = ((m % 12) + 12) % 12;
+            when = daysFromCivil(y, m + 1, d) * 86400 + 12 * 3600;   // noon UTC
+        }
+        if (!shape || when < daysFromCivil(2000, 1, 1) * 86400 || when > Online::unixNow())
+            return fail("Pick a date in the past (like 2025-09-15).");
+        me.created = when;
+        saveUsers();
+        json r = okay(); r["me"] = meJson(me); return r;
+    }
+    if (name == "account.rename") {
+        // Change your username for 1000 Bolts. Old usernames stay reserved for you: nobody
+        // else can take them, and you can switch back to one (for the same price).
+        if (me.userId == 0) return fail("Sign up first.");
+        if (isOfficial(me)) return fail("The staff account is always Guts.");
+        const std::string wanted = Online::cleanText(str("username"), 20);
+        if (std::string problem = Online::usernameProblem(wanted); !problem.empty()) return fail(problem);
+        const std::string want = lower(wanted);
+        if (want == lower(me.username)) {
+            if (wanted == me.username) return fail("That's already your username.");
+        } else {
+            const bool mine = std::any_of(me.pastNames.begin(), me.pastNames.end(), [&](const std::string& p) { return lower(p) == want; });
+            if (!mine && m_takenNames.count(want)) return fail("That username is taken (usernames are never reused).");
+        }
+        if (balance(me) < kRenameCost)
+            return fail("Changing your username costs " + std::to_string(kRenameCost) + " Bolts. You have " + std::to_string(balance(me)) + ".");
+        const std::string old = me.username;
+        add(me, -kRenameCost, "Username change: " + old + " to " + wanted, "rename:" + Account::randomHex(6));
+        me.pastNames.erase(std::remove_if(me.pastNames.begin(), me.pastNames.end(), [&](const std::string& p) { return lower(p) == want; }),
+                           me.pastNames.end());
+        if (lower(old) != want &&
+            std::none_of(me.pastNames.begin(), me.pastNames.end(), [&](const std::string& p) { return lower(p) == lower(old); }))
+            me.pastNames.push_back(old);
+        me.username = wanted;
+        me.name = wanted;
+        m_takenNames.insert(want);
+        saveIds();
+        saveUsers();
+        log("rename: #" + std::to_string(me.userId) + " " + old + " is now " + wanted);
+        json r = okay(); r["me"] = meJson(me); return r;
+    }
+    if (name == "account.password") {
+        // Change your password: the new locked key comes from this device (which has the key).
+        if (me.userId == 0 || me.keyBlob.empty()) return fail("Set a password in the app first.");
+        if (!provePassword()) return fail("Your current password is wrong.");
+        const std::string salt = lower(str("salt")), auth = lower(str("newAuth")), blob = lower(str("key"));
+        if (!isHex(salt, 32, 32) || !isHex(auth, 64, 64) || !isHex(blob, 208, 208)) return fail("Something was missing. Try again.");
+        me.pwSalt = salt;
+        me.pwHash = Account::hashHex(auth);
+        me.keyBlob = blob;
         saveUsers();
         json r = okay(); r["me"] = meJson(me); return r;
     }
