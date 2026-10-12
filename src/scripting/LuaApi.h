@@ -88,6 +88,7 @@ uint64_t   toInstanceId(lua_State* L, int idx);            // 0 if it isn't an o
 void       pushSignal  (lua_State* L, SignalKind kind, uint64_t id);
 void       pushHumanoid(lua_State* L, uint64_t characterRootId);
 void       pushLighting(lua_State* L);
+void       pushCamera  (lua_State* L);                     // workspace.CurrentCamera (always the same one)
 void       pushValue   (lua_State* L, const SceneNode& valueObject);   // a Value object's .Value
 
 } // namespace LuaApi
