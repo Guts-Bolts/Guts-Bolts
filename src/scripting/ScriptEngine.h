@@ -60,6 +60,8 @@ public:
     void fireFocusLost(uint64_t id, bool enter);        // textBox.FocusLost(enterPressed)
     // A ProximityPrompt event (SignalKind::Prompt*), by the player with this UserId (0 = ours).
     void firePrompt(SignalKind kind, uint64_t promptId, int userId = 0);
+    // A ClickDetector event (SignalKind::Click*), by the player with this UserId (0 = ours).
+    void fireClickDetector(SignalKind kind, uint64_t detectorId, int userId = 0);
     void firePropertyChanged(uint64_t id, const char* property);   // obj.Changed(property) (a TextBox's Text...)
     void fireAnimationEvents();                         // AnimationTracks: Stopped, KeyframeReached...
     // DataStoreService's saved data for this game (a file in the player's account folder).

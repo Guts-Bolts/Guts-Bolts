@@ -107,6 +107,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
         case NodeKind::Light:  return n->lightType == LightType::Spot ? "SpotLight" : "PointLight";
@@ -1397,6 +1398,14 @@ int inst_index(lua_State* L) {
         if (is(k, "PromptShown"))           { LuaApi::pushSignal(L, SignalKind::PromptShown, n->id); return 1; }
         if (is(k, "PromptHidden"))          { LuaApi::pushSignal(L, SignalKind::PromptHidden, n->id); return 1; }
     }
+    if (n->isClickDetector()) {
+        if (is(k, "MaxActivationDistance")) { lua_pushnumber(L, n->click.range); return 1; }
+        if (is(k, "CursorIcon"))            { lua_pushstring(L, n->click.cursor.c_str()); return 1; }
+        if (is(k, "MouseClick"))            { LuaApi::pushSignal(L, SignalKind::ClickMouseClick, n->id); return 1; }
+        if (is(k, "RightMouseClick"))       { LuaApi::pushSignal(L, SignalKind::ClickRightClick, n->id); return 1; }
+        if (is(k, "MouseHoverEnter"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverEnter, n->id); return 1; }
+        if (is(k, "MouseHoverLeave"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverLeave, n->id); return 1; }
+    }
     if (n->isHighlight()) {
         const HighlightProps& h = n->highlight;
         if (is(k, "FillColor"))           { LuaApi::pushColor3(L, h.fill); return 1; }
@@ -1655,6 +1664,16 @@ int inst_newindex(lua_State* L) {
         if (is(k, "Style") || is(k, "Exclusivity") || is(k, "GamepadKeyCode") || is(k, "UIOffset") ||
             is(k, "AutoLocalize") || is(k, "RootLocalizationTable")) return 0;
     }
+    if (n->isClickDetector()) {
+        if (is(k, "MaxActivationDistance")) { n->click.range = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 500.0f); return 0; }
+        if (is(k, "CursorIcon")) {
+            std::string c = luaL_tolstring(L, 3, nullptr);
+            lua_pop(L, 1);
+            if (c.size() > 300) c.resize(300);
+            n->click.cursor = c;
+            return 0;
+        }
+    }
     if (n->isHighlight()) {
         HighlightProps& h = n->highlight;
         if (is(k, "FillColor"))           { h.fill = glm::clamp(LuaApi::checkColor3(L, 3), 0.0f, 1.0f); return 0; }
@@ -1863,6 +1882,8 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Prompt);
     } else if (cls == "Highlight") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Highlight);
+    } else if (cls == "ClickDetector") {
+        n = std::make_unique<SceneNode>(cls, NodeKind::ClickDetector);
     } else if (cls == "Trail" || cls == "Beam") {
         n = std::make_unique<SceneNode>(cls, cls == "Trail" ? NodeKind::Trail : NodeKind::Beam);
     } else if (cls == "Attachment") {

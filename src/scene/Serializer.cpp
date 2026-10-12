@@ -54,6 +54,7 @@ const char* kindName(NodeKind k) {
         case NodeKind::Highlight:    return "Highlight";
         case NodeKind::Trail:        return "Trail";
         case NodeKind::Beam:         return "Beam";
+        case NodeKind::ClickDetector: return "ClickDetector";
         default:               return "Part";
     }
 }
@@ -78,6 +79,7 @@ NodeKind kindFrom(const std::string& s) {
     if (s == "Highlight")    return NodeKind::Highlight;
     if (s == "Trail")        return NodeKind::Trail;
     if (s == "Beam")         return NodeKind::Beam;
+    if (s == "ClickDetector") return NodeKind::ClickDetector;
     return NodeKind::Part;
 }
 
@@ -128,6 +130,17 @@ void promptFromJson(const nlohmann::json& j, PromptProps& p, bool& enabled) {
     p.lineOfSight = j.value("los", true);
     p.clickable   = j.value("click", true);
     enabled       = j.value("on", true);
+}
+
+nlohmann::json clickToJson(const ClickProps& c) {
+    nlohmann::json j = {{"range", c.range}};
+    if (!c.cursor.empty()) j["cursor"] = c.cursor;
+    return j;
+}
+
+void clickFromJson(const nlohmann::json& j, ClickProps& c) {
+    c.range  = std::clamp(j.value("range", 16.0f), 0.0f, 500.0f);
+    c.cursor = j.value("cursor", std::string());
 }
 
 nlohmann::json highlightToJson(const HighlightProps& h, bool enabled) {
@@ -498,6 +511,7 @@ json toJson(const SceneNode& n) {
     if (n.isLocal)  j["local"]    = true;
     if (n.remoteFunction) j["function"] = true;
     if (n.isPrompt()) j["prompt"] = Serializer::promptToJson(n.prompt, n.enabled);
+    if (n.isClickDetector()) j["click"] = Serializer::clickToJson(n.click);
     if (n.isHighlight()) j["highlight"] = Serializer::highlightToJson(n.highlight, n.enabled);
     if (n.isEffect()) j["effect"] = Serializer::effectToJson(n.effect, n.enabled, n.kind == NodeKind::Beam);
     if (n.locked)   j["locked"]   = true;
@@ -682,6 +696,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     n->isLocal       = get<bool>(j, "local", false);
     n->remoteFunction = get<bool>(j, "function", false);
     if (auto p = j.find("prompt"); p != j.end() && p->is_object()) Serializer::promptFromJson(*p, n->prompt, n->enabled);
+    if (auto c = j.find("click"); c != j.end() && c->is_object()) Serializer::clickFromJson(*c, n->click);
     if (auto h = j.find("highlight"); h != j.end() && h->is_object()) Serializer::highlightFromJson(*h, n->highlight, n->enabled);
     if (auto e = j.find("effect"); e != j.end() && e->is_object()) Serializer::effectFromJson(*e, n->effect, n->enabled);
     n->locked        = get<bool>(j, "locked", false);
@@ -927,6 +942,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.isModule = src->isModule;   dst.locked = src->locked;
     dst.isLocal = src->isLocal;     dst.remoteFunction = src->remoteFunction;
     dst.prompt = src->prompt;       dst.highlight = src->highlight;
+    dst.click = src->click;
     dst.effect = src->effect;
     dst.tags = src->tags;           dst.attributes = src->attributes;
     dst.lightType = src->lightType; dst.brightness = src->brightness;

@@ -152,6 +152,7 @@ std::string nodeState(const SceneNode* n) {
         n->brightness, n->range, n->spotAngle);
     if (n->isGui()) return std::string(buf) + Serializer::guiToJson(n->gui).dump();   // text, colours, sizes...
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
+    if (n->isClickDetector()) return std::string(buf) + Serializer::clickToJson(n->click).dump();
     if (n->isHighlight()) return std::string(buf) + Serializer::highlightToJson(n->highlight, n->enabled).dump();
     if (n->isEffect()) return std::string(buf) + Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam).dump();
     return buf;
@@ -164,6 +165,7 @@ json nodeUpdate(const SceneNode* n) {
             {"rg", n->range}, {"sa", n->spotAngle}};
     if (n->isGui()) u["gui"] = Serializer::guiToJson(n->gui);
     if (n->isPrompt()) u["pr"] = Serializer::promptToJson(n->prompt, n->enabled);
+    if (n->isClickDetector()) u["cd"] = Serializer::clickToJson(n->click);
     if (n->isHighlight()) u["hl"] = Serializer::highlightToJson(n->highlight, n->enabled);
     if (n->isEffect()) u["fx"] = Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam);
     return u;
@@ -191,6 +193,7 @@ void applyUpdate(SceneNode* n, const json& u) {
         n->gui.absPos = absPos; n->gui.absSize = absSize;
     }
     if (n->isPrompt() && u.contains("pr") && u["pr"].is_object()) Serializer::promptFromJson(u["pr"], n->prompt, n->enabled);
+    if (n->isClickDetector() && u.contains("cd") && u["cd"].is_object()) Serializer::clickFromJson(u["cd"], n->click);
     if (n->isHighlight() && u.contains("hl") && u["hl"].is_object()) Serializer::highlightFromJson(u["hl"], n->highlight, n->enabled);
     if (n->isEffect() && u.contains("fx") && u["fx"].is_object()) Serializer::effectFromJson(u["fx"], n->effect, n->enabled);
 }
