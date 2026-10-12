@@ -387,6 +387,11 @@ What you can use:
   `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, each with `:Connect`, `:Once` and `:Wait`
 - **Players:** `game.Players.LocalPlayer.Character`, `Players:GetPlayers()`, `humanoid.Health` / `WalkSpeed` /
   `JumpPower` / `:TakeDamage(n)`, `character:BreakJoints()`
+- **Camera:** `workspace.CurrentCamera` with `CFrame`, `Focus`, `FieldOfView`, `CameraType`
+  (`Enum.CameraType.Custom` / `Scriptable` / `Fixed`), `CameraSubject`, `ViewportSize`,
+  `:WorldToViewportPoint` / `:WorldToScreenPoint` and `:ViewportPointToRay` / `:ScreenPointToRay`;
+  `player.CameraMode` (`Enum.CameraMode.Classic` / `LockFirstPerson`), `player.CameraMinZoomDistance` and
+  `CameraMaxZoomDistance` (see *Scripting the camera* below)
 - **Lighting:** `Lighting.ClockTime`, `Brightness`, `FogEnabled`, `FogColor`, `Ambient`, ...
 - **Screen text:** `Gui.Label("Score", "Score: 5")`, `Gui.Message("You win!", 3)`
 - **Mayhem:** `Explode(position, radius, power, options)` (see *Explosions* below), `Effects.Blood(pos, amount)`, `Effects.Oil(...)`, `Effects.Gibs(...)`,
@@ -1322,6 +1327,67 @@ camera moves over your right shoulder and your character always faces where
 you look (a ring shows in the middle). Press Shift again to turn it off. It
 works in the Player and in Studio's play test, and you can switch it off in
 the in-game menu.
+
+### Scripting the camera
+
+Games can take over the camera like in Roblox, from a LocalScript (or a Script
+when you play by yourself). It works the same in the Player and in Studio's
+play test, and games that don't touch it keep the normal camera.
+
+```lua
+local camera = workspace.CurrentCamera
+local player = game.Players.LocalPlayer
+
+-- A cutscene: the engine stops moving the camera and shows exactly this.
+camera.CameraType = Enum.CameraType.Scriptable
+camera.CFrame = CFrame.new(Vector3.new(0, 40, 40), Vector3.new(0, 0, 0))
+wait(3)
+camera.CameraType = Enum.CameraType.Custom      -- back to following the character
+
+camera.FieldOfView = 80                         -- degrees top to bottom (1 to 120, 60 to start with)
+camera.CameraSubject = workspace.Boss           -- follow a part (or another character's Humanoid)
+camera.CameraSubject = player.Character.Humanoid
+
+player.CameraMode = Enum.CameraMode.LockFirstPerson   -- always first person
+player.CameraMinZoomDistance = 5                      -- the mouse wheel stays between these
+player.CameraMaxZoomDistance = 30
+```
+
+- `CameraType`: **Custom** (the normal camera, following `CameraSubject`),
+  **Scriptable** (only scripts move it: the mouse, wheel and controller leave it
+  alone) and **Fixed** (it stays where it is, but the mouse can still turn it).
+  Roblox's Follow, Track, Watch, Attach and Orbital act like Custom.
+- `CFrame` is where the camera is and which way it looks (`camera.CFrame.LookVector`).
+  The engine keeps it up to date while it follows the character; setting it in
+  Custom turns the camera to look the same way.
+- `CameraSubject` starts as your own Humanoid. Give it a part, a character model or
+  a Humanoid and the camera follows that instead (your character stays visible);
+  `nil` or a part that's destroyed puts it back on you.
+- `Focus` is the point the camera orbits (your head, normally).
+- `camera:WorldToViewportPoint(position)` gives the pixel on screen (`X`, `Y`, and
+  how far in front of the camera as `Z`) plus whether it's on screen;
+  `camera:ViewportPointToRay(x, y)` is the ray from the camera through a pixel
+  (`ViewportSize` is the view's size in pixels). The Screen versions are the same.
+- `player.CameraMode`: **Classic** (zoom in and out; all the way in is first person)
+  or **LockFirstPerson** (always through your character's eyes: your character is
+  hidden except the tool you hold, the mouse is locked in the middle and your
+  character faces where you look).
+- `player.CameraMinZoomDistance` / `CameraMaxZoomDistance` (0.5 and 60 to start
+  with) are how close and how far the mouse wheel, pinch and D-pad can zoom. A
+  minimum of 1.2 or more means no first person; a maximum under 1.2 means first
+  person only.
+
+The game's starting **Camera Mode**, **Min Zoom Distance** and **Max Zoom
+Distance** are in Studio's **Player** panel, under Camera (Roblox's StarterPlayer
+settings). In an online game, a Script on the host can change a player's
+`CameraMode` and zoom limits too: they're sent to that player. The camera itself
+(`CurrentCamera`) is each player's own, so change it from a LocalScript.
+
+`tools/test_camera.lua` checks all of this in a real play test:
+
+```
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_camera.lua)" --screenshot /tmp/camera.png --frames 900
+```
 
 ### Controllers
 

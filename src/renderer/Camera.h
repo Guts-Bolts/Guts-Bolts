@@ -34,6 +34,16 @@ public:
     bool  orthographic = false;
     float orthoSize = 0.0f;
     float viewHeight() const;   // orthographic: studs from the bottom of the view to the top
+    // Playing, with a script in charge (Camera.CameraType Scriptable / Fixed): the view
+    // is exactly `cframe` (where it is, looking along its -Z) instead of the orbit.
+    // `noInput`: the mouse, wheel and sticks leave it alone (Scriptable).
+    bool      useCFrame = false;
+    glm::mat4 cframe{1.0f};
+    bool      noInput = false;
+    // Back to the plain orbit camera (Studio's Stop, a new game in the Player).
+    void      clearScripted() { useCFrame = false; noInput = false; }
+    int width()  const { return m_w; }
+    int height() const { return m_h; }
 
 private:
     int m_w = 1, m_h = 1;

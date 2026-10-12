@@ -555,7 +555,7 @@ More in get_engine_info topic "examples".
 get_engine_info (or the gutsbolts:// resources) explains what the engine can do (capabilities), its concepts, the coordinate system, common workflows and every class you can insert. Check capabilities before promising a feature.
 
 ## Quick facts
-Y is up, X is right, -Z is an object's forward (LookVector). Position is a part's centre. Orientation is in degrees; CFrame.Angles takes radians. Colours are [r, g, b] from 0 to 1. Scripts are Lua 5.4 with a Roblox-style API (Instance.new, part.Touched, game:GetService, RunService.Heartbeat, wait(), Players.LocalPlayer, humanoid:MoveTo, PathfindingService, Effects.Explosion/Blood, Sounds.Play). Luau-only syntax (`+=`, type annotations, `continue`) does not work: write plain Lua. 1 unit = 2 Roblox studs; a character is about 2.6 units tall and walks 6 units a second.
+Y is up, X is right, -Z is an object's forward (LookVector). Position is a part's centre. Orientation is in degrees; CFrame.Angles takes radians. Colours are [r, g, b] from 0 to 1. Scripts are Lua 5.4 with a Roblox-style API (Instance.new, part.Touched, game:GetService, RunService.Heartbeat, wait(), Players.LocalPlayer, workspace.CurrentCamera, humanoid:MoveTo, PathfindingService, Effects.Explosion/Blood, Sounds.Play). Luau-only syntax (`+=`, type annotations, `continue`) does not work: write plain Lua. 1 unit = 2 Roblox studs; a character is about 2.6 units tall and walks 6 units a second.
 
 ## Talking to the person
 Keep it short and friendly: they may be new to making games. Say what changed, not every tool call. If something couldn't be done, say what and why.)GUIDE";
