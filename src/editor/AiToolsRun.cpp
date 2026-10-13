@@ -549,21 +549,25 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         std::string out;
         int shown = 0;
         bool truncated = false;
-        // `skipServices`: the Workspace's own listing leaves out the service folders
-        // (they're listed as services of their own below it, like Studio's Explorer).
+        // `skipServices`: the Workspace's own listing leaves out the service folders and,
+        // outside playtests, the character (they're listed under their services below it,
+        // like Studio's Explorer).
+        auto elsewhere = [&](const SceneNode* c) {
+            return m_scene->isServiceFolder(c) || (!m_playing && m_scene->isCharacterRoot(c->id));
+        };
         std::function<void(SceneNode*, int, bool)> walk = [&](SceneNode* n, int d, bool skipServices) {
             if (n->internal) return;
             if (shown >= 1500) { truncated = true; return; }
             out += std::string((size_t)d * 2, ' ') + label(n) + "\n";
             ++shown;
             int kids = 0;
-            for (auto& c : n->children) if (!c->internal && !(skipServices && m_scene->isServiceFolder(c.get()))) ++kids;
+            for (auto& c : n->children) if (!c->internal && !(skipServices && elsewhere(c.get()))) ++kids;
             if (d >= depth) {
                 if (kids) out += std::string((size_t)(d + 1) * 2, ' ') + "... " + std::to_string(kids) + " more inside\n";
                 return;
             }
             for (auto& c : n->children)
-                if (!(skipServices && m_scene->isServiceFolder(c.get()))) walk(c.get(), d + 1, false);
+                if (!(skipServices && elsewhere(c.get()))) walk(c.get(), d + 1, false);
         };
         if (args.contains("root")) {
             // One part of the game. An empty service (nothing put in it yet) is just empty.
@@ -622,10 +626,12 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             if (svc == "StarterPlayer") {
                 Player* p = m_scene->player();
                 SceneNode* ch = p ? p->root() : nullptr;
-                if (ch) {
+                if (ch && !m_playing) {
+                    // The character everyone spawns as (it's in the Workspace while the game runs).
+                    if (shown < 1500) walk(ch, 1, false);
                     out += "  StarterCharacterScripts -> the character " + label(ch) + ": scripts in it run in every player's character\n";
-                    info["starter_character"] = idOf(ch);
                 }
+                if (ch) info["starter_character"] = idOf(ch);
                 if (!f || !f->findChild("StarterPlayerScripts"))
                     out += "  StarterPlayerScripts  [empty: LocalScripts here run for every player]\n";
             }
