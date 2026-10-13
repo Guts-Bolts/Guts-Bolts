@@ -45,8 +45,9 @@ bool NpcSystem::isRig(Scene& scene, const SceneNode* m) {
     // Hidden = kept in storage (ServerStorage, ReplicatedStorage) as a template.
     for (const SceneNode* n = m; n; n = n->parent) if (!n->visible) return false;
     // A character inside another character (or a tool) isn't walking around.
+    // (nor is one shown in a ViewportFrame)
     for (const SceneNode* n = m->parent; n; n = n->parent)
-        if (n->isTool() || n->isPart()) return false;
+        if (n->isTool() || n->isPart() || n->isViewportFrame()) return false;
     return true;
 }
 

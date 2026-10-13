@@ -38,7 +38,7 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //   Animation  — keyframes that pose a rig's parts (made in Studio's Animation
 //                Editor, played by scripts: humanoid:LoadAnimation(anim):Play())
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
-                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam };
+                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, Camera };
 
 // A ProximityPrompt's settings (kind == Prompt; `enabled` switches it off).
 struct PromptProps {
@@ -100,16 +100,23 @@ struct HighlightProps {
 // A TextBox is a label you can type in; a ScrollingFrame holds more than fits and scrolls.
 // BillboardGui and SurfaceGui are like ScreenGui but sit on a part (its Adornee, else the
 // part they're in): a billboard floats over it facing you, a surface is painted on one side.
+// UIGradient colours the object it's in (fading along a line), UIScale makes it and
+// everything inside it bigger or smaller, UIAspectRatioConstraint keeps its shape.
+// A ViewportFrame shows the parts and models inside it as a little 3D picture, seen
+// from its CurrentCamera (a Camera object, kind == Camera).
 enum class GuiType { ScreenGui, Frame, TextLabel, TextButton, ImageLabel, ImageButton, UICorner, UIStroke, UIShadow, UIBlur,
-                     TextBox, ScrollingFrame, UIListLayout, UIGridLayout, UIPadding, BillboardGui, SurfaceGui };
-inline constexpr int kGuiTypeCount = 17;
+                     TextBox, ScrollingFrame, UIListLayout, UIGridLayout, UIPadding, BillboardGui, SurfaceGui,
+                     UIGradient, UIScale, UIAspectRatioConstraint, ViewportFrame };
+inline constexpr int kGuiTypeCount = 21;
 inline const char* const kGuiClassNames[kGuiTypeCount] = {"ScreenGui", "Frame", "TextLabel", "TextButton", "ImageLabel",
                                                           "ImageButton", "UICorner", "UIStroke", "UIShadow", "UIBlur",
                                                           "TextBox", "ScrollingFrame", "UIListLayout", "UIGridLayout", "UIPadding",
-                                                          "BillboardGui", "SurfaceGui"};
+                                                          "BillboardGui", "SurfaceGui", "UIGradient", "UIScale",
+                                                          "UIAspectRatioConstraint", "ViewportFrame"};
 inline bool isGuiModifier(GuiType t) {
     return t == GuiType::UICorner || t == GuiType::UIStroke || t == GuiType::UIShadow || t == GuiType::UIBlur ||
-           t == GuiType::UIListLayout || t == GuiType::UIGridLayout || t == GuiType::UIPadding;
+           t == GuiType::UIListLayout || t == GuiType::UIGridLayout || t == GuiType::UIPadding ||
+           t == GuiType::UIGradient || t == GuiType::UIScale || t == GuiType::UIAspectRatioConstraint;
 }
 // A whole layer of UI (holds the rest): ScreenGui, BillboardGui, SurfaceGui.
 inline bool isGuiLayer(GuiType t) { return t == GuiType::ScreenGui || t == GuiType::BillboardGui || t == GuiType::SurfaceGui; }
@@ -193,8 +200,25 @@ struct GuiProps {
     bool      perStud = true;                       // SizingMode: PixelsPerStud (else FixedSize: CanvasSize)
     float     pixelsPerStud = 50.0f;                // PixelsPerStud
     glm::vec2 surfaceCanvas{800.0f, 600.0f};        // SurfaceGui.CanvasSize (FixedSize)
+    // UIGradient: Color and Transparency along the line (Rotation degrees clockwise from
+    // left -> right), moved by Offset (a fraction of the object's size). `enabled` is Enabled.
+    std::vector<ColorKey>  gradColor{{0.0f, glm::vec3(1.0f)}, {1.0f, glm::vec3(1.0f)}};
+    std::vector<NumberKey> gradTransparency{{0.0f, 0.0f}, {1.0f, 0.0f}};
+    float     gradRotation = 0.0f;
+    glm::vec2 gradOffset{0.0f};
+    float     scale = 1.0f;                         // UIScale.Scale
+    // UIAspectRatioConstraint: AspectRatio (width / height), AspectType (0 FitWithinMaxSize,
+    // 1 ScaleWithParentSize) and DominantAxis (0 Width, 1 Height).
+    float     aspectRatio = 1.0f;
+    int       aspectType = 0, dominantAxis = 0;
+    // ViewportFrame: CurrentCamera (a Camera's id; 0 = none: it frames what's inside by
+    // itself), Ambient, LightColor and LightDirection. ImageColor3 / ImageTransparency
+    // tint the picture.
+    uint64_t  camera = 0;
+    glm::vec3 ambient{200.0f / 255.0f}, lightColor{140.0f / 255.0f}, lightDir{-1.0f, -1.0f, -1.0f};
     // Where it was last drawn (AbsolutePosition / AbsoluteSize). Runtime only.
     glm::vec2 absPos{0.0f}, absSize{0.0f};
+    float     absScale = 1.0f;                      // every UIScale above it multiplied (pixels are this much bigger). Runtime only.
     glm::vec2 contentSize{0.0f};                    // layouts: AbsoluteContentSize. Runtime only.
 };
 
@@ -388,6 +412,9 @@ public:
 
     // Game UI (kind == Gui). `visible` is Visible; `enabled` is a ScreenGui's Enabled.
     GuiProps    gui;
+    // Camera (kind == Camera): a ViewportFrame's CurrentCamera. Its transform is its
+    // CFrame (it looks along its -Z); FieldOfView is degrees, top to bottom.
+    float       fieldOfView = 70.0f;
 
     // Value (kind == Value): its type and contents (the name inside isn't used).
     Attribute   value;
@@ -447,6 +474,14 @@ public:
         return kind == NodeKind::Gui && !isGuiLayer(gui.type) && !isGuiModifier(gui.type);
     }
     bool isGuiButton() const { return kind == NodeKind::Gui && (gui.type == GuiType::TextButton || gui.type == GuiType::ImageButton); }
+    // A ViewportFrame: the parts inside it are only a picture, not in the world
+    // (not drawn there, no physics, rays and explosions don't find them).
+    bool isViewportFrame() const { return kind == NodeKind::Gui && gui.type == GuiType::ViewportFrame; }
+    bool inViewportFrame() const {
+        for (const SceneNode* p = parent; p; p = p->parent) if (p->isViewportFrame()) return true;
+        return false;
+    }
+    bool isCamera() const { return kind == NodeKind::Camera; }
     // "IntValue", "StringValue"... (kind == Value)
     const char* valueClass() const {
         switch (value.type) {

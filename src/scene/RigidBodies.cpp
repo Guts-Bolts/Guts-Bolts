@@ -464,7 +464,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         // "Visible" only hides drawing for constraints; hidden parts are switched off.
         if (n->isConstraint()) { if (n->enabled) constraintNodes.push_back(n); continue; }
         if (n->isMover()) { if (n->enabled) moverNodes.push_back(n); continue; }
-        if (!n->visible) continue;
+        if (!n->visible || n->isViewportFrame()) continue;   // (a ViewportFrame's parts don't fall)
         if (scene.isCharacterPart(n)) continue;
         for (auto& c : n->children) stack.push_back(c.get());
         if (!n->isPart() || n->internal) continue;
