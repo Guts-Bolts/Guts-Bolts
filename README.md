@@ -1989,22 +1989,52 @@ On the website, **Settings** (top right) has your account settings:
   password *and* a code from your email (the app asks for the code too).
 - **Change password.**
 
+**No email on your account, or the code never came?** Open a **support
+ticket** instead: the *Support* link at the bottom of every page (or "Open a
+support ticket" on the Forgot password page). You don't need to be logged in.
+Staff see it on the **Staff** page (*Support tickets* box) and can:
+
+- **Answer** it. The answer shows up on the person's Support page, in their
+  notifications if they're logged in, and by email if they left one.
+- **Send a reset code** (for "I forgot my password" tickets). The code shows up
+  on their Support page with a "pick a new password" form. It works for 24
+  hours, and only in the browser that sent the ticket. Only press it when you're
+  sure it's really them: you know them, or they told you things only the owner
+  would know (a game they made, when they joined, who their friends are).
+- **Close** it.
+
+The C++ server (`GutsAndBoltsServer`) has tickets too, but it can't send email
+or reset passwords yet, so staff answer with what to do instead.
+
+#### Turning email on
+
 Emails need an email service, because Cloudflare can't send email to anyone
-by itself. The easiest is [Brevo](https://www.brevo.com) (free, 300 emails a
-day, and you don't need your own domain):
+by itself. We use [Brevo](https://www.brevo.com): it's free (300 emails a day)
+and only needs an API key.
 
-1. Make a Brevo account. Under *Senders*, add the email address the codes
-   should come from and confirm it.
-2. Under *SMTP & API > API Keys*, make an API key.
-3. In the Cloudflare dashboard, open the Worker: *Settings > Variables and
+1. Make a Brevo account.
+2. Tell Brevo which address the emails come from. The best way is your own
+   domain (like `noreply@gutsandbolts.net`): in Brevo, open *Senders, Domains &
+   Dedicated IPs > Domains*, add the domain and follow the steps (Brevo can add
+   the DNS records to Cloudflare for you). Emails from your own domain are much
+   less likely to land in spam. The quick way is *Senders > Add a sender* with
+   an address you already have, and click the link Brevo emails you; it works,
+   but more emails end up in spam.
+3. Under *SMTP & API > API Keys*, make an API key and copy it.
+4. In the Cloudflare dashboard, open the Worker: *Settings > Variables and
    Secrets*. Add a **Secret** `BREVO_API_KEY` (the key) and a **Text**
-   variable `MAIL_FROM` (the sender address from step 1). You can also run
-   `npx wrangler secret put BREVO_API_KEY`.
+   variable `MAIL_FROM` (the sender address from step 2). You can also run
+   `npx wrangler secret put BREVO_API_KEY`. (Optional: `MAIL_NAME`, the name
+   emails come from, "Guts&Bolts" if you leave it out.)
+5. Check it works: on the website's **Staff** page, the *Email* box says
+   whether email is on. Type your address and press **Send test**, then reload
+   the page: it says "sent", or exactly what Brevo didn't like (a wrong key, a
+   sender that isn't confirmed yet...).
 
-Resend works too: set `RESEND_API_KEY` instead (it needs a domain you own).
-Until one is set, the settings page says email isn't switched on yet. For
-testing with `wrangler dev`, put `MAIL_DEBUG=1` in a `.dev.vars` file: codes
-are printed in the terminal instead of emailed.
+Resend works too: set `RESEND_API_KEY` instead of the Brevo key (it needs a
+domain you own). Until a key *and* `MAIL_FROM` are set, the settings page says
+email isn't switched on yet. For testing with `wrangler dev`, put `MAIL_DEBUG=1`
+in a `.dev.vars` file: emails are printed in the terminal instead of sent.
 
 ### Authenticator app and the Verified Hat
 
