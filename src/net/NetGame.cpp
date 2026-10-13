@@ -167,6 +167,8 @@ std::string nodeState(const SceneNode* n) {
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
     if (n->isHighlight()) return std::string(buf) + Serializer::highlightToJson(n->highlight, n->enabled).dump();
     if (n->isEffect()) return std::string(buf) + Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam).dump();
+    if (n->isPostEffect()) return std::string(buf) + Serializer::postEffectToJson(n->post, n->enabled).dump();
+    if (n->isSky()) return std::string(buf) + Serializer::skyToJson(n->sky).dump();
     return buf;
 }
 
@@ -179,6 +181,8 @@ json nodeUpdate(const SceneNode* n) {
     if (n->isPrompt()) u["pr"] = Serializer::promptToJson(n->prompt, n->enabled);
     if (n->isHighlight()) u["hl"] = Serializer::highlightToJson(n->highlight, n->enabled);
     if (n->isEffect()) u["fx"] = Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam);
+    if (n->isPostEffect()) u["pfx"] = Serializer::postEffectToJson(n->post, n->enabled);
+    if (n->isSky()) u["sky"] = Serializer::skyToJson(n->sky);
     return u;
 }
 
@@ -206,6 +210,8 @@ void applyUpdate(SceneNode* n, const json& u) {
     if (n->isPrompt() && u.contains("pr") && u["pr"].is_object()) Serializer::promptFromJson(u["pr"], n->prompt, n->enabled);
     if (n->isHighlight() && u.contains("hl") && u["hl"].is_object()) Serializer::highlightFromJson(u["hl"], n->highlight, n->enabled);
     if (n->isEffect() && u.contains("fx") && u["fx"].is_object()) Serializer::effectFromJson(u["fx"], n->effect, n->enabled);
+    if (n->isPostEffect() && u.contains("pfx") && u["pfx"].is_object()) Serializer::postEffectFromJson(u["pfx"], n->post, n->enabled);
+    if (n->isSky() && u.contains("sky") && u["sky"].is_object()) Serializer::skyFromJson(u["sky"], n->sky);
 }
 
 glm::vec3 spawnPoint(Scene& scene) {

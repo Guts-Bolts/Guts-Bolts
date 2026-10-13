@@ -1078,6 +1078,16 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         }
         put(std::make_unique<SceneNode>("ProximityPrompt", NodeKind::Prompt));
     }
+    else if (what == "Sky" || std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), what) != std::end(kPostEffectClassNames)) {
+        // They only work right inside Lighting, so that's where they go.
+        auto n = std::make_unique<SceneNode>(what, what == "Sky" ? NodeKind::Sky : NodeKind::PostEffect);
+        for (int i = 0; i < kPostEffectCount; ++i) if (what == kPostEffectClassNames[i]) n->post = postEffectDefaults((PostEffectType)i);
+        if (parent != m_scene->lightingFolder(false)) {
+            parent = m_scene->lightingFolder(true);
+            Log::info(what + " goes in Lighting (that's where it works).");
+        }
+        put(std::move(n));
+    }
     else if (what == "Highlight") {
         // It colours what it's in (a part or a model).
         if (!parent || parent == m_scene->root() || (!parent->isPart() && parent->kind != NodeKind::Model)) {
@@ -1246,6 +1256,8 @@ const std::vector<InsertItem>& insertItems() {
         {"MeshPart", Icons::Id::Mesh}, {"SpawnLocation", Icons::Id::Part}, {"TrussPart", Icons::Id::Part}, {"Seat", Icons::Id::Part}, {"Water", Icons::Id::Part}, {"FluidVolume", Icons::Id::Part}, {"WaterSource", Icons::Id::Part}, {"FluidSystem", Icons::Id::Value}, {"FluidEmitter", Icons::Id::Sound}, {"Model", Icons::Id::Model}, {"Folder", Icons::Id::Folder},
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
         {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
+        {"Sky", Icons::Id::Lighting}, {"ColorCorrectionEffect", Icons::Id::Lighting}, {"SunRaysEffect", Icons::Id::Lighting},
+        {"DepthOfFieldEffect", Icons::Id::Lighting}, {"BloomEffect", Icons::Id::Lighting}, {"BlurEffect", Icons::Id::Lighting},
         {"PointLight", Icons::Id::Light}, {"SpotLight", Icons::Id::Light}, {"Sound", Icons::Id::Sound},
         {"Attachment", Icons::Id::Attachment},
         {"BodyVelocity", Icons::Id::Constraint}, {"BodyPosition", Icons::Id::Constraint}, {"BodyGyro", Icons::Id::Constraint},

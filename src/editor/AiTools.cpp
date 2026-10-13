@@ -130,6 +130,7 @@ const std::vector<Tool>& tools() {
          {"Creates a NEW object in the game and returns its object_id. kind is a class or a ready-made thing: Part, Sphere, "
           "Cylinder, Model, Folder, Script, LocalScript, ModuleScript, PointLight, SpotLight, Sound, SpawnLocation, "
           "TrussPart, Seat, Water, WaterSource, Attachment, ProximityPrompt, Highlight, Trail, Beam, Tool, Decal, Rig, "
+          "Sky, ColorCorrectionEffect, SunRaysEffect, DepthOfFieldEffect, BloomEffect, BlurEffect (these always go in Lighting), "
           "RemoteEvent, RemoteFunction, IntValue/NumberValue/StringValue/BoolValue, ScreenGui, Frame, TextLabel, TextButton, "
           "TextBox, ImageLabel, ScrollingFrame, BillboardGui, SurfaceGui, UICorner, UIStroke, UIListLayout, BodyVelocity, "
           "AlignPosition, VectorForce..., and ready-made things by name: \"Kill Brick\", \"Coin\", \"Jump Pad\", \"Exploding Barrel\", "
@@ -630,6 +631,7 @@ Guts and Bolts is Roblox-style: there is no separate component system. What an o
 - Script -> Script (game server), LocalScript (each player's computer), ModuleScript (require()).
 - Particles -> no ParticleEmitter class. Scripts make effects with Effects.Sparks / Blood / Oil / Gibs, explosions with smoke and fire, Trails and Beams.
 - Camera -> no camera object to edit. Players' cameras follow their character (World settings can make it orthographic).
+- Post-processing / skybox -> objects right inside Lighting (or, from a LocalScript, workspace.CurrentCamera): ColorCorrectionEffect (Brightness, Contrast, Saturation, TintColor), SunRaysEffect (Intensity, Spread), DepthOfFieldEffect (FarIntensity, FocusDistance, InFocusRadius, NearIntensity), BloomEffect (Intensity, Size, Threshold), BlurEffect (Size), each with Enabled; several add up. A Sky (SkyboxBk/Dn/Ft/Lf/Rt/Up and SunTextureId/MoonTextureId pictures, StarCount, CelestialBodiesShown, SunAngularSize, MoonAngularSize) changes the sky; its skybox shows only when all six pictures load (uploaded "gb:<id>" pictures or files), else the Lighting settings' sky stays. insert_object puts them in Lighting; set_property changes them. SunRays and DepthOfField are off on Low graphics.
 
 SCENE (place, game)
 One game = one tree under Workspace, saved as one file. Folders and Models group things. StarterGui holds screen UI; Teams holds Team objects.

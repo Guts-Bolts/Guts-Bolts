@@ -10,6 +10,20 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'rose-tinted-skies', name: 'Rose-Tinted Skies', time: 1791874800, tag: 'Engine',
+    summary: 'Paint your own sky and grade the whole screen: Sky objects and five screen effects in Lighting.',
+    items: [
+      'Put a Sky in Lighting for your own skybox pictures, a custom sun and moon, more or fewer stars, or no sun and moon at all',
+      'ColorCorrectionEffect changes brightness, contrast, colourfulness and tint (black and white, sepia, horror red...)',
+      'SunRaysEffect makes rays of light stream from the sun past buildings and trees',
+      'DepthOfFieldEffect blurs things nearer or further than where you\'re focused, like a camera lens',
+      'BloomEffect makes bright things glow, and BlurEffect blurs the whole screen (menus, being dizzy)',
+      'Stack several, switch them on and off with Enabled, and put them in the Camera from a LocalScript for just one player',
+      'Insert them from Lighting\'s right-click menu in Studio, change them in Properties, and they save, go to everyone in the game, and come in and out of .rbxl / .rbxlx files',
+      'Phones stay smooth: sun rays and depth of field switch off on Low graphics, and sun rays take fewer steps on phones',
+    ],
+  },
+  {
     id: 'lost-and-found', name: 'Lost & Found', time: 1791838800, tag: 'Website',
     summary: 'Forgot your password and never added an email? Ask staff on the new Support page and get back in.',
     items: [

@@ -37,8 +37,11 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //   Decal      — a picture on one side of the part it's inside
 //   Animation  — keyframes that pose a rig's parts (made in Studio's Animation
 //                Editor, played by scripts: humanoid:LoadAnimation(anim):Play())
+//   PostEffect — a screen effect in Lighting (or the Camera): ColorCorrectionEffect,
+//                SunRaysEffect, DepthOfFieldEffect, BloomEffect, BlurEffect
+//   Sky        — in Lighting: skybox pictures, the sun and moon, how many stars
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
-                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam };
+                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, PostEffect, Sky };
 
 // A ProximityPrompt's settings (kind == Prompt; `enabled` switches it off).
 struct PromptProps {
@@ -80,6 +83,67 @@ struct EffectProps {
     float textureLength = 1.0f, textureSpeed = 1.0f;
     bool  textureWrap = false;                                 // TextureMode: Wrap (per stud) / Stretch (repeats TextureLength times)
 };
+
+// Screen effects (kind == PostEffect; `enabled` switches it off). They work when they're
+// right inside Lighting or the Camera, and several stack up. Defaults are Roblox's.
+enum class PostEffectType { ColorCorrection, SunRays, DepthOfField, Bloom, Blur };
+inline constexpr int kPostEffectCount = 5;
+inline const char* const kPostEffectClassNames[kPostEffectCount] = {
+    "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect"};
+struct PostEffectProps {
+    PostEffectType type = PostEffectType::ColorCorrection;
+    // ColorCorrectionEffect
+    float     brightness = 0.0f;           // Brightness: added to every colour (-1..1)
+    float     contrast = 0.0f;             // Contrast (-1..1, 0 = as it is)
+    float     saturation = 0.0f;           // Saturation (-1 = grey .. 1 = twice as colourful)
+    glm::vec3 tint{1.0f};                  // TintColor (multiplies)
+    // SunRaysEffect (Intensity, Spread) / BloomEffect (Intensity, Size, Threshold) / BlurEffect (Size)
+    float     intensity = 0.25f;
+    float     spread = 1.0f;               // how far the rays reach across the screen (0..1)
+    float     size = 24.0f;                // pixels: how far the glow / blur spreads (0..56)
+    float     threshold = 0.95f;           // BloomEffect: how bright before it glows
+    // DepthOfFieldEffect (distances in studs)
+    float     farIntensity = 0.75f;        // how blurry far things get (0..1)
+    float     focusDistance = 0.05f;       // where it's sharpest (0..200)
+    float     inFocusRadius = 10.0f;       // how far either side of that stays sharp (0..50)
+    float     nearIntensity = 0.75f;       // how blurry things closer than the focus get (0..1)
+};
+inline PostEffectProps postEffectDefaults(PostEffectType t) {
+    PostEffectProps p;
+    p.type = t;
+    if (t == PostEffectType::Bloom) p.intensity = 0.4f;
+    return p;
+}
+
+// Keep each setting in the range it can have (scripts, files and other players can send anything).
+inline void clampPostEffect(PostEffectProps& p) {
+    auto c = [](float& v, float lo, float hi) { v = (v == v) ? (v < lo ? lo : v > hi ? hi : v) : lo; };
+    c(p.brightness, -1.0f, 1.0f); c(p.contrast, -1.0f, 1.0f); c(p.saturation, -1.0f, 1.0f);
+    c(p.tint.r, 0.0f, 1.0f); c(p.tint.g, 0.0f, 1.0f); c(p.tint.b, 0.0f, 1.0f);
+    c(p.intensity, 0.0f, 1.0f); c(p.spread, 0.0f, 1.0f); c(p.size, 0.0f, 56.0f); c(p.threshold, 0.0f, 4.0f);
+    c(p.farIntensity, 0.0f, 1.0f); c(p.focusDistance, 0.0f, 200.0f); c(p.inFocusRadius, 0.0f, 50.0f);
+    c(p.nearIntensity, 0.0f, 1.0f);
+}
+
+// A Sky (kind == Sky), right inside Lighting. Pictures are ids like a Decal's ("gb:<id>",
+// a file in the games folder...); "" = the engine's own sky / sun / moon. The skybox is
+// used when all six of its pictures load.
+struct SkyProps {
+    std::string bk, dn, ft, lf, rt, up;    // SkyboxBk, SkyboxDn, SkyboxFt, SkyboxLf, SkyboxRt, SkyboxUp
+    std::string sun, moon;                 // SunTextureId, MoonTextureId
+    int         starCount = 3000;          // StarCount (0..5000)
+    bool        celestial = true;          // CelestialBodiesShown: the sun and moon
+    float       sunSize = 21.0f;           // SunAngularSize (degrees)
+    float       moonSize = 11.0f;          // MoonAngularSize (degrees)
+};
+inline void clampSky(SkyProps& s) {
+    if (s.starCount < 0) s.starCount = 0;
+    if (s.starCount > 5000) s.starCount = 5000;
+    auto c = [](float& v) { v = (v == v) ? (v < 0.0f ? 0.0f : v > 60.0f ? 60.0f : v) : 0.0f; };
+    c(s.sunSize); c(s.moonSize);
+    for (std::string* t : {&s.bk, &s.dn, &s.ft, &s.lf, &s.rt, &s.up, &s.sun, &s.moon})
+        if (t->size() > 500) t->resize(500);
+}
 
 // A Highlight's settings (kind == Highlight; `enabled` switches it off). Like Roblox's
 // defaults: a see-through red fill with a white outline, shown through walls.
@@ -340,6 +404,8 @@ public:
     PromptProps prompt;                   // (kind == Prompt)
     HighlightProps highlight;             // (kind == Highlight)
     EffectProps effect;                   // (kind == Trail / Beam)
+    PostEffectProps post;                 // (kind == PostEffect)
+    SkyProps    sky;                      // (kind == Sky)
 
     // Anything
     std::vector<Attribute>   attributes;
@@ -465,6 +531,8 @@ public:
     bool isPrompt() const { return kind == NodeKind::Prompt; }
     bool isHighlight() const { return kind == NodeKind::Highlight; }
     bool isEffect() const { return kind == NodeKind::Trail || kind == NodeKind::Beam; }
+    bool isPostEffect() const { return kind == NodeKind::PostEffect; }
+    bool isSky() const { return kind == NodeKind::Sky; }
     bool hasForceField() const {
         for (auto& c : children) if (c->kind == NodeKind::ForceField) return true;
         return false;

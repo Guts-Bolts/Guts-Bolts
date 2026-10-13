@@ -2814,7 +2814,8 @@ bool ScriptEngine::setParent(SceneNode* node, SceneNode* newParent, std::string&
 
     // Take ownership of the node, wherever it currently lives.
     std::unique_ptr<SceneNode> owned;
-    bool inScene = topOf(node) == m_scene->root();
+    // (The Camera holds things too, outside the Workspace's tree: see Scene::cameraNode.)
+    bool inScene = topOf(node) == m_scene->root() || topOf(node) == m_scene->cameraNode();
     if (inScene) {
         owned = m_scene->detach(node);
     } else if (node->parent) {
@@ -2839,7 +2840,7 @@ bool ScriptEngine::setParent(SceneNode* node, SceneNode* newParent, std::string&
 bool ScriptEngine::destroy(SceneNode* node, std::string& err) {
     if (m_scene->isProtected(node)) { err = "You can't Destroy " + node->name; return false; }
     stopScripts(node);
-    if (topOf(node) == m_scene->root()) {
+    if (topOf(node) == m_scene->root() || topOf(node) == m_scene->cameraNode()) {
         m_scene->removeNode(node);
     } else if (node->parent) {
         node->parent->removeChild(node);

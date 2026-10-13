@@ -209,6 +209,7 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
         {"Characters & Tools", {"Tool", "Rig", "Animation", "Team", "ProximityPrompt"}},
         {"Containers", {"Model", "Folder"}},
         {"Effects & Lights", {"PointLight", "SpotLight", "Sound", "ForceField", "Decal", "Highlight", "Trail", "Beam"}},
+        {"Sky & Screen Effects", {"Sky", "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect"}},
         {"Water", {"Water", "WaterSource", "FluidVolume", "FluidSystem", "FluidEmitter"}},
         {"Constraints", {"Attachment", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
         {"Body Movers (classic)", {"BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce"}},
@@ -231,13 +232,16 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
 // A container service (ReplicatedStorage, ServerScriptService, StarterPack...): a row of
 // its own like Roblox's Explorer, holding what's inside its folder. The folder is made
 // the first time you put something in it (Insert Object, or drag things onto the row).
-void OutlinerPanel::folderService(const char* name, int icon, const char* tip) {
+void OutlinerPanel::folderService(const char* name, int icon, const char* tip, const std::function<void()>& onClick) {
     SceneNode* f = m_scene->serviceFolder(name, false);
     bool kids = false;
     if (f) for (auto& c : f->children) if (!c->internal) { kids = true; break; }
     ImGui::PushID(name);
     const bool open = serviceRow(name, icon, kids, f && f->selected);
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() && f) m_scene->select(f);
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+        if (f) m_scene->select(f);
+        if (onClick) onClick();
+    }
     if (ImGui::IsItemHovered() && tip) ImGui::SetTooltip("%s", tip);
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GB_NODE")) {
@@ -317,9 +321,11 @@ void OutlinerPanel::render() {
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everyone in the game (while it runs).");
         }
-        if (serviceRow("Lighting", (int)Icons::Id::Lighting, false, false)) ImGui::TreePop();
-        if (ImGui::IsItemClicked() && onLighting) onLighting();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sky, sun, fog and colours (opens the Lighting settings)");
+        // Lighting: clicking it opens the Lighting settings; inside it go the Sky and the
+        // screen effects (Insert Object on its row, or drag them onto it).
+        folderService("Lighting", (int)Icons::Id::Lighting,
+                      "Sky, sun, fog and colours (opens the Lighting settings).\nRight-click > Insert Object for a Sky or screen effects.",
+                      onLighting);
         SceneNode* character = nullptr;
         for (auto& c : m_scene->root()->children)
             if (m_scene->isCharacterRoot(c->id)) character = c.get();
@@ -407,6 +413,8 @@ std::string className(const SceneNode& n) {
         case NodeKind::Remote:     return n.remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt:     return "ProximityPrompt";
         case NodeKind::Highlight:  return "Highlight";
+        case NodeKind::PostEffect: return kPostEffectClassNames[(int)n.post.type];
+        case NodeKind::Sky:        return "Sky";
         case NodeKind::Trail:      return "Trail";
         case NodeKind::Beam:       return "Beam";
         case NodeKind::Light:      return n.lightType == LightType::Spot ? "SpotLight" : "PointLight";

@@ -34,6 +34,8 @@ Scene::Scene() {
     m_terrainNode = std::make_unique<SceneNode>("Terrain", NodeKind::Model);
     m_terrainNode->id = kTerrainId;
     m_terrainNode->anchored = true;
+    m_cameraNode = std::make_unique<SceneNode>("Camera", NodeKind::Model);
+    m_cameraNode->id = kCameraId;
     m_player = std::make_unique<Player>(this);
     buildDefault();
 }
@@ -42,6 +44,7 @@ void Scene::buildDefault() {
     m_selected = nullptr;
     m_selection.clear();
     m_terrain.clear();
+    m_cameraNode->children.clear();
     m_root = std::make_unique<SceneNode>("Workspace", NodeKind::Model);
     markDirty();
 
@@ -181,6 +184,7 @@ void Scene::replaceRoot(std::unique_ptr<SceneNode> root) {
     m_selected = nullptr;
     m_selection.clear();
     m_particles.clear();
+    m_cameraNode->children.clear();
     m_root = std::move(root);
     markDirty();
 }
@@ -188,6 +192,8 @@ void Scene::replaceRoot(std::unique_ptr<SceneNode> root) {
 void Scene::rebuildIndex() {
     m_index.clear();
     forEach([this](SceneNode* n) { m_index[n->id] = n; });
+    std::function<void(SceneNode*)> add = [this](SceneNode* n) { m_index[n->id] = n; };
+    walk(m_cameraNode.get(), add);   // (what's in the Camera)
     m_indexDirty = false;
 }
 
@@ -204,7 +210,8 @@ SceneNode* Scene::findById(uint64_t id) {
 
 const std::vector<const char*>& Scene::serviceNames() {
     static const std::vector<const char*> names = {"ReplicatedFirst", "ReplicatedStorage", "ServerScriptService", "ServerStorage",
-                                                   "StarterGui", "StarterPack", "Teams", "SoundService", "Chat", "TextChatService"};
+                                                   "StarterGui", "StarterPack", "Teams", "SoundService", "Chat", "TextChatService",
+                                                   "Lighting"};
     return names;
 }
 
@@ -229,7 +236,7 @@ SceneNode* Scene::serviceFolder(const std::string& name, bool create) {
 }
 
 bool Scene::isProtected(const SceneNode* node) const {
-    return node == m_root.get() || (node && node == m_terrainNode.get()) || (m_player && node && node->id == m_player->rootId());
+    return node == m_root.get() || (node && (node == m_terrainNode.get() || node == m_cameraNode.get())) || (m_player && node && node->id == m_player->rootId());
 }
 
 bool Scene::isCharacterPart(const SceneNode* node) const {

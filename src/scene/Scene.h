@@ -193,6 +193,13 @@ public:
     // can't be moved or deleted; findById(kTerrainId) returns it.
     static constexpr uint64_t kTerrainId = 4503599627370000ull;
     SceneNode*       terrainNode() { return m_terrainNode.get(); }
+    // workspace.CurrentCamera as an object that can hold things (screen effects put in
+    // the Camera, like Roblox). Only on this computer: it isn't saved or sent to other
+    // players, and it's emptied when a game is loaded. findById(kCameraId) returns it.
+    static constexpr uint64_t kCameraId = 4503599627370001ull;
+    SceneNode*       cameraNode() { return m_cameraNode.get(); }
+    // The Lighting service's folder (its screen effects and Sky), made when asked.
+    SceneNode*       lightingFolder(bool create) { return serviceFolder("Lighting", create); }
     bool             isCharacterRoot(uint64_t id) const;
     // Kill any character; `force` 0..1 = how violently.
     void             killCharacter(uint64_t rootId, float force, const glm::vec3& impulse);
@@ -227,6 +234,7 @@ private:
     WaterSystem                m_water;
     Terrain                    m_terrain;
     std::unique_ptr<SceneNode> m_terrainNode;
+    std::unique_ptr<SceneNode> m_cameraNode;
     ParticleSystem             m_particles;
     BlastSystem                m_blasts;
     Anim::Animator             m_animator;

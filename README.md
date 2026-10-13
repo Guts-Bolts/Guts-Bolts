@@ -1389,6 +1389,51 @@ settings). In an online game, a Script on the host can change a player's
 xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_camera.lua)" --screenshot /tmp/camera.png --frames 900
 ```
 
+### Sky and screen effects
+
+Like Roblox, you change the sky and the look of the whole screen with objects
+**right inside Lighting**. In Studio, right-click **Lighting** in the Explorer >
+Insert Object > Sky & Screen Effects (they always go in Lighting), then change
+them in Properties. Scripts make them the same way:
+
+```lua
+local cc = Instance.new("ColorCorrectionEffect")
+cc.Saturation = -1                  -- black and white
+cc.TintColor = Color3.fromRGB(255, 230, 200)
+cc.Parent = game.Lighting
+
+local blur = Instance.new("BlurEffect")
+blur.Size = 16
+blur.Parent = workspace.CurrentCamera   -- only on this player's screen (a LocalScript)
+```
+
+- **ColorCorrectionEffect**: `Brightness`, `Contrast`, `Saturation` (-1 = grey) and `TintColor`.
+- **SunRaysEffect**: `Intensity` and `Spread` - rays of light from the sun, past whatever is in front of it.
+- **DepthOfFieldEffect**: `FocusDistance` (studs), `InFocusRadius`, `NearIntensity`, `FarIntensity` - blurs what's nearer or further than the focus.
+- **BloomEffect**: `Intensity`, `Size`, `Threshold` - bright things glow. While there's one, it's used instead of the bloom in the Lighting settings.
+- **BlurEffect**: `Size` - blurs everything (pause menus, being dizzy).
+- **Sky**: `SkyboxBk` / `Dn` / `Ft` / `Lf` / `Rt` / `Up` pictures, `SunTextureId`,
+  `MoonTextureId`, `StarCount` (0 to 5000), `CelestialBodiesShown`,
+  `SunAngularSize`, `MoonAngularSize`. Pictures are ids like a Decal's (an
+  uploaded picture `gb:<id>`, or a file in the games folder). The skybox shows
+  when all six pictures load; otherwise the Lighting settings' sky stays and the
+  Sky still sets the stars, sun and moon. Ft faces -Z, Bk +Z, Rt +X, Lf -X. Clouds
+  are hidden behind a skybox (paint them into the pictures).
+
+Every effect has `Enabled`, and several stack (two ColorCorrections add up, two
+Blurs blur more). They work in Lighting and in `workspace.CurrentCamera` (the
+camera's are only on that player's screen and aren't saved); a Sky only works in
+Lighting. Lighting's effects and Sky are saved with the game, sent to everyone in
+a multiplayer game, and come in from and go out to `.rbxl` / `.rbxlx` files
+(Roblox's own built-in sky pictures can't load here, so those use our sky).
+`Lighting:GetChildren()`, `Lighting:FindFirstChildOfClass("Sky")` and
+`Lighting.Sky` work like Roblox.
+
+On phones and slow computers: colour correction, blur and bloom are cheap and
+always on (bloom follows the Bloom graphics setting). **Sun rays and depth of
+field switch off on Low graphics**, and on phones the sun rays take half as many
+steps. Blur and depth of field are worked out on small copies of the picture.
+
 ### Controllers
 
 Plug in an Xbox, PlayStation, Switch Pro or other game controller and play with
