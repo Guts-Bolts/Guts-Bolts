@@ -39,14 +39,7 @@ struct ConnRef   { int index; };
 
 bool is(const char* a, const char* b) { return std::strcmp(a, b) == 0; }
 
-bool parseMaterial(const std::string& s, Material& out) {
-    for (int i = 0; i < kMaterialCount; ++i)
-        if (s == kMaterialNames[i]) { out = (Material)i; return true; }
-    if (s == "SmoothPlastic") { out = Material::Plastic; return true; }
-    if (s == "DiamondPlate" || s == "Foil" || s == "CorrodedMetal") { out = Material::Metal; return true; }
-    if (s == "WoodPlanks") { out = Material::Wood; return true; }
-    return false;
-}
+bool parseMaterial(const std::string& s, Material& out) { return materialFromName(s, out); }
 
 const char* shapeName(PrimitiveType t) {
     switch (t) {
@@ -1620,7 +1613,7 @@ int inst_newindex(lua_State* L) {
         if (is(k, "CastShadow"))   { n->castShadow = lua_toboolean(L, 3); return 0; }
         if (is(k, "Material")) {
             if (!parseMaterial(luaL_checkstring(L, 3), n->material))
-                return luaL_error(L, "Unknown material '%s' (try Plastic, Metal, Neon, Wood, Glass, Concrete or Ice)", lua_tostring(L, 3));
+                return luaL_error(L, "Unknown material '%s' (the materials are %s)", lua_tostring(L, 3), materialNameList());
             return 0;
         }
         if (is(k, "Shape")) {
