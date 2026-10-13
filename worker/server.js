@@ -951,7 +951,10 @@ export class GbServerObject extends DurableObject {
         this.assets.set(a.id, a);
       }
       a.description = cleanText(info.description || '', 1000, true);
-      if (a.size !== data.length) { a.size = data.length; a.updated = now(); this.writeFile(a.id, data); }
+      if (a.size !== data.length) {
+        if (a.versions && a.versions.length) this.addVersion(a, data, this.official, null);   // (if it has a history, this is a new version)
+        a.size = data.length; a.updated = now(); this.writeFile(a.id, data);
+      }
       this.saveAsset(a);
     }
   }

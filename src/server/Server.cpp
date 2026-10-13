@@ -1496,7 +1496,10 @@ void GbServer::addExampleGames() {
         const json& info = j.contains("info") ? j["info"] : json::object();
         a.name = Online::cleanText(info.value("title", std::string(title)), 50);
         a.description = Online::cleanText(info.value("description", std::string()), 1000);
-        if (a.size != text.size()) { a.size = text.size(); writeFile(blobPath(id), text); }
+        if (a.size != text.size()) {
+            if (!a.versions.empty()) addVersion(a, text, a.creator, nullptr);   // (if it has a history, this is a new version)
+            a.size = text.size(); writeFile(blobPath(id), text);
+        }
         changed = true;
     }
     // The Verified Hat (worker/server.js VERIFIED_HAT, the same hat): an award for
