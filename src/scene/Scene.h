@@ -167,7 +167,8 @@ public:
 
     // Nodes the user must not delete / move (Workspace and the character).
     bool isProtected(const SceneNode* node) const;
-    // Roblox's container services (ReplicatedStorage, ServerScriptService, StarterPack...)
+    // Roblox's container services (ReplicatedStorage, ServerScriptService, StarterPack,
+    // StarterPlayer (its StarterPlayerScripts folder)...)
     // are folders at the top of the scene with those names. Studio shows them as their own
     // rows in the Explorer, next to the Workspace, instead of inside it.
     static const std::vector<const char*>& serviceNames();

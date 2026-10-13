@@ -88,6 +88,32 @@ void Editor::renderServerDialog() {
 // File > Publish to Guts&Bolts...
 // ---------------------------------------------------------------------------
 
+void Editor::publishGame(const std::string& name, const std::string& description, bool update,
+                         std::function<void(const json&)> done) {
+    std::string data = Serializer::saveScene(*m_scene);
+    std::string picture = m_viewport->snapshotPng(480, 270);   // for the game's card on the site
+    json args = {{"name", name}, {"description", description}, {"data", Online::base64Encode(data)}};
+    if (update) args["id"] = m_scene->info().publishedId;
+    else args["kind"] = "game";
+    m_onlineBusy = true;
+    Online::request(update ? "update" : "upload", args, [this, picture, name, description, done](const json& r) {
+        m_onlineBusy = false;
+        if (r.value("ok", false)) {
+            m_scene->info().publishedId = r["asset"].value("id", std::string());
+            if (!picture.empty())
+                Online::request("thumb.set", {{"id", m_scene->info().publishedId}, {"data", Online::base64Encode(picture)}},
+                                [](const json& t) {
+                    if (!t.value("ok", false)) Log::warn("The game's picture didn't upload: " + t.value("error", std::string()));
+                }, 60);
+            m_scene->info().title = name;
+            m_scene->info().description = description;
+            if (!m_path.empty()) saveFile(m_path, false);   // remember it's published (the server already has this version)
+            Log::system("Published \"" + name + "\" to " + Online::serverInfo().value("name", std::string("the server")));
+        }
+        if (done) done(r);
+    }, 120);
+}
+
 void Editor::renderPublishDialog() {
     if (m_openPublish) {
         ImGui::OpenPopup("Publish to Guts&Bolts");
@@ -116,32 +142,12 @@ void Editor::renderPublishDialog() {
     ImGui::InputTextMultiline("Description", &m_publishDesc, ImVec2(-90, 80));
     const std::string& published = m_scene->info().publishedId;
     auto send = [this](bool update) {
-        std::string data = Serializer::saveScene(*m_scene);
-        std::string picture = m_viewport->snapshotPng(480, 270);   // for the game's card on the site
-        json args = {{"name", m_publishName}, {"description", m_publishDesc}, {"data", Online::base64Encode(data)}};
-        if (update) args["id"] = m_scene->info().publishedId;
-        else args["kind"] = "game";
-        m_onlineBusy = true;
         m_publishMsg = "Publishing...";
-        Online::request(update ? "update" : "upload", args, [this, picture](const json& r) {
-            m_onlineBusy = false;
+        publishGame(m_publishName, m_publishDesc, update, [this](const json& r) {
             if (!r.value("ok", false)) { m_publishMsg = r.value("error", std::string("Publishing didn't work.")); return; }
-            m_scene->info().publishedId = r["asset"].value("id", std::string());
-            if (!picture.empty())
-                Online::request("thumb.set", {{"id", m_scene->info().publishedId}, {"data", Online::base64Encode(picture)}},
-                                [](const json& t) {
-                    if (!t.value("ok", false)) Log::warn("The game's picture didn't upload: " + t.value("error", std::string()));
-                }, 60);
-            m_scene->info().title = m_publishName;
-            m_scene->info().description = m_publishDesc;
-            if (!m_path.empty()) {
-                saveFile(m_path, false);   // remember it's published (the server already has this version)
-                m_publishMsg = "Published! It's on the website now, and saving updates it there too.";
-            } else {
-                m_publishMsg = "Published! It's on the website now. Save your game so Studio remembers it's published.";
-            }
-            Log::system("Published \"" + m_publishName + "\" to " + Online::serverInfo().value("name", std::string("the server")));
-        }, 120);
+            m_publishMsg = m_path.empty() ? "Published! It's on the website now. Save your game so Studio remembers it's published."
+                                          : "Published! It's on the website now, and saving updates it there too.";
+        });
     };
     ImGui::BeginDisabled(m_onlineBusy);
     if (!published.empty()) {
