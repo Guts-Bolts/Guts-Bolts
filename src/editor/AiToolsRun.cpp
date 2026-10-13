@@ -4,6 +4,7 @@
 // it can be fixed and what to try next.
 #include "AiTools.h"
 #include "Editor.h"
+#include "MultiTest.h"
 #include "panels/ViewportPanel.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
@@ -579,6 +580,46 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         d["note"] = !m_playing ? "Stopped. The game is back exactly how it was before Play."
                   : m_state.simPaused ? "Paused: physics and scripts are frozen (step moves one frame)."
                   : "Scripts and physics are running. Check get_errors, get_runtime_state, get_object and screenshot, then stop.";
+        if (!warn.empty()) d["warnings"] = warn;
+        return done(d);
+    }
+
+    if (name == "multiplayer_test") {
+        MultiTest& mt = multiTest();
+        const std::string action = str("action");
+        json warn = json::array();
+        bool withOutput = false;
+        std::string err;
+        if (action == "start") {
+            const int players = std::clamp(args.value("players", 2), MultiTest::kMinPlayers, MultiTest::kMaxPlayers);
+            if (mt.running()) warn.push_back("A multiplayer test was already running: it was restarted with the game as it is now.");
+            if (m_playing) warn.push_back("The playtest was stopped first.");
+            if (!startMultiTest(players, err))
+                return fail("MULTIPLAYER_TEST_FAILED", err, "Check that GutsAndBoltsGameServer and GutsAndBoltsPlayer are next to Studio.");
+        } else if (action == "stop") {
+            if (!mt.running()) warn.push_back("There was no multiplayer test running.");
+            stopMultiTest();
+            withOutput = true;   // (what they printed before closing)
+        } else if (action == "add_player") {
+            if (!mt.addPlayer(err)) return fail("MULTIPLAYER_TEST_FAILED", err, mt.running() ? "" : "multiplayer_test start first.");
+        } else if (action == "output" || action == "status") {
+            withOutput = action == "output";
+        } else {
+            return fail("INVALID_INPUT", "action must be start, stop, status, output or add_player.", "");
+        }
+        json d = mt.status();
+        if (withOutput || action == "status") {
+            const int want = std::clamp(args.value("lines", withOutput ? 60 : 10), 1, 400);
+            json lines = json::array();
+            for (const auto& l : mt.output(want, str("from")))
+                lines.push_back({{"from", l.from}, {"level", l.level}, {"text", l.text}, {"time", l.time}});
+            d["output"] = lines;
+        }
+        d["note"] = !mt.running() ? (action == "stop" ? "Stopped: the test server and every player window are closed."
+                                                      : "No multiplayer test is running.")
+                  : !mt.serverReady() ? "The test server is loading the game; the player windows open when it's ready. "
+                                        "Check again in a few seconds (status or output)."
+                  : "Running. Server Scripts run on the test server, LocalScripts in each window. Read output, then stop.";
         if (!warn.empty()) d["warnings"] = warn;
         return done(d);
     }
