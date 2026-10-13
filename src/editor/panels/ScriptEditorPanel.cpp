@@ -35,6 +35,9 @@ const char* const kWords[] = {
     "TeleportService", "TeleportOptions", "Teleport", "TeleportAsync", "TeleportPartyAsync", "SetTeleportData", "GetJoinData",
     "GetLocalPlayerTeleportData",
     "game:GetService", "Players.LocalPlayer", "RunService.Heartbeat", "UserInputService.InputBegan",
+    "ContextActionService", "BindAction", "BindActionAtPriority", "UnbindAction", "UnbindAllActions",
+    "GetBoundActionInfo", "GetAllBoundActionInfo", "SetTitle", "SetImage", "SetDescription", "SetPosition", "GetButton",
+    "ContextActionResult", "ContextActionPriority", "UserInputState", "KeyCode", "UserInputType",
     // Members
     "Parent", "Name", "ClassName", "Position", "Orientation", "Size", "CFrame", "Color", "Transparency", "Material",
     "Anchored", "CanCollide", "Velocity", "AssemblyLinearVelocity", "AssemblyAngularVelocity", "Shape",

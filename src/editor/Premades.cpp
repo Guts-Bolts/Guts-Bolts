@@ -1006,6 +1006,14 @@ const std::vector<Snippet>& snippetList() {
          "game:GetService(\"RunService\").Heartbeat:Connect(function(dt)\n    -- runs about 60 times a second\nend)\n"},
         {"When a key is pressed",
          "game:GetService(\"UserInputService\").InputBegan:Connect(function(input)\n    if input.KeyCode == Enum.KeyCode.E then\n        print(\"You pressed E\")\n    end\nend)\n"},
+        {"Bind a key (and a phone button)",
+         "-- In a LocalScript: E on a keyboard, X on a controller, a round button on phones.\n"
+         "local CAS = game:GetService(\"ContextActionService\")\n"
+         "CAS:BindAction(\"Shout\", function(actionName, state, input)\n"
+         "    if state == Enum.UserInputState.Begin then\n        print(\"Hey!\")\n    end\n"
+         "    return Enum.ContextActionResult.Sink   -- Pass lets others have the key too\n"
+         "end, true, Enum.KeyCode.E, Enum.KeyCode.ButtonX)\n"
+         "CAS:SetTitle(\"Shout\", \"Shout\")\n"},
         {"Make a new part",
          "local part = Instance.new(\"Part\")\npart.Size = Vector3.new(2, 2, 2)\npart.Position = Vector3.new(0, 10, 0)\npart.Color = Color3.fromRGB(255, 100, 0)\npart.Parent = workspace   -- it falls, because new parts aren't anchored\n"},
         {"Change colour",

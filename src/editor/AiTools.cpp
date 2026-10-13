@@ -527,6 +527,7 @@ Your loop: UNDERSTAND the request -> INSPECT the game -> PLAN -> ACT with tools 
 - Physics: Anchored = false, forces (part:ApplyImpulse, BodyVelocity, VectorForce...), constraints. DON'T fake physics by teleporting parts every frame.
 - Navigation: PathfindingService and humanoid:PathfindTo. DON'T write your own path-walking code when it can do the job.
 - Explosions: the Explosion object / Explode(). DON'T push every nearby part by hand.
+- Player input ("press E to ...", a sprint key, a mobile button): ContextActionService:BindAction(name, fn, createTouchButton, Enum.KeyCode.E, ...) in a LocalScript; fn(name, state, input) returns Enum.ContextActionResult.Sink (keep it: the game's own controls ignore it) or Pass. createTouchButton = true adds a phone button (SetTitle / SetImage).
 - Only write scripts for behaviour the built-in objects and properties can't give, or when the person asks for code.
 
 ## Editor vs playtest
@@ -628,6 +629,7 @@ Guts and Bolts is Roblox-style: there is no separate component system. What an o
 - Light -> a PointLight or SpotLight placed inside a part.
 - Audio source -> a Sound object (inside a part = it plays from there), or Sounds.Play in scripts.
 - Script -> Script (game server), LocalScript (each player's computer), ModuleScript (require()).
+- Input actions / key bindings -> ContextActionService in a LocalScript: BindAction / BindActionAtPriority (Enum.KeyCode, or Enum.UserInputType Keyboard / Gamepad1 / MouseButton1 / Touch), UnbindAction, GetBoundActionInfo; the newest or highest-priority binding hears an input first and returning Sink hides it from the rest (and from walking / jumping / tools). createTouchButton = true shows a round button on phones (SetTitle, SetImage, SetPosition, GetButton). UserInputService.InputBegan also works.
 - Particles -> no ParticleEmitter class. Scripts make effects with Effects.Sparks / Blood / Oil / Gibs, explosions with smoke and fire, Trails and Beams.
 - Camera -> no camera object to edit. Players' cameras follow their character (World settings can make it orthographic).
 

@@ -383,6 +383,7 @@ What you can use:
   `Material`, `Shape`, `Anchored`, `CanCollide`, `Velocity`
 - **Values:** `Vector3.new`, `Color3.new` / `fromRGB` / `fromHSV` / `fromHex`, `CFrame.new` / `Angles` / `lookAt`
 - **Time:** `wait(seconds)`, `spawn(fn)`, `delay(seconds, fn)`, `time()`, `tick()`
+- **Keys:** `ContextActionService:BindAction(name, fn, touchButton, Enum.KeyCode.E, ...)` (see *Key bindings* below)
 - **Events:** `part.Touched`, `part.Clicked`, `RunService.Heartbeat`, `UserInputService.InputBegan` / `InputEnded`,
   `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, each with `:Connect`, `:Once` and `:Wait`
 - **Players:** `game.Players.LocalPlayer.Character`, `Players:GetPlayers()`, `humanoid.Health` / `WalkSpeed` /
@@ -1413,6 +1414,65 @@ with `Enum.KeyCode.ButtonA` (and `UserInputType` `Gamepad1`), and
 `UserInputService.GamepadEnabled`, `IsGamepadButtonDown` and `GetGamepadState`
 (the sticks and triggers) work like Roblox's.
 
+### Key bindings (ContextActionService)
+
+A LocalScript can bind an action to keys, controller buttons, the mouse or
+fingers, and give it its own round button on phones, like Roblox's
+`ContextActionService`:
+
+```lua
+local CAS = game:GetService("ContextActionService")
+
+local function dash(actionName, state, input)
+    if state == Enum.UserInputState.Begin then
+        print("Dash!", input.KeyCode, input.UserInputType)
+    end
+    return Enum.ContextActionResult.Sink   -- keep it (Pass: let others have it too)
+end
+
+-- Q on a keyboard, X on a controller, and a button on touch screens.
+CAS:BindAction("Dash", dash, true, Enum.KeyCode.Q, Enum.KeyCode.ButtonX)
+CAS:SetTitle("Dash", "Dash")
+```
+
+- **Inputs:** any `Enum.KeyCode` the engine knows (letters, numbers, Space,
+  Shift, arrows, controller buttons like `ButtonA` or `DPadUp`...), or a whole
+  `Enum.UserInputType`: `Keyboard`, `Gamepad1`, `MouseButton1` (a click in the
+  game view) or `Touch` (a finger on the game view).
+- **The function** gets `(actionName, state, inputObject)`. `state` is
+  `Enum.UserInputState.Begin` when the key goes down, `End` when it comes up,
+  and `Cancel` when a newer binding takes the key over while it's held. The
+  input object has `KeyCode`, `UserInputType`, `UserInputState` and `Position`.
+- **Sink or Pass:** the newest binding (or the one with the highest priority)
+  hears an input first. Returning `Enum.ContextActionResult.Sink` (or nothing)
+  keeps it: lower bindings don't hear it, the game's own controls ignore it
+  (bind Space with Sink and the character can't jump; bind MouseButton1 and a
+  click doesn't use the held tool), and `UserInputService.InputBegan` says
+  `gameProcessedEvent = true`. Returning `Pass` hands it on down.
+- **Priority:** `BindActionAtPriority(name, fn, touchButton, priority, ...)`,
+  with a number or `Enum.ContextActionPriority.Low / Medium / Default / High.Value`
+  (1000 / 2000 / 2000 / 3000). `BindAction` uses Default.
+- `UnbindAction(name)`, `UnbindAllActions()`, `GetBoundActionInfo(name)` and
+  `GetAllBoundActionInfo()` (with `inputTypes`, `priorityLevel`,
+  `createTouchButton`, `stackOrder`, `title`, `description`, `image`). Binding a
+  name again replaces it, and a LocalScript's actions go away when it stops.
+- **Touch buttons:** with `createTouchButton = true`, phones and tablets get a
+  round button for the action, stacked round the jump button (the first ones
+  closest). `SetTitle`, `SetImage` (`rbxassetid://` or an id), `SetDescription`
+  and `SetPosition` (a `UDim2` on the game view, for the button's top-left
+  corner) change it, and `GetButton(name)` gives an ImageButton-like object
+  whose `Image`, `Position` and `ActionTitle.Text` can be read and changed (nil
+  when the action has no touch button). Pressing it runs the action with
+  `UserInputType` `Touch`.
+
+It works the same in the Player, Studio's play test and online games (each
+player's own LocalScripts hear their own input). `tools/test_context_actions.lua`
+checks it in a real play test:
+
+```
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_context_actions.lua)" --screenshot /tmp/actions.png --frames 2400
+```
+
 ### The in-game menu
 
 Press **Esc** (or the Menu button) for a Roblox-style menu with three tabs:
@@ -1516,7 +1576,8 @@ Games saved with the old blocky character get the new one when they load.
   menu (Resume, Reset Character, Settings, Leave). The player list in the top
   right shows everyone in the game.
 - **Touch controls:** on phones and tablets you get a thumbstick (it appears
-  under your thumb, bottom-left), a jump button (bottom-right) and Chat / Menu
+  under your thumb, bottom-left), a jump button (bottom-right, with any buttons
+  the game adds stacked round it) and Chat / Menu
   buttons (top-left). Drag anywhere else to turn the camera, pinch to zoom and
   tap things to click them. Try them on a computer with **Settings > Touch
   controls > Always on** (the mouse acts as one finger).

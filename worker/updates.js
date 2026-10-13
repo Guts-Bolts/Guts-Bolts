@@ -10,6 +10,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'hotkey-heist', name: 'Hotkey Heist', time: 1791867600, tag: 'Engine',
+    summary: 'Games can bind their own keys and controller buttons, and give phones their own on-screen buttons.',
+    items: [
+      'ContextActionService works: a LocalScript binds an action to keys, controller buttons, mouse clicks or fingers with BindAction',
+      'The newest (or highest priority) binding gets a key first; returning Sink keeps it, so binding Space can stop the jump, and Pass hands it on',
+      'BindActionAtPriority, UnbindAction, UnbindAllActions, GetBoundActionInfo and GetAllBoundActionInfo',
+      'Ask for a touch button and phones get a round button next to the jump button, with SetTitle, SetImage, SetDescription, SetPosition and GetButton',
+      'UserInputService.InputBegan now says gameProcessedEvent when an action took the key, and clicks in the game view also fire InputEnded',
+      'Works in the Player, in Studio\'s play test and in online games',
+    ],
+  },
+  {
     id: 'lost-and-found', name: 'Lost & Found', time: 1791838800, tag: 'Website',
     summary: 'Forgot your password and never added an email? Ask staff on the new Support page and get back in.',
     items: [
