@@ -63,6 +63,10 @@ struct PlayerOptions {
     std::string testType;              // --test-type "text" (tests: type it at frame 90, then press Enter)
     float       testWheel = 0.0f;      // --test-wheel N (tests: turn the mouse wheel N notches at frame 70)
     std::string launchUrl;             // gutsandbolts://play/<game>?guest=boy (the website's Play button)
+    // Studio's "Test with N players": --studio-test host:port --name Player2 joins Studio's
+    // local test server straight away as that name; the window closes when the test ends.
+    std::string studioTest;
+    std::string testName;
 };
 
 // Guts&BoltsPlayer: the platform app. Browse the games on this computer,
@@ -125,7 +129,9 @@ private:
     void fetchAvatarParts();                   // download worn accessories / faces, then put them on
     std::set<std::string> m_avatarFetching;    // asset ids already asked for
     void drawServerCards(const std::string& gameKey, const std::string& title);   // game page: who's playing where   // not connected: "Connecting..." / "Can't reach Guts&Bolts"
-    bool testMode() const { return !m_opts.screenshot.empty() && m_opts.page != "noserver"; }   // automated tests may play offline
+    // Automated tests and Studio's multiplayer test may play offline.
+    bool testMode() const { return (!m_opts.screenshot.empty() && m_opts.page != "noserver") || studioTest(); }
+    bool studioTest() const { return !m_opts.studioTest.empty(); }
     void drawOnlineCatalog();
     void drawWardrobe();
     void drawModeration();                          // the ban screen and staff warnings (PlayerOnline.cpp)                            // Avatar page: what you own, click to wear (PlayerOnline.cpp)

@@ -31,6 +31,9 @@ struct LaunchOptions {
     bool        testFixPictures = false;  // --test-fix-pictures: File > Upload Missing Item Pictures (tests)
     bool        testAnalysis = false;  // --test-analysis: open Script Analysis and print what it finds (tests)
     std::string testTools;         // --test-tools "1 click wait print" while playing (tests: gear)
+    // --test-multiplayer "N[:seconds]" (tests): the multiplayer_test AI tool starts a test with N
+    // players, adds one more halfway, then prints its output, stops it and quits (default 30 s).
+    std::string testMultiplayer;
 };
 
 // The editor application ("Guts and Bolts Studio").
@@ -41,6 +44,10 @@ public:
     void run();
 
 private:
+    void testMultiplayer(int frame);   // --test-multiplayer
+    double m_multiStart = 0.0;
+    int    m_multiStep = 0;
+
     LaunchOptions m_opts;
     // Declared first so it is destroyed last (after everything using OpenGL).
     std::unique_ptr<AppWindow> m_window;
