@@ -8,6 +8,7 @@
 #include "../scene/Physics.h"
 #include "../scene/EditMesh.h"
 #include "Plugins.h"
+#include "MultiTest.h"
 #include "../core/Log.h"
 
 #include <imgui.h>
@@ -457,6 +458,32 @@ void Editor::renderToolbar() {
     }
     case 2: {   // TEST
         test(true, true);
+        {
+            // Test with 2-4 players: a local test server and that many Player windows on this computer.
+            Group g("Multiplayer");
+            MultiTest& mt = multiTest();
+            const bool on = mt.running();
+            if (bigButton("Players", Icons::Id::Team, on, true,
+                          on ? "A multiplayer test is running: add a player or stop it"
+                             : "Test with more than one player: a local test server and a Player window for each,\n"
+                               "joined as Player1, Player2... Output shows what the server and each player print."))
+                ImGui::OpenPopup("##multitest");
+            if (bigButton("End Test", Icons::Id::Stop, false, on, "Stop the multiplayer test (closes the server and every player window)"))
+                stopMultiTest();
+            if (ImGui::BeginPopup("##multitest")) {
+                std::string err;
+                for (int n = MultiTest::kMinPlayers; n <= MultiTest::kMaxPlayers; ++n) {
+                    const std::string label = "Test with " + std::to_string(n) + " players";
+                    if (ImGui::MenuItem(label.c_str(), nullptr, false, !on)) startMultiTest(n, err);
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Add a player", nullptr, false, on && mt.playerCount() < MultiTest::kMostPlayers) &&
+                    !mt.addPlayer(err))
+                    Log::warn(err);
+                if (ImGui::MenuItem("Stop multiplayer test", nullptr, false, on)) stopMultiTest();
+                ImGui::EndPopup();
+            }
+        }
         {
             Group g("Settings");
             if (bigButton("Player", Icons::Id::Player, false, true, "Walk speed, jump, death and gore")) m_showPanel[kPanelPlayer] = true;

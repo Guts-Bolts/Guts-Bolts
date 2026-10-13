@@ -28,6 +28,7 @@ class ScriptEditorPanel;
 class AnimationEditor;
 class TeamCreate;
 class Plugins;
+class MultiTest;
 
 class Physics;
 
@@ -65,6 +66,11 @@ public:
     void testCollisions();                       // --test-collide
     void testDrop(const std::string& files);     // --test-drop "a.fbx;b.png": dropped in the middle of the 3D view
     void setMode(StudioMode mode);               // Build / Modeling / Simulate / Play
+    // TEST > Players: "Test with N players" (see MultiTest.h). Starts a local test server
+    // with the game as it is now, and N Player windows that join it. False if it couldn't.
+    bool startMultiTest(int players, std::string& error);
+    void stopMultiTest();
+    MultiTest& multiTest() { return *m_multiTest; }
 
 private:
     void buildDockspace();
@@ -185,6 +191,7 @@ private:
     std::unique_ptr<AnimationEditor>   m_animEditor;
     std::unique_ptr<TeamCreate>        m_team;
     std::unique_ptr<Plugins>           m_plugins;
+    std::unique_ptr<MultiTest>         m_multiTest;     // TEST > Players: Test with N players
     // Online
     bool        m_openServer = false, m_openPublish = false, m_showPluginLibrary = false;
     std::string m_serverInput, m_publishName, m_publishDesc, m_publishMsg, m_marketMsg, m_marketQuery;
