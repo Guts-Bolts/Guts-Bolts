@@ -68,7 +68,13 @@ void frameSpawn(Scene& scene, Camera& cam) {
 } // namespace
 
 PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
-    m_window = std::make_unique<AppWindow>("Guts&Bolts Player", 1280, 720, "player_layout.ini");
+    if (studioTest()) {   // Studio's multiplayer test: smaller windows, so a few fit on the screen
+        if (!m_opts.testName.empty()) Online::setTestName(m_opts.testName);
+        const std::string title = Online::playerName() + " - Guts&Bolts multiplayer test";
+        m_window = std::make_unique<AppWindow>(title.c_str(), 800, 450, "player_layout.ini");
+    } else {
+        m_window = std::make_unique<AppWindow>("Guts&Bolts Player", 1280, 720, "player_layout.ini");
+    }
     m_window->setFixedTimestep(!m_opts.screenshot.empty());
     m_renderer = std::make_unique<SceneRenderer>();
     m_scene    = std::make_unique<Scene>();
@@ -221,6 +227,13 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
         else m_opts.onlinePlay = true;
     }
     if (!m_opts.join.empty() && testMode()) joinServer(m_opts.join);
+    if (studioTest()) {
+        joinServer(m_opts.studioTest);
+        if (!m_client) {   // (couldn't even start connecting: nothing to show)
+            Log::error("Couldn't join the multiplayer test: " + m_status);
+            m_window->close();
+        }
+    }
 }
 
 PlayerApp::~PlayerApp() {
@@ -628,6 +641,11 @@ void PlayerApp::leaveGame() {
     m_paused = false;
     m_page = Page::Home;
     m_window->setTitle("Guts&Bolts Player");
+    if (studioTest()) {   // the test server closed (or we left): this window was only for the test
+        if (!m_status.empty()) Log::warn(m_status);
+        Log::system("Left the multiplayer test.");
+        m_window->close();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1574,6 +1592,7 @@ void PlayerApp::drawGame(float dt) {
                     onlineStarter(m_moveGame)(HostMode::Public);
                 } else m_moveRetryAt = ImGui::GetTime() + 2.0;
             } else {
+                m_status = err;
                 leaveGame();
                 m_status = err;
                 return;

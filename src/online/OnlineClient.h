@@ -58,6 +58,9 @@ void        setGuest(bool on);
 bool        isGuest();
 std::string guestName();   // "Guest 1234" (the same on this device every time)
 std::string playerName();  // your name in games: the guest name for guests, else your profile's
+// Studio's multiplayer test: this window plays as "Player1", "Player2"... ("" = back to
+// normal). Only for this run of the app; nothing is saved.
+void        setTestName(const std::string& name);
 inline const char* kGuestChatText = "Sign up to chat with other users!";
 
 // Wait for every request to finish (tests / quitting).
