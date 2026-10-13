@@ -900,6 +900,40 @@ and `IncrementAsync` adds on the server in one step, so two servers adding at
 the same time both count. Limits: names and keys up to 100 letters, 256 KB per
 value, 100,000 keys per game.
 
+### Talking between servers (MessagingService)
+
+`MessagingService` sends a message to **every running server of the same
+game**, the one that sent it included. Other games never see it.
+
+```lua
+local MessagingService = game:GetService("MessagingService")
+
+local conn = MessagingService:SubscribeAsync("Announcements", function(msg)
+    print("Got", msg.Data, "sent at", msg.Sent)   -- Sent is unix time
+end)
+MessagingService:PublishAsync("Announcements", { text = "Double coins!", minutes = 10 })
+-- later: conn:Disconnect()
+```
+
+The message can be a string, number, boolean or table (anything that turns into
+JSON). `PublishAsync` waits until it's sent and raises a clear error when it
+can't be. Limits, like Roblox's:
+
+- **1 KB per message** (after it's turned into JSON).
+- **Topic names up to 80 letters.**
+- **Per server, a minute:** 150 + 60 per player messages sent, and
+  20 + 8 per player topics subscribed at once.
+
+How it travels depends on who runs the game, the same way as saved data:
+
+- **On a game server machine, or when you host it online:** through the
+  Guts&Bolts server, which passes it to each server of the game (it checks the
+  sender really runs a server of that game). Messages arrive about a second
+  later, and are kept for 30 seconds.
+- **Studio play tests and local multiplayer tests:** through a folder on this
+  computer (`messaging` in your account folder), so two play tests of the same
+  game on one computer hear each other right away.
+
 ### Sound effects
 
 Most built-in sounds are made in code, but a few are recordings in
@@ -912,6 +946,44 @@ Most built-in sounds are made in code, but a few are recordings in
 | `respawn.wav` | `"respawn"` | you come back after dying |
 
 Swap in your own .wav files with the same names and rebuild.
+
+### Sound groups and effects
+
+A **SoundGroup** is a volume knob for many sounds at once (music, effects,
+voices...). Put it in **SoundService** (Studio: *Insert > SoundGroup*), then
+set each Sound's **SoundGroup** in Properties, or in a script:
+
+```lua
+local music = Instance.new("SoundGroup")
+music.Volume = 0.5
+music.Parent = game:GetService("SoundService")
+sound.SoundGroup = music     -- the sound now plays at sound.Volume x 0.5
+```
+
+A group inside another group multiplies again (Master 0.5 > Music 0.8 > a Sound
+at 1 plays at 0.4). Volumes go from 0 to 10.
+
+**Effects** go inside a Sound or a SoundGroup (*Insert*, in the Sound section).
+Effects in a group change every sound in it. Each has **Enabled** and
+**Priority** (higher goes first; a Sound's own effects come before its group's):
+
+| Effect | What it does | Settings |
+| --- | --- | --- |
+| ReverbSoundEffect | a room or hall around the sound | DecayTime, Density, Diffusion, DryLevel, WetLevel |
+| EchoSoundEffect | repeats that fade away | Delay, Feedback, DryLevel, WetLevel |
+| EqualizerSoundEffect | louder or quieter lows, middles and highs | LowGain, MidGain, HighGain |
+| DistortionSoundEffect | crunchy, clipped sound | Level |
+| PitchShiftSoundEffect | higher or lower without speeding up | Octave (0.5 to 2) |
+| ChorusSoundEffect | a thicker, "many voices" sound | Depth, Mix, Rate |
+| CompressorSoundEffect | evens out loud and quiet parts | Attack, GainMakeup, Ratio, Release, Threshold |
+| FlangeSoundEffect | a sweeping jet-plane whoosh | Depth, Mix, Rate |
+| TremoloSoundEffect | the volume pulses | Depth, Duty, Frequency |
+
+They start with the same settings as Roblox's, are saved with the game,
+copied to everyone in online games, and come along when you open or export a
+Roblox file. Not done: the Compressor's **SideChain** (ducking one sound under
+another) isn't there yet, and the Reverb is a simple made-up room rather than a
+recorded one.
 
 ### Climbing and swimming
 
@@ -2434,6 +2506,19 @@ is left running:
 ```
 python3 tools/test_multiplayer.py            # --players 3 --seconds 40 to change it
 ```
+
+Some engine features have a check script that runs inside a play test with no
+screen (after building, Linux, needs `xvfb-run`). Each prints `PASS`/`FAIL`
+lines and a `DONE (N failed)` line:
+
+```
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_messaging.lua)" --screenshot /tmp/m.png --frames 1500
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_sound_groups.lua)" --screenshot /tmp/s.png --frames 600
+```
+
+To check messages reach *another* running server, start a second copy first with
+`--test-command "MESSAGING_PARTNER = true $(cat tools/test_messaging.lua)"` and
+`--frames 2400` (it waits around to answer); the first copy then also checks it hears the partner.
 
 ## Building by hand
 

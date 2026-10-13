@@ -1643,10 +1643,11 @@ int l_msgTake(lua_State* L) {
     return 1;
 }
 
-// __gb_soundMix(sound [, frequency]) -> volume, { effect class names in order }, loudness
+// __gb_soundMix(sound [, frequency]) -> volume, { effect class names in order }, loudness, pitch
 // For checks (tools/test_sound_groups.lua): how loud a Sound really plays (its Volume times its
 // groups'), which effects it goes through, and - with a frequency - how loud a test tone
-// comes out of those effects compared to going in (1 = the same; the last half second).
+// comes out of those effects compared to going in (1 = the same; the last half second) and
+// at what pitch (Hz).
 int l_soundMix(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
     if (!n->isSound()) return luaL_error(L, "__gb_soundMix needs a Sound");
@@ -1665,7 +1666,11 @@ int l_soundMix(lua_State* L) {
         return std::sqrt(sum / std::max<size_t>(1, v.size() - from));
     };
     lua_pushnumber(L, rms(out) / std::max(1e-9, rms(in)));
-    return 3;
+    // Its pitch, from how often it crosses zero (the last half second).
+    int crossings = 0;
+    for (size_t i = out.size() * 3 / 4 + 1; i < out.size(); ++i) crossings += (out[i - 1] < 0.0f) != (out[i] < 0.0f);
+    lua_pushnumber(L, crossings / (2.0 * seconds / 4.0));
+    return 4;
 }
 
 // __gb_awardBadge(playerName, badgeId): the app sends it to the server.

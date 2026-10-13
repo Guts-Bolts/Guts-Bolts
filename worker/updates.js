@@ -10,6 +10,32 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'echo-chamber', name: 'Echo Chamber', time: 1791885600, tag: 'Engine',
+    summary: 'Sound groups turn whole sets of sounds up or down at once, and nine sound effects make them echo, ring, wobble and crunch.',
+    items: [
+      'SoundGroup: put one in SoundService and set a Sound\'s SoundGroup to it. The group\'s Volume multiplies the sound\'s, so one slider turns all the music or all the footsteps up or down',
+      'Groups inside groups multiply again, so a Master group can sit over Music and Effects',
+      'Sound effects to put inside a Sound or a SoundGroup: Reverb, Echo, Equalizer, Distortion, Pitch Shift, Chorus, Compressor, Flange and Tremolo',
+      'Each effect has Enabled and Priority (higher goes first) and its own settings, like DecayTime, Delay, Feedback, HighGain, Level and Octave',
+      'Effects in a SoundGroup work on all of its sounds mixed together, so a reverb or compressor treats the whole group as one',
+      'Find them under Insert Object > Sound in Studio, change them in Properties (with a Preview button), and change them from scripts while the game runs',
+      'They save with your game, show up for everyone in multiplayer, and come along when you open or save .rbxl / .rbxm files',
+      'Not done yet: the compressor\'s SideChain setting',
+    ],
+  },
+  {
+    id: 'crosstalk', name: 'Crosstalk', time: 1791882000, tag: 'Engine',
+    summary: 'MessagingService lets every running server of your game talk to the others: global announcements, cross-server events and more.',
+    items: [
+      'MessagingService:PublishAsync(topic, message) sends a message to every server of the same game that\'s running right now, including the one that sent it',
+      'MessagingService:SubscribeAsync(topic, function(msg) ... end) listens for a topic. msg.Data is what was sent and msg.Sent is when. Call :Disconnect() on what it gives back to stop',
+      'Other games never see your messages',
+      'Topics can be up to 80 letters and a message up to 1 KB. A server can send 150 messages a minute plus 60 for each player, and listen to 20 topics plus 8 for each player. Going over gives a clear error',
+      'In Studio\'s play test and multiplayer test it works between the servers running on your computer, so you can try it before publishing',
+      'Online, the messages go through the Guts&Bolts server, and only your game\'s own servers can send or read them',
+    ],
+  },
+  {
     id: 'party-of-one-no-more', name: 'Party of One No More', time: 1791838800, tag: 'Studio',
     summary: 'Studio can test your game with 2, 3 or 4 players at once, all on your own computer, no friends needed.',
     items: [

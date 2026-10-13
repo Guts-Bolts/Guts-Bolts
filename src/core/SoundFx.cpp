@@ -163,13 +163,21 @@ private:
 };
 
 // --- Equalizer: three bands (below 400 Hz, 400-4000 Hz, above 4000 Hz), each louder or
-// quieter in decibels. The bands are split so that all at 0 dB is exactly the sound. ---------
+// quieter in decibels. Linkwitz-Riley crossovers split the bands so they add back up to the
+// whole sound (all at 0 dB changes nothing). ---------------------------------------------------
 class Equalizer : public Effect {
 public:
     Equalizer(int rate, int ch) : Effect(Type::Equalizer, rate, ch) {
-        for (Biquad* b : {&m_lo[0], &m_lo[1], &m_hi[0], &m_hi[1]}) b->channels(ch);
-        for (Biquad& b : m_lo) b.lowpass(400.0f, m_rate);
-        for (Biquad& b : m_hi) b.highpass(std::min(4000.0f, m_rate * 0.45f), m_rate);
+        const float top = std::min(4000.0f, m_rate * 0.45f);
+        for (int i = 0; i < 2; ++i) {
+            for (Biquad* b : {&m_lo[i], &m_hi[i], &m_midLo[i], &m_midHi[i], &m_apLo[i], &m_apHi[i]}) b->channels(ch);
+            m_lo[i].lowpass(400.0f, m_rate);
+            m_hi[i].highpass(400.0f, m_rate);
+            m_midLo[i].lowpass(top, m_rate);
+            m_midHi[i].highpass(top, m_rate);
+            m_apLo[i].lowpass(top, m_rate);    // (the low band goes through the 4000 Hz split too,
+            m_apHi[i].highpass(top, m_rate);   //  so it stays in step with the other two)
+        }
     }
     void set(const Settings& s) override {
         m_high = dbToGain(std::clamp(s.v[0], -80.0f, 10.0f));
@@ -177,18 +185,21 @@ public:
         m_mid  = dbToGain(std::clamp(s.v[2], -80.0f, 10.0f));
     }
     void process(float* x, uint32_t frames) override {
+        if (m_low == 1.0f && m_mid == 1.0f && m_high == 1.0f) return;
         for (uint32_t f = 0; f < frames; ++f)
             for (int c = 0; c < m_ch; ++c) {
                 float& s = x[f * m_ch + c];
-                const float low = m_lo[1].run(c, m_lo[0].run(c, s));    // (two in a row: a steep split)
-                const float high = m_hi[1].run(c, m_hi[0].run(c, s));
-                const float mid = s - low - high;
-                s = low * m_low + mid * m_mid + high * m_high;
+                const float low = m_lo[1].run(c, m_lo[0].run(c, s));     // (two in a row: a steep split)
+                const float rest = m_hi[1].run(c, m_hi[0].run(c, s));
+                const float mid = m_midLo[1].run(c, m_midLo[0].run(c, rest));
+                const float high = m_midHi[1].run(c, m_midHi[0].run(c, rest));
+                const float lowInStep = m_apLo[1].run(c, m_apLo[0].run(c, low)) + m_apHi[1].run(c, m_apHi[0].run(c, low));
+                s = lowInStep * m_low + mid * m_mid + high * m_high;
             }
     }
 
 private:
-    Biquad m_lo[2], m_hi[2];
+    Biquad m_lo[2], m_hi[2], m_midLo[2], m_midHi[2], m_apLo[2], m_apHi[2];
     float  m_low = 1.0f, m_mid = 1.0f, m_high = 1.0f;
 };
 
