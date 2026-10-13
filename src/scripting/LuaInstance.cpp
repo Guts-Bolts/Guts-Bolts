@@ -1824,6 +1824,11 @@ int inst_newindex(lua_State* L) {
     if (n->kind == NodeKind::Script) {
         if (is(k, "Enabled"))  { LuaApi::engine(L)->setScriptEnabled(n, lua_toboolean(L, 3)); return 0; }
         if (is(k, "Disabled")) { LuaApi::engine(L)->setScriptEnabled(n, !lua_toboolean(L, 3)); return 0; }
+        if (is(k, "Source")) {   // like Roblox: Studio's command bar and plugins may, game scripts may not
+            if (E(L)->currentScript()) return luaL_error(L, "Source can only be set from the command bar or a plugin");
+            n->source = luaL_checkstring(L, 3);
+            return 0;
+        }
     }
     if (n->kind == NodeKind::FluidSystem) {
         if (is(k, "Color"))          { n->color = LuaApi::checkColor3(L, 3); return 0; }
@@ -1959,9 +1964,10 @@ int inst_new(lua_State* L) {
     PrimitiveType shape;
     if (cls == "Model" || cls == "Folder") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Model);
-    } else if (cls == "Script" || cls == "LocalScript") {
+    } else if (cls == "Script" || cls == "LocalScript" || cls == "ModuleScript") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Script);
         n->isLocal = cls == "LocalScript";
+        n->isModule = cls == "ModuleScript";
     } else if (cls == "RemoteEvent" || cls == "RemoteFunction") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Remote);
         n->remoteFunction = cls == "RemoteFunction";

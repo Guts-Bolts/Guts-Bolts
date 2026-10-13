@@ -177,6 +177,7 @@ public:
     // ---- used by the Lua bindings --------------------------------------------
     Scene*     scene() { return m_scene; }
     double     time() const { return m_time; }
+    uint64_t   currentScript() const { return m_current; }   // the Script running now (0 = the command bar, a plugin)
     SceneNode* resolve(uint64_t id);                 // scene or detached (Parent = nil)
     SceneNode* adopt(std::unique_ptr<SceneNode> n);  // new object with Parent = nil
     bool       setParent(SceneNode* node, SceneNode* newParent, std::string& err);
