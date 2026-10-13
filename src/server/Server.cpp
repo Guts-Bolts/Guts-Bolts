@@ -136,7 +136,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies",
                                                     "get", "servers.play", "relay.host", "relay.join", "product.pending", "product.grant"};
     if (me.userId == 0 && opName != "hello" && opName != "ping" && opName.rfind("account.", 0) != 0 &&
-        !kLookOnly.count(opName))
+        !kLookOnly.count(opName) && opName != "support.send" && opName != "support.mine")
         return fail("Sign up or log in first.");
     out = &me;
     return nullptr;
@@ -515,6 +515,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         json r = okay(); r["users"] = list; return r;
     }
     if (name.rfind("account.", 0) == 0) return accountOp(name, me, args);
+    if (name.rfind("support.", 0) == 0) return supportOp(name, me, args);
     if (name.rfind("groups.", 0) == 0) return groupOp(name, me, args);
     if (name.rfind("forum.", 0) == 0) return forumOp(name, me, args);
     if (name.rfind("friends.", 0) == 0 || name.rfind("follow.", 0) == 0) return friendOp(name, me, args);
@@ -676,6 +677,16 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             json r = okay(); r["reports"] = reportsJson(str("status") == "closed" ? "closed" : "open"); return r;
         }
         if (name == "admin.closeReport") return closeReport(me, str("id"), str("outcome"));
+        if (name == "admin.tickets") {
+            json r = okay(); r["tickets"] = ticketsJson(str("status") == "closed" ? "closed" : "open"); return r;
+        }
+        if (name == "admin.replyTicket" || name == "admin.ticketReset" || name == "admin.closeTicket") return ticketAdminOp(name, me, args);
+        if (name == "admin.mailStatus") {   // (the Staff page's Email box)
+            json r = okay();
+            r["mail"] = {{"service", ""}, {"from", ""}, {"on", false}, {"problem", "This server can't send email."}, {"last", nullptr}};
+            return r;
+        }
+        if (name == "admin.mailTest") return fail("This server can't send email.");
         // Featured games (worker/server.js has the same): staff pick games for the Featured row.
         if (name == "admin.feature") {
             auto it = findAsset(str("id"));
