@@ -380,7 +380,7 @@ What you can use:
 - **Objects:** `workspace`, `script`, `Instance.new("Part" | "Ball" | "Cylinder" | "Model" | "PointLight" | "SpotLight", parent)`,
   `:FindFirstChild`, `:WaitForChild`, `:GetChildren`, `:GetDescendants`, `:Clone`, `:Destroy`, `:IsA`
 - **Part properties:** `Name`, `Parent`, `Position`, `Orientation`, `Size`, `CFrame`, `Color`, `Transparency`,
-  `Material`, `Shape`, `Anchored`, `CanCollide`, `Velocity`
+  `Material`, `Shape`, `Anchored`, `CanCollide`, `CollisionGroup`, `Velocity`
 - **Values:** `Vector3.new`, `Color3.new` / `fromRGB` / `fromHSV` / `fromHex`, `CFrame.new` / `Angles` / `lookAt`
 - **Time:** `wait(seconds)`, `spawn(fn)`, `delay(seconds, fn)`, `time()`, `tick()`
 - **Events:** `part.Touched`, `part.Clicked`, `RunService.Heartbeat`, `UserInputService.InputBegan` / `InputEnded`,
@@ -398,6 +398,8 @@ What you can use:
   `Effects.Sparks(...)`
 - **Physics:** `part:ApplyImpulse(v)`, `AssemblyLinearVelocity`, `AssemblyAngularVelocity`, `Density`,
   `Friction`, `Elasticity`, and constraint properties such as `rope.Length` or `hinge.AngularVelocity`
+- **Collision groups:** `PhysicsService:RegisterCollisionGroup`, `CollisionGroupSetCollidable` and
+  `part.CollisionGroup` (see *Collision groups* below)
 - **Sound:** `Sounds.Play("coin", position)` (built in: jump, coin, oof, explosion, splat, click, hit, win,
   boing, spawn) or a Sound object with `:Play()` / `:Stop()`
 - **Attributes:** `obj:SetAttribute("Damage", 25)`, `obj:GetAttribute("Damage")`, `obj:GetAttributes()`,
@@ -412,7 +414,8 @@ What you can use:
 - **Game rules:** `workspace.Gravity`, `workspace.DeathStyle = "Classic" | "Ragdoll"`, `workspace.Gore = "Off" | "Oil" | "Blood"`
 - **Rays:** `workspace:Raycast(origin, direction, params)` gives back `Instance`, `Position`, `Normal` and
   `Distance` (or nil). `RaycastParams.new()` with `FilterDescendantsInstances` and `FilterType`
-  (`Exclude` / `Include`). The old `Ray.new` + `workspace:FindPartOnRay(ray, ignore)` works too, and
+  (`Exclude` / `Include`), `CollisionGroup` (the ray skips parts that group passes through) and
+  `RespectCanCollide`. The old `Ray.new` + `workspace:FindPartOnRay(ray, ignore)` works too, and
   `workspace:GetPartBoundsInRadius(position, radius)` finds parts near a point
 - **Tweens:** `TweenService:Create(part, TweenInfo.new(2, Enum.EasingStyle.Bounce), { Position = ... }):Play()`
   smoothly changes numbers, `Vector3`, `Color3`, `CFrame`, `UDim2` and `Vector2` properties. Every easing
@@ -1387,6 +1390,67 @@ settings). In an online game, a Script on the host can change a player's
 
 ```
 xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_camera.lua)" --screenshot /tmp/camera.png --frames 900
+```
+
+### Collision groups
+
+Collision groups decide which parts bump into which, like Roblox's
+PhysicsService. Every part is in one group (`part.CollisionGroup`, **Default**
+to start with), and a table says which groups collide. Two groups that don't
+collide pass straight through each other: loose parts falling, characters
+walking, and raycasts that ask for a group.
+
+```lua
+local PhysicsService = game:GetService("PhysicsService")
+
+-- Players walk through each other (but not through walls).
+PhysicsService:RegisterCollisionGroup("Players")
+PhysicsService:CollisionGroupSetCollidable("Players", "Players", false)
+local function joinGroup(player)   -- (a character keeps its group when it respawns)
+    for _, part in ipairs(player.Character:GetDescendants()) do
+        if part:IsA("BasePart") then part.CollisionGroup = "Players" end
+    end
+end
+for _, player in ipairs(game.Players:GetPlayers()) do joinGroup(player) end
+game.Players.PlayerAdded:Connect(joinGroup)
+
+-- A door only the red team walks through.
+PhysicsService:RegisterCollisionGroup("RedTeam")
+PhysicsService:RegisterCollisionGroup("RedDoor")
+PhysicsService:CollisionGroupSetCollidable("RedTeam", "RedDoor", false)
+workspace.RedDoor.CollisionGroup = "RedDoor"
+```
+
+- `RegisterCollisionGroup(name)`, `UnregisterCollisionGroup(name)`,
+  `RenameCollisionGroup(old, new)` (its parts move to the new name),
+  `IsCollisionGroupRegistered(name)`, `GetRegisteredCollisionGroups()` (a list of
+  `{ name, id, mask }`), `CollisionGroupSetCollidable(a, b, true/false)`,
+  `CollisionGroupsAreCollidable(a, b)` and `GetMaxCollisionGroups()` (32,
+  Default included). A new group collides with everything until you say
+  otherwise. The older `CreateCollisionGroup`, `GetCollisionGroupId`,
+  `SetPartCollisionGroup` and `part.CollisionGroupId` work too.
+- Mistakes are errors that say what's wrong: an unknown group in
+  `CollisionGroupSetCollidable`, a 33rd group, renaming or unregistering Default,
+  a name that isn't a string (or is empty, or over 100 characters).
+- A part in a group that isn't registered (or was unregistered) acts as Default.
+- A character is in its **HumanoidRootPart**'s group (or its Torso's). The
+  terrain is in Default.
+- `RaycastParams.CollisionGroup` (Default to start with) makes a ray skip what
+  that group passes through; `RespectCanCollide = true` skips CanCollide-off parts.
+- Touched still fires between parts that pass through each other.
+
+In Studio, **MODEL > Collision Groups** (or **View > Collision Groups**) opens a
+small window: add, rename (double-click) and delete groups, and tick or untick
+the grid to say which pairs collide. Pick a part's group with **Collision Group**
+in Properties. The groups are saved with the place, sent to everyone who joins
+(and again when a script changes them), and read from Roblox files (the
+Workspace's groups and each part's `CollisionGroup` or `CollisionGroupId`);
+Export to Roblox writes them back.
+
+`tools/test_collision_groups.lua` checks all of this in a real play test:
+
+```
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_collision_groups.lua)" --screenshot /tmp/groups.png --frames 1500
 ```
 
 ### Controllers

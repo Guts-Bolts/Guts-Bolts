@@ -152,6 +152,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             s["transparency"] = n->transparency;
             s["anchored"] = n->anchored;
             s["can_collide"] = n->canCollide;
+            if (n->collisionGroup != "Default") s["collision_group"] = n->collisionGroup;
         } else if (n->isScript()) {
             s["enabled"] = n->enabled;
             s["lines"] = (int)std::count(n->source.begin(), n->source.end(), '\n') + (n->source.empty() ? 0 : 1);

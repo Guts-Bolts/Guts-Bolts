@@ -34,10 +34,12 @@ const char* const kWords[] = {
     "NotProcessedYet", "UserOwnsGamePassAsync", "PromptGamePassPurchase",
     "TeleportService", "TeleportOptions", "Teleport", "TeleportAsync", "TeleportPartyAsync", "SetTeleportData", "GetJoinData",
     "GetLocalPlayerTeleportData",
+    "PhysicsService", "RegisterCollisionGroup", "UnregisterCollisionGroup", "RenameCollisionGroup", "IsCollisionGroupRegistered",
+    "GetRegisteredCollisionGroups", "CollisionGroupSetCollidable", "CollisionGroupsAreCollidable", "GetMaxCollisionGroups",
     "game:GetService", "Players.LocalPlayer", "RunService.Heartbeat", "UserInputService.InputBegan",
     // Members
     "Parent", "Name", "ClassName", "Position", "Orientation", "Size", "CFrame", "Color", "Transparency", "Material",
-    "Anchored", "CanCollide", "Velocity", "AssemblyLinearVelocity", "AssemblyAngularVelocity", "Shape",
+    "Anchored", "CanCollide", "CollisionGroup", "RespectCanCollide", "Velocity", "AssemblyLinearVelocity", "AssemblyAngularVelocity", "Shape",
     "Touched", "Clicked", "Heartbeat", "Died", "Humanoid", "Health", "MaxHealth", "WalkSpeed", "JumpPower", "Character",
     "Connect", "Once", "Wait", "Disconnect", "FindFirstChild", "FindFirstChildOfClass", "WaitForChild", "GetChildren",
     "GetDescendants", "Destroy", "Clone", "IsA", "IsDescendantOf", "GetFullName", "GetPivot", "PivotTo",
