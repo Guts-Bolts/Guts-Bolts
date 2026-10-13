@@ -991,6 +991,48 @@ struct Converter {
                 g.bgTransparency = (float)in.num("Transparency", 0.0);
                 node->enabled = in.flag("Enabled", true);
             }
+            if (gt == GuiType::UIGradient) {
+                if (const Value* v = in.get("Color"); v && v->kind == Value::ColorSeq && v->seq.size() >= 4) {
+                    g.gradColor.clear();
+                    for (size_t k = 0; k + 4 <= v->seq.size() && g.gradColor.size() < 20; k += 4)
+                        g.gradColor.push_back({std::clamp(v->seq[k], 0.0f, 1.0f), glm::clamp(glm::vec3(v->seq[k + 1], v->seq[k + 2], v->seq[k + 3]), 0.0f, 1.0f)});
+                }
+                if (const Value* v = in.get("Transparency"); v && v->kind == Value::NumSeq && v->seq.size() >= 2) {
+                    g.gradTransparency.clear();
+                    for (size_t k = 0; k + 2 <= v->seq.size() && g.gradTransparency.size() < 20; k += 2)
+                        g.gradTransparency.push_back({std::clamp(v->seq[k], 0.0f, 1.0f), std::clamp(v->seq[k + 1], 0.0f, 1.0f)});
+                }
+                f("Rotation", g.gradRotation);
+                if (const Value* v = in.get("Offset"); v && v->kind == Value::Vec2) g.gradOffset = {v->q.x, v->q.y};
+                node->enabled = in.flag("Enabled", true);
+            }
+            if (gt == GuiType::UIScale) g.scale = std::clamp((float)in.num("Scale", 1.0), 0.0f, 100.0f);
+            if (gt == GuiType::UIAspectRatioConstraint) {
+                g.aspectRatio = std::clamp((float)in.num("AspectRatio", 1.0), 0.001f, 1000.0f);
+                g.aspectType = (int)in.num("AspectType", 0) == 1 ? 1 : 0;       // FitWithinMaxSize 0, ScaleWithParentSize 1
+                g.dominantAxis = (int)in.num("DominantAxis", 0) == 1 ? 1 : 0;   // Width 0, Height 1
+            }
+            if (gt == GuiType::ViewportFrame) {   // (CurrentCamera is linked in linkRefs)
+                col("Ambient", g.ambient);
+                col("LightColor", g.lightColor);
+                if (const Value* v = in.get("LightDirection"); v && v->kind == Value::Vec3) g.lightDir = v->v;
+                col("ImageColor3", g.imageColor);
+                f("ImageTransparency", g.imageTransparency);
+            }
+        } else if (c == "Camera" && parent && (parent->isViewportFrame() || parent->inViewportFrame())) {
+            // A ViewportFrame's camera (the Workspace's own Camera isn't kept: each player has theirs).
+            node = std::make_unique<SceneNode>(name, NodeKind::Camera);
+            glm::vec3 pos(0.0f);
+            glm::mat3 rot(1.0f);
+            if (const Value* v = in.get("CFrame"); v && v->kind == Value::CFrame) { pos = v->v * kImportScale; rot = v->r; }
+            place(*node, parent, pos, rot, glm::vec3(1.0f));
+            node->fieldOfView = std::clamp((float)in.num("FieldOfView", 70.0), 1.0f, 120.0f);
+            ++report.other;
+        } else if (c == "WorldModel") {   // (a Model in a ViewportFrame)
+            node = std::make_unique<SceneNode>(name, NodeKind::Model);
+            Attribute a; a.name = "RobloxClass"; a.type = Attribute::String; a.s = c;
+            node->attributes.push_back(a);
+            ++report.models;
         } else if (c == "Decal" || c == "Texture") {
             node = std::make_unique<SceneNode>(name, NodeKind::Decal);
             node->texture = in.str("Texture");   // rbxassetid:// links won't load here, but are kept
@@ -1314,6 +1356,12 @@ struct Converter {
                     if (auto it = byRef.find(v->ref); it != byRef.end()) node->highlight.adornee = it->second->id;
                 continue;
             }
+            if (node->isViewportFrame()) {   // (its CurrentCamera)
+                const Value* v = inst->get("CurrentCamera");
+                if (v && v->kind == Value::Ref)
+                    if (auto it = byRef.find(v->ref); it != byRef.end() && it->second->isCamera()) node->gui.camera = it->second->id;
+                continue;
+            }
             if (!node->isConstraint() && !node->isMover()) continue;
             auto ref = [&](const char* a, const char* b) -> uint64_t {
                 const Value* v = inst->get(a);
@@ -1442,7 +1490,12 @@ struct XmlWriter {
         const char* cls = nullptr;
         switch (n.kind) {
             case NodeKind::Part:       cls = n.name == "SpawnLocation" ? "SpawnLocation" : "Part"; break;
-            case NodeKind::Model:      cls = "Model"; break;
+            case NodeKind::Model: {
+                const Attribute* rc = n.findAttribute("RobloxClass");
+                cls = rc && rc->type == Attribute::String && rc->s == "WorldModel" ? "WorldModel" : "Model";
+                break;
+            }
+            case NodeKind::Camera:     cls = "Camera"; break;
             case NodeKind::Script:     cls = n.isModule ? "ModuleScript" : n.isLocal ? "LocalScript" : "Script"; break;
             case NodeKind::Remote:     cls = n.remoteFunction ? "RemoteFunction" : "RemoteEvent"; break;
             case NodeKind::Prompt:     cls = "ProximityPrompt"; break;
@@ -1563,6 +1616,24 @@ struct XmlWriter {
             }
             if (g.type == GuiType::UIStroke) { color3("Color", g.borderColor); flt("Thickness", g.thickness); flt("Transparency", g.bgTransparency); boolean("Enabled", n.enabled); break; }
             if (g.type == GuiType::UIShadow || g.type == GuiType::UIBlur) break;   // (ours; Roblox skips classes it doesn't know)
+            if (g.type == GuiType::UIGradient) {
+                std::ostringstream c, t;
+                for (const ColorKey& k : g.gradColor) c << k.t << " " << k.c.r << " " << k.c.g << " " << k.c.b << " 0 ";
+                for (const NumberKey& k : g.gradTransparency) t << k.t << " " << k.v << " 0 ";
+                o << "<ColorSequence name=\"Color\">" << c.str() << "</ColorSequence>\n";
+                o << "<NumberSequence name=\"Transparency\">" << t.str() << "</NumberSequence>\n";
+                flt("Rotation", g.gradRotation);
+                vec2("Offset", g.gradOffset);
+                boolean("Enabled", n.enabled);
+                break;
+            }
+            if (g.type == GuiType::UIScale) { flt("Scale", g.scale); break; }
+            if (g.type == GuiType::UIAspectRatioConstraint) {
+                flt("AspectRatio", g.aspectRatio);
+                token("AspectType", g.aspectType);
+                token("DominantAxis", g.dominantAxis);
+                break;
+            }
             auto udim = [&](const char* k, float s, float off) {
                 o << "<UDim name=\"" << k << "\"><S>" << s << "</S><O>" << (int)std::lround(off) << "</O></UDim>\n";
             };
@@ -1633,6 +1704,22 @@ struct XmlWriter {
                 flt("ImageTransparency", g.imageTransparency);
             }
             if (g.type == GuiType::TextButton || g.type == GuiType::ImageButton) boolean("AutoButtonColor", g.autoButtonColor);
+            if (g.type == GuiType::ViewportFrame) {
+                refProp("CurrentCamera", g.camera);
+                color3("Ambient", g.ambient);
+                color3("LightColor", g.lightColor);
+                vec3("LightDirection", g.lightDir);
+                color3("ImageColor3", g.imageColor);
+                flt("ImageTransparency", g.imageTransparency);
+            }
+            break;
+        }
+        case NodeKind::Camera: {
+            const glm::mat4 w = n.worldMatrix();
+            glm::mat3 rot;
+            for (int i = 0; i < 3; ++i) rot[i] = glm::normalize(glm::vec3(w[i]));
+            cframe("CFrame", glm::vec3(w[3]) * kExportScale, rot);
+            flt("FieldOfView", n.fieldOfView);
             break;
         }
         case NodeKind::Decal:

@@ -1053,6 +1053,22 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         sp->color = {0.25f, 0.6f, 1.0f};
     }
     else if (what == "Model" || what == "Folder") put(std::make_unique<SceneNode>(what, NodeKind::Model));
+    else if (what == "WorldModel") {   // a Model for inside a ViewportFrame
+        auto m = std::make_unique<SceneNode>(what, NodeKind::Model);
+        Attribute cls; cls.name = "RobloxClass"; cls.type = Attribute::String; cls.s = "WorldModel";
+        m->attributes.push_back(cls);
+        put(std::move(m));
+    }
+    else if (what == "Camera") {
+        // A camera for a ViewportFrame: in the selected one (it becomes its CurrentCamera),
+        // a little back from the middle, looking at it.
+        auto cam = std::make_unique<SceneNode>("Camera", NodeKind::Camera);
+        cam->transform.position = {0.0f, 1.5f, -6.0f};
+        cam->transform.rotation = {-10.0f, 180.0f, 0.0f};
+        const bool inFrame = parent && parent->isViewportFrame();
+        SceneNode* c = put(std::move(cam));
+        if (inFrame && !parent->gui.camera) parent->gui.camera = c->id;
+    }
     else if (what == "Team") {
         // Teams live in a folder called Teams (Roblox's Teams service). A Team has a
         // colour; players join the AutoAssignable ones and spawn on SpawnLocations
@@ -1259,6 +1275,8 @@ const std::vector<InsertItem>& insertItems() {
         {"UIShadow", Icons::Id::GuiCorner}, {"UIBlur", Icons::Id::GuiCorner},
         {"TextBox", Icons::Id::GuiText}, {"ScrollingFrame", Icons::Id::GuiFrame}, {"UIListLayout", Icons::Id::GuiCorner},
         {"UIGridLayout", Icons::Id::GuiCorner}, {"UIPadding", Icons::Id::GuiCorner},
+        {"UIGradient", Icons::Id::GuiCorner}, {"UIScale", Icons::Id::GuiCorner}, {"UIAspectRatioConstraint", Icons::Id::GuiCorner},
+        {"ViewportFrame", Icons::Id::GuiViewport}, {"Camera", Icons::Id::Camera}, {"WorldModel", Icons::Id::Model},
         {"BillboardGui", Icons::Id::ScreenGui}, {"SurfaceGui", Icons::Id::ScreenGui},
         {"IntValue", Icons::Id::Value}, {"NumberValue", Icons::Id::Value}, {"StringValue", Icons::Id::Value}, {"BoolValue", Icons::Id::Value}};
     return list;

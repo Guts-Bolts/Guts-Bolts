@@ -51,6 +51,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::FluidEmitter: return "FluidEmitter";
         case NodeKind::Mover:        return kMoverClassNames[(int)n->mover.type];
         case NodeKind::Gui:        return kGuiClassNames[(int)n->gui.type];
+        case NodeKind::Camera:     return "Camera";
         case NodeKind::Sound:      return "Sound";
         case NodeKind::Attachment: return "Attachment";
         case NodeKind::Constraint: return "Constraint";
