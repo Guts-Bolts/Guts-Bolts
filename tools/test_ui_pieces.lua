@@ -88,7 +88,7 @@ task.spawn(function()
     check(near(s1.AbsoluteSize.X, 200) and near(s1.AbsoluteSize.Y, 160), "UIScale 2: 200 x 160", s1.AbsoluteSize)
     check(near(inner.AbsoluteSize.X, 120) and near(inner.AbsoluteSize.Y, 40), "what's inside is scaled too", inner.AbsoluteSize)
     check(near(inner.AbsolutePosition.X - s1.AbsolutePosition.X, 40), "and its Position offset", inner.AbsolutePosition.X - s1.AbsolutePosition.X)
-    check(near(s1.AbsolutePosition.Y + s1.AbsoluteSize.Y / 2, gui.AbsoluteSize.Y / 2), "it grows around its AnchorPoint")
+    check(near(s1.AbsolutePosition.Y + s1.AbsoluteSize.Y / 2, gui.AbsolutePosition.Y + gui.AbsoluteSize.Y / 2), "it grows around its AnchorPoint")
     check(not pcall(function() scale.Scale = -1 end), "a negative Scale is an error")
 
     -- 3. UIAspectRatioConstraint: half the screen's height tall, but always square.

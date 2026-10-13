@@ -131,7 +131,8 @@ const std::vector<Tool>& tools() {
           "Cylinder, Model, Folder, Script, LocalScript, ModuleScript, PointLight, SpotLight, Sound, SpawnLocation, "
           "TrussPart, Seat, Water, WaterSource, Attachment, ProximityPrompt, Highlight, Trail, Beam, Tool, Decal, Rig, "
           "RemoteEvent, RemoteFunction, IntValue/NumberValue/StringValue/BoolValue, ScreenGui, Frame, TextLabel, TextButton, "
-          "TextBox, ImageLabel, ScrollingFrame, BillboardGui, SurfaceGui, UICorner, UIStroke, UIListLayout, BodyVelocity, "
+          "TextBox, ImageLabel, ScrollingFrame, BillboardGui, SurfaceGui, UICorner, UIStroke, UIListLayout, UIGradient, UIScale, "
+          "UIAspectRatioConstraint, ViewportFrame, Camera, WorldModel, BodyVelocity, "
           "AlignPosition, VectorForce..., and ready-made things by name: \"Kill Brick\", \"Coin\", \"Jump Pad\", \"Exploding Barrel\", "
           "\"Zombie\", \"Moving Platform\", \"Lamp Post\"... (the same list as Studio's Insert Object window). It only creates the object: "
           "it does not position it, colour it or give it behaviour.",
@@ -630,6 +631,8 @@ Guts and Bolts is Roblox-style: there is no separate component system. What an o
 - Script -> Script (game server), LocalScript (each player's computer), ModuleScript (require()).
 - Particles -> no ParticleEmitter class. Scripts make effects with Effects.Sparks / Blood / Oil / Gibs, explosions with smoke and fire, Trails and Beams.
 - Camera -> no camera object to edit. Players' cameras follow their character (World settings can make it orthographic).
+- UI styling -> objects inside a Frame/label/button: UICorner, UIStroke, UIGradient (Color = ColorSequence, Transparency = NumberSequence, Rotation, Offset), UIScale (Scale: it and everything inside it), UIAspectRatioConstraint (AspectRatio = width/height, AspectType FitWithinMaxSize / ScaleWithParentSize, DominantAxis Width / Height).
+- 3D in UI -> a ViewportFrame shows the parts/models inside it as a picture, seen from its CurrentCamera (a Camera object made with Instance.new("Camera") inside it; none = it frames its contents). Ambient, LightColor, LightDirection light it. Its parts are not in the world (no physics, rays miss them).
 
 SCENE (place, game)
 One game = one tree under Workspace, saved as one file. Folders and Models group things. StarterGui holds screen UI; Teams holds Team objects.
