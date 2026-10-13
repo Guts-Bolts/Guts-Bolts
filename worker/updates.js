@@ -10,6 +10,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'undo-button-for-your-whole-game', name: 'The Undo Button for Your Whole Game', time: 1791889200, tag: 'Website',
+    summary: 'Publishing a game keeps its old versions now, and one click puts an old one back.',
+    items: [
+      'Every time you publish a game (from Studio, or with "New version" on the website), the version it replaces is kept',
+      'A new Version history box on your game\'s Configure page lists them: version number, date, who published it and its size',
+      'Restore puts an old version back as the newest version, so nothing is ever lost, not even the one you restored over',
+      'The newest 50 versions of each game are kept (up to 100 MB); older ones are cleared out, oldest first',
+      'Saving the same file again doesn\'t add a copy, and games you published before today start their history at version 1',
+      'Only the game\'s creator can see the list or restore. Studio\'s Publish window says which version you just published',
+    ],
+  },
+  {
     id: 'party-of-one-no-more', name: 'Party of One No More', time: 1791838800, tag: 'Studio',
     summary: 'Studio can test your game with 2, 3 or 4 players at once, all on your own computer, no friends needed.',
     items: [
