@@ -109,7 +109,7 @@ workspace:SetAttribute("LuauWords", words)
     check(back ~= nil and math.abs(back.Density - 0.5) < 1e-4 and math.abs(back.Friction - 0.1) < 1e-4 and
           math.abs(back.Elasticity - 0.9) < 1e-4 and back.FrictionWeight == 2 and back.ElasticityWeight == 3,
           "CustomPhysicalProperties reads back", back)
-    check(math.abs(part.Density - 0.5) < 1e-4 and math.abs(part:GetMass() - 0.5 * 8) < 0.05, "it changes the part's density and mass", part:GetMass())
+    check(math.abs(part.Density - 0.5) < 1e-4 and math.abs(part:GetMass() - 0.5 * part.Size.X * part.Size.Y * part.Size.Z) < 0.05, "it changes the part's density and mass", part:GetMass())
     local copy = part:Clone()   -- (copies go through the save format)
     local cb = copy.CustomPhysicalProperties
     check(cb ~= nil and math.abs(cb.Density - 0.5) < 1e-4 and cb.FrictionWeight == 2 and cb.ElasticityWeight == 3,

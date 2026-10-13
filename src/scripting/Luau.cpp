@@ -275,6 +275,18 @@ struct Rewriter {
                 if (isSym(t[e], ")") || isSym(t[e], "}") || isSym(t[e], "]")) --depth;
                 if (depth <= 0 && (t[e].newline || isSym(t[e], ";") || t[e].type == T::Comment)) break;
                 if (depth <= 0 && t[e].type == T::Name && (t[e].text == "end" || t[e].text == "else" || t[e].text == "elseif")) break;
+                // A name right after a finished value starts the next statement: n += 1 print(n)
+                if (depth <= 0 && t[e].type == T::Name && t[e].text != "and" && t[e].text != "or") {
+                    const long p = prev((long)e);
+                    if (p > (long)i) {
+                        const Tok& b = t[p];
+                        const bool done = b.type == T::Number || b.type == T::String || b.type == T::Interp ||
+                                          isSym(b, ")") || isSym(b, "]") || isSym(b, "}") ||
+                                          (b.type == T::Name && b.text != "and" && b.text != "or" && b.text != "not" &&
+                                           b.text != "function" && b.text != "return" && b.text != "local");
+                        if (done) break;
+                    }
+                }
             }
             // Keep trailing spaces outside the parentheses.
             size_t valEnd = e;

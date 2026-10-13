@@ -87,6 +87,7 @@ local playerMeta = {
     __index = function(t, k)
         if k == "PlayerGui" then return uiFolder() end
         if k == "GetJoinData" then return getJoinData end
+        if k == "Team" or k == "TeamColor" or k == "Neutral" then return rawget(t, "__" .. k) end
         return rawget(t, "__node")[k]
     end,
     __newindex = function(t, k, v)
@@ -96,16 +97,16 @@ local playerMeta = {
         if k == "TeamColor" then
             local team = teamByColor(v)
             if team then applyTeam(t, team) return end
-            rawset(t, "Team", nil)
-            rawset(t, "TeamColor", v)
-            rawset(t, "Neutral", false)
+            rawset(t, "__Team", nil)
+            rawset(t, "__TeamColor", v)
+            rawset(t, "__Neutral", false)
             setTeam(rawget(t, "Character"), false, nil, v)
             return
         end
         if k == "Neutral" then
             if v then applyTeam(t, nil) return end
-            rawset(t, "Neutral", false)
-            setTeam(rawget(t, "Character"), false, rawget(t, "Team"), rawget(t, "TeamColor"))
+            rawset(t, "__Neutral", false)
+            setTeam(rawget(t, "Character"), false, rawget(t, "__Team"), rawget(t, "__TeamColor"))
             return
         end
         rawset(t, k, v)
@@ -118,7 +119,7 @@ local function makePlayer(name, character, id)
     local added, removing = charSignals(character)
     return setmetatable({ Name = name, DisplayName = name, UserId = id, Character = character,
                           CharacterAdded = added, CharacterRemoving = removing,
-                          Neutral = true, TeamColor = Color3.new(1, 1, 1),
+                          __Neutral = true, __TeamColor = Color3.new(1, 1, 1),   -- (hidden: setting them runs __newindex)
                           __node = playerNode(name) }, playerMeta)
 end
 -- A game server machine plays nobody: no LocalPlayer, only the people who join.
@@ -160,21 +161,21 @@ function Teams:GetTeams()
 end
 function Teams:GetPlayersOnTeam(team)
     local t = {}
-    for _, p in ipairs(playerList) do if rawget(p, "Team") == team then t[#t + 1] = p end end
+    for _, p in ipairs(playerList) do if rawget(p, "__Team") == team then t[#t + 1] = p end end
     return t
 end
 -- Setting a player's team (player.Team = ...) also sets their TeamColor and Neutral, and
 -- tells the engine, which spawns them on their team's SpawnLocations (or Neutral ones).
 applyTeam = function(p, team)
     if team ~= nil then
-        rawset(p, "Team", team)
-        rawset(p, "TeamColor", team:GetAttribute("TeamColor") or rawget(p, "TeamColor"))
-        rawset(p, "Neutral", false)
+        rawset(p, "__Team", team)
+        rawset(p, "__TeamColor", team:GetAttribute("TeamColor") or rawget(p, "__TeamColor"))
+        rawset(p, "__Neutral", false)
     else
-        rawset(p, "Team", nil)
-        rawset(p, "Neutral", true)
+        rawset(p, "__Team", nil)
+        rawset(p, "__Neutral", true)
     end
-    setTeam(rawget(p, "Character"), rawget(p, "Neutral"), rawget(p, "Team"), rawget(p, "TeamColor"))
+    setTeam(rawget(p, "Character"), rawget(p, "__Neutral"), rawget(p, "__Team"), rawget(p, "__TeamColor"))
 end
 local function sameColor(a, b)
     return a ~= nil and b ~= nil and math.abs(a.R - b.R) + math.abs(a.G - b.G) + math.abs(a.B - b.B) < 0.03
@@ -200,9 +201,9 @@ end
 if LocalPlayer and not __gb_clientMode then autoTeam(LocalPlayer) end
 function __gb_hostTeam(team, neutral, color)
     if not LocalPlayer then return end
-    rawset(LocalPlayer, "Team", team)
-    rawset(LocalPlayer, "Neutral", neutral)
-    rawset(LocalPlayer, "TeamColor", color)
+    rawset(LocalPlayer, "__Team", team)
+    rawset(LocalPlayer, "__Neutral", neutral)
+    rawset(LocalPlayer, "__TeamColor", color)
 end
 -- A character touched a SpawnLocation with AllowTeamChangeOnTouch.
 function __gb_spawnTouched(character, color)
@@ -210,7 +211,7 @@ function __gb_spawnTouched(character, color)
     if team == nil then return end
     for _, p in ipairs(playerList) do
         if rawget(p, "Character") == character then
-            if rawget(p, "Team") ~= team then applyTeam(p, team) end
+            if rawget(p, "__Team") ~= team then applyTeam(p, team) end
             return
         end
     end
