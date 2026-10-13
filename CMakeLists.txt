@@ -18,6 +18,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerMain.cpp
     src/server/Server.cpp
     src/server/ServerGroups.cpp
+    src/server/ServerSupport.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
     src/server/ServerAccounts.cpp
