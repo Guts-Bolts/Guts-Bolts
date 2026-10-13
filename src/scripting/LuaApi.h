@@ -6,6 +6,7 @@ extern "C" {
 #include <lualib.h>
 }
 #include <cstdint>
+#include <string>
 #include <glm/glm.hpp>
 #include "../scene/NavMesh.h"
 
@@ -90,5 +91,10 @@ void       pushHumanoid(lua_State* L, uint64_t characterRootId);
 void       pushLighting(lua_State* L);
 void       pushCamera  (lua_State* L);                     // workspace.CurrentCamera (always the same one)
 void       pushValue   (lua_State* L, const SceneNode& valueObject);   // a Value object's .Value
+
+// Keys (ScriptEngine.cpp): Enum.KeyCode names <-> ImGuiKey numbers, with the UserInputType
+// ("Keyboard" / "Gamepad1"). Null / 0 when it isn't a key the engine knows.
+const char* keyCodeName(int imguiKey, const char** inputType = nullptr);
+int         keyFromName(const std::string& name, const char** inputType = nullptr);
 
 } // namespace LuaApi

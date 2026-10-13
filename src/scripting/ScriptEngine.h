@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <unordered_set>
 #include <vector>
+#include <glm/glm.hpp>
 
 struct lua_State;
 class Scene;
@@ -150,6 +151,31 @@ public:
     // server's copy of it: these swap them (unset: ids are the same everywhere).
     std::function<uint64_t(uint64_t)> idToServer, idFromServer;
 
+    // ContextActionService (key bindings; ScriptActions.cpp). Every key, mouse press and
+    // finger goes through the bound actions first, newest / highest priority first; an
+    // action that sinks it hides it from lower ones, from the game's own controls (ask
+    // inputSunk) and makes UserInputService's gameProcessedEvent true.
+    struct ActionButton {          // an action's round on-screen button (touch screens)
+        std::string name, title, image, description;
+        bool  hasPosition = false; // SetPosition: UDim2 on the game view, else stacked round the jump button
+        float xScale = 0, xOffset = 0, yScale = 0, yOffset = 0;
+        bool  pressed = false;
+    };
+    // A key, mouse button or finger, by its KeyCode and UserInputType names ("Space" /
+    // "Keyboard", "Unknown" / "MouseButton1"...); state is Begin / Change / End. True = sunk.
+    // UserInputService.InputBegan / InputEnded fire after, with gameProcessedEvent = sunk.
+    // key tells fingers apart ("Touch#3"); for keys and buttons it's the KeyCode / type.
+    bool input(const std::string& key, const std::string& keyCode, const std::string& inputType,
+               const char* state, glm::vec2 position);
+    bool touchInput(int finger, const char* state, glm::vec2 position);   // UserInputType Touch
+    bool inputSunk(int imguiKey) const;                  // a key the game's controls should ignore now
+    bool pointerDown(bool down, glm::vec2 position);     // MouseButton1 in the game view (true = sunk)
+    std::vector<ActionButton> actionButtons() const;     // the touch buttons to show, oldest first
+    void actionButtonInput(const std::string& name, bool down, glm::vec2 position);   // one was pressed / let go
+    // Tests (--test-command only): __gb_testInput pretends keys, clicks and touch buttons.
+    static bool s_testHooks;
+    bool takeTestClick() { bool c = m_testClick; m_testClick = false; return c; }
+
     GuiState& gui() { return m_gui; }
     void setPlayerName(const std::string& n) { m_playerName = n; }
     // A game server machine: nobody plays here, so there's no LocalPlayer (only people who join).
@@ -176,7 +202,8 @@ public:
     int        connectWaiter(SignalKind kind, uint64_t id, lua_State* thread);
     void       disconnect(int index);
     bool       connected(int index) const;
-    void       resume(lua_State* co, int ref, int nargs, lua_State* from = nullptr);
+    // result: the thread's first return value as text ("" for nil, or if it waited / failed).
+    void       resume(lua_State* co, int ref, int nargs, lua_State* from = nullptr, std::string* result = nullptr);
     void       schedule(lua_State* co, int ref, double delay, int startArgs);
     void       checkTimeout(lua_State* L);
     float&     clockTime();
@@ -272,4 +299,36 @@ private:
     std::string                             m_playerName = "Player";
     bool                                    m_noLocalPlayer = false;
     bool m_padSeen = false;   // a controller was plugged in (UserInputService.GamepadEnabled)
+
+    // ContextActionService (ScriptActions.cpp)
+    friend struct ActionLua;
+    struct ActionBinding {
+        std::string name;
+        int         fnRef = -2;
+        bool        touchButton = false;
+        std::vector<std::string> inputs;   // KeyCode / UserInputType names
+        int         priority = 2000;       // Enum.ContextActionPriority.Default
+        uint64_t    seq = 0;               // newer wins a tie
+        uint64_t    owner = 0;             // the LocalScript that bound it
+        ActionButton button;
+    };
+    void openActions();                                  // the Lua side
+    bool routeInput(const std::string& key, const std::string& keyCode, const std::string& inputType,
+                    const char* state, glm::vec2 position);
+    void unbindAction(const std::string& name, bool cancel);
+    void forgetActions(const std::unordered_set<uint64_t>& owners);   // their scripts stopped
+    std::string callAction(uint64_t seq, const char* state, const std::string& keyCode,
+                           const std::string& inputType, glm::vec2 position);
+    ActionBinding* findAction(const std::string& name);
+    ActionBinding* actionBySeq(uint64_t seq);
+    void updateActions();                                // keys / mouse let go while nobody looked
+    std::vector<ActionBinding>                 m_actions;
+    uint64_t                                   m_actionSeq = 0;
+    struct Held { std::string keyCode, inputType; std::vector<uint64_t> actions; };
+    std::map<std::string, Held>                m_holders;    // input -> the actions that got its Begin
+    std::set<std::string>                      m_sunk;       // inputs an action sank (until let go)
+    bool                                       m_pointerHeld = false;
+    struct TestInput { std::string kind, name; bool down; };
+    std::vector<TestInput>                     m_testInputs;
+    bool                                       m_testClick = false;
 };
