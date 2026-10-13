@@ -152,6 +152,66 @@ int runGame(const std::string& gameId, int max) {
     return 0;
 }
 
+// --- Studio's multiplayer test ----------------------------------------------
+//
+// Studio's "Test with N players" runs the open place here, on this computer, as a
+// local network server (the same one "Host on LAN" uses), and opens Player windows
+// that join it. Nothing goes through the Guts&Bolts server and no account is needed.
+// Everything printed (scripts' print / warn / errors) goes to stdout, which Studio
+// shows in its Output. Studio stops us when the test ends; if it doesn't (it
+// crashed), we close by ourselves once nobody has been here for a minute.
+
+int runLocalTest(const std::string& place, int port) {
+    Mesh::headless = true;
+    setUpImGui();
+    Scene scene;
+    GameSession session(&scene);
+    std::string err;
+    if (!Serializer::loadGameFile(scene, place, &err)) { say("Couldn't load " + place + ": " + err); return 1; }
+    if (Player* p = scene.player()) {   // nobody plays on the server itself
+        if (SceneNode* r = p->root()) scene.removeNode(r);
+        p->setRootId(0);
+    }
+    session.setRunOnly(true);
+    session.scripts().setNoLocalPlayer(true);
+    session.scripts().setPlayerName("Server");
+
+    NetServer server(&scene, &session);
+    server.setDedicated(true);
+    server.setOwner(Account::id());   // the test windows are this computer's account: they get the dev console
+    if (!server.start(port, err)) { say("Couldn't start the test server: " + err); return 1; }
+    session.start();
+    say("Test server running " + scene.info().title + " on port " + std::to_string(port));
+
+    constexpr double kStep = 1.0 / 60.0;
+    double next = seconds(), emptySince = seconds();
+    std::vector<std::string> here;   // who's in, to say who joins and leaves
+    while (true) {
+        ImGui::NewFrame();
+        server.update((float)kStep);
+        session.update((float)kStep, 0.0f, false);
+        for (auto& tp : session.scripts().takeTeleports())
+            say("Teleport: " + tp.player + " would go to " + tp.place + " (teleports don't work in a test)");
+        ImGui::EndFrame();
+
+        std::vector<std::string> now;
+        for (const PlayerEntry& e : server.players()) now.push_back(e.name);
+        for (const auto& n : now) if (std::find(here.begin(), here.end(), n) == here.end()) say(n + " joined the test");
+        for (const auto& n : here) if (std::find(now.begin(), now.end(), n) == now.end()) say(n + " left the test");
+        here = std::move(now);
+        if (!here.empty()) emptySince = seconds();
+        else if (seconds() - emptySince > kEmptyClose) { say("Nobody's here: closing the test server."); break; }
+
+        next += kStep;
+        const double wait = next - seconds();
+        if (wait > 0) std::this_thread::sleep_for(std::chrono::duration<double>(wait));
+        else if (wait < -0.5) next = seconds();
+    }
+    server.stop();
+    session.stop();
+    return 0;
+}
+
 // --- Waiting for games ------------------------------------------------------
 
 std::string quoted(const std::string& s) {
@@ -175,7 +235,7 @@ void startGame(const std::string& self, const std::string& gameId, int max) {
     if (!safeId(gameId)) return;
     const std::string cmd = quoted(self) + " --game " + gameId + " --max " + std::to_string(max);
     say("Starting game " + gameId);
-    std::thread([cmd] { (void)std::system(cmd.c_str()); }).detach();
+    std::thread([cmd] { if (std::system(cmd.c_str()) != 0) {} }).detach();   // (it says how it went itself)
 }
 
 int runPool(const std::string& self, int slots) {
@@ -223,19 +283,24 @@ int runPool(const std::string& self, int slots) {
 } // namespace
 
 int main(int argc, char** argv) {
-    std::string game;
-    int slots = 4, max = 12;
+    std::string game, place;
+    int slots = 4, max = 12, port = kDefaultPort;
     for (int i = 1; i < argc; ++i) {
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
         if (!std::strcmp(argv[i], "--game"))       game = next();
         else if (!std::strcmp(argv[i], "--slots")) slots = std::clamp(std::atoi(next()), 1, 50);
         else if (!std::strcmp(argv[i], "--max"))   max = std::atoi(next());
+        else if (!std::strcmp(argv[i], "--place")) place = next();
+        else if (!std::strcmp(argv[i], "--port"))  port = std::atoi(next());
         else if (!std::strcmp(argv[i], "--help") || !std::strcmp(argv[i], "-h")) {
             say("GutsAndBoltsGameServer [--slots N]   wait for games to run (up to N at once)\n"
-                "GutsAndBoltsGameServer --game <id>   run one game");
+                "GutsAndBoltsGameServer --game <id>   run one game\n"
+                "GutsAndBoltsGameServer --place <file> [--port N]   Studio's multiplayer test: run a game file\n"
+                "                                     on this computer's network (Player windows join it)");
             return 0;
         }
     }
+    if (!place.empty()) return runLocalTest(place, port > 0 && port < 65536 ? port : kDefaultPort);
     if (!game.empty()) return runGame(game, max);
     std::error_code ec;
     std::filesystem::path self = std::filesystem::canonical(argv[0], ec);

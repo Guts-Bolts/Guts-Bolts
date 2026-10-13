@@ -269,6 +269,34 @@ const std::vector<Tool>& tools() {
           "playtest start -> get_output / get_errors / screenshot / get_object (runtime) -> playtest stop -> fix -> repeat.",
           "\"Play the game and tell me if the door works.\""},
          schema({{"action", {{"type", "string"}, {"enum", {"start", "simulate", "stop", "pause", "resume", "step"}}}}}, {"action"})},
+        {"multiplayer_test", "Test with several players", "RUNTIME", false, false, false, Risk::Medium,
+         {"Studio's \"Test with N players\": starts the game (as it is now in Studio, saved or not) on a local test "
+          "server on this computer and opens N Player windows that join it as Player1, Player2... Server Scripts run "
+          "on the test server, LocalScripts run in each player's window, and RemoteEvents / RemoteFunctions really go "
+          "between them. Everything the server and each player print is collected (output) and also shows in Studio's "
+          "Output as [Server] / [Player1] lines. Stopping closes the server and every window.",
+          "\"Test it with 2 players\", \"does the RemoteEvent reach the clients?\", \"check the LocalScript\", "
+          "\"what happens when someone joins / leaves\", anything about multiplayer, PlayerAdded, FireClient / "
+          "FireAllClients / FireServer, or leaderstats with more than one person.",
+          "For a quick single-player check use playtest (it's faster and lets you inspect objects while it runs). "
+          "This tool can't move the test players or read objects inside the test: check things with print() in "
+          "your scripts and read them back with action output.",
+          "action (required): start, stop, status, output or add_player. players (start: 2-4, default 2). "
+          "lines (output: how many, default 60, max 400). from (output: only \"Server\" or \"Player1\"... default everyone).",
+          "{running, ready (the server has loaded the game; players join after this), port, server, players: "
+          "[{name, running}], output: [{from, level, text, time}] (output and status)}.",
+          "None. It uses the game as it is in Studio right now; a running playtest is stopped first.",
+          "start: a test server and N windows on this computer (players join a few seconds later; check with status "
+          "or output). stop: all of them are closed. Edits made in Studio during the test don't reach it: stop and "
+          "start again.",
+          "create_script (Script + LocalScript + RemoteEvent) -> multiplayer_test start -> wait a few seconds -> "
+          "multiplayer_test output (look for each player's lines and errors) -> multiplayer_test stop -> fix -> repeat.",
+          "\"Test my game with 3 players.\" \"Does everyone get the round message?\" \"Stop the multiplayer test.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"start", "stop", "status", "output", "add_player"}}}},
+                 {"players", {{"type", "integer"}, {"minimum", 2}, {"maximum", 4}, {"description", "start: how many player windows (default 2)"}}},
+                 {"lines", {{"type", "integer"}, {"minimum", 1}, {"maximum", 400}, {"description", "output: how many lines (default 60)"}}},
+                 {"from", {{"type", "string"}, {"description", "output: only lines from \"Server\" or one player (\"Player1\"...)"}}}},
+                {"action"})},
 
         // ---------------------------------------------------------------- DEBUG
         {"get_output", "Read the Output window", "DEBUG", true, false, true, Risk::None,
@@ -472,6 +500,7 @@ json workflowOf(const std::string& name) {
         {"edit_script", {{"read_script"}, {"diagnose_object", "playtest"}}},
         {"run_lua", {{"get_game_tree"}, {"get_game_tree", "screenshot"}}},
         {"playtest", {{"validate_scene"}, {"get_errors", "get_output", "get_object", "screenshot"}}},
+        {"multiplayer_test", {{"create_script", "playtest"}, {"multiplayer_test", "get_errors", "edit_script"}}},
         {"get_output", {{"playtest", "run_lua"}, {}}},
         {"get_errors", {{"playtest"}, {"read_script", "edit_script"}}},
         {"diagnose_object", {{"find_objects"}, {"set_property", "edit_script"}}},
@@ -523,6 +552,7 @@ Your loop: UNDERSTAND the request -> INSPECT the game -> PLAN -> ACT with tools 
 - "Try something risky" -> checkpoint save first; checkpoint restore if it goes wrong.
 - Many similar changes at once -> run_lua with a loop.
 - "Test it" -> playtest start, then get_errors / get_output / screenshot, then playtest stop.
+- "Test it with 2 players" / RemoteEvents / LocalScripts / joining and leaving -> multiplayer_test start, wait a few seconds, multiplayer_test output, then multiplayer_test stop.
 
 ## Use the engine's own systems
 - Physics: Anchored = false, forces (part:ApplyImpulse, BodyVelocity, VectorForce...), constraints. DON'T fake physics by teleporting parts every frame.
@@ -604,7 +634,7 @@ Guts and Bolts is a game engine, not a file editor. These tools act on the real 
 What the tools give you:
 - Look: get_game_tree, find_objects, get_object, read_script, screenshot, get_output, get_errors.
 - Change: insert_object, set_property, delete_object, create_script, edit_script, run_lua (any Lua, like the Command Bar).
-- Run and check: playtest (play, simulate, pause, step), get_runtime_state, diagnose_object, validate_scene.
+- Run and check: playtest (play, simulate, pause, step), multiplayer_test (a local server and 2-4 player windows), get_runtime_state, diagnose_object, validate_scene.
 - Physics and navigation: create_physical_object, spawn_explosion, bake_navmesh, find_path, walk_character_to.
 - Stay safe: undo / redo, and checkpoint (save points to try things and roll back).
 - Learn: get_engine_info (this text, capabilities, concepts, coordinates, workflows, examples, classes).
@@ -782,11 +812,11 @@ json capabilities() {
             {"compound_tools", json::array({"create_physical_object", "spawn_explosion", "walk_character_to"})},
             {"screenshots", true},
             {"diagnostics", true},
-            {"multiplayer_testing", false},
+            {"multiplayer_testing", "multiplayer_test: a local test server and 2-4 Player windows on this computer; read what each prints"},
             {"publishing", false},
         }},
         {"not_supported", json::array({"editing Library assets", "linked prefabs", "camera objects",
-                                       "shaders", "publishing games", "multiplayer test sessions"})},
+                                       "shaders", "publishing games", "moving or inspecting the players inside a multiplayer test"})},
         {"notes", "If a capability is false or missing, the tools can't do it: say so instead of pretending."},
     };
 }
