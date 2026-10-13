@@ -6,10 +6,17 @@
 
 #include <imgui.h>
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <sstream>
 #include <vector>
 
 namespace {
+double wallSeconds() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 // "ctrl+shift+left" -> modifiers + key (test helper).
 struct Chord { bool ctrl = false, shift = false, alt = false; ImGuiKey key = ImGuiKey_None; std::string text; };
 Chord parseChord(const std::string& text) {
@@ -152,11 +159,39 @@ void Application::run() {
         if (!m_opts.exportRoblox.empty() && frame == 2) m_editor->testExportRoblox(m_opts.exportRoblox);
         if (!m_opts.testSnapshot.empty() && frame == 3) m_editor->testSnapshot(m_opts.testSnapshot);
         if (!m_opts.testDrop.empty() && frame == 10) m_editor->testDrop(m_opts.testDrop);
+        if (!m_opts.testMultiplayer.empty()) testMultiplayer(frame);
 
         m_editor->render(dt);
 
         bool shoot = !m_opts.screenshot.empty() && frame == m_opts.frames;
         m_window->endFrame(shoot ? m_opts.screenshot : std::string());
         if (shoot) m_window->close();
+    }
+}
+
+// --test-multiplayer "N[:seconds]": drives the multiplayer test through the same AI tool
+// the Assistant and MCP apps use, and prints each answer (tools/test_multiplayer.py reads them).
+void Application::testMultiplayer(int frame) {
+    const std::string& spec = m_opts.testMultiplayer;
+    const size_t colon = spec.find(':');
+    const int players = std::atoi(spec.c_str());
+    const double length = colon == std::string::npos ? 30.0 : std::atof(spec.c_str() + colon + 1);
+    auto tool = [&](const char* label, const nlohmann::json& args) {
+        AiToolResult r = m_editor->runAiTool("multiplayer_test", args);
+        std::printf("MULTITEST %s %s\n", label, r.data.dump().c_str());
+        std::fflush(stdout);
+    };
+    if (m_multiStep == 0 && frame >= 5) {
+        m_multiStart = wallSeconds();
+        tool("start", {{"action", "start"}, {"players", players}});
+        m_multiStep = 1;
+    } else if (m_multiStep == 1 && wallSeconds() - m_multiStart > length * 0.5) {
+        tool("add_player", {{"action", "add_player"}});   // someone joining late
+        m_multiStep = 2;
+    } else if (m_multiStep == 2 && wallSeconds() - m_multiStart > length) {
+        tool("output", {{"action", "output"}, {"lines", 400}});
+        tool("stop", {{"action", "stop"}});
+        m_multiStep = 3;
+        m_window->close();
     }
 }
