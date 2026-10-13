@@ -212,6 +212,19 @@ const GENRES = ['Adventure', 'Obby', 'Fighting', 'Horror', 'Roleplay', 'Simulato
   'Shooter', 'Puzzle', 'Survival', 'Comedy', 'Building', 'Sandbox', 'Showcase', 'Town and City', 'Destruction'];
 // "87%" liked, or '' before anyone has voted.
 const likedPercent = (g) => (g.likes || 0) + (g.dislikes || 0) ? Math.round(100 * g.likes / (g.likes + g.dislikes)) + '%' : '';
+// Library models' "Best rated": the Wilson score (the lowest the real like rate is likely to be,
+// 95% sure), so one vote at 100% doesn't beat 500 at 95%. The server sorts the same way.
+function wilsonScore(up, down) {
+  const n = up + down;
+  if (!n) return 0;
+  const z = 1.96, p = up / n;
+  return (p + z * z / (2 * n) - z * Math.sqrt((p * (1 - p) + z * z / (4 * n)) / n)) / (1 + z * z / n);
+}
+const voteCount = (a) => (a.likes || 0) + (a.dislikes || 0);
+// "92% liked · 25 votes" (or "No ratings yet") under a Library model.
+const ratingLine = (a) => voteCount(a)
+  ? html`<span class="rating" title="${a.likes || 0} thumbs up, ${a.dislikes || 0} thumbs down">&#128077; ${likedPercent(a)} <span class="muted">· ${voteCount(a).toLocaleString()} vote${voteCount(a) === 1 ? '' : 's'}</span></span>`
+  : html`<span class="rating muted">No ratings yet</span>`;
 
 function gameCard(g) {
   const n = playingNow[g.id] || g.playing || 0, liked = likedPercent(g);
@@ -369,7 +382,7 @@ function loginPopup(what) {
 }
 // Which clicks and forms need an account, and what to say.
 const NEEDS_ACCOUNT = {
-  buy: 'get items from the catalog', buyPass: 'buy game passes', buyPrivate: 'buy private servers', daily: 'claim your daily Bolts', saveAvatar: 'save your avatar',
+  buy: 'get items from the catalog', gift: 'send gifts', modelVote: 'rate models', buyPass: 'buy game passes', buyPrivate: 'buy private servers', daily: 'claim your daily Bolts', saveAvatar: 'save your avatar',
   friend: 'add friends', follow: 'follow people', group: 'join groups', redeem: 'redeem codes', upload: 'upload things and publish games',
   groupCreate: 'make a group', groupPost: 'post on group walls', groupShout: 'shout to a group',
   favorite: 'favourite games', outfitSave: 'save outfits', sendMessage: 'send messages', statusSet: 'post a status', blurbSet: 'edit your profile',
@@ -830,6 +843,8 @@ function browseLink(changes) {
 const BROWSE_SORTS = [['', 'Relevance'], ['popular', 'Most Popular'], ['new', 'Recently Updated'], ['low', 'Price (Low to High)'], ['high', 'Price (High to Low)']];
 function browseSort(list, sort) {
   const by = {
+    rated: (x, y) => wilsonScore(y.likes || 0, y.dislikes || 0) - wilsonScore(x.likes || 0, x.dislikes || 0)
+      || voteCount(y) - voteCount(x) || (y.sales || 0) - (x.sales || 0),
     popular: (x, y) => (y.sales + y.plays) - (x.sales + x.plays),
     new: (x, y) => (y.updated || y.created) - (x.updated || x.created),
     low: (x, y) => (x.price || 0) - (y.price || 0),
@@ -853,12 +868,13 @@ function browseCard(a, href, price) {
       : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
     <div class="bprice">${price}</div>
+    ${a.kind === 'model' ? html`<div class="brating">${ratingLine(a)}</div>` : ''}
     <div class="btip"><div>Creator: <a href="#/user/${a.creator}">${a.creatorName}</a>${verified(a.creatorVerified)}</div>
       <div>Updated: ${ago(a.updated || a.created)}</div><div>${a.kind === 'model' || a.kind === 'animation' ? 'Taken' : 'Sales'}: ${(a.sales || 0).toLocaleString()}</div>
       ${isCatalogItem(a.kind) ? '' : html`<div>ID: ${assetNum(a)} <button class="btn small" data-act="copyId" data-id="${assetNum(a)}">Copy</button></div>`}</div></div>`;
 }
 // cats: [key, label, [kids]]; the page itself fetches, filters and passes the tiles in.
-function browsePage({ title, cats, cat, heading, shown, total, filters, side = '' }) {
+function browsePage({ title, cats, cat, heading, shown, total, filters, side = '', sorts = BROWSE_SORTS }) {
   const q = hashParams(), query = q.get('q') || '', sort = q.get('sort') || '', page = Math.max(1, Number(q.get('page')) || 1);
   const catLink = (k) => browseLink({ cat: k, q: '' });
   const open = (c) => c[0] === cat || (c[2] || []).some((k) => k[0] === cat);
@@ -888,7 +904,7 @@ function browsePage({ title, cats, cat, heading, shown, total, filters, side = '
       <section class="bmain">
         <div class="bhead"><div><b class="bcaps">${heading}</b><br>
           <span class="small muted">${total ? `Showing ${from + 1} - ${to} of ${total.toLocaleString()} result${total === 1 ? '' : 's'}` : 'No results'}${query ? html` for <b>${query}</b>` : ''}</span></div>
-          <label class="small">Sort by: <select data-go>${BROWSE_SORTS.map(([k, l]) => html`<option value="${browseLink({ sort: k })}" ${sort === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>
+          <label class="small">Sort by: <select data-go>${sorts.map(([k, l]) => html`<option value="${browseLink({ sort: k })}" ${sort === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>
         ${shown.length ? html`<div class="bgrid">${shown}</div>${pager}` : html`<p class="muted">Nothing here yet.</p>`}
       </section></div>`;
 }
@@ -914,7 +930,8 @@ async function libraryPage(head) {
         <button class="btn small">Go</button></form></div>`;
   show(html`${head}${browsePage({ title: 'Library', cats: LIBRARY_CATS, cat, heading: LIBRARY_CATS.find((c) => c[0] === cat)[1],
     shown: browseSlice(list).map((a) => browseCard(a, '#/library/' + assetNum(a), a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>'))),
-    total: list.length, filters: [creatorFilter()], side })}`);
+    total: list.length, filters: [creatorFilter()], side,
+    sorts: cat === 'model' ? [...BROWSE_SORTS.filter((x) => x[0] !== 'low' && x[0] !== 'high'), ['rated', 'Best rated']] : BROWSE_SORTS })}`);
   view.querySelectorAll('img[data-decal]').forEach(decalPicture);
   loadThumbs();
 }
@@ -991,6 +1008,7 @@ pages.library = async (id = '') => {
             </table>
           </div>
           <p class="item-desc">${a.description || html`<span class="muted">No description.</span>`}</p>
+          ${a.kind === 'model' ? modelVotes(a, r.used) : ''}
           ${a.kind === 'audio' ? html`<div id="assetAudio"><button class="btn green" data-act="assetListen" data-id="${a.id}">&#9654; Listen</button></div>` : ''}
           <hr>
           <p class="small muted">Type: ${KINDS[a.kind] || a.kind}${a.size ? ' · ' + Math.max(1, Math.round(a.size / 1024)) + ' KB' : ''}</p>
@@ -1025,6 +1043,25 @@ pages.library = async (id = '') => {
   }).catch(() => {});
 };
 
+// Thumbs up / down on a Library model (one vote each; press yours again to take it back). Only
+// people who've inserted it in Studio can vote, and never on their own model.
+function modelVotes(a, used) {
+  const own = signedIn() && a.creator === me.id;
+  const can = signedIn() && !own && used;
+  const why = !signedIn() ? html`<a href="#/login">Log in</a> to rate it.` : own ? 'This is your model, so you can\'t rate it.'
+    : used ? 'Did it work well in your game? Give it a thumbs up or down.' : 'Insert it from Studio\'s Toolbox first, then you can rate it here.';
+  const pct = voteCount(a) ? Math.round(100 * (a.likes || 0) / voteCount(a)) : 50;
+  return html`<div class="model-rating">
+    <div class="votes">
+      <button class="btn small ${a.myVote === 1 ? 'green' : ''}" data-act="modelVote" data-id="${a.id}" data-vote="${a.myVote === 1 ? 0 : 1}"
+        title="${a.myVote === 1 ? 'Take your thumbs up back' : 'Thumbs up'}" ${can ? '' : 'disabled'}>&#128077; ${a.likes || 0}</button>
+      <div class="vote-bar ${voteCount(a) ? '' : 'none'}"><div style="width:${pct}%"></div></div>
+      <button class="btn small ${a.myVote === -1 ? 'red' : ''}" data-act="modelVote" data-id="${a.id}" data-vote="${a.myVote === -1 ? 0 : -1}"
+        title="${a.myVote === -1 ? 'Take your thumbs down back' : 'Thumbs down'}" ${can ? '' : 'disabled'}>&#128078; ${a.dislikes || 0}</button></div>
+    <p class="small">${ratingLine(a)}</p>
+    <p class="small muted">${why}</p></div>`;
+}
+
 // Create > Accessories: hats, hair and the rest, made and placed in Studio.
 async function myAccessoriesPage(head) {
   if (!signedIn()) { show(html`${head}${needSignIn('see your accessories')}`); return; }
@@ -1050,7 +1087,7 @@ async function myModelsPage(head) {
       ${left >= 0 ? html`<br><span class="muted">You can make ${left} more model${left === 1 ? '' : 's'} public this week (Verified creators have no limit).</span>` : ''}</div>
     <h2>My Models</h2>
     ${r.ok && r.assets.length ? html`<div class="list">${r.assets.map((a) => html`<div>
-        <span class="grow"><b>${a.name}</b> <span class="small muted">${a.id}</span></span>
+        <span class="grow"><b><a href="#/library/${assetNum(a)}">${a.name}</a></b> <span class="small muted">${a.id}</span><br><span class="small">${ratingLine(a)}</span></span>
         <span class="badge-pill">${a.access === 'private' ? 'Private' : 'Public'}</span>
         <button class="btn small" data-act="modelAccess" data-id="${a.id}" data-access="${a.access === 'private' ? 'public' : 'private'}">Make ${a.access === 'private' ? 'public' : 'private'}</button>
         <button class="btn small red" data-act="deleteAsset" data-id="${a.id}" data-name="${a.name}">Delete</button></div>`)}</div>`
@@ -1210,6 +1247,9 @@ pages.item = async (id) => {
     : soldOut ? html`<button class="btn big buy" disabled>Sold out</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
     : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
+  // Paid items that aren't Limited can be bought for a friend (even if you have one yourself).
+  const giftable = a.price > 0 && !L && !offsale && !a.review && !(a.meta && a.meta.award);
+  const giftButton = giftable ? html`<button class="btn big gift" data-act="gift" data-id="${a.id}" data-name="${a.name}" data-price="${a.price}">&#127873; Buy as a gift</button>` : '';
   show(html`<p><a href="#/catalog">&lt; Catalog</a></p>
     <div class="item-page">
       <h1 class="item-title">${a.name}</h1>
@@ -1246,6 +1286,7 @@ pages.item = async (id) => {
               : offsale ? html`<div class="item-left">Off sale</div>` : ''}
             <div class="item-price">Price: ${a.price > 0 ? bolts(a.price) : html`<b class="ok">Free</b>`}</div>
             ${buyButton}
+            ${giftButton}
             <div class="item-sold">( ${a.sales || 0} Sold )</div>
             ${L && L.resellers ? html`<div class="small">${L.resellers} for resale from ${bolts(L.lowest)}</div>` : ''}
           </div>
@@ -2163,6 +2204,7 @@ function noteLink(n) {
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;
   if (n.kind === 'sale' || n.kind === 'upload') return '#/library/' + n.about;
+  if (n.kind === 'gift') return '#/item/' + n.about;
   if (n.kind === 'support') return '#/support';
   if (n.kind === 'ticket') return '#/staff';
   return '';
@@ -2171,7 +2213,7 @@ pages.notifications = async () => {
   if (!signedIn()) { show(html`<h1>Notifications</h1>${needSignIn('see your notifications')}`); return; }
   const r = await pageCall('notes.list', {});
   if (!r.ok) { show(html`<h1>Notifications</h1><p class="error">${r.error}</p>`); return; }
-  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟' };
+  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁' };
   show(html`<h1>Notifications</h1>
     <div class="list notes">${r.notes.length ? r.notes.map((n) => {
       const link = noteLink(n);
@@ -2194,8 +2236,9 @@ pages.bolts = async () => {
     <h2>Redeem a code</h2><form class="row" data-form="redeem"><input type="text" name="code" placeholder="BOLTS-..." style="max-width:360px">
       <button class="btn blue">Redeem</button></form>
     <h2>History</h2>
-    <div class="list">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div><span class="grow">${h.reason}</span>
-      <span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span><span class="small muted">${ago(h.time)}</span></div>`)
+    <div class="list">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div>${h.gift ? html`<span class="note-icon" aria-hidden="true">🎁</span>` : ''}<span class="grow">${h.reason}</span>
+      ${h.gift === 'got' && !h.amount ? html`<span class="ok">Gift</span>`
+        : html`<span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span>`}<span class="small muted">${ago(h.time)}</span></div>`)
       : html`<p class="muted">${signedIn() ? 'Nothing yet.' : 'Log in to see your Bolts. New accounts start with 100!'}</p>`}</div>`);
 };
 
@@ -2604,6 +2647,41 @@ const actions = {
     view.querySelector('.comments').insertAdjacentHTML('beforeend', r.comments.map((c) => commentRow(g, c).s).join(''));
     if (r.more && r.comments.length) el.dataset.before = r.comments[r.comments.length - 1].id;
     else el.remove();
+  },
+  async modelVote(d) {
+    if (!signedIn()) { loginPopup('rate models'); return; }
+    const r = await call('model.vote', { id: d.id, vote: Number(d.vote) });
+    if (!r.ok) toast(r.error);
+    else toast(Number(d.vote) === 0 ? 'Vote taken back.' : 'Thanks for rating it!');
+    render();
+  },
+  // Buy as a gift: pick a friend, add a note if you like, check, send.
+  async gift(d) {
+    const r = await call('friends.list', {});
+    if (!r.ok) { toast(r.error); return; }
+    const friends = r.friends.slice().sort((x, y) => lower(x.username || x.name).localeCompare(lower(y.username || y.name)));
+    const price = Number(d.price);
+    popup(html`<h1 class="popup-title">&#127873; Buy as a gift</h1>
+      <p>Send <b>${d.name}</b> to a friend. You pay ${bolts(price)}, and it goes straight into their inventory.</p>
+      ${friends.length ? html`<form class="form gift-form" data-form="gift"><input type="hidden" name="id" value="${d.id}">
+          <input type="hidden" name="name" value="${d.name}"><input type="hidden" name="price" value="${price}">
+          <label>Who's it for?</label>
+          <select name="to" required><option value="">Pick a friend...</option>
+            ${friends.map((f) => html`<option value="${f.userId}">${f.username || f.name}</option>`)}</select>
+          <label>A note <span class="muted small">(optional, up to 100 letters)</span></label>
+          <input type="text" name="message" maxlength="100" placeholder="Happy birthday!">
+          <p class="small muted">They get a notification with your note. You have ${bolts(me.bolts)}.</p>
+          <p class="popup-buttons"><button class="btn green big">Next</button> <a href="#" class="btn" data-act="closeModal">Cancel</a></p></form>`
+        : html`<p class="muted">You can only send gifts to friends, and you don't have any yet. <a href="#/people">Find some!</a></p>
+          <p class="popup-buttons"><a href="#" class="btn" data-act="closeModal">Close</a></p>`}`);
+  },
+  // Buy as a gift, step 3: pay and send (the server checks everything again).
+  async giftSend(d, el) {
+    const r = await call('gift.buy', { id: d.id, to: Number(d.to), message: d.message || '' });
+    if (!r.ok) { toast(r.error, 6000); return; }
+    el.closest('.modal').remove();
+    toast('Sent! ' + d.who + ' got ' + d.name + ' and a notification.', 5000);
+    render();
   },
   async vote(d) {
     if (!signedIn()) { loginPopup('vote on games'); return; }
@@ -3069,6 +3147,23 @@ const forms = {
   peopleSearch(f) { location.hash = '#/people?' + new URLSearchParams({ q: f.q.value }); },
   staffSearch(f) { location.hash = '#/staff?' + new URLSearchParams({ q: f.q.value }); },
   groupSearch(f) { location.hash = '#/groups?' + new URLSearchParams({ q: f.q.value }); },
+  // Buy as a gift, step 2: check who it's for and what it costs before anything is paid.
+  gift(f) {
+    if (!f.to.value) { toast('Pick a friend first.'); return; }
+    const who = f.to.selectedOptions[0].textContent, price = Number(f.price.value), note = f.message.value.trim();
+    const short = (me.bolts || 0) < price;
+    popup(html`<h1 class="popup-title">Send this gift?</h1>
+      <table class="stats gift-check">
+        <tr><td>Gift</td><td><b>${f.name.value}</b></td></tr>
+        <tr><td>For</td><td><b>${who}</b></td></tr>
+        <tr><td>Note</td><td>${note ? html`"${note}"` : html`<span class="muted">No note</span>`}</td></tr>
+        <tr><td>You pay</td><td>${bolts(price)}</td></tr>
+        <tr><td>You'll have</td><td>${bolts(Math.max(0, (me.bolts || 0) - price))}</td></tr></table>
+      ${short ? html`<p class="error">You need ${(price - (me.bolts || 0)).toLocaleString()} more Bolts for this. <a href="#/bolts">Get Bolts</a></p>` : ''}
+      <p class="popup-buttons"><button class="btn green big" data-act="giftSend" data-id="${f.id.value}" data-to="${f.to.value}"
+          data-who="${who}" data-name="${f.name.value}" data-message="${note}" ${short ? 'disabled' : ''}>Send gift</button>
+        <a href="#" class="btn" data-act="closeModal">Cancel</a></p>`);
+  },
   async redeem(f) {
     const r = await call('bolts.redeem', { code: f.code.value });
     toast(r.ok ? 'You got ' + r.got + ' Bolts!' : r.error);

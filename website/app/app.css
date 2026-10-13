@@ -555,6 +555,19 @@ html.gutstober .foot, html.gutstober .foot a { color: #cbb5dc; }
 .btip { display: none; position: absolute; left: -6px; right: -6px; top: calc(100% - 2px); z-index: 6; padding: 5px 7px; font-size: 11px;
   color: var(--muted); background: var(--panel); border: 1px solid #c3c8cf; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
 .btip a { font-size: 11px; }
+/* Thumbs up / down on Library models */
+.brating { font-size: 11px; margin-top: 1px; }
+.rating { white-space: nowrap; }
+.model-rating { margin: 6px 0 4px; }
+.model-rating .votes { margin: 4px 0; }
+.model-rating .btn[disabled] { opacity: .55; cursor: default; }
+.vote-bar.none { background: var(--line); }
+.vote-bar.none > div { background: transparent; }
+/* Buy as a gift */
+.item-buybox .btn.gift { width: 100%; margin-top: 6px; padding: 6px; font-size: 14px; }
+.gift-form select, .gift-form input[type=text] { width: 100%; }
+.gift-check td { padding: 3px 14px 3px 0; text-align: left; }
+.gift-check td:first-child { color: var(--muted); }
 @media (hover: hover) { .bcard:hover .btip { display: block; } }
 .bpager { display: flex; gap: 10px; align-items: center; justify-content: center; margin: 18px 0 4px; }
 @media (max-width: 640px) {

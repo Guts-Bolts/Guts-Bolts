@@ -160,6 +160,28 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         saveAssets();
         return assetReply(a);
     }
+    if (name == "model.vote") {
+        // Thumbs up or down on a Library model: one vote each (vote 0 takes it back). You have to
+        // have inserted it first (Studio's Toolbox, or a script's require), and not on your own.
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end() || it->second.kind != "model") return fail("That model doesn't exist (any more).");
+        Asset& a = it->second;
+        if (!canSee(a, me)) return fail(noSeeText(a.kind, a.meta));
+        if (a.creator == me.id) return fail("You can't rate your own model.");
+        if (std::find(me.usedModels.begin(), me.usedModels.end(), a.id) == me.usedModels.end())
+            return fail("Insert it in Studio first (from the Toolbox), then you can rate it.");
+        const long long n = num("vote"), v = n > 0 ? 1 : n < 0 ? -1 : 0;
+        if (!a.votes.is_object()) a.votes = json::object();
+        const long long old = a.votes.value(me.id, 0LL);
+        if (old == 1) a.likes--; else if (old == -1) a.dislikes--;
+        if (v == 0) a.votes.erase(me.id); else a.votes[me.id] = v;
+        if (v == 1) a.likes++;
+        if (v == -1) a.dislikes++;
+        saveAssets();
+        json r = assetReply(a);
+        r["used"] = true;
+        return r;
+    }
     if (name == "icon.set") {
         // A game's icon: a small square picture (PNG or JPG, up to 200 KB).
         auto it = findAsset(str("id"));
