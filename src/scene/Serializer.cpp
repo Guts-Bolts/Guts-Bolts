@@ -54,6 +54,8 @@ const char* kindName(NodeKind k) {
         case NodeKind::Highlight:    return "Highlight";
         case NodeKind::Trail:        return "Trail";
         case NodeKind::Beam:         return "Beam";
+        case NodeKind::SoundGroup:   return "SoundGroup";
+        case NodeKind::SoundEffect:  return "SoundEffect";
         default:               return "Part";
     }
 }
@@ -78,6 +80,8 @@ NodeKind kindFrom(const std::string& s) {
     if (s == "Highlight")    return NodeKind::Highlight;
     if (s == "Trail")        return NodeKind::Trail;
     if (s == "Beam")         return NodeKind::Beam;
+    if (s == "SoundGroup")   return NodeKind::SoundGroup;
+    if (s == "SoundEffect")  return NodeKind::SoundEffect;
     return NodeKind::Part;
 }
 
@@ -373,6 +377,47 @@ void guiFromJson(GuiProps& g, const nlohmann::json& j) {
     if (j.contains("surfaceCanvas") && j["surfaceCanvas"].is_array() && j["surfaceCanvas"].size() == 2)
         try { g.surfaceCanvas = glm::max(glm::vec2(1.0f), glm::vec2(j["surfaceCanvas"][0].get<float>(), j["surfaceCanvas"][1].get<float>())); } catch (...) {}
 }
+// Sounds, SoundGroups and sound effects (saving and multiplayer updates).
+nlohmann::json soundToJson(const SceneNode& n) {
+    if (n.isSound()) {
+        nlohmann::json j = {{"volume", n.volume}, {"pitch", n.pitch}, {"looped", n.looped}};
+        if (n.soundGroup) j["group"] = n.soundGroup;   // (a node ID, like a constraint's ref0)
+        return j;
+    }
+    if (n.isSoundGroup()) return {{"volume", n.volume}};
+    if (n.isSoundEffect()) {
+        const SoundFxProps& f = n.soundFx;
+        nlohmann::json v = nlohmann::json::array();
+        for (size_t i = 0; i < SoundFx::params(f.type).size(); ++i) v.push_back(f.v[i]);
+        nlohmann::json j = {{"type", SoundFx::kClassNames[(int)f.type]}, {"v", v}};
+        if (f.priority) j["priority"] = f.priority;
+        if (!n.enabled) j["on"] = false;
+        return j;
+    }
+    return nullptr;
+}
+
+void soundFromJson(SceneNode& n, const nlohmann::json& j) {
+    if (!j.is_object()) return;
+    if (n.isSound()) {
+        n.volume = std::clamp(get<float>(j, "volume", n.volume), 0.0f, 10.0f);
+        n.pitch = get<float>(j, "pitch", n.pitch);
+        n.looped = get<bool>(j, "looped", n.looped);
+        n.soundGroup = get<uint64_t>(j, "group", 0);
+    } else if (n.isSoundGroup()) {
+        n.volume = std::clamp(get<float>(j, "volume", 0.5f), 0.0f, 10.0f);
+    } else if (n.isSoundEffect()) {
+        bool found = false;
+        const SoundFx::Type t = SoundFx::typeFromClass(get<std::string>(j, "type", "").c_str(), found);
+        n.soundFx = soundFxDefaults(found ? t : SoundFx::Type::Reverb);
+        const auto& params = SoundFx::params(n.soundFx.type);
+        if (auto v = j.find("v"); v != j.end() && v->is_array())
+            for (size_t i = 0; i < v->size() && i < params.size(); ++i)
+                if ((*v)[i].is_number()) n.soundFx.v[i] = std::clamp((*v)[i].get<float>(), params[i].lo, params[i].hi);
+        n.soundFx.priority = get<int>(j, "priority", 0);
+        n.enabled = get<bool>(j, "on", true);
+    }
+}
 } // namespace Serializer
 
 namespace {
@@ -483,7 +528,10 @@ json toJson(const SceneNode& n) {
     if (n.kind == NodeKind::Sound) {
         j["soundId"] = n.soundId; j["volume"] = n.volume; j["pitch"] = n.pitch;
         j["looped"] = n.looped; j["autoplay"] = n.autoplay;
+        if (n.soundGroup) j["soundGroup"] = n.soundGroup;   // (a node ID, like a constraint's ref0)
     }
+    if (n.isSoundGroup()) j["volume"] = n.volume;
+    if (n.isSoundEffect()) j["soundFx"] = Serializer::soundToJson(n);
     if (n.kind == NodeKind::Light) {
         j["lightType"]  = n.lightType == LightType::Spot ? "Spot" : "Point";
         j["color"]      = vec(n.color);
@@ -673,7 +721,9 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->pitch    = get<float>(j, "pitch", 1.0f);
         n->looped   = get<bool>(j, "looped", false);
         n->autoplay = get<bool>(j, "autoplay", false);
+        n->soundGroup = get<uint64_t>(j, "soundGroup", 0);
     }
+    if (n->isSoundGroup()) n->volume = std::clamp(get<float>(j, "volume", 0.5f), 0.0f, 10.0f);
     n->source        = get<std::string>(j, "source", "");
     n->enabled = get<bool>(j, "enabled", true);
     n->visible       = get<bool>(j, "visible", true);
@@ -684,6 +734,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     if (auto p = j.find("prompt"); p != j.end() && p->is_object()) Serializer::promptFromJson(*p, n->prompt, n->enabled);
     if (auto h = j.find("highlight"); h != j.end() && h->is_object()) Serializer::highlightFromJson(*h, n->highlight, n->enabled);
     if (auto e = j.find("effect"); e != j.end() && e->is_object()) Serializer::effectFromJson(*e, n->effect, n->enabled);
+    if (auto f = j.find("soundFx"); f != j.end() && f->is_object() && n->isSoundEffect()) Serializer::soundFromJson(*n, *f);
     n->locked        = get<bool>(j, "locked", false);
     if (auto t = j.find("tags"); t != j.end() && t->is_array())
         for (auto& v : *t) if (v.is_string()) n->tags.push_back(v.get<std::string>());
@@ -943,6 +994,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.range = src->range;         dst.spotAngle = src->spotAngle;
     dst.soundId = src->soundId;     dst.volume = src->volume; dst.pitch = src->pitch;
     dst.looped = src->looped;       dst.autoplay = src->autoplay;
+    dst.soundGroup = src->soundGroup; dst.soundFx = src->soundFx;
     dst.toolTip = src->toolTip;     dst.canBeDropped = src->canBeDropped;
     dst.value = src->value;         dst.intValue = src->intValue;
     dst.texture = src->texture;     dst.face = src->face;
@@ -994,6 +1046,8 @@ void remapRefs(SceneNode& n, const std::unordered_map<uint64_t, uint64_t>& map) 
         if (auto it = map.find(n.effect.a0); it != map.end()) n.effect.a0 = it->second;
         if (auto it = map.find(n.effect.a1); it != map.end()) n.effect.a1 = it->second;
     }
+    if (n.isSound() && n.soundGroup)   // (a copied sound plays through the copied group, if it came along)
+        if (auto it = map.find(n.soundGroup); it != map.end()) n.soundGroup = it->second;
     if (n.kind == NodeKind::FluidEmitter)   // (a copied emitter uses the copied liquid, if it came along)
         if (auto it = map.find(n.fluidSystem); it != map.end()) n.fluidSystem = it->second;
     for (auto& c : n.children) remapRefs(*c, map);

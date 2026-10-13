@@ -1146,6 +1146,24 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         addLight(what == "SpotLight" ? LightType::Spot : LightType::Point);
     }
     else if (what == "Sound") { m_scene->select(parent); addSound(); }
+    else if (what == "SoundGroup") {
+        // Groups live in SoundService (or inside another group, to be part of it).
+        if (!parent || !parent->isSoundGroup()) parent = m_scene->serviceFolder("SoundService", true);
+        auto g = std::make_unique<SceneNode>("SoundGroup", NodeKind::SoundGroup);
+        g->volume = 0.5f;   // (Roblox's starting Volume for a group)
+        put(std::move(g));
+        Log::info("Set a Sound's SoundGroup (in Properties) to this group: its Volume and effects then apply to that sound.");
+    }
+    else if (auto ft = std::find(std::begin(SoundFx::kClassNames), std::end(SoundFx::kClassNames), what); ft != std::end(SoundFx::kClassNames)) {
+        // Sound effects change the Sound or SoundGroup they're inside.
+        if (!parent || (!parent->isSound() && !parent->isSoundGroup())) {
+            Log::warn("Select a Sound or SoundGroup first: a " + what + " changes the sound it's inside.");
+            return;
+        }
+        auto f = std::make_unique<SceneNode>(what, NodeKind::SoundEffect);
+        f->soundFx = soundFxDefaults((SoundFx::Type)(ft - std::begin(SoundFx::kClassNames)));
+        put(std::move(f));
+    }
     else if (what == "Attachment") put(std::make_unique<SceneNode>("Attachment", NodeKind::Attachment));
     else if (auto mt = std::find(std::begin(kMoverClassNames), std::end(kMoverClassNames), what); mt != std::end(kMoverClassNames)) {
         // BodyVelocity, AlignPosition...: they go inside the part they push. The newer
@@ -1262,6 +1280,10 @@ const std::vector<InsertItem>& insertItems() {
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
         {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
         {"PointLight", Icons::Id::Light}, {"SpotLight", Icons::Id::Light}, {"Sound", Icons::Id::Sound},
+        {"SoundGroup", Icons::Id::Sound}, {"ReverbSoundEffect", Icons::Id::Sound}, {"EchoSoundEffect", Icons::Id::Sound},
+        {"EqualizerSoundEffect", Icons::Id::Sound}, {"DistortionSoundEffect", Icons::Id::Sound}, {"PitchShiftSoundEffect", Icons::Id::Sound},
+        {"ChorusSoundEffect", Icons::Id::Sound}, {"CompressorSoundEffect", Icons::Id::Sound}, {"FlangeSoundEffect", Icons::Id::Sound},
+        {"TremoloSoundEffect", Icons::Id::Sound},
         {"Attachment", Icons::Id::Attachment},
         {"BodyVelocity", Icons::Id::Constraint}, {"BodyPosition", Icons::Id::Constraint}, {"BodyGyro", Icons::Id::Constraint},
         {"BodyAngularVelocity", Icons::Id::Constraint}, {"BodyThrust", Icons::Id::Constraint}, {"BodyForce", Icons::Id::Constraint},

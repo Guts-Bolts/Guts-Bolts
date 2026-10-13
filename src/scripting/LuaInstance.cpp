@@ -13,6 +13,7 @@
 #include "../game/GameGui.h"
 #include "../renderer/MeshLibrary.h"
 #include "../core/Audio.h"
+#include "../scene/SoundMix.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/euler_angles.hpp>
@@ -118,6 +119,8 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Animation:  return "Animation";
         case NodeKind::Gui:        return kGuiClassNames[(int)n->gui.type];
         case NodeKind::Sound:      return "Sound";
+        case NodeKind::SoundGroup: return "SoundGroup";
+        case NodeKind::SoundEffect: return SoundFx::kClassNames[(int)n->soundFx.type];
         case NodeKind::Attachment: return "Attachment";
         case NodeKind::FluidSystem:  return "FluidSystem";
         case NodeKind::FluidEmitter: return "FluidEmitter";
@@ -150,6 +153,7 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
     if (n->kind == NodeKind::Tool && cls == "BackpackItem") return true;
     if (n->kind == NodeKind::Value && cls == "ValueBase") return true;
     if (n->kind == NodeKind::Decal && cls == "FaceInstance") return true;
+    if (n->isSoundEffect() && cls == "SoundEffect") return true;
     if (n->isGui()) {
         if (cls == "GuiBase" || (!isGuiModifier(n->gui.type) && cls == "GuiBase2d")) return true;
         if (n->gui.type == GuiType::ScreenGui && (cls == "LayerCollector" || cls == "BasePlayerGui")) return true;
@@ -314,8 +318,11 @@ void startSound(lua_State* L, SceneNode* n) {
     Audio::stop(n->audioHandle);
     bool in3d = n->parent && n->parent->isPart();
     glm::vec3 at = in3d ? glm::vec3(n->parent->worldMatrix()[3]) : glm::vec3(0.0f);
-    n->audioHandle = Audio::play(n->soundId, n->volume, n->pitch, n->looped, in3d ? &at : nullptr);
-    if (!n->looped) E(L)->scene()->pushFx(FxEvent::Sound, at, n->volume, n->soundId);   // multiplayer
+    Scene& scene = *E(L)->scene();
+    const float volume = SoundMix::volume(scene, n);   // (times its SoundGroup's Volume)
+    n->audioHandle = Audio::play(n->soundId, volume, n->pitch, n->looped, in3d ? &at : nullptr);
+    SoundMix::apply(scene, n, n->audioHandle);          // its effects, and its group's
+    if (!n->looped) scene.pushFx(FxEvent::Sound, at, volume, n->soundId, n->id, in3d);   // multiplayer
 }
 int m_Play(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
@@ -1290,6 +1297,14 @@ int inst_index(lua_State* L) {
         if (is(k, "Color"))          { LuaApi::pushColor3(L, n->color); return 1; }
         if (is(k, "Enabled"))        { lua_pushboolean(L, n->enabled); return 1; }
     }
+    // SoundGroups and sound effects (Sound.SoundGroup is with the other Sound properties).
+    if (n->isSoundGroup() && is(k, "Volume")) { lua_pushnumber(L, n->volume); return 1; }
+    if (n->isSoundEffect()) {
+        if (is(k, "Enabled"))  { lua_pushboolean(L, n->enabled); return 1; }
+        if (is(k, "Priority")) { lua_pushinteger(L, n->soundFx.priority); return 1; }
+        const int i = SoundFx::paramIndex(n->soundFx.type, k);
+        if (i >= 0) { lua_pushnumber(L, n->soundFx.v[i]); return 1; }
+    }
     if (is(k, "Parent"))    { LuaApi::pushInstance(L, n->parent ? n->parent->id : 0); return 1; }
     if (is(k, "Position"))  { LuaApi::pushVector3(L, worldPosition(n)); return 1; }
     if (is(k, "Orientation") || is(k, "Rotation")) { LuaApi::pushVector3(L, n->transform.rotation); return 1; }
@@ -1462,6 +1477,11 @@ int inst_index(lua_State* L) {
         if (is(k, "PlaybackSpeed") || is(k, "Pitch")) { lua_pushnumber(L, n->pitch); return 1; }
         if (is(k, "Looped"))        { lua_pushboolean(L, n->looped); return 1; }
         if (is(k, "Playing") || is(k, "IsPlaying")) { lua_pushboolean(L, Audio::isPlaying(n->audioHandle)); return 1; }
+        if (is(k, "SoundGroup")) {
+            SceneNode* g = n->soundGroup ? E(L)->resolve(n->soundGroup) : nullptr;
+            if (g && g->isSoundGroup()) LuaApi::pushInstance(L, g->id); else lua_pushnil(L);
+            return 1;
+        }
     }
     if (n->kind == NodeKind::FluidSystem) {
         if (is(k, "Color"))          { LuaApi::pushColor3(L, n->color); return 1; }
@@ -1564,6 +1584,18 @@ int inst_newindex(lua_State* L) {
         if (is(k, "Thickness"))      { n->thickness = (float)luaL_checknumber(L, 3); return 0; }
         if (is(k, "Color"))          { n->color = LuaApi::checkColor3(L, 3); return 0; }
         if (is(k, "Enabled"))        { n->enabled = lua_toboolean(L, 3); return 0; }
+    }
+    // SoundGroups and sound effects (the mixer picks changes up every frame, see SoundMix).
+    if (n->isSoundGroup() && is(k, "Volume")) { n->volume = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 10.0f); return 0; }
+    if (n->isSoundEffect()) {
+        if (is(k, "Enabled"))  { n->enabled = lua_toboolean(L, 3); return 0; }
+        if (is(k, "Priority")) { n->soundFx.priority = (int)luaL_checknumber(L, 3); return 0; }
+        const int i = SoundFx::paramIndex(n->soundFx.type, k);
+        if (i >= 0) {
+            const SoundFx::Param& p = SoundFx::params(n->soundFx.type)[i];
+            n->soundFx.v[i] = std::clamp((float)luaL_checknumber(L, 3), p.lo, p.hi);   // (Roblox keeps them in range too)
+            return 0;
+        }
     }
     if (is(k, "Name")) {
         if (scene->isProtected(n)) return luaL_error(L, "You can't rename %s", n->name.c_str());
@@ -1742,9 +1774,16 @@ int inst_newindex(lua_State* L) {
     }
     if (n->isSound()) {
         if (is(k, "SoundId"))  { n->soundId = Online::assetRef(luaL_checkstring(L, 3)); return 0; }
-        if (is(k, "Volume"))   { n->volume = std::max(0.0f, (float)luaL_checknumber(L, 3)); Audio::setVolume(n->audioHandle, n->volume); return 0; }
+        if (is(k, "Volume"))   { n->volume = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 10.0f); Audio::setVolume(n->audioHandle, SoundMix::volume(*E(L)->scene(), n)); return 0; }
         if (is(k, "PlaybackSpeed") || is(k, "Pitch")) { n->pitch = std::max(0.05f, (float)luaL_checknumber(L, 3)); Audio::setPitch(n->audioHandle, n->pitch); return 0; }
         if (is(k, "Looped"))   { n->looped = lua_toboolean(L, 3); return 0; }
+        if (is(k, "SoundGroup")) {
+            SceneNode* g = lua_isnoneornil(L, 3) ? nullptr : LuaApi::checkNode(L, 3);
+            if (g && !g->isSoundGroup()) return luaL_error(L, "Sound.SoundGroup must be a SoundGroup (or nil)");
+            n->soundGroup = g ? g->id : 0;
+            if (n->audioHandle) SoundMix::apply(*scene, n, n->audioHandle);
+            return 0;
+        }
         if (is(k, "Playing"))  {
             if (lua_toboolean(L, 3)) startSound(L, n);
             else { Audio::stop(n->audioHandle); n->audioHandle = 0; }
@@ -1905,6 +1944,13 @@ int inst_new(lua_State* L) {
         n->transform.scale = {1.0f, 1.0f, 1.0f};
     } else if (cls == "Sound") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Sound);
+    } else if (cls == "SoundGroup") {
+        n = std::make_unique<SceneNode>(cls, NodeKind::SoundGroup);
+        n->volume = 0.5f;   // (Roblox's starting Volume for a group)
+    } else if (std::find(std::begin(SoundFx::kClassNames), std::end(SoundFx::kClassNames), cls) != std::end(SoundFx::kClassNames)) {
+        n = std::make_unique<SceneNode>(cls, NodeKind::SoundEffect);
+        bool found = false;
+        n->soundFx = soundFxDefaults(SoundFx::typeFromClass(cls.c_str(), found));
     } else if (cls == "ForceField") {
         n = std::make_unique<SceneNode>(cls, NodeKind::ForceField);
     } else if (cls == "Tool") {

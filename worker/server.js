@@ -186,6 +186,15 @@ const kMoveWait = 90, kHeirWait = 12;
 const kPoolMost = 50, kPoolStartWait = 25;
 // DataStores: names and keys up to 100 letters, values up to 256 KB of JSON, 100,000 keys a game.
 const kDataName = 100, kDataValue = 256 * 1024, kDataKeys = 100000;
+// MessagingService (msgOp): messages between the running servers of one game. Kept in
+// memory for a short while; each server asks for new ones about once a second.
+// (ServerData.cpp has the same rules.)
+const kMsgTopic = 80;            // topic names: 1-80 letters
+const kMsgSize = 1024;           // one message, as JSON (bytes)
+const kMsgKeep = 30;             // seconds a message waits to be picked up
+const kMsgKept = 500;            // messages kept per game at most
+const kMsgPerPoll = 200;         // handed out per msg.poll
+const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
 const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
@@ -207,7 +216,8 @@ const GENRES = ['Adventure', 'Obby', 'Fighting', 'Horror', 'Roleplay', 'Simulato
 // How well liked a game is, for sorting: likes out of votes, pulled towards 50% while there are few votes.
 const ratingOf = (a) => ((a.likes || 0) + 1) / ((a.likes || 0) + (a.dislikes || 0) + 2);
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
-const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant']);   // (product.*: guests can host games too)
+export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
+  'msg.publish', 'msg.poll']);   // (product.* and msg.*: guests can host games too)
 
 // Assets have plain numbers counting up, like Roblox's asset IDs (1, 2, 3...). New ones
 // use the number as their ID; older ones ("decal-1a2b3c4d5e") got a number too and
@@ -492,6 +502,10 @@ export class GbServerObject extends DurableObject {
     // Servers whose host left: old session id -> { game, title, priv, code, max, members:[accounts], heir, heirSince, newId, until }
     this.moved = new Map();
     this.sweepTimer = null;
+    // MessagingService: game id -> { seq, list: [{ n, topic, message, sent }] }, and who sent
+    // when ("account\ngame" -> [times]) for the rate limit. In memory, like the relay.
+    this.msgs = new Map();
+    this.msgSent = new Map();
   }
 
   getMeta(key, fallback) {
@@ -1189,6 +1203,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
+    if (name.startsWith('msg.')) return this.msgOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
     if (name.startsWith('support.')) return this.supportOp(name, me, args);
@@ -3282,6 +3297,62 @@ export class GbServerObject extends DurableObject {
       const value = (old || 0) + delta;
       const bad = write(value);
       return bad || okay({ value });
+    }
+    return fail('Unknown request.');
+  }
+
+  // MessagingService: messages between the running servers of one game (every one of them
+  // gets each message, the sender too; other games never see them). Only the host of a live
+  // server of the game can send or read them. Servers ask for new ones about once a second.
+  //   msg.publish {game, topic, message}  -> {}
+  //   msg.poll    {game, after, topics[]} -> {server, messages: [{n, topic, message, sent}], last}
+  //     server: false = you aren't running a server of it (the game keeps its messages on
+  //     its own computer then). after: the last n you saw (leave it out to start from now).
+  msgOp(name, me, args) {
+    const game = this.assets.resolve(cleanText(typeof args.game === 'string' ? args.game : '', 80));
+    const asset = this.assets.get(game);
+    if (!asset || asset.kind !== 'game') return fail('That game isn\'t there.');
+    const t = now();
+    const mine = [...this.sessions.values()].filter((s) => s.host === me.id && this.assets.resolve(s.game) === game);
+    const box = this.msgs.get(game) || { seq: 0, list: [] };
+    while (box.list.length && (box.list[0].sent < t - kMsgKeep || box.list.length > kMsgKept)) box.list.shift();
+    if (name === 'msg.poll') {
+      if (!mine.length) return okay({ server: false, messages: [], last: 0 });
+      const after = typeof args.after === 'number' && Number.isFinite(args.after) ? Math.floor(args.after) : -1;
+      if (after < 0) return okay({ server: true, messages: [], last: box.seq });
+      const from = after > box.seq ? 0 : after;   // (the server restarted since: start again)
+      const topics = Array.isArray(args.topics) ? new Set(args.topics.filter((x) => typeof x === 'string').slice(0, 100)) : null;
+      const out = [];
+      let last = from;
+      for (const m of box.list) {
+        if (m.n <= from) continue;
+        if (out.length >= kMsgPerPoll) break;
+        last = m.n;
+        if (!topics || topics.has(m.topic)) out.push(m);
+      }
+      if (out.length < kMsgPerPoll) last = Math.max(last, box.seq);
+      return okay({ server: true, messages: out, last });
+    }
+    if (name === 'msg.publish') {
+      if (!mine.length) return fail('MessagingService: only a running server of this game can send its messages.');
+      const topic = typeof args.topic === 'string' ? args.topic : '';
+      if (!topic || topic.length > kMsgTopic) return fail('MessagingService: topic names are 1-' + kMsgTopic + ' letters.');
+      const message = args.message === undefined ? null : args.message;
+      const size = new TextEncoder().encode(JSON.stringify(message)).length;
+      if (size > kMsgSize) return fail('MessagingService: that message is ' + size + ' bytes; ' + kMsgSize + ' bytes (1 KB) is the most.');
+      // Each server may send 150 + 60 per player a minute (all of yours together, if you run several).
+      let allowed = 0;
+      for (const s of mine) allowed += kMsgBase + kMsgPerPlayer * this.headcount(s);
+      const key = me.id + '\n' + game;
+      const times = (this.msgSent.get(key) || []).filter((x) => x > t - 60);
+      if (times.length >= allowed) return fail('MessagingService: too many messages (' + allowed + ' a minute is the most for this server). Wait a moment.');
+      times.push(t);
+      this.msgSent.set(key, times);
+      box.seq++;
+      box.list.push({ n: box.seq, topic, message, sent: t });
+      if (box.list.length > kMsgKept) box.list.shift();
+      this.msgs.set(game, box);
+      return okay({ n: box.seq, sent: t });
     }
     return fail('Unknown request.');
   }

@@ -5,6 +5,7 @@
 #include "../scene/Scene.h"
 #include "../scene/Player.h"
 #include "../core/Audio.h"
+#include "../scene/SoundMix.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -22,11 +23,12 @@ void GameSession::start() {
     if (Player* p = m_scene->player()) p->beginPlay();
     m_running = true;
     // Sounds marked "Autoplay" (e.g. background music) start with the game.
-    m_scene->forEach([](SceneNode* n) {
+    m_scene->forEach([this](SceneNode* n) {
         if (!n->isSound() || !n->autoplay) return;
         glm::vec3 at = n->parent ? glm::vec3(n->parent->worldMatrix()[3]) : glm::vec3(0.0f);
         bool in3d = n->parent && n->parent->isPart();
-        n->audioHandle = Audio::play(n->soundId, n->volume, n->pitch, n->looped, in3d ? &at : nullptr);
+        n->audioHandle = Audio::play(n->soundId, SoundMix::volume(*m_scene, n), n->pitch, n->looped, in3d ? &at : nullptr);
+        SoundMix::apply(*m_scene, n, n->audioHandle);   // its effects and SoundGroup
     });
     // Animations played by scripts pose the character from how it was built
     // (not mid-step), and leave the walking arms and legs to the walk cycle.
@@ -388,6 +390,8 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         if (n->isSound() && n->audioHandle && n->parent && n->parent->isPart())
             Audio::setPosition(n->audioHandle, glm::vec3(n->parent->worldMatrix()[3]));
     });
+    // SoundGroup volumes and sound effects (scripts may have changed them).
+    SoundMix::update(*m_scene);
 
     // Blood, oil, sparks, smoke...
     const WorldSettings& ws = m_scene->world();

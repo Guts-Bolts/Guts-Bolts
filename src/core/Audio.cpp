@@ -12,10 +12,13 @@
 #include "Log.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <cstring>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <random>
 
 namespace Audio {
@@ -140,15 +143,49 @@ std::map<std::string, Samples> synthesize() {
 
 // ---------------------------------------------------------------------------
 
+// Effects in the mixer: a node of our own that runs a SoundFx::Chain. One goes after a
+// sound that has effects, and one is each SoundGroup's bus (sounds in the group mix into it).
+struct FxNode {
+    ma_node_base base;                        // (first: miniaudio treats this as an ma_node)
+    std::mutex   lock;
+    std::unique_ptr<SoundFx::Chain> chain;
+    std::vector<SoundFx::Settings>  settings;
+    bool         ready = false;
+};
+
+void fxProcess(ma_node* node, const float** in, ma_uint32* inCount, float** out, ma_uint32* outCount) {
+    FxNode* n = (FxNode*)node;
+    const ma_uint32 frames = *outCount, ch = ma_node_get_output_channels(node, 0);
+    if (in && in[0]) std::memcpy(out[0], in[0], sizeof(float) * frames * ch);
+    else std::memset(out[0], 0, sizeof(float) * frames * ch);
+    if (inCount) *inCount = frames;
+    // Never wait in the mixer: if the settings are being changed right now, pass this bit through.
+    std::unique_lock<std::mutex> hold(n->lock, std::try_to_lock);
+    if (hold.owns_lock() && n->chain) n->chain->process(out[0], frames);
+}
+
+// Keeps going with nothing attached, so an echo or reverb can ring on after its sounds stop.
+ma_node_vtable g_fxVtable = {fxProcess, nullptr, 1, 1, MA_NODE_FLAG_CONTINUOUS_PROCESSING | MA_NODE_FLAG_ALLOW_NULL_INPUT};
+
 struct Instance {
     int               handle;
     ma_sound          sound;
     ma_audio_buffer   buffer;
     bool              usesBuffer = false;
+    std::unique_ptr<FxNode> fx;               // its own effects (null = none yet)
+    uint64_t          route = 0;              // the SoundGroup bus it goes to (0 = straight out)
+    float             tail = 0.0f;            // seconds its effects ring on after it ends
+    double            endedAt = -1.0;
+};
+
+struct Bus {
+    std::unique_ptr<FxNode> node;
+    uint64_t parent = 0;
 };
 
 bool                                    g_ready = false;
 ma_engine                               g_engine;
+std::map<uint64_t, std::unique_ptr<Bus>> g_buses;
 std::map<std::string, Samples>          g_builtin;
 std::map<int, std::unique_ptr<Instance>> g_playing;
 
@@ -174,6 +211,47 @@ int                                     g_next = 1;
 void destroy(Instance& in) {
     ma_sound_uninit(&in.sound);
     if (in.usesBuffer) ma_audio_buffer_uninit(&in.buffer);
+    if (in.fx && in.fx->ready) ma_node_uninit(&in.fx->base, nullptr);
+    in.fx.reset();
+}
+
+bool makeFxNode(FxNode& n) {
+    ma_uint32 ch = ma_engine_get_channels(&g_engine);
+    ma_node_config cfg = ma_node_config_init();
+    cfg.vtable = &g_fxVtable;
+    cfg.pInputChannels = &ch;
+    cfg.pOutputChannels = &ch;
+    if (ma_node_init(ma_engine_get_node_graph(&g_engine), &cfg, nullptr, &n.base) != MA_SUCCESS) return false;
+    n.chain = std::make_unique<SoundFx::Chain>((int)ma_engine_get_sample_rate(&g_engine), (int)ch);
+    n.ready = true;
+    return true;
+}
+
+void setChain(FxNode& n, const std::vector<SoundFx::Settings>& fx) {
+    if (SoundFx::same(n.settings, fx)) return;
+    std::lock_guard<std::mutex> hold(n.lock);
+    n.chain->set(fx);
+    n.settings = fx;
+}
+
+// Where something's sound goes next: a SoundGroup's bus, or straight out.
+ma_node* target(uint64_t bus) {
+    auto it = g_buses.find(bus);
+    return it != g_buses.end() && it->second->node->ready ? (ma_node*)&it->second->node->base : ma_engine_get_endpoint(&g_engine);
+}
+
+void reroute(Instance& in) {
+    ma_node* to = target(in.route);
+    if (in.fx && in.fx->ready) {
+        ma_node_attach_output_bus(&in.sound, 0, &in.fx->base, 0);
+        ma_node_attach_output_bus(&in.fx->base, 0, to, 0);
+    } else {
+        ma_node_attach_output_bus(&in.sound, 0, to, 0);
+    }
+}
+
+double clockNow() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 Instance* find(int handle) {
@@ -211,6 +289,7 @@ void shutdown() {
     Voice::shutdown();   // (its sounds use the engine)
     if (!g_ready) return;
     stopAll();
+    keepBuses({});
     ma_engine_uninit(&g_engine);
     g_ready = false;
 }
@@ -220,6 +299,11 @@ void update() {
     for (auto it = g_playing.begin(); it != g_playing.end();) {
         Instance& in = *it->second;
         if (!ma_sound_is_looping(&in.sound) && ma_sound_at_end(&in.sound)) {
+            // With an echo or reverb of its own, it rings on for a bit before it's let go.
+            if (in.fx && in.tail > 0.0f) {
+                if (in.endedAt < 0.0) in.endedAt = clockNow();
+                if (clockNow() - in.endedAt < in.tail) { ++it; continue; }
+            }
             destroy(in);
             it = g_playing.erase(it);
         } else {
@@ -295,6 +379,65 @@ void stopAll() {
 bool isPlaying(int handle) {
     Instance* in = find(handle);
     return in && ma_sound_is_playing(&in->sound);
+}
+
+void setEffects(int handle, const std::vector<SoundFx::Settings>& fx) {
+    Instance* in = find(handle);
+    if (!in) return;
+    if (fx.empty() && !in->fx) return;
+    if (!in->fx) {
+        in->fx = std::make_unique<FxNode>();
+        if (!makeFxNode(*in->fx)) { in->fx.reset(); return; }
+        setChain(*in->fx, fx);
+        reroute(*in);
+    } else {
+        setChain(*in->fx, fx);
+    }
+    in->tail = SoundFx::tailSeconds(fx);
+}
+
+void setRoute(int handle, uint64_t bus) {
+    Instance* in = find(handle);
+    if (!in || in->route == bus) return;
+    in->route = bus;
+    reroute(*in);
+}
+
+void setBus(uint64_t id, uint64_t parent, const std::vector<SoundFx::Settings>& fx) {
+    if (!g_ready || id == 0) return;
+    auto& b = g_buses[id];
+    bool moved = false;
+    if (!b) {
+        b = std::make_unique<Bus>();
+        b->node = std::make_unique<FxNode>();
+        if (!makeFxNode(*b->node)) { g_buses.erase(id); return; }
+        moved = true;
+    }
+    setChain(*b->node, fx);
+    if (moved || b->parent != parent) {
+        b->parent = parent == id ? 0 : parent;
+        ma_node_attach_output_bus(&b->node->base, 0, target(b->parent), 0);
+    }
+}
+
+void keepBuses(const std::set<uint64_t>& used) {
+    std::vector<uint64_t> gone;
+    for (auto& [id, b] : g_buses) if (!used.count(id)) gone.push_back(id);
+    if (gone.empty()) return;
+    // Whatever went into them goes straight out (or to what's left) from now on.
+    for (uint64_t id : gone) {
+        for (auto& [h, in] : g_playing) if (in->route == id) { in->route = 0; reroute(*in); }
+        for (auto& [other, b] : g_buses)
+            if (b->parent == id && !std::count(gone.begin(), gone.end(), other)) {
+                b->parent = 0;
+                ma_node_attach_output_bus(&b->node->base, 0, ma_engine_get_endpoint(&g_engine), 0);
+            }
+    }
+    for (uint64_t id : gone) {
+        auto it = g_buses.find(id);
+        if (it->second->node->ready) ma_node_uninit(&it->second->node->base, nullptr);
+        g_buses.erase(it);
+    }
 }
 
 void setVolume(int handle, float v) { if (Instance* in = find(handle)) ma_sound_set_volume(&in->sound, std::max(0.0f, v)); }

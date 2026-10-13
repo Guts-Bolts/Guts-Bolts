@@ -209,6 +209,8 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
         {"Characters & Tools", {"Tool", "Rig", "Animation", "Team", "ProximityPrompt"}},
         {"Containers", {"Model", "Folder"}},
         {"Effects & Lights", {"PointLight", "SpotLight", "Sound", "ForceField", "Decal", "Highlight", "Trail", "Beam"}},
+        {"Sound", {"SoundGroup", "ReverbSoundEffect", "EchoSoundEffect", "EqualizerSoundEffect", "DistortionSoundEffect",
+                   "PitchShiftSoundEffect", "ChorusSoundEffect", "CompressorSoundEffect", "FlangeSoundEffect", "TremoloSoundEffect"}},
         {"Water", {"Water", "WaterSource", "FluidVolume", "FluidSystem", "FluidEmitter"}},
         {"Constraints", {"Attachment", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
         {"Body Movers (classic)", {"BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce"}},
@@ -411,6 +413,8 @@ std::string className(const SceneNode& n) {
         case NodeKind::Beam:       return "Beam";
         case NodeKind::Light:      return n.lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::Sound:      return "Sound";
+        case NodeKind::SoundGroup: return "SoundGroup";
+        case NodeKind::SoundEffect: return SoundFx::kClassNames[(int)n.soundFx.type];
         case NodeKind::Attachment: return "Attachment";
         case NodeKind::ForceField: return "ForceField";
         case NodeKind::Tool:       return "Tool";

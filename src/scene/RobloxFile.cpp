@@ -1106,6 +1106,20 @@ struct Converter {
             node->looped = in.flag("Looped", false);
             node->autoplay = in.flag("Playing", false);
             ++report.sounds;
+        } else if (c == "SoundGroup") {
+            node = std::make_unique<SceneNode>(name, NodeKind::SoundGroup);
+            node->volume = std::clamp((float)in.num("Volume", 0.5), 0.0f, 10.0f);
+            ++report.sounds;
+        } else if (bool fx = false; (void)SoundFx::typeFromClass(c.c_str(), fx), fx) {
+            // ReverbSoundEffect, EchoSoundEffect...: the same settings, by name.
+            node = std::make_unique<SceneNode>(name, NodeKind::SoundEffect);
+            node->soundFx = soundFxDefaults(SoundFx::typeFromClass(c.c_str(), fx));
+            const auto& params = SoundFx::params(node->soundFx.type);
+            for (size_t i = 0; i < params.size(); ++i)
+                node->soundFx.v[i] = std::clamp((float)in.num(params[i].name, params[i].start), params[i].lo, params[i].hi);
+            node->soundFx.priority = (int)in.num("Priority", 0.0);
+            node->enabled = in.flag("Enabled", true);
+            ++report.sounds;
         } else if (c == "Attachment") {
             node = std::make_unique<SceneNode>(name, NodeKind::Attachment);
             glm::vec3 pos(0.0f);
@@ -1314,6 +1328,12 @@ struct Converter {
                     if (auto it = byRef.find(v->ref); it != byRef.end()) node->highlight.adornee = it->second->id;
                 continue;
             }
+            if (node->isSound()) {   // (its SoundGroup)
+                const Value* v = inst->get("SoundGroup");
+                if (v && v->kind == Value::Ref)
+                    if (auto it = byRef.find(v->ref); it != byRef.end() && it->second->isSoundGroup()) node->soundGroup = it->second->id;
+                continue;
+            }
             if (!node->isConstraint() && !node->isMover()) continue;
             auto ref = [&](const char* a, const char* b) -> uint64_t {
                 const Value* v = inst->get(a);
@@ -1451,6 +1471,8 @@ struct XmlWriter {
             case NodeKind::Beam:       cls = "Beam"; break;
             case NodeKind::Light:      cls = n.lightType == LightType::Spot ? "SpotLight" : "PointLight"; break;
             case NodeKind::Sound:      cls = "Sound"; break;
+            case NodeKind::SoundGroup: cls = "SoundGroup"; break;
+            case NodeKind::SoundEffect: cls = SoundFx::kClassNames[(int)n.soundFx.type]; break;
             case NodeKind::Attachment: cls = "Attachment"; break;
             case NodeKind::ForceField: cls = "ForceField"; break;
             case NodeKind::Tool:       cls = "Tool"; break;
@@ -1699,7 +1721,18 @@ struct XmlWriter {
             flt("PlaybackSpeed", n.pitch);
             boolean("Looped", n.looped);
             boolean("Playing", n.autoplay);
+            if (n.soundGroup) refProp("SoundGroup", n.soundGroup);
             break;
+        case NodeKind::SoundGroup:
+            flt("Volume", n.volume);
+            break;
+        case NodeKind::SoundEffect: {
+            const auto& params = SoundFx::params(n.soundFx.type);
+            for (size_t i = 0; i < params.size(); ++i) flt(params[i].name, n.soundFx.v[i]);
+            o << "<int name=\"Priority\">" << n.soundFx.priority << "</int>\n";
+            boolean("Enabled", n.enabled);
+            break;
+        }
         case NodeKind::Attachment: {
             glm::vec3 psize = n.parent ? n.parent->transform.scale : glm::vec3(1.0f);
             glm::mat4 r = glm::eulerAngleZYX(glm::radians(n.transform.rotation.z), glm::radians(n.transform.rotation.y),
@@ -1830,7 +1863,7 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
     Converter conv{scene, report, {}};
     for (const Inst* k : ws->children) conv.convert(*k, nullptr);
     // Scripts that run on the server live in ServerScriptService in Roblox.
-    for (const char* svc : {"StarterGui", "ServerScriptService", "ReplicatedStorage", "ServerStorage", "StarterPlayer", "ReplicatedFirst"}) {
+    for (const char* svc : {"StarterGui", "ServerScriptService", "ReplicatedStorage", "ServerStorage", "StarterPlayer", "ReplicatedFirst", "SoundService"}) {
         const Inst* s = findChild(doc.roots, svc);
         if (!s || s->children.empty()) continue;
         auto folder = std::make_unique<SceneNode>(svc, NodeKind::Model);
@@ -1893,8 +1926,17 @@ bool exportPlace(Scene& scene, const std::string& path, std::string& error) {
     w.o << "</Properties>\n";
     const SceneNode* ui = scene.root()->findChild("StarterGui");
     if (ui && ui->kind != NodeKind::Model) ui = nullptr;
-    for (auto& c : scene.root()->children) if (c.get() != ui) w.item(*c);
+    const SceneNode* sounds = scene.root()->findChild("SoundService");   // (SoundGroups, music...)
+    if (sounds && sounds->kind != NodeKind::Model) sounds = nullptr;
+    for (auto& c : scene.root()->children) if (c.get() != ui && c.get() != sounds) w.item(*c);
     w.o << "</Item>\n";
+    if (sounds) {   // our SoundService folder is Roblox's SoundService
+        w.o << "<Item class=\"SoundService\" referent=\"RBXSOUNDSERVICE\">\n<Properties>\n";
+        w.str("Name", "SoundService");
+        w.o << "</Properties>\n";
+        for (auto& c : sounds->children) w.item(*c);
+        w.o << "</Item>\n";
+    }
     if (ui) {   // our StarterGui folder is Roblox's StarterGui service
         w.o << "<Item class=\"StarterGui\" referent=\"RBXSTARTERGUI\">\n<Properties>\n";
         w.str("Name", "StarterGui");

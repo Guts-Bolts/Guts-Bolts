@@ -111,6 +111,8 @@ struct FxEvent {
     glm::vec3 pos;
     float     amount;              // Sound: volume
     std::string name = {};         // Sound: which sound
+    uint64_t  node = 0;            // Sound: the Sound object it came from (its effects and SoundGroup), 0 = none
+    bool      at3d = true;         // Sound: from `pos` (false = heard the same everywhere)
 };
 
 // Shown on the game's card in the Guts&BoltsPlayer app.
@@ -201,8 +203,8 @@ public:
     // Effects the host should show on everyone's screen.
     bool                  recordFx = false;
     std::vector<FxEvent>  fxQueue;
-    void pushFx(FxEvent::Type t, const glm::vec3& p, float amount, const std::string& name = {}) {
-        if (recordFx) fxQueue.push_back({t, p, amount, name});
+    void pushFx(FxEvent::Type t, const glm::vec3& p, float amount, const std::string& name = {}, uint64_t node = 0, bool at3d = true) {
+        if (recordFx) fxQueue.push_back({t, p, amount, name, node, at3d});
     }
 
     // Wipe everything and build the default starting place.

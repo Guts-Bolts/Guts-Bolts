@@ -53,6 +53,8 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Mover:        return kMoverClassNames[(int)n->mover.type];
         case NodeKind::Gui:        return kGuiClassNames[(int)n->gui.type];
         case NodeKind::Sound:      return "Sound";
+        case NodeKind::SoundGroup: return "SoundGroup";
+        case NodeKind::SoundEffect: return SoundFx::kClassNames[(int)n->soundFx.type];
         case NodeKind::Attachment: return "Attachment";
         case NodeKind::Constraint: return "Constraint";
         default: return n->primitiveType == PrimitiveType::Mesh ? "MeshPart" : "Part";

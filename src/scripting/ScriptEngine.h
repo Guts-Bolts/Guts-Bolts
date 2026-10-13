@@ -74,6 +74,19 @@ public:
     int  dataStart(const std::string& kind, const std::string& store, const std::string& key, double delta);
     bool dataDone(int ticket, nlohmann::json& value);
     void dataSet(const std::string& store, const std::string& key, const nlohmann::json& value);
+    // MessagingService: messages between the running servers of this game (each one gets every
+    // message, the sender too). Online - through the Guts&Bolts server - when setOnlineData is on
+    // and the server says we're running a server of the game; otherwise on this computer (a
+    // folder that Studio's play test, its multiplayer test server and any other local server of
+    // the same game share). Limits like Roblox's: topics 1-80 letters, messages 1 KB as JSON,
+    // 150 + 60 per player sends a minute, 20 + 8 per player subscriptions.
+    static constexpr size_t kMsgTopic = 80, kMsgSize = 1024;
+    // A send (the Lua side checked the topic and size): ticket, or 0 with `error` (too many).
+    int  msgPublish(const std::string& topic, const nlohmann::json& data, int players, std::string& error);
+    bool msgDone(int ticket, std::string& error);   // finished? (error "" = sent)
+    void msgSubscribe(const std::string& topic, bool on);
+    struct MsgIn { std::string topic; nlohmann::json data; double sent = 0.0; };
+    std::vector<MsgIn> takeMessages() { std::vector<MsgIn> out; out.swap(m_msgIn); return out; }
     // require(ID): a model from the Library, fetched once per game. 0 = still getting it,
     // 1 = ready (module = its MainModule), 2 = couldn't (error says why).
     int  libraryModule(const std::string& assetId, uint64_t& module, std::string& error);
@@ -231,6 +244,25 @@ private:
     struct LibraryModule { int state = 0; uint64_t module = 0; std::string error; };
     std::map<std::string, LibraryModule> m_libraryModules;   // require(ID): asset ID -> what we got
     std::map<std::string, DataCached> m_dataCache; // "store\nkey" -> what we last saw or wrote
+    // MessagingService (see msgPublish).
+    enum class MsgMode { Unknown, Asking, Local, Online };
+    struct MsgOut { int ticket = 0; std::string topic; nlohmann::json data; };
+    void msgStep();                                  // every frame: ask for / read new messages
+    void msgSync();                                  // online: find out where the game's messages are up to
+    void msgSend(const MsgOut& m);
+    std::filesystem::path msgFolder() const;
+    MsgMode     m_msgMode = MsgMode::Unknown;
+    std::map<std::string, double> m_msgTopics;       // subscribed topic -> since when (unix seconds)
+    std::vector<MsgIn>  m_msgIn;                     // arrived, for the scripts
+    std::vector<MsgOut> m_msgQueue;                  // waiting while we ask the server
+    std::map<int, std::string> m_msgDone;            // ticket -> error ("" = sent)
+    std::vector<double> m_msgSentAt;                 // the rate limit
+    std::set<std::string> m_msgSeen;                 // local message files already read
+    std::string m_msgToken;                          // this engine's part of local file names
+    long long   m_msgAfter = -1, m_msgCount = 0;
+    int         m_msgNext = 1;
+    bool        m_msgPolling = false;
+    double      m_msgNextPoll = 0.0, m_msgPruned = 0.0;
     std::filesystem::path saveFile() const;
     struct Waiting {
         int        ref;
