@@ -255,8 +255,11 @@ vec3 bump(vec3 N, float h) {
     vec3 grad = sign(det) * (dhx * r1 + dhy * r2);
     return normalize(abs(det) * N - grad);
 }
-// How much of a pattern to show: none once it repeats in fewer than ~3 pixels (no shimmer).
-float fadeAt(float px, float period) { return clamp(2.0 - px * 6.0 / period, 0.0, 1.0); }
+// How much of a pattern to show: all of it while it repeats every 5 or so pixels,
+// none once it's down to about 2 (no shimmer). px: fwidth length (~2 pixels).
+float fadeAt(float px, float period) { return clamp((period / px - 1.0) / 1.5, 0.0, 1.0); }
+// A soft-edged line: 1 within `w` of an edge, anti-aliased over a pixel.
+float lineAA(float d, float w, float px) { return 1.0 - smoothstep(w - px * 0.35, w + px * 0.35, d); }
 
 void main() {
     vec3 N = normalize(vNormal);
@@ -341,16 +344,18 @@ void main() {
         float h = 0.0;
         vec2 cid;
         if (uMaterial == 10) {                                    // sand: fine grains, wind ripples
-            float f = fadeAt(px, 0.02);
-            float grain = hash12(floor(uv * 70.0));
-            albedo *= mix(1.0, 0.82 + 0.3 * grain, f) * (0.9 + 0.2 * fbm(uv * 0.7));
-            h = sin(uv.x * 3.5 + uv.y * 1.2 + fbm(uv * 0.5) * 5.0) * 0.012 * fadeAt(px, 1.5) + grain * 0.002 * f;
+            float f = fadeAt(px, 0.03);
+            float grain = hash12(floor(uv * 35.0));
+            float ripple = sin(uv.x * 3.5 + uv.y * 1.2 + fbm(uv * 0.5) * 5.0);
+            albedo *= mix(1.0, 0.85 + 0.25 * grain, f) * (0.82 + 0.3 * fbm(uv * 2.5)) * (0.95 + 0.05 * ripple);
+            h = ripple * 0.02 * fadeAt(px, 1.5) + grain * 0.003 * f;
             rough = 0.95;
         } else if (uMaterial == 11) {                             // grass: blades (upright on the sides), patches
-            float f = fadeAt(px, 0.03);
-            float blades = top ? vnoise(uv * 45.0) : vnoise(vec2(uv.x * 40.0, uv.y * 5.0 + vnoise(uv * 9.0)));
+            float f = fadeAt(px, 0.07);
+            float blades = top ? vnoise(uv * 28.0) : vnoise(vec2(uv.x * 26.0, uv.y * 3.0 + vnoise(uv * 7.0) * 2.0));
+            float clumps = vnoise(uv * 5.0);
             float patches = fbm(uv * 0.45);
-            albedo *= mix(1.0, 0.6 + 0.65 * blades, f) * (0.8 + 0.4 * patches);
+            albedo *= mix(1.0, 0.55 + 0.7 * blades, f) * (0.75 + 0.35 * clumps) * (0.8 + 0.4 * patches);
             albedo *= mix(vec3(1.0), vec3(1.1, 1.05, 0.75), smoothstep(0.55, 0.8, patches) * 0.6);   // sun-dried bits
             h = blades * 0.015 * f;
             rough = 0.92;
@@ -360,7 +365,7 @@ void main() {
             b.x += mod(row, 2.0) * 0.5;
             vec2 f2 = fract(b);
             vec2 e = min(f2, 1.0 - f2) * vec2(1.0, 0.4);
-            float mortar = 1.0 - smoothstep(0.02, 0.035, min(e.x, e.y));
+            float mortar = lineAA(min(e.x, e.y), 0.04, px);
             float tint = hash12(vec2(floor(b.x), row));
             vec3 brick = albedo * (0.75 + 0.4 * tint) * (0.88 + 0.24 * vnoise(uv * 14.0));
             vec3 mortarCol = mix(lin(vec3(0.66, 0.64, 0.6)), albedo, 0.25);
@@ -369,12 +374,13 @@ void main() {
             h = (1.0 - mortar) * 0.02 * f + vnoise(uv * 20.0) * 0.003 * f;
             rough = 0.9;
         } else if (uMaterial == 13) {                             // fabric: woven threads, a bit fuzzy
-            vec2 t = uv * 22.0;
+            vec2 t = uv * 16.0;
             float over = mod(floor(t.x) + floor(t.y), 2.0);
             float thread = over > 0.5 ? sin(3.14159 * fract(t.y)) : sin(3.14159 * fract(t.x));
-            float f = fadeAt(px, 0.05);
-            albedo *= mix(1.0, 0.72 + 0.32 * thread, f) * (0.92 + 0.12 * fbm(uv * 3.0));
-            h = thread * 0.006 * f;
+            float f = fadeAt(px, 0.025);                          // (only close up: a weave moirés)
+            float fuzz = vnoise(uv * 6.0) * 0.5 + vnoise(uv * 15.0) * 0.5 * fadeAt(px, 0.07);   // soft and felty
+            albedo *= mix(0.92, 0.76 + 0.28 * thread, f) * (0.8 + 0.3 * fuzz) * (0.92 + 0.12 * fbm(uv * 1.5));
+            h = thread * 0.01 * f;
             rough = 1.0;
         } else if (uMaterial == 14) {                             // slate: flat, layered slabs
             float n = fbm(uv * vec2(0.6, 1.8) + vec2(3.1, 0.0));
@@ -384,13 +390,13 @@ void main() {
             h = slabs * 0.04 + vnoise(uv * 6.0) * 0.006 * f;
             rough = 0.75;
         } else if (uMaterial == 15) {                             // granite: dark and light crystals, polished
-            vec3 v = voronoi(uv * 20.0, cid);
-            float f = fadeAt(px, 0.05);
-            vec3 g = albedo * (0.85 + 0.25 * vnoise(uv * 3.0));
+            vec3 v = voronoi(uv * 9.0, cid);
+            float f = fadeAt(px, 0.11);
+            vec3 g = albedo * (0.8 + 0.35 * fbm(uv * 1.5));
             if (v.z < 0.22) g = albedo * 0.25;
             else if (v.z > 0.86) g = mix(albedo, vec3(0.95), 0.6);
             else if (v.z > 0.7) g = albedo * vec3(1.15, 0.95, 0.9);
-            albedo = mix(albedo * 0.85, g, f);
+            albedo = mix(albedo * (0.8 + 0.3 * fbm(uv * 1.5)), g, f);
             rough = 0.4;
         } else if (uMaterial == 16) {                             // marble: polished, with soft winding veins
             float w = fbm(uv * 0.8);
@@ -401,29 +407,29 @@ void main() {
             rough = 0.12;
         } else if (uMaterial == 17) {                             // cobblestone: rounded stones, dark gaps
             vec3 v = voronoi(uv * 1.7, cid);
-            float gap = 1.0 - smoothstep(0.03, 0.09, v.y);
+            float gap = lineAA(v.y / 1.7, 0.035, px);
             float f = fadeAt(px, 0.3);
             vec3 stone = albedo * (0.65 + 0.5 * v.z) * (0.85 + 0.3 * vnoise(uv * 10.0));
             albedo = mix(albedo * 0.85, mix(stone, albedo * 0.25, gap), f);
             h = (smoothstep(0.0, 0.2, v.y) * 0.05 + vnoise(uv * 8.0) * 0.005) * f;
             rough = 0.85;
         } else if (uMaterial == 18) {                             // foil: thin crinkled metal, every facet tilted
-            vec3 v = voronoi(uv * 6.0, cid);
-            float f = fadeAt(px, 0.08);
+            vec3 v = voronoi(uv * 5.0, cid);
+            float f = fadeAt(px, 0.2);
             vec3 tilt = vec3(hash12(cid + 3.7), hash12(cid + 9.1), hash12(cid + 5.3)) - 0.5;
             N = normalize(N + tilt * 0.5 * f);
             albedo *= mix(1.0, 0.85 + 0.25 * v.z, f);
             h = v.y * 0.01 * f;
-            metal = 1.0; rough = 0.22;
+            metal = 1.0; rough = 0.25;
         } else if (uMaterial == 19) {                             // diamond plate: raised stripes, every other one turned
-            vec2 p = uv * 2.4;
+            vec2 p = uv * 1.6;
             vec2 cell = floor(p), q = fract(p) - 0.5;
             q = mod(cell.x + cell.y, 2.0) > 0.5 ? vec2(q.x + q.y, q.x - q.y) : vec2(q.x - q.y, q.x + q.y);
-            float d = abs(q.x) / 0.42 + abs(q.y) / 0.1;
+            float d = abs(q.x) / 0.62 + abs(q.y) / 0.16;
             float stud = 1.0 - smoothstep(0.8, 1.0, d);
-            float f = fadeAt(px, 0.12);
-            h = stud * 0.025 * f;
-            albedo *= mix(1.0, 0.86 + 0.14 * stud, f) * (0.95 + 0.05 * vnoise(vec2(uv.x * 80.0, uv.y * 2.0)));
+            float f = fadeAt(px, 0.1);
+            h = stud * 0.03 * f;
+            albedo *= mix(0.85, 0.72 + 0.35 * stud, f) * (0.95 + 0.05 * vnoise(vec2(uv.x * 40.0, uv.y * 2.0)));
             metal = 1.0; rough = mix(0.4, 0.28, stud * f);
         } else {                                                  // smooth plastic: no grain, glossier
             rough = 0.22;

@@ -1326,8 +1326,9 @@ int inst_index(lua_State* L) {
             if (is(k, "WaveScale"))    { lua_pushnumber(L, numAttr(n, "WaveScale", numAttr(n, "Waves", 0.0f) * 2.0f)); return 1; }
             if (is(k, "Drag"))         { lua_pushnumber(L, numAttr(n, "Drag", 1.0f)); return 1; }   // how hard it pushes things (1 = water)
         }
-        if (is(k, "Friction"))   { lua_pushnumber(L, n->friction); return 1; }
-        if (is(k, "Elasticity")) { lua_pushnumber(L, n->elasticity); return 1; }
+        // (unset: the material's own, like Density)
+        if (is(k, "Friction"))   { lua_pushnumber(L, n->friction >= 0 ? n->friction : materialPhysics(n->material).friction); return 1; }
+        if (is(k, "Elasticity")) { lua_pushnumber(L, n->elasticity >= 0 ? n->elasticity : materialPhysics(n->material).elasticity); return 1; }
         if (is(k, "Touched"))      { LuaApi::pushSignal(L, SignalKind::Touched, n->id); return 1; }
         if (is(k, "Clicked"))      { LuaApi::pushSignal(L, SignalKind::Clicked, n->id); return 1; }
     }
