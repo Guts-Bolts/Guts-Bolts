@@ -1326,7 +1326,7 @@ export class GbServerObject extends DurableObject {
         try { data = b64ToBytes(str(args, 'data')); } catch { return fail('The picture got scrambled. Try again.'); }
         const type = pictureType(data);
         if (!type) return fail('Screenshots must be .png, .jpg or .webp pictures.');
-        if (data.length > kShotSize) return fail('That screenshot is too big (the most is ' + (kShotSize >> 20) + ' MB). Try a smaller picture or a .jpg.');
+        if (data.length > kShotSize) return fail('That screenshot is too big (the most is ' + (kShotSize >> 20) + ' MB). Try a smaller picture, or save it as a .jpg.');
         const sh = { id: randomHex(6), at: t, type };
         this.writeFile('shot:' + a.id + ':' + sh.id, data);
         a.shots.push(sh);
@@ -2304,7 +2304,7 @@ export class GbServerObject extends DurableObject {
       const n = [...this.sql.exec('SELECT COUNT(*) AS n FROM pasttrades WHERE a = ? OR b = ?', me.id, me.id)][0].n;
       const pages = Math.max(1, Math.ceil(n / kPastTradesPage));
       const page = Math.min(Math.max(1, Math.trunc(Number(args.page)) || 1), pages);
-      const rows = [...this.sql.exec('SELECT data FROM pasttrades WHERE a = ? OR b = ? ORDER BY at DESC, id DESC LIMIT ? OFFSET ?',
+      const rows = [...this.sql.exec('SELECT data FROM pasttrades WHERE a = ? OR b = ? ORDER BY at DESC, rowid DESC LIMIT ? OFFSET ?',
         me.id, me.id, kPastTradesPage, (page - 1) * kPastTradesPage)];
       const trades = rows.map((r) => {
         const x = JSON.parse(r.data), sent = x.from === me.id, otherId = sent ? x.to : x.from, other = this.users.get(otherId);

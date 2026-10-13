@@ -133,7 +133,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // except looking around: visitors to the website can browse before signing up.
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
-                                                    "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies",
+                                                    "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get",
                                                     "get", "servers.play", "relay.host", "relay.join", "product.pending", "product.grant"};
     if (me.userId == 0 && opName != "hello" && opName != "ping" && opName.rfind("account.", 0) != 0 &&
         !kLookOnly.count(opName) && opName != "support.send" && opName != "support.mine")
@@ -303,6 +303,9 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
         if (auto g = m_groups.find(a.meta.value("group", std::string())); g != m_groups.end())
             j["group"] = {{"id", g->second.id}, {"name", g->second.name}, {"color", g->second.color}};
         if (a.meta.value("featured", 0LL) > 0) j["featured"] = true;
+        json shots = json::array();
+        for (const json& s : a.shots) shots.push_back(s.value("id", std::string()));
+        j["shots"] = shots;
     }
     auto it = m_users.find(a.creator);
     j["creatorName"] = it != m_users.end() ? it->second.name : "?";
@@ -526,7 +529,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         name == "profile.set" || name == "feed.list")
         return socialOp(name, me, args);
     if (name.rfind("item.", 0) == 0 || name.rfind("resale.", 0) == 0 || name.rfind("trade.", 0) == 0 ||
-        name.rfind("updates.", 0) == 0 || name == "game.vote" || name == "icon.set" || name == "icon.get" || name == "model.access")
+        name.rfind("updates.", 0) == 0 || name.rfind("shots.", 0) == 0 || name == "game.vote" || name == "icon.set" || name == "icon.get" || name == "model.access")
         return itemOp(name, me, args);   // ServerItems.cpp
     if (name == "ping") {   // "I'm still here" (for friends' online dots); the answer keeps your account fresh
         json r = okay(); r["me"] = meJson(me); return r;
@@ -1269,6 +1272,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         fs::remove(blobPath(it->first), ec);
         fs::remove(m_opts.data / "files" / ("thumb-" + it->first), ec);
         fs::remove(m_opts.data / "files" / ("icon-" + it->first), ec);
+        for (const json& s : it->second.shots) fs::remove(m_opts.data / "files" / ("shot-" + it->first + "-" + s.value("id", std::string())), ec);
         log(me.name + " deleted " + it->second.kind + " \"" + it->second.name + "\"");
         m_assets.erase(it);
         saveAssets();
@@ -1386,6 +1390,7 @@ void GbServer::saveAssets() {
         if (a.icon) all[id]["icon"] = a.icon;
         if (a.kind == "game") { all[id]["likes"] = a.likes; all[id]["dislikes"] = a.dislikes; all[id]["votes"] = a.votes; }
         if (a.limited) { all[id]["limited"] = true; all[id]["stock"] = a.stock; all[id]["copies"] = a.copies; }
+        if (!a.shots.empty()) all[id]["shots"] = a.shots;
     }
     writeFile(m_opts.data / "assets.json", all.dump(1));
 }
@@ -1578,6 +1583,9 @@ void GbServer::load() {
                         if (c.is_object() && c.contains("serial") && c["serial"].is_number_integer() && c.contains("owner") && c["owner"].is_string())
                             a.copies.push_back({{"serial", c["serial"].get<long long>()}, {"owner", c["owner"]},
                                                 {"price", c.contains("price") && c["price"].is_number_integer() ? c["price"].get<long long>() : 0LL}});
+                if (j.contains("shots") && j["shots"].is_array())
+                    for (const json& s : j["shots"])
+                        if (s.is_object() && s.contains("id") && s["id"].is_string()) a.shots.push_back(s);
                 if (Online::validKind(a.kind)) m_assets[id] = a;
             }
     }
@@ -1586,6 +1594,7 @@ void GbServer::load() {
     loadStaffLog();
     loadForum();
     loadTrades();
+    loadPastTrades();
     loadUpdates();
     loadIds();
     log("loaded " + std::to_string(m_users.size()) + " accounts, " + std::to_string(m_assets.size()) + " uploads and " +

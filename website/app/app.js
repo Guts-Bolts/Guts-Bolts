@@ -1071,6 +1071,80 @@ function privateServerBox(g, s) {
       : html`<button class="btn green" data-act="buyPrivate" data-id="${g.id}" data-name="${g.name}" data-price="${price}">Buy a private server</button>`}</div>`;
 }
 
+// A game's pictures on its page: the thumbnail, then the creator's screenshots (up to 5), with
+// arrows, a strip to pick one, and a click (or tap) for a big view. Swipe works on phones.
+const shotUrl = (g, s) => `/shot/${encodeURIComponent(g.id)}/${encodeURIComponent(s)}`;
+// Screenshot limits (the server has the same: kMaxShots, kShotSize).
+const SHOT_MOST = 5, SHOT_MB = 2;
+function shotProblem(file) {
+  const okType = ['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name);
+  if (!okType) return `"${file.name}" isn't a .png, .jpg or .webp picture.`;
+  if (file.size > SHOT_MB * 1024 * 1024) return `"${file.name}" is too big (${(file.size / 1048576).toFixed(1)} MB; the most is ${SHOT_MB} MB). Try a smaller picture, or save it as a .jpg.`;
+  return '';
+}
+let gallery = { pics: [], i: 0 };
+function gameGallery(g) {
+  const shots = g.shots || [];
+  if (!shots.length) return gamePic(g);
+  const pics = [...(g.thumb ? [{ src: `/thumb/${encodeURIComponent(g.id)}?v=${g.thumb}`, alt: g.name }] : []),
+    ...shots.map((s, i) => ({ src: shotUrl(g, s), alt: `Screenshot ${i + 1} of ${g.name}` }))];
+  gallery = { pics, i: 0 };
+  return html`<div class="gallery">
+    <div class="gallery-stage" data-swipe="gallery">
+      <button type="button" class="gallery-main" data-act="galleryOpen" aria-label="Show this picture bigger">
+        <img id="galleryImg" src="${pics[0].src}" alt="${pics[0].alt}"></button>
+      ${pics.length > 1 ? html`<button type="button" class="gallery-arrow prev" data-act="galleryStep" data-step="-1" aria-label="Previous picture">&lsaquo;</button>
+        <button type="button" class="gallery-arrow next" data-act="galleryStep" data-step="1" aria-label="Next picture">&rsaquo;</button>
+        <span class="gallery-count" id="galleryCount">1 / ${pics.length}</span>` : ''}</div>
+    ${pics.length > 1 ? html`<div class="gallery-strip">${pics.map((p, i) => html`<button type="button" class="gallery-thumb ${i ? '' : 'on'}"
+        data-act="galleryShow" data-i="${i}" aria-label="Picture ${i + 1} of ${pics.length}"><img src="${p.src}" alt="" loading="lazy"></button>`)}</div>` : ''}</div>`;
+}
+function galleryGo(i) {
+  const n = gallery.pics.length;
+  if (!n) return;
+  gallery.i = ((i % n) + n) % n;
+  const p = gallery.pics[gallery.i];
+  for (const img of document.querySelectorAll('#galleryImg, #lightboxImg')) { img.src = p.src; img.alt = p.alt; }
+  for (const c of document.querySelectorAll('#galleryCount, #lightboxCount')) c.textContent = (gallery.i + 1) + ' / ' + n;
+  document.querySelectorAll('.gallery-thumb').forEach((b, k) => b.classList.toggle('on', k === gallery.i));
+}
+function galleryLightbox() {
+  document.querySelectorAll('.lightbox').forEach((m) => m.remove());
+  const p = gallery.pics[gallery.i], many = gallery.pics.length > 1;
+  const box = document.createElement('div');
+  box.className = 'modal lightbox';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-label', 'Pictures');
+  box.dataset.swipe = 'gallery';
+  box.innerHTML = html`<button type="button" class="lightbox-x" data-act="galleryClose" aria-label="Close">&times;</button>
+    <img id="lightboxImg" src="${p.src}" alt="${p.alt}">
+    ${many ? html`<button type="button" class="gallery-arrow prev" data-act="galleryStep" data-step="-1" aria-label="Previous picture">&lsaquo;</button>
+      <button type="button" class="gallery-arrow next" data-act="galleryStep" data-step="1" aria-label="Next picture">&rsaquo;</button>
+      <span class="gallery-count" id="lightboxCount">${gallery.i + 1} / ${gallery.pics.length}</span>` : ''}`.s;
+  box.addEventListener('click', (e) => { if (e.target === box) box.remove(); });   // a click outside the picture closes it
+  document.body.appendChild(box);
+  box.querySelector('.lightbox-x').focus();
+}
+document.addEventListener('keydown', (e) => {
+  if (!document.querySelector('.lightbox')) return;
+  if (e.key === 'Escape') document.querySelectorAll('.lightbox').forEach((m) => m.remove());
+  else if (e.key === 'ArrowLeft') galleryGo(gallery.i - 1);
+  else if (e.key === 'ArrowRight') galleryGo(gallery.i + 1);
+});
+// Swiping left or right on the picture (phones) moves through them.
+let swipeStart = null;
+document.addEventListener('touchstart', (e) => {
+  swipeStart = e.target.closest && e.target.closest('[data-swipe=gallery]') && e.touches.length === 1
+    ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+}, { passive: true });
+document.addEventListener('touchend', (e) => {
+  if (!swipeStart || !e.changedTouches.length) return;
+  const dx = e.changedTouches[0].clientX - swipeStart.x, dy = e.changedTouches[0].clientY - swipeStart.y;
+  swipeStart = null;
+  if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) galleryGo(gallery.i + (dx < 0 ? 1 : -1));
+}, { passive: true });
+
 pages.game = async (id) => {
   const [r, s] = await Promise.all([pageCall('list', { kind: 'game', limit: 100 }), pageCall('servers.list', { game: id })]);
   const g = r.ok && r.assets.find((a) => a.id === id || String(a.num) === id);
@@ -1102,7 +1176,7 @@ pages.game = async (id) => {
       <button class="btn small" data-act="serverPage" data-to="${serverPage + 1}" ${serverPage === pages ? 'disabled' : ''}>&rsaquo;</button>
       <button class="btn small" data-act="serverPage" data-to="${pages}" ${serverPage === pages ? 'disabled' : ''}>&raquo;</button></div>` : '';
   show(html`<p><a href="#/games">&lt; Games</a></p>
-    <div class="hero">${gamePic(g)}
+    <div class="hero">${gameGallery(g)}
       <div><h1 class="game-title">${gameIcon(g, 40)} ${g.name}</h1>
         ${g.access && g.access !== 'public' ? html`<p><span class="badge-pill">${ACCESS_NAMES[g.access]}</span></p>` : ''}
         ${g.featured ? html`<p><span class="badge-pill featured-pill">&#11088; Featured</span></p>` : ''}
@@ -1447,6 +1521,7 @@ pages.configure = async (id) => {
   const myGroups = (gr.ok ? gr.groups : []).filter((x) => (x.perms || []).includes('games') || (g.group && x.id === g.group.id));
   if (g.group && !myGroups.some((x) => x.id === g.group.id)) myGroups.push(g.group);
   const passes = pr.ok ? pr.passes : [], products = dr.ok ? dr.passes : [];
+  const shots = g.shots || [];
   const choice = (v, label, note) => html`<label class="choice"><input type="radio" name="access" value="${v}" ${access === v ? 'checked' : ''}>
     <b>${label}</b> <span class="muted small">${note}</span></label>`;
   show(html`<p><a href="#/create/games">&lt; My Games</a></p>
@@ -1491,6 +1566,21 @@ pages.configure = async (id) => {
         <button type="button" class="btn red" data-act="deleteAsset" data-id="${g.id}" data-name="${g.name}" style="float:right">Delete game</button>
         <span id="configMsg"></span></p>
     </form>
+    <div class="box" id="screenshots"><h2 class="boxhead">Screenshots</h2>
+      <p class="small muted">Up to ${SHOT_MOST} pictures of your game, shown after the thumbnail on its page (people can click them to see them bigger).
+        .png, .jpg or .webp, up to ${SHOT_MB} MB each. Pictures from your game in the Player or Studio work best.</p>
+      ${shots.length ? html`<div class="shot-grid">${shots.map((s, i) => html`<div class="shot-edit" data-shot="${s}">
+          <a href="${shotUrl(g, s)}" target="_blank" rel="noopener"><img src="${shotUrl(g, s)}" alt="Screenshot ${i + 1}" loading="lazy"></a>
+          <div class="shot-buttons"><span class="small muted">${i + 1}</span>
+            <button type="button" class="btn small" data-act="shotMove" data-id="${g.id}" data-shot="${s}" data-dir="-1" ${i ? '' : 'disabled'} aria-label="Move screenshot ${i + 1} earlier">&lsaquo;</button>
+            <button type="button" class="btn small" data-act="shotMove" data-id="${g.id}" data-shot="${s}" data-dir="1" ${i < shots.length - 1 ? '' : 'disabled'} aria-label="Move screenshot ${i + 1} later">&rsaquo;</button>
+            <button type="button" class="btn small red" data-act="shotDelete" data-id="${g.id}" data-shot="${s}">Delete</button></div></div>`)}</div>`
+        : html`<p class="muted">No screenshots yet.</p>`}
+      ${shots.length < SHOT_MOST ? html`<form class="form" data-form="shotsAdd"><input type="hidden" name="id" value="${g.id}"><input type="hidden" name="count" value="${shots.length}">
+          <label>Add screenshots <span class="muted small">(${SHOT_MOST - shots.length} more)</span></label>
+          <input type="file" name="files" accept="image/png,image/jpeg,image/webp" multiple>
+          <p><button class="btn green">Upload</button> <span id="shotsMsg"></span></p></form>`
+        : html`<p class="small muted">That's the most a game can have. Delete one to add another.</p>`}</div>
     <div class="box"><h2 class="boxhead">Badges</h2>
       <p class="small muted">Make badges players earn in your game. Give one from a script:
         <code>game:GetService("BadgeService"):AwardBadge(player, "badge-id")</code>
@@ -1550,9 +1640,16 @@ pages.configure = async (id) => {
   }));
 };
 
-// Trades: offers of your limited copies for someone else's.
-pages.trades = async () => {
+// Trades: offers of your limited copies for someone else's. Two tabs: Open (#/trades) and
+// Past trades (#/trades/past/<page>): every finished trade, newest first.
+const tradeTabs = (tab) => html`<div class="tabs"><a class="btn ${tab === 'open' ? 'blue' : ''}" href="#/trades">Open trades</a>
+  <a class="btn ${tab === 'past' ? 'blue' : ''}" href="#/trades/past">Past trades</a></div>`;
+const TRADE_OUTCOMES = { accepted: 'Accepted', declined: 'Declined', cancelled: 'Cancelled', expired: 'Expired', failed: 'Couldn\'t happen' };
+const tradeItems = (items) => items.length
+  ? items.map((i) => html`<a class="chip" href="#/item/${i.id}">${i.name} <b>#${i.serial}</b></a> `) : html`<span class="muted">Nothing</span>`;
+pages.trades = async (tab, pageNo) => {
   if (!signedIn()) { show(html`<h1>Trades</h1>${needSignIn('trade Limited items')}`); return; }
+  if (tab === 'past') { await pastTradesPage(Number(pageNo) || 1); return; }
   const r = await pageCall('trade.list', {});
   const list = (items) => items.map((i) => html`<a href="#/item/${i.id}">${i.name} #${i.serial}</a>`).reduce((acc, x, k) => html`${acc}${k ? ', ' : ''}${x}`, html``);
   const row = (tr) => {
@@ -1564,14 +1661,44 @@ pages.trades = async () => {
           <button class="btn small" data-act="tradeAnswer" data-op="trade.decline" data-id="${tr.id}">Decline</button>`
         : html`<button class="btn small" data-act="tradeAnswer" data-op="trade.cancel" data-id="${tr.id}">Cancel</button>`) : ''}</div>`;
   };
-  const open = r.ok ? r.trades.filter((x) => x.status === 'open') : [], done = r.ok ? r.trades.filter((x) => x.status !== 'open') : [];
-  show(html`<h1>Trades</h1>
-    <p class="muted">Trade your Limited items with other players. Open someone's profile and press <b>Trade</b> to make an offer.</p>
+  const open = r.ok ? r.trades.filter((x) => x.status === 'open') : [];
+  show(html`<h1>Trades</h1>${tradeTabs('open')}
+    <p class="muted">Trade your Limited items with other players. Open someone's profile and press <b>Trade</b> to make an offer.
+      A trade nobody answers runs out after 30 days.</p>
+    ${r.ok ? '' : html`<p class="error">${r.error}</p>`}
     <h2>Your Limiteds</h2>${r.ok && r.items.length ? html`<div class="row">${r.items.map((i) => html`<a class="chip" href="#/item/${i.id}">${i.name} #${i.serial}</a>`)}</div>`
       : html`<p class="muted">You don't have any Limited items yet.</p>`}
     <h2>Open</h2>${open.length ? html`<div class="list">${open.map(row)}</div>` : html`<p class="muted">No open trades.</p>`}
-    <h2>History</h2>${done.length ? html`<div class="list">${done.slice(0, 30).map(row)}</div>` : html`<p class="muted">Nothing yet.</p>`}`);
+    <p class="small muted">Finished trades are under <a href="#/trades/past">Past trades</a>.</p>`);
 };
+
+// Past trades: who it was with, what each of you put in, when it finished and how it ended.
+// Only you and the other person can see a trade here.
+async function pastTradesPage(page) {
+  const r = await pageCall('trade.history', { page });
+  if (!r.ok) { show(html`<h1>Trades</h1>${tradeTabs('past')}<p class="error">${r.error}</p>`); return; }
+  const who = (w) => w.userId ? html`<a href="#/user/${w.userId}"><b>${w.name}</b></a>` : html`<b>${w.name}</b>`;
+  const card = (tr) => {
+    const done = tr.status === 'accepted';
+    return html`<div class="past-trade">
+      <div class="past-trade-head">
+        <span class="outcome outcome-${tr.status}">${TRADE_OUTCOMES[tr.status] || tr.status}</span>
+        <span class="grow">${tr.sent ? html`You sent a trade to ${who(tr.with)}` : html`${who(tr.with)} sent you a trade`}</span>
+        <span class="small muted" title="${new Date(tr.finished * 1000).toLocaleString()}">${new Date(tr.finished * 1000).toLocaleDateString()}</span></div>
+      <div class="past-trade-sides">
+        <div><span class="small muted">${done ? 'You gave' : 'You put in'}</span><div>${tradeItems(tr.gave)}</div></div>
+        <div><span class="small muted">${done ? html`You got (from ${tr.with.name})` : html`${tr.with.name} put in`}</span><div>${tradeItems(tr.got)}</div></div></div>
+      ${done ? '' : html`<p class="small muted">Nothing changed hands.</p>`}</div>`;
+  };
+  const pager = r.pages > 1 ? html`<div class="pager">
+      <a class="btn small ${r.page === 1 ? 'disabled' : ''}" href="#/trades/past/${Math.max(1, r.page - 1)}" aria-label="Newer trades">&lsaquo; Newer</a>
+      <span>Page ${r.page} of ${r.pages}</span>
+      <a class="btn small ${r.page === r.pages ? 'disabled' : ''}" href="#/trades/past/${Math.min(r.pages, r.page + 1)}" aria-label="Older trades">Older &rsaquo;</a></div>` : '';
+  show(html`<h1>Trades</h1>${tradeTabs('past')}
+    <p class="muted">Your finished trades, newest first: accepted, declined, cancelled and expired. Only you and the other person can see them.</p>
+    ${r.trades.length ? html`<div class="past-trades">${r.trades.map(card)}</div>${pager}`
+      : html`<p class="muted">No finished trades yet. Trades you send or get show up here once they're accepted, declined, cancelled or expire.</p>`}`);
+}
 
 pages.trade = async (id) => {
   if (!signedIn()) { show(html`<h1>Trade</h1>${needSignIn('trade Limited items')}`); return; }
@@ -2567,6 +2694,27 @@ const actions = {
     toast(r.ok ? 'It\'s yours!' : r.error);
     render();
   },
+  // The pictures on a game's page (gameGallery).
+  galleryStep(d) { galleryGo(gallery.i + Number(d.step)); },
+  galleryShow(d) { galleryGo(Number(d.i)); },
+  galleryOpen() { galleryLightbox(); },
+  galleryClose() { document.querySelectorAll('.lightbox').forEach((m) => m.remove()); },
+  // Screenshots on the Configure page: move one left or right, or delete it.
+  async shotMove(d) {
+    const order = [...view.querySelectorAll('.shot-edit[data-shot]')].map((x) => x.dataset.shot);
+    const i = order.indexOf(d.shot), j = i + Number(d.dir);
+    if (i < 0 || j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    const r = await call('shots.order', { id: d.id, order });
+    if (!r.ok) { toast(r.error); return; }
+    render();
+  },
+  async shotDelete(d) {
+    if (!confirm('Delete this screenshot? It comes off the game\'s page straight away.')) return;
+    const r = await call('shots.delete', { id: d.id, shot: d.shot });
+    toast(r.ok ? 'Screenshot deleted.' : r.error);
+    render();
+  },
   async tradeAnswer(d) {
     const r = await call(d.op, { id: d.id });
     if (r.ok && r.me) setMe(r.me);
@@ -3031,6 +3179,32 @@ const forms = {
     const r = await call('gamebadge.create', { game: f.game.value, name: f.name.value, description: f.description.value, color });
     toast(r.ok ? 'Badge made! Copy its ID into your script.' : r.error);
     if (r.ok) render();
+  },
+  // Add screenshots to a game (Configure page): each one is checked here first so the
+  // message is quick, and the server checks again.
+  async shotsAdd(f) {
+    const msg = $('#shotsMsg'), say = (t, cls = 'muted') => { msg.className = cls; msg.textContent = ' ' + t; };
+    const files = [...f.files.files], room = SHOT_MOST - Number(f.count.value || 0);
+    if (!files.length) { say('Pick one or more pictures first.', 'error'); return; }
+    if (files.length > room) { say(room ? `You can add ${room} more (a game has at most ${SHOT_MOST}).` : `A game can have ${SHOT_MOST} screenshots. Delete one first.`, 'error'); return; }
+    for (const file of files) {
+      const problem = shotProblem(file);
+      if (problem) { say(problem, 'error'); return; }
+    }
+    let added = 0;
+    for (const file of files) {
+      say(`Uploading ${added + 1} of ${files.length}...`);
+      const r = await call('shots.add', { id: f.id.value, data: await gb.fileBase64(file) });
+      if (!r.ok) {
+        if (!added) { say(`"${file.name}": ${r.error}`, 'error'); return; }
+        toast(`Added ${added}, but "${file.name}": ${r.error}`, 6000);
+        render();
+        return;
+      }
+      added++;
+    }
+    toast(added === 1 ? 'Screenshot added!' : added + ' screenshots added!');
+    render();
   },
   async configure(f) {
     const msg = $('#configMsg'), say = (t, cls = 'muted') => { msg.className = cls; msg.textContent = ' ' + t; };

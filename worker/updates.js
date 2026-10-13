@@ -10,6 +10,29 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'say-cheese', name: 'Say Cheese', time: 1791896400, tag: 'Website',
+    summary: 'Games can show off up to 5 screenshots on their page, next to the thumbnail.',
+    items: [
+      'Creators add up to 5 screenshots on a game\'s Configure page: .png, .jpg or .webp, up to 2 MB each',
+      'Move them earlier or later to pick the order, or delete one, right on the Configure page',
+      'The game\'s page shows the thumbnail and the screenshots together, with arrows and a strip of small pictures to pick from',
+      'Click a picture to see it big. Arrow keys and Esc work, and on phones you can swipe',
+      'If a picture is the wrong kind or too big, it says so before uploading',
+    ],
+  },
+  {
+    id: 'paper-trail', name: 'Paper Trail', time: 1791892800, tag: 'Website',
+    summary: 'A new Past trades tab on the Trades page: every finished trade, with who, what, when and how it ended.',
+    items: [
+      'Trades now has two tabs: Open trades and Past trades',
+      'Past trades lists accepted, declined, cancelled and expired trades, newest first, 20 to a page',
+      'Each one shows who it was with, the items each of you put in, the date, and how it ended',
+      'Only you and the other person in a trade can see it',
+      'Trades nobody answers now run out after 30 days (the one who sent it gets a notification)',
+      'Past trades are kept from this update on (plus the last month\'s, which the server still had), for a year',
+    ],
+  },
+  {
     id: 'party-of-one-no-more', name: 'Party of One No More', time: 1791838800, tag: 'Studio',
     summary: 'Studio can test your game with 2, 3 or 4 players at once, all on your own computer, no friends needed.',
     items: [

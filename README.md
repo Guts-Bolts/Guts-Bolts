@@ -1682,6 +1682,21 @@ only* or *Private*), upload a **thumbnail** (cropped to 16:9) and a square
 from everyone else: the server won't list them, send them or start servers
 for them.
 
+**Screenshots:** the Configure page also has a **Screenshots** box for up to 5
+pictures of the game: `.png`, `.jpg` or `.webp`, up to 2 MB each (anything else
+gets a clear message, before uploading and again from the server). Move one
+earlier or later with the arrows, or delete it. The game's page shows the
+thumbnail and the screenshots together: big picture, arrows, a strip of small
+pictures to pick from, and a click (or tap) opens a big view (arrow keys and Esc
+work, and you can swipe on phones). Like the thumbnail they're the creator's own
+pictures and aren't held for a staff check, but staff can delete one (it goes in
+the staff log). The pictures are served from `/shot/<game id>/<screenshot id>`;
+every screenshot gets a new random id, so browsers can keep them for good.
+(`shots.add`, `shots.delete`, `shots.order` and `shots.get` in
+`worker/server.js` and `src/server/ServerItems.cpp`. The C++ server keeps them
+as `files/shot-<game>-<id>`; like thumbnails, its pictures reach the apps
+through requests, since only the main server has the `/shot/` addresses.)
+
 The site's **Create** page has one tab per kind of thing you make:
 
 - **My Games:** every game you made in Studio (on this computer, plus the ones
@@ -1760,7 +1775,22 @@ Find things in two places:
 - **Trading:** press **Trade** on someone's profile, pick up to 4 of your
   Limiteds and up to 4 of theirs, and send the offer. They accept or decline
   on the **Trades** page. The swap only happens if both of you still have
-  everything.
+  everything. A trade nobody answers runs out (**expires**) after 30 days, and
+  whoever sent it gets a notification.
+- **Past trades:** the Trades page has two tabs, **Open trades** and **Past
+  trades**. Past trades lists every finished trade, newest first, 20 to a page:
+  who it was with, the items each of you put in, the date it ended and how
+  (Accepted, Declined, Cancelled, Expired, or "Couldn't happen" when someone no
+  longer had an item). Only the two people in a trade can see it (not even staff
+  get it from this list). Each one is saved with the names of the people and
+  items as they were then, so it still reads right if an item is deleted later.
+  They're kept for a year (at most 50,000 in all). Past trades started being
+  kept with the *Paper Trail* update; before that, finished trades were only
+  kept for a month, so the history starts with what the server still had then.
+  Blocking someone cancels your open trades with them, and those show up as
+  Cancelled. (`trade.history` in `worker/server.js`, which keeps them in its own
+  `pasttrades` table, and `src/server/ServerItems.cpp`, which saves
+  `pasttrades.json`.)
 - **Inventory:** every profile (website and app) has an **Inventory** box with
   what that person owns from the catalog, newest first. **See all** shows the
   whole thing in groups (Accessories, Clothing, Faces, Gear, Limiteds), and a
@@ -2285,7 +2315,7 @@ right page. The newest 50 are kept. Both servers do the same (`notify` in
 
 Everything staff do is written down: bans and unbans, warnings, badges (like
 Verified and Staff), Bolts given or taken, upload checks, closed reports, and
-games, items or comments they deleted that weren't theirs. The **Staff** page (on
+games, items, comments or game screenshots they deleted that weren't theirs. The **Staff** page (on
 the website and in the Player) shows the newest 200; the **Log** button next to a
 person shows just what was done by or to them. The newest 3,000 are kept
 (`staffDid` in `worker/server.js` and `src/server/ServerSafety.cpp`, which saves

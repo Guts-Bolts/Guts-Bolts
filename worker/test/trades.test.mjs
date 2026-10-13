@@ -112,6 +112,21 @@ test('a trade nobody answers expires after 30 days and goes in Past trades', () 
   assert.ok((ann.notes || []).some((n) => n.kind === 'trade' && /expired/.test(n.text)));
 });
 
+test('trades finished in the same second still come newest first', () => {
+  const { s, ann, ben, hat, cap } = setup();
+  const ids = [1, 2, 3].map((n) => offer(s, ann, ben, { id: hat.id, serial: n }, { id: cap.id, serial: n }));
+  for (const id of ids) assert.ok(s.call(ann, 'trade.cancel', { id }).ok);
+  assert.deepEqual(s.call(ben, 'trade.history', {}).trades.map((x) => x.id), ids.slice().reverse());
+});
+
+test('a trade that can\'t happen any more is in Past trades as failed', () => {
+  const { s, ann, ben, hat, cap } = setup();
+  const id = offer(s, ann, ben, { id: hat.id, serial: 1 }, { id: cap.id, serial: 1 });
+  hat.copies[0].owner = ben.id;   // (ann doesn't have it any more)
+  assert.equal(s.call(ben, 'trade.accept', { id }).ok, false);
+  assert.equal(s.call(ann, 'trade.history', {}).trades[0].status, 'failed');
+});
+
 test('blocking someone cancels open trades, and they go in Past trades', () => {
   const { s, ann, ben, hat, cap } = setup();
   const id = offer(s, ann, ben, { id: hat.id, serial: 1 }, { id: cap.id, serial: 1 });
