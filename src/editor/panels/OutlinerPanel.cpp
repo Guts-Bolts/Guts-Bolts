@@ -239,8 +239,8 @@ void OutlinerPanel::folderService(const char* name, int icon, const char* tip, c
     ImGui::PushID(name);
     const bool open = serviceRow(name, icon, kids, f && f->selected);
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
-        if (f) m_scene->select(f);
-        if (onClick) onClick();
+        if (onClick) onClick();            // (Lighting: its settings, not its folder)
+        else if (f) m_scene->select(f);
     }
     if (ImGui::IsItemHovered() && tip) ImGui::SetTooltip("%s", tip);
     if (ImGui::BeginDragDropTarget()) {

@@ -541,7 +541,7 @@ void main() {
                 float spots = 0.75 + 0.25 * vnoise(q * 3.0 + 7.0);
                 sky = mix(sky, vec3(0.85, 0.87, 0.92) * spots * 1.4, m * fade);
             }
-            sky += vec3(0.6, 0.65, 0.8) * 0.12 * pow(max(d, 0.0), 600.0 / max(uMoonAngle, 0.5)) * fade;
+            sky += vec3(0.6, 0.65, 0.8) * 0.08 * pow(max(d, 0.0), 6000.0 / max(uMoonAngle, 0.5)) * fade;
         }
     }
     FragColor = vec4(sky, 1.0);
@@ -885,14 +885,16 @@ out vec4 FragColor;
 float skyLight(vec2 uv) {
     if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
     if (texture(uDepth, uv).r < 0.9999) return 0.0;              // something solid
+    // Open sky round the sun (clouds in front of it dim it a little).
     vec3 c = texture(uHdr, uv).rgb;
     float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
     vec2 d = (uv - uSun) * vec2(uAspect, 1.0);
-    return l * exp(-dot(d, d) * 6.0);                             // brightest round the sun
+    return (0.3 + 0.7 * clamp(l * 0.25, 0.0, 1.0)) * exp(-dot(d, d) * 10.0);
 }
 void main() {
     vec2 step = (uSun - vUV) * (0.15 + 0.85 * uSpread) / float(uSamples);
-    vec2 p = vUV;
+    // Each pixel starts a little further along (no stripes from the steps).
+    vec2 p = vUV + step * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
     float sum = 0.0, w = 1.0;
     for (int i = 0; i < 64; ++i) {
         if (i >= uSamples) break;
@@ -1046,7 +1048,12 @@ void main() {
         }
         if (lv > 0.001) c = blurAt(uv, min(lv, 4.0));
     }
-    if (uRaysOn) c += texture(uRays, vUV).r * uRaysColor;
+    if (uRaysOn) {   // (smoothed a little: it was worked out small)
+        vec2 rt = 1.0 / vec2(textureSize(uRays, 0));
+        float r = texture(uRays, vUV + rt * vec2(-0.75, -0.75)).r + texture(uRays, vUV + rt * vec2(0.75, -0.75)).r +
+                  texture(uRays, vUV + rt * vec2(-0.75, 0.75)).r + texture(uRays, vUV + rt * vec2(0.75, 0.75)).r;
+        c += r * 0.25 * uRaysColor;
+    }
     c *= 1.0 + drops.z * 0.12;   // (the drops catch the light a little)
     if (uUseAO) {
         float ao = 0.0;

@@ -1912,7 +1912,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
             glDrawArrays(GL_TRIANGLES, 0, 3);
             // Fades as the sun leaves the view; tinted like the sunlight.
             const float edge = glm::clamp((facing - 0.05f) / 0.35f, 0.0f, 1.0f);
-            raysColor = glm::pow(env.sunColor, glm::vec3(2.2f)) * m_fx.rays * edge * 1.2f;
+            raysColor = glm::pow(env.sunColor, glm::vec3(2.2f)) * m_fx.rays * edge * 4.0f;
             useRays = true;
         }
     }

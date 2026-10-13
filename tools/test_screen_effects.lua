@@ -99,6 +99,14 @@ task.spawn(function()
     local copy = blur:Clone()
     check(copy.Size == 12 and copy.ClassName == "BlurEffect", "Clone keeps the settings")
     copy:Destroy()
+    -- (Clone goes through the same saving code as the game file and joining players.)
+    local skyCopy, ccCopy = sky:Clone(), cc:Clone()
+    check(skyCopy.StarCount == 5000 and skyCopy.CelestialBodiesShown == false and skyCopy.SunAngularSize == 30 and
+          skyCopy.SkyboxUp == "assets/templates/shirt_template.png", "a cloned Sky keeps its settings")
+    check(ccCopy.Saturation == 1 and near(ccCopy.Contrast, 0.2) and math.abs(ccCopy.TintColor.B - 150 / 255) < 1e-3,
+          "a cloned ColorCorrectionEffect keeps its settings")
+    skyCopy:Destroy()
+    ccCopy:Destroy()
     frames(10)   -- (draw a few frames with all of them on)
     blur.Enabled = false
     check(blur.Enabled == false, "Enabled can be switched off")
