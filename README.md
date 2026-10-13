@@ -1623,7 +1623,9 @@ site** (`/app/`) to do what the Player's site pages do:
 - use friends, people, groups and Bolts;
 - change your **avatar** (colours, hat, and clothes from the catalog). It's saved
   on the server, so the app and the website always match;
-- **staff:** a Staff page to verify people, make staff, give Bolts and ban.
+- **staff:** a Staff page to verify people, make staff, give Bolts, ban, and
+  answer ban appeals;
+- **Settings:** email, two-step, privacy, password, and deleting your account.
 
 Games published from Studio get a **picture** (Studio takes it from the spawn
 point when you publish), shown on the website's game cards. A red number on
@@ -1692,6 +1694,28 @@ make people **Staff**, give or take Bolts, and ban. Banning asks for a reason
 (sexual content, violent extremism, harassment, hate speech, threats, scams,
 sharing personal info, exploiting, spam and so on) and an optional note; the
 banned player sees them when they try to sign in.
+
+**Ban appeals.** On their ban screen (on the website or in the Player) a banned
+player can send staff one short note (up to 500 letters) asking to be unbanned.
+There's one open appeal per ban: they can only send another once staff have
+answered, or if the ban changes. Appeals show on the Staff page next to the
+reports, with the ban's reason, the staff note, when and by whom they were
+banned (from the staff action log) and what they wrote. Staff can **Deny** with
+a short note, and the official account can **Accept**, which unbans them the
+normal way. The player sees the answer on their ban screen, and every answer is
+in the staff action log.
+
+**Deleting an account.** In the website's **Settings** (or the Player's
+**Avatar > Your account > Delete account...**) you can delete your account after
+typing your password. That removes the password and key backup, email,
+two-step settings, avatar, About me, posts, outfits, messages, friends and
+follows (on both sides), favourites, notifications and logged-in devices.
+Games and items you made stay up (so what other people bought keeps working),
+shown as made by **Deleted user**; forum posts and game comments stay too, under
+that name. The username (and any past usernames) and the user number are never
+given to anyone else. Limited copies the account owned stay with it, off resale,
+and can't be traded any more. The Guts account can't be deleted. The staff log
+notes "Account #N was deleted" as a System event, without the name.
 
 ### The Library (sharing models)
 
