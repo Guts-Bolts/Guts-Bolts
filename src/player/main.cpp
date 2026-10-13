@@ -56,6 +56,8 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--test-clothes")) opts.testClothes = next();
         else if (!std::strcmp(argv[i], "--test-accessory")) opts.testAccessory = next();
         else if (!std::strcmp(argv[i], "--test-face")) opts.testFace = next();
+        else if (!std::strcmp(argv[i], "--studio-test")) opts.studioTest = next();   // Studio's "Test with N players"
+        else if (!std::strcmp(argv[i], "--name"))        opts.testName = next();
         else if (!std::strncmp(argv[i], "gutsandbolts:", 13)) opts.launchUrl = argv[i];   // the website's Play button
         else if (argv[i][0] != '-')                     opts.game       = argv[i];
     }
