@@ -206,6 +206,20 @@ const GENRES = ['Adventure', 'Obby', 'Fighting', 'Horror', 'Roleplay', 'Simulato
   'Shooter', 'Puzzle', 'Survival', 'Comedy', 'Building', 'Sandbox', 'Showcase', 'Town and City', 'Destruction'];
 // How well liked a game is, for sorting: likes out of votes, pulled towards 50% while there are few votes.
 const ratingOf = (a) => ((a.likes || 0) + 1) / ((a.likes || 0) + (a.dislikes || 0) + 2);
+// Library models' "Best rated" sort: the Wilson score (the lowest the real like rate is likely
+// to be, 95% sure), so 1 vote at 100% doesn't beat 500 votes at 95%. Unrated models score 0.
+// (src/server/ServerUtil.h has the same.)
+function wilsonScore(up, down) {
+  const n = up + down;
+  if (n <= 0) return 0;
+  const z = 1.96, p = up / n;
+  return (p + z * z / (2 * n) - z * Math.sqrt((p * (1 - p) + z * z / (4 * n)) / n)) / (1 + z * z / n);
+}
+const rankOf = (a) => (a.kind === 'model' ? wilsonScore(a.likes || 0, a.dislikes || 0) : ratingOf(a));
+const hasVotes = (k) => k === 'game' || k === 'model';   // thumbs up / down
+const kMaxUsedModels = 2000;   // Library models someone has inserted (they can rate those), newest kept
+// Gifts: buy a catalog item for a friend, with a short note. (src/server has the same rules.)
+const kGiftNote = 100;
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
 const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant']);   // (product.*: guests can host games too)
 
@@ -928,7 +942,7 @@ export class GbServerObject extends DurableObject {
       icon: a.icon || 0, access: hasAccess(a.kind) ? (a.access || 'public') : undefined,
       badges: a.kind === 'game' ? (a.badges || []) : undefined,
       genres: a.kind === 'game' ? (a.genres || []) : undefined, allowGear: a.kind === 'game' ? !!a.allowGear : undefined, maxPlayers: a.kind === 'game' ? (a.maxPlayers || kDefaultMax) : undefined,
-      likes: a.kind === 'game' ? (a.likes || 0) : undefined, dislikes: a.kind === 'game' ? (a.dislikes || 0) : undefined,
+      likes: hasVotes(a.kind) ? (a.likes || 0) : undefined, dislikes: hasVotes(a.kind) ? (a.dislikes || 0) : undefined,
       updated: a.updated || a.created, playing: a.kind === 'game' ? this.playingIn(a.id) : undefined,
       myVote: me && a.votes ? (a.votes[me.id] || 0) : undefined, limited: this.limitedJson(a),
       favorites: a.kind === 'game' ? (a.favorites || 0) : undefined,
@@ -1462,6 +1476,23 @@ export class GbServerObject extends DurableObject {
       this.saveAsset(a);
       return okay({ asset: this.publicAsset(a, me) });
     }
+    if (name === 'model.vote') {
+      // Thumbs up or down on a Library model: one vote each (vote 0 takes it back). You have to
+      // have inserted it first (Studio's Toolbox, or a script's require), and not on your own.
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || a.kind !== 'model') return fail('That model doesn\'t exist (any more).');
+      if (!this.canPlay(a, me)) return fail(this.noPlay(a));
+      if (a.creator === me.id) return fail('You can\'t rate your own model.');
+      if (!(me.usedModels || []).includes(a.id)) return fail('Insert it in Studio first (from the Toolbox), then you can rate it.');
+      const v = Math.sign(num(args, 'vote'));
+      a.votes = a.votes || {};
+      const old = a.votes[me.id] || 0;
+      a.likes = (a.likes || 0) - (old === 1 ? 1 : 0) + (v === 1 ? 1 : 0);
+      a.dislikes = (a.dislikes || 0) - (old === -1 ? 1 : 0) + (v === -1 ? 1 : 0);
+      if (v === 0) delete a.votes[me.id]; else a.votes[me.id] = v;
+      this.saveAsset(a);
+      return okay({ asset: this.publicAsset(a, me), used: true });
+    }
     // --- Comments under a game, newest first. Anyone can read; signed-up players can write. ---
     if (name === 'comments.list' || name === 'comments.post' || name === 'comments.delete') {
       const a = this.assets.get(str(args, 'game'));
@@ -1515,7 +1546,8 @@ export class GbServerObject extends DurableObject {
       return data ? okay({ data: bytesToB64(data) }) : fail('No picture.');
     }
     if (name === 'bolts.history') {
-      const h = me.ledger.slice(-100).map((e) => ({ amount: e[0], reason: e[1], time: e[2] }));
+      const h = me.ledger.slice(-100).map((e) => Object.assign({ amount: e[0], reason: e[1], time: e[2] },
+        /^gift(for|from):/.test(e[3] || '') ? { gift: e[3].startsWith('giftfor:') ? 'sent' : 'got' } : {}));
       return okay({ history: h, me: this.meJson(me) });
     }
     if (name === 'bolts.daily') {
@@ -1977,7 +2009,9 @@ export class GbServerObject extends DurableObject {
       const by = {
         popular: (x, y) => (y.plays + y.sales) - (x.plays + x.sales),
         playing: (x, y) => playing.get(y.id) - playing.get(x.id) || y.plays - x.plays,
-        rated: (x, y) => ratingOf(y) - ratingOf(x) || y.plays - x.plays,
+        // (models: the Wilson score, then the most votes; games: likes pulled towards 50%)
+        rated: (x, y) => rankOf(y) - rankOf(x) || (x.kind === 'model' && y.kind === 'model'
+          ? ((y.likes || 0) + (y.dislikes || 0)) - ((x.likes || 0) + (x.dislikes || 0)) || y.sales - x.sales : y.plays - x.plays),
         updated: (x, y) => (y.updated || y.created) - (x.updated || x.created),
         featured: (x, y) => y.featured - x.featured,   // picked by staff, newest pick first
       }[sort] || ((x, y) => y.created - x.created);
@@ -1991,7 +2025,9 @@ export class GbServerObject extends DurableObject {
     if (name === 'asset.info') {
       const a = this.assets.get(str(args, 'id').trim().replace(/^gb:/, ''));
       if (!a || !this.canPlay(a, me)) return fail('There\'s nothing with that ID (or it\'s private).');
-      return okay({ asset: this.publicAsset(a, me), owned: me.owned.includes(a.id) });
+      // used: they've inserted this model, so they can rate it (model.vote).
+      return okay({ asset: this.publicAsset(a, me), owned: me.owned.includes(a.id),
+        used: a.kind === 'model' ? (me.usedModels || []).includes(a.id) : undefined });
     }
     if (name === 'get') {
       const a = this.assets.get(str(args, 'id'));
@@ -2010,6 +2046,12 @@ export class GbServerObject extends DurableObject {
         this.tally(a, 'plays');
         me.played = me.played || [];
         if (!me.played.includes(a.id)) { me.played.push(a.id); if (me.played.length > 500) me.played.shift(); this.saveUser(me); }
+      }
+      // A Library model someone else made, fetched to insert (Studio's Toolbox, or require() in a
+      // script): now they've used it, so they can give it a thumbs up or down (model.vote).
+      if (a.kind === 'model' && a.creator !== me.id && me.userId > 0) {
+        const used = me.usedModels || (me.usedModels = []);
+        if (!used.includes(a.id)) { used.push(a.id); if (used.length > kMaxUsedModels) used.shift(); this.saveUser(me); }
       }
       return okay({ asset: this.publicAsset(a), data: bytesToB64(data) });
     }
@@ -2033,6 +2075,39 @@ export class GbServerObject extends DurableObject {
       me.owned.push(a.id);
       this.saveAsset(a); this.saveUser(me);
       return okay({ me: this.meJson(me) });
+    }
+    if (name === 'gift.buy') {
+      // "Buy as a gift": you pay, a friend gets the item, and the bell tells them (with your note).
+      // The same checks as buying it for yourself, plus: friends only, not someone who already has
+      // it, and no Limiteds (their numbered copies are only sold, resold and traded, never gifted).
+      if (me.userId === 0) return fail('Sign up to buy things.');
+      const a = this.assets.get(str(args, 'id'));
+      if (!a) return fail('That doesn\'t exist (any more).');
+      if (!isCatalogItem(a.kind)) return fail('Only catalog items can be gifts.');
+      if (a.review) return fail(this.noPlay(a));
+      if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: it\'s given to people who confirm an email.');
+      if (a.limited) return fail('Limited items can\'t be gifts. Trade one with your friend instead.');
+      if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.');
+      if (!(a.price > 0)) return fail('This item is free, so your friend can just get it themselves.');
+      const to = this.findPerson(args.to);
+      if (!to || to.userId === 0) return fail('There\'s no account with that ID on this server.');
+      if (to.id === me.id) return fail('That\'s you! Press Buy to get it for yourself.');
+      if (!me.friends.includes(to.id)) return fail('You can only send gifts to your friends.');
+      if (to.banned || this.blocks(me, to)) return fail('You can\'t send gifts to that account.');
+      // (Who owns what stays private when they hid their inventory from you.)
+      if (to.owned.includes(a.id)) return fail(this.seesInventory(me, to) ? to.name + ' already has ' + a.name + '.' : 'You can\'t gift this to ' + to.name + '.');
+      const note = say(str(args, 'message'), kGiftNote);
+      if (this.balance(me) < a.price) return fail('You need ' + (a.price - this.balance(me)) + ' more Bolts for that.');
+      const ref = a.id + ':' + to.id + ':' + randomHex(4);
+      this.add(me, -a.price, 'Gift for ' + to.name + ': ' + a.name, 'giftfor:' + ref);
+      this.paySeller(a, me, Math.floor(a.price * kCreatorSharePercent / 100), 'sale:' + ref);
+      this.add(to, 0, 'Gift from ' + me.name + ': ' + a.name, 'giftfrom:' + ref);   // (in their history, costs them nothing)
+      a.sales++;
+      if (a.creator !== to.id) this.tally(a, 'sales');
+      to.owned.push(a.id);
+      this.notify(to, 'gift', me.name + ' sent you a gift: ' + a.name + '!' + (note ? ' "' + note + '"' : ''), a.id);
+      this.saveAsset(a); this.saveUser(me, to);
+      return okay({ me: this.meJson(me), to: this.publicUser(to) });
     }
     if (name === 'model.access') {
       // Make one of your Library models public or private.
