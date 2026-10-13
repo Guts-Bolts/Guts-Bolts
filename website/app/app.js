@@ -575,7 +575,7 @@ pages.home = async () => {
             : html`<p class="small muted">Come back tomorrow for 25 more.</p>`}</div>
         <div class="box"><h2 class="boxhead">Friends online (${onlineFriends.length})</h2>
           ${onlineFriends.length ? html`<div class="list">${onlineFriends.slice(0, 8).map((p) => html`<div>
-              <span class="dot on"></span><a class="grow" href="#/user/${p.userId}">${p.username || p.name}</a></div>`)}</div>`
+              <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
       <div class="home-right">${updateBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
@@ -2037,6 +2037,46 @@ function reportsBox(rep, closed) {
     <p class="small muted">"Done" means you did something about it (a warning, a ban, deleting it). Closing one closes every report about the same thing.</p></div>`;
 }
 
+// Support tickets: people asking staff for help (like a forgotten password). Answer them,
+// send a password reset code, or close them.
+function ticketsBox(tk, closed) {
+  const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?tickets=closed">Closed</a>`;
+  if (!tk.ok) return html`<div class="box"><h2 class="boxhead">Support tickets</h2><p class="error">${tk.error}</p></div>`;
+  const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>${verified(u.verified)}` : html`?`);
+  const topicName = (k) => (TICKET_TOPICS.find((x) => x[0] === k) || ['', k])[1];
+  const row = (x) => html`<div class="report">
+      <p><b>${topicName(x.topic)}</b>${x.about ? html`: ${person(x.about)}` : ''}
+        <span class="small muted">· from ${x.from ? person(x.from) : 'someone who isn\'t logged in'}${x.contact ? html` (${x.contact})` : ''} · ${ago(x.at)}</span></p>
+      <p class="report-note">"${x.message}"</p>
+      ${x.replies.map((y) => html`<p class="ticket-reply"><b>${y.by ? y.by.name : 'Staff'}:</b> ${y.text} <span class="small muted">${ago(y.at)}</span></p>`)}
+      ${x.resetSent ? html`<p class="small ok">A reset code is waiting for them on their Support page.</p>` : ''}
+      ${x.resetUsed ? html`<p class="small ok">They reset their password with the code.</p>` : ''}
+      <p>${closed ? html`<span class="small muted">Closed${x.closedBy ? html` by ${person(x.closedBy)}` : ''} ${ago(x.closedAt)}</span>
+          <button class="btn small" data-act="replyTicket" data-id="${x.id}">Answer (reopens it)</button>`
+        : html`<button class="btn small blue" data-act="replyTicket" data-id="${x.id}">Answer</button>
+          ${x.topic === 'password' && x.about ? html`<button class="btn small green" data-act="ticketReset" data-id="${x.id}" data-name="${x.about.username}"
+            >${x.resetSent ? 'Send a new reset code' : 'Send a reset code'}</button>` : ''}
+          <button class="btn small" data-act="closeTicket" data-id="${x.id}">Close</button>`}</p></div>`;
+  return html`<div class="box"><h2 class="boxhead">Support tickets${closed ? '' : html` (${tk.tickets.length})`}</h2>
+    <p>${tabs}</p>
+    ${tk.tickets.length ? html`<div class="reports">${tk.tickets.map(row)}</div>`
+      : html`<p class="muted small">${closed ? 'No closed tickets yet.' : 'Nobody needs help right now.'}</p>`}
+    <p class="small muted">Only send a reset code when you're sure it's really them (you know them, or they told you things only the owner
+      would know). The code shows up on their Support page, works for 24 hours, and only in the browser that sent the ticket.</p></div>`;
+}
+
+// Is email working? Which service, the sender address, how the last email went, and a test button.
+function mailBox(ml) {
+  if (!ml.ok) return '';
+  const m = ml.mail;
+  return html`<div class="box"><h2 class="boxhead">Email</h2>
+    <p>${m.on ? html`<span class="ok">On</span>: sent with <b>${m.service}</b>${m.from ? html` from <b>${m.from}</b>` : ''}.`
+      : html`<span class="error">Off.</span> ${m.problem}`}</p>
+    ${m.last ? html`<p class="small">Last email (to ${m.last.to}, ${ago(m.last.at)}): ${m.last.ok ? html`<span class="ok">sent</span>` : html`<span class="error">${m.last.error}</span>`}</p>` : ''}
+    ${m.on ? html`<form class="row" data-form="mailTest"><input type="email" name="email" required placeholder="Send a test email to..." style="max-width:280px">
+      <button class="btn small blue">Send test</button></form>` : ''}</div>`;
+}
+
 // New decals, sounds and T-shirts from creators who aren't Verified: look, listen, then OK or turn down.
 function uploadsBox(up) {
   if (!up.ok) return html`<div class="box"><h2 class="boxhead">Uploads to check</h2><p class="error">${up.error}</p></div>`;
@@ -2067,11 +2107,15 @@ pages.staff = async () => {
   const query = new URLSearchParams(location.hash.split('?')[1] || '').get('q') || '';
   const closed = new URLSearchParams(location.hash.split('?')[1] || '').get('reports') === 'closed';
   const logFor = new URLSearchParams(location.hash.split('?')[1] || '').get('log') || '';
-  const [r, rep, up, lg] = await Promise.all([pageCall('admin.find', { query }), pageCall('admin.reports', { status: closed ? 'closed' : 'open' }),
-    pageCall('admin.uploads', {}), pageCall('admin.log', logFor ? { user: logFor } : {})]);
+  const ticketsClosed = new URLSearchParams(location.hash.split('?')[1] || '').get('tickets') === 'closed';
+  const [r, rep, up, lg, tk, ml] = await Promise.all([pageCall('admin.find', { query }), pageCall('admin.reports', { status: closed ? 'closed' : 'open' }),
+    pageCall('admin.uploads', {}), pageCall('admin.log', logFor ? { user: logFor } : {}),
+    pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.mailStatus', {})]);
   show(html`<h1>Staff</h1>
+    ${ticketsBox(tk, ticketsClosed)}
     ${uploadsBox(up)}
     ${reportsBox(rep, closed)}
+    ${mailBox(ml)}
     <h2>People</h2>
     <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make staff, give Bolts and ban.'
       : 'Staff can verify people and take Verified away.'}</p>
@@ -2096,7 +2140,7 @@ pages.staff = async () => {
 };
 
 // The staff action log: who banned, warned, verified, checked or deleted what (newest first).
-const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', delete: '🗑️', comment: '💬', feature: '⭐' };
+const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐' };
 function staffLogBox(lg, logFor) {
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.name}</a>` : '');
   const body = !lg.ok ? html`<p class="error">${lg.error}</p>`
@@ -2119,13 +2163,15 @@ function noteLink(n) {
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;
   if (n.kind === 'sale' || n.kind === 'upload') return '#/library/' + n.about;
+  if (n.kind === 'support') return '#/support';
+  if (n.kind === 'ticket') return '#/staff';
   return '';
 }
 pages.notifications = async () => {
   if (!signedIn()) { show(html`<h1>Notifications</h1>${needSignIn('see your notifications')}`); return; }
   const r = await pageCall('notes.list', {});
   if (!r.ok) { show(html`<h1>Notifications</h1><p class="error">${r.error}</p>`); return; }
-  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐' };
+  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟' };
   show(html`<h1>Notifications</h1>
     <div class="list notes">${r.notes.length ? r.notes.map((n) => {
       const link = noteLink(n);
@@ -2168,8 +2214,54 @@ pages.forgot = async () => {
       <label>New password again</label><input type="password" name="password2" autocomplete="new-password" required>
       <p><button class="btn green big" style="width:100%">Set new password</button></p><p class="error" id="resetMsg"></p>
       <p class="small muted">This logs your other devices out. Log in on them again with the new password.</p></form>
-    <p class="small muted">No email on your account? Log in on a device where you're still logged in (like the Guts&amp;Bolts app)
-      and add one in Account Settings, so this works next time.</p></div>`);
+    <div class="box"><h2 class="boxhead">No email on your account, or the code never came?</h2>
+      <p>Ask Guts&amp;Bolts staff for help: <a class="btn small blue" href="#/support?topic=password">Open a support ticket</a></p>
+      <p class="small muted">Or log in on a device where you're still logged in (like the Guts&amp;Bolts app)
+        and add an email in Account Settings, so this works next time.</p></div></div>`);
+};
+
+// Support: ask staff for help (even when you can't log in). Tickets belong to this browser:
+// staff's answers show up here, and so does a password reset code if staff send one.
+const TICKET_TOPICS = [['password', 'I forgot my password'], ['account', 'Something else about my account'], ['other', 'Something else']];
+pages.support = async () => {
+  const topic = new URLSearchParams(location.hash.split('?')[1] || '').get('topic') || (signedIn() ? 'account' : 'password');
+  const r = await pageCall('support.mine', {});
+  const tickets = r.ok ? r.tickets : [];
+  const withCode = tickets.find((x) => x.resetCode);
+  const topicName = (k) => (TICKET_TOPICS.find((x) => x[0] === k) || ['', k])[1];
+  const ticket = (x) => html`<div class="report">
+      <p><b>${topicName(x.topic)}</b>${x.about ? html` (${x.about.username || x.about.name})` : ''}
+        <span class="small muted">· ${ago(x.at)} · ${x.status === 'open' ? 'waiting for staff' : 'closed'}</span></p>
+      <p class="report-note">"${x.message}"</p>
+      ${x.replies.map((y) => html`<p class="ticket-reply"><b>Staff:</b> ${y.text} <span class="small muted">${ago(y.at)}</span></p>`)}
+      ${x.resetCode ? html`<p class="ok">Staff sent a reset code for <b>${x.resetUsername}</b>: use the form at the top of this page.</p>` : ''}
+      ${x.resetUsed ? html`<p class="ok">Your password was reset with the code staff sent.</p>` : ''}</div>`;
+  show(html`<div class="form" style="margin:0 auto;max-width:640px">
+    <h1>Support</h1>
+    ${withCode && !signedIn() ? html`<div class="box info"><h2 class="boxhead">Pick a new password for ${withCode.resetUsername}</h2>
+      <form data-form="reset"><input type="hidden" name="username" value="${withCode.resetUsername}">
+        <input type="hidden" name="code" value="${withCode.resetCode}">
+        <label>New password</label><input type="password" name="password" autocomplete="new-password" required>
+        <label>New password again</label><input type="password" name="password2" autocomplete="new-password" required>
+        <p><button class="btn green big" style="width:100%">Set new password</button></p><p class="error" id="resetMsg"></p>
+        <p class="small muted">The code staff sent works until ${new Date(withCode.resetUntil * 1000).toLocaleString()}, only in this browser.
+          This logs your other devices out: log in on them again with the new password.</p></form></div>` : ''}
+    ${withCode && signedIn() ? html`<p class="box gold small">Staff sent a reset code for ${withCode.resetUsername}. Log out first, then come back here to use it.</p>` : ''}
+    <p class="muted">Stuck? Ask Guts&amp;Bolts staff. They'll answer here, so come back to this page in this browser.
+      ${signedIn() ? '' : 'You don\'t need to be logged in.'}</p>
+    <form data-form="supportSend">
+      <label>What do you need help with?</label>
+      <select name="topic">${TICKET_TOPICS.map(([k, t]) => html`<option value="${k}" ${k === topic ? 'selected' : ''}>${t}</option>`)}</select>
+      <label>Username of the account <span class="muted small">${signedIn() ? '(leave empty for yours)' : ''}</span></label>
+      <input type="text" name="username" maxlength="20" autocomplete="username" placeholder="${signedIn() ? me.username : 'your username'}">
+      <label>Tell staff what happened</label>
+      <textarea name="message" rows="5" maxlength="1000" required placeholder="For a forgotten password: tell staff something that shows it's really you, like when you made the account, a game you made, or who your friends are on it."></textarea>
+      <label>Your email <span class="muted small">(optional: we'll email you when staff answer)</span></label>
+      <input type="email" name="contact" maxlength="254" autocomplete="email" placeholder="you@example.com">
+      <p><button class="btn blue">Send to staff</button> <span id="supportMsg"></span></p></form>
+    <h2>Your tickets</h2>
+    ${!r.ok ? html`<p class="error">${r.error}</p>` : tickets.length ? html`<div class="reports">${tickets.map(ticket)}</div>`
+      : html`<p class="muted small">Nothing yet. Tickets you send from this browser show up here.</p>`}</div>`);
 };
 
 // Account Settings: email, two-step verification, password.
@@ -2353,7 +2445,7 @@ function loginPage(signup) {
       ${signup ? html`<label>Password again</label><input type="password" name="password2" autocomplete="new-password" required>`
         : html`<div id="codeBox" hidden><label>Code from your email</label>
           <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6 digits"></div>
-          <p class="small"><a href="#/forgot">Forgot your password?</a></p>`}
+          <p class="small"><a href="#/forgot">Forgot your password?</a> · <a href="#/support">Get help from staff</a></p>`}
       ${signup ? html`<div class="mature-note"><b>Heads up: Guts&amp;Bolts is for adults (18+).</b> It's the
           uncensored, R-rated cousin of the blocky-game genre: games can have strong language, crude humour,
           cartoon gore and violence, and other players' chat isn't filtered. It's a free hobby project, not
@@ -2571,6 +2663,24 @@ const actions = {
     toast(d.ok ? 'OK: everyone can see it now.' : 'Turned down.');
     render();
   },
+  async replyTicket(d) {
+    const text = prompt('Your answer (they see it on their Support page):', '');
+    if (!text || !text.trim()) return;
+    const r = await call('admin.replyTicket', { id: d.id, text });
+    toast(r.ok ? 'Answer sent.' : r.error);
+    if (r.ok) render();
+  },
+  async ticketReset(d) {
+    if (!confirm('Send a password reset code for ' + d.name + '?\n\nOnly do this if you\'re sure this is really them. Whoever sent the ticket can take over the account with it.')) return;
+    const r = await call('admin.ticketReset', { id: d.id });
+    toast(r.ok ? 'Sent: it shows up on their Support page.' : r.error);
+    if (r.ok) render();
+  },
+  async closeTicket(d) {
+    const r = await call('admin.closeTicket', { id: d.id });
+    toast(r.ok ? 'Closed.' : r.error);
+    if (r.ok) render();
+  },
   async closeReport(d) {
     const r = await call('admin.closeReport', { id: d.id, outcome: d.outcome });
     if (!r.ok) { toast(r.error); return; }
@@ -2775,6 +2885,18 @@ const forms = {
       summary: f.summary.value, items: f.items.value.split('\n').map((x) => x.trim()).filter(Boolean) });
     toast(r.ok ? 'Posted "' + r.update.name + '"!' : r.error);
     if (r.ok) render();
+  },
+  async supportSend(f) {
+    const msg = $('#supportMsg');
+    msg.className = 'muted'; msg.textContent = 'Sending...';
+    const r = await call('support.send', { topic: f.topic.value, username: f.username.value.trim(), message: f.message.value, contact: f.contact.value.trim() });
+    if (!r.ok) { msg.className = 'error'; msg.textContent = r.error; return; }
+    toast('Sent! Staff will answer on this page.', 5000);
+    render();
+  },
+  async mailTest(f) {
+    const r = await call('admin.mailTest', { email: f.email.value.trim() });
+    toast(r.ok ? 'Sending... reload the Staff page in a few seconds to see how it went.' : r.error, 5000);
   },
   async forgot(f) {
     const msg = $('#forgotMsg');

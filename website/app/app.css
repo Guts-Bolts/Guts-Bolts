@@ -580,6 +580,7 @@ html.gutstober .foot, html.gutstober .foot a { color: #cbb5dc; }
 .report:first-child { border-top: 0; }
 .report p { margin: 4px 0; }
 .report-note { font-style: italic; white-space: pre-wrap; }
+.ticket-reply { white-space: pre-wrap; margin-left: 12px !important; padding-left: 8px; border-left: 3px solid var(--line); }
 .review-preview { width: 120px; min-height: 60px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .review-preview img { max-width: 120px; max-height: 120px; border-radius: 4px; background: repeating-conic-gradient(#ccc 0 25%, #fff 0 50%) 0 0 / 16px 16px; }
 .review-preview audio { width: 120px; }
