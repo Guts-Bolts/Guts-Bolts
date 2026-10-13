@@ -398,6 +398,11 @@ What you can use:
   puts you on its team
 - **Models:** `model.PrimaryPart`, `model:GetPivot()` / `:PivotTo(cframe)` (they go by the PrimaryPart),
   `:SetPrimaryPartCFrame(cframe)` / `:GetPrimaryPartCFrame()`
+- **Camera:** `workspace.CurrentCamera` with `CFrame`, `Focus`, `FieldOfView`, `CameraType`
+  (`Enum.CameraType.Custom` / `Scriptable` / `Fixed`), `CameraSubject`, `ViewportSize`,
+  `:WorldToViewportPoint` / `:WorldToScreenPoint` and `:ViewportPointToRay` / `:ScreenPointToRay`;
+  `player.CameraMode` (`Enum.CameraMode.Classic` / `LockFirstPerson`), `player.CameraMinZoomDistance` and
+  `CameraMaxZoomDistance` (see *Scripting the camera* below)
 - **Lighting:** `Lighting.ClockTime`, `Brightness`, `FogEnabled`, `FogColor`, `Ambient`, ...
 - **Screen text:** `Gui.Label("Score", "Score: 5")`, `Gui.Message("You win!", 3)`
 - **Mayhem:** `Explode(position, radius, power, options)` (see *Explosions* below), `Effects.Blood(pos, amount)`, `Effects.Oil(...)`, `Effects.Gibs(...)`,
@@ -1338,6 +1343,67 @@ you look (a ring shows in the middle). Press Shift again to turn it off. It
 works in the Player and in Studio's play test, and you can switch it off in
 the in-game menu.
 
+### Scripting the camera
+
+Games can take over the camera like in Roblox, from a LocalScript (or a Script
+when you play by yourself). It works the same in the Player and in Studio's
+play test, and games that don't touch it keep the normal camera.
+
+```lua
+local camera = workspace.CurrentCamera
+local player = game.Players.LocalPlayer
+
+-- A cutscene: the engine stops moving the camera and shows exactly this.
+camera.CameraType = Enum.CameraType.Scriptable
+camera.CFrame = CFrame.new(Vector3.new(0, 40, 40), Vector3.new(0, 0, 0))
+wait(3)
+camera.CameraType = Enum.CameraType.Custom      -- back to following the character
+
+camera.FieldOfView = 80                         -- degrees top to bottom (1 to 120, 60 to start with)
+camera.CameraSubject = workspace.Boss           -- follow a part (or another character's Humanoid)
+camera.CameraSubject = player.Character.Humanoid
+
+player.CameraMode = Enum.CameraMode.LockFirstPerson   -- always first person
+player.CameraMinZoomDistance = 5                      -- the mouse wheel stays between these
+player.CameraMaxZoomDistance = 30
+```
+
+- `CameraType`: **Custom** (the normal camera, following `CameraSubject`),
+  **Scriptable** (only scripts move it: the mouse, wheel and controller leave it
+  alone) and **Fixed** (it stays where it is, but the mouse can still turn it).
+  Roblox's Follow, Track, Watch, Attach and Orbital act like Custom.
+- `CFrame` is where the camera is and which way it looks (`camera.CFrame.LookVector`).
+  The engine keeps it up to date while it follows the character; setting it in
+  Custom turns the camera to look the same way.
+- `CameraSubject` starts as your own Humanoid. Give it a part, a character model or
+  a Humanoid and the camera follows that instead (your character stays visible);
+  `nil` or a part that's destroyed puts it back on you.
+- `Focus` is the point the camera orbits (your head, normally).
+- `camera:WorldToViewportPoint(position)` gives the pixel on screen (`X`, `Y`, and
+  how far in front of the camera as `Z`) plus whether it's on screen;
+  `camera:ViewportPointToRay(x, y)` is the ray from the camera through a pixel
+  (`ViewportSize` is the view's size in pixels). The Screen versions are the same.
+- `player.CameraMode`: **Classic** (zoom in and out; all the way in is first person)
+  or **LockFirstPerson** (always through your character's eyes: your character is
+  hidden except the tool you hold, the mouse is locked in the middle and your
+  character faces where you look).
+- `player.CameraMinZoomDistance` / `CameraMaxZoomDistance` (0.5 and 60 to start
+  with) are how close and how far the mouse wheel, pinch and D-pad can zoom. A
+  minimum of 1.2 or more means no first person; a maximum under 1.2 means first
+  person only.
+
+The game's starting **Camera Mode**, **Min Zoom Distance** and **Max Zoom
+Distance** are in Studio's **Player** panel, under Camera (Roblox's StarterPlayer
+settings). In an online game, a Script on the host can change a player's
+`CameraMode` and zoom limits too: they're sent to that player. The camera itself
+(`CurrentCamera`) is each player's own, so change it from a LocalScript.
+
+`tools/test_camera.lua` checks all of this in a real play test:
+
+```
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_camera.lua)" --screenshot /tmp/camera.png --frames 900
+```
+
 ### Controllers
 
 Plug in an Xbox, PlayStation, Switch Pro or other game controller and play with
@@ -1910,22 +1976,52 @@ On the website, **Settings** (top right) has your account settings:
   password *and* a code from your email (the app asks for the code too).
 - **Change password.**
 
+**No email on your account, or the code never came?** Open a **support
+ticket** instead: the *Support* link at the bottom of every page (or "Open a
+support ticket" on the Forgot password page). You don't need to be logged in.
+Staff see it on the **Staff** page (*Support tickets* box) and can:
+
+- **Answer** it. The answer shows up on the person's Support page, in their
+  notifications if they're logged in, and by email if they left one.
+- **Send a reset code** (for "I forgot my password" tickets). The code shows up
+  on their Support page with a "pick a new password" form. It works for 24
+  hours, and only in the browser that sent the ticket. Only press it when you're
+  sure it's really them: you know them, or they told you things only the owner
+  would know (a game they made, when they joined, who their friends are).
+- **Close** it.
+
+The C++ server (`GutsAndBoltsServer`) has tickets too, but it can't send email
+or reset passwords yet, so staff answer with what to do instead.
+
+#### Turning email on
+
 Emails need an email service, because Cloudflare can't send email to anyone
-by itself. The easiest is [Brevo](https://www.brevo.com) (free, 300 emails a
-day, and you don't need your own domain):
+by itself. We use [Brevo](https://www.brevo.com): it's free (300 emails a day)
+and only needs an API key.
 
-1. Make a Brevo account. Under *Senders*, add the email address the codes
-   should come from and confirm it.
-2. Under *SMTP & API > API Keys*, make an API key.
-3. In the Cloudflare dashboard, open the Worker: *Settings > Variables and
+1. Make a Brevo account.
+2. Tell Brevo which address the emails come from. The best way is your own
+   domain (like `noreply@gutsandbolts.net`): in Brevo, open *Senders, Domains &
+   Dedicated IPs > Domains*, add the domain and follow the steps (Brevo can add
+   the DNS records to Cloudflare for you). Emails from your own domain are much
+   less likely to land in spam. The quick way is *Senders > Add a sender* with
+   an address you already have, and click the link Brevo emails you; it works,
+   but more emails end up in spam.
+3. Under *SMTP & API > API Keys*, make an API key and copy it.
+4. In the Cloudflare dashboard, open the Worker: *Settings > Variables and
    Secrets*. Add a **Secret** `BREVO_API_KEY` (the key) and a **Text**
-   variable `MAIL_FROM` (the sender address from step 1). You can also run
-   `npx wrangler secret put BREVO_API_KEY`.
+   variable `MAIL_FROM` (the sender address from step 2). You can also run
+   `npx wrangler secret put BREVO_API_KEY`. (Optional: `MAIL_NAME`, the name
+   emails come from, "Guts&Bolts" if you leave it out.)
+5. Check it works: on the website's **Staff** page, the *Email* box says
+   whether email is on. Type your address and press **Send test**, then reload
+   the page: it says "sent", or exactly what Brevo didn't like (a wrong key, a
+   sender that isn't confirmed yet...).
 
-Resend works too: set `RESEND_API_KEY` instead (it needs a domain you own).
-Until one is set, the settings page says email isn't switched on yet. For
-testing with `wrangler dev`, put `MAIL_DEBUG=1` in a `.dev.vars` file: codes
-are printed in the terminal instead of emailed.
+Resend works too: set `RESEND_API_KEY` instead of the Brevo key (it needs a
+domain you own). Until a key *and* `MAIL_FROM` are set, the settings page says
+email isn't switched on yet. For testing with `wrangler dev`, put `MAIL_DEBUG=1`
+in a `.dev.vars` file: emails are printed in the terminal instead of sent.
 
 ### Authenticator app and the Verified Hat
 

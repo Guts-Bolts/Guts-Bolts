@@ -128,6 +128,10 @@ const kMaxBlurb = 1000, kMaxStatus = 140, kMaxPosts = 10, kStatusesPerDay = 30;
 const kMaxBlocked = 200, kReportsPerDay = 20, kMaxReports = 3000;
 // The staff action log: what staff did (bans, checks, badges...), newest kept (ServerSafety.cpp has the same).
 const kMaxStaffLog = 3000;
+// Support tickets (ServerSupport.cpp has the same): anyone, even someone who can't log in,
+// can ask staff for help. A few open at once per device, and a few a day.
+const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 1000, kResetHours = 24;
+const TICKET_TOPICS = ['password', 'account', 'other'];
 const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass: 'pass' })[a.kind] || a.kind;
 const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum'];
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.
@@ -203,7 +207,7 @@ const GENRES = ['Adventure', 'Obby', 'Fighting', 'Horror', 'Roleplay', 'Simulato
 // How well liked a game is, for sorting: likes out of votes, pulled towards 50% while there are few votes.
 const ratingOf = (a) => ((a.likes || 0) + 1) / ((a.likes || 0) + (a.dislikes || 0) + 2);
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
-const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant']);   // (product.*: guests can host games too)
+const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant']);   // (product.*: guests can host games too)
 
 // Assets have plain numbers counting up, like Roblox's asset IDs (1, 2, 3...). New ones
 // use the number as their ID; older ones ("decal-1a2b3c4d5e") got a number too and
@@ -441,7 +445,7 @@ export class GbServerObject extends DurableObject {
     this.name = env.SERVER_NAME || 'Guts&Bolts';
     this.users = new Map(); this.assets = new AssetMap(); this.groups = new Map(); this.forum = new Map();
     // What changed and needs writing (set up first: loading can already change things).
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false };
     for (const r of this.sql.exec('SELECT id, data FROM users')) this.users.set(r.id, JSON.parse(r.data));
     for (const r of this.sql.exec('SELECT id, data FROM assets')) {
       const a = JSON.parse(r.data);
@@ -454,6 +458,7 @@ export class GbServerObject extends DurableObject {
     this.posted = this.getMeta('updates', []);  // updates staff posted on the website (the rest are in updates.js)
     this.reports = this.getMeta('reports', []);  // what players reported, for staff to look at (newest last)
     this.staffLog = this.getMeta('stafflog', []);   // what staff did, newest last
+    this.tickets = this.getMeta('tickets', []);   // support tickets (like "I forgot my password"), newest last
     const ids = this.getMeta('ids', { next: 2, taken: [] });
     this.nextUserId = Math.max(2, ids.next || 2);
     this.nextAssetNum = Math.max(1, ids.asset || 1);
@@ -475,7 +480,8 @@ export class GbServerObject extends DurableObject {
     for (const u of this.users.values()) for (const k of u.keys || []) this.aliases.set(k, u.id);
     // Emails to send once the request is done (see sendMail).
     this.outbox = [];
-    this.canMail = !!(env.BREVO_API_KEY || env.RESEND_API_KEY || env.MAIL_DEBUG);
+    this.canMail = !!(((env.BREVO_API_KEY || env.RESEND_API_KEY) && env.MAIL_FROM) || env.MAIL_DEBUG);
+    this.mailLast = null;   // how the last email went: { at, to, ok, error } (for the Staff page)
     this.failedLogins = new Map();
     this.lastPost = new Map();
     // The relay (in memory: a restart closes every game, like the C++ server).
@@ -533,11 +539,20 @@ export class GbServerObject extends DurableObject {
       }
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'reports', JSON.stringify(this.reports));
     }
+    if (this.dirty.tickets) {
+      // Keep every open ticket, and only the newest closed ones.
+      if (this.tickets.length > kMaxTickets) {
+        const extra = this.tickets.length - kMaxTickets;
+        let dropped = 0;
+        this.tickets = this.tickets.filter((x) => x.status === 'open' || dropped++ >= extra);
+      }
+      this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'tickets', JSON.stringify(this.tickets));
+    }
     if (this.dirty.staffLog) {
       if (this.staffLog.length > kMaxStaffLog) this.staffLog.splice(0, this.staffLog.length - kMaxStaffLog);
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'stafflog', JSON.stringify(this.staffLog));
     }
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false };
   }
   // --- Limited items: numbered copies (a.copies = [{ serial, owner, price }]) ---
   copiesOf(u) {   // every limited copy this account holds
@@ -804,26 +819,41 @@ export class GbServerObject extends DurableObject {
     this.saveUser(u);
     return '';
   }
+  // Which email service is set up, and what's missing (for the Staff page).
+  mailStatus() {
+    const env = this.env;
+    const service = env.BREVO_API_KEY ? 'Brevo' : env.RESEND_API_KEY ? 'Resend' : env.MAIL_DEBUG ? 'test mode (codes go in the log)' : '';
+    let problem = '';
+    if (!service) problem = 'Email isn\'t set up yet: add a BREVO_API_KEY secret and a MAIL_FROM variable in Cloudflare (see the README).';
+    else if (!env.MAIL_DEBUG && !env.MAIL_FROM) problem = 'There\'s an API key, but no MAIL_FROM variable (the address emails come from). Add it in Cloudflare.';
+    return { service, from: env.MAIL_FROM || '', on: this.canMail, problem, last: this.mailLast };
+  }
   // Send what's in the outbox (after the request, so the answer isn't held up by much).
   async sendMail() {
     const mails = this.outbox.splice(0);
     for (const m of mails) {
       const from = this.env.MAIL_FROM || '', fromName = this.env.MAIL_NAME || 'Guts&Bolts';
+      let error = '';
       try {
+        let res = null;
         if (this.env.BREVO_API_KEY) {
-          await fetch('https://api.brevo.com/v3/smtp/email', { method: 'POST',
+          res = await fetch('https://api.brevo.com/v3/smtp/email', { method: 'POST',
             headers: { 'api-key': this.env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
             body: JSON.stringify({ sender: { name: fromName, email: from }, to: [{ email: m.to }], subject: m.subject, textContent: m.text }) });
         } else if (this.env.RESEND_API_KEY) {
-          await fetch('https://api.resend.com/emails', { method: 'POST',
+          res = await fetch('https://api.resend.com/emails', { method: 'POST',
             headers: { authorization: 'Bearer ' + this.env.RESEND_API_KEY, 'content-type': 'application/json' },
             body: JSON.stringify({ from: fromName + ' <' + from + '>', to: [m.to], subject: m.subject, text: m.text }) });
         } else {
-          console.log('MAIL (MAIL_DEBUG) to ' + m.to + ': ' + m.subject + ' code ' + m.code);
+          console.log('MAIL (MAIL_DEBUG) to ' + m.to + ': ' + m.subject + (m.code ? ' code ' + m.code : '') + '\n' + m.text);
         }
+        // The email service says what went wrong (a bad key, a sender it doesn't know...) in its answer.
+        if (res && !res.ok) error = (this.env.BREVO_API_KEY ? 'Brevo' : 'Resend') + ' said ' + res.status + ': ' + (await res.text()).slice(0, 300);
       } catch (e) {
-        console.log('Couldn\'t send an email: ' + (e && e.message || e));
+        error = 'Couldn\'t reach the email service: ' + (e && e.message || e);
       }
+      if (error) console.log('Couldn\'t send an email: ' + error);
+      this.mailLast = { at: now(), to: maskEmail(m.to), ok: !error, error };
     }
   }
   // The example games (see EXAMPLE_GAMES): added once, kept up to date with the
@@ -1161,6 +1191,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
+    if (name.startsWith('support.')) return this.supportOp(name, me, args);
     // "I'm still here" (for friends' online dots); the answer keeps your account fresh
     // (a new warning, or Bolts someone sent you, shows up within a minute).
     if (name === 'ping') return okay({ me: this.meJson(me) });
@@ -1556,6 +1587,17 @@ export class GbServerObject extends DurableObject {
         return okay({ asset: this.publicAsset(a, me) });
       }
       if (name === 'admin.reports') return okay({ reports: this.reportsJson(str(args, 'status') === 'closed' ? 'closed' : 'open') });
+      if (name === 'admin.tickets') return okay({ tickets: this.ticketsJson(str(args, 'status') === 'closed' ? 'closed' : 'open') });
+      if (name === 'admin.replyTicket' || name === 'admin.ticketReset' || name === 'admin.closeTicket') return this.ticketAdminOp(name, me, args);
+      if (name === 'admin.mailStatus') return okay({ mail: this.mailStatus() });
+      if (name === 'admin.mailTest') {
+        // Send a test email, to check the email settings work (the Staff page shows how it went).
+        const to = lower(cleanText(str(args, 'email'), 254));
+        if (!isEmail(to)) return fail('That doesn\'t look like an email address.');
+        if (!this.canMail) return fail(this.mailStatus().problem);
+        this.outbox.push({ to, subject: 'Guts&Bolts test email', text: 'Hi,\n\nIf you can read this, email works on your Guts&Bolts server.\n\n- Guts&Bolts', code: '' });
+        return okay({ mail: this.mailStatus() });
+      }
       if (name === 'admin.log') {   // the newest 200, or just what one person did or had done to them
         const who = str(args, 'user') ? this.findPerson(str(args, 'user')) : null;
         if (str(args, 'user') && !who) return fail('There\'s no account with that ID on this server.');
@@ -2378,9 +2420,13 @@ export class GbServerObject extends DurableObject {
       return problem && problem.startsWith('Email isn') ? fail(problem) : sent;
     }
     if (name === 'account.reset') {
-      if (!u || !u.emailVerified) return fail('That code isn\'t right.');
+      // The code came by email, or staff made it for a support ticket (then it only works on the device that sent it).
+      const c = u && u.codes && u.codes.reset;
+      if (!u || !c || (!u.emailVerified && !c.ticket)) return fail('That code isn\'t right.');
       if (this.isOfficial(u)) return fail('The Guts account can\'t be reset by email.');
       if (me.userId > 0) return fail('Log out first: this device is signed in as ' + me.username + '.');
+      if (c.device && c.device !== me.id) return fail('That code only works on the device that sent the support ticket.');
+      const ticket = c.ticket;
       const problem = this.checkCode(u, 'reset', str(args, 'code'));
       if (problem) return fail(problem);
       const salt = lower(str(args, 'salt')), auth = lower(str(args, 'auth')), blob = lower(str(args, 'key'));
@@ -2393,6 +2439,8 @@ export class GbServerObject extends DurableObject {
       u.pwSalt = salt; u.pwHash = hashHex(auth); u.keyBlob = blob;
       this.failedLogins.delete(lower(u.username));
       this.saveUser(u);
+      const tk = ticket && this.tickets.find((x) => x.id === ticket);
+      if (tk) { tk.resetUsed = true; delete tk.code; tk.status = 'closed'; tk.closedAt = now(); this.dirty.tickets = true; }
       return okay({ me: this.meJson(u) });
     }
     // An account made on a device that never set a password can't be logged into anywhere else yet.
@@ -2439,7 +2487,7 @@ export class GbServerObject extends DurableObject {
   }
 
   friendOp(name, me, args) {
-    const person = (u) => ({ id: u.id, name: u.name, verified: this.isVerified(u) });
+    const person = (u) => ({ id: u.id, userId: u.userId, username: u.username, name: u.name, verified: this.isVerified(u) });
     if (name === 'friends.list') {
       const friends = [];
       for (const id of me.friends) {
@@ -2607,6 +2655,114 @@ export class GbServerObject extends DurableObject {
     }
     return fail('Unknown request.');
   }
+  // --- Support tickets (ServerSupport.cpp has the same) ---
+  // Anyone can ask staff for help, even without logging in (like "I forgot my password and
+  // my account has no email"). A ticket belongs to the device that sent it: only that device
+  // sees staff's answers, and a reset code staff make only works there.
+  supportOp(name, me, args) {
+    const t = now();
+    if (name === 'support.send') {
+      const topic = TICKET_TOPICS.includes(str(args, 'topic')) ? str(args, 'topic') : 'other';
+      const message = cleanText(str(args, 'message'), kTicketLength, true).trim();
+      const contact = lower(cleanText(str(args, 'contact'), 254)).trim();
+      const username = cleanText(str(args, 'username'), 32).trim().replace(/^@/, '');
+      if (message.length < 10) return fail('Tell staff a bit more (at least 10 letters), so they know how to help.');
+      if (contact && !isEmail(contact)) return fail('That doesn\'t look like an email address. You can leave it empty.');
+      let about = me.userId > 0 ? me : null;
+      if (username || (topic === 'password' && !about)) {
+        about = this.findUsername(username);
+        if (!about || about.userId === 0) return fail('There\'s no account called "' + username + '". Check the spelling.');
+        if (this.isOfficial(about)) return fail('The Guts account can\'t get help this way.');
+      }
+      const mine = this.tickets.filter((x) => x.from === me.id && x.status === 'open');
+      if (mine.length >= kOpenTickets) return fail('You already have ' + kOpenTickets + ' open tickets. Wait for staff to answer those first.');
+      if (this.tickets.filter((x) => x.from === me.id && t - x.at < 86400).length >= kTicketsPerDay)
+        return fail('That\'s enough tickets for today. Try again tomorrow.');
+      const tk = { id: 'tk-' + randomHex(6), from: me.id, topic, about: about ? about.id : '', contact, message, at: t, status: 'open', replies: [] };
+      this.tickets.push(tk);
+      this.dirty.tickets = true;
+      this.notify(this.users.get(this.official), 'ticket', 'New support ticket' + (about ? ' about ' + about.name : '') + ': "' + message.slice(0, 80) + '"', tk.id);
+      return okay({ ticket: this.ticketJson(tk, false) });
+    }
+    if (name === 'support.mine') {
+      const list = this.tickets.filter((x) => x.from === me.id).slice(-20).reverse();
+      return okay({ tickets: list.map((x) => this.ticketJson(x, false)) });
+    }
+    return fail('Unknown request.');
+  }
+  // A ticket as JSON. Staff see who sent it and their contact; the sender sees staff's
+  // answers and, while it works, the reset code staff made for them.
+  ticketJson(x, forStaff) {
+    const who = (id) => { const u = id && this.users.get(id); return u ? this.publicUser(u) : null; };
+    const r = { id: x.id, topic: x.topic, message: x.message, at: x.at, status: x.status, about: who(x.about),
+      replies: (x.replies || []).map((y) => ({ text: y.text, at: y.at, by: forStaff ? who(y.by) : null })) };
+    if (x.status === 'closed') r.closedAt = x.closedAt;
+    const u = x.about && this.users.get(x.about);
+    const c = u && u.codes && u.codes.reset;
+    const codeWorks = !!(x.code && c && c.ticket === x.id && now() <= c.exp && c.tries < kCodeTries);
+    if (forStaff) {
+      const from = this.users.get(x.from);
+      r.from = from && from.userId > 0 ? this.publicUser(from) : null;   // null: a guest (not logged in)
+      r.contact = x.contact || '';
+      r.resetSent = codeWorks;
+      r.resetUsed = !!x.resetUsed;
+      r.hasEmail = !!(u && u.emailVerified);
+      if (x.status === 'closed') r.closedBy = who(x.closedBy);
+    } else if (codeWorks) {
+      r.resetCode = x.code;
+      r.resetUsername = u.username;
+      r.resetUntil = c.exp;
+    }
+    if (!forStaff && x.resetUsed) r.resetUsed = true;
+    return r;
+  }
+  // Open tickets oldest first (first come, first served); closed ones newest first.
+  ticketsJson(status) {
+    const list = this.tickets.filter((x) => x.status === status);
+    return (status === 'open' ? list.slice(0, 100) : list.slice(-100).reverse()).map((x) => this.ticketJson(x, true));
+  }
+  // Staff answer a ticket: a reply (the sender sees it on the Support page, and gets an
+  // email too if they left one), a reset code, or closing it.
+  ticketAdminOp(name, me, args) {
+    const tk = this.tickets.find((x) => x.id === str(args, 'id'));
+    if (!tk) return fail('That ticket isn\'t there any more.');
+    const about = tk.about && this.users.get(tk.about);
+    const tellSender = (text) => {
+      this.notify(this.users.get(tk.from), 'support', text, tk.id);
+      if (tk.contact && this.canMail)
+        this.outbox.push({ to: tk.contact, subject: 'Guts&Bolts staff answered your ticket',
+          text: 'Hi,\n\n' + text + '\n\nOpen the Support page on the Guts&Bolts website (on the same device you sent the ticket from) '
+            + 'to see it and answer.\n\n- Guts&Bolts', code: '' });
+    };
+    if (name === 'admin.replyTicket') {
+      const text = cleanText(str(args, 'text'), kTicketLength, true).trim();
+      if (!text) return fail('Type an answer first.');
+      tk.replies = (tk.replies || []).concat([{ by: me.id, text, at: now() }]);
+      if (tk.status === 'closed') { tk.status = 'open'; delete tk.closedBy; delete tk.closedAt; }
+      tellSender('Staff answered your support ticket: "' + text + '"');
+      this.staffDid(me, 'ticket', 'Answered a support ticket' + (about ? ' about ' + about.name : ''), about ? about.id : '');
+    } else if (name === 'admin.ticketReset') {
+      // A password reset code for the account the ticket is about. Only press this when you're
+      // sure the person really owns it (you know them, they can tell you things only they'd know).
+      if (tk.topic !== 'password' || !about) return fail('Only "I forgot my password" tickets can get a reset code.');
+      if (this.isOfficial(about)) return fail('The Guts account can\'t be reset this way.');
+      if (tk.status === 'closed') return fail('That ticket is closed.');
+      const code = sixDigits();
+      about.codes = about.codes || {};
+      about.codes.reset = { hash: hashHex(code + ':' + about.id + ':reset'), exp: now() + kResetHours * 3600, tries: 0, sent: now(), device: tk.from, ticket: tk.id };
+      tk.code = code;
+      delete tk.resetUsed;
+      this.saveUser(about);
+      tellSender('Staff made a password reset code for ' + about.username + '. It works for ' + kResetHours + ' hours.');
+      this.staffDid(me, 'ticket', 'Made a password reset code for ' + about.name + ' (support ticket)', about.id);
+    } else if (name === 'admin.closeTicket') {
+      tk.status = 'closed'; tk.closedBy = me.id; tk.closedAt = now();
+      this.staffDid(me, 'ticket', 'Closed a support ticket' + (about ? ' about ' + about.name : ''), about ? about.id : '');
+    } else return fail('Unknown request.');
+    this.dirty.tickets = true;
+    return okay({ tickets: this.ticketsJson('open') });
+  }
+
   // Reports for the Staff page, with names filled in. Open: oldest first (first come, first served).
   reportsJson(status) {
     const who = (id) => { const u = this.users.get(id); return u ? this.publicUser(u) : { id, name: '?', userId: 0 }; };

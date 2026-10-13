@@ -22,6 +22,31 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'lost-and-found', name: 'Lost & Found', time: 1791838800, tag: 'Website',
+    summary: 'Forgot your password and never added an email? Ask staff on the new Support page and get back in.',
+    items: [
+      'A new Support page (link at the bottom of every page): ask staff for help, even when you can\'t log in',
+      'Forgot your password? Staff can send you a reset code right on the Support page, so you can pick a new password',
+      'Staff answers show up on the Support page and in your notifications, and by email if you left one',
+      'A Support tickets box on the Staff page to answer, send reset codes and close tickets',
+      'Email now says what went wrong when it can\'t send, and staff can send a test email from the Staff page',
+      'Fixed: clicking a friend in "Friends online" on the home page said the user doesn\'t exist',
+    ],
+  },
+  {
+    id: 'directors-cut', name: 'Director\'s Cut', time: 1791835200, tag: 'Engine',
+    summary: 'Games can now take over the camera: cutscenes, locked first person, zoom limits and more.',
+    items: [
+      'workspace.CurrentCamera: scripts can read and set its CFrame, FieldOfView, Focus and CameraSubject',
+      'CameraType Scriptable hands the camera to your scripts for cutscenes; Fixed keeps it in one spot; Custom is the normal camera',
+      'Point the camera at a part or another character with CameraSubject',
+      'player.CameraMode = LockFirstPerson keeps players in first person, and CameraMinZoomDistance / CameraMaxZoomDistance limit the mouse wheel',
+      'Set every player\'s starting Camera Mode and zoom limits in Studio\'s Player panel',
+      'WorldToViewportPoint and ViewportPointToRay turn 3D points into screen pixels and back',
+      'Works in the Player and in Studio\'s play test, and games that don\'t use it keep the camera they had',
+    ],
+  },
+  {
     id: 'twin-engines', name: 'Twin Engines', time: 1791831600, tag: 'Server',
     summary: 'The server you can run on your own computer caught up with the main one: Limiteds, trades, votes, icons and more.',
     items: [

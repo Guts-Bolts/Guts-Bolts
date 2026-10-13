@@ -83,14 +83,21 @@ end
 __gb_uiFolder = uiFolder
 local joinData = __gb_joinData
 local function getJoinData(self) return joinData(rawget(self, "Name")) end
+-- player.CameraMode (Enum.CameraMode.Classic / LockFirstPerson), CameraMinZoomDistance and
+-- CameraMaxZoomDistance live in the engine (the camera uses them; the host sends a
+-- joined player's to them).
+local camOpt, setCamOpt = __gb_camOpt, __gb_setCamOpt
+local cameraOptions = { CameraMode = true, CameraMinZoomDistance = true, CameraMaxZoomDistance = true }
 local playerMeta = {
     __index = function(t, k)
         if k == "PlayerGui" then return uiFolder() end
         if k == "GetJoinData" then return getJoinData end
         if k == "Team" or k == "TeamColor" or k == "Neutral" then return rawget(t, "__" .. k) end
+        if cameraOptions[k] then return camOpt(rawget(t, "Name"), k) end
         return rawget(t, "__node")[k]
     end,
     __newindex = function(t, k, v)
+        if cameraOptions[k] then setCamOpt(rawget(t, "Name"), k, v) return end
         if k == "RespawnLocation" and rawget(t, "__local") then setRespawn(v) end
         -- Teams, like Roblox: Team, TeamColor and Neutral keep each other right.
         if k == "Team" then applyTeam(t, v) return end
@@ -1303,6 +1310,7 @@ __gb_heartbeat, __gb_inputBegan, __gb_inputEnded, __gb_isKeyDown, __gb_padState 
 __gb_playerAdded, __gb_playerRemoving, __gb_tagAdded, __gb_tagRemoved = nil, nil, nil, nil
 __gb_charSignals, __gb_setTeam, __gb_clientMode = nil, nil, nil
 __gb_playerNode, __gb_setRespawn, __gb_dsStart, __gb_dsDone, __gb_dsSet, __gb_navPath, __gb_navQuery = nil, nil, nil, nil, nil, nil, nil
+__gb_camOpt, __gb_setCamOpt = nil, nil
 __gb_awardBadge, __gb_hasBadge, __gb_teleport, __gb_joinData = nil, nil, nil, nil
 __gb_raycast, __gb_storage, __gb_addMethod = nil, nil, nil
 __gb_passLookup, __gb_passReady, __gb_passOwns, __gb_passPrompt, __gb_passResults = nil, nil, nil, nil, nil
@@ -1751,6 +1759,50 @@ int l_setRespawn(lua_State* L) {
     return 0;
 }
 
+// player.CameraMode / CameraMinZoomDistance / CameraMaxZoomDistance (see the prelude).
+// Our own player's live here; another player's (on the host) are sent to them.
+CameraOptions* cameraOptionsOf(lua_State* L, const std::string& player, bool forWriting) {
+    ScriptEngine* e = LuaApi::engine(L);
+    Scene& scene = *e->scene();
+    if (!e->noLocalPlayer() && player == e->playerName()) {
+        ScriptCamera& c = scene.camera();
+        if (!c.optionsSet && forWriting) { c.options = scene.world().playerCamera; c.optionsSet = true; }
+        return c.optionsSet ? &c.options : &scene.world().playerCamera;
+    }
+    for (RemoteCharacter& r : scene.remotes())
+        if (r.name == player) {
+            if (!r.cameraSet && forWriting) { r.camera = scene.world().playerCamera; r.cameraSet = true; }
+            return r.cameraSet ? &r.camera : &scene.world().playerCamera;
+        }
+    return forWriting ? nullptr : &scene.world().playerCamera;
+}
+int l_camOpt(lua_State* L) {
+    const CameraOptions* o = cameraOptionsOf(L, luaL_checkstring(L, 1), false);
+    const std::string k = luaL_checkstring(L, 2);
+    if (k == "CameraMode") lua_pushstring(L, o->lockFirstPerson ? "LockFirstPerson" : "Classic");
+    else if (k == "CameraMinZoomDistance") lua_pushnumber(L, o->minZoom);
+    else lua_pushnumber(L, o->maxZoom);
+    return 1;
+}
+int l_setCamOpt(lua_State* L) {
+    const std::string k = luaL_checkstring(L, 2);
+    CameraOptions want;
+    if (k == "CameraMode") {
+        std::string m = luaL_checkstring(L, 3);   // Enum.CameraMode.LockFirstPerson -> "LockFirstPerson"
+        if (size_t dot = m.rfind('.'); dot != std::string::npos) m = m.substr(dot + 1);
+        if (m != "Classic" && m != "LockFirstPerson")
+            return luaL_error(L, "'%s' is not a CameraMode (use Classic or LockFirstPerson)", m.c_str());
+        want.lockFirstPerson = m == "LockFirstPerson";
+    }
+    const float n = k == "CameraMode" ? 0.0f : std::clamp((float)luaL_checknumber(L, 3), 0.0f, CameraOptions::kLimit);
+    CameraOptions* o = cameraOptionsOf(L, luaL_checkstring(L, 1), true);
+    if (!o) return 0;   // (someone who isn't here any more)
+    if (k == "CameraMode") o->lockFirstPerson = want.lockFirstPerson;
+    else if (k == "CameraMinZoomDistance") o->minZoom = n;
+    else o->maxZoom = n;
+    return 0;
+}
+
 // Gui.Message(text, seconds), Gui.Label(key, text), Gui.Clear()
 int gui_message(lua_State* L) {
     GuiState& g = LuaApi::engine(L)->gui();
@@ -2130,6 +2182,8 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_charSignals", l_charSignals);
     lua_register(L, "__gb_setTeam", l_setTeam);
     lua_register(L, "__gb_materialPhysics", l_materialPhysics);
+    lua_register(L, "__gb_camOpt", l_camOpt);
+    lua_register(L, "__gb_setCamOpt", l_setCamOpt);
     lua_register(L, "__gb_dsStart", l_dsStart);
     lua_register(L, "__gb_dsDone", l_dsDone);
     lua_register(L, "__gb_dsSet", l_dsSet);

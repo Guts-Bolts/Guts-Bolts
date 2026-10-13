@@ -455,6 +455,7 @@ void PlayerApp::joinGame(const std::filesystem::path& path, HostMode mode, const
     if (!m_loadingAuthor.empty()) m_currentAuthor = m_loadingAuthor;
     m_window->setTitle(m_currentTitle + " - Guts&Bolts Player");
     frameSpawn(*m_scene, m_camera);
+    m_camera.clearScripted();    // (a script may have had it in the last game)
     m_camera.distance = 12.0f;
     m_camera.pitch = 20.0f;
     m_camera.yaw = 90.0f;        // behind the character, looking the way it faces (-Z)
@@ -1668,7 +1669,7 @@ void PlayerApp::drawGame(float dt) {
              (ImGui::IsKeyPressed(ImGuiKey_LeftShift, false) || ImGui::IsKeyPressed(ImGuiKey_RightShift, false)))
         m_shiftLock = !m_shiftLock;
     if (acceptInput && hovered) {
-        const bool locked = (firstPerson || m_shiftLock) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
+        const bool locked = (firstPerson || (m_shiftLock && !m_camera.noInput)) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
         if (locked) {
             ImVec2 c = ImGui::GetCursorScreenPos();
             ImVec2 mid(c.x + size.x * 0.5f, c.y + size.y * 0.5f);
@@ -1688,7 +1689,7 @@ void PlayerApp::drawGame(float dt) {
         } else if (ImGui::IsMouseDown(ImGuiMouseButton_Right) || ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
             PlayCamera::turn(m_camera, io.MouseDelta.x, io.MouseDelta.y);
         }
-        if (!GameGui::overScroller(*m_scene, ImGui::GetMousePos())) PlayCamera::zoom(m_camera, io.MouseWheel);   // (else the wheel scrolls the UI)
+        if (!GameGui::overScroller(*m_scene, ImGui::GetMousePos())) PlayCamera::zoom(m_camera, io.MouseWheel, m_scene->cameraOptions());   // (else the wheel scrolls the UI)
     }
     if (acceptInput && Pad::connected()) padCamera(dt);
     if (Player* p = m_scene->player()) {
@@ -2386,8 +2387,8 @@ void PlayerApp::drawPauseMenu() {
 void PlayerApp::padCamera(float dt) {
     const glm::vec2 rs = Pad::rightStick();
     if (rs.x != 0.0f || rs.y != 0.0f) PlayCamera::turn(m_camera, rs.x * 900.0f * dt, -rs.y * 600.0f * dt);
-    if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, true))   PlayCamera::zoom(m_camera, 1.0f);
-    if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, true)) PlayCamera::zoom(m_camera, -1.0f);
+    if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp, true))   PlayCamera::zoom(m_camera, 1.0f, m_scene->cameraOptions());
+    if (ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown, true)) PlayCamera::zoom(m_camera, -1.0f, m_scene->cameraOptions());
     if (ImGui::IsKeyPressed(ImGuiKey_GamepadR3, false) && GraphicsSettings::get().shiftLockSwitch &&
         !PlayCamera::firstPerson(m_camera))
         m_shiftLock = !m_shiftLock;
@@ -2424,8 +2425,8 @@ void PlayerApp::updateTouch(ImVec2 min, ImVec2 max, bool acceptInput) {
     if (!acceptInput) { m_session->setTouchInput(glm::vec2(0.0f), false); return; }
     m_session->setTouchInput(m_touch.move(), m_touch.jump());
     ImVec2 look = m_touch.look();
-    if (look.x != 0.0f || look.y != 0.0f) m_camera.orbit(look.x, look.y);
-    if (m_touch.zoom() != 0.0f) PlayCamera::zoom(m_camera, m_touch.zoom());
+    if ((look.x != 0.0f || look.y != 0.0f) && !m_camera.noInput) m_camera.orbit(look.x, look.y);
+    if (m_touch.zoom() != 0.0f) PlayCamera::zoom(m_camera, m_touch.zoom(), m_scene->cameraOptions());
     if (m_touch.chatPressed()) m_chatOpen = true;
     if (m_touch.menuPressed()) m_paused = true;
     if (m_touch.micPressed()) m_talkOn = !m_talkOn;

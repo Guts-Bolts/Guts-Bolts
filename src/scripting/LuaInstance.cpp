@@ -29,6 +29,7 @@ constexpr const char* kSig   = "RBXScriptSignal";
 constexpr const char* kConn  = "RBXScriptConnection";
 constexpr const char* kHum   = "Humanoid";
 constexpr const char* kLight = "Lighting";
+constexpr const char* kCam   = "Camera";
 constexpr const char* kTrack = "AnimationTrack";
 constexpr const char* kAnimr = "Animator";
 
@@ -1564,6 +1565,7 @@ int inst_index(lua_State* L) {
         if (is(k, "PlayerCollisions")) { lua_pushboolean(L, w.playerCollisions); return 1; }
         if (is(k, "VoiceChatEnabled")) { lua_pushboolean(L, w.voiceChat); return 1; }
         if (is(k, "Orthographic"))     { lua_pushboolean(L, w.orthographic); return 1; }
+        if (is(k, "CurrentCamera"))    { LuaApi::pushCamera(L); return 1; }
         if (is(k, "OrthographicSize")) { lua_pushnumber(L, w.orthographicSize); return 1; }
         if (is(k, "BloodColor"))  { LuaApi::pushColor3(L, w.bloodColor); return 1; }
         if (is(k, "BloodAmount")) { lua_pushnumber(L, w.bloodAmount); return 1; }
@@ -1925,6 +1927,7 @@ int inst_newindex(lua_State* L) {
         if (is(k, "PlayerCollisions")) { w.playerCollisions = lua_toboolean(L, 3); return 0; }
         if (is(k, "VoiceChatEnabled")) { w.voiceChat = lua_toboolean(L, 3); return 0; }
         if (is(k, "Orthographic"))     { w.orthographic = lua_toboolean(L, 3); return 0; }
+        if (is(k, "CurrentCamera"))    return 0;   // (there's only ever the one camera)
         if (is(k, "OrthographicSize")) { w.orthographicSize = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 2000.0f); return 0; }
         if (is(k, "BloodColor"))  { w.bloodColor = LuaApi::checkColor3(L, 3); return 0; }
         if (is(k, "BloodAmount")) { w.bloodAmount = glm::clamp((float)luaL_checknumber(L, 3), 0.0f, 5.0f); return 0; }
@@ -2527,6 +2530,168 @@ int hum_eq(lua_State* L) {
 }
 
 // ===========================================================================
+// Camera (workspace.CurrentCamera)
+// ===========================================================================
+//
+// One per computer, like Roblox's: the play camera (game/PlayCamera.cpp) follows
+// what scripts set here, and writes back where it really is every frame.
+
+ScriptCamera& cam(lua_State* L) { return E(L)->scene()->camera(); }
+
+// Enum.CameraType.Scriptable -> "Scriptable" (also takes "Enum.CameraType.Scriptable").
+std::string enumName(lua_State* L, int idx) {
+    std::string s = luaL_checkstring(L, idx);
+    const size_t dot = s.rfind('.');
+    return dot == std::string::npos ? s : s.substr(dot + 1);
+}
+
+// The camera's view and lens, for turning points into screen pixels and back.
+struct Lens {
+    glm::mat4 world;   // camera -> world (no scale)
+    glm::vec2 size;    // pixels
+    float     tanHalf, aspect, orthoHalf;
+};
+Lens lensOf(const ScriptCamera& c) {
+    Lens l;
+    l.world = c.cframe;
+    for (int i = 0; i < 3; ++i) {
+        glm::vec3 a(l.world[i]);
+        l.world[i] = glm::vec4(glm::length(a) > 1e-6f ? glm::normalize(a) : glm::vec3(i == 0, i == 1, i == 2), 0.0f);
+    }
+    l.size = glm::max(c.viewport, glm::vec2(1.0f));
+    l.tanHalf = std::tan(glm::radians(c.fov) * 0.5f);
+    l.aspect = l.size.x / l.size.y;
+    l.orthoHalf = c.orthoHeight * 0.5f;
+    return l;
+}
+
+// camera:WorldToViewportPoint(pos) -> Vector3(x, y pixels, depth), onScreen
+int cam_worldToViewport(lua_State* L) {
+    const Lens l = lensOf(cam(L));
+    const glm::vec3 p = glm::vec3(glm::inverse(l.world) * glm::vec4(LuaApi::checkVector3(L, 2), 1.0f));
+    const float depth = -p.z;
+    glm::vec2 ndc;
+    if (l.orthoHalf > 0.0f) ndc = glm::vec2(p.x / (l.orthoHalf * l.aspect), p.y / l.orthoHalf);
+    else {
+        const float d = std::abs(depth) > 1e-6f ? std::abs(depth) : 1e-6f;   // (behind: mirrored, like Roblox)
+        ndc = glm::vec2(p.x / (d * l.tanHalf * l.aspect), p.y / (d * l.tanHalf));
+    }
+    const glm::vec2 px((ndc.x * 0.5f + 0.5f) * l.size.x, (0.5f - ndc.y * 0.5f) * l.size.y);
+    LuaApi::pushVector3(L, glm::vec3(px, depth));
+    lua_pushboolean(L, depth > 0.0f && px.x >= 0.0f && px.y >= 0.0f && px.x <= l.size.x && px.y <= l.size.y);
+    return 2;
+}
+
+// camera:ViewportPointToRay(x, y [, depth]) -> a unit Ray from the camera through that pixel
+int cam_viewportToRay(lua_State* L) {
+    const Lens l = lensOf(cam(L));
+    const float x = (float)luaL_checknumber(L, 2), y = (float)luaL_checknumber(L, 3);
+    const float depth = (float)luaL_optnumber(L, 4, 0.0);
+    const glm::vec2 ndc(x / l.size.x * 2.0f - 1.0f, 1.0f - y / l.size.y * 2.0f);
+    glm::vec3 origin, dir;
+    if (l.orthoHalf > 0.0f) {
+        origin = glm::vec3(ndc.x * l.orthoHalf * l.aspect, ndc.y * l.orthoHalf, 0.0f);
+        dir = glm::vec3(0, 0, -1);
+    } else {
+        origin = glm::vec3(0.0f);
+        dir = glm::normalize(glm::vec3(ndc.x * l.tanHalf * l.aspect, ndc.y * l.tanHalf, -1.0f));
+    }
+    origin = glm::vec3(l.world * glm::vec4(origin, 1.0f));
+    dir = glm::vec3(l.world * glm::vec4(dir, 0.0f));
+    origin += dir * depth;
+    lua_getglobal(L, "Ray");
+    lua_getfield(L, -1, "new");
+    LuaApi::pushVector3(L, origin);
+    LuaApi::pushVector3(L, dir);
+    lua_call(L, 2, 1);
+    return 1;
+}
+
+int cam_isA(lua_State* L) {
+    const char* c = luaL_checkstring(L, 2);
+    lua_pushboolean(L, is(c, "Camera") || is(c, "Instance"));
+    return 1;
+}
+
+int cam_index(lua_State* L) {
+    const char* k = luaL_checkstring(L, 2);
+    const ScriptCamera& c = cam(L);
+    if (is(k, "CFrame"))      { LuaApi::pushCFrame(L, c.cframe); return 1; }
+    if (is(k, "Focus"))       { LuaApi::pushCFrame(L, glm::translate(glm::mat4(1.0f), c.focus)); return 1; }
+    if (is(k, "FieldOfView")) { lua_pushnumber(L, c.fov); return 1; }
+    if (is(k, "CameraType"))  { lua_pushstring(L, c.typeName.c_str()); return 1; }
+    if (is(k, "CameraSubject")) {
+        if (c.subject) {
+            if (c.subjectIsHumanoid) LuaApi::pushHumanoid(L, c.subject);
+            else LuaApi::pushInstance(L, c.subject);
+        } else if (Player* p = E(L)->scene()->player(); p && !E(L)->noLocalPlayer() && p->rootId()) {
+            LuaApi::pushHumanoid(L, p->rootId());   // your own character's Humanoid
+        } else {
+            lua_pushnil(L);
+        }
+        return 1;
+    }
+    if (is(k, "ViewportSize")) { LuaApi::pushVector2(L, c.viewport); return 1; }
+    if (is(k, "NearPlaneZ"))   { lua_pushnumber(L, -0.1); return 1; }
+    if (is(k, "Name") || is(k, "ClassName")) { lua_pushstring(L, "Camera"); return 1; }
+    if (is(k, "Parent")) { LuaApi::pushInstance(L, E(L)->scene()->root()->id); return 1; }
+    if (is(k, "IsA")) { lua_pushcfunction(L, cam_isA); return 1; }
+    if (is(k, "WorldToViewportPoint") || is(k, "WorldToScreenPoint")) { lua_pushcfunction(L, cam_worldToViewport); return 1; }
+    if (is(k, "ViewportPointToRay") || is(k, "ScreenPointToRay")) { lua_pushcfunction(L, cam_viewportToRay); return 1; }
+    return luaL_error(L, "'%s' is not a valid member of Camera", k);
+}
+
+int cam_newindex(lua_State* L) {
+    const char* k = luaL_checkstring(L, 2);
+    ScriptCamera& c = cam(L);
+    if (is(k, "CFrame")) {
+        c.cframe = LuaApi::checkCFrame(L, 3);
+        c.cframeSet = true;   // (the play camera takes it on its next frame)
+        if (c.type == CameraType::Fixed) c.fixedAt = glm::vec3(c.cframe[3]);
+        return 0;
+    }
+    if (is(k, "Focus")) {
+        if (glm::vec3* v = LuaApi::toVector3(L, 3)) c.focus = *v;
+        else c.focus = glm::vec3(LuaApi::checkCFrame(L, 3)[3]);
+        return 0;
+    }
+    if (is(k, "FieldOfView")) { c.fov = std::clamp((float)luaL_checknumber(L, 3), 1.0f, 120.0f); return 0; }
+    if (is(k, "CameraType")) {
+        const std::string t = enumName(L, 3);
+        CameraType type;
+        if (t == "Scriptable") type = CameraType::Scriptable;
+        else if (t == "Fixed") type = CameraType::Fixed;
+        else if (t == "Custom" || t == "Follow" || t == "Track" || t == "Watch" || t == "Attach" || t == "Orbital") type = CameraType::Custom;
+        else return luaL_error(L, "'%s' is not a CameraType (use Custom, Scriptable or Fixed)", t.c_str());
+        if (type == CameraType::Fixed && c.type != CameraType::Fixed) c.fixedAt = glm::vec3(c.cframe[3]);   // stays right here
+        c.type = type;
+        c.typeName = t;
+        return 0;
+    }
+    if (is(k, "CameraSubject")) {
+        Player* p = E(L)->scene()->player();
+        const uint64_t mine = p && !E(L)->noLocalPlayer() ? p->rootId() : 0;
+        if (lua_isnil(L, 3)) { c.subject = 0; c.subjectIsHumanoid = true; return 0; }
+        if (auto* h = static_cast<HumRef*>(luaL_testudata(L, 3, kHum))) {
+            c.subject = h->rootId == mine ? 0 : h->rootId;
+            c.subjectIsHumanoid = true;
+            return 0;
+        }
+        SceneNode* n = LuaApi::checkNode(L, 3);
+        if (hasHumanoid(L, n)) {   // a character model: follow its head, like its Humanoid
+            c.subject = n->id == mine ? 0 : n->id;
+            c.subjectIsHumanoid = true;
+        } else {
+            c.subject = n->id;
+            c.subjectIsHumanoid = false;
+        }
+        return 0;
+    }
+    if (is(k, "Name") || is(k, "Parent")) return 0;   // (there's only ever the one camera)
+    return luaL_error(L, "'%s' can't be set on Camera", k);
+}
+
+// ===========================================================================
 // Lighting
 // ===========================================================================
 
@@ -2644,6 +2809,16 @@ void pushLighting(lua_State* L) {
     luaL_setmetatable(L, kLight);
 }
 
+void pushCamera(lua_State* L) {
+    // The same object every time, so `workspace.CurrentCamera == camera` holds.
+    if (lua_getfield(L, LUA_REGISTRYINDEX, "GB.Camera") == LUA_TUSERDATA) return;
+    lua_pop(L, 1);
+    lua_newuserdatauv(L, 1, 0);
+    luaL_setmetatable(L, kCam);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, LUA_REGISTRYINDEX, "GB.Camera");
+}
+
 void registerInstance(lua_State* L) {
     static const luaL_Reg instMeta[] = {
         {"__index", inst_index}, {"__newindex", inst_newindex}, {"__eq", inst_eq},
@@ -2652,6 +2827,7 @@ void registerInstance(lua_State* L) {
     static const luaL_Reg connMeta[]  = {{"__index", conn_index},  {nullptr, nullptr}};
     static const luaL_Reg humMeta[]   = {{"__index", hum_index}, {"__newindex", hum_newindex}, {"__eq", hum_eq}, {nullptr, nullptr}};
     static const luaL_Reg lightMeta[] = {{"__index", light_index}, {"__newindex", light_newindex}, {nullptr, nullptr}};
+    static const luaL_Reg camMeta[]   = {{"__index", cam_index}, {"__newindex", cam_newindex}, {nullptr, nullptr}};
     static const luaL_Reg trackMeta[] = {{"__index", track_index}, {"__newindex", track_newindex}, {"__eq", track_eq}, {nullptr, nullptr}};
     static const luaL_Reg animrMeta[] = {{"__index", animr_index}, {nullptr, nullptr}};
     makeMeta(L, kInst, instMeta);
@@ -2659,6 +2835,7 @@ void registerInstance(lua_State* L) {
     makeMeta(L, kConn, connMeta);
     makeMeta(L, kHum, humMeta);
     makeMeta(L, kLight, lightMeta);
+    makeMeta(L, kCam, camMeta);
     makeMeta(L, kTrack, trackMeta);
     makeMeta(L, kAnimr, animrMeta);
 
