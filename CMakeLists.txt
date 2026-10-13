@@ -486,6 +486,7 @@ set(EDITOR_SOURCES
     src/editor/Plugins.cpp
     src/editor/Premades.cpp
     src/editor/TeamCreate.cpp
+    src/editor/MultiTest.cpp
     src/editor/panels/ViewportPanel.cpp
     src/editor/panels/AnimationEditor.cpp
     src/editor/panels/OutlinerPanel.cpp
