@@ -10,7 +10,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'undo-button-for-your-whole-game', name: 'The Undo Button for Your Whole Game', time: 1791889200, tag: 'Website',
+    id: 'rewind', name: 'Rewind', time: 1791889200, tag: 'Website',
     summary: 'Publishing a game keeps its old versions now, and one click puts an old one back.',
     items: [
       'Every time you publish a game (from Studio, or with "New version" on the website), the version it replaces is kept',
