@@ -121,6 +121,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     m_seenNonces[key] = now;
 
     User& me = user(account);
+    if (me.deleted) return fail("This account was deleted.");
     me.lastSeen = now;
     if (me.banned && me.bannedUntil > 0 && now >= me.bannedUntil) {   // a timed ban is over
         me.banned = false;
@@ -128,7 +129,8 @@ json GbServer::checkRequest(const json& req, User*& out) {
         me.bannedAt = me.bannedUntil = 0;
         saveUsers();
     }
-    if (me.banned && opName != "hello") return fail(Online::banMessage(me.banReason, me.banNote));
+    // A banned account can only say hello (to see its ban screen) and appeal the ban.
+    if (me.banned && opName != "hello" && opName != "appeal.send") return fail(Online::banMessage(me.banReason, me.banNote));
     // Everything else needs a signed-up account (hello just says who we are),
     // except looking around: visitors to the website can browse before signing up.
     // Guests can also play: download games, find and join servers (they can't chat in games).
@@ -248,7 +250,7 @@ json GbServer::meJson(const User& u) const {
     if (u.banned) {
         const char* title = Online::banReasonTitle(u.banReason);
         j["ban"] = {{"reason", u.banReason}, {"title", title ? title : "Breaking the rules"}, {"note", u.banNote},
-                    {"at", u.bannedAt}, {"until", u.bannedUntil}};
+                    {"at", u.bannedAt}, {"until", u.bannedUntil}, {"appeal", myAppeal(u)}, {"canAppeal", canAppeal(u)}};
     } else {
         j["ban"] = nullptr;
     }
@@ -522,6 +524,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("servers.", 0) == 0) return serverOp(name, me, args);
     if (name.rfind("data.", 0) == 0) return dataOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);
+    if (name.rfind("appeal.", 0) == 0) return appealOp(name, me, args);
     if (name.rfind("outfit.", 0) == 0 || name.rfind("message.", 0) == 0 || name.rfind("notes.", 0) == 0 || name == "game.favorite" || name == "games.mine" || name.rfind("comments.", 0) == 0 ||
         name == "profile.set" || name == "feed.list")
         return socialOp(name, me, args);
@@ -677,6 +680,10 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             json r = okay(); r["reports"] = reportsJson(str("status") == "closed" ? "closed" : "open"); return r;
         }
         if (name == "admin.closeReport") return closeReport(me, str("id"), str("outcome"));
+        if (name == "admin.appeals") {
+            json r = okay(); r["appeals"] = appealsJson(str("status") == "closed" ? "closed" : "open"); return r;
+        }
+        if (name == "admin.answerAppeal") return answerAppeal(me, args);
         if (name == "admin.tickets") {
             json r = okay(); r["tickets"] = ticketsJson(str("status") == "closed" ? "closed" : "open"); return r;
         }
@@ -741,29 +748,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             json r = okay(); r["user"] = publicUser(*to); r["bolts"] = balance(*to); return r;
         }
         if (name == "admin.ban") {
-            if (isOfficial(*to)) return fail("You can't ban yourself.");
-            const bool on = args.value("on", true);
-            if (on) {
-                std::string reason = str("reason");
-                if (!Online::banReasonTitle(reason)) return fail("Pick a reason for the ban.");
-                to->banReason = reason;
-                to->banNote = Online::cleanText(str("note"), 200);
-                to->bannedAt = Online::unixNow();
-                const long long days = std::clamp(num("days"), 0LL, 3650LL);   // 0 = for good
-                to->bannedUntil = days > 0 ? to->bannedAt + days * 86400 : 0;
-            } else {
-                to->banReason.clear();
-                to->banNote.clear();
-                to->bannedAt = to->bannedUntil = 0;
-            }
-            to->banned = on;
-            if (on) {
-                const char* why = Online::banReasonTitle(to->banReason);
-                staffDid(me, "ban", "Banned " + to->name + " (" + (why ? why : to->banReason) + ", " +
-                         (to->bannedUntil ? std::to_string(std::clamp(num("days"), 0LL, 3650LL)) + " days" : std::string("for good")) + ")" +
-                         (to->banNote.empty() ? "" : ": \"" + to->banNote + "\""), to->id);
-            } else staffDid(me, "unban", "Unbanned " + to->name, to->id);
-            saveUsers();
+            if (std::string problem = setBan(me, *to, args.value("on", true), args); !problem.empty()) return fail(problem);
             json r = okay(); r["user"] = publicUser(*to); return r;
         }
         if (name == "admin.warn") {
@@ -1333,6 +1318,8 @@ void GbServer::saveUsers() {
                    {"following", u.following}, {"followers", u.followers},
                    {"username", u.username}, {"userId", u.userId}, {"pwSalt", u.pwSalt}, {"pwHash", u.pwHash},
                    {"keyBlob", u.keyBlob}, {"avatar", u.avatar}, {"gameBadges", u.gameBadges}};
+        if (!u.appeal.is_null()) all[id]["appeal"] = u.appeal;
+        if (u.deleted) all[id]["deleted"] = u.deleted;
         if (!u.totpSecret.empty()) { all[id]["totpSecret"] = u.totpSecret; all[id]["totpLast"] = u.totpLast; }
         if (!u.totpPending.empty()) all[id]["totpPending"] = u.totpPending;
         all[id]["privacy"] = {{"status", u.privacyStatus}, {"join", u.privacyJoin}, {"messages", u.privacyMessages}, {"inventory", u.privacyInventory}};
@@ -1527,6 +1514,8 @@ void GbServer::load() {
                 u.bannedAt = j.value("bannedAt", 0LL);
                 u.bannedUntil = j.value("bannedUntil", 0LL);
                 if (j.contains("warnings") && j["warnings"].is_array()) u.warnings = j["warnings"];
+                if (j.contains("appeal") && j["appeal"].is_object()) u.appeal = j["appeal"];
+                u.deleted = j.value("deleted", 0LL);
                 u.username = j.value("username", std::string());
                 u.userId = j.value("userId", 0LL);
                 u.pwSalt = j.value("pwSalt", std::string());

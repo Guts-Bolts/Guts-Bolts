@@ -249,7 +249,8 @@ void GbServer::staffDid(const User& staff, const std::string& action, const std:
 json GbServer::staffLogJson(const std::string& who) const {
     auto name = [&](const std::string& id) {
         auto it = m_users.find(id);
-        return it != m_users.end() ? json{{"id", id}, {"userId", it->second.userId}, {"name", it->second.name}} : json{{"id", id}, {"userId", 0}, {"name", "?"}};
+        return it != m_users.end() ? json{{"id", id}, {"userId", it->second.userId}, {"name", it->second.name}}
+                                   : json{{"id", id}, {"userId", 0}, {"name", id == "system" ? "System" : "?"}};
     };
     json out = json::array();
     for (size_t i = m_staffLog.size(); i > 0 && out.size() < 200; --i) {
@@ -260,6 +261,138 @@ json GbServer::staffLogJson(const std::string& who) const {
                        {"text", x.value("text", std::string())}, {"about", about.empty() ? json() : name(about)}});
     }
     return out;
+}
+
+// Ban (on) or unban someone, and write it in the staff log (worker/server.js setBan).
+std::string GbServer::setBan(const User& staff, User& to, bool on, const json& args) {
+    auto str = [&](const char* k) { return args.contains(k) && args[k].is_string() ? args[k].get<std::string>() : std::string(); };
+    const long long days = std::clamp(args.contains("days") && args["days"].is_number() ? args["days"].get<long long>() : 0LL, 0LL, 3650LL);
+    if (isOfficial(to)) return "You can't ban yourself.";
+    if (on) {
+        const std::string reason = str("reason");
+        if (!Online::banReasonTitle(reason)) return "Pick a reason for the ban.";
+        to.banReason = reason;
+        to.banNote = Online::cleanText(str("note"), 200);
+        to.bannedAt = Online::unixNow();
+        to.bannedUntil = days > 0 ? to.bannedAt + days * 86400 : 0;   // 0 = for good
+    } else {
+        to.banReason.clear();
+        to.banNote.clear();
+        to.bannedAt = to.bannedUntil = 0;
+    }
+    to.banned = on;
+    if (on) {
+        const char* why = Online::banReasonTitle(to.banReason);
+        staffDid(staff, "ban", "Banned " + to.name + " (" + (why ? why : to.banReason) + ", " +
+                 (to.bannedUntil ? std::to_string(days) + " days" : std::string("for good")) + ")" +
+                 (to.banNote.empty() ? "" : ": \"" + to.banNote + "\""), to.id);
+    } else staffDid(staff, "unban", "Unbanned " + to.name, to.id);
+    saveUsers();
+    return "";
+}
+
+// --- Ban appeals (worker/server.js has the same) ---
+// A banned account can send staff one short note asking to be unbanned (User::appeal). Staff see
+// it next to the reports and accept it (an unban, through setBan) or deny it with a note; the
+// answer shows on the ban screen. One open appeal per ban: a new one only after staff answer, or
+// when the ban changes (appeal.banAt is the bannedAt it was sent for).
+namespace { constexpr size_t kAppealLength = 500; }
+
+bool GbServer::appealIsCurrent(const User& u) const {
+    return u.appeal.is_object() && u.banned && u.appeal.value("banAt", 0LL) == u.bannedAt;
+}
+bool GbServer::canAppeal(const User& u) const {
+    return u.banned && !(appealIsCurrent(u) && u.appeal.value("status", std::string()) == "open");
+}
+json GbServer::myAppeal(const User& u) const {
+    if (!appealIsCurrent(u)) return nullptr;
+    const json& a = u.appeal;
+    return {{"text", a.value("text", std::string())}, {"at", a.value("at", 0LL)}, {"status", a.value("status", std::string())},
+            {"note", a.value("note", std::string())}, {"answeredAt", a.value("answeredAt", 0LL)}};
+}
+
+json GbServer::appealOp(const std::string& name, User& me, const json& args) {
+    if (name != "appeal.send") return fail("Unknown request.");
+    if (!me.banned) return fail("Your account isn't banned.");
+    if (!canAppeal(me)) return fail("You already appealed this ban. Staff will answer it soon.");
+    const std::string text = say(args.contains("text") && args["text"].is_string() ? args["text"].get<std::string>() : std::string(),
+                                 kAppealLength, true);
+    if (text.size() < 10) return fail("Tell staff a bit more (at least 10 letters) about why the ban should be lifted.");
+    const long long now = Online::unixNow();
+    me.appeal = {{"id", "ap-" + Account::randomHex(6)}, {"text", text}, {"at", now}, {"banAt", me.bannedAt}, {"status", "open"},
+                 {"ban", {{"reason", me.banReason}, {"note", me.banNote}, {"at", me.bannedAt}, {"until", me.bannedUntil}}}};
+    saveUsers();
+    notify(findUserId(1), "appeal", me.name + " appealed their ban: \"" + text.substr(0, 80) + "\"", me.id);
+    log(me.name + " appealed their ban");
+    json r = okay(); r["me"] = meJson(me); return r;
+}
+
+// Appeals for the Staff page. Open: oldest first (first come, first served); closed: newest answers first.
+json GbServer::appealsJson(const std::string& status) const {
+    auto who = [&](const std::string& id) -> json {
+        auto it = m_users.find(id);
+        return it != m_users.end() ? publicUser(it->second) : json(nullptr);
+    };
+    std::vector<const User*> list;
+    for (const auto& [id, u] : m_users) {
+        if (!u.appeal.is_object()) continue;
+        const std::string st = u.appeal.value("status", std::string());
+        if (status == "open" ? st == "open" && appealIsCurrent(u) : st == "accepted" || st == "denied") list.push_back(&u);
+    }
+    std::sort(list.begin(), list.end(), [&](const User* x, const User* y) {
+        const char* key = status == "open" ? "at" : "answeredAt";
+        const long long a = x->appeal.value(key, 0LL), b = y->appeal.value(key, 0LL);
+        if (a != b) return status == "open" ? a < b : a > b;
+        return x->appeal.value("id", std::string()) < y->appeal.value("id", std::string());
+    });
+    if (list.size() > 100) list.resize(100);
+    json out = json::array();
+    for (const User* u : list) {
+        const json& a = u->appeal;
+        const json b = a.contains("ban") && a["ban"].is_object() ? a["ban"] : json::object();
+        // Who banned them, from the staff log: the newest ban of them from before the appeal.
+        json by = nullptr;
+        for (size_t i = m_staffLog.size(); i > 0; --i) {
+            const json& x = m_staffLog[i - 1];
+            if (x.value("action", std::string()) == "ban" && x.value("about", std::string()) == u->id && x.value("at", 0LL) <= a.value("at", 0LL)) {
+                by = who(x.value("by", std::string()));
+                break;
+            }
+        }
+        const std::string reason = b.value("reason", std::string());
+        const char* title = Online::banReasonTitle(reason);
+        out.push_back({{"id", a.value("id", std::string())}, {"user", publicUser(*u)}, {"text", a.value("text", std::string())},
+                       {"at", a.value("at", 0LL)}, {"status", a.value("status", std::string())}, {"note", a.value("note", std::string())},
+                       {"answeredAt", a.value("answeredAt", 0LL)}, {"answeredBy", who(a.value("by", std::string()))},
+                       {"ban", {{"reason", reason}, {"title", title ? title : "Breaking the rules"}, {"note", b.value("note", std::string())},
+                                {"at", b.value("at", 0LL)}, {"until", b.value("until", 0LL)}, {"by", by}}}});
+    }
+    return out;
+}
+
+// Staff answer an appeal: accept (unbans them; only the official account can unban) or deny, with a short note.
+json GbServer::answerAppeal(const User& staff, const json& args) {
+    const std::string id = args.contains("id") && args["id"].is_string() ? args["id"].get<std::string>() : std::string();
+    User* u = nullptr;
+    for (auto& [uid, x] : m_users)
+        if (!id.empty() && x.appeal.is_object() && x.appeal.value("id", std::string()) == id) { u = &x; break; }
+    if (!u) return fail("That appeal isn't there any more.");
+    if (u->appeal.value("status", std::string()) != "open" || !appealIsCurrent(*u)) return fail("That appeal was already answered, or the ban changed.");
+    const bool accept = args.contains("accept") && args["accept"].is_boolean() && args["accept"].get<bool>();
+    if (accept && !isOfficial(staff)) return fail("Only the official Guts account can do that.");
+    const std::string note = Online::cleanText(args.contains("note") && args["note"].is_string() ? args["note"].get<std::string>() : std::string(), 200);
+    u->appeal["status"] = accept ? "accepted" : "denied";
+    u->appeal["note"] = note;
+    u->appeal["answeredAt"] = Online::unixNow();
+    u->appeal["by"] = staff.id;
+    staffDid(staff, "appeal", std::string(accept ? "Accepted " : "Denied ") + u->name + "'s ban appeal" + (note.empty() ? "" : ": \"" + note + "\""), u->id);
+    if (accept) {
+        setBan(staff, *u, false, json::object());
+        notify(u, "appeal", "Staff accepted your appeal, so your account isn't banned any more." +
+               (note.empty() ? std::string() : " Staff said: \"" + note + "\""), "");
+    }
+    saveUsers();
+    json r = okay(); r["appeals"] = appealsJson("open"); return r;
 }
 
 void GbServer::loadStaffLog() {

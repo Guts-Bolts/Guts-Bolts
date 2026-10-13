@@ -289,6 +289,15 @@ json GbServer::accountOp(const std::string& name, User& me, const json& args) {
         saveUsers();
         json r = okay(); r["me"] = meJson(me); return r;
     }
+    if (name == "account.delete") {
+        // Delete your account and what's personal in it, after typing your password (see deleteAccount).
+        if (me.userId == 0) return fail("Sign up first.");
+        if (isOfficial(me)) return fail("The staff account can't be deleted.");
+        if (me.keyBlob.empty()) return fail("Set a password in the app first.");
+        if (!provePassword()) return fail("Wrong password.");
+        deleteAccount(me);
+        json r = okay(); r["deleted"] = true; return r;
+    }
     if (name == "account.check") {   // is this username free? (for the sign-up page, as you type)
         json r = okay();
         std::string problem = Online::usernameProblem(username, isOfficial(me));
@@ -384,4 +393,62 @@ json GbServer::accountOp(const std::string& name, User& me, const json& args) {
         return r;
     }
     return fail("Unknown request.");
+}
+
+// Delete an account (account.delete; worker/server.js deleteAccount has the same). What's personal
+// goes: password and key backup, two-step, avatar, About me, posts, outfits, messages, friends and
+// follows (on both sides), favourites and notifications. Games and items stay (so what people
+// bought keeps working), made by "Deleted user". Its username (and old ones) and user number stay
+// reserved: never given to anyone else. Limited copies it holds stay its own, but come off resale
+// and can't be traded (nobody can reach a deleted account), so they're out of circulation for good.
+void GbServer::deleteAccount(User& u) {
+    const long long now = Online::unixNow(), number = u.userId;
+    if (!u.username.empty()) m_takenNames.insert(lower(u.username));
+    for (const std::string& p : u.pastNames) m_takenNames.insert(lower(p));
+    for (auto& [id, v] : m_users) {
+        if (&v == &u) continue;
+        v.friends.erase(u.id); v.friendIn.erase(u.id); v.friendOut.erase(u.id);
+        v.following.erase(u.id); v.followers.erase(u.id);
+    }
+    for (const std::string& gameId : u.favorites) {
+        auto it = findAsset(gameId);
+        if (it == m_assets.end() || !it->second.meta.is_object()) continue;
+        const long long count = it->second.meta.value("favorites", 0LL);
+        if (count > 0) it->second.meta["favorites"] = count - 1;
+    }
+    for (auto& [gid, g] : m_groups) {   // groups they own stay (with "Deleted user" as the owner)
+        if (g.owner != u.id) g.members.erase(u.id);
+        g.requests.erase(u.id);
+    }
+    std::set<std::string> limited;
+    for (auto& [aid, a] : m_assets) {
+        if (!a.limited) continue;
+        for (json& c : a.copies)
+            if (c.value("owner", std::string()) == u.id) { c["price"] = 0; limited.insert(aid); }
+    }
+    for (json& x : m_trades)
+        if (x.value("status", std::string()) == "open" && (x.value("from", std::string()) == u.id || x.value("to", std::string()) == u.id)) {
+            x["status"] = "cancelled";
+            x["updated"] = now;
+        }
+    for (json& x : m_tickets)   // email addresses left on support tickets
+        if (x.value("from", std::string()) == u.id || x.value("about", std::string()) == u.id) { x["contact"] = ""; x.erase("code"); }
+    // What's left: the ID (so its requests are refused), when it was made, and its Limited copies.
+    User left;
+    left.id = u.id;
+    left.name = "Deleted user";
+    left.created = u.created;
+    left.owned = limited;
+    left.deleted = now;
+    u = std::move(left);
+    saveIds();
+    saveUsers();
+    saveAssets();
+    saveGroups();
+    saveTrades();
+    saveTickets();
+    User system;
+    system.id = "system";
+    system.name = "System";
+    staffDid(system, "account", "Account #" + std::to_string(number) + " was deleted by its owner");
 }
