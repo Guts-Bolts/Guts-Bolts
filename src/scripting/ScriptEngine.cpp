@@ -505,10 +505,11 @@ local raycast, addMethod = __gb_raycast, __gb_addMethod
 --   if hit then print(hit.Instance.Name, hit.Position, hit.Normal, hit.Distance) end
 RaycastParams = {}
 function RaycastParams.new()
-    return { ClassName = "RaycastParams", FilterDescendantsInstances = {}, FilterType = "Exclude", IgnoreWater = false }
+    return { ClassName = "RaycastParams", FilterDescendantsInstances = {}, FilterType = "Exclude", IgnoreWater = false,
+             CollisionGroup = "Default", RespectCanCollide = false }
 end
-local function castWith(origin, direction, list, include)
-    local part, pos, normal, dist, material = raycast(origin, direction, list or {}, include)
+local function castWith(origin, direction, list, include, group, respectCanCollide)
+    local part, pos, normal, dist, material = raycast(origin, direction, list or {}, include, group, respectCanCollide)
     if not part then return nil end
     return { ClassName = "RaycastResult", Instance = part, Position = pos, Normal = normal, Distance = dist,
              Material = material or part.Material }
@@ -516,8 +517,11 @@ end
 addMethod("Raycast", function(_, origin, direction, params)
     params = params or RaycastParams.new()
     local ft = tostring(params.FilterType)
+    local group = params.CollisionGroup
+    if group ~= nil and type(group) ~= "string" then error("RaycastParams.CollisionGroup must be a string", 2) end
     return castWith(origin, direction, params.FilterDescendantsInstances,
-                    ft == "Include" or ft == "Whitelist" or ft == "Enum.RaycastFilterType.Include")
+                    ft == "Include" or ft == "Whitelist" or ft == "Enum.RaycastFilterType.Include",
+                    group or "Default", params.RespectCanCollide == true)
 end)
 -- The old way: Ray.new(origin, direction) and workspace:FindPartOnRay(ray, ignore)
 Ray = {}
@@ -1001,12 +1005,60 @@ do
     function GamePassService:PlayerHasPass(player, passId) return MarketplaceService:UserOwnsGamePassAsync(player, passId) end
 end
 
+-- PhysicsService: collision groups. Every part is in one (part.CollisionGroup, "Default"
+-- to start with); groups that aren't collidable pass through each other.
+--   PhysicsService:RegisterCollisionGroup("Players")
+--   PhysicsService:CollisionGroupSetCollidable("Players", "Players", false)   -- players walk through each other
+--   for _, p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") then p.CollisionGroup = "Players" end end
+local PhysicsService = { Name = "PhysicsService", ClassName = "PhysicsService" }
+do
+    local cg = __gb_cgroups
+    local function call(what, ...)
+        local r, err = cg(what, ...)
+        if r == nil then error(err, 3) end
+        return r
+    end
+    local function str(v, what)
+        if type(v) ~= "string" then error(what .. " must be a string (a collision group's name)", 3) end
+        return v
+    end
+    function PhysicsService:RegisterCollisionGroup(name) call("register", str(name, "the name")) end
+    function PhysicsService:UnregisterCollisionGroup(name) call("unregister", str(name, "the name")) end
+    function PhysicsService:RenameCollisionGroup(from, to) call("rename", str(from, "the old name"), str(to, "the new name")) end
+    function PhysicsService:IsCollisionGroupRegistered(name) return call("registered", str(name, "the name")) end
+    function PhysicsService:GetRegisteredCollisionGroups() return call("list") end
+    function PhysicsService:CollisionGroupSetCollidable(a, b, collidable)
+        if type(collidable) ~= "boolean" then error("CollisionGroupSetCollidable needs true or false as its third argument", 2) end
+        call("set", str(a, "the first group"), str(b, "the second group"), collidable)
+    end
+    function PhysicsService:CollisionGroupsAreCollidable(a, b) return call("get", str(a, "the first group"), str(b, "the second group")) end
+    function PhysicsService:GetMaxCollisionGroups() return 32 end
+    -- The older names (still in lots of games).
+    function PhysicsService:CreateCollisionGroup(name)
+        if cg("registered", str(name, "the name")) then error("there's already a collision group called '" .. name .. "'", 2) end
+        return call("register", name)
+    end
+    function PhysicsService:RemoveCollisionGroup(name) call("unregister", str(name, "the name")) end
+    function PhysicsService:GetCollisionGroupId(name) return call("id", str(name, "the name")) end
+    function PhysicsService:GetCollisionGroupName(id) return call("name", id) end
+    function PhysicsService:GetCollisionGroups() return call("list") end
+    function PhysicsService:SetPartCollisionGroup(part, name)
+        if type(part) ~= "userdata" or not part:IsA("BasePart") then error("SetPartCollisionGroup needs a part", 2) end
+        if not cg("registered", str(name, "the name")) then error("there's no collision group called '" .. name .. "'", 2) end
+        part.CollisionGroup = name
+    end
+    function PhysicsService:GetPartCollisionGroup(part) return call("id", part.CollisionGroup) end
+    function PhysicsService:CollisionGroupContainsPart(name, part) return part.CollisionGroup == str(name, "the name") end
+    function PhysicsService:IsA(c) return c == "PhysicsService" or c == "Instance" end
+    setmetatable(PhysicsService, { __tostring = function() return "PhysicsService" end })
+end
+
 local services = { Workspace = workspace, PathfindingService = PathfindingService, BadgeService = BadgeService, TeleportService = TeleportService, Debris = Debris, Teams = Teams, Players = Players, Lighting = Lighting,
                    MarketplaceService = MarketplaceService, GamePassService = GamePassService,
                    RunService = RunService, UserInputService = UserInputService, Gui = Gui,
                    CollectionService = CollectionService, DataStoreService = DataStoreService,
                    TweenService = TweenService, HttpService = HttpService,
-                   ProximityPromptService = ProximityPromptService }
+                   ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService }
 -- The container services are folders at the top of the game (Studio shows them in the Explorer).
 local storageNames = { ReplicatedStorage = true, ServerStorage = true, ReplicatedFirst = true, ServerScriptService = true,
                        StarterPack = true, SoundService = true, Chat = true, TextChatService = true }
@@ -1019,7 +1071,6 @@ local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, Scri
     PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {}, TextService = {},
     MaterialService = {}, VoiceChatService = {}, ContextActionService = { UnbindAction = true },
     MemoryStoreService = {}, MessagingService = { PublishAsync = true }, InsertService = {},
-    PhysicsService = { RegisterCollisionGroup = true, CollisionGroupSetCollidable = true },
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
     StarterPlayer = {}, VRService = {}, GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
 local made = {}
@@ -1207,7 +1258,7 @@ __gb_playerAdded, __gb_playerRemoving, __gb_tagAdded, __gb_tagRemoved = nil, nil
 __gb_playerNode, __gb_setRespawn, __gb_dsStart, __gb_dsDone, __gb_dsSet, __gb_navPath, __gb_navQuery = nil, nil, nil, nil, nil, nil, nil
 __gb_camOpt, __gb_setCamOpt = nil, nil
 __gb_awardBadge, __gb_hasBadge, __gb_teleport, __gb_joinData = nil, nil, nil, nil
-__gb_raycast, __gb_storage, __gb_addMethod = nil, nil, nil
+__gb_raycast, __gb_storage, __gb_addMethod, __gb_cgroups = nil, nil, nil, nil
 __gb_passLookup, __gb_passReady, __gb_passOwns, __gb_passPrompt, __gb_passResults = nil, nil, nil, nil, nil
 __gb_receiptCheck, __gb_receipts, __gb_receiptDone = nil, nil, nil
 )LUA";
@@ -1690,6 +1741,12 @@ int l_raycast(lua_State* L) {
         }
     }
     const bool include = lua_toboolean(L, 4);
+    // RaycastParams.CollisionGroup: skip parts that group passes through (the terrain is
+    // Default's). RespectCanCollide: skip parts with CanCollide off.
+    const std::string group = lua_isstring(L, 5) ? lua_tostring(L, 5) : CollisionGroups::kDefault;
+    const bool respectCanCollide = lua_toboolean(L, 6);
+    const CollisionGroups& groups = scene->world().collisionGroups;
+    const bool useGroups = !groups.onlyDefault() || !groups.collides(0, 0);
     auto inside = [&](const SceneNode* n) {   // n is one of the list, or inside one
         for (const SceneNode* p = n; p; p = p->parent)
             if (std::find(list.begin(), list.end(), p) != list.end()) return true;
@@ -1704,6 +1761,12 @@ int l_raycast(lua_State* L) {
     float dist = 0.0f;
     SceneNode* hit = Physics::raycastIf(*scene, from, rd, &dist, [&](const SceneNode* n) {
         if (n == scene->root()) return true;
+        if (n->id == Scene::kTerrainId) {
+            if (useGroups && !groups.collides(group, CollisionGroups::kDefault)) return false;
+        } else if (n->isPart()) {
+            if (respectCanCollide && !n->canCollide) return false;
+            if (useGroups && !groups.collides(group, n->collisionGroup)) return false;
+        }
         return include ? (inside(n) || above(n)) : !inside(n);
     });
     if (!hit || dist > range) return 0;
@@ -1732,6 +1795,88 @@ int l_raycast(lua_State* L) {
     LuaApi::pushVector3(L, normal);
     lua_pushnumber(L, dist);
     return 4;
+}
+
+// __gb_cgroups(what, ...): PhysicsService's collision groups (the prelude wraps these).
+// Problems come back as nil, message (the Lua side raises them at the caller's line).
+int l_cgroups(lua_State* L) {
+    Scene* scene = LuaApi::engine(L)->scene();
+    const std::string what = luaL_checkstring(L, 1);
+    if (!scene) { lua_pushnil(L); lua_pushstring(L, "there's no game running"); return 2; }
+    CollisionGroups& g = scene->world().collisionGroups;
+    auto fail = [&](const std::string& msg) { lua_pushnil(L); lua_pushstring(L, msg.c_str()); return 2; };
+    auto name = [&](int i) { return std::string(luaL_checkstring(L, i)); };
+    auto known = [&](const std::string& n, int& slot) {
+        slot = g.find(n);
+        return slot >= 0;
+    };
+    if (what == "register") {
+        const std::string n = name(2);
+        if (std::string bad = CollisionGroups::badName(n); !bad.empty()) return fail(bad);
+        if (g.find(n) < 0 && g.count() >= CollisionGroups::kMax)
+            return fail("can't register '" + n + "': there are already 32 collision groups (the most there can be)");
+        lua_pushinteger(L, g.add(n));
+        return 1;
+    }
+    if (what == "unregister") {
+        const std::string n = name(2);
+        if (n == CollisionGroups::kDefault) return fail("the Default collision group can't be unregistered");
+        g.remove(n);   // (not registered: nothing to do) - its parts act as Default now
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    if (what == "rename") {
+        const std::string from = name(2), to = name(3);
+        int slot;
+        if (from == CollisionGroups::kDefault) return fail("the Default collision group can't be renamed");
+        if (!known(from, slot)) return fail("there's no collision group called '" + from + "'");
+        if (std::string bad = CollisionGroups::badName(to); !bad.empty()) return fail(bad);
+        if (to == from) { lua_pushboolean(L, 1); return 1; }
+        if (g.find(to) >= 0) return fail("there's already a collision group called '" + to + "'");
+        g.names[slot] = to;
+        scene->forEach([&](SceneNode* n) { if (n->collisionGroup == from) n->collisionGroup = to; });   // its parts go with it
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    if (what == "registered") {
+        lua_pushboolean(L, g.find(name(2)) >= 0);
+        return 1;
+    }
+    if (what == "list") {   // { {name, id, mask}, ... } (mask as a signed 32-bit number, like Roblox)
+        const std::vector<int> slots = g.slots();
+        lua_createtable(L, (int)slots.size(), 0);
+        int k = 0;
+        for (int i : slots) {
+            lua_createtable(L, 0, 3);
+            lua_pushstring(L, g.names[i].c_str()); lua_setfield(L, -2, "name");
+            lua_pushinteger(L, i);                 lua_setfield(L, -2, "id");
+            lua_pushinteger(L, (lua_Integer)(int32_t)g.masks[i]); lua_setfield(L, -2, "mask");
+            lua_rawseti(L, -2, ++k);
+        }
+        return 1;
+    }
+    if (what == "set" || what == "get") {
+        const std::string a = name(2), b = name(3);
+        int sa, sb;
+        if (!known(a, sa)) return fail("there's no collision group called '" + a + "' (RegisterCollisionGroup it first)");
+        if (!known(b, sb)) return fail("there's no collision group called '" + b + "' (RegisterCollisionGroup it first)");
+        if (what == "set") g.set(sa, sb, lua_toboolean(L, 4));
+        lua_pushboolean(L, g.collides(sa, sb));
+        return 1;
+    }
+    if (what == "id") {
+        int slot;
+        if (!known(name(2), slot)) return fail("there's no collision group called '" + name(2) + "'");
+        lua_pushinteger(L, slot);
+        return 1;
+    }
+    if (what == "name") {
+        const lua_Integer id = luaL_checkinteger(L, 2);
+        if (id < 0 || id >= CollisionGroups::kMax || g.names[id].empty()) return fail("there's no collision group with id " + std::to_string(id));
+        lua_pushstring(L, g.names[id].c_str());
+        return 1;
+    }
+    return fail("unknown collision group request '" + what + "'");
 }
 
 // __gb_addMethod(name, fn): a method every object gets (the prelude adds workspace:Raycast etc. this way).
@@ -2032,6 +2177,7 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_navPath", l_navPath);
     lua_register(L, "__gb_navQuery", l_navQuery);
     lua_register(L, "__gb_raycast", l_raycast);
+    lua_register(L, "__gb_cgroups", l_cgroups);
     lua_register(L, "__gb_storage", l_storage);
     lua_register(L, "__gb_addMethod", l_addMethod);
     lua_register(L, "__gb_awardBadge", l_awardBadge);

@@ -6,6 +6,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include "NavMesh.h"
+#include "CollisionGroups.h"
 
 class Scene;
 class SceneNode;
@@ -85,13 +86,21 @@ public:
     // `yaw` (degrees) = which way the character faces: its box turns with it.
     // `self`: the moving character's root id, so it doesn't bump into itself
     // (other characters are solid when the game has Player Collisions on).
+    // `group`: the character's collision group slot (groupOf): it walks through parts,
+    // characters and the terrain its group doesn't collide with.
     MoveResult moveCharacter(const glm::vec3& feet, const glm::vec3& delta, bool wasGrounded, float yaw = 0.0f,
-                             uint64_t self = 0) const;
+                             uint64_t self = 0, int group = 0) const;
+    // Collision groups (PhysicsService). A character is in its HumanoidRootPart's group
+    // (or its Torso's); this frame's table is a copy of the Workspace's.
+    static const std::string& characterGroup(const SceneNode* root);
+    int  groupOf(const SceneNode* characterRoot) const { return m_groups.slotOf(characterGroup(characterRoot)); }
+    bool groupsCollide(int a, int b) const { return m_groups.collides(a, b); }
+    const CollisionGroups& groups() const { return m_groups; }
     static OBB  charOBB(const glm::vec3& feet, float yaw);   // the character's body box
     // Loose parts moving into the character: which way each one shoves it and how
     // hard (the speed it gives), heavier and faster parts shoving harder.
     struct Shove { glm::vec3 dir; float speed; };
-    std::vector<Shove> shoves(const glm::vec3& feet, float yaw, float characterMass) const;
+    std::vector<Shove> shoves(const glm::vec3& feet, float yaw, float characterMass, int group = 0) const;
     static AABB bounds(const OBB& o);                       // a box around a turned box
     // Unanchored parts: rigid-body physics (tumbling, stacking, bouncing) and
     // constraints (ropes, rods, springs, welds, hinges). Ids of parts that fell
@@ -129,6 +138,7 @@ private:
         bool       dynamic;   // unanchored
         bool       rotated;   // not lined up with the world axes: use `obb`
         OBB        obb;
+        int        group = 0;  // collision group slot
     };
     bool blocked(const AABB& box) const;
 
@@ -137,6 +147,7 @@ private:
 
     std::vector<Collider>                  m_colliders;
     const Terrain*                         m_terrain = nullptr;   // this frame's terrain (null = none)
+    CollisionGroups                        m_groups;              // this frame's collision groups
     std::vector<Collider>                  m_bodies;   // characters' body boxes (players bumping into players)
     std::set<std::pair<uint64_t, uint64_t>> m_touching;
     uint64_t                               m_staticHash = 0;     // the anchored solid parts, as a number

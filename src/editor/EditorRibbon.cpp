@@ -431,6 +431,12 @@ void Editor::renderToolbar() {
             }
         }
         {
+            Group g("Physics");
+            if (bigButton("Collision Groups", Icons::Id::Collide, m_showCollisionGroups, true,
+                          "Which groups of parts bump into each other (players walking through each other, team doors...)"))
+                m_showCollisionGroups = !m_showCollisionGroups;
+        }
+        {
             Group g("Align");
             ImGui::BeginGroup();
             static int axis = 0;

@@ -10,6 +10,7 @@ struct GuiProps;
 struct PromptProps;
 struct HighlightProps;
 struct EffectProps;
+struct CollisionGroups;
 
 // Turns scenes and objects into JSON text and back. Used for:
 //  * File > Save / Open (".gbscene" files)
@@ -22,6 +23,9 @@ std::string saveScene(Scene& scene, bool pretty = false);
 bool        loadScene(Scene& scene, const std::string& text, std::string* error = nullptr);
 
 std::string                nodeToString(const SceneNode& node);
+// The collision groups (PhysicsService) and which collide: [{"name", "id", "mask"}, ...].
+nlohmann::json             collisionGroupsToJson(const CollisionGroups& g);
+CollisionGroups            collisionGroupsFromJson(const nlohmann::json& j);
 // Game UI properties as JSON (saving, and multiplayer updates).
 nlohmann::json             guiToJson(const GuiProps& g);
 void                       guiFromJson(GuiProps& g, const nlohmann::json& j);

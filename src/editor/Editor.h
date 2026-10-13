@@ -139,6 +139,7 @@ private:
     void       selectChildren();
     void       toggleHidden();
     void       renderShortcuts();
+    void       renderCollisionGroups();   // the Collision Groups editor (PhysicsService's table)
     bool       canEdit(const SceneNode* n) const;
     glm::vec3  spawnPoint() const;
 
@@ -224,6 +225,10 @@ private:
     std::string              m_committed;      // last known scene state
     std::vector<std::string> m_clipboard;
     bool                     m_showShortcuts = false;
+    bool                     m_showCollisionGroups = false;
+    std::string              m_newGroupName, m_groupError;
+    int                      m_renamingGroup = -1;      // the slot whose name is being edited
+    std::string              m_renameText;
     int                      m_ribbonTab = 0;           // HOME / MODEL / TEST / VIEW (/ MESH in Modeling mode)
     int                      m_playMode = 0;
     bool                     m_openInsert = false;

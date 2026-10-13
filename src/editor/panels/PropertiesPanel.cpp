@@ -790,6 +790,27 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::Checkbox("Can Collide", &node->canCollide);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Turn off to let things pass through");
         ImGui::Checkbox("Cast Shadow", &node->castShadow);
+        // Collision Group (PhysicsService): which registered group it's in.
+        const CollisionGroups& groups = m_scene->world().collisionGroups;
+        const bool known = groups.find(node->collisionGroup) >= 0;
+        std::string shown = known ? node->collisionGroup : node->collisionGroup + " (not registered: acts as Default)";
+        if (ImGui::BeginCombo("Collision Group", shown.c_str())) {
+            for (int i : groups.slots()) {
+                const bool on = groups.names[i] == node->collisionGroup;
+                if (ImGui::Selectable(groups.names[i].c_str(), on)) {
+                    const std::string g = groups.names[i];
+                    for (SceneNode* s : m_scene->selection())   // (every selected part)
+                        if (s->isPart()) s->collisionGroup = g;
+                    node->collisionGroup = g;
+                }
+                if (on) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Parts in groups that don't collide pass through each other");
+        if (ImGui::SmallButton("Edit Collision Groups...") && m_editCollisionGroups) m_editCollisionGroups();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Collision Groups: add groups and choose which ones collide");
     }
 
     // --- Physics (how it behaves when unanchored) ---

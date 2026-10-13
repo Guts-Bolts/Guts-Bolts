@@ -373,6 +373,34 @@ void guiFromJson(GuiProps& g, const nlohmann::json& j) {
     if (j.contains("surfaceCanvas") && j["surfaceCanvas"].is_array() && j["surfaceCanvas"].size() == 2)
         try { g.surfaceCanvas = glm::max(glm::vec2(1.0f), glm::vec2(j["surfaceCanvas"][0].get<float>(), j["surfaceCanvas"][1].get<float>())); } catch (...) {}
 }
+
+nlohmann::json collisionGroupsToJson(const CollisionGroups& g) {
+    json out = json::array();
+    for (int i : g.slots()) out.push_back({{"name", g.names[i]}, {"id", i}, {"mask", g.masks[i]}});
+    return out;
+}
+
+CollisionGroups collisionGroupsFromJson(const nlohmann::json& j) {
+    CollisionGroups g;
+    if (!j.is_array()) return g;
+    for (const auto& e : j) {
+        if (!e.is_object()) continue;
+        const int id = get<int>(e, "id", -1);
+        std::string name = get<std::string>(e, "name", std::string()).substr(0, CollisionGroups::kMaxNameLength);
+        if (id < 0 || id >= CollisionGroups::kMax || name.empty()) continue;
+        if (id == 0) name = CollisionGroups::kDefault;            // (slot 0 is always Default)
+        else if (name == CollisionGroups::kDefault || g.find(name) >= 0) continue;
+        g.names[id] = name;
+        g.masks[id] = get<uint32_t>(e, "mask", ~0u);
+    }
+    // Both sides of every pair agree (a hand-edited file could say otherwise).
+    for (int a = 0; a < CollisionGroups::kMax; ++a)
+        for (int b = 0; b < a; ++b) {
+            const bool both = ((g.masks[a] >> b) & 1u) && ((g.masks[b] >> a) & 1u);
+            g.set(a, b, both);
+        }
+    return g;
+}
 } // namespace Serializer
 
 namespace {
@@ -414,6 +442,7 @@ json toJson(const SceneNode& n) {
         j["material"]     = kMaterialNames[(int)n.material];
         j["anchored"]     = n.anchored;
         j["canCollide"]   = n.canCollide;
+        if (n.collisionGroup != CollisionGroups::kDefault) j["collisionGroup"] = n.collisionGroup;
         j["castShadow"]   = n.castShadow;
         if (n.negated) j["negate"] = {{"color", vec(n.negColor)}, {"transparency", n.negTransparency}, {"canCollide", n.negCollide}};
         if (!n.unionSource.empty()) j["union"] = json::parse(n.unionSource, nullptr, false);
@@ -574,6 +603,8 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->material      = materialFrom(get<std::string>(j, "material", "Plastic"));
         n->anchored      = get<bool>(j, "anchored", true);
         n->canCollide    = get<bool>(j, "canCollide", true);
+        n->collisionGroup = get<std::string>(j, "collisionGroup", CollisionGroups::kDefault).substr(0, CollisionGroups::kMaxNameLength);
+        if (n->collisionGroup.empty()) n->collisionGroup = CollisionGroups::kDefault;
         n->castShadow    = get<bool>(j, "castShadow", true);
         if (auto it = j.find("negate"); it != j.end() && it->is_object()) {
             n->negated = true;
@@ -763,6 +794,8 @@ json settingsJson(Scene& scene) {
                   {"bloodAmount", ws.bloodAmount}, {"bloodStay", ws.bloodStay},
                   {"playerCollisions", ws.playerCollisions}, {"voiceChat", ws.voiceChat}, {"maxFluidParticles", ws.maxFluidParticles},
                   {"orthographic", ws.orthographic}, {"orthographicSize", ws.orthographicSize}};
+    if (!ws.collisionGroups.isDefault())   // (only games that use them)
+        j["world"]["collisionGroups"] = Serializer::collisionGroupsToJson(ws.collisionGroups);
     if (ws.playerCamera != CameraOptions{})   // (only games that changed them)
         j["world"]["playerCamera"] = {{"lockFirstPerson", ws.playerCamera.lockFirstPerson},
                                       {"minZoom", ws.playerCamera.minZoom}, {"maxZoom", ws.playerCamera.maxZoom}};
@@ -815,6 +848,7 @@ void applySettings(Scene& scene, const json& j) {
         w.bloodColor        = vec(j["world"], "bloodColor", w.bloodColor);
         w.bloodAmount       = get<float>(j["world"], "bloodAmount", w.bloodAmount);
         w.bloodStay         = get<float>(j["world"], "bloodStay", w.bloodStay);
+        if (j["world"].contains("collisionGroups")) w.collisionGroups = Serializer::collisionGroupsFromJson(j["world"]["collisionGroups"]);
         if (j["world"].contains("playerCamera") && j["world"]["playerCamera"].is_object()) {
             const json& pc = j["world"]["playerCamera"];
             CameraOptions& o = w.playerCamera;
@@ -930,6 +964,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.visible = src->visible;     dst.internal = src->internal;
     dst.transparency = src->transparency; dst.material = src->material;
     dst.anchored = src->anchored;   dst.canCollide = src->canCollide; dst.castShadow = src->castShadow;
+    dst.collisionGroup = src->collisionGroup;
     dst.negated = src->negated;     dst.negColor = src->negColor;
     dst.negTransparency = src->negTransparency; dst.negCollide = src->negCollide;
     dst.unionSource = src->unionSource;
