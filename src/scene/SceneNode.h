@@ -311,7 +311,7 @@ inline MaterialPhysics materialPhysics(Material m) {
         case Material::Ice:           return {0.9f, 0.03f, 0.10f};
         case Material::Neon:          return {1.0f, 0.40f, 0.20f};
         case Material::Sand:          return {1.6f, 0.60f, 0.05f};
-        case Material::Grass:         return {1.3f, 0.55f, 0.10f};
+        case Material::Grass:         return {1.2f, 0.55f, 0.10f};
         case Material::Brick:         return {1.9f, 0.80f, 0.15f};
         case Material::Fabric:        return {0.9f, 0.45f, 0.05f};
         case Material::Slate:         return {2.7f, 0.55f, 0.20f};

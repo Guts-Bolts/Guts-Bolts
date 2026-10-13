@@ -177,7 +177,8 @@ const std::vector<Tool>& tools() {
          {"Changes ONE property of an existing object, exactly like a script would (obj.Property = value), then reads it "
           "back so you can see the value the engine really has. Common properties: Position [x,y,z], Size [x,y,z], "
           "Orientation [x,y,z] (degrees), Color [r,g,b] (0-1 each), Transparency (0-1), Anchored (false = falls with "
-          "gravity in play), CanCollide, Material (\"Plastic\", \"Metal\", \"Neon\", \"Wood\", \"Glass\", \"Concrete\", \"Ice\"), "
+          "gravity in play), CanCollide, Material (\"Plastic\", \"SmoothPlastic\", \"Metal\", \"DiamondPlate\", \"Foil\", \"Neon\", \"Wood\", \"Glass\", \"Ice\", "
+          "\"Concrete\", \"Brick\", \"Cobblestone\", \"Slate\", \"Granite\", \"Marble\", \"Sand\", \"Grass\", \"Fabric\"), "
           "Name, Parent (an object), Enabled, Brightness, Range, Text, Visible...",
           "\"Move/resize/recolour/rename X\", \"make it red/glow/see-through\", \"make it fall\" (Anchored false), "
           "\"make it solid / walk-through\" (CanCollide), \"put X inside Y\" (Parent).",
@@ -319,7 +320,8 @@ const std::vector<Tool>& tools() {
           "For something that should NOT move (floors, walls, platforms) use anchored: true, or insert_object. To make an "
           "EXISTING part physical use set_property Anchored false instead.",
           "shape (Part = box, Sphere, Cylinder; default Part); position [x,y,z] (its centre; default near the camera); "
-          "size [x,y,z] (default 2x2x2); color [r,g,b] 0-1; material (Plastic, Metal, Neon, Wood, Glass, Concrete, Ice); "
+          "size [x,y,z] (default 2x2x2); color [r,g,b] 0-1; material (Plastic, SmoothPlastic, Metal, DiamondPlate, Foil, Neon, Wood, Glass, Ice, "
+          "Concrete, Brick, Cobblestone, Slate, Granite, Marble, Sand, Grass, Fabric); "
           "name; parent (object); anchored (default false); can_collide (default true); density (mass per volume, "
           "default from material); friction (0-2); elasticity (bounciness 0-1).",
           "{object_id, resulting_state, findings (from diagnose_object), warnings}.",
@@ -618,7 +620,7 @@ Everything in a game is an object in one tree under Workspace. Each has a name, 
 CLASS (instead of components)
 Guts and Bolts is Roblox-style: there is no separate component system. What an object does comes from its class and its properties, and extra behaviour comes from objects put INSIDE it. What other engines call components map like this:
 - Transform -> a part's Position (its centre), Orientation (degrees) and Size properties. Models move their contents with scripts (model:PivotTo / :MoveTo) or run_lua.
-- Mesh renderer -> the Part itself: its shape (Part = box, Sphere, Cylinder, MeshPart = a mesh made in Studio's Modeling mode), Color, Material, Transparency.
+- Mesh renderer -> the Part itself: its shape (Part = box, Sphere, Cylinder, MeshPart = a mesh made in Studio's Modeling mode), Color, Material, Transparency. Materials: Plastic, SmoothPlastic, Metal, DiamondPlate, Foil, Neon (glows), Wood, Glass, Ice, Concrete, Brick, Cobblestone, Slate, Granite, Marble, Sand, Grass, Fabric; each has its own look and its own default weight, grip and bounce (Ice is slippery, Brick grippy, Metal heavy). Enum.Material.Brick and "Brick" both work.
 - Collider -> the same Part: CanCollide on/off. Collision uses the part's own shape (boxes, also rotated; spheres; cylinders). There's no separate collider object.
 - Rigidbody -> Anchored = false makes a part simulated (gravity, collisions, forces). Mass comes from Size x Density (Material sets the default; the Density, Friction and Elasticity properties override it).
 - Joints -> Constraint objects (Rope, Rod, Spring, Weld, Hinge with optional motor) between two Attachments (a Weld joins two Parts).
