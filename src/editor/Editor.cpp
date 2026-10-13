@@ -23,6 +23,7 @@
 #include "panels/ScriptEditorPanel.h"
 #include "panels/AnimationEditor.h"
 #include "TeamCreate.h"
+#include "MultiTest.h"
 #include "../scene/Scene.h"
 #include "../scene/Player.h"
 #include "../scene/Serializer.h"
@@ -106,6 +107,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_assistant    = std::make_unique<AssistantPanel>(*this);
     m_team         = std::make_unique<TeamCreate>(scene);
     m_viewport->setTeam(m_team.get());
+    m_multiTest    = std::make_unique<MultiTest>();
 
     ToolboxPanel::Actions actions;
     actions.spawnPart    = [this](PrimitiveType t) { spawnPrimitive(t); };
@@ -135,6 +137,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
 
 // Out-of-line so the panel types are complete here.
 Editor::~Editor() {
+    m_multiTest.reset();   // closes the test server and its player windows
     m_plugins.reset();
     m_team.reset();
     if (m_session) m_session->stop();
@@ -143,6 +146,7 @@ Editor::~Editor() {
 
 void Editor::render(float dt) {
     Online::update();   // replies from the Guts&Bolts server
+    m_multiTest->update();   // the multiplayer test's output -> Output
     ImGuizmo::BeginFrame();
     // Docked tabs appear over a few frames; make sure the 3D view ends up on top.
     if (++m_frame <= 3) m_viewport->focus();
@@ -969,6 +973,17 @@ void Editor::startPlay(int mode) {
     if (mode == 2) r->visible = false;   // Run: nobody's playing (Stop brings the character back)
 }
 
+bool Editor::startMultiTest(int players, std::string& error) {
+    if (m_playing) togglePlay();   // the game as it is in Build mode, not mid-playtest
+    if (!m_multiTest->start(Serializer::saveScene(*m_scene), players, error)) {
+        Log::error("Couldn't start the multiplayer test: " + error);
+        return false;
+    }
+    return true;
+}
+
+void Editor::stopMultiTest() { m_multiTest->stop(); }
+
 // Ctrl+I / the Explorer's + button: a searchable list of things to insert.
 void Editor::insertObject(const std::string& what, SceneNode* parent) {
     if (parent && (m_scene->isCharacterPart(parent) || parent->isScript())) parent = nullptr;
@@ -1636,6 +1651,14 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Play Here", nullptr, false, !m_playing)) startPlay(1);
         if (ImGui::MenuItem(m_state.simPaused ? "Resume" : "Pause", "F6", false, m_playing)) m_state.simPaused = !m_state.simPaused;
         if (ImGui::MenuItem("Step one frame", "F7", false, m_playing)) { m_state.simPaused = true; m_state.simStep = true; }
+        ImGui::Separator();
+        const bool multi = m_multiTest->running();
+        for (int n = MultiTest::kMinPlayers; n <= MultiTest::kMaxPlayers; ++n) {
+            const std::string label = "Test with " + std::to_string(n) + " players";
+            std::string err;
+            if (ImGui::MenuItem(label.c_str(), nullptr, false, !multi)) startMultiTest(n, err);
+        }
+        if (ImGui::MenuItem("Stop multiplayer test", nullptr, false, multi)) stopMultiTest();
         ImGui::EndMenu();
     }
 
