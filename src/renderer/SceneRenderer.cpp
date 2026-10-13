@@ -795,6 +795,47 @@ void SceneRenderer::drawConstraints(Scene& scene, bool editing) {
             case ConstraintType::Hinge:
                 draw(segment(p0 - glm::vec3(a0->worldMatrix()[0]) * 0.0f, p1, th * 0.5f), col, Material::Metal, *cyl);
                 break;
+            case ConstraintType::BallSocket: {
+                // A ball in its socket, with a thin line to Attachment1 if they've drifted apart.
+                const float r = std::max(0.15f, th * 2.0f);
+                draw(glm::translate(glm::mat4(1.0f), p0) * glm::scale(glm::mat4(1.0f), glm::vec3(r)), col, Material::Metal, *ball);
+                if (glm::length(p1 - p0) > r * 0.5f) draw(segment(p0, p1, th * 0.5f), col, Material::Metal, *cyl);
+                break;
+            }
+            case ConstraintType::Prismatic:
+            case ConstraintType::Cylindrical: {
+                // The rail along Attachment0's axis (from LowerLimit to UpperLimit when
+                // limited), and a sleeve where Attachment1 rides on it.
+                glm::vec3 x(a0->worldMatrix()[0]);
+                if (glm::length(x) < 1e-6f) break;
+                x = glm::normalize(x);
+                const JointProps& jp = n->joint;
+                const float s = glm::dot(p1 - p0, x);
+                float lo = std::min(0.0f, s), hi = std::max(0.0f, s);
+                if (jp.limitsEnabled) {
+                    lo = std::min(lo, std::min(jp.lowerLimit, jp.upperLimit));
+                    hi = std::max(hi, std::max(jp.lowerLimit, jp.upperLimit));
+                }
+                if (hi - lo < 0.2f) { lo -= 0.1f; hi += 0.1f; }
+                draw(segment(p0 + x * lo, p0 + x * hi, th * 0.5f), col, Material::Metal, *cyl);
+                const float sleeve = std::max(0.25f, th * 4.0f);
+                draw(segment(p1 - x * sleeve, p1 + x * sleeve, th * 1.6f), col * 0.8f, Material::Metal, *cyl);
+                if (n->constraintType == ConstraintType::Cylindrical) {
+                    // A ring around the sleeve shows it can spin.
+                    const glm::vec3 u = std::abs(x.y) < 0.99f ? glm::normalize(glm::cross(x, glm::vec3(0, 1, 0)))
+                                                              : glm::normalize(glm::cross(x, glm::vec3(1, 0, 0)));
+                    const glm::vec3 v = glm::cross(x, u);
+                    const float rr = sleeve * 1.2f;
+                    glm::vec3 prev = p1 + u * rr;
+                    for (int i = 1; i <= 16; ++i) {
+                        const float a = i / 16.0f * 6.2831853f;
+                        const glm::vec3 q = p1 + (u * std::cos(a) + v * std::sin(a)) * rr;
+                        draw(segment(prev, q, th * 0.4f), col, Material::Metal, *cyl);
+                        prev = q;
+                    }
+                }
+                break;
+            }
             default: break;
         }
     });

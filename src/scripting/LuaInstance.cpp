@@ -123,13 +123,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::FluidEmitter: return "FluidEmitter";
         case NodeKind::Mover:        return kMoverClassNames[(int)n->mover.type];
         case NodeKind::Constraint:
-            switch (n->constraintType) {
-                case ConstraintType::Rope:   return "RopeConstraint";
-                case ConstraintType::Rod:    return "RodConstraint";
-                case ConstraintType::Spring: return "SpringConstraint";
-                case ConstraintType::Weld:   return "WeldConstraint";
-                default:                     return "HingeConstraint";
-            }
+            return kConstraintClassNames[std::clamp((int)n->constraintType, 0, kConstraintTypeCount - 1)];
         default:
             if (isFluidVolume(n)) return "FluidVolume";
             return n->primitiveType == PrimitiveType::Mesh ? "MeshPart" : "Part";
@@ -832,6 +826,107 @@ bool moverNewIndex(lua_State* L, SceneNode* n, const char* k) {
     return false;
 }
 
+// ---- BallSocketConstraint, PrismaticConstraint, CylindricalConstraint --------------
+// (Attachment0 / Attachment1, Enabled, Visible and Color are shared with the other
+// constraints, further down.)
+bool jointIndex(lua_State* L, SceneNode* n, const char* k) {
+    const JointProps& p = n->joint;
+    const ConstraintType t = n->constraintType;
+    auto num = [&](float v) { lua_pushnumber(L, v); return true; };
+    auto flag = [&](bool v) { lua_pushboolean(L, v); return true; };
+    auto act = [&](Actuator a) { lua_pushstring(L, kActuatorNames[(int)a]); return true; };
+    if (is(k, "LimitsEnabled")) return flag(p.limitsEnabled);
+    if (is(k, "Restitution"))   return num(p.restitution);
+    if (t == ConstraintType::BallSocket) {
+        if (is(k, "UpperAngle"))         return num(p.upperAngle);
+        if (is(k, "TwistLimitsEnabled")) return flag(p.twistLimitsEnabled);
+        if (is(k, "TwistLowerAngle"))    return num(p.twistLowerAngle);
+        if (is(k, "TwistUpperAngle"))    return num(p.twistUpperAngle);
+        return false;
+    }
+    if (is(k, "LowerLimit"))      return num(p.lowerLimit);
+    if (is(k, "UpperLimit"))      return num(p.upperLimit);
+    if (is(k, "ActuatorType"))    return act(p.actuator);
+    if (is(k, "MotorMaxForce"))   return num(p.motorMaxForce);
+    if (is(k, "Velocity"))        return num(p.velocity);
+    if (is(k, "Speed"))           return num(p.speed);
+    if (is(k, "ServoMaxForce"))   return num(p.servoMaxForce);
+    if (is(k, "TargetPosition"))  return num(p.targetPosition);
+    if (is(k, "CurrentPosition")) return num(p.currentPosition);
+    if (is(k, "MotorMaxAcceleration")) return num((float)HUGE_VAL);   // (no limit here)
+    if (t != ConstraintType::Cylindrical) return false;
+    if (is(k, "AngularActuatorType"))  return act(p.angularActuator);
+    if (is(k, "AngularVelocity"))      return num(p.angularVelocity);
+    if (is(k, "MotorMaxTorque"))       return num(p.motorMaxTorque);
+    if (is(k, "AngularSpeed"))         return num(p.angularSpeed);
+    if (is(k, "TargetAngle"))          return num(p.targetAngle);
+    if (is(k, "ServoMaxTorque"))       return num(p.servoMaxTorque);
+    if (is(k, "InclinationAngle"))     return num(p.inclinationAngle);
+    if (is(k, "AngularLimitsEnabled")) return flag(p.angularLimitsEnabled);
+    if (is(k, "LowerAngle"))           return num(p.lowerAngle);
+    if (is(k, "UpperAngle"))           return num(p.upperAngle);
+    if (is(k, "AngularRestitution"))   return num(p.restitution);
+    if (is(k, "CurrentAngle"))         return num(p.currentAngle);
+    if (is(k, "MotorMaxAngularAcceleration")) return num((float)HUGE_VAL);
+    return false;
+}
+
+// Enum.ActuatorType.Servo, "Servo" or 2.
+Actuator checkActuator(lua_State* L, int idx) {
+    if (lua_type(L, idx) == LUA_TNUMBER) {
+        const int v = (int)lua_tointeger(L, idx);
+        if (v >= 0 && v <= 2) return (Actuator)v;
+    } else {
+        std::string s = luaL_checkstring(L, idx);
+        if (const size_t dot = s.rfind('.'); dot != std::string::npos) s = s.substr(dot + 1);
+        for (int i = 0; i < 3; ++i) if (s == kActuatorNames[i]) return (Actuator)i;
+    }
+    luaL_error(L, "ActuatorType must be None, Motor or Servo");
+    return Actuator::None;
+}
+
+bool jointNewIndex(lua_State* L, SceneNode* n, const char* k) {
+    JointProps& p = n->joint;
+    const ConstraintType t = n->constraintType;
+    auto num = [&](float& out, float lo = -1e30f, float hi = 1e30f) {
+        out = std::clamp((float)luaL_checknumber(L, 3), lo, hi);
+        return true;
+    };
+    auto flag = [&](bool& out) { out = lua_toboolean(L, 3); return true; };
+    if (is(k, "LimitsEnabled")) return flag(p.limitsEnabled);
+    if (is(k, "Restitution"))   return num(p.restitution, 0.0f, 1.0f);
+    if (t == ConstraintType::BallSocket) {
+        if (is(k, "UpperAngle"))         return num(p.upperAngle, 0.0f, 180.0f);
+        if (is(k, "TwistLimitsEnabled")) return flag(p.twistLimitsEnabled);
+        if (is(k, "TwistLowerAngle"))    return num(p.twistLowerAngle, -180.0f, 180.0f);
+        if (is(k, "TwistUpperAngle"))    return num(p.twistUpperAngle, -180.0f, 180.0f);
+        return false;
+    }
+    if (is(k, "LowerLimit"))      return num(p.lowerLimit);
+    if (is(k, "UpperLimit"))      return num(p.upperLimit);
+    if (is(k, "ActuatorType"))    { p.actuator = checkActuator(L, 3); return true; }
+    if (is(k, "MotorMaxForce"))   return num(p.motorMaxForce, 0.0f);
+    if (is(k, "Velocity"))        return num(p.velocity);
+    if (is(k, "Speed"))           return num(p.speed, 0.0f);
+    if (is(k, "ServoMaxForce"))   return num(p.servoMaxForce, 0.0f);
+    if (is(k, "TargetPosition"))  return num(p.targetPosition);
+    if (is(k, "MotorMaxAcceleration")) return true;   // (accepted, no limit here)
+    if (t != ConstraintType::Cylindrical) return false;
+    if (is(k, "AngularActuatorType"))  { p.angularActuator = checkActuator(L, 3); return true; }
+    if (is(k, "AngularVelocity"))      return num(p.angularVelocity);
+    if (is(k, "MotorMaxTorque"))       return num(p.motorMaxTorque, 0.0f);
+    if (is(k, "AngularSpeed"))         return num(p.angularSpeed, 0.0f);
+    if (is(k, "TargetAngle"))          return num(p.targetAngle, -180.0f, 180.0f);
+    if (is(k, "ServoMaxTorque"))       return num(p.servoMaxTorque, 0.0f);
+    if (is(k, "InclinationAngle"))     return num(p.inclinationAngle, -180.0f, 180.0f);
+    if (is(k, "AngularLimitsEnabled")) return flag(p.angularLimitsEnabled);
+    if (is(k, "LowerAngle"))           return num(p.lowerAngle, -180.0f, 180.0f);
+    if (is(k, "UpperAngle"))           return num(p.upperAngle, -180.0f, 180.0f);
+    if (is(k, "AngularRestitution"))   return num(p.restitution, 0.0f, 1.0f);
+    if (is(k, "MotorMaxAngularAcceleration")) return true;
+    return false;
+}
+
 // part:GetMass(): how heavy it is (its Density times its size).
 float massOf(const SceneNode* n) {
     return Physics::densityOf(n) * n->transform.scale.x * n->transform.scale.y * n->transform.scale.z;
@@ -1276,16 +1371,18 @@ int inst_index(lua_State* L) {
     }
     if (n->isGui() && guiIndex(L, n, k)) return 1;
     if (n->isMover() && moverIndex(L, n, k)) return 1;
+    if (n->isConstraint() && usesJointProps(n->constraintType) && jointIndex(L, n, k)) return 1;
     if (n->isConstraint()) {
         bool weld = n->constraintType == ConstraintType::Weld;
+        const bool hingeProps = !usesJointProps(n->constraintType);
         if ((!weld && is(k, "Attachment0")) || (weld && is(k, "Part0"))) { LuaApi::pushInstance(L, n->ref0); return 1; }
         if ((!weld && is(k, "Attachment1")) || (weld && is(k, "Part1"))) { LuaApi::pushInstance(L, n->ref1); return 1; }
         if (is(k, "Length") || is(k, "FreeLength")) { lua_pushnumber(L, n->length); return 1; }
         if (is(k, "Stiffness"))      { lua_pushnumber(L, n->stiffness); return 1; }
         if (is(k, "Damping"))        { lua_pushnumber(L, n->damping); return 1; }
-        if (is(k, "AngularVelocity")){ lua_pushnumber(L, n->motorSpeed); return 1; }
-        if (is(k, "MotorMaxTorque")) { lua_pushnumber(L, n->motorTorque); return 1; }
-        if (is(k, "ActuatorType"))   { lua_pushstring(L, n->motorTorque > 0 ? "Motor" : "None"); return 1; }
+        if (hingeProps && is(k, "AngularVelocity")){ lua_pushnumber(L, n->motorSpeed); return 1; }
+        if (hingeProps && is(k, "MotorMaxTorque")) { lua_pushnumber(L, n->motorTorque); return 1; }
+        if (hingeProps && is(k, "ActuatorType"))   { lua_pushstring(L, n->motorTorque > 0 ? "Motor" : "None"); return 1; }
         if (is(k, "Thickness"))      { lua_pushnumber(L, n->thickness); return 1; }
         if (is(k, "Color"))          { LuaApi::pushColor3(L, n->color); return 1; }
         if (is(k, "Enabled"))        { lua_pushboolean(L, n->enabled); return 1; }
@@ -1542,8 +1639,10 @@ int inst_newindex(lua_State* L) {
     }
     if (n->isGui() && guiNewIndex(L, n, k)) return 0;
     if (n->isMover() && moverNewIndex(L, n, k)) return 0;
+    if (n->isConstraint() && usesJointProps(n->constraintType) && jointNewIndex(L, n, k)) return 0;
     if (n->isConstraint()) {
         bool weld = n->constraintType == ConstraintType::Weld;
+        const bool hingeProps = !usesJointProps(n->constraintType);
         auto ref = [&](uint64_t& r) {
             SceneNode* t = lua_isnil(L, 3) ? nullptr : LuaApi::checkNode(L, 3);
             r = t ? t->id : 0;
@@ -1554,9 +1653,9 @@ int inst_newindex(lua_State* L) {
         if (is(k, "Length") || is(k, "FreeLength")) { n->length = (float)luaL_checknumber(L, 3); return 0; }
         if (is(k, "Stiffness"))      { n->stiffness = (float)luaL_checknumber(L, 3); return 0; }
         if (is(k, "Damping"))        { n->damping = (float)luaL_checknumber(L, 3); return 0; }
-        if (is(k, "AngularVelocity")){ n->motorSpeed = (float)luaL_checknumber(L, 3); return 0; }
-        if (is(k, "MotorMaxTorque")) { n->motorTorque = std::max(0.0f, (float)luaL_checknumber(L, 3)); return 0; }
-        if (is(k, "ActuatorType")) {
+        if (hingeProps && is(k, "AngularVelocity")){ n->motorSpeed = (float)luaL_checknumber(L, 3); return 0; }
+        if (hingeProps && is(k, "MotorMaxTorque")) { n->motorTorque = std::max(0.0f, (float)luaL_checknumber(L, 3)); return 0; }
+        if (hingeProps && is(k, "ActuatorType")) {
             bool motor = std::string(luaL_checkstring(L, 3)) == "Motor";
             n->motorTorque = motor ? (n->motorTorque > 0 ? n->motorTorque : 2000.0f) : 0.0f;
             return 0;
@@ -1870,13 +1969,10 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, cls == "Trail" ? NodeKind::Trail : NodeKind::Beam);
     } else if (cls == "Attachment") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Attachment);
-    } else if (cls == "RopeConstraint" || cls == "RodConstraint" || cls == "SpringConstraint" ||
-               cls == "WeldConstraint" || cls == "HingeConstraint") {
+    } else if (auto ct = std::find(std::begin(kConstraintClassNames), std::end(kConstraintClassNames), cls);
+               ct != std::end(kConstraintClassNames)) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Constraint);
-        n->constraintType = cls == "RodConstraint"    ? ConstraintType::Rod
-                          : cls == "SpringConstraint" ? ConstraintType::Spring
-                          : cls == "WeldConstraint"   ? ConstraintType::Weld
-                          : cls == "HingeConstraint"  ? ConstraintType::Hinge : ConstraintType::Rope;
+        n->constraintType = (ConstraintType)(ct - std::begin(kConstraintClassNames));
         n->color = n->constraintType == ConstraintType::Rope ? glm::vec3(0.45f, 0.32f, 0.2f) : glm::vec3(0.6f);
     } else if (cls == "FluidSystem") {
         n = std::make_unique<SceneNode>(cls, NodeKind::FluidSystem);

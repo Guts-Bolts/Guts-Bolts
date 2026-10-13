@@ -10,6 +10,19 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'joint-venture', name: 'Joint Venture', time: 1791878400, tag: 'Engine',
+    summary: 'Three new joints: ball sockets that turn any way, sliders, and joints that slide and spin at once.',
+    items: [
+      'BallSocketConstraint: two parts held at one point that can turn any way, with an optional cone limit, twist limits and bounce',
+      'PrismaticConstraint: a slider along a line, with end stops, a motor that pushes at a set speed, or a servo that goes to a set spot and stays there',
+      'CylindricalConstraint: slides like a slider and spins around the same line, with its own spin motor, spin servo and angle limits',
+      'Make them from scripts, Insert Object or the Constraints tool in Studio (click two parts), and change them in Properties',
+      'Studio draws them: a ball for the socket, a rail and sleeve for sliders, and a ring on the ones that spin',
+      'They save with your game, show up for everyone in multiplayer, and come along when you import or export a place file',
+      'CurrentPosition and CurrentAngle tell scripts where a slider is and how far it has turned',
+    ],
+  },
+  {
     id: 'lost-and-found', name: 'Lost & Found', time: 1791838800, tag: 'Website',
     summary: 'Forgot your password and never added an email? Ask staff on the new Support page and get back in.',
     items: [

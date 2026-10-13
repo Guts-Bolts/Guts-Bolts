@@ -569,8 +569,9 @@ void Editor::connectParts(int type, SceneNode* a, glm::vec3 pa, SceneNode* b, gl
         return;
     }
     bool motor = type == 5;
-    ConstraintType ct = motor ? ConstraintType::Hinge : (ConstraintType)type;
-    // Hinges turn around the direction the first clicked surface faces.
+    // (Tool 5 is the motor, so the joints after it are one further along.)
+    ConstraintType ct = motor ? ConstraintType::Hinge : (ConstraintType)(type > 5 ? type - 1 : type);
+    // Hinges turn (and sliders slide) along the direction the first clicked surface faces.
     glm::mat4 wa = a->worldMatrix();
     glm::vec3 local = glm::vec3(glm::inverse(wa) * glm::vec4(pa, 1.0f));
     int ax = 0;
@@ -1146,6 +1147,28 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         if (!parent || !parent->isPart()) Log::warn("Put a " + what + " inside an unanchored part to push it.");
         put(std::move(mv));
     }
+    else if (auto ct = std::find(std::begin(kConstraintClassNames), std::end(kConstraintClassNames), what);
+             ct != std::end(kConstraintClassNames)) {
+        // A joint on its own: inside a part it gets that part's Attachment as its
+        // Attachment0 (or Part0 for a weld); pick the other end in Properties or a script.
+        // (The Constraints tool in the Toolbox joins two clicked parts in one go.)
+        auto c = std::make_unique<SceneNode>(what, NodeKind::Constraint);
+        c->constraintType = (ConstraintType)(ct - std::begin(kConstraintClassNames));
+        c->color = c->constraintType == ConstraintType::Rope ? glm::vec3(0.45f, 0.32f, 0.2f) : glm::vec3(0.6f, 0.62f, 0.66f);
+        if (parent && parent->isPart()) {
+            if (c->constraintType == ConstraintType::Weld) c->ref0 = parent->id;
+            else {
+                SceneNode* att = nullptr;
+                for (auto& ch : parent->children) if (ch->isAttachment()) { att = ch.get(); break; }
+                if (!att) att = m_scene->insert(std::make_unique<SceneNode>("Attachment", NodeKind::Attachment), parent);
+                c->ref0 = att->id;
+            }
+        }
+        Log::system("Set the " + what + "'s " +
+                    (c->constraintType == ConstraintType::Weld ? "Part1" : "Attachment1") +
+                    " to join it to another part (or use the Constraints tool to click two parts).");
+        put(std::move(c));
+    }
     else if (what == "FluidSystem") {
         auto f = std::make_unique<SceneNode>("FluidSystem", NodeKind::FluidSystem);
         f->color = {0.12f, 0.56f, 1.0f};
@@ -1248,6 +1271,9 @@ const std::vector<InsertItem>& insertItems() {
         {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
         {"PointLight", Icons::Id::Light}, {"SpotLight", Icons::Id::Light}, {"Sound", Icons::Id::Sound},
         {"Attachment", Icons::Id::Attachment},
+        {"RopeConstraint", Icons::Id::Constraint}, {"RodConstraint", Icons::Id::Constraint}, {"SpringConstraint", Icons::Id::Constraint},
+        {"WeldConstraint", Icons::Id::Constraint}, {"HingeConstraint", Icons::Id::Constraint}, {"BallSocketConstraint", Icons::Id::Constraint},
+        {"PrismaticConstraint", Icons::Id::Constraint}, {"CylindricalConstraint", Icons::Id::Constraint},
         {"BodyVelocity", Icons::Id::Constraint}, {"BodyPosition", Icons::Id::Constraint}, {"BodyGyro", Icons::Id::Constraint},
         {"BodyAngularVelocity", Icons::Id::Constraint}, {"BodyThrust", Icons::Id::Constraint}, {"BodyForce", Icons::Id::Constraint},
         {"LinearVelocity", Icons::Id::Constraint}, {"AlignPosition", Icons::Id::Constraint}, {"AlignOrientation", Icons::Id::Constraint},

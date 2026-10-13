@@ -676,7 +676,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     }
     if (node->isConstraint()) {
         int t = (int)node->constraintType;
-        if (ImGui::Combo("Type", &t, kConstraintNames, 5)) { node->constraintType = (ConstraintType)t; node->jointReady = false; }
+        if (ImGui::Combo("Type", &t, kConstraintNames, kConstraintTypeCount)) { node->constraintType = (ConstraintType)t; node->jointReady = false; }
         ImGui::Checkbox("Enabled", &node->enabled);
         ImGui::SameLine();
         ImGui::Checkbox("Visible", &node->visible);
@@ -685,6 +685,26 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         auto owner = [](SceneNode* r) { return r ? (r->isAttachment() && r->parent ? r->parent->name : r->name) : std::string("(missing)"); };
         ImGui::TextDisabled("Connects %s  <->  %s", owner(r0).c_str(), owner(r1).c_str());
         ConstraintType ct = node->constraintType;
+        if (ct != ConstraintType::Weld) {
+            // Its two Attachments: pick from every Attachment in the game.
+            std::vector<SceneNode*> atts;
+            m_scene->forEach([&](SceneNode* n) { if (n->isAttachment()) atts.push_back(n); });
+            auto label = [](const SceneNode* a) { return a ? (a->parent ? a->parent->name + "." + a->name : a->name) : std::string("(none)"); };
+            auto pick = [&](const char* name, uint64_t& id) {
+                SceneNode* cur = id ? m_scene->findById(id) : nullptr;
+                if (ImGui::BeginCombo(name, label(cur).c_str())) {
+                    if (ImGui::Selectable("(none)", !cur)) { id = 0; node->jointReady = false; }
+                    for (SceneNode* a : atts) {
+                        ImGui::PushID(a);
+                        if (ImGui::Selectable(label(a).c_str(), a == cur)) { id = a->id; node->jointReady = false; }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndCombo();
+                }
+            };
+            pick("Attachment0", node->ref0);
+            pick("Attachment1", node->ref1);
+        }
         if (ct == ConstraintType::Rope || ct == ConstraintType::Rod || ct == ConstraintType::Spring) {
             bool autoLen = node->length < 0.0f;
             if (ImGui::Checkbox("Length as placed", &autoLen)) node->length = autoLen ? -1.0f : 4.0f;
@@ -701,6 +721,63 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
                 ImGui::DragFloat("Speed", &node->motorSpeed, 0.05f, -100.0f, 100.0f, "%.2f rad/s");
                 ImGui::DragFloat("Strength", &node->motorTorque, 10.0f, 0.0f, 1e7f);
             }
+        }
+        if (usesJointProps(ct)) {
+            JointProps& p = node->joint;
+            auto actuator = [](const char* label, Actuator& a) {
+                int v = (int)a;
+                if (ImGui::Combo(label, &v, kActuatorNames, 3)) a = (Actuator)v;
+            };
+            ImGui::PushTextWrapPos(0);
+            if (ct == ConstraintType::BallSocket) {
+                ImGui::TextDisabled("Holds the two attachments together and lets them turn any way, like a shoulder.");
+                ImGui::Checkbox("LimitsEnabled", &p.limitsEnabled);
+                if (p.limitsEnabled) ImGui::DragFloat("UpperAngle", &p.upperAngle, 0.5f, 0.0f, 180.0f, "%.1f deg");
+                ImGui::Checkbox("TwistLimitsEnabled", &p.twistLimitsEnabled);
+                if (p.twistLimitsEnabled) {
+                    ImGui::DragFloat("TwistLowerAngle", &p.twistLowerAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                    ImGui::DragFloat("TwistUpperAngle", &p.twistUpperAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                }
+                if (p.limitsEnabled || p.twistLimitsEnabled) ImGui::SliderFloat("Restitution", &p.restitution, 0.0f, 1.0f);
+            } else {
+                ImGui::TextDisabled(ct == ConstraintType::Prismatic
+                    ? "Lets Attachment1 slide along Attachment0's axis (its X), like a drawer or a lift. It can't turn."
+                    : "Lets Attachment1 slide along Attachment0's axis and spin around it, like a piston or a drill.");
+                ImGui::Checkbox("LimitsEnabled", &p.limitsEnabled);
+                if (p.limitsEnabled) {
+                    ImGui::DragFloat("LowerLimit", &p.lowerLimit, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
+                    ImGui::DragFloat("UpperLimit", &p.upperLimit, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
+                    ImGui::SliderFloat("Restitution", &p.restitution, 0.0f, 1.0f);
+                }
+                actuator("ActuatorType", p.actuator);
+                if (p.actuator == Actuator::Motor) {
+                    ImGui::DragFloat("Velocity", &p.velocity, 0.05f, -1000.0f, 1000.0f, "%.2f studs/s");
+                    ImGui::DragFloat("MotorMaxForce", &p.motorMaxForce, 10.0f, 0.0f, 1e9f);
+                } else if (p.actuator == Actuator::Servo) {
+                    ImGui::DragFloat("TargetPosition", &p.targetPosition, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
+                    ImGui::DragFloat("Speed", &p.speed, 0.05f, 0.0f, 1000.0f, "%.2f studs/s");
+                    ImGui::DragFloat("ServoMaxForce", &p.servoMaxForce, 10.0f, 0.0f, 1e9f);
+                }
+                if (ct == ConstraintType::Cylindrical) {
+                    ImGui::SeparatorText("Spinning");
+                    ImGui::DragFloat("InclinationAngle", &p.inclinationAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                    ImGui::Checkbox("AngularLimitsEnabled", &p.angularLimitsEnabled);
+                    if (p.angularLimitsEnabled) {
+                        ImGui::DragFloat("LowerAngle", &p.lowerAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                        ImGui::DragFloat("UpperAngle", &p.upperAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                    }
+                    actuator("AngularActuatorType", p.angularActuator);
+                    if (p.angularActuator == Actuator::Motor) {
+                        ImGui::DragFloat("AngularVelocity", &p.angularVelocity, 0.05f, -100.0f, 100.0f, "%.2f rad/s");
+                        ImGui::DragFloat("MotorMaxTorque", &p.motorMaxTorque, 10.0f, 0.0f, 1e9f);
+                    } else if (p.angularActuator == Actuator::Servo) {
+                        ImGui::DragFloat("TargetAngle", &p.targetAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                        ImGui::DragFloat("AngularSpeed", &p.angularSpeed, 0.05f, 0.0f, 100.0f, "%.2f rad/s");
+                        ImGui::DragFloat("ServoMaxTorque", &p.servoMaxTorque, 10.0f, 0.0f, 1e9f);
+                    }
+                }
+            }
+            ImGui::PopTextWrapPos();
         }
         if (ct != ConstraintType::Weld) {
             ImGui::ColorEdit3("Color", &node->color.x);

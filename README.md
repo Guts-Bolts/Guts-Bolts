@@ -109,8 +109,9 @@ The panels:
   **Motor Cart**, domino run, crate pyramid and trampoline.
 - **Insert Object** (`Ctrl+I` or the **+** in the Explorer): a searchable list
   of every kind of object you can add.
-- **Constraints** (in the Toolbox): pick Rope, Rod, Spring, Weld, Hinge or
-  Motor, then click two parts in the Viewport to join them.
+- **Constraints** (in the Toolbox): pick Rope, Rod, Spring, Weld, Hinge,
+  Motor, Ball Socket, Prismatic or Cylindrical, then click two parts in the
+  Viewport to join them.
 - **Properties**: colour, material (Plastic, Metal, Neon, Wood, Glass,
   Concrete, Ice), size, anchored, can-collide and so on.
 - **Lighting**: sun, shadows, sky light, clouds, stars, fog, exposure,
@@ -1261,6 +1262,49 @@ Constraints join parts together through **Attachments** (little points on a part
 | Weld | Glues two parts together |
 | Hinge | Lets a part swing around one axis, like a door or a wheel |
 | Motor | A hinge that spins by itself (`AngularVelocity`, `MotorMaxTorque`) |
+| Ball Socket | Holds two points together and lets them turn any way, like a shoulder |
+| Prismatic | A slider: the second part slides along a line and can't turn |
+| Cylindrical | Slides along a line and spins around it, like a piston or a drill |
+
+### Ball sockets, sliders and slide-and-spin joints
+
+`BallSocketConstraint`, `PrismaticConstraint` and `CylindricalConstraint`
+work like Roblox's: make them from scripts (`Instance.new`), Insert Object or
+the Constraints tool, and set `Attachment0` / `Attachment1`. They're saved in
+your game, show up for everyone in multiplayer, and come in and go out with
+`.rbxl` / `.rbxlx` files.
+
+- **Ball socket:** `LimitsEnabled` + `UpperAngle` (degrees) keep Attachment1's
+  axis within a cone around Attachment0's; `TwistLimitsEnabled` +
+  `TwistLowerAngle` / `TwistUpperAngle` stop it twisting too far;
+  `Restitution` (0 to 1) makes it bounce off the limits.
+- **Prismatic:** slides along Attachment0's axis (its X; turn the attachment
+  to aim it). `LimitsEnabled` + `LowerLimit` / `UpperLimit` (studs).
+  `ActuatorType` `Motor` pushes at `Velocity` with up to `MotorMaxForce`;
+  `Servo` goes to `TargetPosition` at `Speed` with up to `ServoMaxForce`.
+  `CurrentPosition` says where it is now.
+- **Cylindrical:** everything a prismatic has, plus spinning:
+  `AngularActuatorType` `Motor` (`AngularVelocity`, `MotorMaxTorque`) or
+  `Servo` (`TargetAngle` in degrees, `AngularSpeed`, `ServoMaxTorque`),
+  `AngularLimitsEnabled` + `LowerAngle` / `UpperAngle`, and
+  `InclinationAngle` to tilt the spin axis. `CurrentAngle` says how far it's
+  turned.
+
+```lua
+-- A lift: the platform slides up and down a post.
+local slide = Instance.new("PrismaticConstraint")
+slide.Attachment0 = post.Attachment      -- its X axis points up
+slide.Attachment1 = platform.Attachment
+slide.ActuatorType = Enum.ActuatorType.Servo
+slide.ServoMaxForce = 50000
+slide.Speed = 4
+slide.TargetPosition = 10
+slide.Parent = post
+```
+
+Like hinges, the parts these join don't collide with each other. Forces start
+at 0 (as in Roblox), so set `MotorMaxForce` / `ServoMaxForce` /
+`MotorMaxTorque` / `ServoMaxTorque` or the actuator won't move anything.
 
 ### The character's body
 

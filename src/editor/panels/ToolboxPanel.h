@@ -32,7 +32,7 @@ public:
         std::function<void()>              addModel;
         std::function<void(LightType)>     addLight;
         std::function<void()>              addSound;
-        std::function<void(int)>           startConnect;   // ConstraintType (5 = motor)
+        std::function<void(int)>           startConnect;   // ConstraintType (5 = motor, 6.. = ConstraintType 5..)
         std::function<void(Premade)>       spawnPremade;
         // A picture of what `build` makes (made once per key; 0 while it's being made).
         std::function<unsigned(const std::string& key, const std::function<void(Scene&)>& build)> thumbnail;

@@ -10,6 +10,7 @@ struct GuiProps;
 struct PromptProps;
 struct HighlightProps;
 struct EffectProps;
+struct JointProps;
 
 // Turns scenes and objects into JSON text and back. Used for:
 //  * File > Save / Open (".gbscene" files)
@@ -34,6 +35,9 @@ void                       highlightFromJson(const nlohmann::json& j, HighlightP
 // A Trail's or Beam's settings (and whether it's on), the same way.
 nlohmann::json             effectToJson(const EffectProps& e, bool enabled, bool beam);
 void                       effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled);
+// A ball-socket / prismatic / cylindrical joint's settings, the same way.
+nlohmann::json             jointToJson(const JointProps& p);
+void                       jointFromJson(const nlohmann::json& j, JointProps& p);
 // freshIds = true gives every object a brand-new id (needed for copies).
 std::unique_ptr<SceneNode> nodeFromString(const std::string& text, bool freshIds);
 std::unique_ptr<SceneNode> clone(const SceneNode& node);

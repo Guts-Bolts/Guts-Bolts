@@ -809,8 +809,8 @@ void ViewportPanel::render(float dt) {
 
             // Connect tool: click part A, then part B.
             if (m_state->connectTool >= 0) {
-                static const char* names[] = {"rope", "rod", "spring", "weld", "hinge", "motor"};
-                const char* what = names[std::clamp(m_state->connectTool, 0, 5)];
+                static const char* names[] = {"rope", "rod", "spring", "weld", "hinge", "motor", "ball socket", "prismatic slider", "cylindrical joint"};
+                const char* what = names[std::clamp(m_state->connectTool, 0, 8)];
                 char hint[160];
                 if (!m_state->connectFirst)
                     std::snprintf(hint, sizeof(hint), "Adding a %s: click the FIRST part   (Esc to cancel)", what);
