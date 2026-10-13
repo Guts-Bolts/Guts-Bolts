@@ -136,6 +136,17 @@ const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass:
 const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum'];
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.
 const kMaxComments = 500, kCommentLength = 200, kCommentCooldown = 15, kCommentsPage = 20;
+// Trades (ServerItems.cpp has the same): a trade nobody answers expires after kTradeExpiry.
+// Every finished trade (accepted, declined, cancelled, expired, or one that couldn't happen)
+// goes in both people's Past trades, kept for kKeepPastTrades (at most kMaxPastTrades in all),
+// kPastTradesPage to a page. Only the two people in a trade can see it.
+const kTradeExpiry = 30 * 86400, kKeepPastTrades = 365 * 86400, kMaxPastTrades = 50000, kPastTradesPage = 20;
+const TRADE_DONE = ['accepted', 'declined', 'cancelled', 'expired', 'failed'];
+// Screenshots on a game's page (ServerItems.cpp has the same): up to kMaxShots pictures,
+// .png, .jpg or .webp, up to kShotSize each. Like thumbnails, they're the creator's own pictures.
+const kMaxShots = 5, kShotSize = 2 << 20;
+const webpFile = (d) => d.length > 12 && [0x52, 0x49, 0x46, 0x46].every((v, i) => d[i] === v) && [0x57, 0x45, 0x42, 0x50].every((v, i) => d[8 + i] === v);
+const pictureType = (d) => (pngSize(d) ? 'png' : jpgFile(d) ? 'jpg' : webpFile(d) ? 'webp' : '');
 // The forum (ServerForum.cpp has the same boards and limits). Boards are fixed; anyone can
 // read, signed-up players post, staff pin, lock and delete. Each thread keeps its posts, oldest first.
 const FORUM_BOARDS = [
@@ -187,7 +198,7 @@ const kPoolMost = 50, kPoolStartWait = 25;
 // DataStores: names and keys up to 100 letters, values up to 256 KB of JSON, 100,000 keys a game.
 const kDataName = 100, kDataValue = 256 * 1024, kDataKeys = 100000;
 const kStaffName = 'Guts';
-const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list']);
+const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
 const kCodeMinutes = 15, kCodeTries = 5, kMailGap = 60, kMailsPerDay = 8;
@@ -440,7 +451,11 @@ export class GbServerObject extends DurableObject {
       CREATE TABLE IF NOT EXISTS files (id TEXT NOT NULL, part INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY (id, part));
       CREATE TABLE IF NOT EXISTS nonces (key TEXT PRIMARY KEY, time INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS gamedata (game TEXT NOT NULL, store TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
-        updated INTEGER NOT NULL, PRIMARY KEY (game, store, key));`);
+        updated INTEGER NOT NULL, PRIMARY KEY (game, store, key));
+      CREATE TABLE IF NOT EXISTS pasttrades (id TEXT PRIMARY KEY, a TEXT NOT NULL, b TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL);
+      CREATE INDEX IF NOT EXISTS pasttrades_a ON pasttrades (a, at);
+      CREATE INDEX IF NOT EXISTS pasttrades_b ON pasttrades (b, at);
+      CREATE INDEX IF NOT EXISTS pasttrades_at ON pasttrades (at);`);
     this.official = lower(env.OFFICIAL || '');
     this.name = env.SERVER_NAME || 'Guts&Bolts';
     this.users = new Map(); this.assets = new AssetMap(); this.groups = new Map(); this.forum = new Map();
@@ -455,6 +470,9 @@ export class GbServerObject extends DurableObject {
     for (const r of this.sql.exec('SELECT id, data FROM groups')) this.groups.set(r.id, JSON.parse(r.data));
     for (const r of this.sql.exec('SELECT id, data FROM forum')) this.forum.set(r.id, JSON.parse(r.data));
     this.trades = this.getMeta('trades', []);   // trade offers between players (limited items)
+    // Past trades started being kept for good with the "Paper Trail" update: the finished
+    // trades the server still had then (the last month's) go in too.
+    for (const x of this.trades) if (TRADE_DONE.includes(x.status)) this.keepPastTrade(x, true);
     this.posted = this.getMeta('updates', []);  // updates staff posted on the website (the rest are in updates.js)
     this.reports = this.getMeta('reports', []);  // what players reported, for staff to look at (newest last)
     this.staffLog = this.getMeta('stafflog', []);   // what staff did, newest last
@@ -560,6 +578,34 @@ export class GbServerObject extends DurableObject {
     for (const a of this.assets.values())
       if (a.limited) for (const c of a.copies || []) if (c.owner === u.id) out.push({ id: a.id, name: a.name, kind: a.kind, serial: c.serial, price: c.price || 0 });
     return out;
+  }
+  // A trade is over: it goes in both people's Past trades, with the names of the people and
+  // items as they were then (so it still reads right if an item is deleted later).
+  finishTrade(tr, status, t = now()) {
+    tr.status = status;
+    tr.updated = t;
+    this.dirty.trades = true;
+    this.keepPastTrade(tr);
+  }
+  keepPastTrade(tr, onlyIfNew = false) {
+    const nameOf = (id) => { const u = this.users.get(id); return u ? u.name : '?'; };
+    const label = (l) => (l || []).map((i) => { const a = this.assets.get(i.id); return { id: i.id, serial: i.serial, name: a ? a.name : '(gone)', kind: a ? a.kind : '' }; });
+    const rec = { id: tr.id, from: tr.from, to: tr.to, fromName: nameOf(tr.from), toName: nameOf(tr.to), give: label(tr.give), get: label(tr.get),
+      status: tr.status, created: tr.created, finished: tr.updated };
+    this.sql.exec((onlyIfNew ? 'INSERT OR IGNORE' : 'INSERT OR REPLACE') + ' INTO pasttrades (id, a, b, at, data) VALUES (?, ?, ?, ?, ?)',
+      tr.id, tr.from, tr.to, tr.updated || 0, JSON.stringify(rec));
+    if (onlyIfNew) return;
+    this.sql.exec('DELETE FROM pasttrades WHERE at < ?', now() - kKeepPastTrades);
+    this.sql.exec('DELETE FROM pasttrades WHERE id IN (SELECT id FROM pasttrades ORDER BY at DESC LIMIT -1 OFFSET ?)', kMaxPastTrades);
+  }
+  // Open trades nobody answered in kTradeExpiry run out (the one who sent it is told).
+  expireTrades(t = now()) {
+    for (const x of this.trades)
+      if (x.status === 'open' && t - (x.created || 0) >= kTradeExpiry) {
+        this.finishTrade(x, 'expired', t);
+        const to = this.users.get(x.to);
+        this.notify(this.users.get(x.from), 'trade', 'Your trade with ' + (to ? to.name : 'someone') + ' expired: nobody answered it in 30 days.', x.id);
+      }
   }
   // After copies change hands: `owned` (what you can wear) follows the copies you hold.
   syncOwned(u, a) {
@@ -937,6 +983,7 @@ export class GbServerObject extends DurableObject {
       myFavorite: a.kind === 'game' && me ? (me.favorites || []).includes(a.id) : undefined,
       offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), review: a.review || undefined, reviewNote: a.reviewNote || undefined,
       privatePrice: a.kind === 'game' ? (a.privatePrice || 0) : undefined,
+      shots: a.kind === 'game' ? (a.shots || []).map((x) => x.id) : undefined,
       group: a.kind === 'game' ? this.groupJson(a.group) : undefined };
   }
   groupJson(id) { const g = id ? this.groups.get(id) : null; return g ? { id: g.id, name: g.name, color: g.color } : undefined; }
@@ -1265,6 +1312,46 @@ export class GbServerObject extends DurableObject {
       a.icon = t;
       this.saveAsset(a);
       return okay({ asset: this.publicAsset(a) });
+    }
+    // Screenshots on a game's page: the creator (or staff) adds up to kMaxShots, deletes them
+    // and puts them in order. The page shows them, in that order, after the thumbnail.
+    if (name === 'shots.add' || name === 'shots.delete' || name === 'shots.order') {
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || a.kind !== 'game') return fail('That game doesn\'t exist (any more).');
+      if (a.creator !== me.id && !this.isStaff(me)) return fail('You can only change your own games.');
+      a.shots = a.shots || [];
+      if (name === 'shots.add') {
+        if (a.shots.length >= kMaxShots) return fail('A game can have ' + kMaxShots + ' screenshots. Delete one first.');
+        let data;
+        try { data = b64ToBytes(str(args, 'data')); } catch { return fail('The picture got scrambled. Try again.'); }
+        const type = pictureType(data);
+        if (!type) return fail('Screenshots must be .png, .jpg or .webp pictures.');
+        if (data.length > kShotSize) return fail('That screenshot is too big (the most is ' + (kShotSize >> 20) + ' MB). Try a smaller picture or a .jpg.');
+        const sh = { id: randomHex(6), at: t, type };
+        this.writeFile('shot:' + a.id + ':' + sh.id, data);
+        a.shots.push(sh);
+      } else if (name === 'shots.delete') {
+        const i = a.shots.findIndex((x) => x.id === str(args, 'shot'));
+        if (i < 0) return fail('That screenshot is already gone.');
+        this.sql.exec('DELETE FROM files WHERE id = ?', 'shot:' + a.id + ':' + a.shots[i].id);
+        a.shots.splice(i, 1);
+        if (a.creator !== me.id) this.staffDid(me, 'screenshot', 'Deleted a screenshot of the game "' + a.name + '"', a.creator);
+      } else {
+        const order = Array.isArray(args.order) ? args.order.map(String) : [];
+        const have = a.shots.map((x) => x.id);
+        if (order.length !== have.length || new Set(order).size !== order.length || !order.every((x) => have.includes(x)))
+          return fail('The screenshots changed while you were moving them. Reload the page and try again.');
+        a.shots = order.map((x) => a.shots.find((y) => y.id === x));
+      }
+      this.saveAsset(a);
+      return okay({ asset: this.publicAsset(a), shots: a.shots.map((x) => x.id) });
+    }
+    if (name === 'shots.get') {
+      // One screenshot's picture (the website shows them from /shot/<game>/<screenshot> instead).
+      const a = this.assets.get(str(args, 'id'));
+      const sh = a && a.kind === 'game' && (a.shots || []).find((x) => x.id === str(args, 'shot'));
+      const data = sh ? this.readFile('shot:' + a.id + ':' + sh.id) : null;
+      return data ? okay({ data: bytesToB64(data), type: sh.type }) : fail('No picture.');
     }
     if (name === 'game.settings') {
       // Configure a game from the website: name, description and who can play it.
@@ -2153,6 +2240,7 @@ export class GbServerObject extends DurableObject {
       return okay({ me: this.meJson(me) });
     }
     // --- Trading limited copies ---
+    if (name.startsWith('trade.')) this.expireTrades(t);
     if (name === 'trade.inventory') {
       const u = this.findPerson(args.user);
       if (!u) return fail('There\'s no account with that ID on this server.');
@@ -2192,10 +2280,8 @@ export class GbServerObject extends DurableObject {
       const tr = this.trades.find((x) => x.id === str(args, 'id'));
       if (!tr || tr.status !== 'open') return fail('That trade isn\'t open (any more).');
       if (name === 'trade.cancel' ? tr.from !== me.id : tr.to !== me.id) return fail('That isn\'t your trade to answer.');
-      tr.updated = t;
-      this.dirty.trades = true;
       if (name !== 'trade.accept') {
-        tr.status = name === 'trade.cancel' ? 'cancelled' : 'declined';
+        this.finishTrade(tr, name === 'trade.cancel' ? 'cancelled' : 'declined', t);
         if (name === 'trade.decline') this.notify(this.users.get(tr.from), 'trade', me.name + ' turned down your trade.', tr.id);
         return okay({ trade: tr });
       }
@@ -2203,14 +2289,30 @@ export class GbServerObject extends DurableObject {
       const copy = (x) => { const a = this.assets.get(x.id); return a && a.limited ? (a.copies || []).find((c) => c.serial === x.serial) : null; };
       const ok = from && tr.give.every((x) => { const c = copy(x); return c && c.owner === from.id; }) &&
         tr.get.every((x) => { const c = copy(x); return c && c.owner === me.id; });
-      if (!ok) { tr.status = 'failed'; return fail('Someone doesn\'t have those items any more, so the trade can\'t happen.'); }
+      if (!ok) { this.finishTrade(tr, 'failed', t); return fail('Someone doesn\'t have those items any more, so the trade can\'t happen.'); }
       const touched = new Set();
       for (const x of tr.give) { const c = copy(x); c.owner = me.id; c.price = 0; touched.add(x.id); }
       for (const x of tr.get) { const c = copy(x); c.owner = from.id; c.price = 0; touched.add(x.id); }
       for (const id of touched) { const a = this.assets.get(id); this.saveAsset(a); this.syncOwned(me, a); this.syncOwned(from, a); }
-      tr.status = 'accepted';
+      this.finishTrade(tr, 'accepted', t);
       this.notify(from, 'trade', me.name + ' accepted your trade!', tr.id);
       return okay({ trade: tr, me: this.meJson(me) });
+    }
+    // Past trades: your finished trades, newest first, a page at a time. Only the two people
+    // in a trade see it. `gave` and `got` are from your side.
+    if (name === 'trade.history') {
+      const n = [...this.sql.exec('SELECT COUNT(*) AS n FROM pasttrades WHERE a = ? OR b = ?', me.id, me.id)][0].n;
+      const pages = Math.max(1, Math.ceil(n / kPastTradesPage));
+      const page = Math.min(Math.max(1, Math.trunc(Number(args.page)) || 1), pages);
+      const rows = [...this.sql.exec('SELECT data FROM pasttrades WHERE a = ? OR b = ? ORDER BY at DESC, id DESC LIMIT ? OFFSET ?',
+        me.id, me.id, kPastTradesPage, (page - 1) * kPastTradesPage)];
+      const trades = rows.map((r) => {
+        const x = JSON.parse(r.data), sent = x.from === me.id, otherId = sent ? x.to : x.from, other = this.users.get(otherId);
+        return { id: x.id, status: x.status, created: x.created, finished: x.finished, sent,
+          with: { id: otherId, userId: other ? other.userId : 0, name: other ? other.name : (sent ? x.toName : x.fromName) },
+          gave: sent ? x.give : x.get, got: sent ? x.get : x.give };
+      });
+      return okay({ trades, page, pages, total: n });
     }
     if (name === 'delete') {
       const a = this.assets.get(str(args, 'id'));
@@ -2219,6 +2321,7 @@ export class GbServerObject extends DurableObject {
       if (a.limited && (a.copies || []).length && !this.isOfficial(me)) return fail('People own copies of this Limited, so it can\'t be deleted.');
       if (a.creator !== me.id) this.staffDid(me, 'delete', 'Deleted ' + KIND_TITLE(a) + ' "' + a.name + '"', a.creator);
       this.sql.exec('DELETE FROM files WHERE id = ? OR id = ? OR id = ?', a.id, 'thumb:' + a.id, 'icon:' + a.id);
+      for (const sh of a.shots || []) this.sql.exec('DELETE FROM files WHERE id = ?', 'shot:' + a.id + ':' + sh.id);
       this.assets.delete(a.id);
       this.dirty.assets.add(a.id);
       return okay();
@@ -2594,7 +2697,7 @@ export class GbServerObject extends DurableObject {
       me.inbox = (me.inbox || []).filter((m) => m.from !== them.id);
       for (const x of this.trades)
         if (x.status === 'open' && ((x.from === me.id && x.to === them.id) || (x.from === them.id && x.to === me.id))) {
-          x.status = 'cancelled'; x.updated = now(); this.dirty.trades = true;
+          this.finishTrade(x, 'cancelled');
         }
       this.saveUser(me, them);
       return okay({ blocked: true, me: this.meJson(me) });
@@ -3547,6 +3650,17 @@ export class GbServerObject extends DurableObject {
       if (!data) return new Response('No picture.', { status: 404 });
       const jpg = data.length > 2 && data[0] === 0xff && data[1] === 0xd8;
       return new Response(data, { headers: { 'content-type': jpg ? 'image/jpeg' : 'image/png', 'cache-control': 'public, max-age=86400' } });
+    }
+    // GET /shot/<game id>/<screenshot id>: one of a game's screenshots (public like its thumbnail;
+    // a screenshot's id is random and new for every picture, so it can be cached for good).
+    if (url.pathname.startsWith('/shot/')) {
+      const [gameId, shotId] = url.pathname.slice(6).split('/').map((x) => { try { return decodeURIComponent(x || ''); } catch { return ''; } });
+      const a = this.assets.get(gameId);
+      const sh = a && a.kind === 'game' && (a.shots || []).find((x) => x.id === shotId);
+      const data = sh ? this.readFile('shot:' + a.id + ':' + sh.id) : null;
+      if (!data) return new Response('No picture.', { status: 404 });
+      const type = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }[pictureType(data)] || 'application/octet-stream';
+      return new Response(data, { headers: { 'content-type': type, 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' } });
     }
     // GET /thumb/<asset id> and /icon/<asset id>: a game's picture and icon (public, so pages can show them directly).
     if (url.pathname.startsWith('/thumb/') || url.pathname.startsWith('/icon/')) {
