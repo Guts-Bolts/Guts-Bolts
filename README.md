@@ -206,6 +206,32 @@ between four modes:
 **Stop** (`Shift+F5` or `Esc`) goes back to Build mode, and everything goes
 back exactly how it was before you pressed Simulate or Play.
 
+### Testing with more than one player
+
+Play is just you. To see how your game works with other people, use
+**TEST > Players** (or the **Mode** menu) and pick **Test with 2 / 3 / 4
+players**. Studio starts your game, as it is right now (saved or not), on a
+test server on your own computer (`GutsAndBoltsGameServer --place`, the same
+local network server as "Host on LAN") and opens a small Player window for
+each player, which joins it as **Player1**, **Player2** and so on. No friends,
+account or internet needed.
+
+- Server **Scripts** run on the test server and **LocalScripts** run in each
+  player's window, so RemoteEvents and RemoteFunctions really go between them.
+- What the server and every player print (and their errors) shows in Studio's
+  **Output**, marked `[Server]`, `[Player1]`... The server also says when each
+  player joins and leaves.
+- **Add a player** (in the same menu) opens one more window, to test someone
+  joining late. Close a player's window to test someone leaving.
+- **End Test** (or **Stop multiplayer test**) closes the test server and every
+  player window. Quitting Studio does too.
+- Changes you make in Studio while the test runs don't reach it: end the test
+  and start it again.
+
+Studio needs `GutsAndBoltsGameServer` and `GutsAndBoltsPlayer` next to it
+(they're built and installed with it). The test server uses a free port from
+7790 up; the player windows are on this computer only.
+
 ### Assistant (AI help)
 
 The **Assistant** tab (HOME > Assistant) is Studio's AI helper, like Roblox
@@ -231,7 +257,9 @@ what it needs, what it gives back and how risky it is):
 - Scene: `get_game_tree`, `find_objects`, `insert_object`, `delete_object`
 - Objects: `get_object`, `set_property`, `select`
 - Scripting: `create_script`, `read_script`, `edit_script`, `run_lua`
-- Runtime: `playtest` (start, simulate, stop, pause, resume, step), `get_runtime_state`
+- Runtime: `playtest` (start, simulate, stop, pause, resume, step), `get_runtime_state`,
+  `multiplayer_test` (start a test with 2-4 players, `add_player`, `status`,
+  `output` to read what the server and each player printed, `stop`)
 - Physics and navigation: `create_physical_object`, `spawn_explosion`,
   `bake_navmesh`, `find_path`, `walk_character_to`
 - Docs: `get_engine_info` (overview, capabilities, concepts, coordinates,
@@ -2420,6 +2448,17 @@ every change, as the **Tests** job. To add a test, copy one of the
 `*.test.mjs` files; `makeServer()` in `helpers.mjs` gives you a fresh server and
 `s.call(player, 'op', {...})` asks it to do something.
 
+Studio's multiplayer test has its own check (Linux, after building, needs
+`xvfb-run`). It makes a small game whose server Script prints when each player
+joins and answers them through a RemoteEvent, starts a 2-player test with no
+screen, adds a third player halfway, closes Player2's window, and checks every
+player's LocalScript got the answer, the server saw Player2 leave, and nothing
+is left running:
+
+```
+python3 tools/test_multiplayer.py            # --players 3 --seconds 40 to change it
+```
+
 ## Building by hand
 
 You need CMake, a C++20 compiler, and GLFW, GLEW and GLM where `find_package`
@@ -2446,7 +2485,7 @@ install.py, Install.bat, Install.command, install.sh    the installer
 android/                the Android app (Gradle project around the same C++ Player)
 games/                  sample games (copied next to the apps)
 catalog/                official catalog items (signed; copied next to the apps)
-tools/                  make_sample_games.py
+tools/                  make_sample_games.py, test_multiplayer.py
 src/
   core/                 AppWindow, Log, Settings, Paths, CrashHandler, Account (keys / signatures)
   renderer/             SceneRenderer + Shaders (HDR, shadows, post-fx), Mesh, Camera, ...

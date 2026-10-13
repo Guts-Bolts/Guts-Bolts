@@ -23,6 +23,18 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'party-of-one-no-more', name: 'Party of One No More', time: 1791838800, tag: 'Studio',
+    summary: 'Studio can test your game with 2, 3 or 4 players at once, all on your own computer, no friends needed.',
+    items: [
+      'TEST > Players > "Test with 2 / 3 / 4 players" starts your game on a test server on this computer and opens a Player window for each player',
+      'The players are called Player1, Player2 and so on, so you can tell who is who',
+      'Check that RemoteEvents really go between the server and the players, that LocalScripts run for everyone, and what happens when people join and leave',
+      'What the server and every player print shows in Studio\'s Output, marked [Server], [Player1]...',
+      'Add a player halfway through to test joining late, or close a window to test leaving. End Test closes everything',
+      'The Assistant and AI apps connected with MCP can start and stop a multiplayer test and read what everyone printed',
+    ],
+  },
+  {
     id: 'lost-and-found', name: 'Lost & Found', time: 1791838800, tag: 'Website',
     summary: 'Forgot your password and never added an email? Ask staff on the new Support page and get back in.',
     items: [
