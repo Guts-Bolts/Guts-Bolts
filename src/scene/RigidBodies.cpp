@@ -374,12 +374,38 @@ void angularRow(Body& A, Body& B, const glm::vec3& u, float target, float& acc, 
     if (B.dynamic) B.w += IB * u * lambda;
 }
 
+// A turning row for a ball socket's limits. The bodies turn about the joint's point
+// (which the point rows hold still), not about their own middles: a pendulum's bob
+// is much harder to swing round the pivot than to spin in place, and solving it as
+// a spin would barely slow the swing down.
+glm::mat3 invInertiaAbout(const Body& b, const glm::vec3& r) {
+    if (!b.dynamic) return glm::mat3(0.0f);
+    const glm::mat3 R = b.R();
+    const glm::vec3 il = 1.0f / glm::max(b.invInertiaLocal, glm::vec3(1e-12f));
+    glm::mat3 I = R * glm::mat3(glm::vec3(il.x, 0, 0), glm::vec3(0, il.y, 0), glm::vec3(0, 0, il.z)) * glm::transpose(R);
+    I += (1.0f / b.invMass) * (glm::dot(r, r) * glm::mat3(1.0f) - glm::outerProduct(r, r));
+    return glm::inverse(I);
+}
+
+void pivotRow(Body& A, Body& B, const glm::vec3& ra, const glm::vec3& rb, const glm::vec3& u,
+              float target, float& acc, float lo, float hi) {
+    const glm::mat3 KA = invInertiaAbout(A, ra), KB = invInertiaAbout(B, rb);
+    const float k = glm::dot(u, KA * u) + glm::dot(u, KB * u);
+    if (k < 1e-9f) return;
+    float lambda = (target - glm::dot(B.w - A.w, u)) / k;
+    const float old = acc;
+    acc = std::clamp(old + lambda, lo, hi);
+    lambda = acc - old;
+    if (A.dynamic) { const glm::vec3 dw = -(KA * u) * lambda; A.w += dw; A.v -= glm::cross(dw, ra); }
+    if (B.dynamic) { const glm::vec3 dw = (KB * u) * lambda;  B.w += dw; B.v -= glm::cross(dw, rb); }
+}
+
 // The speed a one-sided limit row aims for, given how far inside the limit it is
 // (gap > 0: inside; < 0: past it). Inside, it may close the gap in one step and no
 // faster; past it, it's pushed back. `bounce` (from Restitution) kicks it back out.
 float limitTarget(float gap, float h, float bounce) {
     const float t = gap >= 0.0f ? -gap / h : -0.2f / h * gap;
-    return gap < 0.05f ? std::max(t, bounce) : t;
+    return gap < 0.05f && bounce > 0.0f ? std::max(t, bounce) : t;
 }
 
 float wrapAngle(float a) {
@@ -433,7 +459,7 @@ void solveJointProps(Joint& j, Body& A, Body& B, float h, bool firstPass) {
                 const float angle = std::atan2(s, glm::dot(x, xb));
                 const float gap = glm::radians(std::clamp(p.upperAngle, 0.0f, 180.0f)) - angle;
                 const float b = bounceFor(Joint::Cone, glm::dot(B.w - A.w, u));
-                angularRow(A, B, u, limitTarget(gap, h, b), j.acc[Joint::Cone], 0.0f, kFree);
+                pivotRow(A, B, ra, rb, u, limitTarget(gap, h, b), j.acc[Joint::Cone], 0.0f, kFree);
             }
         }
         // ...and twists only between TwistLowerAngle and TwistUpperAngle.
@@ -445,8 +471,8 @@ void solveJointProps(Joint& j, Body& A, Body& B, float h, bool firstPass) {
             axis = glm::length(axis) > 1e-4f ? glm::normalize(axis) : xb;
             const float lo = glm::radians(p.twistLowerAngle), hi = glm::radians(p.twistUpperAngle);
             const float w = glm::dot(B.w - A.w, axis);
-            angularRow(A, B, axis, limitTarget(twist - lo, h, bounceFor(Joint::AngLow, w)), j.acc[Joint::AngLow], 0.0f, kFree);
-            angularRow(A, B, -axis, limitTarget(hi - twist, h, bounceFor(Joint::AngHigh, -w)), j.acc[Joint::AngHigh], 0.0f, kFree);
+            pivotRow(A, B, ra, rb, axis, limitTarget(twist - lo, h, bounceFor(Joint::AngLow, w)), j.acc[Joint::AngLow], 0.0f, kFree);
+            pivotRow(A, B, ra, rb, -axis, limitTarget(hi - twist, h, bounceFor(Joint::AngHigh, -w)), j.acc[Joint::AngHigh], 0.0f, kFree);
         }
         return;
     }
