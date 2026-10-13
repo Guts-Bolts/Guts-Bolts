@@ -569,14 +569,15 @@ void Editor::renderMakeGearDialog() {
 // The Toolbox's Library: everyone's public models, decals and audio, with pictures
 // ---------------------------------------------------------------------------
 
-std::vector<ToolboxTile> Editor::libraryTiles(bool mine, int kind, const std::string& query, bool reload, std::string& status) {
+std::vector<ToolboxTile> Editor::libraryTiles(bool mine, int kind, const std::string& query, bool bestRated, bool reload, std::string& status) {
     static const char* kinds[] = {"model", "decal", "audio"};
     std::vector<ToolboxTile> out;
     kind = std::clamp(kind, 0, 2);
     if (!Online::online()) { status = "Connecting to the Library..."; return out; }
     const std::string myId = Online::me().value("id", std::string());
     if (mine && myId.empty()) { status = "Log in to see your own models, decals and audio."; return out; }
-    std::string key = std::string(mine ? "mine:" : "all:") + kinds[kind] + ":" + query;
+    bestRated = bestRated && !mine && kind == 0;   // (only models have thumbs up / down)
+    std::string key = std::string(mine ? "mine:" : "all:") + kinds[kind] + (bestRated ? ":rated:" : ":") + query;
     if (reload || key != m_libraryKey || !m_libraryLoaded) {
         m_libraryKey = key;
         m_libraryLoaded = true;
@@ -584,7 +585,7 @@ std::vector<ToolboxTile> Editor::libraryTiles(bool mine, int kind, const std::st
         m_libraryMsg = "Loading...";
         json args = {{"kind", kinds[kind]}, {"query", query}, {"limit", 60}};
         if (mine) args["creator"] = myId;
-        else args["sort"] = "popular";
+        else args["sort"] = bestRated ? "rated" : "popular";
         Online::request("list", args, [this, key](const json& r) {
             if (key != m_libraryKey) return;   // an older search
             if (r.value("ok", false)) { m_library = r["assets"]; m_libraryMsg.clear(); }
@@ -624,9 +625,17 @@ std::vector<ToolboxTile> Editor::libraryTiles(bool mine, int kind, const std::st
         t.official = a.value("creatorStaff", false);
         t.icon = k == "decal" ? Icons::Id::Decal : k == "audio" ? Icons::Id::Sound : Icons::Id::Model;
         std::string access = a.value("access", std::string("public"));
-        t.tip = k == "model" ? "Click to insert it." : k == "decal" ? "Click to put it on the selected part."
+        t.tip = k == "model" ? (mine ? "Click to insert it." : "Click to insert it. Once you have, you can rate it on its Library page on the website.")
+              : k == "decal" ? "Click to put it on the selected part."
                                                               : "Click to add it as a Sound.";
         if (mine && access == "private") t.tip += "\n(Private: only you can see it.)";
+        if (k == "model") {   // thumbs up / down (people rate it on its Library page after inserting it)
+            const long long up = a.value("likes", 0LL), votes = up + a.value("dislikes", 0LL);
+            if (votes > 0) {
+                t.rating = std::to_string((up * 100 + votes / 2) / votes) + "%";
+                t.ratingTip = t.rating + " liked (" + std::to_string(votes) + (votes == 1 ? " vote)" : " votes)");
+            } else t.ratingTip = "No ratings yet";
+        }
         t.picture = [this, a]() { return libraryPicture(a); };
         t.use = [this, a]() { useLibraryAsset(a); };
         out.push_back(std::move(t));

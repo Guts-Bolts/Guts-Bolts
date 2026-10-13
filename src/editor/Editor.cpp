@@ -124,8 +124,8 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     actions.thumbnail = [this](const std::string& key, const std::function<void(Scene&)>& build) {
         return m_thumbnailer->texture(key, build);
     };
-    actions.library = [this](bool mine, int kind, const std::string& query, bool reload, std::string& status) {
-        return libraryTiles(mine, kind, query, reload, status);
+    actions.library = [this](bool mine, int kind, const std::string& query, bool bestRated, bool reload, std::string& status) {
+        return libraryTiles(mine, kind, query, bestRated, reload, status);
     };
     m_toolbox = std::make_unique<ToolboxPanel>(actions);
 
