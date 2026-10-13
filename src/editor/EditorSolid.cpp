@@ -120,6 +120,7 @@ void Editor::unionSelected(int mode) {
     const SceneNode& look = *plus[0];
     u->color = look.color; u->material = look.material; u->transparency = look.transparency;
     u->anchored = look.anchored; u->canCollide = look.canCollide; u->castShadow = look.castShadow;
+    u->collisionGroup = look.collisionGroup;
     u->transform.position = center;
     u->transform.scale = size;
     // What it was made from (positions in the union's parent), for Separate.

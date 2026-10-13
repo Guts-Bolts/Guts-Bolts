@@ -190,8 +190,7 @@ task.spawn(function()
     PS:CollisionGroupSetCollidable("Players", "Players", false)
     check(not PS:CollisionGroupsAreCollidable("Players", "Players") and PS:CollisionGroupsAreCollidable("Players", "Default"),
           "Players pass through Players but not the world")
-    -- A ladder in a group we pass through can't be climbed either; standing on the
-    -- floor still works because the floor is Default.
+    -- Red still collides with Default, so the character kept standing on the Baseplate.
     check(math.abs(root.Position.Y - start.Y) < 1, "the character stayed on the ground", root.Position.Y - start.Y)
 
     print(fails == 0 and "COLLISION GROUPS TEST DONE: all passed" or ("COLLISION GROUPS TEST DONE: " .. fails .. " failed"))

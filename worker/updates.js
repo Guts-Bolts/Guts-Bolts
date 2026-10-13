@@ -10,7 +10,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'velvet-rope', name: 'Velvet Rope', time: 1791864000, tag: 'Engine',
+    id: 'phase-shift', name: 'Phase Shift', time: 1791864000, tag: 'Engine',
     summary: 'Collision groups are real now: choose which parts bump into which, so players can walk through each other and team doors let only one team in.',
     items: [
       'PhysicsService collision groups work for real: register groups, then say which ones collide and which pass through each other (up to 32)',
