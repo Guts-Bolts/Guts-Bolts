@@ -10,6 +10,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'pick-a-side', name: 'Pick a Side', time: 1791849600, tag: 'Engine',
+    summary: 'Teams get their own spawns, models know their main part, and scripts can be written the newer way with += and continue.',
+    items: [
+      'SpawnLocations can belong to a team: players spawn on their team\'s spawns, and some can switch your team when you step on them',
+      'Scripts can tell when a character spawns or is about to respawn (CharacterAdded and CharacterRemoving)',
+      'Models have a PrimaryPart, and moving a model with PivotTo turns it around that part',
+      'Scripts can set a part\'s density, grip and bounce all at once, and the physics really use them',
+      'Text can be made bold with one switch (Bold)',
+      'Every script can use +=, continue, types and {name} strings, and errors still point at the right line',
+    ],
+  },
+  {
     id: 'twin-engines', name: 'Twin Engines', time: 1791831600, tag: 'Server',
     summary: 'The server you can run on your own computer caught up with the main one: Limiteds, trades, votes, icons and more.',
     items: [

@@ -548,7 +548,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         LuaRun r = lua(str("code"));
         json d = {{"output", r.lines}, {"errors", r.errors}, {"ran_in", m_playing ? "the running playtest" : "the editor (saved game)"}};
         if (!r.errors.empty()) {
-            AiToolResult res = fail("LUA_ERROR", r.errors.front(), "Fix the code and run it again (plain Lua 5.4, Roblox-style API).");
+            AiToolResult res = fail("LUA_ERROR", r.errors.front(), "Fix the code and run it again (Lua 5.4 or Luau, Roblox-style API).");
             res.data["output"] = r.lines;
             res.data["errors"] = r.errors;
             res.text = res.data.dump(1);
