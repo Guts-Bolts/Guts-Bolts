@@ -522,9 +522,12 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         auto one = [&](const std::string& t) {
             json d = {{"topic", t}};
             if (t == "classes") {
-                d["classes"] = insertKinds();
+                json kinds = insertKinds();
+                kinds.push_back("Team");
+                d["classes"] = kinds;
+                d["services"] = containerChoices();
                 d["text"] = "Every kind insert_object can make (the names after the classes are ready-made things, each an "
-                            "independent copy). Plus Team (goes in the Teams folder).";
+                            "independent copy; Team goes in Teams by itself), and the services they can be put in.";
             } else d["text"] = AiTools::engineDoc(t);
             if (t == "capabilities") d["manifest"] = AiTools::capabilities();
             return d;
