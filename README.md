@@ -113,8 +113,19 @@ The panels:
   of every kind of object you can add.
 - **Constraints** (in the Toolbox): pick Rope, Rod, Spring, Weld, Hinge or
   Motor, then click two parts in the Viewport to join them.
-- **Properties**: colour, material (Plastic, Metal, Neon, Wood, Glass,
-  Concrete, Ice), size, anchored, can-collide and so on.
+- **Properties**: colour, material, size, anchored, can-collide and so on.
+  There are 18 materials, each with its own look drawn by the engine (no
+  image files) and its own default weight, grip and bounce: **Plastic**,
+  **SmoothPlastic** (glossier, no grain), **Metal**, **DiamondPlate** (raised
+  non-slip stripes), **Foil** (crinkly and shiny), **Neon** (glows), **Wood**,
+  **Glass**, **Ice** (slippery), **Concrete**, **Brick** (rows of bricks with
+  mortar, lined up with the part's edges), **Cobblestone**, **Slate**,
+  **Granite** (speckled), **Marble** (polished, with veins), **Sand**,
+  **Grass** and **Fabric** (woven). Scripts use `part.Material =
+  Enum.Material.Brick` or `"Brick"`; a name that doesn't exist is an error
+  that lists the real ones. Imported Roblox places keep these materials;
+  other Roblox materials get the closest one (Rock, Basalt and Asphalt look
+  like Concrete, Pebble like Cobblestone, LeafyGrass like Grass).
 - **Lighting**: sun, shadows, sky light, clouds, stars, fog, exposure,
   bloom, ambient occlusion and colour grading, plus a **time of day** slider
   and presets (Day, Sunset, Night, Overcast, Horror).
@@ -1078,7 +1089,9 @@ Water isn't just a see-through box you can swim in. While the game runs:
   through it leaves a wake.
 - **Floating and sinking.** Loose (unanchored) parts float or sink depending on
   their material, like real life: **Wood**, **Ice**, **Plastic** and **Neon**
-  float (wood highest), while **Metal**, **Glass** and **Concrete** sink. Set a
+  float (wood highest), as do **Fabric** and **Grass**, while **Metal**,
+  **Glass**, **Concrete** and the stones (**Brick**, **Slate**, **Granite**,
+  **Marble**, **Cobblestone**, **Sand**) sink. Set a
   part's Density to choose exactly. A long plank tips over and floats flat, and
   boats rock on the waves.
 - **Splashes.** Things (and people) that fall in throw up spray, make a splash

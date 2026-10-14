@@ -103,8 +103,9 @@ PrimitiveType shapeFrom(const std::string& s) {
 }
 
 Material materialFrom(const std::string& s) {
-    for (int i = 0; i < kMaterialCount; ++i) if (s == kMaterialNames[i]) return (Material)i;
-    return Material::Plastic;
+    Material m = Material::Plastic;
+    materialFromName(s, m);   // an unknown name (from a newer version?) stays Plastic
+    return m;
 }
 
 } // namespace
