@@ -657,29 +657,54 @@ bool readFile(const std::string& path, Document& doc) {
 // Roblox objects -> Guts and Bolts objects
 // ===========================================================================
 
+// Roblox's Enum.Material numbers. The ones we have are kept as they are; the rest get
+// the closest look we do have.
 Material materialFromRoblox(int m) {
     switch (m) {
+        case 272:                                    return Material::SmoothPlastic;
         case 288:                                    return Material::Neon;
-        case 512: case 528:                          return Material::Wood;
-        case 1040: case 1056: case 1072: case 1088:  return Material::Metal;
-        case 1536: case 1552:                        return Material::Ice;
+        case 512: case 528:                          return Material::Wood;          // Wood, WoodPlanks
+        case 784:                                    return Material::Marble;
+        case 800:                                    return Material::Slate;
+        case 832:                                    return Material::Granite;
+        case 848:                                    return Material::Brick;
+        case 864: case 880:                          return Material::Cobblestone;   // Pebble, Cobblestone
+        case 1056:                                   return Material::DiamondPlate;
+        case 1072:                                   return Material::Foil;
+        case 1040: case 1088:                        return Material::Metal;         // CorrodedMetal, Metal
+        case 1280: case 1284:                        return Material::Grass;         // Grass, LeafyGrass
+        case 1296: case 1392:                        return Material::Sand;          // Sand, Salt
+        case 1312:                                   return Material::Fabric;
+        case 1536: case 1552:                        return Material::Ice;           // Ice, Glacier
         case 1568:                                   return Material::Glass;
-        case 784: case 788: case 800: case 816: case 820: case 832: case 836: case 848:
-        case 864: case 880: case 896: case 912: case 1376:
+        // Basalt, Concrete, Limestone, Pavement, Rock, Sandstone, Asphalt
+        case 788: case 816: case 820: case 836: case 896: case 912: case 1376:
                                                      return Material::Concrete;
         default:                                     return Material::Plastic;
     }
 }
 int materialToRoblox(Material m) {
     switch (m) {
-        case Material::Neon:     return 288;
-        case Material::Wood:     return 512;
-        case Material::Metal:    return 1088;
-        case Material::Ice:      return 1536;
-        case Material::Glass:    return 1568;
-        case Material::Concrete: return 816;
-        default:                 return 256;
+        case Material::Plastic:       return 256;
+        case Material::SmoothPlastic: return 272;
+        case Material::Neon:          return 288;
+        case Material::Wood:          return 512;
+        case Material::Marble:        return 784;
+        case Material::Slate:         return 800;
+        case Material::Concrete:      return 816;
+        case Material::Granite:       return 832;
+        case Material::Brick:         return 848;
+        case Material::Cobblestone:   return 880;
+        case Material::DiamondPlate:  return 1056;
+        case Material::Foil:          return 1072;
+        case Material::Metal:         return 1088;
+        case Material::Grass:         return 1280;
+        case Material::Sand:          return 1296;
+        case Material::Fabric:        return 1312;
+        case Material::Ice:           return 1536;
+        case Material::Glass:         return 1568;
     }
+    return 256;
 }
 
 // Roblox attributes are stored as a small binary blob.
