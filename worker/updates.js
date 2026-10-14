@@ -22,6 +22,18 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'bricks-and-mortar', name: 'Bricks & Mortar', time: 1791853200, tag: 'Engine',
+    summary: 'Eleven new materials, each with its own look and feel: Brick, Cobblestone, Marble, Diamond Plate and more.',
+    items: [
+      'New materials: Sand, Grass, Brick, Fabric, Slate, Granite, Marble, Cobblestone, Foil, DiamondPlate and SmoothPlastic',
+      'Each one is drawn by the engine: bricks with mortar lined up with the part\'s edges, round cobbles, marble veins, granite speckles, woven fabric, crinkly foil and raised diamond plate stripes',
+      'They feel different too: Brick and Cobblestone are grippy, Marble is a bit slippery, the stones sink in water and Fabric floats',
+      'Pick them in Studio\'s Properties panel, or from a script with part.Material = Enum.Material.Marble (or "Marble")',
+      'A material name that doesn\'t exist now says which ones do',
+      'Imported Roblox places keep their Slate, Granite, Marble, Brick, Sand, Grass and other materials instead of turning into Concrete or Plastic',
+    ],
+  },
+  {
     id: 'push-the-big-red-button', name: 'Push the Big Red Button', time: 1791842400, tag: 'Engine',
     summary: 'ClickDetectors: put one in a part or model and players can click it to make things happen.',
     items: [
