@@ -1575,6 +1575,13 @@ int l_receipts(lua_State* L) {
     }
     return 1;
 }
+int l_testInput(lua_State* L) {
+    ScriptEngine* e = LuaApi::engine(L);
+    const std::string what = luaL_checkstring(L, 1);
+    const uint64_t part = lua_isnoneornil(L, 2) ? 0 : LuaApi::toInstanceId(L, 2);
+    lua_pushboolean(L, e->testInput && e->testInput(what, part));
+    return 1;
+}
 int l_receiptDone(lua_State* L) {
     LuaApi::engine(L)->receiptDone((int)luaL_checkinteger(L, 1), luaL_checkstring(L, 2), lua_toboolean(L, 3));
     return 0;
@@ -1965,6 +1972,8 @@ NavMesh::Agent checkAgent(lua_State* L, int idx) {
 }
 }
 
+bool ScriptEngine::testHooks = false;
+
 ScriptEngine::ScriptEngine(Scene* scene) : m_scene(scene) {}
 ScriptEngine::~ScriptEngine() { stop(); }
 
@@ -2044,6 +2053,7 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_receiptCheck", l_receiptCheck);
     lua_register(L, "__gb_receipts", l_receipts);
     lua_register(L, "__gb_receiptDone", l_receiptDone);
+    if (testHooks) lua_register(L, "__gb_testInput", l_testInput);
 
     LuaApi::pushInstance(L, m_scene->root()->id);
     lua_setglobal(L, "workspace");
