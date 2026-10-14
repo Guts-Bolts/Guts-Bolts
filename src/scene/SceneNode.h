@@ -272,10 +272,69 @@ inline MoverProps moverDefaults(MoverType t) {
 }
 
 // Surface look, à la Roblox materials — affects shading in the lit shader.
-enum class Material { Plastic, Metal, Neon, Wood, Glass, Concrete, Ice };
-inline constexpr int kMaterialCount = 7;
+// New ones go on the end: the number is what the network sends.
+enum class Material { Plastic, Metal, Neon, Wood, Glass, Concrete, Ice,
+                      Sand, Grass, Brick, Fabric, Slate, Granite, Marble, Cobblestone, Foil, DiamondPlate,
+                      SmoothPlastic };
+inline constexpr int kMaterialCount = 18;
 inline const char* const kMaterialNames[kMaterialCount] =
-    {"Plastic", "Metal", "Neon", "Wood", "Glass", "Concrete", "Ice"};
+    {"Plastic", "Metal", "Neon", "Wood", "Glass", "Concrete", "Ice",
+     "Sand", "Grass", "Brick", "Fabric", "Slate", "Granite", "Marble", "Cobblestone", "Foil", "DiamondPlate",
+     "SmoothPlastic"};
+// "Plastic, Metal, ... or SmoothPlastic": for error messages and hints.
+inline const char* materialNameList() {
+    static std::string list = [] {
+        std::string s;
+        for (int i = 0; i < kMaterialCount; ++i)
+            s += std::string(i == 0 ? "" : i == kMaterialCount - 1 ? " or " : ", ") + kMaterialNames[i];
+        return s;
+    }();
+    return list.c_str();
+}
+// A material by name (exact, like scripts), plus the few other Roblox names we draw
+// with one of ours. False if there's no such material.
+inline bool materialFromName(const std::string& s, Material& out) {
+    for (int i = 0; i < kMaterialCount; ++i)
+        if (s == kMaterialNames[i]) { out = (Material)i; return true; }
+    if (s == "CorrodedMetal")                { out = Material::Metal;    return true; }
+    if (s == "WoodPlanks")                   { out = Material::Wood;     return true; }
+    if (s == "Asphalt" || s == "Basalt" || s == "Limestone" || s == "Pavement" || s == "Sandstone" || s == "Rock")
+                                             { out = Material::Concrete; return true; }
+    if (s == "Pebble")                       { out = Material::Cobblestone; return true; }
+    if (s == "LeafyGrass")                   { out = Material::Grass;    return true; }
+    if (s == "Salt")                         { out = Material::Sand;     return true; }
+    if (s == "Glacier")                      { out = Material::Ice;      return true; }
+    return false;
+}
+// How heavy (1 = Plastic, floats half under in water), grippy (0-2) and bouncy (0-1)
+// each material is by default; a part's Density / Friction / Elasticity override it.
+// In proportion to Roblox's defaults, but on our scale (Metal is 3, not 7.85).
+struct MaterialPhysics { float density, friction, elasticity; };
+inline MaterialPhysics materialPhysics(Material m) {
+    switch (m) {
+        case Material::Metal:         return {3.0f, 0.35f, 0.15f};
+        case Material::Wood:          return {0.7f, 0.50f, 0.25f};
+        case Material::Glass:         return {2.5f, 0.25f, 0.20f};
+        case Material::Concrete:      return {2.4f, 0.70f, 0.10f};
+        case Material::Ice:           return {0.9f, 0.03f, 0.10f};
+        case Material::Neon:          return {1.0f, 0.40f, 0.20f};
+        case Material::Sand:          return {1.6f, 0.60f, 0.05f};
+        case Material::Grass:         return {1.2f, 0.55f, 0.10f};
+        case Material::Brick:         return {1.9f, 0.80f, 0.15f};
+        case Material::Fabric:        return {0.9f, 0.45f, 0.05f};
+        case Material::Slate:         return {2.7f, 0.55f, 0.20f};
+        case Material::Granite:       return {2.7f, 0.55f, 0.20f};
+        case Material::Marble:        return {2.6f, 0.30f, 0.17f};
+        case Material::Cobblestone:   return {2.7f, 0.65f, 0.17f};
+        case Material::Foil:          return {2.7f, 0.40f, 0.25f};
+        case Material::DiamondPlate:  return {3.0f, 0.55f, 0.25f};
+        case Material::SmoothPlastic: return {1.0f, 0.40f, 0.30f};
+        default:                      return {1.0f, 0.50f, 0.30f};   // Plastic
+    }
+}
+// The look the part shader draws (uMaterial): the first seven are the material's own
+// number; 7-9 are water, liquid and terrain, so the newer ones start at 10.
+inline int materialShaderId(Material m) { return (int)m < 7 ? (int)m : (int)m + 3; }
 
 // A custom value on an object, like Roblox Attributes (Properties panel >
 // Attributes, or part:SetAttribute("Coins", 5) in a script).

@@ -733,8 +733,8 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             bool found = false;
             for (int i = 0; i < kMaterialCount; ++i)
                 if (lower(kMaterialNames[i]) == lower(str("material"))) { n->material = (Material)i; found = true; }
-            if (!found) warnings.push_back("There's no material \"" + str("material") + "\" (there are Plastic, Metal, Neon, Wood, "
-                                           "Glass, Concrete, Ice); it stayed Plastic.");
+            if (!found) warnings.push_back("There's no material \"" + str("material") + "\" (there are " +
+                                           std::string(materialNameList()) + "); it stayed Plastic.");
         }
         n->anchored = args.value("anchored", false);
         n->canCollide = args.value("can_collide", true);
