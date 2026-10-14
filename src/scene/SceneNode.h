@@ -35,10 +35,12 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //   Value      — holds one value (IntValue, NumberValue, StringValue, BoolValue,
 //                Vector3Value, Color3Value); leaderstats are made of these
 //   Decal      — a picture on one side of the part it's inside
+//   ClickDetector — inside a part or model: players can click it (or tap it) to
+//                make something happen (buttons, levers, "click to buy" signs)
 //   Animation  — keyframes that pose a rig's parts (made in Studio's Animation
 //                Editor, played by scripts: humanoid:LoadAnimation(anim):Play())
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
-                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam };
+                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector };
 
 // A ProximityPrompt's settings (kind == Prompt; `enabled` switches it off).
 struct PromptProps {
@@ -49,6 +51,12 @@ struct PromptProps {
     float       range = 5.0f;          // MaxActivationDistance (Roblox's default 10 studs)
     bool        lineOfSight = true;    // RequiresLineOfSight: hidden behind walls
     bool        clickable = true;      // ClickablePrompt: can be clicked / tapped too
+};
+
+// A ClickDetector's settings (kind == ClickDetector).
+struct ClickProps {
+    float       range = 16.0f;   // MaxActivationDistance (Roblox's default 32 studs; 0 = can't be clicked)
+    std::string cursor;          // CursorIcon: a picture for the mouse pointer ("" = the hand)
 };
 
 // ColorSequence / NumberSequence: a colour or number that changes along something
@@ -341,6 +349,7 @@ public:
     bool        isLocal = false;          // LocalScript: runs on each player's computer, not the game's server
     bool        remoteFunction = false;   // (kind == Remote) a RemoteFunction, else a RemoteEvent
     PromptProps prompt;                   // (kind == Prompt)
+    ClickProps  click;                    // (kind == ClickDetector)
     HighlightProps highlight;             // (kind == Highlight)
     EffectProps effect;                   // (kind == Trail / Beam)
 
@@ -467,6 +476,7 @@ public:
     bool isRemote() const { return kind == NodeKind::Remote; }
     bool isPrompt() const { return kind == NodeKind::Prompt; }
     bool isHighlight() const { return kind == NodeKind::Highlight; }
+    bool isClickDetector() const { return kind == NodeKind::ClickDetector; }
     bool isEffect() const { return kind == NodeKind::Trail || kind == NodeKind::Beam; }
     bool hasForceField() const {
         for (auto& c : children) if (c->kind == NodeKind::ForceField) return true;

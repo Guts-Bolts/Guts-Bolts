@@ -129,7 +129,7 @@ const std::vector<Tool>& tools() {
         {"insert_object", "Create an object", "SCENE", false, false, false, Risk::Low,
          {"Creates a NEW object in the game and returns its object_id. kind is a class or a ready-made thing: Part, Sphere, "
           "Cylinder, Model, Folder, Script, LocalScript, ModuleScript, PointLight, SpotLight, Sound, SpawnLocation, "
-          "TrussPart, Seat, Water, WaterSource, Attachment, ProximityPrompt, Highlight, Trail, Beam, Tool, Decal, Rig, "
+          "TrussPart, Seat, Water, WaterSource, Attachment, ProximityPrompt, ClickDetector, Highlight, Trail, Beam, Tool, Decal, Rig, "
           "RemoteEvent, RemoteFunction, IntValue/NumberValue/StringValue/BoolValue, ScreenGui, Frame, TextLabel, TextButton, "
           "TextBox, ImageLabel, ScrollingFrame, BillboardGui, SurfaceGui, UICorner, UIStroke, UIListLayout, BodyVelocity, "
           "AlignPosition, VectorForce..., and ready-made things by name: \"Kill Brick\", \"Coin\", \"Jump Pad\", \"Exploding Barrel\", "
@@ -676,6 +676,9 @@ Only runs during a playtest (or a published game). Parts are ANCHORED by default
 COLLISION
 CanCollide decides whether things bump into a part. A character touching a part fires Touched even when its CanCollide is off (coins, checkpoints). Water parts and FluidVolumes are swum through.
 Collision groups (PhysicsService) decide which parts bump into which: every part has CollisionGroup ("Default" to start with); PhysicsService:RegisterCollisionGroup("Players") adds a group (32 at most, Default included), :CollisionGroupSetCollidable("Players", "Players", false) makes two groups pass through each other, :CollisionGroupsAreCollidable(a, b), :IsCollisionGroupRegistered, :GetRegisteredCollisionGroups, :RenameCollisionGroup, :UnregisterCollisionGroup. Unknown group names in SetCollidable are errors; a part in an unregistered group acts as Default. A character is in its HumanoidRootPart's group (set every BasePart of the character to be safe); the terrain is Default. Loose parts, character movement and RaycastParams.CollisionGroup all honour it; Touched still fires. "Players walk through each other" -> a Players group not collidable with itself. "A door only the red team can pass" -> RedDoor and RedTeam groups not collidable, the door part in RedDoor, red characters' parts in RedTeam. Groups are set up in Studio too (MODEL > Collision Groups) and saved with the place.
+
+CLICKING
+A ClickDetector inside a part (or a model: any part in it) lets players click it: buttons, levers, "click to buy" signs. Its events MouseClick, RightMouseClick, MouseHoverEnter and MouseHoverLeave pass the player; server Scripts get them in online games too, and the pointer turns into a hand over it. MaxActivationDistance is in units (default 16 = Roblox's 32 studs); CursorIcon is an optional pointer picture. Example: part.ClickDetector.MouseClick:Connect(function(player) ... end).
 
 NAVIGATION
 The navigation mesh (every floor a character can stand on) is baked from the anchored, solid parts and rebakes itself when they change. PathfindingService:Bake() (or the bake_navmesh tool) rebakes now; Studio's Navmesh view shows it. find_path tests a route. PathfindingLabel / PathfindingPassThrough attributes and path Costs work like Roblox's PathfindingModifier. The terrain counts as floor (its materials are the area names for Costs).

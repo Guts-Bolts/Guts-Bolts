@@ -40,6 +40,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
         case NodeKind::Light:  return n->lightType == LightType::Spot ? "SpotLight" : "PointLight";
@@ -287,6 +288,9 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                             (weld ? "Part0 / Part1" : "Attachment0 / Attachment1") + ", so it does nothing.",
                             std::string("Set ") + (weld ? "Part0 and Part1" : "Attachment0 and Attachment1") + " with set_property.");
             }
+            if (n->isClickDetector() && !inPart(n) && !(n->parent && n->parent->kind == NodeKind::Model && n->parent->parent))
+                add(n, "warning", "NOT_IN_PART", "A ClickDetector makes the part (or model) it's in clickable, but this one isn't inside either.",
+                    "set_property Parent to a part or model.");
             if (n->isEffect()) {
                 for (uint64_t ref : {n->effect.a0, n->effect.a1})
                     if (!ref || !m_scene->findById(ref))

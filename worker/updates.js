@@ -23,6 +23,17 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'push-the-big-red-button', name: 'Push the Big Red Button', time: 1791842400, tag: 'Engine',
+    summary: 'ClickDetectors: put one in a part or model and players can click it to make things happen.',
+    items: [
+      'Buttons, levers and "click to buy" signs: a ClickDetector fires MouseClick with the player who clicked',
+      'RightMouseClick, MouseHoverEnter and MouseHoverLeave too, and the pointer turns into a hand over it',
+      'Works in multiplayer: the server hears the click and checks the player is close enough',
+      'Tap it on a phone, or aim with a controller and press RT',
+      'Insert one from Studio\'s Insert Object window, and imported games keep theirs',
+    ],
+  },
+  {
     id: 'party-of-one-no-more', name: 'Party of One No More', time: 1791838800, tag: 'Studio',
     summary: 'Studio can test your game with 2, 3 or 4 players at once, all on your own computer, no friends needed.',
     items: [
