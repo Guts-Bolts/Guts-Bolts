@@ -50,6 +50,11 @@ enum class SignalKind : int {
     PromptHoldEnded,     // prompt.PromptButtonHoldEnded
     PromptShown,         // prompt.PromptShown    (inputType)  (on the computer it shows on)
     PromptHidden,        // prompt.PromptHidden   ()
+    // ClickDetectors (player): the computer it happened on, and the game's server
+    ClickMouseClick,     // detector.MouseClick       (player)
+    ClickRightClick,     // detector.RightMouseClick  (player)
+    ClickHoverEnter,     // detector.MouseHoverEnter  (player)
+    ClickHoverLeave,     // detector.MouseHoverLeave  (player)
 };
 
 namespace LuaApi {

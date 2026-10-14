@@ -522,6 +522,7 @@ private:
     bool        m_paused = false;
     bool        m_showSettings = false;
     bool        m_shiftLock = false;   // Roblox Shift Lock (Shift toggles it)
+    bool        m_padClick = false;    // a controller's RT held (it clicks ClickDetectors)
     int         m_menuTab = 0;         // in-game menu: 0 Players, 1 Settings, 2 Help
     int         m_menuConfirm = 0;     // 1 = "Reset character?", 2 = "Leave game?"
     int         m_frame = 0;
