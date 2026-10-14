@@ -113,6 +113,15 @@ void draw(ImDrawList* dl, ImVec2 c, float s, Id id, ImU32 tint) {
         dl->AddRect(ImVec2(c.x - s * 0.36f, c.y - s * 0.36f), ImVec2(c.x + s * 0.36f, c.y + s * 0.36f), rgb(60, 60, 70), s * 0.12f, 0, s * 0.07f);
         dl->AddText(nullptr, s * 0.55f, ImVec2(c.x - s * 0.15f, c.y - s * 0.3f), rgb(30, 30, 36), "E");
         break;
+    case Id::Click:   // a pointer clicking, with little lines round its tip
+        draw(dl, ImVec2(c.x + s * 0.1f, c.y + s * 0.1f), s * 0.8f, Id::Select, rgb(240, 240, 245));
+        for (int i = 0; i < 3; ++i) {
+            const float a = kPi * (1.0f + 0.25f * i);
+            const ImVec2 tip(c.x - s * 0.16f, c.y - s * 0.24f);
+            dl->AddLine(ImVec2(tip.x + std::cos(a) * s * 0.14f, tip.y + std::sin(a) * s * 0.14f),
+                        ImVec2(tip.x + std::cos(a) * s * 0.3f, tip.y + std::sin(a) * s * 0.3f), rgb(250, 200, 80), th);
+        }
+        break;
     case Id::Highlight:   // a cube, filled in and outlined
         dl->AddRectFilled(ImVec2(c.x - s * 0.3f, c.y - s * 0.3f), ImVec2(c.x + s * 0.3f, c.y + s * 0.3f), rgb(240, 70, 70), s * 0.06f);
         dl->AddRect(ImVec2(c.x - s * 0.38f, c.y - s * 0.38f), ImVec2(c.x + s * 0.38f, c.y + s * 0.38f), rgb(255, 255, 255), s * 0.1f, 0, s * 0.09f);
@@ -573,6 +582,7 @@ Id forNode(const SceneNode& n) {
         case NodeKind::Remote:     return Id::Remote;
         case NodeKind::Prompt:     return Id::Prompt;
         case NodeKind::Highlight:  return Id::Highlight;
+        case NodeKind::ClickDetector: return Id::Click;
         case NodeKind::Trail:
         case NodeKind::Beam:       return Id::Ribbon;
         case NodeKind::Light:      return Id::Light;

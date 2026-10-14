@@ -1036,6 +1036,11 @@ struct Converter {
             p.clickable = in.flag("ClickablePrompt", true);
             node->enabled = in.flag("Enabled", true);
             ++report.other;
+        } else if (c == "ClickDetector") {
+            node = std::make_unique<SceneNode>(name, NodeKind::ClickDetector);
+            node->click.range = std::max(0.0f, (float)in.num("MaxActivationDistance", 32.0) * kImportScale);
+            node->click.cursor = in.str("CursorIcon");   // (an rbxassetid:// picture won't load here, but is kept)
+            ++report.other;
         } else if (c == "Trail" || c == "Beam") {
             const bool beam = c == "Beam";
             node = std::make_unique<SceneNode>(name, beam ? NodeKind::Beam : NodeKind::Trail);
@@ -1447,6 +1452,7 @@ struct XmlWriter {
             case NodeKind::Remote:     cls = n.remoteFunction ? "RemoteFunction" : "RemoteEvent"; break;
             case NodeKind::Prompt:     cls = "ProximityPrompt"; break;
             case NodeKind::Highlight:  cls = "Highlight"; break;
+            case NodeKind::ClickDetector: cls = "ClickDetector"; break;
             case NodeKind::Trail:      cls = "Trail"; break;
             case NodeKind::Beam:       cls = "Beam"; break;
             case NodeKind::Light:      cls = n.lightType == LightType::Spot ? "SpotLight" : "PointLight"; break;
@@ -1524,6 +1530,10 @@ struct XmlWriter {
             token("DepthMode", n.highlight.onTop ? 0 : 1);
             refProp("Adornee", n.highlight.adornee);
             boolean("Enabled", n.enabled);
+            break;
+        case NodeKind::ClickDetector:
+            flt("MaxActivationDistance", n.click.range * kExportScale);
+            str("CursorIcon", n.click.cursor);
             break;
         case NodeKind::Prompt:
             str("ActionText", n.prompt.action);
