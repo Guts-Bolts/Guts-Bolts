@@ -109,6 +109,9 @@ class Animator {
 public:
     // Scripts: humanoid:LoadAnimation(anim) -> a track id (0 = no).
     int  load(uint64_t rigId, const SceneNode& animation);
+    // The same for keyframes that aren't in an Animation object (emotes): `name` is the track's Name.
+    int  loadClip(uint64_t rigId, const std::string& name, const Clip& clip);
+    void forget(int track) { m_tracks.erase(track); }   // done with it (it must have stopped)
     void play(int track, float fade, float weight, float speed);
     void stop(int track, float fade);
     void adjustSpeed(int track, float speed);

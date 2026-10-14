@@ -15,7 +15,7 @@ void TouchControls::begin(ImVec2 min, ImVec2 max, float scale) {
     m_dt = ImGui::GetIO().DeltaTime;
     m_look = ImVec2(0, 0);
     m_zoom = 0.0f;
-    m_tap = m_chat = m_menu = m_mic = false;
+    m_tap = m_chat = m_menu = m_mic = m_emote = false;
 }
 
 // The thumbstick stays put in the bottom-left corner (it doesn't jump to your thumb).
@@ -47,10 +47,18 @@ void TouchControls::micRect(ImVec2& a, ImVec2& b) const {
     b = ImVec2(a.x + (chatB.x - chatA.x), chatB.y);
 }
 
+void TouchControls::emoteRect(ImVec2& a, ImVec2& b) const {
+    const float s = 46 * m_scale;
+    const ImVec2 j = jumpCenter();
+    a = ImVec2(j.x - s * 0.5f, j.y - jumpRadius() - 18 * m_scale - s);
+    b = ImVec2(a.x + s, a.y + s);
+}
+
 void TouchControls::feed(const std::vector<Finger>& fingers, bool allowNew) {
-    ImVec2 chatA, chatB, menuA, menuB, micA, micB;
+    ImVec2 chatA, chatB, menuA, menuB, micA, micB, emoteA, emoteB;
     buttonRects(chatA, chatB, menuA, menuB);
     micRect(micA, micB);
+    emoteRect(emoteA, emoteB);
 
     // Fingers that lifted (or vanished).
     for (auto it = m_touches.begin(); it != m_touches.end();) {
@@ -64,6 +72,7 @@ void TouchControls::feed(const std::vector<Finger>& fingers, bool allowNew) {
             case Role::Chat: if (inRect(it->pos, chatA, chatB)) m_chat = true; break;
             case Role::Menu: if (inRect(it->pos, menuA, menuB)) m_menu = true; break;
             case Role::Mic:  if (inRect(it->pos, micA, micB)) m_mic = true; break;
+            case Role::Emote: if (inRect(it->pos, emoteA, emoteB)) m_emote = true; break;
             case Role::Stick: m_stickActive = false; break;
             default: break;
         }
@@ -90,6 +99,7 @@ void TouchControls::feed(const std::vector<Finger>& fingers, bool allowNew) {
         if (inRect(f.pos, menuA, menuB))                           t.role = Role::Menu;
         else if (inRect(f.pos, chatA, chatB))                      t.role = Role::Chat;
         else if (m_micShown && inRect(f.pos, micA, micB))          t.role = Role::Mic;
+        else if (m_emoteShown && inRect(f.pos, emoteA, emoteB))    t.role = Role::Emote;
         else if (dist(f.pos, jumpCenter()) < jumpRadius() * 1.25f) t.role = Role::Jump;
         else if (!m_stickActive && inStickZone(f.pos)) {
             t.role = Role::Stick;
@@ -186,6 +196,19 @@ void TouchControls::draw(ImDrawList* dl) const {
     dl->AddRectFilled(b0, b1, IM_COL32(255, 255, 255, 235), 5 * s);
     dl->AddTriangleFilled(ImVec2(b0.x + w * 0.12f, b1.y), ImVec2(b0.x + w * 0.3f, b1.y),
                           ImVec2(b0.x + w * 0.1f, b1.y + w * 0.14f), IM_COL32(255, 255, 255, 235));
+    if (m_emoteShown) {   // the emote menu's button: a smiley
+        ImVec2 ea, eb;
+        emoteRect(ea, eb);
+        dl->AddRectFilled(ea, eb, held(Role::Emote) ? IM_COL32(255, 255, 255, 110) : IM_COL32(0, 0, 0, 120), 8);
+        const ImVec2 c((ea.x + eb.x) * 0.5f, (ea.y + eb.y) * 0.5f);
+        const float fr = w * 0.3f;
+        const ImU32 col = IM_COL32(255, 255, 255, 235);
+        dl->AddCircle(c, fr, col, 24, 2.2f * s);
+        dl->AddCircleFilled(ImVec2(c.x - fr * 0.36f, c.y - fr * 0.25f), fr * 0.13f, col, 10);
+        dl->AddCircleFilled(ImVec2(c.x + fr * 0.36f, c.y - fr * 0.25f), fr * 0.13f, col, 10);
+        dl->PathArcTo(ImVec2(c.x, c.y + fr * 0.05f), fr * 0.55f, 0.35f, 2.79f, 12);
+        dl->PathStroke(col, 0, 2.2f * s);
+    }
     if (m_micShown) {   // voice chat's Talk button: a microphone, green while you're talking
         ImVec2 micA, micB;
         micRect(micA, micB);

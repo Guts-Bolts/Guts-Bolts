@@ -103,9 +103,13 @@ public:
     uint64_t   checkpoint() const { return m_checkpoint; }
     void       swingTool() { if (equippedTool()) m_toolSwing = kToolSwingTime; }   // the "use" animation
     // Emotes, like old Roblox's "/e dance": dance (dance1), dance2, dance3, laugh,
-    // cheer, wave, point. Dances go on until you move; the rest play once.
-    // False if there's no such emote (or you can't right now).
+    // cheer, wave, point (keyframes in Emotes.h), and the ones you equipped from the
+    // catalog (by name: "Jumping Jacks" or "jumpingjacks"). Dances go on until you move;
+    // the rest play once. They play as an AnimationTrack on your character, so everyone
+    // in the game sees them. False if there's no such emote (or you can't right now).
     bool       playEmote(const std::string& name);
+    // humanoid.Jump = true from a script: jump once, as if Space was pressed.
+    void       scriptJump() { m_scriptJump = true; }
     const std::string& emote() const { return m_emote; }
     // Knocked off your feet for `seconds` (tripped, flung): no control, the body
     // falls over and gets back up afterwards. 0 = get up now.
@@ -281,8 +285,17 @@ private:
     float m_seatCooldown = 0.0f;    // just got up: don't sit straight back down
     float m_sitBlend = 0.0f;        // 0 standing .. 1 sitting (the pose)
     std::string m_emote;            // playing now ("" = none)
+    bool  m_scriptJump = false;      // humanoid.Jump = true (next update)
+    int   m_emoteTrack = 0;          // its AnimationTrack (0 = the game's Animate script plays it)
+    std::vector<int> m_fadingTracks; // emotes letting go (forgotten once they have)
     uint64_t m_gripMade = 0;         // the tool we made a RightGrip for
-    float m_emoteTime = 0.0f, m_emoteBlend = 0.0f, m_idleTime = 0.0f;
+    float m_emoteTime = 0.0f, m_emoteLength = 0.0f, m_idleTime = 0.0f;
+    void  stopEmote(float fade);
+    // An animation pack (Emotes::mine().pack): which of its animations plays, and the one before.
+    std::string m_packState, m_packPrev;
+    float m_packTime = 0.0f, m_packPrevTime = 0.0f, m_packFade = 1.0f, m_packBlend = 0.0f;
+    std::vector<uint64_t> m_packMoved;   // parts it moved (put back next frame)
+    void  animationPack(const std::string& state, float dt, float groundSpeed);
     float m_airTime = 0.0f;          // how long we've been off the ground
     // Tripped / PlatformStand: the whole body tips over (pitch about the feet) and
     // spins when flung; then it gets back up.
@@ -292,6 +305,8 @@ private:
     struct CustomClip { size_t hash = 0; bool has = false; float time = 0.0f; };
     std::unordered_map<uint64_t, CustomClip> m_customClips;
     bool applyCustomAnimation(const char* state, float dt);
+    SceneNode* customAnimation(const char* state) const;   // the Animate script's Animation for it
+    bool hasCustomAnimation(const char* state) const;      // ... and it has keyframes
     void  sitStep(float dt, bool jump);   // while sitting: stay on the seat
     void  sitHereStep(float dt, bool jump);   // while sitting on the floor
     bool      m_sitHere = false;     // sitting on the floor (not a seat)

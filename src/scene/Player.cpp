@@ -9,6 +9,7 @@
 #include "../core/Paths.h"
 #include "Serializer.h"
 #include "Animation.h"
+#include "Emotes.h"
 #include "Movers.h"
 #include <fstream>
 #include <sstream>
@@ -449,7 +450,7 @@ void Player::respawn(bool firstSpawn) {
     m_seatId = 0;   // (off any seat)
     m_sitHere = m_sitPending = false;
     m_tilt = m_tiltVel = m_tripTime = m_getUp = 0.0f;   // back on your feet
-    m_emote.clear();
+    stopEmote(0.0f);
     m_humanoid.platformStand = false;
     SceneNode* r = root();
     if (!r) return;
@@ -803,7 +804,7 @@ void Player::sitDown() {
     m_sitHere = true;
     m_sitSpot = r->transform.position - glm::vec3(0.0f, m_stepShown, 0.0f);
     m_velocity = glm::vec3(0.0f);
-    m_emote.clear();
+    stopEmote(0.2f);
     footsteps(false, glm::vec3(0.0f));
 }
 
@@ -1004,7 +1005,8 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     // Knocked over (tripped, flung) or PlatformStand: the controls do nothing.
     const bool knocked = tripped();
     const glm::vec3 moveDir = knocked ? glm::vec3(0.0f) : moveIn;
-    const bool jump = knocked ? false : jumpIn;
+    const bool jump = knocked ? false : (jumpIn || m_scriptJump);
+    m_scriptJump = false;
     if (knocked && sitting()) standUp(false);
 
     if (m_dead) { updateDeath(dt, physics); return; }
@@ -1328,7 +1330,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
             m_tilt += m_tiltVel * dt;
         }
         m_getUp = 0.0f;
-        m_emote.clear();
+        stopEmote(0.2f);
     } else if (m_tilt != 0.0f) {
         m_tilt = std::remainder(m_tilt, 360.0f);
         m_getUp += dt;   // GettingUp
@@ -1387,73 +1389,48 @@ BodyPose mix(const BodyPose& a, const BodyPose& b, float t) {
     return r;
 }
 
-// The emotes. `t` = seconds since it started. Old Roblox's moves, give or take.
-BodyPose emotePose(const std::string& e, float t, float& headPitch, float& headTurn) {
-    BodyPose p;
-    const float w = t * 6.0f;
-    if (e == "dance") {          // the classic: arms pumping up and down in turn, legs kicking
-        p[0] = {-90.0f + 75.0f * std::sin(w), 15.0f};
-        p[1] = {-90.0f - 75.0f * std::sin(w), 15.0f};
-        p[2] = {-28.0f * std::max(0.0f, std::sin(w)), 0.0f};
-        p[3] = {-28.0f * std::max(0.0f, -std::sin(w)), 0.0f};
-        headTurn = 12.0f * std::sin(w * 0.5f);
-    } else if (e == "dance2") {  // arms out flapping, side steps
-        p[0] = {-10.0f, 75.0f + 30.0f * std::sin(w)};
-        p[1] = {-10.0f, 75.0f - 30.0f * std::sin(w)};
-        p[2] = {0.0f, 12.0f * std::max(0.0f, std::sin(w))};
-        p[3] = {0.0f, 12.0f * std::max(0.0f, -std::sin(w))};
-        headPitch = 6.0f * std::sin(w * 2.0f);
-    } else if (e == "dance3") {  // disco: point up with one arm, then the other
-        const bool right = std::fmod(t, 1.0f) < 0.5f;
-        p[0] = right ? LimbPose{-20.0f, 10.0f} : LimbPose{-165.0f, 25.0f};
-        p[1] = right ? LimbPose{-165.0f, 25.0f} : LimbPose{-20.0f, 10.0f};
-        p[2] = {right ? -20.0f : 0.0f, 0.0f};
-        p[3] = {right ? 0.0f : -20.0f, 0.0f};
-        headTurn = right ? 15.0f : -15.0f;
-    } else if (e == "laugh") {   // holding your belly, shaking
-        const float shake = 4.0f * std::sin(t * 24.0f);
-        p[0] = {-35.0f + shake, -18.0f};
-        p[1] = {-35.0f - shake, -18.0f};
-        headPitch = -18.0f + 6.0f * std::sin(t * 24.0f);
-    } else if (e == "cheer") {   // both arms up, pumping
-        const float pump = 22.0f * std::abs(std::sin(t * 7.0f));
-        p[0] = {-165.0f + pump, 18.0f};
-        p[1] = {-165.0f + pump, 18.0f};
-        headPitch = -10.0f;
-    } else if (e == "wave") {    // right hand up by your head, waving
-        p[1] = {-150.0f, 30.0f + 25.0f * std::sin(t * 10.0f)};
-    } else if (e == "point") {   // right arm straight out in front
-        p[1] = {-90.0f, 0.0f};
-    }
-    return p;
-}
-
-// How long the one-off emotes last (dances go on until you move).
-float emoteLength(const std::string& e) {
-    if (e == "laugh" || e == "cheer") return 2.2f;
-    if (e == "wave" || e == "point") return 2.0f;
-    return 0.0f;
-}
-
 const char* const kAnimNames[] = {"idle", "walk", "run", "jump", "fall", "climb", "sit", "toolnone",
                                   "dance", "dance2", "dance3", "laugh", "cheer", "wave", "point", "swim"};
 } // namespace
 
 bool Player::playEmote(const std::string& name) {
-    std::string e = name;
-    for (char& c : e) c = (char)std::tolower((unsigned char)c);
-    if (e == "dance1") e = "dance";
+    const std::string e = Emotes::normalize(name);
     if (e == "sit") {   // sit down right here (like Humanoid.Sit = true)
         if (m_dead || sitting() || m_climbing || m_swimming || tripped() || !m_grounded) return false;
         sitDown();
         return true;
     }
-    if (e != "dance" && e != "dance2" && e != "dance3" && e != "laugh" && e != "cheer" && e != "wave" && e != "point")
-        return false;
+    // The built-in emotes, then the ones you equipped from the catalog.
+    std::shared_ptr<const Anim::Clip> clip;
+    std::string title = e;
+    if (const Emotes::Emote* b = Emotes::findBuiltIn(e)) { clip = b->clip; title = b->title; }
+    else
+        for (const Emotes::Slot& s : Emotes::mine().slots)
+            if (s.clip && Emotes::normalize(s.name) == e) { clip = s.clip; title = s.name; break; }
+    if (!clip || clip->keys.empty()) return false;
     if (m_dead || sitting() || m_climbing || m_swimming || tripped() || !m_grounded) return false;
+    stopEmote(0.15f);
+    if (equippedTool()) equip(0);   // (an emote needs both hands: the tool goes back in the backpack)
     m_emote = e;
     m_emoteTime = 0.0f;
+    m_emoteLength = clip->loop ? 0.0f : clip->length();
+    // It plays like a script's AnimationTrack (so everyone sees it, and scripts can find it in
+    // Animator:GetPlayingAnimationTracks()), unless the game's Animate script has its own.
+    if (!hasCustomAnimation(e.c_str())) {
+        Anim::Animator& an = m_scene->animator();
+        m_emoteTrack = an.loadClip(m_rootId, title, *clip);
+        an.play(m_emoteTrack, 0.2f, 1.0f, 1.0f);
+    }
     return true;
+}
+
+void Player::stopEmote(float fade) {
+    m_emote.clear();
+    if (!m_emoteTrack) return;
+    Anim::Animator& an = m_scene->animator();
+    if (an.valid(m_emoteTrack)) an.stop(m_emoteTrack, fade);
+    m_fadingTracks.push_back(m_emoteTrack);   // forgotten once it has faded out
+    m_emoteTrack = 0;
 }
 
 void Player::trip(float seconds, const glm::vec3& spin) {
@@ -1506,14 +1483,24 @@ void Player::addAnimateScript(Scene& scene, SceneNode* rig) {
     scene.markDirty();
 }
 
-bool Player::applyCustomAnimation(const char* state, float dt) {
+SceneNode* Player::customAnimation(const char* state) const {
     SceneNode* r = root();
     SceneNode* animate = r ? r->findChild("Animate") : nullptr;
-    if (!animate || !animate->enabled) return false;
+    if (!animate || !animate->enabled) return nullptr;
     SceneNode* v = animate->findChild(state);
-    if (!v) return false;
-    SceneNode* anim = nullptr;
-    for (auto& c : v->children) if (c->isAnimation()) { anim = c.get(); break; }
+    if (!v) return nullptr;
+    for (auto& c : v->children) if (c->isAnimation()) return c.get();
+    return nullptr;
+}
+
+bool Player::hasCustomAnimation(const char* state) const {
+    SceneNode* anim = customAnimation(state);
+    return anim && Anim::parse(anim->source).length() > 0.0f;
+}
+
+bool Player::applyCustomAnimation(const char* state, float dt) {
+    SceneNode* r = root();
+    SceneNode* anim = customAnimation(state);
     if (!anim) return false;
     CustomClip& cc = m_customClips[anim->id];
     const size_t h = std::hash<std::string>{}(anim->source);
@@ -1548,11 +1535,19 @@ void Player::animate(float dt, float groundSpeed, bool grounded) {
     // Emotes stop when you move, jump, sit or climb; the short ones end by themselves.
     if (!m_emote.empty()) {
         m_emoteTime += dt;
-        const float len = emoteLength(m_emote);
-        if (groundSpeed > 0.5f || !grounded || sitting() || m_climbing || m_swimming || tripped() || (len > 0.0f && m_emoteTime > len))
-            m_emote.clear();
+        if (groundSpeed > 0.5f || !grounded || sitting() || m_climbing || m_swimming || tripped())
+            stopEmote(0.2f);
+        else if (m_emoteTrack) {   // played to the end (or a script stopped it)
+            const Anim::Animator::Track* t = m_scene->animator().track(m_emoteTrack);
+            if (!t || !t->playing || t->target <= 0.0f) stopEmote(0.1f);
+        } else if (m_emoteLength > 0.0f && m_emoteTime > m_emoteLength) stopEmote(0.1f);   // (the game's own one)
     }
-    m_emoteBlend = approach(m_emoteBlend, m_emote.empty() ? 0.0f : 1.0f, 10.0f, dt);
+    for (auto it = m_fadingTracks.begin(); it != m_fadingTracks.end();) {
+        const Anim::Animator::Track* t = m_scene->animator().track(*it);
+        if (t && t->playing) { ++it; continue; }
+        if (t) m_scene->animator().forget(*it);
+        it = m_fadingTracks.erase(it);
+    }
 
     // Which animation this is (the names in the Animate script).
     const char* state = "idle";
@@ -1605,17 +1600,6 @@ void Player::animate(float dt, float groundSpeed, bool grounded) {
     m_sitBlend = approach(m_sitBlend, sitting() ? 1.0f : 0.0f, 14.0f, dt);
     const BodyPose sitPose = {{{-45.0f, 0.0f}, m_holdBlend > 0.5f ? pose[1] : LimbPose{-45.0f, 0.0f}, {-90.0f, 0.0f}, {-90.0f, 0.0f}}};
     pose = mix(pose, sitPose, m_sitBlend);
-    // Emotes.
-    float headPitch = 0.0f, headTurn = 0.0f;
-    if (m_emoteBlend > 0.001f) {
-        static std::string last;
-        if (!m_emote.empty()) last = m_emote;
-        BodyPose e = emotePose(last, m_emoteTime, headPitch, headTurn);
-        if (m_holdBlend > 0.5f) e[1] = pose[1];   // keep holding the tool
-        pose = mix(pose, e, m_emoteBlend);
-        headPitch *= m_emoteBlend;
-        headTurn *= m_emoteBlend;
-    }
     // Knocked over: stiff as a board, arms a little out.
     const float down = std::clamp(std::abs(m_tilt) / 90.0f, 0.0f, 1.0f);
     if (down > 0.01f) {
@@ -1641,8 +1625,69 @@ void Player::animate(float dt, float groundSpeed, bool grounded) {
     }
     if (SceneNode* head = part("Head")) {
         auto it = m_rest.find(head->id);
-        if (it != m_rest.end()) head->transform.rotation = it->second.rotation + glm::vec3(headPitch, headTurn, 0.0f);
+        if (it != m_rest.end()) head->transform.rotation = it->second.rotation;
     }
+    animationPack(m_emote.empty() ? state : "idle", dt, groundSpeed);
+}
+
+// An animation pack from the catalog: its idle / walk / run / jump / fall play instead of
+// the classic ones (a game's own Animate script animations still win). Changing from one
+// to the next blends over a moment; walking and running keep time with your real speed.
+void Player::animationPack(const std::string& state, float dt, float groundSpeed) {
+    SceneNode* r = root();
+    // What the pack moved last frame that the walk cycle doesn't put back (the Torso) goes back first.
+    for (uint64_t id : m_packMoved)
+        if (SceneNode* n = m_scene->findById(id))
+            if (auto it = m_rest.find(id); it != m_rest.end()) {
+                n->transform.position = it->second.position;
+                n->transform.rotation = it->second.rotation;
+            }
+    m_packMoved.clear();
+    const Emotes::Pack& pack = Emotes::mine().pack;
+    if (!r || pack.empty()) { m_packBlend = 0.0f; m_packState.clear(); return; }
+    std::string want = state;
+    if (want == "run" && !pack.count("run")) want = "walk";
+    if (want == "fall" && !pack.count("fall")) want = "jump";
+    const bool use = !tripped() && pack.count(want);
+    m_packBlend = approach(m_packBlend, use ? 1.0f : 0.0f, 10.0f, dt);
+    if (use && want != m_packState) {
+        m_packPrev = m_packState;
+        m_packPrevTime = m_packTime;
+        m_packState = want;
+        m_packTime = 0.0f;
+        m_packFade = m_packPrev.empty() ? 1.0f : 0.0f;
+    }
+    if (m_packState.empty() || m_packBlend < 0.001f) return;
+    float rate = 1.0f;
+    if (m_packState == "walk" || m_packState == "run")
+        rate = std::clamp(groundSpeed / std::max(1.0f, m_humanoid.walkSpeed * (m_packState == "run" ? 1.6f : 1.0f)), 0.3f, 2.5f);
+    m_packTime += dt * rate;
+    m_packPrevTime += dt;
+    m_packFade = std::min(1.0f, m_packFade + dt / 0.2f);
+    auto sampleAt = [&](const std::string& st, float t, std::map<std::string, Anim::Sample>& out) {
+        out.clear();
+        auto it = pack.find(st);
+        if (it == pack.end()) return;
+        const Anim::Clip& c = *it->second;
+        const float len = c.length();
+        Anim::sample(c, len <= 0.0f ? 0.0f : c.loop ? std::fmod(t, len) : std::min(t, len), out);
+    };
+    std::map<std::string, Anim::Sample> poses, before;
+    sampleAt(m_packState, m_packTime, poses);
+    if (m_packFade < 1.0f && !m_packPrev.empty()) {   // blend over from the last one
+        sampleAt(m_packPrev, m_packPrevTime, before);
+        for (const auto& [n, b] : before) if (!poses.count(n)) poses[n] = Anim::Sample{};
+        for (auto& [n, s] : poses) {
+            auto b = before.find(n);
+            const Anim::Sample from = b == before.end() ? Anim::Sample{} : b->second;
+            s.pos = glm::mix(from.pos, s.pos, m_packFade);
+            s.rot = glm::slerp(from.rot, s.rot, m_packFade);
+        }
+    }
+    if (m_holdBlend > 0.5f) poses.erase("Right Arm");   // keep holding the tool
+    Anim::applyPoses(r, m_rest, poses, m_packBlend);
+    for (const auto& [n, s] : poses)
+        if (SceneNode* p = Anim::findPart(r, n); p && !isLimb(p) && p->name != "Head") m_packMoved.push_back(p->id);
 }
 
 void Player::startDeath() {

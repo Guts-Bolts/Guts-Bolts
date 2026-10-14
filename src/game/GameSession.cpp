@@ -19,6 +19,7 @@ void GameSession::start() {
     m_scene->particles().clear();
     m_scene->blasts().clear();
     m_scene->camera() = ScriptCamera{};   // workspace.CurrentCamera starts fresh: Custom, following you
+    m_scene->coreGui() = CoreGuiState{};  // the emote menu and the rest are back on
     if (Player* p = m_scene->player()) p->beginPlay();
     m_running = true;
     // Sounds marked "Autoplay" (e.g. background music) start with the game.

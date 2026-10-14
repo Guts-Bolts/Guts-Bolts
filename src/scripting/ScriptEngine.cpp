@@ -1036,6 +1036,13 @@ local function quietService(name)
     made[name] = s
     return s
 end
+-- GuiService: the emote menu can be opened and closed from scripts (the rest is quiet).
+do
+    local emotesMenu = __gb_emotesMenu
+    local gs = quietService("GuiService")
+    rawset(gs, "SetEmotesMenuOpen", function(_, open) emotesMenu(open and true or false) end)
+    rawset(gs, "GetEmotesMenuOpen", function() return emotesMenu() end)
+end
 local function findService(name)
     if name == "StarterGui" then return __gb_uiFolder() end
     if storageNames[name] then return storage(name) end
@@ -1205,7 +1212,7 @@ __gb_noLocalPlayer = nil
 __gb_heartbeat, __gb_inputBegan, __gb_inputEnded, __gb_isKeyDown, __gb_padState = nil, nil, nil, nil, nil
 __gb_playerAdded, __gb_playerRemoving, __gb_tagAdded, __gb_tagRemoved = nil, nil, nil, nil
 __gb_playerNode, __gb_setRespawn, __gb_dsStart, __gb_dsDone, __gb_dsSet, __gb_navPath, __gb_navQuery = nil, nil, nil, nil, nil, nil, nil
-__gb_camOpt, __gb_setCamOpt = nil, nil
+__gb_camOpt, __gb_setCamOpt, __gb_emotesMenu = nil, nil, nil
 __gb_awardBadge, __gb_hasBadge, __gb_teleport, __gb_joinData = nil, nil, nil, nil
 __gb_raycast, __gb_storage, __gb_addMethod = nil, nil, nil
 __gb_passLookup, __gb_passReady, __gb_passOwns, __gb_passPrompt, __gb_passResults = nil, nil, nil, nil, nil
@@ -1622,6 +1629,17 @@ CameraOptions* cameraOptionsOf(lua_State* L, const std::string& player, bool for
         }
     return forWriting ? nullptr : &scene.world().playerCamera;
 }
+// GuiService:SetEmotesMenuOpen(open) / GetEmotesMenuOpen() (see the prelude). With no
+// argument it just says whether the emote menu is open; it can't open while a game has
+// turned it off (StarterGui:SetCoreGuiEnabled) or there's no character.
+int l_emotesMenu(lua_State* L) {
+    ScriptEngine* e = LuaApi::engine(L);
+    CoreGuiState& g = e->scene()->coreGui();
+    if (lua_gettop(L) >= 1)
+        g.emotesOpen = lua_toboolean(L, 1) && g.enabled("EmotesMenu") && !e->noLocalPlayer() && e->scene()->player();
+    lua_pushboolean(L, g.emotesOpen);
+    return 1;
+}
 int l_camOpt(lua_State* L) {
     const CameraOptions* o = cameraOptionsOf(L, luaL_checkstring(L, 1), false);
     const std::string k = luaL_checkstring(L, 2);
@@ -2025,6 +2043,7 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_playerNode", l_playerNode);
     lua_register(L, "__gb_setRespawn", l_setRespawn);
     lua_register(L, "__gb_camOpt", l_camOpt);
+    lua_register(L, "__gb_emotesMenu", l_emotesMenu);
     lua_register(L, "__gb_setCamOpt", l_setCamOpt);
     lua_register(L, "__gb_dsStart", l_dsStart);
     lua_register(L, "__gb_dsDone", l_dsDone);

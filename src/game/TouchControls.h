@@ -7,7 +7,7 @@
 // On-screen controls for phones and tablets, laid out like Roblox mobile:
 //   - a thumbstick on the left (it appears wherever your thumb lands),
 //   - a big jump button on the right,
-//   - Chat and Menu buttons along the top,
+//   - Chat and Menu buttons along the top, an Emotes button over the jump button,
 //   - drag anywhere else to turn the camera, pinch to zoom, tap to click.
 // Fingers come in through feed(). On a computer, feedMouse() turns the mouse
 // into one finger so you can try the controls without a phone.
@@ -36,11 +36,14 @@ public:
     // Voice chat's Talk button (next to Chat): tap to start talking, tap again to stop.
     void      setMic(bool shown, bool on) { m_micShown = shown; m_micOn = on; }
     bool      micPressed() const { return m_mic; }
+    // The emote menu's button (a smiley, above the jump button), when the game allows it.
+    void      setEmoteShown(bool shown) { m_emoteShown = shown; }
+    bool      emotePressed() const { return m_emote; }
     // True while a finger is on the controls (so the game ignores that mouse press).
     bool      busy() const { return !m_touches.empty(); }
 
 private:
-    enum class Role { Stick, Jump, Look, Chat, Menu, Mic };
+    enum class Role { Stick, Jump, Look, Chat, Menu, Mic, Emote };
     struct Touch {
         int    id;
         Role   role;
@@ -54,6 +57,7 @@ private:
     bool   inStickZone(ImVec2 p) const;
     void   buttonRects(ImVec2& chatA, ImVec2& chatB, ImVec2& menuA, ImVec2& menuB) const;
     void   micRect(ImVec2& a, ImVec2& b) const;
+    void   emoteRect(ImVec2& a, ImVec2& b) const;
 
     ImVec2 m_min{0, 0}, m_max{0, 0};
     std::vector<std::pair<ImVec2, ImVec2>> m_blocked;
@@ -73,4 +77,5 @@ private:
     ImVec2    m_tapPos{0, 0};
     bool      m_chat = false, m_menu = false, m_mic = false;
     bool      m_micShown = false, m_micOn = false;
+    bool      m_emote = false, m_emoteShown = false;
 };
