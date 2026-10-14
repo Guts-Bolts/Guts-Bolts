@@ -412,7 +412,7 @@ What you can use:
   `Material`, `Shape`, `Anchored`, `CanCollide`, `Velocity`
 - **Values:** `Vector3.new`, `Color3.new` / `fromRGB` / `fromHSV` / `fromHex`, `CFrame.new` / `Angles` / `lookAt`
 - **Time:** `wait(seconds)`, `spawn(fn)`, `delay(seconds, fn)`, `time()`, `tick()`
-- **Events:** `part.Touched`, `part.Clicked`, `RunService.Heartbeat`, `UserInputService.InputBegan` / `InputEnded`,
+- **Events:** `part.Touched`, `part.Clicked`, `clickDetector.MouseClick` (see *ClickDetectors* below), `RunService.Heartbeat`, `UserInputService.InputBegan` / `InputEnded`,
   `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, each with `:Connect`, `:Once` and `:Wait`
 - **Players:** `game.Players.LocalPlayer.Character`, `Players:GetPlayers()`, `humanoid.Health` / `WalkSpeed` /
   `JumpPower` / `:TakeDamage(n)`, `character:BreakJoints()`
@@ -774,6 +774,35 @@ end)
   hears every prompt in the game at once.
 - In a multiplayer game the server checks the player really is close before
   `Triggered` fires.
+
+### ClickDetectors
+
+A **ClickDetector** inside a part lets players click it: buttons, levers,
+"click to buy" signs (Insert Object > Characters & Tools > ClickDetector, with the
+part selected). Put one inside a model and every part in the model is clickable.
+The mouse pointer turns into a hand over it, and clicking fires `MouseClick` with
+the player who clicked:
+
+```lua
+local button = script.Parent
+button.ClickDetector.MouseClick:Connect(function(player)
+    button.Color = Color3.fromRGB(0, 200, 0)
+    print(player.Name .. " pressed the button")
+end)
+```
+
+- `RightMouseClick`, `MouseHoverEnter` and `MouseHoverLeave` work the same way
+  (each passes the player).
+- `MaxActivationDistance` is how close the player's character has to be (16, the
+  same as Roblox's 32 studs; 0 = it can't be clicked). `CursorIcon` is an optional
+  picture to show instead of the hand.
+- Server Scripts hear clicks in multiplayer games too (the server checks the
+  player really is close enough), and LocalScripts hear their own player's.
+- On a touch screen, tap the part. With a controller, aim the middle of the screen
+  at it and press RT.
+- Like Roblox, it doesn't react while the player is holding a tool (the click
+  uses the tool). `part.Clicked` still works for any part, with or without one.
+- Roblox places (.rbxl / .rbxm) keep their ClickDetectors when you import them.
 
 ### Highlights
 

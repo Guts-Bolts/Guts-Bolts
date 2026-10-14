@@ -8,6 +8,7 @@ class SceneNode;
 struct Environment;
 struct GuiProps;
 struct PromptProps;
+struct ClickProps;
 struct HighlightProps;
 struct EffectProps;
 struct JointProps;
@@ -29,6 +30,9 @@ void                       guiFromJson(GuiProps& g, const nlohmann::json& j);
 // A ProximityPrompt's settings (and whether it's on), the same way.
 nlohmann::json             promptToJson(const PromptProps& p, bool enabled);
 void                       promptFromJson(const nlohmann::json& j, PromptProps& p, bool& enabled);
+// A ClickDetector's settings, the same way.
+nlohmann::json             clickToJson(const ClickProps& c);
+void                       clickFromJson(const nlohmann::json& j, ClickProps& c);
 // A Highlight's settings (and whether it's on), the same way.
 nlohmann::json             highlightToJson(const HighlightProps& h, bool enabled);
 void                       highlightFromJson(const nlohmann::json& j, HighlightProps& h, bool& enabled);
