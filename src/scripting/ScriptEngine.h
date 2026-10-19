@@ -60,6 +60,8 @@ public:
     void fireFocusLost(uint64_t id, bool enter);        // textBox.FocusLost(enterPressed)
     // A ProximityPrompt event (SignalKind::Prompt*), by the player with this UserId (0 = ours).
     void firePrompt(SignalKind kind, uint64_t promptId, int userId = 0);
+    // A ClickDetector event (SignalKind::Click*), by the player with this UserId (0 = ours).
+    void fireClickDetector(SignalKind kind, uint64_t detectorId, int userId = 0);
     void firePropertyChanged(uint64_t id, const char* property);   // obj.Changed(property) (a TextBox's Text...)
     void fireAnimationEvents();                         // AnimationTracks: Stopped, KeyframeReached...
     // DataStoreService's saved data for this game (a file in the player's account folder).
@@ -158,6 +160,11 @@ public:
     // On a joined player's computer our own character has different ids from the
     // server's copy of it: these swap them (unset: ids are the same everywhere).
     std::function<uint64_t(uint64_t)> idToServer, idFromServer;
+    // Tests only (the app was started with --test-command): pretend the player pointed at or
+    // clicked a part. Lua: __gb_testInput("hover" | "click" | "right" | "pad", part). Returns
+    // whether it was on something clickable. Unset (and no __gb_testInput) otherwise.
+    static bool testHooks;
+    std::function<bool(const std::string& what, uint64_t part)> testInput;
 
     GuiState& gui() { return m_gui; }
     void setPlayerName(const std::string& n) { m_playerName = n; }

@@ -404,6 +404,15 @@ bool readBinary(const std::vector<uint8_t>& data, Document& doc) {
                 }
                 break;
             }
+            case 0x17: {                                           // NumberRange: min, max (kept like a Vector2)
+                for (size_t i = 0; i < n && !r.bad; ++i) {
+                    Value v; v.kind = Value::Vec2;
+                    const float lo = r.f32(), hi = r.f32();
+                    v.q = {lo, hi, 0, 0};
+                    set(i, v);
+                }
+                break;
+            }
             case 0x1A: {                                           // Color3uint8
                 const uint8_t* R = r.take(n); const uint8_t* G = r.take(n); const uint8_t* B = r.take(n);
                 if (!R || !G || !B) break;
@@ -606,6 +615,12 @@ void readXmlItem(const XmlNode& x, Inst* parent, Document& doc, std::map<std::st
                 v.kind = Value::UDim; v.q = {fnum(p->child("S")), fnum(p->child("O")), 0, 0};
             } else if (t == "Vector2") {
                 v.kind = Value::Vec2; v.q = {fnum(p->child("X")), fnum(p->child("Y")), 0, 0};
+            } else if (t == "NumberRange") {   // "min max" (kept like a Vector2)
+                v.kind = Value::Vec2;
+                char* end = nullptr;
+                const float lo = std::strtof(text.c_str(), &end);
+                const float hi = end && *end ? std::strtof(end, nullptr) : lo;
+                v.q = {lo, hi, 0, 0};
             } else if (t == "Color3") {
                 v.kind = Value::Color;
                 if (p->child("R")) v.v = {fnum(p->child("R")), fnum(p->child("G")), fnum(p->child("B"))};
@@ -685,29 +700,54 @@ bool readFile(const std::string& path, Document& doc) {
 // Roblox objects -> Guts and Bolts objects
 // ===========================================================================
 
+// Roblox's Enum.Material numbers. The ones we have are kept as they are; the rest get
+// the closest look we do have.
 Material materialFromRoblox(int m) {
     switch (m) {
+        case 272:                                    return Material::SmoothPlastic;
         case 288:                                    return Material::Neon;
-        case 512: case 528:                          return Material::Wood;
-        case 1040: case 1056: case 1072: case 1088:  return Material::Metal;
-        case 1536: case 1552:                        return Material::Ice;
+        case 512: case 528:                          return Material::Wood;          // Wood, WoodPlanks
+        case 784:                                    return Material::Marble;
+        case 800:                                    return Material::Slate;
+        case 832:                                    return Material::Granite;
+        case 848:                                    return Material::Brick;
+        case 864: case 880:                          return Material::Cobblestone;   // Pebble, Cobblestone
+        case 1056:                                   return Material::DiamondPlate;
+        case 1072:                                   return Material::Foil;
+        case 1040: case 1088:                        return Material::Metal;         // CorrodedMetal, Metal
+        case 1280: case 1284:                        return Material::Grass;         // Grass, LeafyGrass
+        case 1296: case 1392:                        return Material::Sand;          // Sand, Salt
+        case 1312:                                   return Material::Fabric;
+        case 1536: case 1552:                        return Material::Ice;           // Ice, Glacier
         case 1568:                                   return Material::Glass;
-        case 784: case 788: case 800: case 816: case 820: case 832: case 836: case 848:
-        case 864: case 880: case 896: case 912: case 1376:
+        // Basalt, Concrete, Limestone, Pavement, Rock, Sandstone, Asphalt
+        case 788: case 816: case 820: case 836: case 896: case 912: case 1376:
                                                      return Material::Concrete;
         default:                                     return Material::Plastic;
     }
 }
 int materialToRoblox(Material m) {
     switch (m) {
-        case Material::Neon:     return 288;
-        case Material::Wood:     return 512;
-        case Material::Metal:    return 1088;
-        case Material::Ice:      return 1536;
-        case Material::Glass:    return 1568;
-        case Material::Concrete: return 816;
-        default:                 return 256;
+        case Material::Plastic:       return 256;
+        case Material::SmoothPlastic: return 272;
+        case Material::Neon:          return 288;
+        case Material::Wood:          return 512;
+        case Material::Marble:        return 784;
+        case Material::Slate:         return 800;
+        case Material::Concrete:      return 816;
+        case Material::Granite:       return 832;
+        case Material::Brick:         return 848;
+        case Material::Cobblestone:   return 880;
+        case Material::DiamondPlate:  return 1056;
+        case Material::Foil:          return 1072;
+        case Material::Metal:         return 1088;
+        case Material::Grass:         return 1280;
+        case Material::Sand:          return 1296;
+        case Material::Fabric:        return 1312;
+        case Material::Ice:           return 1536;
+        case Material::Glass:         return 1568;
     }
+    return 256;
 }
 
 // BrickColor numbers (TeamColor) -> colours: the common ones; anything else is Medium stone grey.
@@ -1116,6 +1156,11 @@ struct Converter {
             p.clickable = in.flag("ClickablePrompt", true);
             node->enabled = in.flag("Enabled", true);
             ++report.other;
+        } else if (c == "ClickDetector") {
+            node = std::make_unique<SceneNode>(name, NodeKind::ClickDetector);
+            node->click.range = std::max(0.0f, (float)in.num("MaxActivationDistance", 32.0) * kImportScale);
+            node->click.cursor = in.str("CursorIcon");   // (an rbxassetid:// picture won't load here, but is kept)
+            ++report.other;
         } else if (c == "Trail" || c == "Beam") {
             const bool beam = c == "Beam";
             node = std::make_unique<SceneNode>(name, beam ? NodeKind::Beam : NodeKind::Trail);
@@ -1150,6 +1195,70 @@ struct Converter {
                 e.minLength = (float)in.num("MinLength", 0.1) * kImportScale;
                 e.maxLength = (float)in.num("MaxLength", 0.0) * kImportScale;
                 numSeq("WidthScale", e.widthScale, 0.0f, 100.0f);
+            }
+            node->enabled = in.flag("Enabled", true);
+            ++report.other;
+        } else if (c == "ParticleEmitter" || c == "Fire" || c == "Smoke" || c == "Sparkles") {
+            node = std::make_unique<SceneNode>(name, NodeKind::Particles);
+            ParticleType type = ParticleType::ParticleEmitter;
+            for (int i = 0; i < kParticleTypeCount; ++i) if (c == kParticleClassNames[i]) type = (ParticleType)i;
+            ParticleProps& p = node->particle;
+            p = particleDefaults(type);
+            auto color = [&](const char* key, glm::vec3 fb) {
+                const Value* v = in.get(key);
+                return v && v->kind == Value::Color ? glm::clamp(v->v, 0.0f, 1.0f) : fb;
+            };
+            auto range = [&](const char* key, glm::vec2 fb, float scale) {
+                const Value* v = in.get(key);
+                if (v && v->kind == Value::Vec2) return glm::vec2(v->q.x, std::max(v->q.x, v->q.y)) * scale;
+                if (v && v->kind == Value::Num) return glm::vec2((float)v->n) * scale;
+                return fb * scale;
+            };
+            auto numSeq = [&](const char* key, std::vector<NumberKey>& out, float lo, float hi, float scale) {
+                const Value* v = in.get(key);
+                if (!v || v->kind != Value::NumSeq || v->seq.size() < 2) { for (NumberKey& k : out) k.v *= scale; return; }
+                out.clear();
+                for (size_t k = 0; k + 2 <= v->seq.size(); k += 2)
+                    out.push_back({std::clamp(v->seq[k], 0.0f, 1.0f), std::clamp(v->seq[k + 1] * scale, lo, hi)});
+            };
+            switch (type) {
+                case ParticleType::Fire:
+                    p.color1 = color("Color", p.color1);
+                    p.color2 = color("SecondaryColor", p.color2);
+                    p.fxSize = std::clamp((float)in.num("size_xml", in.num("Size", 5.0)) * kImportScale, 2.0f, 30.0f);
+                    p.rise   = std::clamp((float)in.num("heat_xml", in.num("Heat", 9.0)) * kImportScale, -25.0f, 25.0f);
+                    break;
+                case ParticleType::Smoke:
+                    p.color1  = color("Color", p.color1);
+                    p.opacity = std::clamp((float)in.num("opacity_xml", in.num("Opacity", 0.5)), 0.0f, 1.0f);
+                    p.fxSize  = std::clamp((float)in.num("size_xml", in.num("Size", 1.0)) * kImportScale, 0.1f, 100.0f);
+                    p.rise    = std::clamp((float)in.num("riseVelocity_xml", in.num("RiseVelocity", 1.0)) * kImportScale, -25.0f, 25.0f);
+                    break;
+                case ParticleType::Sparkles:
+                    p.color1 = color("SparkleColor", color("Color", p.color1));
+                    break;
+                default: {
+                    p.rate     = std::clamp((float)in.num("Rate", 20.0), 0.0f, 1e6f);
+                    p.lifetime = glm::clamp(range("Lifetime", p.lifetime, 1.0f), 0.0f, 1000.0f);
+                    p.speed    = range("Speed", p.speed, kImportScale);
+                    if (const Value* v = in.get("SpreadAngle"); v && v->kind == Value::Vec2) p.spread = {v->q.x, v->q.y};
+                    p.rotation = range("Rotation", p.rotation, 1.0f);
+                    p.rotSpeed = range("RotSpeed", p.rotSpeed, 1.0f);
+                    if (const Value* v = in.get("Color"); v && v->kind == Value::ColorSeq && v->seq.size() >= 4) {
+                        p.color.clear();
+                        for (size_t k = 0; k + 4 <= v->seq.size(); k += 4)
+                            p.color.push_back({std::clamp(v->seq[k], 0.0f, 1.0f), glm::clamp(glm::vec3(v->seq[k + 1], v->seq[k + 2], v->seq[k + 3]), 0.0f, 1.0f)});
+                    }
+                    numSeq("Size", p.size, 0.0f, 1000.0f, kImportScale);
+                    numSeq("Transparency", p.transparency, 0.0f, 1.0f, 1.0f);
+                    p.texture = particleTexture(in.str("Texture", "rbxasset://textures/particles/sparkles_main.dds"));
+                    p.lightEmission = std::clamp((float)in.num("LightEmission", 0.0), 0.0f, 1.0f);
+                    if (const Value* v = in.get("Acceleration"); v && v->kind == Value::Vec3) p.acceleration = v->v * kImportScale;
+                    p.drag = std::clamp((float)in.num("Drag", 0.0), -100.0f, 100.0f);
+                    p.direction = (Face)std::clamp((int)in.num("EmissionDirection", 1.0), 0, 5);   // NormalId: Right, Top, Back, Left, Bottom, Front
+                    p.locked = in.flag("LockedToPart", false);
+                    break;
+                }
             }
             node->enabled = in.flag("Enabled", true);
             ++report.other;
@@ -1533,8 +1642,10 @@ struct XmlWriter {
             case NodeKind::Remote:     cls = n.remoteFunction ? "RemoteFunction" : "RemoteEvent"; break;
             case NodeKind::Prompt:     cls = "ProximityPrompt"; break;
             case NodeKind::Highlight:  cls = "Highlight"; break;
+            case NodeKind::ClickDetector: cls = "ClickDetector"; break;
             case NodeKind::Trail:      cls = "Trail"; break;
             case NodeKind::Beam:       cls = "Beam"; break;
+            case NodeKind::Particles:  cls = n.particleClass(); break;
             case NodeKind::Light:      cls = n.lightType == LightType::Spot ? "SpotLight" : "PointLight"; break;
             case NodeKind::Sound:      cls = "Sound"; break;
             case NodeKind::Attachment: cls = "Attachment"; break;
@@ -1603,6 +1714,56 @@ struct XmlWriter {
             boolean("Enabled", n.enabled);
             break;
         }
+        case NodeKind::Particles: {
+            const ParticleProps& p = n.particle;
+            boolean("Enabled", n.enabled);
+            if (p.type == ParticleType::Fire) {
+                color3("Color", p.color1);
+                color3("SecondaryColor", p.color2);
+                flt("size_xml", std::clamp(p.fxSize * kExportScale, 2.0f, 30.0f));
+                flt("heat_xml", std::clamp(p.rise * kExportScale, -25.0f, 25.0f));
+                break;
+            }
+            if (p.type == ParticleType::Smoke) {
+                color3("Color", p.color1);
+                flt("opacity_xml", p.opacity);
+                flt("riseVelocity_xml", std::clamp(p.rise * kExportScale, -25.0f, 25.0f));
+                flt("size_xml", std::clamp(p.fxSize * kExportScale, 0.1f, 100.0f));
+                break;
+            }
+            if (p.type == ParticleType::Sparkles) { color3("SparkleColor", p.color1); break; }
+            auto range = [&](const char* name, glm::vec2 r) { o << "<NumberRange name=\"" << name << "\">" << r.x << " " << r.y << " </NumberRange>\n"; };
+            auto seq = [&](const char* name, const std::vector<NumberKey>& keys, float scale) {
+                std::ostringstream c;
+                for (const NumberKey& k : keys) c << k.t << " " << k.v * scale << " 0 ";
+                o << "<NumberSequence name=\"" << name << "\">" << c.str() << "</NumberSequence>\n";
+            };
+            flt("Rate", p.rate);
+            range("Lifetime", p.lifetime);
+            range("Speed", p.speed * kExportScale);
+            vec2("SpreadAngle", p.spread);
+            range("Rotation", p.rotation);
+            range("RotSpeed", p.rotSpeed);
+            {
+                std::ostringstream c;
+                for (const ColorKey& k : p.color) c << k.t << " " << k.c.r << " " << k.c.g << " " << k.c.b << " 0 ";
+                o << "<ColorSequence name=\"Color\">" << c.str() << "</ColorSequence>\n";
+            }
+            seq("Size", p.size, kExportScale);
+            seq("Transparency", p.transparency, 1.0f);
+            // The built-in looks as Roblox's own particle pictures; anything else as it is.
+            const std::string tex = p.texture == "fire"  ? "rbxasset://textures/particles/fire_main.dds"
+                                  : p.texture == "smoke" ? "rbxasset://textures/particles/smoke_main.dds"
+                                  : p.texture.empty() || p.texture == "sparkle" ? "rbxasset://textures/particles/sparkles_main.dds"
+                                  : p.texture;
+            o << "<Content name=\"Texture\"><url>" << esc(tex) << "</url></Content>\n";
+            flt("LightEmission", p.lightEmission);
+            vec3("Acceleration", p.acceleration * kExportScale);
+            flt("Drag", p.drag);
+            token("EmissionDirection", (int)p.direction);
+            boolean("LockedToPart", p.locked);
+            break;
+        }
         case NodeKind::Highlight:
             color3("FillColor", n.highlight.fill);
             color3("OutlineColor", n.highlight.outline);
@@ -1611,6 +1772,10 @@ struct XmlWriter {
             token("DepthMode", n.highlight.onTop ? 0 : 1);
             refProp("Adornee", n.highlight.adornee);
             boolean("Enabled", n.enabled);
+            break;
+        case NodeKind::ClickDetector:
+            flt("MaxActivationDistance", n.click.range * kExportScale);
+            str("CursorIcon", n.click.cursor);
             break;
         case NodeKind::Prompt:
             str("ActionText", n.prompt.action);

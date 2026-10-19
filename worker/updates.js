@@ -10,7 +10,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'pick-a-side', name: 'Pick a Side', time: 1791849600, tag: 'Engine',
+    id: 'pick-a-side', name: 'Pick a Side', time: 1792381691, tag: 'Engine',
     summary: 'Teams get their own spawns, models know their main part, and scripts can be written the newer way with += and continue.',
     items: [
       'SpawnLocations can belong to a team: players spawn on their team\'s spawns, and some can switch your team when you step on them',
@@ -19,6 +19,41 @@ export const BUILT_IN_UPDATES = [
       'Scripts can set a part\'s density, grip and bounce all at once, and the physics really use them',
       'Text can be made bold with one switch (Bold)',
       'Every script can use +=, continue, types and {name} strings, and errors still point at the right line',
+    ],
+  },
+  {
+    id: 'ember-and-ash', name: 'Ember & Ash', time: 1792380179, tag: 'Engine',
+    summary: 'Particle effects you can place: ParticleEmitter, Fire, Smoke and Sparkles, seen by everyone in the game.',
+    items: [
+      'Insert a ParticleEmitter into any part (Insert Object > Particles) and it starts spraying, even while you build',
+      'Set its Rate, Lifetime, Speed, Spread, Color, Size, Transparency, glow, gravity, drag and spin in Properties or from scripts',
+      'Scripts can call Emit(50) for a burst or Clear() to wipe them, and NumberRange.new is new for these',
+      'Classic Fire, Smoke and Sparkles: drop one in a part and it just works',
+      'Every player sees them in online games, and a huge Rate can\'t freeze the game (there\'s a cap)',
+      'Particles come across when you import .rbxl and .rbxm files, and go back out when you export',
+    ],
+  },
+  {
+    id: 'bricks-and-mortar', name: 'Bricks & Mortar', time: 1791853200, tag: 'Engine',
+    summary: 'Eleven new materials, each with its own look and feel: Brick, Cobblestone, Marble, Diamond Plate and more.',
+    items: [
+      'New materials: Sand, Grass, Brick, Fabric, Slate, Granite, Marble, Cobblestone, Foil, DiamondPlate and SmoothPlastic',
+      'Each one is drawn by the engine: bricks with mortar lined up with the part\'s edges, round cobbles, marble veins, granite speckles, woven fabric, crinkly foil and raised diamond plate stripes',
+      'They feel different too: Brick and Cobblestone are grippy, Marble is a bit slippery, the stones sink in water and Fabric floats',
+      'Pick them in Studio\'s Properties panel, or from a script with part.Material = Enum.Material.Marble (or "Marble")',
+      'A material name that doesn\'t exist now says which ones do',
+      'Imported Roblox places keep their Slate, Granite, Marble, Brick, Sand, Grass and other materials instead of turning into Concrete or Plastic',
+    ],
+  },
+  {
+    id: 'push-the-big-red-button', name: 'Push the Big Red Button', time: 1791842400, tag: 'Engine',
+    summary: 'ClickDetectors: put one in a part or model and players can click it to make things happen.',
+    items: [
+      'Buttons, levers and "click to buy" signs: a ClickDetector fires MouseClick with the player who clicked',
+      'RightMouseClick, MouseHoverEnter and MouseHoverLeave too, and the pointer turns into a hand over it',
+      'Works in multiplayer: the server hears the click and checks the player is close enough',
+      'Tap it on a phone, or aim with a controller and press RT',
+      'Insert one from Studio\'s Insert Object window, and imported games keep theirs',
     ],
   },
   {

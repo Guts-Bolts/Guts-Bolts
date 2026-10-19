@@ -178,6 +178,7 @@ void Editor::render(float dt) {
     }
     buildDockspace();
     if (!m_playing) m_animEditor->update(dt, m_viewport->gizmoInUse());   // show the rig posed
+    if (!m_playing) m_scene->particles().runEmitters(*m_scene, dt);       // particle effects show while you edit too
     m_viewport->render(dt);
     // Files dragged from the computer onto Studio.
     if (auto dropped = AppWindow::takeDroppedFiles(); !dropped.empty()) importFiles(dropped, ImGui::GetMousePos(), true);
@@ -1093,6 +1094,14 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         }
         put(std::make_unique<SceneNode>("ProximityPrompt", NodeKind::Prompt));
     }
+    else if (what == "ClickDetector") {
+        // It goes on the part (or model) players click.
+        if (!parent || parent == m_scene->root() || (!parent->isPart() && parent->kind != NodeKind::Model)) {
+            Log::warn("Select a part or model first: a ClickDetector goes inside the thing players click.");
+            return;
+        }
+        put(std::make_unique<SceneNode>("ClickDetector", NodeKind::ClickDetector));
+    }
     else if (what == "Highlight") {
         // It colours what it's in (a part or a model).
         if (!parent || parent == m_scene->root() || (!parent->isPart() && parent->kind != NodeKind::Model)) {
@@ -1121,6 +1130,16 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         } else {
             Log::warn("Put a " + what + " inside a part: it runs between Attachments (set them in Properties).");
         }
+        put(std::move(fx));
+    }
+    else if (auto pt = std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), what); pt != std::end(kParticleClassNames)) {
+        // Particles come out of the part (or Attachment) they're in.
+        if (!parent || (!parent->isPart() && !parent->isAttachment())) {
+            Log::warn("Select a part first: a " + what + " goes inside the part (or Attachment) it comes out of.");
+            return;
+        }
+        auto fx = std::make_unique<SceneNode>(what, NodeKind::Particles);
+        fx->particle = particleDefaults((ParticleType)(pt - std::begin(kParticleClassNames)));
         put(std::move(fx));
     }
     else if (what == "RemoteEvent" || what == "RemoteFunction") {
@@ -1260,7 +1279,8 @@ const std::vector<InsertItem>& insertItems() {
         {"Part", Icons::Id::Part}, {"Sphere", Icons::Id::Sphere}, {"Cylinder", Icons::Id::Cylinder},
         {"MeshPart", Icons::Id::Mesh}, {"SpawnLocation", Icons::Id::Part}, {"TrussPart", Icons::Id::Part}, {"Seat", Icons::Id::Part}, {"Water", Icons::Id::Part}, {"FluidVolume", Icons::Id::Part}, {"WaterSource", Icons::Id::Part}, {"FluidSystem", Icons::Id::Value}, {"FluidEmitter", Icons::Id::Sound}, {"Model", Icons::Id::Model}, {"Folder", Icons::Id::Folder},
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
-        {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
+        {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"ClickDetector", Icons::Id::Click}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
+        {"ParticleEmitter", Icons::Id::Particles}, {"Fire", Icons::Id::Particles}, {"Smoke", Icons::Id::Particles}, {"Sparkles", Icons::Id::Particles},
         {"PointLight", Icons::Id::Light}, {"SpotLight", Icons::Id::Light}, {"Sound", Icons::Id::Sound},
         {"Attachment", Icons::Id::Attachment},
         {"BodyVelocity", Icons::Id::Constraint}, {"BodyPosition", Icons::Id::Constraint}, {"BodyGyro", Icons::Id::Constraint},

@@ -5,6 +5,7 @@
 #include "../core/Paths.h"
 #include "../game/Badges.h"
 #include "../game/GameSession.h"
+#include "../game/ClickDetectors.h"
 #include "../game/Profile.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
@@ -201,8 +202,10 @@ std::string nodeState(const SceneNode* n) {
     if (!extra.empty()) return std::string(buf) + extra;   // (parts and models: none of the kinds below)
     if (n->isGui()) return std::string(buf) + Serializer::guiToJson(n->gui).dump();   // text, colours, sizes...
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
+    if (n->isClickDetector()) return std::string(buf) + Serializer::clickToJson(n->click).dump();
     if (n->isHighlight()) return std::string(buf) + Serializer::highlightToJson(n->highlight, n->enabled).dump();
     if (n->isEffect()) return std::string(buf) + Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam).dump();
+    if (n->isParticles()) return std::string(buf) + Serializer::particleToJson(n->particle, n->enabled).dump();
     return buf;
 }
 
@@ -213,9 +216,11 @@ json nodeUpdate(const SceneNode* n) {
             {"rg", n->range}, {"sa", n->spotAngle}};
     if (n->isGui()) u["gui"] = Serializer::guiToJson(n->gui);
     if (n->isPrompt()) u["pr"] = Serializer::promptToJson(n->prompt, n->enabled);
+    if (n->isClickDetector()) u["cd"] = Serializer::clickToJson(n->click);
     if (n->isHighlight()) u["hl"] = Serializer::highlightToJson(n->highlight, n->enabled);
     if (n->isEffect()) u["fx"] = Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam);
     u.update(nodeExtras(n));
+    if (n->isParticles()) u["px"] = Serializer::particleToJson(n->particle, n->enabled);
     return u;
 }
 
@@ -241,9 +246,11 @@ void applyUpdate(SceneNode* n, const json& u) {
         n->gui.absPos = absPos; n->gui.absSize = absSize;
     }
     if (n->isPrompt() && u.contains("pr") && u["pr"].is_object()) Serializer::promptFromJson(u["pr"], n->prompt, n->enabled);
+    if (n->isClickDetector() && u.contains("cd") && u["cd"].is_object()) Serializer::clickFromJson(u["cd"], n->click);
     if (n->isHighlight() && u.contains("hl") && u["hl"].is_object()) Serializer::highlightFromJson(u["hl"], n->highlight, n->enabled);
     if (n->isEffect() && u.contains("fx") && u["fx"].is_object()) Serializer::effectFromJson(u["fx"], n->effect, n->enabled);
     applyExtras(n, u);
+    if (n->isParticles() && u.contains("px") && u["px"].is_object()) Serializer::particleFromJson(u["px"], n->particle, n->enabled, true);
 }
 
 glm::vec3 spawnPoint(Scene& scene) {
@@ -469,10 +476,10 @@ std::string charEffects(Scene& scene, SceneNode* root) {
         SceneNode* n = stack.back();
         stack.pop_back();
         for (auto& c : n->children) {
-            if (!c->isHighlight() && !c->isEffect()) { stack.push_back(c.get()); continue; }
+            if (!c->isHighlight() && !c->isEffect() && !c->isParticles()) { stack.push_back(c.get()); continue; }
             json e = {{"in", pathIn(root, n)}, {"n", Serializer::nodeToString(*c)}};
             if (c->isHighlight()) ref(e, "a", "w", c->highlight.adornee);
-            else { ref(e, "a0", "w0", c->effect.a0); ref(e, "a1", "w1", c->effect.a1); }
+            else if (c->isEffect()) { ref(e, "a0", "w0", c->effect.a0); ref(e, "a1", "w1", c->effect.a1); }
             list.push_back(e);
         }
     }
@@ -500,6 +507,8 @@ struct NetServer::Client {
     std::map<uint64_t, std::string> fxSent;     // the Highlights / Trails / Beams on each character, as last sent
     double      remoteBudget = 60.0;  // RemoteEvent messages they may still send (refills over time)
     double      remoteAt = 0.0;
+    double      clickBudget = 20.0;   // ClickDetector messages they may still send (refills over time)
+    double      clickAt = 0.0;
     bool        voiceOn = false;      // they turned voice chat on (they hear others and may talk)
     double      voiceBudget = 40.0;   // voice packets they may still send (about 17 a second while talking)
     double      voiceAt = 0.0;
@@ -1003,6 +1012,31 @@ void NetServer::handle(Client& c, const std::string& text) {
         m_session->scripts().setJoinerEvent(true);
         m_session->scripts().firePrompt(k->second, id, c.id + 1);
         m_session->scripts().setJoinerEvent(false);
+    } else if (t == "clickdet") {   // they clicked (or pointed at) a ClickDetector's part (it must be near them)
+        const double now = clockNow();   // (at most about 20 a second; a burst of 20 is fine)
+        c.clickBudget = std::min(20.0, c.clickBudget + (now - c.clickAt) * 20.0);
+        c.clickAt = now;
+        if (c.clickBudget < 1.0) return;
+        c.clickBudget -= 1.0;
+        const uint64_t id = m.value("id", (uint64_t)0);
+        SceneNode* cd = m_scene->findById(id);
+        SceneNode* rig = m_scene->findById(c.rootId);
+        if (!cd || !cd->isClickDetector() || !rig) return;
+        const std::string what = m.value("do", std::string());
+        static const std::map<std::string, SignalKind> kinds = {
+            {"c", SignalKind::ClickMouseClick}, {"r", SignalKind::ClickRightClick},
+            {"he", SignalKind::ClickHoverEnter}, {"hl", SignalKind::ClickHoverLeave}};
+        auto k = kinds.find(what);
+        if (k == kinds.end()) return;
+        // Clicking or pointing at it needs them alive and close enough (with some slack for lag);
+        // the pointer leaving it always counts.
+        if (what != "hl") {
+            if (!rc || !rc->alive || cd->click.range <= 0.0f) return;
+            if (ClickDetectors::distance(cd, glm::vec3(rig->worldMatrix()[3])) > cd->click.range + 4.0f) return;
+        }
+        m_session->scripts().setJoinerEvent(true);
+        m_session->scripts().fireClickDetector(k->second, id, c.id + 1);
+        m_session->scripts().setJoinerEvent(false);
     } else if (t == "remote" || t == "invoke") {   // a LocalScript's FireServer / InvokeServer
         // At most about 60 a second each (a burst of 60 is fine), and 64 KB apiece.
         const double now = clockNow();
@@ -1285,6 +1319,7 @@ void NetClient::disconnect() {
         m_session->onGuiText = nullptr;
         m_session->onToolRequest = nullptr;
         m_session->onPrompt = nullptr;
+        m_session->onClickDetector = nullptr;
         m_session->scripts().idToServer = nullptr;
         m_session->scripts().idFromServer = nullptr;
         if (Player* p = m_scene->player()) p->clearTools();
@@ -1457,6 +1492,9 @@ void NetClient::handle(const std::string& text) {
         m_session->onPrompt = [this](uint64_t prompt, const char* what) {   // a ProximityPrompt: the host's scripts hear it
             if (m_conn && prompt < kLocalIdBase) m_conn->send(json{{"t", "prompt"}, {"id", prompt}, {"do", what}}.dump());
         };
+        m_session->onClickDetector = [this](uint64_t detector, const char* what) {   // a ClickDetector: the host's scripts hear it
+            if (m_conn && detector < kLocalIdBase) m_conn->send(json{{"t", "clickdet"}, {"id", detector}, {"do", what}}.dump());
+        };
         m_session->onToolRequest = [this](const std::string& what, uint64_t tool, bool down) {   // the host has our tools
             if (m_conn) m_conn->send(json{{"t", "tool"}, {"do", what}, {"id", tool}, {"down", down}}.dump());
         };
@@ -1611,7 +1649,7 @@ void NetClient::handle(const std::string& text) {
             if (!e.is_object()) continue;
             auto node = Serializer::nodeFromString(e.value("n", std::string()), true);
             SceneNode* in = findPath(root, e.value("in", std::string()));
-            if (!node || !in || (!node->isHighlight() && !node->isEffect())) continue;
+            if (!node || !in || (!node->isHighlight() && !node->isEffect() && !node->isParticles())) continue;
             node->children.clear();
             // What it points at, here.
             auto ref = [&](const char* inside, const char* world) -> uint64_t {
@@ -1623,7 +1661,7 @@ void NetClient::handle(const std::string& text) {
             if (node->isHighlight()) {
                 node->highlight.adornee = ref("a", "w");
                 if (node->highlight.adornee == root->id && in == root) node->highlight.adornee = 0;
-            } else {
+            } else if (node->isEffect()) {
                 node->effect.a0 = ref("a0", "w0");
                 node->effect.a1 = ref("a1", "w1");
             }

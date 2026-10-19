@@ -131,6 +131,7 @@ SceneRenderer::SceneRenderer() {
     m_hlMask      = std::make_unique<Shader>(highlightMaskVert, highlightMaskFrag);
     m_hl          = std::make_unique<Shader>(fullscreenVert, highlightFrag);
     m_ribbon      = std::make_unique<Shader>(ribbonVert, ribbonFrag);
+    m_sprite      = std::make_unique<Shader>(spriteVert, spriteFrag);
     m_fluidDepth  = std::make_unique<Shader>(fluidVert, fluidDepthFrag);
     m_fluidThick  = std::make_unique<Shader>(fluidVert, fluidThickFrag);
     m_fluidColor  = std::make_unique<Shader>(fluidVert, fluidColorFrag);
@@ -737,7 +738,7 @@ void SceneRenderer::drawConstraints(Scene& scene, bool editing) {
         m_lit->setMat4("uModel", m);
         m_lit->setMat3("uNormalMat", glm::transpose(glm::inverse(glm::mat3(m))));
         m_lit->setVec3("uColor", color);
-        m_lit->setInt("uMaterial", (int)mat);
+        m_lit->setInt("uMaterial", materialShaderId(mat));
         mesh.draw();
     };
     scene.forEach([&](SceneNode* n) {
@@ -1142,7 +1143,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         m_lit->setMat3("uNormalMat", nrm);
         m_lit->setVec3("uColor", node->color);
         m_lit->setBool("uSelected", node->selected);
-        m_lit->setInt("uMaterial", water ? 7 : (int)node->material);
+        m_lit->setInt("uMaterial", water ? 7 : materialShaderId(node->material));
         m_lit->setFloat("uAlpha", 1.0f - node->shownTransparency());
         m_lit->setFloat("uWetPart", wetPart(node));
         if (water) {
@@ -1337,8 +1338,82 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     }
 
     drawRibbons(scene, camera);
+    drawSprites(scene, camera);
     m_lit->bind();
     glDepthMask(GL_TRUE);
+}
+
+// ParticleEmitter / Fire / Smoke / Sparkles particles (ParticleSystem::runEmitters has
+// already moved them and worked out their looks): camera-facing squares, furthest first.
+void SceneRenderer::drawSprites(Scene& scene, const Camera& camera) {
+    const ParticleSystem& ps = scene.particles();
+    const std::vector<Sprite>& sprites = ps.sprites();
+    if (sprites.empty()) return;
+    const glm::mat4 view = camera.view();
+    std::vector<std::pair<float, const Sprite*>> order;
+    order.reserve(sprites.size());
+    for (const Sprite& s : sprites) {
+        if (s.alpha <= 0.003f || s.size <= 0.0f || tooFar(s.pos, s.size)) continue;
+        const float z = (view * glm::vec4(s.pos, 1.0f)).z;
+        if (z > s.size) continue;   // behind the camera
+        order.push_back({z, &s});
+    }
+    if (order.empty()) return;
+    std::sort(order.begin(), order.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    struct V { glm::vec3 c; glm::vec2 k; glm::vec4 col; glm::vec4 info; float seed; };
+    std::vector<V> verts;
+    verts.reserve(order.size() * 6);
+    const glm::vec2 corners[6] = {{-1, -1}, {1, -1}, {1, 1}, {-1, -1}, {1, 1}, {-1, 1}};
+    if (!m_spriteVao) {
+        glGenVertexArrays(1, &m_spriteVao);
+        glGenBuffers(1, &m_spriteVbo);
+        glBindVertexArray(m_spriteVao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_spriteVbo);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, c));
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, k));
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, col));
+        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, info));
+        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, seed));
+    }
+    const Environment& env = scene.environment();
+    const glm::vec3 light = glm::clamp(env.ambientColor * env.ambientIntensity +
+                                       env.sunColor * std::max(0.0f, env.sunIntensity) * std::max(env.sunDirection().y, 0.0f),
+                                       glm::vec3(0.05f), glm::vec3(1.2f));
+    m_sprite->bind();
+    m_sprite->setMat4("uView", view);
+    m_sprite->setMat4("uProj", camera.projection());
+    m_sprite->setVec3("uLight", light);
+    m_sprite->setInt("uTex", 5);
+    glBindVertexArray(m_spriteVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_spriteVbo);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    // Colours come out already multiplied by their alpha: a glowing one adds its light,
+    // a plain one covers what's behind it, and anything between.
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    // In runs that use the same picture (most use a built-in one: no picture at all).
+    size_t i = 0;
+    while (i < order.size()) {
+        const int tex = order[i].second->tex;
+        verts.clear();
+        for (; i < order.size() && order[i].second->tex == tex; ++i) {
+            const Sprite& s = *order[i].second;
+            const glm::vec4 col(s.color, std::clamp(s.alpha, 0.0f, 1.0f));
+            const glm::vec4 info(s.size * 0.5f, glm::radians(s.rot), (float)s.look, std::clamp(s.glow, 0.0f, 1.0f));
+            for (const glm::vec2& k : corners) verts.push_back({s.pos, k, col, info, s.seed});
+        }
+        const std::vector<std::string>& texNames = ps.spriteTextures();
+        const unsigned t = tex >= 0 && tex < (int)texNames.size() ? Textures::get(texNames[tex]) : 0;
+        if (t) bindTex(5, t);
+        m_sprite->setBool("uHasTex", t != 0);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(V)), verts.data(), GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    }
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(0);
 }
 
 namespace {

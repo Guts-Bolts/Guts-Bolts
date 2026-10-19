@@ -104,8 +104,7 @@ public:
     static float densityOf(const SceneNode* n);
     // A material's own density, friction and bounciness (what a part without
     // CustomPhysicalProperties uses). Friction and bounciness of a part: its own, else its material's.
-    struct MaterialPhysics { float density, friction, elasticity; };
-    static MaterialPhysics materialPhysics(Material m);
+    // (The material's own values: materialPhysics in SceneNode.h.)
     static float frictionOf(const SceneNode* n);
     static float elasticityOf(const SceneNode* n);
     static constexpr float kWaterDensity = 1.3f;

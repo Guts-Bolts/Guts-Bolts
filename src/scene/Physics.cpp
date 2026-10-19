@@ -205,18 +205,6 @@ float Physics::densityOf(const SceneNode* n) {
     if (n->density >= 0.0f) return std::max(0.01f, n->density);
     return materialPhysics(n->material).density;
 }
-
-Physics::MaterialPhysics Physics::materialPhysics(Material m) {
-    switch (m) {
-        case Material::Metal:    return {3.0f, 0.35f, 0.15f};
-        case Material::Wood:     return {0.7f, 0.50f, 0.25f};
-        case Material::Glass:    return {2.5f, 0.25f, 0.20f};
-        case Material::Concrete: return {2.4f, 0.70f, 0.10f};
-        case Material::Ice:      return {0.9f, 0.03f, 0.10f};
-        case Material::Neon:     return {1.0f, 0.40f, 0.20f};
-        default:                 return {1.0f, 0.50f, 0.30f};   // Plastic
-    }
-}
 float Physics::frictionOf(const SceneNode* n) { return n->friction >= 0.0f ? n->friction : materialPhysics(n->material).friction; }
 float Physics::elasticityOf(const SceneNode* n) { return n->elasticity >= 0.0f ? n->elasticity : materialPhysics(n->material).elasticity; }
 

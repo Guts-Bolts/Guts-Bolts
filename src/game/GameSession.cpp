@@ -4,6 +4,7 @@
 #include "../scripting/LuaApi.h"   // SignalKind (tool events)
 #include "../scene/Scene.h"
 #include "../scene/Player.h"
+#include "ClickDetectors.h"
 #include "../core/Audio.h"
 
 #include <imgui.h>
@@ -12,7 +13,19 @@
 #include <cmath>
 #include <vector>
 
-GameSession::GameSession(Scene* scene) : m_scene(scene), m_scripts(scene) { m_scripts.setPhysics(&m_physics); }
+GameSession::GameSession(Scene* scene) : m_scene(scene), m_scripts(scene) {
+    m_scripts.setPhysics(&m_physics);
+    if (ScriptEngine::testHooks)   // (tests: what the mouse would do)
+        m_scripts.testInput = [this](const std::string& what, uint64_t part) {
+            const bool on = reachableDetector(part) != nullptr;
+            if (what == "hover") return hoverPart(part);
+            if (what == "click") click(part);
+            else if (what == "right") rightClick(part);
+            else if (what == "pad") return clickDetector(part);
+            else return false;
+            return on;
+        };
+}
 
 void GameSession::start() {
     m_physics.reset();
@@ -285,6 +298,7 @@ void GameSession::stop() {
     m_scene->blasts().clear();
     m_scene->camera() = ScriptCamera{};
     m_running = false;
+    m_hoverDetector = 0;
 }
 
 void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swimLook) {
@@ -406,6 +420,9 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     const WorldSettings& ws = m_scene->world();
     m_scene->particles().setBlood(ws.bloodColor, ws.bloodAmount, ws.bloodStay);
     m_scene->particles().update(dt, m_scene->world().gravity, m_physics);
+    // ParticleEmitters, Fire, Smoke, Sparkles: every screen makes its own (a game server
+    // with no screen doesn't bother).
+    if (!Mesh::headless) m_scene->particles().runEmitters(*m_scene, dt);
     m_scene->blasts().update(dt, *m_scene, m_physics);   // explosions (the host pushes things; everyone sees them)
 
     // 4. Touched events (after everything has moved).
@@ -462,8 +479,54 @@ void GameSession::guiEvents(const std::vector<GameGui::Event>& events) {
     }
 }
 
+// The ClickDetector this part belongs to, if our character is close enough to click it.
+// Like Roblox, not while holding a tool (the click is the tool's).
+SceneNode* GameSession::reachableDetector(uint64_t partId) {
+    SceneNode* part = partId ? m_scene->findById(partId) : nullptr;
+    SceneNode* d = ClickDetectors::find(*m_scene, part);
+    if (!d || d->click.range <= 0.0f) return nullptr;
+    if (Player* p = m_runOnly ? nullptr : m_scene->player()) {
+        if (p->isDead() || !p->root() || p->equippedTool()) return nullptr;
+        if (ClickDetectors::distanceToPart(part, p->position()) > d->click.range) return nullptr;
+    }
+    return d;
+}
+
+// Here (our LocalScripts; and the game's Scripts when they run here) and, when we've
+// joined someone's game, the host (its Scripts).
+void GameSession::fireDetector(SignalKind kind, const char* what, uint64_t detector) {
+    if (m_role == Role::Client && onClickDetector) onClickDetector(detector, what);
+    m_scripts.fireClickDetector(kind, detector);
+}
+
+bool GameSession::hoverPart(uint64_t partId, std::string* cursor) {
+    SceneNode* d = m_running ? reachableDetector(partId) : nullptr;
+    const uint64_t now = d ? d->id : 0;
+    if (now != m_hoverDetector) {
+        if (m_hoverDetector && m_scene->findById(m_hoverDetector))
+            fireDetector(SignalKind::ClickHoverLeave, "hl", m_hoverDetector);
+        m_hoverDetector = now;
+        if (now) fireDetector(SignalKind::ClickHoverEnter, "he", now);
+    }
+    if (cursor) *cursor = d ? d->click.cursor : std::string();
+    return d != nullptr;
+}
+
+void GameSession::rightClick(uint64_t partId) {
+    if (!m_running) return;
+    if (SceneNode* d = reachableDetector(partId)) fireDetector(SignalKind::ClickRightClick, "r", d->id);
+}
+
+bool GameSession::clickDetector(uint64_t partId) {
+    if (!m_running) return false;
+    SceneNode* d = reachableDetector(partId);
+    if (d) fireDetector(SignalKind::ClickMouseClick, "c", d->id);
+    return d != nullptr;
+}
+
 void GameSession::click(uint64_t partId) {
     if (!m_running) return;
+    clickDetector(partId);
     if (m_role == Role::Client) {
         if (onClick && partId) onClick(partId);
         if (partId) m_scripts.fireClicked(partId);   // (our LocalScripts)

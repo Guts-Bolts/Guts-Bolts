@@ -64,11 +64,14 @@ const char* const kWords[] = {
     "ProximityPrompt", "ProximityPromptService", "Triggered", "TriggerEnded", "ActionText", "ObjectText",
     "KeyboardKeyCode", "HoldDuration", "MaxActivationDistance", "RequiresLineOfSight", "PromptButtonHoldBegan",
     "PromptButtonHoldEnded", "PromptShown", "PromptHidden", "ClickablePrompt",
+    "ClickDetector", "MouseClick", "RightMouseClick", "MouseHoverEnter", "MouseHoverLeave", "CursorIcon",
     "Highlight", "FillColor", "OutlineColor", "FillTransparency", "OutlineTransparency", "DepthMode",
     "HighlightDepthMode", "AlwaysOnTop", "Occluded", "Adornee",
     "Trail", "Beam", "Attachment0", "Attachment1", "ColorSequence", "ColorSequenceKeypoint", "NumberSequence",
     "NumberSequenceKeypoint", "Keypoints", "Lifetime", "MinLength", "MaxLength", "WidthScale", "LightEmission",
     "FaceCamera", "Width0", "Width1", "CurveSize0", "CurveSize1", "Segments", "TextureSpeed", "TextureLength", "TextureMode",
+    "ParticleEmitter", "Fire", "Smoke", "Sparkles", "Emit", "NumberRange", "Rate", "Speed", "SpreadAngle", "EmissionDirection",
+    "Acceleration", "Drag", "RotSpeed", "LockedToPart", "SecondaryColor", "Heat", "Opacity", "RiseVelocity", "SparkleColor",
 };
 
 bool wordChar(char c) { return std::isalnum((unsigned char)c) || c == '_'; }

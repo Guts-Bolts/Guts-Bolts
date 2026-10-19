@@ -39,14 +39,7 @@ struct ConnRef   { int index; };
 
 bool is(const char* a, const char* b) { return std::strcmp(a, b) == 0; }
 
-bool parseMaterial(const std::string& s, Material& out) {
-    for (int i = 0; i < kMaterialCount; ++i)
-        if (s == kMaterialNames[i]) { out = (Material)i; return true; }
-    if (s == "SmoothPlastic") { out = Material::Plastic; return true; }
-    if (s == "DiamondPlate" || s == "Foil" || s == "CorrodedMetal") { out = Material::Metal; return true; }
-    if (s == "WoodPlanks") { out = Material::Wood; return true; }
-    return false;
-}
+bool parseMaterial(const std::string& s, Material& out) { return materialFromName(s, out); }
 
 const char* shapeName(PrimitiveType t) {
     switch (t) {
@@ -108,8 +101,10 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
+        case NodeKind::Particles: return n->particleClass();
         case NodeKind::Light:  return n->lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::ForceField: return "ForceField";
         case NodeKind::Tool:       return "Tool";
@@ -1284,6 +1279,160 @@ int trail_Clear(lua_State* L) {
 }
 int noop(lua_State*) { return 0; }
 
+// --- ParticleEmitter / Fire / Smoke / Sparkles ---------------------------------------
+void pushNumberRange(lua_State* L, glm::vec2 r) {
+    lua_getglobal(L, "NumberRange");
+    lua_getfield(L, -1, "new");
+    lua_remove(L, -2);
+    lua_pushnumber(L, r.x);
+    lua_pushnumber(L, r.y);
+    lua_call(L, 2, 1);
+}
+// A NumberRange (or a plain number: the same both ends).
+glm::vec2 checkNumberRange(lua_State* L, int idx, float lo, float hi) {
+    glm::vec2 r;
+    if (lua_istable(L, idx)) {
+        lua_getfield(L, idx, "Min");
+        lua_getfield(L, idx, "Max");
+        if (!lua_isnumber(L, -2) || !lua_isnumber(L, -1)) luaL_error(L, "expected a NumberRange");
+        r = {(float)lua_tonumber(L, -2), (float)lua_tonumber(L, -1)};
+        lua_pop(L, 2);
+    } else {
+        if (!lua_isnumber(L, idx)) luaL_error(L, "expected a NumberRange (NumberRange.new(min, max)), got %s", luaL_typename(L, idx));
+        r = glm::vec2((float)lua_tonumber(L, idx));
+    }
+    r = glm::clamp(r, lo, hi);
+    if (r.y < r.x) std::swap(r.x, r.y);
+    return r;
+}
+// Enum.NormalId.Top / "Top" / 1 -> Face::Top
+bool parseFace(lua_State* L, int idx, Face& out) {
+    if (lua_type(L, idx) == LUA_TNUMBER) {
+        const int i = (int)lua_tointeger(L, idx);
+        if (i < 0 || i > 5) return false;
+        out = (Face)i;
+        return true;
+    }
+    std::string s = luaL_tolstring(L, idx, nullptr);
+    lua_pop(L, 1);
+    if (const size_t dot = s.rfind('.'); dot != std::string::npos) s = s.substr(dot + 1);
+    for (int i = 0; i < 6; ++i) if (s == kFaceNames[i]) { out = (Face)i; return true; }
+    return false;
+}
+// emitter:Emit(count = 16): that many particles at once (on every player's screen).
+int particle_Emit(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    if (!n->isParticles() || n->particle.type != ParticleType::ParticleEmitter)
+        return luaL_error(L, "Emit is a ParticleEmitter method (%s is a %s)", n->name.c_str(), className(L, n));
+    const double want = luaL_optnumber(L, 2, 16.0);
+    if (want != want) return luaL_error(L, "Emit needs a number of particles");
+    const int count = (int)std::clamp(want, 0.0, (double)kMaxSpritesPerEmitter);
+    n->particle.emits += count;
+    n->particle.pendingEmit = std::min(n->particle.pendingEmit + count, kMaxSpritesPerEmitter);
+    return 0;
+}
+// emitter:Clear(): its particles vanish.
+int particle_Clear(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    if (!n->isParticles()) return luaL_error(L, "Clear: %s isn't a ParticleEmitter", n->name.c_str());
+    ++n->particle.clears;
+    n->particle.pendingClear = true;
+    return 0;
+}
+bool particleIndex(lua_State* L, SceneNode* n, const char* k) {
+    const ParticleProps& p = n->particle;
+    if (is(k, "Enabled"))   { lua_pushboolean(L, n->enabled); return true; }
+    if (is(k, "TimeScale")) { lua_pushnumber(L, 1); return true; }
+    switch (p.type) {
+        case ParticleType::Fire:
+            if (is(k, "Color"))          { LuaApi::pushColor3(L, p.color1); return true; }
+            if (is(k, "SecondaryColor")) { LuaApi::pushColor3(L, p.color2); return true; }
+            if (is(k, "Size"))           { lua_pushnumber(L, p.fxSize); return true; }
+            if (is(k, "Heat"))           { lua_pushnumber(L, p.rise); return true; }
+            return false;
+        case ParticleType::Smoke:
+            if (is(k, "Color"))        { LuaApi::pushColor3(L, p.color1); return true; }
+            if (is(k, "Opacity"))      { lua_pushnumber(L, p.opacity); return true; }
+            if (is(k, "RiseVelocity")) { lua_pushnumber(L, p.rise); return true; }
+            if (is(k, "Size"))         { lua_pushnumber(L, p.fxSize); return true; }
+            return false;
+        case ParticleType::Sparkles:
+            if (is(k, "SparkleColor") || is(k, "Color")) { LuaApi::pushColor3(L, p.color1); return true; }
+            return false;
+        default: break;
+    }
+    if (is(k, "Rate"))              { lua_pushnumber(L, p.rate); return true; }
+    if (is(k, "Lifetime"))          { pushNumberRange(L, p.lifetime); return true; }
+    if (is(k, "Speed"))             { pushNumberRange(L, p.speed); return true; }
+    if (is(k, "SpreadAngle"))       { LuaApi::pushVector2(L, p.spread); return true; }
+    if (is(k, "Rotation"))          { pushNumberRange(L, p.rotation); return true; }
+    if (is(k, "RotSpeed"))          { pushNumberRange(L, p.rotSpeed); return true; }
+    if (is(k, "Color"))             { pushColorSequence(L, p.color); return true; }
+    if (is(k, "Size"))              { pushNumberSequence(L, p.size); return true; }
+    if (is(k, "Transparency"))      { pushNumberSequence(L, p.transparency); return true; }
+    if (is(k, "Texture"))           { lua_pushstring(L, p.texture.c_str()); return true; }
+    if (is(k, "LightEmission"))     { lua_pushnumber(L, p.lightEmission); return true; }
+    if (is(k, "LightInfluence"))    { lua_pushnumber(L, 1.0 - p.lightEmission); return true; }
+    if (is(k, "Acceleration"))      { LuaApi::pushVector3(L, p.acceleration); return true; }
+    if (is(k, "Drag"))              { lua_pushnumber(L, p.drag); return true; }
+    if (is(k, "EmissionDirection")) { lua_pushstring(L, kFaceNames[(int)p.direction]); return true; }
+    if (is(k, "LockedToPart"))      { lua_pushboolean(L, p.locked); return true; }
+    if (is(k, "Emit"))              { lua_pushcfunction(L, particle_Emit); return true; }
+    if (is(k, "Clear"))             { lua_pushcfunction(L, particle_Clear); return true; }
+    if (is(k, "ZOffset") || is(k, "VelocityInheritance") || is(k, "Squash")) { lua_pushnumber(L, 0); return true; }
+    if (is(k, "Brightness"))        { lua_pushnumber(L, 1); return true; }
+    return false;
+}
+bool particleNewIndex(lua_State* L, SceneNode* n, const char* k) {
+    ParticleProps& p = n->particle;
+    auto num = [&](float lo, float hi) { return std::clamp((float)luaL_checknumber(L, 3), lo, hi); };
+    auto color = [&] { return glm::clamp(LuaApi::checkColor3(L, 3), 0.0f, 1.0f); };
+    if (is(k, "Enabled"))   { n->enabled = lua_toboolean(L, 3); return true; }
+    if (is(k, "TimeScale")) return true;   // (always normal speed)
+    switch (p.type) {
+        case ParticleType::Fire:
+            if (is(k, "Color"))          { p.color1 = color(); return true; }
+            if (is(k, "SecondaryColor")) { p.color2 = color(); return true; }
+            if (is(k, "Size"))           { p.fxSize = num(2.0f, 30.0f); return true; }
+            if (is(k, "Heat"))           { p.rise = num(-25.0f, 25.0f); return true; }
+            return false;
+        case ParticleType::Smoke:
+            if (is(k, "Color"))        { p.color1 = color(); return true; }
+            if (is(k, "Opacity"))      { p.opacity = num(0.0f, 1.0f); return true; }
+            if (is(k, "RiseVelocity")) { p.rise = num(-25.0f, 25.0f); return true; }
+            if (is(k, "Size"))         { p.fxSize = num(0.1f, 100.0f); return true; }
+            return false;
+        case ParticleType::Sparkles:
+            if (is(k, "SparkleColor") || is(k, "Color")) { p.color1 = color(); return true; }
+            return false;
+        default: break;
+    }
+    if (is(k, "Rate"))          { p.rate = num(0.0f, 1e6f); return true; }   // (how many can be out at once is capped)
+    if (is(k, "Lifetime"))      { p.lifetime = checkNumberRange(L, 3, 0.0f, 1000.0f); return true; }
+    if (is(k, "Speed"))         { p.speed = checkNumberRange(L, 3, -1e4f, 1e4f); return true; }
+    if (is(k, "SpreadAngle"))   { p.spread = glm::clamp(LuaApi::checkVector2(L, 3), -360.0f, 360.0f); return true; }
+    if (is(k, "Rotation"))      { p.rotation = checkNumberRange(L, 3, -36000.0f, 36000.0f); return true; }
+    if (is(k, "RotSpeed"))      { p.rotSpeed = checkNumberRange(L, 3, -36000.0f, 36000.0f); return true; }
+    if (is(k, "Color"))         { p.color = checkColorSequence(L, 3); return true; }
+    if (is(k, "Size"))          { p.size = checkNumberSequence(L, 3, 0.0f, 1000.0f); return true; }
+    if (is(k, "Transparency"))  { p.transparency = checkNumberSequence(L, 3, 0.0f, 1.0f); return true; }
+    if (is(k, "Texture"))       { p.texture = particleTexture(Online::assetRef(luaL_checkstring(L, 3))); return true; }
+    if (is(k, "LightEmission")) { p.lightEmission = num(0.0f, 1.0f); return true; }
+    if (is(k, "Acceleration"))  { p.acceleration = glm::clamp(LuaApi::checkVector3(L, 3), -1e4f, 1e4f); return true; }
+    if (is(k, "Drag"))          { p.drag = num(-100.0f, 100.0f); return true; }
+    if (is(k, "EmissionDirection")) {
+        if (!parseFace(L, 3, p.direction)) luaL_error(L, "EmissionDirection must be an Enum.NormalId (Top, Bottom, Left, Right, Front or Back)");
+        return true;
+    }
+    if (is(k, "LockedToPart"))  { p.locked = lua_toboolean(L, 3); return true; }
+    // Accepted so Roblox scripts run, but they don't change how it looks here.
+    if (is(k, "LightInfluence") || is(k, "ZOffset") || is(k, "VelocityInheritance") || is(k, "Squash") ||
+        is(k, "Brightness") || is(k, "Orientation") || is(k, "Shape") || is(k, "ShapeStyle") || is(k, "ShapeInOut") ||
+        is(k, "ShapePartial") || is(k, "FlipbookLayout") || is(k, "FlipbookMode") || is(k, "FlipbookFramerate") ||
+        is(k, "FlipbookStartRandom") || is(k, "WindAffectsDrag")) return true;
+    return false;
+}
+
 int seat_sit(lua_State* L) {
     SceneNode* seat = LuaApi::checkNode(L, 1);
     uint64_t who = 0;
@@ -1325,6 +1474,7 @@ int inst_index(lua_State* L) {
     }
     if (n->isGui() && guiIndex(L, n, k)) return 1;
     if (n->isMover() && moverIndex(L, n, k)) return 1;
+    if (n->isParticles() && particleIndex(L, n, k)) return 1;
     if (n->isConstraint()) {
         bool weld = n->constraintType == ConstraintType::Weld;
         if ((!weld && is(k, "Attachment0")) || (weld && is(k, "Part0"))) { LuaApi::pushInstance(L, n->ref0); return 1; }
@@ -1468,6 +1618,14 @@ int inst_index(lua_State* L) {
         if (is(k, "PromptButtonHoldEnded")) { LuaApi::pushSignal(L, SignalKind::PromptHoldEnded, n->id); return 1; }
         if (is(k, "PromptShown"))           { LuaApi::pushSignal(L, SignalKind::PromptShown, n->id); return 1; }
         if (is(k, "PromptHidden"))          { LuaApi::pushSignal(L, SignalKind::PromptHidden, n->id); return 1; }
+    }
+    if (n->isClickDetector()) {
+        if (is(k, "MaxActivationDistance")) { lua_pushnumber(L, n->click.range); return 1; }
+        if (is(k, "CursorIcon"))            { lua_pushstring(L, n->click.cursor.c_str()); return 1; }
+        if (is(k, "MouseClick"))            { LuaApi::pushSignal(L, SignalKind::ClickMouseClick, n->id); return 1; }
+        if (is(k, "RightMouseClick"))       { LuaApi::pushSignal(L, SignalKind::ClickRightClick, n->id); return 1; }
+        if (is(k, "MouseHoverEnter"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverEnter, n->id); return 1; }
+        if (is(k, "MouseHoverLeave"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverLeave, n->id); return 1; }
     }
     if (n->isHighlight()) {
         const HighlightProps& h = n->highlight;
@@ -1613,6 +1771,7 @@ int inst_newindex(lua_State* L) {
     }
     if (n->isGui() && guiNewIndex(L, n, k)) return 0;
     if (n->isMover() && moverNewIndex(L, n, k)) return 0;
+    if (n->isParticles() && particleNewIndex(L, n, k)) return 0;
     if (n->isConstraint()) {
         bool weld = n->constraintType == ConstraintType::Weld;
         auto ref = [&](uint64_t& r) {
@@ -1691,7 +1850,7 @@ int inst_newindex(lua_State* L) {
         if (is(k, "CastShadow"))   { n->castShadow = lua_toboolean(L, 3); return 0; }
         if (is(k, "Material")) {
             if (!parseMaterial(luaL_checkstring(L, 3), n->material))
-                return luaL_error(L, "Unknown material '%s' (try Plastic, Metal, Neon, Wood, Glass, Concrete or Ice)", lua_tostring(L, 3));
+                return luaL_error(L, "Unknown material '%s' (the materials are %s)", lua_tostring(L, 3), materialNameList());
             return 0;
         }
         if (is(k, "Shape")) {
@@ -1762,6 +1921,16 @@ int inst_newindex(lua_State* L) {
         // Looks and gamepads: accepted so Roblox scripts run (the card always looks the same).
         if (is(k, "Style") || is(k, "Exclusivity") || is(k, "GamepadKeyCode") || is(k, "UIOffset") ||
             is(k, "AutoLocalize") || is(k, "RootLocalizationTable")) return 0;
+    }
+    if (n->isClickDetector()) {
+        if (is(k, "MaxActivationDistance")) { n->click.range = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 500.0f); return 0; }
+        if (is(k, "CursorIcon")) {
+            std::string c = luaL_tolstring(L, 3, nullptr);
+            lua_pop(L, 1);
+            if (c.size() > 300) c.resize(300);
+            n->click.cursor = c;
+            return 0;
+        }
     }
     if (n->isHighlight()) {
         HighlightProps& h = n->highlight;
@@ -1978,8 +2147,13 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Prompt);
     } else if (cls == "Highlight") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Highlight);
+    } else if (cls == "ClickDetector") {
+        n = std::make_unique<SceneNode>(cls, NodeKind::ClickDetector);
     } else if (cls == "Trail" || cls == "Beam") {
         n = std::make_unique<SceneNode>(cls, cls == "Trail" ? NodeKind::Trail : NodeKind::Beam);
+    } else if (std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), cls) != std::end(kParticleClassNames)) {
+        n = std::make_unique<SceneNode>(cls, NodeKind::Particles);
+        for (int i = 0; i < kParticleTypeCount; ++i) if (cls == kParticleClassNames[i]) n->particle = particleDefaults((ParticleType)i);
     } else if (cls == "Attachment") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Attachment);
     } else if (cls == "RopeConstraint" || cls == "RodConstraint" || cls == "SpringConstraint" ||

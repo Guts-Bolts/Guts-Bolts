@@ -35,6 +35,8 @@ public:
     std::function<void(uint64_t box, const std::string& text, bool enter)> onGuiText;   // a TextBox typed in (when it loses focus)
     // A ProximityPrompt pressed: "t" Triggered, "te" TriggerEnded, "hb" / "he" hold began / ended.
     std::function<void(uint64_t prompt, const char* what)> onPrompt;
+    // A ClickDetector: "c" MouseClick, "r" RightMouseClick, "he" / "hl" MouseHoverEnter / Leave.
+    std::function<void(uint64_t detector, const char* what)> onClickDetector;
     // Client mode: tool requests for the host ("equip" with a tool id or 0, "drop",
     // "use" with down = mouse pressed / let go). The host keeps everyone's tools.
     std::function<void(const std::string& what, uint64_t tool, bool down)> onToolRequest;
@@ -47,7 +49,13 @@ public:
     // `acceptInput` = false ignores the keyboard (e.g. while typing).
     // swimLook: the camera's up/down for swimming (see Player::setSwimInput).
     void update(float dt, float cameraYaw, bool acceptInput, float swimLook = 0.0f);
-    void click(uint64_t partId);                 // left-click in the 3D view
+    void click(uint64_t partId);                 // left-click in the 3D view (a ClickDetector's MouseClick too)
+    // ClickDetectors. The part under the pointer each frame (0 = none): fires MouseHoverEnter /
+    // MouseHoverLeave as that changes. True when it can be clicked (show a hand); `cursor`
+    // gets its CursorIcon ("" = the hand).
+    bool hoverPart(uint64_t partId, std::string* cursor = nullptr);
+    void rightClick(uint64_t partId);            // RightMouseClick
+    bool clickDetector(uint64_t partId);         // just MouseClick (a controller's RT); false if there's none in reach
     void useTool();                              // the held tool's Activated (a click, a controller's RT)
     // Game UI: pointer events from GameGui (clicks go to the host in multiplayer).
     void guiEvents(const std::vector<GameGui::Event>& events);
@@ -97,4 +105,7 @@ private:
     double       m_time = 0.0;
     bool         m_toolDown = false;          // mouse held after activating the tool
     bool         m_padTrigger = false;        // a controller's RT held
+    uint64_t     m_hoverDetector = 0;         // the ClickDetector the pointer is on
+    SceneNode*   reachableDetector(uint64_t partId);
+    void         fireDetector(SignalKind kind, const char* what, uint64_t detector);
 };

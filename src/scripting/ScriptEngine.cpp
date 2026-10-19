@@ -65,6 +65,20 @@ end
 ColorSequence = sequence("ColorSequence", ColorSequenceKeypoint)
 NumberSequence = sequence("NumberSequence", NumberSequenceKeypoint)
 
+-- NumberRange.new(min, max): a ParticleEmitter's Lifetime, Speed, Rotation and RotSpeed
+-- (each particle gets a random number in it). NumberRange.new(n) is just n.
+local rangeMeta = { __type = "NumberRange",
+    __tostring = function(r) return tostring(r.Min) .. " " .. tostring(r.Max) end,
+    __eq = function(a, b) return a.Min == b.Min and a.Max == b.Max end }
+NumberRange = { new = function(min, max)
+    min = tonumber(min)
+    if min == nil then error("NumberRange.new needs a number", 2) end
+    max = max == nil and min or tonumber(max)
+    if max == nil then error("NumberRange.new needs numbers", 2) end
+    if max < min then error("NumberRange.new: the minimum (" .. min .. ") is bigger than the maximum (" .. max .. ")", 2) end
+    return setmetatable({ Min = min, Max = max }, rangeMeta)
+end }
+
 -- Players are tables with an object behind them (__node), so `player.leaderstats`
 -- and `folder.Parent = player` work like Roblox.
 local playerNode, setRespawn = __gb_playerNode, __gb_setRespawn
@@ -1680,6 +1694,13 @@ int l_receipts(lua_State* L) {
     }
     return 1;
 }
+int l_testInput(lua_State* L) {
+    ScriptEngine* e = LuaApi::engine(L);
+    const std::string what = luaL_checkstring(L, 1);
+    const uint64_t part = lua_isnoneornil(L, 2) ? 0 : LuaApi::toInstanceId(L, 2);
+    lua_pushboolean(L, e->testInput && e->testInput(what, part));
+    return 1;
+}
 int l_receiptDone(lua_State* L) {
     LuaApi::engine(L)->receiptDone((int)luaL_checkinteger(L, 1), luaL_checkstring(L, 2), lua_toboolean(L, 3));
     return 0;
@@ -1743,7 +1764,7 @@ int l_materialPhysics(lua_State* L) {
     const std::string name = luaL_checkstring(L, 1);
     for (int i = 0; i < kMaterialCount; ++i)
         if (name == kMaterialNames[i] || (name == "SmoothPlastic" && i == 0)) {
-            const Physics::MaterialPhysics m = Physics::materialPhysics((Material)i);
+            const MaterialPhysics m = materialPhysics((Material)i);
             lua_pushnumber(L, m.density);
             lua_pushnumber(L, m.friction);
             lua_pushnumber(L, m.elasticity);
@@ -2119,6 +2140,8 @@ NavMesh::Agent checkAgent(lua_State* L, int idx) {
 }
 }
 
+bool ScriptEngine::testHooks = false;
+
 ScriptEngine::ScriptEngine(Scene* scene) : m_scene(scene) {}
 ScriptEngine::~ScriptEngine() { stop(); }
 
@@ -2202,6 +2225,7 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_receiptCheck", l_receiptCheck);
     lua_register(L, "__gb_receipts", l_receipts);
     lua_register(L, "__gb_receiptDone", l_receiptDone);
+    if (testHooks) lua_register(L, "__gb_testInput", l_testInput);
 
     LuaApi::pushInstance(L, m_scene->root()->id);
     lua_setglobal(L, "workspace");

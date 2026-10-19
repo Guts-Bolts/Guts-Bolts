@@ -423,3 +423,12 @@ void ScriptEngine::firePrompt(SignalKind kind, uint64_t id, int userId) {
     });
     if (m_L) luaL_unref(m_L, LUA_REGISTRYINDEX, ref);
 }
+
+void ScriptEngine::fireClickDetector(SignalKind kind, uint64_t id, int userId) {
+    if (!m_L) return;
+    lua_State* L = m_L;
+    RemoteLua::pushPlayer(L, userId ? userId : m_localUserId, "");
+    const int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+    fire(kind, id, [ref](lua_State* co) { lua_rawgeti(co, LUA_REGISTRYINDEX, ref); return 1; });
+    if (m_L) luaL_unref(m_L, LUA_REGISTRYINDEX, ref);
+}
