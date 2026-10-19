@@ -270,6 +270,40 @@ function usernameProblem(name, official = false) {
 }
 // What people write for others to read goes through the text filter (textfilter.js).
 const say = (s, maxLen, allowNewlines = false) => filterText(cleanText(s, maxLen, allowNewlines));
+
+// Lyreto (lyreto.com) is the chat app Guts&Bolts partners with: a game or a group can
+// link its Lyreto server, and its page shows the link as a card (like Roblox does with Guilded).
+// A link cleaned up to https://lyreto.com/..., '' for no link, or null when it isn't a Lyreto link.
+export function lyretoLink(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  if (s.length > 200) return null;
+  if (!/^[a-z]+:\/\//i.test(s)) s = 'https://' + s;
+  let u;
+  try { u = new URL(s); } catch { return null; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  if (u.username || u.password || u.port || !/^(www\.)?lyreto\.com$/i.test(u.hostname)) return null;
+  const path = u.pathname.replace(/\/+$/, '');
+  if (!/^(\/[A-Za-z0-9._~-]+)+$/.test(path)) return null;   // just lyreto.com isn't anyone's server
+  if (u.search && !/^\?[A-Za-z0-9._~=&-]{1,100}$/.test(u.search)) return null;
+  return 'https://lyreto.com' + path + u.search;
+}
+// Lyreto's invite pages say what server they're for in their preview tags (og:title and so on,
+// the same ones chat apps use for link previews). This reads them into the card shown on the page.
+export function lyretoCardFrom(page) {
+  const tag = (prop) => {
+    for (const m of String(page).matchAll(/<meta\s[^>]*>/gi)) {
+      const t = m[0], name = /(?:property|name)\s*=\s*["']([^"']+)["']/i.exec(t), content = /content\s*=\s*["']([^"']*)["']/i.exec(t);
+      if (name && content && name[1].toLowerCase() === prop) return content[1];
+    }
+    return '';
+  };
+  const unescape = (x) => x.replace(/&(amp|lt|gt|quot|#39|apos);/g, (_, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", apos: "'" })[e]);
+  const title = say(unescape(tag('og:title')), 100), description = say(unescape(tag('og:description')), 300);
+  let image = unescape(tag('og:image'));
+  try { const u = new URL(image); image = u.protocol === 'https:' && /(^|\.)lyreto\.com$/i.test(u.hostname) ? u.href : ''; } catch { image = ''; }
+  return title ? { title, description, image } : null;
+}
 const nameIsReserved = (name) => lower(name).replace(/[ _.]/g, '') === lower(kStaffName);
 
 function makeCode() {
@@ -480,6 +514,8 @@ export class GbServerObject extends DurableObject {
     for (const u of this.users.values()) for (const k of u.keys || []) this.aliases.set(k, u.id);
     // Emails to send once the request is done (see sendMail).
     this.outbox = [];
+    // Lyreto links whose preview card still needs fetching: [kind, id] (see fetchLyretoCards).
+    this.lyretoQueue = [];
     this.canMail = !!(((env.BREVO_API_KEY || env.RESEND_API_KEY) && env.MAIL_FROM) || env.MAIL_DEBUG);
     this.mailLast = null;   // how the last email went: { at, to, ok, error } (for the Staff page)
     this.failedLogins = new Map();
@@ -828,6 +864,34 @@ export class GbServerObject extends DurableObject {
     else if (!env.MAIL_DEBUG && !env.MAIL_FROM) problem = 'There\'s an API key, but no MAIL_FROM variable (the address emails come from). Add it in Cloudflare.';
     return { service, from: env.MAIL_FROM || '', on: this.canMail, problem, last: this.mailLast };
   }
+  // Fetch the preview cards for Lyreto links that were just set (after the request, like emails).
+  async fetchLyretoCards() {
+    for (const [kind, id] of this.lyretoQueue.splice(0)) {
+      const o = kind === 'group' ? this.groups.get(id) : this.assets.get(id);
+      if (!o || !o.lyreto) continue;
+      const link = o.lyreto;
+      let card = null;
+      try {
+        const res = await fetch(link, { headers: { accept: 'text/html' }, signal: AbortSignal.timeout(5000) });
+        if (res.ok && lyretoLink(res.url) !== null) card = lyretoCardFrom((await res.text()).slice(0, 300000));
+      } catch { /* Lyreto didn't answer: the page shows the plain link */ }
+      if (o.lyreto !== link) continue;   // it was changed while we waited
+      if (card) o.lyretoCard = card; else delete o.lyretoCard;
+      if (kind === 'group') this.saveGroup(o); else this.saveAsset(o);
+    }
+    this.flush();
+  }
+  // Set a game's or group's Lyreto link (false when it isn't one).
+  setLyreto(kind, o, raw) {
+    const link = lyretoLink(raw);
+    if (link === null) return false;
+    if (link !== (o.lyreto || '')) {
+      delete o.lyretoCard;
+      if (link) { o.lyreto = link; this.lyretoQueue.push([kind, o.id]); } else delete o.lyreto;
+    }
+    return true;
+  }
+  lyretoJson(o) { return o.lyreto ? Object.assign({ link: o.lyreto }, o.lyretoCard || {}) : undefined; }
   // Send what's in the outbox (after the request, so the answer isn't held up by much).
   async sendMail() {
     const mails = this.outbox.splice(0);
@@ -937,6 +1001,7 @@ export class GbServerObject extends DurableObject {
       myFavorite: a.kind === 'game' && me ? (me.favorites || []).includes(a.id) : undefined,
       offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), review: a.review || undefined, reviewNote: a.reviewNote || undefined,
       privatePrice: a.kind === 'game' ? (a.privatePrice || 0) : undefined,
+      lyreto: a.kind === 'game' ? this.lyretoJson(a) : undefined,
       group: a.kind === 'game' ? this.groupJson(a.group) : undefined };
   }
   groupJson(id) { const g = id ? this.groups.get(id) : null; return g ? { id: g.id, name: g.name, color: g.color } : undefined; }
@@ -995,7 +1060,7 @@ export class GbServerObject extends DurableObject {
     const o = this.users.get(g.owner);
     return { id: g.id, name: g.name, description: g.description, owner: g.owner, ownerName: o ? o.name : '?',
       ownerVerified: !!o && this.isVerified(o), members: Object.keys(g.members).length, color: g.color, open: g.open,
-      created: g.created, shout: (g.shout && g.shout.text) || '' };
+      created: g.created, shout: (g.shout && g.shout.text) || '', lyreto: this.lyretoJson(g) };
   }
   groupsOf(id) { return [...this.groups.values()].filter((g) => g.members[id]); }
   ranksOf(g) { return Array.isArray(g.ranks) && g.ranks.length ? g.ranks : defaultRanks(); }
@@ -1292,6 +1357,7 @@ export class GbServerObject extends DurableObject {
       if ('allowGear' in args) a.allowGear = args.allowGear === true;
       if ('comments' in args) a.commentsOff = args.comments === false;
       if ('privatePrice' in args) a.privatePrice = clamp(num(args, 'privatePrice'), 0, kMaxPrivatePrice);
+      if ('lyreto' in args && !this.setLyreto('game', a, str(args, 'lyreto'))) return fail('That isn\'t a Lyreto link. Copy your server\'s invite link in Lyreto: it starts with https://lyreto.com/');
       if ('group' in args) {   // put the game in one of your groups (its sales go to the group), or '' to take it out
         const gid = str(args, 'group');
         if (gid) {
@@ -3008,6 +3074,7 @@ export class GbServerObject extends DurableObject {
       if (!can('manage')) return fail('Your rank can\'t change this group.');
       if ('description' in args) g.description = say(str(args, 'description'), 1000, true);
       if ('color' in args) g.color = clamp(num(args, 'color'), 0, 0xffffff);
+      if ('lyreto' in args && !this.setLyreto('group', g, str(args, 'lyreto'))) return fail('That isn\'t a Lyreto link. Copy your server\'s invite link in Lyreto: it starts with https://lyreto.com/');
       if ('open' in args) {
         g.open = !!args.open;
         if (g.open) { for (const id of g.requests) if (!g.members[id]) g.members[id] = 'Member'; g.requests = []; }
@@ -3567,6 +3634,7 @@ export class GbServerObject extends DurableObject {
     if (typeof req.op === 'string' && req.op.startsWith('relay.')) return json(fail('Multiplayer needs the Guts&Bolts app.'));
     const answer = this.handle(req);
     if (this.outbox.length) await this.sendMail();
+    if (this.lyretoQueue.length) await this.fetchLyretoCards();
     return json(answer);
   }
 }

@@ -1059,6 +1059,20 @@ async function myModelsPage(head) {
 
 let serverPage = 1;   // which page of a game's server cards
 // Paid private servers: the creator sets a price; buying one lasts 30 days, and friends join free with its code.
+// Lyreto (lyreto.com) is the chat app Guts&Bolts partners with. Games and groups can link their
+// Lyreto server; the card shows the server's name, picture and blurb from its invite link's preview
+// (the server fetches it), or just the link when there isn't one yet.
+function lyretoCard(l, whose) {
+  if (!l || !l.link) return '';
+  return html`<div class="lyreto-card">
+    ${l.image ? html`<img class="lyreto-pic" src="${l.image}" alt="" loading="lazy" referrerpolicy="no-referrer">` : html`<div class="lyreto-pic lyreto-mark">L</div>`}
+    <div class="grow"><div class="lyreto-kicker">Lyreto server</div>
+      <b>${l.title || 'Chat with ' + whose + ' on Lyreto'}</b>
+      ${l.description ? html`<p>${l.description}</p>` : html`<p>Chat, voice and hang out with other players.</p>`}</div>
+    <a class="btn lyreto-join" href="${l.link}" target="_blank" rel="noopener noreferrer">Join on Lyreto</a></div>`;
+}
+const LYRETO_FIELD_NOTE = 'Paste your Lyreto server\'s invite link (it starts with https://lyreto.com/). Its page shows it as a card. Leave it empty for none.';
+
 function privateServerBox(g, s) {
   const price = (s.ok && s.privatePrice) || g.privatePrice || 0;
   if (!price) return '';
@@ -1126,6 +1140,7 @@ pages.game = async (id) => {
           ${g.featured ? 'Stop featuring' : 'Feature this game'}</button> <span class="small muted">(staff)</span></p>` : ''}
         <p class="small muted">Games run in the Guts&amp;Bolts app (Windows, Mac, Linux and Android).${mine ? '' : html` ${reportLink('game', g.id, g.name)}`}</p></div></div>
     <h2>Description</h2><p style="white-space:pre-wrap">${g.description || 'No description yet.'}</p>
+    ${g.lyreto ? html`<h2>Community</h2>${lyretoCard(g.lyreto, 'the players')}` : ''}
     ${(g.badges || []).length ? html`<h2>Badges</h2><div class="list">${g.badges.map((b) => html`<div>
         ${gameBadgeIcon(b, 44)}<span class="grow"><b>${b.name}</b><br><span class="small muted">${b.description || ''}</span></span>
         <span class="small muted">Won ${b.awarded || 0} time${b.awarded === 1 ? '' : 's'}</span></div>`)}</div>` : ''}
@@ -1463,6 +1478,10 @@ pages.configure = async (id) => {
         <label class="choice"><input type="checkbox" name="comments" ${g.comments !== false ? 'checked' : ''}> Allow comments <span class="muted small">(players can comment on its page; you can delete any comment)</span></label>
         <label>Private server price <span class="muted small">(Bolts for 30 days; 0 = free. You get 70% of each sale, or your group does if the game is in one. Private servers are always free for you.)</span></label>
         <input type="number" name="privatePrice" min="0" max="10000" value="${g.privatePrice || 0}" style="max-width:100px"></div>
+      <div class="box"><h2 class="boxhead">Community</h2>
+        <label>Lyreto server <span class="muted small">(optional)</span></label>
+        <input type="url" name="lyreto" maxlength="200" placeholder="https://lyreto.com/..." value="${g.lyreto ? g.lyreto.link : ''}">
+        <p class="small muted">${LYRETO_FIELD_NOTE}</p></div>
       <div class="box"><h2 class="boxhead">Group</h2>
         <p class="small muted">Put the game in one of your groups: it shows as the group's game, and its game pass and product sales go to the group's Bolts instead of to you.</p>
         <select name="group" data-was="${g.group ? g.group.id : ''}"><option value="">No group (it's just yours)</option>
@@ -1838,6 +1857,7 @@ pages.group = async (id) => {
       <p class="muted">Owned by <a href="#/user/${g.owner}">${g.ownerName}</a>${verified(g.ownerVerified)} · ${g.members} members
         ${role ? html` · your rank: <b>${role}</b>` : ''}</p>
       <p style="white-space:pre-wrap">${g.description}</p>${join}${owner ? '' : html` ${reportLink('group', g.id, g.name)}`}</div>
+    ${lyretoCard(g.lyreto, g.name)}
     ${r.shoutInfo && r.shoutInfo.text ? html`<div class="box info"><b>${r.shoutInfo.name}:</b> ${r.shoutInfo.text}
       <span class="small muted">· ${ago(r.shoutInfo.time)}</span></div>` : ''}
     ${can('shout') ? html`<form class="row" data-form="groupShout"><input type="hidden" name="id" value="${g.id}">
@@ -1877,6 +1897,8 @@ pages.group = async (id) => {
     ${can('manage') ? html`<h2>Settings</h2><form class="form" data-form="groupEdit"><input type="hidden" name="id" value="${g.id}">
       <label>Description</label><textarea name="description" maxlength="1000">${g.description}</textarea>
       <label>Colour</label><input type="color" name="color" value="${color}">
+      <label>Lyreto server</label><input type="url" name="lyreto" maxlength="200" placeholder="https://lyreto.com/..." value="${g.lyreto ? g.lyreto.link : ''}">
+      <p class="small muted">${LYRETO_FIELD_NOTE}</p>
       <label><input type="checkbox" name="open" ${g.open ? 'checked' : ''}> Anyone can join</label>
       <p><button class="btn blue">Save</button>
       ${owner ? html` <button type="button" class="btn red" data-act="group" data-op="groups.delete" data-id="${g.id}">Delete group</button>` : ''}</p></form>` : ''}`);
@@ -3041,7 +3063,7 @@ const forms = {
       if (genres.length > 3) { say('Pick up to 3 genres.', 'error'); return; }
       let r = await call('game.settings', { id, name: f.name.value, description: f.description.value, access: f.access.value,
         genres, maxPlayers: Number(f.maxPlayers.value) || 12, allowGear: f.allowGear.checked, comments: f.comments.checked,
-        privatePrice: Math.max(0, Math.trunc(Number(f.privatePrice.value) || 0)),
+        privatePrice: Math.max(0, Math.trunc(Number(f.privatePrice.value) || 0)), lyreto: f.lyreto.value,
         ...(f.group.value !== f.group.dataset.was ? { group: f.group.value } : {}) });
       if (!r.ok) { say(r.error, 'error'); return; }
       if (f.thumb.files[0]) {
@@ -3208,7 +3230,7 @@ const forms = {
   },
   async groupEdit(f) {
     const r = await call('groups.edit', { id: f.id.value, description: f.description.value,
-      color: parseInt(f.color.value.slice(1), 16), open: f.open.checked });
+      color: parseInt(f.color.value.slice(1), 16), open: f.open.checked, lyreto: f.lyreto.value });
     toast(r.ok ? 'Saved.' : r.error);
     if (r.ok) render();
   },

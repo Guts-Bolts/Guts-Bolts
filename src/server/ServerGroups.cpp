@@ -104,11 +104,13 @@ std::vector<const GbServer::Group*> GbServer::groupsOf(const std::string& userId
 
 json GbServer::publicGroup(const Group& g) const {
     auto it = m_users.find(g.owner);
-    return {{"id", g.id}, {"name", g.name}, {"description", g.description}, {"owner", g.owner},
+    json j = {{"id", g.id}, {"name", g.name}, {"description", g.description}, {"owner", g.owner},
             {"ownerName", it != m_users.end() ? it->second.name : "?"},
             {"ownerVerified", it != m_users.end() && isVerified(it->second)},
             {"members", g.members.size()}, {"color", g.color}, {"open", g.open}, {"created", g.created},
             {"shout", g.shout.text}};
+    if (!g.lyreto.empty()) j["lyreto"] = {{"link", g.lyreto}};
+    return j;
 }
 
 json GbServer::groupOp(const std::string& name, User& me, const json& args) {
@@ -292,6 +294,11 @@ json GbServer::groupOp(const std::string& name, User& me, const json& args) {
         if (!can("manage")) return fail("Your rank can't change this group.");
         if (args.contains("description")) g.description = say(str("description"), 1000, true);
         if (args.contains("color")) g.color = (int)std::clamp(args.value("color", 0LL), 0LL, 0xFFFFFFLL);
+        if (args.contains("lyreto")) {   // its Lyreto server's invite link ("" for none)
+            std::string link;
+            if (!lyretoLink(str("lyreto"), link)) return fail("That isn't a Lyreto link. Copy your server's invite link in Lyreto: it starts with https://lyreto.com/");
+            g.lyreto = link;
+        }
         if (args.contains("open")) {
             g.open = args.value("open", true);
             if (g.open) {   // opening up lets everyone who asked in
@@ -446,6 +453,7 @@ void GbServer::saveGroups() {
                    {"color", g.color}, {"open", g.open}, {"members", g.members}, {"requests", g.requests},
                    {"shout", {g.shout.by, g.shout.text, g.shout.time}}, {"wall", wall}};
         if (!g.ranks.empty()) all[id]["ranks"] = g.ranks;
+        if (!g.lyreto.empty()) all[id]["lyreto"] = g.lyreto;
         if (!g.ledger.empty()) {
             json ledger = json::array();
             for (const Entry& e : g.ledger) ledger.push_back({e.amount, e.reason, e.time, e.ref});
@@ -469,6 +477,7 @@ void GbServer::loadGroups() {
         g.created = j.value("created", 0LL);
         g.color = j.value("color", 0x3A7BD5);
         g.open = j.value("open", true);
+        g.lyreto = j.value("lyreto", std::string());
         if (j.contains("members") && j["members"].is_object())
             for (auto& [k, v] : j["members"].items()) if (v.is_string()) g.members[k] = v.get<std::string>();
         if (j.contains("requests")) for (const auto& r : j["requests"]) if (r.is_string()) g.requests.insert(r.get<std::string>());
