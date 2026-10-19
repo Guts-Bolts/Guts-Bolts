@@ -39,14 +39,7 @@ struct ConnRef   { int index; };
 
 bool is(const char* a, const char* b) { return std::strcmp(a, b) == 0; }
 
-bool parseMaterial(const std::string& s, Material& out) {
-    for (int i = 0; i < kMaterialCount; ++i)
-        if (s == kMaterialNames[i]) { out = (Material)i; return true; }
-    if (s == "SmoothPlastic") { out = Material::Plastic; return true; }
-    if (s == "DiamondPlate" || s == "Foil" || s == "CorrodedMetal") { out = Material::Metal; return true; }
-    if (s == "WoodPlanks") { out = Material::Wood; return true; }
-    return false;
-}
+bool parseMaterial(const std::string& s, Material& out) { return materialFromName(s, out); }
 
 const char* shapeName(PrimitiveType t) {
     switch (t) {
@@ -108,6 +101,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
         case NodeKind::Particles: return n->particleClass();
@@ -1489,8 +1483,9 @@ int inst_index(lua_State* L) {
             if (is(k, "WaveScale"))    { lua_pushnumber(L, numAttr(n, "WaveScale", numAttr(n, "Waves", 0.0f) * 2.0f)); return 1; }
             if (is(k, "Drag"))         { lua_pushnumber(L, numAttr(n, "Drag", 1.0f)); return 1; }   // how hard it pushes things (1 = water)
         }
-        if (is(k, "Friction"))   { lua_pushnumber(L, n->friction); return 1; }
-        if (is(k, "Elasticity")) { lua_pushnumber(L, n->elasticity); return 1; }
+        // (unset: the material's own, like Density)
+        if (is(k, "Friction"))   { lua_pushnumber(L, n->friction >= 0 ? n->friction : materialPhysics(n->material).friction); return 1; }
+        if (is(k, "Elasticity")) { lua_pushnumber(L, n->elasticity >= 0 ? n->elasticity : materialPhysics(n->material).elasticity); return 1; }
         if (is(k, "Touched"))      { LuaApi::pushSignal(L, SignalKind::Touched, n->id); return 1; }
         if (is(k, "Clicked"))      { LuaApi::pushSignal(L, SignalKind::Clicked, n->id); return 1; }
     }
@@ -1553,6 +1548,14 @@ int inst_index(lua_State* L) {
         if (is(k, "PromptButtonHoldEnded")) { LuaApi::pushSignal(L, SignalKind::PromptHoldEnded, n->id); return 1; }
         if (is(k, "PromptShown"))           { LuaApi::pushSignal(L, SignalKind::PromptShown, n->id); return 1; }
         if (is(k, "PromptHidden"))          { LuaApi::pushSignal(L, SignalKind::PromptHidden, n->id); return 1; }
+    }
+    if (n->isClickDetector()) {
+        if (is(k, "MaxActivationDistance")) { lua_pushnumber(L, n->click.range); return 1; }
+        if (is(k, "CursorIcon"))            { lua_pushstring(L, n->click.cursor.c_str()); return 1; }
+        if (is(k, "MouseClick"))            { LuaApi::pushSignal(L, SignalKind::ClickMouseClick, n->id); return 1; }
+        if (is(k, "RightMouseClick"))       { LuaApi::pushSignal(L, SignalKind::ClickRightClick, n->id); return 1; }
+        if (is(k, "MouseHoverEnter"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverEnter, n->id); return 1; }
+        if (is(k, "MouseHoverLeave"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverLeave, n->id); return 1; }
     }
     if (n->isHighlight()) {
         const HighlightProps& h = n->highlight;
@@ -1777,7 +1780,7 @@ int inst_newindex(lua_State* L) {
         if (is(k, "CastShadow"))   { n->castShadow = lua_toboolean(L, 3); return 0; }
         if (is(k, "Material")) {
             if (!parseMaterial(luaL_checkstring(L, 3), n->material))
-                return luaL_error(L, "Unknown material '%s' (try Plastic, Metal, Neon, Wood, Glass, Concrete or Ice)", lua_tostring(L, 3));
+                return luaL_error(L, "Unknown material '%s' (the materials are %s)", lua_tostring(L, 3), materialNameList());
             return 0;
         }
         if (is(k, "Shape")) {
@@ -1813,6 +1816,16 @@ int inst_newindex(lua_State* L) {
         // Looks and gamepads: accepted so Roblox scripts run (the card always looks the same).
         if (is(k, "Style") || is(k, "Exclusivity") || is(k, "GamepadKeyCode") || is(k, "UIOffset") ||
             is(k, "AutoLocalize") || is(k, "RootLocalizationTable")) return 0;
+    }
+    if (n->isClickDetector()) {
+        if (is(k, "MaxActivationDistance")) { n->click.range = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 500.0f); return 0; }
+        if (is(k, "CursorIcon")) {
+            std::string c = luaL_tolstring(L, 3, nullptr);
+            lua_pop(L, 1);
+            if (c.size() > 300) c.resize(300);
+            n->click.cursor = c;
+            return 0;
+        }
     }
     if (n->isHighlight()) {
         HighlightProps& h = n->highlight;
@@ -2023,6 +2036,8 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Prompt);
     } else if (cls == "Highlight") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Highlight);
+    } else if (cls == "ClickDetector") {
+        n = std::make_unique<SceneNode>(cls, NodeKind::ClickDetector);
     } else if (cls == "Trail" || cls == "Beam") {
         n = std::make_unique<SceneNode>(cls, cls == "Trail" ? NodeKind::Trail : NodeKind::Beam);
     } else if (std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), cls) != std::end(kParticleClassNames)) {

@@ -33,6 +33,7 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::Remote   ? (node->remoteFunction ? "RemoteFunction" : "RemoteEvent")
                     : node->kind == NodeKind::Prompt   ? "ProximityPrompt"
                     : node->kind == NodeKind::Highlight ? "Highlight"
+                    : node->kind == NodeKind::ClickDetector ? "ClickDetector"
                     : node->kind == NodeKind::Trail    ? "Trail"
                     : node->kind == NodeKind::Beam     ? "Beam"
                     : node->kind == NodeKind::Particles ? node->particleClass()
@@ -376,6 +377,19 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("Shows when a player walks up to the part it's in. Pressing the key (or clicking it) "
                             "fires its Triggered event, with the player who pressed it.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    if (node->isClickDetector()) {
+        ClickProps& c = node->click;
+        ImGui::SeparatorText("ClickDetector");
+        ImGui::DragFloat("MaxActivationDistance", &c.range, 0.1f, 0.0f, 500.0f, "%.1f");
+        ImGui::InputText("CursorIcon", &c.cursor);
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Players can click (or tap) the part or model it's in when they're this close. "
+                            "Fires MouseClick, RightMouseClick, MouseHoverEnter and MouseHoverLeave, with the player.");
         ImGui::PopTextWrapPos();
         return;
     }

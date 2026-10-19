@@ -738,7 +738,7 @@ void SceneRenderer::drawConstraints(Scene& scene, bool editing) {
         m_lit->setMat4("uModel", m);
         m_lit->setMat3("uNormalMat", glm::transpose(glm::inverse(glm::mat3(m))));
         m_lit->setVec3("uColor", color);
-        m_lit->setInt("uMaterial", (int)mat);
+        m_lit->setInt("uMaterial", materialShaderId(mat));
         mesh.draw();
     };
     scene.forEach([&](SceneNode* n) {
@@ -1143,7 +1143,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         m_lit->setMat3("uNormalMat", nrm);
         m_lit->setVec3("uColor", node->color);
         m_lit->setBool("uSelected", node->selected);
-        m_lit->setInt("uMaterial", water ? 7 : (int)node->material);
+        m_lit->setInt("uMaterial", water ? 7 : materialShaderId(node->material));
         m_lit->setFloat("uAlpha", 1.0f - node->shownTransparency());
         m_lit->setFloat("uWetPart", wetPart(node));
         if (water) {

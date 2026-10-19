@@ -40,6 +40,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
         case NodeKind::Particles: return n->particleClass();
@@ -287,6 +288,9 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                             (weld ? "Part0 / Part1" : "Attachment0 / Attachment1") + ", so it does nothing.",
                             std::string("Set ") + (weld ? "Part0 and Part1" : "Attachment0 and Attachment1") + " with set_property.");
             }
+            if (n->isClickDetector() && !inPart(n) && !(n->parent && n->parent->kind == NodeKind::Model && n->parent->parent))
+                add(n, "warning", "NOT_IN_PART", "A ClickDetector makes the part (or model) it's in clickable, but this one isn't inside either.",
+                    "set_property Parent to a part or model.");
             if (n->isEffect()) {
                 for (uint64_t ref : {n->effect.a0, n->effect.a1})
                     if (!ref || !m_scene->findById(ref))
@@ -734,8 +738,8 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             bool found = false;
             for (int i = 0; i < kMaterialCount; ++i)
                 if (lower(kMaterialNames[i]) == lower(str("material"))) { n->material = (Material)i; found = true; }
-            if (!found) warnings.push_back("There's no material \"" + str("material") + "\" (there are Plastic, Metal, Neon, Wood, "
-                                           "Glass, Concrete, Ice); it stayed Plastic.");
+            if (!found) warnings.push_back("There's no material \"" + str("material") + "\" (there are " +
+                                           std::string(materialNameList()) + "); it stayed Plastic.");
         }
         n->anchored = args.value("anchored", false);
         n->canCollide = args.value("can_collide", true);

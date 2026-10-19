@@ -111,8 +111,19 @@ The panels:
   of every kind of object you can add.
 - **Constraints** (in the Toolbox): pick Rope, Rod, Spring, Weld, Hinge or
   Motor, then click two parts in the Viewport to join them.
-- **Properties**: colour, material (Plastic, Metal, Neon, Wood, Glass,
-  Concrete, Ice), size, anchored, can-collide and so on.
+- **Properties**: colour, material, size, anchored, can-collide and so on.
+  There are 18 materials, each with its own look drawn by the engine (no
+  image files) and its own default weight, grip and bounce: **Plastic**,
+  **SmoothPlastic** (glossier, no grain), **Metal**, **DiamondPlate** (raised
+  non-slip stripes), **Foil** (crinkly and shiny), **Neon** (glows), **Wood**,
+  **Glass**, **Ice** (slippery), **Concrete**, **Brick** (rows of bricks with
+  mortar, lined up with the part's edges), **Cobblestone**, **Slate**,
+  **Granite** (speckled), **Marble** (polished, with veins), **Sand**,
+  **Grass** and **Fabric** (woven). Scripts use `part.Material =
+  Enum.Material.Brick` or `"Brick"`; a name that doesn't exist is an error
+  that lists the real ones. Imported Roblox places keep these materials;
+  other Roblox materials get the closest one (Rock, Basalt and Asphalt look
+  like Concrete, Pebble like Cobblestone, LeafyGrass like Grass).
 - **Lighting**: sun, shadows, sky light, clouds, stars, fog, exposure,
   bloom, ambient occlusion and colour grading, plus a **time of day** slider
   and presets (Day, Sunset, Night, Overcast, Horror).
@@ -411,7 +422,7 @@ What you can use:
   `Material`, `Shape`, `Anchored`, `CanCollide`, `Velocity`
 - **Values:** `Vector3.new`, `Color3.new` / `fromRGB` / `fromHSV` / `fromHex`, `CFrame.new` / `Angles` / `lookAt`
 - **Time:** `wait(seconds)`, `spawn(fn)`, `delay(seconds, fn)`, `time()`, `tick()`
-- **Events:** `part.Touched`, `part.Clicked`, `RunService.Heartbeat`, `UserInputService.InputBegan` / `InputEnded`,
+- **Events:** `part.Touched`, `part.Clicked`, `clickDetector.MouseClick` (see *ClickDetectors* below), `RunService.Heartbeat`, `UserInputService.InputBegan` / `InputEnded`,
   `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, each with `:Connect`, `:Once` and `:Wait`
 - **Players:** `game.Players.LocalPlayer.Character`, `Players:GetPlayers()`, `humanoid.Health` / `WalkSpeed` /
   `JumpPower` / `:TakeDamage(n)`, `character:BreakJoints()`
@@ -774,6 +785,35 @@ end)
 - In a multiplayer game the server checks the player really is close before
   `Triggered` fires.
 
+### ClickDetectors
+
+A **ClickDetector** inside a part lets players click it: buttons, levers,
+"click to buy" signs (Insert Object > Characters & Tools > ClickDetector, with the
+part selected). Put one inside a model and every part in the model is clickable.
+The mouse pointer turns into a hand over it, and clicking fires `MouseClick` with
+the player who clicked:
+
+```lua
+local button = script.Parent
+button.ClickDetector.MouseClick:Connect(function(player)
+    button.Color = Color3.fromRGB(0, 200, 0)
+    print(player.Name .. " pressed the button")
+end)
+```
+
+- `RightMouseClick`, `MouseHoverEnter` and `MouseHoverLeave` work the same way
+  (each passes the player).
+- `MaxActivationDistance` is how close the player's character has to be (16, the
+  same as Roblox's 32 studs; 0 = it can't be clicked). `CursorIcon` is an optional
+  picture to show instead of the hand.
+- Server Scripts hear clicks in multiplayer games too (the server checks the
+  player really is close enough), and LocalScripts hear their own player's.
+- On a touch screen, tap the part. With a controller, aim the middle of the screen
+  at it and press RT.
+- Like Roblox, it doesn't react while the player is holding a tool (the click
+  uses the tool). `part.Clicked` still works for any part, with or without one.
+- Roblox places (.rbxl / .rbxm) keep their ClickDetectors when you import them.
+
 ### Highlights
 
 A **Highlight** colours a part or a whole model and draws an outline round it,
@@ -1093,7 +1133,9 @@ Water isn't just a see-through box you can swim in. While the game runs:
   through it leaves a wake.
 - **Floating and sinking.** Loose (unanchored) parts float or sink depending on
   their material, like real life: **Wood**, **Ice**, **Plastic** and **Neon**
-  float (wood highest), while **Metal**, **Glass** and **Concrete** sink. Set a
+  float (wood highest), as do **Fabric** and **Grass**, while **Metal**,
+  **Glass**, **Concrete** and the stones (**Brick**, **Slate**, **Granite**,
+  **Marble**, **Cobblestone**, **Sand**) sink. Set a
   part's Density to choose exactly. A long plank tips over and floats flat, and
   boats rock on the waves.
 - **Splashes.** Things (and people) that fall in throw up spray, make a splash
