@@ -10,6 +10,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'whats-in-the-box', name: 'What\'s in the Box?!', time: 1792438313, tag: 'Website',
+    summary: 'Gift boxes and Exclusive items: own a gift box when it goes off sale and a secret item drops into your inventory.',
+    items: [
+      'Gift boxes: staff can point a timed item at another item, and everyone who owns the box when it goes off sale gets that item for free',
+      'The bell tells you when your box opens, and what was inside',
+      'Exclusive items: hidden from the catalog and can\'t be bought or gifted, only won from gift boxes and events (their page still works by link)',
+      'Staff can give an item to someone straight from its page, for event prizes',
+      'Item pages open for every item now, not just the newest 100 in the catalog',
+    ],
+  },
+  {
     id: 'skeleton-key', name: 'Skeleton Key', time: 1792433006, tag: 'Studio',
     summary: 'Studio\'s Assistant and connected AI apps can now reach every service, use the same names as your scripts, and publish when you ask.',
     items: [

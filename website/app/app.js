@@ -284,7 +284,7 @@ function officialBadge(a) {
 function itemCard(a) {
   items3d.set(a.id, a);
   return html`<a class="card square" href="#/item/${a.id}">
-    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}
+    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}
     <div class="name">${a.name}</div>
     <div class="by">${a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
       : a.price > 0 ? bolts(a.price) : raw('<span class="muted">Free</span>')} · by ${a.creatorName}${verified(a.creatorVerified)}</div></a>`;
@@ -892,7 +892,7 @@ function browseCard(a, href, price) {
     <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="" style="width:100%;height:100%;object-fit:contain;border:0">`
       : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" alt="">`
       : a.kind === 'audio' || a.kind === 'plugin' || a.kind === 'model' || a.kind === 'animation' ? html`<span class="lib-kind">${a.kind === 'audio' ? raw(SPEAKER_SVG) : ''}${KINDS[a.kind] || a.kind}</span>`
-      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
+      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
     <div class="bprice">${price}</div>
     ${a.kind === 'model' ? html`<div class="brating">${ratingLine(a)}</div>` : ''}
@@ -1336,8 +1336,9 @@ function emoteSlotPicker(id, slot) {
 }
 
 pages.item = async (id) => {
-  const r = await pageCall('list', { kind: 'clothing', limit: 100 });
-  const a = r.ok && r.assets.find((x) => x.id === id || String(x.num) === id);
+  // (Asked for by ID: Exclusive items aren't in the catalog's list, and it only holds the newest 100.)
+  const r = await pageCall('asset.info', { id });
+  const a = r.ok && isCatalogItem(r.asset.kind) ? r.asset : null;
   if (!a) { show(html`<h1>Item not found</h1>`); return; }
   const owned = signedIn() && (me.owned || []).includes(a.id);
   const gearOn = a.kind === 'gear' && signedIn() && (me.gear || []).includes(a.id);
@@ -1351,7 +1352,7 @@ pages.item = async (id) => {
   const soldOut = L && L.left <= 0;
   const offsale = !!a.offsale;
   const isNew = Date.now() / 1000 - (a.created || 0) < 7 * 86400;
-  const timed = a.offsaleAt && !offsale;
+  const timed = a.offsaleAt && !offsale && !a.exclusive;   // (an Exclusive item has no sale to end)
   // The buy box (like the 2016 catalog): what's left, the price, the button, how many sold.
   const buyButton = owned && a.kind === 'gear'
     ? html`<p class="ok"><b>You own this.</b></p>
@@ -1363,15 +1364,16 @@ pages.item = async (id) => {
       <button class="btn ${packOn ? '' : 'green'} big buy" data-act="animpackEquip" data-id="${packOn ? '' : a.id}">${packOn ? 'Take off' : 'Use this pack'}</button>`
     : owned ? html`<p class="ok"><b>You own this${mineCopies.length ? ' (#' + mineCopies.map((c) => c.serial).join(', #') + ')' : ''}.</b></p>`
     : soldOut ? html`<button class="btn big buy" disabled>Sold out</button>`
+    : a.exclusive ? html`<button class="btn big buy" disabled>Exclusive</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
     : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
   // Paid items that aren't Limited can be bought for a friend (even if you have one yourself).
-  const giftable = a.price > 0 && !L && !offsale && !a.review && !(a.meta && a.meta.award);
+  const giftable = a.price > 0 && !L && !offsale && !a.review && !a.exclusive && !(a.meta && a.meta.award);
   const giftButton = giftable ? html`<button class="btn big gift" data-act="gift" data-id="${a.id}" data-name="${a.name}" data-price="${a.price}">&#127873; Buy as a gift</button>` : '';
   show(html`<p><a href="#/catalog">&lt; Catalog</a></p>
     <div class="item-page">
       <h1 class="item-title">${a.name}</h1>
-      <div class="item-sub">Guts&amp;Bolts ${KINDS[a.kind]}${L ? ' / Collectible Item / Limited Edition' : timed ? ' / Timed Item' : ''}
+      <div class="item-sub">Guts&amp;Bolts ${KINDS[a.kind]}${L ? ' / Collectible Item / Limited Edition' : a.exclusive ? ' / Exclusive Item' : timed ? ' / Timed Item' : ''}
         ${canEdit ? '' : html` · ${reportLink('item', a.id, a.name)}`}</div>
       ${reviewBanner(a)}
       <div class="item-cols">
@@ -1394,6 +1396,8 @@ pages.item = async (id) => {
           <p class="item-desc">${a.description || html`<span class="muted">No description.</span>`}</p>
           <hr>
           <p class="small muted">Type: ${KINDS[a.kind]} · Asset ID ${assetNum(a)}</p>
+          ${a.exclusive ? html`<p class="small"><b>Exclusive:</b> not in the catalog and can't be bought. It comes from events and gift boxes.</p>` : ''}
+          ${a.gift ? html`<p class="small"><b>🎁 Gift box:</b> everyone who owns this when it goes off sale gets a surprise item.${a.giftItem ? html` <span class="muted">(Staff: it gives <a href="#/item/${a.giftItem.id}">${a.giftItem.name}</a>.)</span>` : ''}</p>` : ''}
           ${a.kind === 'gear' ? html`<p class="small muted">Equipped gear goes in your backpack in games that allow gear (up to 4 at once).</p>`
             : a.kind === 'emote' ? html`<p class="small muted">Put it in one of your 8 emote slots, then press B in any game (or tap the smiley on a phone) and pick it. You can also type /e and its name in the chat.</p>`
             : a.kind === 'animpack' ? html`<p class="small muted">An animation pack changes how your character stands, walks, runs, jumps and falls, in every game.</p>`
@@ -1428,7 +1432,14 @@ pages.item = async (id) => {
           : html`<label>New picture <span class="muted small">(optional, from the <a href="templates/${a.kind}_template.png" download>template</a>)</span></label><input type="file" name="picture" accept="image/png">`}
         ${canEdit ? html`<label>Goes off sale <span class="muted small">(a timed item; leave empty to sell it for good)</span></label>
           <input type="datetime-local" name="offsaleAt" value="${a.offsaleAt ? localInput(a.offsaleAt) : ''}" style="max-width:220px">` : ''}
+        ${me.staff ? html`<label><input type="checkbox" name="exclusive" ${a.exclusive ? 'checked' : ''}> Exclusive <span class="muted small">(staff only: hidden from the catalog and can't be bought; give it out with a gift box or the box below)</span></label>
+          <label>Gift box: gives item ID <span class="muted small">(staff only: when this goes off sale, everyone who owns it gets that item; leave empty for a normal item)</span></label>
+          <input type="text" name="giftItem" value="${a.giftItem ? a.giftItem.num || a.giftItem.id : ''}" placeholder="like 86" style="max-width:220px">` : ''}
         <p><button class="btn green">Save</button> <span id="itemEditMsg"></span></p></form>
+      ${me.staff && !L ? html`<form class="form" data-form="itemGive"><input type="hidden" name="id" value="${a.id}">
+        <label>Give it to someone <span class="muted small">(staff only: free, for event prizes; their user number or username)</span></label>
+        <input type="text" name="to" placeholder="like 5 or @username" style="max-width:220px">
+        <p><button class="btn blue">Give</button> <span id="itemGiveMsg"></span></p></form>` : ''}
       ${me.official && a.creator === me.id && canBeLimited(a) ? html`<form class="form" data-form="itemLimited"><input type="hidden" name="id" value="${a.id}">
         <label>${L ? 'Change the stock' : 'Make it Limited'} <span class="muted small">(only Guts can do this)</span></label>
         <input type="number" name="stock" min="1" value="${L ? L.stock : 100}" style="max-width:140px">
@@ -3568,6 +3579,8 @@ const forms = {
       if (Number.isNaN(when)) { m.className = 'error'; m.textContent = ' Pick a whole date and time for it to go off sale (or clear the box).'; return; }
       args.offsaleAt = when;
     }
+    if (field('exclusive')) args.exclusive = field('exclusive').checked;
+    if (field('giftItem')) args.giftItem = field('giftItem').value.trim();
     if (field('picture') && field('picture').files[0]) args.data = await gb.fileBase64(field('picture').files[0]);
     const r = await call('item.edit', args);
     if (!r.ok) { m.className = 'error'; m.textContent = ' ' + r.error; return; }
@@ -3579,6 +3592,13 @@ const forms = {
     if (!r.ok) { const m = $('#joinMsg'); m.className = 'error'; m.textContent = ' ' + r.error; return; }
     toast('Join date saved!');
     await hello();
+    render();
+  },
+  async itemGive(f) {
+    const m = $('#itemGiveMsg');
+    const r = await call('item.give', { id: f.id.value, to: f.to.value.trim() });
+    if (!r.ok) { m.className = 'error'; m.textContent = ' ' + r.error; return; }
+    toast('Gave it to ' + r.to + '!');
     render();
   },
   async itemLimited(f) {
