@@ -10,6 +10,113 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'skeleton-key', name: 'Skeleton Key', time: 1792433006, tag: 'Studio',
+    summary: 'Studio\'s Assistant and connected AI apps can now reach every service, use the same names as your scripts, and publish when you ask.',
+    items: [
+      'The AI helpers can put things in StarterPack, StarterGui, StarterPlayer (StarterPlayerScripts and StarterCharacterScripts), ReplicatedStorage, ServerStorage, ServerScriptService, Teams, SoundService and the rest',
+      'Their view of the game shows every service, like the Explorer, not just the Workspace',
+      'They read and change properties by the same names your scripts use (CanCollide, BackgroundColor3...), and older spellings still work',
+      'Changing a script\'s code always goes through the script editing tool, which checks it for mistakes',
+      'Every Output line now says which play test it came from, so old errors aren\'t mixed up with the run you\'re checking',
+      'A wrong class, property, setting or service name comes back with the list of names that would work',
+      'They can publish your game like File > Publish, as your signed-in account and only when you ask; when you\'re not signed in they say so and stop',
+      'StarterPlayer has its own StarterPlayerScripts folder in the Explorer, and game.StarterPlayer works in scripts',
+    ],
+  },
+  {
+    id: 'pick-a-side', name: 'Pick a Side', time: 1792381691, tag: 'Engine',
+    summary: 'Teams get their own spawns, models know their main part, and scripts can be written the newer way with += and continue.',
+    items: [
+      'SpawnLocations can belong to a team: players spawn on their team\'s spawns, and some can switch your team when you step on them',
+      'Scripts can tell when a character spawns or is about to respawn (CharacterAdded and CharacterRemoving)',
+      'Models have a PrimaryPart, and moving a model with PivotTo turns it around that part',
+      'Scripts can set a part\'s density, grip and bounce all at once, and the physics really use them',
+      'Text can be made bold with one switch (Bold)',
+      'Every script can use +=, continue, types and {name} strings, and errors still point at the right line',
+    ],
+  },
+  {
+    id: 'ember-and-ash', name: 'Ember & Ash', time: 1792380179, tag: 'Engine',
+    summary: 'Particle effects you can place: ParticleEmitter, Fire, Smoke and Sparkles, seen by everyone in the game.',
+    items: [
+      'Insert a ParticleEmitter into any part (Insert Object > Particles) and it starts spraying, even while you build',
+      'Set its Rate, Lifetime, Speed, Spread, Color, Size, Transparency, glow, gravity, drag and spin in Properties or from scripts',
+      'Scripts can call Emit(50) for a burst or Clear() to wipe them, and NumberRange.new is new for these',
+      'Classic Fire, Smoke and Sparkles: drop one in a part and it just works',
+      'Every player sees them in online games, and a huge Rate can\'t freeze the game (there\'s a cap)',
+      'Particles come across when you import .rbxl and .rbxm files, and go back out when you export',
+    ],
+  },
+  {
+    id: 'no-peeking', name: 'No Peeking!', time: 1791907200, tag: 'Website',
+    summary: 'Buy something from the catalog for a friend: you pay, they get it, with a note from you.',
+    items: [
+      'A new "Buy as a gift" button on catalog items: pick a friend, write a short note if you like, check it and send',
+      'You pay the price, the item goes straight into your friend\'s inventory, and they get a notification with your note',
+      'Gifts show up in both of your Bolts histories, so you can see what you sent and what you got',
+      'You can only send gifts to friends, and not something they already have',
+      'Limited items can\'t be gifts (trade them instead), and free or off-sale items can\'t either',
+    ],
+  },
+  {
+    id: 'two-thumbs-way-up', name: 'Two Thumbs Way Up', time: 1791900000, tag: 'Website',
+    summary: 'Rate Library models with a thumbs up or down, and find the best ones with the new "Best rated" sort.',
+    items: [
+      'Give any Library model a thumbs up or down on its page. Change your mind any time, or press your vote again to take it back',
+      'Only people who have inserted the model in Studio can rate it, and you can\'t rate your own',
+      'The Library, each model\'s page and Studio\'s Toolbox show how many people liked it and how many voted',
+      'A new "Best rated" sort in the Library and the Toolbox. It\'s fair: one vote at 100% doesn\'t beat 500 votes at 95%',
+    ],
+  },
+  {
+    id: 'say-cheese', name: 'Say Cheese', time: 1791896400, tag: 'Website',
+    summary: 'Games can show off up to 5 screenshots on their page, next to the thumbnail.',
+    items: [
+      'Creators add up to 5 screenshots on a game\'s Configure page: .png, .jpg or .webp, up to 2 MB each',
+      'Move them earlier or later to pick the order, or delete one, right on the Configure page',
+      'The game\'s page shows the thumbnail and the screenshots together, with arrows and a strip of small pictures to pick from',
+      'Click a picture to see it big. Arrow keys and Esc work, and on phones you can swipe',
+      'If a picture is the wrong kind or too big, it says so before uploading',
+    ],
+  },
+  {
+    id: 'paper-trail', name: 'Paper Trail', time: 1791892800, tag: 'Website',
+    summary: 'A new Past trades tab on the Trades page: every finished trade, with who, what, when and how it ended.',
+    items: [
+      'Trades now has two tabs: Open trades and Past trades',
+      'Past trades lists accepted, declined, cancelled and expired trades, newest first, 20 to a page',
+      'Each one shows who it was with, the items each of you put in, the date, and how it ended',
+      'Only you and the other person in a trade can see it',
+      'Trades nobody answers now run out after 30 days (the one who sent it gets a notification)',
+      'Past trades are kept from this update on (plus the last month\'s, which the server still had), for a year',
+    ],
+  },
+  {
+    id: 'rewind', name: 'Rewind', time: 1791889200, tag: 'Website',
+    summary: 'Publishing a game keeps its old versions now, and one click puts an old one back.',
+    items: [
+      'Every time you publish a game (from Studio, or with "New version" on the website), the version it replaces is kept',
+      'A new Version history box on your game\'s Configure page lists them: version number, date, who published it and its size',
+      'Restore puts an old version back as the newest version, so nothing is ever lost, not even the one you restored over',
+      'The newest 50 versions of each game are kept (up to 100 MB); older ones are cleared out, oldest first',
+      'Saving the same file again doesn\'t add a copy, and games you published before today start their history at version 1',
+      'Only the game\'s creator can see the list or restore. Studio\'s Publish window says which version you just published',
+    ],
+  },
+  {
+    id: 'joint-venture', name: 'Joint Venture', time: 1791878400, tag: 'Engine',
+    summary: 'Three new joints: ball sockets that turn any way, sliders, and joints that slide and spin at once.',
+    items: [
+      'BallSocketConstraint: two parts held at one point that can turn any way, with an optional cone limit, twist limits and bounce',
+      'PrismaticConstraint: a slider along a line, with end stops, a motor that pushes at a set speed, or a servo that goes to a set spot and stays there',
+      'CylindricalConstraint: slides like a slider and spins around the same line, with its own spin motor, spin servo and angle limits',
+      'Make them from scripts, Insert Object or the Constraints tool in Studio (click two parts), and change them in Properties',
+      'Studio draws them: a ball for the socket, a rail and sleeve for sliders, and a ring on the ones that spin',
+      'They save with your game, show up for everyone in multiplayer, and come along when you import or export a place file',
+      'CurrentPosition and CurrentAngle tell scripts where a slider is and how far it has turned',
+    ],
+  },
+  {
     id: 'rose-tinted-skies', name: 'Rose-Tinted Skies', time: 1791874800, tag: 'Engine',
     summary: 'Paint your own sky and grade the whole screen: Sky objects and five screen effects in Lighting.',
     items: [
@@ -21,6 +128,80 @@ export const BUILT_IN_UPDATES = [
       'Stack several, switch them on and off with Enabled, and put them in the Camera from a LocalScript for just one player',
       'Insert them from Lighting\'s right-click menu in Studio, change them in Properties, and they save, go to everyone in the game, and come in and out of .rbxl / .rbxlx files',
       'Phones stay smooth: sun rays and depth of field switch off on Low graphics, and sun rays take fewer steps on phones',
+    ],
+  },
+  {
+    id: 'snow-globe', name: 'Snow Globe', time: 1791871200, tag: 'Engine',
+    summary: 'Game UI can hold a little 3D world now, and fade, grow and keep its shape on every screen.',
+    items: [
+      'ViewportFrame: put parts and models in it and they show up as a little 3D picture, great for shop items and character previews',
+      'Give it a Camera as its CurrentCamera to pick the view, and light it with Ambient, LightColor and LightDirection',
+      'Parts in a ViewportFrame are only a picture: they don\'t fall, collide or get hit by rays, and they\'re only drawn while the frame is on screen',
+      'UIGradient fades a frame, its text and its picture from colour to colour, with Rotation and Offset',
+      'UIScale makes a frame and everything inside it bigger or smaller',
+      'UIAspectRatioConstraint keeps a frame the same shape on every screen size',
+      'All four can be inserted and edited in Studio, are saved and sent to every player, and are kept when you import or export a place file',
+    ],
+  },
+  {
+    id: 'hotkey-heist', name: 'Hotkey Heist', time: 1791867600, tag: 'Engine',
+    summary: 'Games can bind their own keys and controller buttons, and give phones their own on-screen buttons.',
+    items: [
+      'ContextActionService works: a LocalScript binds an action to keys, controller buttons, mouse clicks or fingers with BindAction',
+      'The newest (or highest priority) binding gets a key first; returning Sink keeps it, so binding Space can stop the jump, and Pass hands it on',
+      'BindActionAtPriority, UnbindAction, UnbindAllActions, GetBoundActionInfo and GetAllBoundActionInfo',
+      'Ask for a touch button and phones get a round button next to the jump button, with SetTitle, SetImage, SetDescription, SetPosition and GetButton',
+      'UserInputService.InputBegan now says gameProcessedEvent when an action took the key, and clicks in the game view also fire InputEnded',
+      'Works in the Player, in Studio\'s play test and in online games',
+    ],
+  },
+  {
+    id: 'phase-shift', name: 'Phase Shift', time: 1791864000, tag: 'Engine',
+    summary: 'Collision groups are real now: choose which parts bump into which, so players can walk through each other and team doors let only one team in.',
+    items: [
+      'PhysicsService collision groups work for real: register groups, then say which ones collide and which pass through each other (up to 32)',
+      'Every part has a CollisionGroup, and loose parts, walking characters and raycasts all follow the table',
+      'Players walk through each other but not through walls, and a door can let only one team through',
+      'A Collision Groups window in Studio (MODEL tab or the View menu): add, rename and delete groups and tick which pairs collide',
+      'Pick a part\'s group in the Properties panel',
+      'Groups are saved with your place, sent to everyone who joins, and brought in from imported places',
+      'RaycastParams.CollisionGroup and RespectCanCollide for rays that skip what they should',
+    ],
+  },
+  {
+    id: 'second-chances', name: 'Second Chances', time: 1791860400, tag: 'Website',
+    summary: 'Banned? Ask staff to take another look. Done with Guts&Bolts? Delete your account from Settings.',
+    items: [
+      'A banned account can send staff one short appeal (up to 500 letters) right from the ban screen, on the website or in the Player',
+      'One appeal per ban: you can send another once staff have answered, and their answer and note show on your ban screen',
+      'Staff see appeals next to the reports, with why, when and by whom the account was banned, and can accept (unban) or deny them',
+      'New "Delete your account" box in Settings (and in the Player under Your account): type your password and it\'s gone for good',
+      'Deleting removes your email, password, two-step, avatar, About me, posts, outfits, messages, friends, follows and favourites',
+      'Games and items you made stay up as made by "Deleted user", so nothing anyone bought breaks, and your username is never reused',
+      'Limited copies a deleted account owned stay with it and can\'t be traded any more',
+    ],
+  },
+  {
+    id: 'bricks-and-mortar', name: 'Bricks & Mortar', time: 1791853200, tag: 'Engine',
+    summary: 'Eleven new materials, each with its own look and feel: Brick, Cobblestone, Marble, Diamond Plate and more.',
+    items: [
+      'New materials: Sand, Grass, Brick, Fabric, Slate, Granite, Marble, Cobblestone, Foil, DiamondPlate and SmoothPlastic',
+      'Each one is drawn by the engine: bricks with mortar lined up with the part\'s edges, round cobbles, marble veins, granite speckles, woven fabric, crinkly foil and raised diamond plate stripes',
+      'They feel different too: Brick and Cobblestone are grippy, Marble is a bit slippery, the stones sink in water and Fabric floats',
+      'Pick them in Studio\'s Properties panel, or from a script with part.Material = Enum.Material.Marble (or "Marble")',
+      'A material name that doesn\'t exist now says which ones do',
+      'Imported Roblox places keep their Slate, Granite, Marble, Brick, Sand, Grass and other materials instead of turning into Concrete or Plastic',
+    ],
+  },
+  {
+    id: 'push-the-big-red-button', name: 'Push the Big Red Button', time: 1791842400, tag: 'Engine',
+    summary: 'ClickDetectors: put one in a part or model and players can click it to make things happen.',
+    items: [
+      'Buttons, levers and "click to buy" signs: a ClickDetector fires MouseClick with the player who clicked',
+      'RightMouseClick, MouseHoverEnter and MouseHoverLeave too, and the pointer turns into a hand over it',
+      'Works in multiplayer: the server hears the click and checks the player is close enough',
+      'Tap it on a phone, or aim with a controller and press RT',
+      'Insert one from Studio\'s Insert Object window, and imported games keep theirs',
     ],
   },
   {
@@ -135,6 +316,17 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'touch-grass', name: 'Touch Grass', version: '0.7.1', time: 1791349000, tag: 'Studio',
+    summary: 'Terrain! Sculpt hills, valleys, beaches and mountains in Studio, then go outside (in the game).',
+    items: [
+      'New TERRAIN tab in Studio: Generate rolling hills, then Raise, Lower, Smooth, Flatten and Paint with brushes',
+      'Six grounds that blend into each other: grass, dirt, sand, rock, snow and mud',
+      'Characters walk up gentle slopes (not cliffs), loose parts roll down hills, and pathfinding works on it',
+      'Scripts can change it with workspace.Terrain (FillBlock, FillBall, Generate, Sculpt, GetHeight)',
+      'Saved with your place and sent to every player, even when a script changes it mid-game',
+    ],
+  },
+  {
     id: 'can-you-hear-me-now', name: 'Can You Hear Me Now?', version: '0.7.1', time: 1791348000, tag: 'Player',
     summary: 'Voice chat: hold V to talk to the players around you, and hear them from their characters.',
     items: [
@@ -152,17 +344,6 @@ export const BUILT_IN_UPDATES = [
       'Signing up, the daily Bolts, buying items, comments, the filter and staff tools are all tested automatically',
       'The update log, the "Library" wording and the C++ filter\'s word list are checked too',
       'Every website script is checked for typing mistakes before it goes live',
-    ],
-  },
-  {
-    id: 'touch-grass', name: 'Touch Grass', version: '0.7.1', time: 1791349000, tag: 'Studio',
-    summary: 'Terrain! Sculpt hills, valleys, beaches and mountains in Studio, then go outside (in the game).',
-    items: [
-      'New TERRAIN tab in Studio: Generate rolling hills, then Raise, Lower, Smooth, Flatten and Paint with brushes',
-      'Six grounds that blend into each other: grass, dirt, sand, rock, snow and mud',
-      'Characters walk up gentle slopes (not cliffs), loose parts roll down hills, and pathfinding works on it',
-      'Scripts can change it with workspace.Terrain (FillBlock, FillBall, Generate, Sculpt, GetHeight)',
-      'Saved with your place and sent to every player, even when a script changes it mid-game',
     ],
   },
   {
@@ -532,6 +713,20 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'cut-and-paste-studio', name: 'Studio Gets Its Hands Dirty', version: '0.6.5', time: 1791244800, tag: 'Studio',
+    summary: 'Unions, Roblox-style Move and Scale handles, box select, blue selection boxes, Script Analysis and AutoSave.',
+    items: [
+      'Unions like Roblox: Union (Ctrl+Shift+G) joins parts into one, Negate (Ctrl+Shift+N) turns a part into a hole that gets cut out, Intersect (Ctrl+Shift+I) keeps the overlap, Separate (Ctrl+Shift+U) gives the parts back',
+      'Scale has an orb on each of the 6 sides: drag one to move just that side (hold Ctrl for both sides)',
+      'Move has an arrow on each side, and moves everything you selected (with snapping and collisions)',
+      'Rotating several things now turns them all together instead of only the last one picked',
+      'Click empty space and drag to box-select parts',
+      'Selected parts get a light blue box around them',
+      'Script Analysis (VIEW tab): finds mistakes in every script without pressing Play, like a missing "end" or a misspelled name',
+      'AutoSave: unsaved work is backed up every 5 minutes, and Studio offers to bring it back after a crash',
+    ],
+  },
+  {
     id: 'new-address', name: 'Moving Day', version: '0.6.6', time: 1791241500, tag: 'Website',
     summary: 'Guts&Bolts has its own address now: gutsandbolts.net.',
     items: [
@@ -557,20 +752,6 @@ export const BUILT_IN_UPDATES = [
       'Now: the player who has been there longest starts a new server of the same game, and everyone follows them there by themselves',
       'Private servers keep the same code, so friends can still join with it',
       'You see "The host left. Moving everyone to a new server" for a few seconds, then you\'re back in (the world starts fresh)',
-    ],
-  },
-  {
-    id: 'cut-and-paste-studio', name: 'Studio Gets Its Hands Dirty', version: '0.6.5', time: 1791244800, tag: 'Studio',
-    summary: 'Unions, Roblox-style Move and Scale handles, box select, blue selection boxes, Script Analysis and AutoSave.',
-    items: [
-      'Unions like Roblox: Union (Ctrl+Shift+G) joins parts into one, Negate (Ctrl+Shift+N) turns a part into a hole that gets cut out, Intersect (Ctrl+Shift+I) keeps the overlap, Separate (Ctrl+Shift+U) gives the parts back',
-      'Scale has an orb on each of the 6 sides: drag one to move just that side (hold Ctrl for both sides)',
-      'Move has an arrow on each side, and moves everything you selected (with snapping and collisions)',
-      'Rotating several things now turns them all together instead of only the last one picked',
-      'Click empty space and drag to box-select parts',
-      'Selected parts get a light blue box around them',
-      'Script Analysis (VIEW tab): finds mistakes in every script without pressing Play, like a missing "end" or a misspelled name',
-      'AutoSave: unsaved work is backed up every 5 minutes, and Studio offers to bring it back after a crash',
     ],
   },
   {

@@ -111,7 +111,7 @@ void PlayerApp::drawBell(ImVec2 c) {
             else if (kind == "friend" || kind == "follow") openProfile(about);
             else if (kind == "group") openGroup(about);
             else if (kind == "forum") openForum("", about, -1);
-            else if (kind == "upload" || kind == "sale") openAsset(about);
+            else if (kind == "upload" || kind == "sale" || kind == "gift") openAsset(about);
             ImGui::CloseCurrentPopup();
         }
         ImGui::PopID();

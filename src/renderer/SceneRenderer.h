@@ -89,6 +89,9 @@ private:
     static constexpr int kBlurLevels = 5;
     Target m_blurDown[kBlurLevels], m_blurUp[kBlurLevels - 1], m_rays;   // BlurEffect / DepthOfFieldEffect, SunRaysEffect
     unsigned int m_ribbonVao = 0, m_ribbonVbo = 0;
+    std::unique_ptr<Shader> m_sprite;         // ParticleEmitter / Fire / Smoke / Sparkles particles
+    unsigned int m_spriteVao = 0, m_spriteVbo = 0;
+    void drawSprites(Scene& scene, const Camera& camera);
     // Each Trail's pieces: where its two attachments were, and when.
     struct TrailPoint { glm::vec3 a, b; double time; };
     struct TrailState { std::vector<TrailPoint> points; double seen = 0.0; int clears = 0; };

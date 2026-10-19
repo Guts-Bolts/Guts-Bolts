@@ -173,6 +173,7 @@ std::vector<BlastSystem::Hit> BlastSystem::start(Scene& scene, const glm::vec3& 
     while (!stack.empty()) {
         SceneNode* n = stack.back();
         stack.pop_back();
+        if (n->isViewportFrame()) continue;   // (its parts are only a picture)
         for (auto& c : n->children) stack.push_back(c.get());
         if (!n->isPart() || n == scene.root()) continue;
         const float d = glm::length(glm::vec3(n->worldMatrix()[3]) - pos);
@@ -234,6 +235,7 @@ void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physic
     while (!stack.empty()) {
         SceneNode* n = stack.back();
         stack.pop_back();
+        if (n->isViewportFrame()) continue;   // (its parts are only a picture)
         for (auto& c : n->children) stack.push_back(c.get());
         if (n->isConstraint()) { joints.push_back(n); continue; }
         if (!n->isPart() || scene.isCharacterPart(n) || b.done.count(n->id)) continue;

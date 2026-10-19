@@ -3,6 +3,7 @@
 // signed-up directly (no keys or passwords needed).
 import { DatabaseSync } from 'node:sqlite';
 import { GbServerObject } from '../server.js';
+import wasmModule from '../../website/app/gbcrypto.wasm';
 
 export const STAFF = 'a'.repeat(64);   // the staff account ("Guts", user #1)
 
@@ -59,3 +60,33 @@ export function addGame(s, creator, name, extra = {}) {
 
 // rot13: the filter's word list is kept scrambled so the code doesn't spell them out.
 export const rot13 = (w) => w.replace(/[a-z]/gi, (c) => String.fromCharCode((c <= 'Z' ? 65 : 97) + (c.toLowerCase().charCodeAt(0) - 97 + 13) % 26));
+
+// A device that sends real signed requests through s.handle (checkRequest and all), like the
+// website does: device(s, n) makes key pair number n; d.call(op, args) signs and sends one.
+let wasm = null;
+const hexOf = (b) => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+function canon(v) {
+  if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}';
+  return JSON.stringify(v);
+}
+export function device(s, n) {
+  if (!wasm) wasm = new WebAssembly.Instance(wasmModule, {}).exports;
+  const io = () => new Uint8Array(wasm.memory.buffer, wasm.buf(), wasm.bufSize());
+  io().set(new Uint8Array(32).fill(n), 0);
+  wasm.keyPair();
+  const secret = io().slice(32, 96), account = hexOf(io().slice(96, 128));
+  let nonce = 0;
+  return {
+    account,
+    call(op, args = {}) {
+      const time = Math.floor(Date.now() / 1000), nn = (++nonce).toString(16).padStart(16, '0');
+      const msg = new TextEncoder().encode('gb-req:' + op + '\n' + account + '\n' + time + '\n' + nn + '\n' + canon(args));
+      io().set(secret, 0);
+      io().set(msg, 128);
+      wasm.sign(msg.length);
+      const sig = hexOf(io().slice(64, 128));
+      return s.handle({ op, account, time, nonce: nn, args, sig });
+    },
+  };
+}

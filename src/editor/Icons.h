@@ -9,9 +9,9 @@ namespace Icons {
 
 enum class Id {
     Select, Move, Scale, Rotate, Transform,
-    Part, Sphere, Cylinder, Plane, Model, Folder, Script, ModuleScript, LocalScript, Remote, Prompt, Highlight, Ribbon, Light, Sound, Attachment, Constraint,
+    Part, Sphere, Cylinder, Plane, Model, Folder, Script, ModuleScript, LocalScript, Remote, Prompt, Click, Highlight, Ribbon, Particles, Light, Sound, Attachment, Constraint,
     ForceField, Workspace, Player, Tool, Value, Decal, Animation, Rig,
-    ScreenGui, GuiFrame, GuiText, GuiButton, GuiImage, GuiCorner,
+    ScreenGui, GuiFrame, GuiText, GuiButton, GuiImage, GuiCorner, GuiViewport, Camera,
     Play, PlayHere, Run, Stop,
     Paste, Copy, Cut, Duplicate, Undo, Redo, Delete,
     Group, Ungroup, Lock, Anchor, Snap, Collide, Align,

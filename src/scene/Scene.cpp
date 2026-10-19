@@ -210,7 +210,8 @@ SceneNode* Scene::findById(uint64_t id) {
 
 const std::vector<const char*>& Scene::serviceNames() {
     static const std::vector<const char*> names = {"ReplicatedFirst", "ReplicatedStorage", "ServerScriptService", "ServerStorage",
-                                                   "StarterGui", "StarterPack", "Teams", "SoundService", "Chat", "TextChatService",
+                                                   "StarterGui", "StarterPack", "StarterPlayer", "Teams", "SoundService", "Chat",
+                                                   "TextChatService",
                                                    "Lighting"};
     return names;
 }

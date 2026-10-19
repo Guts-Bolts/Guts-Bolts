@@ -51,12 +51,14 @@ out vec2 vUV;
 out vec4 vBlend;
 out vec3 vLocalPos;      // in the part's own space (-0.5..0.5): for faces painted on heads
 out vec3 vLocalNormal;
+out vec3 vObjPos;        // in the part's own space, in world units from its corner: material patterns
 
 void main() {
     vUV = aUV;
     vBlend = aBlend;
     vLocalPos = aPos;
     vLocalNormal = aNormal;
+    vObjPos = (aPos + 0.5) * vec3(length(uModel[0].xyz), length(uModel[1].xyz), length(uModel[2].xyz));
     vec4 world = uModel * vec4(aPos, 1.0);
     vWorldPos  = world.xyz;
     vNormal    = normalize(uNormalMat * aNormal);
@@ -71,6 +73,7 @@ in vec2 vUV;
 in vec4 vBlend;
 in vec3 vLocalPos;
 in vec3 vLocalNormal;
+in vec3 vObjPos;
 
 uniform bool      uUseDecal;   // drawing a Decal: its picture colours the surface
 uniform bool      uFace;       // a head: its face picture (uDecal) is painted onto the front of it
@@ -81,6 +84,8 @@ uniform sampler2D uDecal;
 
 uniform vec3  uColor;
 uniform int   uMaterial;      // 0 plastic 1 metal 2 neon 3 wood 4 glass 5 concrete 6 ice (7 water, 8 liquid, 9 terrain)
+                              // 10 sand 11 grass 12 brick 13 fabric 14 slate 15 granite 16 marble
+                              // 17 cobblestone 18 foil 19 diamond plate 20 smooth plastic (materialShaderId)
 uniform float uAlpha;
 uniform bool  uSelected;
 uniform vec3  uViewPos;
@@ -219,6 +224,43 @@ vec3 shade(vec3 N, vec3 V, vec3 L, vec3 albedo, float rough, float metal, vec3 r
     return (kd * albedo / PI + spec) * radiance * NoL;
 }
 
+vec2 hash22(vec2 p) {
+    return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453);
+}
+// Cells (stones, crystals, crinkles): x = distance to the nearest cell's centre,
+// y = how far from the edge between cells, z = a random number per cell; id = the cell.
+vec3 voronoi(vec2 p, out vec2 id) {
+    vec2 i = floor(p), f = fract(p);
+    float d1 = 8.0, d2 = 8.0;
+    id = i;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x) {
+            vec2 g = vec2(float(x), float(y));
+            vec2 r = g + hash22(i + g) * 0.85 + 0.075 - f;
+            float d = dot(r, r);
+            if (d < d1) { d2 = d1; d1 = d; id = i + g; }
+            else if (d < d2) d2 = d;
+        }
+    d1 = sqrt(d1); d2 = sqrt(d2);
+    return vec3(d1, (d2 - d1) * 0.5, hash12(id));
+}
+// Bumps from a height (in world units) painted on the surface: tilts the normal
+// along how fast the height changes on screen (no extra textures or tangents needed).
+vec3 bump(vec3 N, float h) {
+    vec3 dpdx = dFdx(vWorldPos), dpdy = dFdy(vWorldPos);
+    float dhx = dFdx(h), dhy = dFdy(h);
+    vec3 r1 = cross(dpdy, N), r2 = cross(N, dpdx);
+    float det = dot(dpdx, r1);
+    if (abs(det) < 1e-12) return N;
+    vec3 grad = sign(det) * (dhx * r1 + dhy * r2);
+    return normalize(abs(det) * N - grad);
+}
+// How much of a pattern to show: all of it while it repeats every 5 or so pixels,
+// none once it's down to about 2 (no shimmer). px: fwidth length (~2 pixels).
+float fadeAt(float px, float period) { return clamp((period / px - 1.0) / 1.5, 0.0, 1.0); }
+// A soft-edged line: 1 within `w` of an edge, anti-aliased over a pixel.
+float lineAA(float d, float w, float px) { return 1.0 - smoothstep(w - px * 0.35, w + px * 0.35, d); }
+
 void main() {
     vec3 N = normalize(vNormal);
     vec3 V = normalize(uViewPos - vWorldPos);
@@ -292,6 +334,108 @@ void main() {
         rough = 0.95;
     }
     else if (uMaterial == 6) { rough = 0.08; albedo = mix(albedo, vec3(0.8, 0.9, 1.0), 0.2); }
+    else if (uMaterial >= 10 && uMaterial <= 20) {
+        // The newer materials are drawn on each face of the part in its own space
+        // (so bricks line up with its edges and patterns move with it), from its corner.
+        vec3 an = abs(vLocalNormal);
+        bool top = an.y >= max(an.x, an.z);
+        vec2 uv = top ? vObjPos.xz : (an.x > an.z ? vObjPos.zy : vObjPos.xy);
+        float px = length(fwidth(vWorldPos));                    // one pixel, in world units
+        float h = 0.0;
+        vec2 cid;
+        if (uMaterial == 10) {                                    // sand: fine grains, wind ripples
+            float f = fadeAt(px, 0.03);
+            float grain = hash12(floor(uv * 35.0));
+            float ripple = sin(uv.x * 3.5 + uv.y * 1.2 + fbm(uv * 0.5) * 5.0);
+            albedo *= mix(1.0, 0.85 + 0.25 * grain, f) * (0.82 + 0.3 * fbm(uv * 2.5)) * (0.95 + 0.05 * ripple);
+            h = ripple * 0.02 * fadeAt(px, 1.5) + grain * 0.003 * f;
+            rough = 0.95;
+        } else if (uMaterial == 11) {                             // grass: blades (upright on the sides), patches
+            float f = fadeAt(px, 0.07);
+            float blades = top ? vnoise(uv * 28.0) : vnoise(vec2(uv.x * 26.0, uv.y * 3.0 + vnoise(uv * 7.0) * 2.0));
+            float clumps = vnoise(uv * 5.0);
+            float patches = fbm(uv * 0.45);
+            albedo *= mix(1.0, 0.55 + 0.7 * blades, f) * (0.75 + 0.35 * clumps) * (0.8 + 0.4 * patches);
+            albedo *= mix(vec3(1.0), vec3(1.1, 1.05, 0.75), smoothstep(0.55, 0.8, patches) * 0.6);   // sun-dried bits
+            h = blades * 0.015 * f;
+            rough = 0.92;
+        } else if (uMaterial == 12) {                             // brick: rows of bricks, every other row shifted
+            vec2 b = uv / vec2(1.0, 0.4);
+            float row = floor(b.y);
+            b.x += mod(row, 2.0) * 0.5;
+            vec2 f2 = fract(b);
+            vec2 e = min(f2, 1.0 - f2) * vec2(1.0, 0.4);
+            float mortar = lineAA(min(e.x, e.y), 0.04, px);
+            float tint = hash12(vec2(floor(b.x), row));
+            vec3 brick = albedo * (0.75 + 0.4 * tint) * (0.88 + 0.24 * vnoise(uv * 14.0));
+            vec3 mortarCol = mix(lin(vec3(0.66, 0.64, 0.6)), albedo, 0.25);
+            float f = fadeAt(px, 0.2);
+            albedo = mix(albedo * 0.95, mix(brick, mortarCol, mortar), f);
+            h = (1.0 - mortar) * 0.02 * f + vnoise(uv * 20.0) * 0.003 * f;
+            rough = 0.9;
+        } else if (uMaterial == 13) {                             // fabric: woven threads, a bit fuzzy
+            vec2 t = uv * 16.0;
+            float over = mod(floor(t.x) + floor(t.y), 2.0);
+            float thread = over > 0.5 ? sin(3.14159 * fract(t.y)) : sin(3.14159 * fract(t.x));
+            float f = fadeAt(px, 0.025);                          // (only close up: a weave moirés)
+            float fuzz = vnoise(uv * 6.0) * 0.5 + vnoise(uv * 15.0) * 0.5 * fadeAt(px, 0.07);   // soft and felty
+            albedo *= mix(0.92, 0.76 + 0.28 * thread, f) * (0.8 + 0.3 * fuzz) * (0.92 + 0.12 * fbm(uv * 1.5));
+            h = thread * 0.01 * f;
+            rough = 1.0;
+        } else if (uMaterial == 14) {                             // slate: flat, layered slabs
+            float n = fbm(uv * vec2(0.6, 1.8) + vec2(3.1, 0.0));
+            float slabs = floor(n * 6.0) / 6.0;
+            float f = fadeAt(px, 0.1);
+            albedo *= (0.7 + 0.5 * slabs) * mix(1.0, 0.9 + 0.2 * vnoise(uv * 18.0), f);
+            h = slabs * 0.04 + vnoise(uv * 6.0) * 0.006 * f;
+            rough = 0.75;
+        } else if (uMaterial == 15) {                             // granite: dark and light crystals, polished
+            vec3 v = voronoi(uv * 9.0, cid);
+            float f = fadeAt(px, 0.11);
+            vec3 g = albedo * (0.8 + 0.35 * fbm(uv * 1.5));
+            if (v.z < 0.22) g = albedo * 0.25;
+            else if (v.z > 0.86) g = mix(albedo, vec3(0.95), 0.6);
+            else if (v.z > 0.7) g = albedo * vec3(1.15, 0.95, 0.9);
+            albedo = mix(albedo * (0.8 + 0.3 * fbm(uv * 1.5)), g, f);
+            rough = 0.4;
+        } else if (uMaterial == 16) {                             // marble: polished, with soft winding veins
+            float w = fbm(uv * 0.8);
+            float vein  = 1.0 - smoothstep(0.0, 0.1, abs(sin((uv.x + uv.y * 0.6) * 1.6 + w * 7.0)));
+            float vein2 = 1.0 - smoothstep(0.0, 0.05, abs(sin((uv.x * 0.4 - uv.y) * 3.5 + fbm(uv * 1.7 + 3.0) * 6.0)));
+            albedo *= 0.94 + 0.12 * w;
+            albedo = mix(albedo, albedo * 0.35, max(vein * 0.75, vein2 * 0.45) * fadeAt(px, 0.3));
+            rough = 0.12;
+        } else if (uMaterial == 17) {                             // cobblestone: rounded stones, dark gaps
+            vec3 v = voronoi(uv * 1.7, cid);
+            float gap = lineAA(v.y / 1.7, 0.035, px);
+            float f = fadeAt(px, 0.3);
+            vec3 stone = albedo * (0.65 + 0.5 * v.z) * (0.85 + 0.3 * vnoise(uv * 10.0));
+            albedo = mix(albedo * 0.85, mix(stone, albedo * 0.25, gap), f);
+            h = (smoothstep(0.0, 0.2, v.y) * 0.05 + vnoise(uv * 8.0) * 0.005) * f;
+            rough = 0.85;
+        } else if (uMaterial == 18) {                             // foil: thin crinkled metal, every facet tilted
+            vec3 v = voronoi(uv * 5.0, cid);
+            float f = fadeAt(px, 0.2);
+            vec3 tilt = vec3(hash12(cid + 3.7), hash12(cid + 9.1), hash12(cid + 5.3)) - 0.5;
+            N = normalize(N + tilt * 0.5 * f);
+            albedo *= mix(1.0, 0.85 + 0.25 * v.z, f);
+            h = v.y * 0.01 * f;
+            metal = 1.0; rough = 0.25;
+        } else if (uMaterial == 19) {                             // diamond plate: raised stripes, every other one turned
+            vec2 p = uv * 1.6;
+            vec2 cell = floor(p), q = fract(p) - 0.5;
+            q = mod(cell.x + cell.y, 2.0) > 0.5 ? vec2(q.x + q.y, q.x - q.y) : vec2(q.x - q.y, q.x + q.y);
+            float d = abs(q.x) / 0.62 + abs(q.y) / 0.16;
+            float stud = 1.0 - smoothstep(0.8, 1.0, d);
+            float f = fadeAt(px, 0.1);
+            h = stud * 0.03 * f;
+            albedo *= mix(0.85, 0.72 + 0.35 * stud, f) * (0.95 + 0.05 * vnoise(vec2(uv.x * 40.0, uv.y * 2.0)));
+            metal = 1.0; rough = mix(0.4, 0.28, stud * f);
+        } else {                                                  // smooth plastic: no grain, glossier
+            rough = 0.22;
+        }
+        N = bump(N, h);
+    }
     else if (uMaterial == 8) {                                    // wet liquid (blood, oil): glossy, a bit darker in the middle
         rough = 0.15;
         albedo *= 0.7;
@@ -317,7 +461,8 @@ void main() {
         }
         if (wet > 0.0) {
             wet *= smoothstep(0.15, 0.55, vnoise(vWorldPos.xz * 1.3 + vWorldPos.y * 0.7) * 0.6 + wet * 0.6);
-            float porous = (uMaterial == 3 || uMaterial == 5) ? 0.5 : (uMaterial == 0 ? 0.72 : 0.88);
+            bool soaks = uMaterial == 3 || uMaterial == 5 || (uMaterial >= 10 && uMaterial <= 14) || uMaterial == 17;
+            float porous = soaks ? 0.5 : (uMaterial == 0 || uMaterial == 20 ? 0.72 : 0.88);
             albedo *= mix(1.0, porous, wet);
             float puddle = wet * smoothstep(0.75, 0.95, N.y);
             rough = mix(rough, 0.05, max(wet * 0.75, puddle));
@@ -692,6 +837,83 @@ void main() {
     c.rgb *= mix(uLight, vec3(1.5), uGlow);
     if (c.a < 0.003) discard;
     FragColor = c;
+}
+)";
+
+// ParticleEmitter / Fire / Smoke / Sparkles particles: camera-facing squares, turned by
+// their Rotation. The built-in pictures are drawn right here (no image files): 0 a soft
+// round glow, 1 a puff of smoke, 2 a lick of flame, 3 a four-pointed sparkle. Or a
+// picture (a ParticleEmitter's Texture). The colour comes out multiplied by its alpha,
+// and LightEmission turns "cover what's behind" into "add light to it".
+inline const char* spriteVert = R"(#version 410 core
+layout(location=0) in vec3 aCenter;
+layout(location=1) in vec2 aCorner;   // -1..1
+layout(location=2) in vec4 aColor;    // rgb, alpha
+layout(location=3) in vec4 aInfo;     // half size, turn (radians), look, glow
+layout(location=4) in float aSeed;
+uniform mat4 uView;
+uniform mat4 uProj;
+out vec2 vCorner;
+out vec4 vColor;
+out vec3 vInfo;    // look, glow, seed
+void main() {
+    vCorner = aCorner;
+    vColor = aColor;
+    vInfo = vec3(aInfo.z, aInfo.w, aSeed);
+    float c = cos(aInfo.y), s = sin(aInfo.y);
+    vec4 p = uView * vec4(aCenter, 1.0);
+    p.xy += mat2(c, s, -s, c) * aCorner * aInfo.x;
+    gl_Position = uProj * p;
+}
+)";
+
+inline const char* spriteFrag = R"(#version 410 core
+in vec2 vCorner;
+in vec4 vColor;
+in vec3 vInfo;
+uniform sampler2D uTex;
+uniform bool  uHasTex;
+uniform vec3  uLight;     // the scene's light (unlit particles still dim at night)
+out vec4 FragColor;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+void main() {
+    int look = int(vInfo.x + 0.5);
+    float glow = vInfo.y, seed = vInfo.z;
+    vec3 col = pow(vColor.rgb, vec3(2.2));
+    float d2 = dot(vCorner, vCorner);
+    float a;
+    if (uHasTex) {
+        vec4 t = texture(uTex, vec2(vCorner.x, -vCorner.y) * 0.5 + 0.5);
+        col *= pow(t.rgb, vec3(2.2));
+        a = t.a;
+    } else if (look == 1) {          // smoke: a lumpy, wispy puff
+        vec2 q = vCorner * 2.1 + vec2(seed * 9.1, seed * 5.3);
+        float n = noise(q) * 0.55 + noise(q * 2.2) * 0.3 + noise(q * 4.5) * 0.15;
+        a = pow(max(0.0, 1.0 - d2), 1.5) * (0.45 + 0.9 * n);
+        col *= 0.85 + 0.3 * n;
+    } else if (look == 2) {          // fire: a soft flame, white-hot in the middle
+        vec2 q = vec2(vCorner.x * 1.3, vCorner.y * 0.9 + 0.15);
+        float r2 = dot(q, q);
+        float n = noise(vCorner * 3.0 + vec2(seed * 7.0, seed * 3.0));
+        a = pow(max(0.0, 1.0 - r2), 1.6) * (0.6 + 0.6 * n);
+        col = mix(col, vec3(1.0, 0.85, 0.5), pow(max(0.0, 1.0 - r2 * 2.5), 2.0) * 0.35);
+    } else if (look == 3) {          // sparkle: a little four-pointed star
+        vec2 q = abs(vCorner);
+        float star = exp(-q.x * 14.0) * exp(-q.y * 2.2) + exp(-q.y * 14.0) * exp(-q.x * 2.2);
+        a = clamp(star + exp(-d2 * 18.0), 0.0, 1.0);
+        col = mix(col, vec3(1.0), exp(-d2 * 30.0) * 0.7);
+    } else {                         // a soft round glow
+        a = pow(max(0.0, 1.0 - d2), 2.0);
+    }
+    a *= vColor.a;
+    if (a < 0.003) discard;
+    col *= mix(uLight, vec3(1.25), glow);
+    FragColor = vec4(col * a, a * (1.0 - glow));
 }
 )";
 
@@ -1831,6 +2053,41 @@ void main() {
     float diff = max(dot(n, uLightDir), 0.0);
     float spec = pow(max(dot(reflect(-uLightDir, n), vec3(0, 0, 1)), 0.0), 60.0);
     FragColor = vec4(pow(vColor, vec3(2.2)) * (uAmbient + diff) + vec3(spec), 0.75);
+}
+)";
+
+// ---------------------------------------------------------------------------
+// ViewportFrame: the parts inside a UI frame as a little 3D picture, lit the
+// simple Roblox way (Ambient + LightColor from LightDirection), no post-processing.
+// ---------------------------------------------------------------------------
+inline const char* viewportVert = R"(#version 410 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNormal;
+uniform mat4 uModel;
+uniform mat4 uViewProj;
+uniform mat3 uNormalMat;
+out vec3 vNormal;
+void main() {
+    vNormal = uNormalMat * aNormal;
+    gl_Position = uViewProj * uModel * vec4(aPos, 1.0);
+}
+)";
+
+inline const char* viewportFrag = R"(#version 410 core
+in vec3 vNormal;
+uniform vec3  uColor;
+uniform vec3  uAmbient;
+uniform vec3  uLightColor;
+uniform vec3  uLightDir;    // the way the light travels (normalized)
+uniform float uAlpha;
+uniform int   uGlow;        // Neon: lit by itself
+out vec4 FragColor;
+void main() {
+    vec3 n = normalize(vNormal);
+    if (!gl_FrontFacing) n = -n;
+    float d = max(dot(n, -uLightDir), 0.0);
+    vec3 c = uGlow == 1 ? uColor : uColor * (uAmbient + uLightColor * d);
+    FragColor = vec4(min(c, vec3(1.0)), uAlpha);
 }
 )";
 

@@ -132,6 +132,7 @@ SceneRenderer::SceneRenderer() {
     m_hl          = std::make_unique<Shader>(fullscreenVert, highlightFrag);
     m_ribbon      = std::make_unique<Shader>(ribbonVert, ribbonFrag);
     m_sunRays     = std::make_unique<Shader>(fullscreenVert, sunRaysFrag);
+    m_sprite      = std::make_unique<Shader>(spriteVert, spriteFrag);
     m_fluidDepth  = std::make_unique<Shader>(fluidVert, fluidDepthFrag);
     m_fluidThick  = std::make_unique<Shader>(fluidVert, fluidThickFrag);
     m_fluidColor  = std::make_unique<Shader>(fluidVert, fluidColorFrag);
@@ -462,7 +463,8 @@ void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, 
     m_depth->setMat4("uLightSpace", lightSpace);
     scene.forEach([&](SceneNode* node) {
         if (!node->mesh || !node->visible || !node->castShadow) return;
-        for (SceneNode* p = node->parent; p; p = p->parent) if (!p->visible) return;   // inside something hidden (a backpack)
+        for (SceneNode* p = node->parent; p; p = p->parent)   // inside something hidden (a backpack) or a ViewportFrame
+            if (!p->visible || p->isViewportFrame()) return;
         if (node->kind != NodeKind::Part || node->transparency > 0.5f) return;
         const glm::mat4 m = node->worldMatrix();
         if (tooFar(glm::vec3(m[3]), partRadius(m))) return;
@@ -818,7 +820,7 @@ void SceneRenderer::drawConstraints(Scene& scene, bool editing) {
         m_lit->setMat4("uModel", m);
         m_lit->setMat3("uNormalMat", glm::transpose(glm::inverse(glm::mat3(m))));
         m_lit->setVec3("uColor", color);
-        m_lit->setInt("uMaterial", (int)mat);
+        m_lit->setInt("uMaterial", materialShaderId(mat));
         mesh.draw();
     };
     scene.forEach([&](SceneNode* n) {
@@ -876,6 +878,47 @@ void SceneRenderer::drawConstraints(Scene& scene, bool editing) {
             case ConstraintType::Hinge:
                 draw(segment(p0 - glm::vec3(a0->worldMatrix()[0]) * 0.0f, p1, th * 0.5f), col, Material::Metal, *cyl);
                 break;
+            case ConstraintType::BallSocket: {
+                // A ball in its socket, with a thin line to Attachment1 if they've drifted apart.
+                const float r = std::max(0.15f, th * 2.0f);
+                draw(glm::translate(glm::mat4(1.0f), p0) * glm::scale(glm::mat4(1.0f), glm::vec3(r)), col, Material::Metal, *ball);
+                if (glm::length(p1 - p0) > r * 0.5f) draw(segment(p0, p1, th * 0.5f), col, Material::Metal, *cyl);
+                break;
+            }
+            case ConstraintType::Prismatic:
+            case ConstraintType::Cylindrical: {
+                // The rail along Attachment0's axis (from LowerLimit to UpperLimit when
+                // limited), and a sleeve where Attachment1 rides on it.
+                glm::vec3 x(a0->worldMatrix()[0]);
+                if (glm::length(x) < 1e-6f) break;
+                x = glm::normalize(x);
+                const JointProps& jp = n->joint;
+                const float s = glm::dot(p1 - p0, x);
+                float lo = std::min(0.0f, s), hi = std::max(0.0f, s);
+                if (jp.limitsEnabled) {
+                    lo = std::min(lo, std::min(jp.lowerLimit, jp.upperLimit));
+                    hi = std::max(hi, std::max(jp.lowerLimit, jp.upperLimit));
+                }
+                if (hi - lo < 0.2f) { lo -= 0.1f; hi += 0.1f; }
+                draw(segment(p0 + x * lo, p0 + x * hi, th * 0.5f), col, Material::Metal, *cyl);
+                const float sleeve = std::max(0.25f, th * 4.0f);
+                draw(segment(p1 - x * sleeve, p1 + x * sleeve, th * 1.6f), col * 0.8f, Material::Metal, *cyl);
+                if (n->constraintType == ConstraintType::Cylindrical) {
+                    // A ring around the sleeve shows it can spin.
+                    const glm::vec3 u = std::abs(x.y) < 0.99f ? glm::normalize(glm::cross(x, glm::vec3(0, 1, 0)))
+                                                              : glm::normalize(glm::cross(x, glm::vec3(1, 0, 0)));
+                    const glm::vec3 v = glm::cross(x, u);
+                    const float rr = sleeve * 1.2f;
+                    glm::vec3 prev = p1 + u * rr;
+                    for (int i = 1; i <= 16; ++i) {
+                        const float a = i / 16.0f * 6.2831853f;
+                        const glm::vec3 q = p1 + (u * std::cos(a) + v * std::sin(a)) * rr;
+                        draw(segment(prev, q, th * 0.4f), col, Material::Metal, *cyl);
+                        prev = q;
+                    }
+                }
+                break;
+            }
             default: break;
         }
     });
@@ -1183,7 +1226,8 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         stack.pop_back();
         if (!node->visible) continue;
         ff = ff || node->hasForceField();
-        for (auto& c : node->children) stack.push_back({c.get(), ff});
+        if (!node->isViewportFrame())   // (the parts in a ViewportFrame are only its picture)
+            for (auto& c : node->children) stack.push_back({c.get(), ff});
         if (node->isDecal() && !node->texture.empty() && node->shownTransparency() < 0.99f &&
             node->parent && node->parent->kind == NodeKind::Part)
             if (!tooFar(glm::vec3(node->parent->worldMatrix()[3]), partRadius(node->parent->worldMatrix())))
@@ -1223,7 +1267,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         m_lit->setMat3("uNormalMat", nrm);
         m_lit->setVec3("uColor", node->color);
         m_lit->setBool("uSelected", node->selected);
-        m_lit->setInt("uMaterial", water ? 7 : (int)node->material);
+        m_lit->setInt("uMaterial", water ? 7 : materialShaderId(node->material));
         m_lit->setFloat("uAlpha", 1.0f - node->shownTransparency());
         m_lit->setFloat("uWetPart", wetPart(node));
         if (water) {
@@ -1418,8 +1462,82 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     }
 
     drawRibbons(scene, camera);
+    drawSprites(scene, camera);
     m_lit->bind();
     glDepthMask(GL_TRUE);
+}
+
+// ParticleEmitter / Fire / Smoke / Sparkles particles (ParticleSystem::runEmitters has
+// already moved them and worked out their looks): camera-facing squares, furthest first.
+void SceneRenderer::drawSprites(Scene& scene, const Camera& camera) {
+    const ParticleSystem& ps = scene.particles();
+    const std::vector<Sprite>& sprites = ps.sprites();
+    if (sprites.empty()) return;
+    const glm::mat4 view = camera.view();
+    std::vector<std::pair<float, const Sprite*>> order;
+    order.reserve(sprites.size());
+    for (const Sprite& s : sprites) {
+        if (s.alpha <= 0.003f || s.size <= 0.0f || tooFar(s.pos, s.size)) continue;
+        const float z = (view * glm::vec4(s.pos, 1.0f)).z;
+        if (z > s.size) continue;   // behind the camera
+        order.push_back({z, &s});
+    }
+    if (order.empty()) return;
+    std::sort(order.begin(), order.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    struct V { glm::vec3 c; glm::vec2 k; glm::vec4 col; glm::vec4 info; float seed; };
+    std::vector<V> verts;
+    verts.reserve(order.size() * 6);
+    const glm::vec2 corners[6] = {{-1, -1}, {1, -1}, {1, 1}, {-1, -1}, {1, 1}, {-1, 1}};
+    if (!m_spriteVao) {
+        glGenVertexArrays(1, &m_spriteVao);
+        glGenBuffers(1, &m_spriteVbo);
+        glBindVertexArray(m_spriteVao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_spriteVbo);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, c));
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, k));
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, col));
+        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, info));
+        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, seed));
+    }
+    const Environment& env = scene.environment();
+    const glm::vec3 light = glm::clamp(env.ambientColor * env.ambientIntensity +
+                                       env.sunColor * std::max(0.0f, env.sunIntensity) * std::max(env.sunDirection().y, 0.0f),
+                                       glm::vec3(0.05f), glm::vec3(1.2f));
+    m_sprite->bind();
+    m_sprite->setMat4("uView", view);
+    m_sprite->setMat4("uProj", camera.projection());
+    m_sprite->setVec3("uLight", light);
+    m_sprite->setInt("uTex", 5);
+    glBindVertexArray(m_spriteVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_spriteVbo);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    // Colours come out already multiplied by their alpha: a glowing one adds its light,
+    // a plain one covers what's behind it, and anything between.
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    // In runs that use the same picture (most use a built-in one: no picture at all).
+    size_t i = 0;
+    while (i < order.size()) {
+        const int tex = order[i].second->tex;
+        verts.clear();
+        for (; i < order.size() && order[i].second->tex == tex; ++i) {
+            const Sprite& s = *order[i].second;
+            const glm::vec4 col(s.color, std::clamp(s.alpha, 0.0f, 1.0f));
+            const glm::vec4 info(s.size * 0.5f, glm::radians(s.rot), (float)s.look, std::clamp(s.glow, 0.0f, 1.0f));
+            for (const glm::vec2& k : corners) verts.push_back({s.pos, k, col, info, s.seed});
+        }
+        const std::vector<std::string>& texNames = ps.spriteTextures();
+        const unsigned t = tex >= 0 && tex < (int)texNames.size() ? Textures::get(texNames[tex]) : 0;
+        if (t) bindTex(5, t);
+        m_sprite->setBool("uHasTex", t != 0);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(V)), verts.data(), GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    }
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(0);
 }
 
 namespace {
