@@ -36,6 +36,7 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::ClickDetector ? "ClickDetector"
                     : node->kind == NodeKind::Trail    ? "Trail"
                     : node->kind == NodeKind::Beam     ? "Beam"
+                    : node->kind == NodeKind::Particles ? node->particleClass()
                     : node->kind == NodeKind::Light    ? (node->lightType == LightType::Spot ? "SpotLight" : "PointLight")
                     : node->kind == NodeKind::Sound    ? "Sound"
                     : node->kind == NodeKind::Attachment ? "Attachment"
@@ -470,6 +471,91 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::TextDisabled(beam ? "A ribbon between its two Attachments. CurveSize bends it along each Attachment's X axis."
                                  : "Leaves a ribbon behind between its two Attachments as they move, fading over Lifetime seconds.");
         ImGui::PopTextWrapPos();
+        return;
+    }
+
+    if (node->isParticles()) {
+        ParticleProps& p = node->particle;
+        ImGui::SeparatorText(node->particleClass());
+        ImGui::Checkbox("Enabled", &node->enabled);
+        auto note = [](const char* text) {
+            ImGui::Spacing();
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("%s", text);
+            ImGui::PopTextWrapPos();
+        };
+        switch (p.type) {
+            case ParticleType::Fire:
+                ImGui::ColorEdit3("Color", &p.color1.x);
+                ImGui::ColorEdit3("SecondaryColor", &p.color2.x);
+                ImGui::SliderFloat("Size", &p.fxSize, 2.0f, 30.0f, "%.1f");
+                ImGui::SliderFloat("Heat", &p.rise, -25.0f, 25.0f, "%.1f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How fast the flames rise (below 0: they fall).");
+                note("Flames rising from the middle of the part it's in. They fade from Color to SecondaryColor.");
+                return;
+            case ParticleType::Smoke:
+                ImGui::ColorEdit3("Color", &p.color1.x);
+                ImGui::SliderFloat("Opacity", &p.opacity, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("RiseVelocity", &p.rise, -25.0f, 25.0f, "%.1f");
+                ImGui::SliderFloat("Size", &p.fxSize, 0.1f, 100.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+                note("Puffs of smoke drifting up from the part it's in, growing as they go.");
+                return;
+            case ParticleType::Sparkles:
+                ImGui::ColorEdit3("SparkleColor", &p.color1.x);
+                note("Twinkling sparkles all round the part it's in.");
+                return;
+            default: break;
+        }
+        auto range = [](const char* name, glm::vec2& r, float speed, float lo, float hi, const char* fmt) {
+            if (ImGui::DragFloat2(name, &r.x, speed, lo, hi, fmt)) { r = glm::clamp(r, lo, hi); if (r.y < r.x) r.y = r.x; }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Min, Max: each particle gets a random value between them.");
+        };
+        ImGui::DragFloat("Rate", &p.rate, 0.5f, 0.0f, 100000.0f, "%.1f / s");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Particles a second. At most %d from one emitter are out at once.", kMaxSpritesPerEmitter);
+        range("Lifetime", p.lifetime, 0.05f, 0.0f, 1000.0f, "%.2f s");
+        range("Speed", p.speed, 0.1f, -10000.0f, 10000.0f, "%.1f");
+        ImGui::DragFloat2("SpreadAngle", &p.spread.x, 0.5f, -360.0f, 360.0f, "%.0f deg");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far (degrees) they can veer from EmissionDirection, each way.");
+        int dir = (int)p.direction;
+        if (ImGui::Combo("EmissionDirection", &dir, kFaceNames, 6)) p.direction = (Face)dir;
+        // Over each particle's life: start and end (scripts can use more keypoints).
+        glm::vec3 c0 = p.color.front().c, c1 = p.color.back().c;
+        bool edit = ImGui::ColorEdit3("Color (start)", &c0.x);
+        edit |= ImGui::ColorEdit3("Color (end)", &c1.x);
+        if (edit) p.color = {{0.0f, c0}, {1.0f, c1}};
+        float s0 = p.size.front().v, s1 = p.size.back().v;
+        edit = ImGui::DragFloat("Size (start)", &s0, 0.02f, 0.0f, 1000.0f, "%.2f");
+        edit |= ImGui::DragFloat("Size (end)", &s1, 0.02f, 0.0f, 1000.0f, "%.2f");
+        if (edit) p.size = {{0.0f, std::max(0.0f, s0)}, {1.0f, std::max(0.0f, s1)}};
+        float t0 = p.transparency.front().v, t1 = p.transparency.back().v;
+        edit = ImGui::SliderFloat("Transparency (start)", &t0, 0.0f, 1.0f, "%.2f");
+        edit |= ImGui::SliderFloat("Transparency (end)", &t1, 0.0f, 1.0f, "%.2f");
+        if (edit) p.transparency = {{0.0f, t0}, {1.0f, t1}};
+        ImGui::SliderFloat("LightEmission", &p.lightEmission, 0.0f, 1.0f, "%.2f");
+        ImGui::DragFloat3("Acceleration", &p.acceleration.x, 0.1f, -10000.0f, 10000.0f, "%.1f");
+        ImGui::DragFloat("Drag", &p.drag, 0.02f, -100.0f, 100.0f, "%.2f");
+        range("Rotation", p.rotation, 1.0f, -36000.0f, 36000.0f, "%.0f deg");
+        range("RotSpeed", p.rotSpeed, 1.0f, -36000.0f, 36000.0f, "%.0f deg/s");
+        ImGui::Checkbox("LockedToPart", &p.locked);
+        // The picture: a built-in one, or your own.
+        static const char* looks[] = {"Glow", "Smoke", "Fire", "Sparkle"};
+        int look = -1;
+        for (int i = 0; i < kParticleLookCount; ++i) if (p.texture == kParticleLooks[i]) look = i;
+        if (ImGui::BeginCombo("Texture", look >= 0 ? looks[look] : "(a picture)")) {
+            for (int i = 0; i < kParticleLookCount; ++i)
+                if (ImGui::Selectable(looks[i], look == i)) p.texture = kParticleLooks[i];
+            ImGui::EndCombo();
+        }
+        ImGui::InputText("Texture picture", &p.texture);
+        if (ImGui::IsItemDeactivatedAfterEdit()) p.texture = particleTexture(Online::assetRef(p.texture));
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Your own picture: a .png in the games folder, a full path, or gb:<id>.\nEmpty = the soft glow.");
+        if (ImGui::Button("Emit 20")) { p.pendingEmit += 20; }
+        ImGui::SameLine();
+        if (ImGui::Button("Clear")) p.pendingClear = true;
+        note("Particles fly out of the part it's in (from anywhere inside it), or from an Attachment's point. "
+             "Scripts: emitter:Emit(n) sends out n at once, emitter:Clear() removes them.");
         return;
     }
 

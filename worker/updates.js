@@ -10,6 +10,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'ember-and-ash', name: 'Ember & Ash', time: 1792380179, tag: 'Engine',
+    summary: 'Particle effects you can place: ParticleEmitter, Fire, Smoke and Sparkles, seen by everyone in the game.',
+    items: [
+      'Insert a ParticleEmitter into any part (Insert Object > Particles) and it starts spraying, even while you build',
+      'Set its Rate, Lifetime, Speed, Spread, Color, Size, Transparency, glow, gravity, drag and spin in Properties or from scripts',
+      'Scripts can call Emit(50) for a burst or Clear() to wipe them, and NumberRange.new is new for these',
+      'Classic Fire, Smoke and Sparkles: drop one in a part and it just works',
+      'Every player sees them in online games, and a huge Rate can\'t freeze the game (there\'s a cap)',
+      'Particles come across when you import .rbxl and .rbxm files, and go back out when you export',
+    ],
+  },
+  {
     id: 'bricks-and-mortar', name: 'Bricks & Mortar', time: 1791853200, tag: 'Engine',
     summary: 'Eleven new materials, each with its own look and feel: Brick, Cobblestone, Marble, Diamond Plate and more.',
     items: [

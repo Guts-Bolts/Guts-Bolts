@@ -43,6 +43,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
+        case NodeKind::Particles: return n->particleClass();
         case NodeKind::Light:  return n->lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::ForceField: return "ForceField";
         case NodeKind::Tool:       return "Tool";
@@ -297,6 +298,10 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                             " needs two Attachments (Attachment0 and Attachment1) and doesn't have both, so it isn't drawn.",
                             "Insert Attachments in parts and set Attachment0 / Attachment1 with set_property.");
             }
+            if (n->isParticles() && (!n->parent || (!isPartLike(n->parent) && !n->parent->isAttachment())))
+                add(n, "warning", "PARTICLES_NOT_IN_PART", std::string("The ") + classOf(n, root) +
+                    " isn't inside a part or an Attachment, so no particles come out of it.",
+                    "Move it into the part (or Attachment) the particles should come from.");
             if (n->isTool()) {
                 SceneNode* h = n->findChild("Handle");
                 if (!h || !isPartLike(h))
