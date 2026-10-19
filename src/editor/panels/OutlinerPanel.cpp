@@ -209,11 +209,15 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
         {"Characters & Tools", {"Tool", "Rig", "Animation", "Team", "ProximityPrompt", "ClickDetector"}},
         {"Containers", {"Model", "Folder"}},
         {"Effects & Lights", {"PointLight", "SpotLight", "Sound", "ForceField", "Decal", "Highlight", "Trail", "Beam"}},
+        {"Sky & Screen Effects", {"Sky", "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect"}},
+        {"Particles", {"ParticleEmitter", "Fire", "Smoke", "Sparkles"}},
         {"Water", {"Water", "WaterSource", "FluidVolume", "FluidSystem", "FluidEmitter"}},
-        {"Constraints", {"Attachment", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
+        {"Constraints", {"Attachment", "HingeConstraint", "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint",
+                          "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
         {"Body Movers (classic)", {"BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce"}},
         {"User Interface", {"ScreenGui", "BillboardGui", "SurfaceGui", "Frame", "TextLabel", "TextButton", "ImageLabel", "ImageButton", "TextBox", "ScrollingFrame",
-                            "UICorner", "UIStroke", "UIShadow", "UIBlur", "UIListLayout", "UIGridLayout", "UIPadding"}},
+                            "UICorner", "UIStroke", "UIShadow", "UIBlur", "UIGradient", "UIScale", "UIAspectRatioConstraint",
+                            "UIListLayout", "UIGridLayout", "UIPadding", "ViewportFrame", "Camera", "WorldModel"}},
         {"Values", {"IntValue", "NumberValue", "StringValue", "BoolValue"}},
     };
     for (const Group& g : groups) {
@@ -231,13 +235,16 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
 // A container service (ReplicatedStorage, ServerScriptService, StarterPack...): a row of
 // its own like Roblox's Explorer, holding what's inside its folder. The folder is made
 // the first time you put something in it (Insert Object, or drag things onto the row).
-void OutlinerPanel::folderService(const char* name, int icon, const char* tip) {
+void OutlinerPanel::folderService(const char* name, int icon, const char* tip, const std::function<void()>& onClick) {
     SceneNode* f = m_scene->serviceFolder(name, false);
     bool kids = false;
     if (f) for (auto& c : f->children) if (!c->internal) { kids = true; break; }
     ImGui::PushID(name);
     const bool open = serviceRow(name, icon, kids, f && f->selected);
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() && f) m_scene->select(f);
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+        if (onClick) onClick();            // (Lighting: its settings, not its folder)
+        else if (f) m_scene->select(f);
+    }
     if (ImGui::IsItemHovered() && tip) ImGui::SetTooltip("%s", tip);
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* p = ImGui::AcceptDragDropPayload("GB_NODE")) {
@@ -317,9 +324,11 @@ void OutlinerPanel::render() {
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everyone in the game (while it runs).");
         }
-        if (serviceRow("Lighting", (int)Icons::Id::Lighting, false, false)) ImGui::TreePop();
-        if (ImGui::IsItemClicked() && onLighting) onLighting();
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sky, sun, fog and colours (opens the Lighting settings)");
+        // Lighting: clicking it opens the Lighting settings; inside it go the Sky and the
+        // screen effects (Insert Object on its row, or drag them onto it).
+        folderService("Lighting", (int)Icons::Id::Lighting,
+                      "Sky, sun, fog and colours (opens the Lighting settings).\nRight-click > Insert Object for a Sky or screen effects.",
+                      onLighting);
         SceneNode* character = nullptr;
         for (auto& c : m_scene->root()->children)
             if (m_scene->isCharacterRoot(c->id)) character = c.get();
@@ -330,13 +339,24 @@ void OutlinerPanel::render() {
         folderService("ServerStorage", (int)Id::Folder, "Things only server scripts use (maps, prizes). Not in the world until a script clones them.");
         folderService("StarterGui", (int)Id::ScreenGui, "The game's on-screen UI (ScreenGuis). Everyone gets a copy.");
         folderService("StarterPack", (int)Id::Tool, "Tools everyone spawns with.");
-        if (serviceRow("StarterPlayer", (int)Icons::Id::Player, character && !inWorkspace, false)) {
-            if (character && !inWorkspace) drawNode(character);
-            ImGui::TreePop();
+        {
+            SceneNode* sp = m_scene->serviceFolder("StarterPlayer", false);
+            bool spKids = false;
+            if (sp) for (auto& c : sp->children) if (!c->internal) { spKids = true; break; }
+            ImGui::PushID("StarterPlayer");
+            const bool spOpen = serviceRow("StarterPlayer", (int)Icons::Id::Player, (character && !inWorkspace) || spKids, sp && sp->selected);
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() && sp) m_scene->select(sp);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(inWorkspace ? "The character is in the Workspace while the game runs."
+                                              : "The character everyone spawns as. Dress it, add scripts to it (its Animate script plays "
+                                                "its animations). StarterPlayerScripts holds LocalScripts that run for every player.");
+            if (spOpen) {
+                if (character && !inWorkspace) drawNode(character);
+                if (sp) for (auto& c : sp->children) drawNode(c.get());   // StarterPlayerScripts...
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
         }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(inWorkspace ? "The character is in the Workspace while the game runs."
-                                          : "The character everyone spawns as. Dress it, add scripts to it (its Animate script plays its animations).");
         folderService("Teams", (int)Id::Team, "Teams players can be on. Insert a Team here.");
         folderService("SoundService", (int)Id::Sound, "Sounds for the whole game (music, sound effects scripts play).");
         folderService("Chat", (int)Id::Output, "Chat settings and scripts.");
@@ -407,9 +427,12 @@ std::string className(const SceneNode& n) {
         case NodeKind::Remote:     return n.remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt:     return "ProximityPrompt";
         case NodeKind::Highlight:  return "Highlight";
+        case NodeKind::PostEffect: return kPostEffectClassNames[(int)n.post.type];
+        case NodeKind::Sky:        return "Sky";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:      return "Trail";
         case NodeKind::Beam:       return "Beam";
+        case NodeKind::Particles:  return n.particleClass();
         case NodeKind::Light:      return n.lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::Sound:      return "Sound";
         case NodeKind::Attachment: return "Attachment";
@@ -422,6 +445,7 @@ std::string className(const SceneNode& n) {
         case NodeKind::FluidEmitter: return "FluidEmitter";
         case NodeKind::Mover:        return kMoverClassNames[(int)n.mover.type];
         case NodeKind::Gui:        return kGuiClassNames[(int)n.gui.type];
+        case NodeKind::Camera:     return "Camera";
         case NodeKind::Constraint: return std::string(kConstraintNames[(int)n.constraintType]) + "Constraint";
         default: return n.name == "SpawnLocation" ? "SpawnLocation" : "Part";
     }

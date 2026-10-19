@@ -15,6 +15,8 @@
 #include "../scene/Player.h"
 #include "../game/GameSession.h"
 #include "../core/Log.h"
+#include "../online/OnlineClient.h"
+#include "../scripting/Luau.h"
 
 #include <imgui.h>
 
@@ -34,15 +36,27 @@ namespace {
 
 const char* classOf(const SceneNode* n, const SceneNode* root) {
     if (n == root) return "Workspace";
+    // A container service (StarterPack, ServerScriptService...) is a folder at the top.
+    if (n->parent == root && n->kind == NodeKind::Model && Scene::isServiceName(n->name)) return n->name.c_str();
     switch (n->kind) {
-        case NodeKind::Model:  return "Model";
+        case NodeKind::Model:
+            for (const Attribute& a : n->attributes)   // a Team, or an imported Roblox object we keep as a Model
+                if (a.name == "RobloxClass" && a.type == Attribute::String) {
+                    static thread_local std::string cls;
+                    cls = a.s;
+                    return cls.c_str();
+                }
+            return "Model";
         case NodeKind::Script: return n->isModule ? "ModuleScript" : n->isLocal ? "LocalScript" : "Script";
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
+        case NodeKind::Sky:       return "Sky";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
+        case NodeKind::Particles: return n->particleClass();
         case NodeKind::Light:  return n->lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::ForceField: return "ForceField";
         case NodeKind::Tool:       return "Tool";
@@ -53,9 +67,10 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::FluidEmitter: return "FluidEmitter";
         case NodeKind::Mover:        return kMoverClassNames[(int)n->mover.type];
         case NodeKind::Gui:        return kGuiClassNames[(int)n->gui.type];
+        case NodeKind::Camera:     return "Camera";
         case NodeKind::Sound:      return "Sound";
         case NodeKind::Attachment: return "Attachment";
-        case NodeKind::Constraint: return "Constraint";
+        case NodeKind::Constraint: return kConstraintClassNames[std::clamp((int)n->constraintType, 0, kConstraintTypeCount - 1)];
         default: return n->primitiveType == PrimitiveType::Mesh ? "MeshPart" : "Part";
     }
 }
@@ -94,7 +109,7 @@ std::string idOf(const SceneNode* n) { return "#" + std::to_string(n->id); }
 json syntaxOf(const std::string& source, const std::string& name) {
     lua_State* L = luaL_newstate();
     const std::string chunk = "=" + name;
-    int r = luaL_loadbufferx(L, source.data(), source.size(), chunk.c_str(), "t");
+    int r = Luau::load(L, source, chunk.c_str(), "t");   // (Luau extras compile too)
     json out = {{"ok", r == LUA_OK}};
     if (r != LUA_OK) out["error"] = lua_tostring(L, -1) ? lua_tostring(L, -1) : "syntax error";
     lua_close(L);
@@ -108,11 +123,107 @@ std::string lower(std::string s) {
     return s;
 }
 
+// A name the way people misspell it: "can_collide", "cancollide" and "CanCollide" are the same.
+std::string canon(const std::string& s) {
+    std::string out;
+    for (char c : s) if (c != '_' && c != ' ' && c != '-') out += (char)std::tolower((unsigned char)c);
+    return out;
+}
+
+// Every service an AI can name, in Roblox's Explorer order. Workspace, Players and
+// Lighting are built in; the rest are folders at the top of the game, made the first
+// time something goes in them (Scene::serviceNames).
+const std::vector<std::string>& serviceList() {
+    static const std::vector<std::string> list = {"Workspace", "Players", "Lighting", "ReplicatedFirst", "ReplicatedStorage",
+        "ServerScriptService", "ServerStorage", "StarterGui", "StarterPack", "StarterPlayer", "Teams", "SoundService",
+        "Chat", "TextChatService"};
+    return list;
+}
+// Where objects can go (Players fills itself while the game runs; Lighting holds settings).
+json containerChoices() {
+    json out = json::array();
+    for (const std::string& s : serviceList())
+        if (s != "Players" && s != "Lighting") out.push_back(s);
+    out.push_back("StarterPlayer.StarterPlayerScripts");
+    out.push_back("StarterPlayer.StarterCharacterScripts");
+    return out;
+}
+// "Lighting" / "game.Players" -> that name; "" for anything else.
+std::string virtualService(std::string ref) {
+    if (ref.rfind("game.", 0) == 0) ref = ref.substr(5);
+    return ref == "Lighting" || ref == "Players" ? ref : std::string();
+}
+
+// Every property name scripts can read on some object (LuaInstance.cpp). get_object and
+// set_property ask the engine which of them the object really has (__gb_aiProps), so
+// the tools always say and accept the same names as Lua.
+const char* const kLuaProperties[] = {
+    "Name", "ClassName", "Parent", "Position", "Size", "Orientation", "Rotation", "CFrame", "Color", "Color3",
+    "Material", "Transparency", "Anchored", "CanCollide", "CastShadow", "Shape", "Visible", "Locked", "Mass",
+    "Velocity", "AssemblyLinearVelocity", "RotVelocity", "AssemblyAngularVelocity", "AssemblyMass", "Density",
+    "Friction", "Elasticity", "Enabled", "Disabled", "Source", "Brightness", "Range", "Angle", "Face", "Texture",
+    "SoundId", "Volume", "PlaybackSpeed", "Pitch", "Looped", "Playing", "TimePosition", "Value", "ToolTip",
+    "CanBeDropped", "RequiresHandle", "Grip", "GripPos", "GripForward", "GripRight", "GripUp", "ActionText",
+    "ObjectText", "KeyboardKeyCode", "HoldDuration", "MaxActivationDistance", "RequiresLineOfSight", "ClickablePrompt",
+    "Style", "FillColor", "OutlineColor", "FillTransparency", "OutlineTransparency", "DepthMode", "Adornee",
+    "Attachment0", "Attachment1", "Part0", "Part1", "WorldPosition", "Length", "FreeLength", "Stiffness", "Damping",
+    "AngularVelocity", "MotorMaxTorque", "ActuatorType", "Thickness", "LightEmission", "LightInfluence", "FaceCamera",
+    "TextureMode", "TextureLength", "TextureSpeed", "Lifetime", "MinLength", "MaxLength", "WidthScale", "Width0",
+    "Width1", "CurveSize0", "CurveSize1", "Segments", "ZOffset", "Viscosity", "SurfaceTension", "Rate", "FluidSystem",
+    "FlowVelocity", "Clarity", "Drag", "WaveScale", "Gravity", "DeathStyle", "Gore", "FallDamage", "SafeFallSpeed",
+    "FallDamageScale", "PlayerCollisions", "VoiceChatEnabled", "Orthographic", "OrthographicSize", "BloodColor",
+    "BloodAmount", "MaxFluidParticles", "ClockTime", "GlobalShadows", "FogEnabled", "FogDensity", "FogColor",
+    "Ambient", "SunColor", "Text", "TextColor3", "TextSize", "TextScaled", "TextWrapped", "TextTransparency",
+    "TextStrokeColor3", "TextStrokeTransparency", "TextXAlignment", "TextYAlignment", "TextEditable", "Font", "FontSize",
+    "PlaceholderText", "PlaceholderColor3", "ClearTextOnFocus", "MultiLine", "ContentText", "BackgroundColor3",
+    "BackgroundTransparency", "BorderColor3", "BorderSizePixel", "AnchorPoint", "ZIndex", "LayoutOrder", "Active",
+    "AutoButtonColor", "ClipsDescendants", "Selectable", "Rotation", "Image", "ImageColor3", "ImageTransparency",
+    "ScaleType", "CornerRadius", "ApplyStrokeMode", "LineJoinMode", "Blur", "CanvasSize", "CanvasPosition",
+    "AutomaticCanvasSize", "ScrollBarThickness", "ScrollBarImageColor3", "ScrollBarImageTransparency",
+    "ScrollingDirection", "ScrollingEnabled", "FillDirection", "HorizontalAlignment", "VerticalAlignment", "SortOrder",
+    "Padding", "CellPadding", "CellSize", "StartCorner", "FillDirectionMaxCells", "DisplayOrder", "IgnoreGuiInset",
+    "ResetOnSpawn", "ZIndexBehavior", "AlwaysOnTop", "MaxDistance", "StudsOffset", "StudsOffsetWorldSpace",
+    "ExtentsOffset", "ExtentsOffsetWorldSpace", "SizeOffset", "PixelsPerStud", "SizingMode", "PlayerToHideFrom",
+    "Force", "MaxForce", "MaxTorque", "MaxVelocity", "MaxAngularVelocity", "Torque", "VectorVelocity", "P", "D",
+    "Responsiveness", "RigidityEnabled", "ReactionForceEnabled", "ReactionTorqueEnabled", "ApplyAtCenterOfMass",
+    "RelativeTo", "Mode", "AlignType", "PrimaryAxisOnly", "ForceLimitMode", "ForceLimitsEnabled",
+    "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart",
+};
+
+// The names as a Lua table, for __gb_aiProps.
+const std::string& luaPropertyTable() {
+    static const std::string t = [] {
+        std::string s = "{";
+        for (const char* n : kLuaProperties) { s += '"'; s += n; s += "\","; }
+        return s + "}";
+    }();
+    return t;
+}
+
+// Enum-like properties and the values they take (Enum.Material.Neon or "Neon").
+const std::vector<std::string>* enumChoices(const std::string& property) {
+    static const std::vector<std::string> materials = [] {
+        std::vector<std::string> v(std::begin(kMaterialNames), std::end(kMaterialNames));
+        for (const char* alias : {"SmoothPlastic", "DiamondPlate", "Foil", "CorrodedMetal", "WoodPlanks"}) v.push_back(alias);
+        return v;
+    }();
+    static const std::vector<std::string> shapes = {"Block", "Ball", "Cylinder", "Plane"};
+    static const std::vector<std::string> faces(std::begin(kFaceNames), std::end(kFaceNames));
+    static const std::vector<std::string> depth = {"AlwaysOnTop", "Occluded"};
+    static const std::vector<std::string> priority = {"Core", "Idle", "Movement", "Action"};
+    if (property == "Material") return &materials;
+    if (property == "Shape") return &shapes;
+    if (property == "Face") return &faces;
+    if (property == "DepthMode") return &depth;
+    if (property == "Priority") return &priority;
+    return nullptr;
+}
+
 } // namespace
 
 // ---------------------------------------------------------------------------
 
-SceneNode* Editor::aiFind(const std::string& ref) {
+SceneNode* Editor::aiFind(const std::string& ref, bool create) {
     if (ref.empty()) return nullptr;
     if (ref[0] == '#') {
         try { return m_scene->findById(std::stoull(ref.substr(1))); } catch (...) { return nullptr; }
@@ -120,14 +231,40 @@ SceneNode* Editor::aiFind(const std::string& ref) {
     if (ref.find_first_not_of("0123456789") == std::string::npos) {   // "42" = "#42"
         try { return m_scene->findById(std::stoull(ref)); } catch (...) { return nullptr; }
     }
+    std::vector<std::string> parts;
     std::stringstream ss(ref);
-    std::string part;
-    SceneNode* n = m_scene->root();
-    bool first = true;
-    while (std::getline(ss, part, '.')) {
-        if (first && (part == "Workspace" || part == "workspace" || part == "game")) { first = false; continue; }
-        first = false;
-        SceneNode* c = n->findChild(part);
+    for (std::string p; std::getline(ss, p, '.');) parts.push_back(p);
+    size_t i = 0;
+    if (i < parts.size() && parts[i] == "game") ++i;
+    SceneNode* const root = m_scene->root();
+    SceneNode* n = root;
+    if (i < parts.size()) {
+        const std::string& top = parts[i];
+        if (top == "Workspace" || top == "workspace") ++i;
+        else if (Scene::isServiceName(top)) {
+            // StarterPack, ServerScriptService...: a folder made the first time something goes in.
+            n = m_scene->serviceFolder(top, create);
+            if (!n) return nullptr;
+            ++i;
+            if (top == "StarterPlayer" && i < parts.size()) {
+                if (parts[i] == "StarterCharacterScripts") {
+                    // Guts&Bolts' StarterCharacterScripts is the character itself: what's in it
+                    // is in every player's character (like the Animate script).
+                    Player* p = m_scene->player();
+                    n = p ? p->root() : nullptr;
+                    if (!n) return nullptr;
+                    ++i;
+                } else if (parts[i] == "StarterPlayerScripts" && !n->findChild(parts[i]) && create) {
+                    auto f = std::make_unique<SceneNode>("StarterPlayerScripts", NodeKind::Model);
+                    f->visible = false;
+                    n = m_scene->insert(std::move(f), n);
+                    ++i;
+                }
+            }
+        }
+    }
+    for (; i < parts.size(); ++i) {
+        SceneNode* c = n->findChild(parts[i]);
         if (!c) return nullptr;
         n = c;
     }
@@ -138,27 +275,38 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     SceneNode* const root = m_scene->root();
     auto str = [&](const char* k) { return args.contains(k) && args[k].is_string() ? args[k].get<std::string>() : std::string(); };
     auto label = [&](const SceneNode* n) { return n->name + " (" + classOf(n, root) + ") " + idOf(n); };
+    // Where an object is, the way scripts reach it: "Workspace.Castle.Door", "StarterPack.Sword",
+    // "ServerScriptService.Main" (service folders are their own top-level services).
+    auto pathOf = [&](const SceneNode* n) {
+        if (n == root) return std::string("Workspace");
+        std::string p = n->name;
+        const SceneNode* top = n;
+        for (const SceneNode* a = n->parent; a && a != root; a = a->parent) { p = a->name + "." + p; top = a; }
+        return m_scene->isServiceFolder(top) ? p : "Workspace." + p;
+    };
     auto brief = [&](const SceneNode* n) { return json{{"object_id", idOf(n)}, {"name", n->name}, {"class", classOf(n, root)}}; };
 
-    // A short picture of an object's state: what an AI needs to check its work.
+    // A short picture of an object's state: what an AI needs to check its work. The keys
+    // are the property names scripts use (Position, CanCollide...), so set_property takes them back.
     auto state = [&](const SceneNode* n) {
         json s = brief(n);
-        s["path"] = n == root ? "Workspace" : n->fullName();
+        s["path"] = pathOf(n);
         if (n->parent) s["parent_id"] = idOf(n->parent);
         if (isPartLike(n)) {
-            s["position"] = vec(glm::vec3(n->worldMatrix()[3]));
-            s["size"] = vec(n->transform.scale);
-            s["orientation"] = vec(n->transform.rotation);
-            s["color"] = vec(n->color);
-            s["material"] = kMaterialNames[(int)n->material];
-            s["transparency"] = n->transparency;
-            s["anchored"] = n->anchored;
-            s["can_collide"] = n->canCollide;
+            s["Position"] = vec(glm::vec3(n->worldMatrix()[3]));
+            s["Size"] = vec(n->transform.scale);
+            s["Orientation"] = vec(n->transform.rotation);
+            s["Color"] = vec(n->color);
+            s["Material"] = kMaterialNames[(int)n->material];
+            s["Transparency"] = n->transparency;
+            s["Anchored"] = n->anchored;
+            s["CanCollide"] = n->canCollide;
+            if (n->collisionGroup != "Default") s["CollisionGroup"] = n->collisionGroup;
         } else if (n->isScript()) {
-            s["enabled"] = n->enabled;
+            s["Enabled"] = n->enabled;
             s["lines"] = (int)std::count(n->source.begin(), n->source.end(), '\n') + (n->source.empty() ? 0 : 1);
-        } else if (n != root) {
-            s["enabled"] = n->enabled;
+        } else if (n != root && !m_scene->isServiceFolder(n)) {
+            s["Enabled"] = n->enabled;
         }
         return s;
     };
@@ -179,26 +327,59 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         r.data = std::move(d);
         return r;
     };
-    auto notFound = [&](const char* key) {
-        std::string ref = str(key);
+    // A failure with the names that would have worked (error.valid_choices).
+    auto failWith = [&](const char* code, const std::string& message, const std::string& suggestion, json choices) {
+        AiToolResult r = fail(code, message, suggestion);
+        r.data["error"]["valid_choices"] = std::move(choices);
+        r.text = r.data.dump(1);
+        return r;
+    };
+    auto notFound = [&](const char* key, const std::string& ref) {
         if (ref.empty()) return fail("INVALID_INPUT", std::string("`") + key + "` is missing.", "Give an object_id like \"#42\" (from get_game_tree or find_objects).");
+        if (ref[0] != '#' && ref.find_first_not_of("0123456789") != std::string::npos) {
+            // A path: is its first name a service or something in the Workspace?
+            std::string top = ref.rfind("game.", 0) == 0 ? ref.substr(5) : ref;
+            top = top.substr(0, top.find('.'));
+            const bool known = top == "Workspace" || top == "workspace" || Scene::isServiceName(top) || root->findChild(top);
+            if (!known)
+                return failWith("SERVICE_NOT_FOUND", "\"" + top + "\" isn't a service, and nothing in the Workspace is called that.",
+                                "Start the path with a service (see valid_choices) or Workspace, or use an object_id.",
+                                json(serviceList()));
+            if (top == "StarterPlayer" && ref.find(".StarterCharacterScripts") != std::string::npos)
+                return fail("OBJECT_NOT_FOUND", "StarterCharacterScripts is the character, and there's no character in this game.",
+                            "Put the script in StarterPlayer.StarterPlayerScripts, or in a character Model.");
+            if (Scene::isServiceName(top) && !m_scene->serviceFolder(top, false))
+                return fail("OBJECT_NOT_FOUND", top + " is empty, so there's no " + ref + ".",
+                            "insert_object / create_script with parent \"" + top + "\" puts things there.");
+        }
         return fail("OBJECT_NOT_FOUND", "No object " + ref + " exists.",
                     "Search with find_objects or get_game_tree and use the object_id it returns.");
     };
     // Find the object a ref names. A path is refused when a name on it is used by
     // more than one object (the wrong one could be changed): ask for an id instead.
     AiToolResult refErr;
-    auto resolve = [&](const std::string& ref, const char* key, SceneNode*& out) -> bool {
-        out = aiFind(ref);
-        if (!out) { refErr = notFound(key); return false; }
+    auto resolve = [&](const std::string& ref, const char* key, SceneNode*& out, bool create = false) -> bool {
+        if (const std::string v = virtualService(ref); !v.empty()) {
+            refErr = failWith("NOT_A_CONTAINER", v == "Lighting"
+                                  ? "Lighting holds the sky, sun and fog settings, not objects."
+                                  : "Players fills itself with the people in the game while it runs; nothing can be put in it.",
+                              v == "Lighting" ? "Change its settings with set_property {object: \"Lighting\"}; put objects in one of valid_choices."
+                                              : "Use one of valid_choices (StarterPlayer.StarterPlayerScripts for per-player LocalScripts).",
+                              containerChoices());
+            out = nullptr;
+            return false;
+        }
+        out = aiFind(ref, create);
+        if (!out) { refErr = notFound(key, ref); return false; }
         if (ref[0] == '#' || ref.find_first_not_of("0123456789") == std::string::npos) return true;
         for (const SceneNode* n = out; n && n->parent; n = n->parent) {
+            if (m_scene->isCharacterRoot(n->id)) continue;   // StarterPlayer.StarterCharacterScripts (named on purpose)
             json same = json::array();
             for (auto& c : n->parent->children)
-                if (c->name == n->name && !c->internal) same.push_back(json{{"object_id", idOf(c.get())}, {"path", c->fullName()}});
+                if (c->name == n->name && !c->internal) same.push_back(json{{"object_id", idOf(c.get())}, {"path", pathOf(c.get())}});
             if (same.size() > 1) {
                 refErr = fail("AMBIGUOUS_NAME", std::to_string(same.size()) + " objects are called \"" + n->name + "\" in " +
-                              n->parent->fullName() + ", so \"" + ref + "\" could mean more than one thing.",
+                              pathOf(n->parent) + ", so \"" + ref + "\" could mean more than one thing.",
                               "Use the object_id of the one you mean (see candidates).");
                 refErr.data["error"]["candidates"] = same;
                 refErr.text = refErr.data.dump(1);
@@ -208,11 +389,12 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         }
         return true;
     };
-    auto need = [&](const char* k, SceneNode*& out) -> bool { return resolve(str(k), k, out); };
-    // An optional object argument: `fallback` when it's not given.
-    auto optional = [&](const char* k, SceneNode* fallback, SceneNode*& out) -> bool {
+    auto need = [&](const char* k, SceneNode*& out, bool create = false) -> bool { return resolve(str(k), k, out, create); };
+    // An optional object argument: `fallback` when it's not given. `create`: a service named
+    // here (StarterPack...) gets its folder now, because something is about to go in it.
+    auto optional = [&](const char* k, SceneNode* fallback, SceneNode*& out, bool create = false) -> bool {
         if (!args.contains(k)) { out = fallback; return true; }
-        return need(k, out);
+        return need(k, out, create);
     };
     // Run Lua and collect what it printed.
     struct LuaRun { std::vector<std::string> lines; std::vector<std::string> errors; };
@@ -227,6 +409,29 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             else out.lines.push_back((e[i].level == Log::Level::Warn ? "warning: " : "") + e[i].text);
         }
         return out;
+    };
+    struct QuietRun { std::vector<std::string> lines, errors; };
+    auto quietLua = [&](const std::string& code) {
+        std::vector<Log::Entry> got;
+        Log::setCapture(&got);
+        runCommand(code);
+        Log::setCapture(nullptr);
+        QuietRun out;
+        for (size_t i = 0; i < got.size(); ++i) {
+            if (i == 0 && got[i].text.rfind("> ", 0) == 0) continue;   // the echo of the command
+            (got[i].level == Log::Level::Error ? out.errors : out.lines).push_back(got[i].text);
+        }
+        return out;
+    };
+    // Every property `expr` (Lua: an object, or Lighting) has, by its Lua name, read from the engine.
+    auto readProps = [&](const std::string& expr) {
+        QuietRun r = quietLua("print(\"\\1GBPROPS\" .. __gb_aiProps(" + expr + ", " + luaPropertyTable() + "))");
+        for (auto& l : r.lines)
+            if (l.rfind("\1GBPROPS", 0) == 0) {
+                json j = json::parse(l.substr(8), nullptr, false);
+                if (j.is_object()) return j;
+            }
+        return json::object();
     };
     auto levelName = [](Log::Level l) {
         return l == Log::Level::Error ? "error" : l == Log::Level::Warn ? "warning" : l == Log::Level::System ? "studio" : "info";
@@ -297,6 +502,10 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                             " needs two Attachments (Attachment0 and Attachment1) and doesn't have both, so it isn't drawn.",
                             "Insert Attachments in parts and set Attachment0 / Attachment1 with set_property.");
             }
+            if (n->isParticles() && (!n->parent || (!isPartLike(n->parent) && !n->parent->isAttachment())))
+                add(n, "warning", "PARTICLES_NOT_IN_PART", std::string("The ") + classOf(n, root) +
+                    " isn't inside a part or an Attachment, so no particles come out of it.",
+                    "Move it into the part (or Attachment) the particles should come from.");
             if (n->isTool()) {
                 SceneNode* h = n->findChild("Handle");
                 if (!h || !isPartLike(h))
@@ -328,9 +537,12 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         auto one = [&](const std::string& t) {
             json d = {{"topic", t}};
             if (t == "classes") {
-                d["classes"] = insertKinds();
+                json kinds = insertKinds();
+                kinds.push_back("Team");
+                d["classes"] = kinds;
+                d["services"] = containerChoices();
                 d["text"] = "Every kind insert_object can make (the names after the classes are ready-made things, each an "
-                            "independent copy). Plus Team (goes in the Teams folder).";
+                            "independent copy; Team goes in Teams by itself), and the services they can be put in.";
             } else d["text"] = AiTools::engineDoc(t);
             if (t == "capabilities") d["manifest"] = AiTools::capabilities();
             return d;
@@ -348,27 +560,100 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
 
     // ------------------------------------------------------------------ SCENE
     if (name == "get_game_tree") {
-        SceneNode* top;
-        if (!optional("root", root, top)) return refErr;
         int depth = std::max(0, args.value("depth", 4));
         std::string out;
         int shown = 0;
         bool truncated = false;
-        std::function<void(SceneNode*, int)> walk = [&](SceneNode* n, int d) {
+        // `skipServices`: the Workspace's own listing leaves out the service folders and,
+        // outside playtests, the character (they're listed under their services below it,
+        // like Studio's Explorer).
+        auto elsewhere = [&](const SceneNode* c) {
+            return m_scene->isServiceFolder(c) || (!m_playing && m_scene->isCharacterRoot(c->id));
+        };
+        std::function<void(SceneNode*, int, bool)> walk = [&](SceneNode* n, int d, bool skipServices) {
             if (n->internal) return;
             if (shown >= 1500) { truncated = true; return; }
             out += std::string((size_t)d * 2, ' ') + label(n) + "\n";
             ++shown;
+            int kids = 0;
+            for (auto& c : n->children) if (!c->internal && !(skipServices && elsewhere(c.get()))) ++kids;
             if (d >= depth) {
-                int kids = 0;
-                for (auto& c : n->children) if (!c->internal) ++kids;
                 if (kids) out += std::string((size_t)(d + 1) * 2, ' ') + "... " + std::to_string(kids) + " more inside\n";
                 return;
             }
-            for (auto& c : n->children) walk(c.get(), d + 1);
+            for (auto& c : n->children)
+                if (!(skipServices && elsewhere(c.get()))) walk(c.get(), d + 1, false);
         };
-        walk(top, 0);
-        return done({{"object_id", idOf(top)}, {"tree", out}, {"object_count", shown}, {"truncated", truncated}});
+        if (args.contains("root")) {
+            // One part of the game. An empty service (nothing put in it yet) is just empty.
+            const std::string ref = str("root");
+            std::string svc = ref.rfind("game.", 0) == 0 ? ref.substr(5) : ref;
+            if (svc == "Lighting" || svc == "Players") {
+                out = svc + " (" + svc + ")\n";
+                return done({{"tree", out}, {"object_count", 0}, {"truncated", false},
+                             {"note", svc == "Lighting" ? "Lighting holds settings: get_object {object: \"Lighting\"} reads them."
+                                                        : "Players lists the people in the game while it runs (get_runtime_state)."}});
+            }
+            if (Scene::isServiceName(svc) && !m_scene->serviceFolder(svc, false))
+                return done({{"tree", svc + " (" + svc + ")\n"}, {"object_count", 0}, {"truncated", false},
+                             {"note", svc + " is empty. insert_object / create_script with parent \"" + svc + "\" puts things in it."}});
+            SceneNode* top;
+            if (!need("root", top)) return refErr;
+            walk(top, 0, top == root);
+            return done({{"object_id", idOf(top)}, {"path", pathOf(top)}, {"tree", out}, {"object_count", shown}, {"truncated", truncated}});
+        }
+        // The whole game: the Workspace, then every service.
+        json services = json::array();
+        walk(root, 0, true);
+        services.push_back({{"name", "Workspace"}, {"class", "Workspace"}, {"object_id", idOf(root)}, {"can_insert", true}});
+        for (const std::string& svc : serviceList()) {
+            if (svc == "Workspace") continue;
+            json info = {{"name", svc}, {"class", svc}, {"can_insert", svc != "Players" && svc != "Lighting"}};
+            if (svc == "Players") {
+                std::vector<std::string> who;
+                if (m_playing) {
+                    if (Player* p = m_scene->player(); p && p->root() && !m_session->runOnly()) who.push_back(p->root()->name);
+                    for (auto& rc : m_scene->remotes()) who.push_back(rc.name);
+                }
+                out += "Players (Players)" + std::string(who.empty() ? "  [nobody: it fills while the game runs]" : "") + "\n";
+                for (auto& w : who) out += "  " + w + " (Player)\n";
+                info["players"] = who;
+                services.push_back(info);
+                continue;
+            }
+            if (svc == "Lighting") {
+                out += "Lighting (Lighting)  [sky, sun and fog settings: get_object / set_property \"Lighting\"]\n";
+                services.push_back(info);
+                continue;
+            }
+            SceneNode* f = m_scene->serviceFolder(svc, false);
+            if (f) {
+                if (shown >= 1500) truncated = true;
+                else walk(f, 0, false);
+                info["object_id"] = idOf(f);
+            } else {
+                out += svc + " (" + svc + ")  [empty]\n";
+                info["object_id"] = nullptr;
+            }
+            int kids = 0;
+            if (f) for (auto& c : f->children) if (!c->internal) ++kids;
+            info["child_count"] = kids;
+            if (svc == "StarterPlayer") {
+                Player* p = m_scene->player();
+                SceneNode* ch = p ? p->root() : nullptr;
+                if (ch && !m_playing) {
+                    // The character everyone spawns as (it's in the Workspace while the game runs).
+                    if (shown < 1500) walk(ch, 1, false);
+                    out += "  StarterCharacterScripts -> the character " + label(ch) + ": scripts in it run in every player's character\n";
+                }
+                if (ch) info["starter_character"] = idOf(ch);
+                if (!f || !f->findChild("StarterPlayerScripts"))
+                    out += "  StarterPlayerScripts  [empty: LocalScripts here run for every player]\n";
+            }
+            services.push_back(info);
+        }
+        return done({{"object_id", idOf(root)}, {"tree", out}, {"object_count", shown}, {"truncated", truncated}, {"services", services},
+                     {"note", "Paths start with a service: Workspace.Castle.Door, StarterPack.Sword, ServerScriptService.Main."}});
     }
     if (name == "find_objects") {
         const std::string want = lower(str("name")), cls = str("class"), tag = str("tag");
@@ -387,7 +672,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             if (ok && !tag.empty()) ok = std::find(n->tags.begin(), n->tags.end(), tag) != n->tags.end();
             if (ok) {
                 ++total;
-                if ((int)matches.size() < limit) { json b = brief(n); b["path"] = n->fullName(); matches.push_back(b); }
+                if ((int)matches.size() < limit) { json b = brief(n); b["path"] = pathOf(n); matches.push_back(b); }
             }
             for (auto& c : n->children) walk(c.get());
         };
@@ -395,14 +680,50 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         return done({{"matches", matches}, {"count", total}, {"truncated", total > (int)matches.size()}});
     }
     if (name == "insert_object") {
-        SceneNode* parent;
-        if (!optional("parent", nullptr, parent)) return refErr;
-        const std::string kind = str("kind");
+        std::string kind = str("kind");
         if (kind.empty()) return fail("INVALID_INPUT", "`kind` is missing.", "Give a class like Part, Model, Script or PointLight.");
+        // The class: exactly, or the same name typed differently ("pointlight" -> PointLight).
+        std::vector<std::string> kinds = insertKinds();
+        kinds.push_back("Team");
+        if (std::find(kinds.begin(), kinds.end(), kind) == kinds.end()) {
+            std::string fixed;
+            for (const std::string& k : kinds) if (canon(k) == canon(kind)) fixed = k;
+            if (fixed.empty()) {
+                json similar = json::array();
+                for (const std::string& k : kinds)
+                    if (canon(k).find(canon(kind)) != std::string::npos || canon(kind).find(canon(k)) != std::string::npos) similar.push_back(k);
+                AiToolResult r = failWith("UNKNOWN_CLASS", "\"" + kind + "\" isn't something Studio can insert.",
+                                          similar.empty() ? "Use one of valid_choices (the same list as Studio's Insert Object window)."
+                                                          : "Did you mean " + similar[0].get<std::string>() + "? valid_choices has every kind.",
+                                          json(kinds));
+                if (!similar.empty()) { r.data["error"]["did_you_mean"] = similar; r.text = r.data.dump(1); }
+                return r;
+            }
+            kind = fixed;
+        }
+        SceneNode* parent;
+        if (!optional("parent", nullptr, parent, true)) return refErr;
+        const bool script = kind == "Script" || kind == "LocalScript" || kind == "ModuleScript";
+        json warn = json::array();
+        // StarterPlayer.StarterCharacterScripts is the character: scripts go straight in
+        // (Studio's Insert Object keeps other things out of the character).
+        if (parent && m_scene->isCharacterRoot(parent->id) && script) {
+            AiToolResult made = runAiTool("create_script", {{"parent", idOf(parent)}, {"type", kind},
+                {"name", str("name").empty() ? kind : str("name")},
+                {"source", "-- In the character: script.Parent is the character it runs in.\n"}});
+            made.data["operation"] = name;
+            if (!made.error) made.data["note"] = "In the character (StarterCharacterScripts): it runs in every player's character.";
+            made.text = made.data.dump(1);
+            return made;
+        }
         std::vector<uint64_t> before;
         m_scene->forEach([&](SceneNode* n) { before.push_back(n->id); });
         std::sort(before.begin(), before.end());
+        std::vector<Log::Entry> said;   // what Insert Object said (e.g. "Select a part first")
+        Log::setCapture(&said);
         insertObject(kind, parent);
+        Log::setCapture(nullptr);
+        for (auto& e : said) if (e.level != Log::Level::Info) warn.push_back(e.text);
         SceneNode* made = nullptr;
         json affected = json::array();
         m_scene->forEach([&](SceneNode* n) {
@@ -410,18 +731,31 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             if (!made) made = n;
             affected.push_back(idOf(n));
         });
-        // Ready-made things come with parts inside: report the top one.
-        while (made && made->parent && made->parent != root &&
+        // Ready-made things come with parts inside: report the top one (not a service
+        // folder made on the way, like Teams or StarterGui).
+        while (made && made->parent && made->parent != root && !m_scene->isServiceFolder(made->parent) &&
                !std::binary_search(before.begin(), before.end(), made->parent->id)) made = made->parent;
-        if (!made) return fail("UNKNOWN_CLASS", "Couldn't insert a \"" + kind + "\": that isn't something Studio can insert.",
-                               "Use a class from the insert_object description, like Part, Model, Script or PointLight.");
+        if (made && m_scene->isServiceFolder(made) && made->children.size() == 1) made = made->children.front().get();
+        if (!made) {
+            std::string why = warn.empty() ? "nothing was made" : warn.front().get<std::string>();
+            return fail("COULD_NOT_INSERT", "Couldn't insert a " + kind + ": " + why,
+                        "Give a parent it can go in (e.g. a part for lights, prompts and decals).");
+        }
         if (!str("name").empty()) made->name = str("name");
-        json d = {{"object_id", idOf(made)}, {"name", made->name}, {"class", classOf(made, root)},
+        json d = {{"object_id", idOf(made)}, {"name", made->name}, {"class", classOf(made, root)}, {"path", pathOf(made)},
                   {"affected_ids", affected}, {"resulting_state", state(made)}};
         if (made->parent) d["parent_id"] = idOf(made->parent);
-        if (parent && made->parent != parent)
-            d["warnings"] = json::array({"It couldn't go inside " + label(parent) + " (scripts and character parts can't hold "
-                                         "objects), so it went in " + (made->parent ? label(made->parent) : std::string("Workspace")) + "."});
+        if (parent && made->parent != parent) {
+            if (m_scene->isCharacterPart(parent) || parent->isScript())
+                warn.push_back("It couldn't go inside " + label(parent) + " (scripts and character parts can't hold "
+                               "objects; only scripts go in StarterCharacterScripts), so it went in " +
+                               (made->parent ? label(made->parent) : std::string("Workspace")) + ".");
+            else
+                warn.push_back("A " + kind + " always goes in " + (made->parent ? pathOf(made->parent) : std::string("Workspace")) + ".");
+        }
+        if (parent && parent->name == "StarterPlayerScripts" && kind == "Script")
+            warn.push_back("A Script in StarterPlayerScripts runs once on the server; LocalScripts are what normally go here.");
+        if (!warn.empty()) d["warnings"] = warn;
         return done(d);
     }
     if (name == "delete_object") {
@@ -439,22 +773,53 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
 
     // ---------------------------------------------------------------- OBJECTS
     if (name == "get_object") {
+        // Lighting is a service of settings (no object_id): its properties, like a script sees them.
+        if (const std::string v = virtualService(str("object")); !v.empty()) {
+            if (v == "Players") {
+                json who = json::array();
+                if (m_playing) {
+                    if (Player* p = m_scene->player(); p && p->root() && !m_session->runOnly()) who.push_back(brief(p->root()));
+                    for (auto& rc : m_scene->remotes()) who.push_back({{"name", rc.name}, {"object_id", "#" + std::to_string(rc.rootId)}});
+                }
+                return done({{"name", "Players"}, {"class", "Players"}, {"path", "Players"}, {"players", who},
+                             {"note", "Players fills itself while the game runs; it can't be changed."}});
+            }
+            return done({{"name", "Lighting"}, {"class", "Lighting"}, {"path", "Lighting"}, {"properties", readProps("Lighting")},
+                         {"note", "Change these with set_property {object: \"Lighting\", property, value}."}});
+        }
         SceneNode* n;
         if (!need("object", n)) return refErr;
-        json props = json::parse(Serializer::nodeToString(*n), nullptr, false);
-        if (props.is_object()) {
-            props.erase("children");
-            props.erase("mesh");            // big model data isn't useful here
-            props.erase("editMesh");
-            props.erase("id");
+        json saved = json::parse(Serializer::nodeToString(*n), nullptr, false);
+        if (saved.is_object()) {
+            saved.erase("children");
+            saved.erase("mesh");            // big model data isn't useful here
+            saved.erase("editMesh");
+            saved.erase("id");
+            saved.erase("source");          // read_script has it
         }
-        std::string dumped = props.dump();
-        if (dumped.size() > 60000) props = {{"note", "too big to show; use read_script for a script's source"}};
+        if (saved.dump().size() > 60000) saved = {{"note", "too big to show"}};
         json kids = json::array();
         for (auto& c : n->children) if (!c->internal) kids.push_back(brief(c.get()));
         json d = state(n);
         d["children"] = kids;
+        // The same names and values a script reads (part.CanCollide, gui.BackgroundColor3...):
+        // set_property takes exactly these names back.
+        json props = readProps("__gb_byId(" + std::to_string(n->id) + ")");
+        if (n->isScript()) props.erase("Source");   // read_script has it
         d["properties"] = props;
+        json attrs = json::object();
+        for (const Attribute& a : n->attributes) {
+            switch (a.type) {
+                case Attribute::Bool:    attrs[a.name] = a.b; break;
+                case Attribute::String:  attrs[a.name] = a.s; break;
+                case Attribute::Vector3:
+                case Attribute::Color3:  attrs[a.name] = vec(a.v); break;
+                default:                 attrs[a.name] = a.n; break;
+            }
+        }
+        if (!attrs.empty()) d["attributes"] = attrs;
+        if (!n->tags.empty()) d["tags"] = n->tags;
+        d["saved_fields"] = saved;   // how the game file stores it (internal names; for reference)
         d["state_source"] = m_playing ? "runtime (playtest running)" : "editor (saved game)";
         if (m_playing && isPartLike(n))
             d["runtime"] = {{"velocity", vec(n->velocity)}, {"angular_velocity", vec(n->angularVelocity)},
@@ -462,31 +827,113 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         return done(d);
     }
     if (name == "set_property") {
-        SceneNode* n;
-        if (!need("object", n)) return refErr;
         std::string prop = str("property");
         if (prop.empty() || prop.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_") != std::string::npos)
             return fail("INVALID_INPUT", "\"" + prop + "\" isn't a property name.", "Use a property name like Position, Color or Anchored.");
         if (!args.contains("value")) return fail("INVALID_INPUT", "`value` is missing.", "Give the new value (number, true/false, text or [x, y, z]).");
         json value = args["value"];
+        // Which object: one by id / path, or the Lighting service.
+        const bool lighting = virtualService(str("object")) == "Lighting";
+        SceneNode* n = nullptr;
+        if (!lighting) {
+            if (virtualService(str("object")) == "Players")
+                return fail("NOT_SETTABLE", "Players has no properties to change here.", "Change a player's character during a playtest, or StarterPlayer.");
+            if (!need("object", n)) return refErr;
+        }
+        const uint64_t id = n ? n->id : 0;
+        const std::string expr = lighting ? std::string("Lighting") : "__gb_byId(" + std::to_string(id) + ")";
+        const std::string who = lighting ? std::string("Lighting") : label(n);
+        // A script's code goes through edit_script (it checks the Lua and keeps the editor in step).
+        if (n && n->isScript() && canon(prop) == "source") {
+            if (!value.is_string()) return fail("INVALID_INPUT", "Source must be text (the whole Lua code).", "Use edit_script {object, source} or {object, old, new}.");
+            AiToolResult r = runAiTool("edit_script", {{"object", idOf(n)}, {"source", value}});
+            r.data["operation"] = name;
+            r.data["routed_to"] = "edit_script";
+            r.data["note"] = "Script.Source is changed with edit_script; this call was passed on to it. Next time use edit_script "
+                             "(old/new swaps a small part without rewriting the whole script).";
+            r.text = r.data.dump(1);
+            return r;
+        }
+        // The property's real (Lua) name: "can_collide", "cancollide" and "CanCollide" all mean CanCollide.
+        json have = readProps(expr);
+        json aliasNote;
+        if (!have.contains(prop)) {
+            std::string fixed;
+            for (auto& [k, v] : have.items()) if (canon(k) == canon(prop)) fixed = k;
+            if (fixed.empty() && canon(prop) == "color" && have.contains("Color3")) fixed = "Color3";      // a Decal's colour
+            if (fixed.empty() && canon(prop) == "rotation" && have.contains("Orientation")) fixed = "Orientation";
+            if (!fixed.empty()) { aliasNote = prop + " is called " + fixed + " (the name scripts use)."; prop = fixed; }
+        }
+        // Enum values: Enum.Material.Neon, "Neon" and "neon" are the same; anything else lists the choices.
+        if (value.is_string()) {
+            std::string sv = value.get<std::string>();
+            if (sv.rfind("Enum.", 0) == 0 && sv.rfind('.') != std::string::npos) sv = sv.substr(sv.rfind('.') + 1);
+            if (const std::vector<std::string>* choices = enumChoices(prop); choices && (have.contains(prop) || n == nullptr)) {
+                std::string fixed;
+                for (const std::string& c : *choices) if (canon(c) == canon(sv)) fixed = c;
+                if (fixed.empty())
+                    return failWith("INVALID_ENUM_VALUE", "\"" + value.get<std::string>() + "\" isn't a " + prop + ".",
+                                    "Use one of valid_choices.", json(*choices));
+                sv = fixed;
+            }
+            value = sv;
+        }
         std::string v = luaValue(value, prop);
-        if (prop == "Parent" && value.is_string()) {
+        // Objects as values: Parent, Adornee, Part0, Attachment0... take an object ("#42" or a path).
+        static const char* refProps[] = {"Parent", "Adornee", "Part0", "Part1", "Attachment0", "Attachment1", "FluidSystem",
+                                         "PrimaryPart", "PlayerToHideFrom"};
+        const bool refProp = std::find_if(std::begin(refProps), std::end(refProps), [&](const char* r) { return prop == r; }) != std::end(refProps);
+        if (value.is_string() && (refProp || (have.contains(prop) && have[prop].is_string() &&
+                                              have[prop].get<std::string>().rfind('#', 0) == 0))) {
             SceneNode* p;
-            if (!resolve(value.get<std::string>(), "value", p)) return refErr;
+            if (!resolve(value.get<std::string>(), "value", p, prop == "Parent")) return refErr;
             v = "__gb_byId(" + std::to_string(p->id) + ")";
         }
-        const uint64_t id = n->id;
-        LuaRun r = lua("local o = __gb_byId(" + std::to_string(id) + ")\no." + prop + " = " + v +
-                       "\nlocal ok, now = pcall(function() return o." + prop + " end)\nprint(\"\\1GBREAD\" .. (ok and tostring(now) or \"?\"))");
-        if (!r.errors.empty())
-            return fail("LUA_ERROR", "Couldn't set " + prop + " of " + label(n) + ": " + r.errors.front(),
-                        "Check the property name and value type with get_object (properties are Roblox-style, e.g. Color takes [r, g, b] 0-1).");
-        std::string now;
-        for (auto& l : r.lines) if (l.rfind("\1GBREAD", 0) == 0) now = l.substr(7);
-        n = m_scene->findById(id);
-        if (!n) return fail("OBJECT_NOT_FOUND", "The object disappeared after the change.", "Check get_game_tree.", false);
-        return done({{"object_id", idOf(n)}, {"changed_properties", {{prop, {{"requested", value}, {"now", now}}}}},
-                     {"resulting_state", state(n)}});
+        // Lists: [x, y] Vector2, [[xs, xo], [ys, yo]] or [xs, xo, ys, yo] UDim2 (UI sizes and positions).
+        if (value.is_array()) {
+            auto num = [](const json& j) { return j.is_number(); };
+            std::ostringstream o;
+            if (value.size() == 2 && value[0].is_array() && value[1].is_array() && value[0].size() == 2 && value[1].size() == 2) {
+                o << "UDim2.new(" << value[0][0].get<double>() << ", " << value[0][1].get<double>() << ", "
+                  << value[1][0].get<double>() << ", " << value[1][1].get<double>() << ")";
+                v = o.str();
+            } else if (value.size() == 4 && std::all_of(value.begin(), value.end(), num)) {
+                o << "UDim2.new(" << value[0].get<double>() << ", " << value[1].get<double>() << ", " << value[2].get<double>()
+                  << ", " << value[3].get<double>() << ")";
+                v = o.str();
+            } else if (value.size() == 2 && std::all_of(value.begin(), value.end(), num)) {
+                o << "Vector2.new(" << value[0].get<double>() << ", " << value[1].get<double>() << ")";
+                v = o.str();
+            }
+        } else if (value.is_object() && value.contains("position") && value["position"].is_array() && value["position"].size() == 3) {
+            const json& pp = value["position"];
+            std::ostringstream o;
+            o << "CFrame.new(" << pp[0].get<double>() << ", " << pp[1].get<double>() << ", " << pp[2].get<double>() << ")";
+            v = o.str();
+        }
+        QuietRun r = quietLua("local o = " + expr + "\no." + prop + " = " + v);
+        if (!r.errors.empty()) {
+            const std::string& e = r.errors.front();
+            const bool unknown = !have.contains(prop) &&
+                (e.find("can't be set") != std::string::npos || e.find("not a valid member") != std::string::npos);
+            json choices = json::array();
+            for (auto& [k, val] : have.items()) if (k != "ClassName") choices.push_back(k);
+            if (unknown)
+                return failWith("UNKNOWN_PROPERTY", who + " has no property \"" + prop + "\".",
+                                "Use one of valid_choices (the names scripts use; get_object shows their values).", choices);
+            return failWith("LUA_ERROR", "Couldn't set " + prop + " of " + who + ": " + e,
+                            "Check the value's type with get_object (Color takes [r, g, b] 0-1, Position [x, y, z]).", choices);
+        }
+        json now = readProps(expr);
+        if (!lighting) {
+            n = m_scene->findById(id);
+            if (!n) return fail("OBJECT_NOT_FOUND", "The object disappeared after the change.", "Check get_game_tree.", false);
+        }
+        json d = {{"changed_properties", {{prop, {{"requested", args["value"]}, {"now", now.contains(prop) ? now[prop] : json()}}}}}};
+        if (n) { d["object_id"] = idOf(n); d["resulting_state"] = state(n); }
+        else d["object"] = "Lighting";
+        if (!aliasNote.is_null()) d["warnings"] = json::array({aliasNote});
+        return done(d);
     }
     if (name == "select") {
         m_scene->deselect();
@@ -505,7 +952,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     // -------------------------------------------------------------- SCRIPTING
     if (name == "create_script") {
         SceneNode* parent;
-        if (!optional("parent", root, parent)) return refErr;
+        if (!optional("parent", root, parent, true)) return refErr;
         const std::string type = str("type").empty() ? "Script" : str("type");
         if (type != "Script" && type != "LocalScript" && type != "ModuleScript")
             return fail("INVALID_INPUT", "type must be Script, LocalScript or ModuleScript.", "Leave it out for a normal Script.");
@@ -515,7 +962,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         s->isLocal = type == "LocalScript";
         SceneNode* made = m_scene->insert(std::move(s), parent);
         json d = {{"object_id", idOf(made)}, {"name", made->name}, {"class", classOf(made, root)}, {"parent_id", idOf(parent)},
-                  {"syntax", syntaxOf(made->source, made->name)}, {"resulting_state", state(made)}};
+                  {"path", pathOf(made)}, {"syntax", syntaxOf(made->source, made->name)}, {"resulting_state", state(made)}};
         if (!d["syntax"]["ok"].get<bool>()) d["warnings"] = json::array({"The script has a syntax error and won't run until it's fixed."});
         return done(d);
     }
@@ -552,7 +999,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         LuaRun r = lua(str("code"));
         json d = {{"output", r.lines}, {"errors", r.errors}, {"ran_in", m_playing ? "the running playtest" : "the editor (saved game)"}};
         if (!r.errors.empty()) {
-            AiToolResult res = fail("LUA_ERROR", r.errors.front(), "Fix the code and run it again (plain Lua 5.4, Roblox-style API).");
+            AiToolResult res = fail("LUA_ERROR", r.errors.front(), "Fix the code and run it again (Lua 5.4 or Luau, Roblox-style API).");
             res.data["output"] = r.lines;
             res.data["errors"] = r.errors;
             res.text = res.data.dump(1);
@@ -628,24 +1075,64 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     }
 
     // ------------------------------------------------------------------ DEBUG
+    // Which play session's lines: "all" (default), "latest" (the newest run, running or
+    // finished), "current" (the running one), "editing" (outside play), or a run number.
+    int runWanted = -2;   // -2 all, -1 editing only, else that run (0 = none yet)
+    std::string runError;
+    auto pickRun = [&]() {
+        runWanted = -2;
+        if (!args.contains("run")) return true;
+        const json& r = args["run"];
+        if (r.is_number_integer()) { runWanted = std::max(0, r.get<int>()); return true; }
+        const std::string s = r.is_string() ? r.get<std::string>() : std::string();
+        if (s == "all") return true;
+        if (s == "latest") { runWanted = Log::lastRun(); return true; }
+        if (s == "current") { runWanted = Log::currentRun(); return true; }
+        if (s == "editing") { runWanted = -1; return true; }
+        runError = "run must be \"all\", \"latest\", \"current\", \"editing\" or a run number.";
+        return false;
+    };
+    auto inRun = [&](const Log::Entry& e) { return runWanted == -2 || (runWanted == -1 ? e.run == 0 : e.run == runWanted); };
+    auto runInfo = [&](json& d) {
+        d["latest_run"] = Log::lastRun();
+        d["current_run"] = Log::currentRun();
+        d["playing"] = m_playing;
+        if (runWanted >= 0) d["run"] = runWanted;
+        else d["run"] = runWanted == -1 ? "editing" : "all";
+        if (runWanted == 0) d["note"] = Log::lastRun() ? "No play session is running now (see latest_run)." : "Nothing has been playtested yet.";
+    };
     if (name == "get_output") {
+        if (!pickRun()) return fail("INVALID_INPUT", runError, "Leave run out for everything.");
         int want = std::clamp(args.value("lines", 40), 1, 400);
         const auto& e = Log::entries();
+        std::vector<size_t> pick;
+        for (size_t i = e.size(); i-- > 0 && (int)pick.size() < want;) if (inRun(e[i])) pick.push_back(i);
         json lines = json::array();
-        for (size_t i = e.size() > (size_t)want ? e.size() - (size_t)want : 0; i < e.size(); ++i)
-            lines.push_back({{"time", e[i].time}, {"level", levelName(e[i].level)}, {"text", e[i].text}});
-        return done({{"lines", lines}});
+        for (size_t k = pick.size(); k-- > 0;) {
+            const Log::Entry& x = e[pick[k]];
+            lines.push_back({{"time", x.time}, {"level", levelName(x.level)}, {"text", x.text}, {"run", x.run}});
+        }
+        json d = {{"lines", lines}};
+        runInfo(d);
+        return done(d);
     }
     if (name == "get_errors") {
+        if (!pickRun()) return fail("INVALID_INPUT", runError, "Leave run out for everything.");
         int look = std::clamp(args.value("lines", 200), 1, 2000);
         bool warnings = args.value("include_warnings", true);
         const auto& e = Log::entries();
         json errs = json::array(), warns = json::array();
-        for (size_t i = e.size() > (size_t)look ? e.size() - (size_t)look : 0; i < e.size(); ++i) {
-            if (e[i].level == Log::Level::Error) errs.push_back({{"time", e[i].time}, {"text", e[i].text}});
-            else if (warnings && e[i].level == Log::Level::Warn) warns.push_back({{"time", e[i].time}, {"text", e[i].text}});
+        int seen = 0;
+        size_t from = e.size();
+        while (from > 0 && seen < look) { --from; if (inRun(e[from])) ++seen; }
+        for (size_t i = from; i < e.size(); ++i) {
+            if (!inRun(e[i])) continue;
+            if (e[i].level == Log::Level::Error) errs.push_back({{"time", e[i].time}, {"text", e[i].text}, {"run", e[i].run}});
+            else if (warnings && e[i].level == Log::Level::Warn) warns.push_back({{"time", e[i].time}, {"text", e[i].text}, {"run", e[i].run}});
         }
-        return done({{"errors", errs}, {"warnings", warns}, {"error_count", errs.size()}, {"warning_count", warns.size()}});
+        json d = {{"errors", errs}, {"warnings", warns}, {"error_count", errs.size()}, {"warning_count", warns.size()}};
+        runInfo(d);
+        return done(d);
     }
     if (name == "diagnose_object") {
         SceneNode* n;
@@ -714,6 +1201,15 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     };
 
     if (name == "create_physical_object") {
+        // Accept the property names scripts use (Size, Color, CanCollide...) as well as size / can_collide.
+        bool renamed = false;
+        json norm = json::object();
+        for (auto& [k, v] : args.items()) {
+            std::string key = canon(k) == "cancollide" ? "can_collide" : lower(k);
+            if (key != k) renamed = true;
+            norm[key] = v;
+        }
+        if (renamed) return runAiTool(name, norm);
         const std::string shape = str("shape").empty() ? "Part" : str("shape");
         if (shape != "Part" && shape != "Sphere" && shape != "Cylinder")
             return fail("INVALID_INPUT", "shape must be Part, Sphere or Cylinder.", "Leave it out for a box.");
@@ -731,8 +1227,10 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         if (vecArg("color", v)) n->color = glm::clamp(v, glm::vec3(0.0f), glm::vec3(1.0f));
         if (!str("material").empty()) {
             bool found = false;
+            std::string m = str("material");
+            if (m.rfind("Enum.", 0) == 0) m = m.substr(m.rfind('.') + 1);
             for (int i = 0; i < kMaterialCount; ++i)
-                if (lower(kMaterialNames[i]) == lower(str("material"))) { n->material = (Material)i; found = true; }
+                if (lower(kMaterialNames[i]) == lower(m)) { n->material = (Material)i; found = true; }
             if (!found) warnings.push_back("There's no material \"" + str("material") + "\" (there are " +
                                            std::string(materialNameList()) + "); it stayed Plastic.");
         }
@@ -942,6 +1440,57 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         int steps = std::clamp(args.value("steps", 1), 1, 100), doneSteps = 0;
         while (doneSteps < steps && !m_undo.empty()) { undo(); ++doneSteps; }
         return done({{"undone", doneSteps}, {"undo_steps_left", m_undo.size()}});
+    }
+
+    // ---------------------------------------------------------------- PUBLISH
+    // The same publish as File > Publish to Guts&Bolts: the signed-in account, the same
+    // request, and the server's own checks and limits decide. Nothing here gets around them.
+    if (name == "publish_game") {
+        const std::string action = str("action").empty() ? "publish" : str("action");
+        if (action == "status") {
+            json d = m_aiPublish.is_object() ? m_aiPublish : json{{"state", "none"}};
+            d["published_id"] = m_scene->info().publishedId;
+            return done(d);
+        }
+        if (action != "publish") return failWith("INVALID_INPUT", "action must be publish or status.", "", json::array({"publish", "status"}));
+        if (!Online::configured() || !Online::online())
+            return fail("NOT_SIGNED_IN", "Studio isn't signed in to Guts&Bolts (" +
+                        (Online::configured() ? Online::statusText() : std::string("no server")) + "), so it can't publish.",
+                        "Ask the person to sign in (File > Guts&Bolts Server... / their profile), then try again. "
+                        "Publishing only ever happens as the account they signed in with.", false);
+        if (Online::isGuest())
+            return fail("NOT_SIGNED_IN", "Guests can't publish games.", "Ask the person to sign up or sign in first.", false);
+        if (m_playing) return fail("PLAYTEST_RUNNING", "Can't publish during a playtest (it would publish the running game).", "playtest stop first.");
+        if (m_onlineBusy || (m_aiPublish.is_object() && m_aiPublish.value("state", "") == "publishing"))
+            return fail("BUSY", "A publish (or another upload) is still going.", "Wait, then publish_game {action: \"status\"}.");
+        if (!args.value("confirm", false))
+            return fail("CONFIRMATION_REQUIRED", "Publishing puts the game on Guts&Bolts for everyone to find and play.",
+                        "Only publish when the person asked for it, then call again with confirm: true.");
+        const std::string pubName = str("name").empty() ? m_scene->info().title : str("name");
+        const std::string pubDesc = args.contains("description") ? str("description") : m_scene->info().description;
+        if (pubName.find_first_not_of(" \t") == std::string::npos)
+            return fail("INVALID_INPUT", "The game needs a name.", "Give name (the title people see on the site).");
+        const std::string mode = str("mode").empty() ? "auto" : str("mode");
+        if (mode != "auto" && mode != "new" && mode != "update")
+            return failWith("INVALID_INPUT", "mode must be auto, new or update.", "", json::array({"auto", "new", "update"}));
+        const bool published = !m_scene->info().publishedId.empty();
+        if (mode == "update" && !published)
+            return fail("NOT_PUBLISHED", "This game hasn't been published yet, so there's nothing to update.", "Use mode \"new\" (or auto).");
+        const bool update = mode == "update" || (mode == "auto" && published);
+        m_aiPublish = {{"state", "publishing"}, {"name", pubName}, {"update", update}};
+        Log::system("AI tools: publishing \"" + pubName + "\" to Guts&Bolts...");
+        publishGame(pubName, pubDesc, update, [this](const json& r) {
+            if (r.value("ok", false)) {
+                m_aiPublish["state"] = "published";
+                m_aiPublish["published_id"] = m_scene->info().publishedId;
+            } else {
+                m_aiPublish["state"] = "failed";
+                m_aiPublish["error"] = r.value("error", std::string("Publishing didn't work."));
+                Log::warn("Publishing didn't work: " + m_aiPublish["error"].get<std::string>());
+            }
+        });
+        return done({{"state", "publishing"}, {"name", pubName}, {"update", update},
+                     {"note", "Sent to the server; its checks decide. Check the result with publish_game {action: \"status\"}."}});
     }
 
     return fail("UNKNOWN_TOOL", "There's no tool called " + name + ".", "Use one of the tools from tools/list. Don't invent tools.", false);

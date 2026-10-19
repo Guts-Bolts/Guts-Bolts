@@ -8,6 +8,7 @@
 #include "Particles.h"
 #include "Blast.h"
 #include "Animation.h"
+#include "CollisionGroups.h"
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -76,6 +77,7 @@ struct WorldSettings {
     float      bloodStay   = 30.0f;         // seconds pools and splats stay before drying up
     float      spawnForceField = 4.0f;      // seconds of ForceField after spawning (0 = none)
     bool       playerCollisions = true;     // characters bump into each other (off = walk through)
+    CollisionGroups collisionGroups;        // PhysicsService's groups and which of them collide
     bool       voiceChat = true;            // players who turned voice chat on can talk (off = nobody can, in this game)
     int        maxFluidParticles = 100000;  // real liquid: the most drops at once (the oldest are recycled)
     // The players' camera: orthographic = no perspective (2D, isometric and puzzle
@@ -103,6 +105,11 @@ struct RemoteCharacter {
     bool          cameraSet = false;
     CameraOptions camera;
     std::vector<uint64_t> toolSlots;     // their hotbar order (the host keeps their tools)
+    // Their team (the host's scripts decide; sent to them so they spawn in the right place).
+    uint64_t    team = 0;
+    bool        neutral = true;
+    glm::vec3   teamColor{1.0f};
+    bool        teamDirty = false;
 };
 
 // A visual effect to show on every player's screen (multiplayer).
@@ -167,7 +174,8 @@ public:
 
     // Nodes the user must not delete / move (Workspace and the character).
     bool isProtected(const SceneNode* node) const;
-    // Roblox's container services (ReplicatedStorage, ServerScriptService, StarterPack...)
+    // Roblox's container services (ReplicatedStorage, ServerScriptService, StarterPack,
+    // StarterPlayer (its StarterPlayerScripts folder)...)
     // are folders at the top of the scene with those names. Studio shows them as their own
     // rows in the Explorer, next to the Workspace, instead of inside it.
     static const std::vector<const char*>& serviceNames();
@@ -193,6 +201,13 @@ public:
     // can't be moved or deleted; findById(kTerrainId) returns it.
     static constexpr uint64_t kTerrainId = 4503599627370000ull;
     SceneNode*       terrainNode() { return m_terrainNode.get(); }
+    // workspace.CurrentCamera as an object that can hold things (screen effects put in
+    // the Camera, like Roblox). Only on this computer: it isn't saved or sent to other
+    // players, and it's emptied when a game is loaded. findById(kCameraId) returns it.
+    static constexpr uint64_t kCameraId = 4503599627370001ull;
+    SceneNode*       cameraNode() { return m_cameraNode.get(); }
+    // The Lighting service's folder (its screen effects and Sky), made when asked.
+    SceneNode*       lightingFolder(bool create) { return serviceFolder("Lighting", create); }
     bool             isCharacterRoot(uint64_t id) const;
     // Kill any character; `force` 0..1 = how violently.
     void             killCharacter(uint64_t rootId, float force, const glm::vec3& impulse);
@@ -227,6 +242,7 @@ private:
     WaterSystem                m_water;
     Terrain                    m_terrain;
     std::unique_ptr<SceneNode> m_terrainNode;
+    std::unique_ptr<SceneNode> m_cameraNode;
     ParticleSystem             m_particles;
     BlastSystem                m_blasts;
     Anim::Animator             m_animator;

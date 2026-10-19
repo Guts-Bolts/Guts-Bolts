@@ -131,6 +131,8 @@ SceneRenderer::SceneRenderer() {
     m_hlMask      = std::make_unique<Shader>(highlightMaskVert, highlightMaskFrag);
     m_hl          = std::make_unique<Shader>(fullscreenVert, highlightFrag);
     m_ribbon      = std::make_unique<Shader>(ribbonVert, ribbonFrag);
+    m_sunRays     = std::make_unique<Shader>(fullscreenVert, sunRaysFrag);
+    m_sprite      = std::make_unique<Shader>(spriteVert, spriteFrag);
     m_fluidDepth  = std::make_unique<Shader>(fluidVert, fluidDepthFrag);
     m_fluidThick  = std::make_unique<Shader>(fluidVert, fluidThickFrag);
     m_fluidColor  = std::make_unique<Shader>(fluidVert, fluidColorFrag);
@@ -165,6 +167,55 @@ SceneRenderer::~SceneRenderer() {
     for (auto& b : m_bloom) destroyTarget(b);
     for (auto& b : m_bdDown) destroyTarget(b);
     for (auto& b : m_bdUp) destroyTarget(b);
+    for (auto& b : m_blurDown) destroyTarget(b);
+    for (auto& b : m_blurUp) destroyTarget(b);
+    destroyTarget(m_rays);
+}
+
+void SceneRenderer::gatherScreenFx(Scene& scene) {
+    m_fx = ScreenFx{};
+    ScreenFx& f = m_fx;
+    auto take = [&](const SceneNode* holder, bool lighting) {
+        for (const auto& c : holder->children) {
+            if (lighting && c->isSky() && !f.sky) f.sky = c.get();
+            if (!c->isPostEffect() || !c->enabled) continue;
+            const PostEffectProps& p = c->post;
+            switch (p.type) {
+                case PostEffectType::ColorCorrection:
+                    f.grade = true;
+                    f.brightness += p.brightness;
+                    f.contrast *= 1.0f + p.contrast;
+                    f.saturation *= 1.0f + p.saturation;
+                    f.tint *= p.tint;
+                    break;
+                case PostEffectType::SunRays:
+                    f.rays += p.intensity;
+                    f.raysSpread = std::max(f.raysSpread, p.spread);
+                    break;
+                case PostEffectType::DepthOfField:
+                    if (!f.dof) { f.focus = p.focusDistance; f.inFocus = p.inFocusRadius; }
+                    f.dof = true;
+                    f.nearAmt = std::max(f.nearAmt, p.nearIntensity);
+                    f.farAmt = std::max(f.farAmt, p.farIntensity);
+                    break;
+                case PostEffectType::Bloom:
+                    f.bloom = true;
+                    f.bloomIntensity += p.intensity;
+                    f.bloomThreshold = std::min(f.bloomThreshold, p.threshold);
+                    f.bloomSize = std::max(f.bloomSize, p.size);
+                    break;
+                case PostEffectType::Blur:
+                    f.blur = std::sqrt(f.blur * f.blur + p.size * p.size);   // two blurs: a bit blurrier
+                    break;
+            }
+        }
+    };
+    for (const auto& c : scene.root()->children)
+        if (c->name == "Lighting" && scene.isServiceFolder(c.get())) take(c.get(), true);
+    take(scene.cameraNode(), false);
+    f.rays = std::min(f.rays, 1.0f);
+    f.bloomIntensity = std::min(f.bloomIntensity, 2.0f);
+    if (f.dof && f.nearAmt <= 0.0f && f.farAmt <= 0.0f) f.dof = false;
 }
 
 void SceneRenderer::setOverlay(const std::vector<OverlayVertex>& tris, const std::vector<OverlayVertex>& lines) {
@@ -412,7 +463,8 @@ void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, 
     m_depth->setMat4("uLightSpace", lightSpace);
     scene.forEach([&](SceneNode* node) {
         if (!node->mesh || !node->visible || !node->castShadow) return;
-        for (SceneNode* p = node->parent; p; p = p->parent) if (!p->visible) return;   // inside something hidden (a backpack)
+        for (SceneNode* p = node->parent; p; p = p->parent)   // inside something hidden (a backpack) or a ViewportFrame
+            if (!p->visible || p->isViewportFrame()) return;
         if (node->kind != NodeKind::Part || node->transparency > 0.5f) return;
         const glm::mat4 m = node->worldMatrix();
         if (tooFar(glm::vec3(m[3]), partRadius(m))) return;
@@ -433,6 +485,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     GraphicsSettings& gs = GraphicsSettings::get();
     const Environment& env = scene.environment();
     glm::vec3 sunDir = env.sunDirection();
+    gatherScreenFx(scene);
 
     // Render distance (10 = no limit). Water and liquid out there rest too (less lag).
     m_viewPos = camera.position();
@@ -510,6 +563,36 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         m_sky->setVec3("uCloudColor", env.cloudColor);
         m_sky->setBool("uStars", env.stars);
         m_sky->setFloat("uTime", time);
+        {   // A Sky in Lighting: its skybox, stars, sun and moon.
+            const SkyProps* sk = m_fx.sky ? &m_fx.sky->sky : nullptr;
+            m_sky->setBool("uSkyObj", sk != nullptr);
+            bool box = false, sunTex = false, moonTex = false;
+            if (sk) {
+                const std::string* faces[6] = {&sk->bk, &sk->dn, &sk->ft, &sk->lf, &sk->rt, &sk->up};
+                static const char* const names[6] = {"uSkyBk", "uSkyDn", "uSkyFt", "uSkyLf", "uSkyRt", "uSkyUp"};
+                unsigned tex[6];
+                box = true;
+                for (int i = 0; i < 6; ++i) { tex[i] = Textures::get(*faces[i]); box = box && tex[i]; }
+                if (box)
+                    for (int i = 0; i < 6; ++i) { bindTex(1 + i, tex[i]); m_sky->setInt(names[i], 1 + i); }
+                const unsigned st = Textures::get(sk->sun), mt = Textures::get(sk->moon);
+                sunTex = st != 0;
+                moonTex = mt != 0;
+                if (st) { bindTex(7, st); m_sky->setInt("uSunTex", 7); }
+                if (mt) { bindTex(8, mt); m_sky->setInt("uMoonTex", 8); }
+                m_sky->setFloat("uStarDensity", (float)sk->starCount / 3000.0f);
+                m_sky->setBool("uCelestial", sk->celestial);
+                m_sky->setFloat("uSunAngle", sk->sunSize);
+                m_sky->setFloat("uMoonAngle", sk->moonSize);
+                // Night (the light comes from the moon), the way Lighting.ClockTime works it out.
+                const float h = std::fmod(std::fmod(env.clockTime, 24.0f) + 24.0f, 24.0f);
+                m_sky->setBool("uNight", std::sin((h - 6.0f) / 12.0f * 3.14159265f) < -0.05f);
+            }
+            m_sky->setBool("uSkybox", box);
+            m_sky->setBool("uSunTexOn", sunTex);
+            m_sky->setBool("uMoonTexOn", moonTex);
+            glActiveTexture(GL_TEXTURE0);
+        }
         glBindVertexArray(m_emptyVao);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glDepthMask(GL_TRUE);
@@ -795,6 +878,47 @@ void SceneRenderer::drawConstraints(Scene& scene, bool editing) {
             case ConstraintType::Hinge:
                 draw(segment(p0 - glm::vec3(a0->worldMatrix()[0]) * 0.0f, p1, th * 0.5f), col, Material::Metal, *cyl);
                 break;
+            case ConstraintType::BallSocket: {
+                // A ball in its socket, with a thin line to Attachment1 if they've drifted apart.
+                const float r = std::max(0.15f, th * 2.0f);
+                draw(glm::translate(glm::mat4(1.0f), p0) * glm::scale(glm::mat4(1.0f), glm::vec3(r)), col, Material::Metal, *ball);
+                if (glm::length(p1 - p0) > r * 0.5f) draw(segment(p0, p1, th * 0.5f), col, Material::Metal, *cyl);
+                break;
+            }
+            case ConstraintType::Prismatic:
+            case ConstraintType::Cylindrical: {
+                // The rail along Attachment0's axis (from LowerLimit to UpperLimit when
+                // limited), and a sleeve where Attachment1 rides on it.
+                glm::vec3 x(a0->worldMatrix()[0]);
+                if (glm::length(x) < 1e-6f) break;
+                x = glm::normalize(x);
+                const JointProps& jp = n->joint;
+                const float s = glm::dot(p1 - p0, x);
+                float lo = std::min(0.0f, s), hi = std::max(0.0f, s);
+                if (jp.limitsEnabled) {
+                    lo = std::min(lo, std::min(jp.lowerLimit, jp.upperLimit));
+                    hi = std::max(hi, std::max(jp.lowerLimit, jp.upperLimit));
+                }
+                if (hi - lo < 0.2f) { lo -= 0.1f; hi += 0.1f; }
+                draw(segment(p0 + x * lo, p0 + x * hi, th * 0.5f), col, Material::Metal, *cyl);
+                const float sleeve = std::max(0.25f, th * 4.0f);
+                draw(segment(p1 - x * sleeve, p1 + x * sleeve, th * 1.6f), col * 0.8f, Material::Metal, *cyl);
+                if (n->constraintType == ConstraintType::Cylindrical) {
+                    // A ring around the sleeve shows it can spin.
+                    const glm::vec3 u = std::abs(x.y) < 0.99f ? glm::normalize(glm::cross(x, glm::vec3(0, 1, 0)))
+                                                              : glm::normalize(glm::cross(x, glm::vec3(1, 0, 0)));
+                    const glm::vec3 v = glm::cross(x, u);
+                    const float rr = sleeve * 1.2f;
+                    glm::vec3 prev = p1 + u * rr;
+                    for (int i = 1; i <= 16; ++i) {
+                        const float a = i / 16.0f * 6.2831853f;
+                        const glm::vec3 q = p1 + (u * std::cos(a) + v * std::sin(a)) * rr;
+                        draw(segment(prev, q, th * 0.4f), col, Material::Metal, *cyl);
+                        prev = q;
+                    }
+                }
+                break;
+            }
             default: break;
         }
     });
@@ -1102,7 +1226,8 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         stack.pop_back();
         if (!node->visible) continue;
         ff = ff || node->hasForceField();
-        for (auto& c : node->children) stack.push_back({c.get(), ff});
+        if (!node->isViewportFrame())   // (the parts in a ViewportFrame are only its picture)
+            for (auto& c : node->children) stack.push_back({c.get(), ff});
         if (node->isDecal() && !node->texture.empty() && node->shownTransparency() < 0.99f &&
             node->parent && node->parent->kind == NodeKind::Part)
             if (!tooFar(glm::vec3(node->parent->worldMatrix()[3]), partRadius(node->parent->worldMatrix())))
@@ -1337,8 +1462,82 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     }
 
     drawRibbons(scene, camera);
+    drawSprites(scene, camera);
     m_lit->bind();
     glDepthMask(GL_TRUE);
+}
+
+// ParticleEmitter / Fire / Smoke / Sparkles particles (ParticleSystem::runEmitters has
+// already moved them and worked out their looks): camera-facing squares, furthest first.
+void SceneRenderer::drawSprites(Scene& scene, const Camera& camera) {
+    const ParticleSystem& ps = scene.particles();
+    const std::vector<Sprite>& sprites = ps.sprites();
+    if (sprites.empty()) return;
+    const glm::mat4 view = camera.view();
+    std::vector<std::pair<float, const Sprite*>> order;
+    order.reserve(sprites.size());
+    for (const Sprite& s : sprites) {
+        if (s.alpha <= 0.003f || s.size <= 0.0f || tooFar(s.pos, s.size)) continue;
+        const float z = (view * glm::vec4(s.pos, 1.0f)).z;
+        if (z > s.size) continue;   // behind the camera
+        order.push_back({z, &s});
+    }
+    if (order.empty()) return;
+    std::sort(order.begin(), order.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    struct V { glm::vec3 c; glm::vec2 k; glm::vec4 col; glm::vec4 info; float seed; };
+    std::vector<V> verts;
+    verts.reserve(order.size() * 6);
+    const glm::vec2 corners[6] = {{-1, -1}, {1, -1}, {1, 1}, {-1, -1}, {1, 1}, {-1, 1}};
+    if (!m_spriteVao) {
+        glGenVertexArrays(1, &m_spriteVao);
+        glGenBuffers(1, &m_spriteVbo);
+        glBindVertexArray(m_spriteVao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_spriteVbo);
+        glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, c));
+        glEnableVertexAttribArray(1); glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, k));
+        glEnableVertexAttribArray(2); glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, col));
+        glEnableVertexAttribArray(3); glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, info));
+        glEnableVertexAttribArray(4); glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(V), (void*)offsetof(V, seed));
+    }
+    const Environment& env = scene.environment();
+    const glm::vec3 light = glm::clamp(env.ambientColor * env.ambientIntensity +
+                                       env.sunColor * std::max(0.0f, env.sunIntensity) * std::max(env.sunDirection().y, 0.0f),
+                                       glm::vec3(0.05f), glm::vec3(1.2f));
+    m_sprite->bind();
+    m_sprite->setMat4("uView", view);
+    m_sprite->setMat4("uProj", camera.projection());
+    m_sprite->setVec3("uLight", light);
+    m_sprite->setInt("uTex", 5);
+    glBindVertexArray(m_spriteVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_spriteVbo);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    // Colours come out already multiplied by their alpha: a glowing one adds its light,
+    // a plain one covers what's behind it, and anything between.
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    // In runs that use the same picture (most use a built-in one: no picture at all).
+    size_t i = 0;
+    while (i < order.size()) {
+        const int tex = order[i].second->tex;
+        verts.clear();
+        for (; i < order.size() && order[i].second->tex == tex; ++i) {
+            const Sprite& s = *order[i].second;
+            const glm::vec4 col(s.color, std::clamp(s.alpha, 0.0f, 1.0f));
+            const glm::vec4 info(s.size * 0.5f, glm::radians(s.rot), (float)s.look, std::clamp(s.glow, 0.0f, 1.0f));
+            for (const glm::vec2& k : corners) verts.push_back({s.pos, k, col, info, s.seed});
+        }
+        const std::vector<std::string>& texNames = ps.spriteTextures();
+        const unsigned t = tex >= 0 && tex < (int)texNames.size() ? Textures::get(texNames[tex]) : 0;
+        if (t) bindTex(5, t);
+        m_sprite->setBool("uHasTex", t != 0);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(V)), verts.data(), GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    }
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_CULL_FACE);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(0);
 }
 
 namespace {
@@ -1720,19 +1919,26 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
         glDrawArrays(GL_TRIANGLES, 0, 3);
     }
 
-    // --- Bloom: bright-pass, then a blur pyramid down and back up ---
-    bool useBloom = gs.bloom && env.bloomIntensity > 0.0f;
+    // --- Bloom: bright-pass, then a blur pyramid down and back up. A BloomEffect in
+    //     Lighting / the Camera takes over from the Lighting panel's bloom: its Size says
+    //     how far it spreads (how many levels of the pyramid). Off when bloom is off in
+    //     the graphics settings (Low, so phones on Low skip it). ---
+    const float bloomIntensity = m_fx.bloom ? m_fx.bloomIntensity * 2.5f : env.bloomIntensity;
+    const float bloomThreshold = m_fx.bloom ? m_fx.bloomThreshold : env.bloomThreshold;
+    const int bloomLevels = m_fx.bloom ? std::clamp(1 + (int)std::lround(m_fx.bloomSize / 56.0f * (kBloomLevels - 1)), 1, kBloomLevels)
+                                       : kBloomLevels;
+    bool useBloom = gs.bloom && bloomIntensity > 0.0f;
     if (useBloom) {
         bindTarget(m_bloom[0]);
         m_bloomPre->bind();
         bindTex(0, m_hdr.color);
         m_bloomPre->setInt("uSrc", 0);
-        m_bloomPre->setFloat("uThreshold", env.bloomThreshold);
+        m_bloomPre->setFloat("uThreshold", bloomThreshold);
         glDrawArrays(GL_TRIANGLES, 0, 3);
 
         m_bloomDown->bind();
         m_bloomDown->setInt("uSrc", 0);
-        for (int i = 1; i < kBloomLevels; ++i) {
+        for (int i = 1; i < bloomLevels; ++i) {
             bindTarget(m_bloom[i]);
             bindTex(0, m_bloom[i - 1].color);
             m_bloomDown->setVec2("uTexel", glm::vec2(1.0f / m_bloom[i - 1].w, 1.0f / m_bloom[i - 1].h));
@@ -1743,7 +1949,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
         m_bloomUp->setInt("uSrc", 0);
         glEnable(GL_BLEND);
         glBlendFunc(GL_ONE, GL_ONE);
-        for (int i = kBloomLevels - 1; i > 0; --i) {
+        for (int i = bloomLevels - 1; i > 0; --i) {
             bindTarget(m_bloom[i - 1]);
             bindTex(0, m_bloom[i].color);
             m_bloomUp->setVec2("uTexel", glm::vec2(1.0f / m_bloom[i].w, 1.0f / m_bloom[i].h));
@@ -1751,6 +1957,82 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
         }
         glDisable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+
+    // --- BlurEffect / DepthOfFieldEffect: blurrier and blurrier copies of the picture
+    //     (each half the size of the last, smoothed back up one size, like the UI's blur),
+    //     mixed in by the composite. A handful of tiny passes, so phones keep it. Depth of
+    //     field is skipped on Low graphics. ---
+    const bool lowEnd = gs.quality == GraphicsSettings::Low;
+    const bool useDof = m_fx.dof && !lowEnd;
+    // BlurEffect.Size in pixels -> which copy: each is about twice as blurry as the last.
+    const float blurLevel = m_fx.blur > 0.5f ? std::clamp(std::log2(m_fx.blur / 1.5f), 0.0f, 4.0f) * (m_fx.blur < 3.0f ? m_fx.blur / 3.0f : 1.0f) : 0.0f;
+    const bool useBlur = blurLevel > 0.0f || useDof;
+    if (useBlur) {
+        if (m_blurDown[0].w != std::max(1, m_hdr.w / 2) || m_blurDown[0].h != std::max(1, m_hdr.h / 2) || !m_blurDown[0].fbo) {
+            int bw = m_hdr.w / 2, bh = m_hdr.h / 2;
+            for (int i = 0; i < kBlurLevels; ++i) {
+                createTarget(m_blurDown[i], bw, bh, hdrFormat(), false);
+                if (i < kBlurLevels - 1) createTarget(m_blurUp[i], bw, bh, hdrFormat(), false);
+                bw = std::max(1, bw / 2);
+                bh = std::max(1, bh / 2);
+            }
+        }
+        m_bloomDown->bind();
+        m_bloomDown->setInt("uSrc", 0);
+        unsigned src = m_hdr.color;
+        int sw = m_hdr.w, sh = m_hdr.h;
+        for (int i = 0; i < kBlurLevels; ++i) {
+            bindTarget(m_blurDown[i]);
+            bindTex(0, src);
+            m_bloomDown->setVec2("uTexel", glm::vec2(1.0f / sw, 1.0f / sh));
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            src = m_blurDown[i].color;
+            sw = m_blurDown[i].w;
+            sh = m_blurDown[i].h;
+        }
+        m_bloomUp->bind();
+        m_bloomUp->setInt("uSrc", 0);
+        for (int i = 0; i < kBlurLevels - 1; ++i) {
+            bindTarget(m_blurUp[i]);
+            bindTex(0, m_blurDown[i + 1].color);
+            m_bloomUp->setVec2("uTexel", glm::vec2(1.0f / m_blurDown[i + 1].w, 1.0f / m_blurDown[i + 1].h));
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+        }
+    }
+
+    // --- SunRaysEffect: streaks from the sun, worked out at a quarter of the size. Phones
+    //     take half as many steps; Low graphics skips it. ---
+    glm::vec3 raysColor(0.0f);
+    bool useRays = false;
+    if (m_fx.rays > 0.0f && !lowEnd && env.sunElevation > -2.0f && !camera.orthographic) {
+        const glm::vec4 clip = camera.projection() * camera.view() * glm::vec4(camera.position() + env.sunDirection() * 1000.0f, 1.0f);
+        const float facing = glm::dot(camera.forward(), env.sunDirection());
+        if (clip.w > 0.0f && facing > 0.05f) {
+            const glm::vec2 sun = glm::vec2(clip) / clip.w * 0.5f + 0.5f;
+            const int rw = std::max(1, m_hdr.w / 4), rh = std::max(1, m_hdr.h / 4);
+            if (m_rays.w != rw || m_rays.h != rh || !m_rays.fbo) createTarget(m_rays, rw, rh, hdrFormat(), false);
+            bindTarget(m_rays);
+            m_sunRays->bind();
+            bindTex(0, m_hdr.color);
+            bindTex(1, m_hdr.depth);
+            m_sunRays->setInt("uHdr", 0);
+            m_sunRays->setInt("uDepth", 1);
+            m_sunRays->setVec2("uSun", sun);
+            m_sunRays->setFloat("uSpread", m_fx.raysSpread);
+            m_sunRays->setFloat("uStrength", 1.0f);
+            m_sunRays->setFloat("uAspect", (float)m_hdr.w / (float)std::max(1, m_hdr.h));
+#ifdef GB_GLES
+            m_sunRays->setInt("uSamples", 16);
+#else
+            m_sunRays->setInt("uSamples", 32);
+#endif
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            // Fades as the sun leaves the view; tinted like the sunlight.
+            const float edge = glm::clamp((facing - 0.05f) / 0.35f, 0.0f, 1.0f);
+            raysColor = glm::pow(env.sunColor, glm::vec3(2.2f)) * m_fx.rays * edge * 4.0f;
+            useRays = true;
+        }
     }
 
     // --- Composite: tone mapping + grading, then optional FXAA ---
@@ -1770,12 +2052,39 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     m_composite->setBool("uLumaAlpha", useFxaa);
     m_composite->setVec2("uAOTexel", glm::vec2(1.0f / m_ao.w, 1.0f / m_ao.h));
     m_composite->setFloat("uExposure", env.exposure);
-    m_composite->setFloat("uBloomIntensity", env.bloomIntensity);
+    m_composite->setFloat("uBloomIntensity", bloomIntensity);
     m_composite->setFloat("uAOIntensity", env.aoIntensity);
     m_composite->setFloat("uContrast", env.contrast);
     m_composite->setFloat("uSaturation", env.saturation);
     m_composite->setFloat("uVignette", env.vignette);
     m_composite->setVec3("uTint", env.tint);
+    // Screen effects.
+    m_composite->setBool("uBlurOn", useBlur);
+    m_composite->setBool("uDof", useDof);
+    m_composite->setBool("uRaysOn", useRays);
+    m_composite->setBool("uGrade", m_fx.grade);
+    if (useBlur) {
+        static const char* const names[4] = {"uBlur1", "uBlur2", "uBlur3", "uBlur4"};
+        for (int i = 0; i < 4; ++i) { bindTex(4 + i, m_blurUp[i].color); m_composite->setInt(names[i], 4 + i); }
+        m_composite->setFloat("uBlurLevel", blurLevel);
+        m_composite->setVec4("uDofParams", glm::vec4(m_fx.focus, m_fx.inFocus, m_fx.nearAmt, m_fx.farAmt));
+        if (useDof) {
+            const glm::mat4 proj = camera.projection();
+            bindTex(3, m_hdr.depth);
+            m_composite->setInt("uDepth", 3);
+            m_composite->setVec2("uDepthParams", glm::vec2(proj[3][2], proj[2][2]));
+            m_composite->setBool("uOrthoDepth", camera.orthographic);
+        }
+    }
+    if (useRays) {
+        bindTex(8, m_rays.color);
+        m_composite->setInt("uRays", 8);
+        m_composite->setVec3("uRaysColor", raysColor);
+    }
+    if (m_fx.grade) {
+        m_composite->setVec4("uGradeParams", glm::vec4(m_fx.brightness, m_fx.contrast, m_fx.saturation, 0.0f));
+        m_composite->setVec3("uGradeTint", m_fx.tint);
+    }
     // Is the camera under water?
     {
         const glm::vec3 eye = camera.position();

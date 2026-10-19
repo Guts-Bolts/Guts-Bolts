@@ -27,6 +27,19 @@ test('Exclusive items are hidden from the catalog and can\'t be bought', () => {
   assert.equal(bob.notes[0].kind, 'gift');
 });
 
+test('Exclusive items can\'t be bought as a gift either', () => {
+  const s = makeServer();
+  const bob = s.signUp('bob'), amy = s.signUp('amy');
+  assert.ok(s.call(bob, 'friends.add', { user: amy.userId }).ok);
+  assert.ok(s.call(amy, 'friends.accept', { user: bob.userId }).ok);
+  const hat = s.addGame(s.staff, 'Event Hat', { kind: 'hat', price: 40 });
+  assert.ok(s.call(s.staff, 'item.edit', { id: hat.id, exclusive: true }).ok);
+  const r = s.call(bob, 'gift.buy', { id: hat.id, to: amy.userId });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /Exclusive/);
+  assert.ok(!amy.owned.includes(hat.id));
+});
+
 test('a gift box gives its owners the hidden item once it goes off sale', () => {
   const s = makeServer();
   const bob = s.signUp('bob'), amy = s.signUp('amy'), late = s.signUp('late');
