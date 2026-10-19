@@ -1637,6 +1637,40 @@ void PlayerApp::drawModeration() {
         ImGui::Spacing();
         ImGui::TextWrapped("Please keep Guts&Bolts a fun, safe place for everyone.");
         ImGui::Spacing();
+        // Think it's a mistake? One short note to staff per ban (appeal.send); their answer shows here.
+        {
+            const json appeal = b.contains("appeal") && b["appeal"].is_object() ? b["appeal"] : json();
+            const std::string status = appeal.is_object() ? appeal.value("status", std::string()) : std::string();
+            ImGui::Separator();
+            if (status == "open") {
+                ImGui::TextDisabled("Your appeal");
+                ImGui::TextWrapped("\"%s\"", appeal.value("text", std::string()).c_str());
+                ImGui::TextDisabled("Sent %s. Staff will read it and answer here.", dateText(appeal.value("at", 0LL)).c_str());
+            } else {
+                if (!status.empty()) {
+                    ImGui::TextWrapped("%s", status == "denied" ? "Staff looked at your appeal and kept the ban." : "Staff accepted your appeal.");
+                    if (std::string note = appeal.value("note", std::string()); !note.empty()) ImGui::TextWrapped("\"%s\"", note.c_str());
+                }
+                if (b.value("canAppeal", false)) {
+                    ImGui::TextUnformatted(status.empty() ? "Think this is a mistake?" : "Appeal again");
+                    ImGui::TextDisabled("Tell staff why the ban should be lifted (up to 500 letters, once per ban).");
+                    ImGui::InputTextMultiline("##appeal", &m_appealText, ImVec2(-1, 80));
+                    ImGui::BeginDisabled(m_appealBusy || m_appealText.size() < 10);
+                    if (Classic::button("Send appeal", Classic::kBlue, ImVec2(140, 28))) {
+                        m_appealBusy = true;
+                        m_appealMsg = "Sending...";
+                        Online::request("appeal.send", {{"text", m_appealText}}, [this](const json& r) {
+                            m_appealBusy = false;
+                            m_appealMsg = r.value("ok", false) ? "" : r.value("error", std::string("Couldn't send it."));
+                            if (r.value("ok", false)) m_appealText.clear();
+                        });
+                    }
+                    ImGui::EndDisabled();
+                    if (!m_appealMsg.empty()) ImGui::TextWrapped("%s", m_appealMsg.c_str());
+                }
+            }
+            ImGui::Spacing();
+        }
         if (until > 0 && Classic::button("Check again", Classic::kBlue, ImVec2(140, 32))) Online::connect();
         if (until > 0) ImGui::SameLine();
         if (Online::me().value("hasPassword", false) && Classic::button("Log out", Classic::kBlue, ImVec2(120, 32))) logOut();

@@ -1,5 +1,6 @@
 #pragma once
 #include <filesystem>
+#include <deque>
 #include <map>
 #include <memory>
 #include <set>
@@ -48,6 +49,10 @@ private:
         std::string banReason, banNote;   // Online::kBanReasons key, and staff's note
         long long   bannedAt = 0, bannedUntil = 0;   // bannedUntil 0 = for good
         nlohmann::json warnings = nlohmann::json::array();   // staff warnings: {id, reason, note, at, seen}
+        // Ban appeal (ServerSafety.cpp): {id, text, at, banAt, status open/accepted/denied, ban: {reason, note, at, until},
+        // note, answeredAt, by}; null = never appealed. banAt is the bannedAt it was sent for.
+        nlohmann::json appeal;
+        long long   deleted = 0;          // when the account was deleted (account.delete); 0 = it wasn't
         std::set<std::string> friends, friendIn, friendOut;   // friends; requests to me; requests I sent
         std::set<std::string> following, followers;           // one-way follows (no asking)
         // Privacy: who sees you online / what you play, and who can join you there:
@@ -199,6 +204,17 @@ private:
     nlohmann::json inventoryOf(const User& u, const std::string& cat) const;
     nlohmann::json reportsJson(const std::string& status) const;   // for the Staff page
     nlohmann::json closeReport(const User& staff, const std::string& id, const std::string& outcome);
+    // Ban appeals (ServerSafety.cpp; worker/server.js has the same): one short note per ban, for staff to answer.
+    nlohmann::json appealOp(const std::string& name, User& me, const nlohmann::json& args);
+    bool           appealIsCurrent(const User& u) const;   // their appeal is for the ban they have now
+    bool           canAppeal(const User& u) const;
+    nlohmann::json myAppeal(const User& u) const;          // what the banned person sees (null: none yet)
+    nlohmann::json appealsJson(const std::string& status) const;   // for the Staff page
+    nlohmann::json answerAppeal(const User& staff, const nlohmann::json& args);
+    // Ban (on) or unban someone and write it in the staff log; "" = done, else why not. admin.ban and accepted appeals.
+    std::string    setBan(const User& staff, User& to, bool on, const nlohmann::json& args);
+    // account.delete (ServerAccounts.cpp): what's personal goes; games, items and the name stay.
+    void           deleteAccount(User& u);
     void saveReports();
     void loadReports();
     // ServerSupport.cpp: support tickets (like "I forgot my password"), for staff to answer.
@@ -222,6 +238,12 @@ private:
     nlohmann::json& gameData(const std::string& game);
     void saveGameData(const std::string& game);
     std::map<std::string, nlohmann::json> m_gameData;   // game id -> {store: {key: value}}, loaded when first used
+    // ServerData.cpp too: MessagingService, messages between the running servers of one game
+    // (worker/server.js msgOp has the same). In memory, like the relay.
+    nlohmann::json msgOp(const std::string& name, User& me, const nlohmann::json& args);
+    struct MsgBox { long long seq = 0; std::deque<nlohmann::json> list; };   // {n, topic, message, sent}
+    std::map<std::string, MsgBox> m_msgs;                       // game id ->
+    std::map<std::string, std::deque<long long>> m_msgSent;     // "account\ngame" -> when they sent (the rate limit)
     nlohmann::json checkRequest(const nlohmann::json& req, User*& me);   // null = fine, else the failure reply
     void relayRequest(Client& c, const nlohmann::json& req);            // relay.host / relay.join
     void relayAccept(Client& c, const std::string& ticket);

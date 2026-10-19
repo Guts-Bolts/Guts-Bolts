@@ -40,7 +40,7 @@ private:
     void drawNode(SceneNode* node);
     void insertMenu(SceneNode* parent);                // the Insert Object submenu
     bool serviceRow(const char* name, int icon, bool hasKids, bool selected);   // Lighting / StarterPlayer
-    void folderService(const char* name, int icon, const char* tip);           // ReplicatedStorage, StarterPack...
+    void folderService(const char* name, int icon, const char* tip, const std::function<void()>& onClick = {});           // ReplicatedStorage, StarterPack...
     bool m_showAllServices = false;   // Explorer: also list the services that only scripts use
     bool matches(const SceneNode* node) const;         // the search filter
     bool anyMatch(const SceneNode* node) const;        // it or something inside it

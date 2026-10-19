@@ -136,7 +136,14 @@ private:
     void       renderAccessoryWindow();      // AVATAR > Accessories (Verified creators)
     void       renderPluginsTab();
     void       insertObject(const std::string& what, SceneNode* parent);
-    SceneNode* aiFind(const std::string& ref);   // "#42" or "Workspace.Castle.Door"
+    // "#42", "Workspace.Castle.Door" or a service path like "StarterPack" / "game.ServerScriptService.Main".
+    // `create`: make a service's folder (StarterPack, StarterPlayer.StarterPlayerScripts...) if it isn't there yet.
+    SceneNode* aiFind(const std::string& ref, bool create = false);
+    // File > Publish (the dialog and the AI tools' publish_game): sends the game to the
+    // Guts&Bolts server as the signed-in account. `update` replaces the published copy.
+    // `done` gets the server's reply ({ok, error?, asset?}).
+    void       publishGame(const std::string& name, const std::string& description, bool update,
+                           std::function<void(const nlohmann::json&)> done);
     void       renderInsertObject();
     void       renderCommandBar();
     void       ungroupSelected();
@@ -145,6 +152,7 @@ private:
     void       selectChildren();
     void       toggleHidden();
     void       renderShortcuts();
+    void       renderCollisionGroups();   // the Collision Groups editor (PhysicsService's table)
     bool       canEdit(const SceneNode* n) const;
     glm::vec3  spawnPoint() const;
 
@@ -227,10 +235,15 @@ private:
     // game as it is (bake_navmesh / find_path work outside playtests too).
     std::map<std::string, std::string> m_aiCheckpoints;
     std::unique_ptr<Physics>           m_aiNav;
+    nlohmann::json                     m_aiPublish;   // the publish_game tool's last publish: {state, name, ...}
     std::vector<std::string> m_undo, m_redo;
     std::string              m_committed;      // last known scene state
     std::vector<std::string> m_clipboard;
     bool                     m_showShortcuts = false;
+    bool                     m_showCollisionGroups = false;
+    std::string              m_newGroupName, m_groupError;
+    int                      m_renamingGroup = -1;      // the slot whose name is being edited
+    std::string              m_renameText;
     int                      m_ribbonTab = 0;           // HOME / MODEL / TEST / VIEW (/ MESH in Modeling mode)
     int                      m_playMode = 0;
     bool                     m_openInsert = false;

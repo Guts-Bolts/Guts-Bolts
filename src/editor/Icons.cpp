@@ -222,6 +222,27 @@ void draw(ImDrawList* dl, ImVec2 c, float s, Id id, ImU32 tint) {
         dl->AddRect(a, b, rgb(235, 238, 245), s * 0.03f, 0, th);
         break;
     }
+    case Id::GuiViewport: {   // a frame with a little cube in it
+        ImVec2 a(c.x - s * 0.38f, c.y - s * 0.3f), b(c.x + s * 0.38f, c.y + s * 0.3f);
+        dl->AddRectFilled(a, b, rgb(60, 70, 92), s * 0.04f);
+        dl->AddRect(a, b, rgb(90, 150, 230), s * 0.04f, 0, th * 0.8f);
+        const float q = s * 0.14f;
+        const ImVec2 top[4] = {ImVec2(c.x, c.y - q * 1.5f), ImVec2(c.x + q * 1.3f, c.y - q * 0.8f), ImVec2(c.x, c.y - q * 0.1f), ImVec2(c.x - q * 1.3f, c.y - q * 0.8f)};
+        dl->AddConvexPolyFilled(top, 4, rgb(250, 200, 90));
+        const ImVec2 left[4] = {top[3], top[2], ImVec2(c.x, c.y + q * 1.5f), ImVec2(c.x - q * 1.3f, c.y + q * 0.8f)};
+        dl->AddConvexPolyFilled(left, 4, rgb(210, 140, 60));
+        const ImVec2 right[4] = {top[2], top[1], ImVec2(c.x + q * 1.3f, c.y + q * 0.8f), ImVec2(c.x, c.y + q * 1.5f)};
+        dl->AddConvexPolyFilled(right, 4, rgb(170, 100, 50));
+        break;
+    }
+    case Id::Camera: {   // a camera body with a lens
+        ImVec2 a(c.x - s * 0.38f, c.y - s * 0.2f), b(c.x + s * 0.18f, c.y + s * 0.24f);
+        dl->AddRectFilled(a, b, rgb(150, 160, 180), s * 0.05f);
+        dl->AddTriangleFilled(ImVec2(b.x, c.y + s * 0.02f), ImVec2(c.x + s * 0.4f, c.y - s * 0.18f), ImVec2(c.x + s * 0.4f, c.y + s * 0.22f), rgb(150, 160, 180));
+        dl->AddCircleFilled(ImVec2(c.x - s * 0.22f, a.y - s * 0.08f), s * 0.1f, rgb(150, 160, 180));
+        dl->AddCircleFilled(ImVec2(c.x - s * 0.02f, a.y - s * 0.08f), s * 0.1f, rgb(150, 160, 180));
+        break;
+    }
     case Id::GuiCorner: {   // a rounded corner
         dl->PathArcTo(ImVec2(c.x + s * 0.12f, c.y + s * 0.12f), s * 0.36f, 3.14159f, 4.71239f, 12);
         dl->PathStroke(rgb(150, 190, 240), 0, th * 1.6f);
@@ -592,12 +613,16 @@ Id forNode(const SceneNode& n) {
         case NodeKind::Remote:     return Id::Remote;
         case NodeKind::Prompt:     return Id::Prompt;
         case NodeKind::Highlight:  return Id::Highlight;
+        case NodeKind::PostEffect:
+        case NodeKind::Sky:        return Id::Lighting;
         case NodeKind::ClickDetector: return Id::Click;
         case NodeKind::Trail:
         case NodeKind::Beam:       return Id::Ribbon;
         case NodeKind::Particles:  return Id::Particles;
         case NodeKind::Light:      return Id::Light;
-        case NodeKind::Sound:      return Id::Sound;
+        case NodeKind::Sound:
+        case NodeKind::SoundGroup:
+        case NodeKind::SoundEffect: return Id::Sound;
         case NodeKind::Attachment: return Id::Attachment;
         case NodeKind::Constraint: return Id::Constraint;
         case NodeKind::ForceField: return Id::ForceField;
@@ -608,6 +633,7 @@ Id forNode(const SceneNode& n) {
         case NodeKind::FluidSystem:  return Id::Value;    // (a liquid: plain icons for now)
         case NodeKind::FluidEmitter: return Id::Sound;
         case NodeKind::Mover:        return Id::Constraint;
+        case NodeKind::Camera:       return Id::Camera;
         case NodeKind::Gui:
             switch (n.gui.type) {
                 case GuiType::ScreenGui: case GuiType::BillboardGui: case GuiType::SurfaceGui: return Id::ScreenGui;
@@ -615,7 +641,9 @@ Id forNode(const SceneNode& n) {
                 case GuiType::TextButton: case GuiType::ImageButton: return Id::GuiButton;
                 case GuiType::ImageLabel: return Id::GuiImage;
                 case GuiType::UICorner: case GuiType::UIStroke: case GuiType::UIShadow: case GuiType::UIBlur:
-                case GuiType::UIListLayout: case GuiType::UIGridLayout: case GuiType::UIPadding: return Id::GuiCorner;
+                case GuiType::UIListLayout: case GuiType::UIGridLayout: case GuiType::UIPadding:
+                case GuiType::UIGradient: case GuiType::UIScale: case GuiType::UIAspectRatioConstraint: return Id::GuiCorner;
+                case GuiType::ViewportFrame: return Id::GuiViewport;
                 default:                  return Id::GuiFrame;
             }
         default: break;

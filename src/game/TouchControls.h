@@ -1,6 +1,7 @@
 #pragma once
 #include <imgui.h>
 #include <glm/glm.hpp>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -42,11 +43,33 @@ public:
     // True while a finger is on the controls (so the game ignores that mouse press).
     bool      busy() const { return !m_touches.empty(); }
 
+    // Scripts' action buttons (ContextActionService:BindAction with createTouchButton):
+    // round buttons stacked around the jump button, or where SetPosition put them
+    // (a UDim2 on the game view). Set them before feed() each frame.
+    struct ActionButton {
+        std::string name, title, image;
+        bool  hasPosition = false;
+        float xScale = 0, xOffset = 0, yScale = 0, yOffset = 0;
+    };
+    void setActionButtons(std::vector<ActionButton> b) { m_actions = std::move(b); }
+    // What happened this frame. Buttons: pressed / let go. Fingers on the game view
+    // (UserInputType Touch, for scripts): state 0 = Begin, 1 = Change, 2 = End.
+    struct ButtonEvent { std::string name; bool down; ImVec2 pos; };
+    struct FingerEvent { int id; int state; ImVec2 pos; };
+    const std::vector<ButtonEvent>& actionEvents() const { return m_actionEvents; }
+    const std::vector<FingerEvent>& fingerEvents() const { return m_fingerEvents; }
+    // A script's action sank this finger: it doesn't turn the camera or tap.
+    void      sinkFinger(int id);
+    // Where action button i goes (its centre and radius), for drawing and tests.
+    void      actionButtonPlace(size_t i, ImVec2& center, float& radius) const;
+
 private:
-    enum class Role { Stick, Jump, Look, Chat, Menu, Mic, Emote };
+    enum class Role { Stick, Jump, Look, Chat, Menu, Mic, Emote, Action };
     struct Touch {
         int    id;
         Role   role;
+        std::string action;   // Role::Action: which button
+        bool   sunk = false;  // a script's action took this finger
         ImVec2 start, pos, last;
         float  age = 0.0f;
         float  travel = 0.0f;
@@ -78,4 +101,7 @@ private:
     bool      m_chat = false, m_menu = false, m_mic = false;
     bool      m_micShown = false, m_micOn = false;
     bool      m_emote = false, m_emoteShown = false;
+    std::vector<ActionButton> m_actions;
+    std::vector<ButtonEvent>  m_actionEvents;
+    std::vector<FingerEvent>  m_fingerEvents;
 };

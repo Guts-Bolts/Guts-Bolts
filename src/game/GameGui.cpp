@@ -2,6 +2,8 @@
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
 #include "../renderer/Textures.h"
+#include "../renderer/ViewportRender.h"
+#include "../renderer/Mesh.h"
 #include "../scene/Physics.h"
 
 #include <imgui_internal.h>   // ImGui::ShadeVertsLinearUV (pictures in odd shapes)
@@ -9,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <glm/glm.hpp>
 #include <unordered_map>
 
@@ -32,9 +35,17 @@ ImU32 rgba(const glm::vec3& c, float transparency) {
 }
 
 const SceneNode* childOfType(const SceneNode* n, GuiType t) {
+    // (UICorner, UIScale and UIAspectRatioConstraint have no Enabled: always on)
+    const bool always = t == GuiType::UICorner || t == GuiType::UIScale || t == GuiType::UIAspectRatioConstraint;
     for (auto& c : n->children)
-        if (c->isGui() && c->gui.type == t && (t == GuiType::UICorner || c->enabled)) return c.get();
+        if (c->isGui() && c->gui.type == t && (always || c->enabled)) return c.get();
     return nullptr;
+}
+
+// UIScale: how much bigger it (and everything inside it) is drawn.
+float ownScale(const SceneNode* n) {
+    const SceneNode* s = childOfType(n, GuiType::UIScale);
+    return s ? std::clamp(s->gui.scale, 0.0f, 100.0f) : 1.0f;
 }
 
 // How round each corner is (pixels): top-left, top-right, bottom-right, bottom-left.
@@ -48,10 +59,11 @@ Radii radiiOf(const SceneNode* n, float w, float h) {
     const SceneNode* c = childOfType(n, GuiType::UICorner);
     if (!c) return out;
     const GuiProps& k = c->gui;
+    const float px = n->gui.absScale;   // (pixels grow with UIScale)
     const float most = std::max(0.0f, std::min(w, h) * 0.5f);
     for (int i = 0; i < 4; ++i) {
-        const float v = k.corners[i] < 0 ? k.corner.xs * std::min(w, h) + k.corner.xo
-                                         : k.cornerScales[i] * std::min(w, h) + k.corners[i];
+        const float v = k.corners[i] < 0 ? k.corner.xs * std::min(w, h) + k.corner.xo * px
+                                         : k.cornerScales[i] * std::min(w, h) + k.corners[i] * px;
         out.r[i] = std::clamp(v, 0.0f, most);
     }
     return out;
@@ -150,6 +162,101 @@ void drawShadow(ImDrawList* dl, ImVec2 a, ImVec2 b, const Radii& radii, const Gu
     }
 }
 
+// UIGradient: where a point of the box [a, b] is along the gradient (0 = its first
+// colour, 1 = its last). Like Roblox's, it works in the box's own 0..1 space: turned
+// Rotation degrees clockwise around the middle and moved by Offset.
+struct Gradient {
+    const GuiProps* g = nullptr;
+    ImVec2 a, b;
+    glm::vec2 dir{1.0f, 0.0f};
+    Gradient(const GuiProps* gp, ImVec2 a_, ImVec2 b_) : g(gp), a(a_), b(b_) {
+        const float r = glm::radians(gp->gradRotation);
+        dir = {std::cos(r), std::sin(r)};   // (screen y points down: clockwise)
+    }
+    float at(ImVec2 p) const {
+        const float w = std::max(1e-3f, b.x - a.x), h = std::max(1e-3f, b.y - a.y);
+        const glm::vec2 uv((p.x - a.x) / w - 0.5f - g->gradOffset.x, (p.y - a.y) / h - 0.5f - g->gradOffset.y);
+        return glm::dot(uv, dir) + 0.5f;
+    }
+    // The colour times the gradient at t.
+    ImU32 tint(ImU32 col, float t) const {
+        const ImVec4 c = ImGui::ColorConvertU32ToFloat4(col);
+        const glm::vec3 k = sampleSequence(g->gradColor, t);
+        const float alpha = 1.0f - std::clamp(sampleSequence(g->gradTransparency, t), 0.0f, 1.0f);
+        return ImGui::ColorConvertFloat4ToU32(ImVec4(c.x * k.r, c.y * k.g, c.z * k.b, c.w * alpha));
+    }
+    // Every vertex added to `dl` since `start` takes the gradient's colour where it is.
+    void recolor(ImDrawList* dl, int start) const {
+        for (int i = start; i < dl->VtxBuffer.Size; ++i) dl->VtxBuffer[i].col = tint(dl->VtxBuffer[i].col, at(dl->VtxBuffer[i].pos));
+    }
+};
+
+// The box's outline as points (clockwise from the top-left): 4 corners, or rounded.
+constexpr int kMaxShape = 4 * (kArc + 1);
+int shapePoints(ImVec2 a, ImVec2 b, const Radii& r, ImVec2* out) {
+    if (r.r[0] < 0.5f && r.r[1] < 0.5f && r.r[2] < 0.5f && r.r[3] < 0.5f) {
+        out[0] = a; out[1] = ImVec2(b.x, a.y); out[2] = b; out[3] = ImVec2(a.x, b.y);
+        return 4;
+    }
+    roundedPoints(a, b, r.r, out);
+    return kMaxShape;
+}
+
+// The box filled with `col` (and the picture `tex` over uv0..uv1, if any) times the
+// gradient. The shape is cut into strips at each of the gradient's keypoints, so a
+// gradient with many colours is exact (not just its two ends).
+void fillGradient(ImDrawList* dl, ImVec2 a, ImVec2 b, ImU32 col, const Radii& radii, const Gradient& gr,
+                  unsigned tex = 0, ImVec2 uv0 = ImVec2(0, 0), ImVec2 uv1 = ImVec2(1, 1)) {
+    if (b.x <= a.x || b.y <= a.y) return;
+    struct P { ImVec2 p; float t; };
+    ImVec2 pts[kMaxShape];
+    const int n = shapePoints(a, b, radii, pts);
+    std::vector<P> shape(n);
+    for (int i = 0; i < n; ++i) shape[i] = {pts[i], gr.at(pts[i])};
+    std::vector<float> cuts;
+    for (const ColorKey& k : gr.g->gradColor) cuts.push_back(k.t);
+    for (const NumberKey& k : gr.g->gradTransparency) cuts.push_back(k.t);
+    std::sort(cuts.begin(), cuts.end());
+    cuts.erase(std::unique(cuts.begin(), cuts.end()), cuts.end());
+    cuts.insert(cuts.begin(), -1e9f);
+    cuts.push_back(1e9f);
+    auto clip = [](const std::vector<P>& in, float lim, bool above) {
+        std::vector<P> out;
+        for (size_t i = 0; i < in.size(); ++i) {
+            const P& p = in[i];
+            const P& q = in[(i + 1) % in.size()];
+            const float dp = above ? p.t - lim : lim - p.t, dq = above ? q.t - lim : lim - q.t;
+            if (dp >= 0) out.push_back(p);
+            if ((dp >= 0) != (dq >= 0)) {
+                const float f = dp / (dp - dq);
+                out.push_back({ImVec2(p.p.x + (q.p.x - p.p.x) * f, p.p.y + (q.p.y - p.p.y) * f), p.t + (q.t - p.t) * f});
+            }
+        }
+        return out;
+    };
+    const ImVec2 white = dl->_Data->TexUvWhitePixel;
+    if (tex) dl->PushTexture((ImTextureID)(intptr_t)tex);
+    const float w = b.x - a.x, h = b.y - a.y;
+    for (size_t c = 0; c + 1 < cuts.size(); ++c) {
+        const std::vector<P> strip = clip(clip(shape, cuts[c], true), cuts[c + 1], false);
+        if (strip.size() < 3) continue;
+        dl->PrimReserve(((int)strip.size() - 2) * 3, (int)strip.size());
+        const ImDrawIdx base = (ImDrawIdx)dl->_VtxCurrentIdx;
+        for (const P& v : strip) {
+            ImVec2 uv = white;
+            if (tex) {
+                const float fx = (v.p.x - a.x) / w, fy = (v.p.y - a.y) / h;
+                uv = ImVec2(uv0.x + (uv1.x - uv0.x) * fx, uv0.y + (uv1.y - uv0.y) * fy);
+            }
+            dl->PrimWriteVtx(v.p, uv, gr.tint(col, v.t));
+        }
+        for (int i = 1; i + 1 < (int)strip.size(); ++i) {
+            dl->PrimWriteIdx(base); dl->PrimWriteIdx((ImDrawIdx)(base + i)); dl->PrimWriteIdx((ImDrawIdx)(base + i + 1));
+        }
+    }
+    if (tex) dl->PopTexture();
+}
+
 uint64_t g_focus = 0;           // the TextBox being typed in
 uint64_t g_wantFocus = 0;       // CaptureFocus asked for this one (~0 = ReleaseFocus)
 bool     g_releaseEnter = false;
@@ -175,19 +282,46 @@ const SceneNode* firstLayout(const SceneNode* n) {
     return nullptr;
 }
 
-// Its rectangle inside [pa, pb] from Position, Size and AnchorPoint.
-void rectIn(const GuiProps& g, ImVec2 pa, ImVec2 pb, ImVec2& a, ImVec2& b) {
+// How UI inside `parent` is scaled by UIScales: `px` multiplies pixel sizes and
+// positions, `whole` its whole size (a UIScale in a ScreenGui scales each thing in it).
+struct Scaling { float px = 1.0f, whole = 1.0f; };
+Scaling scalingIn(const SceneNode* parent) {
+    if (isGuiLayer(parent->gui.type)) return {1.0f, parent->gui.absScale};
+    return {parent->gui.absScale, 1.0f};
+}
+
+// Its size in a parent pw x ph pixels: Size (its pixels grown by the UIScales above it),
+// kept to the shape of a UIAspectRatioConstraint inside it, times its own UIScale.
+ImVec2 sizeIn(const SceneNode* n, float pw, float ph, Scaling sc) {
+    const GuiProps& g = n->gui;
+    float w = std::max(0.0f, pw * g.size.xs + g.size.xo * sc.px), h = std::max(0.0f, ph * g.size.ys + g.size.yo * sc.px);
+    if (const SceneNode* c = childOfType(n, GuiType::UIAspectRatioConstraint)) {
+        const float r = std::clamp(c->gui.aspectRatio, 0.001f, 1000.0f);
+        if (c->gui.aspectType == 0) {   // FitWithinMaxSize: the biggest box of that shape that fits in Size
+            if (w / r <= h) h = w / r; else w = h * r;
+        } else if (c->gui.dominantAxis == 0) h = w / r;   // ScaleWithParentSize: Width decides the height
+        else w = h * r;                                    // ... or Height decides the width
+    }
+    const float k = ownScale(n) * sc.whole;
+    return ImVec2(w * k, h * k);
+}
+
+// Its rectangle inside [pa, pb] from Position, Size and AnchorPoint (a UIScale grows
+// it around its AnchorPoint).
+void rectIn(const SceneNode* n, ImVec2 pa, ImVec2 pb, ImVec2& a, ImVec2& b, Scaling sc) {
+    const GuiProps& g = n->gui;
     const float pw = pb.x - pa.x, ph = pb.y - pa.y;
-    const float w = pw * g.size.xs + g.size.xo, h = ph * g.size.ys + g.size.yo;
-    const float x = pa.x + pw * g.pos.xs + g.pos.xo - g.anchor.x * w;
-    const float y = pa.y + ph * g.pos.ys + g.pos.yo - g.anchor.y * h;
+    const ImVec2 s = sizeIn(n, pw, ph, sc);
+    const float x = pa.x + pw * g.pos.xs + g.pos.xo * sc.px - g.anchor.x * s.x;
+    const float y = pa.y + ph * g.pos.ys + g.pos.yo * sc.px - g.anchor.y * s.y;
     a = ImVec2(x, y);
-    b = ImVec2(x + w, y + h);
+    b = ImVec2(x + s.x, y + s.y);
 }
 
 // UIListLayout / UIGridLayout: line `kids` up inside [pa, pb] (instead of their Position).
-void arrange(SceneNode* lay, std::vector<SceneNode*> kids, ImVec2 pa, ImVec2 pb, std::vector<Placed>& out) {
+void arrange(SceneNode* lay, std::vector<SceneNode*> kids, ImVec2 pa, ImVec2 pb, std::vector<Placed>& out, Scaling sc) {
     GuiProps& L = lay->gui;
+    const float px = sc.px * sc.whole;   // (gaps and cells grow with UIScale too)
     std::stable_sort(kids.begin(), kids.end(), [&](SceneNode* l, SceneNode* r) {
         return L.sortByName ? l->name < r->name : l->gui.layoutOrder < r->gui.layoutOrder;
     });
@@ -197,12 +331,12 @@ void arrange(SceneNode* lay, std::vector<SceneNode*> kids, ImVec2 pa, ImVec2 pb,
         out.push_back(Placed{n, ImVec2(x, y), ImVec2(x + w, y + h)});
     };
     if (L.type == GuiType::UIListLayout) {
-        const float gap = across ? W * L.padding.xs + L.padding.xo : H * L.padding.xs + L.padding.xo;
+        const float gap = across ? W * L.padding.xs + L.padding.xo * px : H * L.padding.xs + L.padding.xo * px;
         std::vector<ImVec2> sizes;
         float total = 0.0f, widest = 0.0f;
         for (SceneNode* k : kids) {
             ImVec2 a, b;
-            rectIn(k->gui, pa, pb, a, b);
+            rectIn(k, pa, pb, a, b, sc);
             sizes.emplace_back(b.x - a.x, b.y - a.y);
             total += across ? sizes.back().x : sizes.back().y;
             widest = std::max(widest, across ? sizes.back().y : sizes.back().x);
@@ -218,20 +352,20 @@ void arrange(SceneNode* lay, std::vector<SceneNode*> kids, ImVec2 pa, ImVec2 pb,
         return;
     }
     // A grid of CellSize cells, CellPadding apart, filling rows (or columns) in turn.
-    const float cw = W * L.cellSize.xs + L.cellSize.xo, ch = H * L.cellSize.ys + L.cellSize.yo;
-    const float px = W * L.padding.xs + L.padding.xo, py = H * L.padding.ys + L.padding.yo;
-    int per = across ? (int)std::floor((W + px) / std::max(1.0f, cw + px)) : (int)std::floor((H + py) / std::max(1.0f, ch + py));
+    const float cw = W * L.cellSize.xs + L.cellSize.xo * px, ch = H * L.cellSize.ys + L.cellSize.yo * px;
+    const float gx = W * L.padding.xs + L.padding.xo * px, py = H * L.padding.ys + L.padding.yo * px;
+    int per = across ? (int)std::floor((W + gx) / std::max(1.0f, cw + gx)) : (int)std::floor((H + py) / std::max(1.0f, ch + py));
     per = std::max(1, per);
     if (L.maxCells > 0) per = std::min(per, L.maxCells);
     const int n = (int)kids.size();
     const int lines = n ? (n + per - 1) / per : 0, inLine = std::min(n, per);
     const int cols = across ? inLine : lines, rows = across ? lines : inLine;
-    const float bw = cols ? cols * (cw + px) - px : 0.0f, bh = rows ? rows * (ch + py) - py : 0.0f;
+    const float bw = cols ? cols * (cw + gx) - gx : 0.0f, bh = rows ? rows * (ch + py) - py : 0.0f;
     L.contentSize = {bw, bh};
     const float x0 = pa.x + (W - bw) * 0.5f * L.hAlign, y0 = pa.y + (H - bh) * 0.5f * L.vAlign;
     for (int i = 0; i < n; ++i) {
         const int c = across ? i % per : i / per, r = across ? i / per : i % per;
-        put(kids[i], x0 + c * (cw + px), y0 + r * (ch + py), cw, ch);
+        put(kids[i], x0 + c * (cw + gx), y0 + r * (ch + py), cw, ch);
     }
 }
 
@@ -242,12 +376,13 @@ void layoutChildren(SceneNode* parent, ImVec2 pa, ImVec2 pb, ImVec2 clipA, ImVec
     std::vector<SceneNode*> kids;
     for (auto& c : parent->children) if (c->isGuiObject() && c->visible) kids.push_back(c.get());
     std::vector<Placed> rects;
+    const Scaling sc = scalingIn(parent);
     if (SceneNode* lay = const_cast<SceneNode*>(firstLayout(parent))) {
-        arrange(lay, kids, pa, pb, rects);
+        arrange(lay, kids, pa, pb, rects, sc);
     } else {
         for (SceneNode* k : kids) {
             Placed p{k, {}, {}};
-            rectIn(k->gui, pa, pb, p.a, p.b);
+            rectIn(k, pa, pb, p.a, p.b, sc);
             rects.push_back(p);
         }
     }
@@ -266,9 +401,9 @@ void insideOf(const SceneNode* n, ImVec2& a, ImVec2& b) {
     for (auto& c : n->children) {
         if (!c->isGui() || c->gui.type != GuiType::UIPadding) continue;
         const GuiProps& p = c->gui;
-        const float w = b.x - a.x, h = b.y - a.y;
-        a = ImVec2(a.x + w * p.padScale.x + p.padPx.x, a.y + h * p.padScale.y + p.padPx.y);
-        b = ImVec2(b.x - w * p.padScale.z - p.padPx.z, b.y - h * p.padScale.w - p.padPx.w);
+        const float w = b.x - a.x, h = b.y - a.y, k = n->gui.absScale;
+        a = ImVec2(a.x + w * p.padScale.x + p.padPx.x * k, a.y + h * p.padScale.y + p.padPx.y * k);
+        b = ImVec2(b.x - w * p.padScale.z - p.padPx.z * k, b.y - h * p.padScale.w - p.padPx.w * k);
         if (b.x < a.x) b.x = a.x;
         if (b.y < a.y) b.y = a.y;
         return;
@@ -279,7 +414,7 @@ void insideOf(const SceneNode* n, ImVec2& a, ImVec2& b) {
 glm::vec2 canvasFor(SceneNode* n, ImVec2 ia, ImVec2 ib) {
     GuiProps& g = n->gui;
     const float vw = ib.x - ia.x, vh = ib.y - ia.y;
-    glm::vec2 c(vw * g.canvasSize.xs + g.canvasSize.xo, vh * g.canvasSize.ys + g.canvasSize.yo);
+    glm::vec2 c(vw * g.canvasSize.xs + g.canvasSize.xo * g.absScale, vh * g.canvasSize.ys + g.canvasSize.yo * g.absScale);
     if (g.autoCanvas) {   // AutomaticCanvasSize: big enough for what's inside
         std::vector<Item> trial;
         layoutChildren(n, ia, ImVec2(ia.x + std::max(c.x, vw), ia.y + std::max(c.y, vh)), ia, ib, trial);
@@ -295,6 +430,7 @@ glm::vec2 canvasFor(SceneNode* n, ImVec2 ia, ImVec2 ib) {
 
 void place(SceneNode* n, ImVec2 a, ImVec2 b, ImVec2 clipA, ImVec2 clipB, std::vector<Item>& out) {
     GuiProps& g = n->gui;
+    g.absScale = (n->parent && n->parent->isGui() ? n->parent->gui.absScale : 1.0f) * ownScale(n);
     g.absPos = {a.x, a.y};
     g.absSize = {b.x - a.x, b.y - a.y};
     out.push_back(Item{n, a, b, clipA, clipB});
@@ -496,6 +632,7 @@ std::vector<Item> items(Scene& scene, ImVec2 min, ImVec2 max) {
         }
         std::stable_sort(onParts.begin(), onParts.end(), [](const OnPart& l, const OnPart& r) { return l.dist > r.dist; });
         for (OnPart& o : onParts) {
+            o.gui->gui.absScale = ownScale(o.gui);
             o.gui->gui.absPos = {o.a.x, o.a.y};
             o.gui->gui.absSize = {o.b.x - o.a.x, o.b.y - o.a.y};
             ImVec2 ia = o.a, ib = o.b;
@@ -519,6 +656,7 @@ std::vector<Item> items(Scene& scene, ImVec2 min, ImVec2 max) {
                      [](SceneNode* a, SceneNode* b) { return a->gui.displayOrder < b->gui.displayOrder; });
     for (SceneNode* s : screens) {
         if (!s->enabled) continue;
+        s->gui.absScale = ownScale(s);
         s->gui.absPos = {min.x, min.y};
         s->gui.absSize = {max.x - min.x, max.y - min.y};
         ImVec2 ia = min, ib = max;
@@ -544,7 +682,7 @@ bool blocks(const SceneNode* n) {
     return n->gui.bgTransparency < 0.95f || ((n->gui.type == GuiType::ImageLabel) && !n->gui.image.empty());
 }
 
-void drawText(ImDrawList* dl, const Item& it, const GuiProps& gIn, float radius) {
+void drawText(ImDrawList* dl, const Item& it, const GuiProps& gIn, float radius, const Gradient* grad) {
     GuiProps shown;
     const GuiProps* gp = &gIn;
     if (gIn.type == GuiType::TextBox && gIn.text.empty() && !gIn.placeholder.empty()) {   // PlaceholderText, greyed out
@@ -557,9 +695,10 @@ void drawText(ImDrawList* dl, const Item& it, const GuiProps& gIn, float radius)
     if (g.text.empty() || g.textTransparency >= 1.0f) return;
     ImFont* font = ImGui::GetFont();
     const float w = it.b.x - it.a.x, h = it.b.y - it.a.y;
-    const float pad = std::min(4.0f, radius * 0.5f + 2.0f);
+    const float k = it.node->gui.absScale;   // (text grows with UIScale)
+    const float pad = std::min(4.0f * k, radius * 0.5f + 2.0f * k);
     float wrap = g.textWrapped || g.textScaled ? std::max(1.0f, w - pad * 2) : 0.0f;
-    float size = g.textSize;
+    float size = g.textSize * k;
     if (g.textScaled) {   // as big as fits
         size = std::max(6.0f, h * 0.85f);
         for (int i = 0; i < 24; ++i) {
@@ -577,15 +716,19 @@ void drawText(ImDrawList* dl, const Item& it, const GuiProps& gIn, float radius)
         const ImU32 sc = rgba(g.strokeColor, std::max(g.strokeTransparency, g.textTransparency));
         for (int dx = -1; dx <= 1; ++dx)
             for (int dy = -1; dy <= 1; ++dy)
-                if (dx || dy) dl->AddText(font, size, ImVec2(x + dx, y + dy), sc, g.text.c_str(), nullptr, wrap);
+                if (dx || dy) dl->AddText(font, size, ImVec2(x + dx * k, y + dy * k), sc, g.text.c_str(), nullptr, wrap);
     }
+    const int start = dl->VtxBuffer.Size;
     dl->AddText(font, size, ImVec2(x, y), col, g.text.c_str(), nullptr, wrap);
-    if (g.bold) dl->AddText(font, size, ImVec2(x + 1, y), col, g.text.c_str(), nullptr, wrap);
+    if (g.bold) dl->AddText(font, size, ImVec2(x + k, y), col, g.text.c_str(), nullptr, wrap);
+    if (grad) grad->recolor(dl, start);   // UIGradient colours the letters too
 }
 
 } // namespace
 
 void refresh(Scene& scene) { items(scene, g_lastMin, g_lastMax); }
+
+Scene* g_drawScene = nullptr;   // (ViewportFrames draw the parts in it)
 
 bool needsBackdrop(Scene& scene) {
     std::vector<SceneNode*> screens;
@@ -620,9 +763,18 @@ void drawItem(ImDrawList* dl, const Item& it, ImVec2 min, ImVec2 max, const Inpu
     const float w = it.b.x - it.a.x, h = it.b.y - it.a.y;
     const Radii radii = radiiOf(n, w, h);
     const float radius = std::max(std::max(radii.r[0], radii.r[1]), std::max(radii.r[2], radii.r[3]));
+    const float k = g.absScale;   // UIScale
+    const SceneNode* gradNode = childOfType(n, GuiType::UIGradient);
+    std::optional<Gradient> grad;
+    if (gradNode) grad.emplace(&gradNode->gui, it.a, it.b);
+    const Gradient* gr = grad ? &*grad : nullptr;
 
     // A soft shadow under it, then the world behind it blurred (frosted glass).
-    if (const SceneNode* s = childOfType(n, GuiType::UIShadow)) drawShadow(dl, it.a, it.b, radii, s->gui);
+    if (const SceneNode* s = childOfType(n, GuiType::UIShadow)) {
+        GuiProps sh = s->gui;
+        sh.shadowOffset *= k; sh.shadowBlur *= k; sh.shadowSpread *= k;
+        drawShadow(dl, it.a, it.b, radii, sh);
+    }
     if (const SceneNode* b = childOfType(n, GuiType::UIBlur); b && !flat && b->gui.blurSize > 0 && g_backdropCount > 0) {
         const float sz = b->gui.blurSize;
         const int level = std::min(g_backdropCount - 1, sz <= 6 ? 0 : sz <= 12 ? 1 : sz <= 24 ? 2 : 3);
@@ -640,7 +792,10 @@ void drawItem(ImDrawList* dl, const Item& it, ImVec2 min, ImVec2 max, const Inpu
         if (input->pressed == n->id && input->hovered == n->id) bg *= 0.7f;
         else if (input->hovered == n->id) bg *= 0.87f;
     }
-    if (g.bgTransparency < 1.0f) fillRounded(dl, it.a, it.b, rgba(bg, g.bgTransparency), radii);
+    if (g.bgTransparency < 1.0f) {   // (a UIGradient colours it along a line)
+        if (gr) fillGradient(dl, it.a, it.b, rgba(bg, g.bgTransparency), radii, *gr);
+        else fillRounded(dl, it.a, it.b, rgba(bg, g.bgTransparency), radii);
+    }
 
     // A picture.
     if ((g.type == GuiType::ImageLabel || g.type == GuiType::ImageButton) && !g.image.empty() && g.imageTransparency < 1.0f)
@@ -648,19 +803,32 @@ void drawItem(ImDrawList* dl, const Item& it, ImVec2 min, ImVec2 max, const Inpu
             glm::vec3 tint = g.imageColor;
             if (n->isGuiButton() && g.autoButtonColor && input && input->hovered == n->id && g.bgTransparency >= 1.0f)
                 tint *= input->pressed == n->id ? 0.7f : 0.87f;
-            imageRounded(dl, tex, it.a, it.b, ImVec2(0, 1), ImVec2(1, 0), rgba(tint, g.imageTransparency), radii);
+            if (gr) fillGradient(dl, it.a, it.b, rgba(tint, g.imageTransparency), radii, *gr, tex, ImVec2(0, 1), ImVec2(1, 0));
+            else imageRounded(dl, tex, it.a, it.b, ImVec2(0, 1), ImVec2(1, 0), rgba(tint, g.imageTransparency), radii);
         }
 
-    if (!input || n->id != g_focus) drawText(dl, it, g, radius);   // (the TextBox being typed in shows its own)
+    // A ViewportFrame: the parts inside it, drawn into a picture of their own (only
+    // while it's on screen, at the size it's shown).
+    if (g.type == GuiType::ViewportFrame && g_drawScene && !Mesh::headless && g.imageTransparency < 1.0f) {
+        const ImVec2 va(std::max(it.a.x, ca.x), std::max(it.a.y, ca.y)), vb(std::min(it.b.x, cb.x), std::min(it.b.y, cb.y));
+        if (vb.x > va.x && vb.y > va.y && w >= 1.0f && h >= 1.0f)
+            if (unsigned tex = ViewportRender::render(*g_drawScene, *n, (int)std::ceil(w), (int)std::ceil(h))) {
+                const ImU32 tint = rgba(g.imageColor, g.imageTransparency);
+                if (gr) fillGradient(dl, it.a, it.b, tint, radii, *gr, tex, ImVec2(0, 1), ImVec2(1, 0));
+                else imageRounded(dl, tex, it.a, it.b, ImVec2(0, 1), ImVec2(1, 0), tint, radii);
+            }
+    }
+
+    if (!input || n->id != g_focus) drawText(dl, it, g, radius, gr);   // (the TextBox being typed in shows its own)
 
     // The edge: a UIStroke inside it, else the border.
     if (const SceneNode* s = childOfType(n, GuiType::UIStroke)) {
         if (s->gui.thickness > 0 && s->gui.bgTransparency < 1.0f)
-            strokeRounded(dl, it.a, it.b, rgba(s->gui.borderColor, s->gui.bgTransparency), radii, s->gui.thickness);
+            strokeRounded(dl, it.a, it.b, rgba(s->gui.borderColor, s->gui.bgTransparency), radii, s->gui.thickness * k);
     } else if (g.border > 0 && g.bgTransparency < 1.0f) {
-        strokeRounded(dl, ImVec2(it.a.x - g.border * 0.5f, it.a.y - g.border * 0.5f),
-                      ImVec2(it.b.x + g.border * 0.5f, it.b.y + g.border * 0.5f),
-                      rgba(g.borderColor, g.bgTransparency), radii, (float)g.border);
+        const float bw = (float)g.border * k;
+        strokeRounded(dl, ImVec2(it.a.x - bw * 0.5f, it.a.y - bw * 0.5f), ImVec2(it.b.x + bw * 0.5f, it.b.y + bw * 0.5f),
+                      rgba(g.borderColor, g.bgTransparency), radii, bw);
     }
     dl->PopClipRect();
 }
@@ -724,6 +892,8 @@ void emitSurface(ImDrawList* dl, const ImDrawList& src, const Surface& s, ImVec2
 void draw(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const Input* input, uint64_t selected) {
     g_lastMin = min;
     g_lastMax = max;
+    g_drawScene = &scene;
+    ViewportRender::collect();
     const std::vector<Item> list = items(scene, min, max);
     size_t i = 0;
     while (i < list.size()) {
@@ -893,7 +1063,7 @@ void textInput(Scene& scene, std::vector<Event>& events) {
 
     GuiProps& g = n->gui;
     const ImVec2 a(g.absPos.x, g.absPos.y), b(a.x + g.absSize.x, a.y + g.absSize.y);
-    ImGui::PushFont(nullptr, std::clamp(g.textSize, 6.0f, 200.0f));
+    ImGui::PushFont(nullptr, std::clamp(g.textSize * g.absScale, 6.0f, 200.0f));
     const float fh = ImGui::GetFontSize();
     ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_Text, rgba(g.textColor, g.textTransparency));

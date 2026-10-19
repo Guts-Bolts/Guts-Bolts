@@ -461,7 +461,25 @@ function banPage() {
       </table>
       <p class="small muted">${b.until ? 'When the ban ends, just come back and log in again.' : ''}
         Please keep Guts&amp;Bolts a fun, safe place for everyone.</p>
+      ${appealPart(b)}
       <p><button class="btn" data-act="logout">Log out</button></p></div>`);
+}
+// Think the ban is a mistake? One short note to staff per ban; their answer shows here.
+function appealPart(b) {
+  const a = b.appeal;
+  const answer = a && a.status !== 'open' ? html`<div class="appeal-answer">
+      <p><b>${a.status === 'denied' ? 'Staff looked at your appeal and kept the ban.' : 'Staff accepted your appeal.'}</b>
+        <span class="small muted">${dateText(a.answeredAt)}</span></p>
+      ${a.note ? html`<p>"${a.note}"</p>` : ''}</div>` : '';
+  if (a && a.status === 'open') return html`<div class="appeal-box"><h2>Your appeal</h2>
+      <p class="report-note">"${a.text}"</p>
+      <p class="small muted">Sent ${dateText(a.at)}. Staff will read it and answer here.</p></div>`;
+  if (!b.canAppeal) return answer;
+  return html`<div class="appeal-box">${answer}<h2>${a ? 'Appeal again' : 'Think this is a mistake?'}</h2>
+      <form class="form" data-form="appeal">
+        <label>Tell staff why the ban should be lifted <span class="small muted">(up to 500 letters, once per ban)</span></label>
+        <textarea name="text" maxlength="500" rows="4" required minlength="10"></textarea>
+        <p><button class="btn blue">Send appeal</button> <span id="appealMsg"></span></p></form></div>`;
 }
 
 // A staff warning, shown once until you say you understand.
@@ -500,11 +518,16 @@ async function keepFresh() {
   const r = await gb.call('ping', {});
   if (r.ok && r.me) setMe(r.me);
   else if (!r.ok && /^This account has been banned/.test(r.error || '')) await hello();
+  else if (!r.ok && r.error === 'This account was deleted.') { await hello(); render(); return; }
   if (banned() !== wasBanned) render();
 }
 
 async function hello() {
-  const r = await gb.call('hello', { name: signedIn() ? me.username : '', grants: [], protocol: 1 });
+  let r = await gb.call('hello', { name: signedIn() ? me.username : '', grants: [], protocol: 1 });
+  if (!r.ok && r.error === 'This account was deleted.') {   // (deleted on another device)
+    await gb.forgetKey();
+    r = await gb.call('hello', { name: '', grants: [], protocol: 1 });
+  }
   const st = $('#status');
   if (r.ok) {
     serverName = (r.server && r.server.name) || 'Online';
@@ -2263,6 +2286,28 @@ function reportsBox(rep, closed) {
     <p class="small muted">"Done" means you did something about it (a warning, a ban, deleting it). Closing one closes every report about the same thing.</p></div>`;
 }
 
+// Ban appeals: banned people asking to be unbanned, with the ban (why, the note, when and who) and what they wrote.
+function appealsBox(ap, closed) {
+  const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?appeals=closed">Answered</a>`;
+  if (!ap.ok) return html`<div class="box"><h2 class="boxhead">Ban appeals</h2><p class="error">${ap.error}</p></div>`;
+  const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>${verified(u.verified)}` : html`?`);
+  const row = (x) => html`<div class="report">
+      <p><b>${person(x.user)}</b> <span class="small muted">· appealed ${ago(x.at)}</span></p>
+      <p class="small">Banned for <b>${x.ban.title}</b>${x.ban.at ? html` ${ago(x.ban.at)}` : ''}${x.ban.by ? html` by ${person(x.ban.by)}` : ''},
+        ${x.ban.until ? html`until ${dateText(x.ban.until)}` : 'for good'}${x.ban.note ? html`. Staff note: "${x.ban.note}"` : ''}</p>
+      <p class="report-note">"${x.text}"</p>
+      <p>${closed ? html`<span class="small muted">${x.status === 'accepted' ? 'Accepted (unbanned)' : 'Denied'}${x.answeredBy ? html` by ${person(x.answeredBy)}` : ''}
+          ${ago(x.answeredAt)}${x.note ? html`: "${x.note}"` : ''}</span>`
+        : html`${me.official ? html`<button class="btn small green" data-act="answerAppeal" data-id="${x.id}" data-accept="1" data-name="${x.user.username || x.user.name}">Accept (unban)</button> ` : ''}
+          <button class="btn small red" data-act="answerAppeal" data-id="${x.id}" data-accept="" data-name="${x.user.username || x.user.name}">Deny</button>
+          <a class="btn small" href="#/staff?log=${x.user.userId || x.user.id}">Log</a>`}</p></div>`;
+  return html`<div class="box"><h2 class="boxhead">Ban appeals${closed ? '' : html` (${ap.appeals.length})`}</h2>
+    <p>${tabs}</p>
+    ${ap.appeals.length ? html`<div class="reports">${ap.appeals.map(row)}</div>`
+      : html`<p class="muted small">${closed ? 'No answered appeals yet.' : 'Nobody is appealing a ban right now.'}</p>`}
+    <p class="small muted">The person sees your answer (and your note) on their ban screen. ${me.official ? 'Accepting unbans them.' : 'Only the Guts account can accept (unban).'}</p></div>`;
+}
+
 // Support tickets: people asking staff for help (like a forgotten password). Answer them,
 // send a password reset code, or close them.
 function ticketsBox(tk, closed) {
@@ -2334,13 +2379,16 @@ pages.staff = async () => {
   const closed = new URLSearchParams(location.hash.split('?')[1] || '').get('reports') === 'closed';
   const logFor = new URLSearchParams(location.hash.split('?')[1] || '').get('log') || '';
   const ticketsClosed = new URLSearchParams(location.hash.split('?')[1] || '').get('tickets') === 'closed';
-  const [r, rep, up, lg, tk, ml] = await Promise.all([pageCall('admin.find', { query }), pageCall('admin.reports', { status: closed ? 'closed' : 'open' }),
+  const appealsClosed = new URLSearchParams(location.hash.split('?')[1] || '').get('appeals') === 'closed';
+  const [r, rep, up, lg, tk, ml, ap] = await Promise.all([pageCall('admin.find', { query }), pageCall('admin.reports', { status: closed ? 'closed' : 'open' }),
     pageCall('admin.uploads', {}), pageCall('admin.log', logFor ? { user: logFor } : {}),
-    pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.mailStatus', {})]);
+    pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.mailStatus', {}),
+    pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' })]);
   show(html`<h1>Staff</h1>
     ${ticketsBox(tk, ticketsClosed)}
     ${uploadsBox(up)}
     ${reportsBox(rep, closed)}
+    ${appealsBox(ap, appealsClosed)}
     ${mailBox(ml)}
     <h2>People</h2>
     <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make staff, give Bolts and ban.'
@@ -2366,7 +2414,7 @@ pages.staff = async () => {
 };
 
 // The staff action log: who banned, warned, verified, checked or deleted what (newest first).
-const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐' };
+const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤' };
 function staffLogBox(lg, logFor) {
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.name}</a>` : '');
   const body = !lg.ok ? html`<p class="error">${lg.error}</p>`
@@ -2376,7 +2424,7 @@ function staffLogBox(lg, logFor) {
     : html`<p class="muted">Nothing yet.</p>`;
   return html`<div class="box"><h2 class="boxhead">Staff action log</h2>
     <p class="small muted">${logFor ? html`Just what was done by or to this person. <a href="#/staff">Show everything</a>`
-      : 'Everything staff did lately: bans, warnings, badges, Bolts, upload checks, closed reports and deletes.'}</p>${body}</div>`;
+      : 'Everything staff did lately: bans, warnings, ban appeals, badges, Bolts, upload checks, closed reports and deletes (and deleted accounts).'}</p>${body}</div>`;
 }
 
 // The bell: friend requests, sales, trades, uploads checked by staff... (newest first).
@@ -2582,6 +2630,17 @@ pages.settings = async () => {
           <label>New password</label><input type="password" name="password" autocomplete="new-password" required>
           <label>New password again</label><input type="password" name="password2" autocomplete="new-password" required>
           <p><button class="btn blue">Change password</button> <span id="pwMsg"></span></p></form></div>`}
+      ${me.official ? '' : html`<div class="box danger-box"><h2 class="boxhead">Delete your account</h2>
+        <p>This deletes your account for good: your password, email, two-step settings, avatar, About me, posts, outfits,
+          messages, friends, follows, favourites and notifications. It can't be undone.</p>
+        <p class="small muted">Games and items you made stay up (so nothing people bought breaks), shown as made by "Deleted user".
+          Your username and user number are never given to anyone else. Limited copies you own stay with the deleted account and can't be traded.</p>
+        ${noPw ? html`<p class="muted small">Set a password first (in the app: Avatar &gt; Your account).</p>`
+          : html`<form class="form" data-form="deleteAccount">
+            <label>Type your username (<b>${me.username}</b>) to say you're sure</label>
+            <input type="text" name="confirm" autocomplete="off" required>
+            <label>Your password</label><input type="password" name="password" autocomplete="current-password" required>
+            <p><button class="btn red">Delete my account</button> <span id="deleteMsg"></span></p></form>`}</div>`}
     </div>`);
   const blocked = await pageCall('block.list', {});
   const box = $('#blockedList');
@@ -2971,6 +3030,14 @@ const actions = {
     toast(r.ok ? 'Closed.' : r.error);
     if (r.ok) render();
   },
+  async answerAppeal(d) {
+    const accept = !!d.accept;
+    const note = prompt((accept ? 'Unban ' + d.name + '?' : 'Keep ' + d.name + ' banned?') + '\n\nA short note for them (optional, they see it on their ban screen):', '');
+    if (note === null) return;
+    const r = await call('admin.answerAppeal', { id: d.id, accept, note });
+    toast(r.ok ? (accept ? d.name + ' is unbanned.' : 'Appeal denied.') : r.error);
+    if (r.ok) render();
+  },
   async closeReport(d) {
     const r = await call('admin.closeReport', { id: d.id, outcome: d.outcome });
     if (!r.ok) { toast(r.error); return; }
@@ -3304,6 +3371,28 @@ const forms = {
     const r = await call('account.twoStep', { on: !!f.on.value, auth: await gb.passwordProof(me.username, f.password.value) });
     if (!r.ok) { const m = $('#twoStepMsg'); m.className = 'error'; m.textContent = r.error; return; }
     me = r.me; toast(me.twoStep ? 'Two-step verification is on.' : 'Two-step verification is off.'); render();
+  },
+  async appeal(f) {
+    const msg = $('#appealMsg');
+    msg.className = 'muted'; msg.textContent = 'Sending...';
+    const r = await call('appeal.send', { text: f.text.value });
+    if (!r.ok) { msg.className = 'error'; msg.textContent = r.error; return; }
+    toast('Appeal sent. Staff will answer it here.');
+    render();
+  },
+  async deleteAccount(f) {
+    const msg = $('#deleteMsg');
+    if (f.confirm.value.trim() !== me.username) { msg.className = 'error'; msg.textContent = 'Type your username to say you\'re sure.'; return; }
+    if (!confirm('Delete ' + me.username + ' for good? This can\'t be undone.')) return;
+    msg.className = 'muted'; msg.textContent = 'Deleting...';
+    const auth = await gb.passwordProof(me.username, f.password.value);
+    const r = await call('account.delete', { auth });
+    if (!r.ok) { msg.className = 'error'; msg.textContent = r.error; return; }
+    await gb.forgetKey();
+    await hello();
+    toast('Your account is deleted. Goodbye, and thanks for playing!', 6000);
+    location.hash = '#/';
+    render();
   },
   async changePassword(f) {
     const msg = $('#pwMsg');

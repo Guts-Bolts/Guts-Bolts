@@ -46,6 +46,23 @@ private:
     static glm::mat4 decalMatrix(const SceneNode& decal);
     void drawConstraints(Scene& scene, bool editing);
     void postProcess(Scene& scene, const Camera& camera, Framebuffer& target);
+    // Screen effects and the Sky (ColorCorrectionEffect, SunRaysEffect, DepthOfFieldEffect,
+    // BloomEffect, BlurEffect, Sky) found right inside Lighting and the Camera, all added
+    // together. Gathered once a frame.
+    struct ScreenFx {
+        bool      grade = false;                   // any ColorCorrectionEffect
+        float     brightness = 0.0f, contrast = 1.0f, saturation = 1.0f;
+        glm::vec3 tint{1.0f};
+        bool      bloom = false;                   // any BloomEffect (replaces the Lighting panel's bloom)
+        float     bloomIntensity = 0.0f, bloomThreshold = 4.0f, bloomSize = 0.0f;
+        float     blur = 0.0f;                     // BlurEffect sizes, together (pixels)
+        bool      dof = false;
+        float     focus = 0.0f, inFocus = 0.0f, nearAmt = 0.0f, farAmt = 0.0f;
+        float     rays = 0.0f, raysSpread = 0.0f;  // SunRaysEffect
+        const SceneNode* sky = nullptr;            // the Sky in Lighting (the first one)
+    };
+    ScreenFx m_fx;
+    void gatherScreenFx(Scene& scene);
     void renderLiquid(Scene& scene, const Camera& camera);   // real liquid (Liquid.cpp)
     void drawHighlights(Scene& scene, const Camera& camera, Framebuffer& target);   // Highlight objects
     void drawRibbons(Scene& scene, const Camera& camera);   // Trails and Beams
@@ -68,6 +85,9 @@ private:
     std::unique_ptr<Shader> m_hlMask, m_hl;   // Highlights (see Shaders::highlightFrag)
     Target m_hlTarget;                        // a Highlight's shape on screen
     std::unique_ptr<Shader> m_ribbon;         // Trails and Beams
+    std::unique_ptr<Shader> m_sunRays;        // SunRaysEffect
+    static constexpr int kBlurLevels = 5;
+    Target m_blurDown[kBlurLevels], m_blurUp[kBlurLevels - 1], m_rays;   // BlurEffect / DepthOfFieldEffect, SunRaysEffect
     unsigned int m_ribbonVao = 0, m_ribbonVbo = 0;
     std::unique_ptr<Shader> m_sprite;         // ParticleEmitter / Fire / Smoke / Sparkles particles
     unsigned int m_spriteVao = 0, m_spriteVbo = 0;

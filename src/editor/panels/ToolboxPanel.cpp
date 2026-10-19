@@ -164,6 +164,9 @@ std::vector<ToolboxTile> ToolboxPanel::builtIn(int category) {
             {"Weld", 3, "Glues two parts together"},
             {"Hinge", 4, "Lets a part swing around a point (like a door)"},
             {"Motor", 5, "A hinge that spins by itself (wheels, fans)"},
+            {"Ball Socket", 6, "Joins two parts at a point and lets them turn any way (ragdolls, chains)"},
+            {"Prismatic", 7, "A slider: the second part slides along a line (drawers, lifts, doors)"},
+            {"Cylindrical", 8, "Slides along a line and spins around it (pistons, drills)"},
         };
         for (const C& c : items) {
             int type = c.type;

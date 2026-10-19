@@ -2457,6 +2457,11 @@ void PlayerApp::updateTouch(ImVec2 min, ImVec2 max, bool acceptInput) {
     std::vector<std::pair<ImVec2, ImVec2>> blocked = GameGui::scrollerRects(*m_scene);   // fingers there scroll the UI
     blocked.push_back({m_chatMin, m_chatMax});
     m_touch.setBlocked(std::move(blocked));
+    // Scripts' action buttons (ContextActionService), next to the jump button.
+    std::vector<TouchControls::ActionButton> buttons;
+    for (const ScriptEngine::ActionButton& b : m_session->scripts().actionButtons())
+        buttons.push_back({b.name, b.title, b.image, b.hasPosition, b.xScale, b.xOffset, b.yScale, b.yOffset});
+    m_touch.setActionButtons(std::move(buttons));
     if (m_window->hasTouchScreen()) {
         // A real touch screen: every finger counts (thumbstick + look + jump at once).
         std::vector<TouchControls::Finger> f;
@@ -2478,6 +2483,15 @@ void PlayerApp::updateTouch(ImVec2 min, ImVec2 max, bool acceptInput) {
         m_touch.feed(f);
     } else {
         m_touch.feedMouse(acceptInput && ImGui::IsWindowHovered());
+    }
+    // Scripts hear the fingers first: action buttons, and Touch for fingers on the game view
+    // (an action that sinks one keeps it from turning the camera or tapping).
+    ScriptEngine& scripts = m_session->scripts();
+    for (const auto& e : m_touch.actionEvents()) scripts.actionButtonInput(e.name, e.down, glm::vec2(e.pos.x - min.x, e.pos.y - min.y));
+    for (const auto& e : m_touch.fingerEvents()) {
+        static const char* states[] = {"Begin", "Change", "End"};
+        if (scripts.touchInput(e.id, states[e.state], glm::vec2(e.pos.x - min.x, e.pos.y - min.y)) && e.state != 2)
+            m_touch.sinkFinger(e.id);
     }
     if (!acceptInput) { m_session->setTouchInput(glm::vec2(0.0f), false); return; }
     m_session->setTouchInput(m_touch.move(), m_touch.jump());
@@ -2523,6 +2537,47 @@ void PlayerApp::drawAccount() {
                 ImGui::TextUnformatted("Log out of this device? You can log back in with your username and password.");
                 if (ImGui::Button("Yes, log out")) { ImGui::CloseCurrentPopup(); logOut(); }
                 ImGui::EndPopup();
+            }
+            // Delete my account (account.delete, the same as the website's Settings): the password proves it's you.
+            if (!om.value("official", false)) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Delete account...")) { m_deleteName.clear(); m_deletePassword.clear(); m_deleteMsg.clear(); ImGui::OpenPopup("##deleteaccount"); }
+                if (ImGui::BeginPopup("##deleteaccount")) {
+                    const std::string username = om.value("username", std::string());
+                    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28);
+                    ImGui::TextUnformatted("Delete your account for good? Your password, avatar, About me, posts, outfits, messages, "
+                                           "friends, follows, favourites and notifications are deleted. It can't be undone.");
+                    ImGui::TextDisabled("Games and items you made stay up, shown as made by \"Deleted user\". Your username and number are "
+                                        "never given to anyone else. Limited copies you own stay with the deleted account and can't be traded.");
+                    ImGui::PopTextWrapPos();
+                    ImGui::SetNextItemWidth(220);
+                    ImGui::InputTextWithHint("##delname", ("Type " + username + " to say you're sure").c_str(), &m_deleteName);
+                    ImGui::SetNextItemWidth(220);
+                    ImGui::InputTextWithHint("##delpw", "Your password", &m_deletePassword, ImGuiInputTextFlags_Password);
+                    ImGui::BeginDisabled(m_deleteBusy || m_deleteName != username || m_deletePassword.empty());
+                    if (Classic::button("Delete my account", ImVec4(0.78f, 0.16f, 0.16f, 1.0f))) {
+                        m_deleteBusy = true;
+                        m_deleteMsg = "Deleting...";
+                        Online::request("account.salt", {{"username", username}}, [this](const nlohmann::json& r) {
+                            std::string lock, auth;
+                            if (!r.value("ok", false) || !Account::passwordKeys(m_deletePassword, r.value("salt", std::string()), lock, auth)) {
+                                m_deleteBusy = false;
+                                m_deleteMsg = r.value("error", std::string("Something went wrong. Try again."));
+                                return;
+                            }
+                            Online::request("account.delete", {{"auth", auth}}, [this](const nlohmann::json& d) {
+                                m_deleteBusy = false;
+                                m_deletePassword.clear();
+                                if (!d.value("ok", false)) { m_deleteMsg = d.value("error", std::string("Couldn't delete it.")); return; }
+                                m_deleteMsg.clear();
+                                logOut();   // this device becomes a new, empty account
+                            });
+                        });
+                    }
+                    ImGui::EndDisabled();
+                    if (!m_deleteMsg.empty()) ImGui::TextWrapped("%s", m_deleteMsg.c_str());
+                    ImGui::EndPopup();
+                }
             }
         } else {
             ImGui::TextColored(ImVec4(0.75f, 0.45f, 0.0f, 1), "No password yet, so you can only use this account on this device.");

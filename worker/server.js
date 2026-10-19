@@ -175,6 +175,11 @@ const kMaxBlurb = 1000, kMaxStatus = 140, kMaxPosts = 10, kStatusesPerDay = 30;
 const kMaxBlocked = 200, kReportsPerDay = 20, kMaxReports = 3000;
 // The staff action log: what staff did (bans, checks, badges...), newest kept (ServerSafety.cpp has the same).
 const kMaxStaffLog = 3000;
+// Ban appeals (ServerSafety.cpp has the same): a banned account can send staff one short
+// "please unban me" note per ban; a new one only once staff have answered (or the ban changed).
+const kAppealLength = 500;
+// What's left of a deleted account (account.delete): the name everyone sees on its games and items.
+const kDeletedName = 'Deleted user';
 // Support tickets (ServerSupport.cpp has the same): anyone, even someone who can't log in,
 // can ask staff for help. A few open at once per device, and a few a day.
 const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 1000, kResetHours = 24;
@@ -244,6 +249,15 @@ const kMoveWait = 90, kHeirWait = 12;
 const kPoolMost = 50, kPoolStartWait = 25;
 // DataStores: names and keys up to 100 letters, values up to 256 KB of JSON, 100,000 keys a game.
 const kDataName = 100, kDataValue = 256 * 1024, kDataKeys = 100000;
+// MessagingService (msgOp): messages between the running servers of one game. Kept in
+// memory for a short while; each server asks for new ones about once a second.
+// (ServerData.cpp has the same rules.)
+const kMsgTopic = 80;            // topic names: 1-80 letters
+const kMsgSize = 1024;           // one message, as JSON (bytes)
+const kMsgKeep = 30;             // seconds a message waits to be picked up
+const kMsgKept = 500;            // messages kept per game at most
+const kMsgPerPoll = 200;         // handed out per msg.poll
+const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
 const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
@@ -279,7 +293,8 @@ const kMaxUsedModels = 2000;   // Library models someone has inserted (they can 
 // Gifts: buy a catalog item for a friend, with a short note. (src/server has the same rules.)
 const kGiftNote = 100;
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
-const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant']);   // (product.*: guests can host games too)
+export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
+  'msg.publish', 'msg.poll']);   // (product.* and msg.*: guests can host games too)
 
 // Assets have plain numbers counting up, like Roblox's asset IDs (1, 2, 3...). New ones
 // use the number as their ID; older ones ("decal-1a2b3c4d5e") got a number too and
@@ -572,6 +587,10 @@ export class GbServerObject extends DurableObject {
     // Servers whose host left: old session id -> { game, title, priv, code, max, members:[accounts], heir, heirSince, newId, until }
     this.moved = new Map();
     this.sweepTimer = null;
+    // MessagingService: game id -> { seq, list: [{ n, topic, message, sent }] }, and who sent
+    // when ("account\ngame" -> [times]) for the rate limit. In memory, like the relay.
+    this.msgs = new Map();
+    this.msgSent = new Map();
   }
 
   getMeta(key, fallback) {
@@ -860,14 +879,36 @@ export class GbServerObject extends DurableObject {
     return setting === 'friends' && !!viewer && u.friends.includes(viewer.id);
   }
   // Has either of them blocked the other? (Then they can't message, friend, follow, trade or join each other.)
-  // The staff action log. action: ban, unban, warn, bolts, badge, unbadge, review, report, delete, comment.
+  // The staff action log. action: ban, unban, warn, bolts, badge, unbadge, review, report, delete, comment,
+  // appeal (a ban appeal answered), account (a system event: an account was deleted; by is "system").
   // about: who it was done to (an account id), so the log can link to them.
   staffDid(me, action, text, about = '') {
     this.staffLog.push({ at: now(), by: me.id, action, text, about });
     this.dirty.staffLog = true;
   }
+  // Ban (on) or unban someone, and write it in the staff log ('' = done, else why not).
+  // admin.ban and accepting a ban appeal both come here.
+  setBan(me, to, on, args) {
+    if (this.isOfficial(to)) return 'You can\'t ban yourself.';
+    if (on) {
+      const reason = str(args, 'reason');
+      if (!BAN_REASONS[reason]) return 'Pick a reason for the ban.';
+      to.banReason = reason;
+      to.banNote = cleanText(str(args, 'note'), 200);
+      to.bannedAt = now();
+      const days = clamp(num(args, 'days'), 0, 3650);   // 0 = for good
+      if (days > 0) to.bannedUntil = to.bannedAt + days * 86400; else delete to.bannedUntil;
+    } else {
+      delete to.banReason; delete to.banNote; delete to.bannedAt; delete to.bannedUntil;
+    }
+    to.banned = on;
+    this.staffDid(me, on ? 'ban' : 'unban', on ? 'Banned ' + to.name + ' (' + (BAN_REASONS[to.banReason] || to.banReason) + ', '
+      + (to.bannedUntil ? clamp(num(args, 'days'), 0, 3650) + ' days' : 'for good') + ')' + (to.banNote ? ': "' + to.banNote + '"' : '') : 'Unbanned ' + to.name, to.id);
+    this.saveUser(to);
+    return '';
+  }
   staffLogJson(who) {
-    const name = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name } : { id, userId: 0, name: '?' }; };
+    const name = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name } : { id, userId: 0, name: id === 'system' ? 'System' : '?' }; };
     const list = who ? this.staffLog.filter((x) => x.by === who || x.about === who) : this.staffLog;
     return list.slice(-200).reverse().map((x) => ({ at: x.at, by: name(x.by), action: x.action, text: x.text, about: x.about ? name(x.about) : null }));
   }
@@ -924,7 +965,8 @@ export class GbServerObject extends DurableObject {
       animPack: u.animPack && u.owned.includes(u.animPack) ? u.animPack : '',
       // Banned: what for and until when (the app and the site show a ban screen).
       ban: u.banned ? { reason: u.banReason || '', title: BAN_REASONS[u.banReason] || 'Breaking the rules',
-        note: u.banNote || '', at: u.bannedAt || 0, until: u.bannedUntil || 0 } : null,
+        note: u.banNote || '', at: u.bannedAt || 0, until: u.bannedUntil || 0,
+        appeal: this.myAppeal(u), canAppeal: this.canAppeal(u) } : null,
       // Staff warnings not seen yet (shown once, until "I understand").
       warnings: (u.warnings || []).filter((w) => !w.seen)
         .map((w) => ({ id: w.id, reason: w.reason, title: BAN_REASONS[w.reason] || 'Breaking the rules', note: w.note, at: w.at })),
@@ -1256,6 +1298,7 @@ export class GbServerObject extends DurableObject {
     const owner = this.aliases.get(account);
     const me = owner ? this.users.get(owner) : this.user(account);
     if (!me) return { bad: fail('That account is gone.') };
+    if (me.deleted) return { bad: fail('This account was deleted.') };
     if (!owner && me.keyRevoked)
       return { bad: fail('This device was logged out because the account\'s password was reset. Log in again with the new password.') };
     me.lastSeen = t;
@@ -1265,7 +1308,8 @@ export class GbServerObject extends DurableObject {
       delete me.banReason; delete me.banNote; delete me.bannedAt; delete me.bannedUntil;
       this.saveUser(me);
     }
-    if (me.banned && opName !== 'hello') return { bad: fail(banMessage(me)) };
+    // A banned account can only say hello (to see its ban screen) and appeal the ban.
+    if (me.banned && opName !== 'hello' && opName !== 'appeal.send') return { bad: fail(banMessage(me)) };
     if (me.userId === 0 && opName !== 'hello' && opName !== 'ping' && !opName.startsWith('account.') && !GUEST_OK.has(opName))
       return { bad: fail('Sign up or log in first.') };
     return { me, args, opName };
@@ -1380,8 +1424,10 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
+    if (name.startsWith('msg.')) return this.msgOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
+    if (name.startsWith('appeal.')) return this.appealOp(name, me, args);
     if (name.startsWith('support.')) return this.supportOp(name, me, args);
     // "I'm still here" (for friends' online dots); the answer keeps your account fresh
     // (a new warning, or Bolts someone sent you, shows up within a minute).
@@ -1865,6 +1911,8 @@ export class GbServerObject extends DurableObject {
         return okay({ asset: this.publicAsset(a, me) });
       }
       if (name === 'admin.reports') return okay({ reports: this.reportsJson(str(args, 'status') === 'closed' ? 'closed' : 'open') });
+      if (name === 'admin.appeals') return okay({ appeals: this.appealsJson(str(args, 'status') === 'closed' ? 'closed' : 'open') });
+      if (name === 'admin.answerAppeal') return this.answerAppeal(me, args);
       if (name === 'admin.tickets') return okay({ tickets: this.ticketsJson(str(args, 'status') === 'closed' ? 'closed' : 'open') });
       if (name === 'admin.replyTicket' || name === 'admin.ticketReset' || name === 'admin.closeTicket') return this.ticketAdminOp(name, me, args);
       if (name === 'admin.mailStatus') return okay({ mail: this.mailStatus() });
@@ -1922,24 +1970,8 @@ export class GbServerObject extends DurableObject {
         return okay({ user: this.publicUser(to), bolts: this.balance(to) });
       }
       if (name === 'admin.ban') {
-        if (this.isOfficial(to)) return fail('You can\'t ban yourself.');
-        const on = args.on === undefined ? true : !!args.on;
-        if (on) {
-          const reason = str(args, 'reason');
-          if (!BAN_REASONS[reason]) return fail('Pick a reason for the ban.');
-          to.banReason = reason;
-          to.banNote = cleanText(str(args, 'note'), 200);
-          to.bannedAt = now();
-          const days = clamp(num(args, 'days'), 0, 3650);   // 0 = for good
-          if (days > 0) to.bannedUntil = to.bannedAt + days * 86400; else delete to.bannedUntil;
-        } else {
-          delete to.banReason; delete to.banNote; delete to.bannedAt; delete to.bannedUntil;
-        }
-        to.banned = on;
-        this.staffDid(me, on ? 'ban' : 'unban', on ? 'Banned ' + to.name + ' (' + (BAN_REASONS[to.banReason] || to.banReason) + ', '
-          + (to.bannedUntil ? clamp(num(args, 'days'), 0, 3650) + ' days' : 'for good') + ')' + (to.banNote ? ': "' + to.banNote + '"' : '') : 'Unbanned ' + to.name, to.id);
-        this.saveUser(to);
-        return okay({ user: this.publicUser(to) });
+        const problem = this.setBan(me, to, args.on === undefined ? true : !!args.on, args);
+        return problem ? fail(problem) : okay({ user: this.publicUser(to) });
       }
       if (name === 'admin.warn') {
         // A warning: they see it (with the reason) next time they open the app or the site.
@@ -2778,6 +2810,16 @@ export class GbServerObject extends DurableObject {
       return okay({ me: this.meJson(me) });
     }
 
+    if (name === 'account.delete') {
+      // Delete your account and what's personal in it, after typing your password (see deleteAccount).
+      if (me.userId === 0) return fail('Sign up first.');
+      if (this.isOfficial(me)) return fail('The staff account can\'t be deleted.');
+      if (!me.keyBlob) return fail('Set a password in the app first.');
+      if (!provePassword()) return fail('Wrong password.');
+      this.deleteAccount(me);
+      return okay({ deleted: true });
+    }
+
     const u = this.findUsername(username);
     // --- forgot password: a code by email, then a new password (and a new key) ---
     if (name === 'account.forgot') {
@@ -2855,6 +2897,51 @@ export class GbServerObject extends DurableObject {
     return fail('Unknown request.');
   }
 
+  // Delete an account (account.delete; ServerAccounts.cpp has the same). What's personal goes:
+  // password and key backup, email, two-step, avatar, About me, posts, outfits, messages,
+  // friends and follows (on both sides), favourites, notifications and logged-in devices.
+  // Games and items stay (so what people bought keeps working), made by "Deleted user".
+  // Its username (and old ones) and user number stay reserved: never given to anyone else.
+  // Limited copies it holds stay its own, but come off resale and can't be traded (nobody can
+  // reach a deleted account), so they're out of circulation for good.
+  deleteAccount(u) {
+    const t = now(), number = u.userId;
+    for (const n of [u.username, ...(u.pastNames || [])]) if (n) this.takenNames.add(lower(n));
+    this.dirty.ids = true;
+    for (const v of this.users.values()) {
+      if (v === u) continue;
+      let changed = false;
+      for (const k of ['friends', 'friendIn', 'friendOut', 'following', 'followers'])
+        if (Array.isArray(v[k]) && v[k].includes(u.id)) { v[k] = v[k].filter((x) => x !== u.id); changed = true; }
+      if (changed) this.saveUser(v);
+    }
+    for (const id of u.favorites || []) {
+      const a = this.assets.get(id);
+      if (a && a.favorites > 0) { a.favorites--; this.saveAsset(a); }
+    }
+    for (const g of this.groups.values()) {   // groups they own stay (with "Deleted user" as the owner)
+      if (g.owner !== u.id && g.members[u.id]) { delete g.members[u.id]; this.saveGroup(g); }
+      if (Array.isArray(g.requests) && g.requests.includes(u.id)) { g.requests = g.requests.filter((x) => x !== u.id); this.saveGroup(g); }
+    }
+    const limited = [];
+    for (const a of this.assets.values()) {
+      if (!a.limited) continue;
+      for (const c of a.copies || []) if (c.owner === u.id) { if (c.price) { c.price = 0; this.saveAsset(a); } if (!limited.includes(a.id)) limited.push(a.id); }
+    }
+    for (const x of this.trades)
+      if (x.status === 'open' && (x.from === u.id || x.to === u.id)) { x.status = 'cancelled'; x.updated = t; this.dirty.trades = true; }
+    for (const x of this.tickets)   // email addresses left on support tickets
+      if ((x.from === u.id || x.about === u.id) && (x.contact || x.code)) { x.contact = ''; delete x.code; this.dirty.tickets = true; }
+    for (const k of u.keys || []) this.aliases.delete(k);   // devices logged in after a password reset
+    // What's left: the ID (so its requests are refused), when it was made, and its Limited copies.
+    const { id, created } = u;
+    for (const k of Object.keys(u)) delete u[k];
+    Object.assign(u, { id, name: kDeletedName, created, lastSeen: 0, ledger: [], grants: {}, owned: limited, uploadDay: '', uploadsToday: 0,
+      playDay: '', playEarned: 0, lastPlay: 0, banned: false, friends: [], friendIn: [], friendOut: [], following: [], followers: [],
+      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', deleted: t });
+    this.saveUser(u);
+    this.staffDid({ id: 'system' }, 'account', 'Account #' + number + ' was deleted by its owner');
+  }
   friendOp(name, me, args) {
     const person = (u) => ({ id: u.id, userId: u.userId, username: u.username, name: u.name, verified: this.isVerified(u) });
     if (name === 'friends.list') {
@@ -3024,6 +3111,74 @@ export class GbServerObject extends DurableObject {
     }
     return fail('Unknown request.');
   }
+  // --- Ban appeals (ServerSafety.cpp has the same) ---
+  // A banned account can send staff one short note asking to be unbanned (u.appeal). Staff see
+  // it next to the reports and accept it (an unban, through setBan) or deny it with a note; the
+  // answer shows on the ban screen. One open appeal per ban: a new one only after staff answer,
+  // or when the ban changes (appeal.banAt is the bannedAt it was sent for).
+  appealIsCurrent(u) { return !!u.appeal && !!u.banned && (u.appeal.banAt || 0) === (u.bannedAt || 0); }
+  canAppeal(u) { return !!u.banned && !(this.appealIsCurrent(u) && u.appeal.status === 'open'); }
+  // What the banned person sees about their appeal for this ban (null: none yet).
+  myAppeal(u) {
+    if (!this.appealIsCurrent(u)) return null;
+    const a = u.appeal;
+    return { text: a.text, at: a.at, status: a.status, note: a.note || '', answeredAt: a.answeredAt || 0 };
+  }
+  appealOp(name, me, args) {
+    if (name !== 'appeal.send') return fail('Unknown request.');
+    if (!me.banned) return fail('Your account isn\'t banned.');
+    if (!this.canAppeal(me)) return fail('You already appealed this ban. Staff will answer it soon.');
+    const text = say(str(args, 'text'), kAppealLength, true);
+    if (text.length < 10) return fail('Tell staff a bit more (at least 10 letters) about why the ban should be lifted.');
+    const t = now();
+    me.appeal = { id: 'ap-' + randomHex(6), text, at: t, banAt: me.bannedAt || 0, status: 'open',
+      ban: { reason: me.banReason || '', note: me.banNote || '', at: me.bannedAt || 0, until: me.bannedUntil || 0 } };
+    this.saveUser(me);
+    this.notify(this.users.get(this.official), 'appeal', me.name + ' appealed their ban: "' + text.slice(0, 80) + '"', me.id);
+    return okay({ me: this.meJson(me) });
+  }
+  // Appeals for the Staff page. Open: oldest first (first come, first served); closed: newest answers first.
+  appealsJson(status) {
+    const who = (id) => { const u = id && this.users.get(id); return u ? this.publicUser(u) : null; };
+    // Who banned them, from the staff log: the newest ban of them from before the appeal.
+    const bannedBy = (u) => {
+      for (let i = this.staffLog.length - 1; i >= 0; i--) {
+        const x = this.staffLog[i];
+        if (x.action === 'ban' && x.about === u.id && x.at <= u.appeal.at) return who(x.by);
+      }
+      return null;
+    };
+    let list = [...this.users.values()].filter((u) => u.appeal && (status === 'open'
+      ? u.appeal.status === 'open' && this.appealIsCurrent(u) : u.appeal.status === 'accepted' || u.appeal.status === 'denied'));
+    if (status === 'open') list = list.sort((x, y) => x.appeal.at - y.appeal.at || (x.appeal.id < y.appeal.id ? -1 : 1)).slice(0, 100);
+    else list = list.sort((x, y) => y.appeal.answeredAt - x.appeal.answeredAt || (x.appeal.id < y.appeal.id ? -1 : 1)).slice(0, 100);
+    return list.map((u) => {
+      const a = u.appeal, b = a.ban || {};
+      return { id: a.id, user: this.publicUser(u), text: a.text, at: a.at, status: a.status, note: a.note || '',
+        answeredAt: a.answeredAt || 0, answeredBy: who(a.by),
+        ban: { reason: b.reason || '', title: BAN_REASONS[b.reason] || 'Breaking the rules', note: b.note || '', at: b.at || 0,
+          until: b.until || 0, by: bannedBy(u) } };
+    });
+  }
+  // Staff answer an appeal: accept (unbans them; only the official account can unban) or deny, with a short note.
+  answerAppeal(me, args) {
+    const id = str(args, 'id');
+    const u = id ? [...this.users.values()].find((x) => x.appeal && x.appeal.id === id) : null;
+    if (!u) return fail('That appeal isn\'t there any more.');
+    if (u.appeal.status !== 'open' || !this.appealIsCurrent(u)) return fail('That appeal was already answered, or the ban changed.');
+    const accept = args.accept === true;
+    if (accept && !this.isOfficial(me)) return fail('Only the official Guts account can do that.');
+    const a = u.appeal, note = cleanText(str(args, 'note'), 200);
+    a.status = accept ? 'accepted' : 'denied'; a.note = note; a.answeredAt = now(); a.by = me.id;
+    this.staffDid(me, 'appeal', (accept ? 'Accepted ' : 'Denied ') + u.name + '\'s ban appeal' + (note ? ': "' + note + '"' : ''), u.id);
+    if (accept) {
+      this.setBan(me, u, false, {});
+      this.notify(u, 'appeal', 'Staff accepted your appeal, so your account isn\'t banned any more.' + (note ? ' Staff said: "' + note + '"' : ''), '');
+    }
+    this.saveUser(u);
+    return okay({ appeals: this.appealsJson('open') });
+  }
+
   // --- Support tickets (ServerSupport.cpp has the same) ---
   // Anyone can ask staff for help, even without logging in (like "I forgot my password and
   // my account has no email"). A ticket belongs to the device that sent it: only that device
@@ -3651,6 +3806,62 @@ export class GbServerObject extends DurableObject {
       const value = (old || 0) + delta;
       const bad = write(value);
       return bad || okay({ value });
+    }
+    return fail('Unknown request.');
+  }
+
+  // MessagingService: messages between the running servers of one game (every one of them
+  // gets each message, the sender too; other games never see them). Only the host of a live
+  // server of the game can send or read them. Servers ask for new ones about once a second.
+  //   msg.publish {game, topic, message}  -> {}
+  //   msg.poll    {game, after, topics[]} -> {server, messages: [{n, topic, message, sent}], last}
+  //     server: false = you aren't running a server of it (the game keeps its messages on
+  //     its own computer then). after: the last n you saw (leave it out to start from now).
+  msgOp(name, me, args) {
+    const game = this.assets.resolve(cleanText(typeof args.game === 'string' ? args.game : '', 80));
+    const asset = this.assets.get(game);
+    if (!asset || asset.kind !== 'game') return fail('That game isn\'t there.');
+    const t = now();
+    const mine = [...this.sessions.values()].filter((s) => s.host === me.id && this.assets.resolve(s.game) === game);
+    const box = this.msgs.get(game) || { seq: 0, list: [] };
+    while (box.list.length && (box.list[0].sent < t - kMsgKeep || box.list.length > kMsgKept)) box.list.shift();
+    if (name === 'msg.poll') {
+      if (!mine.length) return okay({ server: false, messages: [], last: 0 });
+      const after = typeof args.after === 'number' && Number.isFinite(args.after) ? Math.floor(args.after) : -1;
+      if (after < 0) return okay({ server: true, messages: [], last: box.seq });
+      const from = after > box.seq ? 0 : after;   // (the server restarted since: start again)
+      const topics = Array.isArray(args.topics) ? new Set(args.topics.filter((x) => typeof x === 'string').slice(0, 100)) : null;
+      const out = [];
+      let last = from;
+      for (const m of box.list) {
+        if (m.n <= from) continue;
+        if (out.length >= kMsgPerPoll) break;
+        last = m.n;
+        if (!topics || topics.has(m.topic)) out.push(m);
+      }
+      if (out.length < kMsgPerPoll) last = Math.max(last, box.seq);
+      return okay({ server: true, messages: out, last });
+    }
+    if (name === 'msg.publish') {
+      if (!mine.length) return fail('MessagingService: only a running server of this game can send its messages.');
+      const topic = typeof args.topic === 'string' ? args.topic : '';
+      if (!topic || topic.length > kMsgTopic) return fail('MessagingService: topic names are 1-' + kMsgTopic + ' letters.');
+      const message = args.message === undefined ? null : args.message;
+      const size = new TextEncoder().encode(JSON.stringify(message)).length;
+      if (size > kMsgSize) return fail('MessagingService: that message is ' + size + ' bytes; ' + kMsgSize + ' bytes (1 KB) is the most.');
+      // Each server may send 150 + 60 per player a minute (all of yours together, if you run several).
+      let allowed = 0;
+      for (const s of mine) allowed += kMsgBase + kMsgPerPlayer * this.headcount(s);
+      const key = me.id + '\n' + game;
+      const times = (this.msgSent.get(key) || []).filter((x) => x > t - 60);
+      if (times.length >= allowed) return fail('MessagingService: too many messages (' + allowed + ' a minute is the most for this server). Wait a moment.');
+      times.push(t);
+      this.msgSent.set(key, times);
+      box.seq++;
+      box.list.push({ n: box.seq, topic, message, sent: t });
+      if (box.list.length > kMsgKept) box.list.shift();
+      this.msgs.set(game, box);
+      return okay({ n: box.seq, sent: t });
     }
     return fail('Unknown request.');
   }

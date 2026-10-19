@@ -16,6 +16,7 @@
 #include "../scene/Blast.h"
 #include "../scene/Physics.h"
 #include "../core/Audio.h"
+#include "../scene/SoundMix.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -24,6 +25,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <random>
 
 namespace {
 
@@ -280,6 +282,87 @@ function UserInputService:GetGamepadState(pad)
              obj("ButtonL2", Vector3.new(0, 0, lt)), obj("ButtonR2", Vector3.new(0, 0, rt)) }
 end
 
+-- ContextActionService: key bindings for LocalScripts (ScriptActions.cpp does the work).
+-- BindAction(name, fn, createTouchButton, ...inputs): fn(name, state, inputObject) runs on
+-- Begin / End (and Cancel when a newer binding takes the key over); returning
+-- Enum.ContextActionResult.Pass lets lower bindings and the game's controls have it too.
+do
+    local levels = {}
+    for name, value in pairs({ Low = 1000, Medium = 2000, Default = 2000, High = 3000 }) do
+        levels[name] = setmetatable({ Name = name, Value = value, EnumType = "ContextActionPriority" },
+                                    { __tostring = function() return "Enum.ContextActionPriority." .. name end })
+    end
+    rawset(Enum, "ContextActionPriority", setmetatable(levels, { __index = function(_, k)
+        error(tostring(k) .. " is not a valid member of ContextActionPriority", 2)
+    end }))
+    local bind, unbind, unbindAll, info, allInfo = __gb_casBind, __gb_casUnbind, __gb_casUnbindAll, __gb_casInfo, __gb_casAll
+    local setButton, getButton = __gb_casButton, __gb_casButtonGet
+    local CAS = { Name = "ContextActionService", ClassName = "ContextActionService" }
+    local function priorityOf(p)
+        if p == nil then return 2000 end
+        if type(p) == "number" then return math.floor(p) end
+        if type(p) == "table" and type(p.Value) == "number" then return p.Value end
+        if type(p) == "string" and levels[p] then return levels[p].Value end
+        error("BindActionAtPriority: the priority should be a number (like Enum.ContextActionPriority.High.Value)", 3)
+    end
+    local function doBind(name, fn, touch, priority, ...)
+        if type(name) ~= "string" then error("BindAction: the action's name should be a string", 3) end
+        if type(fn) ~= "function" then error("BindAction: the second argument should be a function", 3) end
+        local inputs = table.pack(...)
+        local list = {}
+        for i = 1, inputs.n do
+            local v = inputs[i]
+            if type(v) == "table" and v.Name then v = v.Name end
+            if type(v) ~= "string" then error("BindAction: input " .. i .. " should be an Enum.KeyCode or Enum.UserInputType", 3) end
+            list[#list + 1] = v
+        end
+        bind(name, fn, touch and true or false, priority, list)
+    end
+    function CAS:BindAction(name, fn, touch, ...) doBind(name, fn, touch, 2000, ...) end
+    function CAS:BindActionAtPriority(name, fn, touch, priority, ...) doBind(name, fn, touch, priorityOf(priority), ...) end
+    CAS.BindActionToInputTypes = CAS.BindAction   -- (Roblox's old name)
+    function CAS:UnbindAction(name) unbind(tostring(name)) end
+    function CAS:UnbindAllActions() unbindAll() end
+    function CAS:GetBoundActionInfo(name) return info(tostring(name)) end
+    function CAS:GetAllBoundActionInfo() return allInfo() end
+    function CAS:SetTitle(name, text) setButton(tostring(name), "Title", text) end
+    function CAS:SetDescription(name, text) setButton(tostring(name), "Description", text) end
+    function CAS:SetImage(name, image) setButton(tostring(name), "Image", image) end
+    function CAS:SetPosition(name, position) setButton(tostring(name), "Position", position) end
+    function CAS:GetCurrentLocalToolIcon() return "" end
+    -- GetButton: the action's touch button, as an ImageButton-like object (nil without one).
+    -- Image, Position and its ActionTitle's Text can be read and changed.
+    local buttons = {}
+    function CAS:GetButton(name)
+        name = tostring(name)
+        if not getButton(name, "exists") then return nil end
+        if buttons[name] then return buttons[name] end
+        local title = setmetatable({ Name = "ActionTitle", ClassName = "TextLabel" }, {
+            __index = function(_, k) if k == "Text" then return getButton(name, "Title") end end,
+            __newindex = function(t, k, v) if k == "Text" then setButton(name, "Title", v) else rawset(t, k, v) end end })
+        local kinds = { ImageButton = true, GuiButton = true, GuiObject = true, GuiBase2d = true, Instance = true }
+        local b = setmetatable({ Name = "ContextActionButton", ClassName = "ImageButton", Visible = true }, {
+            __index = function(_, k)
+                if k == "Image" or k == "Position" then return getButton(name, k) end
+                if k == "Pressed" then return getButton(name, "Pressed") end
+                if k == "ActionTitle" then return title end
+                if k == "IsA" then return function(_, c) return kinds[c] == true end end
+                if k == "FindFirstChild" or k == "WaitForChild" then
+                    return function(_, c) if c == "ActionTitle" then return title end return nil end
+                end
+                if k == "GetChildren" then return function() return { title } end end
+                return nil
+            end,
+            __newindex = function(t, k, v)
+                if k == "Image" or k == "Position" then setButton(name, k, v) else rawset(t, k, v) end
+            end,
+            __tostring = function() return "ContextActionButton" end })
+        buttons[name] = b
+        return b
+    end
+    ContextActionService = CAS
+end
+
 -- An event that only passes on some firings: `test` picks them, `out` shapes the arguments.
 local function filtered(sig, test, out)
     local s = {}
@@ -368,6 +451,69 @@ function DataStoreService:GetDataStore(name, scope)
     return ds
 end
 DataStoreService.GetOrderedDataStore = DataStoreService.GetDataStore
+
+-- MessagingService: messages between the running servers of this game (every one of them,
+-- this one too; never other games). Through the Guts&Bolts server for a published game's
+-- online servers, else on this computer (Studio's play test and its multiplayer test server
+-- hear each other). Like Roblox:
+--   MessagingService:SubscribeAsync("Shout", function(msg) print(msg.Data, msg.Sent) end)
+--   MessagingService:PublishAsync("Shout", { text = "hi" })
+-- Topics are 1-80 letters, a message is at most 1 KB as JSON, a server can send 150 + 60 per
+-- player a minute and hold 20 + 8 per player subscriptions.
+do
+    local msgPublish, msgDone, msgSubscribe, msgTake = __gb_msgPublish, __gb_msgDone, __gb_msgSubscribe, __gb_msgTake
+    MessagingService = { Name = "MessagingService", ClassName = "MessagingService" }
+    local subs, count, listening = {}, 0, false   -- topic -> { {fn = callback}, ... }
+    local function listen()
+        if listening then return end
+        listening = true
+        RunService.Heartbeat:Connect(function()
+            for _, m in ipairs(msgTake()) do
+                local list = subs[m[1]]
+                if list then
+                    local now = {}
+                    for i, e in ipairs(list) do now[i] = e end
+                    for _, e in ipairs(now) do
+                        if e.on then task.spawn(e.fn, { Data = m[2], Sent = m[3] }) end
+                    end
+                end
+            end
+        end)
+    end
+    function MessagingService:PublishAsync(topic, message)
+        local ticket = msgPublish(topic, message, #playerList)
+        while true do
+            local done, err = msgDone(ticket)
+            if done then
+                if err then error("MessagingService:PublishAsync: " .. err, 2) end
+                return
+            end
+            task.wait()
+        end
+    end
+    function MessagingService:SubscribeAsync(topic, callback)
+        if type(callback) ~= "function" then error("MessagingService:SubscribeAsync: the second argument must be a function", 2) end
+        topic = msgSubscribe(topic, true, count, #playerList)
+        local entry = { fn = callback, on = true }
+        subs[topic] = subs[topic] or {}
+        table.insert(subs[topic], entry)
+        count = count + 1
+        listen()
+        local conn = { Connected = true }
+        function conn:Disconnect()
+            if not entry.on then return end
+            entry.on = false
+            conn.Connected = false
+            count = count - 1
+            local list = subs[topic]
+            for i, e in ipairs(list) do if e == entry then table.remove(list, i) break end end
+            if #list == 0 then subs[topic] = nil; msgSubscribe(topic, false) end
+        end
+        conn.disconnect = conn.Disconnect
+        return conn
+    end
+    setmetatable(MessagingService, { __tostring = function() return "MessagingService" end })
+end
 
 -- PathfindingService: walking routes on the navigation mesh (every floor a character
 -- can stand on, baked from the parts; it re-bakes itself when anchored parts change).
@@ -580,10 +726,11 @@ local raycast, addMethod = __gb_raycast, __gb_addMethod
 --   if hit then print(hit.Instance.Name, hit.Position, hit.Normal, hit.Distance) end
 RaycastParams = {}
 function RaycastParams.new()
-    return { ClassName = "RaycastParams", FilterDescendantsInstances = {}, FilterType = "Exclude", IgnoreWater = false }
+    return { ClassName = "RaycastParams", FilterDescendantsInstances = {}, FilterType = "Exclude", IgnoreWater = false,
+             CollisionGroup = "Default", RespectCanCollide = false }
 end
-local function castWith(origin, direction, list, include)
-    local part, pos, normal, dist, material = raycast(origin, direction, list or {}, include)
+local function castWith(origin, direction, list, include, group, respectCanCollide)
+    local part, pos, normal, dist, material = raycast(origin, direction, list or {}, include, group, respectCanCollide)
     if not part then return nil end
     return { ClassName = "RaycastResult", Instance = part, Position = pos, Normal = normal, Distance = dist,
              Material = material or part.Material }
@@ -591,8 +738,11 @@ end
 addMethod("Raycast", function(_, origin, direction, params)
     params = params or RaycastParams.new()
     local ft = tostring(params.FilterType)
+    local group = params.CollisionGroup
+    if group ~= nil and type(group) ~= "string" then error("RaycastParams.CollisionGroup must be a string", 2) end
     return castWith(origin, direction, params.FilterDescendantsInstances,
-                    ft == "Include" or ft == "Whitelist" or ft == "Enum.RaycastFilterType.Include")
+                    ft == "Include" or ft == "Whitelist" or ft == "Enum.RaycastFilterType.Include",
+                    group or "Default", params.RespectCanCollide == true)
 end)
 -- The old way: Ray.new(origin, direction) and workspace:FindPartOnRay(ray, ignore)
 Ray = {}
@@ -1076,15 +1226,65 @@ do
     function GamePassService:PlayerHasPass(player, passId) return MarketplaceService:UserOwnsGamePassAsync(player, passId) end
 end
 
+-- PhysicsService: collision groups. Every part is in one (part.CollisionGroup, "Default"
+-- to start with); groups that aren't collidable pass through each other.
+--   PhysicsService:RegisterCollisionGroup("Players")
+--   PhysicsService:CollisionGroupSetCollidable("Players", "Players", false)   -- players walk through each other
+--   for _, p in ipairs(character:GetDescendants()) do if p:IsA("BasePart") then p.CollisionGroup = "Players" end end
+local PhysicsService = { Name = "PhysicsService", ClassName = "PhysicsService" }
+do
+    local cg = __gb_cgroups
+    local function call(what, ...)
+        local r, err = cg(what, ...)
+        if r == nil then error(err, 3) end
+        return r
+    end
+    local function str(v, what)
+        if type(v) ~= "string" then error(what .. " must be a string (a collision group's name)", 3) end
+        return v
+    end
+    function PhysicsService:RegisterCollisionGroup(name) call("register", str(name, "the name")) end
+    function PhysicsService:UnregisterCollisionGroup(name) call("unregister", str(name, "the name")) end
+    function PhysicsService:RenameCollisionGroup(from, to) call("rename", str(from, "the old name"), str(to, "the new name")) end
+    function PhysicsService:IsCollisionGroupRegistered(name) return call("registered", str(name, "the name")) end
+    function PhysicsService:GetRegisteredCollisionGroups() return call("list") end
+    function PhysicsService:CollisionGroupSetCollidable(a, b, collidable)
+        if type(collidable) ~= "boolean" then error("CollisionGroupSetCollidable needs true or false as its third argument", 2) end
+        call("set", str(a, "the first group"), str(b, "the second group"), collidable)
+    end
+    function PhysicsService:CollisionGroupsAreCollidable(a, b) return call("get", str(a, "the first group"), str(b, "the second group")) end
+    function PhysicsService:GetMaxCollisionGroups() return 32 end
+    -- The older names (still in lots of games).
+    function PhysicsService:CreateCollisionGroup(name)
+        if cg("registered", str(name, "the name")) then error("there's already a collision group called '" .. name .. "'", 2) end
+        return call("register", name)
+    end
+    function PhysicsService:RemoveCollisionGroup(name) call("unregister", str(name, "the name")) end
+    function PhysicsService:GetCollisionGroupId(name) return call("id", str(name, "the name")) end
+    function PhysicsService:GetCollisionGroupName(id) return call("name", id) end
+    function PhysicsService:GetCollisionGroups() return call("list") end
+    function PhysicsService:SetPartCollisionGroup(part, name)
+        if type(part) ~= "userdata" or not part:IsA("BasePart") then error("SetPartCollisionGroup needs a part", 2) end
+        if not cg("registered", str(name, "the name")) then error("there's no collision group called '" .. name .. "'", 2) end
+        part.CollisionGroup = name
+    end
+    function PhysicsService:GetPartCollisionGroup(part) return call("id", part.CollisionGroup) end
+    function PhysicsService:CollisionGroupContainsPart(name, part) return part.CollisionGroup == str(name, "the name") end
+    function PhysicsService:IsA(c) return c == "PhysicsService" or c == "Instance" end
+    setmetatable(PhysicsService, { __tostring = function() return "PhysicsService" end })
+end
+
 local services = { Workspace = workspace, PathfindingService = PathfindingService, BadgeService = BadgeService, TeleportService = TeleportService, Debris = Debris, Teams = Teams, Players = Players, Lighting = Lighting,
                    MarketplaceService = MarketplaceService, GamePassService = GamePassService,
                    RunService = RunService, UserInputService = UserInputService, Gui = Gui,
                    CollectionService = CollectionService, DataStoreService = DataStoreService,
+                   MessagingService = MessagingService,
                    TweenService = TweenService, HttpService = HttpService,
-                   ProximityPromptService = ProximityPromptService }
+                   ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService,
+                   ContextActionService = ContextActionService }
 -- The container services are folders at the top of the game (Studio shows them in the Explorer).
 local storageNames = { ReplicatedStorage = true, ServerStorage = true, ReplicatedFirst = true, ServerScriptService = true,
-                       StarterPack = true, SoundService = true, Chat = true, TextChatService = true }
+                       StarterPack = true, StarterPlayer = true, SoundService = true, Chat = true, TextChatService = true }
 local storage = __gb_storage
 -- Services Guts and Bolts doesn't do much with yet: they exist (so scripts written for
 -- Roblox start), their harmless calls do nothing, and anything else says so clearly.
@@ -1092,11 +1292,10 @@ local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, Scri
     Stats = {}, GuiService = {}, HapticService = {}, LocalizationService = {},
     AnalyticsService = { LogCustomEvent = true, LogEconomyEvent = true, LogProgressionEvent = true },
     PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {}, TextService = {},
-    MaterialService = {}, VoiceChatService = {}, ContextActionService = { UnbindAction = true },
-    MemoryStoreService = {}, MessagingService = { PublishAsync = true }, InsertService = {},
-    PhysicsService = { RegisterCollisionGroup = true, CollisionGroupSetCollidable = true },
+    MaterialService = {}, VoiceChatService = {},
+    MemoryStoreService = {}, InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
-    StarterPlayer = {}, VRService = {}, GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
+    VRService = {}, GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
 local made = {}
 local function quietService(name)
     if made[name] then return made[name] end
@@ -1333,9 +1532,11 @@ __gb_charSignals, __gb_setTeam, __gb_clientMode = nil, nil, nil
 __gb_playerNode, __gb_setRespawn, __gb_dsStart, __gb_dsDone, __gb_dsSet, __gb_navPath, __gb_navQuery = nil, nil, nil, nil, nil, nil, nil
 __gb_camOpt, __gb_setCamOpt, __gb_emotesMenu = nil, nil, nil
 __gb_awardBadge, __gb_hasBadge, __gb_teleport, __gb_joinData = nil, nil, nil, nil
-__gb_raycast, __gb_storage, __gb_addMethod = nil, nil, nil
+__gb_raycast, __gb_storage, __gb_addMethod, __gb_cgroups = nil, nil, nil, nil
 __gb_passLookup, __gb_passReady, __gb_passOwns, __gb_passPrompt, __gb_passResults = nil, nil, nil, nil, nil
 __gb_receiptCheck, __gb_receipts, __gb_receiptDone = nil, nil, nil
+__gb_msgPublish, __gb_msgDone, __gb_msgSubscribe, __gb_msgTake = nil, nil, nil, nil
+__gb_casBind, __gb_casUnbind, __gb_casUnbindAll, __gb_casInfo, __gb_casAll, __gb_casButton, __gb_casButtonGet = nil, nil, nil, nil, nil, nil, nil
 )LUA";
 
 constexpr double kTimeoutSeconds = 5.0;
@@ -1385,6 +1586,24 @@ const std::vector<KeyName>& keyTable() {
     }();
     return keys;
 }
+
+} // namespace
+
+// The keys scripts know (ContextActionService uses them too).
+const char* LuaApi::keyCodeName(int imguiKey, const char** inputType) {
+    for (const auto& k : keyTable())
+        if ((int)k.key == imguiKey) { if (inputType) *inputType = k.type; return k.name; }
+    return nullptr;
+}
+int LuaApi::keyFromName(const std::string& name, const char** inputType) {
+    for (const auto& k : keyTable())
+        if (name == k.name) { if (inputType) *inputType = k.type; return (int)k.key; }
+    return 0;
+}
+
+int actionTestInput(lua_State* L);   // ScriptActions.cpp (tests only)
+
+namespace {
 
 // ---------------------------------------------------------------------------
 // Global functions
@@ -1546,7 +1765,9 @@ int l_isKeyDown(lua_State* L) {
 
 // --- DataStoreService: Lua values <-> JSON, kept in a file per game ----------
 
-nlohmann::json toJson(lua_State* L, int idx, int depth = 0) {
+// `what`: the error for things that can't be turned into JSON (functions, objects...).
+const char* const kDataStoreTypes = "DataStores can only save numbers, text, true/false and tables of those";
+nlohmann::json toJson(lua_State* L, int idx, int depth = 0, const char* what = kDataStoreTypes) {
     idx = lua_absindex(L, idx);
     switch (lua_type(L, idx)) {
         case LUA_TBOOLEAN: return (bool)lua_toboolean(L, idx);
@@ -1562,7 +1783,7 @@ nlohmann::json toJson(lua_State* L, int idx, int depth = 0) {
             if (n > 0) {
                 for (lua_Integer i = 1; i <= n; ++i) {
                     lua_rawgeti(L, idx, i);
-                    out.push_back(toJson(L, -1, depth + 1));
+                    out.push_back(toJson(L, -1, depth + 1, what));
                     lua_pop(L, 1);
                 }
                 return out;
@@ -1572,13 +1793,13 @@ nlohmann::json toJson(lua_State* L, int idx, int depth = 0) {
                 lua_pushvalue(L, -2);
                 std::string key = luaL_tolstring(L, -1, nullptr);
                 lua_pop(L, 2);   // the tostring'd key and its copy
-                out[key] = toJson(L, -1, depth + 1);
+                out[key] = toJson(L, -1, depth + 1, what);
                 lua_pop(L, 1);
             }
             return out;
         }
         case LUA_TNIL: return nullptr;
-        default: luaL_error(L, "DataStores can only save numbers, text, true/false and tables of those");
+        default: luaL_error(L, "%s", what);
     }
     return nullptr;
 }
@@ -1626,6 +1847,108 @@ int l_dsSet(lua_State* L) {
     if (v.dump().size() > 256 * 1024) return luaL_error(L, "That's too much to save in one key (256 KB at most)");
     LuaApi::engine(L)->dataSet(store, key, v);
     return 0;
+}
+
+// --- MessagingService (the Lua side is in the prelude) -----------------------
+
+void msgNeedServer(lua_State* L, const char* call) {
+    if (LuaApi::engine(L)->runMode() == ScriptEngine::RunMode::Client)
+        luaL_error(L, "MessagingService:%s only works in Scripts on the server (this is a LocalScript)", call);
+}
+std::string msgTopic(lua_State* L, int idx, const char* call) {
+    if (lua_type(L, idx) != LUA_TSTRING && lua_type(L, idx) != LUA_TNUMBER)
+        luaL_error(L, "MessagingService:%s: the topic must be a string", call);
+    std::string topic = lua_tostring(L, idx);
+    if (topic.empty() || topic.size() > ScriptEngine::kMsgTopic)
+        luaL_error(L, "MessagingService:%s: topic names are 1-%d letters (that one is %d)", call, (int)ScriptEngine::kMsgTopic, (int)topic.size());
+    return topic;
+}
+
+// __gb_msgPublish(topic, message, players) -> ticket
+int l_msgPublish(lua_State* L) {
+    msgNeedServer(L, "PublishAsync");
+    const std::string topic = msgTopic(L, 1, "PublishAsync");
+    nlohmann::json data = toJson(L, 2, 0, "MessagingService:PublishAsync: messages can only hold numbers, text, true/false and tables of those");
+    const size_t size = data.dump().size();
+    if (size > ScriptEngine::kMsgSize)
+        return luaL_error(L, "MessagingService:PublishAsync: that message is %d bytes once encoded; 1 KB (%d bytes) is the most",
+                          (int)size, (int)ScriptEngine::kMsgSize);
+    std::string err;
+    const int ticket = LuaApi::engine(L)->msgPublish(topic, data, (int)luaL_optinteger(L, 3, 0), err);
+    if (!ticket) return luaL_error(L, "MessagingService:PublishAsync: %s", err.c_str());
+    lua_pushinteger(L, ticket);
+    return 1;
+}
+
+// __gb_msgDone(ticket) -> done, error (nil = sent)
+int l_msgDone(lua_State* L) {
+    std::string err;
+    if (!LuaApi::engine(L)->msgDone((int)luaL_checkinteger(L, 1), err)) { lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, 1);
+    if (err.empty()) lua_pushnil(L); else lua_pushstring(L, err.c_str());
+    return 2;
+}
+
+// __gb_msgSubscribe(topic, on, subscriptions, players) -> topic. Subscribing checks the
+// topic and the limit (20 + 8 per player subscriptions per server).
+int l_msgSubscribe(lua_State* L) {
+    msgNeedServer(L, "SubscribeAsync");
+    const std::string topic = msgTopic(L, 1, "SubscribeAsync");
+    const bool on = lua_toboolean(L, 2);
+    if (on) {
+        const long long have = luaL_optinteger(L, 3, 0), players = luaL_optinteger(L, 4, 0);
+        const long long most = 20 + 8 * std::max(0LL, players);
+        if (have >= most)
+            return luaL_error(L, "MessagingService:SubscribeAsync: this server already has %d subscriptions (20 + 8 per player is the most). "
+                                 "Disconnect some first.", (int)have);
+    }
+    LuaApi::engine(L)->msgSubscribe(topic, on);
+    lua_pushstring(L, topic.c_str());
+    return 1;
+}
+
+// __gb_msgTake() -> { {topic, data, sent}, ... } (what arrived since last time)
+int l_msgTake(lua_State* L) {
+    auto list = LuaApi::engine(L)->takeMessages();
+    lua_createtable(L, (int)list.size(), 0);
+    for (size_t i = 0; i < list.size(); ++i) {
+        lua_createtable(L, 3, 0);
+        lua_pushstring(L, list[i].topic.c_str()); lua_rawseti(L, -2, 1);
+        pushJson(L, list[i].data);                lua_rawseti(L, -2, 2);
+        lua_pushinteger(L, (lua_Integer)list[i].sent); lua_rawseti(L, -2, 3);
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    return 1;
+}
+
+// __gb_soundMix(sound [, frequency]) -> volume, { effect class names in order }, loudness, pitch
+// For checks (tools/test_sound_groups.lua): how loud a Sound really plays (its Volume times its
+// groups'), which effects it goes through, and - with a frequency - how loud a test tone
+// comes out of those effects compared to going in (1 = the same; the last half second) and
+// at what pitch (Hz).
+int l_soundMix(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    if (!n->isSound()) return luaL_error(L, "__gb_soundMix needs a Sound");
+    Scene& scene = *LuaApi::engine(L)->scene();
+    lua_pushnumber(L, SoundMix::volume(scene, n));
+    const auto chain = SoundMix::chainOf(scene, n);
+    lua_createtable(L, (int)chain.size(), 0);
+    for (size_t i = 0; i < chain.size(); ++i) { lua_pushstring(L, SoundFx::kClassNames[(int)chain[i].type]); lua_rawseti(L, -2, (lua_Integer)i + 1); }
+    if (lua_isnoneornil(L, 2)) return 2;
+    const float freq = (float)luaL_checknumber(L, 2), seconds = 2.0f;
+    const std::vector<float> out = SoundFx::render(chain, freq, seconds), in = SoundFx::render({}, freq, seconds);
+    auto rms = [](const std::vector<float>& v) {
+        double sum = 0.0;
+        const size_t from = v.size() * 3 / 4;
+        for (size_t i = from; i < v.size(); ++i) sum += (double)v[i] * v[i];
+        return std::sqrt(sum / std::max<size_t>(1, v.size() - from));
+    };
+    lua_pushnumber(L, rms(out) / std::max(1e-9, rms(in)));
+    // Its pitch, from how often it crosses zero (the last half second).
+    int crossings = 0;
+    for (size_t i = out.size() * 3 / 4 + 1; i < out.size(); ++i) crossings += (out[i - 1] < 0.0f) != (out[i] < 0.0f);
+    lua_pushnumber(L, crossings / (2.0 * seconds / 4.0));
+    return 4;
 }
 
 // __gb_awardBadge(playerName, badgeId): the app sends it to the server.
@@ -1704,6 +2027,9 @@ int l_receipts(lua_State* L) {
 int l_testInput(lua_State* L) {
     ScriptEngine* e = LuaApi::engine(L);
     const std::string what = luaL_checkstring(L, 1);
+    // Pretend keys, touch buttons, fingers and clicks on the game view (ContextActionService, ScriptActions.cpp).
+    if (what == "key" || what == "button" || what == "touch" || (what == "click" && lua_gettop(L) < 2))
+        return actionTestInput(L);
     const uint64_t part = lua_isnoneornil(L, 2) ? 0 : LuaApi::toInstanceId(L, 2);
     lua_pushboolean(L, e->testInput && e->testInput(what, part));
     return 1;
@@ -1883,6 +2209,12 @@ int l_raycast(lua_State* L) {
         }
     }
     const bool include = lua_toboolean(L, 4);
+    // RaycastParams.CollisionGroup: skip parts that group passes through (the terrain is
+    // Default's). RespectCanCollide: skip parts with CanCollide off.
+    const std::string group = lua_isstring(L, 5) ? lua_tostring(L, 5) : CollisionGroups::kDefault;
+    const bool respectCanCollide = lua_toboolean(L, 6);
+    const CollisionGroups& groups = scene->world().collisionGroups;
+    const bool useGroups = !groups.onlyDefault() || !groups.collides(0, 0);
     auto inside = [&](const SceneNode* n) {   // n is one of the list, or inside one
         for (const SceneNode* p = n; p; p = p->parent)
             if (std::find(list.begin(), list.end(), p) != list.end()) return true;
@@ -1897,6 +2229,12 @@ int l_raycast(lua_State* L) {
     float dist = 0.0f;
     SceneNode* hit = Physics::raycastIf(*scene, from, rd, &dist, [&](const SceneNode* n) {
         if (n == scene->root()) return true;
+        if (n->id == Scene::kTerrainId) {
+            if (useGroups && !groups.collides(group, CollisionGroups::kDefault)) return false;
+        } else if (n->isPart()) {
+            if (respectCanCollide && !n->canCollide) return false;
+            if (useGroups && !groups.collides(group, n->collisionGroup)) return false;
+        }
         return include ? (inside(n) || above(n)) : !inside(n);
     });
     if (!hit || dist > range) return 0;
@@ -1927,6 +2265,88 @@ int l_raycast(lua_State* L) {
     return 4;
 }
 
+// __gb_cgroups(what, ...): PhysicsService's collision groups (the prelude wraps these).
+// Problems come back as nil, message (the Lua side raises them at the caller's line).
+int l_cgroups(lua_State* L) {
+    Scene* scene = LuaApi::engine(L)->scene();
+    const std::string what = luaL_checkstring(L, 1);
+    if (!scene) { lua_pushnil(L); lua_pushstring(L, "there's no game running"); return 2; }
+    CollisionGroups& g = scene->world().collisionGroups;
+    auto fail = [&](const std::string& msg) { lua_pushnil(L); lua_pushstring(L, msg.c_str()); return 2; };
+    auto name = [&](int i) { return std::string(luaL_checkstring(L, i)); };
+    auto known = [&](const std::string& n, int& slot) {
+        slot = g.find(n);
+        return slot >= 0;
+    };
+    if (what == "register") {
+        const std::string n = name(2);
+        if (std::string bad = CollisionGroups::badName(n); !bad.empty()) return fail(bad);
+        if (g.find(n) < 0 && g.count() >= CollisionGroups::kMax)
+            return fail("can't register '" + n + "': there are already 32 collision groups (the most there can be)");
+        lua_pushinteger(L, g.add(n));
+        return 1;
+    }
+    if (what == "unregister") {
+        const std::string n = name(2);
+        if (n == CollisionGroups::kDefault) return fail("the Default collision group can't be unregistered");
+        g.remove(n);   // (not registered: nothing to do) - its parts act as Default now
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    if (what == "rename") {
+        const std::string from = name(2), to = name(3);
+        int slot;
+        if (from == CollisionGroups::kDefault) return fail("the Default collision group can't be renamed");
+        if (!known(from, slot)) return fail("there's no collision group called '" + from + "'");
+        if (std::string bad = CollisionGroups::badName(to); !bad.empty()) return fail(bad);
+        if (to == from) { lua_pushboolean(L, 1); return 1; }
+        if (g.find(to) >= 0) return fail("there's already a collision group called '" + to + "'");
+        g.names[slot] = to;
+        scene->forEach([&](SceneNode* n) { if (n->collisionGroup == from) n->collisionGroup = to; });   // its parts go with it
+        lua_pushboolean(L, 1);
+        return 1;
+    }
+    if (what == "registered") {
+        lua_pushboolean(L, g.find(name(2)) >= 0);
+        return 1;
+    }
+    if (what == "list") {   // { {name, id, mask}, ... } (mask as a signed 32-bit number, like Roblox)
+        const std::vector<int> slots = g.slots();
+        lua_createtable(L, (int)slots.size(), 0);
+        int k = 0;
+        for (int i : slots) {
+            lua_createtable(L, 0, 3);
+            lua_pushstring(L, g.names[i].c_str()); lua_setfield(L, -2, "name");
+            lua_pushinteger(L, i);                 lua_setfield(L, -2, "id");
+            lua_pushinteger(L, (lua_Integer)(int32_t)g.masks[i]); lua_setfield(L, -2, "mask");
+            lua_rawseti(L, -2, ++k);
+        }
+        return 1;
+    }
+    if (what == "set" || what == "get") {
+        const std::string a = name(2), b = name(3);
+        int sa, sb;
+        if (!known(a, sa)) return fail("there's no collision group called '" + a + "' (RegisterCollisionGroup it first)");
+        if (!known(b, sb)) return fail("there's no collision group called '" + b + "' (RegisterCollisionGroup it first)");
+        if (what == "set") g.set(sa, sb, lua_toboolean(L, 4));
+        lua_pushboolean(L, g.collides(sa, sb));
+        return 1;
+    }
+    if (what == "id") {
+        int slot;
+        if (!known(name(2), slot)) return fail("there's no collision group called '" + name(2) + "'");
+        lua_pushinteger(L, slot);
+        return 1;
+    }
+    if (what == "name") {
+        const lua_Integer id = luaL_checkinteger(L, 2);
+        if (id < 0 || id >= CollisionGroups::kMax || g.names[id].empty()) return fail("there's no collision group with id " + std::to_string(id));
+        lua_pushstring(L, g.names[id].c_str());
+        return 1;
+    }
+    return fail("unknown collision group request '" + what + "'");
+}
+
 // __gb_addMethod(name, fn): a method every object gets (the prelude adds workspace:Raycast etc. this way).
 int l_addMethod(lua_State* L) {
     luaL_checkstring(L, 1);
@@ -1948,6 +2368,55 @@ int l_storage(lua_State* L) {
     auto folder = std::make_unique<SceneNode>(name, NodeKind::Model);
     folder->visible = false;
     LuaApi::pushInstance(L, scene->insert(std::move(folder))->id);
+    return 1;
+}
+
+// For Studio's AI tools: __gb_aiProps(obj, {names...}) reads each name the way a
+// script would (obj.Name) and returns the ones that are properties as JSON, so the
+// tools report exactly the names and values Lua sees. Methods, events and children
+// found by name are left out.
+int l_aiGet(lua_State* L) { lua_gettable(L, 1); return 1; }
+int l_aiProps(lua_State* L) {
+    luaL_checktype(L, 2, LUA_TTABLE);
+    const uint64_t selfId = LuaApi::toInstanceId(L, 1);
+    SceneNode* self = selfId ? LuaApi::engine(L)->scene()->findById(selfId) : nullptr;
+    nlohmann::json out = nlohmann::json::object();
+    const lua_Integer count = (lua_Integer)luaL_len(L, 2);
+    for (lua_Integer i = 1; i <= count; ++i) {
+        lua_rawgeti(L, 2, i);
+        const char* k = lua_tostring(L, -1);
+        lua_pop(L, 1);
+        if (!k) continue;
+        lua_pushcfunction(L, l_aiGet);
+        lua_pushvalue(L, 1);
+        lua_pushstring(L, k);
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) { lua_pop(L, 1); continue; }
+        const int v = lua_gettop(L);
+        nlohmann::json j;
+        bool keep = true;
+        switch (lua_type(L, v)) {
+            case LUA_TBOOLEAN: j = (bool)lua_toboolean(L, v); break;
+            case LUA_TNUMBER:  j = lua_isinteger(L, v) ? nlohmann::json(lua_tointeger(L, v)) : nlohmann::json(lua_tonumber(L, v)); break;
+            case LUA_TSTRING:  j = std::string(lua_tostring(L, v)); break;
+            case LUA_TUSERDATA:
+                if (glm::vec3* p = LuaApi::toVector3(L, v)) j = {p->x, p->y, p->z};
+                else if (glm::vec3* c = LuaApi::toColor3(L, v)) j = {c->x, c->y, c->z};
+                else if (glm::vec2* q = LuaApi::toVector2(L, v)) j = {q->x, q->y};
+                else if (UDim2* u = LuaApi::toUDim2(L, v)) j = {{u->xs, u->xo}, {u->ys, u->yo}};
+                else if (glm::mat4* m = LuaApi::toCFrame(L, v)) j = {{"position", {(*m)[3].x, (*m)[3].y, (*m)[3].z}}};
+                else if (uint64_t id = LuaApi::toInstanceId(L, v)) {
+                    // `obj.Door` finds a child: that's not a property.
+                    if (self && std::strcmp(k, "Parent") != 0 && self->findChild(k)) keep = false;
+                    else j = "#" + std::to_string(id);
+                } else keep = false;   // events, Humanoid...
+                break;
+            default: keep = false;     // methods, nil
+        }
+        lua_pop(L, 1);
+        if (keep) out[k] = j;
+    }
+    const std::string s = out.dump();
+    lua_pushlstring(L, s.data(), s.size());
     return 1;
 }
 
@@ -2202,6 +2671,7 @@ void ScriptEngine::start(bool runScripts) {
     LuaApi::registerTypes(m_L);
     LuaApi::registerInstance(m_L);
     openRemotes();
+    openActions();
 
     lua_State* L = m_L;
     lua_register(L, "print", l_print);
@@ -2229,9 +2699,15 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_dsStart", l_dsStart);
     lua_register(L, "__gb_dsDone", l_dsDone);
     lua_register(L, "__gb_dsSet", l_dsSet);
+    lua_register(L, "__gb_msgPublish", l_msgPublish);
+    lua_register(L, "__gb_msgDone", l_msgDone);
+    lua_register(L, "__gb_msgSubscribe", l_msgSubscribe);
+    lua_register(L, "__gb_msgTake", l_msgTake);
+    lua_register(L, "__gb_soundMix", l_soundMix);
     lua_register(L, "__gb_navPath", l_navPath);
     lua_register(L, "__gb_navQuery", l_navQuery);
     lua_register(L, "__gb_raycast", l_raycast);
+    lua_register(L, "__gb_cgroups", l_cgroups);
     lua_register(L, "__gb_storage", l_storage);
     lua_register(L, "__gb_addMethod", l_addMethod);
     lua_register(L, "__gb_awardBadge", l_awardBadge);
@@ -2308,6 +2784,7 @@ void ScriptEngine::start(bool runScripts) {
         else lua_pushnil(L);
         return 1;
     });
+    lua_register(L, "__gb_aiProps", l_aiProps);   // Studio's AI tools: an object's properties by their Lua names
     // Remote messages name players by UserId (see the prelude).
     lua_getglobal(L, "__gb_playerById");
     lua_setfield(L, LUA_REGISTRYINDEX, "GB.playerById");
@@ -2441,6 +2918,7 @@ void ScriptEngine::stopScripts(SceneNode* root) {
     }
     if (ids.empty()) return;
     m_stopped.insert(ids.begin(), ids.end());
+    forgetActions(ids);
     for (size_t i = 0; i < m_conns.size(); ++i)
         if (m_conns[i].alive && ids.count(m_conns[i].owner)) disconnect((int)i);
     for (auto it = m_waiting.begin(); it != m_waiting.end();) {
@@ -2523,10 +3001,21 @@ void ScriptEngine::stop() {
     m_dataQueue.clear();
     m_dataDone.clear();
     m_dataCache.clear();
+    m_msgMode = MsgMode::Unknown;              // (MessagingService starts again too)
+    m_msgTopics.clear(); m_msgIn.clear(); m_msgQueue.clear(); m_msgDone.clear(); m_msgSentAt.clear();
+    m_msgSeen.clear();
+    m_msgAfter = -1;
+    m_msgPolling = false;
     m_libraryModules.clear();
     m_current = 0;
     m_detached.clear();
     m_gui = GuiState{};
+    m_actions.clear();
+    m_holders.clear();
+    m_sunk.clear();
+    m_pointerHeld = false;
+    m_testInputs.clear();
+    m_testClick = false;
 }
 
 void ScriptEngine::reportError(lua_State* co) {
@@ -2541,7 +3030,8 @@ void ScriptEngine::checkTimeout(lua_State* L) {
                       "did you forget a wait() inside a loop?", (int)kTimeoutSeconds);
 }
 
-void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from) {
+void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, std::string* result) {
+    if (result) result->clear();
     if (!m_L) return;
     if (m_depth == 0) m_resumeStart = nowSeconds();
     ++m_depth;
@@ -2564,6 +3054,7 @@ void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from) {
         return;
     }
     if (status != LUA_OK) reportError(co);
+    else if (result && nres > 0 && lua_type(co, -nres) == LUA_TSTRING) *result = lua_tostring(co, -nres);
     luaL_unref(m_L, LUA_REGISTRYINDEX, ref);
 }
 
@@ -2578,24 +3069,19 @@ void ScriptEngine::schedule(lua_State* co, int ref, double delay, int startArgs)
 void ScriptEngine::update(float dt) {
     if (!m_L) return;
     m_time += dt;
+    msgStep();   // MessagingService: messages from the game's other servers
 
-    // Keyboard events.
+    // Keyboard and controller buttons: bound actions (ContextActionService) first, then
+    // UserInputService.InputBegan / InputEnded.
     if (!ImGui::GetIO().WantTextInput) {
         for (const auto& k : keyTable()) {
-            bool began = ImGui::IsKeyPressed(k.key, false);
-            bool ended = ImGui::IsKeyReleased(k.key);
-            if (!began && !ended) continue;
-            const char* name = k.name;
-            const char* type = k.type;
-            fire(began ? SignalKind::InputBegan : SignalKind::InputEnded, 0, [name, type](lua_State* co) {
-                lua_newtable(co);
-                lua_pushstring(co, name); lua_setfield(co, -2, "KeyCode");
-                lua_pushstring(co, type); lua_setfield(co, -2, "UserInputType");
-                lua_pushboolean(co, 0);
-                return 2;
-            });
+            const bool began = ImGui::IsKeyPressed(k.key, false);
+            const bool ended = ImGui::IsKeyReleased(k.key);
+            if (began) input(k.name, k.name, k.type, "Begin", glm::vec2(0.0f));
+            if (ended) input(k.name, k.name, k.type, "End", glm::vec2(0.0f));
         }
     }
+    updateActions();   // (tests' pretend input, and keys let go while typing)
 
     // UserInputService.GamepadEnabled: is a controller plugged in?
     if (const bool pad = Pad::connected(); pad != m_padSeen) {
@@ -2682,14 +3168,8 @@ void ScriptEngine::fireTouched(uint64_t partId, uint64_t otherId) {
     });
 }
 
+// (Our own mouse button is pointerDown, in ScriptActions.cpp: this is only part.Clicked.)
 void ScriptEngine::fireClicked(uint64_t partId) {
-    fire(SignalKind::InputBegan, 0, [](lua_State* co) {
-        lua_newtable(co);
-        lua_pushstring(co, "Unknown");      lua_setfield(co, -2, "KeyCode");
-        lua_pushstring(co, "MouseButton1"); lua_setfield(co, -2, "UserInputType");
-        lua_pushboolean(co, 0);
-        return 2;
-    });
     if (partId) fire(SignalKind::Clicked, partId, nullptr);
 }
 
@@ -2916,6 +3396,185 @@ void ScriptEngine::dataSet(const std::string& store, const std::string& key, con
     dataRun(j);
 }
 
+// --- MessagingService ------------------------------------------------------
+//
+// Online: the Guts&Bolts server keeps each game's messages for a little while (msg.publish),
+// and every server of the game asks for new ones about once a second (msg.poll). Elsewhere
+// (Studio, LAN games, a published game played alone): a folder on this computer, one small
+// file per message, that every engine running the same game reads.
+
+namespace {
+constexpr double kMsgPollEvery  = 1.0;    // online: ask the server this often
+constexpr double kMsgLocalEvery = 0.1;    // on this computer: look in the folder this often
+constexpr double kMsgKeep       = 30.0;   // seconds a local message file is kept
+double unixNow() {
+    using namespace std::chrono;
+    return duration<double>(system_clock::now().time_since_epoch()).count();
+}
+} // namespace
+
+std::filesystem::path ScriptEngine::msgFolder() const {
+    // One folder per game, named like its saved data file.
+    return Account::folder() / "messaging" / saveFile().stem();
+}
+
+int ScriptEngine::msgPublish(const std::string& topic, const nlohmann::json& data, int players, std::string& error) {
+    const double now = nowSeconds();
+    m_msgSentAt.erase(std::remove_if(m_msgSentAt.begin(), m_msgSentAt.end(), [now](double t) { return t <= now - 60.0; }),
+                      m_msgSentAt.end());
+    const size_t allowed = 150 + 60 * (size_t)std::max(0, players);
+    if (m_msgSentAt.size() >= allowed) {
+        error = "too many messages (" + std::to_string(allowed) + " a minute is the most for this server). Wait a moment.";
+        return 0;
+    }
+    m_msgSentAt.push_back(now);
+    const int ticket = m_msgNext++;
+    MsgOut m{ticket, topic, data};
+    if (m_msgMode == MsgMode::Unknown) msgSync();
+    if (m_msgMode == MsgMode::Asking) m_msgQueue.push_back(std::move(m));
+    else msgSend(m);
+    return ticket;
+}
+
+bool ScriptEngine::msgDone(int ticket, std::string& error) {
+    auto it = m_msgDone.find(ticket);
+    if (it == m_msgDone.end()) return false;
+    error = it->second;
+    m_msgDone.erase(it);
+    return true;
+}
+
+void ScriptEngine::msgSubscribe(const std::string& topic, bool on) {
+    if (!on) { m_msgTopics.erase(topic); return; }
+    const bool first = m_msgTopics.empty();
+    if (!m_msgTopics.count(topic)) m_msgTopics[topic] = unixNow();
+    // Online, nobody was listening (so we stopped asking): find out where the messages are up
+    // to first, so old ones don't arrive (our own sends wait until then).
+    if (m_msgMode == MsgMode::Unknown || (first && m_msgMode == MsgMode::Online)) msgSync();
+}
+
+void ScriptEngine::msgSync() {
+    const std::string game = m_dataGame.empty() ? m_scene->info().publishedId : m_dataGame;
+    if (m_msgMode == MsgMode::Local || !m_onlineData || game.empty() || game.rfind("local:", 0) == 0 || !Online::online()) {
+        m_msgMode = MsgMode::Local;
+        return;
+    }
+    m_dataGame = game;
+    m_msgMode = MsgMode::Asking;
+    m_msgPolling = true;
+    std::weak_ptr<bool> alive = m_alive;
+    const int gen = m_dataGen;
+    Online::request("msg.poll", {{"game", game}}, [this, alive, gen](const nlohmann::json& r) {
+        if (alive.expired() || gen != m_dataGen) return;
+        m_msgPolling = false;
+        if (r.value("ok", false) && r.value("server", false)) {
+            m_msgMode = MsgMode::Online;
+            m_msgAfter = r.value("last", 0LL);
+            m_msgNextPoll = nowSeconds() + kMsgPollEvery;
+        } else {   // not one of the game's online servers (playing it alone...): this computer, then
+            if (!r.value("ok", false)) Log::warn("MessagingService: " + r.value("error", std::string("no answer")) + " (using this computer instead)");
+            m_msgMode = MsgMode::Local;
+        }
+        std::vector<MsgOut> queued;
+        queued.swap(m_msgQueue);
+        for (const MsgOut& m : queued) msgSend(m);
+    });
+}
+
+void ScriptEngine::msgSend(const MsgOut& m) {
+    if (m_msgMode == MsgMode::Online) {
+        std::weak_ptr<bool> alive = m_alive;
+        const int gen = m_dataGen, ticket = m.ticket;
+        Online::request("msg.publish", {{"game", m_dataGame}, {"topic", m.topic}, {"message", m.data}},
+                        [this, alive, gen, ticket](const nlohmann::json& r) {
+            if (alive.expired() || gen != m_dataGen) return;
+            m_msgDone[ticket] = r.value("ok", false) ? std::string() : r.value("error", std::string("couldn't send it"));
+        });
+        return;
+    }
+    // On this computer: a file every engine running this game picks up (written whole, then renamed).
+    if (m_msgToken.empty()) {
+        static const char* hex = "0123456789abcdef";
+        std::random_device rd;
+        for (int i = 0; i < 10; ++i) m_msgToken += hex[rd() % 16];
+    }
+    const double now = unixNow();
+    char name[96];
+    std::snprintf(name, sizeof(name), "%015lld-%s-%06lld", (long long)(now * 1000.0), m_msgToken.c_str(), ++m_msgCount);
+    const std::filesystem::path dir = msgFolder();
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    const std::filesystem::path tmp = dir / (std::string(name) + ".tmp"), file = dir / (std::string(name) + ".msg");
+    bool ok = false;
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        f << nlohmann::json{{"topic", m.topic}, {"message", m.data}, {"sent", now}}.dump();
+        ok = (bool)f;
+    }
+    if (ok) std::filesystem::rename(tmp, file, ec);
+    m_msgDone[m.ticket] = ok && !ec ? std::string() : std::string("couldn't write the message on this computer");
+}
+
+void ScriptEngine::msgStep() {
+    if (m_msgMode == MsgMode::Online) {
+        if (m_msgTopics.empty() || m_msgPolling || nowSeconds() < m_msgNextPoll) return;
+        m_msgPolling = true;
+        nlohmann::json topics = nlohmann::json::array();
+        for (const auto& [t, since] : m_msgTopics) topics.push_back(t);
+        std::weak_ptr<bool> alive = m_alive;
+        const int gen = m_dataGen;
+        Online::request("msg.poll", {{"game", m_dataGame}, {"after", m_msgAfter}, {"topics", topics}},
+                        [this, alive, gen](const nlohmann::json& r) {
+            if (alive.expired() || gen != m_dataGen) return;
+            m_msgPolling = false;
+            m_msgNextPoll = nowSeconds() + kMsgPollEvery;
+            if (!r.value("ok", false)) return;   // (try again in a moment)
+            if (!r.value("server", false)) { m_msgMode = MsgMode::Local; return; }   // our server closed: carry on on this computer
+            m_msgAfter = r.value("last", m_msgAfter);
+            for (const nlohmann::json& m : r.value("messages", nlohmann::json::array())) {
+                const std::string topic = m.value("topic", std::string());
+                if (m_msgTopics.count(topic))
+                    m_msgIn.push_back({topic, m.contains("message") ? m["message"] : nlohmann::json(), m.value("sent", 0.0)});
+            }
+        });
+        return;
+    }
+    if (m_msgMode != MsgMode::Local) return;
+    const double t = nowSeconds();
+    const bool prune = t - m_msgPruned > 5.0;
+    if ((m_msgTopics.empty() && !prune) || t < m_msgNextPoll) return;
+    m_msgNextPoll = t + kMsgLocalEvery;
+    if (prune) m_msgPruned = t;
+    // New files, oldest first. Each is for us if we were listening to its topic when it was sent.
+    std::vector<std::filesystem::path> files;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(msgFolder(), ec), end; !ec && it != end; it.increment(ec))
+        if (it->path().extension() == ".msg") files.push_back(it->path());
+    std::sort(files.begin(), files.end());
+    const double now = unixNow();
+    for (const std::filesystem::path& f : files) {
+        const std::string name = f.filename().string();
+        const double sentMs = std::atof(name.c_str());
+        if (sentMs / 1000.0 < now - kMsgKeep) {   // old: anyone tidies it away
+            std::filesystem::remove(f, ec);
+            m_msgSeen.erase(name);
+            continue;
+        }
+        if (m_msgTopics.empty() || m_msgSeen.count(name)) continue;
+        m_msgSeen.insert(name);
+        std::ifstream in(f, std::ios::binary);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        nlohmann::json m = nlohmann::json::parse(ss.str(), nullptr, false);
+        if (!m.is_object()) continue;
+        const std::string topic = m.value("topic", std::string());
+        auto sub = m_msgTopics.find(topic);
+        const double sent = m.value("sent", 0.0);
+        if (sub == m_msgTopics.end() || sent < sub->second) continue;
+        m_msgIn.push_back({topic, m.contains("message") ? m["message"] : nlohmann::json(), std::floor(sent)});
+    }
+}
+
 uint64_t ScriptEngine::playerNode(const std::string& name) {
     if (!m_playersRoot || !resolve(m_playersRoot)) {
         auto root = std::make_unique<SceneNode>("Players", NodeKind::Model);
@@ -3072,7 +3731,8 @@ bool ScriptEngine::setParent(SceneNode* node, SceneNode* newParent, std::string&
 
     // Take ownership of the node, wherever it currently lives.
     std::unique_ptr<SceneNode> owned;
-    bool inScene = topOf(node) == m_scene->root();
+    // (The Camera holds things too, outside the Workspace's tree: see Scene::cameraNode.)
+    bool inScene = topOf(node) == m_scene->root() || topOf(node) == m_scene->cameraNode();
     if (inScene) {
         owned = m_scene->detach(node);
     } else if (node->parent) {
@@ -3097,7 +3757,7 @@ bool ScriptEngine::setParent(SceneNode* node, SceneNode* newParent, std::string&
 bool ScriptEngine::destroy(SceneNode* node, std::string& err) {
     if (m_scene->isProtected(node)) { err = "You can't Destroy " + node->name; return false; }
     stopScripts(node);
-    if (topOf(node) == m_scene->root()) {
+    if (topOf(node) == m_scene->root() || topOf(node) == m_scene->cameraNode()) {
         m_scene->removeNode(node);
     } else if (node->parent) {
         node->parent->removeChild(node);

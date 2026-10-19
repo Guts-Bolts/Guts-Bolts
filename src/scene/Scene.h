@@ -8,6 +8,7 @@
 #include "Particles.h"
 #include "Blast.h"
 #include "Animation.h"
+#include "CollisionGroups.h"
 #include <functional>
 #include <map>
 #include <memory>
@@ -101,6 +102,7 @@ struct WorldSettings {
     float      bloodStay   = 30.0f;         // seconds pools and splats stay before drying up
     float      spawnForceField = 4.0f;      // seconds of ForceField after spawning (0 = none)
     bool       playerCollisions = true;     // characters bump into each other (off = walk through)
+    CollisionGroups collisionGroups;        // PhysicsService's groups and which of them collide
     bool       voiceChat = true;            // players who turned voice chat on can talk (off = nobody can, in this game)
     int        maxFluidParticles = 100000;  // real liquid: the most drops at once (the oldest are recycled)
     // The players' camera: orthographic = no perspective (2D, isometric and puzzle
@@ -141,6 +143,8 @@ struct FxEvent {
     glm::vec3 pos;
     float     amount;              // Sound: volume
     std::string name = {};         // Sound: which sound
+    uint64_t  node = 0;            // Sound: the Sound object it came from (its effects and SoundGroup), 0 = none
+    bool      at3d = true;         // Sound: from `pos` (false = heard the same everywhere)
 };
 
 // Shown on the game's card in the Guts&BoltsPlayer app.
@@ -198,7 +202,8 @@ public:
 
     // Nodes the user must not delete / move (Workspace and the character).
     bool isProtected(const SceneNode* node) const;
-    // Roblox's container services (ReplicatedStorage, ServerScriptService, StarterPack...)
+    // Roblox's container services (ReplicatedStorage, ServerScriptService, StarterPack,
+    // StarterPlayer (its StarterPlayerScripts folder)...)
     // are folders at the top of the scene with those names. Studio shows them as their own
     // rows in the Explorer, next to the Workspace, instead of inside it.
     static const std::vector<const char*>& serviceNames();
@@ -224,6 +229,13 @@ public:
     // can't be moved or deleted; findById(kTerrainId) returns it.
     static constexpr uint64_t kTerrainId = 4503599627370000ull;
     SceneNode*       terrainNode() { return m_terrainNode.get(); }
+    // workspace.CurrentCamera as an object that can hold things (screen effects put in
+    // the Camera, like Roblox). Only on this computer: it isn't saved or sent to other
+    // players, and it's emptied when a game is loaded. findById(kCameraId) returns it.
+    static constexpr uint64_t kCameraId = 4503599627370001ull;
+    SceneNode*       cameraNode() { return m_cameraNode.get(); }
+    // The Lighting service's folder (its screen effects and Sky), made when asked.
+    SceneNode*       lightingFolder(bool create) { return serviceFolder("Lighting", create); }
     bool             isCharacterRoot(uint64_t id) const;
     // Kill any character; `force` 0..1 = how violently.
     void             killCharacter(uint64_t rootId, float force, const glm::vec3& impulse);
@@ -232,8 +244,8 @@ public:
     // Effects the host should show on everyone's screen.
     bool                  recordFx = false;
     std::vector<FxEvent>  fxQueue;
-    void pushFx(FxEvent::Type t, const glm::vec3& p, float amount, const std::string& name = {}) {
-        if (recordFx) fxQueue.push_back({t, p, amount, name});
+    void pushFx(FxEvent::Type t, const glm::vec3& p, float amount, const std::string& name = {}, uint64_t node = 0, bool at3d = true) {
+        if (recordFx) fxQueue.push_back({t, p, amount, name, node, at3d});
     }
 
     // Wipe everything and build the default starting place.
@@ -258,6 +270,7 @@ private:
     WaterSystem                m_water;
     Terrain                    m_terrain;
     std::unique_ptr<SceneNode> m_terrainNode;
+    std::unique_ptr<SceneNode> m_cameraNode;
     ParticleSystem             m_particles;
     BlastSystem                m_blasts;
     Anim::Animator             m_animator;

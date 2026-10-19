@@ -1,6 +1,10 @@
 #include "TouchControls.h"
 
+#include "../renderer/Textures.h"
+
 #include <algorithm>
+#include <cfloat>
+#include <cstdint>
 #include <cmath>
 
 namespace {
@@ -16,6 +20,42 @@ void TouchControls::begin(ImVec2 min, ImVec2 max, float scale) {
     m_look = ImVec2(0, 0);
     m_zoom = 0.0f;
     m_tap = m_chat = m_menu = m_mic = m_emote = false;
+    m_actionEvents.clear();
+    m_fingerEvents.clear();
+}
+
+void TouchControls::sinkFinger(int id) {
+    for (Touch& t : m_touches) if (t.id == id) t.sunk = true;
+}
+
+// Action buttons: a bit smaller than the jump button, in rings round it (to its left and
+// above it), the first ones closest. A button with a SetPosition goes there instead.
+void TouchControls::actionButtonPlace(size_t i, ImVec2& center, float& radius) const {
+    radius = jumpRadius() * 0.75f;
+    if (i >= m_actions.size()) { center = ImVec2(-1000, -1000); return; }
+    const ActionButton& b = m_actions[i];
+    if (b.hasPosition) {
+        const float w = m_max.x - m_min.x, h = m_max.y - m_min.y;
+        center = ImVec2(m_min.x + b.xScale * w + b.xOffset + radius, m_min.y + b.yScale * h + b.yOffset + radius);
+        return;
+    }
+    int slot = 0;
+    for (size_t k = 0; k < i; ++k) if (!m_actions[k].hasPosition) ++slot;
+    const ImVec2 j = jumpCenter();
+    const float gap = 10.0f * m_scale;
+    float dist = jumpRadius() + gap + radius;
+    for (;;) {
+        // How many fit on this ring's quarter circle (from the left round to straight up).
+        const float step = (2.0f * radius + gap) / dist;
+        const int fit = 1 + (int)(1.5707964f / step);
+        if (slot < fit) {
+            const float a = 3.1415927f + slot * step;   // 180 degrees = left, then up
+            center = ImVec2(j.x + std::cos(a) * dist, j.y + std::sin(a) * dist);
+            return;
+        }
+        slot -= fit;
+        dist += 2.0f * radius + gap;
+    }
 }
 
 // The thumbstick stays put in the bottom-left corner (it doesn't jump to your thumb).
@@ -67,8 +107,10 @@ void TouchControls::feed(const std::vector<Finger>& fingers, bool allowNew) {
         if (f) { ++it; continue; }
         switch (it->role) {
             case Role::Look:
-                if (it->age < 0.3f && it->travel < 12.0f) { m_tap = true; m_tapPos = it->pos; }
+                if (!it->sunk && it->age < 0.3f && it->travel < 12.0f) { m_tap = true; m_tapPos = it->pos; }
+                m_fingerEvents.push_back({it->id, 2, it->pos});
                 break;
+            case Role::Action: m_actionEvents.push_back({it->action, false, it->pos}); break;
             case Role::Chat: if (inRect(it->pos, chatA, chatB)) m_chat = true; break;
             case Role::Menu: if (inRect(it->pos, menuA, menuB)) m_menu = true; break;
             case Role::Mic:  if (inRect(it->pos, micA, micB)) m_mic = true; break;
@@ -84,6 +126,8 @@ void TouchControls::feed(const std::vector<Finger>& fingers, bool allowNew) {
         if (!f.down) continue;
         auto it = std::find_if(m_touches.begin(), m_touches.end(), [&](const Touch& t) { return t.id == f.id; });
         if (it != m_touches.end()) {
+            if (it->role == Role::Look && (it->pos.x != f.pos.x || it->pos.y != f.pos.y))
+                m_fingerEvents.push_back({it->id, 1, f.pos});
             it->travel += dist(it->pos, f.pos);
             it->pos = f.pos;
             it->age += m_dt;
@@ -96,16 +140,30 @@ void TouchControls::feed(const std::vector<Finger>& fingers, bool allowNew) {
         Touch t;
         t.id = f.id;
         t.start = t.pos = t.last = f.pos;
+        int onAction = -1;
+        for (size_t i = 0; i < m_actions.size() && onAction < 0; ++i) {
+            ImVec2 c; float r;
+            actionButtonPlace(i, c, r);
+            if (dist(f.pos, c) < r * 1.1f) onAction = (int)i;
+        }
         if (inRect(f.pos, menuA, menuB))                           t.role = Role::Menu;
         else if (inRect(f.pos, chatA, chatB))                      t.role = Role::Chat;
         else if (m_micShown && inRect(f.pos, micA, micB))          t.role = Role::Mic;
         else if (m_emoteShown && inRect(f.pos, emoteA, emoteB))    t.role = Role::Emote;
+        else if (onAction >= 0) {
+            t.role = Role::Action;
+            t.action = m_actions[onAction].name;
+            m_actionEvents.push_back({t.action, true, f.pos});
+        }
         else if (dist(f.pos, jumpCenter()) < jumpRadius() * 1.25f) t.role = Role::Jump;
         else if (!m_stickActive && inStickZone(f.pos)) {
             t.role = Role::Stick;
             m_stickActive = true;
             m_stickCenter = stickHome();   // always the same place, wherever your thumb lands
-        } else                                                     t.role = Role::Look;
+        } else {
+            t.role = Role::Look;
+            m_fingerEvents.push_back({t.id, 0, f.pos});
+        }
         m_touches.push_back(t);
     }
 
@@ -128,7 +186,7 @@ void TouchControls::feed(const std::vector<Finger>& fingers, bool allowNew) {
                 break;
             }
             case Role::Jump: m_jump = true; break;
-            case Role::Look: looks.push_back(&t); break;
+            case Role::Look: if (!t.sunk) looks.push_back(&t); break;
             default: break;
         }
     }
@@ -177,6 +235,30 @@ void TouchControls::draw(ImDrawList* dl) const {
                           ImVec2(j.x + jr * 0.38f, j.y + jr * 0.05f), IM_COL32(255, 255, 255, 230));
     dl->AddRectFilled(ImVec2(j.x - jr * 0.14f, j.y), ImVec2(j.x + jr * 0.14f, j.y + jr * 0.42f),
                       IM_COL32(255, 255, 255, 230));
+
+    // Scripts' action buttons: a picture (SetImage) and / or a title (SetTitle).
+    for (size_t i = 0; i < m_actions.size(); ++i) {
+        const ActionButton& b = m_actions[i];
+        ImVec2 c; float r;
+        actionButtonPlace(i, c, r);
+        bool down = false;
+        for (const Touch& t : m_touches) if (t.role == Role::Action && t.action == b.name) down = true;
+        dl->AddCircleFilled(c, r, down ? IM_COL32(255, 255, 255, 120) : IM_COL32(0, 0, 0, 90), 36);
+        if (!b.image.empty())
+            if (unsigned tex = Textures::get(b.image))
+                dl->AddImageRounded((ImTextureID)(intptr_t)tex, ImVec2(c.x - r * 0.62f, c.y - r * 0.62f), ImVec2(c.x + r * 0.62f, c.y + r * 0.62f),
+                                    ImVec2(0, 1), ImVec2(1, 0), IM_COL32(255, 255, 255, 235), r * 0.2f);
+        dl->AddCircle(c, r, IM_COL32(255, 255, 255, 200), 36, 2.5f);
+        if (!b.title.empty()) {
+            ImFont* font = ImGui::GetFont();
+            float size = std::max(10.0f, 15.0f * s);
+            ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, b.title.c_str());
+            if (ts.x > r * 1.7f) { size *= r * 1.7f / ts.x; ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, b.title.c_str()); }
+            const ImVec2 at(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f);
+            dl->AddText(font, size, ImVec2(at.x + 1, at.y + 1), IM_COL32(0, 0, 0, 160), b.title.c_str());
+            dl->AddText(font, size, at, IM_COL32(255, 255, 255, 240), b.title.c_str());
+        }
+    }
 
     // Menu (three lines) and Chat (speech bubble) buttons.
     ImVec2 chatA, chatB, menuA, menuB;

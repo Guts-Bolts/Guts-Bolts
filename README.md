@@ -111,8 +111,9 @@ The panels:
   **Motor Cart**, domino run, crate pyramid and trampoline.
 - **Insert Object** (`Ctrl+I` or the **+** in the Explorer): a searchable list
   of every kind of object you can add.
-- **Constraints** (in the Toolbox): pick Rope, Rod, Spring, Weld, Hinge or
-  Motor, then click two parts in the Viewport to join them.
+- **Constraints** (in the Toolbox): pick Rope, Rod, Spring, Weld, Hinge,
+  Motor, Ball Socket, Prismatic or Cylindrical, then click two parts in the
+  Viewport to join them.
 - **Properties**: colour, material, size, anchored, can-collide and so on.
   There are 18 materials, each with its own look drawn by the engine (no
   image files) and its own default weight, grip and bounce: **Plastic**,
@@ -280,6 +281,46 @@ what it needs, what it gives back and how risky it is):
 - Debug: `get_output`, `get_errors`, `diagnose_object`, `validate_scene`
 - View and history: `screenshot`, `undo`, `redo`, `checkpoint` (named save
   points to try things and roll back)
+- Publish: `publish_game` (only when you ask for it)
+
+**Services.** The tools see the whole game, not just the Workspace:
+`get_game_tree` lists every service like the Explorer (Players, Lighting,
+ReplicatedFirst, ReplicatedStorage, ServerScriptService, ServerStorage,
+StarterGui, StarterPack, StarterPlayer with StarterPlayerScripts and
+StarterCharacterScripts, Teams, SoundService, Chat, TextChatService), and a
+service's name works as a parent or at the start of a path: a Tool in
+`StarterPack`, a Script in `ServerScriptService`, a LocalScript in
+`StarterPlayer.StarterPlayerScripts`, `ReplicatedStorage.Events`. A service's
+folder is made the first time something goes in it. StarterCharacterScripts is
+the character itself (scripts there run in every player's character). Lighting
+holds settings, so `get_object` / `set_property` with object `"Lighting"`
+read and change ClockTime, Brightness, fog and so on.
+
+**Property names are the script names.** `get_object` lists an object's
+properties under the names Lua uses (`CanCollide`, `BackgroundColor3`...), read
+from the engine, and `set_property` takes the same names back (older spellings
+like `can_collide` still work and are corrected). Enum values work as `"Neon"`
+or `"Enum.Material.Neon"`. Setting a script's `Source` is passed on to
+`edit_script`, which is the way to change code.
+
+**Play sessions in the Output.** Every Output line is marked with the playtest
+it came from (`run`: 1, 2, 3...; 0 = while editing). `get_output` and
+`get_errors` take `run: "latest"` (or `"current"`, `"editing"`, a number) so an
+AI checking its fix doesn't trip over errors from an earlier run.
+
+**Bad names list the choices.** An unknown class, property, enum value or
+service fails with `UNKNOWN_CLASS`, `UNKNOWN_PROPERTY`, `INVALID_ENUM_VALUE` or
+`SERVICE_NOT_FOUND`, and `error.valid_choices` lists what would have worked.
+
+**Publishing.** `publish_game` publishes exactly like File > Publish to
+Guts&Bolts: as the account Studio is signed in with, through the same request,
+with the server's own checks and limits. It needs `confirm: true`, refuses with
+`NOT_SIGNED_IN` when Studio isn't signed in (it never signs in by itself), and
+finishes in the background: `publish_game {action: "status"}` says how it went.
+
+`tools/test_ai_tools.py` starts Studio with MCP on (under `xvfb-run` when
+there's no screen) and checks all of this over JSON-RPC:
+`python3 tools/test_ai_tools.py`.
 
 Every tool answers with JSON: `success`, the `object_id` (`#42`) of what it
 touched, the state read back from the engine, `warnings`, and for failures an
@@ -294,7 +335,8 @@ MCP apps can also read the engine reference as resources: `gutsbolts://guide`,
 `gutsbolts://overview`, `gutsbolts://capabilities` (a JSON manifest of what the
 tools can and can't do), `gutsbolts://concepts`, `gutsbolts://coordinates`
 (Y up, -Z forward, units, rotations), `gutsbolts://workflows`,
-`gutsbolts://examples`, `gutsbolts://classes`, and live ones:
+`gutsbolts://examples`, `gutsbolts://classes` (insertable classes and the
+services they can go in), and live ones:
 `gutsbolts://scene/tree`, `gutsbolts://runtime` and `gutsbolts://errors`.
 MCP prompts (`make_physical`, `navigate_enemies`, `explosion_push`,
 `fix_not_working`, `describe_scene`) start common jobs with the right workflow. Objects are best named by id (`#42`); a path like
@@ -425,9 +467,10 @@ What you can use:
 - **Objects:** `workspace`, `script`, `Instance.new("Part" | "Ball" | "Cylinder" | "Model" | "PointLight" | "SpotLight", parent)`,
   `:FindFirstChild`, `:WaitForChild`, `:GetChildren`, `:GetDescendants`, `:Clone`, `:Destroy`, `:IsA`
 - **Part properties:** `Name`, `Parent`, `Position`, `Orientation`, `Size`, `CFrame`, `Color`, `Transparency`,
-  `Material`, `Shape`, `Anchored`, `CanCollide`, `Velocity`
+  `Material`, `Shape`, `Anchored`, `CanCollide`, `CollisionGroup`, `Velocity`
 - **Values:** `Vector3.new`, `Color3.new` / `fromRGB` / `fromHSV` / `fromHex`, `CFrame.new` / `Angles` / `lookAt`
 - **Time:** `wait(seconds)`, `spawn(fn)`, `delay(seconds, fn)`, `time()`, `tick()`
+- **Keys:** `ContextActionService:BindAction(name, fn, touchButton, Enum.KeyCode.E, ...)` (see *Key bindings* below)
 - **Events:** `part.Touched`, `part.Clicked`, `clickDetector.MouseClick` (see *ClickDetectors* below), `RunService.Heartbeat`, `UserInputService.InputBegan` / `InputEnded`,
   `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, `player.CharacterAdded` / `CharacterRemoving`
   (fired on every spawn and respawn), each with `:Connect`, `:Once` and `:Wait`
@@ -453,6 +496,8 @@ What you can use:
   elasticity, frictionWeight, elasticityWeight)` (or `PhysicalProperties.new(Enum.Material.Ice)`; `nil` goes back
   to the material's), `part.CurrentPhysicalProperties`, and constraint properties such as `rope.Length` or
   `hinge.AngularVelocity`
+- **Collision groups:** `PhysicsService:RegisterCollisionGroup`, `CollisionGroupSetCollidable` and
+  `part.CollisionGroup` (see *Collision groups* below)
 - **Sound:** `Sounds.Play("coin", position)` (built in: jump, coin, oof, explosion, splat, click, hit, win,
   boing, spawn) or a Sound object with `:Play()` / `:Stop()`
 - **Attributes:** `obj:SetAttribute("Damage", 25)`, `obj:GetAttribute("Damage")`, `obj:GetAttributes()`,
@@ -467,7 +512,8 @@ What you can use:
 - **Game rules:** `workspace.Gravity`, `workspace.DeathStyle = "Classic" | "Ragdoll"`, `workspace.Gore = "Off" | "Oil" | "Blood"`
 - **Rays:** `workspace:Raycast(origin, direction, params)` gives back `Instance`, `Position`, `Normal` and
   `Distance` (or nil). `RaycastParams.new()` with `FilterDescendantsInstances` and `FilterType`
-  (`Exclude` / `Include`). The old `Ray.new` + `workspace:FindPartOnRay(ray, ignore)` works too, and
+  (`Exclude` / `Include`), `CollisionGroup` (the ray skips parts that group passes through) and
+  `RespectCanCollide`. The old `Ray.new` + `workspace:FindPartOnRay(ray, ignore)` works too, and
   `workspace:GetPartBoundsInRadius(position, radius)` finds parts near a point
 - **Tweens:** `TweenService:Create(part, TweenInfo.new(2, Enum.EasingStyle.Bounce), { Position = ... }):Play()`
   smoothly changes numbers, `Vector3`, `Color3`, `CFrame`, `UDim2` and `Vector2` properties. Every easing
@@ -676,10 +722,55 @@ label.TextScaled = true
 label.Parent = sign
 ```
 
+**Gradients, scaling, shapes and 3D previews:**
+
+- **UIGradient**: put it inside a Frame, label, button or picture and its
+  background (and its text and picture) fades from colour to colour. `Color`
+  is a `ColorSequence`, `Transparency` a `NumberSequence`, `Rotation` turns it
+  (0 = left to right, 90 = top to bottom) and `Offset` slides it along.
+- **UIScale**: makes the object it's in, and everything inside it (text,
+  corners and outlines too), `Scale` times bigger. It grows around its
+  `AnchorPoint`. In a ScreenGui it scales everything on the screen.
+- **UIAspectRatioConstraint**: keeps the object it's in the same shape on every
+  screen. `AspectRatio` is width / height. `AspectType` `FitWithinMaxSize`
+  makes it as big as fits in its `Size`; `ScaleWithParentSize` keeps its size
+  along `DominantAxis` (`Width` or `Height`) and works out the other side.
+- **ViewportFrame**: shows the parts and models inside it as a little 3D
+  picture: an item in a shop, a character preview, a spinning trophy. Put a
+  **Camera** in it and make it the frame's `CurrentCamera` (with no camera it
+  frames what's inside by itself). `Ambient`, `LightColor` and
+  `LightDirection` light it. The parts in it aren't in the world: they don't
+  fall or collide and rays don't hit them. A **WorldModel** inside it can hold
+  them too. The picture is only drawn while the frame is on screen, and only
+  again when something in it changes.
+
+```lua
+local card = Instance.new("Frame")
+card.Size = UDim2.fromScale(0.3, 0.3)
+card.Parent = gui
+local fade = Instance.new("UIGradient")
+fade.Color = ColorSequence.new(Color3.fromRGB(255, 80, 0), Color3.fromRGB(120, 0, 255))
+fade.Rotation = 90
+fade.Parent = card
+Instance.new("UIAspectRatioConstraint", card).AspectRatio = 1.5
+
+local preview = Instance.new("ViewportFrame")
+preview.Size = UDim2.fromScale(1, 1)
+preview.BackgroundTransparency = 1
+preview.Parent = card
+local sword = workspace.Sword:Clone()
+sword.Parent = preview
+local cam = Instance.new("Camera")
+cam.CFrame = CFrame.new(Vector3.new(0, 2, -6), sword:GetPivot().Position)
+cam.Parent = preview
+preview.CurrentCamera = cam
+```
+
 In multiplayer, everyone sees the same UI. When anyone clicks a button, the
 host's scripts hear about it, and the same goes for what they type in a TextBox
 (when they press Enter or click away). Roblox files keep their UI: ScreenGuis in a
-place's StarterGui are imported, and exported back to Roblox.
+place's StarterGui are imported, and exported back to Roblox (gradients, UIScales,
+aspect ratio constraints and ViewportFrames with their cameras too).
 
 ## Animations (the Animation Editor)
 
@@ -1048,6 +1139,40 @@ and `IncrementAsync` adds on the server in one step, so two servers adding at
 the same time both count. Limits: names and keys up to 100 letters, 256 KB per
 value, 100,000 keys per game.
 
+### Talking between servers (MessagingService)
+
+`MessagingService` sends a message to **every running server of the same
+game**, the one that sent it included. Other games never see it.
+
+```lua
+local MessagingService = game:GetService("MessagingService")
+
+local conn = MessagingService:SubscribeAsync("Announcements", function(msg)
+    print("Got", msg.Data, "sent at", msg.Sent)   -- Sent is unix time
+end)
+MessagingService:PublishAsync("Announcements", { text = "Double coins!", minutes = 10 })
+-- later: conn:Disconnect()
+```
+
+The message can be a string, number, boolean or table (anything that turns into
+JSON). `PublishAsync` waits until it's sent and raises a clear error when it
+can't be. Limits, like Roblox's:
+
+- **1 KB per message** (after it's turned into JSON).
+- **Topic names up to 80 letters.**
+- **Per server, a minute:** 150 + 60 per player messages sent, and
+  20 + 8 per player topics subscribed at once.
+
+How it travels depends on who runs the game, the same way as saved data:
+
+- **On a game server machine, or when you host it online:** through the
+  Guts&Bolts server, which passes it to each server of the game (it checks the
+  sender really runs a server of that game). Messages arrive about a second
+  later, and are kept for 30 seconds.
+- **Studio play tests and local multiplayer tests:** through a folder on this
+  computer (`messaging` in your account folder), so two play tests of the same
+  game on one computer hear each other right away.
+
 ### Sound effects
 
 Most built-in sounds are made in code, but a few are recordings in
@@ -1060,6 +1185,44 @@ Most built-in sounds are made in code, but a few are recordings in
 | `respawn.wav` | `"respawn"` | you come back after dying |
 
 Swap in your own .wav files with the same names and rebuild.
+
+### Sound groups and effects
+
+A **SoundGroup** is a volume knob for many sounds at once (music, effects,
+voices...). Put it in **SoundService** (Studio: *Insert > SoundGroup*), then
+set each Sound's **SoundGroup** in Properties, or in a script:
+
+```lua
+local music = Instance.new("SoundGroup")
+music.Volume = 0.5
+music.Parent = game:GetService("SoundService")
+sound.SoundGroup = music     -- the sound now plays at sound.Volume x 0.5
+```
+
+A group inside another group multiplies again (Master 0.5 > Music 0.8 > a Sound
+at 1 plays at 0.4). Volumes go from 0 to 10.
+
+**Effects** go inside a Sound or a SoundGroup (*Insert*, in the Sound section).
+Effects in a group change every sound in it. Each has **Enabled** and
+**Priority** (higher goes first; a Sound's own effects come before its group's):
+
+| Effect | What it does | Settings |
+| --- | --- | --- |
+| ReverbSoundEffect | a room or hall around the sound | DecayTime, Density, Diffusion, DryLevel, WetLevel |
+| EchoSoundEffect | repeats that fade away | Delay, Feedback, DryLevel, WetLevel |
+| EqualizerSoundEffect | louder or quieter lows, middles and highs | LowGain, MidGain, HighGain |
+| DistortionSoundEffect | crunchy, clipped sound | Level |
+| PitchShiftSoundEffect | higher or lower without speeding up | Octave (0.5 to 2) |
+| ChorusSoundEffect | a thicker, "many voices" sound | Depth, Mix, Rate |
+| CompressorSoundEffect | evens out loud and quiet parts | Attack, GainMakeup, Ratio, Release, Threshold |
+| FlangeSoundEffect | a sweeping jet-plane whoosh | Depth, Mix, Rate |
+| TremoloSoundEffect | the volume pulses | Depth, Duty, Frequency |
+
+They start with the same settings as Roblox's, are saved with the game,
+copied to everyone in online games, and come along when you open or export a
+Roblox file. Not done: the Compressor's **SideChain** (ducking one sound under
+another) isn't there yet, and the Reverb is a simple made-up room rather than a
+recorded one.
 
 ### Climbing and swimming
 
@@ -1440,6 +1603,49 @@ Constraints join parts together through **Attachments** (little points on a part
 | Weld | Glues two parts together |
 | Hinge | Lets a part swing around one axis, like a door or a wheel |
 | Motor | A hinge that spins by itself (`AngularVelocity`, `MotorMaxTorque`) |
+| Ball Socket | Holds two points together and lets them turn any way, like a shoulder |
+| Prismatic | A slider: the second part slides along a line and can't turn |
+| Cylindrical | Slides along a line and spins around it, like a piston or a drill |
+
+### Ball sockets, sliders and slide-and-spin joints
+
+`BallSocketConstraint`, `PrismaticConstraint` and `CylindricalConstraint`
+work like Roblox's: make them from scripts (`Instance.new`), Insert Object or
+the Constraints tool, and set `Attachment0` / `Attachment1`. They're saved in
+your game, show up for everyone in multiplayer, and come in and go out with
+`.rbxl` / `.rbxlx` files.
+
+- **Ball socket:** `LimitsEnabled` + `UpperAngle` (degrees) keep Attachment1's
+  axis within a cone around Attachment0's; `TwistLimitsEnabled` +
+  `TwistLowerAngle` / `TwistUpperAngle` stop it twisting too far;
+  `Restitution` (0 to 1) makes it bounce off the limits.
+- **Prismatic:** slides along Attachment0's axis (its X; turn the attachment
+  to aim it). `LimitsEnabled` + `LowerLimit` / `UpperLimit` (studs).
+  `ActuatorType` `Motor` pushes at `Velocity` with up to `MotorMaxForce`;
+  `Servo` goes to `TargetPosition` at `Speed` with up to `ServoMaxForce`.
+  `CurrentPosition` says where it is now.
+- **Cylindrical:** everything a prismatic has, plus spinning:
+  `AngularActuatorType` `Motor` (`AngularVelocity`, `MotorMaxTorque`) or
+  `Servo` (`TargetAngle` in degrees, `AngularSpeed`, `ServoMaxTorque`),
+  `AngularLimitsEnabled` + `LowerAngle` / `UpperAngle`, and
+  `InclinationAngle` to tilt the spin axis. `CurrentAngle` says how far it's
+  turned.
+
+```lua
+-- A lift: the platform slides up and down a post.
+local slide = Instance.new("PrismaticConstraint")
+slide.Attachment0 = post.Attachment      -- its X axis points up
+slide.Attachment1 = platform.Attachment
+slide.ActuatorType = Enum.ActuatorType.Servo
+slide.ServoMaxForce = 50000
+slide.Speed = 4
+slide.TargetPosition = 10
+slide.Parent = post
+```
+
+Like hinges, the parts these join don't collide with each other. Forces start
+at 0 (as in Roblox), so set `MotorMaxForce` / `ServoMaxForce` /
+`MotorMaxTorque` / `ServoMaxTorque` or the actuator won't move anything.
 
 ### The character's body
 
@@ -1568,6 +1774,112 @@ settings). In an online game, a Script on the host can change a player's
 xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_camera.lua)" --screenshot /tmp/camera.png --frames 900
 ```
 
+### Sky and screen effects
+
+Like Roblox, you change the sky and the look of the whole screen with objects
+**right inside Lighting**. In Studio, right-click **Lighting** in the Explorer >
+Insert Object > Sky & Screen Effects (they always go in Lighting), then change
+them in Properties. Scripts make them the same way:
+
+```lua
+local cc = Instance.new("ColorCorrectionEffect")
+cc.Saturation = -1                  -- black and white
+cc.TintColor = Color3.fromRGB(255, 230, 200)
+cc.Parent = game.Lighting
+
+local blur = Instance.new("BlurEffect")
+blur.Size = 16
+blur.Parent = workspace.CurrentCamera   -- only on this player's screen (a LocalScript)
+```
+
+- **ColorCorrectionEffect**: `Brightness`, `Contrast`, `Saturation` (-1 = grey) and `TintColor`.
+- **SunRaysEffect**: `Intensity` and `Spread` - rays of light from the sun, past whatever is in front of it.
+- **DepthOfFieldEffect**: `FocusDistance` (studs), `InFocusRadius`, `NearIntensity`, `FarIntensity` - blurs what's nearer or further than the focus.
+- **BloomEffect**: `Intensity`, `Size`, `Threshold` - bright things glow. While there's one, it's used instead of the bloom in the Lighting settings.
+- **BlurEffect**: `Size` - blurs everything (pause menus, being dizzy).
+- **Sky**: `SkyboxBk` / `Dn` / `Ft` / `Lf` / `Rt` / `Up` pictures, `SunTextureId`,
+  `MoonTextureId`, `StarCount` (0 to 5000), `CelestialBodiesShown`,
+  `SunAngularSize`, `MoonAngularSize`. Pictures are ids like a Decal's (an
+  uploaded picture `gb:<id>`, or a file in the games folder). The skybox shows
+  when all six pictures load; otherwise the Lighting settings' sky stays and the
+  Sky still sets the stars, sun and moon. Ft faces -Z, Bk +Z, Rt +X, Lf -X. Clouds
+  are hidden behind a skybox (paint them into the pictures).
+
+Every effect has `Enabled`, and several stack (two ColorCorrections add up, two
+Blurs blur more). They work in Lighting and in `workspace.CurrentCamera` (the
+camera's are only on that player's screen and aren't saved); a Sky only works in
+Lighting. Lighting's effects and Sky are saved with the game, sent to everyone in
+a multiplayer game, and come in from and go out to `.rbxl` / `.rbxlx` files
+(Roblox's own built-in sky pictures can't load here, so those use our sky).
+`Lighting:GetChildren()`, `Lighting:FindFirstChildOfClass("Sky")` and
+`Lighting.Sky` work like Roblox.
+
+On phones and slow computers: colour correction, blur and bloom are cheap and
+always on (bloom follows the Bloom graphics setting). **Sun rays and depth of
+field switch off on Low graphics**, and on phones the sun rays take half as many
+steps. Blur and depth of field are worked out on small copies of the picture.
+
+### Collision groups
+
+Collision groups decide which parts bump into which, like Roblox's
+PhysicsService. Every part is in one group (`part.CollisionGroup`, **Default**
+to start with), and a table says which groups collide. Two groups that don't
+collide pass straight through each other: loose parts falling, characters
+walking, and raycasts that ask for a group.
+
+```lua
+local PhysicsService = game:GetService("PhysicsService")
+
+-- Players walk through each other (but not through walls).
+PhysicsService:RegisterCollisionGroup("Players")
+PhysicsService:CollisionGroupSetCollidable("Players", "Players", false)
+local function joinGroup(player)   -- (a character keeps its group when it respawns)
+    for _, part in ipairs(player.Character:GetDescendants()) do
+        if part:IsA("BasePart") then part.CollisionGroup = "Players" end
+    end
+end
+for _, player in ipairs(game.Players:GetPlayers()) do joinGroup(player) end
+game.Players.PlayerAdded:Connect(joinGroup)
+
+-- A door only the red team walks through.
+PhysicsService:RegisterCollisionGroup("RedTeam")
+PhysicsService:RegisterCollisionGroup("RedDoor")
+PhysicsService:CollisionGroupSetCollidable("RedTeam", "RedDoor", false)
+workspace.RedDoor.CollisionGroup = "RedDoor"
+```
+
+- `RegisterCollisionGroup(name)`, `UnregisterCollisionGroup(name)`,
+  `RenameCollisionGroup(old, new)` (its parts move to the new name),
+  `IsCollisionGroupRegistered(name)`, `GetRegisteredCollisionGroups()` (a list of
+  `{ name, id, mask }`), `CollisionGroupSetCollidable(a, b, true/false)`,
+  `CollisionGroupsAreCollidable(a, b)` and `GetMaxCollisionGroups()` (32,
+  Default included). A new group collides with everything until you say
+  otherwise. The older `CreateCollisionGroup`, `GetCollisionGroupId`,
+  `SetPartCollisionGroup` and `part.CollisionGroupId` work too.
+- Mistakes are errors that say what's wrong: an unknown group in
+  `CollisionGroupSetCollidable`, a 33rd group, renaming or unregistering Default,
+  a name that isn't a string (or is empty, or over 100 characters).
+- A part in a group that isn't registered (or was unregistered) acts as Default.
+- A character is in its **HumanoidRootPart**'s group (or its Torso's). The
+  terrain is in Default.
+- `RaycastParams.CollisionGroup` (Default to start with) makes a ray skip what
+  that group passes through; `RespectCanCollide = true` skips CanCollide-off parts.
+- Touched still fires between parts that pass through each other.
+
+In Studio, **MODEL > Collision Groups** (or **View > Collision Groups**) opens a
+small window: add, rename (double-click) and delete groups, and tick or untick
+the grid to say which pairs collide. Pick a part's group with **Collision Group**
+in Properties. The groups are saved with the place, sent to everyone who joins
+(and again when a script changes them), and read from Roblox files (the
+Workspace's groups and each part's `CollisionGroup` or `CollisionGroupId`);
+Export to Roblox writes them back.
+
+`tools/test_collision_groups.lua` checks all of this in a real play test:
+
+```
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_collision_groups.lua)" --screenshot /tmp/groups.png --frames 1500
+```
+
 ### Controllers
 
 Plug in an Xbox, PlayStation, Switch Pro or other game controller and play with
@@ -1591,6 +1903,65 @@ settings...). Scripts see the buttons too: `UserInputService.InputBegan` fires
 with `Enum.KeyCode.ButtonA` (and `UserInputType` `Gamepad1`), and
 `UserInputService.GamepadEnabled`, `IsGamepadButtonDown` and `GetGamepadState`
 (the sticks and triggers) work like Roblox's.
+
+### Key bindings (ContextActionService)
+
+A LocalScript can bind an action to keys, controller buttons, the mouse or
+fingers, and give it its own round button on phones, like Roblox's
+`ContextActionService`:
+
+```lua
+local CAS = game:GetService("ContextActionService")
+
+local function dash(actionName, state, input)
+    if state == Enum.UserInputState.Begin then
+        print("Dash!", input.KeyCode, input.UserInputType)
+    end
+    return Enum.ContextActionResult.Sink   -- keep it (Pass: let others have it too)
+end
+
+-- Q on a keyboard, X on a controller, and a button on touch screens.
+CAS:BindAction("Dash", dash, true, Enum.KeyCode.Q, Enum.KeyCode.ButtonX)
+CAS:SetTitle("Dash", "Dash")
+```
+
+- **Inputs:** any `Enum.KeyCode` the engine knows (letters, numbers, Space,
+  Shift, arrows, controller buttons like `ButtonA` or `DPadUp`...), or a whole
+  `Enum.UserInputType`: `Keyboard`, `Gamepad1`, `MouseButton1` (a click in the
+  game view) or `Touch` (a finger on the game view).
+- **The function** gets `(actionName, state, inputObject)`. `state` is
+  `Enum.UserInputState.Begin` when the key goes down, `End` when it comes up,
+  and `Cancel` when a newer binding takes the key over while it's held. The
+  input object has `KeyCode`, `UserInputType`, `UserInputState` and `Position`.
+- **Sink or Pass:** the newest binding (or the one with the highest priority)
+  hears an input first. Returning `Enum.ContextActionResult.Sink` (or nothing)
+  keeps it: lower bindings don't hear it, the game's own controls ignore it
+  (bind Space with Sink and the character can't jump; bind MouseButton1 and a
+  click doesn't use the held tool), and `UserInputService.InputBegan` says
+  `gameProcessedEvent = true`. Returning `Pass` hands it on down.
+- **Priority:** `BindActionAtPriority(name, fn, touchButton, priority, ...)`,
+  with a number or `Enum.ContextActionPriority.Low / Medium / Default / High.Value`
+  (1000 / 2000 / 2000 / 3000). `BindAction` uses Default.
+- `UnbindAction(name)`, `UnbindAllActions()`, `GetBoundActionInfo(name)` and
+  `GetAllBoundActionInfo()` (with `inputTypes`, `priorityLevel`,
+  `createTouchButton`, `stackOrder`, `title`, `description`, `image`). Binding a
+  name again replaces it, and a LocalScript's actions go away when it stops.
+- **Touch buttons:** with `createTouchButton = true`, phones and tablets get a
+  round button for the action, stacked round the jump button (the first ones
+  closest). `SetTitle`, `SetImage` (`rbxassetid://` or an id), `SetDescription`
+  and `SetPosition` (a `UDim2` on the game view, for the button's top-left
+  corner) change it, and `GetButton(name)` gives an ImageButton-like object
+  whose `Image`, `Position` and `ActionTitle.Text` can be read and changed (nil
+  when the action has no touch button). Pressing it runs the action with
+  `UserInputType` `Touch`.
+
+It works the same in the Player, Studio's play test and online games (each
+player's own LocalScripts hear their own input). `tools/test_context_actions.lua`
+checks it in a real play test:
+
+```
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_context_actions.lua)" --screenshot /tmp/actions.png --frames 2400
+```
 
 ### The in-game menu
 
@@ -1695,7 +2066,8 @@ Games saved with the old blocky character get the new one when they load.
   menu (Resume, Reset Character, Settings, Leave). The player list in the top
   right shows everyone in the game.
 - **Touch controls:** on phones and tablets you get a thumbstick (it appears
-  under your thumb, bottom-left), a jump button (bottom-right) and Chat / Menu
+  under your thumb, bottom-left), a jump button (bottom-right, with any buttons
+  the game adds stacked round it) and Chat / Menu
   buttons (top-left). Drag anywhere else to turn the camera, pinch to zoom and
   tap things to click them. Try them on a computer with **Settings > Touch
   controls > Always on** (the mouse acts as one finger).
@@ -1802,7 +2174,9 @@ site** (`/app/`) to do what the Player's site pages do:
 - use friends, people, groups and Bolts;
 - change your **avatar** (colours, hat, and clothes from the catalog). It's saved
   on the server, so the app and the website always match;
-- **staff:** a Staff page to verify people, make staff, give Bolts and ban.
+- **staff:** a Staff page to verify people, make staff, give Bolts, ban, and
+  answer ban appeals;
+- **Settings:** email, two-step, privacy, password, and deleting your account.
 
 Games published from Studio get a **picture** (Studio takes it from the spawn
 point when you publish), shown on the website's game cards. A red number on
@@ -1912,6 +2286,28 @@ make people **Staff**, give or take Bolts, and ban. Banning asks for a reason
 (sexual content, violent extremism, harassment, hate speech, threats, scams,
 sharing personal info, exploiting, spam and so on) and an optional note; the
 banned player sees them when they try to sign in.
+
+**Ban appeals.** On their ban screen (on the website or in the Player) a banned
+player can send staff one short note (up to 500 letters) asking to be unbanned.
+There's one open appeal per ban: they can only send another once staff have
+answered, or if the ban changes. Appeals show on the Staff page next to the
+reports, with the ban's reason, the staff note, when and by whom they were
+banned (from the staff action log) and what they wrote. Staff can **Deny** with
+a short note, and the official account can **Accept**, which unbans them the
+normal way. The player sees the answer on their ban screen, and every answer is
+in the staff action log.
+
+**Deleting an account.** In the website's **Settings** (or the Player's
+**Avatar > Your account > Delete account...**) you can delete your account after
+typing your password. That removes the password and key backup, email,
+two-step settings, avatar, About me, posts, outfits, messages, friends and
+follows (on both sides), favourites, notifications and logged-in devices.
+Games and items you made stay up (so what other people bought keeps working),
+shown as made by **Deleted user**; forum posts and game comments stay too, under
+that name. The username (and any past usernames) and the user number are never
+given to anyone else. Limited copies the account owned stay with it, off resale,
+and can't be traded any more. The Guts account can't be deleted. The staff log
+notes "Account #N was deleted" as a System event, without the name.
 
 ### The Library (sharing models)
 
@@ -2680,6 +3076,19 @@ is left running:
 ```
 python3 tools/test_multiplayer.py            # --players 3 --seconds 40 to change it
 ```
+
+Some engine features have a check script that runs inside a play test with no
+screen (after building, Linux, needs `xvfb-run`). Each prints `PASS`/`FAIL`
+lines and a `DONE (N failed)` line:
+
+```
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_messaging.lua)" --screenshot /tmp/m.png --frames 1500
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_sound_groups.lua)" --screenshot /tmp/s.png --frames 600
+```
+
+To check messages reach *another* running server, start a second copy first with
+`--test-command "MESSAGING_PARTNER = true $(cat tools/test_messaging.lua)"` and
+`--frames 2400` (it waits around to answer); the first copy then also checks it hears the partner.
 
 ## Building by hand
 

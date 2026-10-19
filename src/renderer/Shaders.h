@@ -575,24 +575,65 @@ uniform float uCloudSpeed;
 uniform vec3  uCloudColor;
 uniform bool  uStars;
 uniform float uTime;
+// A Sky object in Lighting (uSkyObj): a skybox (six pictures, when they all load),
+// how many stars, and its own sun and moon (sizes in degrees, pictures or drawn here).
+uniform bool  uSkyObj;
+uniform bool  uSkybox;
+uniform sampler2D uSkyBk, uSkyDn, uSkyFt, uSkyLf, uSkyRt, uSkyUp;
+uniform float uStarDensity;    // StarCount / 3000
+uniform bool  uCelestial;      // CelestialBodiesShown
+uniform bool  uNight;          // uSunDir is the moon
+uniform float uSunAngle;       // SunAngularSize
+uniform float uMoonAngle;      // MoonAngularSize
+uniform bool  uSunTexOn, uMoonTexOn;
+uniform sampler2D uSunTex, uMoonTex;
 out vec4 FragColor;
 #pragma gb_common
+// Which of the six skybox pictures a direction looks at, and where on it (v = up).
+// Ft is -Z (the way things face), Bk +Z, Rt +X, Lf -X, Up +Y, Dn -Y.
+vec3 skyboxAt(vec3 d) {
+    vec3 a = abs(d);
+    if (a.x >= a.y && a.x >= a.z) {
+        if (d.x > 0.0) return lin(texture(uSkyRt, vec2(0.5 + 0.5 * d.z / a.x, 0.5 + 0.5 * d.y / a.x)).rgb);
+        return lin(texture(uSkyLf, vec2(0.5 - 0.5 * d.z / a.x, 0.5 + 0.5 * d.y / a.x)).rgb);
+    }
+    if (a.y >= a.z) {
+        if (d.y > 0.0) return lin(texture(uSkyUp, vec2(0.5 + 0.5 * d.x / a.y, 0.5 - 0.5 * d.z / a.y)).rgb);
+        return lin(texture(uSkyDn, vec2(0.5 + 0.5 * d.x / a.y, 0.5 + 0.5 * d.z / a.y)).rgb);
+    }
+    if (d.z < 0.0) return lin(texture(uSkyFt, vec2(0.5 + 0.5 * d.x / a.z, 0.5 + 0.5 * d.y / a.z)).rgb);
+    return lin(texture(uSkyBk, vec2(0.5 - 0.5 * d.x / a.z, 0.5 + 0.5 * d.y / a.z)).rgb);
+}
+// A picture of the sun or moon centred on L, `deg` degrees across (rgb, coverage).
+vec4 bodyPicture(sampler2D tex, vec3 dir, vec3 L, float deg) {
+    float facing = dot(dir, L);
+    if (facing <= 0.0) return vec4(0.0);
+    vec3 right = normalize(abs(L.y) > 0.99 ? cross(L, vec3(1, 0, 0)) : cross(L, vec3(0, 1, 0)));
+    vec3 up = cross(right, L);
+    float t = tan(radians(max(deg, 0.01)) * 0.5);
+    vec2 q = vec2(dot(dir, right), dot(dir, up)) / facing / t;
+    if (abs(q.x) > 1.0 || abs(q.y) > 1.0) return vec4(0.0);
+    vec4 c = texture(tex, q * 0.5 + 0.5);
+    return vec4(lin(c.rgb), c.a);
+}
 void main() {
     vec4 near = uInvViewProj * vec4(vNdc, -1.0, 1.0);
     vec4 far  = uInvViewProj * vec4(vNdc,  1.0, 1.0);
     vec3 dir  = normalize(far.xyz / far.w - near.xyz / near.w);
     vec3 L    = normalize(uSunDir);
 
-    vec3 sky = lin(skyGradient(dir, uZenith, uHorizon, uGround)) * uSkyBrightness;
+    vec3 sky = uSkybox ? skyboxAt(dir) * uSkyBrightness : lin(skyGradient(dir, uZenith, uHorizon, uGround)) * uSkyBrightness;
 
-    // Stars, fading in as the sky gets dark.
-    if (uStars && dir.y > 0.0) {
+    // Stars, fading in as the sky gets dark (a Sky's StarCount says how many).
+    float density = uSkyObj ? uStarDensity : 1.0;
+    if (uStars && dir.y > 0.0 && density > 0.0) {
         float dark = 1.0 - clamp(dot(lin(uZenith), vec3(0.3, 0.6, 0.1)) * 12.0, 0.0, 1.0);
         vec3 cell = floor(dir * 300.0);
         float h = hash13(cell);
-        if (h > 0.9975) {
+        float edge = 1.0 - 0.0025 * density;
+        if (h > edge) {
             float tw = 0.6 + 0.4 * sin(uTime * 3.0 + h * 400.0);
-            sky += vec3(1.0, 0.95, 0.9) * (h - 0.9975) * 900.0 * tw * dark * smoothstep(0.0, 0.2, dir.y);
+            sky += vec3(1.0, 0.95, 0.9) * (h - edge) / (0.0025 * density) * 2.25 * tw * dark * smoothstep(0.0, 0.2, dir.y);
         }
     }
 
@@ -605,7 +646,7 @@ void main() {
 
     // Clouds: animated noise on a flat layer above the world.
     float cover = 0.0;
-    if (uClouds && dir.y > 0.0) {
+    if (uClouds && !uSkybox && dir.y > 0.0) {
         vec2 uv = dir.xz / (dir.y + 0.12) * 0.7 + uTime * 0.008 * uCloudSpeed * vec2(1.0, 0.35);
         float n = fbm(uv * 1.3);
         cover = smoothstep(1.05 - uCloudCover, 1.35 - uCloudCover, n + 0.25) * smoothstep(0.0, 0.2, dir.y);
@@ -616,7 +657,38 @@ void main() {
         sky = mix(sky, cloud, cover * 0.95);
     }
 
-    sky += sunC * (disc * 40.0 + glow) * (1.0 - cover * 0.9);
+    if (!uSkyObj) {
+        sky += sunC * (disc * 40.0 + glow) * (1.0 - cover * 0.9);
+    } else if (uCelestial && !uNight) {
+        // The Sky's sun: its picture, or the drawn disc scaled to SunAngularSize (21 = as usual).
+        if (uSunTexOn) {
+            vec4 p = bodyPicture(uSunTex, dir, L, uSunAngle);
+            sky += p.rgb * p.a * sunC * 6.0 * (1.0 - cover * 0.9);
+        } else {
+            float k = uSunAngle / 21.0;
+            float sd = smoothstep(1.0 - 0.0009 * s2 * k * k, 1.0 - 0.0004 * s2 * k * k, d);
+            float sg = pow(d, 300.0 / max(uSunSize * k, 0.1)) * 1.5 + pow(d, 10.0) * 0.12;
+            sky += sunC * (sd * 40.0 + sg) * (1.0 - cover * 0.9);
+        }
+    } else if (uCelestial) {
+        // The moon (at night the light comes from it).
+        float fade = 1.0 - cover * 0.9;
+        if (uMoonTexOn) {
+            vec4 p = bodyPicture(uMoonTex, dir, L, uMoonAngle);
+            sky = mix(sky, p.rgb * 1.6, clamp(p.a * max(max(p.r, p.g), p.b) * 3.0, 0.0, 1.0) * fade);
+        } else {
+            float r = radians(uMoonAngle * 0.15);
+            float ang = acos(clamp(dot(dir, L), -1.0, 1.0));
+            float m = 1.0 - smoothstep(r * 0.92, r, ang);
+            if (m > 0.0) {
+                vec3 right = normalize(abs(L.y) > 0.99 ? cross(L, vec3(1, 0, 0)) : cross(L, vec3(0, 1, 0)));
+                vec2 q = vec2(dot(dir, right), dot(dir, cross(right, L))) / max(r, 1e-4);
+                float spots = 0.75 + 0.25 * vnoise(q * 3.0 + 7.0);
+                sky = mix(sky, vec3(0.85, 0.87, 0.92) * spots * 1.4, m * fade);
+            }
+            sky += vec3(0.6, 0.65, 0.8) * 0.08 * pow(max(d, 0.0), 6000.0 / max(uMoonAngle, 0.5)) * fade;
+        }
+    }
     FragColor = vec4(sky, 1.0);
 }
 )";
@@ -1019,6 +1091,43 @@ void main() {
 }
 )";
 
+// SunRaysEffect: light streaming out from the sun past whatever is in front of it.
+// Small (a quarter of the screen): each pixel walks toward the sun and adds up how
+// much open, bright sky it passes.
+inline const char* sunRaysFrag = R"(#version 410 core
+in vec2 vUV;
+uniform sampler2D uHdr;
+uniform sampler2D uDepth;
+uniform vec2  uSun;          // where the sun is on screen (0..1, can be off it)
+uniform float uSpread;       // how much of the way to the sun each pixel looks (0..1)
+uniform float uStrength;
+uniform float uAspect;       // width / height
+uniform int   uSamples;
+out vec4 FragColor;
+float skyLight(vec2 uv) {
+    if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 0.0;
+    if (texture(uDepth, uv).r < 0.9999) return 0.0;              // something solid
+    // Open sky round the sun (clouds in front of it dim it a little).
+    vec3 c = texture(uHdr, uv).rgb;
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    vec2 d = (uv - uSun) * vec2(uAspect, 1.0);
+    return (0.3 + 0.7 * clamp(l * 0.25, 0.0, 1.0)) * exp(-dot(d, d) * 10.0);
+}
+void main() {
+    vec2 step = (uSun - vUV) * (0.15 + 0.85 * uSpread) / float(uSamples);
+    // Each pixel starts a little further along (no stripes from the steps).
+    vec2 p = vUV + step * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    float sum = 0.0, w = 1.0;
+    for (int i = 0; i < 64; ++i) {
+        if (i >= uSamples) break;
+        sum += skyLight(p) * w;
+        w *= 0.965;
+        p += step;
+    }
+    FragColor = vec4(sum / float(uSamples) * uStrength, 0.0, 0.0, 1.0);
+}
+)";
+
 // Final image: AO, bloom, exposure, filmic tone mapping, colour grading.
 inline const char* compositeFrag = R"(#version 410 core
 in vec2 vUV;
@@ -1051,7 +1160,33 @@ uniform mat4  uInvViewProj;    // (underwater: where each pixel is, for caustics
 uniform float uWaterTop;       // the surface above the camera
 uniform float uCaustics;       // how strong the sun's caustics are down here
 uniform float uDrip;           // just surfaced: water running down the screen (1 .. 0)
+// Screen effects (Lighting / Camera): BlurEffect and DepthOfFieldEffect mix in blurrier
+// copies of the picture (uBlur1..4, each about twice as blurry), SunRaysEffect adds
+// light streaks (uRays), ColorCorrectionEffect changes the finished colours.
+uniform bool  uBlurOn;
+uniform sampler2D uBlur1, uBlur2, uBlur3, uBlur4;
+uniform float uBlurLevel;      // BlurEffect: 0 = sharp .. 4 = the blurriest copy
+uniform bool  uDof;
+uniform vec4  uDofParams;      // FocusDistance, InFocusRadius, NearIntensity, FarIntensity
+uniform bool  uRaysOn;
+uniform sampler2D uRays;
+uniform vec3  uRaysColor;
+uniform bool  uGrade;
+uniform vec4  uGradeParams;    // Brightness, Contrast (1 = same), Saturation (1 = same), unused
+uniform vec3  uGradeTint;
 out vec4 FragColor;
+
+vec3 blurAt(vec2 uv, float lv) {
+    // Between two neighbouring copies, so the blur grows smoothly.
+    vec3 a, b;
+    float f = fract(lv);
+    if (lv < 1.0)      { a = texture(uHdr, uv).rgb;   b = texture(uBlur1, uv).rgb; }
+    else if (lv < 2.0) { a = texture(uBlur1, uv).rgb; b = texture(uBlur2, uv).rgb; }
+    else if (lv < 3.0) { a = texture(uBlur2, uv).rgb; b = texture(uBlur3, uv).rgb; }
+    else if (lv < 4.0) { a = texture(uBlur3, uv).rgb; b = texture(uBlur4, uv).rgb; }
+    else               { a = texture(uBlur4, uv).rgb; b = a; }
+    return mix(a, b, f);
+}
 
 float causticsAt(vec2 x, float t) {
     float c = 0.0;
@@ -1123,6 +1258,24 @@ void main() {
     } else {
         c = texture(uHdr, uv).rgb;
     }
+    if (uBlurOn) {
+        float lv = uBlurLevel;
+        if (uDof) {
+            float ndc = texture(uDepth, uv).r * 2.0 - 1.0;
+            float dist = ndc > 0.9999 ? 1e4 : uOrthoDepth ? (uDepthParams.x - ndc) / uDepthParams.y : uDepthParams.x / (ndc + uDepthParams.y);
+            float nearEdge = uDofParams.x - uDofParams.y, farEdge = uDofParams.x + uDofParams.y;
+            float farK = clamp((dist - farEdge) / max(farEdge, 20.0), 0.0, 1.0) * uDofParams.w;
+            float nearK = nearEdge > 0.0 ? clamp((nearEdge - dist) / max(nearEdge, 1.0), 0.0, 1.0) * uDofParams.z : 0.0;
+            lv = max(lv, max(farK, nearK) * 3.5);
+        }
+        if (lv > 0.001) c = blurAt(uv, min(lv, 4.0));
+    }
+    if (uRaysOn) {   // (smoothed a little: it was worked out small)
+        vec2 rt = 1.0 / vec2(textureSize(uRays, 0));
+        float r = texture(uRays, vUV + rt * vec2(-0.75, -0.75)).r + texture(uRays, vUV + rt * vec2(0.75, -0.75)).r +
+                  texture(uRays, vUV + rt * vec2(-0.75, 0.75)).r + texture(uRays, vUV + rt * vec2(0.75, 0.75)).r;
+        c += r * 0.25 * uRaysColor;
+    }
     c *= 1.0 + drops.z * 0.12;   // (the drops catch the light a little)
     if (uUseAO) {
         float ao = 0.0;
@@ -1146,6 +1299,12 @@ void main() {
         c *= 1.0 - (uVignette + (uUnderwater ? 0.35 : 0.0)) * smoothstep(0.35, 1.1, v);
     } else {
         c = pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2));
+    }
+    if (uGrade) {   // ColorCorrectionEffect(s)
+        c = clamp(c + uGradeParams.x, 0.0, 1.0);
+        c = (c - 0.5) * uGradeParams.y + 0.5;
+        float gl = dot(c, vec3(0.2126, 0.7152, 0.0722));
+        c = mix(vec3(gl), c, uGradeParams.z) * uGradeTint;
     }
     c = clamp(c, 0.0, 1.0);
     FragColor = vec4(c, uLumaAlpha ? dot(c, vec3(0.299, 0.587, 0.114)) : 1.0);
@@ -1894,6 +2053,41 @@ void main() {
     float diff = max(dot(n, uLightDir), 0.0);
     float spec = pow(max(dot(reflect(-uLightDir, n), vec3(0, 0, 1)), 0.0), 60.0);
     FragColor = vec4(pow(vColor, vec3(2.2)) * (uAmbient + diff) + vec3(spec), 0.75);
+}
+)";
+
+// ---------------------------------------------------------------------------
+// ViewportFrame: the parts inside a UI frame as a little 3D picture, lit the
+// simple Roblox way (Ambient + LightColor from LightDirection), no post-processing.
+// ---------------------------------------------------------------------------
+inline const char* viewportVert = R"(#version 410 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNormal;
+uniform mat4 uModel;
+uniform mat4 uViewProj;
+uniform mat3 uNormalMat;
+out vec3 vNormal;
+void main() {
+    vNormal = uNormalMat * aNormal;
+    gl_Position = uViewProj * uModel * vec4(aPos, 1.0);
+}
+)";
+
+inline const char* viewportFrag = R"(#version 410 core
+in vec3 vNormal;
+uniform vec3  uColor;
+uniform vec3  uAmbient;
+uniform vec3  uLightColor;
+uniform vec3  uLightDir;    // the way the light travels (normalized)
+uniform float uAlpha;
+uniform int   uGlow;        // Neon: lit by itself
+out vec4 FragColor;
+void main() {
+    vec3 n = normalize(vNormal);
+    if (!gl_FrontFacing) n = -n;
+    float d = max(dot(n, -uLightDir), 0.0);
+    vec3 c = uGlow == 1 ? uColor : uColor * (uAmbient + uLightColor * d);
+    FragColor = vec4(min(c, vec3(1.0)), uAlpha);
 }
 )";
 

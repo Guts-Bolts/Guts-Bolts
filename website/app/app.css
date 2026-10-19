@@ -330,6 +330,12 @@ input[type=email] { font: inherit; color: var(--text); background: var(--panel);
 .ban-table { margin: 14px auto; border-collapse: collapse; text-align: left; }
 .ban-table th { padding: 6px 14px 6px 0; color: #555; font-weight: normal; vertical-align: top; white-space: nowrap; }
 .ban-table td { padding: 6px 0; }
+/* Ban appeals (on the ban page) and deleting your account (Settings) */
+.appeal-box { text-align: left; margin: 18px 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.appeal-box h2 { font-size: 17px; margin: 8px 0; }
+.appeal-box textarea { width: 100%; box-sizing: border-box; }
+.appeal-answer { background: var(--stripe); border-left: 4px solid var(--red); padding: 8px 12px; margin-bottom: 12px; }
+.danger-box { border-top: 4px solid var(--red); }
 .modal > div.popup.warning { border-top: 6px solid var(--red); }
 
 /* Sign-up: the 18+ notice, and the Terms page */
