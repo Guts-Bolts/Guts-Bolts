@@ -41,7 +41,7 @@ struct EditorState {
     bool          simStep   = false;  // run one frame while paused
 
     // "Connect" tool: click one part, then another, to join them.
-    int   connectTool = -1;         // ConstraintType, or -1 when off; 5 = hinge + motor
+    int   connectTool = -1;         // ConstraintType, or -1 when off; 5 = hinge + motor, 6.. = ConstraintType 5..
     unsigned long long connectFirst = 0;
     float connectPoint[3] = {0, 0, 0};
 

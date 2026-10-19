@@ -275,8 +275,57 @@ inline ParticleProps particleDefaults(ParticleType t) {
     return p;
 }
 
-enum class ConstraintType { Rope, Rod, Spring, Weld, Hinge };
-inline const char* const kConstraintNames[5] = {"Rope", "Rod", "Spring", "Weld", "Hinge"};
+enum class ConstraintType { Rope, Rod, Spring, Weld, Hinge, BallSocket, Prismatic, Cylindrical };
+inline constexpr int kConstraintTypeCount = 8;
+inline const char* const kConstraintNames[kConstraintTypeCount] = {"Rope", "Rod", "Spring", "Weld", "Hinge",
+                                                                   "BallSocket", "Prismatic", "Cylindrical"};
+inline const char* const kConstraintClassNames[kConstraintTypeCount] = {
+    "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint",
+    "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint"};
+// The joints whose settings live in JointProps (below).
+inline bool usesJointProps(ConstraintType t) { return (int)t >= (int)ConstraintType::BallSocket; }
+// Prismatic and cylindrical joints slide along Attachment0's axis.
+inline bool jointSlides(ConstraintType t) { return t == ConstraintType::Prismatic || t == ConstraintType::Cylindrical; }
+
+// ActuatorType / AngularActuatorType: nothing, a motor (runs at a speed) or a
+// servo (goes to a target and stops there).
+enum class Actuator { None, Motor, Servo };
+inline const char* const kActuatorNames[3] = {"None", "Motor", "Servo"};
+
+// Settings of the ball-socket, prismatic (slider) and cylindrical (slide + spin)
+// joints. Roblox's property names in brackets; angles in degrees, like Roblox.
+struct JointProps {
+    // BallSocket: how far Attachment1's axis may lean away from Attachment0's [LimitsEnabled,
+    // UpperAngle], and how far it may twist around it [TwistLimitsEnabled, TwistLowerAngle,
+    // TwistUpperAngle]. Prismatic / Cylindrical: LimitsEnabled turns on LowerLimit / UpperLimit.
+    bool  limitsEnabled      = false;
+    float upperAngle         = 45.0f;   // BallSocket: the cone; Cylindrical: the furthest turn one way
+    bool  twistLimitsEnabled = false;
+    float twistLowerAngle    = -45.0f;
+    float twistUpperAngle    = 45.0f;
+    float restitution        = 0.0f;    // 0..1: how much it bounces off a limit [Restitution]
+    // Prismatic / Cylindrical: sliding along Attachment0's axis (its X, Roblox's Axis).
+    float lowerLimit = 0.0f, upperLimit = 5.0f;   // studs [LowerLimit, UpperLimit]
+    Actuator actuator = Actuator::None;           // [ActuatorType]
+    float motorMaxForce  = 0.0f;                  // [MotorMaxForce]
+    float velocity       = 0.0f;                  // motor: studs / second [Velocity]
+    float speed          = 0.0f;                  // servo: studs / second [Speed]
+    float servoMaxForce  = 0.0f;                  // [ServoMaxForce]
+    float targetPosition = 0.0f;                  // servo: studs [TargetPosition]
+    // Cylindrical: spinning around the axis (tilted InclinationAngle degrees from X towards Y).
+    Actuator angularActuator = Actuator::None;    // [AngularActuatorType]
+    float angularVelocity  = 0.0f;                // motor: radians / second [AngularVelocity]
+    float motorMaxTorque   = 0.0f;                // [MotorMaxTorque]
+    float angularSpeed     = 0.0f;                // servo: radians / second [AngularSpeed]
+    float targetAngle      = 0.0f;                // servo: degrees [TargetAngle]
+    float servoMaxTorque   = 0.0f;                // [ServoMaxTorque]
+    bool  angularLimitsEnabled = false;           // [AngularLimitsEnabled]: LowerAngle..UpperAngle
+    float lowerAngle       = -45.0f;              // [LowerAngle]
+    float inclinationAngle = 0.0f;                // [InclinationAngle]
+    // Where it is now (worked out by the physics, not saved): [CurrentPosition]
+    // studs along the axis, [CurrentAngle] degrees around it.
+    float currentPosition = 0.0f, currentAngle = 0.0f;
+};
 
 enum class LightType { Point, Spot };
 
@@ -536,6 +585,7 @@ public:
     float       motorSpeed  = 0.0f;        // hinge motor, radians / second
     float       motorTorque = 0.0f;        // hinge motor strength (0 = no motor)
     float       thickness   = 0.1f;        // how thick the rope / rod looks
+    JointProps  joint;                     // ball socket / prismatic / cylindrical settings
 
     // Decal (kind == Decal): which picture, on which side. `color` tints it
     // (white = as it is), `transparency` fades it.

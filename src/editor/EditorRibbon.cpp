@@ -401,8 +401,8 @@ void Editor::renderToolbar() {
         }
         {
             Group g("Constraints");
-            const char* names[] = {"Rope", "Rod", "Spring", "Weld", "Hinge", "Motor"};
-            for (int col = 0; col < 2; ++col) {
+            const char* names[] = {"Rope", "Rod", "Spring", "Weld", "Hinge", "Motor", "Ball Socket", "Prismatic", "Cylindrical"};
+            for (int col = 0; col < 3; ++col) {
                 Stack st;
                 for (int r = 0; r < 3; ++r) {
                     int t = col * 3 + r;

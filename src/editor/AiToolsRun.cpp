@@ -57,7 +57,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Gui:        return kGuiClassNames[(int)n->gui.type];
         case NodeKind::Sound:      return "Sound";
         case NodeKind::Attachment: return "Attachment";
-        case NodeKind::Constraint: return "Constraint";
+        case NodeKind::Constraint: return kConstraintClassNames[std::clamp((int)n->constraintType, 0, kConstraintTypeCount - 1)];
         default: return n->primitiveType == PrimitiveType::Mesh ? "MeshPart" : "Part";
     }
 }

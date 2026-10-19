@@ -11,6 +11,7 @@ struct PromptProps;
 struct ClickProps;
 struct HighlightProps;
 struct EffectProps;
+struct JointProps;
 struct CollisionGroups;
 struct ParticleProps;
 
@@ -43,6 +44,9 @@ void                       highlightFromJson(const nlohmann::json& j, HighlightP
 // A Trail's or Beam's settings (and whether it's on), the same way.
 nlohmann::json             effectToJson(const EffectProps& e, bool enabled, bool beam);
 void                       effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled);
+// A ball-socket / prismatic / cylindrical joint's settings, the same way.
+nlohmann::json             jointToJson(const JointProps& p);
+void                       jointFromJson(const nlohmann::json& j, JointProps& p);
 // A ParticleEmitter's / Fire's / Smoke's / Sparkles' settings, the same way. update = these are
 // another player's changes to one we already have (so new Emit() / Clear() calls happen here too).
 nlohmann::json             particleToJson(const ParticleProps& p, bool enabled);

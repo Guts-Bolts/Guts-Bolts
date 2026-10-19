@@ -1369,6 +1369,48 @@ struct Converter {
             node->visible = in.flag("Visible", c == "RopeConstraint" || c == "RodConstraint" || c == "SpringConstraint");
             node->color = {0.45f, 0.32f, 0.2f};
             ++report.constraints;
+        } else if (c == "BallSocketConstraint" || c == "PrismaticConstraint" || c == "CylindricalConstraint") {
+            // Joints: Roblox's numbers are turned into ours (studs are halved, forces scaled).
+            node = std::make_unique<SceneNode>(name, NodeKind::Constraint);
+            node->constraintType = c == "BallSocketConstraint" ? ConstraintType::BallSocket
+                                 : c == "PrismaticConstraint"  ? ConstraintType::Prismatic : ConstraintType::Cylindrical;
+            auto big = [](double v) { return std::isfinite(v) ? (float)std::clamp(v, -1e30, 1e30) : (v > 0 ? 1e30f : -1e30f); };
+            auto act = [&](const char* k) { return (Actuator)std::clamp((int)in.num(k, 0), 0, 2); };
+            JointProps& p = node->joint;
+            p.limitsEnabled = in.flag("LimitsEnabled", false);
+            p.restitution = std::clamp((float)in.num("Restitution", 0.0), 0.0f, 1.0f);
+            if (node->constraintType == ConstraintType::BallSocket) {
+                p.upperAngle = (float)in.num("UpperAngle", 45.0);
+                p.twistLimitsEnabled = in.flag("TwistLimitsEnabled", false);
+                p.twistLowerAngle = (float)in.num("TwistLowerAngle", -45.0);
+                p.twistUpperAngle = (float)in.num("TwistUpperAngle", 45.0);
+            } else {
+                p.lowerLimit = (float)in.num("LowerLimit", 0.0) * kImportScale;
+                p.upperLimit = (float)in.num("UpperLimit", 5.0) * kImportScale;
+                p.actuator = act("ActuatorType");
+                p.motorMaxForce = big(in.num("MotorMaxForce", 0.0) * kForceScale);
+                p.velocity = (float)in.num("Velocity", 0.0) * kVelScale;
+                p.speed = big(in.num("Speed", 0.0) * kVelScale);
+                p.servoMaxForce = big(in.num("ServoMaxForce", 0.0) * kForceScale);
+                p.targetPosition = (float)in.num("TargetPosition", 0.0) * kImportScale;
+            }
+            if (node->constraintType == ConstraintType::Cylindrical) {
+                p.angularActuator = act("AngularActuatorType");
+                p.angularVelocity = (float)in.num("AngularVelocity", 0.0) * kSpinScale;
+                p.motorMaxTorque = big(in.num("MotorMaxTorque", 0.0) * kTorqueScale);
+                p.angularSpeed = big(in.num("AngularSpeed", 0.0) * kSpinScale);
+                p.targetAngle = (float)in.num("TargetAngle", 0.0);
+                p.servoMaxTorque = big(in.num("ServoMaxTorque", 0.0) * kTorqueScale);
+                p.angularLimitsEnabled = in.flag("AngularLimitsEnabled", false);
+                p.lowerAngle = (float)in.num("LowerAngle", -45.0);
+                p.upperAngle = (float)in.num("UpperAngle", 45.0);
+                p.inclinationAngle = (float)in.num("InclinationAngle", 0.0);
+            }
+            node->enabled = in.flag("Enabled", true);
+            node->visible = in.flag("Visible", false);
+            node->thickness = 0.1f;
+            node->color = {0.6f, 0.62f, 0.66f};
+            ++report.constraints;
         } else if (auto mt = std::find(std::begin(kMoverClassNames), std::end(kMoverClassNames), c); mt != std::end(kMoverClassNames)) {
             // BodyVelocity, BodyGyro... and LinearVelocity, AlignPosition...: classic games'
             // vehicles and flying keep working. (Roblox's numbers are turned into ours.)
@@ -1701,8 +1743,7 @@ struct XmlWriter {
                 cls = n.value.type == Attribute::Vector3 || n.value.type == Attribute::Color3 ? nullptr : n.valueClass();
                 break;
             case NodeKind::Constraint: {
-                static const char* names[] = {"RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint"};
-                cls = names[(int)n.constraintType];
+                cls = kConstraintClassNames[(int)n.constraintType];
                 break;
             }
         }
@@ -2073,6 +2114,39 @@ struct XmlWriter {
                 token("ActuatorType", 1);
                 flt("AngularVelocity", n.motorSpeed);
                 flt("MotorMaxTorque", n.motorTorque);
+            }
+            if (usesJointProps(n.constraintType)) {
+                const JointProps& p = n.joint;
+                auto huge = [](float v, float scale) { return (double)v / scale; };   // ("no limit" stays very big)
+                boolean("LimitsEnabled", p.limitsEnabled);
+                flt("Restitution", p.restitution);
+                if (n.constraintType == ConstraintType::BallSocket) {
+                    flt("UpperAngle", p.upperAngle);
+                    boolean("TwistLimitsEnabled", p.twistLimitsEnabled);
+                    flt("TwistLowerAngle", p.twistLowerAngle);
+                    flt("TwistUpperAngle", p.twistUpperAngle);
+                } else {
+                    flt("LowerLimit", p.lowerLimit * kExportScale);
+                    flt("UpperLimit", p.upperLimit * kExportScale);
+                    token("ActuatorType", (int)p.actuator);
+                    flt("MotorMaxForce", huge(p.motorMaxForce, kForceScale));
+                    flt("Velocity", p.velocity / kVelScale);
+                    flt("Speed", huge(p.speed, kVelScale));
+                    flt("ServoMaxForce", huge(p.servoMaxForce, kForceScale));
+                    flt("TargetPosition", p.targetPosition * kExportScale);
+                }
+                if (n.constraintType == ConstraintType::Cylindrical) {
+                    token("AngularActuatorType", (int)p.angularActuator);
+                    flt("AngularVelocity", p.angularVelocity / kSpinScale);
+                    flt("MotorMaxTorque", huge(p.motorMaxTorque, kTorqueScale));
+                    flt("AngularSpeed", huge(p.angularSpeed, kSpinScale));
+                    flt("TargetAngle", p.targetAngle);
+                    flt("ServoMaxTorque", huge(p.servoMaxTorque, kTorqueScale));
+                    boolean("AngularLimitsEnabled", p.angularLimitsEnabled);
+                    flt("LowerAngle", p.lowerAngle);
+                    flt("UpperAngle", p.upperAngle);
+                    flt("InclinationAngle", p.inclinationAngle);
+                }
             }
             flt("Thickness", n.thickness * kExportScale);
             boolean("Visible", n.visible);
