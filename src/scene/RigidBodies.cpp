@@ -30,6 +30,7 @@ struct Body {
     bool       dynamic = false;
     bool       sphere = false;
     bool       solid = true;
+    int        group = 0;       // collision group slot (the terrain is Default's)
     glm::vec3  pos{0.0f};
     glm::quat  rot{1, 0, 0, 0};
     glm::vec3  half{0.5f};
@@ -442,6 +443,8 @@ void applyMover(const ActiveMover& am, std::vector<Body>& bodies, const Assembly
 
 void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     // ---- 1. Bodies ------------------------------------------------------------
+    const CollisionGroups& groups = scene.world().collisionGroups;
+    const bool useGroups = !groups.onlyDefault() || !groups.collides(0, 0);
     std::vector<Body> bodies;
     std::unordered_map<uint64_t, int> index;
     std::vector<SceneNode*> constraintNodes, moverNodes;
@@ -465,6 +468,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         }
         index[n->id] = (int)bodies.size();
         bodies.push_back(makeBody(n, dynamic));
+        if (useGroups) bodies.back().group = groups.slotOf(n->collisionGroup);
     }
     bool anyDynamic = false;
     for (auto& b : bodies) if (b.dynamic) { anyDynamic = true; break; }
@@ -640,6 +644,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                     A.aabbMin.y > B.aabbMax.y || A.aabbMax.z < B.aabbMin.z || A.aabbMin.z > B.aabbMax.z)
                     continue;
                 if (noCollide.count({std::min(i, k), std::max(i, k)})) continue;
+                if (useGroups && !groups.collides(A.group, B.group)) continue;   // collision groups that pass through
                 if (A.sphere && B.sphere)      sphereSphere(i, k, A, B, contacts);
                 else if (A.sphere)             sphereBox(i, k, A, B, contacts, true);
                 else if (B.sphere)             sphereBox(k, i, B, A, contacts, false);
@@ -652,6 +657,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             for (int i = 0; i < terrainBody; ++i) {
                 const Body& A = bodies[i];
                 if (!A.dynamic || !A.solid || !A.awake) continue;
+                if (useGroups && !groups.collides(A.group, 0)) continue;   // its group passes through the terrain (Default)
                 float top;
                 if (!terrain.highestUnder(A.aabbMin.x, A.aabbMin.z, A.aabbMax.x, A.aabbMax.z, top) || top < A.aabbMin.y) continue;
                 auto touch = [&](const glm::vec3& p) {

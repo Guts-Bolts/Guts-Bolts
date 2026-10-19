@@ -221,7 +221,7 @@ void NpcSystem::step(Npc& n, SceneNode* r, float dt, Scene& scene, Physics& phys
     n.velocity.x *= drag;
     n.velocity.z *= drag;
 
-    Physics::MoveResult res = physics.moveCharacter(pos, delta, n.grounded, r->transform.rotation.y);
+    Physics::MoveResult res = physics.moveCharacter(pos, delta, n.grounded, r->transform.rotation.y, r->id, physics.groupOf(r));
     glm::vec2 wanted(delta.x, delta.z), got(res.position.x - pos.x, res.position.z - pos.z);
     if (moving && n.grounded && glm::length(wanted) > 1e-4f && glm::length(got) < glm::length(wanted) * 0.3f)
         n.stuckTime += dt;

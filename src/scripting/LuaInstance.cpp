@@ -1519,6 +1519,11 @@ int inst_index(lua_State* L) {
         if (is(k, "Transparency")) { lua_pushnumber(L, n->transparency); return 1; }
         if (is(k, "Anchored"))     { lua_pushboolean(L, n->anchored); return 1; }
         if (is(k, "CanCollide"))   { lua_pushboolean(L, n->canCollide); return 1; }
+        if (is(k, "CollisionGroup")) { lua_pushstring(L, n->collisionGroup.c_str()); return 1; }
+        if (is(k, "CollisionGroupId")) {   // (the old way: the group's number)
+            lua_pushinteger(L, E(L)->scene()->world().collisionGroups.slotOf(n->collisionGroup));
+            return 1;
+        }
         if (is(k, "CastShadow"))   { lua_pushboolean(L, n->castShadow); return 1; }
         if (is(k, "Material"))     { lua_pushstring(L, kMaterialNames[(int)n->material]); return 1; }
         if (is(k, "Shape"))        { lua_pushstring(L, shapeName(n->primitiveType)); return 1; }
@@ -1847,6 +1852,21 @@ int inst_newindex(lua_State* L) {
         }
         if (is(k, "Anchored"))     { n->anchored = lua_toboolean(L, 3); if (n->anchored) n->velocity = glm::vec3(0.0f); return 0; }
         if (is(k, "CanCollide"))   { n->canCollide = lua_toboolean(L, 3); return 0; }
+        if (is(k, "CollisionGroup")) {
+            if (lua_type(L, 3) != LUA_TSTRING) return luaL_error(L, "CollisionGroup must be a string (a group's name)");
+            const std::string g = lua_tostring(L, 3);
+            if (g.size() > CollisionGroups::kMaxNameLength) return luaL_error(L, "collision group names can be at most 100 characters");
+            n->collisionGroup = g.empty() ? std::string(CollisionGroups::kDefault) : g;
+            return 0;
+        }
+        if (is(k, "CollisionGroupId")) {
+            const CollisionGroups& groups = E(L)->scene()->world().collisionGroups;
+            const lua_Integer id = luaL_checkinteger(L, 3);
+            if (id < 0 || id >= CollisionGroups::kMax || groups.names[id].empty())
+                return luaL_error(L, "there's no collision group with id %d", (int)id);
+            n->collisionGroup = groups.names[id];
+            return 0;
+        }
         if (is(k, "CastShadow"))   { n->castShadow = lua_toboolean(L, 3); return 0; }
         if (is(k, "Material")) {
             if (!parseMaterial(luaL_checkstring(L, 3), n->material))

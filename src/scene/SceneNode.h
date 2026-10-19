@@ -455,6 +455,9 @@ public:
     // Behaviour
     bool     anchored   = true;              // false = falls with gravity in Play
     bool     canCollide = true;              // false = things pass through it
+    // Which collision group it's in (PhysicsService; see CollisionGroups.h). A group
+    // that isn't registered acts like "Default".
+    std::string collisionGroup = "Default";
     bool     castShadow = true;
     // Solid modeling (Roblox's Negate / Union): a negated part is shown see-through pink and
     // cut out of the other parts by Union; it remembers its old look for Un-negate. A union

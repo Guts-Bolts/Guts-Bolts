@@ -1108,9 +1108,12 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     glm::vec3 current(0.0f);   // water flowing along (a "Flow" attribute)
     WaterSystem& waves = m_scene->water();
     m_climbCooldown = std::max(0.0f, m_climbCooldown - dt);
+    const CollisionGroups& groups = m_scene->world().collisionGroups;
+    const std::string& myGroup = Physics::characterGroup(r);
     m_scene->forEach([&](SceneNode* n) {
         if (truss || !n->isPart() || m_scene->isCharacterPart(n)) return;
         if (m_climbCooldown > 0.0f || !isClimbable(n)) return;
+        if (!groups.collides(myGroup, n->collisionGroup)) return;   // (a ladder our collision group passes through)
         AABB b = Physics::worldBounds(n);
         for (float h : {0.4f, 1.3f, 2.2f})
             if (insideBox(b, pos + glm::vec3(0.0f, h, 0.0f) + ahead * 0.75f, 0.05f)) { truss = true; break; }
@@ -1241,7 +1244,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     m_velocity.x *= drag;
     m_velocity.z *= drag;
 
-    Physics::MoveResult res = physics.moveCharacter(pos, delta, m_grounded, r->transform.rotation.y, m_rootId);
+    Physics::MoveResult res = physics.moveCharacter(pos, delta, m_grounded, r->transform.rotation.y, m_rootId, physics.groupOf(r));
     if (sliding && dt > 0.0f) {
         // Sliding into a wall takes that speed away, so you follow the bends.
         const glm::vec3 moved = (res.position - pos) / dt - horiz * speed;
@@ -1281,7 +1284,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
 
     // Loose parts that crash into us knock us back (a rolling boulder, a swinging
     // wrecking ball), harder the heavier and faster they are.
-    for (const Physics::Shove& s : physics.shoves(res.position, r->transform.rotation.y, kBodyMass)) {
+    for (const Physics::Shove& s : physics.shoves(res.position, r->transform.rotation.y, kBodyMass, physics.groupOf(r))) {
         glm::vec3 dir(s.dir.x, 0.0f, s.dir.z);
         float l = glm::length(dir);
         if (l < 1e-3f) continue;
