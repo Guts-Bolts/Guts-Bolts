@@ -1826,6 +1826,32 @@ only* or *Private*), upload a **thumbnail** (cropped to 16:9) and a square
 from everyone else: the server won't list them, send them or start servers
 for them.
 
+#### Version history (putting an old version back)
+
+Publishing a game never throws its old version away. Every time you publish
+(Studio's **File > Publish**, saving a published game in Studio, or **New
+version** on the Configure page), the server keeps the version it replaces. The
+Configure page has a **Version history** box listing them, newest first: the
+version number, when it was published, who published it and how big it is.
+The live one says **Live now**.
+
+**Restore** puts an old version back. It doesn't rewind anything: the old
+version is published again as a new, newest version (marked "restored from
+3", say), so the version you restored over is still in the list if you change
+your mind. Players get it the next time they join.
+
+- Only the game's creator can see the list or restore.
+- The newest **50** versions are kept, and at most **100 MB** of them per game;
+  older ones are deleted, oldest first. The live version is never deleted.
+- Saving the exact same file again doesn't make a new version.
+- Games published before version history existed show their current file as
+  version 1. It's really kept as version 1 the next time the game is published.
+- Deleting a game deletes its history too.
+
+Both servers do this: the website's (`game.versions` and `game.restore` in
+`worker/server.js`, files `ver:<game>:<version>`) and the one you can run on
+your own computer (`src/server`, files `files/ver-<game>-<version>`).
+
 The site's **Create** page has one tab per kind of thing you make:
 
 - **My Games:** every game you made in Studio (on this computer, plus the ones
@@ -2553,7 +2579,8 @@ mapping and FXAA. It needs OpenGL 4.1, so it runs on Windows, macOS and Linux.
 The `worker/test` folder has automatic checks for the website's server. They
 start a real copy of the server in memory (no internet needed) and try things the
 way a player would: signing up, getting the daily Bolts, buying an item,
-commenting, the filter, and staff tools like warnings and bans. They also check
+commenting, the filter, a game's version history and restoring, and staff
+tools like warnings and bans. They also check
 that the update log is filled in properly, that it says "Library" and not
 "Marketplace", and that the C++ filter has the same word list as the website.
 

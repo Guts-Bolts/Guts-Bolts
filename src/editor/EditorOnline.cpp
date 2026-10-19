@@ -147,12 +147,16 @@ void Editor::renderPublishDialog() {
             if (!r.value("ok", false)) { m_publishMsg = r.value("error", std::string("Publishing didn't work.")); return; }
             m_publishMsg = m_path.empty() ? "Published! It's on the website now. Save your game so Studio remembers it's published."
                                           : "Published! It's on the website now, and saving updates it there too.";
+            // Old versions are kept: the game's Configure page on the website can put one back.
+            if (r.value("version", 0LL) > 1)
+                m_publishMsg += " This is version " + std::to_string(r.value("version", 0LL)) +
+                                " (older ones are under Version history on the game's Configure page on the website).";
         });
     };
     ImGui::BeginDisabled(m_onlineBusy);
     if (!published.empty()) {
         if (ImGui::Button("Update published game", ImVec2(200, 30))) send(true);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replace the version on the server with this one");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Publish this as the newest version (the old ones are kept in the game's Version history on the website)");
         ImGui::SameLine();
         if (ImGui::Button("Publish as a new game", ImVec2(180, 30))) send(false);
     } else {

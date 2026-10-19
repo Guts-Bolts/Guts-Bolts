@@ -649,3 +649,11 @@ table.forum tr.pinned td { background: var(--panel2); }
 /* Inventory on profiles: item cards with the numbers of the Limited copies someone holds */
 .inv-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .inv-item .serials { color: #1a7f37; font-weight: bold; overflow-wrap: anywhere; }
+/* A game's version history (Configure page) */
+.versions { width: 100%; border-collapse: collapse; font-size: 13px; }
+.versions th { text-align: left; color: var(--muted); font-weight: normal; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.versions td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.versions td:last-child { text-align: right; white-space: nowrap; }
+.versions td:nth-child(4) { white-space: nowrap; }
+.tag-live { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 11px; font-weight: bold; color: #fff; background: var(--green); }
+@media (max-width: 560px) { .versions th:nth-child(3), .versions td:nth-child(3) { display: none; } }
