@@ -46,6 +46,9 @@ void                       highlightFromJson(const nlohmann::json& j, HighlightP
 // A Trail's or Beam's settings (and whether it's on), the same way.
 nlohmann::json             effectToJson(const EffectProps& e, bool enabled, bool beam);
 void                       effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled);
+// A Sound's, SoundGroup's or sound effect's settings (multiplayer updates; null for anything else).
+nlohmann::json             soundToJson(const SceneNode& n);
+void                       soundFromJson(SceneNode& n, const nlohmann::json& j);
 // A screen effect's settings (and whether it's on), and a Sky's, the same way.
 nlohmann::json             postEffectToJson(const PostEffectProps& p, bool enabled);
 void                       postEffectFromJson(const nlohmann::json& j, PostEffectProps& p, bool& enabled);

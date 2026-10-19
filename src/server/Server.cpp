@@ -136,7 +136,8 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get",
-                                                    "get", "servers.play", "relay.host", "relay.join", "product.pending", "product.grant"};
+                                                    "get", "servers.play", "relay.host", "relay.join", "product.pending", "product.grant",
+                                                    "msg.publish", "msg.poll"};   // (guests can host games too)
     if (me.userId == 0 && opName != "hello" && opName != "ping" && opName.rfind("account.", 0) != 0 &&
         !kLookOnly.count(opName) && opName != "support.send" && opName != "support.mine")
         return fail("Sign up or log in first.");
@@ -526,6 +527,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("friends.", 0) == 0 || name.rfind("follow.", 0) == 0) return friendOp(name, me, args);
     if (name.rfind("servers.", 0) == 0) return serverOp(name, me, args);
     if (name.rfind("data.", 0) == 0) return dataOp(name, me, args);
+    if (name.rfind("msg.", 0) == 0) return msgOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);
     if (name.rfind("appeal.", 0) == 0) return appealOp(name, me, args);
     if (name.rfind("outfit.", 0) == 0 || name.rfind("message.", 0) == 0 || name.rfind("notes.", 0) == 0 || name == "game.favorite" || name == "games.mine" || name.rfind("comments.", 0) == 0 ||

@@ -620,7 +620,9 @@ Id forNode(const SceneNode& n) {
         case NodeKind::Beam:       return Id::Ribbon;
         case NodeKind::Particles:  return Id::Particles;
         case NodeKind::Light:      return Id::Light;
-        case NodeKind::Sound:      return Id::Sound;
+        case NodeKind::Sound:
+        case NodeKind::SoundGroup:
+        case NodeKind::SoundEffect: return Id::Sound;
         case NodeKind::Attachment: return Id::Attachment;
         case NodeKind::Constraint: return Id::Constraint;
         case NodeKind::ForceField: return Id::ForceField;

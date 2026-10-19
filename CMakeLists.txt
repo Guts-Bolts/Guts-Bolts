@@ -309,6 +309,7 @@ add_library(gb_engine STATIC
     src/core/Paths.cpp
     src/core/FileDialog.cpp
     src/core/Audio.cpp
+    src/core/SoundFx.cpp
     src/core/Voice.cpp
     src/core/UpdateChecker.cpp
     src/core/Account.cpp
@@ -339,6 +340,7 @@ add_library(gb_engine STATIC
     src/scene/Animation.cpp
     src/scene/Ragdoll.cpp
     src/scene/Effects.cpp
+    src/scene/SoundMix.cpp
     src/scene/Blast.cpp
     src/scene/Serializer.cpp
     src/scene/RobloxFile.cpp

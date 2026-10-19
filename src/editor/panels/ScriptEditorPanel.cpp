@@ -75,6 +75,14 @@ const char* const kWords[] = {
     "Trail", "Beam", "Attachment0", "Attachment1", "ColorSequence", "ColorSequenceKeypoint", "NumberSequence",
     "NumberSequenceKeypoint", "Keypoints", "Lifetime", "MinLength", "MaxLength", "WidthScale", "LightEmission",
     "FaceCamera", "Width0", "Width1", "CurveSize0", "CurveSize1", "Segments", "TextureSpeed", "TextureLength", "TextureMode",
+    // Messages between the game's servers
+    "MessagingService", "PublishAsync", "SubscribeAsync", "Data", "Sent",
+    // Sound groups and sound effects
+    "SoundService", "SoundGroup", "Volume", "PlaybackSpeed", "Looped", "Playing", "SoundId", "Priority",
+    "ReverbSoundEffect", "EchoSoundEffect", "EqualizerSoundEffect", "DistortionSoundEffect", "PitchShiftSoundEffect",
+    "ChorusSoundEffect", "CompressorSoundEffect", "FlangeSoundEffect", "TremoloSoundEffect",
+    "DecayTime", "Density", "Diffusion", "DryLevel", "WetLevel", "Delay", "Feedback", "HighGain", "LowGain", "MidGain",
+    "Level", "Octave", "Depth", "Mix", "Rate", "Attack", "GainMakeup", "Ratio", "Release", "Threshold", "Duty", "Frequency",
     // Sky and screen effects (in Lighting, or the Camera)
     "Sky", "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "SunTextureId", "MoonTextureId",
     "StarCount", "CelestialBodiesShown", "SunAngularSize", "MoonAngularSize",

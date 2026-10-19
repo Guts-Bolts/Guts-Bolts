@@ -6,6 +6,7 @@
 #include <memory>
 #include <glm/glm.hpp>
 #include "../renderer/Mesh.h"
+#include "../core/SoundFx.h"
 
 struct EditMesh;   // see EditMesh.h
 
@@ -40,6 +41,11 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //                make something happen (buttons, levers, "click to buy" signs)
 //   Animation  — keyframes that pose a rig's parts (made in Studio's Animation
 //                Editor, played by scripts: humanoid:LoadAnimation(anim):Play())
+//   SoundGroup — a volume knob (and effects) for many sounds at once: each Sound whose
+//                SoundGroup is this one plays at Volume x the group's Volume (a group
+//                inside another group multiplies again). Usually in SoundService.
+//   SoundEffect — ReverbSoundEffect, EchoSoundEffect... inside a Sound (changes that
+//                sound) or a SoundGroup (changes all of its sounds together)
 //   PostEffect — a screen effect in Lighting (or the Camera): ColorCorrectionEffect,
 //                SunRaysEffect, DepthOfFieldEffect, BloomEffect, BlurEffect
 //   Sky        — in Lighting: skybox pictures, the sun and moon, how many stars
@@ -47,7 +53,22 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //                Attachment): little pictures that fly out of it (see ParticleProps)
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
                       FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector, Particles, Camera,
-                      PostEffect, Sky };
+                      PostEffect, Sky, SoundGroup, SoundEffect };
+
+// A sound effect's settings (kind == SoundEffect; `enabled` is Enabled). Which numbers mean
+// what depends on the type: SoundFx::params(type) names them (DecayTime, Delay, Level...).
+struct SoundFxProps {
+    SoundFx::Type type = SoundFx::Type::Reverb;
+    int           priority = 0;                     // Priority: higher ones are applied first
+    float         v[SoundFx::kMostParams] = {1.5f, 1.0f, 1.0f, 0.0f, 0.0f};
+};
+inline SoundFxProps soundFxDefaults(SoundFx::Type t) {
+    SoundFxProps p;
+    p.type = t;
+    const SoundFx::Settings d = SoundFx::defaults(t);
+    for (int i = 0; i < SoundFx::kMostParams; ++i) p.v[i] = d.v[i];
+    return p;
+}
 
 // A ProximityPrompt's settings (kind == Prompt; `enabled` switches it off).
 struct PromptProps {
@@ -641,7 +662,10 @@ public:
     float       pitch    = 1.0f;
     bool        looped   = false;
     bool        autoplay = false;          // start playing when the game starts
+    uint64_t    soundGroup = 0;            // SoundGroup: the group it plays through (0 = none)
     int         audioHandle = 0;           // runtime only
+    // SoundGroup (kind == SoundGroup) uses `volume` (Roblox's default 0.5).
+    SoundFxProps soundFx;                  // (kind == SoundEffect)
 
     // Physics (parts). Negative = use the material's value. Together these are Roblox's
     // CustomPhysicalProperties (PhysicalProperties.new(density, friction, elasticity,
@@ -738,6 +762,8 @@ public:
     bool isScript() const { return kind == NodeKind::Script; }
     bool isLight()  const { return kind == NodeKind::Light; }
     bool isSound()  const { return kind == NodeKind::Sound; }
+    bool isSoundGroup()  const { return kind == NodeKind::SoundGroup; }
+    bool isSoundEffect() const { return kind == NodeKind::SoundEffect; }
     bool isTool()   const { return kind == NodeKind::Tool; }
     bool isValue()  const { return kind == NodeKind::Value; }
     bool isDecal()  const { return kind == NodeKind::Decal; }

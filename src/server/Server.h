@@ -1,5 +1,6 @@
 #pragma once
 #include <filesystem>
+#include <deque>
 #include <map>
 #include <memory>
 #include <set>
@@ -235,6 +236,12 @@ private:
     nlohmann::json& gameData(const std::string& game);
     void saveGameData(const std::string& game);
     std::map<std::string, nlohmann::json> m_gameData;   // game id -> {store: {key: value}}, loaded when first used
+    // ServerData.cpp too: MessagingService, messages between the running servers of one game
+    // (worker/server.js msgOp has the same). In memory, like the relay.
+    nlohmann::json msgOp(const std::string& name, User& me, const nlohmann::json& args);
+    struct MsgBox { long long seq = 0; std::deque<nlohmann::json> list; };   // {n, topic, message, sent}
+    std::map<std::string, MsgBox> m_msgs;                       // game id ->
+    std::map<std::string, std::deque<long long>> m_msgSent;     // "account\ngame" -> when they sent (the rate limit)
     nlohmann::json checkRequest(const nlohmann::json& req, User*& me);   // null = fine, else the failure reply
     void relayRequest(Client& c, const nlohmann::json& req);            // relay.host / relay.join
     void relayAccept(Client& c, const std::string& ticket);
