@@ -627,7 +627,9 @@ SceneNode* makeConstraint(Scene& scene, ConstraintType type, SceneNode* a, const
             return scene.insert(std::move(att), part);
         };
         c->ref0 = makeAttachment(a, pa)->id;
-        c->ref1 = makeAttachment(b, type == ConstraintType::Hinge ? pa : pb)->id;
+        // (Joints that hold two points together start with both at the first click.)
+        const bool samePoint = type == ConstraintType::Hinge || usesJointProps(type);
+        c->ref1 = makeAttachment(b, samePoint ? pa : pb)->id;
     }
     return scene.insert(std::move(c), a);
 }

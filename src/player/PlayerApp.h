@@ -424,6 +424,10 @@ private:
     int            m_banDays = 4;                             // index into the ban lengths (last = forever)
     bool           m_warnMode = false;                        // the popup sends a warning, not a ban
     std::string    m_warnAcking;                              // the warning we said "I understand" to
+    std::string    m_appealText, m_appealMsg;                 // the ban screen's appeal (appeal.send)
+    bool           m_appealBusy = false;
+    std::string    m_deleteName, m_deletePassword, m_deleteMsg;   // Your account > Delete my account (account.delete)
+    bool           m_deleteBusy = false;
     int            m_createKind = 0, m_createPrice = 0, m_giveServerBolts = 100;
     std::string    m_createName, m_createDesc, m_createPath;
     std::string    m_renameKey, m_renameText;      // My Games row being renamed
@@ -518,6 +522,7 @@ private:
     bool        m_paused = false;
     bool        m_showSettings = false;
     bool        m_shiftLock = false;   // Roblox Shift Lock (Shift toggles it)
+    bool        m_padClick = false;    // a controller's RT held (it clicks ClickDetectors)
     int         m_menuTab = 0;         // in-game menu: 0 Players, 1 Settings, 2 Help
     int         m_menuConfirm = 0;     // 1 = "Reset character?", 2 = "Leave game?"
     int         m_frame = 0;

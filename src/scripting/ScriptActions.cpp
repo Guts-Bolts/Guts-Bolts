@@ -196,8 +196,12 @@ void ScriptEngine::openActions() {
     lua_register(L, "__gb_casAll", ActionLua::all);
     lua_register(L, "__gb_casButton", ActionLua::setButton);
     lua_register(L, "__gb_casButtonGet", ActionLua::getButton);
-    if (s_testHooks) lua_register(L, "__gb_testInput", ActionLua::testInput);
+    // (__gb_testInput itself is registered in ScriptEngine.cpp, which hands these kinds to
+    // actionTestInput below: it also does ClickDetector hovers and clicks on a part.)
 }
+
+// __gb_testInput("key" / "button" / "touch" / "click" with no part, ...): see ActionLua::testInput.
+int actionTestInput(lua_State* L) { return ActionLua::testInput(L); }
 
 ScriptEngine::ActionBinding* ScriptEngine::findAction(const std::string& name) {
     for (auto& a : m_actions) if (a.name == name) return &a;

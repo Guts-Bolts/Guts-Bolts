@@ -401,8 +401,8 @@ void Editor::renderToolbar() {
         }
         {
             Group g("Constraints");
-            const char* names[] = {"Rope", "Rod", "Spring", "Weld", "Hinge", "Motor"};
-            for (int col = 0; col < 2; ++col) {
+            const char* names[] = {"Rope", "Rod", "Spring", "Weld", "Hinge", "Motor", "Ball Socket", "Prismatic", "Cylindrical"};
+            for (int col = 0; col < 3; ++col) {
                 Stack st;
                 for (int r = 0; r < 3; ++r) {
                     int t = col * 3 + r;
@@ -430,6 +430,12 @@ void Editor::renderToolbar() {
                     centerModelPivot();
                 if (smallButton("Export", Icons::Id::Export, false, !m_playing, "Export to Roblox (.rbxlx)")) exportRoblox(false);
             }
+        }
+        {
+            Group g("Physics");
+            if (bigButton("Collision Groups", Icons::Id::Collide, m_showCollisionGroups, true,
+                          "Which groups of parts bump into each other (players walking through each other, team doors...)"))
+                m_showCollisionGroups = !m_showCollisionGroups;
         }
         {
             Group g("Align");
