@@ -1026,11 +1026,57 @@ sparkles.Parent = coin
 ### Your character's moves (the Animate script)
 
 Every character gets a 2011-style **Animate** script: idle, walk, run, jump,
-fall, climb, sit, holding a tool, and the emotes **dance** (1-3), **wave**,
-**point**, **laugh** and **cheer**. Type `/e dance` (or `/e wave`, ...) in chat.
-To change a move, put an Animation in the matching value of the Animate
-script (for example `Animate.walk.WalkAnim.AnimationId`): your clip plays
-instead of the built-in one. Scripts can call `humanoid:PlayEmote("cheer")`.
+fall, climb, sit and holding a tool. To change a move, put an Animation in the
+matching value of the Animate script (for example `Animate.walk.WalkAnim.AnimationId`):
+your clip plays instead of the built-in one.
+
+### Emotes
+
+Everyone has the emotes **dance**, **dance2**, **dance3**, **wave**, **point**,
+**cheer** and **laugh**: type `/e dance` (or `/e wave`, ...) in the chat, or press
+**B** for the **emote menu** (on a phone, tap the smiley above the jump button) and
+click one. Everyone in the server sees it. Moving or jumping stops it; dances keep
+going until you do. Emotes are real keyframed animations (the same clips as the
+Animation Editor's), played on the character's Animator as AnimationTracks, so a
+script can find them with `animator:GetPlayingAnimationTracks()`.
+
+**From the catalog:** the catalog sells **Emotes** and **Animation Packs** (the
+*Emotes* group). An animation pack changes how you stand, walk, run, jump and fall.
+On the website's **Avatar** page (or the app's Avatar page, under *Emotes*) put up
+to 8 emotes in your emote menu's slots and pick one pack. They come with you to
+every game: your emotes fill the menu (slots you leave empty show the built-in
+ones), and `/e` works with their names too (`/e jumpingjacks`). The ones there to
+start with:
+
+| Item | Kind | Price |
+|---|---|---|
+| Salute, Shrug, Robot | Emote | Free |
+| Jumping Jacks | Emote | 15 Bolts |
+| Sprinkler | Emote | 25 Bolts |
+| Bouncy Animation Pack | Animation Pack | Free |
+| Robot Animation Pack | Animation Pack | 40 Bolts |
+
+Only Guts&Bolts staff make emotes and packs. Their catalog pictures are real
+renders of the character mid-move, made by Studio: `GutsAndBolts --emote-pictures <dir>`,
+then `python3 tools/make_emotes.py --pictures <dir>` (the starter moves themselves
+are in `tools/make_emotes.py`).
+
+**For scripts:**
+
+```lua
+humanoid:PlayEmote("cheer")        -- true if it played (needs to be standing on the ground)
+-- Turn the emote menu off in your game (emotes from scripts still work):
+game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false)
+-- Open or close it yourself:
+game:GetService("GuiService"):SetEmotesMenuOpen(true)
+print(game:GetService("GuiService"):GetEmotesMenuOpen())
+```
+
+`humanoid.Jump = true` makes your own character jump, and `humanoid:Move(direction)`
+walks it that way until you call it with `Vector3.new()` (keys pushed win).
+`SetCoreGuiEnabled` remembers the other types (PlayerList, Health, Backpack,
+Chat, ...) and `GetCoreGuiEnabled` reads them back, but only `EmotesMenu` hides
+anything so far.
 
 `humanoid.PlatformStand = true` makes the character go limp and fall over,
 like 2011 Roblox, and hard hits can trip or fling you. `humanoid:ChangeState`

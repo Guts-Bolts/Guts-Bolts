@@ -10,6 +10,7 @@
 #include "Animation.h"
 #include "CollisionGroups.h"
 #include <functional>
+#include <map>
 #include <memory>
 #include <unordered_map>
 
@@ -57,6 +58,30 @@ struct ScriptCamera {
     // The local player's camera options, once a script changed them (else the game's).
     bool          optionsSet = false;
     CameraOptions options;
+};
+
+// The engine's own on-screen things a game can switch off while playing, like Roblox's
+// StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false). Only on this computer.
+// (The emote menu listens; the other types are remembered for scripts that read them back.)
+struct CoreGuiState {
+    static constexpr const char* kTypes[] = {"PlayerList", "Health", "Backpack", "Chat", "EmotesMenu", "SelfView", "Captures"};
+    std::map<std::string, bool> on;   // type -> shown (missing = shown)
+    bool emotesOpen = false;          // the emote menu is open (B, its button, or GuiService:SetEmotesMenuOpen)
+    static bool known(const std::string& type) {
+        if (type == "All") return true;
+        for (const char* t : kTypes) if (type == t) return true;
+        return false;
+    }
+    void set(const std::string& type, bool shown) {
+        if (type == "All") { for (const char* t : kTypes) on[t] = shown; }
+        else on[type] = shown;
+        if (!enabled("EmotesMenu")) emotesOpen = false;
+    }
+    bool enabled(const std::string& type) const {
+        if (type == "All") { for (const char* t : kTypes) if (!enabled(t)) return false; return true; }
+        auto it = on.find(type);
+        return it == on.end() || it->second;
+    }
 };
 
 // Rules and physics for the whole place (like Roblox's Workspace properties).
@@ -144,6 +169,7 @@ public:
     BlastSystem&    blasts()     { return m_blasts; }      // explosions: shockwaves, smoke, fire, mushroom clouds
     Anim::Animator& animator()   { return m_animator; }   // animations scripts are playing
     ScriptCamera&   camera()     { return m_camera; }     // workspace.CurrentCamera (while playing)
+    CoreGuiState&   coreGui()    { return m_coreGui; }    // StarterGui:SetCoreGuiEnabled, the emote menu (while playing)
     // This computer's player's camera options: what a script set, or the game's.
     const CameraOptions& cameraOptions() const { return m_camera.optionsSet ? m_camera.options : m_world.playerCamera; }
     // Gore is shown only if the game allows it AND the player hasn't turned it off.
@@ -249,6 +275,7 @@ private:
     BlastSystem                m_blasts;
     Anim::Animator             m_animator;
     ScriptCamera               m_camera;
+    CoreGuiState               m_coreGui;
     std::unique_ptr<Player>    m_player;
 
     std::unordered_map<uint64_t, SceneNode*> m_index;

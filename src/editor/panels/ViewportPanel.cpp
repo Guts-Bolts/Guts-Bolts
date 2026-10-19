@@ -16,6 +16,7 @@
 #include "../../core/AppWindow.h"
 #include "../../scene/Player.h"
 #include "../../game/Hud.h"
+#include "../../game/EmoteMenu.h"
 #include "../../core/Audio.h"
 #include "../TeamCreate.h"
 #include "../Icons.h"
@@ -692,8 +693,10 @@ void ViewportPanel::render(float dt) {
                 : "SIMULATE  -  click things to inspect / drag them, right-drag + WASD fly, F6 pause, Shift+F5 stop";
             dl->AddText(ImVec2(imgPos.x + 12, imgMax.y - ImGui::GetFontSize() - 10), IM_COL32(255, 255, 255, 190), tip);
         } else if (playing) {
-            // Clicks go to the game (part.Clicked / MouseButton1), not the editor.
-            const bool onHotbar = Hud::overHotbar(imgPos, imgMax, *m_scene, ImGui::GetMousePos());
+            // Clicks go to the game (part.Clicked / MouseButton1), not the editor. While the
+            // emote menu is open, they're its.
+            const bool emotesOpen = m_scene->coreGui().emotesOpen;
+            const bool onHotbar = emotesOpen || Hud::overHotbar(imgPos, imgMax, *m_scene, ImGui::GetMousePos());
             std::vector<GameGui::Event> guiEvents;   // the game's own UI gets the mouse first
             const bool onGui = GameGui::handle(*m_scene, imgPos, imgMax, ImGui::GetMousePos(), m_hovered && !onHotbar,
                                                ImGui::IsMouseClicked(ImGuiMouseButton_Left),
@@ -732,17 +735,19 @@ void ViewportPanel::render(float dt) {
                 m_session->guiEvents(typed);
             }
             Hud::draw(dl, imgPos, imgMax, *m_scene, m_session->gui());
-            if (int slot = Hud::drawHotbar(dl, imgPos, imgMax, *m_scene); slot >= 0 && m_hovered) m_session->selectToolSlot(slot);
+            if (int slot = Hud::drawHotbar(dl, imgPos, imgMax, *m_scene); slot >= 0 && m_hovered && !emotesOpen) m_session->selectToolSlot(slot);
             // The leaderboard, once the game gives the player some leaderstats.
             if (auto stats = m_session->scripts().leaderstats(m_session->scripts().playerName()); !stats.empty())
             {
                 static bool listOpen = true;   // (the arrow on its title folds it away)
                 Hud::drawPlayerList(dl, imgPos, imgMax, {{m_session->scripts().playerName(), false, false, stats, true}}, listOpen);
             }
+            // The emote menu (B), over everything else.
+            EmoteMenu::update(dl, imgPos, imgMax, *m_scene, !ImGui::GetIO().WantTextInput && !m_state->simPaused, nullptr, m_hovered);
             // Green frame = the game is running.
             dl->AddRect(imgPos, imgMax, IM_COL32(60, 200, 90, 255), 0.0f, 0, 3.0f);
             const char* tip = m_state->simPaused ? "PLAY (paused)  -  F6 resume, F7 step, Shift+F5 stop"
-                                                 : "PLAYING  -  WASD move, Space jump, right-drag camera, F6 pause, F5/Esc stop";
+                                                 : "PLAYING  -  WASD move, Space jump, right-drag camera, B emotes, F6 pause, F5/Esc stop";
             dl->AddText(ImVec2(imgPos.x + 12, imgMax.y - ImGui::GetFontSize() - 10),
                         IM_COL32(255, 255, 255, 170), tip);
         } else if (m_state->mode == StudioMode::Modeling) {

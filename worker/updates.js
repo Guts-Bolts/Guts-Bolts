@@ -59,6 +59,20 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'bust-a-move', name: 'Bust a Move', time: 1791903600, tag: 'Engine',
+    summary: 'Emotes! Dance, wave and cheer with real animations everyone sees, pick them from a new emote menu, and get more in the catalog.',
+    items: [
+      'Type /e dance (or dance2, dance3, wave, point, cheer, laugh) in the chat, and everyone in the server sees you do it',
+      'Press B (or tap the smiley on a phone) for the emote menu: click an emote to play it',
+      'Moving or jumping stops an emote. Dances keep going until you do',
+      'The catalog has a new Emotes group: emotes, and animation packs that change how you stand, walk, run, jump and fall',
+      'Free to start: Salute, Shrug, Robot and the Bouncy Animation Pack. Jumping Jacks (15 Bolts), Sprinkler (25) and the Robot Animation Pack (40) too',
+      'On the Avatar page, put up to 8 emotes in your emote menu and pick a pack. They come with you to every game',
+      'For scripts: humanoid:PlayEmote("wave"), and games can turn the menu off with StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false)',
+      'humanoid.Jump = true and humanoid:Move(direction) now work on your own character too',
+    ],
+  },
+  {
     id: 'two-thumbs-way-up', name: 'Two Thumbs Way Up', time: 1791900000, tag: 'Website',
     summary: 'Rate Library models with a thumbs up or down, and find the best ones with the new "Best rated" sort.',
     items: [

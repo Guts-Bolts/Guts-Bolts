@@ -20,6 +20,10 @@ import demolitionYard from '../games/Demolition Yard.gbscene';
 import megaWaterSlide from '../games/Mega Water Slide.gbscene';
 import nightPlaza from '../games/Night Plaza.gbscene';
 import obbyOfDoom from '../games/Obby of Doom.gbscene';
+// The starter emotes and animation packs (tools/make_emotes.py), bundled as text like the
+// games: the same file src/server reads, so both servers sell the same ones.
+import emotesText from '../assets/emotes/emotes.gbemotes';
+import emotePicturesText from '../assets/emotes/pictures.gbemotes';
 const EXAMPLE_GAMES = [
   { id: 'game-demolition-yard', text: demolitionYard, genres: ['Destruction', 'Sandbox'] },
   { id: 'game-mega-water-slide', text: megaWaterSlide, genres: ['Adventure', 'Showcase'] },
@@ -35,9 +39,10 @@ const kDailyUploadsUnverified = 5;
 const REVIEWED_KINDS = ['decal', 'audio', 'tshirt'];
 const kCreatorSharePercent = 70;
 const kMaxNotes = 50;   // notifications kept per account (the bell)
-const KINDS = ['hat', 'shirt', 'pants', 'audio', 'plugin', 'game', 'decal', 'model', 'hair', 'faceacc', 'neck', 'shoulder', 'waist', 'face', 'tshirt', 'gear', 'animation'];
+const KINDS = ['hat', 'shirt', 'pants', 'audio', 'plugin', 'game', 'decal', 'model', 'hair', 'faceacc', 'neck', 'shoulder', 'waist', 'face', 'tshirt', 'gear', 'animation',
+  'emote', 'animpack'];
 const FEE = { hat: 10, shirt: 10, pants: 10, audio: 20, plugin: 20, game: 0, decal: 5, model: 0,
-  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0 };
+  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0, emote: 0, animpack: 0 };
 // Accessories: things worn on the body, made (and placed on a mannequin) in Studio's
 // Accessory window. Verified creators only. Faces are pictures, and only Guts makes them.
 const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
@@ -58,21 +63,58 @@ const kMaxVersions = 50, kMaxVersionBytes = 100 << 20;
 const hasAccess = (k) => k === 'game' || k === 'model' || k === 'animation';
 const weekOf = (t) => Math.floor(t / (7 * 86400));
 const MAX_SIZE = { audio: 6 << 20, game: 24 << 20, plugin: 512 << 10, decal: 4 << 20, shirt: 1 << 20, pants: 1 << 20, model: 4 << 20,
-  hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20 };
+  hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20,
+  emote: 256 << 10, animpack: 512 << 10 };
 // Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Only staff
 // make gear. You can have up to kMostGear equipped, and you get them in games whose
 // creator ticked "Allow gear". (src/server has the same rules.)
 const kMostGear = 4;
-const isCatalogItem = (k) => isClothing(k) || k === 'gear';   // sold in the catalog
+// Emotes and animation packs: keyframes for the character, sold in the catalog. Only staff
+// make them. Owners equip up to kEmoteSlots emotes (the emote menu's slots) and one animation
+// pack on the Avatar page; they play in every game. (src/server has the same rules.)
+const isEmoteItem = (k) => k === 'emote' || k === 'animpack';
+const kEmoteSlots = 8;
+const PACK_STATES = ['idle', 'walk', 'run', 'jump', 'fall'];
+const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k);   // sold in the catalog
 // Inventory on profiles: what someone owns from the catalog, in these groups. (src/server has the same.)
-const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'gear', 'limited'];
+const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'gear', 'emotes', 'limited'];
 function inventoryCat(cat, a) {
   if (cat === 'accessories') return isAccessory(a.kind);
   if (cat === 'clothing') return a.kind === 'shirt' || a.kind === 'pants' || a.kind === 'tshirt';
   if (cat === 'faces') return a.kind === 'face';
   if (cat === 'gear') return a.kind === 'gear';
+  if (cat === 'emotes') return isEmoteItem(a.kind);
   if (cat === 'limited') return !!a.limited;
   return true;
+}
+// An emote is an animation file ({format: 'gbanim', clip}); an animation pack is
+// {format: 'gbanimpack', clips: {idle, walk, run, jump, fall}} with at least one of them.
+// A clip needs keyframes, and at most 30 seconds of them. "" if it's fine.
+function clipProblem(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c) || !Array.isArray(c.keys) || !c.keys.length) return 'it has no keyframes';
+  if (c.keys.length > 600) return 'it has too many keyframes';
+  for (const k of c.keys) {
+    if (!k || typeof k !== 'object' || typeof k.t !== 'number' || !(k.t >= 0 && k.t <= 30)) return 'its keyframes must be between 0 and 30 seconds';
+    if (!k.poses || typeof k.poses !== 'object' || Array.isArray(k.poses)) return 'a keyframe has no poses';
+  }
+  return '';
+}
+function emoteProblem(kind, data) {
+  let m = null;
+  try { m = JSON.parse(new TextDecoder().decode(data)); } catch { m = null; }
+  if (kind === 'emote') {
+    if (!m || m.format !== 'gbanim' || !m.clip) return 'An emote must be an animation made in Studio\'s Animation Editor.';
+    const p = clipProblem(m.clip);
+    return p ? 'That emote won\'t play: ' + p + '.' : '';
+  }
+  if (!m || m.format !== 'gbanimpack' || !m.clips || typeof m.clips !== 'object') return 'That isn\'t an animation pack.';
+  const states = Object.keys(m.clips);
+  if (!states.length || states.some((st) => !PACK_STATES.includes(st))) return 'An animation pack has idle, walk, run, jump and fall animations (and nothing else).';
+  for (const st of states) {
+    const p = clipProblem(m.clips[st]);
+    if (p) return 'The pack\'s ' + st + ' animation won\'t play: ' + p + '.';
+  }
+  return '';
 }
 function gearProblem(data) {
   let m = null;
@@ -524,6 +566,7 @@ export class GbServerObject extends DurableObject {
     for (const u of this.users.values()) this.gutsFollows(u);
     this.addExampleGames();
     this.addVerifiedHat();
+    this.addStarterEmotes();
     this.timeGutstoberItems();
     this.numberAssets();
     for (const u of this.users.values()) if (u.emailVerified && !u.owned.includes(VERIFIED_HAT_ID)) { this.giveVerifiedHat(u); this.saveUser(u); }
@@ -917,6 +960,9 @@ export class GbServerObject extends DurableObject {
       email: maskEmail(u.emailVerified ? u.email : ''), emailPending: maskEmail(u.pendingEmail || ''),
       twoStep: !!(u.twoStep && u.emailVerified), canMail: this.canMail, authApp: !!u.totpSecret, privacy: this.privacyOf(u),
       gear: (u.gear || []).filter((g) => u.owned.includes(g)),
+      // Emotes in the emote menu's slots ('' = empty) and the animation pack, all things they own.
+      emotes: this.emoteSlots(u),
+      animPack: u.animPack && u.owned.includes(u.animPack) ? u.animPack : '',
       // Banned: what for and until when (the app and the site show a ban screen).
       ban: u.banned ? { reason: u.banReason || '', title: BAN_REASONS[u.banReason] || 'Breaking the rules',
         note: u.banNote || '', at: u.bannedAt || 0, until: u.bannedUntil || 0,
@@ -1016,6 +1062,45 @@ export class GbServerObject extends DurableObject {
     a.description = 'Given to everyone who confirms their email address. Can\'t be bought: add and confirm an email in Settings to get it.';
     if (a.size !== data.length) { a.size = data.length; a.updated = now(); this.writeFile(a.id, data); }
     this.saveAsset(a);
+  }
+
+  // Someone's emote slots: kEmoteSlots item ids ('' = empty), only emotes they still own.
+  emoteSlots(u) {
+    const out = [];
+    for (let i = 0; i < kEmoteSlots; i++) {
+      const id = (u.emotes || [])[i] || '';
+      const a = id ? this.assets.get(id) : null;
+      out.push(a && a.kind === 'emote' && u.owned.includes(id) ? id : '');
+    }
+    return out;
+  }
+
+  // The starter emotes and animation packs (assets/emotes/emotes.gbemotes): added once, kept
+  // up to date, owned by the staff account (Guts), each with its picture (a render of the
+  // character mid-move, made by Studio: GutsAndBolts --emote-pictures).
+  addStarterEmotes() {
+    if (!this.official || !emotesText) return;
+    let list = [], pictures = {};
+    try { list = JSON.parse(emotesText).catalog || []; } catch { list = []; }
+    try { pictures = JSON.parse(emotePicturesText || '{}'); } catch { pictures = {}; }
+    for (const it of list) {
+      if (!it || !it.id || !isEmoteItem(it.kind)) continue;
+      const file = it.kind === 'emote' ? { format: 'gbanim', clip: it.clip } : { format: 'gbanimpack', clips: it.clips };
+      const data = new TextEncoder().encode(JSON.stringify(file));
+      let a = this.assets.get(it.id);
+      if (!a) {
+        a = { id: it.id, kind: it.kind, name: cleanText(it.name, 50), creator: this.official, price: Math.max(0, it.price | 0),
+          created: now(), sales: 0, plays: 0, size: 0, meta: {}, builtin: true, likes: 0, dislikes: 0 };
+        this.assets.set(a.id, a);
+      }
+      a.description = cleanText(it.description || '', 1000, true);
+      if (a.size !== data.length) { a.size = data.length; a.updated = now(); this.writeFile(a.id, data); }
+      if (pictures[it.id]) {
+        const pic = b64ToBytes(pictures[it.id]);
+        if (a.thumbSize !== pic.length) { this.writeFile('thumb:' + a.id, pic); a.thumb = now(); a.thumbSize = pic.length; }
+      }
+      this.saveAsset(a);
+    }
   }
 
   // Pumpkin items in the catalog are Gutstober items: they go off sale when it ends.
@@ -1369,6 +1454,34 @@ export class GbServerObject extends DurableObject {
       this.saveUser(me);
       return okay({ me: this.meJson(me) });
     }
+    if (name === 'emotes.equip') {
+      // Put an emote you own in one of your emote menu's slots (1-8), or empty the slot (id '').
+      // An emote already in another slot moves to this one.
+      const slot = num(args, 'slot');
+      if (!Number.isInteger(slot) || slot < 1 || slot > kEmoteSlots) return fail('Pick a slot from 1 to ' + kEmoteSlots + '.');
+      const slots = this.emoteSlots(me);
+      const a = str(args, 'id') ? this.assets.get(str(args, 'id')) : null;
+      if (str(args, 'id')) {
+        if (!a || a.kind !== 'emote') return fail('That emote doesn\'t exist (any more).');
+        if (!me.owned.includes(a.id)) return fail('Get it from the catalog first.');
+        for (let i = 0; i < kEmoteSlots; i++) if (slots[i] === a.id) slots[i] = '';
+      }
+      slots[slot - 1] = a ? a.id : '';
+      me.emotes = slots;
+      this.saveUser(me);
+      return okay({ me: this.meJson(me) });
+    }
+    if (name === 'animpack.equip') {   // wear an animation pack you own (id '' = back to the normal animations)
+      const id = str(args, 'id');
+      if (id) {
+        const a = this.assets.get(id);
+        if (!a || a.kind !== 'animpack') return fail('That animation pack doesn\'t exist (any more).');
+        if (!me.owned.includes(a.id)) return fail('Get it from the catalog first.');
+        me.animPack = a.id;
+      } else delete me.animPack;
+      this.saveUser(me);
+      return okay({ me: this.meJson(me) });
+    }
     if (name === 'gear.equip') {   // put gear you own in (or take it out of) your backpack for games
       const on = args.on !== false;
       const a = this.assets.get(str(args, 'id'));
@@ -1390,7 +1503,8 @@ export class GbServerObject extends DurableObject {
       if (a.creator !== me.id && !this.isStaff(me)) return fail('You can only change pictures of your own things.');
       // Catalog items aren't given pictures: everyone sees the item itself, drawn from its
       // real shape (so a picture can never be swapped for something it isn't).
-      if (isCatalogItem(a.kind)) return fail('Catalog items don\'t take pictures: they\'re shown as the item itself.');
+      // (Emotes and animation packs can't be drawn from a shape: staff give them a render of the move.)
+      if (isCatalogItem(a.kind) && !(isEmoteItem(a.kind) && this.isStaff(me))) return fail('Catalog items don\'t take pictures: they\'re shown as the item itself.');
       let data;
       try { data = b64ToBytes(str(args, 'data')); } catch { return fail('The picture got scrambled. Try again.'); }
       const png = data.length > 8 && [0x89, 0x50, 0x4e, 0x47].every((v, i) => data[i] === v);
@@ -1883,6 +1997,7 @@ export class GbServerObject extends DurableObject {
       if (isAccessory(kind) && !verified && !this.isStaff(me)) return fail('Only Verified creators can make hats and accessories. Shirts and pants are open to everyone!');
       if (kind === 'face' && !this.isOfficial(me)) return fail('Only Guts can make faces.');
       if (kind === 'gear' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make gear.');
+      if (isEmoteItem(kind) && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make emotes and animation packs.');
       let price = clamp(num(args, 'price'), 0, 1000000);
       if (kind === 'game' || alwaysFree(kind)) price = 0;
       if (price > 0 && !verified) return fail('Only Verified creators can sell things. Upload it for free, or get Verified!');
@@ -1910,6 +2025,7 @@ export class GbServerObject extends DurableObject {
       if (kind === 'game' && !isJson(data)) return fail('That isn\'t a Guts&Bolts game file.');
       if (kind === 'plugin' && !data.length) return fail('That plugin is empty.');
       if (kind === 'gear') { const problem = gearProblem(data); if (problem) return fail(problem); }
+      if (isEmoteItem(kind)) { const problem = emoteProblem(kind, data); if (problem) return fail(problem); }
       let access;
       if (kind === 'model') {
         if (!isJson(data)) return fail('That isn\'t a Guts&Bolts model.');
@@ -2136,6 +2252,7 @@ export class GbServerObject extends DurableObject {
       if (data.length > maxSize(a.kind)) return fail('That\'s too big.');
       if (a.kind === 'game' && !isJson(data)) return fail('That isn\'t a Guts&Bolts game file.');
       if (a.kind === 'gear') { const problem = gearProblem(data); if (problem) return fail(problem); }
+      if (isEmoteItem(a.kind)) { const problem = emoteProblem(a.kind, data); if (problem) return fail(problem); }
       // A 3D accessory made in Studio: a new version of its model (e.g. with its pictures uploaded).
       const model = isAccessory(a.kind) && a.meta && a.meta.model && data.length;
       if (model) {

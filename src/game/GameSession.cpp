@@ -33,6 +33,7 @@ void GameSession::start() {
     m_scene->particles().clear();
     m_scene->blasts().clear();
     m_scene->camera() = ScriptCamera{};   // workspace.CurrentCamera starts fresh: Custom, following you
+    m_scene->coreGui() = CoreGuiState{};  // the emote menu and the rest are back on
     if (Player* p = m_scene->player()) {
         // Player.CharacterRemoving: just before coming back to life (CharacterAdded is below).
         p->onRespawning = [this, p]() { if (m_scripts.running()) m_scripts.fireCharacter(false, p->rootId()); };

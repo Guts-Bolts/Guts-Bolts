@@ -657,8 +657,8 @@ void PlayerApp::drawInventoryDialog() {
     ImGui::SetWindowFontScale(1.0f);
     // The same groups as the website (worker/server.js INVENTORY_CATS); they wrap on narrow screens.
     static const char* kTabs[][2] = {{"all", "All"}, {"accessories", "Accessories"}, {"clothing", "Clothing"},
-                                     {"faces", "Faces"}, {"gear", "Gear"}, {"limited", "Limiteds"}};
-    for (int i = 0; i < 6; ++i) {
+                                     {"faces", "Faces"}, {"gear", "Gear"}, {"emotes", "Emotes"}, {"limited", "Limiteds"}};
+    for (int i = 0; i < (int)(sizeof(kTabs) / sizeof(kTabs[0])); ++i) {
         const std::string label = std::string(kTabs[i][1]) + " (" + std::to_string(m_invCounts.value(kTabs[i][0], 0LL)) + ")";
         const float w = ImGui::CalcTextSize(label.c_str()).x + 20;
         if (i && ImGui::GetItemRectMax().x + 8 + w < ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x) ImGui::SameLine(0, 6);

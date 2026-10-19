@@ -4,6 +4,8 @@
 #include "SiteUi.h"
 #include "LaunchLink.h"
 #include "../game/GameGui.h"
+#include "../game/EmoteMenu.h"
+#include "../scene/Emotes.h"
 #include "../renderer/Textures.h"
 #include "../core/AppWindow.h"
 #include "../game/PlayCamera.h"
@@ -592,9 +594,13 @@ void PlayerApp::sendChat(const std::string& text) {
         std::string name = text.substr(text.find(' ') + 1);
         while (!name.empty() && name.back() == ' ') name.pop_back();
         Player* p = m_scene->player();
-        if (!p || !p->playEmote(name))
-            chat().add("", "Emotes: /e dance, /e dance2, /e dance3, /e laugh, /e cheer, /e wave, /e point, /e sit "
-                           "(stand still on the ground first).", true);
+        if (!p || !p->playEmote(name)) {
+            std::string help = "Emotes:";
+            for (const Emotes::Emote& e : Emotes::builtIn()) help += " /e " + e.name + ",";
+            for (const Emotes::Slot& e : Emotes::mine().slots)   // the ones you equipped from the catalog
+                if (e.clip) help += " /e " + Emotes::normalize(e.name) + ",";
+            chat().add("", help + " /e sit (stand still on the ground first). Or press B for the emote menu.", true);
+        }
         return;
     }
     if (Online::isGuest() && Online::online()) { chat().add("", Online::kGuestChatText, true); return; }
@@ -738,6 +744,7 @@ void PlayerApp::frame(float dt) {
 #endif
     followLink();
     updateItemRenders();   // item pictures (a couple per frame)
+    syncEmotes();          // the emotes and animation pack you equipped, for games
     if (!m_autoStarted && Online::online()) {   // test options that need the server first
         if (!m_opts.onlineGame.empty()) {
             m_autoStarted = true;
@@ -1741,7 +1748,8 @@ void PlayerApp::drawGame(float dt) {
     ImVec2 tapAt;
     bool tapped = touch && m_touch.tapped(tapAt);
     ImVec2 pointer = tapped ? tapAt : ImGui::GetMousePos();
-    const bool onHotbar = Hud::overHotbar(pos, max, *m_scene, pointer);   // picking a tool isn't swinging it
+    const bool emotesOpen = m_scene->coreGui().emotesOpen;   // (while it's open, clicks are the emote menu's)
+    const bool onHotbar = emotesOpen || Hud::overHotbar(pos, max, *m_scene, pointer);   // picking a tool isn't swinging it
     // The game's own UI (buttons...) gets the pointer first.
     GameGui::setCamera(m_camera.view(), m_camera.projection(), m_camera.position());   // (UI on parts)
     std::vector<GameGui::Event> guiEvents;
@@ -1809,12 +1817,15 @@ void PlayerApp::drawGame(float dt) {
         m_session->guiEvents(typed);
     }
     Hud::draw(dl, pos, max, *m_scene, m_session->gui(), labelsAt);
-    if (int slot = Hud::drawHotbar(dl, pos, max, *m_scene, tapped && onHotbar ? &tapAt : nullptr); slot >= 0 && acceptInput)
+    if (int slot = Hud::drawHotbar(dl, pos, max, *m_scene, tapped && onHotbar && !emotesOpen ? &tapAt : nullptr); slot >= 0 && acceptInput && !emotesOpen)
         m_session->selectToolSlot(slot);
     Hud::drawNameTags(dl, pos, max, *m_scene, m_camera.projection() * m_camera.view(), m_camera.position());
     Hud::drawBubbles(dl, pos, max, *m_scene, m_camera.projection() * m_camera.view(), chat().bubbles);
     Hud::drawVoiceTags(dl, pos, max, m_camera.projection() * m_camera.view());
     drawVoiceHud(dl, pos, max, touch);
+    // The emote menu: B (or the smiley button on phones) opens a wheel of your emotes.
+    EmoteMenu::update(dl, pos, max, *m_scene, acceptInput && !io.WantTextInput && !m_session->runOnly(),
+                      tapped ? &tapAt : nullptr, !touch && hovered);
     // Tab (or a controller's Back / Select) folds the leaderboard away (and back), like old Roblox.
     if (acceptInput && !m_chatOpen && !ImGui::GetIO().WantTextInput &&
         (ImGui::IsKeyPressed(ImGuiKey_Tab, false) || ImGui::IsKeyPressed(ImGuiKey_GamepadBack, false)))
@@ -2442,6 +2453,7 @@ void PlayerApp::padCamera(float dt) {
 void PlayerApp::updateTouch(ImVec2 min, ImVec2 max, bool acceptInput) {
     const float scale = GraphicsSettings::get().touchSize;
     m_touch.begin(min, max, scale);
+    m_touch.setEmoteShown(!m_session->runOnly() && EmoteMenu::available(*m_scene));
     std::vector<std::pair<ImVec2, ImVec2>> blocked = GameGui::scrollerRects(*m_scene);   // fingers there scroll the UI
     blocked.push_back({m_chatMin, m_chatMax});
     m_touch.setBlocked(std::move(blocked));
@@ -2489,6 +2501,7 @@ void PlayerApp::updateTouch(ImVec2 min, ImVec2 max, bool acceptInput) {
     if (m_touch.chatPressed()) m_chatOpen = true;
     if (m_touch.menuPressed()) m_paused = true;
     if (m_touch.micPressed()) m_talkOn = !m_talkOn;
+    if (m_touch.emotePressed()) EmoteMenu::toggle(*m_scene);
 }
 
 // ---------------------------------------------------------------------------

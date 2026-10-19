@@ -2,6 +2,12 @@
 #include "core/AppWindow.h"
 #include "scene/Scene.h"
 #include "editor/Editor.h"
+#include "game/Profile.h"
+#include "renderer/Camera.h"
+#include "renderer/Framebuffer.h"
+#include "renderer/SceneRenderer.h"
+#include "scene/Emotes.h"
+#include "scene/Player.h"
 #include "scripting/ScriptEngine.h"
 
 #include <imgui.h>
@@ -9,6 +15,8 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <sstream>
 #include <vector>
 
@@ -160,6 +168,7 @@ void Application::run() {
         if (!m_opts.testSnapshot.empty() && frame == 3) m_editor->testSnapshot(m_opts.testSnapshot);
         if (!m_opts.testDrop.empty() && frame == 10) m_editor->testDrop(m_opts.testDrop);
         if (!m_opts.testMultiplayer.empty()) testMultiplayer(frame);
+        if (!m_opts.emotePictures.empty() && frame == 3) { makeEmotePictures(); m_window->close(); }
 
         m_editor->render(dt);
 
@@ -167,6 +176,55 @@ void Application::run() {
         m_window->endFrame(shoot ? m_opts.screenshot : std::string());
         if (shoot) m_window->close();
     }
+}
+
+// --emote-pictures <dir>: the catalog pictures of the starter emotes and animation packs.
+// Real renders, like every catalog item's: the plain grey character, drawn by the game's
+// own renderer, posed as the move has it at the item's picture moment.
+void Application::makeEmotePictures() {
+    std::error_code ec;
+    const std::filesystem::path dir = m_opts.emotePictures;
+    std::filesystem::create_directories(dir, ec);
+    SceneRenderer renderer;
+    for (const Emotes::StarterItem& it : Emotes::starterItems()) {
+        Anim::Clip clip;
+        float t = 0.0f;
+        if (!Emotes::pictureClip(it.file.dump(), it.picture, clip, t)) { std::printf("%s: not an emote\n", it.id.c_str()); continue; }
+        Scene scene;
+        std::vector<SceneNode*> remove;
+        for (auto& c : scene.root()->children)
+            if (!scene.isProtected(c.get())) remove.push_back(c.get());
+        for (auto* r : remove) scene.removeNode(r);
+        Environment& env = scene.environment();
+        env.fogEnabled = false;
+        env.sunAzimuth = 50.0f;
+        env.sunElevation = 40.0f;
+        Player* p = scene.player();
+        if (!p) continue;
+        p->setSpawn({0, 0, 0});
+        p->build();
+        Profile look;   // the catalog's plain grey mannequin (player/ItemRenders.cpp)
+        look.colors.head = look.colors.torso = look.colors.leftArm = look.colors.rightArm = glm::vec3(0.80f, 0.81f, 0.83f);
+        look.colors.leftLeg = look.colors.rightLeg = glm::vec3(0.74f, 0.75f, 0.78f);
+        look.hat = HatStyle::None;
+        look.applyTo(*p);
+        Emotes::poseRig(p->root(), clip, t);
+        Camera cam;
+        cam.fov = 35.0f;
+        cam.yaw = 30.0f;
+        cam.pitch = 8.0f;
+        cam.pivot = {0, 1.6f, 0};
+        cam.distance = 8.6f;
+        Framebuffer fb;
+        fb.resize(256, 256);
+        cam.resize(256, 256);
+        renderer.render(scene, cam, fb, false);
+        const std::string png = fb.toPng();
+        std::ofstream out(dir / (it.id + ".png"), std::ios::binary);
+        out.write(png.data(), (std::streamsize)png.size());
+        std::printf("%s: %s at %.2fs, %zu bytes\n", it.id.c_str(), it.name.c_str(), t, png.size());
+    }
+    std::fflush(stdout);
 }
 
 // --test-multiplayer "N[:seconds]": drives the multiplayer test through the same AI tool

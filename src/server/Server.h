@@ -59,6 +59,8 @@ private:
         // "everyone", "friends" or "nobody" (worker/server.js privacyOf).
         std::string privacyStatus = "everyone", privacyJoin = "everyone";
         std::vector<std::string> gear;   // equipped gear (worker/server.js me.gear)
+        std::vector<std::string> emotes; // the emote menu's slots ("" = empty; worker/server.js me.emotes)
+        std::string animPack;            // the animation pack they wear ("" = the normal animations)
         // Signing up: a username and user number (both never reused), plus the
         // password-locked backup of their key so they can log in on other devices.
         std::string username;
@@ -197,7 +199,7 @@ private:
     nlohmann::json safetyOp(const std::string& name, User& me, const nlohmann::json& args);
     bool blocks(const User& a, const User& b) const;   // has either of them blocked the other?
     // Inventory on profiles (ServerFriends.cpp, worker/server.js inventoryOf): the catalog
-    // items someone owns, in one group (all, accessories, clothing, faces, gear, limited).
+    // items someone owns, in one group (all, accessories, clothing, faces, gear, emotes, limited).
     bool seesInventory(const User& viewer, const User& u) const;
     nlohmann::json inventoryOf(const User& u, const std::string& cat) const;
     nlohmann::json reportsJson(const std::string& status) const;   // for the Staff page
@@ -264,6 +266,8 @@ private:
     Group*    groupFor(const Asset& a);   // the group a game (or its pass or product) belongs to
     void      paySeller(Asset& a, User& buyer, long long share, const std::string& ref);   // to the group, or the creator
     nlohmann::json meJson(const User& u) const;
+    // Someone's emote slots: kEmoteSlots item ids ("" = empty), only emotes they still own.
+    nlohmann::json emoteSlots(const User& u) const;
     nlohmann::json publicUser(const User& u) const;
     // me: who's looking (adds their vote on a game, like worker/server.js publicAsset(a, me)).
     nlohmann::json publicAsset(const Asset& a, const User* me = nullptr) const;
@@ -287,6 +291,7 @@ private:
 
     // Files
     void load();
+    void addStarterEmotes();  // the starter emotes and animation packs (assets/emotes), as the staff account's
     void addExampleGames();   // the games folder's example games, as the staff account's
     void saveUsers();
     void saveAssets();

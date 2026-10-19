@@ -533,6 +533,8 @@ int m_GetTags(lua_State* L) {
 }
 
 int m_LoadAnimation(lua_State* L);   // (with the animation code below)
+int m_SetCoreGuiEnabled(lua_State* L);   // (with the Humanoid code below)
+int m_GetCoreGuiEnabled(lua_State* L);
 bool parsePriority(const char* s, Anim::Priority& out);
 
 // river:ParentTo(workspace): the same as river.Parent = workspace.
@@ -667,6 +669,7 @@ const luaL_Reg kMethods[] = {
     {"GetAttributeChangedSignal", m_GetAttributeChangedSignal},
     {"HasTag", m_HasTag}, {"AddTag", m_AddTag}, {"RemoveTag", m_RemoveTag}, {"GetTags", m_GetTags},
     {"LoadAnimation", m_LoadAnimation}, {"GetMass", m_GetMass},
+    {"SetCoreGuiEnabled", m_SetCoreGuiEnabled}, {"GetCoreGuiEnabled", m_GetCoreGuiEnabled},
     {nullptr, nullptr}};
 
 // ===========================================================================
@@ -2966,11 +2969,37 @@ int hum_changeState(lua_State* L) {
     else if (is(st, "PlatformStanding")) hum(L).platformStand = true;
     return 0;
 }
-// humanoid:PlayEmote("dance") -> true if it plays (dance, dance2, dance3, laugh, cheer, wave, point)
+// humanoid:PlayEmote("dance") -> true if it plays: the built-in emotes (dance, dance2, dance3,
+// laugh, cheer, wave, point) and the ones the player equipped from the catalog, by name.
+// Only on the player's own computer (a LocalScript, or playing solo); everyone sees it.
 int hum_playEmote(lua_State* L) {
     Player* p = E(L)->scene()->player();
     const bool mine = p && p->rootId() == humRoot(L);
     lua_pushboolean(L, mine && p->playEmote(luaL_checkstring(L, 2)));
+    return 1;
+}
+
+// StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false) turns the emote menu
+// (B, and its button on phones) off for this player; GetCoreGuiEnabled reads it back.
+SceneNode* checkStarterGui(lua_State* L, const char* method) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    if (n->name != "StarterGui") luaL_error(L, "%s is a StarterGui method: game:GetService(\"StarterGui\"):%s(...)", method, method);
+    return n;
+}
+int m_SetCoreGuiEnabled(lua_State* L) {
+    checkStarterGui(L, "SetCoreGuiEnabled");
+    const std::string type = luaL_checkstring(L, 2);
+    if (!CoreGuiState::known(type))
+        return luaL_error(L, "'%s' is not a CoreGuiType (EmotesMenu, PlayerList, Health, Backpack, Chat, SelfView, Captures or All)", type.c_str());
+    luaL_checkany(L, 3);
+    E(L)->scene()->coreGui().set(type, lua_toboolean(L, 3));
+    return 0;
+}
+int m_GetCoreGuiEnabled(lua_State* L) {
+    checkStarterGui(L, "GetCoreGuiEnabled");
+    const std::string type = luaL_checkstring(L, 2);
+    if (!CoreGuiState::known(type)) return luaL_error(L, "'%s' is not a CoreGuiType", type.c_str());
+    lua_pushboolean(L, E(L)->scene()->coreGui().enabled(type));
     return 1;
 }
 
@@ -3005,6 +3034,7 @@ int hum_stopPathfinding(lua_State* L) {
 int hum_move(lua_State* L) {
     glm::vec3 d = LuaApi::checkVector3(L, 2);
     if (Npc* n = npcOf(L)) { n->moveDir = d; n->hasTarget = false; n->route.state = Npc::Route::Idle; }
+    else if (Player* p = E(L)->scene()->player(); p && p->rootId() == humRoot(L)) p->scriptMove(d);   // this computer's player
     return 0;
 }
 
@@ -3088,6 +3118,7 @@ int hum_newindex(lua_State* L) {
     else if (is(k, "PlatformStand")) h.platformStand = lua_toboolean(L, 3);
     else if (is(k, "Jump")) {
         if (Npc* n = npcOf(L)) n->jump = lua_toboolean(L, 3);
+        else if (Player* p = E(L)->scene()->player(); p && p->rootId() == humRoot(L) && lua_toboolean(L, 3)) p->scriptJump();
         return 0;
     }
     else return luaL_error(L, "'%s' can't be set on Humanoid", k);

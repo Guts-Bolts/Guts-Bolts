@@ -76,6 +76,8 @@ const char* typeName(Type t) {
         case Type::Face:     return "Face";
         case Type::TShirt:   return "TShirt";
         case Type::Gear:     return "Gear";
+        case Type::Emote:    return "Emote";
+        case Type::AnimPack: return "AnimPack";
         default:          return "?";
     }
 }
@@ -144,7 +146,8 @@ Item fromServer(const json& a) {
     it.kind = kind;
     it.type = kind == "hat" ? Type::Hat : kind == "shirt" ? Type::Shirt : kind == "pants" ? Type::Pants
             : kind == "hair" ? Type::Hair : kind == "faceacc" ? Type::FaceAcc : kind == "neck" ? Type::Neck
-            : kind == "shoulder" ? Type::Shoulder : kind == "waist" ? Type::Waist : kind == "tshirt" ? Type::TShirt : kind == "gear" ? Type::Gear : Type::Face;
+            : kind == "shoulder" ? Type::Shoulder : kind == "waist" ? Type::Waist : kind == "tshirt" ? Type::TShirt : kind == "gear" ? Type::Gear
+            : kind == "emote" ? Type::Emote : kind == "animpack" ? Type::AnimPack : Type::Face;
     it.price = a.value("price", 0LL);
     it.created = a.value("created", 0LL);
     if (a.contains("meta") && a["meta"].is_object()) {
@@ -182,7 +185,7 @@ void wear(const Item& it) {
 }
 
 void applyLook(const Item& it) {
-    if (it.type == Type::Gear) return;   // gear isn't worn (the Player equips it on the server)
+    if (isEquipped(it.type)) return;   // gear, emotes and packs aren't worn (they're equipped on the server)
     Profile& me = Profile::get();
     switch (it.type) {
         case Type::Hat:
@@ -247,7 +250,7 @@ void takeOff(const Item& it) {
 }
 
 bool isWearing(const Item& it) {
-    if (it.type == Type::Gear) return false;
+    if (isEquipped(it.type)) return false;
     const auto& w = Profile::get().wearing;
     return std::find(w.begin(), w.end(), it.id) != w.end();
 }

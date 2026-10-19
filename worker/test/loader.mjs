@@ -9,6 +9,11 @@ export async function resolve(spec, ctx, next) {
     return { url: 'data:text/javascript,' + encodeURIComponent('import { readFileSync } from "node:fs"; export default new WebAssembly.Module(readFileSync('
       + JSON.stringify(file) + '));'), shortCircuit: true };
   }
+  if (spec.endsWith('.gbemotes')) {   // the real emotes, as text (the server seeds the catalog from them)
+    const file = new URL(spec, ctx.parentURL).pathname;
+    return { url: 'data:text/javascript,' + encodeURIComponent('import { readFileSync } from "node:fs"; export default readFileSync('
+      + JSON.stringify(file) + ', "utf8");'), shortCircuit: true };
+  }
   if (/\.(wasm|gbscene|png|jpg|bin)$/.test(spec)) return { url: 'data:text/javascript,export default null', shortCircuit: true };
   return next(spec, ctx);
 }

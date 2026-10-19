@@ -643,6 +643,7 @@ Every Output line says which playtest (run) it came from; 0 means outside a play
 - Physics: Anchored = false, forces (part:ApplyImpulse, BodyVelocity, VectorForce...), constraints. DON'T fake physics by teleporting parts every frame.
 - Navigation: PathfindingService and humanoid:PathfindTo. DON'T write your own path-walking code when it can do the job.
 - Explosions: the Explosion object / Explode(). DON'T push every nearby part by hand.
+- Emotes: humanoid:PlayEmote("wave") plays a built-in keyframed emote everyone sees (dance, dance2, dance3, wave, point, cheer, laugh; moving or jumping stops it). Players also have the B emote menu; a game turns it off with game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false). DON'T animate a character by moving its arms in a loop.
 - Player input ("press E to ...", a sprint key, a mobile button): ContextActionService:BindAction(name, fn, createTouchButton, Enum.KeyCode.E, ...) in a LocalScript; fn(name, state, input) returns Enum.ContextActionResult.Sink (keep it: the game's own controls ignore it) or Pass. createTouchButton = true adds a phone button (SetTitle / SetImage).
 - Only write scripts for behaviour the built-in objects and properties can't give, or when the person asks for code.
 
