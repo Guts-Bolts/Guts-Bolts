@@ -11,6 +11,8 @@ struct PromptProps;
 struct ClickProps;
 struct HighlightProps;
 struct EffectProps;
+struct JointProps;
+struct CollisionGroups;
 struct ParticleProps;
 
 // Turns scenes and objects into JSON text and back. Used for:
@@ -24,6 +26,9 @@ std::string saveScene(Scene& scene, bool pretty = false);
 bool        loadScene(Scene& scene, const std::string& text, std::string* error = nullptr);
 
 std::string                nodeToString(const SceneNode& node);
+// The collision groups (PhysicsService) and which collide: [{"name", "id", "mask"}, ...].
+nlohmann::json             collisionGroupsToJson(const CollisionGroups& g);
+CollisionGroups            collisionGroupsFromJson(const nlohmann::json& j);
 // Game UI properties as JSON (saving, and multiplayer updates).
 nlohmann::json             guiToJson(const GuiProps& g);
 void                       guiFromJson(GuiProps& g, const nlohmann::json& j);
@@ -39,6 +44,9 @@ void                       highlightFromJson(const nlohmann::json& j, HighlightP
 // A Trail's or Beam's settings (and whether it's on), the same way.
 nlohmann::json             effectToJson(const EffectProps& e, bool enabled, bool beam);
 void                       effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled);
+// A ball-socket / prismatic / cylindrical joint's settings, the same way.
+nlohmann::json             jointToJson(const JointProps& p);
+void                       jointFromJson(const nlohmann::json& j, JointProps& p);
 // A ParticleEmitter's / Fire's / Smoke's / Sparkles' settings, the same way. update = these are
 // another player's changes to one we already have (so new Emit() / Clear() calls happen here too).
 nlohmann::json             particleToJson(const ParticleProps& p, bool enabled);

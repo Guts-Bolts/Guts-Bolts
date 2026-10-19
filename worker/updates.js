@@ -48,6 +48,50 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'no-peeking', name: 'No Peeking!', time: 1791907200, tag: 'Website',
+    summary: 'Buy something from the catalog for a friend: you pay, they get it, with a note from you.',
+    items: [
+      'A new "Buy as a gift" button on catalog items: pick a friend, write a short note if you like, check it and send',
+      'You pay the price, the item goes straight into your friend\'s inventory, and they get a notification with your note',
+      'Gifts show up in both of your Bolts histories, so you can see what you sent and what you got',
+      'You can only send gifts to friends, and not something they already have',
+      'Limited items can\'t be gifts (trade them instead), and free or off-sale items can\'t either',
+    ],
+  },
+  {
+    id: 'two-thumbs-way-up', name: 'Two Thumbs Way Up', time: 1791900000, tag: 'Website',
+    summary: 'Rate Library models with a thumbs up or down, and find the best ones with the new "Best rated" sort.',
+    items: [
+      'Give any Library model a thumbs up or down on its page. Change your mind any time, or press your vote again to take it back',
+      'Only people who have inserted the model in Studio can rate it, and you can\'t rate your own',
+      'The Library, each model\'s page and Studio\'s Toolbox show how many people liked it and how many voted',
+      'A new "Best rated" sort in the Library and the Toolbox. It\'s fair: one vote at 100% doesn\'t beat 500 votes at 95%',
+    ],
+  },
+  {
+    id: 'say-cheese', name: 'Say Cheese', time: 1791896400, tag: 'Website',
+    summary: 'Games can show off up to 5 screenshots on their page, next to the thumbnail.',
+    items: [
+      'Creators add up to 5 screenshots on a game\'s Configure page: .png, .jpg or .webp, up to 2 MB each',
+      'Move them earlier or later to pick the order, or delete one, right on the Configure page',
+      'The game\'s page shows the thumbnail and the screenshots together, with arrows and a strip of small pictures to pick from',
+      'Click a picture to see it big. Arrow keys and Esc work, and on phones you can swipe',
+      'If a picture is the wrong kind or too big, it says so before uploading',
+    ],
+  },
+  {
+    id: 'paper-trail', name: 'Paper Trail', time: 1791892800, tag: 'Website',
+    summary: 'A new Past trades tab on the Trades page: every finished trade, with who, what, when and how it ended.',
+    items: [
+      'Trades now has two tabs: Open trades and Past trades',
+      'Past trades lists accepted, declined, cancelled and expired trades, newest first, 20 to a page',
+      'Each one shows who it was with, the items each of you put in, the date, and how it ended',
+      'Only you and the other person in a trade can see it',
+      'Trades nobody answers now run out after 30 days (the one who sent it gets a notification)',
+      'Past trades are kept from this update on (plus the last month\'s, which the server still had), for a year',
+    ],
+  },
+  {
     id: 'rewind', name: 'Rewind', time: 1791889200, tag: 'Website',
     summary: 'Publishing a game keeps its old versions now, and one click puts an old one back.',
     items: [
@@ -57,6 +101,45 @@ export const BUILT_IN_UPDATES = [
       'The newest 50 versions of each game are kept (up to 100 MB); older ones are cleared out, oldest first',
       'Saving the same file again doesn\'t add a copy, and games you published before today start their history at version 1',
       'Only the game\'s creator can see the list or restore. Studio\'s Publish window says which version you just published',
+    ],
+  },
+  {
+    id: 'joint-venture', name: 'Joint Venture', time: 1791878400, tag: 'Engine',
+    summary: 'Three new joints: ball sockets that turn any way, sliders, and joints that slide and spin at once.',
+    items: [
+      'BallSocketConstraint: two parts held at one point that can turn any way, with an optional cone limit, twist limits and bounce',
+      'PrismaticConstraint: a slider along a line, with end stops, a motor that pushes at a set speed, or a servo that goes to a set spot and stays there',
+      'CylindricalConstraint: slides like a slider and spins around the same line, with its own spin motor, spin servo and angle limits',
+      'Make them from scripts, Insert Object or the Constraints tool in Studio (click two parts), and change them in Properties',
+      'Studio draws them: a ball for the socket, a rail and sleeve for sliders, and a ring on the ones that spin',
+      'They save with your game, show up for everyone in multiplayer, and come along when you import or export a place file',
+      'CurrentPosition and CurrentAngle tell scripts where a slider is and how far it has turned',
+    ],
+  },
+  {
+    id: 'phase-shift', name: 'Phase Shift', time: 1791864000, tag: 'Engine',
+    summary: 'Collision groups are real now: choose which parts bump into which, so players can walk through each other and team doors let only one team in.',
+    items: [
+      'PhysicsService collision groups work for real: register groups, then say which ones collide and which pass through each other (up to 32)',
+      'Every part has a CollisionGroup, and loose parts, walking characters and raycasts all follow the table',
+      'Players walk through each other but not through walls, and a door can let only one team through',
+      'A Collision Groups window in Studio (MODEL tab or the View menu): add, rename and delete groups and tick which pairs collide',
+      'Pick a part\'s group in the Properties panel',
+      'Groups are saved with your place, sent to everyone who joins, and brought in from imported places',
+      'RaycastParams.CollisionGroup and RespectCanCollide for rays that skip what they should',
+    ],
+  },
+  {
+    id: 'second-chances', name: 'Second Chances', time: 1791860400, tag: 'Website',
+    summary: 'Banned? Ask staff to take another look. Done with Guts&Bolts? Delete your account from Settings.',
+    items: [
+      'A banned account can send staff one short appeal (up to 500 letters) right from the ban screen, on the website or in the Player',
+      'One appeal per ban: you can send another once staff have answered, and their answer and note show on your ban screen',
+      'Staff see appeals next to the reports, with why, when and by whom the account was banned, and can accept (unban) or deny them',
+      'New "Delete your account" box in Settings (and in the Player under Your account): type your password and it\'s gone for good',
+      'Deleting removes your email, password, two-step, avatar, About me, posts, outfits, messages, friends, follows and favourites',
+      'Games and items you made stay up as made by "Deleted user", so nothing anyone bought breaks, and your username is never reused',
+      'Limited copies a deleted account owned stay with it and can\'t be traded any more',
     ],
   },
   {

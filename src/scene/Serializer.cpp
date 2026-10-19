@@ -246,6 +246,61 @@ void effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled) {
     enabled = j.value("on", true);
 }
 
+nlohmann::json jointToJson(const JointProps& p) {
+    return {{"limits", p.limitsEnabled}, {"upperAngle", p.upperAngle}, {"twistLimits", p.twistLimitsEnabled},
+            {"twistLower", p.twistLowerAngle}, {"twistUpper", p.twistUpperAngle}, {"restitution", p.restitution},
+            {"lower", p.lowerLimit}, {"upper", p.upperLimit}, {"actuator", kActuatorNames[(int)p.actuator]},
+            {"motorForce", p.motorMaxForce}, {"velocity", p.velocity}, {"speed", p.speed},
+            {"servoForce", p.servoMaxForce}, {"target", p.targetPosition},
+            {"angActuator", kActuatorNames[(int)p.angularActuator]}, {"angVelocity", p.angularVelocity},
+            {"motorTorque", p.motorMaxTorque}, {"angSpeed", p.angularSpeed}, {"targetAngle", p.targetAngle},
+            {"servoTorque", p.servoMaxTorque}, {"angLimits", p.angularLimitsEnabled}, {"lowerAngle", p.lowerAngle},
+            {"incline", p.inclinationAngle}};
+}
+
+void jointFromJson(const nlohmann::json& j, JointProps& p) {
+    if (!j.is_object()) return;
+    auto num = [&](const char* key, float fallback, float lo, float hi) {
+        auto it = j.find(key);
+        return it != j.end() && it->is_number() ? std::clamp(it->get<float>(), lo, hi) : fallback;
+    };
+    auto flag = [&](const char* key, bool fallback) {
+        auto it = j.find(key);
+        return it != j.end() && it->is_boolean() ? it->get<bool>() : fallback;
+    };
+    auto actuator = [&](const char* key) {
+        auto it = j.find(key);
+        if (it != j.end() && it->is_string())
+            for (int i = 0; i < 3; ++i) if (it->get<std::string>() == kActuatorNames[i]) return (Actuator)i;
+        return Actuator::None;
+    };
+    const JointProps d;
+    const float big = 1e9f;
+    p.limitsEnabled      = flag("limits", false);
+    p.upperAngle         = num("upperAngle", d.upperAngle, -180.0f, 180.0f);
+    p.twistLimitsEnabled = flag("twistLimits", false);
+    p.twistLowerAngle    = num("twistLower", d.twistLowerAngle, -180.0f, 180.0f);
+    p.twistUpperAngle    = num("twistUpper", d.twistUpperAngle, -180.0f, 180.0f);
+    p.restitution        = num("restitution", 0.0f, 0.0f, 1.0f);
+    p.lowerLimit         = num("lower", d.lowerLimit, -big, big);
+    p.upperLimit         = num("upper", d.upperLimit, -big, big);
+    p.actuator           = actuator("actuator");
+    p.motorMaxForce      = num("motorForce", 0.0f, 0.0f, big);
+    p.velocity           = num("velocity", 0.0f, -big, big);
+    p.speed              = num("speed", 0.0f, 0.0f, big);
+    p.servoMaxForce      = num("servoForce", 0.0f, 0.0f, big);
+    p.targetPosition     = num("target", 0.0f, -big, big);
+    p.angularActuator    = actuator("angActuator");
+    p.angularVelocity    = num("angVelocity", 0.0f, -big, big);
+    p.motorMaxTorque     = num("motorTorque", 0.0f, 0.0f, big);
+    p.angularSpeed       = num("angSpeed", 0.0f, 0.0f, big);
+    p.targetAngle        = num("targetAngle", 0.0f, -180.0f, 180.0f);
+    p.servoMaxTorque     = num("servoTorque", 0.0f, 0.0f, big);
+    p.angularLimitsEnabled = flag("angLimits", false);
+    p.lowerAngle         = num("lowerAngle", d.lowerAngle, -180.0f, 180.0f);
+    p.inclinationAngle   = num("incline", 0.0f, -180.0f, 180.0f);
+}
+
 nlohmann::json particleToJson(const ParticleProps& p, bool enabled) {
     json j = {{"class", kParticleClassNames[(int)p.type]}};
     if (!enabled) j["on"] = false;
@@ -499,6 +554,34 @@ void guiFromJson(GuiProps& g, const nlohmann::json& j) {
     if (j.contains("surfaceCanvas") && j["surfaceCanvas"].is_array() && j["surfaceCanvas"].size() == 2)
         try { g.surfaceCanvas = glm::max(glm::vec2(1.0f), glm::vec2(j["surfaceCanvas"][0].get<float>(), j["surfaceCanvas"][1].get<float>())); } catch (...) {}
 }
+
+nlohmann::json collisionGroupsToJson(const CollisionGroups& g) {
+    json out = json::array();
+    for (int i : g.slots()) out.push_back({{"name", g.names[i]}, {"id", i}, {"mask", g.masks[i]}});
+    return out;
+}
+
+CollisionGroups collisionGroupsFromJson(const nlohmann::json& j) {
+    CollisionGroups g;
+    if (!j.is_array()) return g;
+    for (const auto& e : j) {
+        if (!e.is_object()) continue;
+        const int id = get<int>(e, "id", -1);
+        std::string name = get<std::string>(e, "name", std::string()).substr(0, CollisionGroups::kMaxNameLength);
+        if (id < 0 || id >= CollisionGroups::kMax || name.empty()) continue;
+        if (id == 0) name = CollisionGroups::kDefault;            // (slot 0 is always Default)
+        else if (name == CollisionGroups::kDefault || g.find(name) >= 0) continue;
+        g.names[id] = name;
+        g.masks[id] = get<uint32_t>(e, "mask", ~0u);
+    }
+    // Both sides of every pair agree (a hand-edited file could say otherwise).
+    for (int a = 0; a < CollisionGroups::kMax; ++a)
+        for (int b = 0; b < a; ++b) {
+            const bool both = ((g.masks[a] >> b) & 1u) && ((g.masks[b] >> a) & 1u);
+            g.set(a, b, both);
+        }
+    return g;
+}
 } // namespace Serializer
 
 namespace {
@@ -540,6 +623,7 @@ json toJson(const SceneNode& n) {
         j["material"]     = kMaterialNames[(int)n.material];
         j["anchored"]     = n.anchored;
         j["canCollide"]   = n.canCollide;
+        if (n.collisionGroup != CollisionGroups::kDefault) j["collisionGroup"] = n.collisionGroup;
         j["castShadow"]   = n.castShadow;
         if (n.negated) j["negate"] = {{"color", vec(n.negColor)}, {"transparency", n.negTransparency}, {"canCollide", n.negCollide}};
         if (!n.unionSource.empty()) j["union"] = json::parse(n.unionSource, nullptr, false);
@@ -559,6 +643,7 @@ json toJson(const SceneNode& n) {
         j["length"] = n.length; j["stiffness"] = n.stiffness; j["damping"] = n.damping;
         j["motorSpeed"] = n.motorSpeed; j["motorTorque"] = n.motorTorque;
         j["thickness"] = n.thickness; j["color"] = vec(n.color); j["enabled"] = n.enabled;
+        if (usesJointProps(n.constraintType)) j["joint"] = Serializer::jointToJson(n.joint);
     }
     if (n.kind == NodeKind::Mover) {
         const MoverProps& m = n.mover;
@@ -708,6 +793,8 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->material      = materialFrom(get<std::string>(j, "material", "Plastic"));
         n->anchored      = get<bool>(j, "anchored", true);
         n->canCollide    = get<bool>(j, "canCollide", true);
+        n->collisionGroup = get<std::string>(j, "collisionGroup", CollisionGroups::kDefault).substr(0, CollisionGroups::kMaxNameLength);
+        if (n->collisionGroup.empty()) n->collisionGroup = CollisionGroups::kDefault;
         n->castShadow    = get<bool>(j, "castShadow", true);
         if (auto it = j.find("negate"); it != j.end() && it->is_object()) {
             n->negated = true;
@@ -730,7 +817,8 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     if (n->kind == NodeKind::Model) n->primaryPart = get<uint64_t>(j, "primaryPart", 0);
     if (n->kind == NodeKind::Constraint) {
         std::string type = get<std::string>(j, "type", "Rope");
-        for (int i = 0; i < 5; ++i) if (type == kConstraintNames[i]) n->constraintType = (ConstraintType)i;
+        for (int i = 0; i < kConstraintTypeCount; ++i) if (type == kConstraintNames[i]) n->constraintType = (ConstraintType)i;
+        if (auto it = j.find("joint"); it != j.end()) Serializer::jointFromJson(*it, n->joint);
         n->ref0 = get<uint64_t>(j, "ref0", 0);
         n->ref1 = get<uint64_t>(j, "ref1", 0);
         n->length = get<float>(j, "length", -1.0f);
@@ -913,6 +1001,8 @@ json settingsJson(Scene& scene) {
                   {"bloodAmount", ws.bloodAmount}, {"bloodStay", ws.bloodStay},
                   {"playerCollisions", ws.playerCollisions}, {"voiceChat", ws.voiceChat}, {"maxFluidParticles", ws.maxFluidParticles},
                   {"orthographic", ws.orthographic}, {"orthographicSize", ws.orthographicSize}};
+    if (!ws.collisionGroups.isDefault())   // (only games that use them)
+        j["world"]["collisionGroups"] = Serializer::collisionGroupsToJson(ws.collisionGroups);
     if (ws.playerCamera != CameraOptions{})   // (only games that changed them)
         j["world"]["playerCamera"] = {{"lockFirstPerson", ws.playerCamera.lockFirstPerson},
                                       {"minZoom", ws.playerCamera.minZoom}, {"maxZoom", ws.playerCamera.maxZoom}};
@@ -965,6 +1055,7 @@ void applySettings(Scene& scene, const json& j) {
         w.bloodColor        = vec(j["world"], "bloodColor", w.bloodColor);
         w.bloodAmount       = get<float>(j["world"], "bloodAmount", w.bloodAmount);
         w.bloodStay         = get<float>(j["world"], "bloodStay", w.bloodStay);
+        if (j["world"].contains("collisionGroups")) w.collisionGroups = Serializer::collisionGroupsFromJson(j["world"]["collisionGroups"]);
         if (j["world"].contains("playerCamera") && j["world"]["playerCamera"].is_object()) {
             const json& pc = j["world"]["playerCamera"];
             CameraOptions& o = w.playerCamera;
@@ -1080,6 +1171,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.visible = src->visible;     dst.internal = src->internal;
     dst.transparency = src->transparency; dst.material = src->material;
     dst.anchored = src->anchored;   dst.canCollide = src->canCollide; dst.castShadow = src->castShadow;
+    dst.collisionGroup = src->collisionGroup;
     dst.negated = src->negated;     dst.negColor = src->negColor;
     dst.negTransparency = src->negTransparency; dst.negCollide = src->negCollide;
     dst.unionSource = src->unionSource;
@@ -1105,6 +1197,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.constraintType = src->constraintType; dst.ref0 = src->ref0; dst.ref1 = src->ref1;
     dst.length = src->length;       dst.stiffness = src->stiffness; dst.damping = src->damping;
     dst.motorSpeed = src->motorSpeed; dst.motorTorque = src->motorTorque; dst.thickness = src->thickness;
+    dst.joint = src->joint;
     dst.viscosity = src->viscosity; dst.surfaceTension = src->surfaceTension;
     dst.fluidRate = src->fluidRate; dst.fluidVelocity = src->fluidVelocity; dst.fluidSystem = src->fluidSystem;
     dst.mover = src->mover;

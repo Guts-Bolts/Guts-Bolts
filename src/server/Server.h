@@ -48,6 +48,10 @@ private:
         std::string banReason, banNote;   // Online::kBanReasons key, and staff's note
         long long   bannedAt = 0, bannedUntil = 0;   // bannedUntil 0 = for good
         nlohmann::json warnings = nlohmann::json::array();   // staff warnings: {id, reason, note, at, seen}
+        // Ban appeal (ServerSafety.cpp): {id, text, at, banAt, status open/accepted/denied, ban: {reason, note, at, until},
+        // note, answeredAt, by}; null = never appealed. banAt is the bannedAt it was sent for.
+        nlohmann::json appeal;
+        long long   deleted = 0;          // when the account was deleted (account.delete); 0 = it wasn't
         std::set<std::string> friends, friendIn, friendOut;   // friends; requests to me; requests I sent
         std::set<std::string> following, followers;           // one-way follows (no asking)
         // Privacy: who sees you online / what you play, and who can join you there:
@@ -83,6 +87,7 @@ private:
         // ServerItems.cpp / ServerAccounts.cpp (worker/server.js has the same):
         std::vector<std::string> pastNames;   // usernames they had before (reserved for them)
         std::vector<std::string> played;      // games they've played (game.vote needs it), oldest first, at most 500
+        std::vector<std::string> usedModels;  // Library models they've inserted (model.vote needs it), oldest first
         long long   publicWeek = 0;           // the week (unix time / 7 days) publicThisWeek counts
         int         publicThisWeek = 0;       // models made public that week (Verified: no limit)
     };
@@ -97,12 +102,14 @@ private:
         nlohmann::json comments = nlohmann::json::array(); // games: comments under it, newest first (ServerSocial.cpp)
         nlohmann::json days = nlohmann::json::object();    // creator stats: "YYYY-MM-DD" -> {plays, sales, bolts}, last 60 days
         long long   icon = 0;                    // games: when its icon was last set (0 = none)
-        long long   likes = 0, dislikes = 0;     // games: thumbs up / down
-        nlohmann::json votes = nlohmann::json::object();   // games: account id -> 1 or -1
+        long long   likes = 0, dislikes = 0;     // games and Library models: thumbs up / down
+        nlohmann::json votes = nlohmann::json::object();   // games and models: account id -> 1 or -1
         // Limiteds (ServerItems.cpp): a fixed stock of numbered copies, which people resell and trade.
         bool        limited = false;
         long long   stock = 0;
         nlohmann::json copies = nlohmann::json::array();   // {serial, owner, price} (price 0 = not for sale)
+        // Games: screenshots on its page (ServerItems.cpp), in order: {id, at, type}. Files "shot-<game>-<id>".
+        nlohmann::json shots = nlohmann::json::array();
         // Games: version history, {v, at, by, size, restored?}, oldest first (the last is live). Empty for a
         // game published before history existed: its file counts as version 1. (worker/server.js a.versions)
         nlohmann::json versions = nlohmann::json::array();
@@ -160,6 +167,13 @@ private:
     static std::string publicModelLimitText();
     void saveTrades();
     void loadTrades();
+    // Past trades (ServerItems.cpp, worker/server.js has the same): a trade is over, so it goes in
+    // both people's Past trades; open trades nobody answered in 30 days expire.
+    void finishTrade(nlohmann::json& tr, const std::string& status, long long now);
+    void keepPastTrade(const nlohmann::json& tr, bool onlyIfNew = false);
+    void expireTrades(long long now);
+    void savePastTrades();
+    void loadPastTrades();
     void saveUpdates();
     void loadUpdates();
     void  claimOfficial(User& u);                  // the staff account is user 1, "Guts"
@@ -187,6 +201,17 @@ private:
     nlohmann::json inventoryOf(const User& u, const std::string& cat) const;
     nlohmann::json reportsJson(const std::string& status) const;   // for the Staff page
     nlohmann::json closeReport(const User& staff, const std::string& id, const std::string& outcome);
+    // Ban appeals (ServerSafety.cpp; worker/server.js has the same): one short note per ban, for staff to answer.
+    nlohmann::json appealOp(const std::string& name, User& me, const nlohmann::json& args);
+    bool           appealIsCurrent(const User& u) const;   // their appeal is for the ban they have now
+    bool           canAppeal(const User& u) const;
+    nlohmann::json myAppeal(const User& u) const;          // what the banned person sees (null: none yet)
+    nlohmann::json appealsJson(const std::string& status) const;   // for the Staff page
+    nlohmann::json answerAppeal(const User& staff, const nlohmann::json& args);
+    // Ban (on) or unban someone and write it in the staff log; "" = done, else why not. admin.ban and accepted appeals.
+    std::string    setBan(const User& staff, User& to, bool on, const nlohmann::json& args);
+    // account.delete (ServerAccounts.cpp): what's personal goes; games, items and the name stay.
+    void           deleteAccount(User& u);
     void saveReports();
     void loadReports();
     // ServerSupport.cpp: support tickets (like "I forgot my password"), for staff to answer.
@@ -287,6 +312,9 @@ private:
     std::map<std::string, Group> m_groups;
     // Trade offers between players (Limiteds), trades.json: {id, from, to, give, get, status, created, updated}, newest last.
     nlohmann::json m_trades = nlohmann::json::array();
+    // Finished trades (pasttrades.json): {id, from, to, fromName, toName, give, get, status, created, finished},
+    // with the names as they were then, newest last.
+    nlohmann::json m_pastTrades = nlohmann::json::array();
     // Updates staff posted (the website's Updates page; the built-in ones are in worker/updates.js), updates.json, newest first.
     nlohmann::json m_updates = nlohmann::json::array();
     nlohmann::json m_forum = nlohmann::json::object();   // thread id -> thread (forum.json)

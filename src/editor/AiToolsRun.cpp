@@ -67,7 +67,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Gui:        return kGuiClassNames[(int)n->gui.type];
         case NodeKind::Sound:      return "Sound";
         case NodeKind::Attachment: return "Attachment";
-        case NodeKind::Constraint: return "Constraint";
+        case NodeKind::Constraint: return kConstraintClassNames[std::clamp((int)n->constraintType, 0, kConstraintTypeCount - 1)];
         default: return n->primitiveType == PrimitiveType::Mesh ? "MeshPart" : "Part";
     }
 }
@@ -298,6 +298,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             s["Transparency"] = n->transparency;
             s["Anchored"] = n->anchored;
             s["CanCollide"] = n->canCollide;
+            if (n->collisionGroup != "Default") s["CollisionGroup"] = n->collisionGroup;
         } else if (n->isScript()) {
             s["Enabled"] = n->enabled;
             s["lines"] = (int)std::count(n->source.begin(), n->source.end(), '\n') + (n->source.empty() ? 0 : 1);

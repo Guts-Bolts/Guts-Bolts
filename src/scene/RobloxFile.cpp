@@ -804,10 +804,46 @@ void readAttributes(const std::string& blob, SceneNode& node) {
     }
 }
 
+// The Workspace's collision groups as Roblox saves them: "Default^0^-1;Players^1^-3"
+// (name ^ id ^ mask, the mask a signed 32-bit number: bit b = collides with group b).
+CollisionGroups parseCollisionGroups(const std::string& text) {
+    CollisionGroups g;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find(';', start);
+        if (end == std::string::npos) end = text.size();
+        const std::string entry = text.substr(start, end - start);
+        start = end + 1;
+        const size_t a = entry.find('^'), b = entry.find('^', a == std::string::npos ? a : a + 1);
+        if (a == std::string::npos || b == std::string::npos) continue;
+        std::string name = entry.substr(0, a).substr(0, CollisionGroups::kMaxNameLength);
+        long long id = -1, mask = -1;
+        try { id = std::stoll(entry.substr(a + 1, b - a - 1)); mask = std::stoll(entry.substr(b + 1)); } catch (...) { continue; }
+        if (id < 0 || id >= CollisionGroups::kMax || name.empty()) continue;
+        if (id == 0) name = CollisionGroups::kDefault;
+        else if (name == CollisionGroups::kDefault || g.find(name) >= 0) continue;
+        g.names[id] = name;
+        g.masks[id] = (uint32_t)(int32_t)mask;
+    }
+    for (int x = 0; x < CollisionGroups::kMax; ++x)   // (both sides of a pair agree)
+        for (int y = 0; y < x; ++y) g.set(x, y, ((g.masks[x] >> y) & 1u) && ((g.masks[y] >> x) & 1u));
+    return g;
+}
+
+std::string writeCollisionGroups(const CollisionGroups& g) {
+    std::string out;
+    for (int i : g.slots()) {
+        if (!out.empty()) out += ';';
+        out += g.names[i] + "^" + std::to_string(i) + "^" + std::to_string((int32_t)g.masks[i]);
+    }
+    return out;
+}
+
 struct Converter {
     Scene& scene;
     Report& report;
     std::unordered_map<const Inst*, SceneNode*> made;
+    CollisionGroups groups;   // the place's (to name parts saved with only a CollisionGroupId)
 
     static bool isPartClass(const std::string& c) {
         static const char* names[] = {"Part", "SpawnLocation", "Seat", "VehicleSeat", "TrussPart", "WedgePart",
@@ -963,6 +999,11 @@ struct Converter {
             node->transparency = (float)in.num("Transparency", 0.0);
             node->anchored = in.flag("Anchored", false);
             node->canCollide = in.flag("CanCollide", true);
+            // Its collision group: by name (newer files) or by number (older ones).
+            if (std::string cg = in.str("CollisionGroup"); !cg.empty())
+                node->collisionGroup = cg.substr(0, CollisionGroups::kMaxNameLength);
+            else if (int id = (int)in.num("CollisionGroupId", 0); id > 0 && id < CollisionGroups::kMax && !groups.names[id].empty())
+                node->collisionGroup = groups.names[id];
             node->castShadow = in.flag("CastShadow", true);
             node->locked = in.flag("Locked", false);
             node->material = materialFromRoblox((int)in.num("Material", 256));
@@ -1328,6 +1369,48 @@ struct Converter {
             node->visible = in.flag("Visible", c == "RopeConstraint" || c == "RodConstraint" || c == "SpringConstraint");
             node->color = {0.45f, 0.32f, 0.2f};
             ++report.constraints;
+        } else if (c == "BallSocketConstraint" || c == "PrismaticConstraint" || c == "CylindricalConstraint") {
+            // Joints: Roblox's numbers are turned into ours (studs are halved, forces scaled).
+            node = std::make_unique<SceneNode>(name, NodeKind::Constraint);
+            node->constraintType = c == "BallSocketConstraint" ? ConstraintType::BallSocket
+                                 : c == "PrismaticConstraint"  ? ConstraintType::Prismatic : ConstraintType::Cylindrical;
+            auto big = [](double v) { return std::isfinite(v) ? (float)std::clamp(v, -1e30, 1e30) : (v > 0 ? 1e30f : -1e30f); };
+            auto act = [&](const char* k) { return (Actuator)std::clamp((int)in.num(k, 0), 0, 2); };
+            JointProps& p = node->joint;
+            p.limitsEnabled = in.flag("LimitsEnabled", false);
+            p.restitution = std::clamp((float)in.num("Restitution", 0.0), 0.0f, 1.0f);
+            if (node->constraintType == ConstraintType::BallSocket) {
+                p.upperAngle = (float)in.num("UpperAngle", 45.0);
+                p.twistLimitsEnabled = in.flag("TwistLimitsEnabled", false);
+                p.twistLowerAngle = (float)in.num("TwistLowerAngle", -45.0);
+                p.twistUpperAngle = (float)in.num("TwistUpperAngle", 45.0);
+            } else {
+                p.lowerLimit = (float)in.num("LowerLimit", 0.0) * kImportScale;
+                p.upperLimit = (float)in.num("UpperLimit", 5.0) * kImportScale;
+                p.actuator = act("ActuatorType");
+                p.motorMaxForce = big(in.num("MotorMaxForce", 0.0) * kForceScale);
+                p.velocity = (float)in.num("Velocity", 0.0) * kVelScale;
+                p.speed = big(in.num("Speed", 0.0) * kVelScale);
+                p.servoMaxForce = big(in.num("ServoMaxForce", 0.0) * kForceScale);
+                p.targetPosition = (float)in.num("TargetPosition", 0.0) * kImportScale;
+            }
+            if (node->constraintType == ConstraintType::Cylindrical) {
+                p.angularActuator = act("AngularActuatorType");
+                p.angularVelocity = (float)in.num("AngularVelocity", 0.0) * kSpinScale;
+                p.motorMaxTorque = big(in.num("MotorMaxTorque", 0.0) * kTorqueScale);
+                p.angularSpeed = big(in.num("AngularSpeed", 0.0) * kSpinScale);
+                p.targetAngle = (float)in.num("TargetAngle", 0.0);
+                p.servoMaxTorque = big(in.num("ServoMaxTorque", 0.0) * kTorqueScale);
+                p.angularLimitsEnabled = in.flag("AngularLimitsEnabled", false);
+                p.lowerAngle = (float)in.num("LowerAngle", -45.0);
+                p.upperAngle = (float)in.num("UpperAngle", 45.0);
+                p.inclinationAngle = (float)in.num("InclinationAngle", 0.0);
+            }
+            node->enabled = in.flag("Enabled", true);
+            node->visible = in.flag("Visible", false);
+            node->thickness = 0.1f;
+            node->color = {0.6f, 0.62f, 0.66f};
+            ++report.constraints;
         } else if (auto mt = std::find(std::begin(kMoverClassNames), std::end(kMoverClassNames), c); mt != std::end(kMoverClassNames)) {
             // BodyVelocity, BodyGyro... and LinearVelocity, AlignPosition...: classic games'
             // vehicles and flying keep working. (Roblox's numbers are turned into ours.)
@@ -1660,8 +1743,7 @@ struct XmlWriter {
                 cls = n.value.type == Attribute::Vector3 || n.value.type == Attribute::Color3 ? nullptr : n.valueClass();
                 break;
             case NodeKind::Constraint: {
-                static const char* names[] = {"RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint"};
-                cls = names[(int)n.constraintType];
+                cls = kConstraintClassNames[(int)n.constraintType];
                 break;
             }
         }
@@ -1917,6 +1999,7 @@ struct XmlWriter {
             flt("Transparency", n.transparency);
             boolean("Anchored", n.anchored);
             boolean("CanCollide", n.canCollide);
+            if (n.collisionGroup != CollisionGroups::kDefault) str("CollisionGroup", n.collisionGroup);
             boolean("CastShadow", n.castShadow);
             boolean("Locked", n.locked);
             token("Material", materialToRoblox(n.material));
@@ -2032,6 +2115,39 @@ struct XmlWriter {
                 flt("AngularVelocity", n.motorSpeed);
                 flt("MotorMaxTorque", n.motorTorque);
             }
+            if (usesJointProps(n.constraintType)) {
+                const JointProps& p = n.joint;
+                auto huge = [](float v, float scale) { return (double)v / scale; };   // ("no limit" stays very big)
+                boolean("LimitsEnabled", p.limitsEnabled);
+                flt("Restitution", p.restitution);
+                if (n.constraintType == ConstraintType::BallSocket) {
+                    flt("UpperAngle", p.upperAngle);
+                    boolean("TwistLimitsEnabled", p.twistLimitsEnabled);
+                    flt("TwistLowerAngle", p.twistLowerAngle);
+                    flt("TwistUpperAngle", p.twistUpperAngle);
+                } else {
+                    flt("LowerLimit", p.lowerLimit * kExportScale);
+                    flt("UpperLimit", p.upperLimit * kExportScale);
+                    token("ActuatorType", (int)p.actuator);
+                    flt("MotorMaxForce", huge(p.motorMaxForce, kForceScale));
+                    flt("Velocity", p.velocity / kVelScale);
+                    flt("Speed", huge(p.speed, kVelScale));
+                    flt("ServoMaxForce", huge(p.servoMaxForce, kForceScale));
+                    flt("TargetPosition", p.targetPosition * kExportScale);
+                }
+                if (n.constraintType == ConstraintType::Cylindrical) {
+                    token("AngularActuatorType", (int)p.angularActuator);
+                    flt("AngularVelocity", p.angularVelocity / kSpinScale);
+                    flt("MotorMaxTorque", huge(p.motorMaxTorque, kTorqueScale));
+                    flt("AngularSpeed", huge(p.angularSpeed, kSpinScale));
+                    flt("TargetAngle", p.targetAngle);
+                    flt("ServoMaxTorque", huge(p.servoMaxTorque, kTorqueScale));
+                    boolean("AngularLimitsEnabled", p.angularLimitsEnabled);
+                    flt("LowerAngle", p.lowerAngle);
+                    flt("UpperAngle", p.upperAngle);
+                    flt("InclinationAngle", p.inclinationAngle);
+                }
+            }
             flt("Thickness", n.thickness * kExportScale);
             boolean("Visible", n.visible);
             boolean("Enabled", n.enabled);
@@ -2089,7 +2205,9 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
     for (auto& c : scene.root()->children) if (!scene.isProtected(c.get())) old.push_back(c.get());
     for (SceneNode* n : old) scene.removeNode(n);
 
-    Converter conv{scene, report, {}};
+    Converter conv{scene, report, {}, {}};
+    if (std::string cg = ws->str("CollisionGroups"); !cg.empty()) conv.groups = parseCollisionGroups(cg);
+    scene.world().collisionGroups = conv.groups;
     for (const Inst* k : ws->children) conv.convert(*k, nullptr);
     // Scripts that run on the server live in ServerScriptService in Roblox.
     for (const char* svc : {"StarterGui", "ServerScriptService", "ReplicatedStorage", "ServerStorage", "StarterPlayer", "ReplicatedFirst",
@@ -2138,7 +2256,7 @@ std::vector<SceneNode*> importModel(Scene& scene, SceneNode* parent, const std::
     if (!readFile(path, doc)) { error = doc.error; return out; }
     std::vector<Inst*> roots = doc.roots;
     if (const Inst* ws = findChild(doc.roots, "Workspace")) roots = ws->children;   // a place: take its Workspace
-    Converter conv{scene, report, {}};
+    Converter conv{scene, report, {}, scene.world().collisionGroups};
     for (const Inst* r : roots)
         if (SceneNode* n = conv.convert(*r, parent)) out.push_back(n);
     conv.linkRefs(doc);
@@ -2153,6 +2271,7 @@ bool exportPlace(Scene& scene, const std::string& path, std::string& error) {
     w.o << "<Item class=\"Workspace\" referent=\"RBXWORKSPACE\">\n<Properties>\n";
     w.str("Name", "Workspace");
     w.flt("Gravity", scene.world().gravity / 22.0f * kRobloxGravity);
+    if (!scene.world().collisionGroups.isDefault()) w.str("CollisionGroups", writeCollisionGroups(scene.world().collisionGroups));
     w.o << "</Properties>\n";
     const SceneNode* ui = scene.root()->findChild("StarterGui");
     if (ui && ui->kind != NodeKind::Model) ui = nullptr;

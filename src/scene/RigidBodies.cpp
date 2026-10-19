@@ -1,5 +1,5 @@
 // Rigid-body physics for unanchored parts, plus constraints (ropes, rods,
-// springs, welds, hinges with motors).
+// springs, welds, hinges with motors, ball sockets, sliders and slide-and-spin joints).
 //
 // How it works, in short:
 //  * every unanchored part becomes a "body" with mass, velocity and spin;
@@ -30,6 +30,7 @@ struct Body {
     bool       dynamic = false;
     bool       sphere = false;
     bool       solid = true;
+    int        group = 0;       // collision group slot (the terrain is Default's)
     glm::vec3  pos{0.0f};
     glm::quat  rot{1, 0, 0, 0};
     glm::vec3  half{0.5f};
@@ -320,10 +321,218 @@ struct Joint {
     int            a = -1, b = -1;          // bodies
     glm::vec3      la{0.0f}, lb{0.0f};      // anchors in each body's own space
     glm::vec3      axisA{1, 0, 0}, axisB{1, 0, 0};   // hinge axes in body space
-    glm::quat      rel{1, 0, 0, 0};         // weld: B's rotation relative to A
+    glm::quat      rel{1, 0, 0, 0};         // weld / prismatic: B's rotation relative to A
+    glm::quat      qa{1, 0, 0, 0}, qb{1, 0, 0, 0};   // each attachment's turn in its body's own space
     float          length = 0.0f;
     float          accMotor = 0.0f;
+    // Ball socket / prismatic / cylindrical: the impulse each limit or actuator row
+    // has added up this substep (so limits only push, and actuators stay under
+    // their force), and how fast a limit row bounces back (Restitution).
+    enum Row { LinLow, LinHigh, LinMotor, AngLow, AngHigh, AngMotor, Cone, kRows };
+    float          acc[kRows] = {};
+    float          bounce[kRows] = {};
 };
+
+// --- rows of the ball-socket / prismatic / cylindrical joints ------------------------
+// Each row nudges the two bodies' velocities so that one relative speed reaches
+// `target`; the impulse it has added up (`acc`) stays between lo and hi.
+
+constexpr float kFree = 1e30f;
+
+void linearRow(Body& A, Body& B, const glm::vec3& ra, const glm::vec3& rb, const glm::vec3& dir,
+               float target, float& acc, float lo, float hi) {
+    const float cdot = glm::dot((B.v + glm::cross(B.w, rb)) - (A.v + glm::cross(A.w, ra)), dir);
+    float lambda = (target - cdot) / effMass(A, B, ra, rb, dir);
+    const float old = acc;
+    acc = std::clamp(old + lambda, lo, hi);
+    lambda = acc - old;
+    applyImpulse(A, ra, -dir * lambda);
+    applyImpulse(B, rb, dir * lambda);
+}
+
+void angularRow(Body& A, Body& B, const glm::vec3& u, float target, float& acc, float lo, float hi) {
+    const glm::mat3 IA = A.dynamic ? A.invInertia() : glm::mat3(0.0f);
+    const glm::mat3 IB = B.dynamic ? B.invInertia() : glm::mat3(0.0f);
+    const float k = glm::dot(u, IA * u) + glm::dot(u, IB * u);
+    if (k < 1e-9f) return;
+    float lambda = (target - glm::dot(B.w - A.w, u)) / k;
+    const float old = acc;
+    acc = std::clamp(old + lambda, lo, hi);
+    lambda = acc - old;
+    if (A.dynamic) A.w -= IA * u * lambda;
+    if (B.dynamic) B.w += IB * u * lambda;
+}
+
+// A turning row for a ball socket's limits. The bodies turn about the joint's point
+// (which the point rows hold still), not about their own middles: a pendulum's bob
+// is much harder to swing round the pivot than to spin in place, and solving it as
+// a spin would barely slow the swing down.
+glm::mat3 invInertiaAbout(const Body& b, const glm::vec3& r) {
+    if (!b.dynamic) return glm::mat3(0.0f);
+    const glm::mat3 R = b.R();
+    const glm::vec3 il = 1.0f / glm::max(b.invInertiaLocal, glm::vec3(1e-12f));
+    glm::mat3 I = R * glm::mat3(glm::vec3(il.x, 0, 0), glm::vec3(0, il.y, 0), glm::vec3(0, 0, il.z)) * glm::transpose(R);
+    I += (1.0f / b.invMass) * (glm::dot(r, r) * glm::mat3(1.0f) - glm::outerProduct(r, r));
+    return glm::inverse(I);
+}
+
+void pivotRow(Body& A, Body& B, const glm::vec3& ra, const glm::vec3& rb, const glm::vec3& u,
+              float target, float& acc, float lo, float hi) {
+    const glm::mat3 KA = invInertiaAbout(A, ra), KB = invInertiaAbout(B, rb);
+    const float k = glm::dot(u, KA * u) + glm::dot(u, KB * u);
+    if (k < 1e-9f) return;
+    float lambda = (target - glm::dot(B.w - A.w, u)) / k;
+    const float old = acc;
+    acc = std::clamp(old + lambda, lo, hi);
+    lambda = acc - old;
+    if (A.dynamic) { const glm::vec3 dw = -(KA * u) * lambda; A.w += dw; A.v -= glm::cross(dw, ra); }
+    if (B.dynamic) { const glm::vec3 dw = (KB * u) * lambda;  B.w += dw; B.v -= glm::cross(dw, rb); }
+}
+
+// The speed a one-sided limit row aims for, given how far inside the limit it is
+// (gap > 0: inside; < 0: past it). Inside, it may close the gap in one step and no
+// faster; past it, it's pushed back. `bounce` (from Restitution) kicks it back out.
+float limitTarget(float gap, float h, float bounce) {
+    const float t = gap >= 0.0f ? -gap / h : -0.2f / h * gap;
+    return gap < 0.05f && bounce > 0.0f ? std::max(t, bounce) : t;
+}
+
+float wrapAngle(float a) {
+    while (a > 3.14159265f) a -= 6.2831853f;
+    while (a < -3.14159265f) a += 6.2831853f;
+    return a;
+}
+
+// How far B's attachment has turned around the cylindrical joint's spin axis (radians).
+glm::vec3 spinAxisLocal(const JointProps& p) {
+    const float i = glm::radians(p.inclinationAngle);
+    return {std::cos(i), std::sin(i), 0.0f};
+}
+float spinAngle(const glm::quat& fa, const glm::quat& fb, const JointProps& p) {
+    const float i = glm::radians(p.inclinationAngle);
+    const glm::vec3 ref(-std::sin(i), std::cos(i), 0.0f);   // (at right angles to the spin axis)
+    const glm::vec3 axis = fa * spinAxisLocal(p), ra = fa * ref, rb = fb * ref;
+    return std::atan2(glm::dot(glm::cross(ra, rb), axis), glm::dot(ra, rb));
+}
+
+// One solver pass over a ball-socket, prismatic or cylindrical joint.
+void solveJointProps(Joint& j, Body& A, Body& B, float h, bool firstPass) {
+    const JointProps& p = j.node->joint;
+    const float beta = 0.2f / h;
+    const glm::vec3 ra = A.rot * j.la, rb = B.rot * j.lb;
+    const glm::vec3 pa = A.pos + ra, pb = B.pos + rb;
+    const glm::quat fa = A.rot * j.qa, fb = B.rot * j.qb;   // the attachments' frames
+    const glm::vec3 x = fa * glm::vec3(1, 0, 0);
+    float dummy = 0.0f;
+    // A limit row's bounce speed is worked out once per substep, from how fast it hit.
+    auto bounceFor = [&](Joint::Row r, float approach) {
+        if (firstPass) j.bounce[r] = approach < -0.5f ? -p.restitution * approach : 0.0f;
+        return j.bounce[r];
+    };
+
+    if (j.type == ConstraintType::BallSocket) {
+        // The two points stay together...
+        for (int ax = 0; ax < 3; ++ax) {
+            glm::vec3 e(0.0f);
+            e[ax] = 1.0f;
+            dummy = 0.0f;
+            linearRow(A, B, ra, rb, e, -beta * glm::dot(pb - pa, e), dummy, -kFree, kFree);
+        }
+        // ...Attachment1's axis leans no further than UpperAngle from Attachment0's...
+        const glm::vec3 xb = fb * glm::vec3(1, 0, 0);
+        if (p.limitsEnabled) {
+            const glm::vec3 c = glm::cross(x, xb);
+            const float s = glm::length(c);
+            if (s > 1e-5f) {
+                const glm::vec3 u = -c / s;   // turning B this way leans it back in
+                const float angle = std::atan2(s, glm::dot(x, xb));
+                const float gap = glm::radians(std::clamp(p.upperAngle, 0.0f, 180.0f)) - angle;
+                const float b = bounceFor(Joint::Cone, glm::dot(B.w - A.w, u));
+                pivotRow(A, B, ra, rb, u, limitTarget(gap, h, b), j.acc[Joint::Cone], 0.0f, kFree);
+            }
+        }
+        // ...and twists only between TwistLowerAngle and TwistUpperAngle.
+        if (p.twistLimitsEnabled) {
+            glm::quat q = glm::inverse(fa) * fb;
+            if (q.w < 0.0f) q = -q;
+            const float twist = 2.0f * std::atan2(q.x, q.w);
+            glm::vec3 axis = x + xb;
+            axis = glm::length(axis) > 1e-4f ? glm::normalize(axis) : xb;
+            const float lo = glm::radians(p.twistLowerAngle), hi = glm::radians(p.twistUpperAngle);
+            const float w = glm::dot(B.w - A.w, axis);
+            pivotRow(A, B, ra, rb, axis, limitTarget(twist - lo, h, bounceFor(Joint::AngLow, w)), j.acc[Joint::AngLow], 0.0f, kFree);
+            pivotRow(A, B, ra, rb, -axis, limitTarget(hi - twist, h, bounceFor(Joint::AngHigh, -w)), j.acc[Joint::AngHigh], 0.0f, kFree);
+        }
+        return;
+    }
+
+    // Prismatic / cylindrical: B's point stays on the line through A's point along
+    // the axis (the rows act at B's point, so A's lever arm reaches over to it)...
+    const glm::vec3 raB = pb - A.pos;
+    const glm::vec3 d = pb - pa;
+    const glm::vec3 y = fa * glm::vec3(0, 1, 0), z = fa * glm::vec3(0, 0, 1);
+    for (const glm::vec3& e : {y, z}) {
+        dummy = 0.0f;
+        linearRow(A, B, raB, rb, e, -beta * glm::dot(d, e), dummy, -kFree, kFree);
+    }
+    // ...it slides only between LowerLimit and UpperLimit...
+    const float s = glm::dot(d, x);
+    const float slideV = glm::dot(B.velocityAt(pb) - A.velocityAt(pb), x);
+    if (p.limitsEnabled) {
+        const float lo = std::min(p.lowerLimit, p.upperLimit), hi = std::max(p.lowerLimit, p.upperLimit);
+        linearRow(A, B, raB, rb, x, limitTarget(s - lo, h, bounceFor(Joint::LinLow, slideV)), j.acc[Joint::LinLow], 0.0f, kFree);
+        linearRow(A, B, raB, rb, -x, limitTarget(hi - s, h, bounceFor(Joint::LinHigh, -slideV)), j.acc[Joint::LinHigh], 0.0f, kFree);
+    }
+    // ...pushed along by its motor or servo...
+    if (p.actuator == Actuator::Motor && p.motorMaxForce > 0.0f) {
+        const float most = p.motorMaxForce * h;
+        linearRow(A, B, raB, rb, x, p.velocity, j.acc[Joint::LinMotor], -most, most);
+    } else if (p.actuator == Actuator::Servo && p.servoMaxForce > 0.0f) {
+        const float most = p.servoMaxForce * h;
+        const float want = std::clamp((p.targetPosition - s) * 0.5f / h, -std::abs(p.speed), std::abs(p.speed));
+        linearRow(A, B, raB, rb, x, want, j.acc[Joint::LinMotor], -most, most);
+    }
+
+    // ...and turning: a prismatic joint doesn't turn at all; a cylindrical one only
+    // spins around its spin axis.
+    if (j.type == ConstraintType::Prismatic) {
+        glm::quat err = B.rot * glm::inverse(A.rot * j.rel);
+        if (err.w < 0) err = -err;
+        const glm::vec3 e = 2.0f * glm::vec3(err.x, err.y, err.z);
+        for (int ax = 0; ax < 3; ++ax) {
+            glm::vec3 u(0.0f);
+            u[ax] = 1.0f;
+            dummy = 0.0f;
+            angularRow(A, B, u, -beta * glm::dot(e, u), dummy, -kFree, kFree);
+        }
+        return;
+    }
+    const glm::vec3 axA = fa * spinAxisLocal(p), axB = fb * spinAxisLocal(p);
+    const glm::vec3 e = glm::cross(axA, axB);
+    const glm::vec3 p1 = std::abs(axA.x) < 0.9f ? glm::normalize(glm::cross(axA, glm::vec3(1, 0, 0)))
+                                                : glm::normalize(glm::cross(axA, glm::vec3(0, 1, 0)));
+    const glm::vec3 p2 = glm::cross(axA, p1);
+    for (const glm::vec3& u : {p1, p2}) {
+        dummy = 0.0f;
+        angularRow(A, B, u, -beta * glm::dot(e, u), dummy, -kFree, kFree);
+    }
+    const float angle = spinAngle(fa, fb, p);
+    const float spinV = glm::dot(B.w - A.w, axA);
+    if (p.angularLimitsEnabled) {
+        const float lo = glm::radians(std::min(p.lowerAngle, p.upperAngle)), hi = glm::radians(std::max(p.lowerAngle, p.upperAngle));
+        angularRow(A, B, axA, limitTarget(angle - lo, h, bounceFor(Joint::AngLow, spinV)), j.acc[Joint::AngLow], 0.0f, kFree);
+        angularRow(A, B, -axA, limitTarget(hi - angle, h, bounceFor(Joint::AngHigh, -spinV)), j.acc[Joint::AngHigh], 0.0f, kFree);
+    }
+    if (p.angularActuator == Actuator::Motor && p.motorMaxTorque > 0.0f) {
+        const float most = p.motorMaxTorque * h;
+        angularRow(A, B, axA, p.angularVelocity, j.acc[Joint::AngMotor], -most, most);
+    } else if (p.angularActuator == Actuator::Servo && p.servoMaxTorque > 0.0f) {
+        const float most = p.servoMaxTorque * h;
+        const float err = wrapAngle(glm::radians(p.targetAngle) - angle);
+        const float want = std::clamp(err * 0.5f / h, -std::abs(p.angularSpeed), std::abs(p.angularSpeed));
+        angularRow(A, B, axA, want, j.acc[Joint::AngMotor], -most, most);
+    }
+}
 
 // A mover (BodyVelocity, AlignOrientation...) and the body it pushes.
 struct ActiveMover {
@@ -442,6 +651,8 @@ void applyMover(const ActiveMover& am, std::vector<Body>& bodies, const Assembly
 
 void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     // ---- 1. Bodies ------------------------------------------------------------
+    const CollisionGroups& groups = scene.world().collisionGroups;
+    const bool useGroups = !groups.onlyDefault() || !groups.collides(0, 0);
     std::vector<Body> bodies;
     std::unordered_map<uint64_t, int> index;
     std::vector<SceneNode*> constraintNodes, moverNodes;
@@ -465,6 +676,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         }
         index[n->id] = (int)bodies.size();
         bodies.push_back(makeBody(n, dynamic));
+        if (useGroups) bodies.back().group = groups.slotOf(n->collisionGroup);
     }
     bool anyDynamic = false;
     for (auto& b : bodies) if (b.dynamic) { anyDynamic = true; break; }
@@ -483,12 +695,13 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     }
 
     // ---- 2. Joints --------------------------------------------------------------
-    auto bodyOfAttachment = [&](uint64_t attId, glm::vec3& worldPos, glm::vec3& worldAxis) -> int {
+    auto bodyOfAttachment = [&](uint64_t attId, glm::vec3& worldPos, glm::vec3& worldAxis, glm::quat* worldTurn = nullptr) -> int {
         SceneNode* att = scene.findById(attId);
         if (!att || !att->parent) return -1;
         glm::mat4 m = att->worldMatrix();
         worldPos = glm::vec3(m[3]);
         worldAxis = glm::normalize(glm::vec3(m[0]) + glm::vec3(1e-9f));
+        if (worldTurn) *worldTurn = Movers::worldRot(att);
         auto it = index.find(att->parent->id);
         return it == index.end() ? -1 : it->second;
     };
@@ -516,22 +729,38 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             j.la = cn->jointA; j.lb = cn->jointB;
             j.rel = glm::quat(cn->jointRot.w, cn->jointRot.x, cn->jointRot.y, cn->jointRot.z);
         } else {
-            j.a = bodyOfAttachment(cn->ref0, pa, axa);
-            j.b = bodyOfAttachment(cn->ref1, pb, axb);
+            glm::quat ta, tb;
+            j.a = bodyOfAttachment(cn->ref0, pa, axa, &ta);
+            j.b = bodyOfAttachment(cn->ref1, pb, axb, &tb);
             if (j.a < 0 || j.b < 0 || j.a == j.b) continue;
             Body &A = bodies[j.a], &B = bodies[j.b];
             j.la = glm::inverse(A.rot) * (pa - A.pos);
             j.lb = glm::inverse(B.rot) * (pb - B.pos);
             j.axisA = glm::inverse(A.rot) * axa;
             j.axisB = glm::inverse(B.rot) * axb;
-            if (cn->length < 0.0f) cn->length = glm::length(pb - pa);   // "as placed"
-            j.length = cn->length;
+            j.qa = glm::inverse(A.rot) * ta;
+            j.qb = glm::inverse(B.rot) * tb;
+            // A prismatic joint keeps the two attachments turned the same way.
+            j.rel = j.qa * glm::inverse(j.qb);
+            if (!usesJointProps(j.type)) {
+                if (cn->length < 0.0f) cn->length = glm::length(pb - pa);   // "as placed"
+                j.length = cn->length;
+            }
         }
         if (!bodies[j.a].dynamic && !bodies[j.b].dynamic) continue;
-        if (j.type == ConstraintType::Weld || j.type == ConstraintType::Hinge)
+        if (j.type == ConstraintType::Weld || j.type == ConstraintType::Hinge || usesJointProps(j.type))
             noCollide.insert({std::min(j.a, j.b), std::max(j.a, j.b)});
         // A running motor keeps things awake; a connected body wakes its partner.
-        bool motorOn = j.type == ConstraintType::Hinge && cn->motorTorque > 0.0f && cn->motorSpeed != 0.0f;
+        const JointProps& jp = cn->joint;
+        bool motorOn = (j.type == ConstraintType::Hinge && cn->motorTorque > 0.0f && cn->motorSpeed != 0.0f) ||
+                       (jointSlides(j.type) && jp.actuator == Actuator::Motor && jp.motorMaxForce > 0.0f && jp.velocity != 0.0f) ||
+                       (j.type == ConstraintType::Cylindrical && jp.angularActuator == Actuator::Motor &&
+                        jp.motorMaxTorque > 0.0f && jp.angularVelocity != 0.0f) ||
+                       // (a servo that hasn't got there yet: a script may have just moved its target)
+                       (jointSlides(j.type) && jp.actuator == Actuator::Servo && jp.servoMaxForce > 0.0f &&
+                        std::abs(jp.targetPosition - jp.currentPosition) > 0.01f) ||
+                       (j.type == ConstraintType::Cylindrical && jp.angularActuator == Actuator::Servo &&
+                        jp.servoMaxTorque > 0.0f && std::abs(wrapAngle(glm::radians(jp.targetAngle - jp.currentAngle))) > 0.01f);
         if (motorOn || bodies[j.a].awake || bodies[j.b].awake) {
             bodies[j.a].awake = bodies[j.b].awake = true;
         }
@@ -640,6 +869,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                     A.aabbMin.y > B.aabbMax.y || A.aabbMax.z < B.aabbMin.z || A.aabbMin.z > B.aabbMax.z)
                     continue;
                 if (noCollide.count({std::min(i, k), std::max(i, k)})) continue;
+                if (useGroups && !groups.collides(A.group, B.group)) continue;   // collision groups that pass through
                 if (A.sphere && B.sphere)      sphereSphere(i, k, A, B, contacts);
                 else if (A.sphere)             sphereBox(i, k, A, B, contacts, true);
                 else if (B.sphere)             sphereBox(k, i, B, A, contacts, false);
@@ -652,6 +882,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             for (int i = 0; i < terrainBody; ++i) {
                 const Body& A = bodies[i];
                 if (!A.dynamic || !A.solid || !A.awake) continue;
+                if (useGroups && !groups.collides(A.group, 0)) continue;   // its group passes through the terrain (Default)
                 float top;
                 if (!terrain.highestUnder(A.aabbMin.x, A.aabbMin.z, A.aabbMax.x, A.aabbMax.z, top) || top < A.aabbMin.y) continue;
                 auto touch = [&](const glm::vec3& p) {
@@ -750,6 +981,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                     continue;
                 }
                 if (j.type == ConstraintType::Spring) continue;
+                if (usesJointProps(j.type)) { solveJointProps(j, A, B, h, iter == 0); continue; }
 
                 // Weld & hinge: the two anchor points stay together (a ball joint)...
                 for (int ax = 0; ax < 3; ++ax) {
@@ -810,7 +1042,10 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                 }
             }
         }
-        for (auto& j : joints) j.accMotor = 0.0f;
+        for (auto& j : joints) {
+            j.accMotor = 0.0f;
+            for (float& a : j.acc) a = 0.0f;
+        }
 
         // ---- 6. Move ------------------------------------------------------------------
         for (auto& b : bodies) {
@@ -831,6 +1066,16 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             b.aabbMin = b.pos - ext;
             b.aabbMax = b.pos + ext;
         }
+    }
+
+    // Where sliders and spinners are now (CurrentPosition / CurrentAngle).
+    for (const Joint& j : joints) {
+        if (!jointSlides(j.type)) continue;
+        const Body &A = bodies[j.a], &B = bodies[j.b];
+        const glm::quat fa = A.rot * j.qa, fb = B.rot * j.qb;
+        JointProps& p = j.node->joint;
+        p.currentPosition = glm::dot((B.pos + B.rot * j.lb) - (A.pos + A.rot * j.la), fa * glm::vec3(1, 0, 0));
+        if (j.type == ConstraintType::Cylindrical) p.currentAngle = glm::degrees(spinAngle(fa, fb, p));
     }
 
     // ---- 7. Back into the scene (and fall asleep when still) --------------------
