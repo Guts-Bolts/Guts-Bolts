@@ -152,6 +152,8 @@ private:
     nlohmann::json copiesOf(const User& u) const;          // every Limited copy someone holds
     void           syncOwned(User& u, const Asset& a);     // `owned` follows the copies they hold
     nlohmann::json limitedJson(const Asset& a) const;      // what the catalog shows about a Limited (null if it isn't one)
+    void           openGiftBoxes();                        // gift boxes that went off sale hand out their item
+    long long      m_giftsChecked = 0;
     int            publicModelsLeft(const User& u) const;  // -1 = no limit
     void           countPublicModel(User& u);
     static std::string publicModelLimitText();

@@ -126,6 +126,44 @@ std::string GbServer::publicModelLimitText() {
 
 // --- The requests -------------------------------------------------------------------
 
+// Gift boxes (worker/server.js openGiftBoxes): a timed item staff point at another item
+// (meta.giftItem). Once the box goes off sale, everyone who owns it gets that item. Checked
+// at most every 30 seconds, so people who get a box later (a trade) get it too. A Limited
+// box gives one per copy ("gifted"), so passing a copy around doesn't hand out more.
+void GbServer::openGiftBoxes() {
+    const long long now = Online::unixNow();
+    if (m_giftsChecked && now - m_giftsChecked < 30) return;
+    m_giftsChecked = now;
+    bool changed = false;
+    for (auto& [boxId, box] : m_assets) {
+        if (!box.meta.is_object()) continue;
+        const std::string giftId = box.meta.value("giftItem", std::string());
+        const long long off = box.meta.value("offsaleAt", 0LL);
+        if (giftId.empty() || giftId == boxId || off <= 0 || now < off) continue;
+        auto g = m_assets.find(giftId);
+        if (g == m_assets.end()) continue;
+        Asset& gift = g->second;
+        auto give = [&](User* u) {
+            if (!u || u->owned.count(gift.id)) return;
+            u->owned.insert(gift.id);
+            gift.sales++;
+            changed = true;
+            notify(u, "gift", "Your " + box.name + " opened! You got " + gift.name + ".", gift.id);
+        };
+        if (box.limited) {
+            for (json& c : box.copies) {
+                if (c.value("gifted", false)) continue;
+                give(findUser(c.value("owner", std::string())));
+                c["gifted"] = true;
+                changed = true;
+            }
+        } else {
+            for (auto& [uid, u] : m_users) if (u.owned.count(boxId)) give(&u);
+        }
+    }
+    if (changed) { saveAssets(); saveUsers(); }
+}
+
 json GbServer::itemOp(const std::string& name, User& me, const json& args) {
     const long long now = Online::unixNow();
     auto str = [&](const char* k) { return args.contains(k) && args[k].is_string() ? args[k].get<std::string>() : std::string(); };
@@ -228,6 +266,26 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
             a.price = price;
         }
         if (!a.meta.is_object()) a.meta = json::object();
+        if (args.contains("exclusive") || args.contains("giftItem")) {
+            if (!isStaff(me)) return fail("Only staff can make items Exclusive or gift boxes.");
+            if (args.contains("exclusive")) {
+                if (args["exclusive"] == true) a.meta["exclusive"] = true; else a.meta.erase("exclusive");
+            }
+            if (args.contains("giftItem")) {
+                std::string want = str("giftItem");
+                while (!want.empty() && std::isspace((unsigned char)want.back())) want.pop_back();
+                while (!want.empty() && std::isspace((unsigned char)want.front())) want.erase(want.begin());
+                if (want.rfind("gb:", 0) == 0) want = want.substr(3);
+                if (want.empty()) a.meta.erase("giftItem");
+                else {
+                    auto g = findAsset(want);
+                    if (g == m_assets.end() || !Online::isCatalogItem(g->second.kind)) return fail("There's no item with ID " + want + " to put in the gift box.");
+                    if (g->first == a.id) return fail("A gift box can't give itself.");
+                    if (g->second.limited) return fail("A gift box can't give a Limited item (its copies are numbered).");
+                    a.meta["giftItem"] = g->first;
+                }
+            }
+        }
         if (args.contains("offsaleAt")) {   // a timed item: off sale from then on (0 = for sale for good)
             a.meta["offsaleAt"] = std::max(0LL, num("offsaleAt"));
             if (a.meta.value("timedFor", std::string()).empty()) a.meta["timedFor"] = "set";
@@ -258,6 +316,23 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         a.meta["updated"] = now;
         saveAssets();
         return assetReply(a);
+    }
+    if (name == "item.give") {
+        // Staff hand an item to someone (event prizes, Exclusive hats). Free, and it's theirs for good.
+        if (!isStaff(me)) return fail("Only staff can give items away.");
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end() || !Online::isCatalogItem(it->second.kind)) return fail("That item doesn't exist (any more).");
+        Asset& a = it->second;
+        if (a.limited) return fail("Limited items can't be given away (their copies are numbered).");
+        User* u = findPerson(str("to"));
+        if (!u || u->userId == 0) return fail("There's nobody called that.");
+        if (u->owned.count(a.id)) return fail(u->name + " already has it.");
+        u->owned.insert(a.id);
+        a.sales++;
+        saveAssets(); saveUsers();
+        notify(u, "gift", "Guts&Bolts staff gave you " + a.name + "!", a.id);
+        staffDid(me, "item", "Gave " + a.name + " to " + u->name, u->id);
+        json r = assetReply(a); r["to"] = u->name; return r;
     }
     if (name == "item.limited") {
         // Only Guts makes items Limited: a fixed number of numbered copies. People who

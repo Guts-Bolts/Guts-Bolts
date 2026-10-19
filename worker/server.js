@@ -715,7 +715,7 @@ export class GbServerObject extends DurableObject {
     return setting === 'friends' && !!viewer && u.friends.includes(viewer.id);
   }
   // Has either of them blocked the other? (Then they can't message, friend, follow, trade or join each other.)
-  // The staff action log. action: ban, unban, warn, bolts, badge, unbadge, review, report, delete, comment.
+  // The staff action log. action: ban, unban, warn, bolts, badge, unbadge, review, report, delete, comment, item.
   // about: who it was done to (an account id), so the log can link to them.
   staffDid(me, action, text, about = '') {
     this.staffLog.push({ at: now(), by: me.id, action, text, about });
@@ -879,13 +879,45 @@ export class GbServerObject extends DurableObject {
   timeGutstoberItems() {
     const t = now();
     for (const a of this.assets.values()) {
-      if (!isCatalogItem(a.kind) || a.timedFor || !/pumpkin/i.test(a.name || '')) continue;
+      if (!isCatalogItem(a.kind) || a.timedFor || a.exclusive || !/pumpkin/i.test(a.name || '')) continue;
       a.timedFor = 'gutstober';
       a.offsaleAt = gutstoberEnd(a.created || t);
       this.saveAsset(a);
     }
   }
   isOffsale(a, t = now()) { return !!a.offsaleAt && t >= a.offsaleAt; }
+
+  // Gift boxes: a timed item staff point at another item (a.giftItem). Once the box goes
+  // off sale, everyone who owns it gets that item (usually an Exclusive one, hidden from the
+  // catalog). Checked at most every 30 seconds, so people who get a box later (a trade) get it too.
+  // A Limited box gives one per copy (c.gifted), so passing a copy around doesn't hand out more.
+  openGiftBoxes(force = false) {
+    const t = now();
+    if (!force && this.giftsChecked && t - this.giftsChecked < 30) return;
+    this.giftsChecked = t;
+    for (const box of this.assets.values()) {
+      if (!box.giftItem || !this.isOffsale(box, t)) continue;
+      const gift = this.assets.get(box.giftItem);
+      if (!gift || gift.id === box.id) continue;
+      const give = (u) => {
+        if (!u || u.owned.includes(gift.id)) return;
+        u.owned.push(gift.id);
+        gift.sales++;
+        this.saveAsset(gift); this.saveUser(u);
+        this.notify(u, 'gift', 'Your ' + box.name + ' opened! You got ' + gift.name + '.', gift.id);
+      };
+      if (box.limited) {
+        for (const c of box.copies || []) {
+          if (c.gifted) continue;
+          give(this.users.get(c.owner));
+          c.gifted = true;
+          this.saveAsset(box);
+        }
+      } else {
+        for (const u of this.users.values()) if (u.owned.includes(box.id)) give(u);
+      }
+    }
+  }
 
   giveVerifiedHat(u) {
     const a = this.assets.get(VERIFIED_HAT_ID);
@@ -936,9 +968,12 @@ export class GbServerObject extends DurableObject {
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: a.kind === 'game' && me ? (me.favorites || []).includes(a.id) : undefined,
       offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), review: a.review || undefined, reviewNote: a.reviewNote || undefined,
+      exclusive: a.exclusive ? true : undefined, gift: a.giftItem ? true : undefined,
+      giftItem: a.giftItem && me && this.isStaff(me) ? this.giftJson(a) : undefined,   // (staff only: it's a surprise)
       privatePrice: a.kind === 'game' ? (a.privatePrice || 0) : undefined,
       group: a.kind === 'game' ? this.groupJson(a.group) : undefined };
   }
+  giftJson(a) { const g = this.assets.get(a.giftItem); return { id: a.giftItem, num: g ? g.num || 0 : 0, name: g ? g.name : '?' }; }
   groupJson(id) { const g = id ? this.groups.get(id) : null; return g ? { id: g.id, name: g.name, color: g.color } : undefined; }
   publicModelsLeft(u) {   // -1 = no limit
     if (this.isVerified(u)) return -1;
@@ -1084,6 +1119,7 @@ export class GbServerObject extends DurableObject {
     try {
       const c = this.checkRequest(req);
       if (c.bad) return c.bad;
+      this.openGiftBoxes();
       return this.op(c.opName, c.me, c.args);
     } catch (e) {
       return fail('The server hit a problem: ' + (e && e.message || e));
@@ -1970,6 +2006,7 @@ export class GbServerObject extends DurableObject {
         (sort !== 'featured' || a.featured > 0) &&
         (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
         (!ownedOnly || me.owned.includes(a.id)) &&
+        (!a.exclusive || ownedOnly || this.isStaff(me)) &&   // Exclusive items aren't in the catalog
         (!creator || a.creator === creator) && this.canPlay(a, me) &&
         (!genre || (a.genres || []).includes(genre)) &&
         (!q || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
@@ -2020,6 +2057,7 @@ export class GbServerObject extends DurableObject {
       if (a.review && a.creator !== me.id) return fail(this.noPlay(a));
       if (a.kind === 'devproduct') return fail('Developer products are bought inside their game.');
       if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: confirm an email in Settings and it\'s yours.');
+      if (a.exclusive) return fail('This is an Exclusive item: it can\'t be bought. It comes from events and gift boxes.');
       if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited ? ' Buy one from a reseller on the item\'s page.' : ''));
       if (a.limited && a.sales >= a.stock) return fail('Sold out! Buy one from a reseller on the item\'s page.');
       if (a.price > 0) {
@@ -2068,6 +2106,21 @@ export class GbServerObject extends DurableObject {
         a.offsaleAt = Math.max(0, num(args, 'offsaleAt'));
         a.timedFor = a.timedFor || 'set';
       }
+      if ('exclusive' in args || 'giftItem' in args) {
+        if (!this.isStaff(me)) return fail('Only staff can make items Exclusive or gift boxes.');
+        if ('exclusive' in args) a.exclusive = args.exclusive === true;
+        if ('giftItem' in args) {
+          const want = str(args, 'giftItem').trim().replace(/^gb:/, '');
+          if (!want) delete a.giftItem;
+          else {
+            const g = this.assets.get(want);
+            if (!g || !isCatalogItem(g.kind)) return fail('There\'s no item with ID ' + want + ' to put in the gift box.');
+            if (g.id === a.id) return fail('A gift box can\'t give itself.');
+            if (g.limited) return fail('A gift box can\'t give a Limited item (its copies are numbered).');
+            a.giftItem = g.id;
+          }
+        }
+      }
       a.meta = a.meta || {};
       if (a.kind === 'hat' && 'style' in args) a.meta.style = clamp(num(args, 'style'), 1, 3);   // the hat's shape
       const picture = a.kind === 'shirt' || a.kind === 'pants' || a.kind === 'face' || a.kind === 'tshirt';
@@ -2089,6 +2142,22 @@ export class GbServerObject extends DurableObject {
       a.updated = t;
       this.saveAsset(a);
       return okay({ asset: this.publicAsset(a, me) });
+    }
+    if (name === 'item.give') {
+      // Staff hand an item to someone (event prizes, Exclusive hats). Free, and it's theirs for good.
+      if (!this.isStaff(me)) return fail('Only staff can give items away.');
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || !isCatalogItem(a.kind)) return fail('That item doesn\'t exist (any more).');
+      if (a.limited) return fail('Limited items can\'t be given away (their copies are numbered).');
+      const u = this.findPerson(str(args, 'to'));
+      if (!u || u.userId === 0) return fail('There\'s nobody called that.');
+      if (u.owned.includes(a.id)) return fail(u.name + ' already has it.');
+      u.owned.push(a.id);
+      a.sales++;
+      this.saveAsset(a); this.saveUser(u);
+      this.notify(u, 'gift', 'Guts&Bolts staff gave you ' + a.name + '!', a.id);
+      this.staffDid(me, 'item', 'Gave ' + a.name + ' to ' + u.name, u.id);
+      return okay({ asset: this.publicAsset(a, me), to: u.name });
     }
     if (name === 'item.limited') {
       // Only Guts makes items Limited: a fixed number of numbered copies. People who

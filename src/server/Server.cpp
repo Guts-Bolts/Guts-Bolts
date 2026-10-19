@@ -95,6 +95,7 @@ json GbServer::handle(const json& req) {
     if (!bad.is_null()) return bad;
     json args = req.contains("args") && req["args"].is_object() ? req["args"] : json::object();
     try {
+        openGiftBoxes();   // (ServerItems.cpp)
         return op(req.value("op", std::string()), *me, args);
     } catch (const std::exception& e) {
         return fail(std::string("The server hit a problem: ") + e.what());
@@ -312,6 +313,15 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
     const long long off = a.meta.is_object() ? a.meta.value("offsaleAt", 0LL) : 0LL;
     j["offsaleAt"] = off;
     j["offsale"] = off > 0 && Online::unixNow() >= off;
+    // Exclusive items aren't in the catalog; a gift box hands out another item (ServerItems.cpp).
+    if (a.meta.is_object() && a.meta.value("exclusive", false)) j["exclusive"] = true;
+    if (const std::string gift = a.meta.is_object() ? a.meta.value("giftItem", std::string()) : std::string(); !gift.empty()) {
+        j["gift"] = true;
+        if (me && isStaff(*me)) {   // (staff only: it's a surprise)
+            auto g = m_assets.find(gift);
+            j["giftItem"] = {{"id", gift}, {"num", g != m_assets.end() ? g->second.num : 0}, {"name", g != m_assets.end() ? g->second.name : std::string("?")}};
+        }
+    }
     if (const std::string review = reviewOf(a.meta); !review.empty()) {
         j["review"] = review;
         j["reviewNote"] = a.meta.value("reviewNote", std::string());
@@ -1136,6 +1146,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         for (const auto& [id, a] : m_assets) {
             if (!kind.empty() && a.kind != kind && !(kind == "clothing" && Online::isCatalogItem(a.kind))) continue;
             if (ownedOnly && !me.owned.count(a.id)) continue;
+            if (!ownedOnly && !isStaff(me) && a.meta.is_object() && a.meta.value("exclusive", false)) continue;   // Exclusive: not in the catalog
             if (sort == "featured" && a.meta.value("featured", 0LL) <= 0) continue;   // picked by staff
             if (!creator.empty() && a.creator != creator) continue;
             if (!q.empty() && lower(a.name).find(q) == std::string::npos) continue;
@@ -1239,6 +1250,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (a.kind == "devproduct") return fail("Developer products are bought inside their game.");
         if (a.meta.is_object() && a.meta.value("award", std::string()) == "email")
             return fail("This hat can't be bought: confirm an email in Settings and it's yours.");
+        if (a.meta.is_object() && a.meta.value("exclusive", false))
+            return fail("This is an Exclusive item: it can't be bought. It comes from events and gift boxes.");
         if (const long long off = a.meta.is_object() ? a.meta.value("offsaleAt", 0LL) : 0LL; off > 0 && now >= off)
             return fail(std::string("This item is off sale: it was only for sale for a limited time.") +
                         (a.limited ? " Buy one from a reseller on the item's page." : ""));
@@ -1436,7 +1449,7 @@ void GbServer::addExampleGames() {
     // Gutstober (worker/server.js timeGutstoberItems): pumpkin items are timed items that
     // go off sale when Gutstober (October) ends, midnight UTC on November 1st. Once per item.
     for (auto& [id, a] : m_assets) {
-        if (!Online::isCatalogItem(a.kind) || !a.meta.is_object() || a.meta.contains("timedFor")) continue;
+        if (!Online::isCatalogItem(a.kind) || !a.meta.is_object() || a.meta.contains("timedFor") || a.meta.value("exclusive", false)) continue;
         std::string lower = a.name;
         for (char& c : lower) c = (char)std::tolower((unsigned char)c);
         if (lower.find("pumpkin") == std::string::npos) continue;
