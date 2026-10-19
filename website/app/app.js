@@ -28,13 +28,16 @@ function show(content) { view.innerHTML = content.s; setTimeout(() => upgradeIte
 const view = $('#view');
 const KINDS = { hat: 'Hat', shirt: 'Shirt', pants: 'Pants', audio: 'Audio', plugin: 'Plugin', game: 'Game', decal: 'Decal', model: 'Model',
   hair: 'Hair', faceacc: 'Face Accessory', neck: 'Neck Accessory', shoulder: 'Shoulder Accessory', waist: 'Waist Accessory', face: 'Face',
-  tshirt: 'T-Shirt', gear: 'Gear', animation: 'Animation' };
+  tshirt: 'T-Shirt', gear: 'Gear', animation: 'Animation', emote: 'Emote', animpack: 'Animation Pack' };
 // Things you wear on the body, made in Studio's Accessory window (old-style hats are just a shape).
 const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
 const WEARABLE = ['shirt', 'pants', 'tshirt', 'face', ...ACCESSORIES];
 // An asset's ID, the way people see and type it: its number (like Roblox's), or the old ID for anything that hasn't got one.
 const assetNum = (a) => String(a.num || a.id);
-const isCatalogItem = (k) => WEARABLE.includes(k) || k === 'gear';   // sold in the catalog (they have #/item pages)
+// Emotes and animation packs: moves for your character, equipped on the Avatar page (8 emote slots, 1 pack).
+const isEmoteItem = (k) => k === 'emote' || k === 'animpack';
+const kEmoteSlots = 8;
+const isCatalogItem = (k) => WEARABLE.includes(k) || k === 'gear' || isEmoteItem(k);   // sold in the catalog (they have #/item pages)
 // Only Guts' own accessories and faces can be Limited.
 const canBeLimited = (a) => ACCESSORIES.includes(a.kind) || a.kind === 'face';
 // Items with a real picture (Studio accessories, faces) show that instead of a drawing.
@@ -1162,10 +1165,12 @@ function commentsBlock(g, cr) {
 const CATALOG_CATS = [['featured', 'Featured'], ['collectibles', 'Collectibles'], '-', ['all', 'All Categories'],
   ['clothes', 'Clothing', [['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants']]],
   ['body', 'Body Parts', [['face', 'Faces']]], ['gear', 'Gear'],
+  ['emotes', 'Emotes', [['emote', 'Emotes'], ['animpack', 'Animation Packs']]],
   ['accessories', 'Accessories', [['hat', 'Hats'], ['hair', 'Hair'], ['faceacc', 'Face'], ['neck', 'Neck'], ['shoulder', 'Shoulder'], ['waist', 'Waist']]]];
 const CATALOG_PICK = {
   featured: (a) => a.creatorStaff, collectibles: (a) => !!a.limited, all: () => true,
   clothes: (a) => ['shirt', 'tshirt', 'pants'].includes(a.kind), body: (a) => a.kind === 'face', accessories: (a) => ACCESSORIES.includes(a.kind),
+  emotes: (a) => isEmoteItem(a.kind),
 };
 const PRICES = { free: [0, 0], '1-100': [1, 100], '101-1000': [101, 1000], over: [1001, Infinity] };
 pages.catalog = async () => {
@@ -1187,12 +1192,22 @@ pages.catalog = async () => {
       creatorFilter()] }));
 };
 
+// Pick which emote slot (1-8) an emote goes in, or take it out.
+function emoteSlotPicker(id, slot) {
+  return html`<div class="emote-slots small">${slot >= 0 ? html`In slot ${slot + 1}. ` : 'Put it in a slot: '}
+    <span class="row">${Array.from({ length: kEmoteSlots }, (_, i) => html`<button class="btn small ${i === slot ? 'green' : ''}"
+      data-act="emoteEquip" data-slot="${i + 1}" data-id="${id}" title="Slot ${i + 1}">${i + 1}</button>`)}
+    ${slot >= 0 ? html`<button class="btn small" data-act="emoteEquip" data-slot="${slot + 1}" data-id="">Take out</button>` : ''}</span></div>`;
+}
+
 pages.item = async (id) => {
   const r = await pageCall('list', { kind: 'clothing', limit: 100 });
   const a = r.ok && r.assets.find((x) => x.id === id || String(x.num) === id);
   if (!a) { show(html`<h1>Item not found</h1>`); return; }
   const owned = signedIn() && (me.owned || []).includes(a.id);
   const gearOn = a.kind === 'gear' && signedIn() && (me.gear || []).includes(a.id);
+  const emoteSlot = a.kind === 'emote' && signedIn() ? (me.emotes || []).indexOf(a.id) : -1;   // 0-7, or -1
+  const packOn = a.kind === 'animpack' && signedIn() && me.animPack === a.id;
   const canEdit = signedIn() && (a.creator === me.id || me.staff);
   const L = a.limited;
   const copies = L ? ((await pageCall('item.copies', { id: a.id })).copies || []) : [];
@@ -1206,6 +1221,11 @@ pages.item = async (id) => {
   const buyButton = owned && a.kind === 'gear'
     ? html`<p class="ok"><b>You own this.</b></p>
       <button class="btn ${gearOn ? '' : 'green'} big buy" data-act="gearEquip" data-id="${a.id}" data-on="${gearOn ? '' : '1'}">${gearOn ? 'Unequip' : 'Equip'}</button>`
+    : owned && a.kind === 'emote'
+    ? html`<p class="ok"><b>You own this.</b></p>${emoteSlotPicker(a.id, emoteSlot)}`
+    : owned && a.kind === 'animpack'
+    ? html`<p class="ok"><b>You own this.</b></p>
+      <button class="btn ${packOn ? '' : 'green'} big buy" data-act="animpackEquip" data-id="${packOn ? '' : a.id}">${packOn ? 'Take off' : 'Use this pack'}</button>`
     : owned ? html`<p class="ok"><b>You own this${mineCopies.length ? ' (#' + mineCopies.map((c) => c.serial).join(', #') + ')' : ''}.</b></p>`
     : soldOut ? html`<button class="btn big buy" disabled>Sold out</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
@@ -1237,6 +1257,8 @@ pages.item = async (id) => {
           <hr>
           <p class="small muted">Type: ${KINDS[a.kind]} · Asset ID ${assetNum(a)}</p>
           ${a.kind === 'gear' ? html`<p class="small muted">Equipped gear goes in your backpack in games that allow gear (up to 4 at once).</p>`
+            : a.kind === 'emote' ? html`<p class="small muted">Put it in one of your 8 emote slots, then press B in any game (or tap the smiley on a phone) and pick it. You can also type /e and its name in the chat.</p>`
+            : a.kind === 'animpack' ? html`<p class="small muted">An animation pack changes how your character stands, walks, runs, jumps and falls, in every game.</p>`
             : owned ? html`<p class="small muted">Wear it from the Avatar page.</p>` : ''}
         </div>
         <div class="item-side">
@@ -1261,6 +1283,7 @@ pages.item = async (id) => {
         ${a.kind === 'face' ? html`<label>New picture <span class="muted small">(optional, a .png face)</span></label><input type="file" name="picture" accept="image/png">`
           : a.kind === 'tshirt' ? html`<label>New picture <span class="muted small">(optional, a .png or .jpg)</span></label><input type="file" name="picture" accept="image/png,image/jpeg">`
           : a.kind === 'gear' ? html`<p class="small muted">To change the tool itself, publish it again from Studio.</p>`
+          : isEmoteItem(a.kind) ? html`<p class="small muted">The moves themselves can't be changed here.</p>`
           : !drawable3d(a) ? html`<p class="small muted">To change how it looks or where it sits, open it in Studio's Accessory window and upload it again.</p>`
           : a.kind === 'hat' ? html`<label>Shape</label><select name="style">${[[1, 'Top Hat'], [2, 'Cap'], [3, 'Crown']].map(([v, l]) => html`<option value="${v}" ${Number(a.meta && a.meta.style) === v ? 'selected' : ''}>${l}</option>`)}</select>`
           : html`<label>New picture <span class="muted small">(optional, from the <a href="templates/${a.kind}_template.png" download>template</a>)</span></label><input type="file" name="picture" accept="image/png">`}
@@ -1620,7 +1643,7 @@ async function peoplePage(id, which, page) {
 }
 
 // Someone's inventory: #/user/5/inventory (or /inventory/limited/2 for a group and a page).
-const INVENTORY_TABS = [['all', 'All'], ['accessories', 'Accessories'], ['clothing', 'Clothing'], ['faces', 'Faces'], ['gear', 'Gear'], ['limited', 'Limiteds']];
+const INVENTORY_TABS = [['all', 'All'], ['accessories', 'Accessories'], ['clothing', 'Clothing'], ['faces', 'Faces'], ['gear', 'Gear'], ['emotes', 'Emotes'], ['limited', 'Limiteds']];
 function inventoryCard(a) {   // an item card, plus which numbered copies of a Limited they hold
   return html`<div class="inv-item">${itemCard(a)}${(a.serials || []).length ? html`<div class="small serials">${a.serials.map((n) => '#' + n).join(', ')}</div>` : ''}</div>`;
 }
@@ -1938,7 +1961,27 @@ pages.messages = async (box = 'inbox') => {
 
 pages.avatar = async () => {
   const r = signedIn() ? await pageCall('list', { kind: 'clothing', owned: true, limit: 100 }) : { ok: true, assets: [] };
-  const owned = (r.ok ? r.assets : []).filter((a) => (me.owned || []).includes(a.id));
+  const ownedAll = (r.ok ? r.assets : []).filter((a) => (me.owned || []).includes(a.id));
+  const owned = ownedAll.filter((a) => !isEmoteItem(a.kind));
+  const myEmotes = ownedAll.filter((a) => a.kind === 'emote'), myPacks = ownedAll.filter((a) => a.kind === 'animpack');
+  const slots = signedIn() ? (me.emotes || []) : [];
+  const emoteBox = html`<h2>Emotes</h2>
+    <p class="small muted">Your emote slots: press B in a game (or tap the smiley on a phone) to pick one. Slots left empty show the
+      built-in emotes (dance, wave, point, cheer, laugh). Moving or jumping stops an emote.</p>
+    ${signedIn() ? html`<div class="grid emote-grid">${Array.from({ length: kEmoteSlots }, (_, i) => {
+      const it = myEmotes.find((x) => x.id === slots[i]);
+      return html`<div class="card square"><div class="pic">${it ? itemIcon(it) : html`<span class="item-render no-picture">Slot ${i + 1}</span>`}</div>
+        <div class="name">${it ? it.name : 'Empty'}</div>
+        <select data-emote-slot="${i + 1}" aria-label="Emote in slot ${i + 1}"><option value="">(empty)</option>
+          ${myEmotes.map((x) => html`<option value="${x.id}" ${x.id === slots[i] ? 'selected' : ''}>${x.name}</option>`)}</select></div>`;
+    })}</div>
+    ${myEmotes.length ? '' : html`<p class="muted small">You don't have any emotes yet. Get some in the <a href="#/catalog?cat=emotes">Catalog</a>!</p>`}
+    <h2>Animation pack</h2>
+    ${myPacks.length ? html`<div class="row">
+        <button class="btn small ${me.animPack ? '' : 'blue'}" data-act="animpackEquip" data-id="">Normal</button>
+        ${myPacks.map((x) => html`<button class="btn small ${me.animPack === x.id ? 'blue' : ''}" data-act="animpackEquip" data-id="${x.id}">${x.name}</button>`)}</div>`
+      : html`<p class="muted small">No animation packs yet. They change how you walk, run and jump: see the <a href="#/catalog?cat=animpack">Catalog</a>.</p>`}`
+    : html`<p class="muted small">Log in to pick your emotes.</p>`}`;
   if (!avatarDraft) avatarDraft = Object.assign(defaultAvatar(), JSON.parse(JSON.stringify(me.avatar || {})));
   const a = avatarDraft;
   const wornItems = owned.filter((it) => a.wearing.includes(it.id));
@@ -1979,8 +2022,11 @@ pages.avatar = async () => {
             <button class="btn small ${a.wearing.includes(it.id) ? 'green' : ''}" data-act="avatarWear" data-id="${it.id}" data-kind="${it.kind}">
               ${a.wearing.includes(it.id) ? 'Wearing' : 'Wear'}</button></div>`)}</div>`
           : html`<p class="muted">You don't have any clothes yet. Get some in the <a href="#/catalog">Catalog</a>!</p>`}
+        ${emoteBox}
         ${outfitBox}
       </div></div>`);
+  view.querySelectorAll('[data-emote-slot]').forEach((sel) => sel.addEventListener('change', () =>
+    actions.emoteEquip({ slot: sel.dataset.emoteSlot, id: sel.value })));
   // Each outfit's picture: the character wearing it.
   for (const o of outfits) {
     avatarPicture(o.avatar, o.wearing || [], 110).then((url) => {
@@ -2714,6 +2760,18 @@ const actions = {
   async buy(d) {
     const r = await call('buy', { id: d.id });
     toast(r.ok ? 'It\'s yours! Wear (or equip) it from the Avatar page.' : r.error);
+    render();
+  },
+  async emoteEquip(d) {
+    const r = await call('emotes.equip', { slot: Number(d.slot), id: d.id || '' });
+    if (r.ok) me = r.me;
+    toast(r.ok ? (d.id ? 'In slot ' + d.slot + '! Press B in a game to use it.' : 'Slot ' + d.slot + ' is empty now.') : r.error);
+    render();
+  },
+  async animpackEquip(d) {
+    const r = await call('animpack.equip', { id: d.id || '' });
+    if (r.ok) me = r.me;
+    toast(r.ok ? (d.id ? 'You\'ll move like this in every game.' : 'Back to the normal animations.') : r.error);
     render();
   },
   async gearEquip(d) {

@@ -451,6 +451,7 @@ void Player::respawn(bool firstSpawn) {
     m_sitHere = m_sitPending = false;
     m_tilt = m_tiltVel = m_tripTime = m_getUp = 0.0f;   // back on your feet
     stopEmote(0.0f);
+    m_scriptMove = glm::vec3(0.0f);
     m_humanoid.platformStand = false;
     SceneNode* r = root();
     if (!r) return;
@@ -1004,7 +1005,8 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     if (!r) return;
     // Knocked over (tripped, flung) or PlatformStand: the controls do nothing.
     const bool knocked = tripped();
-    const glm::vec3 moveDir = knocked ? glm::vec3(0.0f) : moveIn;
+    // (No keys pushed: a script's humanoid:Move(direction) walks us instead.)
+    const glm::vec3 moveDir = knocked ? glm::vec3(0.0f) : glm::length(moveIn) > 1e-4f ? moveIn : m_scriptMove;
     const bool jump = knocked ? false : (jumpIn || m_scriptJump);
     m_scriptJump = false;
     if (knocked && sitting()) standUp(false);

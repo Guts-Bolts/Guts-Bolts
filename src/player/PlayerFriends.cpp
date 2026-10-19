@@ -18,6 +18,7 @@
 #include "../online/OnlineClient.h"
 #include "../scene/Serializer.h"
 #include "../game/GameSession.h"
+#include "../scene/Emotes.h"
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
@@ -89,6 +90,50 @@ void PlayerApp::giveGear(const std::string& gameKey) {
             if (!m.is_object() || !m.contains("nodes") || !m["nodes"].is_array() || m["nodes"].empty()) return;
             if (auto tool = Serializer::nodeFromString(m["nodes"][0].dump(), true)) m_session->addGear(std::move(tool));
         });
+    }
+}
+
+void PlayerApp::syncEmotes() {
+    const json& me = Online::me();
+    const json slots = me.contains("emotes") && me["emotes"].is_array() ? me["emotes"] : json::array();
+    const std::string pack = me.value("animPack", std::string());
+    const std::string want = slots.dump() + "|" + pack;
+    if (want == m_emotesSynced) return;
+    m_emotesSynced = want;
+    auto readText = [](const std::filesystem::path& file) {
+        std::ifstream f(file, std::ios::binary);
+        std::stringstream ss;
+        ss << f.rdbuf();
+        return ss.str();
+    };
+    Emotes::Loadout& l = Emotes::mine();
+    for (int i = 0; i < Emotes::kSlots; ++i) {
+        const std::string id = i < (int)slots.size() && slots[i].is_string() ? slots[i].get<std::string>() : std::string();
+        if (id == l.slots[i].id) continue;
+        l.slots[i] = Emotes::Slot{id, "", nullptr};
+        ++l.version;
+        if (id.empty()) continue;
+        Online::download(id, [i, id, readText](bool ok, const std::filesystem::path& file, const json& info) {
+            Emotes::Slot& s = Emotes::mine().slots[i];
+            Anim::Clip clip;
+            if (!ok || s.id != id || !Emotes::parseEmoteFile(readText(file), clip)) return;   // (changed meanwhile)
+            s.name = info.value("name", std::string("Emote"));
+            s.clip = std::make_shared<const Anim::Clip>(std::move(clip));
+            ++Emotes::mine().version;
+        });
+    }
+    if (pack != l.packId) {
+        l.packId = pack;
+        l.pack.clear();
+        ++l.version;
+        if (!pack.empty())
+            Online::download(pack, [pack, readText](bool ok, const std::filesystem::path& file, const json&) {
+                Emotes::Loadout& m = Emotes::mine();
+                Emotes::Pack p;
+                if (!ok || m.packId != pack || !Emotes::parsePackFile(readText(file), p)) return;
+                m.pack = std::move(p);
+                ++m.version;
+            });
     }
 }
 

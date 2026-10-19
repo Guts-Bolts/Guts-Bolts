@@ -743,6 +743,7 @@ void PlayerApp::frame(float dt) {
 #endif
     followLink();
     updateItemRenders();   // item pictures (a couple per frame)
+    syncEmotes();          // the emotes and animation pack you equipped, for games
     if (!m_autoStarted && Online::online()) {   // test options that need the server first
         if (!m_opts.onlineGame.empty()) {
             m_autoStarted = true;

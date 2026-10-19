@@ -110,6 +110,9 @@ public:
     bool       playEmote(const std::string& name);
     // humanoid.Jump = true from a script: jump once, as if Space was pressed.
     void       scriptJump() { m_scriptJump = true; }
+    // humanoid:Move(direction) from a script: keep walking that way (a zero vector stops)
+    // while no keys are pushed. Respawning forgets it.
+    void       scriptMove(const glm::vec3& dir) { m_scriptMove = glm::vec3(dir.x, 0.0f, dir.z); }
     const std::string& emote() const { return m_emote; }
     // Knocked off your feet for `seconds` (tripped, flung): no control, the body
     // falls over and gets back up afterwards. 0 = get up now.
@@ -286,6 +289,7 @@ private:
     float m_sitBlend = 0.0f;        // 0 standing .. 1 sitting (the pose)
     std::string m_emote;            // playing now ("" = none)
     bool  m_scriptJump = false;      // humanoid.Jump = true (next update)
+    glm::vec3 m_scriptMove{0.0f};    // humanoid:Move(direction)
     int   m_emoteTrack = 0;          // its AnimationTrack (0 = the game's Animate script plays it)
     std::vector<int> m_fadingTracks; // emotes letting go (forgotten once they have)
     uint64_t m_gripMade = 0;         // the tool we made a RightGrip for

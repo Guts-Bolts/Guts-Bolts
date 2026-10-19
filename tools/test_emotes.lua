@@ -57,7 +57,7 @@ task.spawn(function()
     check(track ~= nil and track.Name == "Dance" and track.Looped and track.IsPlaying, "a dance keeps going", track and track.Name)
     -- Scripts can hold it on one frame, like any track.
     track:AdjustSpeed(0)
-    track.TimePosition = 0.26
+    track.TimePosition = 0.78
     seconds(0.3)
     local held = armUp(leftArm)
     seconds(0.3)
@@ -71,16 +71,13 @@ task.spawn(function()
     check(t == nil or not t.IsPlaying, "jumping stops the dance")
     seconds(1.5)
 
-    -- Walking stops it too (something pushes the character along).
+    -- Walking stops it too (humanoid:Move walks the way the keys would).
     humanoid:PlayEmote("dance2")
     seconds(0.5)
     check(emoteTrack() ~= nil, "dancing again")
-    local push = Instance.new("BodyVelocity")
-    push.MaxForce = Vector3.new(1e6, 0, 1e6)
-    push.Velocity = Vector3.new(8, 0, 0)
-    push.Parent = char.HumanoidRootPart
+    humanoid:Move(Vector3.new(1, 0, 0))
     seconds(0.6)
-    push:Destroy()
+    humanoid:Move(Vector3.new(0, 0, 0))
     t = emoteTrack()
     check(t == nil or not t.IsPlaying, "walking stops the dance")
     seconds(1)
@@ -124,7 +121,7 @@ task.spawn(function()
     humanoid:PlayEmote("dance")
     seconds(0.2)
     local d = emoteTrack()
-    if d then d:AdjustSpeed(0) d.TimePosition = 0.26 end
+    if d then d:AdjustSpeed(0) d.TimePosition = 0.78 end
     local cam = workspace.CurrentCamera
     cam.CameraType = Enum.CameraType.Scriptable
     local p = char.HumanoidRootPart.Position

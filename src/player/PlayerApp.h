@@ -138,6 +138,13 @@ private:
     void wardrobeToggle(const Catalog::Item& it);
     bool itemOn(const Catalog::Item& it) const;   // worn, or (gear) equipped
     void toggleGear(const std::string& id, bool on);
+    // Emotes (into the first empty emote slot) and animation packs, on or off (worker/server.js
+    // emotes.equip / animpack.equip).
+    void toggleMove(const Catalog::Item& it, bool on);
+    // Your equipped emotes and pack (Online::me()) -> Emotes::mine(), downloading their files.
+    // Every frame; only does something when they change.
+    void syncEmotes();
+    std::string m_emotesSynced;
     void drawOnlineItemDialog();
     void drawCreate();
     void drawMyGames();

@@ -2348,6 +2348,7 @@ int hum_stopPathfinding(lua_State* L) {
 int hum_move(lua_State* L) {
     glm::vec3 d = LuaApi::checkVector3(L, 2);
     if (Npc* n = npcOf(L)) { n->moveDir = d; n->hasTarget = false; n->route.state = Npc::Route::Idle; }
+    else if (Player* p = E(L)->scene()->player(); p && p->rootId() == humRoot(L)) p->scriptMove(d);   // this computer's player
     return 0;
 }
 

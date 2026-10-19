@@ -1,5 +1,6 @@
 // Catalog item pictures: real renders, never drawings. Each item is shown worn by a
-// plain grey mannequin (clothes, faces, hats, hair, accessories), or on its own (gear),
+// plain grey mannequin (clothes, faces, hats, hair, accessories), the mannequin mid-move
+// (emotes, animation packs), or on its own (gear),
 // drawn by the game's own renderer into a small picture once and kept.
 //
 // dressPlayer() is also what puts other people's outfits on their characters (profiles,
@@ -9,6 +10,7 @@
 #include "../online/AssetCache.h"
 #include "../online/OnlineClient.h"
 #include "../renderer/SceneRenderer.h"
+#include "../scene/Emotes.h"
 #include "../scene/Physics.h"
 #include "../scene/Serializer.h"
 #include "../core/Paths.h"
@@ -33,7 +35,7 @@ std::vector<std::string> sourcesOf(const Catalog::Item& it) {
     std::vector<std::string> s;
     if (!it.image.empty()) s.push_back(it.image);
     if (!it.model.empty()) s.push_back(it.model);
-    if (it.type == Catalog::Type::Gear) s.push_back("gb:" + it.id);
+    if (it.type == Catalog::Type::Gear || Catalog::isMove(it.type)) s.push_back("gb:" + it.id);
     return s;
 }
 const glm::vec3 kGrey(0.80f, 0.81f, 0.83f), kGreyLegs(0.74f, 0.75f, 0.78f);
@@ -180,6 +182,16 @@ bool PlayerApp::renderItem(ItemRender& e) {
         bc.head = bc.torso = bc.leftArm = bc.rightArm = kGrey;
         bc.leftLeg = bc.rightLeg = kGreyLegs;
         dressPlayer(*p, bc, HatStyle::None, glm::vec3(-1.0f), {it});
+        // Emotes and animation packs: the mannequin mid-move.
+        if (Catalog::isMove(it.type))
+            if (auto file = Paths::downloaded(it.id); !file.empty()) {
+                std::ifstream f(file, std::ios::binary);
+                std::stringstream ss;
+                ss << f.rdbuf();
+                Anim::Clip clip;
+                float t = 0.0f;
+                if (Emotes::pictureClip(ss.str(), nullptr, clip, t)) Emotes::poseRig(p->root(), clip, t);
+            }
         // Frame what the item is on: the head for hats / hair / faces, else the body.
         switch (it.type) {
             case Catalog::Type::Hat: case Catalog::Type::Hair: case Catalog::Type::Face: case Catalog::Type::FaceAcc:
