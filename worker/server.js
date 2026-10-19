@@ -48,6 +48,10 @@ const canBeLimited = (k) => isAccessory(k) || k === 'face';
 // creators can make as many public as they like; everyone else 5 a week.
 const kPublicModelsPerWeek = 5;
 const kMostPasses = 50;   // game passes per game
+// Version history: every time a game is published its old versions are kept, so its creator can
+// put one back. The newest 50 are kept (and at most 100 MB of them per game); older ones are
+// deleted, oldest first. The live version is never deleted. (src/server has the same.)
+const kMaxVersions = 50, kMaxVersionBytes = 100 << 20;
 // Animations (published from Studio's Animation Editor) are public or private too, so other
 // creators can use them, or not. They're free and have no weekly limit.
 // Things that are public or private: games, models and animations.
@@ -82,6 +86,7 @@ const kTemplateW = 585, kTemplateH = 559;
 const pngSize = (d) => (d.length > 24 && [0x89, 0x50, 0x4e, 0x47].every((v, i) => d[i] === v)
   ? [(d[16] << 24 | d[17] << 16 | d[18] << 8 | d[19]) >>> 0, (d[20] << 24 | d[21] << 16 | d[22] << 8 | d[23]) >>> 0] : null);
 const maxSize = (k) => MAX_SIZE[k] || 64 * 1024;
+const sameBytes = (x, y) => x.length === y.length && x.every((b, i) => b === y[i]);
 const isClothing = (k) => k === 'shirt' || k === 'pants' || k === 'tshirt' || k === 'face' || isAccessory(k);   // anything you wear
 // T-shirts: any picture, worn flat on the front of the torso (over a shirt, if there is one).
 const kTShirtMaxSide = 1024;
@@ -660,6 +665,43 @@ export class GbServerObject extends DurableObject {
       this.sql.exec('INSERT INTO files (id, part, data) VALUES (?, ?, ?)', id, part, bytes.subarray(i, i + CHUNK));
     return true;
   }
+  // --- Version history (games): a.versions = [{ v, at, by, size, restored? }], oldest first; the
+  // last one is what's live. Each version's file is 'ver:<game>:<v>'. A game published before
+  // history existed has none: its current file becomes version 1 the first time it's published
+  // again (or restored), and until then the list shows it as version 1. (src/server has the same.)
+  versionsOf(a) {
+    if (a.versions && a.versions.length) return a.versions;
+    return [{ v: 1, at: a.updated || a.created || 0, by: a.creator, size: a.size || 0 }];
+  }
+  // Keep `data` as the game's newest version. `old` is the file it replaces (to make version 1 of
+  // a game that has no history yet). Returns the new version's number.
+  addVersion(a, data, by, old, restored = 0) {
+    if (!a.versions || !a.versions.length) {
+      a.versions = [];
+      if (old) { this.writeFile('ver:' + a.id + ':1', old); a.versions.push({ v: 1, at: a.updated || a.created || now(), by: a.creator, size: old.length }); }
+    }
+    const v = (a.versions.length ? a.versions[a.versions.length - 1].v : 0) + 1;
+    this.writeFile('ver:' + a.id + ':' + v, data);
+    const entry = { v, at: now(), by, size: data.length };
+    if (restored) entry.restored = restored;
+    a.versions.push(entry);
+    let bytes = a.versions.reduce((n, x) => n + (x.size || 0), 0);
+    while (a.versions.length > 1 && (a.versions.length > kMaxVersions || bytes > kMaxVersionBytes)) {
+      const gone = a.versions.shift();
+      bytes -= gone.size || 0;
+      this.sql.exec('DELETE FROM files WHERE id = ?', 'ver:' + a.id + ':' + gone.v);
+    }
+    this.saveAsset(a);
+    return v;
+  }
+  versionsJson(a) {
+    const list = this.versionsOf(a), live = list[list.length - 1].v;
+    return list.map((x) => {
+      const u = this.users.get(x.by);
+      return { v: x.v, at: x.at, by: x.by, byName: u ? u.name : (a.builtin ? 'Guts' : '?'), size: x.size, restored: x.restored || 0, live: x.v === live };
+    }).reverse();   // newest first
+  }
+
   readFile(id) {
     const parts = [...this.sql.exec('SELECT data FROM files WHERE id = ? ORDER BY part', id)].map((r) => new Uint8Array(r.data));
     if (!parts.length) return null;
@@ -955,7 +997,10 @@ export class GbServerObject extends DurableObject {
         this.assets.set(a.id, a);
       }
       a.description = cleanText(info.description || '', 1000, true);
-      if (a.size !== data.length) { a.size = data.length; a.updated = now(); this.writeFile(a.id, data); }
+      if (a.size !== data.length) {
+        if (a.versions && a.versions.length) this.addVersion(a, data, this.official, null);   // (if it has a history, this is a new version)
+        a.size = data.length; a.updated = now(); this.writeFile(a.id, data);
+      }
       this.saveAsset(a);
     }
   }
@@ -1853,6 +1898,7 @@ export class GbServerObject extends DurableObject {
       if (access) { a.access = access; if (access === 'public' && kind === 'model') this.countPublicModel(me); }
       if (REVIEWED_KINDS.includes(kind) && !verified && !this.isStaff(me)) a.review = 'pending';
       this.writeFile(a.id, data);
+      if (kind === 'game') this.addVersion(a, data, me.id, null);   // version 1 of its history
       if ((kind === 'face' || kind === 'tshirt') && data.length <= 400 * 1024) { this.writeFile('thumb:' + a.id, data); a.thumb = t; }   // its own picture
       this.assets.set(a.id, a);
       this.saveAsset(a);
@@ -2033,6 +2079,12 @@ export class GbServerObject extends DurableObject {
         try { acc = JSON.parse(new TextDecoder().decode(data)); } catch { acc = null; }
         if (!acc || acc.format !== 'gbaccessory' || !acc.node) return fail('That isn\'t a Guts&Bolts accessory.');
       }
+      // A game keeps its old versions (version history); publishing the same file again adds none.
+      let version = 0;
+      if (a.kind === 'game') {
+        const old = this.readFile(a.id);
+        if (!old || !sameBytes(old, data)) version = this.addVersion(a, data, me.id, old);
+      }
       if (!isClothing(a.kind) || model) this.writeFile(a.id, data);
       // A new picture or sound gets checked again.
       if (REVIEWED_KINDS.includes(a.kind) && !isClothing(a.kind) && !this.isVerified(me) && !this.isStaff(me)) { a.review = 'pending'; delete a.reviewNote; }
@@ -2047,7 +2099,28 @@ export class GbServerObject extends DurableObject {
       if (!isClothing(a.kind)) a.size = data.length;
       a.updated = t;
       this.saveAsset(a);
-      return okay({ asset: this.publicAsset(a) });
+      return okay({ asset: this.publicAsset(a), version: a.kind === 'game' ? this.versionsOf(a).slice(-1)[0].v : undefined, newVersion: !!version });
+    }
+    // --- Version history: a game's creator sees its published versions and can put an old one
+    // back (it's published again as the newest version; nothing is ever lost by restoring).
+    if (name === 'game.versions' || name === 'game.restore') {
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || a.kind !== 'game') return fail('That game doesn\'t exist (any more).');
+      if (a.creator !== me.id) return fail('Only the game\'s creator can see its versions.');
+      if (name === 'game.versions') return okay({ versions: this.versionsJson(a), most: kMaxVersions });
+      const want = num(args, 'version'), list = this.versionsOf(a);
+      const entry = list.find((x) => x.v === want);
+      if (!entry) return fail('That version isn\'t kept any more.');
+      if (entry.v === list[list.length - 1].v) return fail('That version is already the live one.');
+      const data = this.readFile('ver:' + a.id + ':' + entry.v);
+      if (!data) return fail('The server lost that version.');
+      const old = this.readFile(a.id);
+      const version = this.addVersion(a, data, me.id, old, entry.v);
+      this.writeFile(a.id, data);
+      a.size = data.length;
+      a.updated = t;
+      this.saveAsset(a);
+      return okay({ asset: this.publicAsset(a, me), version, versions: this.versionsJson(a), most: kMaxVersions });
     }
     if (name === 'list') {
       const kind = str(args, 'kind'), q = lower(cleanText(str(args, 'query'), 64)), creator = lower(str(args, 'creator'));
@@ -2322,6 +2395,7 @@ export class GbServerObject extends DurableObject {
       if (a.creator !== me.id) this.staffDid(me, 'delete', 'Deleted ' + KIND_TITLE(a) + ' "' + a.name + '"', a.creator);
       this.sql.exec('DELETE FROM files WHERE id = ? OR id = ? OR id = ?', a.id, 'thumb:' + a.id, 'icon:' + a.id);
       for (const sh of a.shots || []) this.sql.exec('DELETE FROM files WHERE id = ?', 'shot:' + a.id + ':' + sh.id);
+      for (const x of a.versions || []) this.sql.exec('DELETE FROM files WHERE id = ?', 'ver:' + a.id + ':' + x.v);   // its version history
       this.assets.delete(a.id);
       this.dirty.assets.add(a.id);
       return okay();

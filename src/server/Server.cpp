@@ -893,6 +893,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         a.kind = kind; a.name = title; a.description = desc; a.creator = me.id;
         a.price = price; a.created = now; a.size = data.size(); a.meta = meta;
         if (!writeFile(blobPath(a.id), data)) return fail("The server couldn't save that file.");
+        if (kind == "game") addVersion(a, data, me.id, nullptr);   // version 1 of its history
         m_assets[a.id] = a;
         saveAssets();
         me.owned.insert(a.id);
@@ -1112,6 +1113,13 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             if (!acc.is_object() || acc.value("format", std::string()) != "gbaccessory" || !acc.contains("node"))
                 return fail("That isn't a Guts&Bolts accessory.");
         }
+        // A game keeps its old versions (version history); publishing the same file again adds none.
+        bool newVersion = false;
+        if (a.kind == "game") {
+            std::string old;
+            const bool hadFile = readFile(blobPath(a.id), old);
+            if (!hadFile || old != data) { addVersion(a, data, me.id, hadFile ? &old : nullptr); newVersion = true; }
+        }
         if ((!Online::isClothing(a.kind) || model) && !writeFile(blobPath(a.id), data)) return fail("The server couldn't save that file.");
         // A new picture or sound gets checked again.
         if (reviewedKind(a.kind) && !Online::isClothing(a.kind) && !isVerified(me) && !isStaff(me)) {
@@ -1129,7 +1137,34 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (!Online::isClothing(a.kind)) a.size = data.size();
         saveAssets();
         log(me.name + " updated " + a.kind + " \"" + a.name + "\"");
-        json r = okay(); r["asset"] = publicAsset(a); return r;
+        json r = okay(); r["asset"] = publicAsset(a);
+        if (a.kind == "game") { r["version"] = versionsOf(a).back().value("v", 0LL); r["newVersion"] = newVersion; }
+        return r;
+    }
+    // --- Version history: a game's creator sees its published versions and can put an old one
+    // back (it's published again as the newest version). (worker/server.js has the same.)
+    if (name == "game.versions" || name == "game.restore") {
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end() || it->second.kind != "game") return fail("That game doesn't exist (any more).");
+        Asset& a = it->second;
+        if (a.creator != me.id) return fail("Only the game's creator can see its versions.");
+        if (name == "game.versions") { json r = okay(); r["versions"] = versionsJson(a); r["most"] = kMaxVersions; return r; }
+        const long long want = num("version");
+        const json list = versionsOf(a);
+        bool kept = false;
+        for (const json& x : list) if (x.value("v", 0LL) == want) kept = true;
+        if (!kept) return fail("That version isn't kept any more.");
+        if (want == list.back().value("v", 0LL)) return fail("That version is already the live one.");
+        std::string data, old;
+        if (!readFile(versionPath(a.id, want), data)) return fail("The server lost that version.");
+        const bool hadFile = readFile(blobPath(a.id), old);
+        const long long v = addVersion(a, data, me.id, hadFile ? &old : nullptr, want);
+        if (!writeFile(blobPath(a.id), data)) return fail("The server couldn't save that file.");
+        a.size = data.size();
+        saveAssets();
+        log(me.name + " restored version " + std::to_string(want) + " of \"" + a.name + "\"");
+        json r = okay(); r["asset"] = publicAsset(a, &me); r["version"] = v; r["versions"] = versionsJson(a); r["most"] = kMaxVersions;
+        return r;
     }
     if (name == "list") {
         std::string kind = str("kind"), q = lower(Online::cleanText(str("query"), 64)), creator = lower(str("creator"));
@@ -1273,6 +1308,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         fs::remove(m_opts.data / "files" / ("thumb-" + it->first), ec);
         fs::remove(m_opts.data / "files" / ("icon-" + it->first), ec);
         for (const json& s : it->second.shots) fs::remove(m_opts.data / "files" / ("shot-" + it->first + "-" + s.value("id", std::string())), ec);
+        for (const json& x : it->second.versions) fs::remove(versionPath(it->first, x.value("v", 0LL)), ec);   // its version history
         log(me.name + " deleted " + it->second.kind + " \"" + it->second.name + "\"");
         m_assets.erase(it);
         saveAssets();
@@ -1322,6 +1358,51 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
 // ---------------------------------------------------------------------------
 
 fs::path GbServer::blobPath(const std::string& assetId) const { return m_opts.data / "files" / assetId; }
+
+fs::path GbServer::versionPath(const std::string& assetId, long long v) const {
+    return m_opts.data / "files" / ("ver-" + assetId + "-" + std::to_string(v));
+}
+
+json GbServer::versionsOf(const Asset& a) const {
+    if (a.versions.is_array() && !a.versions.empty()) return a.versions;
+    return json::array({{{"v", 1}, {"at", std::max(a.created, a.meta.value("updated", 0LL))}, {"by", a.creator}, {"size", a.size}}});
+}
+
+long long GbServer::addVersion(Asset& a, const std::string& data, const std::string& by, const std::string* old, long long restored) {
+    if (!a.versions.is_array() || a.versions.empty()) {
+        a.versions = json::array();
+        if (old && writeFile(versionPath(a.id, 1), *old))
+            a.versions.push_back({{"v", 1}, {"at", std::max(a.created, a.meta.value("updated", 0LL))}, {"by", a.creator}, {"size", old->size()}});
+    }
+    const long long v = (a.versions.empty() ? 0LL : a.versions.back().value("v", 0LL)) + 1;
+    writeFile(versionPath(a.id, v), data);
+    json entry = {{"v", v}, {"at", Online::unixNow()}, {"by", by}, {"size", data.size()}};
+    if (restored) entry["restored"] = restored;
+    a.versions.push_back(entry);
+    long long bytes = 0;
+    for (const json& x : a.versions) bytes += x.value("size", 0LL);
+    std::error_code ec;
+    while (a.versions.size() > 1 && (a.versions.size() > kMaxVersions || bytes > kMaxVersionBytes)) {
+        bytes -= a.versions[0].value("size", 0LL);
+        fs::remove(versionPath(a.id, a.versions[0].value("v", 0LL)), ec);
+        a.versions.erase(a.versions.begin());
+    }
+    return v;
+}
+
+json GbServer::versionsJson(const Asset& a) const {
+    const json list = versionsOf(a);
+    const long long live = list.back().value("v", 0LL);
+    json out = json::array();
+    for (auto it = list.rbegin(); it != list.rend(); ++it) {   // newest first
+        const std::string by = it->value("by", std::string());
+        auto u = m_users.find(by);
+        out.push_back({{"v", it->value("v", 0LL)}, {"at", it->value("at", 0LL)}, {"by", by},
+                       {"byName", u != m_users.end() ? u->second.name : std::string("?")}, {"size", it->value("size", 0LL)},
+                       {"restored", it->value("restored", 0LL)}, {"live", it->value("v", 0LL) == live}});
+    }
+    return out;
+}
 
 void GbServer::saveUsers() {
     json all = json::object();
@@ -1391,6 +1472,7 @@ void GbServer::saveAssets() {
         if (a.kind == "game") { all[id]["likes"] = a.likes; all[id]["dislikes"] = a.dislikes; all[id]["votes"] = a.votes; }
         if (a.limited) { all[id]["limited"] = true; all[id]["stock"] = a.stock; all[id]["copies"] = a.copies; }
         if (!a.shots.empty()) all[id]["shots"] = a.shots;
+        if (!a.versions.empty()) all[id]["versions"] = a.versions;
     }
     writeFile(m_opts.data / "assets.json", all.dump(1));
 }
@@ -1419,7 +1501,10 @@ void GbServer::addExampleGames() {
         const json& info = j.contains("info") ? j["info"] : json::object();
         a.name = Online::cleanText(info.value("title", std::string(title)), 50);
         a.description = Online::cleanText(info.value("description", std::string()), 1000);
-        if (a.size != text.size()) { a.size = text.size(); writeFile(blobPath(id), text); }
+        if (a.size != text.size()) {
+            if (!a.versions.empty()) addVersion(a, text, a.creator, nullptr);   // (if it has a history, this is a new version)
+            a.size = text.size(); writeFile(blobPath(id), text);
+        }
         changed = true;
     }
     // The Verified Hat (worker/server.js VERIFIED_HAT, the same hat): an award for
@@ -1576,6 +1661,9 @@ void GbServer::load() {
                 a.likes = j.value("likes", m.value("likes", 0LL));
                 a.dislikes = j.value("dislikes", m.value("dislikes", 0LL));
                 if (j.contains("votes") && j["votes"].is_object()) a.votes = j["votes"];
+                if (j.contains("versions") && j["versions"].is_array())
+                    for (const json& x : j["versions"])
+                        if (x.is_object() && x.contains("v") && x["v"].is_number_integer()) a.versions.push_back(x);
                 a.limited = j.value("limited", false);
                 a.stock = j.value("stock", 0LL);
                 if (j.contains("copies") && j["copies"].is_array())

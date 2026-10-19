@@ -140,13 +140,17 @@ void Editor::renderPublishDialog() {
             } else {
                 m_publishMsg = "Published! It's on the website now. Save your game so Studio remembers it's published.";
             }
+            // Old versions are kept: the game's Configure page on the website can put one back.
+            if (r.value("version", 0LL) > 1)
+                m_publishMsg += " This is version " + std::to_string(r.value("version", 0LL)) +
+                                " (older ones are under Version history on the game's Configure page on the website).";
             Log::system("Published \"" + m_publishName + "\" to " + Online::serverInfo().value("name", std::string("the server")));
         }, 120);
     };
     ImGui::BeginDisabled(m_onlineBusy);
     if (!published.empty()) {
         if (ImGui::Button("Update published game", ImVec2(200, 30))) send(true);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replace the version on the server with this one");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Publish this as the newest version (the old ones are kept in the game's Version history on the website)");
         ImGui::SameLine();
         if (ImGui::Button("Publish as a new game", ImVec2(180, 30))) send(false);
     } else {
@@ -485,6 +489,7 @@ void Editor::uploadLocalTextures(json node, const std::string& name, std::functi
         if (n.contains("children")) for (const auto& c : n["children"]) find(c);
         if (n.contains("nodes")) for (const auto& c : n["nodes"]) find(c);
         if (n.contains("node")) find(n["node"]);   // an accessory file: {"format":"gbaccessory","node":{...}}
+        for (const char* k : {"particles", "effect"}) if (n.contains(k)) find(n[k]);   // a ParticleEmitter's, Trail's or Beam's picture
     };
     find(node);
     if (todo.empty()) { done(node, ""); return; }
@@ -503,6 +508,7 @@ void Editor::uploadLocalTextures(json node, const std::string& name, std::functi
                 if (n.contains("children")) for (auto& c : n["children"]) swap(c);
                 if (n.contains("nodes")) for (auto& c : n["nodes"]) swap(c);
                 if (n.contains("node")) swap(n["node"]);
+                for (const char* k : {"particles", "effect"}) if (n.contains(k)) swap(n[k]);
             };
             swap(st->node);
             done(st->node, "");
