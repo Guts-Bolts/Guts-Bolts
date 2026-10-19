@@ -881,7 +881,7 @@ void AnimationEditor::drawDialogs() {
             if (m_importList.empty()) ImGui::TextDisabled("No animations here yet.");
             for (const auto& [id, label] : m_importList) {
                 ImGui::PushID(id.c_str());
-                if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_DontClosePopups) && !m_busy)
+                if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_NoAutoClosePopups) && !m_busy)
                     fetch(id, label.substr(0, label.find("  -  ")));
                 ImGui::PopID();
             }
