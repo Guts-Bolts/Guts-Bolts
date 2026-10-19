@@ -48,6 +48,50 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'no-peeking', name: 'No Peeking!', time: 1791907200, tag: 'Website',
+    summary: 'Buy something from the catalog for a friend: you pay, they get it, with a note from you.',
+    items: [
+      'A new "Buy as a gift" button on catalog items: pick a friend, write a short note if you like, check it and send',
+      'You pay the price, the item goes straight into your friend\'s inventory, and they get a notification with your note',
+      'Gifts show up in both of your Bolts histories, so you can see what you sent and what you got',
+      'You can only send gifts to friends, and not something they already have',
+      'Limited items can\'t be gifts (trade them instead), and free or off-sale items can\'t either',
+    ],
+  },
+  {
+    id: 'two-thumbs-way-up', name: 'Two Thumbs Way Up', time: 1791900000, tag: 'Website',
+    summary: 'Rate Library models with a thumbs up or down, and find the best ones with the new "Best rated" sort.',
+    items: [
+      'Give any Library model a thumbs up or down on its page. Change your mind any time, or press your vote again to take it back',
+      'Only people who have inserted the model in Studio can rate it, and you can\'t rate your own',
+      'The Library, each model\'s page and Studio\'s Toolbox show how many people liked it and how many voted',
+      'A new "Best rated" sort in the Library and the Toolbox. It\'s fair: one vote at 100% doesn\'t beat 500 votes at 95%',
+    ],
+  },
+  {
+    id: 'say-cheese', name: 'Say Cheese', time: 1791896400, tag: 'Website',
+    summary: 'Games can show off up to 5 screenshots on their page, next to the thumbnail.',
+    items: [
+      'Creators add up to 5 screenshots on a game\'s Configure page: .png, .jpg or .webp, up to 2 MB each',
+      'Move them earlier or later to pick the order, or delete one, right on the Configure page',
+      'The game\'s page shows the thumbnail and the screenshots together, with arrows and a strip of small pictures to pick from',
+      'Click a picture to see it big. Arrow keys and Esc work, and on phones you can swipe',
+      'If a picture is the wrong kind or too big, it says so before uploading',
+    ],
+  },
+  {
+    id: 'paper-trail', name: 'Paper Trail', time: 1791892800, tag: 'Website',
+    summary: 'A new Past trades tab on the Trades page: every finished trade, with who, what, when and how it ended.',
+    items: [
+      'Trades now has two tabs: Open trades and Past trades',
+      'Past trades lists accepted, declined, cancelled and expired trades, newest first, 20 to a page',
+      'Each one shows who it was with, the items each of you put in, the date, and how it ended',
+      'Only you and the other person in a trade can see it',
+      'Trades nobody answers now run out after 30 days (the one who sent it gets a notification)',
+      'Past trades are kept from this update on (plus the last month\'s, which the server still had), for a year',
+    ],
+  },
+  {
     id: 'rewind', name: 'Rewind', time: 1791889200, tag: 'Website',
     summary: 'Publishing a game keeps its old versions now, and one click puts an old one back.',
     items: [

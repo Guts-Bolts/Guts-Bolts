@@ -555,6 +555,19 @@ html.gutstober .foot, html.gutstober .foot a { color: #cbb5dc; }
 .btip { display: none; position: absolute; left: -6px; right: -6px; top: calc(100% - 2px); z-index: 6; padding: 5px 7px; font-size: 11px;
   color: var(--muted); background: var(--panel); border: 1px solid #c3c8cf; box-shadow: 0 2px 6px rgba(0,0,0,.18); }
 .btip a { font-size: 11px; }
+/* Thumbs up / down on Library models */
+.brating { font-size: 11px; margin-top: 1px; }
+.rating { white-space: nowrap; }
+.model-rating { margin: 6px 0 4px; }
+.model-rating .votes { margin: 4px 0; }
+.model-rating .btn[disabled] { opacity: .55; cursor: default; }
+.vote-bar.none { background: var(--line); }
+.vote-bar.none > div { background: transparent; }
+/* Buy as a gift */
+.item-buybox .btn.gift { width: 100%; margin-top: 6px; padding: 6px; font-size: 14px; }
+.gift-form select, .gift-form input[type=text] { width: 100%; }
+.gift-check td { padding: 3px 14px 3px 0; text-align: left; }
+.gift-check td:first-child { color: var(--muted); }
 @media (hover: hover) { .bcard:hover .btip { display: block; } }
 .bpager { display: flex; gap: 10px; align-items: center; justify-content: center; margin: 18px 0 4px; }
 @media (max-width: 640px) {
@@ -649,6 +662,62 @@ table.forum tr.pinned td { background: var(--panel2); }
 /* Inventory on profiles: item cards with the numbers of the Limited copies someone holds */
 .inv-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .inv-item .serials { color: #1a7f37; font-weight: bold; overflow-wrap: anywhere; }
+
+/* Past trades: one card per finished trade, with each side's items and how it ended */
+.btn.disabled { opacity: .55; pointer-events: none; }
+.past-trades { display: flex; flex-direction: column; gap: 10px; }
+.past-trade { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 10px 12px; }
+.past-trade-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.past-trade-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.past-trade-sides .chip { margin: 3px 3px 0 0; }
+.past-trade p { margin: 6px 0 0; }
+@media (max-width: 560px) { .past-trade-sides { grid-template-columns: 1fr; } }
+.outcome { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 12px; font-weight: bold; border: 1px solid var(--line);
+  background: var(--panel2); color: var(--text); }
+.outcome-accepted { background: #dff3e6; border-color: #7cc596; color: #0f5c2a; }
+.outcome-declined, .outcome-failed { background: #fbe3e3; border-color: #e09a9a; color: #8a1616; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .outcome-accepted { background: #12351f; border-color: #2c7a48; color: #9fe0b5; }
+  :root:not([data-theme="light"]) .outcome-declined, :root:not([data-theme="light"]) .outcome-failed { background: #3a1616; border-color: #8a3030; color: #f3b0b0; }
+}
+
+/* A game's pictures: the thumbnail and its screenshots, with arrows, a strip and a big view */
+.gallery { min-width: 0; }
+.gallery-stage { position: relative; }
+.gallery-main { display: block; width: 100%; padding: 0; border: 0; background: #11161e; border-radius: 4px; overflow: hidden; cursor: zoom-in; }
+.gallery-main img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; }
+.gallery-arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.5); background: rgba(10,14,20,.6); color: #fff; font-size: 28px; line-height: 34px;
+  cursor: pointer; padding: 0; }
+.gallery-arrow:hover, .gallery-arrow:focus-visible { background: rgba(10,14,20,.85); }
+.gallery-arrow.prev { left: 8px; }
+.gallery-arrow.next { right: 8px; }
+.gallery-count { position: absolute; right: 8px; bottom: 8px; background: rgba(10,14,20,.65); color: #fff; font-size: 12px;
+  padding: 2px 8px; border-radius: 10px; pointer-events: none; }
+.gallery-strip { display: flex; gap: 6px; margin-top: 6px; overflow-x: auto; padding-bottom: 2px; }
+.gallery-thumb { flex: 0 0 auto; width: 84px; padding: 0; border: 2px solid transparent; border-radius: 3px; background: #11161e;
+  cursor: pointer; opacity: .75; }
+.gallery-thumb img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 1px; }
+.gallery-thumb.on { border-color: var(--blue); opacity: 1; }
+.gallery-thumb:hover { opacity: 1; }
+.lightbox { background: rgba(0,0,0,.92); padding: 48px 56px; }
+.lightbox img { width: 100%; height: 100%; object-fit: contain; }
+.lightbox .gallery-arrow { position: fixed; }
+.lightbox .gallery-count { position: fixed; right: auto; left: 50%; transform: translateX(-50%); bottom: 14px; }
+.lightbox-x { position: fixed; top: 10px; right: 12px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,.5);
+  background: rgba(10,14,20,.6); color: #fff; font-size: 26px; line-height: 34px; padding: 0; cursor: pointer; }
+@media (max-width: 640px) {
+  .lightbox { padding: 52px 8px; }
+  .lightbox .gallery-arrow { top: auto; bottom: 8px; transform: none; }
+  .gallery-thumb { width: 68px; }
+}
+/* Screenshots on the Configure page */
+.shot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.shot-edit { border: 1px solid var(--line); border-radius: 3px; padding: 6px; background: var(--panel2); min-width: 0; }
+.shot-edit img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #11161e; border-radius: 2px; }
+.shot-buttons { display: flex; gap: 4px; align-items: center; margin-top: 6px; }
+.shot-buttons .red { margin-left: auto; }
+
 /* A game's version history (Configure page) */
 .versions { width: 100%; border-collapse: collapse; font-size: 13px; }
 .versions th { text-align: left; color: var(--muted); font-weight: normal; padding: 4px 6px; border-bottom: 1px solid var(--line); }

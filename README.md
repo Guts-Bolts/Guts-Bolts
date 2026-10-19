@@ -98,6 +98,8 @@ The panels:
   models, decals and audio, plus Studio's own parts and ready-made objects),
   **Inventory** (your own uploads, private ones too) and **Recent** (what you
   inserted lately). Pick a category, search, and click a picture to insert it.
+  Library models show how many people liked them (a green **92%** tag; point
+  at it for the number of votes), and **Sort: Best rated** lists the best ones first.
   Every item has a picture: Studio photographs models on their own, and
   things made by Guts&Bolts staff (and Studio's built-in objects) carry a gold
   **official** badge, so you know they're safe to use. It has
@@ -1831,6 +1833,21 @@ only* or *Private*), upload a **thumbnail** (cropped to 16:9) and a square
 from everyone else: the server won't list them, send them or start servers
 for them.
 
+**Screenshots:** the Configure page also has a **Screenshots** box for up to 5
+pictures of the game: `.png`, `.jpg` or `.webp`, up to 2 MB each (anything else
+gets a clear message, before uploading and again from the server). Move one
+earlier or later with the arrows, or delete it. The game's page shows the
+thumbnail and the screenshots together: big picture, arrows, a strip of small
+pictures to pick from, and a click (or tap) opens a big view (arrow keys and Esc
+work, and you can swipe on phones). Like the thumbnail they're the creator's own
+pictures and aren't held for a staff check, but staff can delete one (it goes in
+the staff log). The pictures are served from `/shot/<game id>/<screenshot id>`;
+every screenshot gets a new random id, so browsers can keep them for good.
+(`shots.add`, `shots.delete`, `shots.order` and `shots.get` in
+`worker/server.js` and `src/server/ServerItems.cpp`. The C++ server keeps them
+as `files/shot-<game>-<id>`; like thumbnails, its pictures reach the apps
+through requests, since only the main server has the `/shot/` addresses.)
+
 #### Version history (putting an old version back)
 
 Publishing a game never throws its old version away. Every time you publish
@@ -1919,6 +1936,44 @@ Find things in two places:
   button, and **Copy ID** copies the ID to paste into a Decal's Texture or a
   Sound's File.
 
+**Rating models.** Every Library model can get a thumbs up or down, on its page
+(website, and *Create > Library* in the Player). One vote each: press the other
+thumb to change it, or your own again to take it back.
+
+- Only people who have **inserted the model** can rate it. The server remembers
+  each Library model you fetch to use (Studio's Toolbox, or `require(id)` in a
+  script; Studio fetching a picture-less model once to photograph it counts too),
+  so it costs nothing extra. You can't rate your own models.
+- The Library, the model's page and Studio's Toolbox show the like percentage and
+  how many votes it has.
+- **Best rated** (Library and Toolbox) sorts by the Wilson score: the lowest the real
+  like rate is likely to be (95% sure). So one vote at 100% doesn't beat 500 votes
+  at 95%, and models with no votes come last.
+- `model.vote` in `worker/server.js` and `src/server/ServerItems.cpp` (`usedModels` is
+  the list of models someone fetched; `wilsonScore` is in both servers).
+
+### Gifts (Buy as a gift)
+
+Paid catalog items have a **Buy as a gift** button under **Buy** on the website.
+Pick one of your friends, write a short note if you like (up to 100 letters, through
+the text filter), check what it costs and press **Send gift**.
+
+- You pay the price (the creator gets their 70% like any sale). The item goes
+  straight into your friend's inventory, and they get a notification with your note.
+- Both Bolts histories show it: *Gift for amy: Party Hat* for you, *Gift from bob:
+  Party Hat* for them (it costs them nothing).
+- Friends only. You can't gift something they already have (if they hide their
+  inventory from you, it just says you can't gift it to them), and not to someone
+  who is banned or blocked.
+- **No Limiteds.** Limited copies are numbered and only sold, resold and traded, so
+  gifting them isn't supported (trade one instead). Free, off-sale, not-yet-checked
+  and award items (the Verified Hat) can't be gifts either.
+- It's as safe as buying for yourself: the server checks everything again, takes
+  the Bolts and hands the item over in one go, and sending the same gift twice is
+  turned down because they already have it.
+- `gift.buy` in `worker/server.js` and `src/server/Server.cpp`. (Gifts are sent from
+  the website; the Player app shows the notification and opens the item.)
+
 ### Limiteds, resale and trading
 
 - **Edit item:** on an item's page on the website, its creator (or staff) can
@@ -1935,7 +1990,22 @@ Find things in two places:
 - **Trading:** press **Trade** on someone's profile, pick up to 4 of your
   Limiteds and up to 4 of theirs, and send the offer. They accept or decline
   on the **Trades** page. The swap only happens if both of you still have
-  everything.
+  everything. A trade nobody answers runs out (**expires**) after 30 days, and
+  whoever sent it gets a notification.
+- **Past trades:** the Trades page has two tabs, **Open trades** and **Past
+  trades**. Past trades lists every finished trade, newest first, 20 to a page:
+  who it was with, the items each of you put in, the date it ended and how
+  (Accepted, Declined, Cancelled, Expired, or "Couldn't happen" when someone no
+  longer had an item). Only the two people in a trade can see it (not even staff
+  get it from this list). Each one is saved with the names of the people and
+  items as they were then, so it still reads right if an item is deleted later.
+  They're kept for a year (at most 50,000 in all). Past trades started being
+  kept with the *Paper Trail* update; before that, finished trades were only
+  kept for a month, so the history starts with what the server still had then.
+  Blocking someone cancels your open trades with them, and those show up as
+  Cancelled. (`trade.history` in `worker/server.js`, which keeps them in its own
+  `pasttrades` table, and `src/server/ServerItems.cpp`, which saves
+  `pasttrades.json`.)
 - **Inventory:** every profile (website and app) has an **Inventory** box with
   what that person owns from the catalog, newest first. **See all** shows the
   whole thing in groups (Accessories, Clothing, Faces, Gear, Limiteds), and a
@@ -2452,7 +2522,7 @@ how many new things happened. Click it to see them; that marks them read.
 
 You get one when someone sends you a friend request, becomes your friend, follows
 you, buys something you made, sends or answers a trade, asks to join your group or
-lets you in, and when staff check something you uploaded. Each one takes you to the
+lets you in, sends you a gift, and when staff check something you uploaded. Each one takes you to the
 right page. The newest 50 are kept. Both servers do the same (`notify` in
 `worker/server.js` and `src/server/Server.cpp`).
 
@@ -2460,7 +2530,7 @@ right page. The newest 50 are kept. Both servers do the same (`notify` in
 
 Everything staff do is written down: bans and unbans, warnings, badges (like
 Verified and Staff), Bolts given or taken, upload checks, closed reports, and
-games, items or comments they deleted that weren't theirs. The **Staff** page (on
+games, items, comments or game screenshots they deleted that weren't theirs. The **Staff** page (on
 the website and in the Player) shows the newest 200; the **Log** button next to a
 person shows just what was done by or to them. The newest 3,000 are kept
 (`staffDid` in `worker/server.js` and `src/server/ServerSafety.cpp`, which saves
@@ -2583,9 +2653,9 @@ mapping and FXAA. It needs OpenGL 4.1, so it runs on Windows, macOS and Linux.
 
 The `worker/test` folder has automatic checks for the website's server. They
 start a real copy of the server in memory (no internet needed) and try things the
-way a player would: signing up, getting the daily Bolts, buying an item,
-commenting, the filter, a game's version history and restoring, and staff
-tools like warnings and bans. They also check
+way a player would: signing up, getting the daily Bolts, buying an item, sending
+a gift, rating a Library model, commenting, the filter, a game's version history
+and restoring, and staff tools like warnings and bans. They also check
 that the update log is filled in properly, that it says "Library" and not
 "Marketplace", and that the C++ filter has the same word list as the website.
 
