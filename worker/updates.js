@@ -90,6 +90,19 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'second-chances', name: 'Second Chances', time: 1791860400, tag: 'Website',
+    summary: 'Banned? Ask staff to take another look. Done with Guts&Bolts? Delete your account from Settings.',
+    items: [
+      'A banned account can send staff one short appeal (up to 500 letters) right from the ban screen, on the website or in the Player',
+      'One appeal per ban: you can send another once staff have answered, and their answer and note show on your ban screen',
+      'Staff see appeals next to the reports, with why, when and by whom the account was banned, and can accept (unban) or deny them',
+      'New "Delete your account" box in Settings (and in the Player under Your account): type your password and it\'s gone for good',
+      'Deleting removes your email, password, two-step, avatar, About me, posts, outfits, messages, friends, follows and favourites',
+      'Games and items you made stay up as made by "Deleted user", so nothing anyone bought breaks, and your username is never reused',
+      'Limited copies a deleted account owned stay with it and can\'t be traded any more',
+    ],
+  },
+  {
     id: 'bricks-and-mortar', name: 'Bricks & Mortar', time: 1791853200, tag: 'Engine',
     summary: 'Eleven new materials, each with its own look and feel: Brick, Cobblestone, Marble, Diamond Plate and more.',
     items: [

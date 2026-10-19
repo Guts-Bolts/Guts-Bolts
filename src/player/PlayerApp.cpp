@@ -2511,6 +2511,47 @@ void PlayerApp::drawAccount() {
                 if (ImGui::Button("Yes, log out")) { ImGui::CloseCurrentPopup(); logOut(); }
                 ImGui::EndPopup();
             }
+            // Delete my account (account.delete, the same as the website's Settings): the password proves it's you.
+            if (!om.value("official", false)) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Delete account...")) { m_deleteName.clear(); m_deletePassword.clear(); m_deleteMsg.clear(); ImGui::OpenPopup("##deleteaccount"); }
+                if (ImGui::BeginPopup("##deleteaccount")) {
+                    const std::string username = om.value("username", std::string());
+                    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28);
+                    ImGui::TextUnformatted("Delete your account for good? Your password, avatar, About me, posts, outfits, messages, "
+                                           "friends, follows, favourites and notifications are deleted. It can't be undone.");
+                    ImGui::TextDisabled("Games and items you made stay up, shown as made by \"Deleted user\". Your username and number are "
+                                        "never given to anyone else. Limited copies you own stay with the deleted account and can't be traded.");
+                    ImGui::PopTextWrapPos();
+                    ImGui::SetNextItemWidth(220);
+                    ImGui::InputTextWithHint("##delname", ("Type " + username + " to say you're sure").c_str(), &m_deleteName);
+                    ImGui::SetNextItemWidth(220);
+                    ImGui::InputTextWithHint("##delpw", "Your password", &m_deletePassword, ImGuiInputTextFlags_Password);
+                    ImGui::BeginDisabled(m_deleteBusy || m_deleteName != username || m_deletePassword.empty());
+                    if (Classic::button("Delete my account", ImVec4(0.78f, 0.16f, 0.16f, 1.0f))) {
+                        m_deleteBusy = true;
+                        m_deleteMsg = "Deleting...";
+                        Online::request("account.salt", {{"username", username}}, [this](const nlohmann::json& r) {
+                            std::string lock, auth;
+                            if (!r.value("ok", false) || !Account::passwordKeys(m_deletePassword, r.value("salt", std::string()), lock, auth)) {
+                                m_deleteBusy = false;
+                                m_deleteMsg = r.value("error", std::string("Something went wrong. Try again."));
+                                return;
+                            }
+                            Online::request("account.delete", {{"auth", auth}}, [this](const nlohmann::json& d) {
+                                m_deleteBusy = false;
+                                m_deletePassword.clear();
+                                if (!d.value("ok", false)) { m_deleteMsg = d.value("error", std::string("Couldn't delete it.")); return; }
+                                m_deleteMsg.clear();
+                                logOut();   // this device becomes a new, empty account
+                            });
+                        });
+                    }
+                    ImGui::EndDisabled();
+                    if (!m_deleteMsg.empty()) ImGui::TextWrapped("%s", m_deleteMsg.c_str());
+                    ImGui::EndPopup();
+                }
+            }
         } else {
             ImGui::TextColored(ImVec4(0.75f, 0.45f, 0.0f, 1), "No password yet, so you can only use this account on this device.");
             if (Classic::button("Set a password", Classic::kBlue)) {
