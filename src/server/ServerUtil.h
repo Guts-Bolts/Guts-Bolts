@@ -2,6 +2,7 @@
 // Small helpers shared by the server's files.
 #include <cctype>
 #include <cmath>
+#include <cstring>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
@@ -29,6 +30,45 @@ inline bool isHex(const std::string& s, size_t minLen, size_t maxLen) {
 // What people write for others to read goes through the text filter (core/TextFilter).
 inline std::string say(const std::string& s, size_t maxLen, bool allowNewlines = false) {
     return TextFilter::filter(Online::cleanText(s, maxLen, allowNewlines));
+}
+// Lyreto (lyreto.com) is the chat app Guts&Bolts partners with: games and groups can link their
+// Lyreto server. A link cleaned up to https://lyreto.com/... ("" for no link), or false when it
+// isn't a Lyreto link (the same rules as lyretoLink in worker/server.js).
+inline bool lyretoLink(std::string s, std::string& out) {
+    out.clear();
+    while (!s.empty() && std::isspace((unsigned char)s.front())) s.erase(0, 1);
+    while (!s.empty() && std::isspace((unsigned char)s.back())) s.pop_back();
+    if (s.empty()) return true;
+    if (s.size() > 200) return false;
+    const std::string l = lower(s);
+    size_t at = 0;
+    if (l.rfind("https://", 0) == 0) at = 8;
+    else if (l.rfind("http://", 0) == 0) at = 7;
+    else if (l.find("://") != std::string::npos) return false;
+    if (l.compare(at, 4, "www.") == 0) at += 4;
+    if (l.compare(at, 10, "lyreto.com") != 0) return false;
+    at += 10;
+    if (at < s.size() && s[at] != '/' && s[at] != '?') return false;   // lyreto.com.evil.com, lyreto.com:8080
+    const size_t q = s.find('?', at);
+    std::string path = s.substr(at, q == std::string::npos ? std::string::npos : q - at);
+    std::string query = q == std::string::npos ? "" : s.substr(q);
+    while (!path.empty() && path.back() == '/') path.pop_back();
+    if (path.empty()) return false;   // just lyreto.com isn't anyone's server
+    const auto ok = [](char c, const char* extra) {
+        return std::isalnum((unsigned char)c) || std::strchr(extra, c) != nullptr;
+    };
+    bool lastSlash = false;
+    for (char c : path) {
+        if (c == '/') { if (lastSlash) return false; lastSlash = true; continue; }
+        lastSlash = false;
+        if (!ok(c, "._~-")) return false;
+    }
+    if (!query.empty()) {
+        if (query.size() < 2 || query.size() > 101) return false;
+        for (size_t i = 1; i < query.size(); ++i) if (!ok(query[i], "._~=&-")) return false;
+    }
+    out = "https://lyreto.com" + path + query;
+    return true;
 }
 inline json fail(const std::string& why) { return {{"ok", false}, {"error", why}}; }
 inline json okay() { return {{"ok", true}}; }

@@ -10,6 +10,28 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'hello-from-the-other-server', name: 'Hello From the Other Server', version: '0.7.2', time: 1792450920, tag: 'Website',
+    summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
+    items: [
+      'Lyreto is a free chat app for servers, voice and hanging out, and it\'s Guts&Bolts\' chat partner',
+      'Paste your Lyreto server\'s invite link in a game\'s Configure page (under Community) or in a group\'s Settings',
+      'The game or group page then shows a Lyreto card with the server\'s name, picture and blurb, and a Join on Lyreto button',
+      'Only real lyreto.com links are accepted, so nobody can sneak in other links',
+      'There\'s a Chat on Lyreto link at the bottom of every page too',
+    ],
+  },
+  {
+    id: 'whats-in-the-box', name: 'What\'s in the Box?!', version: '0.7.2', time: 1792438313, tag: 'Website',
+    summary: 'Gift boxes and Exclusive items: own a gift box when it goes off sale and a secret item drops into your inventory.',
+    items: [
+      'Gift boxes: staff can point a timed item at another item, and everyone who owns the box when it goes off sale gets that item for free',
+      'The bell tells you when your box opens, and what was inside',
+      'Exclusive items: hidden from the catalog and can\'t be bought or gifted, only won from gift boxes and events (their page still works by link)',
+      'Staff can give an item to someone straight from its page, for event prizes',
+      'Item pages open for every item now, not just the newest 100 in the catalog',
+    ],
+  },
+  {
     id: 'skeleton-key', name: 'Skeleton Key', version: '0.7.2', time: 1792433006, tag: 'Studio',
     summary: 'Studio\'s Assistant and connected AI apps can now reach every service, use the same names as your scripts, and publish when you ask.',
     items: [

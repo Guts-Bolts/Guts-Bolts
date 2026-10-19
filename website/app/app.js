@@ -284,7 +284,7 @@ function officialBadge(a) {
 function itemCard(a) {
   items3d.set(a.id, a);
   return html`<a class="card square" href="#/item/${a.id}">
-    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}
+    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}
     <div class="name">${a.name}</div>
     <div class="by">${a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
       : a.price > 0 ? bolts(a.price) : raw('<span class="muted">Free</span>')} · by ${a.creatorName}${verified(a.creatorVerified)}</div></a>`;
@@ -892,7 +892,7 @@ function browseCard(a, href, price) {
     <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="" style="width:100%;height:100%;object-fit:contain;border:0">`
       : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" alt="">`
       : a.kind === 'audio' || a.kind === 'plugin' || a.kind === 'model' || a.kind === 'animation' ? html`<span class="lib-kind">${a.kind === 'audio' ? raw(SPEAKER_SVG) : ''}${KINDS[a.kind] || a.kind}</span>`
-      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
+      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
     <div class="bprice">${price}</div>
     ${a.kind === 'model' ? html`<div class="brating">${ratingLine(a)}</div>` : ''}
@@ -1123,6 +1123,20 @@ async function myModelsPage(head) {
 
 let serverPage = 1;   // which page of a game's server cards
 // Paid private servers: the creator sets a price; buying one lasts 30 days, and friends join free with its code.
+// Lyreto (lyreto.com) is the chat app Guts&Bolts partners with. Games and groups can link their
+// Lyreto server; the card shows the server's name, picture and blurb from its invite link's preview
+// (the server fetches it), or just the link when there isn't one yet.
+function lyretoCard(l, whose) {
+  if (!l || !l.link) return '';
+  return html`<div class="lyreto-card">
+    ${l.image ? html`<img class="lyreto-pic" src="${l.image}" alt="" loading="lazy" referrerpolicy="no-referrer">` : html`<div class="lyreto-pic lyreto-mark">L</div>`}
+    <div class="grow"><div class="lyreto-kicker">Lyreto server</div>
+      <b>${l.title || 'Chat with ' + whose + ' on Lyreto'}</b>
+      ${l.description ? html`<p>${l.description}</p>` : html`<p>Chat, voice and hang out with other players.</p>`}</div>
+    <a class="btn lyreto-join" href="${l.link}" target="_blank" rel="noopener noreferrer">Join on Lyreto</a></div>`;
+}
+const LYRETO_FIELD_NOTE = 'Paste your Lyreto server\'s invite link (it starts with https://lyreto.com/). Its page shows it as a card. Leave it empty for none.';
+
 function privateServerBox(g, s) {
   const price = (s.ok && s.privatePrice) || g.privatePrice || 0;
   if (!price) return '';
@@ -1264,6 +1278,7 @@ pages.game = async (id) => {
           ${g.featured ? 'Stop featuring' : 'Feature this game'}</button> <span class="small muted">(staff)</span></p>` : ''}
         <p class="small muted">Games run in the Guts&amp;Bolts app (Windows, Mac, Linux and Android).${mine ? '' : html` ${reportLink('game', g.id, g.name)}`}</p></div></div>
     <h2>Description</h2><p style="white-space:pre-wrap">${g.description || 'No description yet.'}</p>
+    ${g.lyreto ? html`<h2>Community</h2>${lyretoCard(g.lyreto, 'the players')}` : ''}
     ${(g.badges || []).length ? html`<h2>Badges</h2><div class="list">${g.badges.map((b) => html`<div>
         ${gameBadgeIcon(b, 44)}<span class="grow"><b>${b.name}</b><br><span class="small muted">${b.description || ''}</span></span>
         <span class="small muted">Won ${b.awarded || 0} time${b.awarded === 1 ? '' : 's'}</span></div>`)}</div>` : ''}
@@ -1336,8 +1351,9 @@ function emoteSlotPicker(id, slot) {
 }
 
 pages.item = async (id) => {
-  const r = await pageCall('list', { kind: 'clothing', limit: 100 });
-  const a = r.ok && r.assets.find((x) => x.id === id || String(x.num) === id);
+  // (Asked for by ID: Exclusive items aren't in the catalog's list, and it only holds the newest 100.)
+  const r = await pageCall('asset.info', { id });
+  const a = r.ok && isCatalogItem(r.asset.kind) ? r.asset : null;
   if (!a) { show(html`<h1>Item not found</h1>`); return; }
   const owned = signedIn() && (me.owned || []).includes(a.id);
   const gearOn = a.kind === 'gear' && signedIn() && (me.gear || []).includes(a.id);
@@ -1351,7 +1367,7 @@ pages.item = async (id) => {
   const soldOut = L && L.left <= 0;
   const offsale = !!a.offsale;
   const isNew = Date.now() / 1000 - (a.created || 0) < 7 * 86400;
-  const timed = a.offsaleAt && !offsale;
+  const timed = a.offsaleAt && !offsale && !a.exclusive;   // (an Exclusive item has no sale to end)
   // The buy box (like the 2016 catalog): what's left, the price, the button, how many sold.
   const buyButton = owned && a.kind === 'gear'
     ? html`<p class="ok"><b>You own this.</b></p>
@@ -1363,15 +1379,16 @@ pages.item = async (id) => {
       <button class="btn ${packOn ? '' : 'green'} big buy" data-act="animpackEquip" data-id="${packOn ? '' : a.id}">${packOn ? 'Take off' : 'Use this pack'}</button>`
     : owned ? html`<p class="ok"><b>You own this${mineCopies.length ? ' (#' + mineCopies.map((c) => c.serial).join(', #') + ')' : ''}.</b></p>`
     : soldOut ? html`<button class="btn big buy" disabled>Sold out</button>`
+    : a.exclusive ? html`<button class="btn big buy" disabled>Exclusive</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
     : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
   // Paid items that aren't Limited can be bought for a friend (even if you have one yourself).
-  const giftable = a.price > 0 && !L && !offsale && !a.review && !(a.meta && a.meta.award);
+  const giftable = a.price > 0 && !L && !offsale && !a.review && !a.exclusive && !(a.meta && a.meta.award);
   const giftButton = giftable ? html`<button class="btn big gift" data-act="gift" data-id="${a.id}" data-name="${a.name}" data-price="${a.price}">&#127873; Buy as a gift</button>` : '';
   show(html`<p><a href="#/catalog">&lt; Catalog</a></p>
     <div class="item-page">
       <h1 class="item-title">${a.name}</h1>
-      <div class="item-sub">Guts&amp;Bolts ${KINDS[a.kind]}${L ? ' / Collectible Item / Limited Edition' : timed ? ' / Timed Item' : ''}
+      <div class="item-sub">Guts&amp;Bolts ${KINDS[a.kind]}${L ? ' / Collectible Item / Limited Edition' : a.exclusive ? ' / Exclusive Item' : timed ? ' / Timed Item' : ''}
         ${canEdit ? '' : html` · ${reportLink('item', a.id, a.name)}`}</div>
       ${reviewBanner(a)}
       <div class="item-cols">
@@ -1394,6 +1411,8 @@ pages.item = async (id) => {
           <p class="item-desc">${a.description || html`<span class="muted">No description.</span>`}</p>
           <hr>
           <p class="small muted">Type: ${KINDS[a.kind]} · Asset ID ${assetNum(a)}</p>
+          ${a.exclusive ? html`<p class="small"><b>Exclusive:</b> not in the catalog and can't be bought. It comes from events and gift boxes.</p>` : ''}
+          ${a.gift ? html`<p class="small"><b>🎁 Gift box:</b> everyone who owns this when it goes off sale gets a surprise item.${a.giftItem ? html` <span class="muted">(Staff: it gives <a href="#/item/${a.giftItem.id}">${a.giftItem.name}</a>.)</span>` : ''}</p>` : ''}
           ${a.kind === 'gear' ? html`<p class="small muted">Equipped gear goes in your backpack in games that allow gear (up to 4 at once).</p>`
             : a.kind === 'emote' ? html`<p class="small muted">Put it in one of your 8 emote slots, then press B in any game (or tap the smiley on a phone) and pick it. You can also type /e and its name in the chat.</p>`
             : a.kind === 'animpack' ? html`<p class="small muted">An animation pack changes how your character stands, walks, runs, jumps and falls, in every game.</p>`
@@ -1428,7 +1447,14 @@ pages.item = async (id) => {
           : html`<label>New picture <span class="muted small">(optional, from the <a href="templates/${a.kind}_template.png" download>template</a>)</span></label><input type="file" name="picture" accept="image/png">`}
         ${canEdit ? html`<label>Goes off sale <span class="muted small">(a timed item; leave empty to sell it for good)</span></label>
           <input type="datetime-local" name="offsaleAt" value="${a.offsaleAt ? localInput(a.offsaleAt) : ''}" style="max-width:220px">` : ''}
+        ${me.staff ? html`<label><input type="checkbox" name="exclusive" ${a.exclusive ? 'checked' : ''}> Exclusive <span class="muted small">(staff only: hidden from the catalog and can't be bought; give it out with a gift box or the box below)</span></label>
+          <label>Gift box: gives item ID <span class="muted small">(staff only: when this goes off sale, everyone who owns it gets that item; leave empty for a normal item)</span></label>
+          <input type="text" name="giftItem" value="${a.giftItem ? a.giftItem.num || a.giftItem.id : ''}" placeholder="like 86" style="max-width:220px">` : ''}
         <p><button class="btn green">Save</button> <span id="itemEditMsg"></span></p></form>
+      ${me.staff && !L ? html`<form class="form" data-form="itemGive"><input type="hidden" name="id" value="${a.id}">
+        <label>Give it to someone <span class="muted small">(staff only: free, for event prizes; their user number or username)</span></label>
+        <input type="text" name="to" placeholder="like 5 or @username" style="max-width:220px">
+        <p><button class="btn blue">Give</button> <span id="itemGiveMsg"></span></p></form>` : ''}
       ${me.official && a.creator === me.id && canBeLimited(a) ? html`<form class="form" data-form="itemLimited"><input type="hidden" name="id" value="${a.id}">
         <label>${L ? 'Change the stock' : 'Make it Limited'} <span class="muted small">(only Guts can do this)</span></label>
         <input type="number" name="stock" min="1" value="${L ? L.stock : 100}" style="max-width:140px">
@@ -1627,6 +1653,10 @@ pages.configure = async (id) => {
         <label class="choice"><input type="checkbox" name="comments" ${g.comments !== false ? 'checked' : ''}> Allow comments <span class="muted small">(players can comment on its page; you can delete any comment)</span></label>
         <label>Private server price <span class="muted small">(Bolts for 30 days; 0 = free. You get 70% of each sale, or your group does if the game is in one. Private servers are always free for you.)</span></label>
         <input type="number" name="privatePrice" min="0" max="10000" value="${g.privatePrice || 0}" style="max-width:100px"></div>
+      <div class="box"><h2 class="boxhead">Community</h2>
+        <label>Lyreto server <span class="muted small">(optional)</span></label>
+        <input type="url" name="lyreto" maxlength="200" placeholder="https://lyreto.com/..." value="${g.lyreto ? g.lyreto.link : ''}">
+        <p class="small muted">${LYRETO_FIELD_NOTE}</p></div>
       <div class="box"><h2 class="boxhead">Group</h2>
         <p class="small muted">Put the game in one of your groups: it shows as the group's game, and its game pass and product sales go to the group's Bolts instead of to you.</p>
         <select name="group" data-was="${g.group ? g.group.id : ''}"><option value="">No group (it's just yours)</option>
@@ -2064,6 +2094,7 @@ pages.group = async (id) => {
       <p class="muted">Owned by <a href="#/user/${g.owner}">${g.ownerName}</a>${verified(g.ownerVerified)} · ${g.members} members
         ${role ? html` · your rank: <b>${role}</b>` : ''}</p>
       <p style="white-space:pre-wrap">${g.description}</p>${join}${owner ? '' : html` ${reportLink('group', g.id, g.name)}`}</div>
+    ${lyretoCard(g.lyreto, g.name)}
     ${r.shoutInfo && r.shoutInfo.text ? html`<div class="box info"><b>${r.shoutInfo.name}:</b> ${r.shoutInfo.text}
       <span class="small muted">· ${ago(r.shoutInfo.time)}</span></div>` : ''}
     ${can('shout') ? html`<form class="row" data-form="groupShout"><input type="hidden" name="id" value="${g.id}">
@@ -2103,6 +2134,8 @@ pages.group = async (id) => {
     ${can('manage') ? html`<h2>Settings</h2><form class="form" data-form="groupEdit"><input type="hidden" name="id" value="${g.id}">
       <label>Description</label><textarea name="description" maxlength="1000">${g.description}</textarea>
       <label>Colour</label><input type="color" name="color" value="${color}">
+      <label>Lyreto server</label><input type="url" name="lyreto" maxlength="200" placeholder="https://lyreto.com/..." value="${g.lyreto ? g.lyreto.link : ''}">
+      <p class="small muted">${LYRETO_FIELD_NOTE}</p>
       <label><input type="checkbox" name="open" ${g.open ? 'checked' : ''}> Anyone can join</label>
       <p><button class="btn blue">Save</button>
       ${owner ? html` <button type="button" class="btn red" data-act="group" data-op="groups.delete" data-id="${g.id}">Delete group</button>` : ''}</p></form>` : ''}`);
@@ -3458,7 +3491,7 @@ const forms = {
       if (genres.length > 3) { say('Pick up to 3 genres.', 'error'); return; }
       let r = await call('game.settings', { id, name: f.name.value, description: f.description.value, access: f.access.value,
         genres, maxPlayers: Number(f.maxPlayers.value) || 12, allowGear: f.allowGear.checked, comments: f.comments.checked,
-        privatePrice: Math.max(0, Math.trunc(Number(f.privatePrice.value) || 0)),
+        privatePrice: Math.max(0, Math.trunc(Number(f.privatePrice.value) || 0)), lyreto: f.lyreto.value,
         ...(f.group.value !== f.group.dataset.was ? { group: f.group.value } : {}) });
       if (!r.ok) { say(r.error, 'error'); return; }
       if (f.thumb.files[0]) {
@@ -3568,6 +3601,8 @@ const forms = {
       if (Number.isNaN(when)) { m.className = 'error'; m.textContent = ' Pick a whole date and time for it to go off sale (or clear the box).'; return; }
       args.offsaleAt = when;
     }
+    if (field('exclusive')) args.exclusive = field('exclusive').checked;
+    if (field('giftItem')) args.giftItem = field('giftItem').value.trim();
     if (field('picture') && field('picture').files[0]) args.data = await gb.fileBase64(field('picture').files[0]);
     const r = await call('item.edit', args);
     if (!r.ok) { m.className = 'error'; m.textContent = ' ' + r.error; return; }
@@ -3579,6 +3614,13 @@ const forms = {
     if (!r.ok) { const m = $('#joinMsg'); m.className = 'error'; m.textContent = ' ' + r.error; return; }
     toast('Join date saved!');
     await hello();
+    render();
+  },
+  async itemGive(f) {
+    const m = $('#itemGiveMsg');
+    const r = await call('item.give', { id: f.id.value, to: f.to.value.trim() });
+    if (!r.ok) { m.className = 'error'; m.textContent = ' ' + r.error; return; }
+    toast('Gave it to ' + r.to + '!');
     render();
   },
   async itemLimited(f) {
@@ -3642,7 +3684,7 @@ const forms = {
   },
   async groupEdit(f) {
     const r = await call('groups.edit', { id: f.id.value, description: f.description.value,
-      color: parseInt(f.color.value.slice(1), 16), open: f.open.checked });
+      color: parseInt(f.color.value.slice(1), 16), open: f.open.checked, lyreto: f.lyreto.value });
     toast(r.ok ? 'Saved.' : r.error);
     if (r.ok) render();
   },

@@ -631,6 +631,18 @@ html.gutstober .foot, html.gutstober .foot a { color: #cbb5dc; }
 .stafflog > div { display: flex; align-items: baseline; gap: 8px; }
 .stafflog .grow { min-width: 0; overflow-wrap: anywhere; }
 
+/* Lyreto server cards (games and groups) */
+.lyreto-card { display: flex; align-items: center; gap: 12px; margin: 8px 0 14px; padding: 12px; border-radius: 8px;
+  background: #1e1f22; color: #e6e8ec; border: 1px solid #34363c; }
+.lyreto-card .grow { min-width: 0; overflow-wrap: anywhere; }
+.lyreto-card p { margin: 3px 0 0; color: #b5bac1; font-size: 12px; }
+.lyreto-kicker { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: .06em; color: #9aa3ff; }
+.lyreto-pic { flex: 0 0 52px; width: 52px; height: 52px; border-radius: 14px; object-fit: cover; background: #2b2d31; }
+.lyreto-mark { display: flex; align-items: center; justify-content: center; font: bold 26px/1 sans-serif; color: #fff;
+  background: linear-gradient(135deg, #6b74ff, #b45cff); }
+.btn.lyreto-join { flex: 0 0 auto; background: #5865f2; border-color: #4752c4; color: #fff; }
+@media (max-width: 560px) { .lyreto-card { flex-wrap: wrap; } .btn.lyreto-join { width: 100%; text-align: center; } }
+
 /* A game's paid private servers */
 .private-box p { margin: 4px 0 8px; }
 /* Group pages: ranks, games and Bolts */

@@ -124,6 +124,7 @@ private:
         long long   created = 0;
         int         color = 0x3A7BD5;                   // emblem colour (0xRRGGBB)
         bool        open = true;                         // anyone can join (false: ask first)
+        std::string lyreto;                              // its Lyreto server's invite link ("" = none)
         std::map<std::string, std::string> members;      // account id -> rank id ("Owner", "Admin", "Member" or a custom "r-...")
         nlohmann::json ranks = nlohmann::json::array();  // [{id, name, level, perms}] (empty = the default three)
         std::vector<Entry> ledger;                       // the group's Bolts (game sales in, payouts out)
@@ -165,6 +166,8 @@ private:
     nlohmann::json copiesOf(const User& u) const;          // every Limited copy someone holds
     void           syncOwned(User& u, const Asset& a);     // `owned` follows the copies they hold
     nlohmann::json limitedJson(const Asset& a) const;      // what the catalog shows about a Limited (null if it isn't one)
+    void           openGiftBoxes();                        // gift boxes that went off sale hand out their item
+    long long      m_giftsChecked = 0;
     int            publicModelsLeft(const User& u) const;  // -1 = no limit
     void           countPublicModel(User& u);
     static std::string publicModelLimitText();

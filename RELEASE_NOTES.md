@@ -1,6 +1,6 @@
 # Guts&Bolts 0.7.2: Feature Creep (October 19, 2026)
 
-We said "just a few things" and then added twenty-four. Games can dance, sell
+We said "just a few things" and then added twenty-six. Games can dance, sell
 emotes, light things on fire, paint the sky, shake the camera and talk across
 servers. Studio can test with four players at once, and the website learned to
 gift, rate, roll back and say sorry.
@@ -38,6 +38,10 @@ gift, rate, roll back and say sorry.
 - **Smarter AI helpers**: Studio's Assistant and connected AI apps reach every
   service, use the same names as your scripts, and can publish when you ask.
 - **Gifts**: buy a catalog item for a friend, with a note.
+- **Gift boxes and Exclusive items**: own a gift box when it goes off sale
+  and a secret Exclusive item drops into your inventory.
+- **Lyreto servers**: games and groups can show their Lyreto chat server on
+  their page, with a Join button.
 - **Ratings**: thumbs up or down on Library models, and a "Best rated" sort.
 - **Screenshots**: games can show up to 5 screenshots on their page.
 - **Past trades**: a new tab with every finished trade.
