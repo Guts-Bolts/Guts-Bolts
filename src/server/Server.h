@@ -124,6 +124,7 @@ private:
         long long   created = 0;
         int         color = 0x3A7BD5;                   // emblem colour (0xRRGGBB)
         bool        open = true;                         // anyone can join (false: ask first)
+        std::string lyreto;                              // its Lyreto server's invite link ("" = none)
         std::map<std::string, std::string> members;      // account id -> rank id ("Owner", "Admin", "Member" or a custom "r-...")
         nlohmann::json ranks = nlohmann::json::array();  // [{id, name, level, perms}] (empty = the default three)
         std::vector<Entry> ledger;                       // the group's Bolts (game sales in, payouts out)

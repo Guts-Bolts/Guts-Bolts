@@ -318,6 +318,7 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
         j["badges"] = a.badges; j["allowGear"] = a.meta.value("allowGear", false); j["favorites"] = a.meta.value("favorites", 0LL);
         j["comments"] = !a.meta.value("commentsOff", false); j["commentCount"] = a.comments.size();
         j["privatePrice"] = a.meta.value("privatePrice", 0LL);
+        if (a.meta.contains("lyreto") && a.meta["lyreto"].is_string()) j["lyreto"] = {{"link", a.meta["lyreto"]}};
         if (auto g = m_groups.find(a.meta.value("group", std::string())); g != m_groups.end())
             j["group"] = {{"id", g->second.id}, {"name", g->second.name}, {"color", g->second.color}};
         if (a.meta.value("featured", 0LL) > 0) j["featured"] = true;
@@ -1284,6 +1285,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (args.contains("comments")) a.meta["commentsOff"] = args["comments"] == false;
         if (args.contains("privatePrice"))   // paid private servers (0 = free)
             a.meta["privatePrice"] = std::clamp(args["privatePrice"].is_number_integer() ? args["privatePrice"].get<long long>() : 0LL, 0LL, 10000LL);
+        if (args.contains("lyreto")) {   // its Lyreto server's invite link ("" for none)
+            std::string link;
+            if (!lyretoLink(str("lyreto"), link)) return fail("That isn't a Lyreto link. Copy your server's invite link in Lyreto: it starts with https://lyreto.com/");
+            if (link.empty()) a.meta.erase("lyreto"); else a.meta["lyreto"] = link;
+        }
         if (args.contains("group")) {   // put the game in one of your groups (its sales go to the group), or "" to take it out
             const std::string gid = str("group");
             if (!gid.empty()) {

@@ -2842,6 +2842,17 @@ When you're connected to a server, the site gets two more pages:
     else, change the settings, or delete the group.
   - Staff can clean up any group.
 
+#### Lyreto servers
+
+Guts&Bolts partners with [Lyreto](https://lyreto.com/), a free chat app (servers,
+voice and hanging out). A game (on its **Configure** page, under Community) or a
+group (in its **Settings**, for ranks with Manage) can paste its Lyreto server's
+invite link. The page then shows a Lyreto card with a **Join on Lyreto** button.
+Only `lyreto.com` links are accepted. The website server reads the invite page's
+preview (its name, blurb and picture, the same tags chat apps use for link
+previews) to fill in the card; the C++ server keeps the link but shows the plain
+card, since it doesn't fetch web pages.
+
 #### Ranks
 
 Every group starts with three ranks: **Owner**, **Admin** and **Member**. The owner
