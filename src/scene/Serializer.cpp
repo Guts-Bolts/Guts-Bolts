@@ -546,7 +546,13 @@ json toJson(const SceneNode& n) {
         if (n.density >= 0)    j["density"]    = n.density;
         if (n.friction >= 0)   j["friction"]   = n.friction;
         if (n.elasticity >= 0) j["elasticity"] = n.elasticity;
+        if (n.frictionWeight != 1.0f)   j["frictionWeight"]   = n.frictionWeight;
+        if (n.elasticityWeight != 1.0f) j["elasticityWeight"] = n.elasticityWeight;
+        // SpawnLocation: Neutral, TeamColor, AllowTeamChangeOnTouch (only if not Roblox's defaults)
+        if (!n.spawnNeutral || n.teamColor != kDefaultTeamColor || n.allowTeamChange)
+            j["spawn"] = {{"neutral", n.spawnNeutral}, {"teamColor", vec(n.teamColor)}, {"allowTeamChange", n.allowTeamChange}};
     }
+    if (n.kind == NodeKind::Model && n.primaryPart) j["primaryPart"] = n.primaryPart;   // (a node ID, like a constraint's ref0)
     if (n.kind == NodeKind::Constraint) {
         j["type"] = kConstraintNames[(int)n.constraintType];
         j["ref0"] = n.ref0; j["ref1"] = n.ref1;
@@ -713,7 +719,15 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->density       = get<float>(j, "density", -1.0f);
         n->friction      = get<float>(j, "friction", -1.0f);
         n->elasticity    = get<float>(j, "elasticity", -1.0f);
+        n->frictionWeight   = get<float>(j, "frictionWeight", 1.0f);
+        n->elasticityWeight = get<float>(j, "elasticityWeight", 1.0f);
+        if (auto sp = j.find("spawn"); sp != j.end() && sp->is_object()) {
+            n->spawnNeutral    = get<bool>(*sp, "neutral", true);
+            n->teamColor       = vec(*sp, "teamColor", n->teamColor);
+            n->allowTeamChange = get<bool>(*sp, "allowTeamChange", false);
+        }
     }
+    if (n->kind == NodeKind::Model) n->primaryPart = get<uint64_t>(j, "primaryPart", 0);
     if (n->kind == NodeKind::Constraint) {
         std::string type = get<std::string>(j, "type", "Rope");
         for (int i = 0; i < 5; ++i) if (type == kConstraintNames[i]) n->constraintType = (ConstraintType)i;
@@ -829,6 +843,12 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
             else if (a.type == Attribute::String && v.is_string()) a.s = v.get<std::string>();
             else if (v.is_array() && v.size() == 3) a.v = {v[0].get<float>(), v[1].get<float>(), v[2].get<float>()};
             n->attributes.push_back(a);
+        }
+    // Spawns saved before SpawnLocation had team properties used a TeamColor attribute.
+    if (n->kind == NodeKind::Part && !j.contains("spawn") && n->isSpawnLocation())
+        if (const Attribute* tc = n->findAttribute("TeamColor"); tc && tc->type == Attribute::Color3) {
+            n->teamColor = tc->v;
+            n->spawnNeutral = false;
         }
 
     if (auto it = j.find("children"); it != j.end() && it->is_array())
@@ -1079,6 +1099,9 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.texture = src->texture;     dst.face = src->face;
     dst.starterTool = src->starterTool; dst.gripPos = src->gripPos; dst.gripRot = src->gripRot;
     dst.density = src->density;     dst.friction = src->friction; dst.elasticity = src->elasticity;
+    dst.frictionWeight = src->frictionWeight; dst.elasticityWeight = src->elasticityWeight;
+    dst.primaryPart = src->primaryPart;
+    dst.spawnNeutral = src->spawnNeutral; dst.teamColor = src->teamColor; dst.allowTeamChange = src->allowTeamChange;
     dst.constraintType = src->constraintType; dst.ref0 = src->ref0; dst.ref1 = src->ref1;
     dst.length = src->length;       dst.stiffness = src->stiffness; dst.damping = src->damping;
     dst.motorSpeed = src->motorSpeed; dst.motorTorque = src->motorTorque; dst.thickness = src->thickness;
@@ -1125,6 +1148,8 @@ void remapRefs(SceneNode& n, const std::unordered_map<uint64_t, uint64_t>& map) 
         if (auto it = map.find(n.effect.a0); it != map.end()) n.effect.a0 = it->second;
         if (auto it = map.find(n.effect.a1); it != map.end()) n.effect.a1 = it->second;
     }
+    if (n.kind == NodeKind::Model && n.primaryPart)   // (a copied model's PrimaryPart is its own copy)
+        if (auto it = map.find(n.primaryPart); it != map.end()) n.primaryPart = it->second;
     if (n.kind == NodeKind::FluidEmitter)   // (a copied emitter uses the copied liquid, if it came along)
         if (auto it = map.find(n.fluidSystem); it != map.end()) n.fluidSystem = it->second;
     for (auto& c : n.children) remapRefs(*c, map);

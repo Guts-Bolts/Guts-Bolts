@@ -127,6 +127,7 @@ const char* className(lua_State* L, const SceneNode* n) {
             }
         default:
             if (isFluidVolume(n)) return "FluidVolume";
+            if (n->isSpawnLocation()) return "SpawnLocation";
             return n->primitiveType == PrimitiveType::Mesh ? "MeshPart" : "Part";
     }
 }
@@ -349,13 +350,58 @@ int m_GetFullName(lua_State* L) {
     return 1;
 }
 
+// Model.PrimaryPart: the part set as it (if it's still inside the model). A character
+// without one goes by its HumanoidRootPart, like Roblox's.
+SceneNode* primaryOf(lua_State* L, const SceneNode* n) {
+    if (n->kind != NodeKind::Model) return nullptr;
+    if (n->primaryPart)
+        if (SceneNode* p = E(L)->resolve(n->primaryPart); p && p->isPart() && n->isAncestorOf(p)) return p;
+    if (hasHumanoid(L, n))
+        if (SceneNode* hrp = n->findChild("HumanoidRootPart"); hrp && hrp->isPart()) return hrp;
+    return nullptr;
+}
+// Where something really is and which way it faces (no size), in world space.
+glm::mat4 worldCFrame(const SceneNode* n) {
+    glm::mat4 m = n->worldMatrix();
+    for (int i = 0; i < 3; ++i) {
+        const float len = glm::length(glm::vec3(m[i]));
+        m[i] = len > 1e-8f ? m[i] / len : glm::vec4(i == 0, i == 1, i == 2, 0);
+    }
+    return m;
+}
+// A model's pivot is its PrimaryPart's CFrame when it has one (Roblox's rule), else its own.
+glm::mat4 pivotOf(lua_State* L, const SceneNode* n) {
+    if (SceneNode* pp = primaryOf(L, n)) return worldCFrame(pp);
+    return getCFrame(n);
+}
+void pivotTo(lua_State* L, SceneNode* n, const glm::mat4& cf) {
+    if (SceneNode* pp = primaryOf(L, n)) {   // move the model so its PrimaryPart lands on cf
+        const glm::mat4 offset = glm::inverse(worldCFrame(n)) * worldCFrame(pp);
+        setCFrame(L, n, cf * glm::inverse(offset));
+        return;
+    }
+    setCFrame(L, n, cf);
+}
 int m_GetPivot(lua_State* L) {
-    LuaApi::pushCFrame(L, getCFrame(LuaApi::checkNode(L, 1)));
+    LuaApi::pushCFrame(L, pivotOf(L, LuaApi::checkNode(L, 1)));
     return 1;
 }
 int m_PivotTo(lua_State* L) {
-    setCFrame(L, LuaApi::checkNode(L, 1), LuaApi::checkCFrame(L, 2));
+    pivotTo(L, LuaApi::checkNode(L, 1), LuaApi::checkCFrame(L, 2));
     return 0;
+}
+// model:SetPrimaryPartCFrame(cf) / model:GetPrimaryPartCFrame() (the older names).
+int m_SetPrimaryPartCFrame(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    if (!primaryOf(L, n)) return luaL_error(L, "%s has no PrimaryPart (set model.PrimaryPart first)", n->name.c_str());
+    pivotTo(L, n, LuaApi::checkCFrame(L, 2));
+    return 0;
+}
+int m_GetPrimaryPartCFrame(lua_State* L) {
+    SceneNode* pp = primaryOf(L, LuaApi::checkNode(L, 1));
+    if (!pp) { lua_pushnil(L); return 1; }
+    LuaApi::pushCFrame(L, worldCFrame(pp));
+    return 1;
 }
 
 // --- Attributes: obj:SetAttribute("Coins", 5), obj:GetAttribute("Coins") ---
@@ -605,6 +651,7 @@ const luaL_Reg kMethods[] = {
     {"ClearAllChildren", m_ClearAllChildren}, {"Clone", m_Clone}, {"IsA", m_IsA},
     {"IsDescendantOf", m_IsDescendantOf}, {"GetFullName", m_GetFullName},
     {"GetPivot", m_GetPivot}, {"PivotTo", m_PivotTo}, {"BreakJoints", m_BreakJoints},
+    {"SetPrimaryPartCFrame", m_SetPrimaryPartCFrame}, {"GetPrimaryPartCFrame", m_GetPrimaryPartCFrame},
     {"Play", m_Play}, {"Stop", m_Stop},
     {"ApplyImpulse", m_ApplyImpulse}, {"ApplyAngularImpulse", m_ApplyAngularImpulse},
     {"GetAttribute", m_GetAttribute}, {"SetAttribute", m_SetAttribute}, {"GetAttributes", m_GetAttributes},
@@ -970,6 +1017,7 @@ bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "TextStrokeColor3")) { LuaApi::pushColor3(L, g.strokeColor); return true; }
         if (is(k, "TextStrokeTransparency")) { lua_pushnumber(L, g.strokeTransparency); return true; }
         if (is(k, "Font"))             { lua_pushstring(L, g.bold ? "SourceSansBold" : "SourceSans"); return true; }
+        if (is(k, "Bold"))             { lua_pushboolean(L, g.bold); return true; }   // (Font gives the same: ...Bold)
         if (is(k, "ContentText"))      { lua_pushstring(L, g.text.c_str()); return true; }
     }
     if (hasImage(n)) {
@@ -1130,6 +1178,7 @@ bool guiNewIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "TextTransparency")) { g.textTransparency = t01(); return true; }
         if (is(k, "TextStrokeColor3")) { g.strokeColor = LuaApi::checkColor3(L, 3); return true; }
         if (is(k, "TextStrokeTransparency")) { g.strokeTransparency = t01(); return true; }
+        if (is(k, "Bold"))             { g.bold = lua_toboolean(L, 3); return true; }   // (Font then reads SourceSansBold)
         if (is(k, "Font")) {   // Enum.Font.SourceSansBold -> bold; every font looks the same otherwise
             std::string f = luaL_tolstring(L, 3, nullptr);
             lua_pop(L, 1);
@@ -1483,11 +1532,32 @@ int inst_index(lua_State* L) {
             if (is(k, "WaveScale"))    { lua_pushnumber(L, numAttr(n, "WaveScale", numAttr(n, "Waves", 0.0f) * 2.0f)); return 1; }
             if (is(k, "Drag"))         { lua_pushnumber(L, numAttr(n, "Drag", 1.0f)); return 1; }   // how hard it pushes things (1 = water)
         }
-        // (unset: the material's own, like Density)
-        if (is(k, "Friction"))   { lua_pushnumber(L, n->friction >= 0 ? n->friction : materialPhysics(n->material).friction); return 1; }
-        if (is(k, "Elasticity")) { lua_pushnumber(L, n->elasticity >= 0 ? n->elasticity : materialPhysics(n->material).elasticity); return 1; }
+        if (is(k, "Friction"))   { lua_pushnumber(L, Physics::frictionOf(n)); return 1; }
+        if (is(k, "Elasticity")) { lua_pushnumber(L, Physics::elasticityOf(n)); return 1; }
+        // PhysicalProperties: Custom (nil = the material's own) and Current (what's used).
+        if (is(k, "CustomPhysicalProperties") || is(k, "CurrentPhysicalProperties")) {
+            if (is(k, "CustomPhysicalProperties") && !n->hasCustomPhysics()) { lua_pushnil(L); return 1; }
+            lua_getfield(L, LUA_REGISTRYINDEX, "GB.physNew");
+            lua_pushnumber(L, Physics::densityOf(n));
+            lua_pushnumber(L, Physics::frictionOf(n));
+            lua_pushnumber(L, Physics::elasticityOf(n));
+            lua_pushnumber(L, n->frictionWeight);
+            lua_pushnumber(L, n->elasticityWeight);
+            lua_call(L, 5, 1);
+            return 1;
+        }
+        if (n->isSpawnLocation()) {
+            if (is(k, "Neutral"))                { lua_pushboolean(L, n->spawnNeutral); return 1; }
+            if (is(k, "TeamColor"))              { LuaApi::pushColor3(L, n->teamColor); return 1; }
+            if (is(k, "AllowTeamChangeOnTouch")) { lua_pushboolean(L, n->allowTeamChange); return 1; }
+        }
         if (is(k, "Touched"))      { LuaApi::pushSignal(L, SignalKind::Touched, n->id); return 1; }
         if (is(k, "Clicked"))      { LuaApi::pushSignal(L, SignalKind::Clicked, n->id); return 1; }
+    }
+    if (n->kind == NodeKind::Model && is(k, "PrimaryPart")) {
+        SceneNode* pp = primaryOf(L, n);
+        LuaApi::pushInstance(L, pp ? pp->id : 0);
+        return 1;
     }
     if (n->isValue()) {
         if (is(k, "Value"))   { LuaApi::pushValue(L, *n); return 1; }
@@ -1796,6 +1866,41 @@ int inst_newindex(lua_State* L) {
         if (is(k, "Density"))    { n->density = std::max(0.01f, (float)luaL_checknumber(L, 3)); return 0; }
         if (is(k, "Friction"))   { n->friction = std::max(0.0f, (float)luaL_checknumber(L, 3)); return 0; }
         if (is(k, "Elasticity")) { n->elasticity = glm::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+        if (is(k, "CustomPhysicalProperties")) {   // PhysicalProperties.new(...), or nil = the material's own
+            if (lua_isnil(L, 3)) {
+                n->density = n->friction = n->elasticity = -1.0f;
+                n->frictionWeight = n->elasticityWeight = 1.0f;
+                return 0;
+            }
+            auto field = [&](const char* name, float lo, float hi) {
+                lua_getfield(L, 3, name);
+                if (!lua_isnumber(L, -1)) luaL_error(L, "CustomPhysicalProperties takes PhysicalProperties.new(density, friction, elasticity)");
+                const float v = std::clamp((float)lua_tonumber(L, -1), lo, hi);
+                lua_pop(L, 1);
+                return v;
+            };
+            if (!lua_istable(L, 3)) return luaL_error(L, "CustomPhysicalProperties takes PhysicalProperties.new(density, friction, elasticity)");
+            n->density          = field("Density", 0.01f, 100.0f);
+            n->friction         = field("Friction", 0.0f, 2.0f);
+            n->elasticity       = field("Elasticity", 0.0f, 1.0f);
+            n->frictionWeight   = field("FrictionWeight", 0.0f, 100.0f);
+            n->elasticityWeight = field("ElasticityWeight", 0.0f, 100.0f);
+            n->sleepTime = 0;
+            return 0;
+        }
+        if (n->isSpawnLocation()) {
+            if (is(k, "Neutral"))                { n->spawnNeutral = lua_toboolean(L, 3); return 0; }
+            if (is(k, "TeamColor"))              { n->teamColor = glm::clamp(LuaApi::checkColor3(L, 3), 0.0f, 1.0f); return 0; }
+            if (is(k, "AllowTeamChangeOnTouch")) { n->allowTeamChange = lua_toboolean(L, 3); return 0; }
+        }
+    }
+    if (n->kind == NodeKind::Model && is(k, "PrimaryPart")) {
+        if (lua_isnil(L, 3)) { n->primaryPart = 0; return 0; }
+        SceneNode* pp = LuaApi::checkNode(L, 3);
+        if (!pp->isPart() || !n->isAncestorOf(pp))
+            return luaL_error(L, "PrimaryPart must be a part inside %s", n->name.c_str());
+        n->primaryPart = pp->id;
+        return 0;
     }
     if (n->isPrompt()) {
         PromptProps& p = n->prompt;
@@ -1890,6 +1995,11 @@ int inst_newindex(lua_State* L) {
     if (n->kind == NodeKind::Script) {
         if (is(k, "Enabled"))  { LuaApi::engine(L)->setScriptEnabled(n, lua_toboolean(L, 3)); return 0; }
         if (is(k, "Disabled")) { LuaApi::engine(L)->setScriptEnabled(n, !lua_toboolean(L, 3)); return 0; }
+        if (is(k, "Source")) {   // like Roblox: Studio's command bar and plugins may, game scripts may not
+            if (E(L)->currentScript()) return luaL_error(L, "Source can only be set from the command bar or a plugin");
+            n->source = luaL_checkstring(L, 3);
+            return 0;
+        }
     }
     if (n->kind == NodeKind::FluidSystem) {
         if (is(k, "Color"))          { n->color = LuaApi::checkColor3(L, 3); return 0; }
@@ -2026,9 +2136,10 @@ int inst_new(lua_State* L) {
     PrimitiveType shape;
     if (cls == "Model" || cls == "Folder") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Model);
-    } else if (cls == "Script" || cls == "LocalScript") {
+    } else if (cls == "Script" || cls == "LocalScript" || cls == "ModuleScript") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Script);
         n->isLocal = cls == "LocalScript";
+        n->isModule = cls == "ModuleScript";
     } else if (cls == "RemoteEvent" || cls == "RemoteFunction") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Remote);
         n->remoteFunction = cls == "RemoteFunction";
@@ -2115,6 +2226,7 @@ int inst_new(lua_State* L) {
         n->anchored = false;                    // new parts fall, like in Roblox
         n->color    = {0.64f, 0.64f, 0.66f};
         n->transform.position = {0.0f, 0.5f, 0.0f};
+        if (cls == "SpawnLocation") n->tags.push_back("SpawnLocation");   // (still one when renamed)
     } else {
         return luaL_error(L, "Instance.new: unknown class '%s' (try \"Part\", \"Ball\", "
                              "\"Cylinder\", \"Model\", \"Folder\" or \"PointLight\")", cls.c_str());

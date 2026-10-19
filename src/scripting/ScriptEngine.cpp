@@ -8,6 +8,7 @@
 #include <sstream>
 #include <fstream>
 #include "LuaApi.h"
+#include "Luau.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
 #include "../core/Log.h"
@@ -81,6 +82,8 @@ end }
 -- Players are tables with an object behind them (__node), so `player.leaderstats`
 -- and `folder.Parent = player` work like Roblox.
 local playerNode, setRespawn = __gb_playerNode, __gb_setRespawn
+local charSignals, setTeam = __gb_charSignals, __gb_setTeam
+local applyTeam, teamByColor   -- (Teams, below)
 -- Game UI lives in a folder called StarterGui (game.StarterGui, player.PlayerGui).
 local function uiFolder()
     local f = workspace:FindFirstChild("StarterGui")
@@ -103,18 +106,41 @@ local playerMeta = {
     __index = function(t, k)
         if k == "PlayerGui" then return uiFolder() end
         if k == "GetJoinData" then return getJoinData end
+        if k == "Team" or k == "TeamColor" or k == "Neutral" then return rawget(t, "__" .. k) end
         if cameraOptions[k] then return camOpt(rawget(t, "Name"), k) end
         return rawget(t, "__node")[k]
     end,
     __newindex = function(t, k, v)
         if cameraOptions[k] then setCamOpt(rawget(t, "Name"), k, v) return end
         if k == "RespawnLocation" and rawget(t, "__local") then setRespawn(v) end
+        -- Teams, like Roblox: Team, TeamColor and Neutral keep each other right.
+        if k == "Team" then applyTeam(t, v) return end
+        if k == "TeamColor" then
+            local team = teamByColor(v)
+            if team then applyTeam(t, team) return end
+            rawset(t, "__Team", nil)
+            rawset(t, "__TeamColor", v)
+            rawset(t, "__Neutral", false)
+            setTeam(rawget(t, "Character"), false, nil, v)
+            return
+        end
+        if k == "Neutral" then
+            if v then applyTeam(t, nil) return end
+            rawset(t, "__Neutral", false)
+            setTeam(rawget(t, "Character"), false, rawget(t, "__Team"), rawget(t, "__TeamColor"))
+            return
+        end
         rawset(t, k, v)
     end,
     __tostring = function(t) return rawget(t, "Name") end,
 }
 local function makePlayer(name, character, id)
+    -- (CharacterAdded fires on spawning and respawning, CharacterRemoving just before
+    -- the old body goes: when you respawn or leave. The character is the same model.)
+    local added, removing = charSignals(character)
     return setmetatable({ Name = name, DisplayName = name, UserId = id, Character = character,
+                          CharacterAdded = added, CharacterRemoving = removing,
+                          __Neutral = true, __TeamColor = Color3.new(1, 1, 1),   -- (hidden: setting them runs __newindex)
                           __node = playerNode(name) }, playerMeta)
 end
 -- A game server machine plays nobody: no LocalPlayer, only the people who join.
@@ -156,8 +182,31 @@ function Teams:GetTeams()
 end
 function Teams:GetPlayersOnTeam(team)
     local t = {}
-    for _, p in ipairs(playerList) do if rawget(p, "Team") == team then t[#t + 1] = p end end
+    for _, p in ipairs(playerList) do if rawget(p, "__Team") == team then t[#t + 1] = p end end
     return t
+end
+-- Setting a player's team (player.Team = ...) also sets their TeamColor and Neutral, and
+-- tells the engine, which spawns them on their team's SpawnLocations (or Neutral ones).
+applyTeam = function(p, team)
+    if team ~= nil then
+        rawset(p, "__Team", team)
+        rawset(p, "__TeamColor", team:GetAttribute("TeamColor") or rawget(p, "__TeamColor"))
+        rawset(p, "__Neutral", false)
+    else
+        rawset(p, "__Team", nil)
+        rawset(p, "__Neutral", true)
+    end
+    setTeam(rawget(p, "Character"), rawget(p, "__Neutral"), rawget(p, "__Team"), rawget(p, "__TeamColor"))
+end
+local function sameColor(a, b)
+    return a ~= nil and b ~= nil and math.abs(a.R - b.R) + math.abs(a.G - b.G) + math.abs(a.B - b.B) < 0.03
+end
+teamByColor = function(color)
+    if color == nil then return nil end
+    for _, team in ipairs(Teams:GetTeams()) do
+        if sameColor(team:GetAttribute("TeamColor"), color) then return team end
+    end
+    return nil
 end
 local function autoTeam(p)
     local best, fewest = nil, math.huge
@@ -167,15 +216,27 @@ local function autoTeam(p)
             if n < fewest then best, fewest = team, n end
         end
     end
-    if best then
-        rawset(p, "Team", best)
-        rawset(p, "TeamColor", best:GetAttribute("TeamColor"))
-        rawset(p, "Neutral", false)
-    else
-        rawset(p, "Neutral", true)
+    applyTeam(p, best)
+end
+-- (A joined player's computer waits for the host to say which team we're on.)
+if LocalPlayer and not __gb_clientMode then autoTeam(LocalPlayer) end
+function __gb_hostTeam(team, neutral, color)
+    if not LocalPlayer then return end
+    rawset(LocalPlayer, "__Team", team)
+    rawset(LocalPlayer, "__Neutral", neutral)
+    rawset(LocalPlayer, "__TeamColor", color)
+end
+-- A character touched a SpawnLocation with AllowTeamChangeOnTouch.
+function __gb_spawnTouched(character, color)
+    local team = teamByColor(color)
+    if team == nil then return end
+    for _, p in ipairs(playerList) do
+        if rawget(p, "Character") == character then
+            if rawget(p, "__Team") ~= team then applyTeam(p, team) end
+            return
+        end
     end
 end
-if LocalPlayer then autoTeam(LocalPlayer) end
 
 -- Used by the engine when people join / leave a multiplayer game.
 function __gb_addPlayer(name, character, id, backpack)
@@ -1068,6 +1129,49 @@ end
 game.FindService = function(_, name) return findService(name) end
 Workspace = workspace
 
+-- PhysicalProperties.new(density, friction, elasticity[, frictionWeight, elasticityWeight]),
+-- or .new(Enum.Material.Wood) for a material's own; part.CustomPhysicalProperties = it.
+do
+    local materialPhysics = __gb_materialPhysics
+    local function num(v, name, lo, hi, default)
+        if v == nil then return default end
+        v = tonumber(v)
+        if v == nil then error("PhysicalProperties." .. name .. " must be a number", 3) end
+        return math.min(hi, math.max(lo, v))
+    end
+    local meta = { __type = "PhysicalProperties" }
+    meta.__index = function(t, k) return rawget(t, "__v")[k] end
+    meta.__newindex = function() error("PhysicalProperties can't be changed: make a new one with PhysicalProperties.new", 2) end
+    meta.__tostring = function(t)
+        local v = rawget(t, "__v")
+        return string.format("%g, %g, %g, %g, %g", v.Density, v.Friction, v.Elasticity, v.FrictionWeight, v.ElasticityWeight)
+    end
+    meta.__eq = function(a, b)
+        local x, y = rawget(a, "__v"), rawget(b, "__v")
+        for _, k in ipairs({ "Density", "Friction", "Elasticity", "FrictionWeight", "ElasticityWeight" }) do
+            if x[k] ~= y[k] then return false end
+        end
+        return true
+    end
+    PhysicalProperties = {}
+    function PhysicalProperties.new(density, friction, elasticity, frictionWeight, elasticityWeight)
+        if type(density) == "string" then   -- a material
+            local d, f, e = materialPhysics(density)
+            if d == nil then error("Unknown material '" .. density .. "'", 2) end
+            density, friction, elasticity, frictionWeight, elasticityWeight = d, f, e, 1, 1
+        end
+        if density == nil or friction == nil or elasticity == nil then
+            error("PhysicalProperties.new needs a density, friction and elasticity (or a material)", 2)
+        end
+        return setmetatable({ __v = {
+            Density = num(density, "Density", 0.01, 100, 1), Friction = num(friction, "Friction", 0, 2, 0.5),
+            Elasticity = num(elasticity, "Elasticity", 0, 1, 0.3),
+            FrictionWeight = num(frictionWeight, "FrictionWeight", 0, 100, 1),
+            ElasticityWeight = num(elasticityWeight, "ElasticityWeight", 0, 100, 1) } }, meta)
+    end
+end
+__gb_materialPhysics = nil
+
 -- Handy extras that Roblox's Luau also has.
 math.atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 math.pow = math.pow or function(x, y) return x ^ y end
@@ -1218,6 +1322,7 @@ __gb_wait, __gb_spawn, __gb_delay, __gb_character, __gb_playerName, __gb_backpac
 __gb_noLocalPlayer = nil
 __gb_heartbeat, __gb_inputBegan, __gb_inputEnded, __gb_isKeyDown, __gb_padState = nil, nil, nil, nil, nil
 __gb_playerAdded, __gb_playerRemoving, __gb_tagAdded, __gb_tagRemoved = nil, nil, nil, nil
+__gb_charSignals, __gb_setTeam, __gb_clientMode = nil, nil, nil
 __gb_playerNode, __gb_setRespawn, __gb_dsStart, __gb_dsDone, __gb_dsSet, __gb_navPath, __gb_navQuery = nil, nil, nil, nil, nil, nil, nil
 __gb_camOpt, __gb_setCamOpt = nil, nil
 __gb_awardBadge, __gb_hasBadge, __gb_teleport, __gb_joinData = nil, nil, nil, nil
@@ -1355,7 +1460,7 @@ int l_moduleLoad(lua_State* L) {
     lua_pop(L, 1);
     std::string chunk = "=" + m->fullName();
     lua_pushboolean(L, 0);
-    if (luaL_loadbuffer(L, m->source.data(), m->source.size(), chunk.c_str()) != LUA_OK) {
+    if (Luau::load(L, m->source, chunk.c_str()) != LUA_OK) {
         table("__gb_modulesLoading");
         lua_pushnil(L);
         lua_rawseti(L, -2, (lua_Integer)m->id);
@@ -1617,6 +1722,55 @@ int l_passResults(lua_State* L) {
 int l_playerNode(lua_State* L) {
     LuaApi::pushInstance(L, LuaApi::engine(L)->playerNode(luaL_checkstring(L, 1)));
     return 1;
+}
+
+// A player's CharacterAdded and CharacterRemoving (the character model stays the same).
+int l_charSignals(lua_State* L) {
+    const uint64_t id = LuaApi::toInstanceId(L, 1);
+    LuaApi::pushSignal(L, SignalKind::CharacterAdded, id);
+    LuaApi::pushSignal(L, SignalKind::CharacterRemoving, id);
+    return 2;
+}
+
+// Put on the team just as the game started (or you joined): start on its spawn.
+constexpr float kTeamSpawnGrace = 2.0f;
+
+// __gb_setTeam(character, neutral, team, teamColor): which SpawnLocations they may use.
+// Our own character: here; someone who joined: sent to them (they spawn themselves).
+int l_setTeam(lua_State* L) {
+    ScriptEngine* e = LuaApi::engine(L);
+    const uint64_t root = LuaApi::toInstanceId(L, 1);
+    const bool neutral = lua_toboolean(L, 2);
+    const uint64_t team = LuaApi::toInstanceId(L, 3);
+    const glm::vec3* c = LuaApi::toColor3(L, 4);
+    const glm::vec3 color = c ? *c : glm::vec3(1.0f);
+    if (!root) return 0;
+    Player* p = e->scene()->player();
+    if (p && p->rootId() == root) {
+        const bool changed = p->neutral() != neutral || p->teamColor() != color;
+        p->setTeam(neutral, color);
+        if (changed && p->aliveTime() < kTeamSpawnGrace) p->placeAtSpawn();
+    } else if (RemoteCharacter* rc = e->scene()->findRemote(root)) {
+        rc->team = team;
+        rc->neutral = neutral;
+        rc->teamColor = color;
+        rc->teamDirty = true;
+    }
+    return 0;
+}
+
+// __gb_materialPhysics("Wood") -> density, friction, elasticity (nil if it isn't a material)
+int l_materialPhysics(lua_State* L) {
+    const std::string name = luaL_checkstring(L, 1);
+    for (int i = 0; i < kMaterialCount; ++i)
+        if (name == kMaterialNames[i] || (name == "SmoothPlastic" && i == 0)) {
+            const MaterialPhysics m = materialPhysics((Material)i);
+            lua_pushnumber(L, m.density);
+            lua_pushnumber(L, m.friction);
+            lua_pushnumber(L, m.elasticity);
+            return 3;
+        }
+    return 0;
 }
 
 // LocalPlayer.RespawnLocation = part (nil = back to the normal spawn)
@@ -2022,6 +2176,7 @@ void ScriptEngine::start(bool runScripts) {
     m_time = 0.0;
     m_depth = 0;
     m_gui = GuiState{};
+    m_charsAdded.clear();
     // Every coroutine inherits this hook, which stops runaway loops.
     lua_sethook(m_L, timeoutHook, LUA_MASKCOUNT, 20000);
 
@@ -2047,6 +2202,9 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_padState", l_padState);
     lua_register(L, "__gb_playerNode", l_playerNode);
     lua_register(L, "__gb_setRespawn", l_setRespawn);
+    lua_register(L, "__gb_charSignals", l_charSignals);
+    lua_register(L, "__gb_setTeam", l_setTeam);
+    lua_register(L, "__gb_materialPhysics", l_materialPhysics);
     lua_register(L, "__gb_camOpt", l_camOpt);
     lua_register(L, "__gb_setCamOpt", l_setCamOpt);
     lua_register(L, "__gb_dsStart", l_dsStart);
@@ -2079,6 +2237,8 @@ void ScriptEngine::start(bool runScripts) {
     lua_setglobal(L, "__gb_playerName");
     lua_pushboolean(L, m_noLocalPlayer);
     lua_setglobal(L, "__gb_noLocalPlayer");
+    lua_pushboolean(L, m_runMode == RunMode::Client);
+    lua_setglobal(L, "__gb_clientMode");
     LuaApi::pushLighting(L);
     lua_setglobal(L, "Lighting");
     LuaApi::pushSignal(L, SignalKind::Heartbeat, 0);  lua_setglobal(L, "__gb_heartbeat");
@@ -2137,6 +2297,10 @@ void ScriptEngine::start(bool runScripts) {
     lua_setfield(L, LUA_REGISTRYINDEX, "GB.attrSignal");
     lua_pushnil(L);
     lua_setglobal(L, "__gb_attrSignal");
+    lua_getglobal(L, "PhysicalProperties");   // (part.CustomPhysicalProperties makes these)
+    if (lua_istable(L, -1)) lua_getfield(L, -1, "new"); else lua_pushnil(L);
+    lua_setfield(L, LUA_REGISTRYINDEX, "GB.physNew");
+    lua_pop(L, 1);
     lua_getglobal(L, "__gb_cmdRun");
     lua_setfield(L, LUA_REGISTRYINDEX, "GB.cmdRun");
     lua_pushnil(L);
@@ -2151,6 +2315,9 @@ void ScriptEngine::start(bool runScripts) {
     });
     for (uint64_t id : scripts)
         if (SceneNode* s = resolve(id)) runScript(s);
+    // Our character is already there: CharacterAdded once everything has started.
+    if (!m_noLocalPlayer)
+        if (Player* p = m_scene->player(); p && p->root()) queueCharacterAdded(p->rootId());
 }
 
 bool ScriptEngine::runCommand(const std::string& code, std::string& error) {
@@ -2161,7 +2328,7 @@ bool ScriptEngine::runCommand(const std::string& code, std::string& error) {
     bool expr = luaL_loadbuffer(L, asExpr.data(), asExpr.size(), "=CommandBar") == LUA_OK;
     if (!expr) {
         lua_pop(L, 1);
-        if (luaL_loadbuffer(L, code.data(), code.size(), "=CommandBar") != LUA_OK) {
+        if (Luau::load(L, code, "=CommandBar") != LUA_OK) {
             error = lua_tostring(L, -1);
             lua_pop(L, 1);
             return false;
@@ -2217,7 +2384,7 @@ bool ScriptEngine::callRef(int ref, std::string& error) {
 void ScriptEngine::runScript(SceneNode* script) {
     lua_State* L = m_L;
     std::string chunk = "=" + script->fullName();
-    if (luaL_loadbuffer(L, script->source.data(), script->source.size(), chunk.c_str()) != LUA_OK) {
+    if (Luau::load(L, script->source, chunk.c_str()) != LUA_OK) {
         Log::error(lua_tostring(L, -1));
         lua_pop(L, 1);
         return;
@@ -2437,6 +2604,16 @@ void ScriptEngine::update(float dt) {
         }
     }
     m_current = 0;
+
+    // Characters that arrived (the game started, someone joined): CharacterAdded.
+    if (!m_charsAdded.empty()) {
+        const std::vector<uint64_t> added = std::move(m_charsAdded);
+        m_charsAdded.clear();
+        for (uint64_t id : added) {
+            if (!m_L) return;
+            if (m_scene->findById(id)) fireCharacter(true, id);
+        }
+    }
 
     fire(SignalKind::Heartbeat, 0, [dt](lua_State* co) { lua_pushnumber(co, dt); return 1; });
 
@@ -2752,6 +2929,7 @@ void ScriptEngine::addPlayer(const std::string& name, uint64_t rootId, int userI
     int ref = luaL_ref(m_L, LUA_REGISTRYINDEX);
     fire(SignalKind::PlayerAdded, 0, [ref](lua_State* co) { lua_rawgeti(co, LUA_REGISTRYINDEX, ref); return 1; });
     if (m_L) luaL_unref(m_L, LUA_REGISTRYINDEX, ref);
+    queueCharacterAdded(rootId);   // (after PlayerAdded, so its handlers can connect to it)
 }
 
 void ScriptEngine::removePlayer(const std::string& name) {
@@ -2759,9 +2937,46 @@ void ScriptEngine::removePlayer(const std::string& name) {
     lua_getglobal(m_L, "__gb_removePlayer");
     lua_pushstring(m_L, name.c_str());
     if (lua_pcall(m_L, 1, 1, 0) != LUA_OK || lua_isnil(m_L, -1)) { lua_pop(m_L, 1); return; }
+    uint64_t character = 0;
+    if (lua_istable(m_L, -1)) {
+        lua_getfield(m_L, -1, "Character");
+        character = LuaApi::toInstanceId(m_L, -1);
+        lua_pop(m_L, 1);
+    }
     int ref = luaL_ref(m_L, LUA_REGISTRYINDEX);
+    m_charsAdded.erase(std::remove(m_charsAdded.begin(), m_charsAdded.end(), character), m_charsAdded.end());
+    if (character) fireCharacter(false, character);
+    if (!m_L) return;
     fire(SignalKind::PlayerRemoving, 0, [ref](lua_State* co) { lua_rawgeti(co, LUA_REGISTRYINDEX, ref); return 1; });
     if (m_L) luaL_unref(m_L, LUA_REGISTRYINDEX, ref);
+}
+
+void ScriptEngine::fireCharacter(bool added, uint64_t rootId) {
+    if (!m_L || !rootId) return;
+    fire(added ? SignalKind::CharacterAdded : SignalKind::CharacterRemoving, rootId, [rootId](lua_State* co) {
+        LuaApi::pushInstance(co, rootId);
+        return 1;
+    });
+}
+
+void ScriptEngine::spawnTouched(uint64_t rootId, const SceneNode* spawn) {
+    if (!m_L || !spawn || !spawn->allowTeamChange || spawn->spawnNeutral) return;
+    lua_getglobal(m_L, "__gb_spawnTouched");
+    LuaApi::pushInstance(m_L, rootId);
+    LuaApi::pushColor3(m_L, spawn->teamColor);
+    if (lua_pcall(m_L, 2, 0, 0) != LUA_OK) {
+        Log::error(std::string("SpawnLocation team change: ") + lua_tostring(m_L, -1));
+        lua_pop(m_L, 1);
+    }
+}
+
+void ScriptEngine::setLocalTeam(uint64_t teamId, bool neutral, float r, float g, float b) {
+    if (!m_L) return;
+    lua_getglobal(m_L, "__gb_hostTeam");
+    if (teamId && m_scene->findById(teamId)) LuaApi::pushInstance(m_L, teamId); else lua_pushnil(m_L);
+    lua_pushboolean(m_L, neutral);
+    LuaApi::pushColor3(m_L, glm::vec3(r, g, b));
+    if (lua_pcall(m_L, 3, 0, 0) != LUA_OK) lua_pop(m_L, 1);
 }
 
 int ScriptEngine::connect(SignalKind kind, uint64_t id, int fnRef, bool once) {
@@ -2888,7 +3103,7 @@ void ScriptEngine::applyClockTime() {
 
 bool ScriptEngine::checkSyntax(const std::string& source, std::string& error, int& line) {
     lua_State* L = luaL_newstate();
-    bool ok = luaL_loadbuffer(L, source.data(), source.size(), "=script") == LUA_OK;
+    bool ok = Luau::load(L, source, "=script") == LUA_OK;   // (Luau extras are fine)
     line = 0;
     if (!ok) {
         error = lua_tostring(L, -1);

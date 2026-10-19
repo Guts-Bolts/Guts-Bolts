@@ -173,8 +173,8 @@ Drop several files at once and they're lined up side by side.
 Open a Roblox place (`.rbxl` / `.rbxlx`) and it becomes a Guts and Bolts
 game. Import a model (`.rbxm` / `.rbxmx`) and it's added to your game. Both
 the binary and XML kinds work. What comes across: parts (blocks, spheres,
-cylinders, wedges, trusses), models and folders, scripts (Roblox's **Luau**
-code is converted to plain Lua for you), lights, sounds, attachments and
+cylinders, wedges, trusses), models (with their PrimaryPart) and folders, SpawnLocations
+and Teams, CustomPhysicalProperties, scripts (Roblox's **Luau** code works as it is), lights, sounds, attachments and
 constraints, value objects, attributes and tags. Things we don't have yet
 (meshes, terrain, GUIs) are skipped, and Output tells you what was left out.
 
@@ -414,6 +414,10 @@ script.Parent.Touched:Connect(function(hit)
 end)
 ```
 
+Scripts can be written in plain Lua or in **Luau**: `x += 1` (and `-=`, `*=`, `..=` ...),
+`continue`, type annotations (`local n: number`, `type Point = {...}`) and `` `Hi {name}` ``
+strings all work, in any script, and error messages keep the right line numbers.
+
 What you can use:
 
 - **Objects:** `workspace`, `script`, `Instance.new("Part" | "Ball" | "Cylinder" | "Model" | "PointLight" | "SpotLight", parent)`,
@@ -423,9 +427,16 @@ What you can use:
 - **Values:** `Vector3.new`, `Color3.new` / `fromRGB` / `fromHSV` / `fromHex`, `CFrame.new` / `Angles` / `lookAt`
 - **Time:** `wait(seconds)`, `spawn(fn)`, `delay(seconds, fn)`, `time()`, `tick()`
 - **Events:** `part.Touched`, `part.Clicked`, `clickDetector.MouseClick` (see *ClickDetectors* below), `RunService.Heartbeat`, `UserInputService.InputBegan` / `InputEnded`,
-  `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, each with `:Connect`, `:Once` and `:Wait`
+  `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, `player.CharacterAdded` / `CharacterRemoving`
+  (fired on every spawn and respawn), each with `:Connect`, `:Once` and `:Wait`
 - **Players:** `game.Players.LocalPlayer.Character`, `Players:GetPlayers()`, `humanoid.Health` / `WalkSpeed` /
   `JumpPower` / `:TakeDamage(n)`, `character:BreakJoints()`
+- **Teams:** `player.Team`, `player.TeamColor`, `player.Neutral` (setting one keeps the others right),
+  `Teams:GetTeams()`. A **SpawnLocation** has `Neutral`, `TeamColor` and `AllowTeamChangeOnTouch`: players
+  spawn on their team's SpawnLocations (or Neutral ones), and touching one with `AllowTeamChangeOnTouch`
+  puts you on its team
+- **Models:** `model.PrimaryPart`, `model:GetPivot()` / `:PivotTo(cframe)` (they go by the PrimaryPart),
+  `:SetPrimaryPartCFrame(cframe)` / `:GetPrimaryPartCFrame()`
 - **Camera:** `workspace.CurrentCamera` with `CFrame`, `Focus`, `FieldOfView`, `CameraType`
   (`Enum.CameraType.Custom` / `Scriptable` / `Fixed`), `CameraSubject`, `ViewportSize`,
   `:WorldToViewportPoint` / `:WorldToScreenPoint` and `:ViewportPointToRay` / `:ScreenPointToRay`;
@@ -436,7 +447,10 @@ What you can use:
 - **Mayhem:** `Explode(position, radius, power, options)` (see *Explosions* below), `Effects.Blood(pos, amount)`, `Effects.Oil(...)`, `Effects.Gibs(...)`,
   `Effects.Sparks(...)`
 - **Physics:** `part:ApplyImpulse(v)`, `AssemblyLinearVelocity`, `AssemblyAngularVelocity`, `Density`,
-  `Friction`, `Elasticity`, and constraint properties such as `rope.Length` or `hinge.AngularVelocity`
+  `Friction`, `Elasticity`, `part.CustomPhysicalProperties = PhysicalProperties.new(density, friction,
+  elasticity, frictionWeight, elasticityWeight)` (or `PhysicalProperties.new(Enum.Material.Ice)`; `nil` goes back
+  to the material's), `part.CurrentPhysicalProperties`, and constraint properties such as `rope.Length` or
+  `hinge.AngularVelocity`
 - **Sound:** `Sounds.Play("coin", position)` (built in: jump, coin, oof, explosion, splat, click, hit, win,
   boing, spawn) or a Sound object with `:Play()` / `:Stop()`
 - **Attributes:** `obj:SetAttribute("Damage", 25)`, `obj:GetAttribute("Damage")`, `obj:GetAttributes()`,
@@ -593,7 +607,7 @@ end)
 
 Buttons have `MouseButton1Click` (also called `Activated`), `MouseEnter` and
 `MouseLeave`. Text has `TextScaled`, `TextWrapped`, alignment, an outline
-(`TextStrokeTransparency`) and bold fonts (`Enum.Font.SourceSansBold`).
+(`TextStrokeTransparency`) and bold text (`label.Bold = true`, or a bold font such as `Enum.Font.SourceSansBold`).
 `player.PlayerGui` and `game.StarterGui` are the same folder.
 
 **Typing, scrolling and lining things up:**
@@ -1364,7 +1378,8 @@ at NPCs (and anything else) live.
 Loose (un-anchored) parts are real rigid bodies: they tumble, spin, stack,
 slide and bounce. Each part has **Density** (heavier), **Friction** (grippier)
 and **Elasticity** (bouncier) in the Properties panel, with sensible defaults
-per material (ice is slippery, metal is heavy). Parts that stop moving go to
+per material (ice is slippery, metal is heavy); scripts set all three at once with
+`part.CustomPhysicalProperties`, whose weights say whose friction and bounce win when two parts touch. Parts that stop moving go to
 sleep so big piles stay fast, and your character can shove light things around.
 
 Constraints join parts together through **Attachments** (little points on a part):

@@ -850,6 +850,35 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         }
     }
 
+    // Model.PrimaryPart: the part GetPivot / PivotTo / SetPrimaryPartCFrame go by.
+    if (node->kind == NodeKind::Model && node != m_scene->root()) {
+        std::vector<SceneNode*> parts;
+        std::vector<SceneNode*> stack{node};
+        while (!stack.empty() && parts.size() < 500) {
+            SceneNode* n = stack.back();
+            stack.pop_back();
+            for (auto& c : n->children) {
+                if (c->internal) continue;
+                if (c->isPart()) parts.push_back(c.get());
+                stack.push_back(c.get());
+            }
+        }
+        if (!parts.empty()) {
+            SceneNode* cur = node->primaryPart ? m_scene->findById(node->primaryPart) : nullptr;
+            if (cur && !node->isAncestorOf(cur)) cur = nullptr;
+            if (ImGui::BeginCombo("PrimaryPart", cur ? cur->name.c_str() : "(none)")) {
+                if (ImGui::Selectable("(none)", !cur)) node->primaryPart = 0;
+                for (SceneNode* p : parts) {
+                    ImGui::PushID((void*)p);
+                    if (ImGui::Selectable(p->name.c_str(), p == cur)) node->primaryPart = p->id;
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("The part model:GetPivot() / PivotTo() / SetPrimaryPartCFrame() go by");
+        }
+    }
+
     if (node->kind != NodeKind::Part) {
         return;
     }
@@ -910,6 +939,24 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         prop("Density", node->density, 1.0f, 0.05f, 10.0f, "Heavier parts are harder to push. Water is 1.3: lighter parts float, heavier ones sink");
         prop("Friction", node->friction, 0.5f, 0.0f, 2.0f, "0 = slides like ice");
         prop("Bounciness", node->elasticity, 0.3f, 0.0f, 1.0f, "1 = bounces like a rubber ball");
+        if (node->hasCustomPhysics()) {   // (CustomPhysicalProperties' FrictionWeight / ElasticityWeight)
+            ImGui::SliderFloat("Friction weight", &node->frictionWeight, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much this part's friction counts when it touches another part (1 = an even mix)");
+            ImGui::SliderFloat("Bounciness weight", &node->elasticityWeight, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much this part's bounciness counts when it touches another part (1 = the usual)");
+        }
+    }
+
+    // --- SpawnLocation: who spawns here ---
+    if (node->isSpawnLocation() && ImGui::CollapsingHeader("Spawn", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Neutral", &node->spawnNeutral);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Anybody can spawn here. Untick to make it one team's spawn (by TeamColor)");
+        ImGui::BeginDisabled(node->spawnNeutral);
+        ImGui::ColorEdit3("TeamColor", &node->teamColor.x);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Players on the Team with this TeamColor spawn here");
+        ImGui::Checkbox("AllowTeamChangeOnTouch", &node->allowTeamChange);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Touching it puts you on its team");
+        ImGui::EndDisabled();
     }
 
     if (!m_scene->isCharacterPart(node)) {

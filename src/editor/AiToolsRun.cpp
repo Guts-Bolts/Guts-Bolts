@@ -15,6 +15,7 @@
 #include "../scene/Player.h"
 #include "../game/GameSession.h"
 #include "../core/Log.h"
+#include "../scripting/Luau.h"
 
 #include <imgui.h>
 
@@ -95,7 +96,7 @@ std::string idOf(const SceneNode* n) { return "#" + std::to_string(n->id); }
 json syntaxOf(const std::string& source, const std::string& name) {
     lua_State* L = luaL_newstate();
     const std::string chunk = "=" + name;
-    int r = luaL_loadbufferx(L, source.data(), source.size(), chunk.c_str(), "t");
+    int r = Luau::load(L, source, chunk.c_str(), "t");   // (Luau extras compile too)
     json out = {{"ok", r == LUA_OK}};
     if (r != LUA_OK) out["error"] = lua_tostring(L, -1) ? lua_tostring(L, -1) : "syntax error";
     lua_close(L);
@@ -557,7 +558,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         LuaRun r = lua(str("code"));
         json d = {{"output", r.lines}, {"errors", r.errors}, {"ran_in", m_playing ? "the running playtest" : "the editor (saved game)"}};
         if (!r.errors.empty()) {
-            AiToolResult res = fail("LUA_ERROR", r.errors.front(), "Fix the code and run it again (plain Lua 5.4, Roblox-style API).");
+            AiToolResult res = fail("LUA_ERROR", r.errors.front(), "Fix the code and run it again (Lua 5.4 or Luau, Roblox-style API).");
             res.data["output"] = r.lines;
             res.data["errors"] = r.errors;
             res.text = res.data.dump(1);

@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -406,6 +407,8 @@ inline int materialShaderId(Material m) { return (int)m < 7 ? (int)m : (int)m + 
 // long side (+Y) points the way the hand's front faces, so with the arm held out a
 // sword points straight up, the classic way.
 inline const glm::mat3 kDefaultGripRot{1.0f};
+// A SpawnLocation's TeamColor to start with: Roblox's default, Medium stone grey.
+inline const glm::vec3 kDefaultTeamColor{0.639f, 0.635f, 0.647f};
 
 struct Attribute {
     enum Type { Bool, Number, String, Vector3, Color3 };
@@ -497,10 +500,28 @@ public:
     bool        autoplay = false;          // start playing when the game starts
     int         audioHandle = 0;           // runtime only
 
-    // Physics (parts). Negative = use the material's value.
+    // Physics (parts). Negative = use the material's value. Together these are Roblox's
+    // CustomPhysicalProperties (PhysicalProperties.new(density, friction, elasticity,
+    // frictionWeight, elasticityWeight)); nil there = all three negative.
     float       density    = -1.0f;
     float       friction   = -1.0f;
     float       elasticity = -1.0f;        // bounciness 0..1
+    // How much this part's friction / bounciness counts when it touches another part
+    // (1 and 1 = the usual mix; bigger = this part's value wins).
+    float       frictionWeight   = 1.0f;
+    float       elasticityWeight = 1.0f;
+    bool hasCustomPhysics() const { return density >= 0.0f || friction >= 0.0f || elasticity >= 0.0f; }
+
+    // Model.PrimaryPart: the part inside it that GetPivot / PivotTo / SetPrimaryPartCFrame
+    // go by (0 = none).
+    uint64_t    primaryPart = 0;
+
+    // SpawnLocation (a part called SpawnLocation, or tagged "SpawnLocation"), like Roblox's:
+    // a Neutral one is for anybody; otherwise only players on the team with this TeamColor
+    // spawn there. AllowTeamChangeOnTouch: touching it puts you on that team.
+    bool        spawnNeutral = true;
+    glm::vec3   teamColor = kDefaultTeamColor;
+    bool        allowTeamChange = false;
 
     // Constraint (kind == Constraint). ref0 / ref1 are Attachments (or, for a
     // Weld, the two Parts).
@@ -599,6 +620,9 @@ public:
     bool isHighlight() const { return kind == NodeKind::Highlight; }
     bool isClickDetector() const { return kind == NodeKind::ClickDetector; }
     bool isEffect() const { return kind == NodeKind::Trail || kind == NodeKind::Beam; }
+    bool isSpawnLocation() const {
+        return isPart() && (name == "SpawnLocation" || std::find(tags.begin(), tags.end(), "SpawnLocation") != tags.end());
+    }
     bool isParticles() const { return kind == NodeKind::Particles; }
     const char* particleClass() const { return kParticleClassNames[(int)particle.type]; }
     bool hasForceField() const {
