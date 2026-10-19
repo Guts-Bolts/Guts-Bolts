@@ -212,6 +212,19 @@ const GENRES = ['Adventure', 'Obby', 'Fighting', 'Horror', 'Roleplay', 'Simulato
   'Shooter', 'Puzzle', 'Survival', 'Comedy', 'Building', 'Sandbox', 'Showcase', 'Town and City', 'Destruction'];
 // "87%" liked, or '' before anyone has voted.
 const likedPercent = (g) => (g.likes || 0) + (g.dislikes || 0) ? Math.round(100 * g.likes / (g.likes + g.dislikes)) + '%' : '';
+// Library models' "Best rated": the Wilson score (the lowest the real like rate is likely to be,
+// 95% sure), so one vote at 100% doesn't beat 500 at 95%. The server sorts the same way.
+function wilsonScore(up, down) {
+  const n = up + down;
+  if (!n) return 0;
+  const z = 1.96, p = up / n;
+  return (p + z * z / (2 * n) - z * Math.sqrt((p * (1 - p) + z * z / (4 * n)) / n)) / (1 + z * z / n);
+}
+const voteCount = (a) => (a.likes || 0) + (a.dislikes || 0);
+// "92% liked · 25 votes" (or "No ratings yet") under a Library model.
+const ratingLine = (a) => voteCount(a)
+  ? html`<span class="rating" title="${a.likes || 0} thumbs up, ${a.dislikes || 0} thumbs down">&#128077; ${likedPercent(a)} <span class="muted">· ${voteCount(a).toLocaleString()} vote${voteCount(a) === 1 ? '' : 's'}</span></span>`
+  : html`<span class="rating muted">No ratings yet</span>`;
 
 function gameCard(g) {
   const n = playingNow[g.id] || g.playing || 0, liked = likedPercent(g);
@@ -369,7 +382,7 @@ function loginPopup(what) {
 }
 // Which clicks and forms need an account, and what to say.
 const NEEDS_ACCOUNT = {
-  buy: 'get items from the catalog', buyPass: 'buy game passes', buyPrivate: 'buy private servers', daily: 'claim your daily Bolts', saveAvatar: 'save your avatar',
+  buy: 'get items from the catalog', gift: 'send gifts', modelVote: 'rate models', buyPass: 'buy game passes', buyPrivate: 'buy private servers', daily: 'claim your daily Bolts', saveAvatar: 'save your avatar',
   friend: 'add friends', follow: 'follow people', group: 'join groups', redeem: 'redeem codes', upload: 'upload things and publish games',
   groupCreate: 'make a group', groupPost: 'post on group walls', groupShout: 'shout to a group',
   favorite: 'favourite games', outfitSave: 'save outfits', sendMessage: 'send messages', statusSet: 'post a status', blurbSet: 'edit your profile',
@@ -427,6 +440,7 @@ function setMe(m) {
 // --- Moderation: bans and staff warnings ---------------------------------------------
 
 const banned = () => !!(me && me.ban);
+const fileSize = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 const dateText = (t) => new Date(t * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 // A banned account sees only this (like Roblox's "Banned" page): why, the note from
@@ -853,6 +867,8 @@ function browseLink(changes) {
 const BROWSE_SORTS = [['', 'Relevance'], ['popular', 'Most Popular'], ['new', 'Recently Updated'], ['low', 'Price (Low to High)'], ['high', 'Price (High to Low)']];
 function browseSort(list, sort) {
   const by = {
+    rated: (x, y) => wilsonScore(y.likes || 0, y.dislikes || 0) - wilsonScore(x.likes || 0, x.dislikes || 0)
+      || voteCount(y) - voteCount(x) || (y.sales || 0) - (x.sales || 0),
     popular: (x, y) => (y.sales + y.plays) - (x.sales + x.plays),
     new: (x, y) => (y.updated || y.created) - (x.updated || x.created),
     low: (x, y) => (x.price || 0) - (y.price || 0),
@@ -876,12 +892,13 @@ function browseCard(a, href, price) {
       : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
     <div class="bprice">${price}</div>
+    ${a.kind === 'model' ? html`<div class="brating">${ratingLine(a)}</div>` : ''}
     <div class="btip"><div>Creator: <a href="#/user/${a.creator}">${a.creatorName}</a>${verified(a.creatorVerified)}</div>
       <div>Updated: ${ago(a.updated || a.created)}</div><div>${a.kind === 'model' || a.kind === 'animation' ? 'Taken' : 'Sales'}: ${(a.sales || 0).toLocaleString()}</div>
       ${isCatalogItem(a.kind) ? '' : html`<div>ID: ${assetNum(a)} <button class="btn small" data-act="copyId" data-id="${assetNum(a)}">Copy</button></div>`}</div></div>`;
 }
 // cats: [key, label, [kids]]; the page itself fetches, filters and passes the tiles in.
-function browsePage({ title, cats, cat, heading, shown, total, filters, side = '' }) {
+function browsePage({ title, cats, cat, heading, shown, total, filters, side = '', sorts = BROWSE_SORTS }) {
   const q = hashParams(), query = q.get('q') || '', sort = q.get('sort') || '', page = Math.max(1, Number(q.get('page')) || 1);
   const catLink = (k) => browseLink({ cat: k, q: '' });
   const open = (c) => c[0] === cat || (c[2] || []).some((k) => k[0] === cat);
@@ -911,7 +928,7 @@ function browsePage({ title, cats, cat, heading, shown, total, filters, side = '
       <section class="bmain">
         <div class="bhead"><div><b class="bcaps">${heading}</b><br>
           <span class="small muted">${total ? `Showing ${from + 1} - ${to} of ${total.toLocaleString()} result${total === 1 ? '' : 's'}` : 'No results'}${query ? html` for <b>${query}</b>` : ''}</span></div>
-          <label class="small">Sort by: <select data-go>${BROWSE_SORTS.map(([k, l]) => html`<option value="${browseLink({ sort: k })}" ${sort === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>
+          <label class="small">Sort by: <select data-go>${sorts.map(([k, l]) => html`<option value="${browseLink({ sort: k })}" ${sort === k ? 'selected' : ''}>${l}</option>`)}</select></label></div>
         ${shown.length ? html`<div class="bgrid">${shown}</div>${pager}` : html`<p class="muted">Nothing here yet.</p>`}
       </section></div>`;
 }
@@ -937,7 +954,8 @@ async function libraryPage(head) {
         <button class="btn small">Go</button></form></div>`;
   show(html`${head}${browsePage({ title: 'Library', cats: LIBRARY_CATS, cat, heading: LIBRARY_CATS.find((c) => c[0] === cat)[1],
     shown: browseSlice(list).map((a) => browseCard(a, '#/library/' + assetNum(a), a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>'))),
-    total: list.length, filters: [creatorFilter()], side })}`);
+    total: list.length, filters: [creatorFilter()], side,
+    sorts: cat === 'model' ? [...BROWSE_SORTS.filter((x) => x[0] !== 'low' && x[0] !== 'high'), ['rated', 'Best rated']] : BROWSE_SORTS })}`);
   view.querySelectorAll('img[data-decal]').forEach(decalPicture);
   loadThumbs();
 }
@@ -1014,6 +1032,7 @@ pages.library = async (id = '') => {
             </table>
           </div>
           <p class="item-desc">${a.description || html`<span class="muted">No description.</span>`}</p>
+          ${a.kind === 'model' ? modelVotes(a, r.used) : ''}
           ${a.kind === 'audio' ? html`<div id="assetAudio"><button class="btn green" data-act="assetListen" data-id="${a.id}">&#9654; Listen</button></div>` : ''}
           <hr>
           <p class="small muted">Type: ${KINDS[a.kind] || a.kind}${a.size ? ' · ' + Math.max(1, Math.round(a.size / 1024)) + ' KB' : ''}</p>
@@ -1048,6 +1067,25 @@ pages.library = async (id = '') => {
   }).catch(() => {});
 };
 
+// Thumbs up / down on a Library model (one vote each; press yours again to take it back). Only
+// people who've inserted it in Studio can vote, and never on their own model.
+function modelVotes(a, used) {
+  const own = signedIn() && a.creator === me.id;
+  const can = signedIn() && !own && used;
+  const why = !signedIn() ? html`<a href="#/login">Log in</a> to rate it.` : own ? 'This is your model, so you can\'t rate it.'
+    : used ? 'Did it work well in your game? Give it a thumbs up or down.' : 'Insert it from Studio\'s Toolbox first, then you can rate it here.';
+  const pct = voteCount(a) ? Math.round(100 * (a.likes || 0) / voteCount(a)) : 50;
+  return html`<div class="model-rating">
+    <div class="votes">
+      <button class="btn small ${a.myVote === 1 ? 'green' : ''}" data-act="modelVote" data-id="${a.id}" data-vote="${a.myVote === 1 ? 0 : 1}"
+        title="${a.myVote === 1 ? 'Take your thumbs up back' : 'Thumbs up'}" ${can ? '' : 'disabled'}>&#128077; ${a.likes || 0}</button>
+      <div class="vote-bar ${voteCount(a) ? '' : 'none'}"><div style="width:${pct}%"></div></div>
+      <button class="btn small ${a.myVote === -1 ? 'red' : ''}" data-act="modelVote" data-id="${a.id}" data-vote="${a.myVote === -1 ? 0 : -1}"
+        title="${a.myVote === -1 ? 'Take your thumbs down back' : 'Thumbs down'}" ${can ? '' : 'disabled'}>&#128078; ${a.dislikes || 0}</button></div>
+    <p class="small">${ratingLine(a)}</p>
+    <p class="small muted">${why}</p></div>`;
+}
+
 // Create > Accessories: hats, hair and the rest, made and placed in Studio.
 async function myAccessoriesPage(head) {
   if (!signedIn()) { show(html`${head}${needSignIn('see your accessories')}`); return; }
@@ -1073,7 +1111,7 @@ async function myModelsPage(head) {
       ${left >= 0 ? html`<br><span class="muted">You can make ${left} more model${left === 1 ? '' : 's'} public this week (Verified creators have no limit).</span>` : ''}</div>
     <h2>My Models</h2>
     ${r.ok && r.assets.length ? html`<div class="list">${r.assets.map((a) => html`<div>
-        <span class="grow"><b>${a.name}</b> <span class="small muted">${a.id}</span></span>
+        <span class="grow"><b><a href="#/library/${assetNum(a)}">${a.name}</a></b> <span class="small muted">${a.id}</span><br><span class="small">${ratingLine(a)}</span></span>
         <span class="badge-pill">${a.access === 'private' ? 'Private' : 'Public'}</span>
         <button class="btn small" data-act="modelAccess" data-id="${a.id}" data-access="${a.access === 'private' ? 'public' : 'private'}">Make ${a.access === 'private' ? 'public' : 'private'}</button>
         <button class="btn small red" data-act="deleteAsset" data-id="${a.id}" data-name="${a.name}">Delete</button></div>`)}</div>`
@@ -1093,6 +1131,80 @@ function privateServerBox(g, s) {
         <button class="btn small" data-act="buyPrivate" data-id="${g.id}" data-name="${g.name}" data-price="${price}">Add 30 days for ${price} Bolts</button>`
       : html`<button class="btn green" data-act="buyPrivate" data-id="${g.id}" data-name="${g.name}" data-price="${price}">Buy a private server</button>`}</div>`;
 }
+
+// A game's pictures on its page: the thumbnail, then the creator's screenshots (up to 5), with
+// arrows, a strip to pick one, and a click (or tap) for a big view. Swipe works on phones.
+const shotUrl = (g, s) => `/shot/${encodeURIComponent(g.id)}/${encodeURIComponent(s)}`;
+// Screenshot limits (the server has the same: kMaxShots, kShotSize).
+const SHOT_MOST = 5, SHOT_MB = 2;
+function shotProblem(file) {
+  const okType = ['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name);
+  if (!okType) return `"${file.name}" isn't a .png, .jpg or .webp picture.`;
+  if (file.size > SHOT_MB * 1024 * 1024) return `"${file.name}" is too big (${(file.size / 1048576).toFixed(1)} MB; the most is ${SHOT_MB} MB). Try a smaller picture, or save it as a .jpg.`;
+  return '';
+}
+let gallery = { pics: [], i: 0 };
+function gameGallery(g) {
+  const shots = g.shots || [];
+  if (!shots.length) return gamePic(g);
+  const pics = [...(g.thumb ? [{ src: `/thumb/${encodeURIComponent(g.id)}?v=${g.thumb}`, alt: g.name }] : []),
+    ...shots.map((s, i) => ({ src: shotUrl(g, s), alt: `Screenshot ${i + 1} of ${g.name}` }))];
+  gallery = { pics, i: 0 };
+  return html`<div class="gallery">
+    <div class="gallery-stage" data-swipe="gallery">
+      <button type="button" class="gallery-main" data-act="galleryOpen" aria-label="Show this picture bigger">
+        <img id="galleryImg" src="${pics[0].src}" alt="${pics[0].alt}"></button>
+      ${pics.length > 1 ? html`<button type="button" class="gallery-arrow prev" data-act="galleryStep" data-step="-1" aria-label="Previous picture">&lsaquo;</button>
+        <button type="button" class="gallery-arrow next" data-act="galleryStep" data-step="1" aria-label="Next picture">&rsaquo;</button>
+        <span class="gallery-count" id="galleryCount">1 / ${pics.length}</span>` : ''}</div>
+    ${pics.length > 1 ? html`<div class="gallery-strip">${pics.map((p, i) => html`<button type="button" class="gallery-thumb ${i ? '' : 'on'}"
+        data-act="galleryShow" data-i="${i}" aria-label="Picture ${i + 1} of ${pics.length}"><img src="${p.src}" alt="" loading="lazy"></button>`)}</div>` : ''}</div>`;
+}
+function galleryGo(i) {
+  const n = gallery.pics.length;
+  if (!n) return;
+  gallery.i = ((i % n) + n) % n;
+  const p = gallery.pics[gallery.i];
+  for (const img of document.querySelectorAll('#galleryImg, #lightboxImg')) { img.src = p.src; img.alt = p.alt; }
+  for (const c of document.querySelectorAll('#galleryCount, #lightboxCount')) c.textContent = (gallery.i + 1) + ' / ' + n;
+  document.querySelectorAll('.gallery-thumb').forEach((b, k) => b.classList.toggle('on', k === gallery.i));
+}
+function galleryLightbox() {
+  document.querySelectorAll('.lightbox').forEach((m) => m.remove());
+  const p = gallery.pics[gallery.i], many = gallery.pics.length > 1;
+  const box = document.createElement('div');
+  box.className = 'modal lightbox';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-label', 'Pictures');
+  box.dataset.swipe = 'gallery';
+  box.innerHTML = html`<button type="button" class="lightbox-x" data-act="galleryClose" aria-label="Close">&times;</button>
+    <img id="lightboxImg" src="${p.src}" alt="${p.alt}">
+    ${many ? html`<button type="button" class="gallery-arrow prev" data-act="galleryStep" data-step="-1" aria-label="Previous picture">&lsaquo;</button>
+      <button type="button" class="gallery-arrow next" data-act="galleryStep" data-step="1" aria-label="Next picture">&rsaquo;</button>
+      <span class="gallery-count" id="lightboxCount">${gallery.i + 1} / ${gallery.pics.length}</span>` : ''}`.s;
+  box.addEventListener('click', (e) => { if (e.target === box) box.remove(); });   // a click outside the picture closes it
+  document.body.appendChild(box);
+  box.querySelector('.lightbox-x').focus();
+}
+document.addEventListener('keydown', (e) => {
+  if (!document.querySelector('.lightbox')) return;
+  if (e.key === 'Escape') document.querySelectorAll('.lightbox').forEach((m) => m.remove());
+  else if (e.key === 'ArrowLeft') galleryGo(gallery.i - 1);
+  else if (e.key === 'ArrowRight') galleryGo(gallery.i + 1);
+});
+// Swiping left or right on the picture (phones) moves through them.
+let swipeStart = null;
+document.addEventListener('touchstart', (e) => {
+  swipeStart = e.target.closest && e.target.closest('[data-swipe=gallery]') && e.touches.length === 1
+    ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+}, { passive: true });
+document.addEventListener('touchend', (e) => {
+  if (!swipeStart || !e.changedTouches.length) return;
+  const dx = e.changedTouches[0].clientX - swipeStart.x, dy = e.changedTouches[0].clientY - swipeStart.y;
+  swipeStart = null;
+  if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) galleryGo(gallery.i + (dx < 0 ? 1 : -1));
+}, { passive: true });
 
 pages.game = async (id) => {
   const [r, s] = await Promise.all([pageCall('list', { kind: 'game', limit: 100 }), pageCall('servers.list', { game: id })]);
@@ -1125,7 +1237,7 @@ pages.game = async (id) => {
       <button class="btn small" data-act="serverPage" data-to="${serverPage + 1}" ${serverPage === pages ? 'disabled' : ''}>&rsaquo;</button>
       <button class="btn small" data-act="serverPage" data-to="${pages}" ${serverPage === pages ? 'disabled' : ''}>&raquo;</button></div>` : '';
   show(html`<p><a href="#/games">&lt; Games</a></p>
-    <div class="hero">${gamePic(g)}
+    <div class="hero">${gameGallery(g)}
       <div><h1 class="game-title">${gameIcon(g, 40)} ${g.name}</h1>
         ${g.access && g.access !== 'public' ? html`<p><span class="badge-pill">${ACCESS_NAMES[g.access]}</span></p>` : ''}
         ${g.featured ? html`<p><span class="badge-pill featured-pill">&#11088; Featured</span></p>` : ''}
@@ -1233,6 +1345,9 @@ pages.item = async (id) => {
     : soldOut ? html`<button class="btn big buy" disabled>Sold out</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
     : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
+  // Paid items that aren't Limited can be bought for a friend (even if you have one yourself).
+  const giftable = a.price > 0 && !L && !offsale && !a.review && !(a.meta && a.meta.award);
+  const giftButton = giftable ? html`<button class="btn big gift" data-act="gift" data-id="${a.id}" data-name="${a.name}" data-price="${a.price}">&#127873; Buy as a gift</button>` : '';
   show(html`<p><a href="#/catalog">&lt; Catalog</a></p>
     <div class="item-page">
       <h1 class="item-title">${a.name}</h1>
@@ -1269,6 +1384,7 @@ pages.item = async (id) => {
               : offsale ? html`<div class="item-left">Off sale</div>` : ''}
             <div class="item-price">Price: ${a.price > 0 ? bolts(a.price) : html`<b class="ok">Free</b>`}</div>
             ${buyButton}
+            ${giftButton}
             <div class="item-sold">( ${a.sales || 0} Sold )</div>
             ${L && L.resellers ? html`<div class="small">${L.resellers} for resale from ${bolts(L.lowest)}</div>` : ''}
           </div>
@@ -1464,12 +1580,14 @@ pages.configure = async (id) => {
   const g = r.ok && r.assets.find((a) => a.id === id || String(a.num) === id);
   if (!g) { show(html`<h1>Configure game</h1><p class="error">${r.ok ? 'That isn\'t one of your games.' : r.error}</p>`); return; }
   const access = g.access || 'public';
-  const [pr, dr, gr] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('pass.list', { game: g.id, products: true }),
-    pageCall('groups.mine', {})]);
+  const [pr, dr, gr, vr] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('pass.list', { game: g.id, products: true }),
+    pageCall('groups.mine', {}), pageCall('game.versions', { id: g.id })]);
+  const versions = vr.ok ? vr.versions : [];
   // Groups this game can go in: ones where your rank can add games (and the one it's in now).
   const myGroups = (gr.ok ? gr.groups : []).filter((x) => (x.perms || []).includes('games') || (g.group && x.id === g.group.id));
   if (g.group && !myGroups.some((x) => x.id === g.group.id)) myGroups.push(g.group);
   const passes = pr.ok ? pr.passes : [], products = dr.ok ? dr.passes : [];
+  const shots = g.shots || [];
   const choice = (v, label, note) => html`<label class="choice"><input type="radio" name="access" value="${v}" ${access === v ? 'checked' : ''}>
     <b>${label}</b> <span class="muted small">${note}</span></label>`;
   show(html`<p><a href="#/create/games">&lt; My Games</a></p>
@@ -1514,6 +1632,31 @@ pages.configure = async (id) => {
         <button type="button" class="btn red" data-act="deleteAsset" data-id="${g.id}" data-name="${g.name}" style="float:right">Delete game</button>
         <span id="configMsg"></span></p>
     </form>
+    <div class="box" id="screenshots"><h2 class="boxhead">Screenshots</h2>
+      <p class="small muted">Up to ${SHOT_MOST} pictures of your game, shown after the thumbnail on its page (people can click them to see them bigger).
+        .png, .jpg or .webp, up to ${SHOT_MB} MB each. Pictures from your game in the Player or Studio work best.</p>
+      ${shots.length ? html`<div class="shot-grid">${shots.map((s, i) => html`<div class="shot-edit" data-shot="${s}">
+          <a href="${shotUrl(g, s)}" target="_blank" rel="noopener"><img src="${shotUrl(g, s)}" alt="Screenshot ${i + 1}" loading="lazy"></a>
+          <div class="shot-buttons"><span class="small muted">${i + 1}</span>
+            <button type="button" class="btn small" data-act="shotMove" data-id="${g.id}" data-shot="${s}" data-dir="-1" ${i ? '' : 'disabled'} aria-label="Move screenshot ${i + 1} earlier">&lsaquo;</button>
+            <button type="button" class="btn small" data-act="shotMove" data-id="${g.id}" data-shot="${s}" data-dir="1" ${i < shots.length - 1 ? '' : 'disabled'} aria-label="Move screenshot ${i + 1} later">&rsaquo;</button>
+            <button type="button" class="btn small red" data-act="shotDelete" data-id="${g.id}" data-shot="${s}">Delete</button></div></div>`)}</div>`
+        : html`<p class="muted">No screenshots yet.</p>`}
+      ${shots.length < SHOT_MOST ? html`<form class="form" data-form="shotsAdd"><input type="hidden" name="id" value="${g.id}"><input type="hidden" name="count" value="${shots.length}">
+          <label>Add screenshots <span class="muted small">(${SHOT_MOST - shots.length} more)</span></label>
+          <input type="file" name="files" accept="image/png,image/jpeg,image/webp" multiple>
+          <p><button class="btn green">Upload</button> <span id="shotsMsg"></span></p></form>`
+        : html`<p class="small muted">That's the most a game can have. Delete one to add another.</p>`}</div>
+    <div class="box"><h2 class="boxhead">Version history</h2>
+      <p class="small muted">Every time you publish (from Studio or with "New version" above), the old version is kept.
+        Restore puts an old version back: it's published again as the newest version, so nothing is lost.
+        The newest ${vr.ok ? vr.most : 50} versions are kept.</p>
+      ${!vr.ok ? html`<p class="error">${vr.error}</p>` : html`<table class="versions">
+        <tr><th>Version</th><th>Published</th><th>By</th><th>Size</th><th></th></tr>
+        ${versions.map((v) => html`<tr><td><b>${v.v}</b>${v.restored ? html` <span class="small muted">(restored from ${v.restored})</span>` : ''}</td>
+          <td title="${ago(v.at)}">${dateText(v.at)}</td><td>${v.byName}</td><td>${fileSize(v.size)}</td>
+          <td>${v.live ? html`<span class="tag-live">Live now</span>`
+            : html`<button class="btn small" data-act="restoreVersion" data-id="${g.id}" data-v="${v.v}">Restore</button>`}</td></tr>`)}</table>`}</div>
     <div class="box"><h2 class="boxhead">Badges</h2>
       <p class="small muted">Make badges players earn in your game. Give one from a script:
         <code>game:GetService("BadgeService"):AwardBadge(player, "badge-id")</code>
@@ -1573,9 +1716,16 @@ pages.configure = async (id) => {
   }));
 };
 
-// Trades: offers of your limited copies for someone else's.
-pages.trades = async () => {
+// Trades: offers of your limited copies for someone else's. Two tabs: Open (#/trades) and
+// Past trades (#/trades/past/<page>): every finished trade, newest first.
+const tradeTabs = (tab) => html`<div class="tabs"><a class="btn ${tab === 'open' ? 'blue' : ''}" href="#/trades">Open trades</a>
+  <a class="btn ${tab === 'past' ? 'blue' : ''}" href="#/trades/past">Past trades</a></div>`;
+const TRADE_OUTCOMES = { accepted: 'Accepted', declined: 'Declined', cancelled: 'Cancelled', expired: 'Expired', failed: 'Couldn\'t happen' };
+const tradeItems = (items) => items.length
+  ? items.map((i) => html`<a class="chip" href="#/item/${i.id}">${i.name} <b>#${i.serial}</b></a> `) : html`<span class="muted">Nothing</span>`;
+pages.trades = async (tab, pageNo) => {
   if (!signedIn()) { show(html`<h1>Trades</h1>${needSignIn('trade Limited items')}`); return; }
+  if (tab === 'past') { await pastTradesPage(Number(pageNo) || 1); return; }
   const r = await pageCall('trade.list', {});
   const list = (items) => items.map((i) => html`<a href="#/item/${i.id}">${i.name} #${i.serial}</a>`).reduce((acc, x, k) => html`${acc}${k ? ', ' : ''}${x}`, html``);
   const row = (tr) => {
@@ -1587,14 +1737,44 @@ pages.trades = async () => {
           <button class="btn small" data-act="tradeAnswer" data-op="trade.decline" data-id="${tr.id}">Decline</button>`
         : html`<button class="btn small" data-act="tradeAnswer" data-op="trade.cancel" data-id="${tr.id}">Cancel</button>`) : ''}</div>`;
   };
-  const open = r.ok ? r.trades.filter((x) => x.status === 'open') : [], done = r.ok ? r.trades.filter((x) => x.status !== 'open') : [];
-  show(html`<h1>Trades</h1>
-    <p class="muted">Trade your Limited items with other players. Open someone's profile and press <b>Trade</b> to make an offer.</p>
+  const open = r.ok ? r.trades.filter((x) => x.status === 'open') : [];
+  show(html`<h1>Trades</h1>${tradeTabs('open')}
+    <p class="muted">Trade your Limited items with other players. Open someone's profile and press <b>Trade</b> to make an offer.
+      A trade nobody answers runs out after 30 days.</p>
+    ${r.ok ? '' : html`<p class="error">${r.error}</p>`}
     <h2>Your Limiteds</h2>${r.ok && r.items.length ? html`<div class="row">${r.items.map((i) => html`<a class="chip" href="#/item/${i.id}">${i.name} #${i.serial}</a>`)}</div>`
       : html`<p class="muted">You don't have any Limited items yet.</p>`}
     <h2>Open</h2>${open.length ? html`<div class="list">${open.map(row)}</div>` : html`<p class="muted">No open trades.</p>`}
-    <h2>History</h2>${done.length ? html`<div class="list">${done.slice(0, 30).map(row)}</div>` : html`<p class="muted">Nothing yet.</p>`}`);
+    <p class="small muted">Finished trades are under <a href="#/trades/past">Past trades</a>.</p>`);
 };
+
+// Past trades: who it was with, what each of you put in, when it finished and how it ended.
+// Only you and the other person can see a trade here.
+async function pastTradesPage(page) {
+  const r = await pageCall('trade.history', { page });
+  if (!r.ok) { show(html`<h1>Trades</h1>${tradeTabs('past')}<p class="error">${r.error}</p>`); return; }
+  const who = (w) => w.userId ? html`<a href="#/user/${w.userId}"><b>${w.name}</b></a>` : html`<b>${w.name}</b>`;
+  const card = (tr) => {
+    const done = tr.status === 'accepted';
+    return html`<div class="past-trade">
+      <div class="past-trade-head">
+        <span class="outcome outcome-${tr.status}">${TRADE_OUTCOMES[tr.status] || tr.status}</span>
+        <span class="grow">${tr.sent ? html`You sent a trade to ${who(tr.with)}` : html`${who(tr.with)} sent you a trade`}</span>
+        <span class="small muted" title="${new Date(tr.finished * 1000).toLocaleString()}">${new Date(tr.finished * 1000).toLocaleDateString()}</span></div>
+      <div class="past-trade-sides">
+        <div><span class="small muted">${done ? 'You gave' : 'You put in'}</span><div>${tradeItems(tr.gave)}</div></div>
+        <div><span class="small muted">${done ? html`You got (from ${tr.with.name})` : html`${tr.with.name} put in`}</span><div>${tradeItems(tr.got)}</div></div></div>
+      ${done ? '' : html`<p class="small muted">Nothing changed hands.</p>`}</div>`;
+  };
+  const pager = r.pages > 1 ? html`<div class="pager">
+      <a class="btn small ${r.page === 1 ? 'disabled' : ''}" href="#/trades/past/${Math.max(1, r.page - 1)}" aria-label="Newer trades">&lsaquo; Newer</a>
+      <span>Page ${r.page} of ${r.pages}</span>
+      <a class="btn small ${r.page === r.pages ? 'disabled' : ''}" href="#/trades/past/${Math.min(r.pages, r.page + 1)}" aria-label="Older trades">Older &rsaquo;</a></div>` : '';
+  show(html`<h1>Trades</h1>${tradeTabs('past')}
+    <p class="muted">Your finished trades, newest first: accepted, declined, cancelled and expired. Only you and the other person can see them.</p>
+    ${r.trades.length ? html`<div class="past-trades">${r.trades.map(card)}</div>${pager}`
+      : html`<p class="muted">No finished trades yet. Trades you send or get show up here once they're accepted, declined, cancelled or expire.</p>`}`);
+}
 
 pages.trade = async (id) => {
   if (!signedIn()) { show(html`<h1>Trade</h1>${needSignIn('trade Limited items')}`); return; }
@@ -2211,6 +2391,7 @@ function noteLink(n) {
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;
   if (n.kind === 'sale' || n.kind === 'upload') return '#/library/' + n.about;
+  if (n.kind === 'gift') return '#/item/' + n.about;
   if (n.kind === 'support') return '#/support';
   if (n.kind === 'ticket') return '#/staff';
   return '';
@@ -2219,7 +2400,7 @@ pages.notifications = async () => {
   if (!signedIn()) { show(html`<h1>Notifications</h1>${needSignIn('see your notifications')}`); return; }
   const r = await pageCall('notes.list', {});
   if (!r.ok) { show(html`<h1>Notifications</h1><p class="error">${r.error}</p>`); return; }
-  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟' };
+  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁' };
   show(html`<h1>Notifications</h1>
     <div class="list notes">${r.notes.length ? r.notes.map((n) => {
       const link = noteLink(n);
@@ -2242,8 +2423,9 @@ pages.bolts = async () => {
     <h2>Redeem a code</h2><form class="row" data-form="redeem"><input type="text" name="code" placeholder="BOLTS-..." style="max-width:360px">
       <button class="btn blue">Redeem</button></form>
     <h2>History</h2>
-    <div class="list">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div><span class="grow">${h.reason}</span>
-      <span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span><span class="small muted">${ago(h.time)}</span></div>`)
+    <div class="list">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div>${h.gift ? html`<span class="note-icon" aria-hidden="true">🎁</span>` : ''}<span class="grow">${h.reason}</span>
+      ${h.gift === 'got' && !h.amount ? html`<span class="ok">Gift</span>`
+        : html`<span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span>`}<span class="small muted">${ago(h.time)}</span></div>`)
       : html`<p class="muted">${signedIn() ? 'Nothing yet.' : 'Log in to see your Bolts. New accounts start with 100!'}</p>`}</div>`);
 };
 
@@ -2626,6 +2808,27 @@ const actions = {
     toast(r.ok ? 'It\'s yours!' : r.error);
     render();
   },
+  // The pictures on a game's page (gameGallery).
+  galleryStep(d) { galleryGo(gallery.i + Number(d.step)); },
+  galleryShow(d) { galleryGo(Number(d.i)); },
+  galleryOpen() { galleryLightbox(); },
+  galleryClose() { document.querySelectorAll('.lightbox').forEach((m) => m.remove()); },
+  // Screenshots on the Configure page: move one left or right, or delete it.
+  async shotMove(d) {
+    const order = [...view.querySelectorAll('.shot-edit[data-shot]')].map((x) => x.dataset.shot);
+    const i = order.indexOf(d.shot), j = i + Number(d.dir);
+    if (i < 0 || j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+    const r = await call('shots.order', { id: d.id, order });
+    if (!r.ok) { toast(r.error); return; }
+    render();
+  },
+  async shotDelete(d) {
+    if (!confirm('Delete this screenshot? It comes off the game\'s page straight away.')) return;
+    const r = await call('shots.delete', { id: d.id, shot: d.shot });
+    toast(r.ok ? 'Screenshot deleted.' : r.error);
+    render();
+  },
   async tradeAnswer(d) {
     const r = await call(d.op, { id: d.id });
     if (r.ok && r.me) setMe(r.me);
@@ -2664,6 +2867,41 @@ const actions = {
     if (r.more && r.comments.length) el.dataset.before = r.comments[r.comments.length - 1].id;
     else el.remove();
   },
+  async modelVote(d) {
+    if (!signedIn()) { loginPopup('rate models'); return; }
+    const r = await call('model.vote', { id: d.id, vote: Number(d.vote) });
+    if (!r.ok) toast(r.error);
+    else toast(Number(d.vote) === 0 ? 'Vote taken back.' : 'Thanks for rating it!');
+    render();
+  },
+  // Buy as a gift: pick a friend, add a note if you like, check, send.
+  async gift(d) {
+    const r = await call('friends.list', {});
+    if (!r.ok) { toast(r.error); return; }
+    const friends = r.friends.slice().sort((x, y) => lower(x.username || x.name).localeCompare(lower(y.username || y.name)));
+    const price = Number(d.price);
+    popup(html`<h1 class="popup-title">&#127873; Buy as a gift</h1>
+      <p>Send <b>${d.name}</b> to a friend. You pay ${bolts(price)}, and it goes straight into their inventory.</p>
+      ${friends.length ? html`<form class="form gift-form" data-form="gift"><input type="hidden" name="id" value="${d.id}">
+          <input type="hidden" name="name" value="${d.name}"><input type="hidden" name="price" value="${price}">
+          <label>Who's it for?</label>
+          <select name="to" required><option value="">Pick a friend...</option>
+            ${friends.map((f) => html`<option value="${f.userId}">${f.username || f.name}</option>`)}</select>
+          <label>A note <span class="muted small">(optional, up to 100 letters)</span></label>
+          <input type="text" name="message" maxlength="100" placeholder="Happy birthday!">
+          <p class="small muted">They get a notification with your note. You have ${bolts(me.bolts)}.</p>
+          <p class="popup-buttons"><button class="btn green big">Next</button> <a href="#" class="btn" data-act="closeModal">Cancel</a></p></form>`
+        : html`<p class="muted">You can only send gifts to friends, and you don't have any yet. <a href="#/people">Find some!</a></p>
+          <p class="popup-buttons"><a href="#" class="btn" data-act="closeModal">Close</a></p>`}`);
+  },
+  // Buy as a gift, step 3: pay and send (the server checks everything again).
+  async giftSend(d, el) {
+    const r = await call('gift.buy', { id: d.id, to: Number(d.to), message: d.message || '' });
+    if (!r.ok) { toast(r.error, 6000); return; }
+    el.closest('.modal').remove();
+    toast('Sent! ' + d.who + ' got ' + d.name + ' and a notification.', 5000);
+    render();
+  },
   async vote(d) {
     if (!signedIn()) { loginPopup('vote on games'); return; }
     const r = await call('game.vote', { id: d.id, vote: Number(d.vote) });
@@ -2672,6 +2910,12 @@ const actions = {
   },
   async copyText(d) {
     try { await navigator.clipboard.writeText(d.text); toast('Copied ' + d.text); } catch { prompt('Copy this:', d.text); }
+  },
+  async restoreVersion(d) {
+    if (!confirm('Restore version ' + d.v + '? It becomes the live version (as a new version), and players get it the next time they join.')) return;
+    const r = await call('game.restore', { id: d.id, version: Number(d.v) });
+    toast(r.ok ? 'Version ' + d.v + ' is live again (as version ' + r.version + ').' : r.error, 5000);
+    render();
   },
   async deleteBadge(d) {
     if (!confirm('Delete the badge "' + d.name + '"? Players who earned it lose it from their profile.')) return;
@@ -3121,6 +3365,32 @@ const forms = {
     toast(r.ok ? 'Badge made! Copy its ID into your script.' : r.error);
     if (r.ok) render();
   },
+  // Add screenshots to a game (Configure page): each one is checked here first so the
+  // message is quick, and the server checks again.
+  async shotsAdd(f) {
+    const msg = $('#shotsMsg'), say = (t, cls = 'muted') => { msg.className = cls; msg.textContent = ' ' + t; };
+    const files = [...f.files.files], room = SHOT_MOST - Number(f.count.value || 0);
+    if (!files.length) { say('Pick one or more pictures first.', 'error'); return; }
+    if (files.length > room) { say(room ? `You can add ${room} more (a game has at most ${SHOT_MOST}).` : `A game can have ${SHOT_MOST} screenshots. Delete one first.`, 'error'); return; }
+    for (const file of files) {
+      const problem = shotProblem(file);
+      if (problem) { say(problem, 'error'); return; }
+    }
+    let added = 0;
+    for (const file of files) {
+      say(`Uploading ${added + 1} of ${files.length}...`);
+      const r = await call('shots.add', { id: f.id.value, data: await gb.fileBase64(file) });
+      if (!r.ok) {
+        if (!added) { say(`"${file.name}": ${r.error}`, 'error'); return; }
+        toast(`Added ${added}, but "${file.name}": ${r.error}`, 6000);
+        render();
+        return;
+      }
+      added++;
+    }
+    toast(added === 1 ? 'Screenshot added!' : added + ' screenshots added!');
+    render();
+  },
   async configure(f) {
     const msg = $('#configMsg'), say = (t, cls = 'muted') => { msg.className = cls; msg.textContent = ' ' + t; };
     const id = f.id.value;
@@ -3158,6 +3428,23 @@ const forms = {
   peopleSearch(f) { location.hash = '#/people?' + new URLSearchParams({ q: f.q.value }); },
   staffSearch(f) { location.hash = '#/staff?' + new URLSearchParams({ q: f.q.value }); },
   groupSearch(f) { location.hash = '#/groups?' + new URLSearchParams({ q: f.q.value }); },
+  // Buy as a gift, step 2: check who it's for and what it costs before anything is paid.
+  gift(f) {
+    if (!f.to.value) { toast('Pick a friend first.'); return; }
+    const who = f.to.selectedOptions[0].textContent, price = Number(f.price.value), note = f.message.value.trim();
+    const short = (me.bolts || 0) < price;
+    popup(html`<h1 class="popup-title">Send this gift?</h1>
+      <table class="stats gift-check">
+        <tr><td>Gift</td><td><b>${f.name.value}</b></td></tr>
+        <tr><td>For</td><td><b>${who}</b></td></tr>
+        <tr><td>Note</td><td>${note ? html`"${note}"` : html`<span class="muted">No note</span>`}</td></tr>
+        <tr><td>You pay</td><td>${bolts(price)}</td></tr>
+        <tr><td>You'll have</td><td>${bolts(Math.max(0, (me.bolts || 0) - price))}</td></tr></table>
+      ${short ? html`<p class="error">You need ${(price - (me.bolts || 0)).toLocaleString()} more Bolts for this. <a href="#/bolts">Get Bolts</a></p>` : ''}
+      <p class="popup-buttons"><button class="btn green big" data-act="giftSend" data-id="${f.id.value}" data-to="${f.to.value}"
+          data-who="${who}" data-name="${f.name.value}" data-message="${note}" ${short ? 'disabled' : ''}>Send gift</button>
+        <a href="#" class="btn" data-act="closeModal">Cancel</a></p>`);
+  },
   async redeem(f) {
     const r = await call('bolts.redeem', { code: f.code.value });
     toast(r.ok ? 'You got ' + r.got + ' Bolts!' : r.error);

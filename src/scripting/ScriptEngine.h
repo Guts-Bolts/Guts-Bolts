@@ -129,6 +129,15 @@ public:
     // Multiplayer: other players joining / leaving (Players.PlayerAdded etc.).
     void addPlayer(const std::string& name, uint64_t characterRootId, int userId, uint64_t backpackId = 0);
     void removePlayer(const std::string& name);
+    // Player.CharacterAdded / CharacterRemoving for the player whose character this is. Added
+    // can wait for the next update (a character that's there as the game starts or someone
+    // joins: their scripts' PlayerAdded has run by then).
+    void fireCharacter(bool added, uint64_t characterRootId);
+    void queueCharacterAdded(uint64_t characterRootId) { m_charsAdded.push_back(characterRootId); }
+    // A character touched a SpawnLocation with AllowTeamChangeOnTouch: onto its team.
+    void spawnTouched(uint64_t characterRootId, const SceneNode* spawn);
+    // A joined player's computer: the host put us on this team (0 + neutral = none).
+    void setLocalTeam(uint64_t teamId, bool neutral, float r, float g, float b);
 
     // Which scripts run here. LocalScripts run on each player's own computer:
     //   All    - playing by yourself, or hosting from the app (you're a player too)
@@ -175,6 +184,7 @@ public:
     // ---- used by the Lua bindings --------------------------------------------
     Scene*     scene() { return m_scene; }
     double     time() const { return m_time; }
+    uint64_t   currentScript() const { return m_current; }   // the Script running now (0 = the command bar, a plugin)
     SceneNode* resolve(uint64_t id);                 // scene or detached (Parent = nil)
     SceneNode* adopt(std::unique_ptr<SceneNode> n);  // new object with Parent = nil
     bool       setParent(SceneNode* node, SceneNode* newParent, std::string& err);
@@ -207,6 +217,7 @@ private:
     int     m_nextCall = 1;
     friend struct RemoteLua;
     std::unordered_set<uint64_t> m_started;   // scripts that have run (so nothing runs twice)
+    std::vector<uint64_t> m_charsAdded;       // characters whose CharacterAdded fires next update
     uint64_t m_playersRoot = 0;               // "Players": one object per player (detached)
     nlohmann::json m_saveData;                // loaded on first use
     std::vector<std::pair<std::string, std::string>> m_badgeAwards;

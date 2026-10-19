@@ -56,7 +56,7 @@ json GbServer::safetyOp(const std::string& name, User& me, const json& args) {
                 return fail("You've blocked " + std::to_string(kMaxBlocked) + " people already. Unblock some first.");
             me.blocked.push_back(them->id);
         }
-        // Blocking ends everything between you: friends, requests, follows, and their messages to you.
+        // Blocking ends everything between you: friends, requests, follows, open trades, and their messages to you.
         for (auto [a, b] : {std::pair<User*, User*>{&me, them}, std::pair<User*, User*>{them, &me}}) {
             a->friends.erase(b->id); a->friendIn.erase(b->id); a->friendOut.erase(b->id);
             a->following.erase(b->id); a->followers.erase(b->id);
@@ -66,6 +66,15 @@ json GbServer::safetyOp(const std::string& name, User& me, const json& args) {
             for (const json& m : me.inbox) if (m.value("from", std::string()) != them->id) kept.push_back(m);
             me.inbox = kept;
         }
+        bool tradesChanged = false;
+        for (json& x : m_trades) {
+            const std::string from = x.value("from", std::string()), to = x.value("to", std::string());
+            if (x.value("status", std::string()) == "open" && ((from == me.id && to == them->id) || (from == them->id && to == me.id))) {
+                finishTrade(x, "cancelled", Online::unixNow());   // (it goes in both people's Past trades)
+                tradesChanged = true;
+            }
+        }
+        if (tradesChanged) saveTrades();
         saveUsers();
         json r = okay(); r["blocked"] = true; r["me"] = meJson(me); return r;
     }

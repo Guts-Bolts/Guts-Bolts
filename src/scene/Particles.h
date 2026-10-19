@@ -1,5 +1,8 @@
 #pragma once
 #include <glm/glm.hpp>
+#include <cstdint>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 class Physics;
@@ -26,13 +29,49 @@ struct Particle {
 
 enum class GoreKind { Blood, Oil };
 
+// A particle from a ParticleEmitter, Fire, Smoke or Sparkles object: a flat picture
+// that always faces the camera. runEmitters() moves them and works out how each looks
+// right now (from its emitter's settings), so drawing them is just drawing.
+struct Sprite {
+    uint64_t  owner = 0;                // the emitter it came from
+    glm::vec3 pos{0.0f}, vel{0.0f};     // world space (LockedToPart: `local` is where it really is)
+    glm::vec3 local{0.0f};              // LockedToPart: its place in the emitter's own space
+    float     age = 0.0f, life = 1.0f;
+    float     rot = 0.0f, spin = 0.0f;  // degrees, degrees / second
+    float     seed = 0.0f;              // 0..1, so they don't all look the same
+    float     scale = 1.0f;             // Fire / Smoke / Sparkles: its own size
+    // How it looks now:
+    glm::vec3 color{1.0f};
+    float     alpha = 1.0f;
+    float     size = 1.0f;              // studs across
+    float     glow = 0.0f;              // LightEmission
+    int       look = 0;                 // built-in picture (kParticleLooks)
+    int       tex = -1;                 // or a picture: an index into ParticleSystem::spriteTextures()
+};
+
+class Scene;
+
+// A ParticleEmitter's Texture as given (a script, an imported Roblox file): Roblox's own
+// pictures ("rbxasset://textures/particles/fire_main.dds", "rbxassetid://...") can't be
+// loaded here, so they become the nearest built-in look; anything else stays as it is.
+std::string particleTexture(const std::string& texture);
+
 class ParticleSystem {
 public:
     void update(float dt, float gravity, const Physics& physics);
     // The game's blood (Game Settings > Damage & Blood).
     void setBlood(const glm::vec3& color, float amount, float stay) { m_bloodColor = color; m_bloodAmount = amount; m_bloodStay = stay; }
-    void clear() { m_items.clear(); }
+    void clear() { m_items.clear(); m_sprites.clear(); m_spawnDebt.clear(); }
     const std::vector<Particle>& items() const { return m_items; }
+
+    // --- ParticleEmitter, Fire, Smoke, Sparkles --------------------------------
+    // Makes new particles from every switched-on emitter in the scene (Rate, Emit(n)),
+    // moves them, and drops ones whose emitter is gone (or was cleared). Each computer
+    // runs this itself: particles are only for looks and never sent.
+    void runEmitters(Scene& scene, float dt);
+    const std::vector<Sprite>& sprites() const { return m_sprites; }
+    const std::vector<std::string>& spriteTextures() const { return m_spriteTex; }
+    int spriteCount(uint64_t owner) const;   // (for tests)
 
     // --- Effects --------------------------------------------------------------
     // A burst of drops flying out from `pos` (direction biased by `dir`).
@@ -50,6 +89,9 @@ public:
 private:
     void add(const Particle& p);
     std::vector<Particle> m_items;
+    std::vector<Sprite>   m_sprites;
+    std::vector<std::string> m_spriteTex;
+    std::unordered_map<uint64_t, float> m_spawnDebt;   // emitter -> part of a particle owed (Rate * dt adds up)
     glm::vec3 m_bloodColor{0.50f, 0.02f, 0.03f};
     float     m_bloodAmount = 1.0f, m_bloodStay = 30.0f;
     int m_splats = 0;
