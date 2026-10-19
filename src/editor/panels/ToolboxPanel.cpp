@@ -164,6 +164,9 @@ std::vector<ToolboxTile> ToolboxPanel::builtIn(int category) {
             {"Weld", 3, "Glues two parts together"},
             {"Hinge", 4, "Lets a part swing around a point (like a door)"},
             {"Motor", 5, "A hinge that spins by itself (wheels, fans)"},
+            {"Ball Socket", 6, "Joins two parts at a point and lets them turn any way (ragdolls, chains)"},
+            {"Prismatic", 7, "A slider: the second part slides along a line (drawers, lifts, doors)"},
+            {"Cylindrical", 8, "Slides along a line and spins around it (pistons, drills)"},
         };
         for (const C& c : items) {
             int type = c.type;
@@ -285,12 +288,20 @@ void ToolboxPanel::drawGrid(std::vector<ToolboxTile>& tiles) {
         else Icons::draw(dl, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), size * 0.45f, t.icon, IM_COL32(70, 74, 84, 255));
         if (hover) dl->AddRect(a, b, kTileHover, round, 0, 2.0f);
         if (t.official) officialBadge(dl, ImVec2(b.x - size * 0.13f, b.y - size * 0.12f), size * 0.2f);
+        if (!t.rating.empty()) {   // how much people like a Library model: a small green tag, top left
+            const ImVec2 ts = ImGui::CalcTextSize(t.rating.c_str());
+            const ImVec2 ra(a.x + 3, a.y + 3), rb(a.x + 3 + ts.x + 8, a.y + 3 + ts.y + 2);
+            dl->AddRectFilled(ra, rb, IM_COL32(22, 130, 60, 230), 3.0f);
+            dl->AddText(ImVec2(ra.x + 4, ra.y + 1), IM_COL32(255, 255, 255, 255), t.rating.c_str());
+        }
         tileName(dl, ImVec2(a.x, b.y + 4), size, t.name, hover ? IM_COL32(150, 200, 255, 255) : kLink);
         if (hover) {
             ImGui::BeginTooltip();
             ImGui::TextUnformatted(t.name.c_str());
             if (!t.creator.empty()) ImGui::TextDisabled("by %s", t.creator.c_str());
             if (t.official) ImGui::TextColored(ImVec4(0.96f, 0.68f, 0.15f, 1), "Official: made by Guts&Bolts staff, safe to use");
+            if (!t.ratingTip.empty()) ImGui::TextColored(t.rating.empty() ? ImVec4(0.6f, 0.6f, 0.62f, 1) : ImVec4(0.35f, 0.8f, 0.45f, 1),
+                                                         "%s", t.ratingTip.c_str());
             if (!t.tip.empty()) {
                 ImGui::PushTextWrapPos(ImGui::GetFontSize() * 22);
                 ImGui::TextUnformatted(t.tip.c_str());
@@ -315,10 +326,20 @@ void ToolboxPanel::render() {
         if (!m_query.empty()) m_query.clear();
     } else if (m_tab == 1) {
         drawSearchRow(kInventory, 3);
-        if (m_do.library) tiles = m_do.library(true, m_invCategory, m_query, m_reload, m_status);
+        if (m_do.library) tiles = m_do.library(true, m_invCategory, m_query, false, m_reload, m_status);
     } else {
         drawSearchRow(kCategories, kCategoryCount);
-        if (m_category < 3) { if (m_do.library) tiles = m_do.library(false, m_category, m_query, m_reload, m_status); }
+        if (m_category == 0) {   // Models: most used first, or the best rated (thumbs up from people who used them)
+            ImGui::TextDisabled("Sort:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(std::min(140.0f, ImGui::GetContentRegionAvail().x));
+            if (ImGui::BeginCombo("##sort", m_bestRated ? "Best rated" : "Most popular")) {
+                if (ImGui::Selectable("Most popular", !m_bestRated) && m_bestRated) { m_bestRated = false; m_reload = true; }
+                if (ImGui::Selectable("Best rated", m_bestRated) && !m_bestRated) { m_bestRated = true; m_reload = true; }
+                ImGui::EndCombo();
+            }
+        }
+        if (m_category < 3) { if (m_do.library) tiles = m_do.library(false, m_category, m_query, m_bestRated, m_reload, m_status); }
         else tiles = builtIn(m_category);
     }
     m_reload = false;

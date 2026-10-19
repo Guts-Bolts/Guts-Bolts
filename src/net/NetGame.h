@@ -132,6 +132,7 @@ private:
     std::unordered_map<uint64_t, std::string> m_sent;   // node id -> last replicated state
     std::string m_lastEnv, m_lastGui;
     std::string m_lastCam;   // the game camera setting last sent (Workspace.Orthographic)
+    std::string m_lastGroups;   // the collision groups last sent (PhysicsService)
     uint64_t    m_terrainSent = 0;    // the terrain version everyone has (0 = not checked yet)
     double      m_terrainAt = 0.0;    // when it was last sent
     std::unordered_map<uint64_t, PoseBuffer> m_poses;   // joined players' characters, shown smoothly

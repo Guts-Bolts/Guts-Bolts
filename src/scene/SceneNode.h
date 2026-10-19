@@ -40,10 +40,14 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //                make something happen (buttons, levers, "click to buy" signs)
 //   Animation  — keyframes that pose a rig's parts (made in Studio's Animation
 //                Editor, played by scripts: humanoid:LoadAnimation(anim):Play())
+//   PostEffect — a screen effect in Lighting (or the Camera): ColorCorrectionEffect,
+//                SunRaysEffect, DepthOfFieldEffect, BloomEffect, BlurEffect
+//   Sky        — in Lighting: skybox pictures, the sun and moon, how many stars
 //   Particles  — a ParticleEmitter, Fire, Smoke or Sparkles inside a part (or an
 //                Attachment): little pictures that fly out of it (see ParticleProps)
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
-                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector, Particles };
+                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector, Particles, Camera,
+                      PostEffect, Sky };
 
 // A ProximityPrompt's settings (kind == Prompt; `enabled` switches it off).
 struct PromptProps {
@@ -92,6 +96,67 @@ struct EffectProps {
     bool  textureWrap = false;                                 // TextureMode: Wrap (per stud) / Stretch (repeats TextureLength times)
 };
 
+// Screen effects (kind == PostEffect; `enabled` switches it off). They work when they're
+// right inside Lighting or the Camera, and several stack up. Defaults are Roblox's.
+enum class PostEffectType { ColorCorrection, SunRays, DepthOfField, Bloom, Blur };
+inline constexpr int kPostEffectCount = 5;
+inline const char* const kPostEffectClassNames[kPostEffectCount] = {
+    "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect"};
+struct PostEffectProps {
+    PostEffectType type = PostEffectType::ColorCorrection;
+    // ColorCorrectionEffect
+    float     brightness = 0.0f;           // Brightness: added to every colour (-1..1)
+    float     contrast = 0.0f;             // Contrast (-1..1, 0 = as it is)
+    float     saturation = 0.0f;           // Saturation (-1 = grey .. 1 = twice as colourful)
+    glm::vec3 tint{1.0f};                  // TintColor (multiplies)
+    // SunRaysEffect (Intensity, Spread) / BloomEffect (Intensity, Size, Threshold) / BlurEffect (Size)
+    float     intensity = 0.25f;
+    float     spread = 1.0f;               // how far the rays reach across the screen (0..1)
+    float     size = 24.0f;                // pixels: how far the glow / blur spreads (0..56)
+    float     threshold = 0.95f;           // BloomEffect: how bright before it glows
+    // DepthOfFieldEffect (distances in studs)
+    float     farIntensity = 0.75f;        // how blurry far things get (0..1)
+    float     focusDistance = 0.05f;       // where it's sharpest (0..200)
+    float     inFocusRadius = 10.0f;       // how far either side of that stays sharp (0..50)
+    float     nearIntensity = 0.75f;       // how blurry things closer than the focus get (0..1)
+};
+inline PostEffectProps postEffectDefaults(PostEffectType t) {
+    PostEffectProps p;
+    p.type = t;
+    if (t == PostEffectType::Bloom) p.intensity = 0.4f;
+    return p;
+}
+
+// Keep each setting in the range it can have (scripts, files and other players can send anything).
+inline void clampPostEffect(PostEffectProps& p) {
+    auto c = [](float& v, float lo, float hi) { v = (v == v) ? (v < lo ? lo : v > hi ? hi : v) : lo; };
+    c(p.brightness, -1.0f, 1.0f); c(p.contrast, -1.0f, 1.0f); c(p.saturation, -1.0f, 1.0f);
+    c(p.tint.r, 0.0f, 1.0f); c(p.tint.g, 0.0f, 1.0f); c(p.tint.b, 0.0f, 1.0f);
+    c(p.intensity, 0.0f, 1.0f); c(p.spread, 0.0f, 1.0f); c(p.size, 0.0f, 56.0f); c(p.threshold, 0.0f, 4.0f);
+    c(p.farIntensity, 0.0f, 1.0f); c(p.focusDistance, 0.0f, 200.0f); c(p.inFocusRadius, 0.0f, 50.0f);
+    c(p.nearIntensity, 0.0f, 1.0f);
+}
+
+// A Sky (kind == Sky), right inside Lighting. Pictures are ids like a Decal's ("gb:<id>",
+// a file in the games folder...); "" = the engine's own sky / sun / moon. The skybox is
+// used when all six of its pictures load.
+struct SkyProps {
+    std::string bk, dn, ft, lf, rt, up;    // SkyboxBk, SkyboxDn, SkyboxFt, SkyboxLf, SkyboxRt, SkyboxUp
+    std::string sun, moon;                 // SunTextureId, MoonTextureId
+    int         starCount = 3000;          // StarCount (0..5000)
+    bool        celestial = true;          // CelestialBodiesShown: the sun and moon
+    float       sunSize = 21.0f;           // SunAngularSize (degrees)
+    float       moonSize = 11.0f;          // MoonAngularSize (degrees)
+};
+inline void clampSky(SkyProps& s) {
+    if (s.starCount < 0) s.starCount = 0;
+    if (s.starCount > 5000) s.starCount = 5000;
+    auto c = [](float& v) { v = (v == v) ? (v < 0.0f ? 0.0f : v > 60.0f ? 60.0f : v) : 0.0f; };
+    c(s.sunSize); c(s.moonSize);
+    for (std::string* t : {&s.bk, &s.dn, &s.ft, &s.lf, &s.rt, &s.up, &s.sun, &s.moon})
+        if (t->size() > 500) t->resize(500);
+}
+
 // A Highlight's settings (kind == Highlight; `enabled` switches it off). Like Roblox's
 // defaults: a see-through red fill with a white outline, shown through walls.
 struct HighlightProps {
@@ -111,16 +176,23 @@ struct HighlightProps {
 // A TextBox is a label you can type in; a ScrollingFrame holds more than fits and scrolls.
 // BillboardGui and SurfaceGui are like ScreenGui but sit on a part (its Adornee, else the
 // part they're in): a billboard floats over it facing you, a surface is painted on one side.
+// UIGradient colours the object it's in (fading along a line), UIScale makes it and
+// everything inside it bigger or smaller, UIAspectRatioConstraint keeps its shape.
+// A ViewportFrame shows the parts and models inside it as a little 3D picture, seen
+// from its CurrentCamera (a Camera object, kind == Camera).
 enum class GuiType { ScreenGui, Frame, TextLabel, TextButton, ImageLabel, ImageButton, UICorner, UIStroke, UIShadow, UIBlur,
-                     TextBox, ScrollingFrame, UIListLayout, UIGridLayout, UIPadding, BillboardGui, SurfaceGui };
-inline constexpr int kGuiTypeCount = 17;
+                     TextBox, ScrollingFrame, UIListLayout, UIGridLayout, UIPadding, BillboardGui, SurfaceGui,
+                     UIGradient, UIScale, UIAspectRatioConstraint, ViewportFrame };
+inline constexpr int kGuiTypeCount = 21;
 inline const char* const kGuiClassNames[kGuiTypeCount] = {"ScreenGui", "Frame", "TextLabel", "TextButton", "ImageLabel",
                                                           "ImageButton", "UICorner", "UIStroke", "UIShadow", "UIBlur",
                                                           "TextBox", "ScrollingFrame", "UIListLayout", "UIGridLayout", "UIPadding",
-                                                          "BillboardGui", "SurfaceGui"};
+                                                          "BillboardGui", "SurfaceGui", "UIGradient", "UIScale",
+                                                          "UIAspectRatioConstraint", "ViewportFrame"};
 inline bool isGuiModifier(GuiType t) {
     return t == GuiType::UICorner || t == GuiType::UIStroke || t == GuiType::UIShadow || t == GuiType::UIBlur ||
-           t == GuiType::UIListLayout || t == GuiType::UIGridLayout || t == GuiType::UIPadding;
+           t == GuiType::UIListLayout || t == GuiType::UIGridLayout || t == GuiType::UIPadding ||
+           t == GuiType::UIGradient || t == GuiType::UIScale || t == GuiType::UIAspectRatioConstraint;
 }
 // A whole layer of UI (holds the rest): ScreenGui, BillboardGui, SurfaceGui.
 inline bool isGuiLayer(GuiType t) { return t == GuiType::ScreenGui || t == GuiType::BillboardGui || t == GuiType::SurfaceGui; }
@@ -204,8 +276,25 @@ struct GuiProps {
     bool      perStud = true;                       // SizingMode: PixelsPerStud (else FixedSize: CanvasSize)
     float     pixelsPerStud = 50.0f;                // PixelsPerStud
     glm::vec2 surfaceCanvas{800.0f, 600.0f};        // SurfaceGui.CanvasSize (FixedSize)
+    // UIGradient: Color and Transparency along the line (Rotation degrees clockwise from
+    // left -> right), moved by Offset (a fraction of the object's size). `enabled` is Enabled.
+    std::vector<ColorKey>  gradColor{{0.0f, glm::vec3(1.0f)}, {1.0f, glm::vec3(1.0f)}};
+    std::vector<NumberKey> gradTransparency{{0.0f, 0.0f}, {1.0f, 0.0f}};
+    float     gradRotation = 0.0f;
+    glm::vec2 gradOffset{0.0f};
+    float     scale = 1.0f;                         // UIScale.Scale
+    // UIAspectRatioConstraint: AspectRatio (width / height), AspectType (0 FitWithinMaxSize,
+    // 1 ScaleWithParentSize) and DominantAxis (0 Width, 1 Height).
+    float     aspectRatio = 1.0f;
+    int       aspectType = 0, dominantAxis = 0;
+    // ViewportFrame: CurrentCamera (a Camera's id; 0 = none: it frames what's inside by
+    // itself), Ambient, LightColor and LightDirection. ImageColor3 / ImageTransparency
+    // tint the picture.
+    uint64_t  camera = 0;
+    glm::vec3 ambient{200.0f / 255.0f}, lightColor{140.0f / 255.0f}, lightDir{-1.0f, -1.0f, -1.0f};
     // Where it was last drawn (AbsolutePosition / AbsoluteSize). Runtime only.
     glm::vec2 absPos{0.0f}, absSize{0.0f};
+    float     absScale = 1.0f;                      // every UIScale above it multiplied (pixels are this much bigger). Runtime only.
     glm::vec2 contentSize{0.0f};                    // layouts: AbsoluteContentSize. Runtime only.
 };
 
@@ -275,8 +364,57 @@ inline ParticleProps particleDefaults(ParticleType t) {
     return p;
 }
 
-enum class ConstraintType { Rope, Rod, Spring, Weld, Hinge };
-inline const char* const kConstraintNames[5] = {"Rope", "Rod", "Spring", "Weld", "Hinge"};
+enum class ConstraintType { Rope, Rod, Spring, Weld, Hinge, BallSocket, Prismatic, Cylindrical };
+inline constexpr int kConstraintTypeCount = 8;
+inline const char* const kConstraintNames[kConstraintTypeCount] = {"Rope", "Rod", "Spring", "Weld", "Hinge",
+                                                                   "BallSocket", "Prismatic", "Cylindrical"};
+inline const char* const kConstraintClassNames[kConstraintTypeCount] = {
+    "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint",
+    "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint"};
+// The joints whose settings live in JointProps (below).
+inline bool usesJointProps(ConstraintType t) { return (int)t >= (int)ConstraintType::BallSocket; }
+// Prismatic and cylindrical joints slide along Attachment0's axis.
+inline bool jointSlides(ConstraintType t) { return t == ConstraintType::Prismatic || t == ConstraintType::Cylindrical; }
+
+// ActuatorType / AngularActuatorType: nothing, a motor (runs at a speed) or a
+// servo (goes to a target and stops there).
+enum class Actuator { None, Motor, Servo };
+inline const char* const kActuatorNames[3] = {"None", "Motor", "Servo"};
+
+// Settings of the ball-socket, prismatic (slider) and cylindrical (slide + spin)
+// joints. Roblox's property names in brackets; angles in degrees, like Roblox.
+struct JointProps {
+    // BallSocket: how far Attachment1's axis may lean away from Attachment0's [LimitsEnabled,
+    // UpperAngle], and how far it may twist around it [TwistLimitsEnabled, TwistLowerAngle,
+    // TwistUpperAngle]. Prismatic / Cylindrical: LimitsEnabled turns on LowerLimit / UpperLimit.
+    bool  limitsEnabled      = false;
+    float upperAngle         = 45.0f;   // BallSocket: the cone; Cylindrical: the furthest turn one way
+    bool  twistLimitsEnabled = false;
+    float twistLowerAngle    = -45.0f;
+    float twistUpperAngle    = 45.0f;
+    float restitution        = 0.0f;    // 0..1: how much it bounces off a limit [Restitution]
+    // Prismatic / Cylindrical: sliding along Attachment0's axis (its X, Roblox's Axis).
+    float lowerLimit = 0.0f, upperLimit = 5.0f;   // studs [LowerLimit, UpperLimit]
+    Actuator actuator = Actuator::None;           // [ActuatorType]
+    float motorMaxForce  = 0.0f;                  // [MotorMaxForce]
+    float velocity       = 0.0f;                  // motor: studs / second [Velocity]
+    float speed          = 0.0f;                  // servo: studs / second [Speed]
+    float servoMaxForce  = 0.0f;                  // [ServoMaxForce]
+    float targetPosition = 0.0f;                  // servo: studs [TargetPosition]
+    // Cylindrical: spinning around the axis (tilted InclinationAngle degrees from X towards Y).
+    Actuator angularActuator = Actuator::None;    // [AngularActuatorType]
+    float angularVelocity  = 0.0f;                // motor: radians / second [AngularVelocity]
+    float motorMaxTorque   = 0.0f;                // [MotorMaxTorque]
+    float angularSpeed     = 0.0f;                // servo: radians / second [AngularSpeed]
+    float targetAngle      = 0.0f;                // servo: degrees [TargetAngle]
+    float servoMaxTorque   = 0.0f;                // [ServoMaxTorque]
+    bool  angularLimitsEnabled = false;           // [AngularLimitsEnabled]: LowerAngle..UpperAngle
+    float lowerAngle       = -45.0f;              // [LowerAngle]
+    float inclinationAngle = 0.0f;                // [InclinationAngle]
+    // Where it is now (worked out by the physics, not saved): [CurrentPosition]
+    // studs along the axis, [CurrentAngle] degrees around it.
+    float currentPosition = 0.0f, currentAngle = 0.0f;
+};
 
 enum class LightType { Point, Spot };
 
@@ -455,6 +593,9 @@ public:
     // Behaviour
     bool     anchored   = true;              // false = falls with gravity in Play
     bool     canCollide = true;              // false = things pass through it
+    // Which collision group it's in (PhysicsService; see CollisionGroups.h). A group
+    // that isn't registered acts like "Default".
+    std::string collisionGroup = "Default";
     bool     castShadow = true;
     // Solid modeling (Roblox's Negate / Union): a negated part is shown see-through pink and
     // cut out of the other parts by Union; it remembers its old look for Un-negate. A union
@@ -475,6 +616,8 @@ public:
     ClickProps  click;                    // (kind == ClickDetector)
     HighlightProps highlight;             // (kind == Highlight)
     EffectProps effect;                   // (kind == Trail / Beam)
+    PostEffectProps post;                 // (kind == PostEffect)
+    SkyProps    sky;                      // (kind == Sky)
     ParticleProps particle;               // (kind == Particles)
 
     // Anything
@@ -533,6 +676,7 @@ public:
     float       motorSpeed  = 0.0f;        // hinge motor, radians / second
     float       motorTorque = 0.0f;        // hinge motor strength (0 = no motor)
     float       thickness   = 0.1f;        // how thick the rope / rod looks
+    JointProps  joint;                     // ball socket / prismatic / cylindrical settings
 
     // Decal (kind == Decal): which picture, on which side. `color` tints it
     // (white = as it is), `transparency` fades it.
@@ -542,6 +686,9 @@ public:
 
     // Game UI (kind == Gui). `visible` is Visible; `enabled` is a ScreenGui's Enabled.
     GuiProps    gui;
+    // Camera (kind == Camera): a ViewportFrame's CurrentCamera. Its transform is its
+    // CFrame (it looks along its -Z); FieldOfView is degrees, top to bottom.
+    float       fieldOfView = 70.0f;
 
     // Value (kind == Value): its type and contents (the name inside isn't used).
     Attribute   value;
@@ -601,6 +748,14 @@ public:
         return kind == NodeKind::Gui && !isGuiLayer(gui.type) && !isGuiModifier(gui.type);
     }
     bool isGuiButton() const { return kind == NodeKind::Gui && (gui.type == GuiType::TextButton || gui.type == GuiType::ImageButton); }
+    // A ViewportFrame: the parts inside it are only a picture, not in the world
+    // (not drawn there, no physics, rays and explosions don't find them).
+    bool isViewportFrame() const { return kind == NodeKind::Gui && gui.type == GuiType::ViewportFrame; }
+    bool inViewportFrame() const {
+        for (const SceneNode* p = parent; p; p = p->parent) if (p->isViewportFrame()) return true;
+        return false;
+    }
+    bool isCamera() const { return kind == NodeKind::Camera; }
     // "IntValue", "StringValue"... (kind == Value)
     const char* valueClass() const {
         switch (value.type) {
@@ -620,6 +775,8 @@ public:
     bool isHighlight() const { return kind == NodeKind::Highlight; }
     bool isClickDetector() const { return kind == NodeKind::ClickDetector; }
     bool isEffect() const { return kind == NodeKind::Trail || kind == NodeKind::Beam; }
+    bool isPostEffect() const { return kind == NodeKind::PostEffect; }
+    bool isSky() const { return kind == NodeKind::Sky; }
     bool isSpawnLocation() const {
         return isPart() && (name == "SpawnLocation" || std::find(tags.begin(), tags.end(), "SpawnLocation") != tags.end());
     }

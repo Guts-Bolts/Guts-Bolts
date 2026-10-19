@@ -54,6 +54,9 @@ const char* kindName(NodeKind k) {
         case NodeKind::Highlight:    return "Highlight";
         case NodeKind::Trail:        return "Trail";
         case NodeKind::Beam:         return "Beam";
+        case NodeKind::PostEffect:   return "PostEffect";
+        case NodeKind::Sky:          return "Sky";
+        case NodeKind::Camera:       return "Camera";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Particles:    return "Particles";
         default:               return "Part";
@@ -80,6 +83,9 @@ NodeKind kindFrom(const std::string& s) {
     if (s == "Highlight")    return NodeKind::Highlight;
     if (s == "Trail")        return NodeKind::Trail;
     if (s == "Beam")         return NodeKind::Beam;
+    if (s == "PostEffect")   return NodeKind::PostEffect;
+    if (s == "Sky")          return NodeKind::Sky;
+    if (s == "Camera")       return NodeKind::Camera;
     if (s == "ClickDetector") return NodeKind::ClickDetector;
     if (s == "Particles")    return NodeKind::Particles;
     return NodeKind::Part;
@@ -171,6 +177,70 @@ void highlightFromJson(const nlohmann::json& j, HighlightProps& h, bool& enabled
     enabled               = j.value("on", true);
 }
 
+// Screen effects: only the settings their kind uses.
+nlohmann::json postEffectToJson(const PostEffectProps& p, bool enabled) {
+    json j = {{"type", kPostEffectClassNames[(int)p.type]}};
+    switch (p.type) {
+        case PostEffectType::ColorCorrection:
+            j["brightness"] = p.brightness; j["contrast"] = p.contrast; j["saturation"] = p.saturation; j["tint"] = vec(p.tint);
+            break;
+        case PostEffectType::SunRays: j["intensity"] = p.intensity; j["spread"] = p.spread; break;
+        case PostEffectType::DepthOfField:
+            j["far"] = p.farIntensity; j["focus"] = p.focusDistance; j["radius"] = p.inFocusRadius; j["near"] = p.nearIntensity;
+            break;
+        case PostEffectType::Bloom: j["intensity"] = p.intensity; j["size"] = p.size; j["threshold"] = p.threshold; break;
+        case PostEffectType::Blur:  j["size"] = p.size; break;
+    }
+    if (!enabled) j["on"] = false;
+    return j;
+}
+
+void postEffectFromJson(const nlohmann::json& j, PostEffectProps& p, bool& enabled) {
+    PostEffectType t = p.type;
+    const std::string name = get<std::string>(j, "type", "");
+    for (int i = 0; i < kPostEffectCount; ++i) if (name == kPostEffectClassNames[i]) t = (PostEffectType)i;
+    const PostEffectProps d = postEffectDefaults(t);
+    p.type          = t;
+    p.brightness    = get<float>(j, "brightness", d.brightness);
+    p.contrast      = get<float>(j, "contrast", d.contrast);
+    p.saturation    = get<float>(j, "saturation", d.saturation);
+    p.tint          = d.tint;
+    if (auto it = j.find("tint"); it != j.end() && it->is_array() && it->size() == 3 && (*it)[0].is_number() &&
+                                  (*it)[1].is_number() && (*it)[2].is_number())
+        p.tint = {(*it)[0].get<float>(), (*it)[1].get<float>(), (*it)[2].get<float>()};
+    p.intensity     = get<float>(j, "intensity", d.intensity);
+    p.spread        = get<float>(j, "spread", d.spread);
+    p.size          = get<float>(j, "size", d.size);
+    p.threshold     = get<float>(j, "threshold", d.threshold);
+    p.farIntensity  = get<float>(j, "far", d.farIntensity);
+    p.focusDistance = get<float>(j, "focus", d.focusDistance);
+    p.inFocusRadius = get<float>(j, "radius", d.inFocusRadius);
+    p.nearIntensity = get<float>(j, "near", d.nearIntensity);
+    clampPostEffect(p);
+    enabled = get<bool>(j, "on", true);
+}
+
+nlohmann::json skyToJson(const SkyProps& s) {
+    json j = {{"stars", s.starCount}, {"sunSize", s.sunSize}, {"moonSize", s.moonSize}};
+    if (!s.celestial) j["celestial"] = false;
+    const std::pair<const char*, const std::string*> pics[] = {{"bk", &s.bk}, {"dn", &s.dn}, {"ft", &s.ft}, {"lf", &s.lf},
+                                                               {"rt", &s.rt}, {"up", &s.up}, {"sun", &s.sun}, {"moon", &s.moon}};
+    for (auto& [k, v] : pics) if (!v->empty()) j[k] = *v;
+    return j;
+}
+
+void skyFromJson(const nlohmann::json& j, SkyProps& s) {
+    const SkyProps d;
+    s.starCount = get<int>(j, "stars", d.starCount);
+    s.sunSize   = get<float>(j, "sunSize", d.sunSize);
+    s.moonSize  = get<float>(j, "moonSize", d.moonSize);
+    s.celestial = get<bool>(j, "celestial", true);
+    s.bk = get<std::string>(j, "bk", ""); s.dn = get<std::string>(j, "dn", ""); s.ft = get<std::string>(j, "ft", "");
+    s.lf = get<std::string>(j, "lf", ""); s.rt = get<std::string>(j, "rt", ""); s.up = get<std::string>(j, "up", "");
+    s.sun = get<std::string>(j, "sun", ""); s.moon = get<std::string>(j, "moon", "");
+    clampSky(s);
+}
+
 nlohmann::json effectToJson(const EffectProps& e, bool enabled, bool beam) {
     json col = json::array(), tr = json::array();
     for (const ColorKey& k : e.color) col.push_back({k.t, k.c.r, k.c.g, k.c.b});
@@ -244,6 +314,61 @@ void effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled) {
     e.textureSpeed = num("texSpeed", 1.0f, -1000.0f, 1000.0f);
     e.textureWrap = j.value("texWrap", false);
     enabled = j.value("on", true);
+}
+
+nlohmann::json jointToJson(const JointProps& p) {
+    return {{"limits", p.limitsEnabled}, {"upperAngle", p.upperAngle}, {"twistLimits", p.twistLimitsEnabled},
+            {"twistLower", p.twistLowerAngle}, {"twistUpper", p.twistUpperAngle}, {"restitution", p.restitution},
+            {"lower", p.lowerLimit}, {"upper", p.upperLimit}, {"actuator", kActuatorNames[(int)p.actuator]},
+            {"motorForce", p.motorMaxForce}, {"velocity", p.velocity}, {"speed", p.speed},
+            {"servoForce", p.servoMaxForce}, {"target", p.targetPosition},
+            {"angActuator", kActuatorNames[(int)p.angularActuator]}, {"angVelocity", p.angularVelocity},
+            {"motorTorque", p.motorMaxTorque}, {"angSpeed", p.angularSpeed}, {"targetAngle", p.targetAngle},
+            {"servoTorque", p.servoMaxTorque}, {"angLimits", p.angularLimitsEnabled}, {"lowerAngle", p.lowerAngle},
+            {"incline", p.inclinationAngle}};
+}
+
+void jointFromJson(const nlohmann::json& j, JointProps& p) {
+    if (!j.is_object()) return;
+    auto num = [&](const char* key, float fallback, float lo, float hi) {
+        auto it = j.find(key);
+        return it != j.end() && it->is_number() ? std::clamp(it->get<float>(), lo, hi) : fallback;
+    };
+    auto flag = [&](const char* key, bool fallback) {
+        auto it = j.find(key);
+        return it != j.end() && it->is_boolean() ? it->get<bool>() : fallback;
+    };
+    auto actuator = [&](const char* key) {
+        auto it = j.find(key);
+        if (it != j.end() && it->is_string())
+            for (int i = 0; i < 3; ++i) if (it->get<std::string>() == kActuatorNames[i]) return (Actuator)i;
+        return Actuator::None;
+    };
+    const JointProps d;
+    const float big = 1e9f;
+    p.limitsEnabled      = flag("limits", false);
+    p.upperAngle         = num("upperAngle", d.upperAngle, -180.0f, 180.0f);
+    p.twistLimitsEnabled = flag("twistLimits", false);
+    p.twistLowerAngle    = num("twistLower", d.twistLowerAngle, -180.0f, 180.0f);
+    p.twistUpperAngle    = num("twistUpper", d.twistUpperAngle, -180.0f, 180.0f);
+    p.restitution        = num("restitution", 0.0f, 0.0f, 1.0f);
+    p.lowerLimit         = num("lower", d.lowerLimit, -big, big);
+    p.upperLimit         = num("upper", d.upperLimit, -big, big);
+    p.actuator           = actuator("actuator");
+    p.motorMaxForce      = num("motorForce", 0.0f, 0.0f, big);
+    p.velocity           = num("velocity", 0.0f, -big, big);
+    p.speed              = num("speed", 0.0f, 0.0f, big);
+    p.servoMaxForce      = num("servoForce", 0.0f, 0.0f, big);
+    p.targetPosition     = num("target", 0.0f, -big, big);
+    p.angularActuator    = actuator("angActuator");
+    p.angularVelocity    = num("angVelocity", 0.0f, -big, big);
+    p.motorMaxTorque     = num("motorTorque", 0.0f, 0.0f, big);
+    p.angularSpeed       = num("angSpeed", 0.0f, 0.0f, big);
+    p.targetAngle        = num("targetAngle", 0.0f, -180.0f, 180.0f);
+    p.servoMaxTorque     = num("servoTorque", 0.0f, 0.0f, big);
+    p.angularLimitsEnabled = flag("angLimits", false);
+    p.lowerAngle         = num("lowerAngle", d.lowerAngle, -180.0f, 180.0f);
+    p.inclinationAngle   = num("incline", 0.0f, -180.0f, 180.0f);
 }
 
 nlohmann::json particleToJson(const ParticleProps& p, bool enabled) {
@@ -386,6 +511,22 @@ nlohmann::json guiToJson(const GuiProps& g) {
     }
     if (g.type == GuiType::UIBlur) j["blurSize"] = g.blurSize;
     if (g.type == GuiType::UIStroke) j["thickness"] = g.thickness;
+    if (g.type == GuiType::UIGradient) {
+        json col = json::array(), tr = json::array();
+        for (const ColorKey& k : g.gradColor) col.push_back({k.t, k.c.r, k.c.g, k.c.b});
+        for (const NumberKey& k : g.gradTransparency) tr.push_back({k.t, k.v});
+        j["gradColor"] = col; j["gradT"] = tr;
+        j["gradRot"] = g.gradRotation; j["gradOffset"] = json::array({g.gradOffset.x, g.gradOffset.y});
+    }
+    if (g.type == GuiType::UIScale) j["scale"] = g.scale;
+    if (g.type == GuiType::UIAspectRatioConstraint) {
+        j["aspect"] = g.aspectRatio; j["aspectType"] = g.aspectType; j["dominantAxis"] = g.dominantAxis;
+    }
+    if (g.type == GuiType::ViewportFrame) {
+        if (g.camera) j["camera"] = g.camera;   // (a node ID, like a BillboardGui's adornee)
+        j["ambient"] = vec(g.ambient); j["lightColor"] = vec(g.lightColor); j["lightDir"] = vec(g.lightDir);
+        j["imageColor"] = vec(g.imageColor); j["imageT"] = g.imageTransparency;
+    }
     if (g.type == GuiType::TextBox) {
         j["placeholder"] = g.placeholder; j["placeholderColor"] = vec(g.placeholderColor);
         j["clearOnFocus"] = g.clearOnFocus; j["editable"] = g.editable; j["multiLine"] = g.multiLine;
@@ -498,6 +639,61 @@ void guiFromJson(GuiProps& g, const nlohmann::json& j) {
     g.pixelsPerStud = std::clamp(get<float>(j, "pps", g.pixelsPerStud), 1.0f, 1000.0f);
     if (j.contains("surfaceCanvas") && j["surfaceCanvas"].is_array() && j["surfaceCanvas"].size() == 2)
         try { g.surfaceCanvas = glm::max(glm::vec2(1.0f), glm::vec2(j["surfaceCanvas"][0].get<float>(), j["surfaceCanvas"][1].get<float>())); } catch (...) {}
+    // UIGradient (sequences: [t, r, g, b] / [t, v], at most 20 keys, like a Trail's)
+    if (auto it = j.find("gradColor"); it != j.end() && it->is_array() && !it->empty()) {
+        std::vector<ColorKey> keys;
+        for (auto& k : *it)
+            if (k.is_array() && k.size() == 4 && k[0].is_number() && k[1].is_number() && k[2].is_number() && k[3].is_number() && keys.size() < 20)
+                keys.push_back({std::clamp(k[0].get<float>(), 0.0f, 1.0f),
+                                glm::clamp(glm::vec3(k[1].get<float>(), k[2].get<float>(), k[3].get<float>()), 0.0f, 1.0f)});
+        if (!keys.empty()) g.gradColor = keys;
+    }
+    if (auto it = j.find("gradT"); it != j.end() && it->is_array() && !it->empty()) {
+        std::vector<NumberKey> keys;
+        for (auto& k : *it)
+            if (k.is_array() && k.size() == 2 && k[0].is_number() && k[1].is_number() && keys.size() < 20)
+                keys.push_back({std::clamp(k[0].get<float>(), 0.0f, 1.0f), std::clamp(k[1].get<float>(), 0.0f, 1.0f)});
+        if (!keys.empty()) g.gradTransparency = keys;
+    }
+    g.gradRotation = get<float>(j, "gradRot", g.gradRotation);
+    if (j.contains("gradOffset") && j["gradOffset"].is_array() && j["gradOffset"].size() == 2)
+        try { g.gradOffset = {j["gradOffset"][0].get<float>(), j["gradOffset"][1].get<float>()}; } catch (...) {}
+    g.scale = std::clamp(get<float>(j, "scale", g.scale), 0.0f, 100.0f);
+    g.aspectRatio = std::clamp(get<float>(j, "aspect", g.aspectRatio), 0.001f, 1000.0f);
+    g.aspectType = std::clamp(get<int>(j, "aspectType", g.aspectType), 0, 1);
+    g.dominantAxis = std::clamp(get<int>(j, "dominantAxis", g.dominantAxis), 0, 1);
+    g.camera = get<uint64_t>(j, "camera", g.camera);
+    g.ambient = glm::clamp(vec(j, "ambient", g.ambient), 0.0f, 1.0f);
+    g.lightColor = glm::clamp(vec(j, "lightColor", g.lightColor), 0.0f, 1.0f);
+    g.lightDir = vec(j, "lightDir", g.lightDir);
+}
+
+nlohmann::json collisionGroupsToJson(const CollisionGroups& g) {
+    json out = json::array();
+    for (int i : g.slots()) out.push_back({{"name", g.names[i]}, {"id", i}, {"mask", g.masks[i]}});
+    return out;
+}
+
+CollisionGroups collisionGroupsFromJson(const nlohmann::json& j) {
+    CollisionGroups g;
+    if (!j.is_array()) return g;
+    for (const auto& e : j) {
+        if (!e.is_object()) continue;
+        const int id = get<int>(e, "id", -1);
+        std::string name = get<std::string>(e, "name", std::string()).substr(0, CollisionGroups::kMaxNameLength);
+        if (id < 0 || id >= CollisionGroups::kMax || name.empty()) continue;
+        if (id == 0) name = CollisionGroups::kDefault;            // (slot 0 is always Default)
+        else if (name == CollisionGroups::kDefault || g.find(name) >= 0) continue;
+        g.names[id] = name;
+        g.masks[id] = get<uint32_t>(e, "mask", ~0u);
+    }
+    // Both sides of every pair agree (a hand-edited file could say otherwise).
+    for (int a = 0; a < CollisionGroups::kMax; ++a)
+        for (int b = 0; b < a; ++b) {
+            const bool both = ((g.masks[a] >> b) & 1u) && ((g.masks[b] >> a) & 1u);
+            g.set(a, b, both);
+        }
+    return g;
 }
 } // namespace Serializer
 
@@ -540,6 +736,7 @@ json toJson(const SceneNode& n) {
         j["material"]     = kMaterialNames[(int)n.material];
         j["anchored"]     = n.anchored;
         j["canCollide"]   = n.canCollide;
+        if (n.collisionGroup != CollisionGroups::kDefault) j["collisionGroup"] = n.collisionGroup;
         j["castShadow"]   = n.castShadow;
         if (n.negated) j["negate"] = {{"color", vec(n.negColor)}, {"transparency", n.negTransparency}, {"canCollide", n.negCollide}};
         if (!n.unionSource.empty()) j["union"] = json::parse(n.unionSource, nullptr, false);
@@ -559,6 +756,7 @@ json toJson(const SceneNode& n) {
         j["length"] = n.length; j["stiffness"] = n.stiffness; j["damping"] = n.damping;
         j["motorSpeed"] = n.motorSpeed; j["motorTorque"] = n.motorTorque;
         j["thickness"] = n.thickness; j["color"] = vec(n.color); j["enabled"] = n.enabled;
+        if (usesJointProps(n.constraintType)) j["joint"] = Serializer::jointToJson(n.joint);
     }
     if (n.kind == NodeKind::Mover) {
         const MoverProps& m = n.mover;
@@ -578,6 +776,7 @@ json toJson(const SceneNode& n) {
         j["gui"] = guiToJson(n.gui);
         j["enabled"] = n.enabled;
     }
+    if (n.kind == NodeKind::Camera) j["fov"] = n.fieldOfView;
     if (n.isPart() && !n.texture.empty()) j["texture"] = n.texture;   // clothing pictures on a character
     if (n.kind == NodeKind::Decal) {
         j["texture"] = n.texture;
@@ -633,6 +832,8 @@ json toJson(const SceneNode& n) {
     if (n.isClickDetector()) j["click"] = Serializer::clickToJson(n.click);
     if (n.isHighlight()) j["highlight"] = Serializer::highlightToJson(n.highlight, n.enabled);
     if (n.isEffect()) j["effect"] = Serializer::effectToJson(n.effect, n.enabled, n.kind == NodeKind::Beam);
+    if (n.isPostEffect()) j["post"] = Serializer::postEffectToJson(n.post, n.enabled);
+    if (n.isSky()) j["sky"] = Serializer::skyToJson(n.sky);
     if (n.isParticles()) j["particles"] = Serializer::particleToJson(n.particle, n.enabled);
     if (n.locked)   j["locked"]   = true;
     if (!n.tags.empty()) j["tags"] = n.tags;
@@ -708,6 +909,8 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->material      = materialFrom(get<std::string>(j, "material", "Plastic"));
         n->anchored      = get<bool>(j, "anchored", true);
         n->canCollide    = get<bool>(j, "canCollide", true);
+        n->collisionGroup = get<std::string>(j, "collisionGroup", CollisionGroups::kDefault).substr(0, CollisionGroups::kMaxNameLength);
+        if (n->collisionGroup.empty()) n->collisionGroup = CollisionGroups::kDefault;
         n->castShadow    = get<bool>(j, "castShadow", true);
         if (auto it = j.find("negate"); it != j.end() && it->is_object()) {
             n->negated = true;
@@ -730,7 +933,8 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     if (n->kind == NodeKind::Model) n->primaryPart = get<uint64_t>(j, "primaryPart", 0);
     if (n->kind == NodeKind::Constraint) {
         std::string type = get<std::string>(j, "type", "Rope");
-        for (int i = 0; i < 5; ++i) if (type == kConstraintNames[i]) n->constraintType = (ConstraintType)i;
+        for (int i = 0; i < kConstraintTypeCount; ++i) if (type == kConstraintNames[i]) n->constraintType = (ConstraintType)i;
+        if (auto it = j.find("joint"); it != j.end()) Serializer::jointFromJson(*it, n->joint);
         n->ref0 = get<uint64_t>(j, "ref0", 0);
         n->ref1 = get<uint64_t>(j, "ref1", 0);
         n->length = get<float>(j, "length", -1.0f);
@@ -772,6 +976,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         if (j.contains("gui") && j["gui"].is_object()) guiFromJson(n->gui, j["gui"]);
         n->enabled = get<bool>(j, "enabled", true);
     }
+    if (n->kind == NodeKind::Camera) n->fieldOfView = std::clamp(get<float>(j, "fov", 70.0f), 1.0f, 120.0f);
     if (n->isPart()) n->texture = get<std::string>(j, "texture", std::string());
     if (n->kind == NodeKind::Decal) {
         n->texture = get<std::string>(j, "texture", std::string());
@@ -827,6 +1032,8 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     if (auto c = j.find("click"); c != j.end() && c->is_object()) Serializer::clickFromJson(*c, n->click);
     if (auto h = j.find("highlight"); h != j.end() && h->is_object()) Serializer::highlightFromJson(*h, n->highlight, n->enabled);
     if (auto e = j.find("effect"); e != j.end() && e->is_object()) Serializer::effectFromJson(*e, n->effect, n->enabled);
+    if (auto e = j.find("post"); n->isPostEffect() && e != j.end() && e->is_object()) Serializer::postEffectFromJson(*e, n->post, n->enabled);
+    if (auto e = j.find("sky"); n->isSky() && e != j.end() && e->is_object()) Serializer::skyFromJson(*e, n->sky);
     if (auto e = j.find("particles"); e != j.end() && e->is_object() && n->isParticles()) Serializer::particleFromJson(*e, n->particle, n->enabled);
     n->locked        = get<bool>(j, "locked", false);
     if (auto t = j.find("tags"); t != j.end() && t->is_array())
@@ -913,6 +1120,8 @@ json settingsJson(Scene& scene) {
                   {"bloodAmount", ws.bloodAmount}, {"bloodStay", ws.bloodStay},
                   {"playerCollisions", ws.playerCollisions}, {"voiceChat", ws.voiceChat}, {"maxFluidParticles", ws.maxFluidParticles},
                   {"orthographic", ws.orthographic}, {"orthographicSize", ws.orthographicSize}};
+    if (!ws.collisionGroups.isDefault())   // (only games that use them)
+        j["world"]["collisionGroups"] = Serializer::collisionGroupsToJson(ws.collisionGroups);
     if (ws.playerCamera != CameraOptions{})   // (only games that changed them)
         j["world"]["playerCamera"] = {{"lockFirstPerson", ws.playerCamera.lockFirstPerson},
                                       {"minZoom", ws.playerCamera.minZoom}, {"maxZoom", ws.playerCamera.maxZoom}};
@@ -965,6 +1174,7 @@ void applySettings(Scene& scene, const json& j) {
         w.bloodColor        = vec(j["world"], "bloodColor", w.bloodColor);
         w.bloodAmount       = get<float>(j["world"], "bloodAmount", w.bloodAmount);
         w.bloodStay         = get<float>(j["world"], "bloodStay", w.bloodStay);
+        if (j["world"].contains("collisionGroups")) w.collisionGroups = Serializer::collisionGroupsFromJson(j["world"]["collisionGroups"]);
         if (j["world"].contains("playerCamera") && j["world"]["playerCamera"].is_object()) {
             const json& pc = j["world"]["playerCamera"];
             CameraOptions& o = w.playerCamera;
@@ -1080,6 +1290,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.visible = src->visible;     dst.internal = src->internal;
     dst.transparency = src->transparency; dst.material = src->material;
     dst.anchored = src->anchored;   dst.canCollide = src->canCollide; dst.castShadow = src->castShadow;
+    dst.collisionGroup = src->collisionGroup;
     dst.negated = src->negated;     dst.negColor = src->negColor;
     dst.negTransparency = src->negTransparency; dst.negCollide = src->negCollide;
     dst.unionSource = src->unionSource;
@@ -1089,6 +1300,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.prompt = src->prompt;       dst.highlight = src->highlight;
     dst.click = src->click;
     dst.effect = src->effect;       dst.particle = src->particle;
+    dst.post = src->post;           dst.sky = src->sky;
     dst.tags = src->tags;           dst.attributes = src->attributes;
     dst.lightType = src->lightType; dst.brightness = src->brightness;
     dst.range = src->range;         dst.spotAngle = src->spotAngle;
@@ -1105,9 +1317,11 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.constraintType = src->constraintType; dst.ref0 = src->ref0; dst.ref1 = src->ref1;
     dst.length = src->length;       dst.stiffness = src->stiffness; dst.damping = src->damping;
     dst.motorSpeed = src->motorSpeed; dst.motorTorque = src->motorTorque; dst.thickness = src->thickness;
+    dst.joint = src->joint;
     dst.viscosity = src->viscosity; dst.surfaceTension = src->surfaceTension;
     dst.fluidRate = src->fluidRate; dst.fluidVelocity = src->fluidVelocity; dst.fluidSystem = src->fluidSystem;
     dst.mover = src->mover;
+    dst.fieldOfView = src->fieldOfView;
 }
 
 std::string nodeToString(const SceneNode& node) { return toJson(node).dump(); }
@@ -1142,6 +1356,8 @@ void remapRefs(SceneNode& n, const std::unordered_map<uint64_t, uint64_t>& map) 
     }
     if (n.isGui() && n.gui.adornee)   // (a copied BillboardGui sits on the copied part, if it came along)
         if (auto it = map.find(n.gui.adornee); it != map.end()) n.gui.adornee = it->second;
+    if (n.isGui() && n.gui.camera)   // (a copied ViewportFrame looks through the copied Camera, if it came along)
+        if (auto it = map.find(n.gui.camera); it != map.end()) n.gui.camera = it->second;
     if (n.isHighlight() && n.highlight.adornee)   // (the same for a copied Highlight)
         if (auto it = map.find(n.highlight.adornee); it != map.end()) n.highlight.adornee = it->second;
     if (n.isEffect()) {   // (a copied Trail / Beam uses the copied attachments)

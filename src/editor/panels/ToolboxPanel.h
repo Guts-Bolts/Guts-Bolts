@@ -18,6 +18,9 @@ struct ToolboxTile {
     std::function<unsigned()> picture;  // a texture, or 0 (then the icon is drawn)
     Icons::Id icon = Icons::Id::Model;
     bool official = false;              // made by Guts&Bolts staff: safe to use
+    // Library models: how much people like it, like "92%" ("" = no votes yet), and the
+    // longer line for the tooltip ("92% liked (25 votes)").
+    std::string rating, ratingTip;
     std::function<void()> use;
 };
 
@@ -32,14 +35,15 @@ public:
         std::function<void()>              addModel;
         std::function<void(LightType)>     addLight;
         std::function<void()>              addSound;
-        std::function<void(int)>           startConnect;   // ConstraintType (5 = motor)
+        std::function<void(int)>           startConnect;   // ConstraintType (5 = motor, 6.. = ConstraintType 5..)
         std::function<void(Premade)>       spawnPremade;
         // A picture of what `build` makes (made once per key; 0 while it's being made).
         std::function<unsigned(const std::string& key, const std::function<void(Scene&)>& build)> thumbnail;
         // The online Library: kind 0 models, 1 decals, 2 audio. `mine` = only your own
-        // (private ones too). `reload` = the search changed. `status` gets any message.
-        std::function<std::vector<ToolboxTile>(bool mine, int kind, const std::string& query, bool reload,
-                                               std::string& status)> library;
+        // (private ones too). `bestRated` = sort by thumbs up instead of most used.
+        // `reload` = the search changed. `status` gets any message.
+        std::function<std::vector<ToolboxTile>(bool mine, int kind, const std::string& query, bool bestRated,
+                                               bool reload, std::string& status)> library;
     };
 
     explicit ToolboxPanel(Actions actions);
@@ -58,5 +62,6 @@ private:
     int m_invCategory = 0;
     std::string m_query, m_status;
     bool m_reload = true;
+    bool m_bestRated = false;  // Library > Models: "Best rated" instead of "Most popular"
     std::vector<ToolboxTile> m_recent;
 };

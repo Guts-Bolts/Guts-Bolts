@@ -804,10 +804,46 @@ void readAttributes(const std::string& blob, SceneNode& node) {
     }
 }
 
+// The Workspace's collision groups as Roblox saves them: "Default^0^-1;Players^1^-3"
+// (name ^ id ^ mask, the mask a signed 32-bit number: bit b = collides with group b).
+CollisionGroups parseCollisionGroups(const std::string& text) {
+    CollisionGroups g;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t end = text.find(';', start);
+        if (end == std::string::npos) end = text.size();
+        const std::string entry = text.substr(start, end - start);
+        start = end + 1;
+        const size_t a = entry.find('^'), b = entry.find('^', a == std::string::npos ? a : a + 1);
+        if (a == std::string::npos || b == std::string::npos) continue;
+        std::string name = entry.substr(0, a).substr(0, CollisionGroups::kMaxNameLength);
+        long long id = -1, mask = -1;
+        try { id = std::stoll(entry.substr(a + 1, b - a - 1)); mask = std::stoll(entry.substr(b + 1)); } catch (...) { continue; }
+        if (id < 0 || id >= CollisionGroups::kMax || name.empty()) continue;
+        if (id == 0) name = CollisionGroups::kDefault;
+        else if (name == CollisionGroups::kDefault || g.find(name) >= 0) continue;
+        g.names[id] = name;
+        g.masks[id] = (uint32_t)(int32_t)mask;
+    }
+    for (int x = 0; x < CollisionGroups::kMax; ++x)   // (both sides of a pair agree)
+        for (int y = 0; y < x; ++y) g.set(x, y, ((g.masks[x] >> y) & 1u) && ((g.masks[y] >> x) & 1u));
+    return g;
+}
+
+std::string writeCollisionGroups(const CollisionGroups& g) {
+    std::string out;
+    for (int i : g.slots()) {
+        if (!out.empty()) out += ';';
+        out += g.names[i] + "^" + std::to_string(i) + "^" + std::to_string((int32_t)g.masks[i]);
+    }
+    return out;
+}
+
 struct Converter {
     Scene& scene;
     Report& report;
     std::unordered_map<const Inst*, SceneNode*> made;
+    CollisionGroups groups;   // the place's (to name parts saved with only a CollisionGroupId)
 
     static bool isPartClass(const std::string& c) {
         static const char* names[] = {"Part", "SpawnLocation", "Seat", "VehicleSeat", "TrussPart", "WedgePart",
@@ -963,6 +999,11 @@ struct Converter {
             node->transparency = (float)in.num("Transparency", 0.0);
             node->anchored = in.flag("Anchored", false);
             node->canCollide = in.flag("CanCollide", true);
+            // Its collision group: by name (newer files) or by number (older ones).
+            if (std::string cg = in.str("CollisionGroup"); !cg.empty())
+                node->collisionGroup = cg.substr(0, CollisionGroups::kMaxNameLength);
+            else if (int id = (int)in.num("CollisionGroupId", 0); id > 0 && id < CollisionGroups::kMax && !groups.names[id].empty())
+                node->collisionGroup = groups.names[id];
             node->castShadow = in.flag("CastShadow", true);
             node->locked = in.flag("Locked", false);
             node->material = materialFromRoblox((int)in.num("Material", 256));
@@ -1104,6 +1145,48 @@ struct Converter {
                 g.bgTransparency = (float)in.num("Transparency", 0.0);
                 node->enabled = in.flag("Enabled", true);
             }
+            if (gt == GuiType::UIGradient) {
+                if (const Value* v = in.get("Color"); v && v->kind == Value::ColorSeq && v->seq.size() >= 4) {
+                    g.gradColor.clear();
+                    for (size_t k = 0; k + 4 <= v->seq.size() && g.gradColor.size() < 20; k += 4)
+                        g.gradColor.push_back({std::clamp(v->seq[k], 0.0f, 1.0f), glm::clamp(glm::vec3(v->seq[k + 1], v->seq[k + 2], v->seq[k + 3]), 0.0f, 1.0f)});
+                }
+                if (const Value* v = in.get("Transparency"); v && v->kind == Value::NumSeq && v->seq.size() >= 2) {
+                    g.gradTransparency.clear();
+                    for (size_t k = 0; k + 2 <= v->seq.size() && g.gradTransparency.size() < 20; k += 2)
+                        g.gradTransparency.push_back({std::clamp(v->seq[k], 0.0f, 1.0f), std::clamp(v->seq[k + 1], 0.0f, 1.0f)});
+                }
+                f("Rotation", g.gradRotation);
+                if (const Value* v = in.get("Offset"); v && v->kind == Value::Vec2) g.gradOffset = {v->q.x, v->q.y};
+                node->enabled = in.flag("Enabled", true);
+            }
+            if (gt == GuiType::UIScale) g.scale = std::clamp((float)in.num("Scale", 1.0), 0.0f, 100.0f);
+            if (gt == GuiType::UIAspectRatioConstraint) {
+                g.aspectRatio = std::clamp((float)in.num("AspectRatio", 1.0), 0.001f, 1000.0f);
+                g.aspectType = (int)in.num("AspectType", 0) == 1 ? 1 : 0;       // FitWithinMaxSize 0, ScaleWithParentSize 1
+                g.dominantAxis = (int)in.num("DominantAxis", 0) == 1 ? 1 : 0;   // Width 0, Height 1
+            }
+            if (gt == GuiType::ViewportFrame) {   // (CurrentCamera is linked in linkRefs)
+                col("Ambient", g.ambient);
+                col("LightColor", g.lightColor);
+                if (const Value* v = in.get("LightDirection"); v && v->kind == Value::Vec3) g.lightDir = v->v;
+                col("ImageColor3", g.imageColor);
+                f("ImageTransparency", g.imageTransparency);
+            }
+        } else if (c == "Camera" && parent && (parent->isViewportFrame() || parent->inViewportFrame())) {
+            // A ViewportFrame's camera (the Workspace's own Camera isn't kept: each player has theirs).
+            node = std::make_unique<SceneNode>(name, NodeKind::Camera);
+            glm::vec3 pos(0.0f);
+            glm::mat3 rot(1.0f);
+            if (const Value* v = in.get("CFrame"); v && v->kind == Value::CFrame) { pos = v->v * kImportScale; rot = v->r; }
+            place(*node, parent, pos, rot, glm::vec3(1.0f));
+            node->fieldOfView = std::clamp((float)in.num("FieldOfView", 70.0), 1.0f, 120.0f);
+            ++report.other;
+        } else if (c == "WorldModel") {   // (a Model in a ViewportFrame)
+            node = std::make_unique<SceneNode>(name, NodeKind::Model);
+            Attribute a; a.name = "RobloxClass"; a.type = Attribute::String; a.s = c;
+            node->attributes.push_back(a);
+            ++report.models;
         } else if (c == "Decal" || c == "Texture") {
             node = std::make_unique<SceneNode>(name, NodeKind::Decal);
             node->texture = in.str("Texture");   // rbxassetid:// links won't load here, but are kept
@@ -1197,6 +1280,45 @@ struct Converter {
                 numSeq("WidthScale", e.widthScale, 0.0f, 100.0f);
             }
             node->enabled = in.flag("Enabled", true);
+            ++report.other;
+        } else if (std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), c) != std::end(kPostEffectClassNames)) {
+            // Screen effects (they work in Lighting; distances are in studs).
+            node = std::make_unique<SceneNode>(name, NodeKind::PostEffect);
+            PostEffectType t = PostEffectType::ColorCorrection;
+            for (int i = 0; i < kPostEffectCount; ++i) if (c == kPostEffectClassNames[i]) t = (PostEffectType)i;
+            PostEffectProps& p = node->post;
+            p = postEffectDefaults(t);
+            p.brightness = (float)in.num("Brightness", p.brightness);
+            p.contrast   = (float)in.num("Contrast", p.contrast);
+            p.saturation = (float)in.num("Saturation", p.saturation);
+            if (const Value* v = in.get("TintColor")) p.tint = v->v;
+            p.intensity  = (float)in.num("Intensity", p.intensity);
+            p.spread     = (float)in.num("Spread", p.spread);
+            p.size       = (float)in.num("Size", p.size);
+            p.threshold  = (float)in.num("Threshold", p.threshold);
+            p.farIntensity  = (float)in.num("FarIntensity", p.farIntensity);
+            p.nearIntensity = (float)in.num("NearIntensity", p.nearIntensity);
+            p.focusDistance = (float)in.num("FocusDistance", 0.05) * kImportScale;
+            p.inFocusRadius = (float)in.num("InFocusRadius", 10.0) * kImportScale;
+            clampPostEffect(p);
+            node->enabled = in.flag("Enabled", true);
+            ++report.other;
+        } else if (c == "Sky") {
+            node = std::make_unique<SceneNode>(name, NodeKind::Sky);
+            SkyProps& k = node->sky;
+            // Roblox's own built-in pictures can't load here: "" = our own sky / sun / moon.
+            auto pic = [&](const char* prop) {
+                std::string v = in.str(prop);
+                return v.rfind("rbxasset://", 0) == 0 ? std::string() : v;
+            };
+            k.bk = pic("SkyboxBk"); k.dn = pic("SkyboxDn"); k.ft = pic("SkyboxFt");
+            k.lf = pic("SkyboxLf"); k.rt = pic("SkyboxRt"); k.up = pic("SkyboxUp");
+            k.sun = pic("SunTextureId"); k.moon = pic("MoonTextureId");
+            k.starCount = (int)in.num("StarCount", 3000);
+            k.celestial = in.flag("CelestialBodiesShown", true);
+            k.sunSize = (float)in.num("SunAngularSize", 21);
+            k.moonSize = (float)in.num("MoonAngularSize", 11);
+            clampSky(k);
             ++report.other;
         } else if (c == "ParticleEmitter" || c == "Fire" || c == "Smoke" || c == "Sparkles") {
             node = std::make_unique<SceneNode>(name, NodeKind::Particles);
@@ -1327,6 +1449,48 @@ struct Converter {
             node->enabled = in.flag("Enabled", true);
             node->visible = in.flag("Visible", c == "RopeConstraint" || c == "RodConstraint" || c == "SpringConstraint");
             node->color = {0.45f, 0.32f, 0.2f};
+            ++report.constraints;
+        } else if (c == "BallSocketConstraint" || c == "PrismaticConstraint" || c == "CylindricalConstraint") {
+            // Joints: Roblox's numbers are turned into ours (studs are halved, forces scaled).
+            node = std::make_unique<SceneNode>(name, NodeKind::Constraint);
+            node->constraintType = c == "BallSocketConstraint" ? ConstraintType::BallSocket
+                                 : c == "PrismaticConstraint"  ? ConstraintType::Prismatic : ConstraintType::Cylindrical;
+            auto big = [](double v) { return std::isfinite(v) ? (float)std::clamp(v, -1e30, 1e30) : (v > 0 ? 1e30f : -1e30f); };
+            auto act = [&](const char* k) { return (Actuator)std::clamp((int)in.num(k, 0), 0, 2); };
+            JointProps& p = node->joint;
+            p.limitsEnabled = in.flag("LimitsEnabled", false);
+            p.restitution = std::clamp((float)in.num("Restitution", 0.0), 0.0f, 1.0f);
+            if (node->constraintType == ConstraintType::BallSocket) {
+                p.upperAngle = (float)in.num("UpperAngle", 45.0);
+                p.twistLimitsEnabled = in.flag("TwistLimitsEnabled", false);
+                p.twistLowerAngle = (float)in.num("TwistLowerAngle", -45.0);
+                p.twistUpperAngle = (float)in.num("TwistUpperAngle", 45.0);
+            } else {
+                p.lowerLimit = (float)in.num("LowerLimit", 0.0) * kImportScale;
+                p.upperLimit = (float)in.num("UpperLimit", 5.0) * kImportScale;
+                p.actuator = act("ActuatorType");
+                p.motorMaxForce = big(in.num("MotorMaxForce", 0.0) * kForceScale);
+                p.velocity = (float)in.num("Velocity", 0.0) * kVelScale;
+                p.speed = big(in.num("Speed", 0.0) * kVelScale);
+                p.servoMaxForce = big(in.num("ServoMaxForce", 0.0) * kForceScale);
+                p.targetPosition = (float)in.num("TargetPosition", 0.0) * kImportScale;
+            }
+            if (node->constraintType == ConstraintType::Cylindrical) {
+                p.angularActuator = act("AngularActuatorType");
+                p.angularVelocity = (float)in.num("AngularVelocity", 0.0) * kSpinScale;
+                p.motorMaxTorque = big(in.num("MotorMaxTorque", 0.0) * kTorqueScale);
+                p.angularSpeed = big(in.num("AngularSpeed", 0.0) * kSpinScale);
+                p.targetAngle = (float)in.num("TargetAngle", 0.0);
+                p.servoMaxTorque = big(in.num("ServoMaxTorque", 0.0) * kTorqueScale);
+                p.angularLimitsEnabled = in.flag("AngularLimitsEnabled", false);
+                p.lowerAngle = (float)in.num("LowerAngle", -45.0);
+                p.upperAngle = (float)in.num("UpperAngle", 45.0);
+                p.inclinationAngle = (float)in.num("InclinationAngle", 0.0);
+            }
+            node->enabled = in.flag("Enabled", true);
+            node->visible = in.flag("Visible", false);
+            node->thickness = 0.1f;
+            node->color = {0.6f, 0.62f, 0.66f};
             ++report.constraints;
         } else if (auto mt = std::find(std::begin(kMoverClassNames), std::end(kMoverClassNames), c); mt != std::end(kMoverClassNames)) {
             // BodyVelocity, BodyGyro... and LinearVelocity, AlignPosition...: classic games'
@@ -1509,6 +1673,12 @@ struct Converter {
                     if (auto it = byRef.find(v->ref); it != byRef.end()) node->highlight.adornee = it->second->id;
                 continue;
             }
+            if (node->isViewportFrame()) {   // (its CurrentCamera)
+                const Value* v = inst->get("CurrentCamera");
+                if (v && v->kind == Value::Ref)
+                    if (auto it = byRef.find(v->ref); it != byRef.end() && it->second->isCamera()) node->gui.camera = it->second->id;
+                continue;
+            }
             if (!node->isConstraint() && !node->isMover()) continue;
             auto ref = [&](const char* a, const char* b) -> uint64_t {
                 const Value* v = inst->get(a);
@@ -1637,11 +1807,18 @@ struct XmlWriter {
         const char* cls = nullptr;
         switch (n.kind) {
             case NodeKind::Part:       cls = n.isSpawnLocation() ? "SpawnLocation" : "Part"; break;
-            case NodeKind::Model:      cls = "Model"; break;
+            case NodeKind::Model: {
+                const Attribute* rc = n.findAttribute("RobloxClass");
+                cls = rc && rc->type == Attribute::String && rc->s == "WorldModel" ? "WorldModel" : "Model";
+                break;
+            }
+            case NodeKind::Camera:     cls = "Camera"; break;
             case NodeKind::Script:     cls = n.isModule ? "ModuleScript" : n.isLocal ? "LocalScript" : "Script"; break;
             case NodeKind::Remote:     cls = n.remoteFunction ? "RemoteFunction" : "RemoteEvent"; break;
             case NodeKind::Prompt:     cls = "ProximityPrompt"; break;
             case NodeKind::Highlight:  cls = "Highlight"; break;
+            case NodeKind::PostEffect: cls = kPostEffectClassNames[(int)n.post.type]; break;
+            case NodeKind::Sky:        cls = "Sky"; break;
             case NodeKind::ClickDetector: cls = "ClickDetector"; break;
             case NodeKind::Trail:      cls = "Trail"; break;
             case NodeKind::Beam:       cls = "Beam"; break;
@@ -1660,8 +1837,7 @@ struct XmlWriter {
                 cls = n.value.type == Attribute::Vector3 || n.value.type == Attribute::Color3 ? nullptr : n.valueClass();
                 break;
             case NodeKind::Constraint: {
-                static const char* names[] = {"RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint"};
-                cls = names[(int)n.constraintType];
+                cls = kConstraintClassNames[(int)n.constraintType];
                 break;
             }
         }
@@ -1712,6 +1888,44 @@ struct XmlWriter {
                 seq("WidthScale", e.widthScale);
             }
             boolean("Enabled", n.enabled);
+            break;
+        }
+        case NodeKind::PostEffect: {
+            const PostEffectProps& p = n.post;
+            switch (p.type) {
+                case PostEffectType::ColorCorrection:
+                    flt("Brightness", p.brightness); flt("Contrast", p.contrast); flt("Saturation", p.saturation);
+                    color3("TintColor", p.tint);
+                    break;
+                case PostEffectType::SunRays: flt("Intensity", p.intensity); flt("Spread", p.spread); break;
+                case PostEffectType::DepthOfField:
+                    flt("FarIntensity", p.farIntensity); flt("NearIntensity", p.nearIntensity);
+                    flt("FocusDistance", p.focusDistance * kExportScale); flt("InFocusRadius", p.inFocusRadius * kExportScale);
+                    break;
+                case PostEffectType::Bloom: flt("Intensity", p.intensity); flt("Size", p.size); flt("Threshold", p.threshold); break;
+                case PostEffectType::Blur:  flt("Size", p.size); break;
+            }
+            boolean("Enabled", n.enabled);
+            break;
+        }
+        case NodeKind::Sky: {
+            const SkyProps& k = n.sky;
+            // "" = ours, which on Roblox is its own default sky.
+            auto pic = [&](const char* prop, const std::string& v, const char* fallback) {
+                o << "<Content name=\"" << prop << "\"><url>" << esc(v.empty() ? std::string(fallback) : v) << "</url></Content>\n";
+            };
+            pic("SkyboxBk", k.bk, "rbxasset://textures/sky/sky512_bk.tex");
+            pic("SkyboxDn", k.dn, "rbxasset://textures/sky/sky512_dn.tex");
+            pic("SkyboxFt", k.ft, "rbxasset://textures/sky/sky512_ft.tex");
+            pic("SkyboxLf", k.lf, "rbxasset://textures/sky/sky512_lf.tex");
+            pic("SkyboxRt", k.rt, "rbxasset://textures/sky/sky512_rt.tex");
+            pic("SkyboxUp", k.up, "rbxasset://textures/sky/sky512_up.tex");
+            pic("SunTextureId", k.sun, "rbxasset://sky/sun.jpg");
+            pic("MoonTextureId", k.moon, "rbxasset://sky/moon.jpg");
+            o << "<int name=\"StarCount\">" << k.starCount << "</int>\n";
+            boolean("CelestialBodiesShown", k.celestial);
+            flt("SunAngularSize", k.sunSize);
+            flt("MoonAngularSize", k.moonSize);
             break;
         }
         case NodeKind::Particles: {
@@ -1815,6 +2029,24 @@ struct XmlWriter {
             }
             if (g.type == GuiType::UIStroke) { color3("Color", g.borderColor); flt("Thickness", g.thickness); flt("Transparency", g.bgTransparency); boolean("Enabled", n.enabled); break; }
             if (g.type == GuiType::UIShadow || g.type == GuiType::UIBlur) break;   // (ours; Roblox skips classes it doesn't know)
+            if (g.type == GuiType::UIGradient) {
+                std::ostringstream c, t;
+                for (const ColorKey& k : g.gradColor) c << k.t << " " << k.c.r << " " << k.c.g << " " << k.c.b << " 0 ";
+                for (const NumberKey& k : g.gradTransparency) t << k.t << " " << k.v << " 0 ";
+                o << "<ColorSequence name=\"Color\">" << c.str() << "</ColorSequence>\n";
+                o << "<NumberSequence name=\"Transparency\">" << t.str() << "</NumberSequence>\n";
+                flt("Rotation", g.gradRotation);
+                vec2("Offset", g.gradOffset);
+                boolean("Enabled", n.enabled);
+                break;
+            }
+            if (g.type == GuiType::UIScale) { flt("Scale", g.scale); break; }
+            if (g.type == GuiType::UIAspectRatioConstraint) {
+                flt("AspectRatio", g.aspectRatio);
+                token("AspectType", g.aspectType);
+                token("DominantAxis", g.dominantAxis);
+                break;
+            }
             auto udim = [&](const char* k, float s, float off) {
                 o << "<UDim name=\"" << k << "\"><S>" << s << "</S><O>" << (int)std::lround(off) << "</O></UDim>\n";
             };
@@ -1885,6 +2117,22 @@ struct XmlWriter {
                 flt("ImageTransparency", g.imageTransparency);
             }
             if (g.type == GuiType::TextButton || g.type == GuiType::ImageButton) boolean("AutoButtonColor", g.autoButtonColor);
+            if (g.type == GuiType::ViewportFrame) {
+                refProp("CurrentCamera", g.camera);
+                color3("Ambient", g.ambient);
+                color3("LightColor", g.lightColor);
+                vec3("LightDirection", g.lightDir);
+                color3("ImageColor3", g.imageColor);
+                flt("ImageTransparency", g.imageTransparency);
+            }
+            break;
+        }
+        case NodeKind::Camera: {
+            const glm::mat4 w = n.worldMatrix();
+            glm::mat3 rot;
+            for (int i = 0; i < 3; ++i) rot[i] = glm::normalize(glm::vec3(w[i]));
+            cframe("CFrame", glm::vec3(w[3]) * kExportScale, rot);
+            flt("FieldOfView", n.fieldOfView);
             break;
         }
         case NodeKind::Decal:
@@ -1917,6 +2165,7 @@ struct XmlWriter {
             flt("Transparency", n.transparency);
             boolean("Anchored", n.anchored);
             boolean("CanCollide", n.canCollide);
+            if (n.collisionGroup != CollisionGroups::kDefault) str("CollisionGroup", n.collisionGroup);
             boolean("CastShadow", n.castShadow);
             boolean("Locked", n.locked);
             token("Material", materialToRoblox(n.material));
@@ -2032,6 +2281,39 @@ struct XmlWriter {
                 flt("AngularVelocity", n.motorSpeed);
                 flt("MotorMaxTorque", n.motorTorque);
             }
+            if (usesJointProps(n.constraintType)) {
+                const JointProps& p = n.joint;
+                auto huge = [](float v, float scale) { return (double)v / scale; };   // ("no limit" stays very big)
+                boolean("LimitsEnabled", p.limitsEnabled);
+                flt("Restitution", p.restitution);
+                if (n.constraintType == ConstraintType::BallSocket) {
+                    flt("UpperAngle", p.upperAngle);
+                    boolean("TwistLimitsEnabled", p.twistLimitsEnabled);
+                    flt("TwistLowerAngle", p.twistLowerAngle);
+                    flt("TwistUpperAngle", p.twistUpperAngle);
+                } else {
+                    flt("LowerLimit", p.lowerLimit * kExportScale);
+                    flt("UpperLimit", p.upperLimit * kExportScale);
+                    token("ActuatorType", (int)p.actuator);
+                    flt("MotorMaxForce", huge(p.motorMaxForce, kForceScale));
+                    flt("Velocity", p.velocity / kVelScale);
+                    flt("Speed", huge(p.speed, kVelScale));
+                    flt("ServoMaxForce", huge(p.servoMaxForce, kForceScale));
+                    flt("TargetPosition", p.targetPosition * kExportScale);
+                }
+                if (n.constraintType == ConstraintType::Cylindrical) {
+                    token("AngularActuatorType", (int)p.angularActuator);
+                    flt("AngularVelocity", p.angularVelocity / kSpinScale);
+                    flt("MotorMaxTorque", huge(p.motorMaxTorque, kTorqueScale));
+                    flt("AngularSpeed", huge(p.angularSpeed, kSpinScale));
+                    flt("TargetAngle", p.targetAngle);
+                    flt("ServoMaxTorque", huge(p.servoMaxTorque, kTorqueScale));
+                    boolean("AngularLimitsEnabled", p.angularLimitsEnabled);
+                    flt("LowerAngle", p.lowerAngle);
+                    flt("UpperAngle", p.upperAngle);
+                    flt("InclinationAngle", p.inclinationAngle);
+                }
+            }
             flt("Thickness", n.thickness * kExportScale);
             boolean("Visible", n.visible);
             boolean("Enabled", n.enabled);
@@ -2089,7 +2371,9 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
     for (auto& c : scene.root()->children) if (!scene.isProtected(c.get())) old.push_back(c.get());
     for (SceneNode* n : old) scene.removeNode(n);
 
-    Converter conv{scene, report, {}};
+    Converter conv{scene, report, {}, {}};
+    if (std::string cg = ws->str("CollisionGroups"); !cg.empty()) conv.groups = parseCollisionGroups(cg);
+    scene.world().collisionGroups = conv.groups;
     for (const Inst* k : ws->children) conv.convert(*k, nullptr);
     // Scripts that run on the server live in ServerScriptService in Roblox.
     for (const char* svc : {"StarterGui", "ServerScriptService", "ReplicatedStorage", "ServerStorage", "StarterPlayer", "ReplicatedFirst",
@@ -2103,7 +2387,6 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
         conv.made[s] = f;
         for (const Inst* k : s->children) conv.convert(*k, f);
     }
-    conv.linkRefs(doc);
 
     // Workspace + Lighting settings.
     double g = ws->num("Gravity", kRobloxGravity);
@@ -2125,7 +2408,20 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
             if (const Attribute* saved = tmp.findAttribute("GutsAndBoltsLighting"); saved && saved->type == Attribute::String)
                 Serializer::environmentFromString(env, saved->s);   // made by Guts and Bolts: exact lighting
         }
+        // What's inside Lighting: the Sky, screen effects (and anything else we can make).
+        if (!light->children.empty()) {
+            SceneNode* f = scene.lightingFolder(true);
+            conv.made[light] = f;
+            for (const Inst* k : light->children) conv.convert(*k, f);
+        }
     }
+    // Screen effects saved in the Workspace's Camera: Studio's camera holds nothing, so they
+    // go in Lighting (where they look the same).
+    if (const Inst* cam = findChild(ws->children, "Camera"); cam && cam->className == "Camera")
+        for (const Inst* k : cam->children)
+            if (std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), k->className) != std::end(kPostEffectClassNames))
+                conv.convert(*k, scene.lightingFolder(true));
+    conv.linkRefs(doc);
     scene.info().title = std::filesystem::path(path).stem().string();
     scene.markDirty();
     return true;
@@ -2138,7 +2434,7 @@ std::vector<SceneNode*> importModel(Scene& scene, SceneNode* parent, const std::
     if (!readFile(path, doc)) { error = doc.error; return out; }
     std::vector<Inst*> roots = doc.roots;
     if (const Inst* ws = findChild(doc.roots, "Workspace")) roots = ws->children;   // a place: take its Workspace
-    Converter conv{scene, report, {}};
+    Converter conv{scene, report, {}, scene.world().collisionGroups};
     for (const Inst* r : roots)
         if (SceneNode* n = conv.convert(*r, parent)) out.push_back(n);
     conv.linkRefs(doc);
@@ -2153,10 +2449,12 @@ bool exportPlace(Scene& scene, const std::string& path, std::string& error) {
     w.o << "<Item class=\"Workspace\" referent=\"RBXWORKSPACE\">\n<Properties>\n";
     w.str("Name", "Workspace");
     w.flt("Gravity", scene.world().gravity / 22.0f * kRobloxGravity);
+    if (!scene.world().collisionGroups.isDefault()) w.str("CollisionGroups", writeCollisionGroups(scene.world().collisionGroups));
     w.o << "</Properties>\n";
     const SceneNode* ui = scene.root()->findChild("StarterGui");
     if (ui && ui->kind != NodeKind::Model) ui = nullptr;
-    for (auto& c : scene.root()->children) if (c.get() != ui) w.item(*c);
+    const SceneNode* lighting = scene.lightingFolder(false);   // (its things go in Roblox's Lighting below)
+    for (auto& c : scene.root()->children) if (c.get() != ui && c.get() != lighting) w.item(*c);
     w.o << "</Item>\n";
     if (ui) {   // our StarterGui folder is Roblox's StarterGui service
         w.o << "<Item class=\"StarterGui\" referent=\"RBXSTARTERGUI\">\n<Properties>\n";
@@ -2180,7 +2478,9 @@ bool exportPlace(Scene& scene, const std::string& path, std::string& error) {
     }
     w.flt("ClockTime", scene.environment().clockTime);
     w.boolean("GlobalShadows", scene.environment().shadows);
-    w.o << "</Properties>\n</Item>\n";
+    w.o << "</Properties>\n";
+    if (lighting) for (auto& c : lighting->children) w.item(*c);   // the Sky, screen effects
+    w.o << "</Item>\n";
     w.end();
     return writeText(path, w.o.str(), error);
 }

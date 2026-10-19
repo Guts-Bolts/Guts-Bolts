@@ -33,6 +33,8 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::Remote   ? (node->remoteFunction ? "RemoteFunction" : "RemoteEvent")
                     : node->kind == NodeKind::Prompt   ? "ProximityPrompt"
                     : node->kind == NodeKind::Highlight ? "Highlight"
+                    : node->kind == NodeKind::PostEffect ? kPostEffectClassNames[(int)node->post.type]
+                    : node->kind == NodeKind::Sky      ? "Sky"
                     : node->kind == NodeKind::ClickDetector ? "ClickDetector"
                     : node->kind == NodeKind::Trail    ? "Trail"
                     : node->kind == NodeKind::Beam     ? "Beam"
@@ -50,6 +52,7 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::FluidEmitter ? "FluidEmitter"
                     : node->kind == NodeKind::Mover        ? kMoverClassNames[(int)node->mover.type]
                     : node->kind == NodeKind::Gui        ? kGuiClassNames[(int)node->gui.type]
+                    : node->kind == NodeKind::Camera     ? "Camera"
                     : node->kind == NodeKind::Model    ? "Model" : "Part";
     ImGui::TextDisabled("%s", cls);
 
@@ -76,7 +79,8 @@ bool editUDim2(const char* label, UDim2& u, float scaleStep = 0.005f) {
 
 void PropertiesPanel::renderGui(SceneNode* node) {
     GuiProps& g = node->gui;
-    const bool noSwitch = g.type == GuiType::UICorner || g.type == GuiType::UIPadding || isGuiLayout(g.type);   // (always on)
+    const bool noSwitch = g.type == GuiType::UICorner || g.type == GuiType::UIPadding || isGuiLayout(g.type) ||
+                          g.type == GuiType::UIScale || g.type == GuiType::UIAspectRatioConstraint;   // (always on)
     const bool hasEnabled = isGuiLayer(g.type) || (isGuiModifier(g.type) && !noSwitch);
     if (!noSwitch)
         ImGui::Checkbox(hasEnabled ? "Enabled" : "Visible", hasEnabled ? &node->enabled : &node->visible);
@@ -205,6 +209,53 @@ void PropertiesPanel::renderGui(SceneNode* node) {
         ImGui::PopTextWrapPos();
         return;
     }
+    if (g.type == GuiType::UIGradient) {
+        ImGui::SeparatorText("UIGradient");
+        // Color / Transparency: the two ends here (scripts can give it more keypoints).
+        const bool many = g.gradColor.size() > 2 || g.gradTransparency.size() > 2;
+        glm::vec3 c0 = g.gradColor.front().c, c1 = g.gradColor.back().c;
+        bool cEdit = ImGui::ColorEdit3("Color (start)", &c0.x);
+        cEdit |= ImGui::ColorEdit3("Color (end)", &c1.x);
+        if (cEdit) g.gradColor = {{0.0f, c0}, {1.0f, c1}};
+        float t0 = g.gradTransparency.front().v, t1 = g.gradTransparency.back().v;
+        bool tEdit = ImGui::SliderFloat("Transparency (start)", &t0, 0.0f, 1.0f);
+        tEdit |= ImGui::SliderFloat("Transparency (end)", &t1, 0.0f, 1.0f);
+        if (tEdit) g.gradTransparency = {{0.0f, t0}, {1.0f, t1}};
+        if (many) ImGui::TextDisabled("(it has more colours, set by a script: editing here keeps just the two ends)");
+        ImGui::DragFloat("Rotation", &g.gradRotation, 1.0f, -360.0f, 360.0f, "%.0f deg");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = left to right, 90 = top to bottom.");
+        ImGui::DragFloat2("Offset", &g.gradOffset.x, 0.01f, -2.0f, 2.0f, "%.2f");
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Colours the object it's in (its background, text and picture) with a fade "
+                            "from one colour to the next.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (g.type == GuiType::UIScale) {
+        ImGui::SeparatorText("UIScale");
+        ImGui::DragFloat("Scale", &g.scale, 0.01f, 0.0f, 10.0f, "%.2f");
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Makes the object it's in, and everything inside it, bigger (2 = twice as big) or smaller. "
+                            "It grows around its AnchorPoint.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (g.type == GuiType::UIAspectRatioConstraint) {
+        ImGui::SeparatorText("UIAspectRatioConstraint");
+        if (ImGui::DragFloat("AspectRatio", &g.aspectRatio, 0.01f, 0.01f, 100.0f, "%.2f")) g.aspectRatio = std::max(0.01f, g.aspectRatio);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Width / height: 1 = square, 2 = twice as wide as tall.");
+        const char* types[] = {"FitWithinMaxSize", "ScaleWithParentSize"};
+        ImGui::Combo("AspectType", &g.aspectType, types, 2);
+        const char* axes[] = {"Width", "Height"};
+        ImGui::BeginDisabled(g.aspectType == 0);
+        ImGui::Combo("DominantAxis", &g.dominantAxis, axes, 2);
+        ImGui::EndDisabled();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Keeps the object it's in the same shape on every screen. FitWithinMaxSize: as big as fits "
+                            "in its Size. ScaleWithParentSize: DominantAxis keeps its size and the other side follows.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
     if (g.type == GuiType::UIStroke) {
         ImGui::SeparatorText("UIStroke");
         ImGui::ColorEdit3("Color", &g.borderColor.x);
@@ -294,6 +345,30 @@ void PropertiesPanel::renderGui(SceneNode* node) {
         }
         ImGui::ColorEdit3("ImageColor3", &g.imageColor.x);
         ImGui::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
+    }
+    if (g.type == GuiType::ViewportFrame) {
+        ImGui::SeparatorText("ViewportFrame");
+        // CurrentCamera: one of the Cameras inside it (or none: it frames what's inside by itself).
+        std::vector<SceneNode*> cams;
+        for (auto& c : node->children) if (c->isCamera()) cams.push_back(c.get());
+        SceneNode* cur = g.camera ? m_scene->findById(g.camera) : nullptr;
+        if (ImGui::BeginCombo("CurrentCamera", cur ? cur->name.c_str() : "(none: fit what's inside)")) {
+            if (ImGui::Selectable("(none: fit what's inside)", !cur)) g.camera = 0;
+            for (SceneNode* c : cams)
+                if (ImGui::Selectable((c->name + "##" + std::to_string(c->id)).c_str(), c == cur)) g.camera = c->id;
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Insert a Camera into the frame to pick it here.");
+        ImGui::ColorEdit3("Ambient", &g.ambient.x);
+        ImGui::ColorEdit3("LightColor", &g.lightColor.x);
+        ImGui::DragFloat3("LightDirection", &g.lightDir.x, 0.02f, -1.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("The way the light shines: -1, -1, -1 = down from the top right.");
+        ImGui::ColorEdit3("ImageColor3", &g.imageColor.x);
+        ImGui::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Shows the parts and models inside it as a little 3D picture (an item in a shop, a "
+                            "character preview). They aren't in the world: no physics, nobody bumps into them.");
+        ImGui::PopTextWrapPos();
     }
     if (node->isGuiButton()) {
         ImGui::SeparatorText("Button");
@@ -408,6 +483,70 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled(h.onTop ? "Colours the part or model it's in, with an outline round it, seen even through walls."
                                     : "Colours the part or model it's in, with an outline round it, only where you can see it.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    if (node->isPostEffect()) {
+        PostEffectProps& p = node->post;
+        ImGui::SeparatorText(kPostEffectClassNames[(int)p.type]);
+        ImGui::Checkbox("Enabled", &node->enabled);
+        const char* about = "";
+        switch (p.type) {
+            case PostEffectType::ColorCorrection:
+                ImGui::SliderFloat("Brightness", &p.brightness, -1.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Contrast", &p.contrast, -1.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Saturation", &p.saturation, -1.0f, 1.0f, "%.2f");
+                ImGui::ColorEdit3("TintColor", &p.tint.x);
+                about = "Changes the colours of everything on screen. Saturation -1 = black and white.";
+                break;
+            case PostEffectType::SunRays:
+                ImGui::SliderFloat("Intensity", &p.intensity, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Spread", &p.spread, 0.0f, 1.0f, "%.2f");
+                about = "Rays of light from the sun, past whatever is in front of it. Off on Low graphics.";
+                break;
+            case PostEffectType::DepthOfField:
+                ImGui::SliderFloat("FarIntensity", &p.farIntensity, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("FocusDistance", &p.focusDistance, 0.0f, 200.0f, "%.1f studs");
+                ImGui::SliderFloat("InFocusRadius", &p.inFocusRadius, 0.0f, 50.0f, "%.1f studs");
+                ImGui::SliderFloat("NearIntensity", &p.nearIntensity, 0.0f, 1.0f, "%.2f");
+                about = "Blurs things nearer and further than FocusDistance, like a camera lens. Off on Low graphics.";
+                break;
+            case PostEffectType::Bloom:
+                ImGui::SliderFloat("Intensity", &p.intensity, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Size", &p.size, 0.0f, 56.0f, "%.0f");
+                ImGui::SliderFloat("Threshold", &p.threshold, 0.0f, 4.0f, "%.2f");
+                about = "Bright things glow. Takes over from the bloom in the Lighting settings.";
+                break;
+            case PostEffectType::Blur:
+                ImGui::SliderFloat("Size", &p.size, 0.0f, 56.0f, "%.0f");
+                about = "Blurs the whole screen (menus, being dizzy...).";
+                break;
+        }
+        clampPostEffect(p);
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s Works right inside Lighting (or the Camera, from a script). Several add up.", about);
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    if (node->isSky()) {
+        SkyProps& k = node->sky;
+        ImGui::SeparatorText("Sky");
+        const std::pair<const char*, std::string*> pics[] = {
+            {"SkyboxBk", &k.bk}, {"SkyboxDn", &k.dn}, {"SkyboxFt", &k.ft}, {"SkyboxLf", &k.lf},
+            {"SkyboxRt", &k.rt}, {"SkyboxUp", &k.up}, {"SunTextureId", &k.sun}, {"MoonTextureId", &k.moon}};
+        for (auto& [label, value] : pics) ImGui::InputTextWithHint(label, "(the engine's own)", value);
+        ImGui::Checkbox("CelestialBodiesShown", &k.celestial);
+        ImGui::SliderInt("StarCount", &k.starCount, 0, 5000);
+        ImGui::SliderFloat("SunAngularSize", &k.sunSize, 0.0f, 60.0f, "%.1f");
+        ImGui::SliderFloat("MoonAngularSize", &k.moonSize, 0.0f, 60.0f, "%.1f");
+        clampSky(k);
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Put it right inside Lighting. Pictures are like a Decal's (an uploaded picture or a file in the games "
+                            "folder); the skybox shows when all six load, else the Lighting settings' sky stays.");
         ImGui::PopTextWrapPos();
         return;
     }
@@ -560,6 +699,18 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     }
 
     if (node->isGui()) { renderGui(node); return; }
+
+    if (node->isCamera()) {
+        ImGui::SeparatorText("Camera");
+        ImGui::DragFloat3("Position", &node->transform.position.x, 0.05f);
+        ImGui::DragFloat3("Orientation", &node->transform.rotation.x, 0.5f, -360.0f, 360.0f, "%.1f");
+        ImGui::SliderFloat("FieldOfView", &node->fieldOfView, 1.0f, 120.0f, "%.0f deg");
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("A camera for a ViewportFrame (its CurrentCamera): it looks along its front (-Z). "
+                            "Turn it with Orientation, or set its CFrame in a script.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
 
     if (node->isDecal()) {
         ImGui::SeparatorText("Decal");
@@ -776,7 +927,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     }
     if (node->isConstraint()) {
         int t = (int)node->constraintType;
-        if (ImGui::Combo("Type", &t, kConstraintNames, 5)) { node->constraintType = (ConstraintType)t; node->jointReady = false; }
+        if (ImGui::Combo("Type", &t, kConstraintNames, kConstraintTypeCount)) { node->constraintType = (ConstraintType)t; node->jointReady = false; }
         ImGui::Checkbox("Enabled", &node->enabled);
         ImGui::SameLine();
         ImGui::Checkbox("Visible", &node->visible);
@@ -785,6 +936,26 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         auto owner = [](SceneNode* r) { return r ? (r->isAttachment() && r->parent ? r->parent->name : r->name) : std::string("(missing)"); };
         ImGui::TextDisabled("Connects %s  <->  %s", owner(r0).c_str(), owner(r1).c_str());
         ConstraintType ct = node->constraintType;
+        if (ct != ConstraintType::Weld) {
+            // Its two Attachments: pick from every Attachment in the game.
+            std::vector<SceneNode*> atts;
+            m_scene->forEach([&](SceneNode* n) { if (n->isAttachment()) atts.push_back(n); });
+            auto label = [](const SceneNode* a) { return a ? (a->parent ? a->parent->name + "." + a->name : a->name) : std::string("(none)"); };
+            auto pick = [&](const char* name, uint64_t& id) {
+                SceneNode* cur = id ? m_scene->findById(id) : nullptr;
+                if (ImGui::BeginCombo(name, label(cur).c_str())) {
+                    if (ImGui::Selectable("(none)", !cur)) { id = 0; node->jointReady = false; }
+                    for (SceneNode* a : atts) {
+                        ImGui::PushID(a);
+                        if (ImGui::Selectable(label(a).c_str(), a == cur)) { id = a->id; node->jointReady = false; }
+                        ImGui::PopID();
+                    }
+                    ImGui::EndCombo();
+                }
+            };
+            pick("Attachment0", node->ref0);
+            pick("Attachment1", node->ref1);
+        }
         if (ct == ConstraintType::Rope || ct == ConstraintType::Rod || ct == ConstraintType::Spring) {
             bool autoLen = node->length < 0.0f;
             if (ImGui::Checkbox("Length as placed", &autoLen)) node->length = autoLen ? -1.0f : 4.0f;
@@ -801,6 +972,63 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
                 ImGui::DragFloat("Speed", &node->motorSpeed, 0.05f, -100.0f, 100.0f, "%.2f rad/s");
                 ImGui::DragFloat("Strength", &node->motorTorque, 10.0f, 0.0f, 1e7f);
             }
+        }
+        if (usesJointProps(ct)) {
+            JointProps& p = node->joint;
+            auto actuator = [](const char* label, Actuator& a) {
+                int v = (int)a;
+                if (ImGui::Combo(label, &v, kActuatorNames, 3)) a = (Actuator)v;
+            };
+            ImGui::PushTextWrapPos(0);
+            if (ct == ConstraintType::BallSocket) {
+                ImGui::TextDisabled("Holds the two attachments together and lets them turn any way, like a shoulder.");
+                ImGui::Checkbox("LimitsEnabled", &p.limitsEnabled);
+                if (p.limitsEnabled) ImGui::DragFloat("UpperAngle", &p.upperAngle, 0.5f, 0.0f, 180.0f, "%.1f deg");
+                ImGui::Checkbox("TwistLimitsEnabled", &p.twistLimitsEnabled);
+                if (p.twistLimitsEnabled) {
+                    ImGui::DragFloat("TwistLowerAngle", &p.twistLowerAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                    ImGui::DragFloat("TwistUpperAngle", &p.twistUpperAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                }
+                if (p.limitsEnabled || p.twistLimitsEnabled) ImGui::SliderFloat("Restitution", &p.restitution, 0.0f, 1.0f);
+            } else {
+                ImGui::TextDisabled(ct == ConstraintType::Prismatic
+                    ? "Lets Attachment1 slide along Attachment0's axis (its X), like a drawer or a lift. It can't turn."
+                    : "Lets Attachment1 slide along Attachment0's axis and spin around it, like a piston or a drill.");
+                ImGui::Checkbox("LimitsEnabled", &p.limitsEnabled);
+                if (p.limitsEnabled) {
+                    ImGui::DragFloat("LowerLimit", &p.lowerLimit, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
+                    ImGui::DragFloat("UpperLimit", &p.upperLimit, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
+                    ImGui::SliderFloat("Restitution", &p.restitution, 0.0f, 1.0f);
+                }
+                actuator("ActuatorType", p.actuator);
+                if (p.actuator == Actuator::Motor) {
+                    ImGui::DragFloat("Velocity", &p.velocity, 0.05f, -1000.0f, 1000.0f, "%.2f studs/s");
+                    ImGui::DragFloat("MotorMaxForce", &p.motorMaxForce, 10.0f, 0.0f, 1e9f);
+                } else if (p.actuator == Actuator::Servo) {
+                    ImGui::DragFloat("TargetPosition", &p.targetPosition, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
+                    ImGui::DragFloat("Speed", &p.speed, 0.05f, 0.0f, 1000.0f, "%.2f studs/s");
+                    ImGui::DragFloat("ServoMaxForce", &p.servoMaxForce, 10.0f, 0.0f, 1e9f);
+                }
+                if (ct == ConstraintType::Cylindrical) {
+                    ImGui::SeparatorText("Spinning");
+                    ImGui::DragFloat("InclinationAngle", &p.inclinationAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                    ImGui::Checkbox("AngularLimitsEnabled", &p.angularLimitsEnabled);
+                    if (p.angularLimitsEnabled) {
+                        ImGui::DragFloat("LowerAngle", &p.lowerAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                        ImGui::DragFloat("UpperAngle", &p.upperAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                    }
+                    actuator("AngularActuatorType", p.angularActuator);
+                    if (p.angularActuator == Actuator::Motor) {
+                        ImGui::DragFloat("AngularVelocity", &p.angularVelocity, 0.05f, -100.0f, 100.0f, "%.2f rad/s");
+                        ImGui::DragFloat("MotorMaxTorque", &p.motorMaxTorque, 10.0f, 0.0f, 1e9f);
+                    } else if (p.angularActuator == Actuator::Servo) {
+                        ImGui::DragFloat("TargetAngle", &p.targetAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                        ImGui::DragFloat("AngularSpeed", &p.angularSpeed, 0.05f, 0.0f, 100.0f, "%.2f rad/s");
+                        ImGui::DragFloat("ServoMaxTorque", &p.servoMaxTorque, 10.0f, 0.0f, 1e9f);
+                    }
+                }
+            }
+            ImGui::PopTextWrapPos();
         }
         if (ct != ConstraintType::Weld) {
             ImGui::ColorEdit3("Color", &node->color.x);
@@ -919,6 +1147,27 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::Checkbox("Can Collide", &node->canCollide);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Turn off to let things pass through");
         ImGui::Checkbox("Cast Shadow", &node->castShadow);
+        // Collision Group (PhysicsService): which registered group it's in.
+        const CollisionGroups& groups = m_scene->world().collisionGroups;
+        const bool known = groups.find(node->collisionGroup) >= 0;
+        std::string shown = known ? node->collisionGroup : node->collisionGroup + " (not registered: acts as Default)";
+        if (ImGui::BeginCombo("Collision Group", shown.c_str())) {
+            for (int i : groups.slots()) {
+                const bool on = groups.names[i] == node->collisionGroup;
+                if (ImGui::Selectable(groups.names[i].c_str(), on)) {
+                    const std::string g = groups.names[i];
+                    for (SceneNode* s : m_scene->selection())   // (every selected part)
+                        if (s->isPart()) s->collisionGroup = g;
+                    node->collisionGroup = g;
+                }
+                if (on) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Parts in groups that don't collide pass through each other");
+        if (ImGui::SmallButton("Edit Collision Groups...") && m_editCollisionGroups) m_editCollisionGroups();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Collision Groups: add groups and choose which ones collide");
     }
 
     // --- Physics (how it behaves when unanchored) ---

@@ -1,6 +1,7 @@
 #pragma once
 // Small helpers shared by the server's files.
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <ctime>
@@ -99,6 +100,22 @@ inline bool readFile(const fs::path& p, std::string& out) {
     out = ss.str();
     return true;
 }
+
+// Library models' "Best rated" sort: the Wilson score (the lowest the real like rate is likely
+// to be, 95% sure), so 1 vote at 100% doesn't beat 500 votes at 95%. Unrated scores 0.
+// (worker/server.js wilsonScore has the same.)
+inline double wilsonScore(long long up, long long down) {
+    const double n = (double)(up + down);
+    if (n <= 0) return 0;
+    const double z = 1.96, p = (double)up / n;
+    return (p + z * z / (2 * n) - z * std::sqrt((p * (1 - p) + z * z / (4 * n)) / n)) / (1 + z * z / n);
+}
+// Games' rating for the "rated" sort: likes out of votes, pulled towards 50% while there are few.
+inline double gameRating(long long up, long long down) { return (double)(up + 1) / (double)(up + down + 2); }
+// Things people give a thumbs up or down: games and Library models.
+inline bool hasVotes(const std::string& kind) { return kind == "game" || kind == "model"; }
+constexpr size_t kMaxUsedModels = 2000;   // Library models someone inserted (they can rate those), newest kept
+constexpr size_t kGiftNote = 100;         // the note that comes with a gift
 
 inline void log(const std::string& what) {
     std::time_t t = std::time(nullptr);

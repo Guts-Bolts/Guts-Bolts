@@ -34,6 +34,15 @@ using json = nlohmann::json;
 
 namespace {
 
+// A character's collision group as the host has it (Physics::characterGroup reads it
+// back from the HumanoidRootPart): put on its body parts when it's different here.
+void setCharacterGroup(SceneNode* root, const std::string& group) {
+    if (!root || Physics::characterGroup(root) == group) return;
+    const std::string g = group.empty() ? std::string(CollisionGroups::kDefault) : group.substr(0, CollisionGroups::kMaxNameLength);
+    for (auto& c : root->children)
+        if (c->isPart()) c->collisionGroup = g;
+}
+
 // Our Verified / Staff badges, sent along so others can check them.
 json myGrants() {
     json g = json::array();
@@ -199,12 +208,16 @@ std::string nodeState(const SceneNode* n) {
         }
     }
     if (n->kind == NodeKind::Model && n->primaryPart) extra += "|pp" + std::to_string(n->primaryPart);
+    if (n->collisionGroup != CollisionGroups::kDefault) extra += "|cg:" + n->collisionGroup;
     if (!extra.empty()) return std::string(buf) + extra;   // (parts and models: none of the kinds below)
     if (n->isGui()) return std::string(buf) + Serializer::guiToJson(n->gui).dump();   // text, colours, sizes...
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
     if (n->isClickDetector()) return std::string(buf) + Serializer::clickToJson(n->click).dump();
     if (n->isHighlight()) return std::string(buf) + Serializer::highlightToJson(n->highlight, n->enabled).dump();
     if (n->isEffect()) return std::string(buf) + Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam).dump();
+    if (n->isPostEffect()) return std::string(buf) + Serializer::postEffectToJson(n->post, n->enabled).dump();
+    if (n->isSky()) return std::string(buf) + Serializer::skyToJson(n->sky).dump();
+    if (n->isConstraint() && usesJointProps(n->constraintType)) return std::string(buf) + Serializer::jointToJson(n->joint).dump();
     if (n->isParticles()) return std::string(buf) + Serializer::particleToJson(n->particle, n->enabled).dump();
     return buf;
 }
@@ -214,11 +227,15 @@ json nodeUpdate(const SceneNode* n) {
             {"a", n->transparency}, {"v", n->visible}, {"cc", n->canCollide}, {"e", n->enabled},
             {"m", (int)n->material}, {"sh", (int)n->primitiveType}, {"b", n->brightness},
             {"rg", n->range}, {"sa", n->spotAngle}};
+    if (n->collisionGroup != CollisionGroups::kDefault) u["cg"] = n->collisionGroup;
     if (n->isGui()) u["gui"] = Serializer::guiToJson(n->gui);
     if (n->isPrompt()) u["pr"] = Serializer::promptToJson(n->prompt, n->enabled);
     if (n->isClickDetector()) u["cd"] = Serializer::clickToJson(n->click);
     if (n->isHighlight()) u["hl"] = Serializer::highlightToJson(n->highlight, n->enabled);
     if (n->isEffect()) u["fx"] = Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam);
+    if (n->isPostEffect()) u["pfx"] = Serializer::postEffectToJson(n->post, n->enabled);
+    if (n->isSky()) u["sky"] = Serializer::skyToJson(n->sky);
+    if (n->isConstraint() && usesJointProps(n->constraintType)) u["jt"] = Serializer::jointToJson(n->joint);
     u.update(nodeExtras(n));
     if (n->isParticles()) u["px"] = Serializer::particleToJson(n->particle, n->enabled);
     return u;
@@ -230,6 +247,7 @@ void applyUpdate(SceneNode* n, const json& u) {
     n->transparency = u.value("a", 0.0f);
     n->visible      = u.value("v", true);
     n->canCollide   = u.value("cc", true);
+    n->collisionGroup = u.value("cg", std::string(CollisionGroups::kDefault)).substr(0, CollisionGroups::kMaxNameLength);
     n->enabled      = u.value("e", true);
     n->material     = (Material)std::clamp(u.value("m", 0), 0, kMaterialCount - 1);
     auto shape = (PrimitiveType)u.value("sh", (int)n->primitiveType);
@@ -249,6 +267,9 @@ void applyUpdate(SceneNode* n, const json& u) {
     if (n->isClickDetector() && u.contains("cd") && u["cd"].is_object()) Serializer::clickFromJson(u["cd"], n->click);
     if (n->isHighlight() && u.contains("hl") && u["hl"].is_object()) Serializer::highlightFromJson(u["hl"], n->highlight, n->enabled);
     if (n->isEffect() && u.contains("fx") && u["fx"].is_object()) Serializer::effectFromJson(u["fx"], n->effect, n->enabled);
+    if (n->isPostEffect() && u.contains("pfx") && u["pfx"].is_object()) Serializer::postEffectFromJson(u["pfx"], n->post, n->enabled);
+    if (n->isSky() && u.contains("sky") && u["sky"].is_object()) Serializer::skyFromJson(u["sky"], n->sky);
+    if (n->isConstraint() && u.contains("jt") && u["jt"].is_object()) Serializer::jointFromJson(u["jt"], n->joint);
     applyExtras(n, u);
     if (n->isParticles() && u.contains("px") && u["px"].is_object()) Serializer::particleFromJson(u["px"], n->particle, n->enabled, true);
 }
@@ -1132,6 +1153,11 @@ std::string NetServer::worldMessage(bool) {
     const WorldSettings& ws = m_scene->world();
     json cam = {{"ortho", ws.orthographic}, {"size", ws.orthographicSize}, {"player", cameraJson(ws.playerCamera)}};
     if (cam.dump() != m_lastCam) { msg["cam"] = cam; m_lastCam = cam.dump(); }
+    // The collision groups (scripts register them while playing; joiners get them with the scene).
+    {
+        std::string groups = Serializer::collisionGroupsToJson(ws.collisionGroups).dump();
+        if (groups != m_lastGroups) { msg["cgt"] = json::parse(groups); m_lastGroups = std::move(groups); }
+    }
     // The terrain, when a script changed it (joiners get it with the scene). At most
     // twice a second: it can be big, and a script might change it every frame.
     {
@@ -1233,6 +1259,7 @@ void NetServer::sendTick() {
             if (ch.id == c->rootId) continue;
             json entry = {{"i", ch.id}, {"n", ch.name}, {"a", ch.admin}, {"v", ch.verified}, {"c", ch.creator},
                           {"pose", poseJson(Player::capturePose(ch.root))}};
+            if (const std::string& g = Physics::characterGroup(ch.root); g != CollisionGroups::kDefault) entry["cg"] = g;
             if (auto st = m_session->scripts().leaderstats(ch.name); !st.empty()) entry["s"] = statsJson(st);
             if (!c->knownChars.count(ch.id)) {                   // first time: send the whole model
                 entry["rig"] = Serializer::nodeToString(*ch.root);
@@ -1244,6 +1271,8 @@ void NetServer::sendTick() {
         }
         msg["chars"] = list;
         msg["ts"] = clockNow();
+        if (SceneNode* mine = m_scene->findById(c->rootId))
+            if (const std::string& g = Physics::characterGroup(mine); g != CollisionGroups::kDefault) msg["mycg"] = g;
         if (auto mine = m_session->scripts().leaderstats(c->name); !mine.empty()) msg["mys"] = statsJson(mine);
         c->conn->send(msg.dump());
         // Highlights, Trails and Beams on characters (their own too), when they change.
@@ -1588,6 +1617,10 @@ void NetClient::handle(const std::string& text) {
                     if (!m_scene->isCharacterPart(n)) drop(n);
         if (m.contains("env")) Serializer::environmentFromString(m_scene->environment(), m["env"].get<std::string>());
         if (m.contains("terrain")) m_scene->terrain().fromJson(m["terrain"]);
+        if (m.contains("cgt")) m_scene->world().collisionGroups = Serializer::collisionGroupsFromJson(m["cgt"]);
+        // Our own character's collision group (a script on the host put it in one), so
+        // walking here agrees with the host about what we pass through.
+        if (me && me->root()) setCharacterGroup(me->root(), m.value("mycg", std::string(CollisionGroups::kDefault)));
         if (m.contains("cam") && m["cam"].is_object()) {
             m_scene->world().orthographic = m["cam"].value("ortho", false);
             m_scene->world().orthographicSize = std::clamp(m["cam"].value("size", 0.0f), 0.0f, 2000.0f);
@@ -1624,6 +1657,7 @@ void NetClient::handle(const std::string& text) {
                 if (!root) continue;
                 showHeldTool(root, ch);
                 root->name = name;
+                setCharacterGroup(root, ch.value("cg", std::string(CollisionGroups::kDefault)));
                 if (!m_scene->findRemote(id)) {
                     RemoteCharacter rc;
                     rc.rootId = id;
