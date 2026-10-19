@@ -1,6 +1,7 @@
 #include "Application.h"
 #include "core/CrashHandler.h"
 #include "editor/StudioMcp.h"
+#include "scripting/ScriptEngine.h"
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -43,6 +44,9 @@ int main(int argc, char** argv) {
         }
         else if (argv[i][0] != '-')                     opts.openFile   = argv[i];  // double-clicked file
     }
+
+    // Tests drive pretend input from Lua (__gb_testInput), and only tests.
+    ScriptEngine::s_testHooks = !opts.testCommand.empty();
 
     try {
         Application app(opts);

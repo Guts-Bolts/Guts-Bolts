@@ -323,6 +323,7 @@ add_library(gb_engine STATIC
     src/renderer/Framebuffer.cpp
     src/renderer/ShadowMap.cpp
     src/renderer/SceneRenderer.cpp
+    src/renderer/ViewportRender.cpp
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
     src/scene/Player.cpp
@@ -351,10 +352,12 @@ add_library(gb_engine STATIC
     src/scripting/LuaTypes.cpp
     src/scripting/LuaInstance.cpp
     src/scripting/ScriptRemotes.cpp
+    src/scripting/ScriptActions.cpp
     src/game/GameSession.cpp
     src/game/Hud.cpp
     src/game/GameGui.cpp
     src/game/Prompts.cpp
+    src/game/ClickDetectors.cpp
     src/game/PlayCamera.cpp
     src/game/SettingsWindow.cpp
     src/game/Profile.cpp

@@ -45,8 +45,9 @@ bool NpcSystem::isRig(Scene& scene, const SceneNode* m) {
     // Hidden = kept in storage (ServerStorage, ReplicatedStorage) as a template.
     for (const SceneNode* n = m; n; n = n->parent) if (!n->visible) return false;
     // A character inside another character (or a tool) isn't walking around.
+    // (nor is one shown in a ViewportFrame)
     for (const SceneNode* n = m->parent; n; n = n->parent)
-        if (n->isTool() || n->isPart()) return false;
+        if (n->isTool() || n->isPart() || n->isViewportFrame()) return false;
     return true;
 }
 
@@ -221,7 +222,7 @@ void NpcSystem::step(Npc& n, SceneNode* r, float dt, Scene& scene, Physics& phys
     n.velocity.x *= drag;
     n.velocity.z *= drag;
 
-    Physics::MoveResult res = physics.moveCharacter(pos, delta, n.grounded, r->transform.rotation.y);
+    Physics::MoveResult res = physics.moveCharacter(pos, delta, n.grounded, r->transform.rotation.y, r->id, physics.groupOf(r));
     glm::vec2 wanted(delta.x, delta.z), got(res.position.x - pos.x, res.position.z - pos.z);
     if (moving && n.grounded && glm::length(wanted) > 1e-4f && glm::length(got) < glm::length(wanted) * 0.3f)
         n.stuckTime += dt;

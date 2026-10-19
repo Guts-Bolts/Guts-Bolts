@@ -34,10 +34,15 @@ const char* const kWords[] = {
     "NotProcessedYet", "UserOwnsGamePassAsync", "PromptGamePassPurchase",
     "TeleportService", "TeleportOptions", "Teleport", "TeleportAsync", "TeleportPartyAsync", "SetTeleportData", "GetJoinData",
     "GetLocalPlayerTeleportData",
+    "PhysicsService", "RegisterCollisionGroup", "UnregisterCollisionGroup", "RenameCollisionGroup", "IsCollisionGroupRegistered",
+    "GetRegisteredCollisionGroups", "CollisionGroupSetCollidable", "CollisionGroupsAreCollidable", "GetMaxCollisionGroups",
     "game:GetService", "Players.LocalPlayer", "RunService.Heartbeat", "UserInputService.InputBegan",
+    "ContextActionService", "BindAction", "BindActionAtPriority", "UnbindAction", "UnbindAllActions",
+    "GetBoundActionInfo", "GetAllBoundActionInfo", "SetTitle", "SetImage", "SetDescription", "SetPosition", "GetButton",
+    "ContextActionResult", "ContextActionPriority", "UserInputState", "KeyCode", "UserInputType",
     // Members
     "Parent", "Name", "ClassName", "Position", "Orientation", "Size", "CFrame", "Color", "Transparency", "Material",
-    "Anchored", "CanCollide", "Velocity", "AssemblyLinearVelocity", "AssemblyAngularVelocity", "Shape",
+    "Anchored", "CanCollide", "CollisionGroup", "RespectCanCollide", "Velocity", "AssemblyLinearVelocity", "AssemblyAngularVelocity", "Shape",
     "Touched", "Clicked", "Heartbeat", "Died", "Humanoid", "Health", "MaxHealth", "WalkSpeed", "JumpPower", "Character",
     "Connect", "Once", "Wait", "Disconnect", "FindFirstChild", "FindFirstChildOfClass", "WaitForChild", "GetChildren",
     "GetDescendants", "Destroy", "Clone", "IsA", "IsDescendantOf", "GetFullName", "GetPivot", "PivotTo",
@@ -52,7 +57,7 @@ const char* const kWords[] = {
     "Gui.Label", "Gui.Message", "Effects.Blood", "Effects.Oil", "Effects.Gibs", "Effects.Sparks", "Sounds.Play",
     // Game UI
     "UDim2.new", "UDim2.fromScale", "UDim2.fromOffset", "UDim.new", "Vector2.new", "StarterGui", "PlayerGui",
-    "ScreenGui", "Frame", "TextLabel", "TextButton", "ImageLabel", "ImageButton", "UICorner", "UIStroke", "UIShadow", "UIBlur", "TextBox", "ScrollingFrame", "UIListLayout", "UIGridLayout", "UIPadding", "BillboardGui", "SurfaceGui", "BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce", "LinearVelocity", "AlignPosition", "AlignOrientation", "VectorForce", "Torque",
+    "ScreenGui", "Frame", "TextLabel", "TextButton", "ImageLabel", "ImageButton", "UICorner", "UIStroke", "UIShadow", "UIBlur", "TextBox", "ScrollingFrame", "UIListLayout", "UIGridLayout", "UIPadding", "BillboardGui", "SurfaceGui", "UIGradient", "UIScale", "UIAspectRatioConstraint", "ViewportFrame", "WorldModel", "CurrentCamera", "AspectRatio", "AspectType", "DominantAxis", "LightDirection", "LightColor", "BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce", "LinearVelocity", "AlignPosition", "AlignOrientation", "VectorForce", "Torque",
     "AnchorPoint", "BackgroundColor3", "BackgroundTransparency", "BorderSizePixel", "BorderColor3", "ZIndex",
     "Visible", "Text", "TextColor3", "TextSize", "TextScaled", "TextWrapped", "TextXAlignment", "TextYAlignment",
     "TextTransparency", "TextStrokeTransparency", "TextStrokeColor3", "Image", "ImageColor3", "ImageTransparency",
@@ -64,6 +69,7 @@ const char* const kWords[] = {
     "ProximityPrompt", "ProximityPromptService", "Triggered", "TriggerEnded", "ActionText", "ObjectText",
     "KeyboardKeyCode", "HoldDuration", "MaxActivationDistance", "RequiresLineOfSight", "PromptButtonHoldBegan",
     "PromptButtonHoldEnded", "PromptShown", "PromptHidden", "ClickablePrompt",
+    "ClickDetector", "MouseClick", "RightMouseClick", "MouseHoverEnter", "MouseHoverLeave", "CursorIcon",
     "Highlight", "FillColor", "OutlineColor", "FillTransparency", "OutlineTransparency", "DepthMode",
     "HighlightDepthMode", "AlwaysOnTop", "Occluded", "Adornee",
     "Trail", "Beam", "Attachment0", "Attachment1", "ColorSequence", "ColorSequenceKeypoint", "NumberSequence",
@@ -77,6 +83,21 @@ const char* const kWords[] = {
     "ChorusSoundEffect", "CompressorSoundEffect", "FlangeSoundEffect", "TremoloSoundEffect",
     "DecayTime", "Density", "Diffusion", "DryLevel", "WetLevel", "Delay", "Feedback", "HighGain", "LowGain", "MidGain",
     "Level", "Octave", "Depth", "Mix", "Rate", "Attack", "GainMakeup", "Ratio", "Release", "Threshold", "Duty", "Frequency",
+    // Sky and screen effects (in Lighting, or the Camera)
+    "Sky", "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "SunTextureId", "MoonTextureId",
+    "StarCount", "CelestialBodiesShown", "SunAngularSize", "MoonAngularSize",
+    "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect", "PostEffect",
+    "Contrast", "Saturation", "TintColor", "Intensity", "Spread", "Threshold", "FarIntensity", "NearIntensity",
+    "FocusDistance", "InFocusRadius", "CurrentCamera",
+    // Joints
+    "Attachment", "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint",
+    "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint", "LimitsEnabled", "UpperAngle", "LowerAngle",
+    "TwistLimitsEnabled", "TwistLowerAngle", "TwistUpperAngle", "Restitution", "LowerLimit", "UpperLimit",
+    "ActuatorType", "Enum.ActuatorType.Motor", "Enum.ActuatorType.Servo", "MotorMaxForce", "ServoMaxForce",
+    "TargetPosition", "CurrentPosition", "AngularActuatorType", "MotorMaxTorque", "ServoMaxTorque", "AngularSpeed",
+    "TargetAngle", "CurrentAngle", "AngularLimitsEnabled", "InclinationAngle",
+    "ParticleEmitter", "Fire", "Smoke", "Sparkles", "Emit", "NumberRange", "Rate", "Speed", "SpreadAngle", "EmissionDirection",
+    "Acceleration", "Drag", "RotSpeed", "LockedToPart", "SecondaryColor", "Heat", "Opacity", "RiseVelocity", "SparkleColor",
 };
 
 bool wordChar(char c) { return std::isalnum((unsigned char)c) || c == '_'; }

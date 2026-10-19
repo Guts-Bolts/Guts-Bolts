@@ -352,6 +352,7 @@ void WaterSystem::stepSurges(float dt, Scene& scene) {
             while (!stack.empty()) {
                 SceneNode* n = stack.back();
                 stack.pop_back();
+                if (n->isViewportFrame()) continue;   // (its parts are only a picture)
                 for (auto& c : n->children) stack.push_back(c.get());
                 if (!n->isPart() || n->anchored || scene.isCharacterPart(n)) continue;
                 glm::vec3 dir; float k;

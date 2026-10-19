@@ -77,6 +77,7 @@ SceneNode* Physics::raycastIf(Scene& scene, const glm::vec3& ro, const glm::vec3
         SceneNode* node = stack.back();
         stack.pop_back();
         if (!node->visible || !counts(node)) continue;
+        if (node->isViewportFrame()) continue;   // (its parts are only a picture)
         for (auto& c : node->children) stack.push_back(c.get());
         if (!node->isPart() || node->internal) continue;
 
@@ -182,13 +183,13 @@ OBB Physics::charOBB(const glm::vec3& f, float yaw) {
     return o;
 }
 
-std::vector<Physics::Shove> Physics::shoves(const glm::vec3& feet, float yaw, float charMass) const {
+std::vector<Physics::Shove> Physics::shoves(const glm::vec3& feet, float yaw, float charMass, int group) const {
     std::vector<Shove> out;
     OBB me = charOBB(feet, yaw);
     me.half += glm::vec3(0.06f);
     AABB mine = bounds(me);
     for (const auto& c : m_colliders) {
-        if (!c.dynamic || !c.solid || !mine.overlaps(c.box)) continue;
+        if (!c.dynamic || !c.solid || !m_groups.collides(group, c.group) || !mine.overlaps(c.box)) continue;
         glm::vec3 n; float d;
         if (!obbOverlap(me, c.rotated ? c.obb : OBB::fromAABB(c.box), n, d)) continue;
         float approach = glm::dot(c.node->velocity, n);   // how fast it's coming at us
@@ -203,15 +204,10 @@ std::vector<Physics::Shove> Physics::shoves(const glm::vec3& feet, float yaw, fl
 
 float Physics::densityOf(const SceneNode* n) {
     if (n->density >= 0.0f) return std::max(0.01f, n->density);
-    switch (n->material) {
-        case Material::Metal:    return 3.0f;
-        case Material::Wood:     return 0.7f;
-        case Material::Glass:    return 2.5f;
-        case Material::Concrete: return 2.4f;
-        case Material::Ice:      return 0.9f;
-        default:                 return 1.0f;   // Plastic, Neon
-    }
+    return materialPhysics(n->material).density;
 }
+float Physics::frictionOf(const SceneNode* n) { return n->friction >= 0.0f ? n->friction : materialPhysics(n->material).friction; }
+float Physics::elasticityOf(const SceneNode* n) { return n->elasticity >= 0.0f ? n->elasticity : materialPhysics(n->material).elasticity; }
 
 AABB Physics::bounds(const OBB& o) {
     glm::vec3 e(0.0f);
@@ -231,16 +227,26 @@ void Physics::reset() {
     m_touching.clear();
 }
 
+const std::string& Physics::characterGroup(const SceneNode* root) {
+    static const std::string kDefault = CollisionGroups::kDefault;
+    if (!root) return kDefault;
+    for (const char* name : {"HumanoidRootPart", "Torso", "UpperTorso"})
+        if (const SceneNode* p = root->findChild(name); p && p->isPart()) return p->collisionGroup;
+    return root->isPart() ? root->collisionGroup : kDefault;
+}
+
 void Physics::gather(Scene& scene) {
     m_colliders.clear();
     m_terrain = scene.terrain().empty() ? nullptr : &scene.terrain();
+    if (m_groups != scene.world().collisionGroups) m_groups = scene.world().collisionGroups;
+    const bool groups = !m_groups.onlyDefault();
     uint64_t hash = 1469598103934665603ull;
     // Manual walk so whole subtrees (hidden models, the character) can be skipped.
     std::vector<SceneNode*> stack{scene.root()};
     while (!stack.empty()) {
         SceneNode* n = stack.back();
         stack.pop_back();
-        if (!n->visible) continue;
+        if (!n->visible || n->isViewportFrame()) continue;   // (a ViewportFrame's parts are only a picture)
         if (scene.isCharacterPart(n)) continue;
         if (n->isPart() && !n->internal)
         {
@@ -248,7 +254,7 @@ void Physics::gather(Scene& scene) {
             bool rot = isRotated(m);
             m_colliders.push_back({n, worldBounds(n), n->canCollide,
                                    !n->anchored && !hasDynamicAncestor(n), rot,
-                                   rot ? worldOBB(n) : OBB{}});
+                                   rot ? worldOBB(n) : OBB{}, groups ? m_groups.slotOf(n->collisionGroup) : 0});
             const Collider& c = m_colliders.back();
             if (c.solid && !c.dynamic) {   // the navmesh only cares about these
                 auto mix = [&](float f) { uint32_t u; std::memcpy(&u, &f, 4); hash = (hash ^ u) * 1099511628211ull; };
@@ -268,7 +274,7 @@ void Physics::gather(Scene& scene) {
     auto addBody = [&](SceneNode* root) {
         if (!root || !root->visible) return;
         OBB o = charOBB(root->transform.position, root->transform.rotation.y);
-        m_bodies.push_back({root, bounds(o), true, false, true, o});
+        m_bodies.push_back({root, bounds(o), true, false, true, o, groups ? groupOf(root) : 0});
     };
     if (Player* p = scene.player(); p && !p->isDead()) addBody(p->root());
     for (const RemoteCharacter& rc : scene.remotes())
@@ -400,14 +406,16 @@ bool Physics::resolveSphere(glm::vec3& c, float r, glm::vec3* normal) const {
 // Every solid part is tested against it with the separating-axis test, so it
 // fits through gaps sideways, brushes past corners and stands on ramps.
 Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec3& delta,
-                                           bool wasGrounded, float yaw, uint64_t self) const {
+                                           bool wasGrounded, float yaw, uint64_t self, int group) const {
     MoveResult r;
     glm::vec3 pos = feet;
-    // Parts, then the other characters' bodies (never our own).
+    // Parts, then the other characters' bodies (never our own); only the ones our
+    // collision group bumps into. The terrain is in the Default group.
     std::vector<const Collider*> solids;
     solids.reserve(m_colliders.size() + m_bodies.size());
-    for (const auto& c : m_colliders) if (c.solid) solids.push_back(&c);
-    for (const auto& c : m_bodies) if (c.node->id != self) solids.push_back(&c);
+    for (const auto& c : m_colliders) if (c.solid && m_groups.collides(group, c.group)) solids.push_back(&c);
+    for (const auto& c : m_bodies) if (c.node->id != self && m_groups.collides(group, c.group)) solids.push_back(&c);
+    const bool useTerrain = m_terrain && m_groups.collides(group, 0);
     auto boxOf = [](const Collider& c) { return c.rotated ? c.obb : OBB::fromAABB(c.box); };
     auto fits = [&](const glm::vec3& p) {
         OBB me = charOBB(p, yaw);
@@ -465,7 +473,7 @@ Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec
     // The terrain under us: climb gentle slopes, stop at cliffs.
     auto onTerrain = [&](const glm::vec3& before) {
         float g;
-        if (!terrainGround(pos, yaw, g) || g <= pos.y) return;
+        if (!useTerrain || !terrainGround(pos, yaw, g) || g <= pos.y) return;
         const glm::vec3 n = m_terrain->normalAt(pos.x, pos.z);
         if (n.y < 0.6f && g - before.y > 0.05f) {   // too steep to walk up (over about 53 degrees)
             pos.x = before.x;
@@ -487,7 +495,7 @@ Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec
         pos.x += h.x / steps;
         pos.z += h.y / steps;
         resolve(true, false);
-        if (m_terrain) onTerrain(before);
+        if (useTerrain) onTerrain(before);
     }
 
     // Fall / jump.
@@ -495,7 +503,7 @@ Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec
     bool wasGround = r.grounded;
     r.grounded = false;
     resolve(false, true);
-    if (m_terrain) {
+    if (useTerrain) {
         float g;
         if (terrainGround(pos, yaw, g) && g >= pos.y) { pos.y = g; r.grounded = true; r.groundId = 0; }
     }
@@ -517,7 +525,7 @@ Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec
             if (y <= pos.y + 0.01f && y > bestY) { bestY = y; bestId = c.node->id; }
         }
         float g;
-        if (terrainGround(pos, yaw, g) && g <= pos.y + 0.01f && g >= pos.y - 0.6f && g > bestY) { bestY = g; bestId = 0; }
+        if (useTerrain && terrainGround(pos, yaw, g) && g <= pos.y + 0.01f && g >= pos.y - 0.6f && g > bestY) { bestY = g; bestId = 0; }
         if (bestY > -1e29f) {
             r.dropped += pos.y - bestY;
             pos.y = bestY;
