@@ -1,3 +1,62 @@
+# Guts&Bolts 0.7.2: Feature Creep (October 19, 2026)
+
+We said "just a few things" and then added twenty-six. Games can dance, sell
+emotes, light things on fire, paint the sky, shake the camera and talk across
+servers. Studio can test with four players at once, and the website learned to
+gift, rate, roll back and say sorry.
+
+## New
+- **Emotes**: `/e dance`, `wave`, `cheer` and more play real animations
+  everyone sees. Press B for the emote wheel (phones get a smiley button). Buy
+  emotes and animation packs in the catalog and equip them on your Avatar page.
+- **Particles**: ParticleEmitter, Fire, Smoke and Sparkles. Drop one in a part
+  and it sprays, with Rate, Color, Size, gravity and more, and `Emit(50)` for
+  a burst.
+- **ClickDetectors**: put one in a part or model and players can click it to
+  make things happen.
+- **Eleven new materials**, like Brick, Cobblestone, Marble and Diamond Plate,
+  each with its own look and grip.
+- **Three new joints**: ball sockets, sliders, and joints that slide and spin.
+- **Collision groups**: choose which parts bump into which, so players can
+  walk through each other and team doors let only one team in.
+- **Your own controls**: games can bind keys and controller buttons, and give
+  phones their own on-screen buttons.
+- **Better game UI**: little 3D worlds inside UI, plus fading, growing and
+  keeping shape on every screen.
+- **Skies and screen effects**: paint your own Sky, and add bloom, blur,
+  colour grading, sun rays and depth of field in Lighting.
+- **Camera control**: cutscenes, locked first person, zoom limits and more.
+- **Cross-server messages**: MessagingService lets every server of a game
+  talk to the others.
+- **Sound groups and effects**: turn whole sets of sounds up or down, and add
+  echo, reverb, chorus, distortion and more.
+- **Teams and spawns**: team SpawnLocations, CharacterAdded/CharacterRemoving,
+  PrimaryPart and PivotTo, and scripts can use `+=`, `continue`, types and
+  `{name}` strings.
+- **Multiplayer testing in Studio**: test with 2, 3 or 4 players on your own
+  computer.
+- **Smarter AI helpers**: Studio's Assistant and connected AI apps reach every
+  service, use the same names as your scripts, and can publish when you ask.
+- **Gifts**: buy a catalog item for a friend, with a note.
+- **Gift boxes and Exclusive items**: own a gift box when it goes off sale
+  and a secret Exclusive item drops into your inventory.
+- **Lyreto servers**: games and groups can show their Lyreto chat server on
+  their page, with a Join button.
+- **Ratings**: thumbs up or down on Library models, and a "Best rated" sort.
+- **Screenshots**: games can show up to 5 screenshots on their page.
+- **Past trades**: a new tab with every finished trade.
+- **Version history**: every publish is kept, and one click puts an old
+  version back.
+- **Ban appeals and account deletion**: ask staff to look at a ban again, or
+  delete your account from Settings.
+- **Password help without an email**: ask staff on the new Support page.
+
+## Changed
+- Hats, shirts and pants lost the Colour box: hats come from Studio, and
+  shirts and pants are always a picture made from the template.
+- The server you can run on your own computer caught up with the main one
+  (Limiteds, trades, votes, icons and more).
+
 # Guts&Bolts 0.7.1: We Can Hear You. Unfortunately (October 7, 2026)
 
 Voice chat is here, so now you can hear everyone. We also added terrain, a

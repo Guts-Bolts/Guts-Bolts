@@ -10,7 +10,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'hello-from-the-other-server', name: 'Hello From the Other Server', time: 1792450920, tag: 'Website',
+    id: 'hello-from-the-other-server', name: 'Hello From the Other Server', version: '0.7.2', time: 1792450920, tag: 'Website',
     summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
     items: [
       'Lyreto is a free chat app for servers, voice and hanging out, and it\'s Guts&Bolts\' chat partner',
@@ -21,7 +21,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'whats-in-the-box', name: 'What\'s in the Box?!', time: 1792438313, tag: 'Website',
+    id: 'whats-in-the-box', name: 'What\'s in the Box?!', version: '0.7.2', time: 1792438313, tag: 'Website',
     summary: 'Gift boxes and Exclusive items: own a gift box when it goes off sale and a secret item drops into your inventory.',
     items: [
       'Gift boxes: staff can point a timed item at another item, and everyone who owns the box when it goes off sale gets that item for free',
@@ -32,7 +32,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'skeleton-key', name: 'Skeleton Key', time: 1792433006, tag: 'Studio',
+    id: 'skeleton-key', name: 'Skeleton Key', version: '0.7.2', time: 1792433006, tag: 'Studio',
     summary: 'Studio\'s Assistant and connected AI apps can now reach every service, use the same names as your scripts, and publish when you ask.',
     items: [
       'The AI helpers can put things in StarterPack, StarterGui, StarterPlayer (StarterPlayerScripts and StarterCharacterScripts), ReplicatedStorage, ServerStorage, ServerScriptService, Teams, SoundService and the rest',
@@ -46,7 +46,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'pick-a-side', name: 'Pick a Side', time: 1792381691, tag: 'Engine',
+    id: 'pick-a-side', name: 'Pick a Side', version: '0.7.2', time: 1792381691, tag: 'Engine',
     summary: 'Teams get their own spawns, models know their main part, and scripts can be written the newer way with += and continue.',
     items: [
       'SpawnLocations can belong to a team: players spawn on their team\'s spawns, and some can switch your team when you step on them',
@@ -58,7 +58,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'ember-and-ash', name: 'Ember & Ash', time: 1792380179, tag: 'Engine',
+    id: 'ember-and-ash', name: 'Ember & Ash', version: '0.7.2', time: 1792380179, tag: 'Engine',
     summary: 'Particle effects you can place: ParticleEmitter, Fire, Smoke and Sparkles, seen by everyone in the game.',
     items: [
       'Insert a ParticleEmitter into any part (Insert Object > Particles) and it starts spraying, even while you build',
@@ -70,7 +70,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'no-peeking', name: 'No Peeking!', time: 1791907200, tag: 'Website',
+    id: 'no-peeking', name: 'No Peeking!', version: '0.7.2', time: 1791907200, tag: 'Website',
     summary: 'Buy something from the catalog for a friend: you pay, they get it, with a note from you.',
     items: [
       'A new "Buy as a gift" button on catalog items: pick a friend, write a short note if you like, check it and send',
@@ -81,7 +81,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'bust-a-move', name: 'Bust a Move', time: 1791903600, tag: 'Engine',
+    id: 'bust-a-move', name: 'Bust a Move', version: '0.7.2', time: 1791903600, tag: 'Engine',
     summary: 'Emotes! Dance, wave and cheer with real animations everyone sees, pick them from a new emote menu, and get more in the catalog.',
     items: [
       'Type /e dance (or dance2, dance3, wave, point, cheer, laugh) in the chat, and everyone in the server sees you do it',
@@ -95,7 +95,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'two-thumbs-way-up', name: 'Two Thumbs Way Up', time: 1791900000, tag: 'Website',
+    id: 'two-thumbs-way-up', name: 'Two Thumbs Way Up', version: '0.7.2', time: 1791900000, tag: 'Website',
     summary: 'Rate Library models with a thumbs up or down, and find the best ones with the new "Best rated" sort.',
     items: [
       'Give any Library model a thumbs up or down on its page. Change your mind any time, or press your vote again to take it back',
@@ -105,7 +105,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'say-cheese', name: 'Say Cheese', time: 1791896400, tag: 'Website',
+    id: 'say-cheese', name: 'Say Cheese', version: '0.7.2', time: 1791896400, tag: 'Website',
     summary: 'Games can show off up to 5 screenshots on their page, next to the thumbnail.',
     items: [
       'Creators add up to 5 screenshots on a game\'s Configure page: .png, .jpg or .webp, up to 2 MB each',
@@ -116,7 +116,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'paper-trail', name: 'Paper Trail', time: 1791892800, tag: 'Website',
+    id: 'paper-trail', name: 'Paper Trail', version: '0.7.2', time: 1791892800, tag: 'Website',
     summary: 'A new Past trades tab on the Trades page: every finished trade, with who, what, when and how it ended.',
     items: [
       'Trades now has two tabs: Open trades and Past trades',
@@ -128,7 +128,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'rewind', name: 'Rewind', time: 1791889200, tag: 'Website',
+    id: 'rewind', name: 'Rewind', version: '0.7.2', time: 1791889200, tag: 'Website',
     summary: 'Publishing a game keeps its old versions now, and one click puts an old one back.',
     items: [
       'Every time you publish a game (from Studio, or with "New version" on the website), the version it replaces is kept',
@@ -140,7 +140,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'echo-chamber', name: 'Echo Chamber', time: 1791885600, tag: 'Engine',
+    id: 'echo-chamber', name: 'Echo Chamber', version: '0.7.2', time: 1791885600, tag: 'Engine',
     summary: 'Sound groups turn whole sets of sounds up or down at once, and nine sound effects make them echo, ring, wobble and crunch.',
     items: [
       'SoundGroup: put one in SoundService and set a Sound\'s SoundGroup to it. The group\'s Volume multiplies the sound\'s, so one slider turns all the music or all the footsteps up or down',
@@ -154,7 +154,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'crosstalk', name: 'Crosstalk', time: 1791882000, tag: 'Engine',
+    id: 'crosstalk', name: 'Crosstalk', version: '0.7.2', time: 1791882000, tag: 'Engine',
     summary: 'MessagingService lets every running server of your game talk to the others: global announcements, cross-server events and more.',
     items: [
       'MessagingService:PublishAsync(topic, message) sends a message to every server of the same game that\'s running right now, including the one that sent it',
@@ -166,7 +166,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'joint-venture', name: 'Joint Venture', time: 1791878400, tag: 'Engine',
+    id: 'joint-venture', name: 'Joint Venture', version: '0.7.2', time: 1791878400, tag: 'Engine',
     summary: 'Three new joints: ball sockets that turn any way, sliders, and joints that slide and spin at once.',
     items: [
       'BallSocketConstraint: two parts held at one point that can turn any way, with an optional cone limit, twist limits and bounce',
@@ -179,7 +179,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'rose-tinted-skies', name: 'Rose-Tinted Skies', time: 1791874800, tag: 'Engine',
+    id: 'rose-tinted-skies', name: 'Rose-Tinted Skies', version: '0.7.2', time: 1791874800, tag: 'Engine',
     summary: 'Paint your own sky and grade the whole screen: Sky objects and five screen effects in Lighting.',
     items: [
       'Put a Sky in Lighting for your own skybox pictures, a custom sun and moon, more or fewer stars, or no sun and moon at all',
@@ -193,7 +193,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'snow-globe', name: 'Snow Globe', time: 1791871200, tag: 'Engine',
+    id: 'snow-globe', name: 'Snow Globe', version: '0.7.2', time: 1791871200, tag: 'Engine',
     summary: 'Game UI can hold a little 3D world now, and fade, grow and keep its shape on every screen.',
     items: [
       'ViewportFrame: put parts and models in it and they show up as a little 3D picture, great for shop items and character previews',
@@ -206,7 +206,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'hotkey-heist', name: 'Hotkey Heist', time: 1791867600, tag: 'Engine',
+    id: 'hotkey-heist', name: 'Hotkey Heist', version: '0.7.2', time: 1791867600, tag: 'Engine',
     summary: 'Games can bind their own keys and controller buttons, and give phones their own on-screen buttons.',
     items: [
       'ContextActionService works: a LocalScript binds an action to keys, controller buttons, mouse clicks or fingers with BindAction',
@@ -218,7 +218,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'phase-shift', name: 'Phase Shift', time: 1791864000, tag: 'Engine',
+    id: 'phase-shift', name: 'Phase Shift', version: '0.7.2', time: 1791864000, tag: 'Engine',
     summary: 'Collision groups are real now: choose which parts bump into which, so players can walk through each other and team doors let only one team in.',
     items: [
       'PhysicsService collision groups work for real: register groups, then say which ones collide and which pass through each other (up to 32)',
@@ -231,7 +231,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'second-chances', name: 'Second Chances', time: 1791860400, tag: 'Website',
+    id: 'second-chances', name: 'Second Chances', version: '0.7.2', time: 1791860400, tag: 'Website',
     summary: 'Banned? Ask staff to take another look. Done with Guts&Bolts? Delete your account from Settings.',
     items: [
       'A banned account can send staff one short appeal (up to 500 letters) right from the ban screen, on the website or in the Player',
@@ -244,7 +244,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'bricks-and-mortar', name: 'Bricks & Mortar', time: 1791853200, tag: 'Engine',
+    id: 'bricks-and-mortar', name: 'Bricks & Mortar', version: '0.7.2', time: 1791853200, tag: 'Engine',
     summary: 'Eleven new materials, each with its own look and feel: Brick, Cobblestone, Marble, Diamond Plate and more.',
     items: [
       'New materials: Sand, Grass, Brick, Fabric, Slate, Granite, Marble, Cobblestone, Foil, DiamondPlate and SmoothPlastic',
@@ -256,7 +256,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'push-the-big-red-button', name: 'Push the Big Red Button', time: 1791842400, tag: 'Engine',
+    id: 'push-the-big-red-button', name: 'Push the Big Red Button', version: '0.7.2', time: 1791842400, tag: 'Engine',
     summary: 'ClickDetectors: put one in a part or model and players can click it to make things happen.',
     items: [
       'Buttons, levers and "click to buy" signs: a ClickDetector fires MouseClick with the player who clicked',
@@ -267,7 +267,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'party-of-one-no-more', name: 'Party of One No More', time: 1791838800, tag: 'Studio',
+    id: 'party-of-one-no-more', name: 'Party of One No More', version: '0.7.2', time: 1791838800, tag: 'Studio',
     summary: 'Studio can test your game with 2, 3 or 4 players at once, all on your own computer, no friends needed.',
     items: [
       'TEST > Players > "Test with 2 / 3 / 4 players" starts your game on a test server on this computer and opens a Player window for each player',
@@ -279,7 +279,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'lost-and-found', name: 'Lost & Found', time: 1791838800, tag: 'Website',
+    id: 'lost-and-found', name: 'Lost & Found', version: '0.7.2', time: 1791838800, tag: 'Website',
     summary: 'Forgot your password and never added an email? Ask staff on the new Support page and get back in.',
     items: [
       'A new Support page (link at the bottom of every page): ask staff for help, even when you can\'t log in',
@@ -291,7 +291,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'directors-cut', name: 'Director\'s Cut', time: 1791835200, tag: 'Engine',
+    id: 'directors-cut', name: 'Director\'s Cut', version: '0.7.2', time: 1791835200, tag: 'Engine',
     summary: 'Games can now take over the camera: cutscenes, locked first person, zoom limits and more.',
     items: [
       'workspace.CurrentCamera: scripts can read and set its CFrame, FieldOfView, Focus and CameraSubject',
@@ -304,7 +304,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'twin-engines', name: 'Twin Engines', time: 1791831600, tag: 'Server',
+    id: 'twin-engines', name: 'Twin Engines', version: '0.7.2', time: 1791831600, tag: 'Server',
     summary: 'The server you can run on your own computer caught up with the main one: Limiteds, trades, votes, icons and more.',
     items: [
       'Limiteds work on your own server too: numbered copies, sold-out stock, reselling and trading',
@@ -316,7 +316,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'paint-by-numbers', name: 'Paint by Numbers', time: 1791828000, tag: 'Website',
+    id: 'paint-by-numbers', name: 'Paint by Numbers', version: '0.7.2', time: 1791828000, tag: 'Website',
     summary: 'The useless Colour box is gone from every item: hats come from Studio, and shirts and pants are always a picture.',
     items: [
       'No more Colour box when you upload or edit a hat, shirt or pants, on the website or in the app',
