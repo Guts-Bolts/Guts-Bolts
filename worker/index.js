@@ -71,7 +71,7 @@ export default {
     const url = new URL(request.url);
     // The site lives at gutsandbolts.net. The old workers.dev address only keeps answering
     // older apps (the server and its pictures); people opening it in a browser get moved.
-    if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|wear|decal|download)(\/|$)/.test(url.pathname))
+    if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|download)(\/|$)/.test(url.pathname))
       return Response.redirect('https://gutsandbolts.net' + url.pathname + url.search, 301);
     if (url.pathname.startsWith('/download/')) return handleDownload(request, env, url);
     if (url.pathname === '/api/info') {
@@ -80,7 +80,7 @@ export default {
     // The server on Cloudflare: one Durable Object holds everything.
     const builtIn = () => env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main'));
     if (url.pathname === '/ws') return builtIn().fetch(request);
-    if ((url.pathname.startsWith('/thumb/') || url.pathname.startsWith('/icon/') || url.pathname.startsWith('/wear/') || url.pathname.startsWith('/decal/')) && !env.GB_SERVER) return builtIn().fetch(request);
+    if ((url.pathname.startsWith('/thumb/') || url.pathname.startsWith('/icon/') || url.pathname.startsWith('/shot/') || url.pathname.startsWith('/wear/') || url.pathname.startsWith('/decal/')) && !env.GB_SERVER) return builtIn().fetch(request);
     if (url.pathname === '/api') {
       if (request.method !== 'POST') return reply({ ok: false, error: 'Use POST.' }, 405);
       if (!env.GB_SERVER) {

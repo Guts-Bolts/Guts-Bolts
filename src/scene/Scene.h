@@ -8,6 +8,7 @@
 #include "Particles.h"
 #include "Blast.h"
 #include "Animation.h"
+#include "CollisionGroups.h"
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -76,6 +77,7 @@ struct WorldSettings {
     float      bloodStay   = 30.0f;         // seconds pools and splats stay before drying up
     float      spawnForceField = 4.0f;      // seconds of ForceField after spawning (0 = none)
     bool       playerCollisions = true;     // characters bump into each other (off = walk through)
+    CollisionGroups collisionGroups;        // PhysicsService's groups and which of them collide
     bool       voiceChat = true;            // players who turned voice chat on can talk (off = nobody can, in this game)
     int        maxFluidParticles = 100000;  // real liquid: the most drops at once (the oldest are recycled)
     // The players' camera: orthographic = no perspective (2D, isometric and puzzle
@@ -103,6 +105,11 @@ struct RemoteCharacter {
     bool          cameraSet = false;
     CameraOptions camera;
     std::vector<uint64_t> toolSlots;     // their hotbar order (the host keeps their tools)
+    // Their team (the host's scripts decide; sent to them so they spawn in the right place).
+    uint64_t    team = 0;
+    bool        neutral = true;
+    glm::vec3   teamColor{1.0f};
+    bool        teamDirty = false;
 };
 
 // A visual effect to show on every player's screen (multiplayer).

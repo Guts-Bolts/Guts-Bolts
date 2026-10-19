@@ -209,6 +209,7 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
         {"Characters & Tools", {"Tool", "Rig", "Animation", "Team", "ProximityPrompt", "ClickDetector"}},
         {"Containers", {"Model", "Folder"}},
         {"Effects & Lights", {"PointLight", "SpotLight", "Sound", "ForceField", "Decal", "Highlight", "Trail", "Beam"}},
+        {"Particles", {"ParticleEmitter", "Fire", "Smoke", "Sparkles"}},
         {"Water", {"Water", "WaterSource", "FluidVolume", "FluidSystem", "FluidEmitter"}},
         {"Constraints", {"Attachment", "HingeConstraint", "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint",
                           "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
@@ -411,6 +412,7 @@ std::string className(const SceneNode& n) {
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:      return "Trail";
         case NodeKind::Beam:       return "Beam";
+        case NodeKind::Particles:  return n.particleClass();
         case NodeKind::Light:      return n.lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::Sound:      return "Sound";
         case NodeKind::Attachment: return "Attachment";

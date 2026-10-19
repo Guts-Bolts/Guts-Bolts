@@ -129,7 +129,8 @@ const std::vector<Tool>& tools() {
         {"insert_object", "Create an object", "SCENE", false, false, false, Risk::Low,
          {"Creates a NEW object in the game and returns its object_id. kind is a class or a ready-made thing: Part, Sphere, "
           "Cylinder, Model, Folder, Script, LocalScript, ModuleScript, PointLight, SpotLight, Sound, SpawnLocation, "
-          "TrussPart, Seat, Water, WaterSource, Attachment, ProximityPrompt, ClickDetector, Highlight, Trail, Beam, Tool, Decal, Rig, "
+          "TrussPart, Seat, Water, WaterSource, Attachment, ProximityPrompt, ClickDetector, Highlight, Trail, Beam, ParticleEmitter, Fire, Smoke, "
+          "Sparkles, Tool, Decal, Rig, "
           "RemoteEvent, RemoteFunction, IntValue/NumberValue/StringValue/BoolValue, ScreenGui, Frame, TextLabel, TextButton, "
           "TextBox, ImageLabel, ScrollingFrame, BillboardGui, SurfaceGui, UICorner, UIStroke, UIListLayout, BodyVelocity, "
           "AlignPosition, VectorForce..., and ready-made things by name: \"Kill Brick\", \"Coin\", \"Jump Pad\", \"Exploding Barrel\", "
@@ -177,7 +178,8 @@ const std::vector<Tool>& tools() {
          {"Changes ONE property of an existing object, exactly like a script would (obj.Property = value), then reads it "
           "back so you can see the value the engine really has. Common properties: Position [x,y,z], Size [x,y,z], "
           "Orientation [x,y,z] (degrees), Color [r,g,b] (0-1 each), Transparency (0-1), Anchored (false = falls with "
-          "gravity in play), CanCollide, Material (\"Plastic\", \"Metal\", \"Neon\", \"Wood\", \"Glass\", \"Concrete\", \"Ice\"), "
+          "gravity in play), CanCollide, CollisionGroup (a registered group's name), Material (\"Plastic\", \"SmoothPlastic\", \"Metal\", \"DiamondPlate\", \"Foil\", \"Neon\", \"Wood\", \"Glass\", \"Ice\", "
+          "\"Concrete\", \"Brick\", \"Cobblestone\", \"Slate\", \"Granite\", \"Marble\", \"Sand\", \"Grass\", \"Fabric\"), "
           "Name, Parent (an object), Enabled, Brightness, Range, Text, Visible...",
           "\"Move/resize/recolour/rename X\", \"make it red/glow/see-through\", \"make it fall\" (Anchored false), "
           "\"make it solid / walk-through\" (CanCollide), \"put X inside Y\" (Parent).",
@@ -210,7 +212,7 @@ const std::vector<Tool>& tools() {
           "scoring, doors that open, enemies that chase), or when the person asks for a script.",
           "Don't write a script for things a property or built-in object already does (falling: Anchored = false; "
           "glowing: Material Neon or a PointLight; a sound: a Sound object). To change an existing script use edit_script.",
-          "source (required, plain Lua 5.4: no Luau `+=`, `continue` or type annotations); parent (optional object, "
+          "source (required, Lua 5.4; Luau `+=`, `continue`, type annotations and `{x}` strings work too); parent (optional object, "
           "default Workspace; `script.Parent` is this object); name (optional); type (Script, LocalScript or ModuleScript).",
           "{object_id, name, class, parent_id, syntax: {ok, error?}}. A syntax error is reported but the script is still made.",
           "parent exists.", "The script exists. It does NOT run until a playtest starts (or the game is played).",
@@ -246,7 +248,7 @@ const std::vector<Tool>& tools() {
           "For one property use set_property; for one object use insert_object (they verify and report ids for you). "
           "Don't use it to fake physics or movement by teleporting parts every frame: use Anchored = false, forces and "
           "the engine's own systems.",
-          "code (required, plain Lua 5.4).",
+          "code (required, Lua 5.4; Luau syntax works too).",
           "{output: what it printed, errors: [...]}. print() whatever you need to know back (e.g. print(part:GetFullName())).",
           "None. Code that waits (wait(), events) only keeps running during a playtest.",
           "Whatever the code did (undoable when not playtesting).",
@@ -347,7 +349,8 @@ const std::vector<Tool>& tools() {
           "For something that should NOT move (floors, walls, platforms) use anchored: true, or insert_object. To make an "
           "EXISTING part physical use set_property Anchored false instead.",
           "shape (Part = box, Sphere, Cylinder; default Part); position [x,y,z] (its centre; default near the camera); "
-          "size [x,y,z] (default 2x2x2); color [r,g,b] 0-1; material (Plastic, Metal, Neon, Wood, Glass, Concrete, Ice); "
+          "size [x,y,z] (default 2x2x2); color [r,g,b] 0-1; material (Plastic, SmoothPlastic, Metal, DiamondPlate, Foil, Neon, Wood, Glass, Ice, "
+          "Concrete, Brick, Cobblestone, Slate, Granite, Marble, Sand, Grass, Fabric); "
           "name; parent (object); anchored (default false); can_collide (default true); density (mass per volume, "
           "default from material); friction (0-2); elasticity (bounciness 0-1).",
           "{object_id, resulting_state, findings (from diagnose_object), warnings}.",
@@ -585,7 +588,7 @@ More in get_engine_info topic "examples".
 get_engine_info (or the gutsbolts:// resources) explains what the engine can do (capabilities), its concepts, the coordinate system, common workflows and every class you can insert. Check capabilities before promising a feature.
 
 ## Quick facts
-Y is up, X is right, -Z is an object's forward (LookVector). Position is a part's centre. Orientation is in degrees; CFrame.Angles takes radians. Colours are [r, g, b] from 0 to 1. Scripts are Lua 5.4 with a Roblox-style API (Instance.new, part.Touched, game:GetService, RunService.Heartbeat, wait(), Players.LocalPlayer, workspace.CurrentCamera, humanoid:MoveTo, PathfindingService, Effects.Explosion/Blood, Sounds.Play). Luau-only syntax (`+=`, type annotations, `continue`) does not work: write plain Lua. 1 unit = 2 Roblox studs; a character is about 2.6 units tall and walks 6 units a second.
+Y is up, X is right, -Z is an object's forward (LookVector). Position is a part's centre. Orientation is in degrees; CFrame.Angles takes radians. Colours are [r, g, b] from 0 to 1. Scripts are Lua 5.4 with a Roblox-style API (Instance.new, part.Touched, game:GetService, RunService.Heartbeat, wait(), Players.LocalPlayer, workspace.CurrentCamera, humanoid:MoveTo, PathfindingService, Effects.Explosion/Blood, Sounds.Play). Luau syntax (`+=`, `continue`, type annotations, interpolated strings) works too. Also: player.CharacterAdded/CharacterRemoving, player.Team/TeamColor/Neutral, SpawnLocation.Neutral/TeamColor/AllowTeamChangeOnTouch (players spawn on their team's spawns), model.PrimaryPart with GetPivot/PivotTo/SetPrimaryPartCFrame, part.CustomPhysicalProperties = PhysicalProperties.new(density, friction, elasticity, frictionWeight, elasticityWeight), TextLabel.Bold. 1 unit = 2 Roblox studs; a character is about 2.6 units tall and walks 6 units a second.
 
 ## Talking to the person
 Keep it short and friendly: they may be new to making games. Say what changed, not every tool call. If something couldn't be done, say what and why.)GUIDE";
@@ -648,7 +651,7 @@ Everything in a game is an object in one tree under Workspace. Each has a name, 
 CLASS (instead of components)
 Guts and Bolts is Roblox-style: there is no separate component system. What an object does comes from its class and its properties, and extra behaviour comes from objects put INSIDE it. What other engines call components map like this:
 - Transform -> a part's Position (its centre), Orientation (degrees) and Size properties. Models move their contents with scripts (model:PivotTo / :MoveTo) or run_lua.
-- Mesh renderer -> the Part itself: its shape (Part = box, Sphere, Cylinder, MeshPart = a mesh made in Studio's Modeling mode), Color, Material, Transparency.
+- Mesh renderer -> the Part itself: its shape (Part = box, Sphere, Cylinder, MeshPart = a mesh made in Studio's Modeling mode), Color, Material, Transparency. Materials: Plastic, SmoothPlastic, Metal, DiamondPlate, Foil, Neon (glows), Wood, Glass, Ice, Concrete, Brick, Cobblestone, Slate, Granite, Marble, Sand, Grass, Fabric; each has its own look and its own default weight, grip and bounce (Ice is slippery, Brick grippy, Metal heavy). Enum.Material.Brick and "Brick" both work.
 - Collider -> the same Part: CanCollide on/off. Collision uses the part's own shape (boxes, also rotated; spheres; cylinders). There's no separate collider object.
 - Rigidbody -> Anchored = false makes a part simulated (gravity, collisions, forces). Mass comes from Size x Density (Material sets the default; the Density, Friction and Elasticity properties override it).
 - Joints -> Constraint objects between two Attachments (a Weld joins two Parts): RopeConstraint, RodConstraint, SpringConstraint, WeldConstraint, HingeConstraint (optional motor: ActuatorType Motor, AngularVelocity, MotorMaxTorque), and:
@@ -661,7 +664,7 @@ Guts and Bolts is Roblox-style: there is no separate component system. What an o
 - Light -> a PointLight or SpotLight placed inside a part.
 - Audio source -> a Sound object (inside a part = it plays from there), or Sounds.Play in scripts.
 - Script -> Script (game server), LocalScript (each player's computer), ModuleScript (require()).
-- Particles -> no ParticleEmitter class. Scripts make effects with Effects.Sparks / Blood / Oil / Gibs, explosions with smoke and fire, Trails and Beams.
+- Particles -> a ParticleEmitter inside a part (particles come out of anywhere in it) or an Attachment (out of that point): Rate, Lifetime and Speed (NumberRange), SpreadAngle (Vector2), Color (ColorSequence), Size and Transparency (NumberSequence), Texture (built-in "", "smoke", "fire", "sparkle", or a picture), LightEmission, Acceleration, Drag, EmissionDirection, Rotation / RotSpeed, LockedToPart; emitter:Emit(n) and :Clear() in scripts. Ready-made: Fire (Color, SecondaryColor, Size, Heat), Smoke (Color, Opacity, RiseVelocity, Size) and Sparkles (SparkleColor) in a part. Every player sees them. Scripts can also make one-off effects with Effects.Sparks / Blood / Oil / Gibs and explosions.
 - Camera -> no camera object to edit. Players' cameras follow their character (World settings can make it orthographic).
 
 SCENE (place, game)
@@ -678,6 +681,7 @@ Only runs during a playtest (or a published game). Parts are ANCHORED by default
 
 COLLISION
 CanCollide decides whether things bump into a part. A character touching a part fires Touched even when its CanCollide is off (coins, checkpoints). Water parts and FluidVolumes are swum through.
+Collision groups (PhysicsService) decide which parts bump into which: every part has CollisionGroup ("Default" to start with); PhysicsService:RegisterCollisionGroup("Players") adds a group (32 at most, Default included), :CollisionGroupSetCollidable("Players", "Players", false) makes two groups pass through each other, :CollisionGroupsAreCollidable(a, b), :IsCollisionGroupRegistered, :GetRegisteredCollisionGroups, :RenameCollisionGroup, :UnregisterCollisionGroup. Unknown group names in SetCollidable are errors; a part in an unregistered group acts as Default. A character is in its HumanoidRootPart's group (set every BasePart of the character to be safe); the terrain is Default. Loose parts, character movement and RaycastParams.CollisionGroup all honour it; Touched still fires. "Players walk through each other" -> a Players group not collidable with itself. "A door only the red team can pass" -> RedDoor and RedTeam groups not collidable, the door part in RedDoor, red characters' parts in RedTeam. Groups are set up in Studio too (MODEL > Collision Groups) and saved with the place.
 
 CLICKING
 A ClickDetector inside a part (or a model: any part in it) lets players click it: buttons, levers, "click to buy" signs. Its events MouseClick, RightMouseClick, MouseHoverEnter and MouseHoverLeave pass the player; server Scripts get them in online games too, and the pointer turns into a hand over it. MaxActivationDistance is in units (default 16 = Roblox's 32 studs); CursorIcon is an optional pointer picture. Example: part.ClickDetector.MouseClick:Connect(function(player) ... end).
@@ -695,7 +699,7 @@ RUNTIME vs EDITOR
 Editor state is the saved game. Runtime state is the game while it runs (playtest): scripts run, physics moves things, characters spawn. Changes during a playtest are thrown away when it stops. get_object says which one you're looking at ("state_source") and adds velocity while playing.
 
 SCRIPT
-Lua 5.4 with Roblox's API names (Instance.new, game:GetService, workspace, task.wait, RunService.Heartbeat, Players, TweenService, DataStoreService, RemoteEvents). Luau-only syntax doesn't work (no +=, continue, type annotations). Prefer the engine's systems (properties, constraints, movers, pathfinding, explosions); write scripts for game rules and when asked.)DOC";
+Lua 5.4 with Roblox's API names (Instance.new, game:GetService, workspace, task.wait, RunService.Heartbeat, Players, TweenService, DataStoreService, RemoteEvents). Luau syntax (+=, continue, type annotations) works too. Player.CharacterAdded/CharacterRemoving, Teams with team SpawnLocations, Model.PrimaryPart/PivotTo and PhysicalProperties are there. Prefer the engine's systems (properties, constraints, movers, pathfinding, explosions); write scripts for game rules and when asked.)DOC";
 
 const char* kCoordinates = R"DOC(# Coordinates and units
 
@@ -782,7 +786,7 @@ checkpoint save -> edit_script (BlastPressure higher) -> playtest start -> spawn
 get_object platform (top height) -> run_lua with a loop making anchored steps (print each step's name) -> get_game_tree -> screenshot.
 
 "Add a ParticleEmitter to the torch."
-get_engine_info capabilities: there's no ParticleEmitter. Say so, and offer what exists (a PointLight, Neon material, Effects.Sparks in a script, a Trail or Beam).
+find_objects {name: "torch"} -> insert_object ParticleEmitter (parent: the torch's top part) -> set_property Color, Size, Speed, Lifetime, LightEmission (or insert_object Fire for ready-made flames) -> screenshot.
 
 "Delete the trees."
 find_objects {name: "tree"} -> if it's clearly those objects, delete_object each (or run_lua over a list of ids) -> get_game_tree. If some are unclear (a "TreeHouse"?), list them and ask first.)DOC";
@@ -807,7 +811,7 @@ json capabilities() {
             {"physics", "via properties (Anchored, CanCollide, Density...), movers, constraints and scripts; simulates during playtests"},
             {"navigation", true},                     // bake_navmesh, find_path, walk_character_to; PathfindingService in scripts
             {"explosions", true},                     // spawn_explosion (playtest); Explosion objects in scripts
-            {"rendering", "partial: part colour, material, transparency, lights, decals; no shader or post-processing tools"},
+            {"rendering", "partial: part colour, material, transparency, lights, decals, particles (ParticleEmitter, Fire, Smoke, Sparkles); no shader or post-processing tools"},
             {"audio", "Sound objects and Sounds.Play"},
             {"ui", true},
             {"assets", false},                        // the Library isn't reachable from these tools
@@ -820,7 +824,7 @@ json capabilities() {
             {"multiplayer_testing", "multiplayer_test: a local test server and 2-4 Player windows on this computer; read what each prints"},
             {"publishing", false},
         }},
-        {"not_supported", json::array({"editing Library assets", "linked prefabs", "ParticleEmitter", "camera objects",
+        {"not_supported", json::array({"editing Library assets", "linked prefabs", "camera objects",
                                        "shaders", "publishing games", "moving or inspecting the players inside a multiplayer test"})},
         {"notes", "If a capability is false or missing, the tools can't do it: say so instead of pretending."},
     };

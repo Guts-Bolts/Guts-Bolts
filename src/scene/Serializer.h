@@ -12,6 +12,8 @@ struct ClickProps;
 struct HighlightProps;
 struct EffectProps;
 struct JointProps;
+struct CollisionGroups;
+struct ParticleProps;
 
 // Turns scenes and objects into JSON text and back. Used for:
 //  * File > Save / Open (".gbscene" files)
@@ -24,6 +26,9 @@ std::string saveScene(Scene& scene, bool pretty = false);
 bool        loadScene(Scene& scene, const std::string& text, std::string* error = nullptr);
 
 std::string                nodeToString(const SceneNode& node);
+// The collision groups (PhysicsService) and which collide: [{"name", "id", "mask"}, ...].
+nlohmann::json             collisionGroupsToJson(const CollisionGroups& g);
+CollisionGroups            collisionGroupsFromJson(const nlohmann::json& j);
 // Game UI properties as JSON (saving, and multiplayer updates).
 nlohmann::json             guiToJson(const GuiProps& g);
 void                       guiFromJson(GuiProps& g, const nlohmann::json& j);
@@ -42,6 +47,10 @@ void                       effectFromJson(const nlohmann::json& j, EffectProps& 
 // A ball-socket / prismatic / cylindrical joint's settings, the same way.
 nlohmann::json             jointToJson(const JointProps& p);
 void                       jointFromJson(const nlohmann::json& j, JointProps& p);
+// A ParticleEmitter's / Fire's / Smoke's / Sparkles' settings, the same way. update = these are
+// another player's changes to one we already have (so new Emit() / Clear() calls happen here too).
+nlohmann::json             particleToJson(const ParticleProps& p, bool enabled);
+void                       particleFromJson(const nlohmann::json& j, ParticleProps& p, bool& enabled, bool update = false);
 // freshIds = true gives every object a brand-new id (needed for copies).
 std::unique_ptr<SceneNode> nodeFromString(const std::string& text, bool freshIds);
 std::unique_ptr<SceneNode> clone(const SceneNode& node);
