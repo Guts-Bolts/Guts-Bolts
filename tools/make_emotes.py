@@ -286,7 +286,7 @@ def main():
     if "--pictures" in sys.argv:
         folder = Path(sys.argv[sys.argv.index("--pictures") + 1])
         pics = {}
-        for item in [b["name"] for b in data["builtin"]] + [c["id"] for c in CATALOG]:
+        for item in [c["id"] for c in CATALOG]:   # (the catalog items; built-in emotes show as words)
             f = folder / (item + ".png")
             if f.exists():
                 pics[item] = base64.b64encode(f.read_bytes()).decode()

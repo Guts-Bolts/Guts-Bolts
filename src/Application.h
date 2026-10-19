@@ -34,6 +34,9 @@ struct LaunchOptions {
     // --test-multiplayer "N[:seconds]" (tests): the multiplayer_test AI tool starts a test with N
     // players, adds one more halfway, then prints its output, stops it and quits (default 30 s).
     std::string testMultiplayer;
+    // --emote-pictures <dir>: render a picture of each starter emote and animation pack (the
+    // character mid-move) into <dir>/<id>.png, then quit. tools/make_emotes.py --pictures packs them.
+    std::string emotePictures;
 };
 
 // The editor application ("Guts and Bolts Studio").
@@ -45,6 +48,7 @@ public:
 
 private:
     void testMultiplayer(int frame);   // --test-multiplayer
+    void makeEmotePictures();          // --emote-pictures
     double m_multiStart = 0.0;
     int    m_multiStep = 0;
 

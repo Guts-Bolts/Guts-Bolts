@@ -48,6 +48,13 @@ bool parseEmoteFile(const std::string& text, Anim::Clip& out);
 using Pack = std::map<std::string, std::shared_ptr<const Anim::Clip>>;   // state -> clip
 bool parsePackFile(const std::string& text, Pack& out);
 
+// Pictures of emote items: the moment to show, and the character posed at it.
+// `when` is the item's picture setting (emote: a time; pack: ["walk", time]); null = a
+// moment a third of the way in (a pack: its walk). False if the file isn't one.
+bool pictureClip(const std::string& fileText, const nlohmann::json& when, Anim::Clip& clip, float& t);
+// Pose a character's parts (fresh from Player::build) as `clip` has them at `t` seconds.
+void poseRig(SceneNode* rig, const Anim::Clip& clip, float t);
+
 // What this computer's player has equipped from their account: up to 8 emotes (in
 // their menu slots) and one animation pack. The app fills it in before a game starts.
 struct Slot {

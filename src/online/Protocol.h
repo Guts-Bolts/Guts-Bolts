@@ -42,6 +42,11 @@ bool        isClothing(const std::string& kind);       // anything you wear (clo
 bool        isCatalogItem(const std::string& kind);    // sold in the catalog: clothing and gear
 std::string gearProblem(const std::string& data);      // "" if it's one Tool from Studio
 constexpr int kMostGear = 4;                           // gear equipped at once
+// Emotes and animation packs: keyframes for the character, sold in the catalog. Only staff
+// make them. Owners equip up to kEmoteSlots emotes (the emote menu's slots) and one pack.
+bool        isEmoteItem(const std::string& kind);      // emote, animpack
+std::string emoteProblem(const std::string& kind, const std::string& data);   // "" if it plays
+constexpr int kEmoteSlots = 8;
 bool        isAccessory(const std::string& kind);      // hat, hair, faceacc, neck, shoulder, waist
 bool        alwaysFree(const std::string& kind);       // decals, audio and animations: free-use assets, never sold
 // Models and animations are public (anyone can find and use them) or private (only their creator).

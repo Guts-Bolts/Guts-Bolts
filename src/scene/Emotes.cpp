@@ -90,6 +90,29 @@ bool parsePackFile(const std::string& text, Pack& out) {
     return !out.empty();
 }
 
+bool pictureClip(const std::string& fileText, const json& when, Anim::Clip& clip, float& t) {
+    if (parseEmoteFile(fileText, clip)) {
+        t = when.is_number() ? when.get<float>() : clip.length() / 3.0f;
+        return true;
+    }
+    Pack pack;
+    if (!parsePackFile(fileText, pack)) return false;
+    std::string state = when.is_array() && !when.empty() && when[0].is_string() ? when[0].get<std::string>() : "walk";
+    if (!pack.count(state)) state = pack.begin()->first;
+    clip = *pack[state];
+    t = when.is_array() && when.size() > 1 && when[1].is_number() ? when[1].get<float>() : clip.length() / 3.0f;
+    return true;
+}
+
+void poseRig(SceneNode* rig, const Anim::Clip& clip, float t) {
+    if (!rig) return;
+    Anim::RestPose rest;
+    Anim::captureRest(rig, rest);
+    std::map<std::string, Anim::Sample> poses;
+    Anim::sample(clip, t, poses);
+    Anim::applyPoses(rig, rest, poses);
+}
+
 Loadout& mine() {
     static Loadout l;
     return l;
