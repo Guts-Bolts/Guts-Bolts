@@ -54,6 +54,8 @@ const char* kindName(NodeKind k) {
         case NodeKind::Highlight:    return "Highlight";
         case NodeKind::Trail:        return "Trail";
         case NodeKind::Beam:         return "Beam";
+        case NodeKind::PostEffect:   return "PostEffect";
+        case NodeKind::Sky:          return "Sky";
         case NodeKind::Camera:       return "Camera";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Particles:    return "Particles";
@@ -81,6 +83,8 @@ NodeKind kindFrom(const std::string& s) {
     if (s == "Highlight")    return NodeKind::Highlight;
     if (s == "Trail")        return NodeKind::Trail;
     if (s == "Beam")         return NodeKind::Beam;
+    if (s == "PostEffect")   return NodeKind::PostEffect;
+    if (s == "Sky")          return NodeKind::Sky;
     if (s == "Camera")       return NodeKind::Camera;
     if (s == "ClickDetector") return NodeKind::ClickDetector;
     if (s == "Particles")    return NodeKind::Particles;
@@ -171,6 +175,70 @@ void highlightFromJson(const nlohmann::json& j, HighlightProps& h, bool& enabled
     h.onTop               = !j.value("occluded", false);
     h.adornee             = j.value("adornee", (uint64_t)0);
     enabled               = j.value("on", true);
+}
+
+// Screen effects: only the settings their kind uses.
+nlohmann::json postEffectToJson(const PostEffectProps& p, bool enabled) {
+    json j = {{"type", kPostEffectClassNames[(int)p.type]}};
+    switch (p.type) {
+        case PostEffectType::ColorCorrection:
+            j["brightness"] = p.brightness; j["contrast"] = p.contrast; j["saturation"] = p.saturation; j["tint"] = vec(p.tint);
+            break;
+        case PostEffectType::SunRays: j["intensity"] = p.intensity; j["spread"] = p.spread; break;
+        case PostEffectType::DepthOfField:
+            j["far"] = p.farIntensity; j["focus"] = p.focusDistance; j["radius"] = p.inFocusRadius; j["near"] = p.nearIntensity;
+            break;
+        case PostEffectType::Bloom: j["intensity"] = p.intensity; j["size"] = p.size; j["threshold"] = p.threshold; break;
+        case PostEffectType::Blur:  j["size"] = p.size; break;
+    }
+    if (!enabled) j["on"] = false;
+    return j;
+}
+
+void postEffectFromJson(const nlohmann::json& j, PostEffectProps& p, bool& enabled) {
+    PostEffectType t = p.type;
+    const std::string name = get<std::string>(j, "type", "");
+    for (int i = 0; i < kPostEffectCount; ++i) if (name == kPostEffectClassNames[i]) t = (PostEffectType)i;
+    const PostEffectProps d = postEffectDefaults(t);
+    p.type          = t;
+    p.brightness    = get<float>(j, "brightness", d.brightness);
+    p.contrast      = get<float>(j, "contrast", d.contrast);
+    p.saturation    = get<float>(j, "saturation", d.saturation);
+    p.tint          = d.tint;
+    if (auto it = j.find("tint"); it != j.end() && it->is_array() && it->size() == 3 && (*it)[0].is_number() &&
+                                  (*it)[1].is_number() && (*it)[2].is_number())
+        p.tint = {(*it)[0].get<float>(), (*it)[1].get<float>(), (*it)[2].get<float>()};
+    p.intensity     = get<float>(j, "intensity", d.intensity);
+    p.spread        = get<float>(j, "spread", d.spread);
+    p.size          = get<float>(j, "size", d.size);
+    p.threshold     = get<float>(j, "threshold", d.threshold);
+    p.farIntensity  = get<float>(j, "far", d.farIntensity);
+    p.focusDistance = get<float>(j, "focus", d.focusDistance);
+    p.inFocusRadius = get<float>(j, "radius", d.inFocusRadius);
+    p.nearIntensity = get<float>(j, "near", d.nearIntensity);
+    clampPostEffect(p);
+    enabled = get<bool>(j, "on", true);
+}
+
+nlohmann::json skyToJson(const SkyProps& s) {
+    json j = {{"stars", s.starCount}, {"sunSize", s.sunSize}, {"moonSize", s.moonSize}};
+    if (!s.celestial) j["celestial"] = false;
+    const std::pair<const char*, const std::string*> pics[] = {{"bk", &s.bk}, {"dn", &s.dn}, {"ft", &s.ft}, {"lf", &s.lf},
+                                                               {"rt", &s.rt}, {"up", &s.up}, {"sun", &s.sun}, {"moon", &s.moon}};
+    for (auto& [k, v] : pics) if (!v->empty()) j[k] = *v;
+    return j;
+}
+
+void skyFromJson(const nlohmann::json& j, SkyProps& s) {
+    const SkyProps d;
+    s.starCount = get<int>(j, "stars", d.starCount);
+    s.sunSize   = get<float>(j, "sunSize", d.sunSize);
+    s.moonSize  = get<float>(j, "moonSize", d.moonSize);
+    s.celestial = get<bool>(j, "celestial", true);
+    s.bk = get<std::string>(j, "bk", ""); s.dn = get<std::string>(j, "dn", ""); s.ft = get<std::string>(j, "ft", "");
+    s.lf = get<std::string>(j, "lf", ""); s.rt = get<std::string>(j, "rt", ""); s.up = get<std::string>(j, "up", "");
+    s.sun = get<std::string>(j, "sun", ""); s.moon = get<std::string>(j, "moon", "");
+    clampSky(s);
 }
 
 nlohmann::json effectToJson(const EffectProps& e, bool enabled, bool beam) {
@@ -764,6 +832,8 @@ json toJson(const SceneNode& n) {
     if (n.isClickDetector()) j["click"] = Serializer::clickToJson(n.click);
     if (n.isHighlight()) j["highlight"] = Serializer::highlightToJson(n.highlight, n.enabled);
     if (n.isEffect()) j["effect"] = Serializer::effectToJson(n.effect, n.enabled, n.kind == NodeKind::Beam);
+    if (n.isPostEffect()) j["post"] = Serializer::postEffectToJson(n.post, n.enabled);
+    if (n.isSky()) j["sky"] = Serializer::skyToJson(n.sky);
     if (n.isParticles()) j["particles"] = Serializer::particleToJson(n.particle, n.enabled);
     if (n.locked)   j["locked"]   = true;
     if (!n.tags.empty()) j["tags"] = n.tags;
@@ -962,6 +1032,8 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     if (auto c = j.find("click"); c != j.end() && c->is_object()) Serializer::clickFromJson(*c, n->click);
     if (auto h = j.find("highlight"); h != j.end() && h->is_object()) Serializer::highlightFromJson(*h, n->highlight, n->enabled);
     if (auto e = j.find("effect"); e != j.end() && e->is_object()) Serializer::effectFromJson(*e, n->effect, n->enabled);
+    if (auto e = j.find("post"); n->isPostEffect() && e != j.end() && e->is_object()) Serializer::postEffectFromJson(*e, n->post, n->enabled);
+    if (auto e = j.find("sky"); n->isSky() && e != j.end() && e->is_object()) Serializer::skyFromJson(*e, n->sky);
     if (auto e = j.find("particles"); e != j.end() && e->is_object() && n->isParticles()) Serializer::particleFromJson(*e, n->particle, n->enabled);
     n->locked        = get<bool>(j, "locked", false);
     if (auto t = j.find("tags"); t != j.end() && t->is_array())
@@ -1228,6 +1300,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.prompt = src->prompt;       dst.highlight = src->highlight;
     dst.click = src->click;
     dst.effect = src->effect;       dst.particle = src->particle;
+    dst.post = src->post;           dst.sky = src->sky;
     dst.tags = src->tags;           dst.attributes = src->attributes;
     dst.lightType = src->lightType; dst.brightness = src->brightness;
     dst.range = src->range;         dst.spotAngle = src->spotAngle;

@@ -75,6 +75,12 @@ const char* const kWords[] = {
     "Trail", "Beam", "Attachment0", "Attachment1", "ColorSequence", "ColorSequenceKeypoint", "NumberSequence",
     "NumberSequenceKeypoint", "Keypoints", "Lifetime", "MinLength", "MaxLength", "WidthScale", "LightEmission",
     "FaceCamera", "Width0", "Width1", "CurveSize0", "CurveSize1", "Segments", "TextureSpeed", "TextureLength", "TextureMode",
+    // Sky and screen effects (in Lighting, or the Camera)
+    "Sky", "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "SunTextureId", "MoonTextureId",
+    "StarCount", "CelestialBodiesShown", "SunAngularSize", "MoonAngularSize",
+    "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect", "PostEffect",
+    "Contrast", "Saturation", "TintColor", "Intensity", "Spread", "Threshold", "FarIntensity", "NearIntensity",
+    "FocusDistance", "InFocusRadius", "CurrentCamera",
     // Joints
     "Attachment", "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint",
     "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint", "LimitsEnabled", "UpperAngle", "LowerAngle",

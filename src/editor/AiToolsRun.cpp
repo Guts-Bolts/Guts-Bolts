@@ -51,6 +51,8 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
+        case NodeKind::Sky:       return "Sky";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";

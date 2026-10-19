@@ -86,6 +86,7 @@ void setAttr(SceneNode* n, const char* name, Attribute::Type t, double num, glm:
 
 const char* className(lua_State* L, const SceneNode* n) {
     if (n == E(L)->scene()->root()) return "Workspace";
+    if (n == E(L)->scene()->cameraNode()) return "Camera";
     if (E(L)->scene()->isServiceFolder(n)) return n->name.c_str();   // StarterPack, ServerScriptService...
     switch (n->kind) {
         case NodeKind::Model:
@@ -105,6 +106,8 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
+        case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
+        case NodeKind::Sky:        return "Sky";
         case NodeKind::Particles: return n->particleClass();
         case NodeKind::Light:  return n->lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::ForceField: return "ForceField";
@@ -138,6 +141,7 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
     if (n->kind == NodeKind::Script && (cls == "LuaSourceContainer" || (cls == "BaseScript" && !n->isModule) ||
                                         (cls == "Script" && n->isLocal))) return true;   // LocalScript is a Script
     if (n->kind == NodeKind::Light && cls == "Light") return true;
+    if (n->isPostEffect() && cls == "PostEffect") return true;
     if (n->kind == NodeKind::Constraint && cls == "Constraint") return true;
     if (n->isMover() && cls == (isBodyMover(n->mover.type) ? "BodyMover" : "Constraint")) return true;
     if (n->kind == NodeKind::Tool && cls == "BackpackItem") return true;
@@ -984,6 +988,107 @@ std::vector<ColorKey> checkColorSequence(lua_State* L, int idx);
 std::vector<NumberKey> checkNumberSequence(lua_State* L, int idx, float lo, float hi);
 
 // Push a UI property; false if `k` isn't one.
+// --- Screen effects (ColorCorrectionEffect, SunRaysEffect...) and the Sky ---
+
+bool postIndex(lua_State* L, SceneNode* n, const char* k) {
+    const PostEffectProps& p = n->post;
+    if (is(k, "Enabled")) { lua_pushboolean(L, n->enabled); return true; }
+    switch (p.type) {
+        case PostEffectType::ColorCorrection:
+            if (is(k, "Brightness")) { lua_pushnumber(L, p.brightness); return true; }
+            if (is(k, "Contrast"))   { lua_pushnumber(L, p.contrast); return true; }
+            if (is(k, "Saturation")) { lua_pushnumber(L, p.saturation); return true; }
+            if (is(k, "TintColor"))  { LuaApi::pushColor3(L, p.tint); return true; }
+            break;
+        case PostEffectType::SunRays:
+            if (is(k, "Intensity")) { lua_pushnumber(L, p.intensity); return true; }
+            if (is(k, "Spread"))    { lua_pushnumber(L, p.spread); return true; }
+            break;
+        case PostEffectType::DepthOfField:
+            if (is(k, "FarIntensity"))  { lua_pushnumber(L, p.farIntensity); return true; }
+            if (is(k, "FocusDistance")) { lua_pushnumber(L, p.focusDistance); return true; }
+            if (is(k, "InFocusRadius")) { lua_pushnumber(L, p.inFocusRadius); return true; }
+            if (is(k, "NearIntensity")) { lua_pushnumber(L, p.nearIntensity); return true; }
+            break;
+        case PostEffectType::Bloom:
+            if (is(k, "Intensity")) { lua_pushnumber(L, p.intensity); return true; }
+            if (is(k, "Size"))      { lua_pushnumber(L, p.size); return true; }
+            if (is(k, "Threshold")) { lua_pushnumber(L, p.threshold); return true; }
+            break;
+        case PostEffectType::Blur:
+            if (is(k, "Size")) { lua_pushnumber(L, p.size); return true; }
+            break;
+    }
+    return false;
+}
+
+bool postNewIndex(lua_State* L, SceneNode* n, const char* k) {
+    PostEffectProps& p = n->post;
+    auto num = [&](float& f) { f = (float)luaL_checknumber(L, 3); clampPostEffect(p); return true; };
+    if (is(k, "Enabled")) { n->enabled = lua_toboolean(L, 3); return true; }
+    switch (p.type) {
+        case PostEffectType::ColorCorrection:
+            if (is(k, "Brightness")) return num(p.brightness);
+            if (is(k, "Contrast"))   return num(p.contrast);
+            if (is(k, "Saturation")) return num(p.saturation);
+            if (is(k, "TintColor"))  { p.tint = LuaApi::checkColor3(L, 3); clampPostEffect(p); return true; }
+            break;
+        case PostEffectType::SunRays:
+            if (is(k, "Intensity")) return num(p.intensity);
+            if (is(k, "Spread"))    return num(p.spread);
+            break;
+        case PostEffectType::DepthOfField:
+            if (is(k, "FarIntensity"))  return num(p.farIntensity);
+            if (is(k, "FocusDistance")) return num(p.focusDistance);
+            if (is(k, "InFocusRadius")) return num(p.inFocusRadius);
+            if (is(k, "NearIntensity")) return num(p.nearIntensity);
+            break;
+        case PostEffectType::Bloom:
+            if (is(k, "Intensity")) return num(p.intensity);
+            if (is(k, "Size"))      return num(p.size);
+            if (is(k, "Threshold")) return num(p.threshold);
+            break;
+        case PostEffectType::Blur:
+            if (is(k, "Size")) return num(p.size);
+            break;
+    }
+    return false;
+}
+
+std::string* skyPicture(SkyProps& s, const char* k) {
+    if (is(k, "SkyboxBk")) return &s.bk;
+    if (is(k, "SkyboxDn")) return &s.dn;
+    if (is(k, "SkyboxFt")) return &s.ft;
+    if (is(k, "SkyboxLf")) return &s.lf;
+    if (is(k, "SkyboxRt")) return &s.rt;
+    if (is(k, "SkyboxUp")) return &s.up;
+    if (is(k, "SunTextureId")) return &s.sun;
+    if (is(k, "MoonTextureId")) return &s.moon;
+    return nullptr;
+}
+
+bool skyIndex(lua_State* L, SceneNode* n, const char* k) {
+    SkyProps& s = n->sky;
+    if (std::string* pic = skyPicture(s, k)) { lua_pushstring(L, pic->c_str()); return true; }
+    if (is(k, "StarCount"))            { lua_pushinteger(L, s.starCount); return true; }
+    if (is(k, "CelestialBodiesShown")) { lua_pushboolean(L, s.celestial); return true; }
+    if (is(k, "SunAngularSize"))       { lua_pushnumber(L, s.sunSize); return true; }
+    if (is(k, "MoonAngularSize"))      { lua_pushnumber(L, s.moonSize); return true; }
+    if (is(k, "SkyboxOrientation"))    { LuaApi::pushVector3(L, glm::vec3(0.0f)); return true; }
+    return false;
+}
+
+bool skyNewIndex(lua_State* L, SceneNode* n, const char* k) {
+    SkyProps& s = n->sky;
+    if (std::string* pic = skyPicture(s, k)) { *pic = luaL_checkstring(L, 3); clampSky(s); return true; }
+    if (is(k, "StarCount"))            { s.starCount = (int)luaL_checknumber(L, 3); clampSky(s); return true; }
+    if (is(k, "CelestialBodiesShown")) { s.celestial = lua_toboolean(L, 3); return true; }
+    if (is(k, "SunAngularSize"))       { s.sunSize = (float)luaL_checknumber(L, 3); clampSky(s); return true; }
+    if (is(k, "MoonAngularSize"))      { s.moonSize = (float)luaL_checknumber(L, 3); clampSky(s); return true; }
+    if (is(k, "SkyboxOrientation"))    return true;   // (accepted so scripts run; the skybox doesn't turn)
+    return false;
+}
+
 bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
     const GuiProps& g = n->gui;
     if (is(k, "AbsoluteSize") || is(k, "AbsolutePosition")) GameGui::refresh(*E(L)->scene());
@@ -1674,6 +1779,8 @@ int inst_index(lua_State* L) {
         }
     }
     if (n->isMover() && moverIndex(L, n, k)) return 1;
+    if (n->isPostEffect() && postIndex(L, n, k)) return 1;
+    if (n->isSky() && skyIndex(L, n, k)) return 1;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointIndex(L, n, k)) return 1;
     if (n->isParticles() && particleIndex(L, n, k)) return 1;
     if (n->isConstraint()) {
@@ -1691,7 +1798,13 @@ int inst_index(lua_State* L) {
         if (is(k, "Color"))          { LuaApi::pushColor3(L, n->color); return 1; }
         if (is(k, "Enabled"))        { lua_pushboolean(L, n->enabled); return 1; }
     }
-    if (is(k, "Parent"))    { LuaApi::pushInstance(L, n->parent ? n->parent->id : 0); return 1; }
+    if (is(k, "Parent")) {
+        // Things in Lighting or the Camera: their Parent is that service / the camera itself.
+        if (n->parent && n->parent == E(L)->scene()->cameraNode()) { LuaApi::pushCamera(L); return 1; }
+        if (n->parent && n->parent->name == "Lighting" && E(L)->scene()->isServiceFolder(n->parent)) { LuaApi::pushLighting(L); return 1; }
+        LuaApi::pushInstance(L, n->parent ? n->parent->id : 0);
+        return 1;
+    }
     if (is(k, "Position"))  { LuaApi::pushVector3(L, worldPosition(n)); return 1; }
     if (is(k, "Orientation") || is(k, "Rotation")) { LuaApi::pushVector3(L, n->transform.rotation); return 1; }
     if (is(k, "Size"))      { LuaApi::pushVector3(L, n->transform.scale); return 1; }
@@ -1983,6 +2096,8 @@ int inst_newindex(lua_State* L) {
             is(k, "DiagonalFieldOfView") || is(k, "MaxAxisFieldOfView") || is(k, "HeadLocked")) return 0;   // (accepted)
     }
     if (n->isMover() && moverNewIndex(L, n, k)) return 0;
+    if (n->isPostEffect() && postNewIndex(L, n, k)) return 0;
+    if (n->isSky() && skyNewIndex(L, n, k)) return 0;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointNewIndex(L, n, k)) return 0;
     if (n->isParticles() && particleNewIndex(L, n, k)) return 0;
     if (n->isConstraint()) {
@@ -2387,6 +2502,11 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, NodeKind::ClickDetector);
     } else if (cls == "Trail" || cls == "Beam") {
         n = std::make_unique<SceneNode>(cls, cls == "Trail" ? NodeKind::Trail : NodeKind::Beam);
+    } else if (std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), cls) != std::end(kPostEffectClassNames)) {
+        n = std::make_unique<SceneNode>(cls, NodeKind::PostEffect);
+        for (int i = 0; i < kPostEffectCount; ++i) if (cls == kPostEffectClassNames[i]) n->post = postEffectDefaults((PostEffectType)i);
+    } else if (cls == "Sky") {
+        n = std::make_unique<SceneNode>(cls, NodeKind::Sky);
     } else if (std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), cls) != std::end(kParticleClassNames)) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Particles);
         for (int i = 0; i < kParticleTypeCount; ++i) if (cls == kParticleClassNames[i]) n->particle = particleDefaults((ParticleType)i);
@@ -3014,6 +3134,25 @@ int cam_viewportToRay(lua_State* L) {
     return 1;
 }
 
+// Lighting and the Camera hold things like any object (screen effects, the Sky): the
+// child-finding methods and `.ChildName` work on them through the object that holds
+// their children (methods get Lighting / the Camera as self; checkNode turns that into it).
+bool proxyIndex(lua_State* L, SceneNode* holder, const char* k) {
+    static const char* const kAllowed[] = {"FindFirstChild", "FindFirstChildOfClass", "FindFirstChildWhichIsA", "WaitForChild",
+                                           "GetChildren", "GetDescendants", "ClearAllChildren", "IsDescendantOf",
+                                           "GetAttribute", "GetAttributes", "SetAttribute"};
+    for (const char* m : kAllowed) {
+        if (!is(k, m)) continue;
+        lua_getfield(L, LUA_REGISTRYINDEX, "GB.InstanceMethods");
+        if (lua_getfield(L, -1, k) != LUA_TNIL) { lua_remove(L, -2); return true; }
+        lua_pop(L, 2);
+        return false;
+    }
+    if (holder)
+        if (SceneNode* c = holder->findChild(k)) { LuaApi::pushInstance(L, c->id); return true; }
+    return false;
+}
+
 int cam_isA(lua_State* L) {
     const char* c = luaL_checkstring(L, 2);
     lua_pushboolean(L, is(c, "Camera") || is(c, "Instance"));
@@ -3045,6 +3184,8 @@ int cam_index(lua_State* L) {
     if (is(k, "IsA")) { lua_pushcfunction(L, cam_isA); return 1; }
     if (is(k, "WorldToViewportPoint") || is(k, "WorldToScreenPoint")) { lua_pushcfunction(L, cam_worldToViewport); return 1; }
     if (is(k, "ViewportPointToRay") || is(k, "ScreenPointToRay")) { lua_pushcfunction(L, cam_viewportToRay); return 1; }
+    // Screen effects put in the camera: camera:GetChildren(), camera.Blur...
+    if (proxyIndex(L, E(L)->scene()->cameraNode(), k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of Camera", k);
 }
 
@@ -3102,6 +3243,12 @@ int cam_newindex(lua_State* L) {
 // Lighting
 // ===========================================================================
 
+int light_isA(lua_State* L) {
+    const char* c = luaL_checkstring(L, 2);
+    lua_pushboolean(L, is(c, "Lighting") || is(c, "Instance"));
+    return 1;
+}
+
 int light_index(lua_State* L) {
     const char* k = luaL_checkstring(L, 2);
     Environment& e = E(L)->scene()->environment();
@@ -3114,6 +3261,10 @@ int light_index(lua_State* L) {
     if (is(k, "Ambient"))       { LuaApi::pushColor3(L, e.ambientColor); return 1; }
     if (is(k, "SunColor"))      { LuaApi::pushColor3(L, e.sunColor);    return 1; }
     if (is(k, "Name") || is(k, "ClassName")) { lua_pushstring(L, "Lighting"); return 1; }
+    if (is(k, "Parent")) { lua_pushnil(L); return 1; }
+    if (is(k, "IsA")) { lua_pushcfunction(L, light_isA); return 1; }
+    // Its screen effects and Sky: Lighting:GetChildren(), Lighting.Sky...
+    if (proxyIndex(L, E(L)->scene()->lightingFolder(true), k)) return 1;
     return luaL_error(L, "'%s' is not a valid member of Lighting", k);
 }
 
@@ -3161,6 +3312,9 @@ void pushInstance(lua_State* L, uint64_t id) {
 }
 
 SceneNode* checkNode(lua_State* L, int idx) {
+    // Lighting and the Camera stand for what holds their children (effect.Parent = Lighting).
+    if (luaL_testudata(L, idx, kLight)) return engine(L)->scene()->lightingFolder(true);
+    if (luaL_testudata(L, idx, kCam)) return engine(L)->scene()->cameraNode();
     // A player (a Lua table) stands for its object: `folder.Parent = player`.
     if (lua_type(L, idx) == LUA_TTABLE) {
         idx = lua_absindex(L, idx);
@@ -3212,8 +3366,13 @@ void pushHumanoid(lua_State* L, uint64_t rootId) {
 }
 
 void pushLighting(lua_State* L) {
+    // The same object every time, so `effect.Parent == Lighting` holds.
+    if (lua_getfield(L, LUA_REGISTRYINDEX, "GB.Lighting") == LUA_TUSERDATA) return;
+    lua_pop(L, 1);
     lua_newuserdatauv(L, 1, 0);
     luaL_setmetatable(L, kLight);
+    lua_pushvalue(L, -1);
+    lua_setfield(L, LUA_REGISTRYINDEX, "GB.Lighting");
 }
 
 void pushCamera(lua_State* L) {

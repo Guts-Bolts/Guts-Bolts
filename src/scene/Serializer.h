@@ -11,6 +11,8 @@ struct PromptProps;
 struct ClickProps;
 struct HighlightProps;
 struct EffectProps;
+struct PostEffectProps;
+struct SkyProps;
 struct JointProps;
 struct CollisionGroups;
 struct ParticleProps;
@@ -44,6 +46,11 @@ void                       highlightFromJson(const nlohmann::json& j, HighlightP
 // A Trail's or Beam's settings (and whether it's on), the same way.
 nlohmann::json             effectToJson(const EffectProps& e, bool enabled, bool beam);
 void                       effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled);
+// A screen effect's settings (and whether it's on), and a Sky's, the same way.
+nlohmann::json             postEffectToJson(const PostEffectProps& p, bool enabled);
+void                       postEffectFromJson(const nlohmann::json& j, PostEffectProps& p, bool& enabled);
+nlohmann::json             skyToJson(const SkyProps& s);
+void                       skyFromJson(const nlohmann::json& j, SkyProps& s);
 // A ball-socket / prismatic / cylindrical joint's settings, the same way.
 nlohmann::json             jointToJson(const JointProps& p);
 void                       jointFromJson(const nlohmann::json& j, JointProps& p);

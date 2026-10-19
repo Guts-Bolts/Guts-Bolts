@@ -1281,6 +1281,45 @@ struct Converter {
             }
             node->enabled = in.flag("Enabled", true);
             ++report.other;
+        } else if (std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), c) != std::end(kPostEffectClassNames)) {
+            // Screen effects (they work in Lighting; distances are in studs).
+            node = std::make_unique<SceneNode>(name, NodeKind::PostEffect);
+            PostEffectType t = PostEffectType::ColorCorrection;
+            for (int i = 0; i < kPostEffectCount; ++i) if (c == kPostEffectClassNames[i]) t = (PostEffectType)i;
+            PostEffectProps& p = node->post;
+            p = postEffectDefaults(t);
+            p.brightness = (float)in.num("Brightness", p.brightness);
+            p.contrast   = (float)in.num("Contrast", p.contrast);
+            p.saturation = (float)in.num("Saturation", p.saturation);
+            if (const Value* v = in.get("TintColor")) p.tint = v->v;
+            p.intensity  = (float)in.num("Intensity", p.intensity);
+            p.spread     = (float)in.num("Spread", p.spread);
+            p.size       = (float)in.num("Size", p.size);
+            p.threshold  = (float)in.num("Threshold", p.threshold);
+            p.farIntensity  = (float)in.num("FarIntensity", p.farIntensity);
+            p.nearIntensity = (float)in.num("NearIntensity", p.nearIntensity);
+            p.focusDistance = (float)in.num("FocusDistance", 0.05) * kImportScale;
+            p.inFocusRadius = (float)in.num("InFocusRadius", 10.0) * kImportScale;
+            clampPostEffect(p);
+            node->enabled = in.flag("Enabled", true);
+            ++report.other;
+        } else if (c == "Sky") {
+            node = std::make_unique<SceneNode>(name, NodeKind::Sky);
+            SkyProps& k = node->sky;
+            // Roblox's own built-in pictures can't load here: "" = our own sky / sun / moon.
+            auto pic = [&](const char* prop) {
+                std::string v = in.str(prop);
+                return v.rfind("rbxasset://", 0) == 0 ? std::string() : v;
+            };
+            k.bk = pic("SkyboxBk"); k.dn = pic("SkyboxDn"); k.ft = pic("SkyboxFt");
+            k.lf = pic("SkyboxLf"); k.rt = pic("SkyboxRt"); k.up = pic("SkyboxUp");
+            k.sun = pic("SunTextureId"); k.moon = pic("MoonTextureId");
+            k.starCount = (int)in.num("StarCount", 3000);
+            k.celestial = in.flag("CelestialBodiesShown", true);
+            k.sunSize = (float)in.num("SunAngularSize", 21);
+            k.moonSize = (float)in.num("MoonAngularSize", 11);
+            clampSky(k);
+            ++report.other;
         } else if (c == "ParticleEmitter" || c == "Fire" || c == "Smoke" || c == "Sparkles") {
             node = std::make_unique<SceneNode>(name, NodeKind::Particles);
             ParticleType type = ParticleType::ParticleEmitter;
@@ -1778,6 +1817,8 @@ struct XmlWriter {
             case NodeKind::Remote:     cls = n.remoteFunction ? "RemoteFunction" : "RemoteEvent"; break;
             case NodeKind::Prompt:     cls = "ProximityPrompt"; break;
             case NodeKind::Highlight:  cls = "Highlight"; break;
+            case NodeKind::PostEffect: cls = kPostEffectClassNames[(int)n.post.type]; break;
+            case NodeKind::Sky:        cls = "Sky"; break;
             case NodeKind::ClickDetector: cls = "ClickDetector"; break;
             case NodeKind::Trail:      cls = "Trail"; break;
             case NodeKind::Beam:       cls = "Beam"; break;
@@ -1847,6 +1888,44 @@ struct XmlWriter {
                 seq("WidthScale", e.widthScale);
             }
             boolean("Enabled", n.enabled);
+            break;
+        }
+        case NodeKind::PostEffect: {
+            const PostEffectProps& p = n.post;
+            switch (p.type) {
+                case PostEffectType::ColorCorrection:
+                    flt("Brightness", p.brightness); flt("Contrast", p.contrast); flt("Saturation", p.saturation);
+                    color3("TintColor", p.tint);
+                    break;
+                case PostEffectType::SunRays: flt("Intensity", p.intensity); flt("Spread", p.spread); break;
+                case PostEffectType::DepthOfField:
+                    flt("FarIntensity", p.farIntensity); flt("NearIntensity", p.nearIntensity);
+                    flt("FocusDistance", p.focusDistance * kExportScale); flt("InFocusRadius", p.inFocusRadius * kExportScale);
+                    break;
+                case PostEffectType::Bloom: flt("Intensity", p.intensity); flt("Size", p.size); flt("Threshold", p.threshold); break;
+                case PostEffectType::Blur:  flt("Size", p.size); break;
+            }
+            boolean("Enabled", n.enabled);
+            break;
+        }
+        case NodeKind::Sky: {
+            const SkyProps& k = n.sky;
+            // "" = ours, which on Roblox is its own default sky.
+            auto pic = [&](const char* prop, const std::string& v, const char* fallback) {
+                o << "<Content name=\"" << prop << "\"><url>" << esc(v.empty() ? std::string(fallback) : v) << "</url></Content>\n";
+            };
+            pic("SkyboxBk", k.bk, "rbxasset://textures/sky/sky512_bk.tex");
+            pic("SkyboxDn", k.dn, "rbxasset://textures/sky/sky512_dn.tex");
+            pic("SkyboxFt", k.ft, "rbxasset://textures/sky/sky512_ft.tex");
+            pic("SkyboxLf", k.lf, "rbxasset://textures/sky/sky512_lf.tex");
+            pic("SkyboxRt", k.rt, "rbxasset://textures/sky/sky512_rt.tex");
+            pic("SkyboxUp", k.up, "rbxasset://textures/sky/sky512_up.tex");
+            pic("SunTextureId", k.sun, "rbxasset://sky/sun.jpg");
+            pic("MoonTextureId", k.moon, "rbxasset://sky/moon.jpg");
+            o << "<int name=\"StarCount\">" << k.starCount << "</int>\n";
+            boolean("CelestialBodiesShown", k.celestial);
+            flt("SunAngularSize", k.sunSize);
+            flt("MoonAngularSize", k.moonSize);
             break;
         }
         case NodeKind::Particles: {
@@ -2308,7 +2387,6 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
         conv.made[s] = f;
         for (const Inst* k : s->children) conv.convert(*k, f);
     }
-    conv.linkRefs(doc);
 
     // Workspace + Lighting settings.
     double g = ws->num("Gravity", kRobloxGravity);
@@ -2330,7 +2408,20 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
             if (const Attribute* saved = tmp.findAttribute("GutsAndBoltsLighting"); saved && saved->type == Attribute::String)
                 Serializer::environmentFromString(env, saved->s);   // made by Guts and Bolts: exact lighting
         }
+        // What's inside Lighting: the Sky, screen effects (and anything else we can make).
+        if (!light->children.empty()) {
+            SceneNode* f = scene.lightingFolder(true);
+            conv.made[light] = f;
+            for (const Inst* k : light->children) conv.convert(*k, f);
+        }
     }
+    // Screen effects saved in the Workspace's Camera: Studio's camera holds nothing, so they
+    // go in Lighting (where they look the same).
+    if (const Inst* cam = findChild(ws->children, "Camera"); cam && cam->className == "Camera")
+        for (const Inst* k : cam->children)
+            if (std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), k->className) != std::end(kPostEffectClassNames))
+                conv.convert(*k, scene.lightingFolder(true));
+    conv.linkRefs(doc);
     scene.info().title = std::filesystem::path(path).stem().string();
     scene.markDirty();
     return true;
@@ -2362,7 +2453,8 @@ bool exportPlace(Scene& scene, const std::string& path, std::string& error) {
     w.o << "</Properties>\n";
     const SceneNode* ui = scene.root()->findChild("StarterGui");
     if (ui && ui->kind != NodeKind::Model) ui = nullptr;
-    for (auto& c : scene.root()->children) if (c.get() != ui) w.item(*c);
+    const SceneNode* lighting = scene.lightingFolder(false);   // (its things go in Roblox's Lighting below)
+    for (auto& c : scene.root()->children) if (c.get() != ui && c.get() != lighting) w.item(*c);
     w.o << "</Item>\n";
     if (ui) {   // our StarterGui folder is Roblox's StarterGui service
         w.o << "<Item class=\"StarterGui\" referent=\"RBXSTARTERGUI\">\n<Properties>\n";
@@ -2386,7 +2478,9 @@ bool exportPlace(Scene& scene, const std::string& path, std::string& error) {
     }
     w.flt("ClockTime", scene.environment().clockTime);
     w.boolean("GlobalShadows", scene.environment().shadows);
-    w.o << "</Properties>\n</Item>\n";
+    w.o << "</Properties>\n";
+    if (lighting) for (auto& c : lighting->children) w.item(*c);   // the Sky, screen effects
+    w.o << "</Item>\n";
     w.end();
     return writeText(path, w.o.str(), error);
 }

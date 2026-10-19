@@ -33,6 +33,8 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::Remote   ? (node->remoteFunction ? "RemoteFunction" : "RemoteEvent")
                     : node->kind == NodeKind::Prompt   ? "ProximityPrompt"
                     : node->kind == NodeKind::Highlight ? "Highlight"
+                    : node->kind == NodeKind::PostEffect ? kPostEffectClassNames[(int)node->post.type]
+                    : node->kind == NodeKind::Sky      ? "Sky"
                     : node->kind == NodeKind::ClickDetector ? "ClickDetector"
                     : node->kind == NodeKind::Trail    ? "Trail"
                     : node->kind == NodeKind::Beam     ? "Beam"
@@ -481,6 +483,70 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled(h.onTop ? "Colours the part or model it's in, with an outline round it, seen even through walls."
                                     : "Colours the part or model it's in, with an outline round it, only where you can see it.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    if (node->isPostEffect()) {
+        PostEffectProps& p = node->post;
+        ImGui::SeparatorText(kPostEffectClassNames[(int)p.type]);
+        ImGui::Checkbox("Enabled", &node->enabled);
+        const char* about = "";
+        switch (p.type) {
+            case PostEffectType::ColorCorrection:
+                ImGui::SliderFloat("Brightness", &p.brightness, -1.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Contrast", &p.contrast, -1.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Saturation", &p.saturation, -1.0f, 1.0f, "%.2f");
+                ImGui::ColorEdit3("TintColor", &p.tint.x);
+                about = "Changes the colours of everything on screen. Saturation -1 = black and white.";
+                break;
+            case PostEffectType::SunRays:
+                ImGui::SliderFloat("Intensity", &p.intensity, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Spread", &p.spread, 0.0f, 1.0f, "%.2f");
+                about = "Rays of light from the sun, past whatever is in front of it. Off on Low graphics.";
+                break;
+            case PostEffectType::DepthOfField:
+                ImGui::SliderFloat("FarIntensity", &p.farIntensity, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("FocusDistance", &p.focusDistance, 0.0f, 200.0f, "%.1f studs");
+                ImGui::SliderFloat("InFocusRadius", &p.inFocusRadius, 0.0f, 50.0f, "%.1f studs");
+                ImGui::SliderFloat("NearIntensity", &p.nearIntensity, 0.0f, 1.0f, "%.2f");
+                about = "Blurs things nearer and further than FocusDistance, like a camera lens. Off on Low graphics.";
+                break;
+            case PostEffectType::Bloom:
+                ImGui::SliderFloat("Intensity", &p.intensity, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Size", &p.size, 0.0f, 56.0f, "%.0f");
+                ImGui::SliderFloat("Threshold", &p.threshold, 0.0f, 4.0f, "%.2f");
+                about = "Bright things glow. Takes over from the bloom in the Lighting settings.";
+                break;
+            case PostEffectType::Blur:
+                ImGui::SliderFloat("Size", &p.size, 0.0f, 56.0f, "%.0f");
+                about = "Blurs the whole screen (menus, being dizzy...).";
+                break;
+        }
+        clampPostEffect(p);
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%s Works right inside Lighting (or the Camera, from a script). Several add up.", about);
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    if (node->isSky()) {
+        SkyProps& k = node->sky;
+        ImGui::SeparatorText("Sky");
+        const std::pair<const char*, std::string*> pics[] = {
+            {"SkyboxBk", &k.bk}, {"SkyboxDn", &k.dn}, {"SkyboxFt", &k.ft}, {"SkyboxLf", &k.lf},
+            {"SkyboxRt", &k.rt}, {"SkyboxUp", &k.up}, {"SunTextureId", &k.sun}, {"MoonTextureId", &k.moon}};
+        for (auto& [label, value] : pics) ImGui::InputTextWithHint(label, "(the engine's own)", value);
+        ImGui::Checkbox("CelestialBodiesShown", &k.celestial);
+        ImGui::SliderInt("StarCount", &k.starCount, 0, 5000);
+        ImGui::SliderFloat("SunAngularSize", &k.sunSize, 0.0f, 60.0f, "%.1f");
+        ImGui::SliderFloat("MoonAngularSize", &k.moonSize, 0.0f, 60.0f, "%.1f");
+        clampSky(k);
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Put it right inside Lighting. Pictures are like a Decal's (an uploaded picture or a file in the games "
+                            "folder); the skybox shows when all six load, else the Lighting settings' sky stays.");
         ImGui::PopTextWrapPos();
         return;
     }

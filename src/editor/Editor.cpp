@@ -1116,6 +1116,16 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         }
         put(std::make_unique<SceneNode>("ProximityPrompt", NodeKind::Prompt));
     }
+    else if (what == "Sky" || std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), what) != std::end(kPostEffectClassNames)) {
+        // They only work right inside Lighting, so that's where they go.
+        auto n = std::make_unique<SceneNode>(what, what == "Sky" ? NodeKind::Sky : NodeKind::PostEffect);
+        for (int i = 0; i < kPostEffectCount; ++i) if (what == kPostEffectClassNames[i]) n->post = postEffectDefaults((PostEffectType)i);
+        if (parent != m_scene->lightingFolder(false)) {
+            parent = m_scene->lightingFolder(true);
+            Log::info(what + " goes in Lighting (that's where it works).");
+        }
+        put(std::move(n));
+    }
     else if (what == "ClickDetector") {
         // It goes on the part (or model) players click.
         if (!parent || parent == m_scene->root() || (!parent->isPart() && parent->kind != NodeKind::Model)) {
@@ -1323,6 +1333,9 @@ const std::vector<InsertItem>& insertItems() {
         {"Part", Icons::Id::Part}, {"Sphere", Icons::Id::Sphere}, {"Cylinder", Icons::Id::Cylinder},
         {"MeshPart", Icons::Id::Mesh}, {"SpawnLocation", Icons::Id::Part}, {"TrussPart", Icons::Id::Part}, {"Seat", Icons::Id::Part}, {"Water", Icons::Id::Part}, {"FluidVolume", Icons::Id::Part}, {"WaterSource", Icons::Id::Part}, {"FluidSystem", Icons::Id::Value}, {"FluidEmitter", Icons::Id::Sound}, {"Model", Icons::Id::Model}, {"Folder", Icons::Id::Folder},
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
+        {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
+        {"Sky", Icons::Id::Lighting}, {"ColorCorrectionEffect", Icons::Id::Lighting}, {"SunRaysEffect", Icons::Id::Lighting},
+        {"DepthOfFieldEffect", Icons::Id::Lighting}, {"BloomEffect", Icons::Id::Lighting}, {"BlurEffect", Icons::Id::Lighting},
         {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"ClickDetector", Icons::Id::Click}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
         {"ParticleEmitter", Icons::Id::Particles}, {"Fire", Icons::Id::Particles}, {"Smoke", Icons::Id::Particles}, {"Sparkles", Icons::Id::Particles},
         {"PointLight", Icons::Id::Light}, {"SpotLight", Icons::Id::Light}, {"Sound", Icons::Id::Sound},

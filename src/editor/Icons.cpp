@@ -613,6 +613,8 @@ Id forNode(const SceneNode& n) {
         case NodeKind::Remote:     return Id::Remote;
         case NodeKind::Prompt:     return Id::Prompt;
         case NodeKind::Highlight:  return Id::Highlight;
+        case NodeKind::PostEffect:
+        case NodeKind::Sky:        return Id::Lighting;
         case NodeKind::ClickDetector: return Id::Click;
         case NodeKind::Trail:
         case NodeKind::Beam:       return Id::Ribbon;
