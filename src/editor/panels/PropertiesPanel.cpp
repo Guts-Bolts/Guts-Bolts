@@ -4,6 +4,7 @@
 #include "../../scene/SceneNode.h"
 #include "../../renderer/MeshLibrary.h"
 #include "../../core/Audio.h"
+#include "../../scene/SoundMix.h"
 #include "../../core/FileDialog.h"
 #include "../../core/Paths.h"
 #include "../../renderer/Textures.h"
@@ -41,6 +42,8 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::Particles ? node->particleClass()
                     : node->kind == NodeKind::Light    ? (node->lightType == LightType::Spot ? "SpotLight" : "PointLight")
                     : node->kind == NodeKind::Sound    ? "Sound"
+                    : node->kind == NodeKind::SoundGroup ? "SoundGroup"
+                    : node->kind == NodeKind::SoundEffect ? SoundFx::kClassNames[(int)node->soundFx.type]
                     : node->kind == NodeKind::Attachment ? "Attachment"
                     : node->kind == NodeKind::Constraint ? "Constraint"
                     : node->kind == NodeKind::ForceField ? "ForceField"
@@ -828,12 +831,70 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::SameLine();
         ImGui::Checkbox("Autoplay", &node->autoplay);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Starts playing when the game starts (great for music)");
+        // SoundGroup: pick from every SoundGroup in the game (usually in SoundService).
+        {
+            std::vector<SceneNode*> groups;
+            m_scene->forEach([&](SceneNode* n) { if (n->isSoundGroup()) groups.push_back(n); });
+            SceneNode* now = SoundMix::groupOf(*m_scene, node);
+            if (ImGui::BeginCombo("SoundGroup", now ? now->name.c_str() : "(none)")) {
+                if (ImGui::Selectable("(none)", !now)) node->soundGroup = 0;
+                for (SceneNode* g : groups) {
+                    ImGui::PushID((int)g->id);
+                    if (ImGui::Selectable(g->fullName().c_str(), now == g)) node->soundGroup = g->id;
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Plays through this group: its Volume multiplies this sound's, and its effects change it too.");
+            if (now) ImGui::TextDisabled("Plays at %.2f (Volume x the groups' Volume)", SoundMix::volume(*m_scene, node));
+        }
         static int preview = 0;
         if (ImGui::Button(Audio::isPlaying(preview) ? "Stop preview" : "Preview")) {
             if (Audio::isPlaying(preview)) Audio::stop(preview);
-            else preview = Audio::play(node->soundId, node->volume, node->pitch, false);
+            else {
+                preview = Audio::play(node->soundId, SoundMix::volume(*m_scene, node), node->pitch, false);
+                SoundMix::apply(*m_scene, node, preview);   // with its effects (and its group's)
+            }
         }
         ImGui::TextDisabled("Scripts: script.Parent:Play()  /  Sounds.Play(\"coin\")");
+        return;
+    }
+
+    if (node->isSoundGroup()) {
+        ImGui::SeparatorText("SoundGroup");
+        ImGui::SliderFloat("Volume", &node->volume, 0.0f, 2.0f, "%.2f");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Every sound in the group plays at its own Volume times this (0-10; Ctrl+click to type)");
+        node->volume = std::clamp(node->volume, 0.0f, 10.0f);
+        int sounds = 0;
+        m_scene->forEach([&](SceneNode* n) { if (n->isSound() && n->soundGroup == node->id) ++sounds; });
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("%d sound%s use%s this group. Set a Sound's SoundGroup in its Properties; put sound effects "
+                            "(Insert Object > Sound) inside the group to change all of them together. A SoundGroup inside "
+                            "another one is part of it (the Volumes multiply).", sounds, sounds == 1 ? "" : "s", sounds == 1 ? "s" : "");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (node->isSoundEffect()) {
+        SoundFxProps& f = node->soundFx;
+        ImGui::SeparatorText(SoundFx::kClassNames[(int)f.type]);
+        ImGui::Checkbox("Enabled", &node->enabled);
+        ImGui::InputInt("Priority", &f.priority);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Effects with a higher Priority are applied first");
+        const auto& params = SoundFx::params(f.type);
+        for (size_t i = 0; i < params.size(); ++i) {
+            const SoundFx::Param& p = params[i];
+            ImGui::SliderFloat(p.name, &f.v[i], p.lo, p.hi, "%.3g");
+            f.v[i] = std::clamp(f.v[i], p.lo, p.hi);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.tip);
+        }
+        ImGui::PushTextWrapPos(0);
+        const SceneNode* in = node->parent;
+        if (!in || (!in->isSound() && !in->isSoundGroup()))
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Put it inside a Sound or SoundGroup: that's what it changes.");
+        else
+            ImGui::TextDisabled(in->isSound() ? "Changes the sound it's in." : "Changes every sound in the group it's in, mixed together.");
+        ImGui::PopTextWrapPos();
         return;
     }
 

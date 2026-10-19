@@ -2,6 +2,7 @@
 #include "../core/Account.h"
 #include "../core/TextFilter.h"
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstring>
@@ -11,13 +12,48 @@ namespace Online {
 
 bool validKind(const std::string& k) {
     return k == "shirt" || k == "pants" || k == "audio" || k == "plugin" || k == "game" || k == "decal" ||
-           k == "model" || k == "face" || k == "tshirt" || k == "gear" || k == "animation" || isAccessory(k);
+           k == "model" || k == "face" || k == "tshirt" || k == "gear" || k == "animation" || isEmoteItem(k) || isAccessory(k);
 }
 bool isAccessory(const std::string& k) {
     return k == "hat" || k == "hair" || k == "faceacc" || k == "neck" || k == "shoulder" || k == "waist";
 }
 bool isClothing(const std::string& k) { return k == "shirt" || k == "pants" || k == "tshirt" || k == "face" || isAccessory(k); }
-bool isCatalogItem(const std::string& k) { return isClothing(k) || k == "gear"; }
+bool isCatalogItem(const std::string& k) { return isClothing(k) || k == "gear" || isEmoteItem(k); }
+bool isEmoteItem(const std::string& k) { return k == "emote" || k == "animpack"; }
+// A clip needs keyframes, and at most 30 seconds of them (worker/server.js clipProblem). "" if it's fine.
+static std::string clipProblem(const nlohmann::json& c) {
+    if (!c.is_object() || !c.contains("keys") || !c["keys"].is_array() || c["keys"].empty()) return "it has no keyframes";
+    if (c["keys"].size() > 600) return "it has too many keyframes";
+    for (const auto& k : c["keys"]) {
+        if (!k.is_object() || !k.contains("t") || !k["t"].is_number()) return "its keyframes must be between 0 and 30 seconds";
+        const double t = k["t"].get<double>();
+        if (!(t >= 0 && t <= 30)) return "its keyframes must be between 0 and 30 seconds";
+        if (!k.contains("poses") || !k["poses"].is_object()) return "a keyframe has no poses";
+    }
+    return "";
+}
+// An emote is {format: "gbanim", clip}; an animation pack is {format: "gbanimpack", clips:
+// {idle, walk, run, jump, fall}} with at least one of them (worker/server.js emoteProblem).
+std::string emoteProblem(const std::string& kind, const std::string& data) {
+    nlohmann::json m = nlohmann::json::parse(data, nullptr, false);
+    if (kind == "emote") {
+        if (!m.is_object() || m.value("format", std::string()) != "gbanim" || !m.contains("clip") || m["clip"].is_null())
+            return "An emote must be an animation made in Studio's Animation Editor.";
+        std::string p = clipProblem(m["clip"]);
+        return p.empty() ? "" : "That emote won't play: " + p + ".";
+    }
+    if (!m.is_object() || m.value("format", std::string()) != "gbanimpack" || !m.contains("clips") || !m["clips"].is_object())
+        return "That isn't an animation pack.";
+    static const char* kStates[] = {"idle", "walk", "run", "jump", "fall"};
+    const nlohmann::json& clips = m["clips"];
+    bool bad = clips.empty();
+    for (auto it = clips.begin(); it != clips.end(); ++it)
+        if (std::find_if(std::begin(kStates), std::end(kStates), [&](const char* s) { return it.key() == s; }) == std::end(kStates)) bad = true;
+    if (bad) return "An animation pack has idle, walk, run, jump and fall animations (and nothing else).";
+    for (auto it = clips.begin(); it != clips.end(); ++it)
+        if (std::string p = clipProblem(it.value()); !p.empty()) return "The pack's " + it.key() + " animation won't play: " + p + ".";
+    return "";
+}
 // Gear: one Tool published from Studio (worker/server.js gearProblem). "" if it's fine.
 std::string gearProblem(const std::string& data) {
     nlohmann::json m = nlohmann::json::parse(data, nullptr, false);
@@ -58,6 +94,8 @@ size_t maxSize(const std::string& k) {
     if (k == "decal") return kMaxDecal;
     if (k == "model" || k == "gear") return 4u * 1024u * 1024u;   // objects from Studio for the Library
     if (k == "animation") return 1024u * 1024u;                    // from Studio's Animation Editor
+    if (k == "emote") return 256u * 1024u;                         // keyframes for the character
+    if (k == "animpack") return 512u * 1024u;                      // five of them
     if (k == "shirt" || k == "pants" || k == "tshirt") return 1024u * 1024u;   // a template picture / a T-shirt picture
     if (k == "face" || isAccessory(k)) return 1024u * 1024u;  // a face picture / an accessory from Studio
     return 64u * 1024u;   // clothing is just a little description of the look
@@ -81,6 +119,8 @@ const char* kindTitle(const std::string& k) {
     if (k == "tshirt") return "T-Shirt";
     if (k == "gear") return "Gear";
     if (k == "animation") return "Animation";
+    if (k == "emote") return "Emote";
+    if (k == "animpack") return "Animation Pack";
     if (k == "gamepass") return "Game Pass";
     return "?";
 }

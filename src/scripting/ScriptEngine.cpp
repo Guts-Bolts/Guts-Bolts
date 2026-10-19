@@ -16,6 +16,7 @@
 #include "../scene/Blast.h"
 #include "../scene/Physics.h"
 #include "../core/Audio.h"
+#include "../scene/SoundMix.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -24,6 +25,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <random>
 
 namespace {
 
@@ -449,6 +451,69 @@ function DataStoreService:GetDataStore(name, scope)
     return ds
 end
 DataStoreService.GetOrderedDataStore = DataStoreService.GetDataStore
+
+-- MessagingService: messages between the running servers of this game (every one of them,
+-- this one too; never other games). Through the Guts&Bolts server for a published game's
+-- online servers, else on this computer (Studio's play test and its multiplayer test server
+-- hear each other). Like Roblox:
+--   MessagingService:SubscribeAsync("Shout", function(msg) print(msg.Data, msg.Sent) end)
+--   MessagingService:PublishAsync("Shout", { text = "hi" })
+-- Topics are 1-80 letters, a message is at most 1 KB as JSON, a server can send 150 + 60 per
+-- player a minute and hold 20 + 8 per player subscriptions.
+do
+    local msgPublish, msgDone, msgSubscribe, msgTake = __gb_msgPublish, __gb_msgDone, __gb_msgSubscribe, __gb_msgTake
+    MessagingService = { Name = "MessagingService", ClassName = "MessagingService" }
+    local subs, count, listening = {}, 0, false   -- topic -> { {fn = callback}, ... }
+    local function listen()
+        if listening then return end
+        listening = true
+        RunService.Heartbeat:Connect(function()
+            for _, m in ipairs(msgTake()) do
+                local list = subs[m[1]]
+                if list then
+                    local now = {}
+                    for i, e in ipairs(list) do now[i] = e end
+                    for _, e in ipairs(now) do
+                        if e.on then task.spawn(e.fn, { Data = m[2], Sent = m[3] }) end
+                    end
+                end
+            end
+        end)
+    end
+    function MessagingService:PublishAsync(topic, message)
+        local ticket = msgPublish(topic, message, #playerList)
+        while true do
+            local done, err = msgDone(ticket)
+            if done then
+                if err then error("MessagingService:PublishAsync: " .. err, 2) end
+                return
+            end
+            task.wait()
+        end
+    end
+    function MessagingService:SubscribeAsync(topic, callback)
+        if type(callback) ~= "function" then error("MessagingService:SubscribeAsync: the second argument must be a function", 2) end
+        topic = msgSubscribe(topic, true, count, #playerList)
+        local entry = { fn = callback, on = true }
+        subs[topic] = subs[topic] or {}
+        table.insert(subs[topic], entry)
+        count = count + 1
+        listen()
+        local conn = { Connected = true }
+        function conn:Disconnect()
+            if not entry.on then return end
+            entry.on = false
+            conn.Connected = false
+            count = count - 1
+            local list = subs[topic]
+            for i, e in ipairs(list) do if e == entry then table.remove(list, i) break end end
+            if #list == 0 then subs[topic] = nil; msgSubscribe(topic, false) end
+        end
+        conn.disconnect = conn.Disconnect
+        return conn
+    end
+    setmetatable(MessagingService, { __tostring = function() return "MessagingService" end })
+end
 
 -- PathfindingService: walking routes on the navigation mesh (every floor a character
 -- can stand on, baked from the parts; it re-bakes itself when anchored parts change).
@@ -1213,6 +1278,7 @@ local services = { Workspace = workspace, PathfindingService = PathfindingServic
                    MarketplaceService = MarketplaceService, GamePassService = GamePassService,
                    RunService = RunService, UserInputService = UserInputService, Gui = Gui,
                    CollectionService = CollectionService, DataStoreService = DataStoreService,
+                   MessagingService = MessagingService,
                    TweenService = TweenService, HttpService = HttpService,
                    ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService,
                    ContextActionService = ContextActionService }
@@ -1227,7 +1293,7 @@ local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, Scri
     AnalyticsService = { LogCustomEvent = true, LogEconomyEvent = true, LogProgressionEvent = true },
     PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {}, TextService = {},
     MaterialService = {}, VoiceChatService = {},
-    MemoryStoreService = {}, MessagingService = { PublishAsync = true }, InsertService = {},
+    MemoryStoreService = {}, InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
     VRService = {}, GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
 local made = {}
@@ -1243,6 +1309,13 @@ local function quietService(name)
     end, __tostring = function() return name end })
     made[name] = s
     return s
+end
+-- GuiService: the emote menu can be opened and closed from scripts (the rest is quiet).
+do
+    local emotesMenu = __gb_emotesMenu
+    local gs = quietService("GuiService")
+    rawset(gs, "SetEmotesMenuOpen", function(_, open) emotesMenu(open and true or false) end)
+    rawset(gs, "GetEmotesMenuOpen", function() return emotesMenu() end)
 end
 local function findService(name)
     if name == "StarterGui" then return __gb_uiFolder() end
@@ -1457,11 +1530,12 @@ __gb_heartbeat, __gb_inputBegan, __gb_inputEnded, __gb_isKeyDown, __gb_padState 
 __gb_playerAdded, __gb_playerRemoving, __gb_tagAdded, __gb_tagRemoved = nil, nil, nil, nil
 __gb_charSignals, __gb_setTeam, __gb_clientMode = nil, nil, nil
 __gb_playerNode, __gb_setRespawn, __gb_dsStart, __gb_dsDone, __gb_dsSet, __gb_navPath, __gb_navQuery = nil, nil, nil, nil, nil, nil, nil
-__gb_camOpt, __gb_setCamOpt = nil, nil
+__gb_camOpt, __gb_setCamOpt, __gb_emotesMenu = nil, nil, nil
 __gb_awardBadge, __gb_hasBadge, __gb_teleport, __gb_joinData = nil, nil, nil, nil
 __gb_raycast, __gb_storage, __gb_addMethod, __gb_cgroups = nil, nil, nil, nil
 __gb_passLookup, __gb_passReady, __gb_passOwns, __gb_passPrompt, __gb_passResults = nil, nil, nil, nil, nil
 __gb_receiptCheck, __gb_receipts, __gb_receiptDone = nil, nil, nil
+__gb_msgPublish, __gb_msgDone, __gb_msgSubscribe, __gb_msgTake = nil, nil, nil, nil
 __gb_casBind, __gb_casUnbind, __gb_casUnbindAll, __gb_casInfo, __gb_casAll, __gb_casButton, __gb_casButtonGet = nil, nil, nil, nil, nil, nil, nil
 )LUA";
 
@@ -1691,7 +1765,9 @@ int l_isKeyDown(lua_State* L) {
 
 // --- DataStoreService: Lua values <-> JSON, kept in a file per game ----------
 
-nlohmann::json toJson(lua_State* L, int idx, int depth = 0) {
+// `what`: the error for things that can't be turned into JSON (functions, objects...).
+const char* const kDataStoreTypes = "DataStores can only save numbers, text, true/false and tables of those";
+nlohmann::json toJson(lua_State* L, int idx, int depth = 0, const char* what = kDataStoreTypes) {
     idx = lua_absindex(L, idx);
     switch (lua_type(L, idx)) {
         case LUA_TBOOLEAN: return (bool)lua_toboolean(L, idx);
@@ -1707,7 +1783,7 @@ nlohmann::json toJson(lua_State* L, int idx, int depth = 0) {
             if (n > 0) {
                 for (lua_Integer i = 1; i <= n; ++i) {
                     lua_rawgeti(L, idx, i);
-                    out.push_back(toJson(L, -1, depth + 1));
+                    out.push_back(toJson(L, -1, depth + 1, what));
                     lua_pop(L, 1);
                 }
                 return out;
@@ -1717,13 +1793,13 @@ nlohmann::json toJson(lua_State* L, int idx, int depth = 0) {
                 lua_pushvalue(L, -2);
                 std::string key = luaL_tolstring(L, -1, nullptr);
                 lua_pop(L, 2);   // the tostring'd key and its copy
-                out[key] = toJson(L, -1, depth + 1);
+                out[key] = toJson(L, -1, depth + 1, what);
                 lua_pop(L, 1);
             }
             return out;
         }
         case LUA_TNIL: return nullptr;
-        default: luaL_error(L, "DataStores can only save numbers, text, true/false and tables of those");
+        default: luaL_error(L, "%s", what);
     }
     return nullptr;
 }
@@ -1771,6 +1847,108 @@ int l_dsSet(lua_State* L) {
     if (v.dump().size() > 256 * 1024) return luaL_error(L, "That's too much to save in one key (256 KB at most)");
     LuaApi::engine(L)->dataSet(store, key, v);
     return 0;
+}
+
+// --- MessagingService (the Lua side is in the prelude) -----------------------
+
+void msgNeedServer(lua_State* L, const char* call) {
+    if (LuaApi::engine(L)->runMode() == ScriptEngine::RunMode::Client)
+        luaL_error(L, "MessagingService:%s only works in Scripts on the server (this is a LocalScript)", call);
+}
+std::string msgTopic(lua_State* L, int idx, const char* call) {
+    if (lua_type(L, idx) != LUA_TSTRING && lua_type(L, idx) != LUA_TNUMBER)
+        luaL_error(L, "MessagingService:%s: the topic must be a string", call);
+    std::string topic = lua_tostring(L, idx);
+    if (topic.empty() || topic.size() > ScriptEngine::kMsgTopic)
+        luaL_error(L, "MessagingService:%s: topic names are 1-%d letters (that one is %d)", call, (int)ScriptEngine::kMsgTopic, (int)topic.size());
+    return topic;
+}
+
+// __gb_msgPublish(topic, message, players) -> ticket
+int l_msgPublish(lua_State* L) {
+    msgNeedServer(L, "PublishAsync");
+    const std::string topic = msgTopic(L, 1, "PublishAsync");
+    nlohmann::json data = toJson(L, 2, 0, "MessagingService:PublishAsync: messages can only hold numbers, text, true/false and tables of those");
+    const size_t size = data.dump().size();
+    if (size > ScriptEngine::kMsgSize)
+        return luaL_error(L, "MessagingService:PublishAsync: that message is %d bytes once encoded; 1 KB (%d bytes) is the most",
+                          (int)size, (int)ScriptEngine::kMsgSize);
+    std::string err;
+    const int ticket = LuaApi::engine(L)->msgPublish(topic, data, (int)luaL_optinteger(L, 3, 0), err);
+    if (!ticket) return luaL_error(L, "MessagingService:PublishAsync: %s", err.c_str());
+    lua_pushinteger(L, ticket);
+    return 1;
+}
+
+// __gb_msgDone(ticket) -> done, error (nil = sent)
+int l_msgDone(lua_State* L) {
+    std::string err;
+    if (!LuaApi::engine(L)->msgDone((int)luaL_checkinteger(L, 1), err)) { lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, 1);
+    if (err.empty()) lua_pushnil(L); else lua_pushstring(L, err.c_str());
+    return 2;
+}
+
+// __gb_msgSubscribe(topic, on, subscriptions, players) -> topic. Subscribing checks the
+// topic and the limit (20 + 8 per player subscriptions per server).
+int l_msgSubscribe(lua_State* L) {
+    msgNeedServer(L, "SubscribeAsync");
+    const std::string topic = msgTopic(L, 1, "SubscribeAsync");
+    const bool on = lua_toboolean(L, 2);
+    if (on) {
+        const long long have = luaL_optinteger(L, 3, 0), players = luaL_optinteger(L, 4, 0);
+        const long long most = 20 + 8 * std::max(0LL, players);
+        if (have >= most)
+            return luaL_error(L, "MessagingService:SubscribeAsync: this server already has %d subscriptions (20 + 8 per player is the most). "
+                                 "Disconnect some first.", (int)have);
+    }
+    LuaApi::engine(L)->msgSubscribe(topic, on);
+    lua_pushstring(L, topic.c_str());
+    return 1;
+}
+
+// __gb_msgTake() -> { {topic, data, sent}, ... } (what arrived since last time)
+int l_msgTake(lua_State* L) {
+    auto list = LuaApi::engine(L)->takeMessages();
+    lua_createtable(L, (int)list.size(), 0);
+    for (size_t i = 0; i < list.size(); ++i) {
+        lua_createtable(L, 3, 0);
+        lua_pushstring(L, list[i].topic.c_str()); lua_rawseti(L, -2, 1);
+        pushJson(L, list[i].data);                lua_rawseti(L, -2, 2);
+        lua_pushinteger(L, (lua_Integer)list[i].sent); lua_rawseti(L, -2, 3);
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    return 1;
+}
+
+// __gb_soundMix(sound [, frequency]) -> volume, { effect class names in order }, loudness, pitch
+// For checks (tools/test_sound_groups.lua): how loud a Sound really plays (its Volume times its
+// groups'), which effects it goes through, and - with a frequency - how loud a test tone
+// comes out of those effects compared to going in (1 = the same; the last half second) and
+// at what pitch (Hz).
+int l_soundMix(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    if (!n->isSound()) return luaL_error(L, "__gb_soundMix needs a Sound");
+    Scene& scene = *LuaApi::engine(L)->scene();
+    lua_pushnumber(L, SoundMix::volume(scene, n));
+    const auto chain = SoundMix::chainOf(scene, n);
+    lua_createtable(L, (int)chain.size(), 0);
+    for (size_t i = 0; i < chain.size(); ++i) { lua_pushstring(L, SoundFx::kClassNames[(int)chain[i].type]); lua_rawseti(L, -2, (lua_Integer)i + 1); }
+    if (lua_isnoneornil(L, 2)) return 2;
+    const float freq = (float)luaL_checknumber(L, 2), seconds = 2.0f;
+    const std::vector<float> out = SoundFx::render(chain, freq, seconds), in = SoundFx::render({}, freq, seconds);
+    auto rms = [](const std::vector<float>& v) {
+        double sum = 0.0;
+        const size_t from = v.size() * 3 / 4;
+        for (size_t i = from; i < v.size(); ++i) sum += (double)v[i] * v[i];
+        return std::sqrt(sum / std::max<size_t>(1, v.size() - from));
+    };
+    lua_pushnumber(L, rms(out) / std::max(1e-9, rms(in)));
+    // Its pitch, from how often it crosses zero (the last half second).
+    int crossings = 0;
+    for (size_t i = out.size() * 3 / 4 + 1; i < out.size(); ++i) crossings += (out[i - 1] < 0.0f) != (out[i] < 0.0f);
+    lua_pushnumber(L, crossings / (2.0 * seconds / 4.0));
+    return 4;
 }
 
 // __gb_awardBadge(playerName, badgeId): the app sends it to the server.
@@ -1951,6 +2129,17 @@ CameraOptions* cameraOptionsOf(lua_State* L, const std::string& player, bool for
             return r.cameraSet ? &r.camera : &scene.world().playerCamera;
         }
     return forWriting ? nullptr : &scene.world().playerCamera;
+}
+// GuiService:SetEmotesMenuOpen(open) / GetEmotesMenuOpen() (see the prelude). With no
+// argument it just says whether the emote menu is open; it can't open while a game has
+// turned it off (StarterGui:SetCoreGuiEnabled) or there's no character.
+int l_emotesMenu(lua_State* L) {
+    ScriptEngine* e = LuaApi::engine(L);
+    CoreGuiState& g = e->scene()->coreGui();
+    if (lua_gettop(L) >= 1)
+        g.emotesOpen = lua_toboolean(L, 1) && g.enabled("EmotesMenu") && !e->noLocalPlayer() && e->scene()->player();
+    lua_pushboolean(L, g.emotesOpen);
+    return 1;
 }
 int l_camOpt(lua_State* L) {
     const CameraOptions* o = cameraOptionsOf(L, luaL_checkstring(L, 1), false);
@@ -2505,10 +2694,16 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_setTeam", l_setTeam);
     lua_register(L, "__gb_materialPhysics", l_materialPhysics);
     lua_register(L, "__gb_camOpt", l_camOpt);
+    lua_register(L, "__gb_emotesMenu", l_emotesMenu);
     lua_register(L, "__gb_setCamOpt", l_setCamOpt);
     lua_register(L, "__gb_dsStart", l_dsStart);
     lua_register(L, "__gb_dsDone", l_dsDone);
     lua_register(L, "__gb_dsSet", l_dsSet);
+    lua_register(L, "__gb_msgPublish", l_msgPublish);
+    lua_register(L, "__gb_msgDone", l_msgDone);
+    lua_register(L, "__gb_msgSubscribe", l_msgSubscribe);
+    lua_register(L, "__gb_msgTake", l_msgTake);
+    lua_register(L, "__gb_soundMix", l_soundMix);
     lua_register(L, "__gb_navPath", l_navPath);
     lua_register(L, "__gb_navQuery", l_navQuery);
     lua_register(L, "__gb_raycast", l_raycast);
@@ -2806,6 +3001,11 @@ void ScriptEngine::stop() {
     m_dataQueue.clear();
     m_dataDone.clear();
     m_dataCache.clear();
+    m_msgMode = MsgMode::Unknown;              // (MessagingService starts again too)
+    m_msgTopics.clear(); m_msgIn.clear(); m_msgQueue.clear(); m_msgDone.clear(); m_msgSentAt.clear();
+    m_msgSeen.clear();
+    m_msgAfter = -1;
+    m_msgPolling = false;
     m_libraryModules.clear();
     m_current = 0;
     m_detached.clear();
@@ -2869,6 +3069,7 @@ void ScriptEngine::schedule(lua_State* co, int ref, double delay, int startArgs)
 void ScriptEngine::update(float dt) {
     if (!m_L) return;
     m_time += dt;
+    msgStep();   // MessagingService: messages from the game's other servers
 
     // Keyboard and controller buttons: bound actions (ContextActionService) first, then
     // UserInputService.InputBegan / InputEnded.
@@ -3193,6 +3394,185 @@ void ScriptEngine::dataSet(const std::string& store, const std::string& key, con
     DataJob j;
     j.kind = "set"; j.store = store; j.key = key; j.value = value;
     dataRun(j);
+}
+
+// --- MessagingService ------------------------------------------------------
+//
+// Online: the Guts&Bolts server keeps each game's messages for a little while (msg.publish),
+// and every server of the game asks for new ones about once a second (msg.poll). Elsewhere
+// (Studio, LAN games, a published game played alone): a folder on this computer, one small
+// file per message, that every engine running the same game reads.
+
+namespace {
+constexpr double kMsgPollEvery  = 1.0;    // online: ask the server this often
+constexpr double kMsgLocalEvery = 0.1;    // on this computer: look in the folder this often
+constexpr double kMsgKeep       = 30.0;   // seconds a local message file is kept
+double unixNow() {
+    using namespace std::chrono;
+    return duration<double>(system_clock::now().time_since_epoch()).count();
+}
+} // namespace
+
+std::filesystem::path ScriptEngine::msgFolder() const {
+    // One folder per game, named like its saved data file.
+    return Account::folder() / "messaging" / saveFile().stem();
+}
+
+int ScriptEngine::msgPublish(const std::string& topic, const nlohmann::json& data, int players, std::string& error) {
+    const double now = nowSeconds();
+    m_msgSentAt.erase(std::remove_if(m_msgSentAt.begin(), m_msgSentAt.end(), [now](double t) { return t <= now - 60.0; }),
+                      m_msgSentAt.end());
+    const size_t allowed = 150 + 60 * (size_t)std::max(0, players);
+    if (m_msgSentAt.size() >= allowed) {
+        error = "too many messages (" + std::to_string(allowed) + " a minute is the most for this server). Wait a moment.";
+        return 0;
+    }
+    m_msgSentAt.push_back(now);
+    const int ticket = m_msgNext++;
+    MsgOut m{ticket, topic, data};
+    if (m_msgMode == MsgMode::Unknown) msgSync();
+    if (m_msgMode == MsgMode::Asking) m_msgQueue.push_back(std::move(m));
+    else msgSend(m);
+    return ticket;
+}
+
+bool ScriptEngine::msgDone(int ticket, std::string& error) {
+    auto it = m_msgDone.find(ticket);
+    if (it == m_msgDone.end()) return false;
+    error = it->second;
+    m_msgDone.erase(it);
+    return true;
+}
+
+void ScriptEngine::msgSubscribe(const std::string& topic, bool on) {
+    if (!on) { m_msgTopics.erase(topic); return; }
+    const bool first = m_msgTopics.empty();
+    if (!m_msgTopics.count(topic)) m_msgTopics[topic] = unixNow();
+    // Online, nobody was listening (so we stopped asking): find out where the messages are up
+    // to first, so old ones don't arrive (our own sends wait until then).
+    if (m_msgMode == MsgMode::Unknown || (first && m_msgMode == MsgMode::Online)) msgSync();
+}
+
+void ScriptEngine::msgSync() {
+    const std::string game = m_dataGame.empty() ? m_scene->info().publishedId : m_dataGame;
+    if (m_msgMode == MsgMode::Local || !m_onlineData || game.empty() || game.rfind("local:", 0) == 0 || !Online::online()) {
+        m_msgMode = MsgMode::Local;
+        return;
+    }
+    m_dataGame = game;
+    m_msgMode = MsgMode::Asking;
+    m_msgPolling = true;
+    std::weak_ptr<bool> alive = m_alive;
+    const int gen = m_dataGen;
+    Online::request("msg.poll", {{"game", game}}, [this, alive, gen](const nlohmann::json& r) {
+        if (alive.expired() || gen != m_dataGen) return;
+        m_msgPolling = false;
+        if (r.value("ok", false) && r.value("server", false)) {
+            m_msgMode = MsgMode::Online;
+            m_msgAfter = r.value("last", 0LL);
+            m_msgNextPoll = nowSeconds() + kMsgPollEvery;
+        } else {   // not one of the game's online servers (playing it alone...): this computer, then
+            if (!r.value("ok", false)) Log::warn("MessagingService: " + r.value("error", std::string("no answer")) + " (using this computer instead)");
+            m_msgMode = MsgMode::Local;
+        }
+        std::vector<MsgOut> queued;
+        queued.swap(m_msgQueue);
+        for (const MsgOut& m : queued) msgSend(m);
+    });
+}
+
+void ScriptEngine::msgSend(const MsgOut& m) {
+    if (m_msgMode == MsgMode::Online) {
+        std::weak_ptr<bool> alive = m_alive;
+        const int gen = m_dataGen, ticket = m.ticket;
+        Online::request("msg.publish", {{"game", m_dataGame}, {"topic", m.topic}, {"message", m.data}},
+                        [this, alive, gen, ticket](const nlohmann::json& r) {
+            if (alive.expired() || gen != m_dataGen) return;
+            m_msgDone[ticket] = r.value("ok", false) ? std::string() : r.value("error", std::string("couldn't send it"));
+        });
+        return;
+    }
+    // On this computer: a file every engine running this game picks up (written whole, then renamed).
+    if (m_msgToken.empty()) {
+        static const char* hex = "0123456789abcdef";
+        std::random_device rd;
+        for (int i = 0; i < 10; ++i) m_msgToken += hex[rd() % 16];
+    }
+    const double now = unixNow();
+    char name[96];
+    std::snprintf(name, sizeof(name), "%015lld-%s-%06lld", (long long)(now * 1000.0), m_msgToken.c_str(), ++m_msgCount);
+    const std::filesystem::path dir = msgFolder();
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    const std::filesystem::path tmp = dir / (std::string(name) + ".tmp"), file = dir / (std::string(name) + ".msg");
+    bool ok = false;
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        f << nlohmann::json{{"topic", m.topic}, {"message", m.data}, {"sent", now}}.dump();
+        ok = (bool)f;
+    }
+    if (ok) std::filesystem::rename(tmp, file, ec);
+    m_msgDone[m.ticket] = ok && !ec ? std::string() : std::string("couldn't write the message on this computer");
+}
+
+void ScriptEngine::msgStep() {
+    if (m_msgMode == MsgMode::Online) {
+        if (m_msgTopics.empty() || m_msgPolling || nowSeconds() < m_msgNextPoll) return;
+        m_msgPolling = true;
+        nlohmann::json topics = nlohmann::json::array();
+        for (const auto& [t, since] : m_msgTopics) topics.push_back(t);
+        std::weak_ptr<bool> alive = m_alive;
+        const int gen = m_dataGen;
+        Online::request("msg.poll", {{"game", m_dataGame}, {"after", m_msgAfter}, {"topics", topics}},
+                        [this, alive, gen](const nlohmann::json& r) {
+            if (alive.expired() || gen != m_dataGen) return;
+            m_msgPolling = false;
+            m_msgNextPoll = nowSeconds() + kMsgPollEvery;
+            if (!r.value("ok", false)) return;   // (try again in a moment)
+            if (!r.value("server", false)) { m_msgMode = MsgMode::Local; return; }   // our server closed: carry on on this computer
+            m_msgAfter = r.value("last", m_msgAfter);
+            for (const nlohmann::json& m : r.value("messages", nlohmann::json::array())) {
+                const std::string topic = m.value("topic", std::string());
+                if (m_msgTopics.count(topic))
+                    m_msgIn.push_back({topic, m.contains("message") ? m["message"] : nlohmann::json(), m.value("sent", 0.0)});
+            }
+        });
+        return;
+    }
+    if (m_msgMode != MsgMode::Local) return;
+    const double t = nowSeconds();
+    const bool prune = t - m_msgPruned > 5.0;
+    if ((m_msgTopics.empty() && !prune) || t < m_msgNextPoll) return;
+    m_msgNextPoll = t + kMsgLocalEvery;
+    if (prune) m_msgPruned = t;
+    // New files, oldest first. Each is for us if we were listening to its topic when it was sent.
+    std::vector<std::filesystem::path> files;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(msgFolder(), ec), end; !ec && it != end; it.increment(ec))
+        if (it->path().extension() == ".msg") files.push_back(it->path());
+    std::sort(files.begin(), files.end());
+    const double now = unixNow();
+    for (const std::filesystem::path& f : files) {
+        const std::string name = f.filename().string();
+        const double sentMs = std::atof(name.c_str());
+        if (sentMs / 1000.0 < now - kMsgKeep) {   // old: anyone tidies it away
+            std::filesystem::remove(f, ec);
+            m_msgSeen.erase(name);
+            continue;
+        }
+        if (m_msgTopics.empty() || m_msgSeen.count(name)) continue;
+        m_msgSeen.insert(name);
+        std::ifstream in(f, std::ios::binary);
+        std::stringstream ss;
+        ss << in.rdbuf();
+        nlohmann::json m = nlohmann::json::parse(ss.str(), nullptr, false);
+        if (!m.is_object()) continue;
+        const std::string topic = m.value("topic", std::string());
+        auto sub = m_msgTopics.find(topic);
+        const double sent = m.value("sent", 0.0);
+        if (sub == m_msgTopics.end() || sent < sub->second) continue;
+        m_msgIn.push_back({topic, m.contains("message") ? m["message"] : nlohmann::json(), std::floor(sent)});
+    }
 }
 
 uint64_t ScriptEngine::playerNode(const std::string& name) {

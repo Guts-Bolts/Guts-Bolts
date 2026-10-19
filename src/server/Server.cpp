@@ -4,6 +4,8 @@
 #include "../core/Paths.h"
 #include "../net/Socket.h"
 #include "ServerUtil.h"
+#include "EmotesData.h"      // assets/emotes/emotes.gbemotes (the starter emotes, also the worker's)
+#include "EmotePictures.h"   // assets/emotes/pictures.gbemotes (their pictures)
 
 #include <algorithm>
 #include <cctype>
@@ -95,6 +97,7 @@ json GbServer::handle(const json& req) {
     if (!bad.is_null()) return bad;
     json args = req.contains("args") && req["args"].is_object() ? req["args"] : json::object();
     try {
+        openGiftBoxes();   // (ServerItems.cpp)
         return op(req.value("op", std::string()), *me, args);
     } catch (const std::exception& e) {
         return fail(std::string("The server hit a problem: ") + e.what());
@@ -136,7 +139,8 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get",
-                                                    "get", "servers.play", "relay.host", "relay.join", "product.pending", "product.grant"};
+                                                    "get", "servers.play", "relay.host", "relay.join", "product.pending", "product.grant",
+                                                    "msg.publish", "msg.poll"};   // (guests can host games too)
     if (me.userId == 0 && opName != "hello" && opName != "ping" && opName.rfind("account.", 0) != 0 &&
         !kLookOnly.count(opName) && opName != "support.send" && opName != "support.mine")
         return fail("Sign up or log in first.");
@@ -220,6 +224,16 @@ json GbServer::publicUser(const User& u) const {
             {"banReason", u.banned ? u.banReason : std::string()}};
 }
 
+json GbServer::emoteSlots(const User& u) const {
+    json out = json::array();
+    for (int i = 0; i < Online::kEmoteSlots; ++i) {
+        const std::string id = i < (int)u.emotes.size() ? u.emotes[i] : std::string();
+        auto it = id.empty() ? m_assets.end() : m_assets.find(id);
+        out.push_back(it != m_assets.end() && it->second.kind == "emote" && u.owned.count(id) ? id : std::string());
+    }
+    return out;
+}
+
 json GbServer::meJson(const User& u) const {
     json j = publicUser(u);
     j["bolts"] = balance(u);
@@ -235,6 +249,8 @@ json GbServer::meJson(const User& u) const {
     json gear = json::array();
     for (const auto& g : u.gear) if (u.owned.count(g)) gear.push_back(g);
     j["gear"] = gear;
+    j["emotes"] = emoteSlots(u);
+    j["animPack"] = !u.animPack.empty() && u.owned.count(u.animPack) ? u.animPack : std::string();
     json g = json::array();
     for (const auto& [k, s] : u.grants) g.push_back({k, s});
     j["grants"] = g;
@@ -318,6 +334,15 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
     const long long off = a.meta.is_object() ? a.meta.value("offsaleAt", 0LL) : 0LL;
     j["offsaleAt"] = off;
     j["offsale"] = off > 0 && Online::unixNow() >= off;
+    // Exclusive items aren't in the catalog; a gift box hands out another item (ServerItems.cpp).
+    if (a.meta.is_object() && a.meta.value("exclusive", false)) j["exclusive"] = true;
+    if (const std::string gift = a.meta.is_object() ? a.meta.value("giftItem", std::string()) : std::string(); !gift.empty()) {
+        j["gift"] = true;
+        if (me && isStaff(*me)) {   // (staff only: it's a surprise)
+            auto g = m_assets.find(gift);
+            j["giftItem"] = {{"id", gift}, {"num", g != m_assets.end() ? g->second.num : 0}, {"name", g != m_assets.end() ? g->second.name : std::string("?")}};
+        }
+    }
     if (const std::string review = reviewOf(a.meta); !review.empty()) {
         j["review"] = review;
         j["reviewNote"] = a.meta.value("reviewNote", std::string());
@@ -477,7 +502,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             r["hidden"] = true; r["cat"] = "all"; r["total"] = 0; r["counts"] = json::object(); r["items"] = json::array();
             return r;
         }
-        static const char* kCats[] = {"all", "accessories", "clothing", "faces", "gear", "limited"};
+        static const char* kCats[] = {"all", "accessories", "clothing", "faces", "gear", "emotes", "limited"};
         std::string cat = "all";
         json counts = json::object();
         for (const char* c : kCats) {
@@ -527,6 +552,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("friends.", 0) == 0 || name.rfind("follow.", 0) == 0) return friendOp(name, me, args);
     if (name.rfind("servers.", 0) == 0) return serverOp(name, me, args);
     if (name.rfind("data.", 0) == 0) return dataOp(name, me, args);
+    if (name.rfind("msg.", 0) == 0) return msgOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);
     if (name.rfind("appeal.", 0) == 0) return appealOp(name, me, args);
     if (name.rfind("outfit.", 0) == 0 || name.rfind("message.", 0) == 0 || name.rfind("notes.", 0) == 0 || name == "game.favorite" || name == "games.mine" || name.rfind("comments.", 0) == 0 ||
@@ -578,7 +604,9 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         Asset& a = it->second;
         if (a.creator != me.id && !isStaff(me)) return fail("You can only change pictures of your own things.");
         // Catalog items aren't given pictures (worker/server.js): they're drawn from the item itself.
-        if (Online::isCatalogItem(a.kind)) return fail("Catalog items don't take pictures: they're shown as the item itself.");
+        // (Emotes and animation packs can't be drawn from a shape: staff give them a render of the move.)
+        if (Online::isCatalogItem(a.kind) && !(Online::isEmoteItem(a.kind) && isStaff(me)))
+            return fail("Catalog items don't take pictures: they're shown as the item itself.");
         std::string data;
         if (!Online::base64Decode(str("data"), data)) return fail("The picture got scrambled. Try again.");
         bool png = data.size() > 8 && data.compare(0, 4, "\x89PNG") == 0;
@@ -784,6 +812,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::string desc = say(str("description"), 1000, true);
         const bool verified = isVerified(me);
         if (kind == "gear" && !isStaff(me)) return fail("Only Guts&Bolts staff can make gear.");
+        if (Online::isEmoteItem(kind) && !isStaff(me)) return fail("Only Guts&Bolts staff can make emotes and animation packs.");
         if (Online::isAccessory(kind) && !verified && !isStaff(me))
             return fail("Only Verified creators can make hats and accessories. Shirts and pants are open to everyone!");
         long long price = std::clamp(num("price"), 0LL, 1000000LL);
@@ -811,6 +840,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (reviewedKind(kind) && !verified && !isStaff(me)) meta["review"] = "pending";
         if (kind == "gear")
             if (std::string problem = Online::gearProblem(data); !problem.empty()) return fail(problem);
+        if (Online::isEmoteItem(kind))
+            if (std::string problem = Online::emoteProblem(kind, data); !problem.empty()) return fail(problem);
         if (kind == "animation") {   // from Studio's Animation Editor (worker/server.js has the same)
             json anim = json::parse(data, nullptr, false);
             if (!anim.is_object() || anim.value("format", std::string()) != "gbanim" || !anim.contains("clip") || !anim["clip"].is_object())
@@ -1097,6 +1128,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (a.kind == "game" && !json::accept(data)) return fail("That isn't a Guts&Bolts game file.");
         if (a.kind == "gear")
             if (std::string problem = Online::gearProblem(data); !problem.empty()) return fail(problem);
+        if (Online::isEmoteItem(a.kind))
+            if (std::string problem = Online::emoteProblem(a.kind, data); !problem.empty()) return fail(problem);
         // A 3D accessory made in Studio: a new version of its model (e.g. with its pictures uploaded).
         const bool model = Online::isAccessory(a.kind) && a.meta.value("model", false) && !data.empty();
         if (model) {
@@ -1165,6 +1198,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         for (const auto& [id, a] : m_assets) {
             if (!kind.empty() && a.kind != kind && !(kind == "clothing" && Online::isCatalogItem(a.kind))) continue;
             if (ownedOnly && !me.owned.count(a.id)) continue;
+            if (!ownedOnly && !isStaff(me) && a.meta.is_object() && a.meta.value("exclusive", false)) continue;   // Exclusive: not in the catalog
             if (sort == "featured" && a.meta.value("featured", 0LL) <= 0) continue;   // picked by staff
             if (!creator.empty() && a.creator != creator) continue;
             if (!q.empty() && lower(a.name).find(q) == std::string::npos) continue;
@@ -1207,6 +1241,38 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
                 return fail("You can have " + std::to_string(Online::kMostGear) + " gear equipped at once. Take one off first.");
             me.gear.push_back(id);
         }
+        saveUsers();
+        json r = okay(); r["me"] = meJson(me); return r;
+    }
+    if (name == "emotes.equip") {
+        // Put an emote you own in one of your emote menu's slots (1-8), or empty the slot (id "").
+        // An emote already in another slot moves to this one. (worker/server.js)
+        const long long slot = num("slot");
+        if (slot < 1 || slot > Online::kEmoteSlots)
+            return fail("Pick a slot from 1 to " + std::to_string(Online::kEmoteSlots) + ".");
+        std::vector<std::string> slots;
+        for (const auto& s : emoteSlots(me)) slots.push_back(s.get<std::string>());
+        std::string id = str("id");
+        if (!id.empty()) {
+            auto it = findAsset(id);
+            if (it == m_assets.end() || it->second.kind != "emote") return fail("That emote doesn't exist (any more).");
+            id = it->first;
+            if (!me.owned.count(id)) return fail("Get it from the catalog first.");
+            for (auto& s : slots) if (s == id) s.clear();
+        }
+        slots[(size_t)slot - 1] = id;
+        me.emotes = slots;
+        saveUsers();
+        json r = okay(); r["me"] = meJson(me); return r;
+    }
+    if (name == "animpack.equip") {   // wear an animation pack you own (id "" = back to the normal animations)
+        std::string id = str("id");
+        if (!id.empty()) {
+            auto it = findAsset(id);
+            if (it == m_assets.end() || it->second.kind != "animpack") return fail("That animation pack doesn't exist (any more).");
+            if (!me.owned.count(it->first)) return fail("Get it from the catalog first.");
+            me.animPack = it->first;
+        } else me.animPack.clear();
         saveUsers();
         json r = okay(); r["me"] = meJson(me); return r;
     }
@@ -1294,6 +1360,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (a.kind == "devproduct") return fail("Developer products are bought inside their game.");
         if (a.meta.is_object() && a.meta.value("award", std::string()) == "email")
             return fail("This hat can't be bought: confirm an email in Settings and it's yours.");
+        if (a.meta.is_object() && a.meta.value("exclusive", false))
+            return fail("This is an Exclusive item: it can't be bought. It comes from events and gift boxes.");
         if (const long long off = a.meta.is_object() ? a.meta.value("offsaleAt", 0LL) : 0LL; off > 0 && now >= off)
             return fail(std::string("This item is off sale: it was only for sale for a limited time.") +
                         (a.limited ? " Buy one from a reseller on the item's page." : ""));
@@ -1327,6 +1395,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (a.meta.is_object() && a.meta.value("award", std::string()) == "email")
             return fail("This hat can't be bought: it's given to people who confirm an email.");
         if (a.limited) return fail("Limited items can't be gifts. Trade one with your friend instead.");
+        if (a.meta.is_object() && a.meta.value("exclusive", false))
+            return fail("This is an Exclusive item: it can't be bought or gifted. It comes from events and gift boxes.");
         if (const long long off = a.meta.is_object() ? a.meta.value("offsaleAt", 0LL) : 0LL; off > 0 && now >= off)
             return fail("This item is off sale: it was only for sale for a limited time.");
         if (a.price <= 0) return fail("This item is free, so your friend can just get it themselves.");
@@ -1482,6 +1552,8 @@ void GbServer::saveUsers() {
         if (!u.totpPending.empty()) all[id]["totpPending"] = u.totpPending;
         all[id]["privacy"] = {{"status", u.privacyStatus}, {"join", u.privacyJoin}, {"messages", u.privacyMessages}, {"inventory", u.privacyInventory}};
         all[id]["gear"] = u.gear;
+        if (!u.emotes.empty()) all[id]["emotes"] = u.emotes;
+        if (!u.animPack.empty()) all[id]["animPack"] = u.animPack;
         all[id]["outfits"] = u.outfits;
         all[id]["favorites"] = u.favorites;
         all[id]["recent"] = u.recent;
@@ -1540,6 +1612,38 @@ void GbServer::saveAssets() {
 
 // The example games that come with Guts&Bolts (the games folder): always on the
 // server as the staff account's games, kept up to date (the website's server does the same).
+// The starter emotes and animation packs (assets/emotes/emotes.gbemotes, worker/server.js
+// addStarterEmotes): added once, kept up to date, owned by the staff account, each with its
+// picture (a render of the character mid-move, made by Studio: GutsAndBolts --emote-pictures).
+void GbServer::addStarterEmotes() {
+    const json list = json::parse(std::string((const char*)kEmotesData, kEmotesDataSize), nullptr, false);
+    const json pictures = json::parse(std::string((const char*)kEmotePictures, kEmotePicturesSize), nullptr, false);
+    if (!list.is_object() || !list.contains("catalog") || !list["catalog"].is_array()) return;
+    for (const json& it : list["catalog"]) {
+        if (!it.is_object()) continue;
+        const std::string id = it.value("id", std::string()), kind = it.value("kind", std::string());
+        if (id.empty() || !Online::isEmoteItem(kind)) continue;
+        const json file = kind == "emote" ? json{{"format", "gbanim"}, {"clip", it.value("clip", json())}}
+                                          : json{{"format", "gbanimpack"}, {"clips", it.value("clips", json())}};
+        const std::string data = file.dump();
+        Asset& a = m_assets[id];
+        if (a.id.empty()) {
+            a.id = id; a.kind = kind; a.creator = Account::officialId(); a.created = Online::unixNow();
+            a.price = std::max(0LL, it.value("price", 0LL));
+            a.meta = {{"builtin", true}};
+        }
+        a.name = Online::cleanText(it.value("name", id), 50);
+        a.description = Online::cleanText(it.value("description", std::string()), 1000);
+        if (a.size != data.size()) { a.size = data.size(); writeFile(blobPath(a.id), data); }
+        if (pictures.is_object() && pictures.contains(id) && pictures[id].is_string()) {
+            std::string pic, old;
+            const fs::path thumb = m_opts.data / "files" / ("thumb-" + a.id);
+            if (Online::base64Decode(pictures[id].get<std::string>(), pic) && (!readFile(thumb, old) || old != pic) && writeFile(thumb, pic))
+                a.thumb = Online::unixNow();
+        }
+    }
+}
+
 void GbServer::addExampleGames() {
     if (Account::officialId().empty()) return;
     std::error_code ec;
@@ -1584,10 +1688,11 @@ void GbServer::addExampleGames() {
         if (a.size != text.size()) { a.size = text.size(); writeFile(blobPath(a.id), text); }
         changed = true;
     }
+    addStarterEmotes();
     // Gutstober (worker/server.js timeGutstoberItems): pumpkin items are timed items that
     // go off sale when Gutstober (October) ends, midnight UTC on November 1st. Once per item.
     for (auto& [id, a] : m_assets) {
-        if (!Online::isCatalogItem(a.kind) || !a.meta.is_object() || a.meta.contains("timedFor")) continue;
+        if (!Online::isCatalogItem(a.kind) || !a.meta.is_object() || a.meta.contains("timedFor") || a.meta.value("exclusive", false)) continue;
         std::string lower = a.name;
         for (char& c : lower) c = (char)std::tolower((unsigned char)c);
         if (lower.find("pumpkin") == std::string::npos) continue;
@@ -1666,6 +1771,9 @@ void GbServer::load() {
                 u.publicThisWeek = j.value("publicThisWeek", 0);
                 if (j.contains("gear") && j["gear"].is_array())
                     for (const auto& g : j["gear"]) if (g.is_string()) u.gear.push_back(g.get<std::string>());
+                if (j.contains("emotes") && j["emotes"].is_array())
+                    for (const auto& e : j["emotes"]) u.emotes.push_back(e.is_string() ? e.get<std::string>() : std::string());
+                u.animPack = j.value("animPack", std::string());
                 u.totpSecret = j.value("totpSecret", std::string());
                 u.totpPending = j.value("totpPending", std::string());
                 u.totpLast = j.value("totpLast", -1LL);

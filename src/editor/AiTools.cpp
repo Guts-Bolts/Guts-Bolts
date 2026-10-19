@@ -144,7 +144,8 @@ const std::vector<Tool>& tools() {
                  {"limit", {{"type", "integer"}, {"minimum", 1}, {"maximum", 500}}}}, {})},
         {"insert_object", "Create an object", "SCENE", false, false, false, Risk::Low,
          {"Creates a NEW object in the game and returns its object_id. kind is a class or a ready-made thing: Part, Sphere, "
-          "Cylinder, Model, Folder, Script, LocalScript, ModuleScript, PointLight, SpotLight, Sound, SpawnLocation, "
+          "Cylinder, Model, Folder, Script, LocalScript, ModuleScript, PointLight, SpotLight, Sound, SoundGroup, "
+          "ReverbSoundEffect/EchoSoundEffect/EqualizerSoundEffect/... (inside a Sound or SoundGroup), SpawnLocation, "
           "TrussPart, Seat, Water, WaterSource, Attachment, ProximityPrompt, ClickDetector, Highlight, Trail, Beam, ParticleEmitter, Fire, Smoke, "
           "Sparkles, Tool, Decal, Rig, "
           "Sky, ColorCorrectionEffect, SunRaysEffect, DepthOfFieldEffect, BloomEffect, BlurEffect (these always go in Lighting), "
@@ -642,6 +643,7 @@ Every Output line says which playtest (run) it came from; 0 means outside a play
 - Physics: Anchored = false, forces (part:ApplyImpulse, BodyVelocity, VectorForce...), constraints. DON'T fake physics by teleporting parts every frame.
 - Navigation: PathfindingService and humanoid:PathfindTo. DON'T write your own path-walking code when it can do the job.
 - Explosions: the Explosion object / Explode(). DON'T push every nearby part by hand.
+- Emotes: humanoid:PlayEmote("wave") plays a built-in keyframed emote everyone sees (dance, dance2, dance3, wave, point, cheer, laugh; moving or jumping stops it). Players also have the B emote menu; a game turns it off with game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false). DON'T animate a character by moving its arms in a loop.
 - Player input ("press E to ...", a sprint key, a mobile button): ContextActionService:BindAction(name, fn, createTouchButton, Enum.KeyCode.E, ...) in a LocalScript; fn(name, state, input) returns Enum.ContextActionResult.Sink (keep it: the game's own controls ignore it) or Pass. createTouchButton = true adds a phone button (SetTitle / SetImage).
 - Only write scripts for behaviour the built-in objects and properties can't give, or when the person asks for code.
 
@@ -747,6 +749,8 @@ Guts and Bolts is Roblox-style: there is no separate component system. What an o
 - Navigation agent -> any Humanoid character + PathfindingService (CreatePath, ComputeAsync, GetWaypoints) or humanoid:PathfindTo(target), which walks the whole way by itself.
 - Light -> a PointLight or SpotLight placed inside a part.
 - Audio source -> a Sound object (inside a part = it plays from there), or Sounds.Play in scripts.
+- Audio mixer -> SoundGroup objects (usually in SoundService): a Sound's SoundGroup property picks one, and the group's Volume multiplies the sound's (a group inside another group multiplies again).
+- Audio effects -> ReverbSoundEffect, EchoSoundEffect, EqualizerSoundEffect, DistortionSoundEffect, PitchShiftSoundEffect, ChorusSoundEffect, CompressorSoundEffect, FlangeSoundEffect, TremoloSoundEffect placed inside a Sound (changes that sound) or a SoundGroup (changes all its sounds together). Each has Enabled and Priority (higher runs first) and Roblox's settings (DecayTime, Delay, Feedback, HighGain, Level, Octave...). CompressorSoundEffect.SideChain isn't supported.
 - Script -> Script (game server), LocalScript (each player's computer), ModuleScript (require()).
 - Input actions / key bindings -> ContextActionService in a LocalScript: BindAction / BindActionAtPriority (Enum.KeyCode, or Enum.UserInputType Keyboard / Gamepad1 / MouseButton1 / Touch), UnbindAction, GetBoundActionInfo; the newest or highest-priority binding hears an input first and returning Sink hides it from the rest (and from walking / jumping / tools). createTouchButton = true shows a round button on phones (SetTitle, SetImage, SetPosition, GetButton). UserInputService.InputBegan also works.
 - Particles -> a ParticleEmitter inside a part (particles come out of anywhere in it) or an Attachment (out of that point): Rate, Lifetime and Speed (NumberRange), SpreadAngle (Vector2), Color (ColorSequence), Size and Transparency (NumberSequence), Texture (built-in "", "smoke", "fire", "sparkle", or a picture), LightEmission, Acceleration, Drag, EmissionDirection, Rotation / RotSpeed, LockedToPart; emitter:Emit(n) and :Clear() in scripts. Ready-made: Fire (Color, SecondaryColor, Size, Heat), Smoke (Color, Opacity, RiseVelocity, Size) and Sparkles (SparkleColor) in a part. Every player sees them. Scripts can also make one-off effects with Effects.Sparks / Blood / Oil / Gibs and explosions.
@@ -787,7 +791,7 @@ RUNTIME vs EDITOR
 Editor state is the saved game. Runtime state is the game while it runs (playtest): scripts run, physics moves things, characters spawn. Changes during a playtest are thrown away when it stops. get_object says which one you're looking at ("state_source") and adds velocity while playing.
 
 SCRIPT
-Lua 5.4 with Roblox's API names (Instance.new, game:GetService, workspace, task.wait, RunService.Heartbeat, Players, TweenService, DataStoreService, RemoteEvents). Luau syntax (+=, continue, type annotations) works too. Player.CharacterAdded/CharacterRemoving, Teams with team SpawnLocations, Model.PrimaryPart/PivotTo and PhysicalProperties are there. Prefer the engine's systems (properties, constraints, movers, pathfinding, explosions); write scripts for game rules and when asked.)DOC";
+Lua 5.4 with Roblox's API names (Instance.new, game:GetService, workspace, task.wait, RunService.Heartbeat, Players, TweenService, DataStoreService, MessagingService, RemoteEvents). MessagingService:PublishAsync(topic, message) / :SubscribeAsync(topic, function(msg) ... msg.Data, msg.Sent end) send messages to every running server of the same game (this one too); topics 1-80 letters, messages at most 1 KB as JSON, 150 + 60 per player sends a minute per server. In Studio playtests they go between the servers running on this computer. Luau syntax (+=, continue, type annotations) works too. Player.CharacterAdded/CharacterRemoving, Teams with team SpawnLocations, Model.PrimaryPart/PivotTo and PhysicalProperties are there. Prefer the engine's systems (properties, constraints, movers, pathfinding, explosions); write scripts for game rules and when asked.)DOC";
 
 const char* kCoordinates = R"DOC(# Coordinates and units
 
@@ -900,7 +904,8 @@ json capabilities() {
             {"navigation", true},                     // bake_navmesh, find_path, walk_character_to; PathfindingService in scripts
             {"explosions", true},                     // spawn_explosion (playtest); Explosion objects in scripts
             {"rendering", "partial: part colour, material, transparency, lights, decals, particles (ParticleEmitter, Fire, Smoke, Sparkles); no shader or post-processing tools"},
-            {"audio", "Sound objects and Sounds.Play"},
+            {"audio", "Sound objects and Sounds.Play; SoundGroups (volume) and sound effects (reverb, echo, equalizer, distortion, pitch shift, chorus, compressor, flange, tremolo)"},
+            {"cross_server_messaging", "MessagingService (PublishAsync / SubscribeAsync) between a game's running servers"},
             {"ui", true},
             {"assets", false},                        // the Library isn't reachable from these tools
             {"prefabs", false},                       // ready-made things are copies, not linked

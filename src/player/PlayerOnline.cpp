@@ -12,6 +12,7 @@
 #include "../online/AssetCache.h"
 #include "../online/OnlineClient.h"
 #include "../online/Protocol.h"
+#include "../scene/Emotes.h"
 #include "ShirtTemplate.h"   // generated: the clothing templates
 #include "PantsTemplate.h"
 #include "../renderer/Framebuffer.h"
@@ -160,6 +161,7 @@ const std::vector<Browse::Cat>& catalogCats() {
         {"clothes", "Clothing", {{"shirt", "Shirts"}, {"tshirt", "T-Shirts"}, {"pants", "Pants"}}},
         {"body", "Body Parts", {{"face", "Faces"}}},
         {"gear", "Gear", {}},
+        {"emotes", "Emotes", {{"emote", "Emotes"}, {"animpack", "Animation Packs"}}},
         {"accessories", "Accessories", {{"hat", "Hats"}, {"hair", "Hair"}, {"faceacc", "Face"}, {"neck", "Neck"}, {"shoulder", "Shoulder"}, {"waist", "Waist"}}},
     };
     return cats;
@@ -171,6 +173,7 @@ bool inCatalogCat(const json& a, const std::string& cat) {
     if (cat == "all") return true;
     if (cat == "clothes") return k == "shirt" || k == "tshirt" || k == "pants";
     if (cat == "body") return k == "face";
+    if (cat == "emotes") return k == "emote" || k == "animpack";
     if (cat == "accessories") return k == "hat" || k == "hair" || k == "faceacc" || k == "neck" || k == "shoulder" || k == "waist";
     return k == cat;
 }
@@ -235,7 +238,7 @@ void PlayerApp::drawOnlineCatalog() {
         };
         if (lim.is_object()) tag("LIMITED", IM_COL32(26, 127, 55, 255));
         else if (a.value("offsaleAt", 0LL) > 0) tag(a.value("offsale", false) ? "OFF SALE" : "TIMED", IM_COL32(217, 98, 11, 255));
-        if (itemOn(it)) dl->AddText(ImVec2(p.x + 6, p.y + tile - 20), IM_COL32(20, 140, 60, 255), it.type == Catalog::Type::Gear ? "Equipped" : "Wearing");
+        if (itemOn(it)) dl->AddText(ImVec2(p.x + 6, p.y + tile - 20), IM_COL32(20, 140, 60, 255), Catalog::isEquipped(it.type) ? "Equipped" : "Wearing");
         if (hover) Browse::tip(a, ago(a.value("updated", a.value("created", 0LL))));
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + tile);
         ImGui::TextColored(Classic::kLink, "%s", it.name.c_str());
@@ -311,6 +314,7 @@ void PlayerApp::drawOnlineItemDialog() {
 
     auto wearIt = [this, it]() {
         if (it.type == Catalog::Type::Gear) { toggleGear(it.id, true); return; }
+        if (Catalog::isMove(it.type)) { toggleMove(it, true); return; }
         Catalog::applyLook(it);
         if (Player* pl = m_avatarScene->player()) Profile::get().applyTo(*pl);
         Online::fetchSounds(*m_avatarScene);   // its clothing picture, if it has one
@@ -333,6 +337,9 @@ void PlayerApp::drawOnlineItemDialog() {
         if (it.type == Catalog::Type::Gear) {   // gear: in your backpack in games that allow gear
             const bool on = itemOn(it);
             if (bigButton(on ? "Unequip" : "Equip", kGreen, ImVec2(140, 34))) toggleGear(it.id, !on);
+        } else if (Catalog::isMove(it.type)) {   // emotes: in your emote menu (B); packs: how you move
+            const bool on = itemOn(it);
+            if (bigButton(on ? "Unequip" : "Equip", kGreen, ImVec2(140, 34))) toggleMove(it, !on);
         } else {
             bool wearing = Catalog::isWearing(it);
             ImGui::BeginDisabled(wearing);
@@ -1388,8 +1395,14 @@ void PlayerApp::drawOnlineStaff() {
 // ---------------------------------------------------------------------------
 
 bool PlayerApp::itemOn(const Catalog::Item& it) const {
-    if (it.type != Catalog::Type::Gear) return Catalog::isWearing(it);
     const json& me = Online::me();
+    if (it.type == Catalog::Type::AnimPack) return me.value("animPack", std::string()) == it.id;
+    if (it.type == Catalog::Type::Emote) {
+        if (me.contains("emotes") && me["emotes"].is_array())
+            for (const auto& e : me["emotes"]) if (e.is_string() && e.get<std::string>() == it.id) return true;
+        return false;
+    }
+    if (it.type != Catalog::Type::Gear) return Catalog::isWearing(it);
     if (!me.contains("gear") || !me["gear"].is_array()) return false;
     for (const auto& g : me["gear"]) if (g.is_string() && g.get<std::string>() == it.id) return true;
     return false;
@@ -1402,8 +1415,36 @@ void PlayerApp::toggleGear(const std::string& id, bool on) {
     });
 }
 
+void PlayerApp::toggleMove(const Catalog::Item& it, bool on) {
+    auto done = [this](const char* yes) {
+        return [this, yes](const json& r) {   // (the reply updates Online::me, and syncEmotes picks it up)
+            m_onlineMsg = r.value("ok", false) ? std::string(yes) : r.value("error", std::string("Couldn't change that."));
+        };
+    };
+    if (it.type == Catalog::Type::AnimPack) {
+        Online::request("animpack.equip", {{"id", on ? it.id : std::string()}},
+                        done(on ? "You'll move like this in every game." : "Back to the normal animations."));
+        return;
+    }
+    // An emote: into the first empty slot (on), or out of its slot (off).
+    const json& me = Online::me();
+    const json slots = me.contains("emotes") && me["emotes"].is_array() ? me["emotes"] : json::array();
+    int slot = -1;
+    for (int i = 0; i < Emotes::kSlots && slot < 0; ++i) {
+        const std::string id = i < (int)slots.size() && slots[i].is_string() ? slots[i].get<std::string>() : std::string();
+        if (on ? id.empty() : id == it.id) slot = i;
+    }
+    if (slot < 0) {
+        if (on) m_onlineMsg = "All 8 emote slots are full. Unequip one first.";
+        return;
+    }
+    Online::request("emotes.equip", {{"slot", slot + 1}, {"id", on ? it.id : std::string()}},
+                    done(on ? "Equipped! Press B in a game to use it." : "Taken out of your emotes."));
+}
+
 void PlayerApp::wardrobeToggle(const Catalog::Item& it) {
     if (it.type == Catalog::Type::Gear) { toggleGear(it.id, !itemOn(it)); return; }
+    if (Catalog::isMove(it.type)) { toggleMove(it, !itemOn(it)); return; }
     if (Catalog::isWearing(it)) Catalog::takeOff(it);
     else Catalog::applyLook(it);
     Profile& me = Profile::get();
@@ -1425,13 +1466,13 @@ void PlayerApp::drawWardrobe() {
     if (ImGui::GetTime() - m_wardrobeAt > 20.0) refreshOnline("wardrobe");   // new things you just got show up
 
     // What kinds there are ("acc" = face, neck, shoulder and waist accessories).
-    static const char* tabs[] = {"All", "Shirts", "Pants", "T-Shirts", "Faces", "Hats", "Hair", "Accessories", "Gear"};
-    static const char* kinds[] = {"", "shirt", "pants", "tshirt", "face", "hat", "hair", "acc", "gear"};
-    const int nTabs = 9;
+    static const char* tabs[] = {"All", "Shirts", "Pants", "T-Shirts", "Faces", "Hats", "Hair", "Accessories", "Gear", "Emotes"};
+    static const char* kinds[] = {"", "shirt", "pants", "tshirt", "face", "hat", "hair", "acc", "gear", "moves"};
+    const int nTabs = 10;
     auto matches = [&](const std::string& k, int tab) {
         const std::string want = kinds[tab];
         bool acc = k == "faceacc" || k == "neck" || k == "shoulder" || k == "waist";
-        return want.empty() || k == want || (want == "acc" && acc);
+        return want.empty() || k == want || (want == "acc" && acc) || (want == "moves" && (k == "emote" || k == "animpack"));
     };
 
     // --- What you have on (click one to take it off) ---
@@ -1471,6 +1512,7 @@ void PlayerApp::drawWardrobe() {
         for (int i : worn) {
             Catalog::Item w = Catalog::fromServer(m_wardrobe[i]);
             if (w.type == Catalog::Type::Gear) toggleGear(w.id, false);
+            else if (Catalog::isMove(w.type)) toggleMove(w, false);
             else Catalog::takeOff(w);
         }
         Profile& me = Profile::get();
@@ -1524,7 +1566,7 @@ void PlayerApp::drawWardrobe() {
             if (on) {
                 ImVec2 t(p.x + 5, p.y + tile - 20);
                 dl->AddRectFilled(t, ImVec2(t.x + 60, t.y + 16), IM_COL32(30, 150, 70, 255), 3);
-                dl->AddText(ImVec2(t.x + 6, t.y + 1), IM_COL32_WHITE, it.type == Catalog::Type::Gear ? "Equipped" : "Wearing");
+                dl->AddText(ImVec2(t.x + 6, t.y + 1), IM_COL32_WHITE, Catalog::isEquipped(it.type) ? "Equipped" : "Wearing");
             }
             ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + tile);
             ImGui::TextUnformatted(it.name.c_str());

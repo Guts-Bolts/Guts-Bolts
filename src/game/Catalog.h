@@ -9,7 +9,10 @@
 // ones signed by the official staff account show up, so only staff can add them.
 namespace Catalog {
 
-enum class Type { Hat, Shirt, Pants, Hair, FaceAcc, Neck, Shoulder, Waist, Face, TShirt, Gear, Count };   // (Gear: a Tool for games, not worn)
+// (Gear: a Tool for games, not worn. Emote / AnimPack: moves for your character, equipped not worn.)
+enum class Type { Hat, Shirt, Pants, Hair, FaceAcc, Neck, Shoulder, Waist, Face, TShirt, Gear, Emote, AnimPack, Count };
+inline bool isMove(Type t) { return t == Type::Emote || t == Type::AnimPack; }   // an emote or an animation pack
+inline bool isEquipped(Type t) { return t == Type::Gear || isMove(t); }        // equipped (not worn)
 const char* typeName(Type t);
 
 struct Item {

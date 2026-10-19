@@ -10,7 +10,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'hello-from-the-other-server', name: 'Hello From the Other Server', time: 1792438250, tag: 'Website',
+    id: 'hello-from-the-other-server', name: 'Hello From the Other Server', time: 1792450920, tag: 'Website',
     summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
     items: [
       'Lyreto is a free chat app for servers, voice and hanging out, and it\'s Guts&Bolts\' chat partner',
@@ -18,6 +18,17 @@ export const BUILT_IN_UPDATES = [
       'The game or group page then shows a Lyreto card with the server\'s name, picture and blurb, and a Join on Lyreto button',
       'Only real lyreto.com links are accepted, so nobody can sneak in other links',
       'There\'s a Chat on Lyreto link at the bottom of every page too',
+    ],
+  },
+  {
+    id: 'whats-in-the-box', name: 'What\'s in the Box?!', time: 1792438313, tag: 'Website',
+    summary: 'Gift boxes and Exclusive items: own a gift box when it goes off sale and a secret item drops into your inventory.',
+    items: [
+      'Gift boxes: staff can point a timed item at another item, and everyone who owns the box when it goes off sale gets that item for free',
+      'The bell tells you when your box opens, and what was inside',
+      'Exclusive items: hidden from the catalog and can\'t be bought or gifted, only won from gift boxes and events (their page still works by link)',
+      'Staff can give an item to someone straight from its page, for event prizes',
+      'Item pages open for every item now, not just the newest 100 in the catalog',
     ],
   },
   {
@@ -70,6 +81,20 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'bust-a-move', name: 'Bust a Move', time: 1791903600, tag: 'Engine',
+    summary: 'Emotes! Dance, wave and cheer with real animations everyone sees, pick them from a new emote menu, and get more in the catalog.',
+    items: [
+      'Type /e dance (or dance2, dance3, wave, point, cheer, laugh) in the chat, and everyone in the server sees you do it',
+      'Press B (or tap the smiley on a phone) for the emote menu: click an emote to play it',
+      'Moving or jumping stops an emote. Dances keep going until you do',
+      'The catalog has a new Emotes group: emotes, and animation packs that change how you stand, walk, run, jump and fall',
+      'Free to start: Salute, Shrug, Robot and the Bouncy Animation Pack. Jumping Jacks (15 Bolts), Sprinkler (25) and the Robot Animation Pack (40) too',
+      'On the Avatar page, put up to 8 emotes in your emote menu and pick a pack. They come with you to every game',
+      'For scripts: humanoid:PlayEmote("wave"), and games can turn the menu off with StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false)',
+      'humanoid.Jump = true and humanoid:Move(direction) now work on your own character too',
+    ],
+  },
+  {
     id: 'two-thumbs-way-up', name: 'Two Thumbs Way Up', time: 1791900000, tag: 'Website',
     summary: 'Rate Library models with a thumbs up or down, and find the best ones with the new "Best rated" sort.',
     items: [
@@ -112,6 +137,32 @@ export const BUILT_IN_UPDATES = [
       'The newest 50 versions of each game are kept (up to 100 MB); older ones are cleared out, oldest first',
       'Saving the same file again doesn\'t add a copy, and games you published before today start their history at version 1',
       'Only the game\'s creator can see the list or restore. Studio\'s Publish window says which version you just published',
+    ],
+  },
+  {
+    id: 'echo-chamber', name: 'Echo Chamber', time: 1791885600, tag: 'Engine',
+    summary: 'Sound groups turn whole sets of sounds up or down at once, and nine sound effects make them echo, ring, wobble and crunch.',
+    items: [
+      'SoundGroup: put one in SoundService and set a Sound\'s SoundGroup to it. The group\'s Volume multiplies the sound\'s, so one slider turns all the music or all the footsteps up or down',
+      'Groups inside groups multiply again, so a Master group can sit over Music and Effects',
+      'Sound effects to put inside a Sound or a SoundGroup: Reverb, Echo, Equalizer, Distortion, Pitch Shift, Chorus, Compressor, Flange and Tremolo',
+      'Each effect has Enabled and Priority (higher goes first) and its own settings, like DecayTime, Delay, Feedback, HighGain, Level and Octave',
+      'Effects in a SoundGroup work on all of its sounds mixed together, so a reverb or compressor treats the whole group as one',
+      'Find them under Insert Object > Sound in Studio, change them in Properties (with a Preview button), and change them from scripts while the game runs',
+      'They save with your game, show up for everyone in multiplayer, and come along when you open or save .rbxl / .rbxm files',
+      'Not done yet: the compressor\'s SideChain setting',
+    ],
+  },
+  {
+    id: 'crosstalk', name: 'Crosstalk', time: 1791882000, tag: 'Engine',
+    summary: 'MessagingService lets every running server of your game talk to the others: global announcements, cross-server events and more.',
+    items: [
+      'MessagingService:PublishAsync(topic, message) sends a message to every server of the same game that\'s running right now, including the one that sent it',
+      'MessagingService:SubscribeAsync(topic, function(msg) ... end) listens for a topic. msg.Data is what was sent and msg.Sent is when. Call :Disconnect() on what it gives back to stop',
+      'Other games never see your messages',
+      'Topics can be up to 80 letters and a message up to 1 KB. A server can send 150 messages a minute plus 60 for each player, and listen to 20 topics plus 8 for each player. Going over gives a clear error',
+      'In Studio\'s play test and multiplayer test it works between the servers running on your computer, so you can try it before publishing',
+      'Online, the messages go through the Guts&Bolts server, and only your game\'s own servers can send or read them',
     ],
   },
   {

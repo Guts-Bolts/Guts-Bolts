@@ -32,7 +32,7 @@ nlohmann::json GbServer::inventoryOf(const User& u, const std::string& cat) cons
         const std::string& k = it->second.kind;
         if (!Online::isCatalogItem(k)) continue;
         const bool in = cat == "accessories" ? Online::isAccessory(k) : cat == "clothing" ? (k == "shirt" || k == "pants" || k == "tshirt")
-                      : cat == "faces" ? k == "face" : cat == "gear" ? k == "gear" : cat == "limited" ? it->second.limited : true;
+                      : cat == "faces" ? k == "face" : cat == "gear" ? k == "gear" : cat == "emotes" ? Online::isEmoteItem(k) : cat == "limited" ? it->second.limited : true;
         if (in) found.push_back(&it->second);
     }
     std::sort(found.begin(), found.end(), [](const Asset* a, const Asset* b) { return a->name < b->name; });

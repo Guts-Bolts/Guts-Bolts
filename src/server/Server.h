@@ -1,5 +1,6 @@
 #pragma once
 #include <filesystem>
+#include <deque>
 #include <map>
 #include <memory>
 #include <set>
@@ -58,6 +59,8 @@ private:
         // "everyone", "friends" or "nobody" (worker/server.js privacyOf).
         std::string privacyStatus = "everyone", privacyJoin = "everyone";
         std::vector<std::string> gear;   // equipped gear (worker/server.js me.gear)
+        std::vector<std::string> emotes; // the emote menu's slots ("" = empty; worker/server.js me.emotes)
+        std::string animPack;            // the animation pack they wear ("" = the normal animations)
         // Signing up: a username and user number (both never reused), plus the
         // password-locked backup of their key so they can log in on other devices.
         std::string username;
@@ -163,6 +166,8 @@ private:
     nlohmann::json copiesOf(const User& u) const;          // every Limited copy someone holds
     void           syncOwned(User& u, const Asset& a);     // `owned` follows the copies they hold
     nlohmann::json limitedJson(const Asset& a) const;      // what the catalog shows about a Limited (null if it isn't one)
+    void           openGiftBoxes();                        // gift boxes that went off sale hand out their item
+    long long      m_giftsChecked = 0;
     int            publicModelsLeft(const User& u) const;  // -1 = no limit
     void           countPublicModel(User& u);
     static std::string publicModelLimitText();
@@ -197,7 +202,7 @@ private:
     nlohmann::json safetyOp(const std::string& name, User& me, const nlohmann::json& args);
     bool blocks(const User& a, const User& b) const;   // has either of them blocked the other?
     // Inventory on profiles (ServerFriends.cpp, worker/server.js inventoryOf): the catalog
-    // items someone owns, in one group (all, accessories, clothing, faces, gear, limited).
+    // items someone owns, in one group (all, accessories, clothing, faces, gear, emotes, limited).
     bool seesInventory(const User& viewer, const User& u) const;
     nlohmann::json inventoryOf(const User& u, const std::string& cat) const;
     nlohmann::json reportsJson(const std::string& status) const;   // for the Staff page
@@ -236,6 +241,12 @@ private:
     nlohmann::json& gameData(const std::string& game);
     void saveGameData(const std::string& game);
     std::map<std::string, nlohmann::json> m_gameData;   // game id -> {store: {key: value}}, loaded when first used
+    // ServerData.cpp too: MessagingService, messages between the running servers of one game
+    // (worker/server.js msgOp has the same). In memory, like the relay.
+    nlohmann::json msgOp(const std::string& name, User& me, const nlohmann::json& args);
+    struct MsgBox { long long seq = 0; std::deque<nlohmann::json> list; };   // {n, topic, message, sent}
+    std::map<std::string, MsgBox> m_msgs;                       // game id ->
+    std::map<std::string, std::deque<long long>> m_msgSent;     // "account\ngame" -> when they sent (the rate limit)
     nlohmann::json checkRequest(const nlohmann::json& req, User*& me);   // null = fine, else the failure reply
     void relayRequest(Client& c, const nlohmann::json& req);            // relay.host / relay.join
     void relayAccept(Client& c, const std::string& ticket);
@@ -258,6 +269,8 @@ private:
     Group*    groupFor(const Asset& a);   // the group a game (or its pass or product) belongs to
     void      paySeller(Asset& a, User& buyer, long long share, const std::string& ref);   // to the group, or the creator
     nlohmann::json meJson(const User& u) const;
+    // Someone's emote slots: kEmoteSlots item ids ("" = empty), only emotes they still own.
+    nlohmann::json emoteSlots(const User& u) const;
     nlohmann::json publicUser(const User& u) const;
     // me: who's looking (adds their vote on a game, like worker/server.js publicAsset(a, me)).
     nlohmann::json publicAsset(const Asset& a, const User* me = nullptr) const;
@@ -281,6 +294,7 @@ private:
 
     // Files
     void load();
+    void addStarterEmotes();  // the starter emotes and animation packs (assets/emotes), as the staff account's
     void addExampleGames();   // the games folder's example games, as the staff account's
     void saveUsers();
     void saveAssets();

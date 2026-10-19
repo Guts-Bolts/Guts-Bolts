@@ -20,6 +20,10 @@ import demolitionYard from '../games/Demolition Yard.gbscene';
 import megaWaterSlide from '../games/Mega Water Slide.gbscene';
 import nightPlaza from '../games/Night Plaza.gbscene';
 import obbyOfDoom from '../games/Obby of Doom.gbscene';
+// The starter emotes and animation packs (tools/make_emotes.py), bundled as text like the
+// games: the same file src/server reads, so both servers sell the same ones.
+import emotesText from '../assets/emotes/emotes.gbemotes';
+import emotePicturesText from '../assets/emotes/pictures.gbemotes';
 const EXAMPLE_GAMES = [
   { id: 'game-demolition-yard', text: demolitionYard, genres: ['Destruction', 'Sandbox'] },
   { id: 'game-mega-water-slide', text: megaWaterSlide, genres: ['Adventure', 'Showcase'] },
@@ -35,9 +39,10 @@ const kDailyUploadsUnverified = 5;
 const REVIEWED_KINDS = ['decal', 'audio', 'tshirt'];
 const kCreatorSharePercent = 70;
 const kMaxNotes = 50;   // notifications kept per account (the bell)
-const KINDS = ['hat', 'shirt', 'pants', 'audio', 'plugin', 'game', 'decal', 'model', 'hair', 'faceacc', 'neck', 'shoulder', 'waist', 'face', 'tshirt', 'gear', 'animation'];
+const KINDS = ['hat', 'shirt', 'pants', 'audio', 'plugin', 'game', 'decal', 'model', 'hair', 'faceacc', 'neck', 'shoulder', 'waist', 'face', 'tshirt', 'gear', 'animation',
+  'emote', 'animpack'];
 const FEE = { hat: 10, shirt: 10, pants: 10, audio: 20, plugin: 20, game: 0, decal: 5, model: 0,
-  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0 };
+  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0, emote: 0, animpack: 0 };
 // Accessories: things worn on the body, made (and placed on a mannequin) in Studio's
 // Accessory window. Verified creators only. Faces are pictures, and only Guts makes them.
 const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
@@ -58,21 +63,58 @@ const kMaxVersions = 50, kMaxVersionBytes = 100 << 20;
 const hasAccess = (k) => k === 'game' || k === 'model' || k === 'animation';
 const weekOf = (t) => Math.floor(t / (7 * 86400));
 const MAX_SIZE = { audio: 6 << 20, game: 24 << 20, plugin: 512 << 10, decal: 4 << 20, shirt: 1 << 20, pants: 1 << 20, model: 4 << 20,
-  hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20 };
+  hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20,
+  emote: 256 << 10, animpack: 512 << 10 };
 // Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Only staff
 // make gear. You can have up to kMostGear equipped, and you get them in games whose
 // creator ticked "Allow gear". (src/server has the same rules.)
 const kMostGear = 4;
-const isCatalogItem = (k) => isClothing(k) || k === 'gear';   // sold in the catalog
+// Emotes and animation packs: keyframes for the character, sold in the catalog. Only staff
+// make them. Owners equip up to kEmoteSlots emotes (the emote menu's slots) and one animation
+// pack on the Avatar page; they play in every game. (src/server has the same rules.)
+const isEmoteItem = (k) => k === 'emote' || k === 'animpack';
+const kEmoteSlots = 8;
+const PACK_STATES = ['idle', 'walk', 'run', 'jump', 'fall'];
+const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k);   // sold in the catalog
 // Inventory on profiles: what someone owns from the catalog, in these groups. (src/server has the same.)
-const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'gear', 'limited'];
+const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'gear', 'emotes', 'limited'];
 function inventoryCat(cat, a) {
   if (cat === 'accessories') return isAccessory(a.kind);
   if (cat === 'clothing') return a.kind === 'shirt' || a.kind === 'pants' || a.kind === 'tshirt';
   if (cat === 'faces') return a.kind === 'face';
   if (cat === 'gear') return a.kind === 'gear';
+  if (cat === 'emotes') return isEmoteItem(a.kind);
   if (cat === 'limited') return !!a.limited;
   return true;
+}
+// An emote is an animation file ({format: 'gbanim', clip}); an animation pack is
+// {format: 'gbanimpack', clips: {idle, walk, run, jump, fall}} with at least one of them.
+// A clip needs keyframes, and at most 30 seconds of them. "" if it's fine.
+function clipProblem(c) {
+  if (!c || typeof c !== 'object' || Array.isArray(c) || !Array.isArray(c.keys) || !c.keys.length) return 'it has no keyframes';
+  if (c.keys.length > 600) return 'it has too many keyframes';
+  for (const k of c.keys) {
+    if (!k || typeof k !== 'object' || typeof k.t !== 'number' || !(k.t >= 0 && k.t <= 30)) return 'its keyframes must be between 0 and 30 seconds';
+    if (!k.poses || typeof k.poses !== 'object' || Array.isArray(k.poses)) return 'a keyframe has no poses';
+  }
+  return '';
+}
+function emoteProblem(kind, data) {
+  let m = null;
+  try { m = JSON.parse(new TextDecoder().decode(data)); } catch { m = null; }
+  if (kind === 'emote') {
+    if (!m || m.format !== 'gbanim' || !m.clip) return 'An emote must be an animation made in Studio\'s Animation Editor.';
+    const p = clipProblem(m.clip);
+    return p ? 'That emote won\'t play: ' + p + '.' : '';
+  }
+  if (!m || m.format !== 'gbanimpack' || !m.clips || typeof m.clips !== 'object') return 'That isn\'t an animation pack.';
+  const states = Object.keys(m.clips);
+  if (!states.length || states.some((st) => !PACK_STATES.includes(st))) return 'An animation pack has idle, walk, run, jump and fall animations (and nothing else).';
+  for (const st of states) {
+    const p = clipProblem(m.clips[st]);
+    if (p) return 'The pack\'s ' + st + ' animation won\'t play: ' + p + '.';
+  }
+  return '';
 }
 function gearProblem(data) {
   let m = null;
@@ -207,6 +249,15 @@ const kMoveWait = 90, kHeirWait = 12;
 const kPoolMost = 50, kPoolStartWait = 25;
 // DataStores: names and keys up to 100 letters, values up to 256 KB of JSON, 100,000 keys a game.
 const kDataName = 100, kDataValue = 256 * 1024, kDataKeys = 100000;
+// MessagingService (msgOp): messages between the running servers of one game. Kept in
+// memory for a short while; each server asks for new ones about once a second.
+// (ServerData.cpp has the same rules.)
+const kMsgTopic = 80;            // topic names: 1-80 letters
+const kMsgSize = 1024;           // one message, as JSON (bytes)
+const kMsgKeep = 30;             // seconds a message waits to be picked up
+const kMsgKept = 500;            // messages kept per game at most
+const kMsgPerPoll = 200;         // handed out per msg.poll
+const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
 const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
@@ -242,7 +293,8 @@ const kMaxUsedModels = 2000;   // Library models someone has inserted (they can 
 // Gifts: buy a catalog item for a friend, with a short note. (src/server has the same rules.)
 const kGiftNote = 100;
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
-const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant']);   // (product.*: guests can host games too)
+export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
+  'msg.publish', 'msg.poll']);   // (product.* and msg.*: guests can host games too)
 
 // Assets have plain numbers counting up, like Roblox's asset IDs (1, 2, 3...). New ones
 // use the number as their ID; older ones ("decal-1a2b3c4d5e") got a number too and
@@ -548,6 +600,7 @@ export class GbServerObject extends DurableObject {
     for (const u of this.users.values()) this.gutsFollows(u);
     this.addExampleGames();
     this.addVerifiedHat();
+    this.addStarterEmotes();
     this.timeGutstoberItems();
     this.numberAssets();
     for (const u of this.users.values()) if (u.emailVerified && !u.owned.includes(VERIFIED_HAT_ID)) { this.giveVerifiedHat(u); this.saveUser(u); }
@@ -570,6 +623,10 @@ export class GbServerObject extends DurableObject {
     // Servers whose host left: old session id -> { game, title, priv, code, max, members:[accounts], heir, heirSince, newId, until }
     this.moved = new Map();
     this.sweepTimer = null;
+    // MessagingService: game id -> { seq, list: [{ n, topic, message, sent }] }, and who sent
+    // when ("account\ngame" -> [times]) for the rate limit. In memory, like the relay.
+    this.msgs = new Map();
+    this.msgSent = new Map();
   }
 
   getMeta(key, fallback) {
@@ -858,8 +915,8 @@ export class GbServerObject extends DurableObject {
     return setting === 'friends' && !!viewer && u.friends.includes(viewer.id);
   }
   // Has either of them blocked the other? (Then they can't message, friend, follow, trade or join each other.)
-  // The staff action log. action: ban, unban, warn, bolts, badge, unbadge, review, report, delete, comment,
-  // appeal (a ban appeal answered), account (a system event: an account was deleted; by is "system").
+  // The staff action log. action: ban, unban, warn, bolts, badge, unbadge, review, report, delete, comment, item
+  // (a staff gift box or item.give), appeal (a ban appeal answered), account (a system event: an account was deleted; by is "system").
   // about: who it was done to (an account id), so the log can link to them.
   staffDid(me, action, text, about = '') {
     this.staffLog.push({ at: now(), by: me.id, action, text, about });
@@ -939,6 +996,9 @@ export class GbServerObject extends DurableObject {
       email: maskEmail(u.emailVerified ? u.email : ''), emailPending: maskEmail(u.pendingEmail || ''),
       twoStep: !!(u.twoStep && u.emailVerified), canMail: this.canMail, authApp: !!u.totpSecret, privacy: this.privacyOf(u),
       gear: (u.gear || []).filter((g) => u.owned.includes(g)),
+      // Emotes in the emote menu's slots ('' = empty) and the animation pack, all things they own.
+      emotes: this.emoteSlots(u),
+      animPack: u.animPack && u.owned.includes(u.animPack) ? u.animPack : '',
       // Banned: what for and until when (the app and the site show a ban screen).
       ban: u.banned ? { reason: u.banReason || '', title: BAN_REASONS[u.banReason] || 'Breaking the rules',
         note: u.banNote || '', at: u.bannedAt || 0, until: u.bannedUntil || 0,
@@ -1068,18 +1128,89 @@ export class GbServerObject extends DurableObject {
     this.saveAsset(a);
   }
 
+  // Someone's emote slots: kEmoteSlots item ids ('' = empty), only emotes they still own.
+  emoteSlots(u) {
+    const out = [];
+    for (let i = 0; i < kEmoteSlots; i++) {
+      const id = (u.emotes || [])[i] || '';
+      const a = id ? this.assets.get(id) : null;
+      out.push(a && a.kind === 'emote' && u.owned.includes(id) ? id : '');
+    }
+    return out;
+  }
+
+  // The starter emotes and animation packs (assets/emotes/emotes.gbemotes): added once, kept
+  // up to date, owned by the staff account (Guts), each with its picture (a render of the
+  // character mid-move, made by Studio: GutsAndBolts --emote-pictures).
+  addStarterEmotes() {
+    if (!this.official || !emotesText) return;
+    let list = [], pictures = {};
+    try { list = JSON.parse(emotesText).catalog || []; } catch { list = []; }
+    try { pictures = JSON.parse(emotePicturesText || '{}'); } catch { pictures = {}; }
+    for (const it of list) {
+      if (!it || !it.id || !isEmoteItem(it.kind)) continue;
+      const file = it.kind === 'emote' ? { format: 'gbanim', clip: it.clip } : { format: 'gbanimpack', clips: it.clips };
+      const data = new TextEncoder().encode(JSON.stringify(file));
+      let a = this.assets.get(it.id);
+      if (!a) {
+        a = { id: it.id, kind: it.kind, name: cleanText(it.name, 50), creator: this.official, price: Math.max(0, it.price | 0),
+          created: now(), sales: 0, plays: 0, size: 0, meta: {}, builtin: true, likes: 0, dislikes: 0 };
+        this.assets.set(a.id, a);
+      }
+      a.description = cleanText(it.description || '', 1000, true);
+      if (a.size !== data.length) { a.size = data.length; a.updated = now(); this.writeFile(a.id, data); }
+      if (pictures[it.id]) {
+        const pic = b64ToBytes(pictures[it.id]);
+        if (a.thumbSize !== pic.length) { this.writeFile('thumb:' + a.id, pic); a.thumb = now(); a.thumbSize = pic.length; }
+      }
+      this.saveAsset(a);
+    }
+  }
+
   // Pumpkin items in the catalog are Gutstober items: they go off sale when it ends.
   // Done once per item (staff can change the date afterwards on the item's page).
   timeGutstoberItems() {
     const t = now();
     for (const a of this.assets.values()) {
-      if (!isCatalogItem(a.kind) || a.timedFor || !/pumpkin/i.test(a.name || '')) continue;
+      if (!isCatalogItem(a.kind) || a.timedFor || a.exclusive || !/pumpkin/i.test(a.name || '')) continue;
       a.timedFor = 'gutstober';
       a.offsaleAt = gutstoberEnd(a.created || t);
       this.saveAsset(a);
     }
   }
   isOffsale(a, t = now()) { return !!a.offsaleAt && t >= a.offsaleAt; }
+
+  // Gift boxes: a timed item staff point at another item (a.giftItem). Once the box goes
+  // off sale, everyone who owns it gets that item (usually an Exclusive one, hidden from the
+  // catalog). Checked at most every 30 seconds, so people who get a box later (a trade) get it too.
+  // A Limited box gives one per copy (c.gifted), so passing a copy around doesn't hand out more.
+  openGiftBoxes(force = false) {
+    const t = now();
+    if (!force && this.giftsChecked && t - this.giftsChecked < 30) return;
+    this.giftsChecked = t;
+    for (const box of this.assets.values()) {
+      if (!box.giftItem || !this.isOffsale(box, t)) continue;
+      const gift = this.assets.get(box.giftItem);
+      if (!gift || gift.id === box.id) continue;
+      const give = (u) => {
+        if (!u || u.owned.includes(gift.id)) return;
+        u.owned.push(gift.id);
+        gift.sales++;
+        this.saveAsset(gift); this.saveUser(u);
+        this.notify(u, 'gift', 'Your ' + box.name + ' opened! You got ' + gift.name + '.', gift.id);
+      };
+      if (box.limited) {
+        for (const c of box.copies || []) {
+          if (c.gifted) continue;
+          give(this.users.get(c.owner));
+          c.gifted = true;
+          this.saveAsset(box);
+        }
+      } else {
+        for (const u of this.users.values()) if (u.owned.includes(box.id)) give(u);
+      }
+    }
+  }
 
   giveVerifiedHat(u) {
     const a = this.assets.get(VERIFIED_HAT_ID);
@@ -1133,11 +1264,14 @@ export class GbServerObject extends DurableObject {
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: a.kind === 'game' && me ? (me.favorites || []).includes(a.id) : undefined,
       offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), review: a.review || undefined, reviewNote: a.reviewNote || undefined,
+      exclusive: a.exclusive ? true : undefined, gift: a.giftItem ? true : undefined,
+      giftItem: a.giftItem && me && this.isStaff(me) ? this.giftJson(a) : undefined,   // (staff only: it's a surprise)
       privatePrice: a.kind === 'game' ? (a.privatePrice || 0) : undefined,
       lyreto: a.kind === 'game' ? this.lyretoJson(a) : undefined,
       shots: a.kind === 'game' ? (a.shots || []).map((x) => x.id) : undefined,
       group: a.kind === 'game' ? this.groupJson(a.group) : undefined };
   }
+  giftJson(a) { const g = this.assets.get(a.giftItem); return { id: a.giftItem, num: g ? g.num || 0 : 0, name: g ? g.name : '?' }; }
   groupJson(id) { const g = id ? this.groups.get(id) : null; return g ? { id: g.id, name: g.name, color: g.color } : undefined; }
   publicModelsLeft(u) {   // -1 = no limit
     if (this.isVerified(u)) return -1;
@@ -1285,6 +1419,7 @@ export class GbServerObject extends DurableObject {
     try {
       const c = this.checkRequest(req);
       if (c.bad) return c.bad;
+      this.openGiftBoxes();
       return this.op(c.opName, c.me, c.args);
     } catch (e) {
       return fail('The server hit a problem: ' + (e && e.message || e));
@@ -1390,6 +1525,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
+    if (name.startsWith('msg.')) return this.msgOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
     if (name.startsWith('appeal.')) return this.appealOp(name, me, args);
@@ -1419,6 +1555,34 @@ export class GbServerObject extends DurableObject {
       this.saveUser(me);
       return okay({ me: this.meJson(me) });
     }
+    if (name === 'emotes.equip') {
+      // Put an emote you own in one of your emote menu's slots (1-8), or empty the slot (id '').
+      // An emote already in another slot moves to this one.
+      const slot = num(args, 'slot');
+      if (!Number.isInteger(slot) || slot < 1 || slot > kEmoteSlots) return fail('Pick a slot from 1 to ' + kEmoteSlots + '.');
+      const slots = this.emoteSlots(me);
+      const a = str(args, 'id') ? this.assets.get(str(args, 'id')) : null;
+      if (str(args, 'id')) {
+        if (!a || a.kind !== 'emote') return fail('That emote doesn\'t exist (any more).');
+        if (!me.owned.includes(a.id)) return fail('Get it from the catalog first.');
+        for (let i = 0; i < kEmoteSlots; i++) if (slots[i] === a.id) slots[i] = '';
+      }
+      slots[slot - 1] = a ? a.id : '';
+      me.emotes = slots;
+      this.saveUser(me);
+      return okay({ me: this.meJson(me) });
+    }
+    if (name === 'animpack.equip') {   // wear an animation pack you own (id '' = back to the normal animations)
+      const id = str(args, 'id');
+      if (id) {
+        const a = this.assets.get(id);
+        if (!a || a.kind !== 'animpack') return fail('That animation pack doesn\'t exist (any more).');
+        if (!me.owned.includes(a.id)) return fail('Get it from the catalog first.');
+        me.animPack = a.id;
+      } else delete me.animPack;
+      this.saveUser(me);
+      return okay({ me: this.meJson(me) });
+    }
     if (name === 'gear.equip') {   // put gear you own in (or take it out of) your backpack for games
       const on = args.on !== false;
       const a = this.assets.get(str(args, 'id'));
@@ -1440,7 +1604,8 @@ export class GbServerObject extends DurableObject {
       if (a.creator !== me.id && !this.isStaff(me)) return fail('You can only change pictures of your own things.');
       // Catalog items aren't given pictures: everyone sees the item itself, drawn from its
       // real shape (so a picture can never be swapped for something it isn't).
-      if (isCatalogItem(a.kind)) return fail('Catalog items don\'t take pictures: they\'re shown as the item itself.');
+      // (Emotes and animation packs can't be drawn from a shape: staff give them a render of the move.)
+      if (isCatalogItem(a.kind) && !(isEmoteItem(a.kind) && this.isStaff(me))) return fail('Catalog items don\'t take pictures: they\'re shown as the item itself.');
       let data;
       try { data = b64ToBytes(str(args, 'data')); } catch { return fail('The picture got scrambled. Try again.'); }
       const png = data.length > 8 && [0x89, 0x50, 0x4e, 0x47].every((v, i) => data[i] === v);
@@ -1934,6 +2099,7 @@ export class GbServerObject extends DurableObject {
       if (isAccessory(kind) && !verified && !this.isStaff(me)) return fail('Only Verified creators can make hats and accessories. Shirts and pants are open to everyone!');
       if (kind === 'face' && !this.isOfficial(me)) return fail('Only Guts can make faces.');
       if (kind === 'gear' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make gear.');
+      if (isEmoteItem(kind) && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make emotes and animation packs.');
       let price = clamp(num(args, 'price'), 0, 1000000);
       if (kind === 'game' || alwaysFree(kind)) price = 0;
       if (price > 0 && !verified) return fail('Only Verified creators can sell things. Upload it for free, or get Verified!');
@@ -1961,6 +2127,7 @@ export class GbServerObject extends DurableObject {
       if (kind === 'game' && !isJson(data)) return fail('That isn\'t a Guts&Bolts game file.');
       if (kind === 'plugin' && !data.length) return fail('That plugin is empty.');
       if (kind === 'gear') { const problem = gearProblem(data); if (problem) return fail(problem); }
+      if (isEmoteItem(kind)) { const problem = emoteProblem(kind, data); if (problem) return fail(problem); }
       let access;
       if (kind === 'model') {
         if (!isJson(data)) return fail('That isn\'t a Guts&Bolts model.');
@@ -2187,6 +2354,7 @@ export class GbServerObject extends DurableObject {
       if (data.length > maxSize(a.kind)) return fail('That\'s too big.');
       if (a.kind === 'game' && !isJson(data)) return fail('That isn\'t a Guts&Bolts game file.');
       if (a.kind === 'gear') { const problem = gearProblem(data); if (problem) return fail(problem); }
+      if (isEmoteItem(a.kind)) { const problem = emoteProblem(a.kind, data); if (problem) return fail(problem); }
       // A 3D accessory made in Studio: a new version of its model (e.g. with its pictures uploaded).
       const model = isAccessory(a.kind) && a.meta && a.meta.model && data.length;
       if (model) {
@@ -2245,6 +2413,7 @@ export class GbServerObject extends DurableObject {
         (sort !== 'featured' || a.featured > 0) &&
         (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
         (!ownedOnly || me.owned.includes(a.id)) &&
+        (!a.exclusive || ownedOnly || this.isStaff(me)) &&   // Exclusive items aren't in the catalog
         (!creator || a.creator === creator) && this.canPlay(a, me) &&
         (!genre || (a.genres || []).includes(genre)) &&
         (!q || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
@@ -2305,6 +2474,7 @@ export class GbServerObject extends DurableObject {
       if (a.review && a.creator !== me.id) return fail(this.noPlay(a));
       if (a.kind === 'devproduct') return fail('Developer products are bought inside their game.');
       if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: confirm an email in Settings and it\'s yours.');
+      if (a.exclusive) return fail('This is an Exclusive item: it can\'t be bought. It comes from events and gift boxes.');
       if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited ? ' Buy one from a reseller on the item\'s page.' : ''));
       if (a.limited && a.sales >= a.stock) return fail('Sold out! Buy one from a reseller on the item\'s page.');
       if (a.price > 0) {
@@ -2330,6 +2500,7 @@ export class GbServerObject extends DurableObject {
       if (a.review) return fail(this.noPlay(a));
       if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: it\'s given to people who confirm an email.');
       if (a.limited) return fail('Limited items can\'t be gifts. Trade one with your friend instead.');
+      if (a.exclusive) return fail('This is an Exclusive item: it can\'t be bought or gifted. It comes from events and gift boxes.');
       if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.');
       if (!(a.price > 0)) return fail('This item is free, so your friend can just get it themselves.');
       const to = this.findPerson(args.to);
@@ -2386,6 +2557,21 @@ export class GbServerObject extends DurableObject {
         a.offsaleAt = Math.max(0, num(args, 'offsaleAt'));
         a.timedFor = a.timedFor || 'set';
       }
+      if ('exclusive' in args || 'giftItem' in args) {
+        if (!this.isStaff(me)) return fail('Only staff can make items Exclusive or gift boxes.');
+        if ('exclusive' in args) a.exclusive = args.exclusive === true;
+        if ('giftItem' in args) {
+          const want = str(args, 'giftItem').trim().replace(/^gb:/, '');
+          if (!want) delete a.giftItem;
+          else {
+            const g = this.assets.get(want);
+            if (!g || !isCatalogItem(g.kind)) return fail('There\'s no item with ID ' + want + ' to put in the gift box.');
+            if (g.id === a.id) return fail('A gift box can\'t give itself.');
+            if (g.limited) return fail('A gift box can\'t give a Limited item (its copies are numbered).');
+            a.giftItem = g.id;
+          }
+        }
+      }
       a.meta = a.meta || {};
       if (a.kind === 'hat' && 'style' in args) a.meta.style = clamp(num(args, 'style'), 1, 3);   // the hat's shape
       const picture = a.kind === 'shirt' || a.kind === 'pants' || a.kind === 'face' || a.kind === 'tshirt';
@@ -2407,6 +2593,22 @@ export class GbServerObject extends DurableObject {
       a.updated = t;
       this.saveAsset(a);
       return okay({ asset: this.publicAsset(a, me) });
+    }
+    if (name === 'item.give') {
+      // Staff hand an item to someone (event prizes, Exclusive hats). Free, and it's theirs for good.
+      if (!this.isStaff(me)) return fail('Only staff can give items away.');
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || !isCatalogItem(a.kind)) return fail('That item doesn\'t exist (any more).');
+      if (a.limited) return fail('Limited items can\'t be given away (their copies are numbered).');
+      const u = this.findPerson(str(args, 'to'));
+      if (!u || u.userId === 0) return fail('There\'s nobody called that.');
+      if (u.owned.includes(a.id)) return fail(u.name + ' already has it.');
+      u.owned.push(a.id);
+      a.sales++;
+      this.saveAsset(a); this.saveUser(u);
+      this.notify(u, 'gift', 'Guts&Bolts staff gave you ' + a.name + '!', a.id);
+      this.staffDid(me, 'item', 'Gave ' + a.name + ' to ' + u.name, u.id);
+      return okay({ asset: this.publicAsset(a, me), to: u.name });
     }
     if (name === 'item.limited') {
       // Only Guts makes items Limited: a fixed number of numbered copies. People who
@@ -3741,6 +3943,62 @@ export class GbServerObject extends DurableObject {
       const value = (old || 0) + delta;
       const bad = write(value);
       return bad || okay({ value });
+    }
+    return fail('Unknown request.');
+  }
+
+  // MessagingService: messages between the running servers of one game (every one of them
+  // gets each message, the sender too; other games never see them). Only the host of a live
+  // server of the game can send or read them. Servers ask for new ones about once a second.
+  //   msg.publish {game, topic, message}  -> {}
+  //   msg.poll    {game, after, topics[]} -> {server, messages: [{n, topic, message, sent}], last}
+  //     server: false = you aren't running a server of it (the game keeps its messages on
+  //     its own computer then). after: the last n you saw (leave it out to start from now).
+  msgOp(name, me, args) {
+    const game = this.assets.resolve(cleanText(typeof args.game === 'string' ? args.game : '', 80));
+    const asset = this.assets.get(game);
+    if (!asset || asset.kind !== 'game') return fail('That game isn\'t there.');
+    const t = now();
+    const mine = [...this.sessions.values()].filter((s) => s.host === me.id && this.assets.resolve(s.game) === game);
+    const box = this.msgs.get(game) || { seq: 0, list: [] };
+    while (box.list.length && (box.list[0].sent < t - kMsgKeep || box.list.length > kMsgKept)) box.list.shift();
+    if (name === 'msg.poll') {
+      if (!mine.length) return okay({ server: false, messages: [], last: 0 });
+      const after = typeof args.after === 'number' && Number.isFinite(args.after) ? Math.floor(args.after) : -1;
+      if (after < 0) return okay({ server: true, messages: [], last: box.seq });
+      const from = after > box.seq ? 0 : after;   // (the server restarted since: start again)
+      const topics = Array.isArray(args.topics) ? new Set(args.topics.filter((x) => typeof x === 'string').slice(0, 100)) : null;
+      const out = [];
+      let last = from;
+      for (const m of box.list) {
+        if (m.n <= from) continue;
+        if (out.length >= kMsgPerPoll) break;
+        last = m.n;
+        if (!topics || topics.has(m.topic)) out.push(m);
+      }
+      if (out.length < kMsgPerPoll) last = Math.max(last, box.seq);
+      return okay({ server: true, messages: out, last });
+    }
+    if (name === 'msg.publish') {
+      if (!mine.length) return fail('MessagingService: only a running server of this game can send its messages.');
+      const topic = typeof args.topic === 'string' ? args.topic : '';
+      if (!topic || topic.length > kMsgTopic) return fail('MessagingService: topic names are 1-' + kMsgTopic + ' letters.');
+      const message = args.message === undefined ? null : args.message;
+      const size = new TextEncoder().encode(JSON.stringify(message)).length;
+      if (size > kMsgSize) return fail('MessagingService: that message is ' + size + ' bytes; ' + kMsgSize + ' bytes (1 KB) is the most.');
+      // Each server may send 150 + 60 per player a minute (all of yours together, if you run several).
+      let allowed = 0;
+      for (const s of mine) allowed += kMsgBase + kMsgPerPlayer * this.headcount(s);
+      const key = me.id + '\n' + game;
+      const times = (this.msgSent.get(key) || []).filter((x) => x > t - 60);
+      if (times.length >= allowed) return fail('MessagingService: too many messages (' + allowed + ' a minute is the most for this server). Wait a moment.');
+      times.push(t);
+      this.msgSent.set(key, times);
+      box.seq++;
+      box.list.push({ n: box.seq, topic, message, sent: t });
+      if (box.list.length > kMsgKept) box.list.shift();
+      this.msgs.set(game, box);
+      return okay({ n: box.seq, sent: t });
     }
     return fail('Unknown request.');
   }

@@ -473,6 +473,18 @@ int Animator::load(uint64_t rigId, const SceneNode& animation) {
     return m_next - 1;
 }
 
+int Animator::loadClip(uint64_t rigId, const std::string& name, const Clip& clip) {
+    Track t;
+    t.id = m_next++;
+    t.rig = rigId;
+    t.name = name;
+    t.clip = clip;
+    t.looped = clip.loop;
+    t.priority = clip.priority;
+    m_tracks[t.id] = std::move(t);
+    return m_next - 1;
+}
+
 std::vector<int> Animator::playingOn(uint64_t rigId) const {
     std::vector<int> out;
     for (const auto& [id, t] : m_tracks) if (t.rig == rigId && t.playing && t.target > 0.0f) out.push_back(id);

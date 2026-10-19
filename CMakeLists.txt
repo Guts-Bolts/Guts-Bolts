@@ -54,6 +54,11 @@ if(GB_SERVER_ONLY)
     find_package(Threads REQUIRED)
     set(GB_GENERATED "${CMAKE_BINARY_DIR}/generated")
     file(MAKE_DIRECTORY "${GB_GENERATED}")
+    include(cmake/Embed.cmake)
+    # The emotes and animation packs that come with Guts&Bolts (tools/make_emotes.py): the
+    # engine plays the built-in ones, and both servers put the starter ones in the catalog.
+    gb_embed("${CMAKE_SOURCE_DIR}/assets/emotes/emotes.gbemotes" kEmotesData "${GB_GENERATED}/EmotesData.h")
+    gb_embed("${CMAKE_SOURCE_DIR}/assets/emotes/pictures.gbemotes" kEmotePictures "${GB_GENERATED}/EmotePictures.h")
     add_custom_target(gb_version ALL
         COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DOUT=${GB_GENERATED}
                 -DVERSION=${PROJECT_VERSION} -P ${CMAKE_SOURCE_DIR}/cmake/GenVersion.cmake
@@ -291,6 +296,10 @@ gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/jump.wav"    kSoundJump    "${GB_GEN
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/respawn.wav" kSoundRespawn "${GB_GENERATED}/SoundRespawn.h")
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/spawn.wav"   kSoundSpawn   "${GB_GENERATED}/SoundSpawn.h")
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/footsteps.mp3" kSoundFootsteps "${GB_GENERATED}/SoundFootsteps.h")
+# The emotes and animation packs that come with Guts&Bolts (tools/make_emotes.py): the
+# engine plays the built-in ones, and both servers put the starter ones in the catalog.
+gb_embed("${CMAKE_SOURCE_DIR}/assets/emotes/emotes.gbemotes" kEmotesData "${GB_GENERATED}/EmotesData.h")
+gb_embed("${CMAKE_SOURCE_DIR}/assets/emotes/pictures.gbemotes" kEmotePictures "${GB_GENERATED}/EmotePictures.h")
 add_custom_target(gb_version ALL
     COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_SOURCE_DIR} -DOUT=${GB_GENERATED}
             -DVERSION=${PROJECT_VERSION} -P ${CMAKE_SOURCE_DIR}/cmake/GenVersion.cmake
@@ -309,6 +318,7 @@ add_library(gb_engine STATIC
     src/core/Paths.cpp
     src/core/FileDialog.cpp
     src/core/Audio.cpp
+    src/core/SoundFx.cpp
     src/core/Voice.cpp
     src/core/UpdateChecker.cpp
     src/core/Account.cpp
@@ -326,6 +336,7 @@ add_library(gb_engine STATIC
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
     src/scene/Player.cpp
+    src/scene/Emotes.cpp
     src/scene/Physics.cpp
     src/scene/NavMesh.cpp
     src/scene/Npc.cpp
@@ -339,6 +350,7 @@ add_library(gb_engine STATIC
     src/scene/Animation.cpp
     src/scene/Ragdoll.cpp
     src/scene/Effects.cpp
+    src/scene/SoundMix.cpp
     src/scene/Blast.cpp
     src/scene/Serializer.cpp
     src/scene/RobloxFile.cpp
@@ -353,6 +365,7 @@ add_library(gb_engine STATIC
     src/scripting/ScriptActions.cpp
     src/game/GameSession.cpp
     src/game/Hud.cpp
+    src/game/EmoteMenu.cpp
     src/game/GameGui.cpp
     src/game/Prompts.cpp
     src/game/ClickDetectors.cpp

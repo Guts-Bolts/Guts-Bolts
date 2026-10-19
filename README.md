@@ -1026,11 +1026,57 @@ sparkles.Parent = coin
 ### Your character's moves (the Animate script)
 
 Every character gets a 2011-style **Animate** script: idle, walk, run, jump,
-fall, climb, sit, holding a tool, and the emotes **dance** (1-3), **wave**,
-**point**, **laugh** and **cheer**. Type `/e dance` (or `/e wave`, ...) in chat.
-To change a move, put an Animation in the matching value of the Animate
-script (for example `Animate.walk.WalkAnim.AnimationId`): your clip plays
-instead of the built-in one. Scripts can call `humanoid:PlayEmote("cheer")`.
+fall, climb, sit and holding a tool. To change a move, put an Animation in the
+matching value of the Animate script (for example `Animate.walk.WalkAnim.AnimationId`):
+your clip plays instead of the built-in one.
+
+### Emotes
+
+Everyone has the emotes **dance**, **dance2**, **dance3**, **wave**, **point**,
+**cheer** and **laugh**: type `/e dance` (or `/e wave`, ...) in the chat, or press
+**B** for the **emote menu** (on a phone, tap the smiley above the jump button) and
+click one. Everyone in the server sees it. Moving or jumping stops it; dances keep
+going until you do. Emotes are real keyframed animations (the same clips as the
+Animation Editor's), played on the character's Animator as AnimationTracks, so a
+script can find them with `animator:GetPlayingAnimationTracks()`.
+
+**From the catalog:** the catalog sells **Emotes** and **Animation Packs** (the
+*Emotes* group). An animation pack changes how you stand, walk, run, jump and fall.
+On the website's **Avatar** page (or the app's Avatar page, under *Emotes*) put up
+to 8 emotes in your emote menu's slots and pick one pack. They come with you to
+every game: your emotes fill the menu (slots you leave empty show the built-in
+ones), and `/e` works with their names too (`/e jumpingjacks`). The ones there to
+start with:
+
+| Item | Kind | Price |
+|---|---|---|
+| Salute, Shrug, Robot | Emote | Free |
+| Jumping Jacks | Emote | 15 Bolts |
+| Sprinkler | Emote | 25 Bolts |
+| Bouncy Animation Pack | Animation Pack | Free |
+| Robot Animation Pack | Animation Pack | 40 Bolts |
+
+Only Guts&Bolts staff make emotes and packs. Their catalog pictures are real
+renders of the character mid-move, made by Studio: `GutsAndBolts --emote-pictures <dir>`,
+then `python3 tools/make_emotes.py --pictures <dir>` (the starter moves themselves
+are in `tools/make_emotes.py`).
+
+**For scripts:**
+
+```lua
+humanoid:PlayEmote("cheer")        -- true if it played (needs to be standing on the ground)
+-- Turn the emote menu off in your game (emotes from scripts still work):
+game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false)
+-- Open or close it yourself:
+game:GetService("GuiService"):SetEmotesMenuOpen(true)
+print(game:GetService("GuiService"):GetEmotesMenuOpen())
+```
+
+`humanoid.Jump = true` makes your own character jump, and `humanoid:Move(direction)`
+walks it that way until you call it with `Vector3.new()` (keys pushed win).
+`SetCoreGuiEnabled` remembers the other types (PlayerList, Health, Backpack,
+Chat, ...) and `GetCoreGuiEnabled` reads them back, but only `EmotesMenu` hides
+anything so far.
 
 `humanoid.PlatformStand = true` makes the character go limp and fall over,
 like 2011 Roblox, and hard hits can trip or fling you. `humanoid:ChangeState`
@@ -1093,6 +1139,40 @@ and `IncrementAsync` adds on the server in one step, so two servers adding at
 the same time both count. Limits: names and keys up to 100 letters, 256 KB per
 value, 100,000 keys per game.
 
+### Talking between servers (MessagingService)
+
+`MessagingService` sends a message to **every running server of the same
+game**, the one that sent it included. Other games never see it.
+
+```lua
+local MessagingService = game:GetService("MessagingService")
+
+local conn = MessagingService:SubscribeAsync("Announcements", function(msg)
+    print("Got", msg.Data, "sent at", msg.Sent)   -- Sent is unix time
+end)
+MessagingService:PublishAsync("Announcements", { text = "Double coins!", minutes = 10 })
+-- later: conn:Disconnect()
+```
+
+The message can be a string, number, boolean or table (anything that turns into
+JSON). `PublishAsync` waits until it's sent and raises a clear error when it
+can't be. Limits, like Roblox's:
+
+- **1 KB per message** (after it's turned into JSON).
+- **Topic names up to 80 letters.**
+- **Per server, a minute:** 150 + 60 per player messages sent, and
+  20 + 8 per player topics subscribed at once.
+
+How it travels depends on who runs the game, the same way as saved data:
+
+- **On a game server machine, or when you host it online:** through the
+  Guts&Bolts server, which passes it to each server of the game (it checks the
+  sender really runs a server of that game). Messages arrive about a second
+  later, and are kept for 30 seconds.
+- **Studio play tests and local multiplayer tests:** through a folder on this
+  computer (`messaging` in your account folder), so two play tests of the same
+  game on one computer hear each other right away.
+
 ### Sound effects
 
 Most built-in sounds are made in code, but a few are recordings in
@@ -1105,6 +1185,44 @@ Most built-in sounds are made in code, but a few are recordings in
 | `respawn.wav` | `"respawn"` | you come back after dying |
 
 Swap in your own .wav files with the same names and rebuild.
+
+### Sound groups and effects
+
+A **SoundGroup** is a volume knob for many sounds at once (music, effects,
+voices...). Put it in **SoundService** (Studio: *Insert > SoundGroup*), then
+set each Sound's **SoundGroup** in Properties, or in a script:
+
+```lua
+local music = Instance.new("SoundGroup")
+music.Volume = 0.5
+music.Parent = game:GetService("SoundService")
+sound.SoundGroup = music     -- the sound now plays at sound.Volume x 0.5
+```
+
+A group inside another group multiplies again (Master 0.5 > Music 0.8 > a Sound
+at 1 plays at 0.4). Volumes go from 0 to 10.
+
+**Effects** go inside a Sound or a SoundGroup (*Insert*, in the Sound section).
+Effects in a group change every sound in it. Each has **Enabled** and
+**Priority** (higher goes first; a Sound's own effects come before its group's):
+
+| Effect | What it does | Settings |
+| --- | --- | --- |
+| ReverbSoundEffect | a room or hall around the sound | DecayTime, Density, Diffusion, DryLevel, WetLevel |
+| EchoSoundEffect | repeats that fade away | Delay, Feedback, DryLevel, WetLevel |
+| EqualizerSoundEffect | louder or quieter lows, middles and highs | LowGain, MidGain, HighGain |
+| DistortionSoundEffect | crunchy, clipped sound | Level |
+| PitchShiftSoundEffect | higher or lower without speeding up | Octave (0.5 to 2) |
+| ChorusSoundEffect | a thicker, "many voices" sound | Depth, Mix, Rate |
+| CompressorSoundEffect | evens out loud and quiet parts | Attack, GainMakeup, Ratio, Release, Threshold |
+| FlangeSoundEffect | a sweeping jet-plane whoosh | Depth, Mix, Rate |
+| TremoloSoundEffect | the volume pulses | Depth, Duty, Frequency |
+
+They start with the same settings as Roblox's, are saved with the game,
+copied to everyone in online games, and come along when you open or export a
+Roblox file. Not done: the Compressor's **SideChain** (ducking one sound under
+another) isn't there yet, and the Reverb is a simple made-up room rather than a
+recorded one.
 
 ### Climbing and swimming
 
@@ -2969,6 +3087,19 @@ is left running:
 ```
 python3 tools/test_multiplayer.py            # --players 3 --seconds 40 to change it
 ```
+
+Some engine features have a check script that runs inside a play test with no
+screen (after building, Linux, needs `xvfb-run`). Each prints `PASS`/`FAIL`
+lines and a `DONE (N failed)` line:
+
+```
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_messaging.lua)" --screenshot /tmp/m.png --frames 1500
+xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_sound_groups.lua)" --screenshot /tmp/s.png --frames 600
+```
+
+To check messages reach *another* running server, start a second copy first with
+`--test-command "MESSAGING_PARTNER = true $(cat tools/test_messaging.lua)"` and
+`--frames 2400` (it waits around to answer); the first copy then also checks it hears the partner.
 
 ## Building by hand
 

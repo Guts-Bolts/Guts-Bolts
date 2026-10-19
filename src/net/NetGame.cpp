@@ -5,6 +5,7 @@
 #include "../core/Paths.h"
 #include "../game/Badges.h"
 #include "../game/GameSession.h"
+#include "../scene/SoundMix.h"
 #include "../game/ClickDetectors.h"
 #include "../game/Profile.h"
 #include "../scene/Scene.h"
@@ -215,6 +216,7 @@ std::string nodeState(const SceneNode* n) {
     if (n->isClickDetector()) return std::string(buf) + Serializer::clickToJson(n->click).dump();
     if (n->isHighlight()) return std::string(buf) + Serializer::highlightToJson(n->highlight, n->enabled).dump();
     if (n->isEffect()) return std::string(buf) + Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam).dump();
+    if (n->isSound() || n->isSoundGroup() || n->isSoundEffect()) return std::string(buf) + Serializer::soundToJson(*n).dump();
     if (n->isPostEffect()) return std::string(buf) + Serializer::postEffectToJson(n->post, n->enabled).dump();
     if (n->isSky()) return std::string(buf) + Serializer::skyToJson(n->sky).dump();
     if (n->isConstraint() && usesJointProps(n->constraintType)) return std::string(buf) + Serializer::jointToJson(n->joint).dump();
@@ -233,6 +235,7 @@ json nodeUpdate(const SceneNode* n) {
     if (n->isClickDetector()) u["cd"] = Serializer::clickToJson(n->click);
     if (n->isHighlight()) u["hl"] = Serializer::highlightToJson(n->highlight, n->enabled);
     if (n->isEffect()) u["fx"] = Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam);
+    if (n->isSound() || n->isSoundGroup() || n->isSoundEffect()) u["snd"] = Serializer::soundToJson(*n);
     if (n->isPostEffect()) u["pfx"] = Serializer::postEffectToJson(n->post, n->enabled);
     if (n->isSky()) u["sky"] = Serializer::skyToJson(n->sky);
     if (n->isConstraint() && usesJointProps(n->constraintType)) u["jt"] = Serializer::jointToJson(n->joint);
@@ -267,6 +270,7 @@ void applyUpdate(SceneNode* n, const json& u) {
     if (n->isClickDetector() && u.contains("cd") && u["cd"].is_object()) Serializer::clickFromJson(u["cd"], n->click);
     if (n->isHighlight() && u.contains("hl") && u["hl"].is_object()) Serializer::highlightFromJson(u["hl"], n->highlight, n->enabled);
     if (n->isEffect() && u.contains("fx") && u["fx"].is_object()) Serializer::effectFromJson(u["fx"], n->effect, n->enabled);
+    if (u.contains("snd") && u["snd"].is_object()) Serializer::soundFromJson(*n, u["snd"]);
     if (n->isPostEffect() && u.contains("pfx") && u["pfx"].is_object()) Serializer::postEffectFromJson(u["pfx"], n->post, n->enabled);
     if (n->isSky() && u.contains("sky") && u["sky"].is_object()) Serializer::skyFromJson(u["sky"], n->sky);
     if (n->isConstraint() && u.contains("jt") && u["jt"].is_object()) Serializer::jointFromJson(u["jt"], n->joint);
@@ -305,8 +309,16 @@ void replayFx(Scene& scene, const json& list) {
             case FxEvent::Gibs:      if (scene.goreEnabled()) ps.gibs(scene.goreKind(), p, {0, 2, 0}, (int)amount); break;
             case FxEvent::Sound: {
                 std::string name = f.value("s", std::string());
-                if (f.value("pos3d", true)) Audio::play(name, amount, 1.0f, false, &p);
-                else                        Audio::play(name, amount);
+                // From a Sound object: its pitch, effects and SoundGroup (as the host has them).
+                SceneNode* node = f.contains("id") ? scene.findById(f.value("id", (uint64_t)0)) : nullptr;
+                if (node && !node->isSound()) node = nullptr;
+                const float pitch = node ? node->pitch : 1.0f;
+                const int h = f.value("pos3d", true) ? Audio::play(name, amount, pitch, false, &p) : Audio::play(name, amount, pitch);
+                if (node && h) {
+                    SoundMix::apply(scene, node, h);
+                    Audio::setVolume(h, amount);   // (the host already worked out how loud)
+                    node->audioHandle = h;         // (so its group's effects stay up to date while it plays)
+                }
                 break;
             }
         }
@@ -1178,8 +1190,12 @@ std::string NetServer::worldMessage(bool) {
 
     if (!m_scene->fxQueue.empty()) {
         json fx = json::array();
-        for (const FxEvent& f : m_scene->fxQueue)
-            fx.push_back({{"k", (int)f.type}, {"p", vec3(f.pos)}, {"n", f.amount}, {"s", f.name}});
+        for (const FxEvent& f : m_scene->fxQueue) {
+            json e = {{"k", (int)f.type}, {"p", vec3(f.pos)}, {"n", f.amount}, {"s", f.name}};
+            if (f.node) e["id"] = f.node;
+            if (!f.at3d) e["pos3d"] = false;
+            fx.push_back(e);
+        }
         msg["fx"] = fx;
         m_scene->fxQueue.clear();
     }
