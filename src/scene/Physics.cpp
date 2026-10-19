@@ -205,6 +205,8 @@ float Physics::densityOf(const SceneNode* n) {
     if (n->density >= 0.0f) return std::max(0.01f, n->density);
     return materialPhysics(n->material).density;
 }
+float Physics::frictionOf(const SceneNode* n) { return n->friction >= 0.0f ? n->friction : materialPhysics(n->material).friction; }
+float Physics::elasticityOf(const SceneNode* n) { return n->elasticity >= 0.0f ? n->elasticity : materialPhysics(n->material).elasticity; }
 
 AABB Physics::bounds(const OBB& o) {
     glm::vec3 e(0.0f);

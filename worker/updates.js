@@ -10,6 +10,30 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'pick-a-side', name: 'Pick a Side', time: 1792381691, tag: 'Engine',
+    summary: 'Teams get their own spawns, models know their main part, and scripts can be written the newer way with += and continue.',
+    items: [
+      'SpawnLocations can belong to a team: players spawn on their team\'s spawns, and some can switch your team when you step on them',
+      'Scripts can tell when a character spawns or is about to respawn (CharacterAdded and CharacterRemoving)',
+      'Models have a PrimaryPart, and moving a model with PivotTo turns it around that part',
+      'Scripts can set a part\'s density, grip and bounce all at once, and the physics really use them',
+      'Text can be made bold with one switch (Bold)',
+      'Every script can use +=, continue, types and {name} strings, and errors still point at the right line',
+    ],
+  },
+  {
+    id: 'ember-and-ash', name: 'Ember & Ash', time: 1792380179, tag: 'Engine',
+    summary: 'Particle effects you can place: ParticleEmitter, Fire, Smoke and Sparkles, seen by everyone in the game.',
+    items: [
+      'Insert a ParticleEmitter into any part (Insert Object > Particles) and it starts spraying, even while you build',
+      'Set its Rate, Lifetime, Speed, Spread, Color, Size, Transparency, glow, gravity, drag and spin in Properties or from scripts',
+      'Scripts can call Emit(50) for a burst or Clear() to wipe them, and NumberRange.new is new for these',
+      'Classic Fire, Smoke and Sparkles: drop one in a part and it just works',
+      'Every player sees them in online games, and a huge Rate can\'t freeze the game (there\'s a cap)',
+      'Particles come across when you import .rbxl and .rbxm files, and go back out when you export',
+    ],
+  },
+  {
     id: 'rewind', name: 'Rewind', time: 1791889200, tag: 'Website',
     summary: 'Publishing a game keeps its old versions now, and one click puts an old one back.',
     items: [
@@ -156,6 +180,17 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'touch-grass', name: 'Touch Grass', version: '0.7.1', time: 1791349000, tag: 'Studio',
+    summary: 'Terrain! Sculpt hills, valleys, beaches and mountains in Studio, then go outside (in the game).',
+    items: [
+      'New TERRAIN tab in Studio: Generate rolling hills, then Raise, Lower, Smooth, Flatten and Paint with brushes',
+      'Six grounds that blend into each other: grass, dirt, sand, rock, snow and mud',
+      'Characters walk up gentle slopes (not cliffs), loose parts roll down hills, and pathfinding works on it',
+      'Scripts can change it with workspace.Terrain (FillBlock, FillBall, Generate, Sculpt, GetHeight)',
+      'Saved with your place and sent to every player, even when a script changes it mid-game',
+    ],
+  },
+  {
     id: 'can-you-hear-me-now', name: 'Can You Hear Me Now?', version: '0.7.1', time: 1791348000, tag: 'Player',
     summary: 'Voice chat: hold V to talk to the players around you, and hear them from their characters.',
     items: [
@@ -173,17 +208,6 @@ export const BUILT_IN_UPDATES = [
       'Signing up, the daily Bolts, buying items, comments, the filter and staff tools are all tested automatically',
       'The update log, the "Library" wording and the C++ filter\'s word list are checked too',
       'Every website script is checked for typing mistakes before it goes live',
-    ],
-  },
-  {
-    id: 'touch-grass', name: 'Touch Grass', version: '0.7.1', time: 1791349000, tag: 'Studio',
-    summary: 'Terrain! Sculpt hills, valleys, beaches and mountains in Studio, then go outside (in the game).',
-    items: [
-      'New TERRAIN tab in Studio: Generate rolling hills, then Raise, Lower, Smooth, Flatten and Paint with brushes',
-      'Six grounds that blend into each other: grass, dirt, sand, rock, snow and mud',
-      'Characters walk up gentle slopes (not cliffs), loose parts roll down hills, and pathfinding works on it',
-      'Scripts can change it with workspace.Terrain (FillBlock, FillBall, Generate, Sculpt, GetHeight)',
-      'Saved with your place and sent to every player, even when a script changes it mid-game',
     ],
   },
   {
@@ -553,6 +577,20 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'cut-and-paste-studio', name: 'Studio Gets Its Hands Dirty', version: '0.6.5', time: 1791244800, tag: 'Studio',
+    summary: 'Unions, Roblox-style Move and Scale handles, box select, blue selection boxes, Script Analysis and AutoSave.',
+    items: [
+      'Unions like Roblox: Union (Ctrl+Shift+G) joins parts into one, Negate (Ctrl+Shift+N) turns a part into a hole that gets cut out, Intersect (Ctrl+Shift+I) keeps the overlap, Separate (Ctrl+Shift+U) gives the parts back',
+      'Scale has an orb on each of the 6 sides: drag one to move just that side (hold Ctrl for both sides)',
+      'Move has an arrow on each side, and moves everything you selected (with snapping and collisions)',
+      'Rotating several things now turns them all together instead of only the last one picked',
+      'Click empty space and drag to box-select parts',
+      'Selected parts get a light blue box around them',
+      'Script Analysis (VIEW tab): finds mistakes in every script without pressing Play, like a missing "end" or a misspelled name',
+      'AutoSave: unsaved work is backed up every 5 minutes, and Studio offers to bring it back after a crash',
+    ],
+  },
+  {
     id: 'new-address', name: 'Moving Day', version: '0.6.6', time: 1791241500, tag: 'Website',
     summary: 'Guts&Bolts has its own address now: gutsandbolts.net.',
     items: [
@@ -578,20 +616,6 @@ export const BUILT_IN_UPDATES = [
       'Now: the player who has been there longest starts a new server of the same game, and everyone follows them there by themselves',
       'Private servers keep the same code, so friends can still join with it',
       'You see "The host left. Moving everyone to a new server" for a few seconds, then you\'re back in (the world starts fresh)',
-    ],
-  },
-  {
-    id: 'cut-and-paste-studio', name: 'Studio Gets Its Hands Dirty', version: '0.6.5', time: 1791244800, tag: 'Studio',
-    summary: 'Unions, Roblox-style Move and Scale handles, box select, blue selection boxes, Script Analysis and AutoSave.',
-    items: [
-      'Unions like Roblox: Union (Ctrl+Shift+G) joins parts into one, Negate (Ctrl+Shift+N) turns a part into a hole that gets cut out, Intersect (Ctrl+Shift+I) keeps the overlap, Separate (Ctrl+Shift+U) gives the parts back',
-      'Scale has an orb on each of the 6 sides: drag one to move just that side (hold Ctrl for both sides)',
-      'Move has an arrow on each side, and moves everything you selected (with snapping and collisions)',
-      'Rotating several things now turns them all together instead of only the last one picked',
-      'Click empty space and drag to box-select parts',
-      'Selected parts get a light blue box around them',
-      'Script Analysis (VIEW tab): finds mistakes in every script without pressing Play, like a missing "end" or a misspelled name',
-      'AutoSave: unsaved work is backed up every 5 minutes, and Studio offers to bring it back after a crash',
     ],
   },
   {

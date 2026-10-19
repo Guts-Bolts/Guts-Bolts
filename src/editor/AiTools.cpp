@@ -129,7 +129,8 @@ const std::vector<Tool>& tools() {
         {"insert_object", "Create an object", "SCENE", false, false, false, Risk::Low,
          {"Creates a NEW object in the game and returns its object_id. kind is a class or a ready-made thing: Part, Sphere, "
           "Cylinder, Model, Folder, Script, LocalScript, ModuleScript, PointLight, SpotLight, Sound, SpawnLocation, "
-          "TrussPart, Seat, Water, WaterSource, Attachment, ProximityPrompt, ClickDetector, Highlight, Trail, Beam, Tool, Decal, Rig, "
+          "TrussPart, Seat, Water, WaterSource, Attachment, ProximityPrompt, ClickDetector, Highlight, Trail, Beam, ParticleEmitter, Fire, Smoke, "
+          "Sparkles, Tool, Decal, Rig, "
           "RemoteEvent, RemoteFunction, IntValue/NumberValue/StringValue/BoolValue, ScreenGui, Frame, TextLabel, TextButton, "
           "TextBox, ImageLabel, ScrollingFrame, BillboardGui, SurfaceGui, UICorner, UIStroke, UIListLayout, BodyVelocity, "
           "AlignPosition, VectorForce..., and ready-made things by name: \"Kill Brick\", \"Coin\", \"Jump Pad\", \"Exploding Barrel\", "
@@ -211,7 +212,7 @@ const std::vector<Tool>& tools() {
           "scoring, doors that open, enemies that chase), or when the person asks for a script.",
           "Don't write a script for things a property or built-in object already does (falling: Anchored = false; "
           "glowing: Material Neon or a PointLight; a sound: a Sound object). To change an existing script use edit_script.",
-          "source (required, plain Lua 5.4: no Luau `+=`, `continue` or type annotations); parent (optional object, "
+          "source (required, Lua 5.4; Luau `+=`, `continue`, type annotations and `{x}` strings work too); parent (optional object, "
           "default Workspace; `script.Parent` is this object); name (optional); type (Script, LocalScript or ModuleScript).",
           "{object_id, name, class, parent_id, syntax: {ok, error?}}. A syntax error is reported but the script is still made.",
           "parent exists.", "The script exists. It does NOT run until a playtest starts (or the game is played).",
@@ -247,7 +248,7 @@ const std::vector<Tool>& tools() {
           "For one property use set_property; for one object use insert_object (they verify and report ids for you). "
           "Don't use it to fake physics or movement by teleporting parts every frame: use Anchored = false, forces and "
           "the engine's own systems.",
-          "code (required, plain Lua 5.4).",
+          "code (required, Lua 5.4; Luau syntax works too).",
           "{output: what it printed, errors: [...]}. print() whatever you need to know back (e.g. print(part:GetFullName())).",
           "None. Code that waits (wait(), events) only keeps running during a playtest.",
           "Whatever the code did (undoable when not playtesting).",
@@ -587,7 +588,7 @@ More in get_engine_info topic "examples".
 get_engine_info (or the gutsbolts:// resources) explains what the engine can do (capabilities), its concepts, the coordinate system, common workflows and every class you can insert. Check capabilities before promising a feature.
 
 ## Quick facts
-Y is up, X is right, -Z is an object's forward (LookVector). Position is a part's centre. Orientation is in degrees; CFrame.Angles takes radians. Colours are [r, g, b] from 0 to 1. Scripts are Lua 5.4 with a Roblox-style API (Instance.new, part.Touched, game:GetService, RunService.Heartbeat, wait(), Players.LocalPlayer, workspace.CurrentCamera, humanoid:MoveTo, PathfindingService, Effects.Explosion/Blood, Sounds.Play). Luau-only syntax (`+=`, type annotations, `continue`) does not work: write plain Lua. 1 unit = 2 Roblox studs; a character is about 2.6 units tall and walks 6 units a second.
+Y is up, X is right, -Z is an object's forward (LookVector). Position is a part's centre. Orientation is in degrees; CFrame.Angles takes radians. Colours are [r, g, b] from 0 to 1. Scripts are Lua 5.4 with a Roblox-style API (Instance.new, part.Touched, game:GetService, RunService.Heartbeat, wait(), Players.LocalPlayer, workspace.CurrentCamera, humanoid:MoveTo, PathfindingService, Effects.Explosion/Blood, Sounds.Play). Luau syntax (`+=`, `continue`, type annotations, interpolated strings) works too. Also: player.CharacterAdded/CharacterRemoving, player.Team/TeamColor/Neutral, SpawnLocation.Neutral/TeamColor/AllowTeamChangeOnTouch (players spawn on their team's spawns), model.PrimaryPart with GetPivot/PivotTo/SetPrimaryPartCFrame, part.CustomPhysicalProperties = PhysicalProperties.new(density, friction, elasticity, frictionWeight, elasticityWeight), TextLabel.Bold. 1 unit = 2 Roblox studs; a character is about 2.6 units tall and walks 6 units a second.
 
 ## Talking to the person
 Keep it short and friendly: they may be new to making games. Say what changed, not every tool call. If something couldn't be done, say what and why.)GUIDE";
@@ -660,7 +661,7 @@ Guts and Bolts is Roblox-style: there is no separate component system. What an o
 - Light -> a PointLight or SpotLight placed inside a part.
 - Audio source -> a Sound object (inside a part = it plays from there), or Sounds.Play in scripts.
 - Script -> Script (game server), LocalScript (each player's computer), ModuleScript (require()).
-- Particles -> no ParticleEmitter class. Scripts make effects with Effects.Sparks / Blood / Oil / Gibs, explosions with smoke and fire, Trails and Beams.
+- Particles -> a ParticleEmitter inside a part (particles come out of anywhere in it) or an Attachment (out of that point): Rate, Lifetime and Speed (NumberRange), SpreadAngle (Vector2), Color (ColorSequence), Size and Transparency (NumberSequence), Texture (built-in "", "smoke", "fire", "sparkle", or a picture), LightEmission, Acceleration, Drag, EmissionDirection, Rotation / RotSpeed, LockedToPart; emitter:Emit(n) and :Clear() in scripts. Ready-made: Fire (Color, SecondaryColor, Size, Heat), Smoke (Color, Opacity, RiseVelocity, Size) and Sparkles (SparkleColor) in a part. Every player sees them. Scripts can also make one-off effects with Effects.Sparks / Blood / Oil / Gibs and explosions.
 - Camera -> no camera object to edit. Players' cameras follow their character (World settings can make it orthographic).
 
 SCENE (place, game)
@@ -694,7 +695,7 @@ RUNTIME vs EDITOR
 Editor state is the saved game. Runtime state is the game while it runs (playtest): scripts run, physics moves things, characters spawn. Changes during a playtest are thrown away when it stops. get_object says which one you're looking at ("state_source") and adds velocity while playing.
 
 SCRIPT
-Lua 5.4 with Roblox's API names (Instance.new, game:GetService, workspace, task.wait, RunService.Heartbeat, Players, TweenService, DataStoreService, RemoteEvents). Luau-only syntax doesn't work (no +=, continue, type annotations). Prefer the engine's systems (properties, constraints, movers, pathfinding, explosions); write scripts for game rules and when asked.)DOC";
+Lua 5.4 with Roblox's API names (Instance.new, game:GetService, workspace, task.wait, RunService.Heartbeat, Players, TweenService, DataStoreService, RemoteEvents). Luau syntax (+=, continue, type annotations) works too. Player.CharacterAdded/CharacterRemoving, Teams with team SpawnLocations, Model.PrimaryPart/PivotTo and PhysicalProperties are there. Prefer the engine's systems (properties, constraints, movers, pathfinding, explosions); write scripts for game rules and when asked.)DOC";
 
 const char* kCoordinates = R"DOC(# Coordinates and units
 
@@ -781,7 +782,7 @@ checkpoint save -> edit_script (BlastPressure higher) -> playtest start -> spawn
 get_object platform (top height) -> run_lua with a loop making anchored steps (print each step's name) -> get_game_tree -> screenshot.
 
 "Add a ParticleEmitter to the torch."
-get_engine_info capabilities: there's no ParticleEmitter. Say so, and offer what exists (a PointLight, Neon material, Effects.Sparks in a script, a Trail or Beam).
+find_objects {name: "torch"} -> insert_object ParticleEmitter (parent: the torch's top part) -> set_property Color, Size, Speed, Lifetime, LightEmission (or insert_object Fire for ready-made flames) -> screenshot.
 
 "Delete the trees."
 find_objects {name: "tree"} -> if it's clearly those objects, delete_object each (or run_lua over a list of ids) -> get_game_tree. If some are unclear (a "TreeHouse"?), list them and ask first.)DOC";
@@ -806,7 +807,7 @@ json capabilities() {
             {"physics", "via properties (Anchored, CanCollide, Density...), movers, constraints and scripts; simulates during playtests"},
             {"navigation", true},                     // bake_navmesh, find_path, walk_character_to; PathfindingService in scripts
             {"explosions", true},                     // spawn_explosion (playtest); Explosion objects in scripts
-            {"rendering", "partial: part colour, material, transparency, lights, decals; no shader or post-processing tools"},
+            {"rendering", "partial: part colour, material, transparency, lights, decals, particles (ParticleEmitter, Fire, Smoke, Sparkles); no shader or post-processing tools"},
             {"audio", "Sound objects and Sounds.Play"},
             {"ui", true},
             {"assets", false},                        // the Library isn't reachable from these tools
@@ -819,7 +820,7 @@ json capabilities() {
             {"multiplayer_testing", "multiplayer_test: a local test server and 2-4 Player windows on this computer; read what each prints"},
             {"publishing", false},
         }},
-        {"not_supported", json::array({"editing Library assets", "linked prefabs", "ParticleEmitter", "camera objects",
+        {"not_supported", json::array({"editing Library assets", "linked prefabs", "camera objects",
                                        "shaders", "publishing games", "moving or inspecting the players inside a multiplayer test"})},
         {"notes", "If a capability is false or missing, the tools can't do it: say so instead of pretending."},
     };

@@ -8,6 +8,7 @@
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
 #include "../../scripting/ScriptEngine.h"
+#include "../../scripting/Luau.h"
 
 #include <cctype>
 #include <set>
@@ -119,7 +120,8 @@ void ScriptEditorPanel::runAnalysis() {
             m_issues.push_back({sn->id, sn->fullName(), errLine, true, err});
             return;   // can't make sense of the names in a script Lua can't read
         }
-        const std::vector<Tok> t = tokens(sn->source);
+        // (Luau extras read as the Lua they run as: same lines, no type names taken for globals)
+        const std::vector<Tok> t = tokens(Luau::toLua(sn->source));
         auto is = [&](size_t k, const char* s) { return k < t.size() && t[k].text == s; };
         // Pass 1: every name the script defines anywhere (locals, functions, parameters,
         // loop variables, globals it assigns). Simple on purpose: no scopes, so no false alarms.
