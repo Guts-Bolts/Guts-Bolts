@@ -50,6 +50,7 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::FluidEmitter ? "FluidEmitter"
                     : node->kind == NodeKind::Mover        ? kMoverClassNames[(int)node->mover.type]
                     : node->kind == NodeKind::Gui        ? kGuiClassNames[(int)node->gui.type]
+                    : node->kind == NodeKind::Camera     ? "Camera"
                     : node->kind == NodeKind::Model    ? "Model" : "Part";
     ImGui::TextDisabled("%s", cls);
 
@@ -76,7 +77,8 @@ bool editUDim2(const char* label, UDim2& u, float scaleStep = 0.005f) {
 
 void PropertiesPanel::renderGui(SceneNode* node) {
     GuiProps& g = node->gui;
-    const bool noSwitch = g.type == GuiType::UICorner || g.type == GuiType::UIPadding || isGuiLayout(g.type);   // (always on)
+    const bool noSwitch = g.type == GuiType::UICorner || g.type == GuiType::UIPadding || isGuiLayout(g.type) ||
+                          g.type == GuiType::UIScale || g.type == GuiType::UIAspectRatioConstraint;   // (always on)
     const bool hasEnabled = isGuiLayer(g.type) || (isGuiModifier(g.type) && !noSwitch);
     if (!noSwitch)
         ImGui::Checkbox(hasEnabled ? "Enabled" : "Visible", hasEnabled ? &node->enabled : &node->visible);
@@ -205,6 +207,53 @@ void PropertiesPanel::renderGui(SceneNode* node) {
         ImGui::PopTextWrapPos();
         return;
     }
+    if (g.type == GuiType::UIGradient) {
+        ImGui::SeparatorText("UIGradient");
+        // Color / Transparency: the two ends here (scripts can give it more keypoints).
+        const bool many = g.gradColor.size() > 2 || g.gradTransparency.size() > 2;
+        glm::vec3 c0 = g.gradColor.front().c, c1 = g.gradColor.back().c;
+        bool cEdit = ImGui::ColorEdit3("Color (start)", &c0.x);
+        cEdit |= ImGui::ColorEdit3("Color (end)", &c1.x);
+        if (cEdit) g.gradColor = {{0.0f, c0}, {1.0f, c1}};
+        float t0 = g.gradTransparency.front().v, t1 = g.gradTransparency.back().v;
+        bool tEdit = ImGui::SliderFloat("Transparency (start)", &t0, 0.0f, 1.0f);
+        tEdit |= ImGui::SliderFloat("Transparency (end)", &t1, 0.0f, 1.0f);
+        if (tEdit) g.gradTransparency = {{0.0f, t0}, {1.0f, t1}};
+        if (many) ImGui::TextDisabled("(it has more colours, set by a script: editing here keeps just the two ends)");
+        ImGui::DragFloat("Rotation", &g.gradRotation, 1.0f, -360.0f, 360.0f, "%.0f deg");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = left to right, 90 = top to bottom.");
+        ImGui::DragFloat2("Offset", &g.gradOffset.x, 0.01f, -2.0f, 2.0f, "%.2f");
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Colours the object it's in (its background, text and picture) with a fade "
+                            "from one colour to the next.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (g.type == GuiType::UIScale) {
+        ImGui::SeparatorText("UIScale");
+        ImGui::DragFloat("Scale", &g.scale, 0.01f, 0.0f, 10.0f, "%.2f");
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Makes the object it's in, and everything inside it, bigger (2 = twice as big) or smaller. "
+                            "It grows around its AnchorPoint.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    if (g.type == GuiType::UIAspectRatioConstraint) {
+        ImGui::SeparatorText("UIAspectRatioConstraint");
+        if (ImGui::DragFloat("AspectRatio", &g.aspectRatio, 0.01f, 0.01f, 100.0f, "%.2f")) g.aspectRatio = std::max(0.01f, g.aspectRatio);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Width / height: 1 = square, 2 = twice as wide as tall.");
+        const char* types[] = {"FitWithinMaxSize", "ScaleWithParentSize"};
+        ImGui::Combo("AspectType", &g.aspectType, types, 2);
+        const char* axes[] = {"Width", "Height"};
+        ImGui::BeginDisabled(g.aspectType == 0);
+        ImGui::Combo("DominantAxis", &g.dominantAxis, axes, 2);
+        ImGui::EndDisabled();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Keeps the object it's in the same shape on every screen. FitWithinMaxSize: as big as fits "
+                            "in its Size. ScaleWithParentSize: DominantAxis keeps its size and the other side follows.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
     if (g.type == GuiType::UIStroke) {
         ImGui::SeparatorText("UIStroke");
         ImGui::ColorEdit3("Color", &g.borderColor.x);
@@ -294,6 +343,30 @@ void PropertiesPanel::renderGui(SceneNode* node) {
         }
         ImGui::ColorEdit3("ImageColor3", &g.imageColor.x);
         ImGui::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
+    }
+    if (g.type == GuiType::ViewportFrame) {
+        ImGui::SeparatorText("ViewportFrame");
+        // CurrentCamera: one of the Cameras inside it (or none: it frames what's inside by itself).
+        std::vector<SceneNode*> cams;
+        for (auto& c : node->children) if (c->isCamera()) cams.push_back(c.get());
+        SceneNode* cur = g.camera ? m_scene->findById(g.camera) : nullptr;
+        if (ImGui::BeginCombo("CurrentCamera", cur ? cur->name.c_str() : "(none: fit what's inside)")) {
+            if (ImGui::Selectable("(none: fit what's inside)", !cur)) g.camera = 0;
+            for (SceneNode* c : cams)
+                if (ImGui::Selectable((c->name + "##" + std::to_string(c->id)).c_str(), c == cur)) g.camera = c->id;
+            ImGui::EndCombo();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Insert a Camera into the frame to pick it here.");
+        ImGui::ColorEdit3("Ambient", &g.ambient.x);
+        ImGui::ColorEdit3("LightColor", &g.lightColor.x);
+        ImGui::DragFloat3("LightDirection", &g.lightDir.x, 0.02f, -1.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("The way the light shines: -1, -1, -1 = down from the top right.");
+        ImGui::ColorEdit3("ImageColor3", &g.imageColor.x);
+        ImGui::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Shows the parts and models inside it as a little 3D picture (an item in a shop, a "
+                            "character preview). They aren't in the world: no physics, nobody bumps into them.");
+        ImGui::PopTextWrapPos();
     }
     if (node->isGuiButton()) {
         ImGui::SeparatorText("Button");
@@ -560,6 +633,18 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     }
 
     if (node->isGui()) { renderGui(node); return; }
+
+    if (node->isCamera()) {
+        ImGui::SeparatorText("Camera");
+        ImGui::DragFloat3("Position", &node->transform.position.x, 0.05f);
+        ImGui::DragFloat3("Orientation", &node->transform.rotation.x, 0.5f, -360.0f, 360.0f, "%.1f");
+        ImGui::SliderFloat("FieldOfView", &node->fieldOfView, 1.0f, 120.0f, "%.0f deg");
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("A camera for a ViewportFrame (its CurrentCamera): it looks along its front (-Z). "
+                            "Turn it with Orientation, or set its CFrame in a script.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
 
     if (node->isDecal()) {
         ImGui::SeparatorText("Decal");

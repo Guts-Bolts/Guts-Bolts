@@ -722,10 +722,55 @@ label.TextScaled = true
 label.Parent = sign
 ```
 
+**Gradients, scaling, shapes and 3D previews:**
+
+- **UIGradient**: put it inside a Frame, label, button or picture and its
+  background (and its text and picture) fades from colour to colour. `Color`
+  is a `ColorSequence`, `Transparency` a `NumberSequence`, `Rotation` turns it
+  (0 = left to right, 90 = top to bottom) and `Offset` slides it along.
+- **UIScale**: makes the object it's in, and everything inside it (text,
+  corners and outlines too), `Scale` times bigger. It grows around its
+  `AnchorPoint`. In a ScreenGui it scales everything on the screen.
+- **UIAspectRatioConstraint**: keeps the object it's in the same shape on every
+  screen. `AspectRatio` is width / height. `AspectType` `FitWithinMaxSize`
+  makes it as big as fits in its `Size`; `ScaleWithParentSize` keeps its size
+  along `DominantAxis` (`Width` or `Height`) and works out the other side.
+- **ViewportFrame**: shows the parts and models inside it as a little 3D
+  picture: an item in a shop, a character preview, a spinning trophy. Put a
+  **Camera** in it and make it the frame's `CurrentCamera` (with no camera it
+  frames what's inside by itself). `Ambient`, `LightColor` and
+  `LightDirection` light it. The parts in it aren't in the world: they don't
+  fall or collide and rays don't hit them. A **WorldModel** inside it can hold
+  them too. The picture is only drawn while the frame is on screen, and only
+  again when something in it changes.
+
+```lua
+local card = Instance.new("Frame")
+card.Size = UDim2.fromScale(0.3, 0.3)
+card.Parent = gui
+local fade = Instance.new("UIGradient")
+fade.Color = ColorSequence.new(Color3.fromRGB(255, 80, 0), Color3.fromRGB(120, 0, 255))
+fade.Rotation = 90
+fade.Parent = card
+Instance.new("UIAspectRatioConstraint", card).AspectRatio = 1.5
+
+local preview = Instance.new("ViewportFrame")
+preview.Size = UDim2.fromScale(1, 1)
+preview.BackgroundTransparency = 1
+preview.Parent = card
+local sword = workspace.Sword:Clone()
+sword.Parent = preview
+local cam = Instance.new("Camera")
+cam.CFrame = CFrame.new(Vector3.new(0, 2, -6), sword:GetPivot().Position)
+cam.Parent = preview
+preview.CurrentCamera = cam
+```
+
 In multiplayer, everyone sees the same UI. When anyone clicks a button, the
 host's scripts hear about it, and the same goes for what they type in a TextBox
 (when they press Enter or click away). Roblox files keep their UI: ScreenGuis in a
-place's StarterGui are imported, and exported back to Roblox.
+place's StarterGui are imported, and exported back to Roblox (gradients, UIScales,
+aspect ratio constraints and ViewportFrames with their cameras too).
 
 ## Animations (the Animation Editor)
 

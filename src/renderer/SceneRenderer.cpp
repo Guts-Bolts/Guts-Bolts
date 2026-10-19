@@ -413,7 +413,8 @@ void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, 
     m_depth->setMat4("uLightSpace", lightSpace);
     scene.forEach([&](SceneNode* node) {
         if (!node->mesh || !node->visible || !node->castShadow) return;
-        for (SceneNode* p = node->parent; p; p = p->parent) if (!p->visible) return;   // inside something hidden (a backpack)
+        for (SceneNode* p = node->parent; p; p = p->parent)   // inside something hidden (a backpack) or a ViewportFrame
+            if (!p->visible || p->isViewportFrame()) return;
         if (node->kind != NodeKind::Part || node->transparency > 0.5f) return;
         const glm::mat4 m = node->worldMatrix();
         if (tooFar(glm::vec3(m[3]), partRadius(m))) return;
@@ -1144,7 +1145,8 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         stack.pop_back();
         if (!node->visible) continue;
         ff = ff || node->hasForceField();
-        for (auto& c : node->children) stack.push_back({c.get(), ff});
+        if (!node->isViewportFrame())   // (the parts in a ViewportFrame are only its picture)
+            for (auto& c : node->children) stack.push_back({c.get(), ff});
         if (node->isDecal() && !node->texture.empty() && node->shownTransparency() < 0.99f &&
             node->parent && node->parent->kind == NodeKind::Part)
             if (!tooFar(glm::vec3(node->parent->worldMatrix()[3]), partRadius(node->parent->worldMatrix())))

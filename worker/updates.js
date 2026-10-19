@@ -117,6 +117,19 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'snow-globe', name: 'Snow Globe', time: 1791871200, tag: 'Engine',
+    summary: 'Game UI can hold a little 3D world now, and fade, grow and keep its shape on every screen.',
+    items: [
+      'ViewportFrame: put parts and models in it and they show up as a little 3D picture, great for shop items and character previews',
+      'Give it a Camera as its CurrentCamera to pick the view, and light it with Ambient, LightColor and LightDirection',
+      'Parts in a ViewportFrame are only a picture: they don\'t fall, collide or get hit by rays, and they\'re only drawn while the frame is on screen',
+      'UIGradient fades a frame, its text and its picture from colour to colour, with Rotation and Offset',
+      'UIScale makes a frame and everything inside it bigger or smaller',
+      'UIAspectRatioConstraint keeps a frame the same shape on every screen size',
+      'All four can be inserted and edited in Studio, are saved and sent to every player, and are kept when you import or export a place file',
+    ],
+  },
+  {
     id: 'hotkey-heist', name: 'Hotkey Heist', time: 1791867600, tag: 'Engine',
     summary: 'Games can bind their own keys and controller buttons, and give phones their own on-screen buttons.',
     items: [

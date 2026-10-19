@@ -215,7 +215,8 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
                           "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
         {"Body Movers (classic)", {"BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce"}},
         {"User Interface", {"ScreenGui", "BillboardGui", "SurfaceGui", "Frame", "TextLabel", "TextButton", "ImageLabel", "ImageButton", "TextBox", "ScrollingFrame",
-                            "UICorner", "UIStroke", "UIShadow", "UIBlur", "UIListLayout", "UIGridLayout", "UIPadding"}},
+                            "UICorner", "UIStroke", "UIShadow", "UIBlur", "UIGradient", "UIScale", "UIAspectRatioConstraint",
+                            "UIListLayout", "UIGridLayout", "UIPadding", "ViewportFrame", "Camera", "WorldModel"}},
         {"Values", {"IntValue", "NumberValue", "StringValue", "BoolValue"}},
     };
     for (const Group& g : groups) {
@@ -436,6 +437,7 @@ std::string className(const SceneNode& n) {
         case NodeKind::FluidEmitter: return "FluidEmitter";
         case NodeKind::Mover:        return kMoverClassNames[(int)n.mover.type];
         case NodeKind::Gui:        return kGuiClassNames[(int)n.gui.type];
+        case NodeKind::Camera:     return "Camera";
         case NodeKind::Constraint: return std::string(kConstraintNames[(int)n.constraintType]) + "Constraint";
         default: return n.name == "SpawnLocation" ? "SpawnLocation" : "Part";
     }

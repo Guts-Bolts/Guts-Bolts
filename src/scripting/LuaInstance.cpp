@@ -113,6 +113,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Decal:      return "Decal";
         case NodeKind::Animation:  return "Animation";
         case NodeKind::Gui:        return kGuiClassNames[(int)n->gui.type];
+        case NodeKind::Camera:     return "Camera";
         case NodeKind::Sound:      return "Sound";
         case NodeKind::Attachment: return "Attachment";
         case NodeKind::FluidSystem:  return "FluidSystem";
@@ -133,6 +134,7 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
     if (cls == mine) return true;
     if (n->kind == NodeKind::Part && (cls == "BasePart" || cls == "Part" || cls == "PVInstance")) return true;
     if (n->kind == NodeKind::Model && (cls == "Model" || cls == "Folder" || cls == "PVInstance")) return true;
+    if (n->kind == NodeKind::Model && cls == "WorldRoot" && mine == "WorldModel") return true;
     if (n->kind == NodeKind::Script && (cls == "LuaSourceContainer" || (cls == "BaseScript" && !n->isModule) ||
                                         (cls == "Script" && n->isLocal))) return true;   // LocalScript is a Script
     if (n->kind == NodeKind::Light && cls == "Light") return true;
@@ -150,6 +152,7 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
         if (n->isGuiButton() && cls == "GuiButton") return true;
         if (isGuiModifier(n->gui.type) && cls == "UIComponent") return true;
         if (isGuiLayout(n->gui.type) && (cls == "UIGridStyleLayout" || cls == "UILayout")) return true;
+        if (n->gui.type == GuiType::UIAspectRatioConstraint && cls == "UIConstraint") return true;
     }
     return false;
 }
@@ -975,6 +978,11 @@ float massOf(const SceneNode* n) {
     return Physics::densityOf(n) * n->transform.scale.x * n->transform.scale.y * n->transform.scale.z;
 }
 
+void pushColorSequence(lua_State* L, const std::vector<ColorKey>& keys);
+void pushNumberSequence(lua_State* L, const std::vector<NumberKey>& keys);
+std::vector<ColorKey> checkColorSequence(lua_State* L, int idx);
+std::vector<NumberKey> checkNumberSequence(lua_State* L, int idx, float lo, float hi);
+
 // Push a UI property; false if `k` isn't one.
 bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
     const GuiProps& g = n->gui;
@@ -1038,6 +1046,32 @@ bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "Transparency")) { lua_pushnumber(L, g.bgTransparency); return true; }
         if (is(k, "Enabled"))      { lua_pushboolean(L, n->enabled); return true; }
         return false;
+    }
+    if (g.type == GuiType::UIGradient) {
+        if (is(k, "Color"))        { pushColorSequence(L, g.gradColor); return true; }
+        if (is(k, "Transparency")) { pushNumberSequence(L, g.gradTransparency); return true; }
+        if (is(k, "Rotation"))     { lua_pushnumber(L, g.gradRotation); return true; }
+        if (is(k, "Offset"))       { LuaApi::pushVector2(L, g.gradOffset); return true; }
+        if (is(k, "Enabled"))      { lua_pushboolean(L, n->enabled); return true; }
+        return false;
+    }
+    if (g.type == GuiType::UIScale) {
+        if (is(k, "Scale")) { lua_pushnumber(L, g.scale); return true; }
+        return false;
+    }
+    if (g.type == GuiType::UIAspectRatioConstraint) {
+        if (is(k, "AspectRatio"))  { lua_pushnumber(L, g.aspectRatio); return true; }
+        if (is(k, "AspectType"))   { lua_pushstring(L, g.aspectType ? "ScaleWithParentSize" : "FitWithinMaxSize"); return true; }
+        if (is(k, "DominantAxis")) { lua_pushstring(L, g.dominantAxis ? "Height" : "Width"); return true; }
+        return false;
+    }
+    if (g.type == GuiType::ViewportFrame) {
+        if (is(k, "CurrentCamera"))  { if (g.camera) LuaApi::pushInstance(L, g.camera); else lua_pushnil(L); return true; }
+        if (is(k, "Ambient"))        { LuaApi::pushColor3(L, g.ambient); return true; }
+        if (is(k, "LightColor"))     { LuaApi::pushColor3(L, g.lightColor); return true; }
+        if (is(k, "LightDirection")) { LuaApi::pushVector3(L, g.lightDir); return true; }
+        if (is(k, "ImageColor3"))    { LuaApi::pushColor3(L, g.imageColor); return true; }
+        if (is(k, "ImageTransparency")) { lua_pushnumber(L, g.imageTransparency); return true; }
     }
     if (isGuiLayout(g.type)) {
         if (is(k, "AbsoluteContentSize")) { GameGui::refresh(*E(L)->scene()); LuaApi::pushVector2(L, g.contentSize); return true; }
@@ -1195,6 +1229,66 @@ bool guiNewIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "Enabled"))      { n->enabled = lua_toboolean(L, 3); return true; }
         if (is(k, "ApplyStrokeMode") || is(k, "LineJoinMode")) return true;
         return false;
+    }
+    if (g.type == GuiType::UIGradient) {   // Color: a ColorSequence (or a Color3); Transparency: a NumberSequence (or a number)
+        if (is(k, "Color"))        { g.gradColor = checkColorSequence(L, 3); return true; }
+        if (is(k, "Transparency")) { g.gradTransparency = checkNumberSequence(L, 3, 0.0f, 1.0f); return true; }
+        if (is(k, "Rotation"))     { const float r = num(); g.gradRotation = std::isfinite(r) ? std::fmod(r, 360.0f) : 0.0f; return true; }
+        if (is(k, "Offset"))       { g.gradOffset = LuaApi::checkVector2(L, 3); return true; }
+        if (is(k, "Enabled"))      { n->enabled = lua_toboolean(L, 3); return true; }
+        return false;
+    }
+    if (g.type == GuiType::UIScale) {
+        if (is(k, "Scale")) {
+            const float v = num();
+            if (!std::isfinite(v) || v < 0.0f) luaL_error(L, "UIScale.Scale must be 0 or more (got %f)", (double)v);
+            g.scale = std::min(v, 100.0f);
+            return true;
+        }
+        return false;
+    }
+    if (g.type == GuiType::UIAspectRatioConstraint) {
+        if (is(k, "AspectRatio")) {
+            const float v = num();
+            if (!std::isfinite(v) || v <= 0.0f) luaL_error(L, "AspectRatio must be more than 0 (width / height, got %f)", (double)v);
+            g.aspectRatio = std::clamp(v, 0.001f, 1000.0f);
+            return true;
+        }
+        if (is(k, "AspectType")) {   // Enum.AspectType.FitWithinMaxSize / ScaleWithParentSize
+            const char* v = luaL_checkstring(L, 3);
+            if (is(v, "FitWithinMaxSize")) g.aspectType = 0;
+            else if (is(v, "ScaleWithParentSize")) g.aspectType = 1;
+            else luaL_error(L, "'%s' isn't an AspectType (FitWithinMaxSize or ScaleWithParentSize)", v);
+            return true;
+        }
+        if (is(k, "DominantAxis")) {   // Enum.DominantAxis.Width / Height
+            const char* v = luaL_checkstring(L, 3);
+            if (is(v, "Width")) g.dominantAxis = 0;
+            else if (is(v, "Height")) g.dominantAxis = 1;
+            else luaL_error(L, "'%s' isn't a DominantAxis (Width or Height)", v);
+            return true;
+        }
+        return false;
+    }
+    if (g.type == GuiType::ViewportFrame) {
+        if (is(k, "CurrentCamera")) {   // a Camera (made with Instance.new("Camera")), or nil
+            if (lua_isnoneornil(L, 3)) { g.camera = 0; return true; }
+            if (luaL_testudata(L, 3, kCam))
+                luaL_error(L, "CurrentCamera: use a Camera made with Instance.new(\"Camera\") (workspace.CurrentCamera is the player's own)");
+            SceneNode* c = LuaApi::checkNode(L, 3);
+            if (!c->isCamera()) luaL_error(L, "CurrentCamera must be a Camera, not %s \"%s\"", className(L, c), c->name.c_str());
+            g.camera = c->id;
+            if (!c->parent) {   // (a Camera with no Parent goes in the frame, so it's saved and copied with it)
+                std::string err;
+                E(L)->setParent(c, n, err);
+            }
+            return true;
+        }
+        if (is(k, "Ambient"))        { g.ambient = glm::clamp(LuaApi::checkColor3(L, 3), 0.0f, 1.0f); return true; }
+        if (is(k, "LightColor"))     { g.lightColor = glm::clamp(LuaApi::checkColor3(L, 3), 0.0f, 1.0f); return true; }
+        if (is(k, "LightDirection")) { g.lightDir = LuaApi::checkVector3(L, 3); return true; }
+        if (is(k, "ImageColor3"))    { g.imageColor = LuaApi::checkColor3(L, 3); return true; }
+        if (is(k, "ImageTransparency")) { g.imageTransparency = t01(); return true; }
     }
     if (isGuiLayout(g.type)) {
         if (is(k, "FillDirection"))       { g.fill = is(luaL_checkstring(L, 3), "Horizontal") ? 1 : 0; return true; }
@@ -1569,6 +1663,16 @@ int inst_index(lua_State* L) {
         if (is(k, "WorldPosition")) { LuaApi::pushVector3(L, worldPosition(n)); return 1; }
     }
     if (n->isGui() && guiIndex(L, n, k)) return 1;
+    if (n->isCamera()) {   // a Camera object (a ViewportFrame's CurrentCamera)
+        if (is(k, "FieldOfView")) { lua_pushnumber(L, n->fieldOfView); return 1; }
+        if (is(k, "Focus"))       { LuaApi::pushCFrame(L, getCFrame(n)); return 1; }
+        if (is(k, "CameraType"))  { lua_pushstring(L, "Fixed"); return 1; }
+        if (is(k, "ViewportSize")) {   // the ViewportFrame it's in, as last drawn
+            const SceneNode* f = n->parent && n->parent->isViewportFrame() ? n->parent : nullptr;
+            LuaApi::pushVector2(L, f ? f->gui.absSize : glm::vec2(0.0f));
+            return 1;
+        }
+    }
     if (n->isMover() && moverIndex(L, n, k)) return 1;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointIndex(L, n, k)) return 1;
     if (n->isParticles() && particleIndex(L, n, k)) return 1;
@@ -1873,6 +1977,11 @@ int inst_newindex(lua_State* L) {
         if (is(k, "WorldPosition")) { setWorldPosition(L, n, LuaApi::checkVector3(L, 3)); return 0; }
     }
     if (n->isGui() && guiNewIndex(L, n, k)) return 0;
+    if (n->isCamera()) {
+        if (is(k, "FieldOfView")) { n->fieldOfView = std::clamp((float)luaL_checknumber(L, 3), 1.0f, 120.0f); return 0; }
+        if (is(k, "Focus") || is(k, "CameraType") || is(k, "CameraSubject") || is(k, "FieldOfViewMode") ||
+            is(k, "DiagonalFieldOfView") || is(k, "MaxAxisFieldOfView") || is(k, "HeadLocked")) return 0;   // (accepted)
+    }
     if (n->isMover() && moverNewIndex(L, n, k)) return 0;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointNewIndex(L, n, k)) return 0;
     if (n->isParticles() && particleNewIndex(L, n, k)) return 0;
@@ -2256,6 +2365,13 @@ int inst_new(lua_State* L) {
     PrimitiveType shape;
     if (cls == "Model" || cls == "Folder") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Model);
+    } else if (cls == "WorldModel") {   // (a Model in a ViewportFrame; ours are all the same)
+        n = std::make_unique<SceneNode>(cls, NodeKind::Model);
+        Attribute a;
+        a.name = "RobloxClass"; a.type = Attribute::String; a.s = "WorldModel";
+        n->attributes.push_back(a);
+    } else if (cls == "Camera") {   // for a ViewportFrame's CurrentCamera
+        n = std::make_unique<SceneNode>(cls, NodeKind::Camera);
     } else if (cls == "Script" || cls == "LocalScript" || cls == "ModuleScript") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Script);
         n->isLocal = cls == "LocalScript";

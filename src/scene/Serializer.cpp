@@ -54,6 +54,7 @@ const char* kindName(NodeKind k) {
         case NodeKind::Highlight:    return "Highlight";
         case NodeKind::Trail:        return "Trail";
         case NodeKind::Beam:         return "Beam";
+        case NodeKind::Camera:       return "Camera";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Particles:    return "Particles";
         default:               return "Part";
@@ -80,6 +81,7 @@ NodeKind kindFrom(const std::string& s) {
     if (s == "Highlight")    return NodeKind::Highlight;
     if (s == "Trail")        return NodeKind::Trail;
     if (s == "Beam")         return NodeKind::Beam;
+    if (s == "Camera")       return NodeKind::Camera;
     if (s == "ClickDetector") return NodeKind::ClickDetector;
     if (s == "Particles")    return NodeKind::Particles;
     return NodeKind::Part;
@@ -441,6 +443,22 @@ nlohmann::json guiToJson(const GuiProps& g) {
     }
     if (g.type == GuiType::UIBlur) j["blurSize"] = g.blurSize;
     if (g.type == GuiType::UIStroke) j["thickness"] = g.thickness;
+    if (g.type == GuiType::UIGradient) {
+        json col = json::array(), tr = json::array();
+        for (const ColorKey& k : g.gradColor) col.push_back({k.t, k.c.r, k.c.g, k.c.b});
+        for (const NumberKey& k : g.gradTransparency) tr.push_back({k.t, k.v});
+        j["gradColor"] = col; j["gradT"] = tr;
+        j["gradRot"] = g.gradRotation; j["gradOffset"] = json::array({g.gradOffset.x, g.gradOffset.y});
+    }
+    if (g.type == GuiType::UIScale) j["scale"] = g.scale;
+    if (g.type == GuiType::UIAspectRatioConstraint) {
+        j["aspect"] = g.aspectRatio; j["aspectType"] = g.aspectType; j["dominantAxis"] = g.dominantAxis;
+    }
+    if (g.type == GuiType::ViewportFrame) {
+        if (g.camera) j["camera"] = g.camera;   // (a node ID, like a BillboardGui's adornee)
+        j["ambient"] = vec(g.ambient); j["lightColor"] = vec(g.lightColor); j["lightDir"] = vec(g.lightDir);
+        j["imageColor"] = vec(g.imageColor); j["imageT"] = g.imageTransparency;
+    }
     if (g.type == GuiType::TextBox) {
         j["placeholder"] = g.placeholder; j["placeholderColor"] = vec(g.placeholderColor);
         j["clearOnFocus"] = g.clearOnFocus; j["editable"] = g.editable; j["multiLine"] = g.multiLine;
@@ -553,6 +571,33 @@ void guiFromJson(GuiProps& g, const nlohmann::json& j) {
     g.pixelsPerStud = std::clamp(get<float>(j, "pps", g.pixelsPerStud), 1.0f, 1000.0f);
     if (j.contains("surfaceCanvas") && j["surfaceCanvas"].is_array() && j["surfaceCanvas"].size() == 2)
         try { g.surfaceCanvas = glm::max(glm::vec2(1.0f), glm::vec2(j["surfaceCanvas"][0].get<float>(), j["surfaceCanvas"][1].get<float>())); } catch (...) {}
+    // UIGradient (sequences: [t, r, g, b] / [t, v], at most 20 keys, like a Trail's)
+    if (auto it = j.find("gradColor"); it != j.end() && it->is_array() && !it->empty()) {
+        std::vector<ColorKey> keys;
+        for (auto& k : *it)
+            if (k.is_array() && k.size() == 4 && k[0].is_number() && k[1].is_number() && k[2].is_number() && k[3].is_number() && keys.size() < 20)
+                keys.push_back({std::clamp(k[0].get<float>(), 0.0f, 1.0f),
+                                glm::clamp(glm::vec3(k[1].get<float>(), k[2].get<float>(), k[3].get<float>()), 0.0f, 1.0f)});
+        if (!keys.empty()) g.gradColor = keys;
+    }
+    if (auto it = j.find("gradT"); it != j.end() && it->is_array() && !it->empty()) {
+        std::vector<NumberKey> keys;
+        for (auto& k : *it)
+            if (k.is_array() && k.size() == 2 && k[0].is_number() && k[1].is_number() && keys.size() < 20)
+                keys.push_back({std::clamp(k[0].get<float>(), 0.0f, 1.0f), std::clamp(k[1].get<float>(), 0.0f, 1.0f)});
+        if (!keys.empty()) g.gradTransparency = keys;
+    }
+    g.gradRotation = get<float>(j, "gradRot", g.gradRotation);
+    if (j.contains("gradOffset") && j["gradOffset"].is_array() && j["gradOffset"].size() == 2)
+        try { g.gradOffset = {j["gradOffset"][0].get<float>(), j["gradOffset"][1].get<float>()}; } catch (...) {}
+    g.scale = std::clamp(get<float>(j, "scale", g.scale), 0.0f, 100.0f);
+    g.aspectRatio = std::clamp(get<float>(j, "aspect", g.aspectRatio), 0.001f, 1000.0f);
+    g.aspectType = std::clamp(get<int>(j, "aspectType", g.aspectType), 0, 1);
+    g.dominantAxis = std::clamp(get<int>(j, "dominantAxis", g.dominantAxis), 0, 1);
+    g.camera = get<uint64_t>(j, "camera", g.camera);
+    g.ambient = glm::clamp(vec(j, "ambient", g.ambient), 0.0f, 1.0f);
+    g.lightColor = glm::clamp(vec(j, "lightColor", g.lightColor), 0.0f, 1.0f);
+    g.lightDir = vec(j, "lightDir", g.lightDir);
 }
 
 nlohmann::json collisionGroupsToJson(const CollisionGroups& g) {
@@ -663,6 +708,7 @@ json toJson(const SceneNode& n) {
         j["gui"] = guiToJson(n.gui);
         j["enabled"] = n.enabled;
     }
+    if (n.kind == NodeKind::Camera) j["fov"] = n.fieldOfView;
     if (n.isPart() && !n.texture.empty()) j["texture"] = n.texture;   // clothing pictures on a character
     if (n.kind == NodeKind::Decal) {
         j["texture"] = n.texture;
@@ -860,6 +906,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         if (j.contains("gui") && j["gui"].is_object()) guiFromJson(n->gui, j["gui"]);
         n->enabled = get<bool>(j, "enabled", true);
     }
+    if (n->kind == NodeKind::Camera) n->fieldOfView = std::clamp(get<float>(j, "fov", 70.0f), 1.0f, 120.0f);
     if (n->isPart()) n->texture = get<std::string>(j, "texture", std::string());
     if (n->kind == NodeKind::Decal) {
         n->texture = get<std::string>(j, "texture", std::string());
@@ -1201,6 +1248,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.viscosity = src->viscosity; dst.surfaceTension = src->surfaceTension;
     dst.fluidRate = src->fluidRate; dst.fluidVelocity = src->fluidVelocity; dst.fluidSystem = src->fluidSystem;
     dst.mover = src->mover;
+    dst.fieldOfView = src->fieldOfView;
 }
 
 std::string nodeToString(const SceneNode& node) { return toJson(node).dump(); }
@@ -1235,6 +1283,8 @@ void remapRefs(SceneNode& n, const std::unordered_map<uint64_t, uint64_t>& map) 
     }
     if (n.isGui() && n.gui.adornee)   // (a copied BillboardGui sits on the copied part, if it came along)
         if (auto it = map.find(n.gui.adornee); it != map.end()) n.gui.adornee = it->second;
+    if (n.isGui() && n.gui.camera)   // (a copied ViewportFrame looks through the copied Camera, if it came along)
+        if (auto it = map.find(n.gui.camera); it != map.end()) n.gui.camera = it->second;
     if (n.isHighlight() && n.highlight.adornee)   // (the same for a copied Highlight)
         if (auto it = map.find(n.highlight.adornee); it != map.end()) n.highlight.adornee = it->second;
     if (n.isEffect()) {   // (a copied Trail / Beam uses the copied attachments)

@@ -1897,4 +1897,39 @@ void main() {
 }
 )";
 
+// ---------------------------------------------------------------------------
+// ViewportFrame: the parts inside a UI frame as a little 3D picture, lit the
+// simple Roblox way (Ambient + LightColor from LightDirection), no post-processing.
+// ---------------------------------------------------------------------------
+inline const char* viewportVert = R"(#version 410 core
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNormal;
+uniform mat4 uModel;
+uniform mat4 uViewProj;
+uniform mat3 uNormalMat;
+out vec3 vNormal;
+void main() {
+    vNormal = uNormalMat * aNormal;
+    gl_Position = uViewProj * uModel * vec4(aPos, 1.0);
+}
+)";
+
+inline const char* viewportFrag = R"(#version 410 core
+in vec3 vNormal;
+uniform vec3  uColor;
+uniform vec3  uAmbient;
+uniform vec3  uLightColor;
+uniform vec3  uLightDir;    // the way the light travels (normalized)
+uniform float uAlpha;
+uniform int   uGlow;        // Neon: lit by itself
+out vec4 FragColor;
+void main() {
+    vec3 n = normalize(vNormal);
+    if (!gl_FrontFacing) n = -n;
+    float d = max(dot(n, -uLightDir), 0.0);
+    vec3 c = uGlow == 1 ? uColor : uColor * (uAmbient + uLightColor * d);
+    FragColor = vec4(min(c, vec3(1.0)), uAlpha);
+}
+)";
+
 } // namespace Shaders
