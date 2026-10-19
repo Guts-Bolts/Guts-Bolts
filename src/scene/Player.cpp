@@ -405,21 +405,50 @@ void Player::applyPose(SceneNode* r, const CharacterPose& pose) {
 // ---------------------------------------------------------------------------
 
 namespace {
-// A random spot on top of the first visible "SpawnLocation" part (random so
-// players in multiplayer don't all appear inside each other).
-bool findSpawnLocation(SceneNode* node, glm::vec3& out) {
-    if (node->name == "SpawnLocation" && node->isPart() && node->visible) {
-        AABB b = Physics::worldBounds(node);
-        glm::vec3 c = (b.min + b.max) * 0.5f;
-        glm::vec3 half = glm::max((b.max - b.min) * 0.5f - glm::vec3(0.6f), glm::vec3(0.0f));
-        out = {c.x + (rand01() * 2 - 1) * half.x, b.max.y + 0.001f, c.z + (rand01() * 2 - 1) * half.z};
-        return true;
-    }
-    for (auto& c : node->children)
-        if (findSpawnLocation(c.get(), out)) return true;
-    return false;
+void collectSpawns(SceneNode* node, std::vector<SceneNode*>& out) {
+    if (node->isSpawnLocation() && node->visible) out.push_back(node);
+    for (auto& c : node->children) collectSpawns(c.get(), out);
 }
+bool sameTeamColor(const glm::vec3& a, const glm::vec3& b) { return glm::length(a - b) < 0.02f; }
 } // namespace
+
+// Like Roblox: a Neutral SpawnLocation is for anybody, a team one only for players on
+// the team with its TeamColor; one of those at random. A random spot on top of it, so
+// players in multiplayer don't all appear inside each other.
+bool Player::findSpawn(Scene& scene, bool neutral, const glm::vec3& teamColor, glm::vec3& out) {
+    std::vector<SceneNode*> all, usable;
+    collectSpawns(scene.root(), all);
+    if (all.empty()) return false;
+    for (SceneNode* s : all)
+        if (s->spawnNeutral || (!neutral && sameTeamColor(s->teamColor, teamColor))) usable.push_back(s);
+    SceneNode* spawn = usable.empty() ? all.front()
+                                      : usable[std::min(usable.size() - 1, (size_t)(rand01() * (float)usable.size()))];
+    AABB b = Physics::worldBounds(spawn);
+    glm::vec3 c = (b.min + b.max) * 0.5f;
+    glm::vec3 half = glm::max((b.max - b.min) * 0.5f - glm::vec3(0.6f), glm::vec3(0.0f));
+    out = {c.x + (rand01() * 2 - 1) * half.x, b.max.y + 0.001f, c.z + (rand01() * 2 - 1) * half.z};
+    return true;
+}
+
+glm::vec3 Player::spawnSpot() const {
+    glm::vec3 spawnAt = m_spawn;
+    findSpawn(*m_scene, m_neutral, m_teamColor, spawnAt);
+    if (SceneNode* cp = m_checkpoint ? m_scene->findById(m_checkpoint) : nullptr) {   // a checkpoint you reached
+        AABB b = Physics::worldBounds(cp);
+        spawnAt = glm::vec3((b.min.x + b.max.x) * 0.5f, b.max.y + 0.05f, (b.min.z + b.max.z) * 0.5f);
+    }
+    return spawnAt;
+}
+
+void Player::placeAtSpawn() {
+    SceneNode* r = root();
+    if (!r || m_dead) return;
+    standUp(false);
+    r->transform.position = spawnSpot();
+    m_velocity = glm::vec3(0.0f);
+    m_grounded = false;
+    m_groundId = 0;
+}
 
 void Player::beginPlay() {
     m_seatId = 0;   // (off any seat)
@@ -447,6 +476,8 @@ void Player::endPlay() {
 }
 
 void Player::respawn(bool firstSpawn) {
+    if (!firstSpawn && onRespawning) onRespawning();   // (Player.CharacterRemoving: still where it died)
+    m_aliveTime = 0.0f;
     m_seatId = 0;   // (off any seat)
     m_sitHere = m_sitPending = false;
     m_tilt = m_tiltVel = m_tripTime = m_getUp = 0.0f;   // back on your feet
@@ -459,12 +490,7 @@ void Player::respawn(bool firstSpawn) {
         auto it = m_rest.find(c->id);
         if (it != m_rest.end()) c->transform = it->second;
     }
-    glm::vec3 spawnAt = m_spawn;
-    findSpawnLocation(m_scene->root(), spawnAt);
-    if (SceneNode* cp = m_checkpoint ? m_scene->findById(m_checkpoint) : nullptr) {   // a checkpoint you reached
-        AABB b = Physics::worldBounds(cp);
-        spawnAt = glm::vec3((b.min.x + b.max.x) * 0.5f, b.max.y + 0.05f, (b.min.z + b.max.z) * 0.5f);
-    }
+    const glm::vec3 spawnAt = spawnSpot();
     r->transform = m_rootRest;
     r->transform.position = spawnAt;
 
@@ -1012,6 +1038,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     if (knocked && sitting()) standUp(false);
 
     if (m_dead) { updateDeath(dt, physics); return; }
+    m_aliveTime += dt;
 
     if (m_spawnFF && (m_spawnFFTime -= dt) <= 0.0f) {
         if (SceneNode* ff = m_scene->findById(m_spawnFF)) m_scene->removeNode(ff);

@@ -54,6 +54,8 @@ const char* kindName(NodeKind k) {
         case NodeKind::Highlight:    return "Highlight";
         case NodeKind::Trail:        return "Trail";
         case NodeKind::Beam:         return "Beam";
+        case NodeKind::ClickDetector: return "ClickDetector";
+        case NodeKind::Particles:    return "Particles";
         default:               return "Part";
     }
 }
@@ -78,6 +80,8 @@ NodeKind kindFrom(const std::string& s) {
     if (s == "Highlight")    return NodeKind::Highlight;
     if (s == "Trail")        return NodeKind::Trail;
     if (s == "Beam")         return NodeKind::Beam;
+    if (s == "ClickDetector") return NodeKind::ClickDetector;
+    if (s == "Particles")    return NodeKind::Particles;
     return NodeKind::Part;
 }
 
@@ -101,8 +105,9 @@ PrimitiveType shapeFrom(const std::string& s) {
 }
 
 Material materialFrom(const std::string& s) {
-    for (int i = 0; i < kMaterialCount; ++i) if (s == kMaterialNames[i]) return (Material)i;
-    return Material::Plastic;
+    Material m = Material::Plastic;
+    materialFromName(s, m);   // an unknown name (from a newer version?) stays Plastic
+    return m;
 }
 
 } // namespace
@@ -128,6 +133,17 @@ void promptFromJson(const nlohmann::json& j, PromptProps& p, bool& enabled) {
     p.lineOfSight = j.value("los", true);
     p.clickable   = j.value("click", true);
     enabled       = j.value("on", true);
+}
+
+nlohmann::json clickToJson(const ClickProps& c) {
+    nlohmann::json j = {{"range", c.range}};
+    if (!c.cursor.empty()) j["cursor"] = c.cursor;
+    return j;
+}
+
+void clickFromJson(const nlohmann::json& j, ClickProps& c) {
+    c.range  = std::clamp(j.value("range", 16.0f), 0.0f, 500.0f);
+    c.cursor = j.value("cursor", std::string());
 }
 
 nlohmann::json highlightToJson(const HighlightProps& h, bool enabled) {
@@ -228,6 +244,116 @@ void effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled) {
     e.textureSpeed = num("texSpeed", 1.0f, -1000.0f, 1000.0f);
     e.textureWrap = j.value("texWrap", false);
     enabled = j.value("on", true);
+}
+
+nlohmann::json particleToJson(const ParticleProps& p, bool enabled) {
+    json j = {{"class", kParticleClassNames[(int)p.type]}};
+    if (!enabled) j["on"] = false;
+    if (p.emits)  j["emits"] = p.emits;     // (running counts: other players do the same Emit / Clear)
+    if (p.clears) j["clears"] = p.clears;
+    if (p.type != ParticleType::ParticleEmitter) {
+        j["color"] = vec(p.color1);
+        if (p.type == ParticleType::Fire)  { j["color2"] = vec(p.color2); j["heat"] = p.rise; j["size"] = p.fxSize; }
+        if (p.type == ParticleType::Smoke) { j["rise"] = p.rise; j["size"] = p.fxSize; j["opacity"] = p.opacity; }
+        return j;
+    }
+    json col = json::array(), sz = json::array(), tr = json::array();
+    for (const ColorKey& k : p.color) col.push_back({k.t, k.c.r, k.c.g, k.c.b});
+    for (const NumberKey& k : p.size) sz.push_back({k.t, k.v});
+    for (const NumberKey& k : p.transparency) tr.push_back({k.t, k.v});
+    auto range = [](glm::vec2 r) { return json::array({r.x, r.y}); };
+    j["rate"] = p.rate;
+    j["lifetime"] = range(p.lifetime);
+    j["speed"] = range(p.speed);
+    j["spread"] = range(p.spread);
+    j["rotation"] = range(p.rotation);
+    j["rotSpeed"] = range(p.rotSpeed);
+    j["colors"] = col;
+    j["sizes"] = sz;
+    j["transparency"] = tr;
+    if (!p.texture.empty())               j["texture"] = p.texture;
+    if (p.lightEmission > 0.0f)           j["glow"] = p.lightEmission;
+    if (p.acceleration != glm::vec3(0.0f)) j["accel"] = vec(p.acceleration);
+    if (p.drag != 0.0f)                   j["drag"] = p.drag;
+    if (p.direction != Face::Top)         j["direction"] = kFaceNames[(int)p.direction];
+    if (p.locked)                         j["lockedToPart"] = true;
+    return j;
+}
+
+void particleFromJson(const nlohmann::json& j, ParticleProps& p, bool& enabled, bool update) {
+    ParticleType type = ParticleType::ParticleEmitter;
+    const std::string cls = j.value("class", std::string());
+    for (int i = 0; i < kParticleTypeCount; ++i) if (cls == kParticleClassNames[i]) type = (ParticleType)i;
+    // (Counts carry on; what's still to do here is only what's new since last time.)
+    const int emits = p.emits, clears = p.clears, pendingEmit = p.pendingEmit;
+    const bool pendingClear = p.pendingClear;
+    const bool same = update && p.type == type;
+    p = particleDefaults(type);
+    auto num = [&](const char* key, float fallback, float lo, float hi) {
+        auto it = j.find(key);
+        return it != j.end() && it->is_number() ? std::clamp(it->get<float>(), lo, hi) : fallback;
+    };
+    auto color = [&](const char* key, glm::vec3 fallback) {
+        auto it = j.find(key);
+        if (it == j.end() || !it->is_array() || it->size() != 3) return fallback;
+        for (auto& v : *it) if (!v.is_number()) return fallback;
+        return glm::vec3((*it)[0].get<float>(), (*it)[1].get<float>(), (*it)[2].get<float>());
+    };
+    auto range = [&](const char* key, glm::vec2 fallback, float lo, float hi) {
+        auto it = j.find(key);
+        if (it == j.end() || !it->is_array() || it->size() != 2 || !(*it)[0].is_number() || !(*it)[1].is_number()) return fallback;
+        glm::vec2 r(std::clamp((*it)[0].get<float>(), lo, hi), std::clamp((*it)[1].get<float>(), lo, hi));
+        if (r.y < r.x) std::swap(r.x, r.y);
+        return r;
+    };
+    auto numbers = [&](const char* key, std::vector<NumberKey>& out, float lo, float hi) {
+        auto it = j.find(key);
+        if (it == j.end() || !it->is_array() || it->empty()) return;
+        std::vector<NumberKey> keys;
+        for (auto& k : *it)
+            if (k.is_array() && k.size() == 2 && k[0].is_number() && k[1].is_number() && keys.size() < 20)
+                keys.push_back({std::clamp(k[0].get<float>(), 0.0f, 1.0f), std::clamp(k[1].get<float>(), lo, hi)});
+        if (!keys.empty()) out = keys;
+    };
+    enabled = j.value("on", true);
+    p.emits = j.value("emits", 0);
+    p.clears = j.value("clears", 0);
+    if (same) {   // the same object again (another player's update): do what they did since
+        p.pendingEmit = std::clamp(pendingEmit + std::max(0, p.emits - emits), 0, kMaxSpritesPerEmitter);
+        p.pendingClear = pendingClear || p.clears != clears;
+    }
+    if (type != ParticleType::ParticleEmitter) {
+        p.color1  = glm::clamp(color("color", p.color1), 0.0f, 1.0f);
+        p.color2  = glm::clamp(color("color2", p.color2), 0.0f, 1.0f);
+        p.rise    = num(type == ParticleType::Fire ? "heat" : "rise", p.rise, -25.0f, 25.0f);
+        p.fxSize  = num("size", p.fxSize, type == ParticleType::Fire ? 2.0f : 0.1f, type == ParticleType::Fire ? 30.0f : 100.0f);
+        p.opacity = num("opacity", p.opacity, 0.0f, 1.0f);
+        return;
+    }
+    p.rate     = num("rate", p.rate, 0.0f, 1e6f);
+    p.lifetime = range("lifetime", p.lifetime, 0.0f, 1000.0f);
+    p.speed    = range("speed", p.speed, -1e4f, 1e4f);
+    p.rotation = range("rotation", p.rotation, -36000.0f, 36000.0f);
+    p.rotSpeed = range("rotSpeed", p.rotSpeed, -36000.0f, 36000.0f);
+    if (auto it = j.find("spread"); it != j.end() && it->is_array() && it->size() == 2 && (*it)[0].is_number() && (*it)[1].is_number())
+        p.spread = {std::clamp((*it)[0].get<float>(), -360.0f, 360.0f), std::clamp((*it)[1].get<float>(), -360.0f, 360.0f)};   // (X, Y: not a range)
+    if (auto it = j.find("colors"); it != j.end() && it->is_array() && !it->empty()) {
+        std::vector<ColorKey> keys;
+        for (auto& k : *it)
+            if (k.is_array() && k.size() == 4 && k[0].is_number() && k[1].is_number() && k[2].is_number() && k[3].is_number() && keys.size() < 20)
+                keys.push_back({std::clamp(k[0].get<float>(), 0.0f, 1.0f),
+                                glm::clamp(glm::vec3(k[1].get<float>(), k[2].get<float>(), k[3].get<float>()), 0.0f, 1.0f)});
+        if (!keys.empty()) p.color = keys;
+    }
+    numbers("sizes", p.size, 0.0f, 1000.0f);
+    numbers("transparency", p.transparency, 0.0f, 1.0f);
+    if (auto it = j.find("texture"); it != j.end() && it->is_string()) p.texture = it->get<std::string>();
+    p.lightEmission = num("glow", 0.0f, 0.0f, 1.0f);
+    p.acceleration  = color("accel", glm::vec3(0.0f));
+    p.drag          = num("drag", 0.0f, -100.0f, 100.0f);
+    const std::string dir = j.value("direction", std::string("Top"));
+    for (int i = 0; i < 6; ++i) if (dir == kFaceNames[i]) p.direction = (Face)i;
+    p.locked = j.value("lockedToPart", false);
 }
 
 nlohmann::json guiToJson(const GuiProps& g) {
@@ -420,7 +546,13 @@ json toJson(const SceneNode& n) {
         if (n.density >= 0)    j["density"]    = n.density;
         if (n.friction >= 0)   j["friction"]   = n.friction;
         if (n.elasticity >= 0) j["elasticity"] = n.elasticity;
+        if (n.frictionWeight != 1.0f)   j["frictionWeight"]   = n.frictionWeight;
+        if (n.elasticityWeight != 1.0f) j["elasticityWeight"] = n.elasticityWeight;
+        // SpawnLocation: Neutral, TeamColor, AllowTeamChangeOnTouch (only if not Roblox's defaults)
+        if (!n.spawnNeutral || n.teamColor != kDefaultTeamColor || n.allowTeamChange)
+            j["spawn"] = {{"neutral", n.spawnNeutral}, {"teamColor", vec(n.teamColor)}, {"allowTeamChange", n.allowTeamChange}};
     }
+    if (n.kind == NodeKind::Model && n.primaryPart) j["primaryPart"] = n.primaryPart;   // (a node ID, like a constraint's ref0)
     if (n.kind == NodeKind::Constraint) {
         j["type"] = kConstraintNames[(int)n.constraintType];
         j["ref0"] = n.ref0; j["ref1"] = n.ref1;
@@ -498,8 +630,10 @@ json toJson(const SceneNode& n) {
     if (n.isLocal)  j["local"]    = true;
     if (n.remoteFunction) j["function"] = true;
     if (n.isPrompt()) j["prompt"] = Serializer::promptToJson(n.prompt, n.enabled);
+    if (n.isClickDetector()) j["click"] = Serializer::clickToJson(n.click);
     if (n.isHighlight()) j["highlight"] = Serializer::highlightToJson(n.highlight, n.enabled);
     if (n.isEffect()) j["effect"] = Serializer::effectToJson(n.effect, n.enabled, n.kind == NodeKind::Beam);
+    if (n.isParticles()) j["particles"] = Serializer::particleToJson(n.particle, n.enabled);
     if (n.locked)   j["locked"]   = true;
     if (!n.tags.empty()) j["tags"] = n.tags;
     if (!n.attributes.empty()) {
@@ -585,7 +719,15 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->density       = get<float>(j, "density", -1.0f);
         n->friction      = get<float>(j, "friction", -1.0f);
         n->elasticity    = get<float>(j, "elasticity", -1.0f);
+        n->frictionWeight   = get<float>(j, "frictionWeight", 1.0f);
+        n->elasticityWeight = get<float>(j, "elasticityWeight", 1.0f);
+        if (auto sp = j.find("spawn"); sp != j.end() && sp->is_object()) {
+            n->spawnNeutral    = get<bool>(*sp, "neutral", true);
+            n->teamColor       = vec(*sp, "teamColor", n->teamColor);
+            n->allowTeamChange = get<bool>(*sp, "allowTeamChange", false);
+        }
     }
+    if (n->kind == NodeKind::Model) n->primaryPart = get<uint64_t>(j, "primaryPart", 0);
     if (n->kind == NodeKind::Constraint) {
         std::string type = get<std::string>(j, "type", "Rope");
         for (int i = 0; i < 5; ++i) if (type == kConstraintNames[i]) n->constraintType = (ConstraintType)i;
@@ -682,8 +824,10 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     n->isLocal       = get<bool>(j, "local", false);
     n->remoteFunction = get<bool>(j, "function", false);
     if (auto p = j.find("prompt"); p != j.end() && p->is_object()) Serializer::promptFromJson(*p, n->prompt, n->enabled);
+    if (auto c = j.find("click"); c != j.end() && c->is_object()) Serializer::clickFromJson(*c, n->click);
     if (auto h = j.find("highlight"); h != j.end() && h->is_object()) Serializer::highlightFromJson(*h, n->highlight, n->enabled);
     if (auto e = j.find("effect"); e != j.end() && e->is_object()) Serializer::effectFromJson(*e, n->effect, n->enabled);
+    if (auto e = j.find("particles"); e != j.end() && e->is_object() && n->isParticles()) Serializer::particleFromJson(*e, n->particle, n->enabled);
     n->locked        = get<bool>(j, "locked", false);
     if (auto t = j.find("tags"); t != j.end() && t->is_array())
         for (auto& v : *t) if (v.is_string()) n->tags.push_back(v.get<std::string>());
@@ -699,6 +843,12 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
             else if (a.type == Attribute::String && v.is_string()) a.s = v.get<std::string>();
             else if (v.is_array() && v.size() == 3) a.v = {v[0].get<float>(), v[1].get<float>(), v[2].get<float>()};
             n->attributes.push_back(a);
+        }
+    // Spawns saved before SpawnLocation had team properties used a TeamColor attribute.
+    if (n->kind == NodeKind::Part && !j.contains("spawn") && n->isSpawnLocation())
+        if (const Attribute* tc = n->findAttribute("TeamColor"); tc && tc->type == Attribute::Color3) {
+            n->teamColor = tc->v;
+            n->spawnNeutral = false;
         }
 
     if (auto it = j.find("children"); it != j.end() && it->is_array())
@@ -937,7 +1087,8 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.isModule = src->isModule;   dst.locked = src->locked;
     dst.isLocal = src->isLocal;     dst.remoteFunction = src->remoteFunction;
     dst.prompt = src->prompt;       dst.highlight = src->highlight;
-    dst.effect = src->effect;
+    dst.click = src->click;
+    dst.effect = src->effect;       dst.particle = src->particle;
     dst.tags = src->tags;           dst.attributes = src->attributes;
     dst.lightType = src->lightType; dst.brightness = src->brightness;
     dst.range = src->range;         dst.spotAngle = src->spotAngle;
@@ -948,6 +1099,9 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.texture = src->texture;     dst.face = src->face;
     dst.starterTool = src->starterTool; dst.gripPos = src->gripPos; dst.gripRot = src->gripRot;
     dst.density = src->density;     dst.friction = src->friction; dst.elasticity = src->elasticity;
+    dst.frictionWeight = src->frictionWeight; dst.elasticityWeight = src->elasticityWeight;
+    dst.primaryPart = src->primaryPart;
+    dst.spawnNeutral = src->spawnNeutral; dst.teamColor = src->teamColor; dst.allowTeamChange = src->allowTeamChange;
     dst.constraintType = src->constraintType; dst.ref0 = src->ref0; dst.ref1 = src->ref1;
     dst.length = src->length;       dst.stiffness = src->stiffness; dst.damping = src->damping;
     dst.motorSpeed = src->motorSpeed; dst.motorTorque = src->motorTorque; dst.thickness = src->thickness;
@@ -994,6 +1148,8 @@ void remapRefs(SceneNode& n, const std::unordered_map<uint64_t, uint64_t>& map) 
         if (auto it = map.find(n.effect.a0); it != map.end()) n.effect.a0 = it->second;
         if (auto it = map.find(n.effect.a1); it != map.end()) n.effect.a1 = it->second;
     }
+    if (n.kind == NodeKind::Model && n.primaryPart)   // (a copied model's PrimaryPart is its own copy)
+        if (auto it = map.find(n.primaryPart); it != map.end()) n.primaryPart = it->second;
     if (n.kind == NodeKind::FluidEmitter)   // (a copied emitter uses the copied liquid, if it came along)
         if (auto it = map.find(n.fluidSystem); it != map.end()) n.fluidSystem = it->second;
     for (auto& c : n.children) remapRefs(*c, map);

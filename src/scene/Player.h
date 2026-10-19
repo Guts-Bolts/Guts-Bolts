@@ -100,6 +100,21 @@ public:
     static void       equipOn(Scene& scene, SceneNode* rig, uint64_t toolId,
                               const std::function<void(uint64_t, bool)>& events);
     void       setCheckpoint(uint64_t partId) { m_checkpoint = partId; }   // respawn on this part (0 = the spawn)
+    // Teams (player.Team / TeamColor / Neutral): which SpawnLocations we may use. A Neutral
+    // player only spawns on Neutral ones; a team player on Neutral ones or their team's.
+    void       setTeam(bool neutral, const glm::vec3& color) { m_neutral = neutral; m_teamColor = color; }
+    bool       neutral() const { return m_neutral; }
+    glm::vec3  teamColor() const { return m_teamColor; }
+    // Where we'd spawn now (a SpawnLocation we may use, a checkpoint, or the spawn point).
+    glm::vec3  spawnSpot() const;
+    // Move to spawnSpot() without dying (the team was set just after we came in).
+    void       placeAtSpawn();
+    float      aliveTime() const { return m_aliveTime; }   // seconds since we last (re)spawned
+    // Called just before the character comes back to life (Player.CharacterRemoving).
+    std::function<void()> onRespawning;
+    // A random spot on top of a SpawnLocation someone on this team may use (Roblox's rules);
+    // if none suits, the first visible one. False if there are no SpawnLocations.
+    static bool findSpawn(Scene& scene, bool neutral, const glm::vec3& teamColor, glm::vec3& out);
     uint64_t   checkpoint() const { return m_checkpoint; }
     void       swingTool() { if (equippedTool()) m_toolSwing = kToolSwingTime; }   // the "use" animation
     // Emotes, like old Roblox's "/e dance": dance (dance1), dance2, dance3, laugh,
@@ -214,6 +229,9 @@ private:
     float    m_holdBlend = 0.0f;       // right arm raised to hold a tool
     float    m_toolSwing = 0.0f;       // seconds left of the swing animation
     uint64_t m_checkpoint = 0;         // RespawnLocation / last Checkpoint touched
+    bool      m_neutral = true;        // no team (see setTeam)
+    glm::vec3 m_teamColor{1.0f};
+    float     m_aliveTime = 0.0f;
     static constexpr float kToolSwingTime = 0.4f;
 public:
     bool climbing() const { return m_climbing; }

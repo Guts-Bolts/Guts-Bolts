@@ -15,6 +15,7 @@
 #include "../scene/Player.h"
 #include "../game/GameSession.h"
 #include "../core/Log.h"
+#include "../scripting/Luau.h"
 
 #include <imgui.h>
 
@@ -40,8 +41,10 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
+        case NodeKind::Particles: return n->particleClass();
         case NodeKind::Light:  return n->lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::ForceField: return "ForceField";
         case NodeKind::Tool:       return "Tool";
@@ -93,7 +96,7 @@ std::string idOf(const SceneNode* n) { return "#" + std::to_string(n->id); }
 json syntaxOf(const std::string& source, const std::string& name) {
     lua_State* L = luaL_newstate();
     const std::string chunk = "=" + name;
-    int r = luaL_loadbufferx(L, source.data(), source.size(), chunk.c_str(), "t");
+    int r = Luau::load(L, source, chunk.c_str(), "t");   // (Luau extras compile too)
     json out = {{"ok", r == LUA_OK}};
     if (r != LUA_OK) out["error"] = lua_tostring(L, -1) ? lua_tostring(L, -1) : "syntax error";
     lua_close(L);
@@ -286,6 +289,9 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                             (weld ? "Part0 / Part1" : "Attachment0 / Attachment1") + ", so it does nothing.",
                             std::string("Set ") + (weld ? "Part0 and Part1" : "Attachment0 and Attachment1") + " with set_property.");
             }
+            if (n->isClickDetector() && !inPart(n) && !(n->parent && n->parent->kind == NodeKind::Model && n->parent->parent))
+                add(n, "warning", "NOT_IN_PART", "A ClickDetector makes the part (or model) it's in clickable, but this one isn't inside either.",
+                    "set_property Parent to a part or model.");
             if (n->isEffect()) {
                 for (uint64_t ref : {n->effect.a0, n->effect.a1})
                     if (!ref || !m_scene->findById(ref))
@@ -293,6 +299,10 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                             " needs two Attachments (Attachment0 and Attachment1) and doesn't have both, so it isn't drawn.",
                             "Insert Attachments in parts and set Attachment0 / Attachment1 with set_property.");
             }
+            if (n->isParticles() && (!n->parent || (!isPartLike(n->parent) && !n->parent->isAttachment())))
+                add(n, "warning", "PARTICLES_NOT_IN_PART", std::string("The ") + classOf(n, root) +
+                    " isn't inside a part or an Attachment, so no particles come out of it.",
+                    "Move it into the part (or Attachment) the particles should come from.");
             if (n->isTool()) {
                 SceneNode* h = n->findChild("Handle");
                 if (!h || !isPartLike(h))
@@ -548,7 +558,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         LuaRun r = lua(str("code"));
         json d = {{"output", r.lines}, {"errors", r.errors}, {"ran_in", m_playing ? "the running playtest" : "the editor (saved game)"}};
         if (!r.errors.empty()) {
-            AiToolResult res = fail("LUA_ERROR", r.errors.front(), "Fix the code and run it again (plain Lua 5.4, Roblox-style API).");
+            AiToolResult res = fail("LUA_ERROR", r.errors.front(), "Fix the code and run it again (Lua 5.4 or Luau, Roblox-style API).");
             res.data["output"] = r.lines;
             res.data["errors"] = r.errors;
             res.text = res.data.dump(1);
@@ -729,8 +739,8 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             bool found = false;
             for (int i = 0; i < kMaterialCount; ++i)
                 if (lower(kMaterialNames[i]) == lower(str("material"))) { n->material = (Material)i; found = true; }
-            if (!found) warnings.push_back("There's no material \"" + str("material") + "\" (there are Plastic, Metal, Neon, Wood, "
-                                           "Glass, Concrete, Ice); it stayed Plastic.");
+            if (!found) warnings.push_back("There's no material \"" + str("material") + "\" (there are " +
+                                           std::string(materialNameList()) + "); it stayed Plastic.");
         }
         n->anchored = args.value("anchored", false);
         n->canCollide = args.value("can_collide", true);

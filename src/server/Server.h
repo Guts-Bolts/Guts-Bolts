@@ -105,6 +105,9 @@ private:
         bool        limited = false;
         long long   stock = 0;
         nlohmann::json copies = nlohmann::json::array();   // {serial, owner, price} (price 0 = not for sale)
+        // Games: version history, {v, at, by, size, restored?}, oldest first (the last is live). Empty for a
+        // game published before history existed: its file counts as version 1. (worker/server.js a.versions)
+        nlohmann::json versions = nlohmann::json::array();
     };
 
     struct Post { std::string by, text; long long time = 0; };
@@ -264,6 +267,15 @@ private:
     void saveGroups();
     void loadGroups();
     std::filesystem::path blobPath(const std::string& assetId) const;
+    // Version history (games): every publish is kept, the newest kMaxVersions (and at most
+    // kMaxVersionBytes of them per game). Files are files/ver-<game>-<v>. (worker/server.js has the same.)
+    static constexpr size_t    kMaxVersions = 50;
+    static constexpr long long kMaxVersionBytes = 100LL << 20;
+    std::filesystem::path versionPath(const std::string& assetId, long long v) const;
+    nlohmann::json versionsOf(const Asset& a) const;   // a.versions, or just "version 1" for older games
+    // Keep `data` as the newest version (old: the file it replaces, to make version 1 of an older game).
+    long long addVersion(Asset& a, const std::string& data, const std::string& by, const std::string* old, long long restored = 0);
+    nlohmann::json versionsJson(const Asset& a) const;  // for the website, newest first
 
     Options m_opts;
     std::unique_ptr<Net::Listener> m_listener;

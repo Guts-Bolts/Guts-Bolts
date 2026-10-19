@@ -8,6 +8,7 @@
 #include "renderer/SceneRenderer.h"
 #include "scene/Emotes.h"
 #include "scene/Player.h"
+#include "scripting/ScriptEngine.h"
 
 #include <imgui.h>
 #include <algorithm>
@@ -52,6 +53,7 @@ Chord parseChord(const std::string& text) {
 } // namespace
 
 Application::Application(LaunchOptions opts) : m_opts(std::move(opts)) {
+    if (!m_opts.testCommand.empty()) ScriptEngine::testHooks = true;   // (__gb_testInput for tests)
     m_window = std::make_unique<AppWindow>("Guts and Bolts", 1280, 720, "editor_layout.ini");
     m_window->setFixedTimestep(!m_opts.screenshot.empty());
     m_scene  = std::make_unique<Scene>();

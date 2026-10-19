@@ -430,6 +430,7 @@ function setMe(m) {
 // --- Moderation: bans and staff warnings ---------------------------------------------
 
 const banned = () => !!(me && me.ban);
+const fileSize = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 const dateText = (t) => new Date(t * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 // A banned account sees only this (like Roblox's "Banned" page): why, the note from
@@ -1464,8 +1465,9 @@ pages.configure = async (id) => {
   const g = r.ok && r.assets.find((a) => a.id === id || String(a.num) === id);
   if (!g) { show(html`<h1>Configure game</h1><p class="error">${r.ok ? 'That isn\'t one of your games.' : r.error}</p>`); return; }
   const access = g.access || 'public';
-  const [pr, dr, gr] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('pass.list', { game: g.id, products: true }),
-    pageCall('groups.mine', {})]);
+  const [pr, dr, gr, vr] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('pass.list', { game: g.id, products: true }),
+    pageCall('groups.mine', {}), pageCall('game.versions', { id: g.id })]);
+  const versions = vr.ok ? vr.versions : [];
   // Groups this game can go in: ones where your rank can add games (and the one it's in now).
   const myGroups = (gr.ok ? gr.groups : []).filter((x) => (x.perms || []).includes('games') || (g.group && x.id === g.group.id));
   if (g.group && !myGroups.some((x) => x.id === g.group.id)) myGroups.push(g.group);
@@ -1514,6 +1516,16 @@ pages.configure = async (id) => {
         <button type="button" class="btn red" data-act="deleteAsset" data-id="${g.id}" data-name="${g.name}" style="float:right">Delete game</button>
         <span id="configMsg"></span></p>
     </form>
+    <div class="box"><h2 class="boxhead">Version history</h2>
+      <p class="small muted">Every time you publish (from Studio or with "New version" above), the old version is kept.
+        Restore puts an old version back: it's published again as the newest version, so nothing is lost.
+        The newest ${vr.ok ? vr.most : 50} versions are kept.</p>
+      ${!vr.ok ? html`<p class="error">${vr.error}</p>` : html`<table class="versions">
+        <tr><th>Version</th><th>Published</th><th>By</th><th>Size</th><th></th></tr>
+        ${versions.map((v) => html`<tr><td><b>${v.v}</b>${v.restored ? html` <span class="small muted">(restored from ${v.restored})</span>` : ''}</td>
+          <td title="${ago(v.at)}">${dateText(v.at)}</td><td>${v.byName}</td><td>${fileSize(v.size)}</td>
+          <td>${v.live ? html`<span class="tag-live">Live now</span>`
+            : html`<button class="btn small" data-act="restoreVersion" data-id="${g.id}" data-v="${v.v}">Restore</button>`}</td></tr>`)}</table>`}</div>
     <div class="box"><h2 class="boxhead">Badges</h2>
       <p class="small muted">Make badges players earn in your game. Give one from a script:
         <code>game:GetService("BadgeService"):AwardBadge(player, "badge-id")</code>
@@ -2659,6 +2671,12 @@ const actions = {
   },
   async copyText(d) {
     try { await navigator.clipboard.writeText(d.text); toast('Copied ' + d.text); } catch { prompt('Copy this:', d.text); }
+  },
+  async restoreVersion(d) {
+    if (!confirm('Restore version ' + d.v + '? It becomes the live version (as a new version), and players get it the next time they join.')) return;
+    const r = await call('game.restore', { id: d.id, version: Number(d.v) });
+    toast(r.ok ? 'Version ' + d.v + ' is live again (as version ' + r.version + ').' : r.error, 5000);
+    render();
   },
   async deleteBadge(d) {
     if (!confirm('Delete the badge "' + d.name + '"? Players who earned it lose it from their profile.')) return;
