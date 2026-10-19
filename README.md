@@ -98,6 +98,8 @@ The panels:
   models, decals and audio, plus Studio's own parts and ready-made objects),
   **Inventory** (your own uploads, private ones too) and **Recent** (what you
   inserted lately). Pick a category, search, and click a picture to insert it.
+  Library models show how many people liked them (a green **92%** tag; point
+  at it for the number of votes), and **Sort: Best rated** lists the best ones first.
   Every item has a picture: Studio photographs models on their own, and
   things made by Guts&Bolts staff (and Studio's built-in objects) carry a gold
   **official** badge, so you know they're safe to use. It has
@@ -111,8 +113,19 @@ The panels:
   of every kind of object you can add.
 - **Constraints** (in the Toolbox): pick Rope, Rod, Spring, Weld, Hinge or
   Motor, then click two parts in the Viewport to join them.
-- **Properties**: colour, material (Plastic, Metal, Neon, Wood, Glass,
-  Concrete, Ice), size, anchored, can-collide and so on.
+- **Properties**: colour, material, size, anchored, can-collide and so on.
+  There are 18 materials, each with its own look drawn by the engine (no
+  image files) and its own default weight, grip and bounce: **Plastic**,
+  **SmoothPlastic** (glossier, no grain), **Metal**, **DiamondPlate** (raised
+  non-slip stripes), **Foil** (crinkly and shiny), **Neon** (glows), **Wood**,
+  **Glass**, **Ice** (slippery), **Concrete**, **Brick** (rows of bricks with
+  mortar, lined up with the part's edges), **Cobblestone**, **Slate**,
+  **Granite** (speckled), **Marble** (polished, with veins), **Sand**,
+  **Grass** and **Fabric** (woven). Scripts use `part.Material =
+  Enum.Material.Brick` or `"Brick"`; a name that doesn't exist is an error
+  that lists the real ones. Imported Roblox places keep these materials;
+  other Roblox materials get the closest one (Rock, Basalt and Asphalt look
+  like Concrete, Pebble like Cobblestone, LeafyGrass like Grass).
 - **Lighting**: sun, shadows, sky light, clouds, stars, fog, exposure,
   bloom, ambient occlusion and colour grading, plus a **time of day** slider
   and presets (Day, Sunset, Night, Overcast, Horror).
@@ -162,8 +175,8 @@ Drop several files at once and they're lined up side by side.
 Open a Roblox place (`.rbxl` / `.rbxlx`) and it becomes a Guts and Bolts
 game. Import a model (`.rbxm` / `.rbxmx`) and it's added to your game. Both
 the binary and XML kinds work. What comes across: parts (blocks, spheres,
-cylinders, wedges, trusses), models and folders, scripts (Roblox's **Luau**
-code is converted to plain Lua for you), lights, sounds, attachments and
+cylinders, wedges, trusses), models (with their PrimaryPart) and folders, SpawnLocations
+and Teams, CustomPhysicalProperties, scripts (Roblox's **Luau** code works as it is), lights, sounds, attachments and
 constraints, value objects, attributes and tags. Things we don't have yet
 (meshes, terrain, GUIs) are skipped, and Output tells you what was left out.
 
@@ -403,6 +416,10 @@ script.Parent.Touched:Connect(function(hit)
 end)
 ```
 
+Scripts can be written in plain Lua or in **Luau**: `x += 1` (and `-=`, `*=`, `..=` ...),
+`continue`, type annotations (`local n: number`, `type Point = {...}`) and `` `Hi {name}` ``
+strings all work, in any script, and error messages keep the right line numbers.
+
 What you can use:
 
 - **Objects:** `workspace`, `script`, `Instance.new("Part" | "Ball" | "Cylinder" | "Model" | "PointLight" | "SpotLight", parent)`,
@@ -412,9 +429,16 @@ What you can use:
 - **Values:** `Vector3.new`, `Color3.new` / `fromRGB` / `fromHSV` / `fromHex`, `CFrame.new` / `Angles` / `lookAt`
 - **Time:** `wait(seconds)`, `spawn(fn)`, `delay(seconds, fn)`, `time()`, `tick()`
 - **Events:** `part.Touched`, `part.Clicked`, `clickDetector.MouseClick` (see *ClickDetectors* below), `RunService.Heartbeat`, `UserInputService.InputBegan` / `InputEnded`,
-  `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, each with `:Connect`, `:Once` and `:Wait`
+  `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, `player.CharacterAdded` / `CharacterRemoving`
+  (fired on every spawn and respawn), each with `:Connect`, `:Once` and `:Wait`
 - **Players:** `game.Players.LocalPlayer.Character`, `Players:GetPlayers()`, `humanoid.Health` / `WalkSpeed` /
   `JumpPower` / `:TakeDamage(n)`, `character:BreakJoints()`
+- **Teams:** `player.Team`, `player.TeamColor`, `player.Neutral` (setting one keeps the others right),
+  `Teams:GetTeams()`. A **SpawnLocation** has `Neutral`, `TeamColor` and `AllowTeamChangeOnTouch`: players
+  spawn on their team's SpawnLocations (or Neutral ones), and touching one with `AllowTeamChangeOnTouch`
+  puts you on its team
+- **Models:** `model.PrimaryPart`, `model:GetPivot()` / `:PivotTo(cframe)` (they go by the PrimaryPart),
+  `:SetPrimaryPartCFrame(cframe)` / `:GetPrimaryPartCFrame()`
 - **Camera:** `workspace.CurrentCamera` with `CFrame`, `Focus`, `FieldOfView`, `CameraType`
   (`Enum.CameraType.Custom` / `Scriptable` / `Fixed`), `CameraSubject`, `ViewportSize`,
   `:WorldToViewportPoint` / `:WorldToScreenPoint` and `:ViewportPointToRay` / `:ScreenPointToRay`;
@@ -425,7 +449,10 @@ What you can use:
 - **Mayhem:** `Explode(position, radius, power, options)` (see *Explosions* below), `Effects.Blood(pos, amount)`, `Effects.Oil(...)`, `Effects.Gibs(...)`,
   `Effects.Sparks(...)`
 - **Physics:** `part:ApplyImpulse(v)`, `AssemblyLinearVelocity`, `AssemblyAngularVelocity`, `Density`,
-  `Friction`, `Elasticity`, and constraint properties such as `rope.Length` or `hinge.AngularVelocity`
+  `Friction`, `Elasticity`, `part.CustomPhysicalProperties = PhysicalProperties.new(density, friction,
+  elasticity, frictionWeight, elasticityWeight)` (or `PhysicalProperties.new(Enum.Material.Ice)`; `nil` goes back
+  to the material's), `part.CurrentPhysicalProperties`, and constraint properties such as `rope.Length` or
+  `hinge.AngularVelocity`
 - **Collision groups:** `PhysicsService:RegisterCollisionGroup`, `CollisionGroupSetCollidable` and
   `part.CollisionGroup` (see *Collision groups* below)
 - **Sound:** `Sounds.Play("coin", position)` (built in: jump, coin, oof, explosion, splat, click, hit, win,
@@ -585,7 +612,7 @@ end)
 
 Buttons have `MouseButton1Click` (also called `Activated`), `MouseEnter` and
 `MouseLeave`. Text has `TextScaled`, `TextWrapped`, alignment, an outline
-(`TextStrokeTransparency`) and bold fonts (`Enum.Font.SourceSansBold`).
+(`TextStrokeTransparency`) and bold text (`label.Bold = true`, or a bold font such as `Enum.Font.SourceSansBold`).
 `player.PlayerGui` and `game.StarterGui` are the same folder.
 
 **Typing, scrolling and lining things up:**
@@ -862,6 +889,52 @@ beam.Parent = gun
 - `FaceCamera` keeps either one turned towards you.
 - In multiplayer they show for everyone, including ones the server puts on characters.
 
+### Particles: ParticleEmitter, Fire, Smoke and Sparkles
+
+Put one inside a part (Insert Object > Particles, with the part selected) and it
+just works, in Studio while you build and in the game. A **ParticleEmitter** sends
+particles out of anywhere inside the part, or out of one point when it's in an
+**Attachment**. **Fire**, **Smoke** and **Sparkles** are the classic ready-made ones.
+
+```lua
+local embers = Instance.new("ParticleEmitter")
+embers.Rate = 30                                   -- particles a second
+embers.Lifetime = NumberRange.new(1, 2)            -- seconds (each gets a random one)
+embers.Speed = NumberRange.new(4, 8)
+embers.SpreadAngle = Vector2.new(20, 20)           -- degrees each way
+embers.Color = ColorSequence.new(Color3.fromRGB(255, 200, 60), Color3.fromRGB(255, 40, 0))
+embers.Size = NumberSequence.new(0.4, 0)           -- shrinks away
+embers.Transparency = NumberSequence.new(0, 1)
+embers.LightEmission = 1                           -- glows
+embers.Acceleration = Vector3.new(0, 3, 0)
+embers.Parent = torch
+
+embers:Emit(50)    -- 50 at once (an explosion, a hit)
+embers:Clear()     -- all of its particles vanish
+
+local fire = Instance.new("Fire")                  -- Color, SecondaryColor, Size, Heat
+fire.Parent = campfire
+local smoke = Instance.new("Smoke")                -- Color, Opacity, RiseVelocity, Size
+smoke.Parent = chimney
+local sparkles = Instance.new("Sparkles")          -- SparkleColor
+sparkles.Parent = coin
+```
+
+- A ParticleEmitter also has `Enabled`, `Drag` (how quickly they slow down),
+  `EmissionDirection` (`Enum.NormalId.Top` and so on, turned with the part),
+  `Rotation` / `RotSpeed` (NumberRanges, degrees), `LockedToPart` (they move with
+  the part) and `Texture`: a built-in look (`""` a soft glow, `"smoke"`, `"fire"`,
+  `"sparkle"`) or your own picture (`gb:<id>` or a file in the games folder).
+- `NumberRange.new(min, max)` is new for these (`NumberRange.new(5)` is 5 to 5);
+  a plain number works anywhere a NumberRange or NumberSequence is wanted.
+- They're only for looks: every player's computer makes its own particles from the
+  emitter's settings, so they show for everyone in multiplayer (and `:Emit` /
+  `:Clear` from the server happen on everyone's screen) without slowing the game down.
+- At most 1500 particles from one emitter and 6000 in all are out at once (new
+  ones wait until some fade), so a huge `Rate` or `Emit(1000000)` can't freeze anything.
+- Saved in your game, editable in Properties, and they come across from imported
+  Roblox files (and go back out when you export).
+
 ### Your character's moves (the Animate script)
 
 Every character gets a 2011-style **Animate** script: idle, walk, run, jump,
@@ -1079,7 +1152,9 @@ Water isn't just a see-through box you can swim in. While the game runs:
   through it leaves a wake.
 - **Floating and sinking.** Loose (unanchored) parts float or sink depending on
   their material, like real life: **Wood**, **Ice**, **Plastic** and **Neon**
-  float (wood highest), while **Metal**, **Glass** and **Concrete** sink. Set a
+  float (wood highest), as do **Fabric** and **Grass**, while **Metal**,
+  **Glass**, **Concrete** and the stones (**Brick**, **Slate**, **Granite**,
+  **Marble**, **Cobblestone**, **Sand**) sink. Set a
   part's Density to choose exactly. A long plank tips over and floats flat, and
   boats rock on the waves.
 - **Splashes.** Things (and people) that fall in throw up spray, make a splash
@@ -1308,7 +1383,8 @@ at NPCs (and anything else) live.
 Loose (un-anchored) parts are real rigid bodies: they tumble, spin, stack,
 slide and bounce. Each part has **Density** (heavier), **Friction** (grippier)
 and **Elasticity** (bouncier) in the Properties panel, with sensible defaults
-per material (ice is slippery, metal is heavy). Parts that stop moving go to
+per material (ice is slippery, metal is heavy); scripts set all three at once with
+`part.CustomPhysicalProperties`, whose weights say whose friction and bounce win when two parts touch. Parts that stop moving go to
 sleep so big piles stay fast, and your character can shove light things around.
 
 Constraints join parts together through **Attachments** (little points on a part):
@@ -1744,7 +1820,9 @@ site** (`/app/`) to do what the Player's site pages do:
 - use friends, people, groups and Bolts;
 - change your **avatar** (colours, hat, and clothes from the catalog). It's saved
   on the server, so the app and the website always match;
-- **staff:** a Staff page to verify people, make staff, give Bolts and ban.
+- **staff:** a Staff page to verify people, make staff, give Bolts, ban, and
+  answer ban appeals;
+- **Settings:** email, two-step, privacy, password, and deleting your account.
 
 Games published from Studio get a **picture** (Studio takes it from the spawn
 point when you publish), shown on the website's game cards. A red number on
@@ -1774,6 +1852,47 @@ only* or *Private*), upload a **thumbnail** (cropped to 16:9) and a square
 **icon**, or upload a new version. Private and friends-only games are hidden
 from everyone else: the server won't list them, send them or start servers
 for them.
+
+**Screenshots:** the Configure page also has a **Screenshots** box for up to 5
+pictures of the game: `.png`, `.jpg` or `.webp`, up to 2 MB each (anything else
+gets a clear message, before uploading and again from the server). Move one
+earlier or later with the arrows, or delete it. The game's page shows the
+thumbnail and the screenshots together: big picture, arrows, a strip of small
+pictures to pick from, and a click (or tap) opens a big view (arrow keys and Esc
+work, and you can swipe on phones). Like the thumbnail they're the creator's own
+pictures and aren't held for a staff check, but staff can delete one (it goes in
+the staff log). The pictures are served from `/shot/<game id>/<screenshot id>`;
+every screenshot gets a new random id, so browsers can keep them for good.
+(`shots.add`, `shots.delete`, `shots.order` and `shots.get` in
+`worker/server.js` and `src/server/ServerItems.cpp`. The C++ server keeps them
+as `files/shot-<game>-<id>`; like thumbnails, its pictures reach the apps
+through requests, since only the main server has the `/shot/` addresses.)
+
+#### Version history (putting an old version back)
+
+Publishing a game never throws its old version away. Every time you publish
+(Studio's **File > Publish**, saving a published game in Studio, or **New
+version** on the Configure page), the server keeps the version it replaces. The
+Configure page has a **Version history** box listing them, newest first: the
+version number, when it was published, who published it and how big it is.
+The live one says **Live now**.
+
+**Restore** puts an old version back. It doesn't rewind anything: the old
+version is published again as a new, newest version (marked "restored from
+3", say), so the version you restored over is still in the list if you change
+your mind. Players get it the next time they join.
+
+- Only the game's creator can see the list or restore.
+- The newest **50** versions are kept, and at most **100 MB** of them per game;
+  older ones are deleted, oldest first. The live version is never deleted.
+- Saving the exact same file again doesn't make a new version.
+- Games published before version history existed show their current file as
+  version 1. It's really kept as version 1 the next time the game is published.
+- Deleting a game deletes its history too.
+
+Both servers do this: the website's (`game.versions` and `game.restore` in
+`worker/server.js`, files `ver:<game>:<version>`) and the one you can run on
+your own computer (`src/server`, files `files/ver-<game>-<version>`).
 
 The site's **Create** page has one tab per kind of thing you make:
 
@@ -1814,6 +1933,28 @@ make people **Staff**, give or take Bolts, and ban. Banning asks for a reason
 sharing personal info, exploiting, spam and so on) and an optional note; the
 banned player sees them when they try to sign in.
 
+**Ban appeals.** On their ban screen (on the website or in the Player) a banned
+player can send staff one short note (up to 500 letters) asking to be unbanned.
+There's one open appeal per ban: they can only send another once staff have
+answered, or if the ban changes. Appeals show on the Staff page next to the
+reports, with the ban's reason, the staff note, when and by whom they were
+banned (from the staff action log) and what they wrote. Staff can **Deny** with
+a short note, and the official account can **Accept**, which unbans them the
+normal way. The player sees the answer on their ban screen, and every answer is
+in the staff action log.
+
+**Deleting an account.** In the website's **Settings** (or the Player's
+**Avatar > Your account > Delete account...**) you can delete your account after
+typing your password. That removes the password and key backup, email,
+two-step settings, avatar, About me, posts, outfits, messages, friends and
+follows (on both sides), favourites, notifications and logged-in devices.
+Games and items you made stay up (so what other people bought keeps working),
+shown as made by **Deleted user**; forum posts and game comments stay too, under
+that name. The username (and any past usernames) and the user number are never
+given to anyone else. Limited copies the account owned stay with it, off resale,
+and can't be traded any more. The Guts account can't be deleted. The staff log
+notes "Account #N was deleted" as a System event, without the name.
+
 ### The Library (sharing models)
 
 Select some objects in Studio and use **File > Publish Selection to Library**.
@@ -1837,6 +1978,44 @@ Find things in two places:
   button, and **Copy ID** copies the ID to paste into a Decal's Texture or a
   Sound's File.
 
+**Rating models.** Every Library model can get a thumbs up or down, on its page
+(website, and *Create > Library* in the Player). One vote each: press the other
+thumb to change it, or your own again to take it back.
+
+- Only people who have **inserted the model** can rate it. The server remembers
+  each Library model you fetch to use (Studio's Toolbox, or `require(id)` in a
+  script; Studio fetching a picture-less model once to photograph it counts too),
+  so it costs nothing extra. You can't rate your own models.
+- The Library, the model's page and Studio's Toolbox show the like percentage and
+  how many votes it has.
+- **Best rated** (Library and Toolbox) sorts by the Wilson score: the lowest the real
+  like rate is likely to be (95% sure). So one vote at 100% doesn't beat 500 votes
+  at 95%, and models with no votes come last.
+- `model.vote` in `worker/server.js` and `src/server/ServerItems.cpp` (`usedModels` is
+  the list of models someone fetched; `wilsonScore` is in both servers).
+
+### Gifts (Buy as a gift)
+
+Paid catalog items have a **Buy as a gift** button under **Buy** on the website.
+Pick one of your friends, write a short note if you like (up to 100 letters, through
+the text filter), check what it costs and press **Send gift**.
+
+- You pay the price (the creator gets their 70% like any sale). The item goes
+  straight into your friend's inventory, and they get a notification with your note.
+- Both Bolts histories show it: *Gift for amy: Party Hat* for you, *Gift from bob:
+  Party Hat* for them (it costs them nothing).
+- Friends only. You can't gift something they already have (if they hide their
+  inventory from you, it just says you can't gift it to them), and not to someone
+  who is banned or blocked.
+- **No Limiteds.** Limited copies are numbered and only sold, resold and traded, so
+  gifting them isn't supported (trade one instead). Free, off-sale, not-yet-checked
+  and award items (the Verified Hat) can't be gifts either.
+- It's as safe as buying for yourself: the server checks everything again, takes
+  the Bolts and hands the item over in one go, and sending the same gift twice is
+  turned down because they already have it.
+- `gift.buy` in `worker/server.js` and `src/server/Server.cpp`. (Gifts are sent from
+  the website; the Player app shows the notification and opens the item.)
+
 ### Limiteds, resale and trading
 
 - **Edit item:** on an item's page on the website, its creator (or staff) can
@@ -1853,7 +2032,22 @@ Find things in two places:
 - **Trading:** press **Trade** on someone's profile, pick up to 4 of your
   Limiteds and up to 4 of theirs, and send the offer. They accept or decline
   on the **Trades** page. The swap only happens if both of you still have
-  everything.
+  everything. A trade nobody answers runs out (**expires**) after 30 days, and
+  whoever sent it gets a notification.
+- **Past trades:** the Trades page has two tabs, **Open trades** and **Past
+  trades**. Past trades lists every finished trade, newest first, 20 to a page:
+  who it was with, the items each of you put in, the date it ended and how
+  (Accepted, Declined, Cancelled, Expired, or "Couldn't happen" when someone no
+  longer had an item). Only the two people in a trade can see it (not even staff
+  get it from this list). Each one is saved with the names of the people and
+  items as they were then, so it still reads right if an item is deleted later.
+  They're kept for a year (at most 50,000 in all). Past trades started being
+  kept with the *Paper Trail* update; before that, finished trades were only
+  kept for a month, so the history starts with what the server still had then.
+  Blocking someone cancels your open trades with them, and those show up as
+  Cancelled. (`trade.history` in `worker/server.js`, which keeps them in its own
+  `pasttrades` table, and `src/server/ServerItems.cpp`, which saves
+  `pasttrades.json`.)
 - **Inventory:** every profile (website and app) has an **Inventory** box with
   what that person owns from the catalog, newest first. **See all** shows the
   whole thing in groups (Accessories, Clothing, Faces, Gear, Limiteds), and a
@@ -2370,7 +2564,7 @@ how many new things happened. Click it to see them; that marks them read.
 
 You get one when someone sends you a friend request, becomes your friend, follows
 you, buys something you made, sends or answers a trade, asks to join your group or
-lets you in, and when staff check something you uploaded. Each one takes you to the
+lets you in, sends you a gift, and when staff check something you uploaded. Each one takes you to the
 right page. The newest 50 are kept. Both servers do the same (`notify` in
 `worker/server.js` and `src/server/Server.cpp`).
 
@@ -2378,7 +2572,7 @@ right page. The newest 50 are kept. Both servers do the same (`notify` in
 
 Everything staff do is written down: bans and unbans, warnings, badges (like
 Verified and Staff), Bolts given or taken, upload checks, closed reports, and
-games, items or comments they deleted that weren't theirs. The **Staff** page (on
+games, items, comments or game screenshots they deleted that weren't theirs. The **Staff** page (on
 the website and in the Player) shows the newest 200; the **Log** button next to a
 person shows just what was done by or to them. The newest 3,000 are kept
 (`staffDid` in `worker/server.js` and `src/server/ServerSafety.cpp`, which saves
@@ -2501,8 +2695,9 @@ mapping and FXAA. It needs OpenGL 4.1, so it runs on Windows, macOS and Linux.
 
 The `worker/test` folder has automatic checks for the website's server. They
 start a real copy of the server in memory (no internet needed) and try things the
-way a player would: signing up, getting the daily Bolts, buying an item,
-commenting, the filter, and staff tools like warnings and bans. They also check
+way a player would: signing up, getting the daily Bolts, buying an item, sending
+a gift, rating a Library model, commenting, the filter, a game's version history
+and restoring, and staff tools like warnings and bans. They also check
 that the update log is filled in properly, that it says "Library" and not
 "Marketplace", and that the C++ filter has the same word list as the website.
 

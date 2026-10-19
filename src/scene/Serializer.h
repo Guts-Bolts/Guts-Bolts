@@ -12,6 +12,7 @@ struct ClickProps;
 struct HighlightProps;
 struct EffectProps;
 struct CollisionGroups;
+struct ParticleProps;
 
 // Turns scenes and objects into JSON text and back. Used for:
 //  * File > Save / Open (".gbscene" files)
@@ -42,6 +43,10 @@ void                       highlightFromJson(const nlohmann::json& j, HighlightP
 // A Trail's or Beam's settings (and whether it's on), the same way.
 nlohmann::json             effectToJson(const EffectProps& e, bool enabled, bool beam);
 void                       effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled);
+// A ParticleEmitter's / Fire's / Smoke's / Sparkles' settings, the same way. update = these are
+// another player's changes to one we already have (so new Emit() / Clear() calls happen here too).
+nlohmann::json             particleToJson(const ParticleProps& p, bool enabled);
+void                       particleFromJson(const nlohmann::json& j, ParticleProps& p, bool& enabled, bool update = false);
 // freshIds = true gives every object a brand-new id (needed for copies).
 std::unique_ptr<SceneNode> nodeFromString(const std::string& text, bool freshIds);
 std::unique_ptr<SceneNode> clone(const SceneNode& node);

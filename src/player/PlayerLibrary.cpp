@@ -47,6 +47,14 @@ void speaker(ImVec2 c, float s, ImU32 col) {
     dl->PathArcTo(ImVec2(c.x, c.y), s * 0.38f, -0.8f, 0.8f); dl->PathStroke(col, 0, s * 0.06f);
 }
 
+// "92% liked (25 votes)" for a Library model ("" if it isn't one).
+std::string ratingText(const json& a) {
+    if (a.value("kind", std::string()) != "model") return "";
+    const long long up = a.value("likes", 0LL), votes = up + a.value("dislikes", 0LL);
+    if (votes <= 0) return "No ratings yet";
+    return std::to_string((up * 100 + votes / 2) / votes) + "% liked (" + std::to_string(votes) + (votes == 1 ? " vote)" : " votes)");
+}
+
 std::string dateText(long long t) {
     std::time_t tt = (std::time_t)t;
     char buf[32] = "?";
@@ -99,6 +107,7 @@ void PlayerApp::openAsset(const std::string& rawId) {
         if (m_assetId != id) return;
         if (!r.value("ok", false)) { m_assetMsg = r.value("error", std::string("Not found.")); return; }
         m_asset = r["asset"];
+        m_asset["_used"] = r.value("used", false);   // they've inserted it, so they can rate it (models)
         m_assetMsg.clear();
     });
 }
@@ -197,6 +206,7 @@ void PlayerApp::drawLibrary() {
         ImGui::PopTextWrapPos();
         if (a.value("price", 0LL) > 0) Bolts::amount(a.value("price", 0LL));
         else ImGui::TextUnformatted("Free");
+        if (const std::string rating = ratingText(a); !rating.empty()) ImGui::TextDisabled("%s", rating.c_str());
         ImGui::EndGroup();
         ImGui::PopID();
     }
@@ -259,6 +269,36 @@ void PlayerApp::drawAsset() {
     if (desc.empty()) ImGui::TextDisabled("No description.");
     else ImGui::TextUnformatted(desc.c_str());
     ImGui::Spacing();
+    if (kind == "model") {
+        // Thumbs up / down: one vote each (press yours again to take it back), only after
+        // inserting it in Studio, and never on your own model (worker/server.js model.vote).
+        const std::string myId = Online::me().value("id", std::string());
+        const bool signedUp = Online::me().value("userId", 0LL) > 0, own = a.value("creator", std::string()) == myId;
+        const bool can = signedUp && !own && a.value("_used", false);
+        const long long myVote = a.value("myVote", 0LL);
+        ImGui::TextUnformatted(ratingText(a).c_str());
+        ImGui::BeginDisabled(!can);
+        auto vote = [this, id](long long v) {
+            Online::request("model.vote", {{"id", id}, {"vote", v}}, [this, id](const json& r) {
+                if (m_assetId != id) return;
+                if (!r.value("ok", false)) { m_assetMsg = r.value("error", std::string("That didn't work.")); return; }
+                m_asset = r["asset"];
+                m_asset["_used"] = true;
+                m_assetMsg.clear();
+            });
+        };
+        const std::string up = (myVote == 1 ? "Thumbs up (yours) " : "Thumbs up ") + std::to_string(a.value("likes", 0LL));
+        const std::string down = (myVote == -1 ? "Thumbs down (yours) " : "Thumbs down ") + std::to_string(a.value("dislikes", 0LL));
+        if (ImGui::Button(up.c_str())) vote(myVote == 1 ? 0 : 1);
+        ImGui::SameLine();
+        if (ImGui::Button(down.c_str())) vote(myVote == -1 ? 0 : -1);
+        ImGui::EndDisabled();
+        ImGui::TextDisabled("%s", !signedUp ? "Log in to rate it." : own ? "This is your model, so you can't rate it."
+                                  : can ? "Did it work well in your game? Give it a thumbs up or down."
+                                        : "Insert it from Studio's Toolbox first, then you can rate it here.");
+        if (!m_assetMsg.empty()) ImGui::TextColored(ImVec4(0.75f, 0.1f, 0.1f, 1), "%s", m_assetMsg.c_str());
+        ImGui::Spacing();
+    }
 
     if (kind == "audio") {   // listen to it right here
         const bool playing = m_assetSound && Audio::isPlaying(m_assetSound);

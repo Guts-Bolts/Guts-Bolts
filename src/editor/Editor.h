@@ -130,7 +130,7 @@ private:
     void       uploadLocalTextures(nlohmann::json node, const std::string& name,
                                    std::function<void(nlohmann::json node, std::string error)> done);       // File > Make Gear (staff): start from a ready-made Tool, sell it in the catalog
     // The Toolbox's Library tiles (everyone's public models, decals and audio, or your own).
-    std::vector<ToolboxTile> libraryTiles(bool mine, int kind, const std::string& query, bool reload, std::string& status);
+    std::vector<ToolboxTile> libraryTiles(bool mine, int kind, const std::string& query, bool bestRated, bool reload, std::string& status);
     unsigned   libraryPicture(const nlohmann::json& asset);
     void       useLibraryAsset(const nlohmann::json& asset);
     void       renderAccessoryWindow();      // AVATAR > Accessories (Verified creators)

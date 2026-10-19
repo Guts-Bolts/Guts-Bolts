@@ -133,6 +133,16 @@ void draw(ImDrawList* dl, ImVec2 c, float s, Id id, ImU32 tint) {
             dl->AddLine(ImVec2(x0, y0), ImVec2(x1, y1), rgb(255, 170 - i * 15, 60, 255 - i * 30), s * (0.22f - i * 0.025f));
         }
         break;
+    case Id::Particles: {   // a spray of dots fanning up out of a point, and a little sparkle
+        const ImVec2 dots[] = {{-0.28f, -0.05f}, {-0.12f, -0.3f}, {0.1f, -0.36f}, {0.3f, -0.12f}, {-0.02f, -0.12f}, {0.16f, 0.02f}};
+        const float r[] = {0.07f, 0.06f, 0.05f, 0.07f, 0.09f, 0.06f};
+        for (int i = 0; i < 6; ++i)
+            dl->AddCircleFilled(ImVec2(c.x + dots[i].x * s, c.y + dots[i].y * s), r[i] * s, rgb(255, 150 + i * 15, 70 + i * 20), 10);
+        dl->AddCircleFilled(ImVec2(c.x - s * 0.05f, c.y + s * 0.3f), s * 0.08f, rgb(255, 120, 50), 10);
+        dl->AddLine(ImVec2(c.x + s * 0.3f, c.y + s * 0.1f), ImVec2(c.x + s * 0.3f, c.y + s * 0.4f), rgb(255, 240, 160), s * 0.05f);
+        dl->AddLine(ImVec2(c.x + s * 0.15f, c.y + s * 0.25f), ImVec2(c.x + s * 0.45f, c.y + s * 0.25f), rgb(255, 240, 160), s * 0.05f);
+        break;
+    }
     case Id::Remote:   // a little envelope
         dl->AddRectFilled(ImVec2(c.x - s * 0.4f, c.y - s * 0.26f), ImVec2(c.x + s * 0.4f, c.y + s * 0.26f), rgb(250, 200, 80), s * 0.05f);
         dl->AddLine(ImVec2(c.x - s * 0.4f, c.y - s * 0.24f), ImVec2(c.x, c.y + s * 0.06f), rgb(150, 100, 30), s * 0.07f);
@@ -585,6 +595,7 @@ Id forNode(const SceneNode& n) {
         case NodeKind::ClickDetector: return Id::Click;
         case NodeKind::Trail:
         case NodeKind::Beam:       return Id::Ribbon;
+        case NodeKind::Particles:  return Id::Particles;
         case NodeKind::Light:      return Id::Light;
         case NodeKind::Sound:      return Id::Sound;
         case NodeKind::Attachment: return Id::Attachment;

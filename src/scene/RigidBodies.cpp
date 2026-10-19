@@ -25,20 +25,6 @@
 
 namespace {
 
-struct MaterialPhysics { float density, friction, elasticity; };
-
-MaterialPhysics materialPhysics(Material m) {
-    switch (m) {
-        case Material::Metal:    return {3.0f, 0.35f, 0.15f};
-        case Material::Wood:     return {0.7f, 0.50f, 0.25f};
-        case Material::Glass:    return {2.5f, 0.25f, 0.20f};
-        case Material::Concrete: return {2.4f, 0.70f, 0.10f};
-        case Material::Ice:      return {0.9f, 0.03f, 0.10f};
-        case Material::Neon:     return {1.0f, 0.40f, 0.20f};
-        default:                 return {1.0f, 0.50f, 0.30f};   // Plastic
-    }
-}
-
 struct Body {
     SceneNode* node = nullptr;
     bool       dynamic = false;
@@ -54,6 +40,7 @@ struct Body {
     float      invMass = 0.0f;
     glm::vec3  invInertiaLocal{0.0f};
     float      friction = 0.5f, elasticity = 0.3f;
+    float      frictionWeight = 1.0f, elasticityWeight = 1.0f;   // CustomPhysicalProperties' weights
     bool       awake = true;
     glm::vec3  aabbMin{0.0f}, aabbMax{0.0f};
 
@@ -193,9 +180,10 @@ Body makeBody(SceneNode* n, bool dynamic) {
     b.sphere = n->primitiveType == PrimitiveType::Sphere;
     b.radius = b.sphere ? (b.half.x + b.half.y + b.half.z) / 3.0f : 0.0f;
 
-    MaterialPhysics mp = materialPhysics(n->material);
-    b.friction   = n->friction   >= 0 ? n->friction   : mp.friction;
-    b.elasticity = n->elasticity >= 0 ? n->elasticity : mp.elasticity;
+    b.friction   = Physics::frictionOf(n);
+    b.elasticity = Physics::elasticityOf(n);
+    b.frictionWeight   = std::max(0.0f, n->frictionWeight);
+    b.elasticityWeight = std::max(0.0f, n->elasticityWeight);
     if (dynamic) {
         float density = Physics::densityOf(n);
         glm::vec3 e = b.half * 2.0f;
@@ -706,6 +694,15 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             c.mu  = std::sqrt(A.friction * B.friction);
             float vn = glm::dot(A.velocityAt(c.p) - B.velocityAt(c.p), c.n);
             float e = std::max(A.elasticity, B.elasticity);
+            // Weights (CustomPhysicalProperties): a weighted mix instead, like Roblox's.
+            if (A.frictionWeight != 1.0f || B.frictionWeight != 1.0f) {
+                const float w = A.frictionWeight + B.frictionWeight;
+                if (w > 1e-6f) c.mu = (A.friction * A.frictionWeight + B.friction * B.frictionWeight) / w;
+            }
+            if (A.elasticityWeight != 1.0f || B.elasticityWeight != 1.0f) {
+                const float w = A.elasticityWeight + B.elasticityWeight;
+                if (w > 1e-6f) e = (A.elasticity * A.elasticityWeight + B.elasticity * B.elasticityWeight) / w;
+            }
             c.bias = 0.25f / h * std::max(c.depth - 0.01f, 0.0f);
             if (vn < -1.5f) c.bias = std::max(c.bias, -e * vn);
         }
