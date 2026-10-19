@@ -491,6 +491,7 @@ void Editor::uploadLocalTextures(json node, const std::string& name, std::functi
         if (n.contains("children")) for (const auto& c : n["children"]) find(c);
         if (n.contains("nodes")) for (const auto& c : n["nodes"]) find(c);
         if (n.contains("node")) find(n["node"]);   // an accessory file: {"format":"gbaccessory","node":{...}}
+        for (const char* k : {"particles", "effect"}) if (n.contains(k)) find(n[k]);   // a ParticleEmitter's, Trail's or Beam's picture
     };
     find(node);
     if (todo.empty()) { done(node, ""); return; }
@@ -509,6 +510,7 @@ void Editor::uploadLocalTextures(json node, const std::string& name, std::functi
                 if (n.contains("children")) for (auto& c : n["children"]) swap(c);
                 if (n.contains("nodes")) for (auto& c : n["nodes"]) swap(c);
                 if (n.contains("node")) swap(n["node"]);
+                for (const char* k : {"particles", "effect"}) if (n.contains(k)) swap(n[k]);
             };
             swap(st->node);
             done(st->node, "");

@@ -103,6 +103,11 @@ struct RemoteCharacter {
     bool          cameraSet = false;
     CameraOptions camera;
     std::vector<uint64_t> toolSlots;     // their hotbar order (the host keeps their tools)
+    // Their team (the host's scripts decide; sent to them so they spawn in the right place).
+    uint64_t    team = 0;
+    bool        neutral = true;
+    glm::vec3   teamColor{1.0f};
+    bool        teamDirty = false;
 };
 
 // A visual effect to show on every player's screen (multiplayer).

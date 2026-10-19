@@ -153,6 +153,28 @@ json avatarJson(const Profile& p) {
             {"faceImage", p.faceImage}, {"accessories", p.accessories}};
 }
 
+// Part physics, a SpawnLocation's team and a Model's PrimaryPart (nodeUpdate sends these too).
+json nodeExtras(const SceneNode* n) {
+    json u = json::object();
+    if (n->isPart())
+        u["ph"] = {n->density, n->friction, n->elasticity, n->frictionWeight, n->elasticityWeight};
+    if (n->isSpawnLocation()) u["sp"] = {n->spawnNeutral, vec3(n->teamColor), n->allowTeamChange};
+    if (n->kind == NodeKind::Model) u["pp"] = n->primaryPart;
+    return u;
+}
+void applyExtras(SceneNode* n, const json& u) {
+    if (const json ph = u.value("ph", json()); ph.is_array() && ph.size() == 5 && n->kind == NodeKind::Part) {
+        n->density = ph[0].get<float>(); n->friction = ph[1].get<float>(); n->elasticity = ph[2].get<float>();
+        n->frictionWeight = ph[3].get<float>(); n->elasticityWeight = ph[4].get<float>();
+    }
+    if (const json sp = u.value("sp", json()); sp.is_array() && sp.size() == 3 && n->kind == NodeKind::Part) {
+        n->spawnNeutral = sp[0].get<bool>();
+        n->teamColor = vec3(sp[1]);
+        n->allowTeamChange = sp[2].get<bool>();
+    }
+    if (n->kind == NodeKind::Model && u.contains("pp") && u["pp"].is_number()) n->primaryPart = u["pp"].get<uint64_t>();
+}
+
 // Everything a joined player needs to see about a (non-character) object.
 std::string nodeState(const SceneNode* n) {
     char buf[512];
@@ -164,11 +186,26 @@ std::string nodeState(const SceneNode* n) {
         t.scale.x, t.scale.y, t.scale.z, n->color.r, n->color.g, n->color.b, n->transparency,
         (int)n->visible, (int)n->canCollide, (int)n->enabled, (int)n->material, (int)n->primitiveType,
         n->brightness, n->range, n->spotAngle);
+    std::string extra;   // CustomPhysicalProperties, a SpawnLocation's team, a Model's PrimaryPart
+    if (n->isPart()) {
+        char more[160];
+        std::snprintf(more, sizeof(more), "|%.3f %.3f %.3f %.3f %.3f", n->density, n->friction, n->elasticity,
+                      n->frictionWeight, n->elasticityWeight);
+        extra += more;
+        if (n->isSpawnLocation()) {
+            std::snprintf(more, sizeof(more), "|%d%d %.3f %.3f %.3f", (int)n->spawnNeutral, (int)n->allowTeamChange,
+                          n->teamColor.r, n->teamColor.g, n->teamColor.b);
+            extra += more;
+        }
+    }
+    if (n->kind == NodeKind::Model && n->primaryPart) extra += "|pp" + std::to_string(n->primaryPart);
+    if (!extra.empty()) return std::string(buf) + extra;   // (parts and models: none of the kinds below)
     if (n->isGui()) return std::string(buf) + Serializer::guiToJson(n->gui).dump();   // text, colours, sizes...
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
     if (n->isClickDetector()) return std::string(buf) + Serializer::clickToJson(n->click).dump();
     if (n->isHighlight()) return std::string(buf) + Serializer::highlightToJson(n->highlight, n->enabled).dump();
     if (n->isEffect()) return std::string(buf) + Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam).dump();
+    if (n->isParticles()) return std::string(buf) + Serializer::particleToJson(n->particle, n->enabled).dump();
     return buf;
 }
 
@@ -182,6 +219,8 @@ json nodeUpdate(const SceneNode* n) {
     if (n->isClickDetector()) u["cd"] = Serializer::clickToJson(n->click);
     if (n->isHighlight()) u["hl"] = Serializer::highlightToJson(n->highlight, n->enabled);
     if (n->isEffect()) u["fx"] = Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam);
+    u.update(nodeExtras(n));
+    if (n->isParticles()) u["px"] = Serializer::particleToJson(n->particle, n->enabled);
     return u;
 }
 
@@ -210,6 +249,8 @@ void applyUpdate(SceneNode* n, const json& u) {
     if (n->isClickDetector() && u.contains("cd") && u["cd"].is_object()) Serializer::clickFromJson(u["cd"], n->click);
     if (n->isHighlight() && u.contains("hl") && u["hl"].is_object()) Serializer::highlightFromJson(u["hl"], n->highlight, n->enabled);
     if (n->isEffect() && u.contains("fx") && u["fx"].is_object()) Serializer::effectFromJson(u["fx"], n->effect, n->enabled);
+    applyExtras(n, u);
+    if (n->isParticles() && u.contains("px") && u["px"].is_object()) Serializer::particleFromJson(u["px"], n->particle, n->enabled, true);
 }
 
 glm::vec3 spawnPoint(Scene& scene) {
@@ -435,10 +476,10 @@ std::string charEffects(Scene& scene, SceneNode* root) {
         SceneNode* n = stack.back();
         stack.pop_back();
         for (auto& c : n->children) {
-            if (!c->isHighlight() && !c->isEffect()) { stack.push_back(c.get()); continue; }
+            if (!c->isHighlight() && !c->isEffect() && !c->isParticles()) { stack.push_back(c.get()); continue; }
             json e = {{"in", pathIn(root, n)}, {"n", Serializer::nodeToString(*c)}};
             if (c->isHighlight()) ref(e, "a", "w", c->highlight.adornee);
-            else { ref(e, "a0", "w0", c->effect.a0); ref(e, "a1", "w1", c->effect.a1); }
+            else if (c->isEffect()) { ref(e, "a0", "w0", c->effect.a0); ref(e, "a1", "w1", c->effect.a1); }
             list.push_back(e);
         }
     }
@@ -1225,6 +1266,11 @@ void NetServer::sendTick() {
                 c->conn->send(json{{"t", "hum"}, {"h", humanoidJson(rc->humanoid)}}.dump());
                 rc->humanoidDirty = false;
             }
+            if (rc->teamDirty) {   // their team (they spawn themselves, on its SpawnLocations)
+                c->conn->send(json{{"t", "team"}, {"team", rc->team}, {"neutral", rc->neutral},
+                                   {"color", vec3(rc->teamColor)}}.dump());
+                rc->teamDirty = false;
+            }
             // Their CameraMode / zoom limits, once a script here changed them.
             if (rc->cameraSet) {
                 std::string camera = json{{"t", "camopt"}, {"o", cameraJson(rc->camera)}}.dump();
@@ -1603,7 +1649,7 @@ void NetClient::handle(const std::string& text) {
             if (!e.is_object()) continue;
             auto node = Serializer::nodeFromString(e.value("n", std::string()), true);
             SceneNode* in = findPath(root, e.value("in", std::string()));
-            if (!node || !in || (!node->isHighlight() && !node->isEffect())) continue;
+            if (!node || !in || (!node->isHighlight() && !node->isEffect() && !node->isParticles())) continue;
             node->children.clear();
             // What it points at, here.
             auto ref = [&](const char* inside, const char* world) -> uint64_t {
@@ -1615,7 +1661,7 @@ void NetClient::handle(const std::string& text) {
             if (node->isHighlight()) {
                 node->highlight.adornee = ref("a", "w");
                 if (node->highlight.adornee == root->id && in == root) node->highlight.adornee = 0;
-            } else {
+            } else if (node->isEffect()) {
                 node->effect.a0 = ref("a0", "w0");
                 node->effect.a1 = ref("a1", "w1");
             }
@@ -1626,6 +1672,15 @@ void NetClient::handle(const std::string& text) {
     if (t == "passprompt") { m_passPrompt = m.value("pass", std::string()); return; }
     if (t == "hum" && me) {
         humanoidFrom(me->humanoid(), m.value("h", json::object()));
+        return;
+    }
+    if (t == "team" && me) {   // the host's scripts put us on a team
+        const bool neutral = m.value("neutral", true);
+        const glm::vec3 color = vec3(m.value("color", json()));
+        const bool changed = me->neutral() != neutral || me->teamColor() != color;
+        me->setTeam(neutral, color);
+        if (changed && me->aliveTime() < 2.0f) me->placeAtSpawn();   // (just arrived: start on our team's spawn)
+        m_session->scripts().setLocalTeam(m.value("team", (uint64_t)0), neutral, color.r, color.g, color.b);
         return;
     }
     if (t == "camopt") {   // the host's scripts changed our player.CameraMode / zoom limits

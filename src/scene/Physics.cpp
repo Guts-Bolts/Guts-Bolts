@@ -203,15 +203,10 @@ std::vector<Physics::Shove> Physics::shoves(const glm::vec3& feet, float yaw, fl
 
 float Physics::densityOf(const SceneNode* n) {
     if (n->density >= 0.0f) return std::max(0.01f, n->density);
-    switch (n->material) {
-        case Material::Metal:    return 3.0f;
-        case Material::Wood:     return 0.7f;
-        case Material::Glass:    return 2.5f;
-        case Material::Concrete: return 2.4f;
-        case Material::Ice:      return 0.9f;
-        default:                 return 1.0f;   // Plastic, Neon
-    }
+    return materialPhysics(n->material).density;
 }
+float Physics::frictionOf(const SceneNode* n) { return n->friction >= 0.0f ? n->friction : materialPhysics(n->material).friction; }
+float Physics::elasticityOf(const SceneNode* n) { return n->elasticity >= 0.0f ? n->elasticity : materialPhysics(n->material).elasticity; }
 
 AABB Physics::bounds(const OBB& o) {
     glm::vec3 e(0.0f);

@@ -10,7 +10,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'skeleton-key', name: 'Skeleton Key', time: 1791856800, tag: 'Studio',
+    id: 'skeleton-key', name: 'Skeleton Key', time: 1792433006, tag: 'Studio',
     summary: 'Studio\'s Assistant and connected AI apps can now reach every service, use the same names as your scripts, and publish when you ask.',
     items: [
       'The AI helpers can put things in StarterPack, StarterGui, StarterPlayer (StarterPlayerScripts and StarterCharacterScripts), ReplicatedStorage, ServerStorage, ServerScriptService, Teams, SoundService and the rest',
@@ -21,6 +21,42 @@ export const BUILT_IN_UPDATES = [
       'A wrong class, property, setting or service name comes back with the list of names that would work',
       'They can publish your game like File > Publish, as your signed-in account and only when you ask; when you\'re not signed in they say so and stop',
       'StarterPlayer has its own StarterPlayerScripts folder in the Explorer, and game.StarterPlayer works in scripts',
+    ],
+  },
+  {
+    id: 'pick-a-side', name: 'Pick a Side', time: 1792381691, tag: 'Engine',
+    summary: 'Teams get their own spawns, models know their main part, and scripts can be written the newer way with += and continue.',
+    items: [
+      'SpawnLocations can belong to a team: players spawn on their team\'s spawns, and some can switch your team when you step on them',
+      'Scripts can tell when a character spawns or is about to respawn (CharacterAdded and CharacterRemoving)',
+      'Models have a PrimaryPart, and moving a model with PivotTo turns it around that part',
+      'Scripts can set a part\'s density, grip and bounce all at once, and the physics really use them',
+      'Text can be made bold with one switch (Bold)',
+      'Every script can use +=, continue, types and {name} strings, and errors still point at the right line',
+    ],
+  },
+  {
+    id: 'ember-and-ash', name: 'Ember & Ash', time: 1792380179, tag: 'Engine',
+    summary: 'Particle effects you can place: ParticleEmitter, Fire, Smoke and Sparkles, seen by everyone in the game.',
+    items: [
+      'Insert a ParticleEmitter into any part (Insert Object > Particles) and it starts spraying, even while you build',
+      'Set its Rate, Lifetime, Speed, Spread, Color, Size, Transparency, glow, gravity, drag and spin in Properties or from scripts',
+      'Scripts can call Emit(50) for a burst or Clear() to wipe them, and NumberRange.new is new for these',
+      'Classic Fire, Smoke and Sparkles: drop one in a part and it just works',
+      'Every player sees them in online games, and a huge Rate can\'t freeze the game (there\'s a cap)',
+      'Particles come across when you import .rbxl and .rbxm files, and go back out when you export',
+    ],
+  },
+  {
+    id: 'bricks-and-mortar', name: 'Bricks & Mortar', time: 1791853200, tag: 'Engine',
+    summary: 'Eleven new materials, each with its own look and feel: Brick, Cobblestone, Marble, Diamond Plate and more.',
+    items: [
+      'New materials: Sand, Grass, Brick, Fabric, Slate, Granite, Marble, Cobblestone, Foil, DiamondPlate and SmoothPlastic',
+      'Each one is drawn by the engine: bricks with mortar lined up with the part\'s edges, round cobbles, marble veins, granite speckles, woven fabric, crinkly foil and raised diamond plate stripes',
+      'They feel different too: Brick and Cobblestone are grippy, Marble is a bit slippery, the stones sink in water and Fabric floats',
+      'Pick them in Studio\'s Properties panel, or from a script with part.Material = Enum.Material.Marble (or "Marble")',
+      'A material name that doesn\'t exist now says which ones do',
+      'Imported Roblox places keep their Slate, Granite, Marble, Brick, Sand, Grass and other materials instead of turning into Concrete or Plastic',
     ],
   },
   {
