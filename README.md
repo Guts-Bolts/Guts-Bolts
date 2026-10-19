@@ -281,6 +281,46 @@ what it needs, what it gives back and how risky it is):
 - Debug: `get_output`, `get_errors`, `diagnose_object`, `validate_scene`
 - View and history: `screenshot`, `undo`, `redo`, `checkpoint` (named save
   points to try things and roll back)
+- Publish: `publish_game` (only when you ask for it)
+
+**Services.** The tools see the whole game, not just the Workspace:
+`get_game_tree` lists every service like the Explorer (Players, Lighting,
+ReplicatedFirst, ReplicatedStorage, ServerScriptService, ServerStorage,
+StarterGui, StarterPack, StarterPlayer with StarterPlayerScripts and
+StarterCharacterScripts, Teams, SoundService, Chat, TextChatService), and a
+service's name works as a parent or at the start of a path: a Tool in
+`StarterPack`, a Script in `ServerScriptService`, a LocalScript in
+`StarterPlayer.StarterPlayerScripts`, `ReplicatedStorage.Events`. A service's
+folder is made the first time something goes in it. StarterCharacterScripts is
+the character itself (scripts there run in every player's character). Lighting
+holds settings, so `get_object` / `set_property` with object `"Lighting"`
+read and change ClockTime, Brightness, fog and so on.
+
+**Property names are the script names.** `get_object` lists an object's
+properties under the names Lua uses (`CanCollide`, `BackgroundColor3`...), read
+from the engine, and `set_property` takes the same names back (older spellings
+like `can_collide` still work and are corrected). Enum values work as `"Neon"`
+or `"Enum.Material.Neon"`. Setting a script's `Source` is passed on to
+`edit_script`, which is the way to change code.
+
+**Play sessions in the Output.** Every Output line is marked with the playtest
+it came from (`run`: 1, 2, 3...; 0 = while editing). `get_output` and
+`get_errors` take `run: "latest"` (or `"current"`, `"editing"`, a number) so an
+AI checking its fix doesn't trip over errors from an earlier run.
+
+**Bad names list the choices.** An unknown class, property, enum value or
+service fails with `UNKNOWN_CLASS`, `UNKNOWN_PROPERTY`, `INVALID_ENUM_VALUE` or
+`SERVICE_NOT_FOUND`, and `error.valid_choices` lists what would have worked.
+
+**Publishing.** `publish_game` publishes exactly like File > Publish to
+Guts&Bolts: as the account Studio is signed in with, through the same request,
+with the server's own checks and limits. It needs `confirm: true`, refuses with
+`NOT_SIGNED_IN` when Studio isn't signed in (it never signs in by itself), and
+finishes in the background: `publish_game {action: "status"}` says how it went.
+
+`tools/test_ai_tools.py` starts Studio with MCP on (under `xvfb-run` when
+there's no screen) and checks all of this over JSON-RPC:
+`python3 tools/test_ai_tools.py`.
 
 Every tool answers with JSON: `success`, the `object_id` (`#42`) of what it
 touched, the state read back from the engine, `warnings`, and for failures an
@@ -295,7 +335,8 @@ MCP apps can also read the engine reference as resources: `gutsbolts://guide`,
 `gutsbolts://overview`, `gutsbolts://capabilities` (a JSON manifest of what the
 tools can and can't do), `gutsbolts://concepts`, `gutsbolts://coordinates`
 (Y up, -Z forward, units, rotations), `gutsbolts://workflows`,
-`gutsbolts://examples`, `gutsbolts://classes`, and live ones:
+`gutsbolts://examples`, `gutsbolts://classes` (insertable classes and the
+services they can go in), and live ones:
 `gutsbolts://scene/tree`, `gutsbolts://runtime` and `gutsbolts://errors`.
 MCP prompts (`make_physical`, `navigate_enemies`, `explosion_push`,
 `fix_not_working`, `describe_scene`) start common jobs with the right workflow. Objects are best named by id (`#42`); a path like

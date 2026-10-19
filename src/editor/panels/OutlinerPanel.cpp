@@ -332,13 +332,24 @@ void OutlinerPanel::render() {
         folderService("ServerStorage", (int)Id::Folder, "Things only server scripts use (maps, prizes). Not in the world until a script clones them.");
         folderService("StarterGui", (int)Id::ScreenGui, "The game's on-screen UI (ScreenGuis). Everyone gets a copy.");
         folderService("StarterPack", (int)Id::Tool, "Tools everyone spawns with.");
-        if (serviceRow("StarterPlayer", (int)Icons::Id::Player, character && !inWorkspace, false)) {
-            if (character && !inWorkspace) drawNode(character);
-            ImGui::TreePop();
+        {
+            SceneNode* sp = m_scene->serviceFolder("StarterPlayer", false);
+            bool spKids = false;
+            if (sp) for (auto& c : sp->children) if (!c->internal) { spKids = true; break; }
+            ImGui::PushID("StarterPlayer");
+            const bool spOpen = serviceRow("StarterPlayer", (int)Icons::Id::Player, (character && !inWorkspace) || spKids, sp && sp->selected);
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() && sp) m_scene->select(sp);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(inWorkspace ? "The character is in the Workspace while the game runs."
+                                              : "The character everyone spawns as. Dress it, add scripts to it (its Animate script plays "
+                                                "its animations). StarterPlayerScripts holds LocalScripts that run for every player.");
+            if (spOpen) {
+                if (character && !inWorkspace) drawNode(character);
+                if (sp) for (auto& c : sp->children) drawNode(c.get());   // StarterPlayerScripts...
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
         }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(inWorkspace ? "The character is in the Workspace while the game runs."
-                                          : "The character everyone spawns as. Dress it, add scripts to it (its Animate script plays its animations).");
         folderService("Teams", (int)Id::Team, "Teams players can be on. Insert a Team here.");
         folderService("SoundService", (int)Id::Sound, "Sounds for the whole game (music, sound effects scripts play).");
         folderService("Chat", (int)Id::Output, "Chat settings and scripts.");

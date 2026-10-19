@@ -86,6 +86,7 @@ void setAttr(SceneNode* n, const char* name, Attribute::Type t, double num, glm:
 
 const char* className(lua_State* L, const SceneNode* n) {
     if (n == E(L)->scene()->root()) return "Workspace";
+    if (E(L)->scene()->isServiceFolder(n)) return n->name.c_str();   // StarterPack, ServerScriptService...
     switch (n->kind) {
         case NodeKind::Model:
             // A stand-in for a Roblox object we don't have (an imported SpecialMesh): it

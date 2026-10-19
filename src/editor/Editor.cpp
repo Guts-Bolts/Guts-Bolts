@@ -239,7 +239,9 @@ void Editor::togglePlay() {
         if (m_state.mode == StudioMode::Modeling) exitModeling();
         m_state.mode = m_session->runOnly() ? StudioMode::Simulate : StudioMode::Play;
         m_state.simPaused = false;
-        Log::system(m_session->runOnly() ? "Simulation started (no character) - Shift+F5 to stop." : "Game started.");
+        const int run = Log::beginRun();
+        Log::system(m_session->runOnly() ? "Simulation started (run " + std::to_string(run) + ", no character) - Shift+F5 to stop."
+                                         : "Game started (run " + std::to_string(run) + ").");
         m_session->start();
     } else {
         uint64_t sel = m_scene->selected() ? m_scene->selected()->id : 0;
@@ -253,6 +255,7 @@ void Editor::togglePlay() {
         m_state.mode = StudioMode::Build;
         m_state.simPaused = false;
         Log::system("Game stopped - everything is back to how it was.");
+        Log::endRun();
     }
 }
 

@@ -18,7 +18,19 @@ json schema(json props, std::vector<std::string> required) {
 }
 const json kObject = {{"type", "string"},
                       {"description", "Which object. Best: its object_id like \"#42\" (stable, never ambiguous; every tool "
-                                      "returns them). Also works: a path like \"Workspace.Castle.Door\"."}};
+                                      "returns them). Also works: a path that starts with a service, like \"Workspace.Castle.Door\", "
+                                      "\"StarterPack.Sword\", \"ServerScriptService.Main\" or \"game.ReplicatedStorage.Events\"."}};
+// Where something goes: an object, or a service.
+const json kParent = {{"type", "string"},
+                      {"description", "Where it goes: an object (\"#42\" or a path) or a service: Workspace, ReplicatedFirst, "
+                                      "ReplicatedStorage, ServerScriptService, ServerStorage, StarterGui, StarterPack, StarterPlayer, "
+                                      "StarterPlayer.StarterPlayerScripts, StarterPlayer.StarterCharacterScripts, Teams, SoundService, "
+                                      "Chat, TextChatService. A service's folder is made the first time something goes in it."}};
+// Which play session's Output lines (get_output / get_errors).
+const json kRun = {{"type", {"string", "integer"}},
+                   {"description", "Which play session: \"all\" (default), \"latest\" (the newest playtest, running or "
+                                   "finished: use this to ignore old errors), \"current\" (the running one), \"editing\" "
+                                   "(lines from outside playtests) or a run number. Every line says its run (0 = editing)."}};
 
 // How risky a tool is (spec: none < low < medium < high < critical).
 enum class Risk { None, Low, Medium, High, Critical };
@@ -100,16 +112,20 @@ const std::vector<Tool>& tools() {
 
         // ---------------------------------------------------------------- SCENE
         {"get_game_tree", "Show the game's object tree", "SCENE", true, false, true, Risk::None,
-         {"Lists the objects in the game (the scene) as an indented tree: name, class and object_id (#number) for each. "
+         {"Lists the objects in the game as an indented tree: name, class and object_id (#number) for each. With no "
+          "root it shows EVERY service like Studio's Explorer: Workspace, Players, Lighting, ReplicatedFirst, "
+          "ReplicatedStorage, ServerScriptService, ServerStorage, StarterGui, StarterPack, StarterPlayer (with "
+          "StarterPlayerScripts and StarterCharacterScripts), Teams, SoundService, Chat, TextChatService (empty ones say so). "
           "This is the real, current content of the game; never guess what is in it.",
           "Start of almost every task. \"What's in the game/scene?\", \"show me the map\", \"what objects are there\", "
           "\"find the door\" (when you don't know its name yet), before creating something to see where it should go.",
           "To read one object's properties use get_object. To search by name or class across a big game use find_objects.",
-          "root (optional object, default the whole game: Workspace); depth (optional, levels to show, default 4).",
-          "{tree: indented text, object_count, truncated}. Deeper levels are summarised as \"... N more inside\".",
+          "root (optional object or service, e.g. \"StarterPack\"; default the whole game); depth (optional, levels to show, default 4).",
+          "{tree: indented text, object_count, truncated, services: [{name, class, object_id, child_count, can_insert}]}. "
+          "Deeper levels are summarised as \"... N more inside\".",
           "None.", "Nothing changes.",
           "get_game_tree -> get_object / find_objects -> (change something) -> get_object to verify.",
-          "\"What is in my game?\" \"Is there a spawn point?\" \"Show me what's inside the Castle model.\""},
+          "\"What is in my game?\" \"Is there a spawn point?\" \"What tools does everyone start with?\" (root StarterPack)"},
          schema({{"root", kObject}, {"depth", {{"type", "integer"}, {"minimum", 0}, {"description", "How many levels deep (default 4)"}}}}, {})},
         {"find_objects", "Search for objects", "SCENE", true, false, true, Risk::None,
          {"Searches the whole game (or one part of it) for objects by name, class and/or tag, and returns their object_ids. "
@@ -120,7 +136,7 @@ const std::vector<Tool>& tools() {
           "name (optional, case-insensitive text the name contains); class (optional, exact class like Part, Model, Script, "
           "PointLight, TextLabel); tag (optional, a CollectionService tag); under (optional object to search inside); "
           "limit (optional, default 50, max 500). Give at least one of name / class / tag.",
-          "{matches: [{object_id, name, class, path}], count, truncated}.",
+          "{matches: [{object_id, name, class, path}], count, truncated}. Searches every service, not just the Workspace.",
           "None.", "Nothing changes.",
           "find_objects -> get_object / diagnose_object -> set_property ...",
           "\"Find every part called Barrel.\" \"List all LocalScripts.\" \"Which objects are tagged Enemy?\""},
@@ -139,13 +155,19 @@ const std::vector<Tool>& tools() {
           "\"Create/add/spawn/place/insert/make a part (cube, ball, light, sound, button, script holder...)\".",
           "To change something that already exists, find it (get_game_tree / find_objects) and use set_property. "
           "For a script with code in it, create_script does both steps at once.",
-          "kind (required, see above); parent (optional object to put it in, default Workspace); name (optional).",
-          "{object_id, name, class, parent_id, resulting_state: the new object's key properties}.",
-          "parent, if given, must exist. Scripts and character parts can't hold new objects (it goes in Workspace instead).",
+          "kind (required, see above; Team goes in Teams by itself); parent (optional object or service, default "
+          "Workspace: e.g. a Tool in \"StarterPack\", a Script in \"ServerScriptService\", a ScreenGui in \"StarterGui\", "
+          "a LocalScript in \"StarterPlayer.StarterPlayerScripts\", templates in \"ReplicatedStorage\" / \"ServerStorage\", "
+          "a Sound in \"SoundService\"); name (optional).",
+          "{object_id, name, class, path, parent_id, resulting_state: the new object's key properties (Lua names)}. An "
+          "unknown kind fails with UNKNOWN_CLASS and error.valid_choices (every kind) / did_you_mean.",
+          "parent, if given, must exist (services are made on demand). Lighting and Players can't hold objects. Scripts "
+          "and character parts can't hold new objects, except that scripts can go in StarterPlayer.StarterCharacterScripts "
+          "(the character).",
           "The object exists, is selected in Studio, and has the class defaults (parts: anchored, 2x1x1 near the camera).",
           "insert_object -> set_property (Position, Size, Color, Anchored...) -> get_object to verify.",
           "\"Add a red ball.\" \"Put a light in the lamp.\" \"Make a button on the screen.\""},
-         schema({{"kind", {{"type", "string"}}}, {"parent", kObject}, {"name", {{"type", "string"}}}}, {"kind"})},
+         schema({{"kind", {{"type", "string"}}}, {"parent", kParent}, {"name", {{"type", "string"}}}}, {"kind"})},
         {"delete_object", "Delete an object", "SCENE", false, true, false, Risk::High,
          {"Deletes one object AND everything inside it. Can be undone with undo, but only while Studio stays open.",
           "Only when the person clearly asked to delete/remove/destroy/get rid of that specific thing.",
@@ -162,38 +184,50 @@ const std::vector<Tool>& tools() {
 
         // -------------------------------------------------------------- OBJECTS
         {"get_object", "Read an object's properties", "OBJECTS", true, false, true, Risk::None,
-         {"Returns everything about one object: object_id, class, path, parent, world position, and all saved "
-          "properties (Position, Size, Color, Material, Anchored, CanCollide, Transparency, attributes, tags, script "
-          "source...). While playtesting it also has runtime values (velocity, spin) under \"runtime\".",
+         {"Returns everything about one object: object_id, class, path, parent, children, and its properties under the "
+          "SAME names scripts use (Position, Size, Color, Material, Anchored, CanCollide, Transparency, BackgroundColor3, "
+          "Text...), read from the engine; plus attributes and tags. set_property takes these names back. While "
+          "playtesting it also has runtime values (velocity, spin) under \"runtime\". object \"Lighting\" gives the "
+          "Lighting service's settings (ClockTime, Brightness, FogEnabled, Ambient...).",
           "Before changing an unfamiliar object, to answer \"what colour/size/where is X\", to check why something "
           "doesn't work, and AFTER a change to verify it took effect.",
           "To list many objects use get_game_tree / find_objects. For a ready-made list of likely problems use diagnose_object.",
           "object (required).",
-          "{object_id, name, class, path, parent_id, children: [{object_id, name, class}], properties: {...}, runtime?}.",
+          "{object_id, name, class, path, parent_id, children: [{object_id, name, class}], properties: {LuaName: value}, "
+          "attributes?, tags?, saved_fields (how the file stores it, internal names), runtime?}. Values: numbers, booleans, "
+          "text, [x, y, z] (Vector3 / Color3 0-1), [[xScale, xOffset], [yScale, yOffset]] (UDim2), \"#id\" (an object).",
           "The object exists.", "Nothing changes.",
           "find_objects -> get_object -> set_property -> get_object.",
           "\"How big is the platform?\" \"Is the door anchored?\" \"What's inside the Tool?\""},
          schema({{"object", kObject}}, {"object"})},
         {"set_property", "Change one property", "OBJECTS", false, false, true, Risk::Low,
          {"Changes ONE property of an existing object, exactly like a script would (obj.Property = value), then reads it "
-          "back so you can see the value the engine really has. Common properties: Position [x,y,z], Size [x,y,z], "
-          "Orientation [x,y,z] (degrees), Color [r,g,b] (0-1 each), Transparency (0-1), Anchored (false = falls with "
-          "gravity in play), CanCollide, CollisionGroup (a registered group's name), Material (\"Plastic\", \"SmoothPlastic\", \"Metal\", \"DiamondPlate\", \"Foil\", \"Neon\", \"Wood\", \"Glass\", \"Ice\", "
-          "\"Concrete\", \"Brick\", \"Cobblestone\", \"Slate\", \"Granite\", \"Marble\", \"Sand\", \"Grass\", \"Fabric\"), "
-          "Name, Parent (an object), Enabled, Brightness, Range, Text, Visible...",
+          "back so you can see the value the engine really has. Property names are the ones scripts use (the same as "
+          "get_object's properties); other spellings of the same name (can_collide, cancollide) are accepted and "
+          "corrected. Common properties: Position [x,y,z], Size [x,y,z], Orientation [x,y,z] (degrees), Color [r,g,b] "
+          "(0-1 each), Transparency (0-1), Anchored (false = falls with gravity in play), CanCollide, CollisionGroup (a registered group's name), Material (\"Plastic\", "
+          "\"SmoothPlastic\", \"Metal\", \"DiamondPlate\", \"Foil\", \"Neon\", \"Wood\", \"Glass\", \"Ice\", \"Concrete\", "
+          "\"Brick\", \"Cobblestone\", \"Slate\", \"Granite\", \"Marble\", \"Sand\", \"Grass\", \"Fabric\"; Enum.Material.Neon "
+          "works too), Name, Parent (an object or a service like \"StarterPack\"), Enabled, Brightness, Range, Text, "
+          "Visible... object \"Lighting\" changes the Lighting service (ClockTime, Brightness, FogEnabled, FogDensity, "
+          "FogColor, Ambient, SunColor, GlobalShadows). Setting a script's Source is passed on to edit_script.",
           "\"Move/resize/recolour/rename X\", \"make it red/glow/see-through\", \"make it fall\" (Anchored false), "
           "\"make it solid / walk-through\" (CanCollide), \"put X inside Y\" (Parent).",
           "To create something new use insert_object. To change a script's code use edit_script. To change many objects "
           "at once, run_lua with a loop is faster.",
-          "object (required); property (required, the Roblox-style name); value (required: number, true/false, text, or "
-          "[x, y, z] for Vector3 / Color3).",
-          "{object_id, changed_properties: {Property: {requested, now}}, resulting_state}. `now` is read back from the engine.",
-          "The object exists and has that property (unknown properties give LUA_ERROR).",
+          "object (required, or \"Lighting\"); property (required, the name scripts use); value (required: number, "
+          "true/false, text, [x, y, z] for Vector3 / Color3, [x, y] Vector2, [[xs, xo], [ys, yo]] or [xs, xo, ys, yo] UDim2, "
+          "\"#id\" or a path for object properties like Parent / Adornee / Part0 / Attachment0).",
+          "{object_id, changed_properties: {Property: {requested, now}}, resulting_state}. `now` is read back from the "
+          "engine (same value format as get_object). A corrected name is noted in warnings.",
+          "The object exists and has that property. A wrong name fails with UNKNOWN_PROPERTY, a wrong enum value with "
+          "INVALID_ENUM_VALUE; both list error.valid_choices.",
           "The property is changed (undoable). Physics changes (Anchored...) only show their effect while playtesting.",
           "get_object -> set_property -> get_object / screenshot.",
           "\"Make the floor blue.\" \"Move the coin 5 units up.\" \"Let the crate fall.\""},
-         schema({{"object", kObject}, {"property", {{"type", "string"}}},
-                 {"value", {{"description", "number, boolean, string, or [x, y, z]"}}}}, {"object", "property", "value"})},
+         schema({{"object", kObject}, {"property", {{"type", "string"}, {"description", "The name scripts use (Position, CanCollide...)"}}},
+                 {"value", {{"description", "number, boolean, string, [x, y, z], [x, y], UDim2 [[xs, xo], [ys, yo]], or an object (\"#42\")"}}}},
+                {"object", "property", "value"})},
         {"select", "Select objects in Studio", "OBJECTS", false, false, true, Risk::None,
          {"Selects objects in Studio so the person can see them highlighted (or clears the selection). Doesn't change the game.",
           "\"Show me which one\", \"select the doors\", pointing the person at what you changed.",
@@ -212,13 +246,15 @@ const std::vector<Tool>& tools() {
           "scoring, doors that open, enemies that chase), or when the person asks for a script.",
           "Don't write a script for things a property or built-in object already does (falling: Anchored = false; "
           "glowing: Material Neon or a PointLight; a sound: a Sound object). To change an existing script use edit_script.",
-          "source (required, Lua 5.4; Luau `+=`, `continue`, type annotations and `{x}` strings work too); parent (optional object, "
-          "default Workspace; `script.Parent` is this object); name (optional); type (Script, LocalScript or ModuleScript).",
+          "source (required, Lua 5.4; Luau `+=`, `continue`, type annotations and `{x}` strings work too); parent (optional "
+          "object or service, default Workspace; `script.Parent` is this object. Game rules: \"ServerScriptService\"; per-player "
+          "LocalScripts: \"StarterPlayer.StarterPlayerScripts\"; in every character: \"StarterPlayer.StarterCharacterScripts\"; "
+          "UI code: inside the ScreenGui); name (optional); type (Script, LocalScript or ModuleScript).",
           "{object_id, name, class, parent_id, syntax: {ok, error?}}. A syntax error is reported but the script is still made.",
           "parent exists.", "The script exists. It does NOT run until a playtest starts (or the game is played).",
           "create_script -> diagnose_object (syntax) -> playtest start -> get_errors / get_output -> fix with edit_script -> playtest stop.",
           "\"Make the door open when touched.\" \"Add a score leaderboard.\""},
-         schema({{"parent", kObject}, {"name", {{"type", "string"}}}, {"source", {{"type", "string"}}},
+         schema({{"parent", kParent}, {"name", {{"type", "string"}}}, {"source", {{"type", "string"}}},
                  {"type", {{"type", "string"}, {"enum", {"Script", "LocalScript", "ModuleScript"}}}}}, {"source"})},
         {"read_script", "Read a script's code", "SCRIPTING", true, false, true, Risk::None,
          {"Returns the Lua source of a Script, LocalScript or ModuleScript.",
@@ -231,7 +267,8 @@ const std::vector<Tool>& tools() {
          {"Changes a script's code: replaces the text `old` with `new` (old must appear exactly once), or replaces "
           "the whole script with `source`. Checks the result for Lua syntax errors.",
           "Fixing a script error, changing what a script does, adding a feature to an existing script.",
-          "To make a new script use create_script. Don't rewrite a whole script with `source` when a small `old`/`new` edit will do.",
+          "To make a new script use create_script. Don't rewrite a whole script with `source` when a small `old`/`new` edit will do. "
+          "This (not set_property Source) is how a script's code is changed.",
           "object (required, a script); old + new (exact text swap) OR source (whole new code).",
           "{object_id, syntax: {ok, error?}}.",
           "The object is a script; `old` is copied exactly from read_script (spaces and line breaks matter).",
@@ -301,21 +338,28 @@ const std::vector<Tool>& tools() {
 
         // ---------------------------------------------------------------- DEBUG
         {"get_output", "Read the Output window", "DEBUG", true, false, true, Risk::None,
-         {"The latest lines of Studio's Output window: print() lines, warnings, script errors and Studio messages, with times.",
-          "After running code or playtesting, to see what scripts printed.",
+         {"The latest lines of Studio's Output window: print() lines, warnings, script errors and Studio messages, with "
+          "times. Each line says which play session (run) it came from, so old lines aren't mistaken for the current test.",
+          "After running code or playtesting, to see what scripts printed. run \"latest\" shows only the newest playtest.",
           "To see only problems use get_errors.",
-          "lines (optional, default 40, max 400).", "{lines: [{time, level, text}]}.", "None.", "Nothing changes.",
-          "playtest start -> get_output.", "\"What did the script print?\""},
-         schema({{"lines", {{"type", "integer"}, {"minimum", 1}, {"maximum", 400}, {"description", "How many (default 40)"}}}}, {})},
+          "lines (optional, default 40, max 400); run (optional: all, latest, current, editing or a number).",
+          "{lines: [{time, level, text, run}], latest_run, current_run, playing, run}.", "None.", "Nothing changes.",
+          "playtest start -> get_output {run: \"latest\"}.", "\"What did the script print?\""},
+         schema({{"lines", {{"type", "integer"}, {"minimum", 1}, {"maximum", 400}, {"description", "How many (default 40)"}}},
+                 {"run", kRun}}, {})},
         {"get_errors", "Read errors and warnings", "DEBUG", true, false, true, Risk::None,
          {"Only the errors (and warnings) from the Output window: script errors with their line numbers, failed loads, "
           "warn() calls.",
           "\"Why doesn't it work?\", \"is anything broken?\", after every playtest and every script change.",
           "For everything printed use get_output.",
-          "lines (optional, how many recent Output lines to look through, default 200); include_warnings (optional, default true).",
-          "{errors: [{time, text}], warnings: [{time, text}], error_count, warning_count}.", "None.", "Nothing changes.",
-          "playtest start -> get_errors -> read_script -> edit_script.", "\"Are there any script errors?\""},
-         schema({{"lines", {{"type", "integer"}, {"minimum", 1}, {"maximum", 2000}}}, {"include_warnings", {{"type", "boolean"}}}}, {})},
+          "lines (optional, how many recent Output lines to look through, default 200); include_warnings (optional, "
+          "default true); run (optional: all, latest, current, editing or a number; \"latest\" = only the newest playtest, "
+          "so errors fixed in an earlier run don't show).",
+          "{errors: [{time, text, run}], warnings: [{time, text, run}], error_count, warning_count, latest_run, current_run}.",
+          "None.", "Nothing changes.",
+          "playtest start -> get_errors {run: \"latest\"} -> read_script -> edit_script.", "\"Are there any script errors?\""},
+         schema({{"lines", {{"type", "integer"}, {"minimum", 1}, {"maximum", 2000}}}, {"include_warnings", {{"type", "boolean"}}},
+                 {"run", kRun}}, {})},
         {"diagnose_object", "Find problems with an object", "DEBUG", true, false, true, Risk::None,
          {"Inspects one object (and what's inside it) and lists likely problems with a suggested fix for each: "
           "anchored parts that are expected to fall, unanchored parts with CanCollide off (fall through the floor), "
@@ -352,7 +396,8 @@ const std::vector<Tool>& tools() {
           "size [x,y,z] (default 2x2x2); color [r,g,b] 0-1; material (Plastic, SmoothPlastic, Metal, DiamondPlate, Foil, Neon, Wood, Glass, Ice, "
           "Concrete, Brick, Cobblestone, Slate, Granite, Marble, Sand, Grass, Fabric); "
           "name; parent (object); anchored (default false); can_collide (default true); density (mass per volume, "
-          "default from material); friction (0-2); elasticity (bounciness 0-1).",
+          "default from material); friction (0-2); elasticity (bounciness 0-1). The script names work too (Position, Size, "
+          "Color, Material, CanCollide, Anchored...).",
           "{object_id, resulting_state, findings (from diagnose_object), warnings}.",
           "parent, if given, exists. Positions in units (Y up).",
           "The part exists with those settings (one undo step each). It only falls / bounces during a playtest.",
@@ -362,7 +407,7 @@ const std::vector<Tool>& tools() {
                  {"position", {{"type", "array"}, {"items", {{"type", "number"}}}, {"minItems", 3}, {"maxItems", 3}}},
                  {"size", {{"type", "array"}, {"items", {{"type", "number"}}}, {"minItems", 3}, {"maxItems", 3}}},
                  {"color", {{"type", "array"}, {"items", {{"type", "number"}}}, {"minItems", 3}, {"maxItems", 3}}},
-                 {"material", {{"type", "string"}}}, {"name", {{"type", "string"}}}, {"parent", kObject},
+                 {"material", {{"type", "string"}}}, {"name", {{"type", "string"}}}, {"parent", kParent},
                  {"anchored", {{"type", "boolean"}}}, {"can_collide", {{"type", "boolean"}}},
                  {"density", {{"type", "number"}}}, {"friction", {{"type", "number"}}}, {"elasticity", {{"type", "number"}}}}, {})},
         {"spawn_explosion", "Set off an explosion now", "PHYSICS", false, false, false, Risk::Medium,
@@ -472,6 +517,29 @@ const std::vector<Tool>& tools() {
           "(change) -> screenshot.", "\"Show me what it looks like.\""},
          schema(json::object(), {})},
 
+        // -------------------------------------------------------------- PUBLISH
+        {"publish_game", "Publish the game to Guts&Bolts", "PUBLISH", false, true, false, Risk::High,
+         {"Publishes the open game to Guts&Bolts exactly like Studio's File > Publish to Guts&Bolts: as the account "
+          "Studio is signed in with, through the same server request, with the server's own checks and limits. With "
+          "mode auto it updates the game's published copy if it has one, else publishes it as a new game. It refuses "
+          "cleanly (NOT_SIGNED_IN) when Studio isn't signed in, and never signs in by itself. action status reports how "
+          "the last publish went (it finishes in the background).",
+          "Only when the person explicitly asks to publish / release / put the game online / update the published game.",
+          "Never on your own initiative, to \"save\" work, or to test something: publishing makes the game public. "
+          "Saving the file is the person's job (File > Save).",
+          "action (publish (default) or status); confirm (required true for publish: the person asked for it); name "
+          "(optional, default the game's title); description (optional, default the current one); mode (auto, new or update; "
+          "default auto).",
+          "publish: {state: \"publishing\", name, update}. status: {state: none | publishing | published | failed, "
+          "published_id, error?}.",
+          "Signed in (not a guest), no playtest running, no other upload going. Run validate_scene first.",
+          "The server has the game (on success); the website lists it. The game remembers its published id.",
+          "validate_scene -> fix -> publish_game {confirm: true} -> publish_game {action: \"status\"}.",
+          "\"Publish my game.\" \"Update the published version.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"publish", "status"}}}}, {"confirm", {{"type", "boolean"}}},
+                 {"name", {{"type", "string"}}}, {"description", {{"type", "string"}}},
+                 {"mode", {{"type", "string"}, {"enum", {"auto", "new", "update"}}}}}, {})},
+
         // -------------------------------------------------------------- HISTORY
         {"undo", "Undo the last change", "HISTORY", false, false, false, Risk::Low,
          {"Undoes the last change to the game (like Ctrl+Z): a tool call, a script edit, a run_lua build...",
@@ -517,6 +585,7 @@ json workflowOf(const std::string& name) {
         {"walk_character_to", {{"playtest", "find_path"}, {"get_runtime_state", "get_object"}}},
         {"get_runtime_state", {{"playtest"}, {"get_object", "playtest"}}},
         {"checkpoint", {{}, {"playtest", "checkpoint"}}},
+        {"publish_game", {{"validate_scene"}, {"publish_game"}}},
     };
     auto it = flows.find(name);
     if (it == flows.end()) return {{"before", json::array()}, {"after", json::array()}};
@@ -553,8 +622,19 @@ Your loop: UNDERSTAND the request -> INSPECT the game -> PLAN -> ACT with tools 
 - "Is it running? Is it laggy? What's moving?" -> get_runtime_state.
 - "Try something risky" -> checkpoint save first; checkpoint restore if it goes wrong.
 - Many similar changes at once -> run_lua with a loop.
-- "Test it" -> playtest start, then get_errors / get_output / screenshot, then playtest stop.
+- "Test it" -> playtest start, then get_errors / get_output {run: "latest"} / screenshot, then playtest stop.
 - "Test it with 2 players" / RemoteEvents / LocalScripts / joining and leaving -> multiplayer_test start, wait a few seconds, multiplayer_test output, then multiplayer_test stop.
+- "Give everyone a sword" -> insert_object Tool with parent "StarterPack". Game rules -> create_script in "ServerScriptService". UI -> ScreenGui in "StarterGui". Per-player LocalScripts -> "StarterPlayer.StarterPlayerScripts". In every character -> "StarterPlayer.StarterCharacterScripts".
+- "Publish my game" (only when asked) -> validate_scene, then publish_game {confirm: true}, then publish_game {action: "status"}.
+
+## Services
+The game is the Workspace plus services, like Roblox: Players, Lighting, ReplicatedFirst, ReplicatedStorage, ServerScriptService, ServerStorage, StarterGui, StarterPack, StarterPlayer (StarterPlayerScripts, StarterCharacterScripts), Teams, SoundService, Chat, TextChatService. get_game_tree shows them all. Use a service's name as a parent or at the start of a path ("StarterPack.Sword"); its folder is made the first time something goes in. Lighting holds settings (get_object / set_property "Lighting"); Players fills itself while the game runs.
+
+## Property names
+Tools use the same property names as scripts (CanCollide, BackgroundColor3...). get_object lists them with their values; set_property takes them back. A bad class, property, enum value or service fails with error.valid_choices: pick from that list, don't guess again. A script's code is changed with edit_script, not set_property Source.
+
+## Output and play sessions
+Every Output line says which playtest (run) it came from; 0 means outside a playtest. After testing, read get_errors / get_output with run "latest" so errors from an earlier run aren't mistaken for new ones.
 
 ## Use the engine's own systems
 - Physics: Anchored = false, forces (part:ApplyImpulse, BodyVelocity, VectorForce...), constraints. DON'T fake physics by teleporting parts every frame.
@@ -572,7 +652,7 @@ When a tool fails, read error.code / message / suggested_action, fix the cause (
 ## Safety
 - Each tool says its RISK. delete_object is HIGH: only delete what the person clearly asked to delete. Never delete things because they look unused or oddly named.
 - If a destructive request is ambiguous ("remove the trees" when there are 40 trees and some are in a model), ask or list what you'd remove first.
-- Everything can be undone with undo (outside playtests).
+- Everything can be undone with undo (outside playtests). Publishing can't: publish_game only when the person asks, with confirm: true.
 
 ## Don't invent capabilities
 A request mentioning something doesn't mean Guts and Bolts has it. Only use the tools you were given and the engine API that exists. Don't make up tools, classes, properties, paths or features. If no tool can do something, say the current tools can't do it.
@@ -639,6 +719,7 @@ What the tools give you:
 - Run and check: playtest (play, simulate, pause, step), multiplayer_test (a local server and 2-4 player windows), get_runtime_state, diagnose_object, validate_scene.
 - Physics and navigation: create_physical_object, spawn_explosion, bake_navmesh, find_path, walk_character_to.
 - Stay safe: undo / redo, and checkpoint (save points to try things and roll back).
+- Share: publish_game (File > Publish, as the signed-in account; only when asked).
 - Learn: get_engine_info (this text, capabilities, concepts, coordinates, workflows, examples, classes).
 
 Work in this loop: UNDERSTAND -> INSPECT -> PLAN -> ACT -> VALIDATE -> REPORT.)DOC";
@@ -668,7 +749,7 @@ Guts and Bolts is Roblox-style: there is no separate component system. What an o
 - Camera -> no camera object to edit. Players' cameras follow their character (World settings can make it orthographic).
 
 SCENE (place, game)
-One game = one tree under Workspace, saved as one file. Folders and Models group things. StarterGui holds screen UI; Teams holds Team objects.
+One game = the Workspace plus services, saved as one file. Folders and Models group things. Services (like Roblox's): ReplicatedFirst, ReplicatedStorage (shared templates, RemoteEvents), ServerScriptService (game scripts), ServerStorage (server-only templates), StarterGui (screen UI), StarterPack (tools everyone spawns with), StarterPlayer (StarterPlayerScripts: LocalScripts for every player; StarterCharacterScripts: the character itself, so scripts there run in every character), Teams (Team objects), SoundService, Chat, TextChatService. Lighting holds the sky/sun/fog settings and Players the people in the running game. Paths start with a service: StarterPack.Sword, Workspace.Castle.Door.
 
 ASSET
 Pictures, sounds and meshes a game uses: files in the game's folder, built-in sounds, or uploaded items ("gb:<id>"). The Library (everyone's shared models, decals and audio) is not reachable through these tools.
@@ -822,10 +903,16 @@ json capabilities() {
             {"screenshots", true},
             {"diagnostics", true},
             {"multiplayer_testing", "multiplayer_test: a local test server and 2-4 Player windows on this computer; read what each prints"},
-            {"publishing", false},
+            {"publishing", "publish_game: like File > Publish, as the signed-in account (refused when not signed in); only when asked"},
+            {"services", json::array({"Workspace", "Players", "Lighting", "ReplicatedFirst", "ReplicatedStorage", "ServerScriptService",
+                                      "ServerStorage", "StarterGui", "StarterPack", "StarterPlayer", "StarterPlayer.StarterPlayerScripts",
+                                      "StarterPlayer.StarterCharacterScripts", "Teams", "SoundService", "Chat", "TextChatService"})},
+            {"property_names", "the same as Lua scripts (get_object lists them; set_property accepts them and common misspellings)"},
+            {"output_runs", "get_output / get_errors mark each line with its playtest run; run \"latest\" reads only the newest"},
         }},
         {"not_supported", json::array({"editing Library assets", "linked prefabs", "camera objects",
-                                       "shaders", "publishing games", "moving or inspecting the players inside a multiplayer test"})},
+                                       "shaders", "moving or inspecting the players inside a multiplayer test", "signing in from the tools",
+                                       "objects inside Lighting (it holds settings)"})},
         {"notes", "If a capability is false or missing, the tools can't do it: say so instead of pretending."},
     };
 }

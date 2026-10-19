@@ -1136,7 +1136,7 @@ local services = { Workspace = workspace, PathfindingService = PathfindingServic
                    ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService }
 -- The container services are folders at the top of the game (Studio shows them in the Explorer).
 local storageNames = { ReplicatedStorage = true, ServerStorage = true, ReplicatedFirst = true, ServerScriptService = true,
-                       StarterPack = true, SoundService = true, Chat = true, TextChatService = true }
+                       StarterPack = true, StarterPlayer = true, SoundService = true, Chat = true, TextChatService = true }
 local storage = __gb_storage
 -- Services Guts and Bolts doesn't do much with yet: they exist (so scripts written for
 -- Roblox start), their harmless calls do nothing, and anything else says so clearly.
@@ -1147,7 +1147,7 @@ local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, Scri
     MaterialService = {}, VoiceChatService = {}, ContextActionService = { UnbindAction = true },
     MemoryStoreService = {}, MessagingService = { PublishAsync = true }, InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
-    StarterPlayer = {}, VRService = {}, GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
+    VRService = {}, GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
 local made = {}
 local function quietService(name)
     if made[name] then return made[name] end
@@ -2078,6 +2078,55 @@ int l_storage(lua_State* L) {
     return 1;
 }
 
+// For Studio's AI tools: __gb_aiProps(obj, {names...}) reads each name the way a
+// script would (obj.Name) and returns the ones that are properties as JSON, so the
+// tools report exactly the names and values Lua sees. Methods, events and children
+// found by name are left out.
+int l_aiGet(lua_State* L) { lua_gettable(L, 1); return 1; }
+int l_aiProps(lua_State* L) {
+    luaL_checktype(L, 2, LUA_TTABLE);
+    const uint64_t selfId = LuaApi::toInstanceId(L, 1);
+    SceneNode* self = selfId ? LuaApi::engine(L)->scene()->findById(selfId) : nullptr;
+    nlohmann::json out = nlohmann::json::object();
+    const lua_Integer count = (lua_Integer)luaL_len(L, 2);
+    for (lua_Integer i = 1; i <= count; ++i) {
+        lua_rawgeti(L, 2, i);
+        const char* k = lua_tostring(L, -1);
+        lua_pop(L, 1);
+        if (!k) continue;
+        lua_pushcfunction(L, l_aiGet);
+        lua_pushvalue(L, 1);
+        lua_pushstring(L, k);
+        if (lua_pcall(L, 2, 1, 0) != LUA_OK) { lua_pop(L, 1); continue; }
+        const int v = lua_gettop(L);
+        nlohmann::json j;
+        bool keep = true;
+        switch (lua_type(L, v)) {
+            case LUA_TBOOLEAN: j = (bool)lua_toboolean(L, v); break;
+            case LUA_TNUMBER:  j = lua_isinteger(L, v) ? nlohmann::json(lua_tointeger(L, v)) : nlohmann::json(lua_tonumber(L, v)); break;
+            case LUA_TSTRING:  j = std::string(lua_tostring(L, v)); break;
+            case LUA_TUSERDATA:
+                if (glm::vec3* p = LuaApi::toVector3(L, v)) j = {p->x, p->y, p->z};
+                else if (glm::vec3* c = LuaApi::toColor3(L, v)) j = {c->x, c->y, c->z};
+                else if (glm::vec2* q = LuaApi::toVector2(L, v)) j = {q->x, q->y};
+                else if (UDim2* u = LuaApi::toUDim2(L, v)) j = {{u->xs, u->xo}, {u->ys, u->yo}};
+                else if (glm::mat4* m = LuaApi::toCFrame(L, v)) j = {{"position", {(*m)[3].x, (*m)[3].y, (*m)[3].z}}};
+                else if (uint64_t id = LuaApi::toInstanceId(L, v)) {
+                    // `obj.Door` finds a child: that's not a property.
+                    if (self && std::strcmp(k, "Parent") != 0 && self->findChild(k)) keep = false;
+                    else j = "#" + std::to_string(id);
+                } else keep = false;   // events, Humanoid...
+                break;
+            default: keep = false;     // methods, nil
+        }
+        lua_pop(L, 1);
+        if (keep) out[k] = j;
+    }
+    const std::string s = out.dump();
+    lua_pushlstring(L, s.data(), s.size());
+    return 1;
+}
+
 int l_navPath(lua_State* L) {
     glm::vec3 from = LuaApi::checkVector3(L, 1), to = LuaApi::checkVector3(L, 2);
     NavMesh::Agent agent = LuaApi::checkAgent(L, 3);
@@ -2435,6 +2484,7 @@ void ScriptEngine::start(bool runScripts) {
         else lua_pushnil(L);
         return 1;
     });
+    lua_register(L, "__gb_aiProps", l_aiProps);   // Studio's AI tools: an object's properties by their Lua names
     // Remote messages name players by UserId (see the prelude).
     lua_getglobal(L, "__gb_playerById");
     lua_setfield(L, LUA_REGISTRYINDEX, "GB.playerById");

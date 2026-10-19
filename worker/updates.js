@@ -10,6 +10,20 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'skeleton-key', name: 'Skeleton Key', time: 1792433006, tag: 'Studio',
+    summary: 'Studio\'s Assistant and connected AI apps can now reach every service, use the same names as your scripts, and publish when you ask.',
+    items: [
+      'The AI helpers can put things in StarterPack, StarterGui, StarterPlayer (StarterPlayerScripts and StarterCharacterScripts), ReplicatedStorage, ServerStorage, ServerScriptService, Teams, SoundService and the rest',
+      'Their view of the game shows every service, like the Explorer, not just the Workspace',
+      'They read and change properties by the same names your scripts use (CanCollide, BackgroundColor3...), and older spellings still work',
+      'Changing a script\'s code always goes through the script editing tool, which checks it for mistakes',
+      'Every Output line now says which play test it came from, so old errors aren\'t mixed up with the run you\'re checking',
+      'A wrong class, property, setting or service name comes back with the list of names that would work',
+      'They can publish your game like File > Publish, as your signed-in account and only when you ask; when you\'re not signed in they say so and stop',
+      'StarterPlayer has its own StarterPlayerScripts folder in the Explorer, and game.StarterPlayer works in scripts',
+    ],
+  },
+  {
     id: 'pick-a-side', name: 'Pick a Side', time: 1792381691, tag: 'Engine',
     summary: 'Teams get their own spawns, models know their main part, and scripts can be written the newer way with += and continue.',
     items: [
