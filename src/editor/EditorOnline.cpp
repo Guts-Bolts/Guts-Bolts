@@ -88,6 +88,32 @@ void Editor::renderServerDialog() {
 // File > Publish to Guts&Bolts...
 // ---------------------------------------------------------------------------
 
+void Editor::publishGame(const std::string& name, const std::string& description, bool update,
+                         std::function<void(const json&)> done) {
+    std::string data = Serializer::saveScene(*m_scene);
+    std::string picture = m_viewport->snapshotPng(480, 270);   // for the game's card on the site
+    json args = {{"name", name}, {"description", description}, {"data", Online::base64Encode(data)}};
+    if (update) args["id"] = m_scene->info().publishedId;
+    else args["kind"] = "game";
+    m_onlineBusy = true;
+    Online::request(update ? "update" : "upload", args, [this, picture, name, description, done](const json& r) {
+        m_onlineBusy = false;
+        if (r.value("ok", false)) {
+            m_scene->info().publishedId = r["asset"].value("id", std::string());
+            if (!picture.empty())
+                Online::request("thumb.set", {{"id", m_scene->info().publishedId}, {"data", Online::base64Encode(picture)}},
+                                [](const json& t) {
+                    if (!t.value("ok", false)) Log::warn("The game's picture didn't upload: " + t.value("error", std::string()));
+                }, 60);
+            m_scene->info().title = name;
+            m_scene->info().description = description;
+            if (!m_path.empty()) saveFile(m_path, false);   // remember it's published (the server already has this version)
+            Log::system("Published \"" + name + "\" to " + Online::serverInfo().value("name", std::string("the server")));
+        }
+        if (done) done(r);
+    }, 120);
+}
+
 void Editor::renderPublishDialog() {
     if (m_openPublish) {
         ImGui::OpenPopup("Publish to Guts&Bolts");
@@ -116,37 +142,21 @@ void Editor::renderPublishDialog() {
     ImGui::InputTextMultiline("Description", &m_publishDesc, ImVec2(-90, 80));
     const std::string& published = m_scene->info().publishedId;
     auto send = [this](bool update) {
-        std::string data = Serializer::saveScene(*m_scene);
-        std::string picture = m_viewport->snapshotPng(480, 270);   // for the game's card on the site
-        json args = {{"name", m_publishName}, {"description", m_publishDesc}, {"data", Online::base64Encode(data)}};
-        if (update) args["id"] = m_scene->info().publishedId;
-        else args["kind"] = "game";
-        m_onlineBusy = true;
         m_publishMsg = "Publishing...";
-        Online::request(update ? "update" : "upload", args, [this, picture](const json& r) {
-            m_onlineBusy = false;
+        publishGame(m_publishName, m_publishDesc, update, [this](const json& r) {
             if (!r.value("ok", false)) { m_publishMsg = r.value("error", std::string("Publishing didn't work.")); return; }
-            m_scene->info().publishedId = r["asset"].value("id", std::string());
-            if (!picture.empty())
-                Online::request("thumb.set", {{"id", m_scene->info().publishedId}, {"data", Online::base64Encode(picture)}},
-                                [](const json& t) {
-                    if (!t.value("ok", false)) Log::warn("The game's picture didn't upload: " + t.value("error", std::string()));
-                }, 60);
-            m_scene->info().title = m_publishName;
-            m_scene->info().description = m_publishDesc;
-            if (!m_path.empty()) {
-                saveFile(m_path, false);   // remember it's published (the server already has this version)
-                m_publishMsg = "Published! It's on the website now, and saving updates it there too.";
-            } else {
-                m_publishMsg = "Published! It's on the website now. Save your game so Studio remembers it's published.";
-            }
-            Log::system("Published \"" + m_publishName + "\" to " + Online::serverInfo().value("name", std::string("the server")));
-        }, 120);
+            m_publishMsg = m_path.empty() ? "Published! It's on the website now. Save your game so Studio remembers it's published."
+                                          : "Published! It's on the website now, and saving updates it there too.";
+            // Old versions are kept: the game's Configure page on the website can put one back.
+            if (r.value("version", 0LL) > 1)
+                m_publishMsg += " This is version " + std::to_string(r.value("version", 0LL)) +
+                                " (older ones are under Version history on the game's Configure page on the website).";
+        });
     };
     ImGui::BeginDisabled(m_onlineBusy);
     if (!published.empty()) {
         if (ImGui::Button("Update published game", ImVec2(200, 30))) send(true);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replace the version on the server with this one");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Publish this as the newest version (the old ones are kept in the game's Version history on the website)");
         ImGui::SameLine();
         if (ImGui::Button("Publish as a new game", ImVec2(180, 30))) send(false);
     } else {
@@ -485,6 +495,7 @@ void Editor::uploadLocalTextures(json node, const std::string& name, std::functi
         if (n.contains("children")) for (const auto& c : n["children"]) find(c);
         if (n.contains("nodes")) for (const auto& c : n["nodes"]) find(c);
         if (n.contains("node")) find(n["node"]);   // an accessory file: {"format":"gbaccessory","node":{...}}
+        for (const char* k : {"particles", "effect"}) if (n.contains(k)) find(n[k]);   // a ParticleEmitter's, Trail's or Beam's picture
     };
     find(node);
     if (todo.empty()) { done(node, ""); return; }
@@ -503,6 +514,7 @@ void Editor::uploadLocalTextures(json node, const std::string& name, std::functi
                 if (n.contains("children")) for (auto& c : n["children"]) swap(c);
                 if (n.contains("nodes")) for (auto& c : n["nodes"]) swap(c);
                 if (n.contains("node")) swap(n["node"]);
+                for (const char* k : {"particles", "effect"}) if (n.contains(k)) swap(n[k]);
             };
             swap(st->node);
             done(st->node, "");
@@ -569,14 +581,15 @@ void Editor::renderMakeGearDialog() {
 // The Toolbox's Library: everyone's public models, decals and audio, with pictures
 // ---------------------------------------------------------------------------
 
-std::vector<ToolboxTile> Editor::libraryTiles(bool mine, int kind, const std::string& query, bool reload, std::string& status) {
+std::vector<ToolboxTile> Editor::libraryTiles(bool mine, int kind, const std::string& query, bool bestRated, bool reload, std::string& status) {
     static const char* kinds[] = {"model", "decal", "audio"};
     std::vector<ToolboxTile> out;
     kind = std::clamp(kind, 0, 2);
     if (!Online::online()) { status = "Connecting to the Library..."; return out; }
     const std::string myId = Online::me().value("id", std::string());
     if (mine && myId.empty()) { status = "Log in to see your own models, decals and audio."; return out; }
-    std::string key = std::string(mine ? "mine:" : "all:") + kinds[kind] + ":" + query;
+    bestRated = bestRated && !mine && kind == 0;   // (only models have thumbs up / down)
+    std::string key = std::string(mine ? "mine:" : "all:") + kinds[kind] + (bestRated ? ":rated:" : ":") + query;
     if (reload || key != m_libraryKey || !m_libraryLoaded) {
         m_libraryKey = key;
         m_libraryLoaded = true;
@@ -584,7 +597,7 @@ std::vector<ToolboxTile> Editor::libraryTiles(bool mine, int kind, const std::st
         m_libraryMsg = "Loading...";
         json args = {{"kind", kinds[kind]}, {"query", query}, {"limit", 60}};
         if (mine) args["creator"] = myId;
-        else args["sort"] = "popular";
+        else args["sort"] = bestRated ? "rated" : "popular";
         Online::request("list", args, [this, key](const json& r) {
             if (key != m_libraryKey) return;   // an older search
             if (r.value("ok", false)) { m_library = r["assets"]; m_libraryMsg.clear(); }
@@ -624,9 +637,17 @@ std::vector<ToolboxTile> Editor::libraryTiles(bool mine, int kind, const std::st
         t.official = a.value("creatorStaff", false);
         t.icon = k == "decal" ? Icons::Id::Decal : k == "audio" ? Icons::Id::Sound : Icons::Id::Model;
         std::string access = a.value("access", std::string("public"));
-        t.tip = k == "model" ? "Click to insert it." : k == "decal" ? "Click to put it on the selected part."
+        t.tip = k == "model" ? (mine ? "Click to insert it." : "Click to insert it. Once you have, you can rate it on its Library page on the website.")
+              : k == "decal" ? "Click to put it on the selected part."
                                                               : "Click to add it as a Sound.";
         if (mine && access == "private") t.tip += "\n(Private: only you can see it.)";
+        if (k == "model") {   // thumbs up / down (people rate it on its Library page after inserting it)
+            const long long up = a.value("likes", 0LL), votes = up + a.value("dislikes", 0LL);
+            if (votes > 0) {
+                t.rating = std::to_string((up * 100 + votes / 2) / votes) + "%";
+                t.ratingTip = t.rating + " liked (" + std::to_string(votes) + (votes == 1 ? " vote)" : " votes)");
+            } else t.ratingTip = "No ratings yet";
+        }
         t.picture = [this, a]() { return libraryPicture(a); };
         t.use = [this, a]() { useLibraryAsset(a); };
         out.push_back(std::move(t));

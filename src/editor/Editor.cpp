@@ -96,6 +96,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
         if (ImGui::MenuItem("Delete", "Del")) m_deferred = [this] { deleteSelected(); };
     };
     m_properties   = std::make_unique<PropertiesPanel>(scene, open);
+    m_properties->m_editCollisionGroups = [this] { m_showCollisionGroups = true; };
     m_properties->m_editMesh = [this](SceneNode* n) {
         m_deferred = [this, n] { m_scene->select(n); setMode(StudioMode::Modeling); };   // not while Properties is drawing
     };
@@ -124,8 +125,8 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     actions.thumbnail = [this](const std::string& key, const std::function<void(Scene&)>& build) {
         return m_thumbnailer->texture(key, build);
     };
-    actions.library = [this](bool mine, int kind, const std::string& query, bool reload, std::string& status) {
-        return libraryTiles(mine, kind, query, reload, status);
+    actions.library = [this](bool mine, int kind, const std::string& query, bool bestRated, bool reload, std::string& status) {
+        return libraryTiles(mine, kind, query, bestRated, reload, status);
     };
     m_toolbox = std::make_unique<ToolboxPanel>(actions);
 
@@ -178,6 +179,7 @@ void Editor::render(float dt) {
     }
     buildDockspace();
     if (!m_playing) m_animEditor->update(dt, m_viewport->gizmoInUse());   // show the rig posed
+    if (!m_playing) m_scene->particles().runEmitters(*m_scene, dt);       // particle effects show while you edit too
     m_viewport->render(dt);
     // Files dragged from the computer onto Studio.
     if (auto dropped = AppWindow::takeDroppedFiles(); !dropped.empty()) importFiles(dropped, ImGui::GetMousePos(), true);
@@ -203,6 +205,7 @@ void Editor::render(float dt) {
     renderInsertObject();
     renderDialogs();
     renderShortcuts();
+    renderCollisionGroups();
     if (m_showPanel[kPanelTeam]) renderTeamPanel();
     m_assistant->update();
     if (m_showPanel[kPanelAssistant]) m_assistant->render(&m_showPanel[kPanelAssistant]);
@@ -236,7 +239,9 @@ void Editor::togglePlay() {
         if (m_state.mode == StudioMode::Modeling) exitModeling();
         m_state.mode = m_session->runOnly() ? StudioMode::Simulate : StudioMode::Play;
         m_state.simPaused = false;
-        Log::system(m_session->runOnly() ? "Simulation started (no character) - Shift+F5 to stop." : "Game started.");
+        const int run = Log::beginRun();
+        Log::system(m_session->runOnly() ? "Simulation started (run " + std::to_string(run) + ", no character) - Shift+F5 to stop."
+                                         : "Game started (run " + std::to_string(run) + ").");
         m_session->start();
     } else {
         uint64_t sel = m_scene->selected() ? m_scene->selected()->id : 0;
@@ -250,6 +255,7 @@ void Editor::togglePlay() {
         m_state.mode = StudioMode::Build;
         m_state.simPaused = false;
         Log::system("Game stopped - everything is back to how it was.");
+        Log::endRun();
     }
 }
 
@@ -573,8 +579,9 @@ void Editor::connectParts(int type, SceneNode* a, glm::vec3 pa, SceneNode* b, gl
         return;
     }
     bool motor = type == 5;
-    ConstraintType ct = motor ? ConstraintType::Hinge : (ConstraintType)type;
-    // Hinges turn around the direction the first clicked surface faces.
+    // (Tool 5 is the motor, so the joints after it are one further along.)
+    ConstraintType ct = motor ? ConstraintType::Hinge : (ConstraintType)(type > 5 ? type - 1 : type);
+    // Hinges turn (and sliders slide) along the direction the first clicked surface faces.
     glm::mat4 wa = a->worldMatrix();
     glm::vec3 local = glm::vec3(glm::inverse(wa) * glm::vec4(pa, 1.0f));
     int ax = 0;
@@ -1109,6 +1116,14 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         }
         put(std::make_unique<SceneNode>("ProximityPrompt", NodeKind::Prompt));
     }
+    else if (what == "ClickDetector") {
+        // It goes on the part (or model) players click.
+        if (!parent || parent == m_scene->root() || (!parent->isPart() && parent->kind != NodeKind::Model)) {
+            Log::warn("Select a part or model first: a ClickDetector goes inside the thing players click.");
+            return;
+        }
+        put(std::make_unique<SceneNode>("ClickDetector", NodeKind::ClickDetector));
+    }
     else if (what == "Highlight") {
         // It colours what it's in (a part or a model).
         if (!parent || parent == m_scene->root() || (!parent->isPart() && parent->kind != NodeKind::Model)) {
@@ -1137,6 +1152,16 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         } else {
             Log::warn("Put a " + what + " inside a part: it runs between Attachments (set them in Properties).");
         }
+        put(std::move(fx));
+    }
+    else if (auto pt = std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), what); pt != std::end(kParticleClassNames)) {
+        // Particles come out of the part (or Attachment) they're in.
+        if (!parent || (!parent->isPart() && !parent->isAttachment())) {
+            Log::warn("Select a part first: a " + what + " goes inside the part (or Attachment) it comes out of.");
+            return;
+        }
+        auto fx = std::make_unique<SceneNode>(what, NodeKind::Particles);
+        fx->particle = particleDefaults((ParticleType)(pt - std::begin(kParticleClassNames)));
         put(std::move(fx));
     }
     else if (what == "RemoteEvent" || what == "RemoteFunction") {
@@ -1176,6 +1201,28 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         }
         if (!parent || !parent->isPart()) Log::warn("Put a " + what + " inside an unanchored part to push it.");
         put(std::move(mv));
+    }
+    else if (auto ct = std::find(std::begin(kConstraintClassNames), std::end(kConstraintClassNames), what);
+             ct != std::end(kConstraintClassNames)) {
+        // A joint on its own: inside a part it gets that part's Attachment as its
+        // Attachment0 (or Part0 for a weld); pick the other end in Properties or a script.
+        // (The Constraints tool in the Toolbox joins two clicked parts in one go.)
+        auto c = std::make_unique<SceneNode>(what, NodeKind::Constraint);
+        c->constraintType = (ConstraintType)(ct - std::begin(kConstraintClassNames));
+        c->color = c->constraintType == ConstraintType::Rope ? glm::vec3(0.45f, 0.32f, 0.2f) : glm::vec3(0.6f, 0.62f, 0.66f);
+        if (parent && parent->isPart()) {
+            if (c->constraintType == ConstraintType::Weld) c->ref0 = parent->id;
+            else {
+                SceneNode* att = nullptr;
+                for (auto& ch : parent->children) if (ch->isAttachment()) { att = ch.get(); break; }
+                if (!att) att = m_scene->insert(std::make_unique<SceneNode>("Attachment", NodeKind::Attachment), parent);
+                c->ref0 = att->id;
+            }
+        }
+        Log::system("Set the " + what + "'s " +
+                    (c->constraintType == ConstraintType::Weld ? "Part1" : "Attachment1") +
+                    " to join it to another part (or use the Constraints tool to click two parts).");
+        put(std::move(c));
     }
     else if (what == "FluidSystem") {
         auto f = std::make_unique<SceneNode>("FluidSystem", NodeKind::FluidSystem);
@@ -1276,9 +1323,13 @@ const std::vector<InsertItem>& insertItems() {
         {"Part", Icons::Id::Part}, {"Sphere", Icons::Id::Sphere}, {"Cylinder", Icons::Id::Cylinder},
         {"MeshPart", Icons::Id::Mesh}, {"SpawnLocation", Icons::Id::Part}, {"TrussPart", Icons::Id::Part}, {"Seat", Icons::Id::Part}, {"Water", Icons::Id::Part}, {"FluidVolume", Icons::Id::Part}, {"WaterSource", Icons::Id::Part}, {"FluidSystem", Icons::Id::Value}, {"FluidEmitter", Icons::Id::Sound}, {"Model", Icons::Id::Model}, {"Folder", Icons::Id::Folder},
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
-        {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
+        {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"ClickDetector", Icons::Id::Click}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
+        {"ParticleEmitter", Icons::Id::Particles}, {"Fire", Icons::Id::Particles}, {"Smoke", Icons::Id::Particles}, {"Sparkles", Icons::Id::Particles},
         {"PointLight", Icons::Id::Light}, {"SpotLight", Icons::Id::Light}, {"Sound", Icons::Id::Sound},
         {"Attachment", Icons::Id::Attachment},
+        {"RopeConstraint", Icons::Id::Constraint}, {"RodConstraint", Icons::Id::Constraint}, {"SpringConstraint", Icons::Id::Constraint},
+        {"WeldConstraint", Icons::Id::Constraint}, {"HingeConstraint", Icons::Id::Constraint}, {"BallSocketConstraint", Icons::Id::Constraint},
+        {"PrismaticConstraint", Icons::Id::Constraint}, {"CylindricalConstraint", Icons::Id::Constraint},
         {"BodyVelocity", Icons::Id::Constraint}, {"BodyPosition", Icons::Id::Constraint}, {"BodyGyro", Icons::Id::Constraint},
         {"BodyAngularVelocity", Icons::Id::Constraint}, {"BodyThrust", Icons::Id::Constraint}, {"BodyForce", Icons::Id::Constraint},
         {"LinearVelocity", Icons::Id::Constraint}, {"AlignPosition", Icons::Id::Constraint}, {"AlignOrientation", Icons::Id::Constraint},
@@ -1471,6 +1522,97 @@ void Editor::renderShortcuts() {
     ImGui::End();
 }
 
+// The Collision Groups editor (like Roblox Studio's): every registered group, and a
+// grid of ticks saying which pairs collide. Parts pick their group in Properties.
+void Editor::renderCollisionGroups() {
+    if (!m_showCollisionGroups) return;
+    ImGui::SetNextWindowSize(ImVec2(520, 380), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+    if (!ImGui::Begin("Collision Groups", &m_showCollisionGroups)) { ImGui::End(); return; }
+    CollisionGroups& g = m_scene->world().collisionGroups;
+    const std::vector<int> slots = g.slots();
+
+    ImGui::TextWrapped("Ticked = the two groups bump into each other. Unticked = they pass through. "
+                       "Put parts in a group with Collision Group in Properties (a character is in its "
+                       "HumanoidRootPart's group).");
+    // Add a group.
+    ImGui::SetNextItemWidth(220);
+    bool add = ImGui::InputTextWithHint("##newgroup", "New group name", &m_newGroupName, ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();
+    add |= ImGui::Button("Add Group");
+    if (add) {
+        std::string bad = CollisionGroups::badName(m_newGroupName);
+        if (bad.empty() && g.find(m_newGroupName) >= 0) bad = "There's already a group called that.";
+        if (bad.empty() && g.count() >= CollisionGroups::kMax) bad = "That's the most there can be (32).";
+        m_groupError = bad;
+        if (bad.empty()) { g.add(m_newGroupName); m_newGroupName.clear(); m_scene->markDirty(); }
+    }
+    if (!m_groupError.empty()) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", m_groupError.c_str());
+    ImGui::Separator();
+
+    // The grid: a row per group, a column per group (the lower half, like Roblox's).
+    const int n = (int)slots.size();
+    const ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY |
+                                  ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg;
+    int removeSlot = -1;
+    if (ImGui::BeginTable("cgrid", n + 2, flags, ImVec2(0, ImGui::GetContentRegionAvail().y))) {
+        ImGui::TableSetupScrollFreeze(1, 1);
+        ImGui::TableSetupColumn("Group");
+        for (int i : slots) ImGui::TableSetupColumn(g.names[i].c_str());
+        ImGui::TableSetupColumn("");
+        ImGui::TableHeadersRow();
+        for (int r = 0; r < n; ++r) {
+            const int a = slots[r];
+            ImGui::PushID(a);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (m_renamingGroup == a) {
+                ImGui::SetNextItemWidth(140);
+                if (ImGui::InputText("##rename", &m_renameText, ImGuiInputTextFlags_EnterReturnsTrue)) {
+                    std::string bad = CollisionGroups::badName(m_renameText);
+                    if (bad.empty() && m_renameText != g.names[a] && g.find(m_renameText) >= 0) bad = "There's already a group called that.";
+                    m_groupError = bad;
+                    if (bad.empty() && m_renameText != g.names[a]) {
+                        const std::string from = g.names[a], to = m_renameText;
+                        g.names[a] = to;
+                        m_scene->forEach([&](SceneNode* p) { if (p->collisionGroup == from) p->collisionGroup = to; });
+                        m_scene->markDirty();
+                    }
+                    if (bad.empty()) m_renamingGroup = -1;
+                }
+                if (ImGui::IsKeyPressed(ImGuiKey_Escape)) m_renamingGroup = -1;
+            } else {
+                ImGui::TextUnformatted(g.names[a].c_str());
+                if (a != 0 && ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Double-click to rename");
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { m_renamingGroup = a; m_renameText = g.names[a]; }
+                }
+            }
+            for (int c = 0; c < n; ++c) {
+                ImGui::TableNextColumn();
+                if (c > r) continue;   // (the upper half is the same pairs again)
+                const int b = slots[c];
+                bool on = g.collides(a, b);
+                ImGui::PushID(b);
+                if (ImGui::Checkbox("##c", &on)) { g.set(a, b, on); m_scene->markDirty(); }
+                if (ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s and %s: %s", g.names[a].c_str(), g.names[b].c_str(), on ? "collide" : "pass through each other");
+                ImGui::PopID();
+            }
+            ImGui::TableNextColumn();
+            if (a != 0 && ImGui::SmallButton("Delete")) removeSlot = a;
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+    }
+    if (removeSlot > 0) {   // (its parts keep the name and act as Default until it's added again)
+        g.remove(g.names[removeSlot]);
+        if (m_renamingGroup == removeSlot) m_renamingGroup = -1;
+        m_scene->markDirty();
+    }
+    ImGui::End();
+}
+
 // ---------------------------------------------------------------------------
 // Layout & chrome
 // ---------------------------------------------------------------------------
@@ -1658,6 +1800,7 @@ void Editor::renderMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;
+        if (ImGui::MenuItem("Collision Groups", nullptr, m_showCollisionGroups)) m_showCollisionGroups = !m_showCollisionGroups;
         ImGui::EndMenu();
     }
 

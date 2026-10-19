@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -35,10 +36,14 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //   Value      — holds one value (IntValue, NumberValue, StringValue, BoolValue,
 //                Vector3Value, Color3Value); leaderstats are made of these
 //   Decal      — a picture on one side of the part it's inside
+//   ClickDetector — inside a part or model: players can click it (or tap it) to
+//                make something happen (buttons, levers, "click to buy" signs)
 //   Animation  — keyframes that pose a rig's parts (made in Studio's Animation
 //                Editor, played by scripts: humanoid:LoadAnimation(anim):Play())
+//   Particles  — a ParticleEmitter, Fire, Smoke or Sparkles inside a part (or an
+//                Attachment): little pictures that fly out of it (see ParticleProps)
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
-                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, Camera };
+                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector, Particles, Camera };
 
 // A ProximityPrompt's settings (kind == Prompt; `enabled` switches it off).
 struct PromptProps {
@@ -49,6 +54,12 @@ struct PromptProps {
     float       range = 5.0f;          // MaxActivationDistance (Roblox's default 10 studs)
     bool        lineOfSight = true;    // RequiresLineOfSight: hidden behind walls
     bool        clickable = true;      // ClickablePrompt: can be clicked / tapped too
+};
+
+// A ClickDetector's settings (kind == ClickDetector).
+struct ClickProps {
+    float       range = 16.0f;   // MaxActivationDistance (Roblox's default 32 studs; 0 = can't be clicked)
+    std::string cursor;          // CursorIcon: a picture for the mouse pointer ("" = the hand)
 };
 
 // ColorSequence / NumberSequence: a colour or number that changes along something
@@ -226,8 +237,119 @@ struct GuiProps {
 enum class Face { Right, Top, Back, Left, Bottom, Front };
 inline const char* const kFaceNames[6] = {"Right", "Top", "Back", "Left", "Bottom", "Front"};
 
-enum class ConstraintType { Rope, Rod, Spring, Weld, Hinge };
-inline const char* const kConstraintNames[5] = {"Rope", "Rod", "Spring", "Weld", "Hinge"};
+// Particle effects (kind == Particles; `enabled` switches them off). A ParticleEmitter
+// is the fully adjustable one; Fire, Smoke and Sparkles are the classic ready-made ones
+// with just a few settings. Every computer makes its own particles from these settings
+// (they're only for looks): the particles are never saved or sent, the settings are.
+enum class ParticleType { ParticleEmitter, Fire, Smoke, Sparkles };
+inline constexpr int kParticleTypeCount = 4;
+inline const char* const kParticleClassNames[kParticleTypeCount] = {"ParticleEmitter", "Fire", "Smoke", "Sparkles"};
+// Built-in particle pictures (a ParticleEmitter's Texture can also be "gb:<id>" or a file).
+inline constexpr int kParticleLookCount = 4;
+inline const char* const kParticleLooks[kParticleLookCount] = {"", "smoke", "fire", "sparkle"};   // "" = a soft round glow
+// The most particles there can be at once (all emitters together), and from one emitter,
+// so a huge Rate or Emit(100000) can't freeze the game. New ones wait until some have faded.
+inline constexpr int kMaxSprites = 6000;
+inline constexpr int kMaxSpritesPerEmitter = 1500;
+struct ParticleProps {
+    ParticleType type = ParticleType::ParticleEmitter;
+    // ParticleEmitter (Roblox's names and defaults). Ranges are (min, max): each particle
+    // gets a random value between them (NumberRange).
+    float     rate = 20.0f;                         // Rate: particles a second
+    glm::vec2 lifetime{5.0f, 10.0f};                // Lifetime (seconds)
+    glm::vec2 speed{5.0f, 5.0f};                    // Speed (studs / second)
+    glm::vec2 spread{0.0f, 0.0f};                   // SpreadAngle (degrees, X and Y: a Vector2)
+    glm::vec2 rotation{0.0f, 0.0f};                 // Rotation: its starting turn (degrees)
+    glm::vec2 rotSpeed{0.0f, 0.0f};                 // RotSpeed (degrees / second)
+    std::vector<ColorKey>  color{{0.0f, glm::vec3(1.0f)}, {1.0f, glm::vec3(1.0f)}};   // Color over its life
+    std::vector<NumberKey> size{{0.0f, 1.0f}, {1.0f, 1.0f}};                          // Size over its life (studs)
+    std::vector<NumberKey> transparency{{0.0f, 0.0f}, {1.0f, 0.0f}};                  // Transparency over its life
+    std::string texture;                            // a built-in look (kParticleLooks) or a picture
+    float     lightEmission = 0.0f;                 // 1 = glows (adds its light to what's behind)
+    glm::vec3 acceleration{0.0f};                   // Acceleration (studs / second², world space)
+    float     drag = 0.0f;                          // Drag: how quickly they slow down
+    Face      direction = Face::Top;                // EmissionDirection
+    bool      locked = false;                       // LockedToPart: they move with the part
+    // Fire / Smoke / Sparkles
+    glm::vec3 color1{1.0f};                         // Fire.Color, Smoke.Color, Sparkles.SparkleColor
+    glm::vec3 color2{1.0f};                         // Fire.SecondaryColor
+    float     fxSize = 5.0f;                        // Fire.Size / Smoke.Size
+    float     rise = 9.0f;                          // Fire.Heat / Smoke.RiseVelocity
+    float     opacity = 0.5f;                       // Smoke.Opacity
+    // emitter:Emit(n) and :Clear(). Running counts, sent to other players so theirs do
+    // it too (not saved); `pending...` is what this computer hasn't done yet.
+    int       emits = 0, clears = 0;
+    int       pendingEmit = 0;
+    bool      pendingClear = false;
+};
+// Roblox's starting values for each one.
+inline ParticleProps particleDefaults(ParticleType t) {
+    ParticleProps p;
+    p.type = t;
+    switch (t) {
+        case ParticleType::Fire:
+            p.color1 = glm::vec3(236, 139, 70) / 255.0f; p.color2 = glm::vec3(139, 80, 55) / 255.0f;
+            p.fxSize = 5.0f; p.rise = 9.0f; break;
+        case ParticleType::Smoke:
+            p.color1 = glm::vec3(1.0f); p.fxSize = 1.0f; p.rise = 1.0f; p.opacity = 0.5f; break;
+        case ParticleType::Sparkles:
+            p.color1 = glm::vec3(144, 25, 255) / 255.0f; break;
+        default: break;
+    }
+    return p;
+}
+
+enum class ConstraintType { Rope, Rod, Spring, Weld, Hinge, BallSocket, Prismatic, Cylindrical };
+inline constexpr int kConstraintTypeCount = 8;
+inline const char* const kConstraintNames[kConstraintTypeCount] = {"Rope", "Rod", "Spring", "Weld", "Hinge",
+                                                                   "BallSocket", "Prismatic", "Cylindrical"};
+inline const char* const kConstraintClassNames[kConstraintTypeCount] = {
+    "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "HingeConstraint",
+    "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint"};
+// The joints whose settings live in JointProps (below).
+inline bool usesJointProps(ConstraintType t) { return (int)t >= (int)ConstraintType::BallSocket; }
+// Prismatic and cylindrical joints slide along Attachment0's axis.
+inline bool jointSlides(ConstraintType t) { return t == ConstraintType::Prismatic || t == ConstraintType::Cylindrical; }
+
+// ActuatorType / AngularActuatorType: nothing, a motor (runs at a speed) or a
+// servo (goes to a target and stops there).
+enum class Actuator { None, Motor, Servo };
+inline const char* const kActuatorNames[3] = {"None", "Motor", "Servo"};
+
+// Settings of the ball-socket, prismatic (slider) and cylindrical (slide + spin)
+// joints. Roblox's property names in brackets; angles in degrees, like Roblox.
+struct JointProps {
+    // BallSocket: how far Attachment1's axis may lean away from Attachment0's [LimitsEnabled,
+    // UpperAngle], and how far it may twist around it [TwistLimitsEnabled, TwistLowerAngle,
+    // TwistUpperAngle]. Prismatic / Cylindrical: LimitsEnabled turns on LowerLimit / UpperLimit.
+    bool  limitsEnabled      = false;
+    float upperAngle         = 45.0f;   // BallSocket: the cone; Cylindrical: the furthest turn one way
+    bool  twistLimitsEnabled = false;
+    float twistLowerAngle    = -45.0f;
+    float twistUpperAngle    = 45.0f;
+    float restitution        = 0.0f;    // 0..1: how much it bounces off a limit [Restitution]
+    // Prismatic / Cylindrical: sliding along Attachment0's axis (its X, Roblox's Axis).
+    float lowerLimit = 0.0f, upperLimit = 5.0f;   // studs [LowerLimit, UpperLimit]
+    Actuator actuator = Actuator::None;           // [ActuatorType]
+    float motorMaxForce  = 0.0f;                  // [MotorMaxForce]
+    float velocity       = 0.0f;                  // motor: studs / second [Velocity]
+    float speed          = 0.0f;                  // servo: studs / second [Speed]
+    float servoMaxForce  = 0.0f;                  // [ServoMaxForce]
+    float targetPosition = 0.0f;                  // servo: studs [TargetPosition]
+    // Cylindrical: spinning around the axis (tilted InclinationAngle degrees from X towards Y).
+    Actuator angularActuator = Actuator::None;    // [AngularActuatorType]
+    float angularVelocity  = 0.0f;                // motor: radians / second [AngularVelocity]
+    float motorMaxTorque   = 0.0f;                // [MotorMaxTorque]
+    float angularSpeed     = 0.0f;                // servo: radians / second [AngularSpeed]
+    float targetAngle      = 0.0f;                // servo: degrees [TargetAngle]
+    float servoMaxTorque   = 0.0f;                // [ServoMaxTorque]
+    bool  angularLimitsEnabled = false;           // [AngularLimitsEnabled]: LowerAngle..UpperAngle
+    float lowerAngle       = -45.0f;              // [LowerAngle]
+    float inclinationAngle = 0.0f;                // [InclinationAngle]
+    // Where it is now (worked out by the physics, not saved): [CurrentPosition]
+    // studs along the axis, [CurrentAngle] degrees around it.
+    float currentPosition = 0.0f, currentAngle = 0.0f;
+};
 
 enum class LightType { Point, Spot };
 
@@ -288,10 +410,69 @@ inline MoverProps moverDefaults(MoverType t) {
 }
 
 // Surface look, à la Roblox materials — affects shading in the lit shader.
-enum class Material { Plastic, Metal, Neon, Wood, Glass, Concrete, Ice };
-inline constexpr int kMaterialCount = 7;
+// New ones go on the end: the number is what the network sends.
+enum class Material { Plastic, Metal, Neon, Wood, Glass, Concrete, Ice,
+                      Sand, Grass, Brick, Fabric, Slate, Granite, Marble, Cobblestone, Foil, DiamondPlate,
+                      SmoothPlastic };
+inline constexpr int kMaterialCount = 18;
 inline const char* const kMaterialNames[kMaterialCount] =
-    {"Plastic", "Metal", "Neon", "Wood", "Glass", "Concrete", "Ice"};
+    {"Plastic", "Metal", "Neon", "Wood", "Glass", "Concrete", "Ice",
+     "Sand", "Grass", "Brick", "Fabric", "Slate", "Granite", "Marble", "Cobblestone", "Foil", "DiamondPlate",
+     "SmoothPlastic"};
+// "Plastic, Metal, ... or SmoothPlastic": for error messages and hints.
+inline const char* materialNameList() {
+    static std::string list = [] {
+        std::string s;
+        for (int i = 0; i < kMaterialCount; ++i)
+            s += std::string(i == 0 ? "" : i == kMaterialCount - 1 ? " or " : ", ") + kMaterialNames[i];
+        return s;
+    }();
+    return list.c_str();
+}
+// A material by name (exact, like scripts), plus the few other Roblox names we draw
+// with one of ours. False if there's no such material.
+inline bool materialFromName(const std::string& s, Material& out) {
+    for (int i = 0; i < kMaterialCount; ++i)
+        if (s == kMaterialNames[i]) { out = (Material)i; return true; }
+    if (s == "CorrodedMetal")                { out = Material::Metal;    return true; }
+    if (s == "WoodPlanks")                   { out = Material::Wood;     return true; }
+    if (s == "Asphalt" || s == "Basalt" || s == "Limestone" || s == "Pavement" || s == "Sandstone" || s == "Rock")
+                                             { out = Material::Concrete; return true; }
+    if (s == "Pebble")                       { out = Material::Cobblestone; return true; }
+    if (s == "LeafyGrass")                   { out = Material::Grass;    return true; }
+    if (s == "Salt")                         { out = Material::Sand;     return true; }
+    if (s == "Glacier")                      { out = Material::Ice;      return true; }
+    return false;
+}
+// How heavy (1 = Plastic, floats half under in water), grippy (0-2) and bouncy (0-1)
+// each material is by default; a part's Density / Friction / Elasticity override it.
+// In proportion to Roblox's defaults, but on our scale (Metal is 3, not 7.85).
+struct MaterialPhysics { float density, friction, elasticity; };
+inline MaterialPhysics materialPhysics(Material m) {
+    switch (m) {
+        case Material::Metal:         return {3.0f, 0.35f, 0.15f};
+        case Material::Wood:          return {0.7f, 0.50f, 0.25f};
+        case Material::Glass:         return {2.5f, 0.25f, 0.20f};
+        case Material::Concrete:      return {2.4f, 0.70f, 0.10f};
+        case Material::Ice:           return {0.9f, 0.03f, 0.10f};
+        case Material::Neon:          return {1.0f, 0.40f, 0.20f};
+        case Material::Sand:          return {1.6f, 0.60f, 0.05f};
+        case Material::Grass:         return {1.2f, 0.55f, 0.10f};
+        case Material::Brick:         return {1.9f, 0.80f, 0.15f};
+        case Material::Fabric:        return {0.9f, 0.45f, 0.05f};
+        case Material::Slate:         return {2.7f, 0.55f, 0.20f};
+        case Material::Granite:       return {2.7f, 0.55f, 0.20f};
+        case Material::Marble:        return {2.6f, 0.30f, 0.17f};
+        case Material::Cobblestone:   return {2.7f, 0.65f, 0.17f};
+        case Material::Foil:          return {2.7f, 0.40f, 0.25f};
+        case Material::DiamondPlate:  return {3.0f, 0.55f, 0.25f};
+        case Material::SmoothPlastic: return {1.0f, 0.40f, 0.30f};
+        default:                      return {1.0f, 0.50f, 0.30f};   // Plastic
+    }
+}
+// The look the part shader draws (uMaterial): the first seven are the material's own
+// number; 7-9 are water, liquid and terrain, so the newer ones start at 10.
+inline int materialShaderId(Material m) { return (int)m < 7 ? (int)m : (int)m + 3; }
 
 // A custom value on an object, like Roblox Attributes (Properties panel >
 // Attributes, or part:SetAttribute("Coins", 5) in a script).
@@ -299,6 +480,8 @@ inline const char* const kMaterialNames[kMaterialCount] =
 // long side (+Y) points the way the hand's front faces, so with the arm held out a
 // sword points straight up, the classic way.
 inline const glm::mat3 kDefaultGripRot{1.0f};
+// A SpawnLocation's TeamColor to start with: Roblox's default, Medium stone grey.
+inline const glm::vec3 kDefaultTeamColor{0.639f, 0.635f, 0.647f};
 
 struct Attribute {
     enum Type { Bool, Number, String, Vector3, Color3 };
@@ -345,6 +528,9 @@ public:
     // Behaviour
     bool     anchored   = true;              // false = falls with gravity in Play
     bool     canCollide = true;              // false = things pass through it
+    // Which collision group it's in (PhysicsService; see CollisionGroups.h). A group
+    // that isn't registered acts like "Default".
+    std::string collisionGroup = "Default";
     bool     castShadow = true;
     // Solid modeling (Roblox's Negate / Union): a negated part is shown see-through pink and
     // cut out of the other parts by Union; it remembers its old look for Un-negate. A union
@@ -362,8 +548,10 @@ public:
     bool        isLocal = false;          // LocalScript: runs on each player's computer, not the game's server
     bool        remoteFunction = false;   // (kind == Remote) a RemoteFunction, else a RemoteEvent
     PromptProps prompt;                   // (kind == Prompt)
+    ClickProps  click;                    // (kind == ClickDetector)
     HighlightProps highlight;             // (kind == Highlight)
     EffectProps effect;                   // (kind == Trail / Beam)
+    ParticleProps particle;               // (kind == Particles)
 
     // Anything
     std::vector<Attribute>   attributes;
@@ -388,10 +576,28 @@ public:
     bool        autoplay = false;          // start playing when the game starts
     int         audioHandle = 0;           // runtime only
 
-    // Physics (parts). Negative = use the material's value.
+    // Physics (parts). Negative = use the material's value. Together these are Roblox's
+    // CustomPhysicalProperties (PhysicalProperties.new(density, friction, elasticity,
+    // frictionWeight, elasticityWeight)); nil there = all three negative.
     float       density    = -1.0f;
     float       friction   = -1.0f;
     float       elasticity = -1.0f;        // bounciness 0..1
+    // How much this part's friction / bounciness counts when it touches another part
+    // (1 and 1 = the usual mix; bigger = this part's value wins).
+    float       frictionWeight   = 1.0f;
+    float       elasticityWeight = 1.0f;
+    bool hasCustomPhysics() const { return density >= 0.0f || friction >= 0.0f || elasticity >= 0.0f; }
+
+    // Model.PrimaryPart: the part inside it that GetPivot / PivotTo / SetPrimaryPartCFrame
+    // go by (0 = none).
+    uint64_t    primaryPart = 0;
+
+    // SpawnLocation (a part called SpawnLocation, or tagged "SpawnLocation"), like Roblox's:
+    // a Neutral one is for anybody; otherwise only players on the team with this TeamColor
+    // spawn there. AllowTeamChangeOnTouch: touching it puts you on that team.
+    bool        spawnNeutral = true;
+    glm::vec3   teamColor = kDefaultTeamColor;
+    bool        allowTeamChange = false;
 
     // Constraint (kind == Constraint). ref0 / ref1 are Attachments (or, for a
     // Weld, the two Parts).
@@ -403,6 +609,7 @@ public:
     float       motorSpeed  = 0.0f;        // hinge motor, radians / second
     float       motorTorque = 0.0f;        // hinge motor strength (0 = no motor)
     float       thickness   = 0.1f;        // how thick the rope / rod looks
+    JointProps  joint;                     // ball socket / prismatic / cylindrical settings
 
     // Decal (kind == Decal): which picture, on which side. `color` tints it
     // (white = as it is), `transparency` fades it.
@@ -499,7 +706,13 @@ public:
     bool isRemote() const { return kind == NodeKind::Remote; }
     bool isPrompt() const { return kind == NodeKind::Prompt; }
     bool isHighlight() const { return kind == NodeKind::Highlight; }
+    bool isClickDetector() const { return kind == NodeKind::ClickDetector; }
     bool isEffect() const { return kind == NodeKind::Trail || kind == NodeKind::Beam; }
+    bool isSpawnLocation() const {
+        return isPart() && (name == "SpawnLocation" || std::find(tags.begin(), tags.end(), "SpawnLocation") != tags.end());
+    }
+    bool isParticles() const { return kind == NodeKind::Particles; }
+    const char* particleClass() const { return kParticleClassNames[(int)particle.type]; }
     bool hasForceField() const {
         for (auto& c : children) if (c->kind == NodeKind::ForceField) return true;
         return false;

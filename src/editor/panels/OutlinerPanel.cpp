@@ -206,11 +206,13 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
     static const Group groups[] = {
         {"Parts", {"Part", "Sphere", "Cylinder", "MeshPart", "TrussPart", "SpawnLocation", "Seat"}},
         {"Scripts", {"Script", "LocalScript", "ModuleScript", "RemoteEvent", "RemoteFunction"}},
-        {"Characters & Tools", {"Tool", "Rig", "Animation", "Team", "ProximityPrompt"}},
+        {"Characters & Tools", {"Tool", "Rig", "Animation", "Team", "ProximityPrompt", "ClickDetector"}},
         {"Containers", {"Model", "Folder"}},
         {"Effects & Lights", {"PointLight", "SpotLight", "Sound", "ForceField", "Decal", "Highlight", "Trail", "Beam"}},
+        {"Particles", {"ParticleEmitter", "Fire", "Smoke", "Sparkles"}},
         {"Water", {"Water", "WaterSource", "FluidVolume", "FluidSystem", "FluidEmitter"}},
-        {"Constraints", {"Attachment", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
+        {"Constraints", {"Attachment", "HingeConstraint", "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint",
+                          "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
         {"Body Movers (classic)", {"BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce"}},
         {"User Interface", {"ScreenGui", "BillboardGui", "SurfaceGui", "Frame", "TextLabel", "TextButton", "ImageLabel", "ImageButton", "TextBox", "ScrollingFrame",
                             "UICorner", "UIStroke", "UIShadow", "UIBlur", "UIGradient", "UIScale", "UIAspectRatioConstraint",
@@ -331,13 +333,24 @@ void OutlinerPanel::render() {
         folderService("ServerStorage", (int)Id::Folder, "Things only server scripts use (maps, prizes). Not in the world until a script clones them.");
         folderService("StarterGui", (int)Id::ScreenGui, "The game's on-screen UI (ScreenGuis). Everyone gets a copy.");
         folderService("StarterPack", (int)Id::Tool, "Tools everyone spawns with.");
-        if (serviceRow("StarterPlayer", (int)Icons::Id::Player, character && !inWorkspace, false)) {
-            if (character && !inWorkspace) drawNode(character);
-            ImGui::TreePop();
+        {
+            SceneNode* sp = m_scene->serviceFolder("StarterPlayer", false);
+            bool spKids = false;
+            if (sp) for (auto& c : sp->children) if (!c->internal) { spKids = true; break; }
+            ImGui::PushID("StarterPlayer");
+            const bool spOpen = serviceRow("StarterPlayer", (int)Icons::Id::Player, (character && !inWorkspace) || spKids, sp && sp->selected);
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() && sp) m_scene->select(sp);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip(inWorkspace ? "The character is in the Workspace while the game runs."
+                                              : "The character everyone spawns as. Dress it, add scripts to it (its Animate script plays "
+                                                "its animations). StarterPlayerScripts holds LocalScripts that run for every player.");
+            if (spOpen) {
+                if (character && !inWorkspace) drawNode(character);
+                if (sp) for (auto& c : sp->children) drawNode(c.get());   // StarterPlayerScripts...
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
         }
-        if (ImGui::IsItemHovered())
-            ImGui::SetTooltip(inWorkspace ? "The character is in the Workspace while the game runs."
-                                          : "The character everyone spawns as. Dress it, add scripts to it (its Animate script plays its animations).");
         folderService("Teams", (int)Id::Team, "Teams players can be on. Insert a Team here.");
         folderService("SoundService", (int)Id::Sound, "Sounds for the whole game (music, sound effects scripts play).");
         folderService("Chat", (int)Id::Output, "Chat settings and scripts.");
@@ -408,8 +421,10 @@ std::string className(const SceneNode& n) {
         case NodeKind::Remote:     return n.remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt:     return "ProximityPrompt";
         case NodeKind::Highlight:  return "Highlight";
+        case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:      return "Trail";
         case NodeKind::Beam:       return "Beam";
+        case NodeKind::Particles:  return n.particleClass();
         case NodeKind::Light:      return n.lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::Sound:      return "Sound";
         case NodeKind::Attachment: return "Attachment";

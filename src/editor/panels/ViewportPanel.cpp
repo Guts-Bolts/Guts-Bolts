@@ -11,6 +11,7 @@
 #include "../../scene/Physics.h"
 #include "../../scene/EditMesh.h"
 #include "../../game/GameSession.h"
+#include "../../game/ClickDetectors.h"
 #include "../../game/PlayCamera.h"
 #include "../../core/AppWindow.h"
 #include "../../scene/Player.h"
@@ -705,14 +706,23 @@ void ViewportPanel::render(float dt) {
                                             ImGui::GetMousePos(), m_hovered && !onGui && !onHotbar, ImGui::GetIO().DeltaTime, guiEvents);
             }
             m_session->guiEvents(guiEvents);
-            if (m_hovered && !onHotbar && !onGui && !onPrompt && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            const bool toWorld = m_hovered && !onHotbar && !onGui && !onPrompt;
+            SceneNode* under = nullptr;   // the part under the mouse (not our own character)
+            if (toWorld) {
                 ImVec2 m = ImGui::GetMousePos();
                 glm::vec3 ro, rd;
                 mouseRay({m.x, m.y}, imgMin, imgSize, view, proj, ro, rd);
                 const SceneNode* character = m_scene->player() ? m_scene->player()->root() : nullptr;
-                SceneNode* hit = Physics::raycast(*m_scene, ro, rd, nullptr, character);
-                m_session->click(hit ? hit->id : 0);
+                under = Physics::raycast(*m_scene, ro, rd, nullptr, character);
             }
+            // ClickDetectors: hovering one fires MouseHoverEnter / Leave and shows a hand.
+            std::string cursorIcon;
+            if (m_session->hoverPart(under ? under->id : 0, &cursorIcon)) ClickDetectors::showPointer(ImGui::GetMousePos(), cursorIcon);
+            if (toWorld && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) m_session->click(under ? under->id : 0);
+            // A right-click (not a right-drag turning the camera): RightMouseClick.
+            if (toWorld && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
+                ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] < 6.0f * 6.0f)
+                m_session->rightClick(under ? under->id : 0);
             Hud::drawNameTags(dl, imgPos, imgMax, *m_scene, proj * view, m_camera.position());
             GameGui::draw(dl, imgPos, imgMax, *m_scene, &m_guiInput);
             GameGui::drawPrompts(dl);
@@ -809,8 +819,8 @@ void ViewportPanel::render(float dt) {
 
             // Connect tool: click part A, then part B.
             if (m_state->connectTool >= 0) {
-                static const char* names[] = {"rope", "rod", "spring", "weld", "hinge", "motor"};
-                const char* what = names[std::clamp(m_state->connectTool, 0, 5)];
+                static const char* names[] = {"rope", "rod", "spring", "weld", "hinge", "motor", "ball socket", "prismatic slider", "cylindrical joint"};
+                const char* what = names[std::clamp(m_state->connectTool, 0, 8)];
                 char hint[160];
                 if (!m_state->connectFirst)
                     std::snprintf(hint, sizeof(hint), "Adding a %s: click the FIRST part   (Esc to cancel)", what);

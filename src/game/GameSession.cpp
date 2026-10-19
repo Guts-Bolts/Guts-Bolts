@@ -4,6 +4,7 @@
 #include "../scripting/LuaApi.h"   // SignalKind (tool events)
 #include "../scene/Scene.h"
 #include "../scene/Player.h"
+#include "ClickDetectors.h"
 #include "../core/Audio.h"
 
 #include <imgui.h>
@@ -12,14 +13,31 @@
 #include <cmath>
 #include <vector>
 
-GameSession::GameSession(Scene* scene) : m_scene(scene), m_scripts(scene) { m_scripts.setPhysics(&m_physics); }
+GameSession::GameSession(Scene* scene) : m_scene(scene), m_scripts(scene) {
+    m_scripts.setPhysics(&m_physics);
+    if (ScriptEngine::testHooks)   // (tests: what the mouse would do)
+        m_scripts.testInput = [this](const std::string& what, uint64_t part) {
+            const bool on = reachableDetector(part) != nullptr;
+            if (what == "hover") return hoverPart(part);
+            if (what == "click") click(part);
+            else if (what == "right") rightClick(part);
+            else if (what == "pad") return clickDetector(part);
+            else return false;
+            return on;
+        };
+}
 
 void GameSession::start() {
     m_physics.reset();
     m_scene->particles().clear();
     m_scene->blasts().clear();
     m_scene->camera() = ScriptCamera{};   // workspace.CurrentCamera starts fresh: Custom, following you
-    if (Player* p = m_scene->player()) p->beginPlay();
+    if (Player* p = m_scene->player()) {
+        // Player.CharacterRemoving: just before coming back to life (CharacterAdded is below).
+        p->onRespawning = [this, p]() { if (m_scripts.running()) m_scripts.fireCharacter(false, p->rootId()); };
+        p->beginPlay();
+        p->consumeRespawned();   // (arriving isn't a respawn: the scripts hear CharacterAdded once they've started)
+    }
     m_running = true;
     // Sounds marked "Autoplay" (e.g. background music) start with the game.
     m_scene->forEach([](SceneNode* n) {
@@ -129,6 +147,8 @@ void GameSession::reachCheckpoints(const std::vector<TouchEvent>& touches) {
     for (const TouchEvent& t : touches) {
         SceneNode* part = m_scene->findById(t.partId);
         SceneNode* other = m_scene->findById(t.otherId);
+        if (part && other && part->isSpawnLocation() && (other == me || other->parent == me))
+            m_scripts.spawnTouched(me->id, part);   // (AllowTeamChangeOnTouch: onto its team)
         if (!part || !other || part->name != "Checkpoint" || p->checkpoint() == part->id) continue;
         if (other != me && other->parent != me) continue;
         p->setCheckpoint(part->id);
@@ -207,12 +227,14 @@ void GameSession::joinerArrived(uint64_t rig) {
 
 void GameSession::joinerRespawned(uint64_t rig) {
     if (!m_running || m_role == Role::Client) return;
+    m_scripts.fireCharacter(false, rig);   // Player.CharacterRemoving (then CharacterAdded, below)
     for (SceneNode* t : joinerTools(rig)) {
         m_scripts.stopScripts(t);
         m_scene->removeNode(t);
     }
     if (RemoteCharacter* rc = m_scene->findRemote(rig)) rc->toolSlots.clear();
     joinerArrived(rig);
+    m_scripts.fireCharacter(true, rig);
 }
 
 void GameSession::joinerEquip(uint64_t rig, uint64_t toolId) {
@@ -246,6 +268,7 @@ void GameSession::joinerTouched(uint64_t rig, uint64_t partId) {
     RemoteCharacter* rc = m_scene->findRemote(rig);
     SceneNode* part = m_scene->findById(partId);
     if (!m_running || m_role == Role::Client || !rc || !rc->alive || !part) return;
+    if (part->isSpawnLocation()) m_scripts.spawnTouched(rig, part);   // (AllowTeamChangeOnTouch)
     if (part->name != "Handle" || !part->parent || !part->parent->isTool()) return;
     SceneNode* tool = part->parent;
     if (m_scene->isCharacterPart(tool)) return;   // someone's already got it
@@ -265,7 +288,7 @@ void GameSession::stop() {
     m_scene->npcs().end();
     m_scene->water().end();
     m_scene->animator().clear();
-    if (Player* p = m_scene->player()) p->onToolEquip = nullptr;
+    if (Player* p = m_scene->player()) { p->onToolEquip = nullptr; p->onRespawning = nullptr; }
     m_starterPack.clear();
     m_gear.clear();
     Audio::stopAll();
@@ -275,6 +298,7 @@ void GameSession::stop() {
     m_scene->blasts().clear();
     m_scene->camera() = ScriptCamera{};
     m_running = false;
+    m_hoverDetector = 0;
 }
 
 void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swimLook) {
@@ -284,8 +308,9 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     const bool client = m_role == Role::Client;
     m_time += dt;
 
-    // 1. Scripts: wake up waits, keyboard events, Heartbeat.
+    // 1. Scripts: wake up waits, keyboard events (bound actions first), Heartbeat.
     m_scripts.update(dt);   // (a joined player's LocalScripts)
+    if (m_scripts.takeTestClick()) click(0);   // (tests: a pretend click in the game view)
 
     // 2. Physics for loose (unanchored) parts (the host does this for everyone).
     m_physics.gather(*m_scene);
@@ -301,16 +326,19 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     if (Player* p = m_runOnly ? nullptr : m_scene->player()) {
         glm::vec3 move(0.0f);
         bool jump = false, dive = false;
+        // A key a script's bound action sank (ContextActionService) isn't the game's.
+        auto down = [this](ImGuiKey k) { return ImGui::IsKeyDown(k) && !m_scripts.inputSunk(k); };
+        auto pressed = [this](ImGuiKey k) { return ImGui::IsKeyPressed(k, false) && !m_scripts.inputSunk(k); };
         if (acceptInput && !ImGui::GetIO().WantTextInput) {
             float yaw = glm::radians(cameraYaw);
             glm::vec3 fwd   = glm::normalize(glm::vec3(-std::cos(yaw), 0.0f, -std::sin(yaw)));
             glm::vec3 right = glm::vec3(-fwd.z, 0.0f, fwd.x);
-            if (ImGui::IsKeyDown(ImGuiKey_W) || ImGui::IsKeyDown(ImGuiKey_UpArrow))    move += fwd;
-            if (ImGui::IsKeyDown(ImGuiKey_S) || ImGui::IsKeyDown(ImGuiKey_DownArrow))  move -= fwd;
-            if (ImGui::IsKeyDown(ImGuiKey_D) || ImGui::IsKeyDown(ImGuiKey_RightArrow)) move += right;
-            if (ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_LeftArrow))  move -= right;
-            jump = ImGui::IsKeyDown(ImGuiKey_Space);
-            dive = ImGui::IsKeyDown(ImGuiKey_C) || ImGui::IsKeyDown(ImGuiKey_LeftCtrl);
+            if (down(ImGuiKey_W) || down(ImGuiKey_UpArrow))    move += fwd;
+            if (down(ImGuiKey_S) || down(ImGuiKey_DownArrow))  move -= fwd;
+            if (down(ImGuiKey_D) || down(ImGuiKey_RightArrow)) move += right;
+            if (down(ImGuiKey_A) || down(ImGuiKey_LeftArrow))  move -= right;
+            jump = down(ImGuiKey_Space);
+            dive = down(ImGuiKey_C) || down(ImGuiKey_LeftCtrl);
             // Touch thumbstick: partly pushed = walk slower.
             move += right * m_touchMove.x + fwd * m_touchMove.y;
             jump = jump || m_touchJump;
@@ -318,25 +346,25 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
             if (Pad::connected()) {
                 const glm::vec2 ls = Pad::leftStick();
                 move += right * ls.x + fwd * ls.y;
-                jump = jump || ImGui::IsKeyDown(ImGuiKey_GamepadFaceDown);
-                dive = dive || Pad::leftTrigger() > 0.5f;
+                jump = jump || down(ImGuiKey_GamepadFaceDown);
+                dive = dive || (Pad::leftTrigger() > 0.5f && !m_scripts.inputSunk(ImGuiKey_GamepadL2));
             }
         }
         // Tools: 1-9 picks a slot (again puts it away), Backspace drops the held one.
         if (acceptInput && !ImGui::GetIO().WantTextInput) {
             for (int i = 0; i < Player::kMaxTools; ++i)
-                if (ImGui::IsKeyPressed((ImGuiKey)(ImGuiKey_1 + i), false)) selectToolSlot(i);
-            if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) dropTool();
+                if (pressed((ImGuiKey)(ImGuiKey_1 + i))) selectToolSlot(i);
+            if (pressed(ImGuiKey_Backspace)) dropTool();
             // A controller: RB / LB pick the next / last tool, B puts it away, RT uses it.
             if (Pad::connected() && !p->isDead()) {
                 const auto tools = p->tools();
                 int held = -1;
                 for (size_t i = 0; i < tools.size(); ++i) if (tools[i] == p->equippedTool()) held = (int)i;
                 const int n = (int)tools.size();
-                if (n && ImGui::IsKeyPressed(ImGuiKey_GamepadR1, false)) selectToolSlot(held < 0 ? 0 : (held + 1) % n);
-                if (n && ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false)) selectToolSlot(held < 0 ? n - 1 : (held + n - 1) % n);
-                if (held >= 0 && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) selectToolSlot(held);
-                const bool trigger = Pad::rightTrigger() > 0.5f;
+                if (n && pressed(ImGuiKey_GamepadR1)) selectToolSlot(held < 0 ? 0 : (held + 1) % n);
+                if (n && pressed(ImGuiKey_GamepadL1)) selectToolSlot(held < 0 ? n - 1 : (held + n - 1) % n);
+                if (held >= 0 && pressed(ImGuiKey_GamepadFaceRight)) selectToolSlot(held);
+                const bool trigger = Pad::rightTrigger() > 0.5f && !m_scripts.inputSunk(ImGuiKey_GamepadR2);
                 if (trigger && !m_padTrigger) useTool();
                 m_padTrigger = trigger;
             }
@@ -352,11 +380,14 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         p->update(dt, move, jump, m_physics);
         if (p->isDead()) m_scene->animator().stopRig(p->rootId(), false, *m_scene);   // the body falls apart instead
         if (p->consumeDied()) m_scripts.fireDied(p->rootId());
-        if (!client && p->consumeRespawned()) {
-            // Like Roblox: you come back with just the StarterPack tools.
-            for (SceneNode* t : p->tools()) m_scripts.stopScripts(t);
-            p->clearTools();
-            giveStarterTools();
+        if (p->consumeRespawned()) {
+            if (!client) {
+                // Like Roblox: you come back with just the StarterPack tools.
+                for (SceneNode* t : p->tools()) m_scripts.stopScripts(t);
+                p->clearTools();
+                giveStarterTools();
+            }
+            m_scripts.fireCharacter(true, p->rootId());   // Player.CharacterAdded
         }
     }
 
@@ -393,6 +424,9 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     const WorldSettings& ws = m_scene->world();
     m_scene->particles().setBlood(ws.bloodColor, ws.bloodAmount, ws.bloodStay);
     m_scene->particles().update(dt, m_scene->world().gravity, m_physics);
+    // ParticleEmitters, Fire, Smoke, Sparkles: every screen makes its own (a game server
+    // with no screen doesn't bother).
+    if (!Mesh::headless) m_scene->particles().runEmitters(*m_scene, dt);
     m_scene->blasts().update(dt, *m_scene, m_physics);   // explosions (the host pushes things; everyone sees them)
 
     // 4. Touched events (after everything has moved).
@@ -449,17 +483,67 @@ void GameSession::guiEvents(const std::vector<GameGui::Event>& events) {
     }
 }
 
+// The ClickDetector this part belongs to, if our character is close enough to click it.
+// Like Roblox, not while holding a tool (the click is the tool's).
+SceneNode* GameSession::reachableDetector(uint64_t partId) {
+    SceneNode* part = partId ? m_scene->findById(partId) : nullptr;
+    SceneNode* d = ClickDetectors::find(*m_scene, part);
+    if (!d || d->click.range <= 0.0f) return nullptr;
+    if (Player* p = m_runOnly ? nullptr : m_scene->player()) {
+        if (p->isDead() || !p->root() || p->equippedTool()) return nullptr;
+        if (ClickDetectors::distanceToPart(part, p->position()) > d->click.range) return nullptr;
+    }
+    return d;
+}
+
+// Here (our LocalScripts; and the game's Scripts when they run here) and, when we've
+// joined someone's game, the host (its Scripts).
+void GameSession::fireDetector(SignalKind kind, const char* what, uint64_t detector) {
+    if (m_role == Role::Client && onClickDetector) onClickDetector(detector, what);
+    m_scripts.fireClickDetector(kind, detector);
+}
+
+bool GameSession::hoverPart(uint64_t partId, std::string* cursor) {
+    SceneNode* d = m_running ? reachableDetector(partId) : nullptr;
+    const uint64_t now = d ? d->id : 0;
+    if (now != m_hoverDetector) {
+        if (m_hoverDetector && m_scene->findById(m_hoverDetector))
+            fireDetector(SignalKind::ClickHoverLeave, "hl", m_hoverDetector);
+        m_hoverDetector = now;
+        if (now) fireDetector(SignalKind::ClickHoverEnter, "he", now);
+    }
+    if (cursor) *cursor = d ? d->click.cursor : std::string();
+    return d != nullptr;
+}
+
+void GameSession::rightClick(uint64_t partId) {
+    if (!m_running) return;
+    if (SceneNode* d = reachableDetector(partId)) fireDetector(SignalKind::ClickRightClick, "r", d->id);
+}
+
+bool GameSession::clickDetector(uint64_t partId) {
+    if (!m_running) return false;
+    SceneNode* d = reachableDetector(partId);
+    if (d) fireDetector(SignalKind::ClickMouseClick, "c", d->id);
+    return d != nullptr;
+}
+
 void GameSession::click(uint64_t partId) {
     if (!m_running) return;
+    // MouseButton1: bound actions (ContextActionService), then UserInputService.InputBegan.
+    // An action that sinks it keeps the held tool from being used.
+    const ImVec2 at = ImGui::GetMousePos();
+    const bool sunk = m_scripts.pointerDown(true, glm::vec2(at.x, at.y));
+    clickDetector(partId);
     if (m_role == Role::Client) {
         if (onClick && partId) onClick(partId);
         if (partId) m_scripts.fireClicked(partId);   // (our LocalScripts)
         // Holding a tool: swing here, and the host fires tool.Activated (and so do we, for its LocalScripts).
-        useTool();
+        if (!sunk) useTool();
         return;
     }
     m_scripts.fireClicked(partId);
-    useTool();   // holding a tool: clicking uses it (tool.Activated), like Roblox
+    if (!sunk) useTool();   // holding a tool: clicking uses it (tool.Activated), like Roblox
 }
 
 void GameSession::useTool() {
