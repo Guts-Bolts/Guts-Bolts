@@ -295,11 +295,11 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
     if (json lim = limitedJson(a); !lim.is_null()) j["limited"] = lim;
     if (me && a.votes.is_object() && !a.votes.empty()) j["myVote"] = a.votes.value(me->id, 0);
     if (Online::hasAccess(a.kind)) j["access"] = a.meta.value("access", std::string("public"));
+    if (hasVotes(a.kind)) { j["likes"] = a.likes; j["dislikes"] = a.dislikes; }   // games and Library models
     if (a.kind == "game") {
         j["badges"] = a.badges; j["allowGear"] = a.meta.value("allowGear", false); j["favorites"] = a.meta.value("favorites", 0LL);
         j["comments"] = !a.meta.value("commentsOff", false); j["commentCount"] = a.comments.size();
         j["privatePrice"] = a.meta.value("privatePrice", 0LL);
-        j["likes"] = a.likes; j["dislikes"] = a.dislikes;
         if (auto g = m_groups.find(a.meta.value("group", std::string())); g != m_groups.end())
             j["group"] = {{"id", g->second.id}, {"name", g->second.name}, {"color", g->second.color}};
         if (a.meta.value("featured", 0LL) > 0) j["featured"] = true;
@@ -529,7 +529,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         name == "profile.set" || name == "feed.list")
         return socialOp(name, me, args);
     if (name.rfind("item.", 0) == 0 || name.rfind("resale.", 0) == 0 || name.rfind("trade.", 0) == 0 ||
-        name.rfind("updates.", 0) == 0 || name.rfind("shots.", 0) == 0 || name == "game.vote" || name == "icon.set" || name == "icon.get" || name == "model.access")
+        name.rfind("updates.", 0) == 0 || name.rfind("shots.", 0) == 0 || name == "game.vote" || name == "model.vote" || name == "icon.set" || name == "icon.get" || name == "model.access")
         return itemOp(name, me, args);   // ServerItems.cpp
     if (name == "ping") {   // "I'm still here" (for friends' online dots); the answer keeps your account fresh
         json r = okay(); r["me"] = meJson(me); return r;
@@ -598,8 +598,13 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name == "bolts.history") {
         json h = json::array();
         size_t from = me.ledger.size() > 100 ? me.ledger.size() - 100 : 0;
-        for (size_t i = from; i < me.ledger.size(); ++i)
-            h.push_back({{"amount", me.ledger[i].amount}, {"reason", me.ledger[i].reason}, {"time", me.ledger[i].time}});
+        for (size_t i = from; i < me.ledger.size(); ++i) {
+            json e = {{"amount", me.ledger[i].amount}, {"reason", me.ledger[i].reason}, {"time", me.ledger[i].time}};
+            const std::string& ref = me.ledger[i].ref;   // gifts: "sent" or "got" (worker/server.js has the same)
+            if (ref.rfind("giftfor:", 0) == 0) e["gift"] = "sent";
+            else if (ref.rfind("giftfrom:", 0) == 0) e["gift"] = "got";
+            h.push_back(e);
+        }
         json r = okay();
         r["history"] = h;
         r["me"] = meJson(me);
@@ -1183,6 +1188,15 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::sort(found.begin(), found.end(), [&](const Asset* x, const Asset* y) {
             if (sort == "popular") return x->plays + x->sales > y->plays + y->sales;
             if (sort == "featured") return x->meta.value("featured", 0LL) > y->meta.value("featured", 0LL);   // newest pick first
+            if (sort == "rated") {   // models: the Wilson score, then the most votes; games: likes pulled towards 50%
+                const bool models = x->kind == "model" && y->kind == "model";
+                const double rx = x->kind == "model" ? wilsonScore(x->likes, x->dislikes) : gameRating(x->likes, x->dislikes);
+                const double ry = y->kind == "model" ? wilsonScore(y->likes, y->dislikes) : gameRating(y->likes, y->dislikes);
+                if (rx != ry) return rx > ry;
+                if (models && x->likes + x->dislikes != y->likes + y->dislikes) return x->likes + x->dislikes > y->likes + y->dislikes;
+                if (models) return x->sales > y->sales;
+                return x->plays > y->plays;
+            }
             return x->created > y->created;   // newest first
         });
         long long offset = std::max(0LL, num("offset")), limit = std::clamp(num("limit"), 1LL, 100LL);
@@ -1239,7 +1253,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (id.rfind("gb:", 0) == 0) id = id.substr(3);
         auto it = findAsset(id);
         if (it == m_assets.end() || !canSee(it->second, me)) return fail("There's nothing with that ID (or it's private).");
-        json r = okay(); r["asset"] = publicAsset(it->second, &me); r["owned"] = me.owned.count(it->first) > 0; return r;
+        json r = okay(); r["asset"] = publicAsset(it->second, &me); r["owned"] = me.owned.count(it->first) > 0;
+        // used: they've inserted this model, so they can rate it (model.vote).
+        if (it->second.kind == "model")
+            r["used"] = std::find(me.usedModels.begin(), me.usedModels.end(), it->first) != me.usedModels.end();
+        return r;
     }
     if (name == "get") {
         auto it = findAsset(str("id"));
@@ -1265,6 +1283,14 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
                 if (me.played.size() > 500) me.played.erase(me.played.begin());
                 saveUsers();
             }
+        }
+        // A Library model someone else made, fetched to insert (Studio's Toolbox, or require() in a
+        // script): now they've used it, so they can give it a thumbs up or down (model.vote).
+        if (a.kind == "model" && a.creator != me.id && me.userId > 0 &&
+            std::find(me.usedModels.begin(), me.usedModels.end(), a.id) == me.usedModels.end()) {
+            me.usedModels.push_back(a.id);
+            if (me.usedModels.size() > kMaxUsedModels) me.usedModels.erase(me.usedModels.begin());
+            saveUsers();
         }
         json r = okay(); r["asset"] = publicAsset(a); r["data"] = Online::base64Encode(data); return r;
     }
@@ -1294,6 +1320,47 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         saveAssets();
         saveUsers();
         json r = okay(); r["me"] = meJson(me); return r;
+    }
+    if (name == "gift.buy") {
+        // "Buy as a gift": you pay, a friend gets the item, and the bell tells them (with your note).
+        // The same checks as buying it for yourself, plus: friends only, not someone who already has
+        // it, and no Limiteds (their numbered copies are only sold, resold and traded, never gifted).
+        // (worker/server.js has the same.)
+        if (me.userId == 0) return fail("Sign up to buy things.");
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end()) return fail("That doesn't exist (any more).");
+        Asset& a = it->second;
+        if (!Online::isCatalogItem(a.kind)) return fail("Only catalog items can be gifts.");
+        if (const std::string review = reviewOf(a.meta); !review.empty())
+            return fail(review == "pending" ? "This is waiting for a staff check." : "This didn't pass the staff check.");
+        if (a.meta.is_object() && a.meta.value("award", std::string()) == "email")
+            return fail("This hat can't be bought: it's given to people who confirm an email.");
+        if (a.limited) return fail("Limited items can't be gifts. Trade one with your friend instead.");
+        if (const long long off = a.meta.is_object() ? a.meta.value("offsaleAt", 0LL) : 0LL; off > 0 && now >= off)
+            return fail("This item is off sale: it was only for sale for a limited time.");
+        if (a.price <= 0) return fail("This item is free, so your friend can just get it themselves.");
+        User* to = args.contains("to") && args["to"].is_number_integer() ? findUserId(args["to"].get<long long>())
+                 : findPerson(str("to"));
+        if (!to || to->userId == 0) return fail("There's no account with that ID on this server.");
+        if (to == &me) return fail("That's you! Press Buy to get it for yourself.");
+        if (!me.friends.count(to->id)) return fail("You can only send gifts to your friends.");
+        if (to->banned || blocks(me, *to)) return fail("You can't send gifts to that account.");
+        // (Who owns what stays private when they hid their inventory from you.)
+        if (to->owned.count(a.id))
+            return fail(seesInventory(me, *to) ? to->name + " already has " + a.name + "." : "You can't gift this to " + to->name + ".");
+        const std::string note = say(str("message"), kGiftNote);
+        if (balance(me) < a.price) return fail("You need " + std::to_string(a.price - balance(me)) + " more Bolts for that.");
+        const std::string ref = a.id + ":" + to->id + ":" + Account::randomHex(4);
+        add(me, -a.price, "Gift for " + to->name + ": " + a.name, "giftfor:" + ref);
+        paySeller(a, me, a.price * Online::kCreatorSharePercent / 100, "sale:" + ref);
+        add(*to, 0, "Gift from " + me.name + ": " + a.name, "giftfrom:" + ref);   // (in their history, costs them nothing)
+        a.sales++;
+        if (a.creator != to->id) tally(&a, "sales");
+        to->owned.insert(a.id);
+        notify(to, "gift", me.name + " sent you a gift: " + a.name + "!" + (note.empty() ? std::string() : " \"" + note + "\""), a.id);
+        saveAssets();
+        saveUsers();
+        json r = okay(); r["me"] = meJson(me); r["to"] = publicUser(*to); return r;
     }
     if (name == "delete") {
         auto it = findAsset(str("id"));
@@ -1441,6 +1508,7 @@ void GbServer::saveUsers() {
         all[id]["reportsToday"] = u.reportsToday;
         all[id]["pastNames"] = u.pastNames;
         all[id]["played"] = u.played;
+        if (!u.usedModels.empty()) all[id]["usedModels"] = u.usedModels;
         all[id]["publicWeek"] = u.publicWeek;
         all[id]["publicThisWeek"] = u.publicThisWeek;
     }
@@ -1469,7 +1537,7 @@ void GbServer::saveAssets() {
                    {"price", a.price}, {"created", a.created}, {"sales", a.sales}, {"plays", a.plays},
                    {"size", a.size}, {"meta", a.meta}, {"thumb", a.thumb}, {"badges", a.badges}, {"num", a.num}, {"days", a.days}, {"comments", a.comments}};
         if (a.icon) all[id]["icon"] = a.icon;
-        if (a.kind == "game") { all[id]["likes"] = a.likes; all[id]["dislikes"] = a.dislikes; all[id]["votes"] = a.votes; }
+        if (hasVotes(a.kind)) { all[id]["likes"] = a.likes; all[id]["dislikes"] = a.dislikes; all[id]["votes"] = a.votes; }
         if (a.limited) { all[id]["limited"] = true; all[id]["stock"] = a.stock; all[id]["copies"] = a.copies; }
         if (!a.shots.empty()) all[id]["shots"] = a.shots;
         if (!a.versions.empty()) all[id]["versions"] = a.versions;
@@ -1596,9 +1664,11 @@ void GbServer::load() {
                     for (const auto& b : j["blocked"]) if (b.is_string()) u.blocked.push_back(b.get<std::string>());
                 u.reportDay = j.value("reportDay", std::string());
                 u.reportsToday = j.value("reportsToday", 0);
-                for (const char* k : {"pastNames", "played"})
+                for (const char* k : {"pastNames", "played", "usedModels"})
                     if (j.contains(k) && j[k].is_array())
-                        for (const auto& v : j[k]) if (v.is_string()) (std::string(k) == "played" ? u.played : u.pastNames).push_back(v.get<std::string>());
+                        for (const auto& v : j[k])
+                            if (v.is_string())
+                                (std::string(k) == "played" ? u.played : std::string(k) == "usedModels" ? u.usedModels : u.pastNames).push_back(v.get<std::string>());
                 u.publicWeek = j.value("publicWeek", 0LL);
                 u.publicThisWeek = j.value("publicThisWeek", 0);
                 if (j.contains("gear") && j["gear"].is_array())

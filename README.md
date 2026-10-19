@@ -98,6 +98,8 @@ The panels:
   models, decals and audio, plus Studio's own parts and ready-made objects),
   **Inventory** (your own uploads, private ones too) and **Recent** (what you
   inserted lately). Pick a category, search, and click a picture to insert it.
+  Library models show how many people liked them (a green **92%** tag; point
+  at it for the number of votes), and **Sort: Best rated** lists the best ones first.
   Every item has a picture: Studio photographs models on their own, and
   things made by Guts&Bolts staff (and Studio's built-in objects) carry a gold
   **official** badge, so you know they're safe to use. It has
@@ -1888,6 +1890,44 @@ Find things in two places:
   button, and **Copy ID** copies the ID to paste into a Decal's Texture or a
   Sound's File.
 
+**Rating models.** Every Library model can get a thumbs up or down, on its page
+(website, and *Create > Library* in the Player). One vote each: press the other
+thumb to change it, or your own again to take it back.
+
+- Only people who have **inserted the model** can rate it. The server remembers
+  each Library model you fetch to use (Studio's Toolbox, or `require(id)` in a
+  script; Studio fetching a picture-less model once to photograph it counts too),
+  so it costs nothing extra. You can't rate your own models.
+- The Library, the model's page and Studio's Toolbox show the like percentage and
+  how many votes it has.
+- **Best rated** (Library and Toolbox) sorts by the Wilson score: the lowest the real
+  like rate is likely to be (95% sure). So one vote at 100% doesn't beat 500 votes
+  at 95%, and models with no votes come last.
+- `model.vote` in `worker/server.js` and `src/server/ServerItems.cpp` (`usedModels` is
+  the list of models someone fetched; `wilsonScore` is in both servers).
+
+### Gifts (Buy as a gift)
+
+Paid catalog items have a **Buy as a gift** button under **Buy** on the website.
+Pick one of your friends, write a short note if you like (up to 100 letters, through
+the text filter), check what it costs and press **Send gift**.
+
+- You pay the price (the creator gets their 70% like any sale). The item goes
+  straight into your friend's inventory, and they get a notification with your note.
+- Both Bolts histories show it: *Gift for amy: Party Hat* for you, *Gift from bob:
+  Party Hat* for them (it costs them nothing).
+- Friends only. You can't gift something they already have (if they hide their
+  inventory from you, it just says you can't gift it to them), and not to someone
+  who is banned or blocked.
+- **No Limiteds.** Limited copies are numbered and only sold, resold and traded, so
+  gifting them isn't supported (trade one instead). Free, off-sale, not-yet-checked
+  and award items (the Verified Hat) can't be gifts either.
+- It's as safe as buying for yourself: the server checks everything again, takes
+  the Bolts and hands the item over in one go, and sending the same gift twice is
+  turned down because they already have it.
+- `gift.buy` in `worker/server.js` and `src/server/Server.cpp`. (Gifts are sent from
+  the website; the Player app shows the notification and opens the item.)
+
 ### Limiteds, resale and trading
 
 - **Edit item:** on an item's page on the website, its creator (or staff) can
@@ -2436,7 +2476,7 @@ how many new things happened. Click it to see them; that marks them read.
 
 You get one when someone sends you a friend request, becomes your friend, follows
 you, buys something you made, sends or answers a trade, asks to join your group or
-lets you in, and when staff check something you uploaded. Each one takes you to the
+lets you in, sends you a gift, and when staff check something you uploaded. Each one takes you to the
 right page. The newest 50 are kept. Both servers do the same (`notify` in
 `worker/server.js` and `src/server/Server.cpp`).
 
@@ -2567,9 +2607,9 @@ mapping and FXAA. It needs OpenGL 4.1, so it runs on Windows, macOS and Linux.
 
 The `worker/test` folder has automatic checks for the website's server. They
 start a real copy of the server in memory (no internet needed) and try things the
-way a player would: signing up, getting the daily Bolts, buying an item,
-commenting, the filter, a game's version history and restoring, and staff
-tools like warnings and bans. They also check
+way a player would: signing up, getting the daily Bolts, buying an item, sending
+a gift, rating a Library model, commenting, the filter, a game's version history
+and restoring, and staff tools like warnings and bans. They also check
 that the update log is filled in properly, that it says "Library" and not
 "Marketplace", and that the C++ filter has the same word list as the website.
 

@@ -34,6 +34,27 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'no-peeking', name: 'No Peeking!', time: 1791907200, tag: 'Website',
+    summary: 'Buy something from the catalog for a friend: you pay, they get it, with a note from you.',
+    items: [
+      'A new "Buy as a gift" button on catalog items: pick a friend, write a short note if you like, check it and send',
+      'You pay the price, the item goes straight into your friend\'s inventory, and they get a notification with your note',
+      'Gifts show up in both of your Bolts histories, so you can see what you sent and what you got',
+      'You can only send gifts to friends, and not something they already have',
+      'Limited items can\'t be gifts (trade them instead), and free or off-sale items can\'t either',
+    ],
+  },
+  {
+    id: 'two-thumbs-way-up', name: 'Two Thumbs Way Up', time: 1791900000, tag: 'Website',
+    summary: 'Rate Library models with a thumbs up or down, and find the best ones with the new "Best rated" sort.',
+    items: [
+      'Give any Library model a thumbs up or down on its page. Change your mind any time, or press your vote again to take it back',
+      'Only people who have inserted the model in Studio can rate it, and you can\'t rate your own',
+      'The Library, each model\'s page and Studio\'s Toolbox show how many people liked it and how many voted',
+      'A new "Best rated" sort in the Library and the Toolbox. It\'s fair: one vote at 100% doesn\'t beat 500 votes at 95%',
+    ],
+  },
+  {
     id: 'say-cheese', name: 'Say Cheese', time: 1791896400, tag: 'Website',
     summary: 'Games can show off up to 5 screenshots on their page, next to the thumbnail.',
     items: [

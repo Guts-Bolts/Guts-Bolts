@@ -83,6 +83,7 @@ private:
         // ServerItems.cpp / ServerAccounts.cpp (worker/server.js has the same):
         std::vector<std::string> pastNames;   // usernames they had before (reserved for them)
         std::vector<std::string> played;      // games they've played (game.vote needs it), oldest first, at most 500
+        std::vector<std::string> usedModels;  // Library models they've inserted (model.vote needs it), oldest first
         long long   publicWeek = 0;           // the week (unix time / 7 days) publicThisWeek counts
         int         publicThisWeek = 0;       // models made public that week (Verified: no limit)
     };
@@ -97,8 +98,8 @@ private:
         nlohmann::json comments = nlohmann::json::array(); // games: comments under it, newest first (ServerSocial.cpp)
         nlohmann::json days = nlohmann::json::object();    // creator stats: "YYYY-MM-DD" -> {plays, sales, bolts}, last 60 days
         long long   icon = 0;                    // games: when its icon was last set (0 = none)
-        long long   likes = 0, dislikes = 0;     // games: thumbs up / down
-        nlohmann::json votes = nlohmann::json::object();   // games: account id -> 1 or -1
+        long long   likes = 0, dislikes = 0;     // games and Library models: thumbs up / down
+        nlohmann::json votes = nlohmann::json::object();   // games and models: account id -> 1 or -1
         // Limiteds (ServerItems.cpp): a fixed stock of numbered copies, which people resell and trade.
         bool        limited = false;
         long long   stock = 0;
