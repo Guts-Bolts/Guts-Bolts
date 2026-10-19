@@ -2445,6 +2445,11 @@ void PlayerApp::updateTouch(ImVec2 min, ImVec2 max, bool acceptInput) {
     std::vector<std::pair<ImVec2, ImVec2>> blocked = GameGui::scrollerRects(*m_scene);   // fingers there scroll the UI
     blocked.push_back({m_chatMin, m_chatMax});
     m_touch.setBlocked(std::move(blocked));
+    // Scripts' action buttons (ContextActionService), next to the jump button.
+    std::vector<TouchControls::ActionButton> buttons;
+    for (const ScriptEngine::ActionButton& b : m_session->scripts().actionButtons())
+        buttons.push_back({b.name, b.title, b.image, b.hasPosition, b.xScale, b.xOffset, b.yScale, b.yOffset});
+    m_touch.setActionButtons(std::move(buttons));
     if (m_window->hasTouchScreen()) {
         // A real touch screen: every finger counts (thumbstick + look + jump at once).
         std::vector<TouchControls::Finger> f;
@@ -2466,6 +2471,15 @@ void PlayerApp::updateTouch(ImVec2 min, ImVec2 max, bool acceptInput) {
         m_touch.feed(f);
     } else {
         m_touch.feedMouse(acceptInput && ImGui::IsWindowHovered());
+    }
+    // Scripts hear the fingers first: action buttons, and Touch for fingers on the game view
+    // (an action that sinks one keeps it from turning the camera or tapping).
+    ScriptEngine& scripts = m_session->scripts();
+    for (const auto& e : m_touch.actionEvents()) scripts.actionButtonInput(e.name, e.down, glm::vec2(e.pos.x - min.x, e.pos.y - min.y));
+    for (const auto& e : m_touch.fingerEvents()) {
+        static const char* states[] = {"Begin", "Change", "End"};
+        if (scripts.touchInput(e.id, states[e.state], glm::vec2(e.pos.x - min.x, e.pos.y - min.y)) && e.state != 2)
+            m_touch.sinkFinger(e.id);
     }
     if (!acceptInput) { m_session->setTouchInput(glm::vec2(0.0f), false); return; }
     m_session->setTouchInput(m_touch.move(), m_touch.jump());

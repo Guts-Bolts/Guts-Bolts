@@ -280,6 +280,87 @@ function UserInputService:GetGamepadState(pad)
              obj("ButtonL2", Vector3.new(0, 0, lt)), obj("ButtonR2", Vector3.new(0, 0, rt)) }
 end
 
+-- ContextActionService: key bindings for LocalScripts (ScriptActions.cpp does the work).
+-- BindAction(name, fn, createTouchButton, ...inputs): fn(name, state, inputObject) runs on
+-- Begin / End (and Cancel when a newer binding takes the key over); returning
+-- Enum.ContextActionResult.Pass lets lower bindings and the game's controls have it too.
+do
+    local levels = {}
+    for name, value in pairs({ Low = 1000, Medium = 2000, Default = 2000, High = 3000 }) do
+        levels[name] = setmetatable({ Name = name, Value = value, EnumType = "ContextActionPriority" },
+                                    { __tostring = function() return "Enum.ContextActionPriority." .. name end })
+    end
+    rawset(Enum, "ContextActionPriority", setmetatable(levels, { __index = function(_, k)
+        error(tostring(k) .. " is not a valid member of ContextActionPriority", 2)
+    end }))
+    local bind, unbind, unbindAll, info, allInfo = __gb_casBind, __gb_casUnbind, __gb_casUnbindAll, __gb_casInfo, __gb_casAll
+    local setButton, getButton = __gb_casButton, __gb_casButtonGet
+    local CAS = { Name = "ContextActionService", ClassName = "ContextActionService" }
+    local function priorityOf(p)
+        if p == nil then return 2000 end
+        if type(p) == "number" then return math.floor(p) end
+        if type(p) == "table" and type(p.Value) == "number" then return p.Value end
+        if type(p) == "string" and levels[p] then return levels[p].Value end
+        error("BindActionAtPriority: the priority should be a number (like Enum.ContextActionPriority.High.Value)", 3)
+    end
+    local function doBind(name, fn, touch, priority, ...)
+        if type(name) ~= "string" then error("BindAction: the action's name should be a string", 3) end
+        if type(fn) ~= "function" then error("BindAction: the second argument should be a function", 3) end
+        local inputs = table.pack(...)
+        local list = {}
+        for i = 1, inputs.n do
+            local v = inputs[i]
+            if type(v) == "table" and v.Name then v = v.Name end
+            if type(v) ~= "string" then error("BindAction: input " .. i .. " should be an Enum.KeyCode or Enum.UserInputType", 3) end
+            list[#list + 1] = v
+        end
+        bind(name, fn, touch and true or false, priority, list)
+    end
+    function CAS:BindAction(name, fn, touch, ...) doBind(name, fn, touch, 2000, ...) end
+    function CAS:BindActionAtPriority(name, fn, touch, priority, ...) doBind(name, fn, touch, priorityOf(priority), ...) end
+    CAS.BindActionToInputTypes = CAS.BindAction   -- (Roblox's old name)
+    function CAS:UnbindAction(name) unbind(tostring(name)) end
+    function CAS:UnbindAllActions() unbindAll() end
+    function CAS:GetBoundActionInfo(name) return info(tostring(name)) end
+    function CAS:GetAllBoundActionInfo() return allInfo() end
+    function CAS:SetTitle(name, text) setButton(tostring(name), "Title", text) end
+    function CAS:SetDescription(name, text) setButton(tostring(name), "Description", text) end
+    function CAS:SetImage(name, image) setButton(tostring(name), "Image", image) end
+    function CAS:SetPosition(name, position) setButton(tostring(name), "Position", position) end
+    function CAS:GetCurrentLocalToolIcon() return "" end
+    -- GetButton: the action's touch button, as an ImageButton-like object (nil without one).
+    -- Image, Position and its ActionTitle's Text can be read and changed.
+    local buttons = {}
+    function CAS:GetButton(name)
+        name = tostring(name)
+        if not getButton(name, "exists") then return nil end
+        if buttons[name] then return buttons[name] end
+        local title = setmetatable({ Name = "ActionTitle", ClassName = "TextLabel" }, {
+            __index = function(_, k) if k == "Text" then return getButton(name, "Title") end end,
+            __newindex = function(t, k, v) if k == "Text" then setButton(name, "Title", v) else rawset(t, k, v) end end })
+        local kinds = { ImageButton = true, GuiButton = true, GuiObject = true, GuiBase2d = true, Instance = true }
+        local b = setmetatable({ Name = "ContextActionButton", ClassName = "ImageButton", Visible = true }, {
+            __index = function(_, k)
+                if k == "Image" or k == "Position" then return getButton(name, k) end
+                if k == "Pressed" then return getButton(name, "Pressed") end
+                if k == "ActionTitle" then return title end
+                if k == "IsA" then return function(_, c) return kinds[c] == true end end
+                if k == "FindFirstChild" or k == "WaitForChild" then
+                    return function(_, c) if c == "ActionTitle" then return title end return nil end
+                end
+                if k == "GetChildren" then return function() return { title } end end
+                return nil
+            end,
+            __newindex = function(t, k, v)
+                if k == "Image" or k == "Position" then setButton(name, k, v) else rawset(t, k, v) end
+            end,
+            __tostring = function() return "ContextActionButton" end })
+        buttons[name] = b
+        return b
+    end
+    ContextActionService = CAS
+end
+
 -- An event that only passes on some firings: `test` picks them, `out` shapes the arguments.
 local function filtered(sig, test, out)
     local s = {}
@@ -1133,7 +1214,8 @@ local services = { Workspace = workspace, PathfindingService = PathfindingServic
                    RunService = RunService, UserInputService = UserInputService, Gui = Gui,
                    CollectionService = CollectionService, DataStoreService = DataStoreService,
                    TweenService = TweenService, HttpService = HttpService,
-                   ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService }
+                   ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService,
+                   ContextActionService = ContextActionService }
 -- The container services are folders at the top of the game (Studio shows them in the Explorer).
 local storageNames = { ReplicatedStorage = true, ServerStorage = true, ReplicatedFirst = true, ServerScriptService = true,
                        StarterPack = true, StarterPlayer = true, SoundService = true, Chat = true, TextChatService = true }
@@ -1144,7 +1226,7 @@ local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, Scri
     Stats = {}, GuiService = {}, HapticService = {}, LocalizationService = {},
     AnalyticsService = { LogCustomEvent = true, LogEconomyEvent = true, LogProgressionEvent = true },
     PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {}, TextService = {},
-    MaterialService = {}, VoiceChatService = {}, ContextActionService = { UnbindAction = true },
+    MaterialService = {}, VoiceChatService = {},
     MemoryStoreService = {}, MessagingService = { PublishAsync = true }, InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
     VRService = {}, GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
@@ -1380,6 +1462,7 @@ __gb_awardBadge, __gb_hasBadge, __gb_teleport, __gb_joinData = nil, nil, nil, ni
 __gb_raycast, __gb_storage, __gb_addMethod, __gb_cgroups = nil, nil, nil, nil
 __gb_passLookup, __gb_passReady, __gb_passOwns, __gb_passPrompt, __gb_passResults = nil, nil, nil, nil, nil
 __gb_receiptCheck, __gb_receipts, __gb_receiptDone = nil, nil, nil
+__gb_casBind, __gb_casUnbind, __gb_casUnbindAll, __gb_casInfo, __gb_casAll, __gb_casButton, __gb_casButtonGet = nil, nil, nil, nil, nil, nil, nil
 )LUA";
 
 constexpr double kTimeoutSeconds = 5.0;
@@ -1429,6 +1512,24 @@ const std::vector<KeyName>& keyTable() {
     }();
     return keys;
 }
+
+} // namespace
+
+// The keys scripts know (ContextActionService uses them too).
+const char* LuaApi::keyCodeName(int imguiKey, const char** inputType) {
+    for (const auto& k : keyTable())
+        if ((int)k.key == imguiKey) { if (inputType) *inputType = k.type; return k.name; }
+    return nullptr;
+}
+int LuaApi::keyFromName(const std::string& name, const char** inputType) {
+    for (const auto& k : keyTable())
+        if (name == k.name) { if (inputType) *inputType = k.type; return (int)k.key; }
+    return 0;
+}
+
+int actionTestInput(lua_State* L);   // ScriptActions.cpp (tests only)
+
+namespace {
 
 // ---------------------------------------------------------------------------
 // Global functions
@@ -1748,6 +1849,9 @@ int l_receipts(lua_State* L) {
 int l_testInput(lua_State* L) {
     ScriptEngine* e = LuaApi::engine(L);
     const std::string what = luaL_checkstring(L, 1);
+    // Pretend keys, touch buttons, fingers and clicks on the game view (ContextActionService, ScriptActions.cpp).
+    if (what == "key" || what == "button" || what == "touch" || (what == "click" && lua_gettop(L) < 2))
+        return actionTestInput(L);
     const uint64_t part = lua_isnoneornil(L, 2) ? 0 : LuaApi::toInstanceId(L, 2);
     lua_pushboolean(L, e->testInput && e->testInput(what, part));
     return 1;
@@ -2378,6 +2482,7 @@ void ScriptEngine::start(bool runScripts) {
     LuaApi::registerTypes(m_L);
     LuaApi::registerInstance(m_L);
     openRemotes();
+    openActions();
 
     lua_State* L = m_L;
     lua_register(L, "print", l_print);
@@ -2618,6 +2723,7 @@ void ScriptEngine::stopScripts(SceneNode* root) {
     }
     if (ids.empty()) return;
     m_stopped.insert(ids.begin(), ids.end());
+    forgetActions(ids);
     for (size_t i = 0; i < m_conns.size(); ++i)
         if (m_conns[i].alive && ids.count(m_conns[i].owner)) disconnect((int)i);
     for (auto it = m_waiting.begin(); it != m_waiting.end();) {
@@ -2704,6 +2810,12 @@ void ScriptEngine::stop() {
     m_current = 0;
     m_detached.clear();
     m_gui = GuiState{};
+    m_actions.clear();
+    m_holders.clear();
+    m_sunk.clear();
+    m_pointerHeld = false;
+    m_testInputs.clear();
+    m_testClick = false;
 }
 
 void ScriptEngine::reportError(lua_State* co) {
@@ -2718,7 +2830,8 @@ void ScriptEngine::checkTimeout(lua_State* L) {
                       "did you forget a wait() inside a loop?", (int)kTimeoutSeconds);
 }
 
-void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from) {
+void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, std::string* result) {
+    if (result) result->clear();
     if (!m_L) return;
     if (m_depth == 0) m_resumeStart = nowSeconds();
     ++m_depth;
@@ -2741,6 +2854,7 @@ void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from) {
         return;
     }
     if (status != LUA_OK) reportError(co);
+    else if (result && nres > 0 && lua_type(co, -nres) == LUA_TSTRING) *result = lua_tostring(co, -nres);
     luaL_unref(m_L, LUA_REGISTRYINDEX, ref);
 }
 
@@ -2756,23 +2870,17 @@ void ScriptEngine::update(float dt) {
     if (!m_L) return;
     m_time += dt;
 
-    // Keyboard events.
+    // Keyboard and controller buttons: bound actions (ContextActionService) first, then
+    // UserInputService.InputBegan / InputEnded.
     if (!ImGui::GetIO().WantTextInput) {
         for (const auto& k : keyTable()) {
-            bool began = ImGui::IsKeyPressed(k.key, false);
-            bool ended = ImGui::IsKeyReleased(k.key);
-            if (!began && !ended) continue;
-            const char* name = k.name;
-            const char* type = k.type;
-            fire(began ? SignalKind::InputBegan : SignalKind::InputEnded, 0, [name, type](lua_State* co) {
-                lua_newtable(co);
-                lua_pushstring(co, name); lua_setfield(co, -2, "KeyCode");
-                lua_pushstring(co, type); lua_setfield(co, -2, "UserInputType");
-                lua_pushboolean(co, 0);
-                return 2;
-            });
+            const bool began = ImGui::IsKeyPressed(k.key, false);
+            const bool ended = ImGui::IsKeyReleased(k.key);
+            if (began) input(k.name, k.name, k.type, "Begin", glm::vec2(0.0f));
+            if (ended) input(k.name, k.name, k.type, "End", glm::vec2(0.0f));
         }
     }
+    updateActions();   // (tests' pretend input, and keys let go while typing)
 
     // UserInputService.GamepadEnabled: is a controller plugged in?
     if (const bool pad = Pad::connected(); pad != m_padSeen) {
@@ -2859,14 +2967,8 @@ void ScriptEngine::fireTouched(uint64_t partId, uint64_t otherId) {
     });
 }
 
+// (Our own mouse button is pointerDown, in ScriptActions.cpp: this is only part.Clicked.)
 void ScriptEngine::fireClicked(uint64_t partId) {
-    fire(SignalKind::InputBegan, 0, [](lua_State* co) {
-        lua_newtable(co);
-        lua_pushstring(co, "Unknown");      lua_setfield(co, -2, "KeyCode");
-        lua_pushstring(co, "MouseButton1"); lua_setfield(co, -2, "UserInputType");
-        lua_pushboolean(co, 0);
-        return 2;
-    });
     if (partId) fire(SignalKind::Clicked, partId, nullptr);
 }
 
