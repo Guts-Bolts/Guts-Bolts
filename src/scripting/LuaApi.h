@@ -55,6 +55,8 @@ enum class SignalKind : int {
     ClickRightClick,     // detector.RightMouseClick  (player)
     ClickHoverEnter,     // detector.MouseHoverEnter  (player)
     ClickHoverLeave,     // detector.MouseHoverLeave  (player)
+    CharacterAdded,      // player.CharacterAdded     (character)  (id = the character)
+    CharacterRemoving,   // player.CharacterRemoving  (character)
 };
 
 namespace LuaApi {

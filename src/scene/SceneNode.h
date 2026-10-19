@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -39,8 +40,10 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //                make something happen (buttons, levers, "click to buy" signs)
 //   Animation  — keyframes that pose a rig's parts (made in Studio's Animation
 //                Editor, played by scripts: humanoid:LoadAnimation(anim):Play())
+//   Particles  — a ParticleEmitter, Fire, Smoke or Sparkles inside a part (or an
+//                Attachment): little pictures that fly out of it (see ParticleProps)
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
-                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector };
+                      FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector, Particles };
 
 // A ProximityPrompt's settings (kind == Prompt; `enabled` switches it off).
 struct PromptProps {
@@ -210,6 +213,68 @@ struct GuiProps {
 enum class Face { Right, Top, Back, Left, Bottom, Front };
 inline const char* const kFaceNames[6] = {"Right", "Top", "Back", "Left", "Bottom", "Front"};
 
+// Particle effects (kind == Particles; `enabled` switches them off). A ParticleEmitter
+// is the fully adjustable one; Fire, Smoke and Sparkles are the classic ready-made ones
+// with just a few settings. Every computer makes its own particles from these settings
+// (they're only for looks): the particles are never saved or sent, the settings are.
+enum class ParticleType { ParticleEmitter, Fire, Smoke, Sparkles };
+inline constexpr int kParticleTypeCount = 4;
+inline const char* const kParticleClassNames[kParticleTypeCount] = {"ParticleEmitter", "Fire", "Smoke", "Sparkles"};
+// Built-in particle pictures (a ParticleEmitter's Texture can also be "gb:<id>" or a file).
+inline constexpr int kParticleLookCount = 4;
+inline const char* const kParticleLooks[kParticleLookCount] = {"", "smoke", "fire", "sparkle"};   // "" = a soft round glow
+// The most particles there can be at once (all emitters together), and from one emitter,
+// so a huge Rate or Emit(100000) can't freeze the game. New ones wait until some have faded.
+inline constexpr int kMaxSprites = 6000;
+inline constexpr int kMaxSpritesPerEmitter = 1500;
+struct ParticleProps {
+    ParticleType type = ParticleType::ParticleEmitter;
+    // ParticleEmitter (Roblox's names and defaults). Ranges are (min, max): each particle
+    // gets a random value between them (NumberRange).
+    float     rate = 20.0f;                         // Rate: particles a second
+    glm::vec2 lifetime{5.0f, 10.0f};                // Lifetime (seconds)
+    glm::vec2 speed{5.0f, 5.0f};                    // Speed (studs / second)
+    glm::vec2 spread{0.0f, 0.0f};                   // SpreadAngle (degrees, X and Y: a Vector2)
+    glm::vec2 rotation{0.0f, 0.0f};                 // Rotation: its starting turn (degrees)
+    glm::vec2 rotSpeed{0.0f, 0.0f};                 // RotSpeed (degrees / second)
+    std::vector<ColorKey>  color{{0.0f, glm::vec3(1.0f)}, {1.0f, glm::vec3(1.0f)}};   // Color over its life
+    std::vector<NumberKey> size{{0.0f, 1.0f}, {1.0f, 1.0f}};                          // Size over its life (studs)
+    std::vector<NumberKey> transparency{{0.0f, 0.0f}, {1.0f, 0.0f}};                  // Transparency over its life
+    std::string texture;                            // a built-in look (kParticleLooks) or a picture
+    float     lightEmission = 0.0f;                 // 1 = glows (adds its light to what's behind)
+    glm::vec3 acceleration{0.0f};                   // Acceleration (studs / second², world space)
+    float     drag = 0.0f;                          // Drag: how quickly they slow down
+    Face      direction = Face::Top;                // EmissionDirection
+    bool      locked = false;                       // LockedToPart: they move with the part
+    // Fire / Smoke / Sparkles
+    glm::vec3 color1{1.0f};                         // Fire.Color, Smoke.Color, Sparkles.SparkleColor
+    glm::vec3 color2{1.0f};                         // Fire.SecondaryColor
+    float     fxSize = 5.0f;                        // Fire.Size / Smoke.Size
+    float     rise = 9.0f;                          // Fire.Heat / Smoke.RiseVelocity
+    float     opacity = 0.5f;                       // Smoke.Opacity
+    // emitter:Emit(n) and :Clear(). Running counts, sent to other players so theirs do
+    // it too (not saved); `pending...` is what this computer hasn't done yet.
+    int       emits = 0, clears = 0;
+    int       pendingEmit = 0;
+    bool      pendingClear = false;
+};
+// Roblox's starting values for each one.
+inline ParticleProps particleDefaults(ParticleType t) {
+    ParticleProps p;
+    p.type = t;
+    switch (t) {
+        case ParticleType::Fire:
+            p.color1 = glm::vec3(236, 139, 70) / 255.0f; p.color2 = glm::vec3(139, 80, 55) / 255.0f;
+            p.fxSize = 5.0f; p.rise = 9.0f; break;
+        case ParticleType::Smoke:
+            p.color1 = glm::vec3(1.0f); p.fxSize = 1.0f; p.rise = 1.0f; p.opacity = 0.5f; break;
+        case ParticleType::Sparkles:
+            p.color1 = glm::vec3(144, 25, 255) / 255.0f; break;
+        default: break;
+    }
+    return p;
+}
+
 enum class ConstraintType { Rope, Rod, Spring, Weld, Hinge };
 inline const char* const kConstraintNames[5] = {"Rope", "Rod", "Spring", "Weld", "Hinge"};
 
@@ -342,6 +407,8 @@ inline int materialShaderId(Material m) { return (int)m < 7 ? (int)m : (int)m + 
 // long side (+Y) points the way the hand's front faces, so with the arm held out a
 // sword points straight up, the classic way.
 inline const glm::mat3 kDefaultGripRot{1.0f};
+// A SpawnLocation's TeamColor to start with: Roblox's default, Medium stone grey.
+inline const glm::vec3 kDefaultTeamColor{0.639f, 0.635f, 0.647f};
 
 struct Attribute {
     enum Type { Bool, Number, String, Vector3, Color3 };
@@ -408,6 +475,7 @@ public:
     ClickProps  click;                    // (kind == ClickDetector)
     HighlightProps highlight;             // (kind == Highlight)
     EffectProps effect;                   // (kind == Trail / Beam)
+    ParticleProps particle;               // (kind == Particles)
 
     // Anything
     std::vector<Attribute>   attributes;
@@ -432,10 +500,28 @@ public:
     bool        autoplay = false;          // start playing when the game starts
     int         audioHandle = 0;           // runtime only
 
-    // Physics (parts). Negative = use the material's value.
+    // Physics (parts). Negative = use the material's value. Together these are Roblox's
+    // CustomPhysicalProperties (PhysicalProperties.new(density, friction, elasticity,
+    // frictionWeight, elasticityWeight)); nil there = all three negative.
     float       density    = -1.0f;
     float       friction   = -1.0f;
     float       elasticity = -1.0f;        // bounciness 0..1
+    // How much this part's friction / bounciness counts when it touches another part
+    // (1 and 1 = the usual mix; bigger = this part's value wins).
+    float       frictionWeight   = 1.0f;
+    float       elasticityWeight = 1.0f;
+    bool hasCustomPhysics() const { return density >= 0.0f || friction >= 0.0f || elasticity >= 0.0f; }
+
+    // Model.PrimaryPart: the part inside it that GetPivot / PivotTo / SetPrimaryPartCFrame
+    // go by (0 = none).
+    uint64_t    primaryPart = 0;
+
+    // SpawnLocation (a part called SpawnLocation, or tagged "SpawnLocation"), like Roblox's:
+    // a Neutral one is for anybody; otherwise only players on the team with this TeamColor
+    // spawn there. AllowTeamChangeOnTouch: touching it puts you on that team.
+    bool        spawnNeutral = true;
+    glm::vec3   teamColor = kDefaultTeamColor;
+    bool        allowTeamChange = false;
 
     // Constraint (kind == Constraint). ref0 / ref1 are Attachments (or, for a
     // Weld, the two Parts).
@@ -534,6 +620,11 @@ public:
     bool isHighlight() const { return kind == NodeKind::Highlight; }
     bool isClickDetector() const { return kind == NodeKind::ClickDetector; }
     bool isEffect() const { return kind == NodeKind::Trail || kind == NodeKind::Beam; }
+    bool isSpawnLocation() const {
+        return isPart() && (name == "SpawnLocation" || std::find(tags.begin(), tags.end(), "SpawnLocation") != tags.end());
+    }
+    bool isParticles() const { return kind == NodeKind::Particles; }
+    const char* particleClass() const { return kParticleClassNames[(int)particle.type]; }
     bool hasForceField() const {
         for (auto& c : children) if (c->kind == NodeKind::ForceField) return true;
         return false;

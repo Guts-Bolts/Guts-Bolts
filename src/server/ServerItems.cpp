@@ -19,6 +19,17 @@ constexpr size_t    kTradeItems          = 4;     // items on each side of a tra
 constexpr size_t    kOpenTrades          = 20;    // trades someone can have waiting
 constexpr size_t    kMaxTrades           = 3000;  // kept (the open ones, and a month of finished ones)
 constexpr long long kKeepTradesFor       = 30 * 86400;
+// Past trades (worker/server.js has the same): a trade nobody answers expires after kTradeExpiry.
+// Every finished trade goes in both people's Past trades, kept for kKeepPastTrades (at most
+// kMaxPastTrades in all), kPastTradesPage to a page. Only the two people in a trade see it.
+constexpr long long kTradeExpiry         = 30 * 86400;
+constexpr long long kKeepPastTrades      = 365 * 86400;
+constexpr size_t    kMaxPastTrades       = 50000;
+constexpr long long kPastTradesPage      = 20;
+// Screenshots on a game's page (worker/server.js has the same): up to kMaxShots pictures,
+// .png, .jpg or .webp, up to kShotSize each.
+constexpr size_t    kMaxShots            = 5;
+constexpr size_t    kShotSize            = 2u << 20;
 constexpr size_t    kMaxUpdates          = 300;
 constexpr int       kTemplateW = 585, kTemplateH = 559;   // shirts and pants
 constexpr unsigned  kTShirtMaxSide = 1024;
@@ -37,6 +48,15 @@ bool pngSize(const std::string& d, unsigned& w, unsigned& h) {
 }
 bool jpgFile(const std::string& d) {
     return d.size() > 3 && (unsigned char)d[0] == 0xFF && (unsigned char)d[1] == 0xD8 && (unsigned char)d[2] == 0xFF;
+}
+bool webpFile(const std::string& d) { return d.size() > 12 && d.compare(0, 4, "RIFF") == 0 && d.compare(8, 4, "WEBP") == 0; }
+// "png", "jpg", "webp", or "" if it isn't one of those.
+std::string pictureType(const std::string& d) {
+    unsigned w = 0, h = 0;
+    return pngSize(d, w, h) ? "png" : jpgFile(d) ? "jpg" : webpFile(d) ? "webp" : "";
+}
+bool tradeDone(const std::string& status) {
+    return status == "accepted" || status == "declined" || status == "cancelled" || status == "expired" || status == "failed";
 }
 std::string tshirtProblem(const std::string& data) {
     unsigned w = 0, h = 0;
@@ -360,6 +380,7 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
     }
 
     // --- Trading Limited copies ---
+    if (name.rfind("trade.", 0) == 0) expireTrades(now);   // (trades nobody answered in 30 days run out)
     if (name == "trade.inventory") {
         User* u = findPerson(idText(arg("user")));
         if (!u) return fail("There's no account with that ID on this server.");
@@ -442,9 +463,8 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         if (!tr || tr->value("status", std::string()) != "open") return fail("That trade isn't open (any more).");
         const std::string fromId = tr->value("from", std::string()), toId = tr->value("to", std::string());
         if (name == "trade.cancel" ? fromId != me.id : toId != me.id) return fail("That isn't your trade to answer.");
-        (*tr)["updated"] = now;
         if (name != "trade.accept") {
-            (*tr)["status"] = name == "trade.cancel" ? "cancelled" : "declined";
+            finishTrade(*tr, name == "trade.cancel" ? "cancelled" : "declined", now);
             const json trade = *tr;   // (saving tidies the list, so `tr` doesn't last)
             saveTrades();
             if (name == "trade.decline") notify(findUser(fromId), "trade", me.name + " turned down your trade.", trade.value("id", std::string()));
@@ -459,7 +479,7 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
             return true;
         };
         if (!from || !holds(from, (*tr)["give"]) || !holds(&me, (*tr)["get"])) {
-            (*tr)["status"] = "failed";
+            finishTrade(*tr, "failed", now);
             saveTrades();
             return fail("Someone doesn't have those items any more, so the trade can't happen.");
         }
@@ -479,12 +499,97 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
             syncOwned(me, a);
             syncOwned(*from, a);
         }
-        (*tr)["status"] = "accepted";
+        finishTrade(*tr, "accepted", now);
         const json trade = *tr;   // (saving tidies the list, so `tr` doesn't last)
         saveAssets();
         saveTrades();
         notify(from, "trade", me.name + " accepted your trade!", trade.value("id", std::string()));
         json r = okay(); r["trade"] = trade; r["me"] = meJson(me); return r;
+    }
+    // Past trades: your finished trades, newest first, a page at a time. Only the two people
+    // in a trade see it. `gave` and `got` are from your side.
+    if (name == "trade.history") {
+        std::vector<const json*> mine;
+        for (auto x = m_pastTrades.rbegin(); x != m_pastTrades.rend(); ++x)   // (the list is oldest first)
+            if (x->value("from", std::string()) == me.id || x->value("to", std::string()) == me.id) mine.push_back(&*x);
+        std::stable_sort(mine.begin(), mine.end(), [](const json* x, const json* y) {   // newest first
+            return x->value("finished", 0LL) > y->value("finished", 0LL);
+        });
+        const long long total = (long long)mine.size();
+        const long long pages = std::max(1LL, (total + kPastTradesPage - 1) / kPastTradesPage);
+        long long page = args.contains("page") && args["page"].is_number() ? (long long)args["page"].get<double>() : 1;
+        page = std::clamp(page, 1LL, pages);
+        json trades = json::array();
+        for (long long i = (page - 1) * kPastTradesPage; i < total && i < page * kPastTradesPage; ++i) {
+            const json& x = *mine[(size_t)i];
+            const bool sent = x.value("from", std::string()) == me.id;
+            const std::string otherId = x.value(sent ? "to" : "from", std::string());
+            const User* other = findUser(otherId);
+            trades.push_back({{"id", x.value("id", std::string())}, {"status", x.value("status", std::string())},
+                              {"created", x.value("created", 0LL)}, {"finished", x.value("finished", 0LL)}, {"sent", sent},
+                              {"with", {{"id", otherId}, {"userId", other ? other->userId : 0LL},
+                                        {"name", other ? other->name : x.value(sent ? "toName" : "fromName", std::string("?"))}}},
+                              {"gave", x.value(sent ? "give" : "get", json::array())}, {"got", x.value(sent ? "get" : "give", json::array())}});
+        }
+        json r = okay(); r["trades"] = trades; r["page"] = page; r["pages"] = pages; r["total"] = total; return r;
+    }
+
+    // --- Screenshots on a game's page: the creator (or staff) adds up to kMaxShots, deletes
+    // them and puts them in order. The page shows them, in that order, after the thumbnail.
+    auto shotFile = [&](const Asset& a, const std::string& id) { return m_opts.data / "files" / ("shot-" + a.id + "-" + id); };
+    if (name == "shots.add" || name == "shots.delete" || name == "shots.order") {
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end() || it->second.kind != "game") return fail("That game doesn't exist (any more).");
+        Asset& a = it->second;
+        if (a.creator != me.id && !isStaff(me)) return fail("You can only change your own games.");
+        if (name == "shots.add") {
+            if (a.shots.size() >= kMaxShots) return fail("A game can have " + std::to_string(kMaxShots) + " screenshots. Delete one first.");
+            std::string data;
+            if (!Online::base64Decode(str("data"), data)) return fail("The picture got scrambled. Try again.");
+            const std::string type = pictureType(data);
+            if (type.empty()) return fail("Screenshots must be .png, .jpg or .webp pictures.");
+            if (data.size() > kShotSize)
+                return fail("That screenshot is too big (the most is " + std::to_string(kShotSize >> 20) + " MB). Try a smaller picture, or save it as a .jpg.");
+            const json shot = {{"id", Account::randomHex(6)}, {"at", now}, {"type", type}};
+            if (!writeFile(shotFile(a, shot["id"].get<std::string>()), data)) return fail("The server couldn't save that picture.");
+            a.shots.push_back(shot);
+        } else if (name == "shots.delete") {
+            auto s = std::find_if(a.shots.begin(), a.shots.end(), [&](const json& x) { return x.value("id", std::string()) == str("shot"); });
+            if (s == a.shots.end()) return fail("That screenshot is already gone.");
+            std::error_code ec;
+            fs::remove(shotFile(a, s->value("id", std::string())), ec);
+            a.shots.erase(s);
+            if (a.creator != me.id) staffDid(me, "screenshot", "Deleted a screenshot of the game \"" + a.name + "\"", a.creator);
+        } else {
+            std::vector<std::string> order;
+            if (args.contains("order") && args["order"].is_array())
+                for (const json& x : args["order"]) order.push_back(x.is_string() ? x.get<std::string>() : std::string());
+            json sorted = json::array();
+            std::set<std::string> seen;
+            for (const std::string& id : order) {
+                auto s = std::find_if(a.shots.begin(), a.shots.end(), [&](const json& x) { return x.value("id", std::string()) == id; });
+                if (s == a.shots.end() || !seen.insert(id).second) break;
+                sorted.push_back(*s);
+            }
+            if (sorted.size() != a.shots.size() || order.size() != a.shots.size())
+                return fail("The screenshots changed while you were moving them. Reload the page and try again.");
+            a.shots = sorted;
+        }
+        saveAssets();
+        json ids = json::array();
+        for (const json& s : a.shots) ids.push_back(s.value("id", std::string()));
+        json r = assetReply(a); r["shots"] = ids; return r;
+    }
+    if (name == "shots.get") {
+        // One screenshot's picture (the main server's website shows them from /shot/<game>/<screenshot>).
+        auto it = findAsset(str("id"));
+        std::string data;
+        if (it != m_assets.end() && it->second.kind == "game")
+            for (const json& s : it->second.shots)
+                if (s.value("id", std::string()) == str("shot") && readFile(shotFile(it->second, str("shot")), data)) {
+                    json r = okay(); r["data"] = Online::base64Encode(data); r["type"] = s.value("type", std::string()); return r;
+                }
+        return fail("No picture.");
     }
 
     // --- The update log (the website's Updates page). The built-in updates are in
@@ -558,6 +663,86 @@ void GbServer::loadTrades() {
     if (!all.is_array()) return;
     for (const json& x : all)
         if (x.is_object() && x.contains("give") && x["give"].is_array() && x.contains("get") && x["get"].is_array()) m_trades.push_back(x);
+}
+
+void GbServer::finishTrade(json& tr, const std::string& status, long long now) {
+    tr["status"] = status;
+    tr["updated"] = now;
+    keepPastTrade(tr);
+}
+
+// A finished trade goes in Past trades with the names of the people and items as they were
+// then (so it still reads right if an item is deleted later).
+void GbServer::keepPastTrade(const json& tr, bool onlyIfNew) {
+    const std::string id = tr.value("id", std::string());
+    auto nameOf = [&](const std::string& who) { const User* u = findUser(who); return u ? u->name : std::string("?"); };
+    auto label = [&](const json& list) {
+        json out = json::array();
+        if (list.is_array())
+            for (const json& i : list) {
+                auto it = findAsset(i.value("id", std::string()));
+                out.push_back({{"id", i.value("id", std::string())}, {"serial", i.value("serial", 0LL)},
+                               {"name", it != m_assets.end() ? it->second.name : std::string("(gone)")},
+                               {"kind", it != m_assets.end() ? it->second.kind : std::string()}});
+            }
+        return out;
+    };
+    json rec = {{"id", id}, {"from", tr.value("from", std::string())}, {"to", tr.value("to", std::string())},
+                {"fromName", nameOf(tr.value("from", std::string()))}, {"toName", nameOf(tr.value("to", std::string()))},
+                {"give", label(tr.contains("give") ? tr["give"] : json())}, {"get", label(tr.contains("get") ? tr["get"] : json())},
+                {"status", tr.value("status", std::string())}, {"created", tr.value("created", 0LL)}, {"finished", tr.value("updated", 0LL)}};
+    if (!onlyIfNew)   // (onlyIfNew: the caller knows it isn't there yet)
+        for (auto x = m_pastTrades.rbegin(); x != m_pastTrades.rend(); ++x)
+            if (x->value("id", std::string()) == id) {
+                *x = rec;
+                savePastTrades();
+                return;
+            }
+    m_pastTrades.push_back(rec);
+    if (!onlyIfNew) savePastTrades();
+}
+
+void GbServer::expireTrades(long long now) {
+    bool any = false;
+    for (json& x : m_trades)
+        if (x.value("status", std::string()) == "open" && now - x.value("created", 0LL) >= kTradeExpiry) {
+            finishTrade(x, "expired", now);
+            const User* to = findUser(x.value("to", std::string()));
+            notify(findUser(x.value("from", std::string())), "trade",
+                   "Your trade with " + (to ? to->name : std::string("someone")) + " expired: nobody answered it in 30 days.", x.value("id", std::string()));
+            any = true;
+        }
+    if (any) saveTrades();
+}
+
+void GbServer::savePastTrades() {
+    // Keep a year of them (at most kMaxPastTrades, the newest).
+    const long long now = Online::unixNow();
+    json kept = json::array();
+    for (const json& x : m_pastTrades) if (now - x.value("finished", 0LL) <= kKeepPastTrades) kept.push_back(x);
+    if (kept.size() > kMaxPastTrades) {
+        std::stable_sort(kept.begin(), kept.end(), [](const json& x, const json& y) { return x.value("finished", 0LL) < y.value("finished", 0LL); });
+        kept.erase(kept.begin(), kept.end() - (long)kMaxPastTrades);
+    }
+    m_pastTrades = kept;
+    writeFile(m_opts.data / "pasttrades.json", m_pastTrades.dump(1));
+}
+
+void GbServer::loadPastTrades() {
+    std::string text;
+    if (readFile(m_opts.data / "pasttrades.json", text)) {
+        json all = json::parse(text, nullptr, false);
+        if (all.is_array())
+            for (const json& x : all) if (x.is_object() && x.contains("id") && x["id"].is_string()) m_pastTrades.push_back(x);
+    }
+    // Past trades started being kept for good with the "Paper Trail" update: the finished
+    // trades the server still had then (the last month's) go in too.
+    const size_t before = m_pastTrades.size();
+    std::set<std::string> have;
+    for (const json& x : m_pastTrades) have.insert(x.value("id", std::string()));
+    for (const json& x : m_trades)
+        if (tradeDone(x.value("status", std::string())) && have.insert(x.value("id", std::string())).second) keepPastTrade(x, true);
+    if (m_pastTrades.size() != before) savePastTrades();
 }
 
 void GbServer::saveUpdates() { writeFile(m_opts.data / "updates.json", m_updates.dump(1)); }
