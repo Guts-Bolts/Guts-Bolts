@@ -103,6 +103,8 @@ private:
         bool        limited = false;
         long long   stock = 0;
         nlohmann::json copies = nlohmann::json::array();   // {serial, owner, price} (price 0 = not for sale)
+        // Games: screenshots on its page (ServerItems.cpp), in order: {id, at, type}. Files "shot-<game>-<id>".
+        nlohmann::json shots = nlohmann::json::array();
         // Games: version history, {v, at, by, size, restored?}, oldest first (the last is live). Empty for a
         // game published before history existed: its file counts as version 1. (worker/server.js a.versions)
         nlohmann::json versions = nlohmann::json::array();
@@ -160,6 +162,13 @@ private:
     static std::string publicModelLimitText();
     void saveTrades();
     void loadTrades();
+    // Past trades (ServerItems.cpp, worker/server.js has the same): a trade is over, so it goes in
+    // both people's Past trades; open trades nobody answered in 30 days expire.
+    void finishTrade(nlohmann::json& tr, const std::string& status, long long now);
+    void keepPastTrade(const nlohmann::json& tr, bool onlyIfNew = false);
+    void expireTrades(long long now);
+    void savePastTrades();
+    void loadPastTrades();
     void saveUpdates();
     void loadUpdates();
     void  claimOfficial(User& u);                  // the staff account is user 1, "Guts"
@@ -287,6 +296,9 @@ private:
     std::map<std::string, Group> m_groups;
     // Trade offers between players (Limiteds), trades.json: {id, from, to, give, get, status, created, updated}, newest last.
     nlohmann::json m_trades = nlohmann::json::array();
+    // Finished trades (pasttrades.json): {id, from, to, fromName, toName, give, get, status, created, finished},
+    // with the names as they were then, newest last.
+    nlohmann::json m_pastTrades = nlohmann::json::array();
     // Updates staff posted (the website's Updates page; the built-in ones are in worker/updates.js), updates.json, newest first.
     nlohmann::json m_updates = nlohmann::json::array();
     nlohmann::json m_forum = nlohmann::json::object();   // thread id -> thread (forum.json)
