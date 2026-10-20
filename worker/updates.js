@@ -11,6 +11,21 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'everything-goes-in',
+    name: 'Everything Goes In',
+    version: '0.7.3',
+    time: 1792469299,
+    tag: 'Studio',
+    summary: 'Studio can import way more kinds of files: squashed Sketchfab models, 30 more 3D formats, and new picture and sound types.',
+    items: [
+      'Squashed .glb / .gltf models (Draco and meshopt, the kind Sketchfab and most model sites hand out) now come in fine',
+      'About 30 more 3D formats: Collada (.dae), 3ds Max (.3ds), DirectX (.x), 3D printing (.3mf, .amf), LightWave, .off, .dxf and more',
+      'Pictures: .webp, .svg, .psd, .hdr and .ppm work too (Studio saves a PNG copy so every Player can show them)',
+      '.ogg sounds now play, in Studio and in games',
+      'Files that can\'t be opened (.blend, .max, .usd, .heic, .m4a, ...) get a clear note saying what to save them as instead',
+    ],
+  },
+  {
     id: 'chunky-salsa', name: 'Chunky Salsa', time: 1792469579, tag: 'Engine',
     summary: 'A point-blank explosion no longer just knocks a body over: it blows it apart into real chunks.',
     items: [
