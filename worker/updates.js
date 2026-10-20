@@ -11,6 +11,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'smooth-operator',
+    name: 'Smooth Operator',
+    version: '0.7.3',
+    time: 1792456528,
+    tag: 'Website',
+    summary: 'Hats on the website are smooth-shaded now, so they look the same as in the game.',
+    items: [
+      'Hats and accessories with Smooth shading on (and every imported hat) look round on the website instead of blocky',
+      'That goes for 3D avatars, the avatar editor and item pictures in the Library',
+    ],
+  },
+  {
     id: 'hold-onto-your-hat',
     name: 'Hold Onto Your Hat',
     version: '0.7.3',
