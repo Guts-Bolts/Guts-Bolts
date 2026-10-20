@@ -73,7 +73,8 @@ void GbServer::step(int waitMs) {
             if (!req.is_object()) { c->conn->send(fail("That wasn't a proper request.").dump()); continue; }
             if (req.value("t", std::string()) == "accept") { relayAccept(*c, req.value("ticket", std::string())); continue; }
             if (req.value("op", std::string()).rfind("relay.", 0) == 0) { relayRequest(*c, req); continue; }
-            json reply = handle(req);
+            json reply = tooFast(*c) ? json{{"ok", false}, {"error", "Whoa, that's a lot of requests. Slow down a little."}, {"slowDown", true}}
+                                     : handle(req, fromOf(*c, req));
             if (req.contains("id")) reply["id"] = req["id"];   // lets clients match replies
             c->conn->send(reply.dump());
         }
@@ -91,17 +92,25 @@ void GbServer::step(int waitMs) {
 // Checking requests
 // ---------------------------------------------------------------------------
 
-json GbServer::handle(const json& req) {
+json GbServer::handle(const json& req) { return handle(req, From()); }
+
+json GbServer::handle(const json& req, const From& from) {
     if (isConnectOpen(req.value("op", std::string())))   // (ServerConnect.cpp: an app's server, not a person)
         return connectOpen(req.value("op", std::string()), req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     User* me = nullptr;
     json bad = checkRequest(req, me);
     if (!bad.is_null()) return bad;
     json args = req.contains("args") && req["args"].is_object() ? req["args"] : json::object();
+    const std::string name = req.value("op", std::string());
+    std::vector<Costly*> counters;
+    json slow = costlyCheck(name, *me, from, counters);   // (ServerShield.cpp)
+    if (!slow.is_null()) return slow;
     try {
         openGiftBoxes();   // (ServerItems.cpp)
         finishAuctions();
-        return op(req.value("op", std::string()), *me, args);
+        json reply = op(name, *me, args);
+        if (reply.value("ok", false) || isGuess(name)) for (Costly* c : counters) ++c->n;
+        return reply;
     } catch (const std::exception& e) {
         return fail(std::string("The server hit a problem: ") + e.what());
     }

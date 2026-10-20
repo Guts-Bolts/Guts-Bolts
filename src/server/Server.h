@@ -23,7 +23,10 @@ public:
         std::filesystem::path data = "server_data";
         std::string official;          // the staff account's ID ("" = the one built in)
         std::string name = "Guts&Bolts";
+        bool        behindWorker = false;  // the website's worker passes requests on: trust the "from" it adds (who's really asking)
     };
+    // Who sent a request, for the risk check's limits (ServerShield.cpp; worker/shield.js finds it out).
+    struct From { std::string ip, sitekey; bool web = false, human = false; };
 
     explicit GbServer(Options opts);
     ~GbServer();
@@ -34,6 +37,7 @@ public:
 
     // Handle one already-parsed request (also used by the tests). Returns the reply.
     nlohmann::json handle(const nlohmann::json& request);
+    nlohmann::json handle(const nlohmann::json& request, const From& from);
 
 private:
     struct Entry { long long amount = 0; std::string reason; long long time = 0; std::string ref; };
@@ -143,6 +147,7 @@ private:
         std::string account, session, ticket;
         Client*     peer = nullptr;      // the other end of a pipe
         bool        closing = false;     // drop once everything queued has been sent
+        long long   window = 0; int sent = 0;   // requests sent in the current 10 seconds (ServerShield.cpp)
     };
     // A game server running on someone's computer, reached only through us, so
     // players never learn each other's IP addresses.
@@ -383,5 +388,12 @@ private:
     std::map<std::string, std::vector<long long>> m_failedLogins;   // username -> times of wrong passwords
     std::map<std::string, long long> m_lastPost;     // account -> when they last wrote on a wall
     std::map<std::string, long long> m_seenNonces;   // account+nonce -> when, to stop replays
+    // ServerShield.cpp: Step 3 of the risk check, limits on the slow, expensive requests (worker/server.js COSTLY).
+    struct Costly { long long start = 0, per = 0; int n = 0; };
+    std::map<std::string, Costly> m_costly;          // "op|acct:..." / "op|ip:..." -> this window's count
+    nlohmann::json costlyCheck(const std::string& op, const User& me, const From& from, std::vector<Costly*>& counters);
+    static bool    isGuess(const std::string& op);
+    bool           tooFast(Client& c);               // more than kWsRequestsPer10s from one connection
+    From           fromOf(const Client& c, const nlohmann::json& req) const;
     bool m_running = false;
 };

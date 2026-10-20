@@ -1,6 +1,10 @@
 // GutsAndBoltsServer: keeps accounts, Bolts, badges and uploads for everyone.
 //
-//   GutsAndBoltsServer [--port 7780] [--data server_data] [--official <staff account id>] [--name "My Server"]
+//   GutsAndBoltsServer [--port 7780] [--data server_data] [--official <staff account id>] [--name "My Server"] [--behind-worker]
+//
+// --behind-worker: the website's Cloudflare worker passes requests on to this server (its
+// GB_SERVER setting), and says who really sent each one, for the limits on expensive requests.
+// Only use it when nobody can reach this server's port directly.
 //
 // Then, in the Guts&Bolts apps, connect to this computer's address (the site's
 // "Server" button, or Studio's File > Guts&Bolts Server).
@@ -29,8 +33,9 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--data"))     opts.data = next();
         else if (!std::strcmp(argv[i], "--official")) opts.official = next();
         else if (!std::strcmp(argv[i], "--name"))     opts.name = next();
+        else if (!std::strcmp(argv[i], "--behind-worker")) opts.behindWorker = true;
         else if (!std::strcmp(argv[i], "--help") || !std::strcmp(argv[i], "-h")) {
-            std::printf("GutsAndBoltsServer [--port %d] [--data server_data] [--official <staff account id>] [--name \"My Server\"]\n",
+            std::printf("GutsAndBoltsServer [--port %d] [--data server_data] [--official <staff account id>] [--name \"My Server\"] [--behind-worker]\n",
                         Online::kDefaultPort);
             return 0;
         }

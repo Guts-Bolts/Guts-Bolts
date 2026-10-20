@@ -18,6 +18,11 @@
 //                at brevo.com (README: "Turning email on").
 //   MAIL_FROM    the address emails come from (one Brevo knows, like
 //                noreply@gutsandbolts.net). Needed with the key.
+//   TURNSTILE_SITEKEY  turns on the "are you a person?" check for doubtful visitors
+//                (worker/shield.js), with TURNSTILE_SECRET (a Secret). Both come from
+//                the Cloudflare dashboard: Turnstile > Add widget (README: "DDoS and bot protection").
+//   TURNSTILE_HOSTNAMES  optional: the sites the check may come from, split by commas
+//                (default gutsandbolts.net).
 {
   "name": "project-guts-and-bolts",
   "main": "worker/index.js",
@@ -39,5 +44,15 @@
   },
   // The Player / Studio / Android downloads (worker/downloads.js).
   "r2_buckets": [{ "binding": "DOWNLOADS", "bucket_name": "gutsandbolts-downloads" }],
+  // The risk check's speed limits (worker/shield.js), counted by Cloudflare per IP. "limit" is
+  // how many a minute; keep SHIELD.limits in shield.js the same. namespace_id is just a number
+  // that names each counter.
+  "ratelimits": [
+    { "name": "RATE_FLOOD",    "namespace_id": "4101", "simple": { "limit": 1200, "period": 60 } },
+    { "name": "RATE_PICTURES", "namespace_id": "4102", "simple": { "limit": 3000, "period": 60 } },
+    { "name": "RATE_BUSY",     "namespace_id": "4103", "simple": { "limit": 300,  "period": 60 } },
+    { "name": "RATE_DOUBT",    "namespace_id": "4104", "simple": { "limit": 60,   "period": 60 } },
+    { "name": "RATE_WS",       "namespace_id": "4105", "simple": { "limit": 30,   "period": 60 } }
+  ],
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GbServerObject"] }]
 }
