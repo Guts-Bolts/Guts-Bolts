@@ -506,6 +506,7 @@ void Player::respawn(bool firstSpawn) {
     m_walkPhase = m_swing = m_airBlend = 0.0f;
     m_dead      = false;
     m_debris.clear();
+    m_ragdoll.unhide(*m_scene);   // (blown to pieces last time)
     m_ragdoll.stop();
     m_pendingForce = 0.0f;
     m_pendingImpulse = glm::vec3(0.0f);

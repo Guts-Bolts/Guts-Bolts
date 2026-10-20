@@ -149,6 +149,8 @@ void Ragdoll::start(Scene& scene, SceneNode* root, const glm::vec3& velocity,
             if (rnd(0, 1) < force * 0.8f) dismember(scene, i);
         if (force > 0.8f && rnd(0, 1) < force * 0.7f) dismember(scene, 4);
     }
+    // Point blank: nothing left but pieces.
+    if (scene.world().dismemberment && m_gore && force >= 0.9f) { place(scene); explode(scene, velocity + impulse, force); }
     if (m_gore) {
         glm::vec3 dir = glm::length(impulse) > 0.1f ? glm::normalize(impulse) : glm::vec3(0, 1, 0);
         scene.particles().spray(m_goreKind, c, dir, 25 + (int)(force * 40), 3.0f + force * 4.0f);
@@ -277,4 +279,24 @@ void Ragdoll::place(Scene& scene) {
         for (int i = 0; i < 3; ++i) r[i] = glm::normalize(r[i]);
         setNode(n, r, glm::vec3(m[3]));
     }
+}
+
+void Ragdoll::explode(Scene& scene, const glm::vec3& velocity, float force) {
+    for (auto& b : m_bones) {
+        SceneNode* n = scene.findById(b.id);
+        if (!n || !n->visible) continue;
+        if (b.kind != 3 && n->name != "HumanoidRootPart")
+            scene.particles().burst(m_goreKind, n, velocity * 0.6f, force);
+        n->visible = false;
+        m_hidden.push_back(n->id);
+    }
+    for (int i = 0; i < 5; ++i) m_cut[i] = true;   // (nothing holds together any more)
+    for (auto& s : m_sticks) s.alive = s.limb < 0;
+    m_stumps.clear();
+}
+
+void Ragdoll::unhide(Scene& scene) {
+    for (uint64_t id : m_hidden)
+        if (SceneNode* n = scene.findById(id)) n->visible = true;
+    m_hidden.clear();
 }

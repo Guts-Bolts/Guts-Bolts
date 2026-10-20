@@ -24,6 +24,10 @@ public:
 
     // Cut a limb loose: 0 L arm, 1 R arm, 2 L leg, 3 R leg, 4 head.
     void dismember(Scene& scene, int limb);
+    // Blown to pieces: every body part bursts into gibs and is hidden.
+    void explode(Scene& scene, const glm::vec3& velocity, float force);
+    // Show the parts explode() hid again (respawning).
+    void unhide(Scene& scene);
 
 private:
     struct Point { glm::vec3 pos, prev; float radius; };
@@ -46,6 +50,7 @@ private:
     std::vector<Stick> m_sticks;
     std::vector<Bone>  m_bones;
     std::vector<Stump> m_stumps;
+    std::vector<uint64_t> m_hidden;     // parts blown to pieces (shown again by unhide)
     bool      m_cut[5] = {};
     float     m_stumpTimer = 0.0f;
     bool      m_gore = false;

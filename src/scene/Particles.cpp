@@ -75,6 +75,14 @@ void ParticleSystem::gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
                                m_bloodColor, 0.35f);   // stained with the game's blood colour
             p.wet   = true;
             p.size  = glm::vec3(rnd(0.12f, 0.25f), rnd(0.08f, 0.2f), rnd(0.1f, 0.22f));
+            p.bleed = rnd(1.0f, 2.5f);
+            if (rnd(0, 1) < 0.15f) {   // a bit of bone
+                p.gib = 1;
+                p.color = glm::vec3(0.86f, 0.82f, 0.72f);
+                p.wet = false;
+                p.size = glm::vec3(rnd(0.05f, 0.08f), rnd(0.18f, 0.32f), rnd(0.05f, 0.08f));
+                p.bleed = 0.0f;
+            }
         } else {
             p.kind   = Particle::Bolt;
             p.color  = glm::vec3(rnd(0.55f, 0.75f));
@@ -84,9 +92,112 @@ void ParticleSystem::gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
         p.pos  = pos + rndDir() * 0.15f;
         p.vel  = vel + rndDir() * rnd(2.0f, 6.0f) + glm::vec3(0, rnd(2.0f, 5.0f), 0);
         p.spin = rndDir() * rnd(200.0f, 700.0f);
-        p.life = p.maxLife = rnd(8.0f, 14.0f);
+        p.life = p.maxLife = rnd(12.0f, 20.0f);
+        p.gibSeed = rnd(0, 1);
         add(p);
     }
+}
+
+void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3& vel, float violence) {
+    if (!part) return;
+    const glm::mat4 M = part->worldMatrix();
+    const glm::vec3 c(M[3]);
+    const glm::vec3 scale = part->transform.scale;
+    const float volume = scale.x * scale.y * scale.z;
+    const int pieces = std::clamp((int)(volume * 3.0f * (0.6f + violence)), 4, 18);
+    const float speed = 4.0f + violence * 10.0f;
+    for (int i = 0; i < pieces; ++i) {
+        Particle p;
+        glm::vec3 local(rnd(-0.4f, 0.4f), rnd(-0.4f, 0.4f), rnd(-0.4f, 0.4f));
+        p.pos  = glm::vec3(M * glm::vec4(local, 1.0f));
+        glm::vec3 out = p.pos - c;
+        out = glm::length(out) > 1e-3f ? glm::normalize(out) : rndDir();
+        p.vel  = vel + (out + rndDir() * 0.5f) * speed * rnd(0.4f, 1.0f) + glm::vec3(0, rnd(1.0f, 4.0f), 0);
+        p.spin = rndDir() * rnd(300.0f, 900.0f);
+        p.rot  = glm::vec3(rnd(0, 360), rnd(0, 360), rnd(0, 360));
+        p.life = p.maxLife = rnd(14.0f, 22.0f);
+        p.gibSeed = rnd(0, 1);
+        float s = std::clamp(std::cbrt(volume / (float)pieces) * rnd(0.6f, 1.0f), 0.15f, 0.7f);
+        p.size = glm::vec3(s * rnd(0.8f, 1.3f), s * rnd(0.6f, 1.0f), s * rnd(0.8f, 1.2f));
+        if (kind == GoreKind::Blood) {
+            p.kind  = Particle::Chunk;
+            p.color = glm::mix(glm::vec3(0.6f, 0.08f, 0.08f), m_bloodColor, 0.4f) * rnd(0.85f, 1.1f);
+            p.skin  = part->color;   // the outside of the body part
+            p.wet   = true;
+            p.bleed = rnd(2.0f, 4.0f);
+        } else {
+            p.kind   = Particle::Bolt;
+            p.color  = part->color;
+            p.glossy = true;
+            p.size  *= 0.8f;
+        }
+        add(p);
+    }
+    // Bits of bone (or bolts and scraps), and the blood.
+    gibs(kind, c, vel * 0.5f, 2 + (int)(violence * 3.0f));
+    spray(kind, c, glm::vec3(0, 1, 0), 30 + (int)(violence * 40.0f), 4.0f + violence * 6.0f);
+    if (kind == GoreKind::Oil) sparks(c, 20);
+}
+
+void ParticleSystem::stepGib(Particle& p, float dt, float gravity, const Physics& physics, std::vector<Particle>& born) {
+    // (Moved and spun by the caller already.)
+    const float r = std::max(0.05f, (p.size.x + p.size.y + p.size.z) / 6.0f);
+    const bool meat = p.kind == Particle::Chunk && p.gib == 0;
+    // Fresh meat drips a trail of blood as it flies and slides.
+    p.bleed -= dt;
+    if (meat && p.bleed > 0.0f) {
+        p.trail -= dt;
+        if (p.trail <= 0.0f) {
+            p.trail = rnd(0.05f, 0.12f);
+            Particle d;
+            d.kind  = Particle::Drop;
+            d.pos   = p.pos + rndDir() * r * 0.5f;
+            d.vel   = p.vel * 0.6f + rndDir() * 0.4f;
+            d.color = glm::mix(p.color, m_bloodColor, 0.7f);
+            d.size  = glm::vec3(rnd(0.035f, 0.06f));
+            d.life  = d.maxLife = 2.5f;
+            d.wet   = true;
+            born.push_back(d);
+        }
+    }
+    glm::vec3 at = p.pos, n;
+    if (!physics.resolveSphere(at, r, &n)) return;
+    p.pos = at;
+    const float vn = glm::dot(p.vel, n);
+    if (vn < 0.0f) {
+        const float bounce = meat ? 0.15f : (p.kind == Particle::Bolt ? 0.45f : 0.3f);
+        p.vel -= n * vn * (1.0f + bounce);
+        // A hard landing: meat goes splat (and leaves a mark).
+        if (meat && vn < -4.0f) {
+            Particle d;
+            d.kind  = Particle::Drop;
+            d.pos   = p.pos;
+            d.vel   = -n * 2.0f + rndDir() * 0.5f;
+            d.color = glm::mix(p.color, m_bloodColor, 0.8f);
+            d.size  = glm::vec3(std::clamp(r * 0.7f, 0.05f, 0.14f));
+            d.life  = d.maxLife = 1.0f;
+            d.wet   = true;
+            born.push_back(d);
+            if (m_splatSound <= 0.0f) {
+                Audio::play("splat", std::clamp(-vn * 0.05f, 0.1f, 0.5f), 0.7f + 0.3f * rnd(0, 1), false, &p.pos);
+                m_splatSound = 0.07f;
+            }
+        } else if (!meat && vn < -3.0f && m_splatSound <= 0.0f) {
+            Audio::play("hit", std::clamp(-vn * 0.03f, 0.05f, 0.3f), 1.2f + 0.5f * rnd(0, 1), false, &p.pos);
+            m_splatSound = 0.05f;
+        }
+    }
+    // Sliding along: friction (meat drags, bone and metal skid), and it rolls the way it slides.
+    glm::vec3 vt = p.vel - n * glm::dot(p.vel, n);
+    const float grip = meat ? 6.0f : 3.0f;
+    vt *= std::max(0.0f, 1.0f - grip * dt);
+    p.vel = vt + n * std::max(0.0f, glm::dot(p.vel, n));
+    float slide = glm::length(vt);
+    if (slide > 0.05f) p.spin = glm::degrees(glm::cross(n, vt) / r) * (meat ? 0.3f : 0.8f);
+    else p.spin *= std::max(0.0f, 1.0f - 8.0f * dt);
+    // Settled on the ground: lie still.
+    if (n.y > 0.6f && glm::length(p.vel) < 0.35f) { p.vel = glm::vec3(0.0f); p.spin = glm::vec3(0.0f); }
+    (void)gravity;
 }
 
 void ParticleSystem::sparks(const glm::vec3& pos, int count) {
@@ -182,6 +293,7 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
         p.rot += p.spin * dt;
         if (p.kind == Particle::Spray) { if (physics.solidAt(p.pos)) p.life = 0.0f; continue; }   // lands: gone
         if (p.kind == Particle::Fire || p.kind == Particle::Smoke || p.kind == Particle::Spark) continue;
+        if (p.kind == Particle::Chunk || p.kind == Particle::Bolt) { stepGib(p, dt, gravity, physics, born); if (p.pos.y < -200.0f) p.life = 0.0f; continue; }
 
         // Hitting something solid.
         glm::vec3 h = p.size * 0.5f;

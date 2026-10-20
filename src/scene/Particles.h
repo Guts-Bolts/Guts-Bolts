@@ -6,6 +6,7 @@
 #include <vector>
 
 class Physics;
+class SceneNode;
 
 // Small flying bits used for gore and effects: blood / oil drops that splat
 // and stick where they land, meat chunks, bolts, sparks, fire and smoke.
@@ -25,6 +26,11 @@ struct Particle {
     float     slide = 0.0f;             // seconds left running down a wall
     float     trail = 0.0f;             // (how far it's run since leaving the last drip mark)
     glm::vec3 normal{0.0f, 1.0f, 0.0f}; // the surface it's on
+    // Gibs (Chunk):
+    int       gib = 0;                  // 0 meat, 1 bone
+    glm::vec3 skin{-1.0f};              // a piece of a body part: its colour on one side (negative = plain meat)
+    float     bleed = 0.0f;             // seconds it still drips blood
+    float     gibSeed = 0.0f;           // 0..1: so no two look the same
 };
 
 enum class GoreKind { Blood, Oil };
@@ -78,6 +84,9 @@ public:
     void spray(GoreKind kind, const glm::vec3& pos, const glm::vec3& dir, int count, float speed);
     // Chunks of meat / bolts and metal scraps.
     void gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel, int count);
+    // A body part bursting into pieces: chunks from all through it, with its colour on
+    // the outside and meat (or metal) inside, a few bits of bone, and a lot of blood.
+    void burst(GoreKind kind, const SceneNode* part, const glm::vec3& vel, float violence);
     void sparks(const glm::vec3& pos, int count);
     void explosion(const glm::vec3& pos, float radius);
     // Water thrown up by a splash (droplets that vanish when they land).
@@ -88,6 +97,8 @@ public:
 
 private:
     void add(const Particle& p);
+    // A chunk flying, tumbling, bouncing off things and sliding to a stop (bleeding as it goes).
+    void stepGib(Particle& p, float dt, float gravity, const Physics& physics, std::vector<Particle>& born);
     std::vector<Particle> m_items;
     std::vector<Sprite>   m_sprites;
     std::vector<std::string> m_spriteTex;
