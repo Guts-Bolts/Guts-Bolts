@@ -21,6 +21,18 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'edit-mode-unlocked', name: 'Edit Mode Unlocked', time: 1792518200, tag: 'Studio',
+    summary: 'Modeling mode works like Blender now: G / R / S follow the mouse, right-click menus, loop cuts and a pile of new tools.',
+    items: [
+      'G moves, R rotates and S scales what you picked with the mouse. Press X, Y or Z to lock an axis, type a number for an exact amount, click to finish or right-click to put it back',
+      'E pulls new faces out and follows the mouse, I insets with the mouse, Shift+D duplicates, Ctrl+R cuts a new edge loop (the mouse wheel adds more cuts)',
+      'Right-click opens the vertex, edge or face menu, like Blender. X opens the Delete menu, M the Merge menu, Shift+A adds shapes (torus, cone, ico sphere, capsule and more) and F3 searches every tool',
+      'New tools: bridge edge loops, dissolve, loop and ring picking (Alt+click), pick linked (L), grow and shrink, triangulate, tris to quads, subdivide smooth, mirror, spin, smooth vertices, merge by distance, recalculate normals, hide and reveal (H / Alt+H), separate (P) and join (Ctrl+J)',
+      'O turns on proportional editing: moving corners drags the ones nearby along too',
+      'Numpad 1, 3 and 7 look from the front, side and top (Ctrl for the other side). F1 lists every key',
+    ],
+  },
+  {
     id: 'bidding-war', name: 'Bidding War', time: 1792517600, tag: 'Website',
     summary: 'Exclusive items can go up for auction, and only the top bidders get one.',
     items: [
