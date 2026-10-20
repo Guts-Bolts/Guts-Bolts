@@ -196,6 +196,7 @@ void takeMe(const json& reply) {
                     if (!r.value("ok", false) || !r.contains("wearing") || !r["wearing"].is_array()) return;
                     Profile& me = Profile::get();
                     me.shirtImage.clear(); me.pantsImage.clear(); me.tshirtImage.clear(); me.faceImage.clear();
+                    me.headless = false;
                     me.accessories.clear();
                     const std::vector<std::string> wearing = me.wearing;
                     for (const json& a : r["wearing"]) if (a.is_object()) Catalog::applyLook(Catalog::fromServer(a));
@@ -206,8 +207,11 @@ void takeMe(const json& reply) {
     }
 }
 
-// "hat-1a2b3c4d5e": clothes from the server's catalog (the built-in catalog's ids look different).
+// "hat-1a2b3c4d5e", "123" or "item-headless-head": clothes from the server's catalog (the built-in
+// catalog's ids look different).
 static bool isServerItem(const std::string& id) {
+    if (!id.empty() && id.size() < 12 && std::all_of(id.begin(), id.end(), [](char c) { return std::isdigit((unsigned char)c); })) return true;
+    if (id.rfind("item-", 0) == 0) return true;
     for (const char* k : {"hat-", "shirt-", "pants-", "tshirt-", "hair-", "faceacc-", "neck-", "shoulder-", "waist-", "face-"}) {
         size_t n = std::strlen(k);
         if (id.size() == n + 10 && id.compare(0, n, k) == 0 &&

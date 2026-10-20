@@ -247,6 +247,20 @@ private:
     struct MsgBox { long long seq = 0; std::deque<nlohmann::json> list; };   // {n, topic, message, sent}
     std::map<std::string, MsgBox> m_msgs;                       // game id ->
     std::map<std::string, std::deque<long long>> m_msgSent;     // "account\ngame" -> when they sent (the rate limit)
+    // ServerConnect.cpp: connected apps, "Log in with Guts&Bolts" for partner apps like Lyreto
+    // (worker/server.js has the same). connect.json: {secrets, codes, tokens, pictures}.
+    nlohmann::json connectOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json connectOpen(const std::string& name, const nlohmann::json& args);   // from the app's server (not signed)
+    nlohmann::json connectAdmin(const std::string& name, const User& me, const nlohmann::json& args);
+    static bool    isConnectOpen(const std::string& op);
+    nlohmann::json liveTokens(const std::string& account) const;
+    void           disconnectApps(const std::string& account, const std::string& app);   // app "" = every app
+    std::string    saveAvatarPicture(const User& u, const std::string& pngBase64);      // "" = saved, else why not
+    nlohmann::json connectsJson(const User& u) const;
+    std::filesystem::path avatarPicturePath(const std::string& account) const;
+    void loadConnect();
+    void saveConnect();
+    nlohmann::json m_connect = nlohmann::json::object();
     nlohmann::json checkRequest(const nlohmann::json& req, User*& me);   // null = fine, else the failure reply
     void relayRequest(Client& c, const nlohmann::json& req);            // relay.host / relay.join
     void relayAccept(Client& c, const std::string& ticket);
@@ -295,6 +309,10 @@ private:
 
     // Files
     void load();
+    // Bundles (worker/server.js bundleItems / giveBundle): a bundle's item list ("" + the ids, or
+    // what's wrong), and handing out what's in one to someone who just got it.
+    std::string bundleItems(const nlohmann::json& list, std::vector<std::string>& out) const;
+    void giveBundle(User& u, const Asset& a);
     void addStarterEmotes();  // the starter emotes and animation packs (assets/emotes), as the staff account's
     void addExampleGames();   // the games folder's example games, as the staff account's
     void saveUsers();

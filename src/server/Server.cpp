@@ -92,6 +92,8 @@ void GbServer::step(int waitMs) {
 // ---------------------------------------------------------------------------
 
 json GbServer::handle(const json& req) {
+    if (isConnectOpen(req.value("op", std::string())))   // (ServerConnect.cpp: an app's server, not a person)
+        return connectOpen(req.value("op", std::string()), req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     User* me = nullptr;
     json bad = checkRequest(req, me);
     if (!bad.is_null()) return bad;
@@ -507,7 +509,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             r["hidden"] = true; r["cat"] = "all"; r["total"] = 0; r["counts"] = json::object(); r["items"] = json::array();
             return r;
         }
-        static const char* kCats[] = {"all", "accessories", "clothing", "faces", "gear", "emotes", "limited"};
+        static const char* kCats[] = {"all", "accessories", "clothing", "faces", "bundles", "gear", "emotes", "limited"};
         std::string cat = "all";
         json counts = json::object();
         for (const char* c : kCats) {
@@ -552,6 +554,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
     if (name.rfind("account.", 0) == 0) return accountOp(name, me, args);
     if (name.rfind("support.", 0) == 0) return supportOp(name, me, args);
+    if (name.rfind("connect.", 0) == 0) return connectOp(name, me, args);
     if (name.rfind("groups.", 0) == 0) return groupOp(name, me, args);
     if (name.rfind("forum.", 0) == 0) return forumOp(name, me, args);
     if (name.rfind("friends.", 0) == 0 || name.rfind("follow.", 0) == 0) return friendOp(name, me, args);
@@ -736,6 +739,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             return r;
         }
         if (name == "admin.mailTest") return fail("This server can't send email.");
+        if (name == "admin.connectApps" || name == "admin.connectSecret") return connectAdmin(name, me, args);
         // Featured games (worker/server.js has the same): staff pick games for the Featured row.
         if (name == "admin.feature") {
             auto it = findAsset(str("id"));
@@ -818,6 +822,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         const bool verified = isVerified(me);
         if (kind == "gear" && !isStaff(me)) return fail("Only Guts&Bolts staff can make gear.");
         if (Online::isEmoteItem(kind) && !isStaff(me)) return fail("Only Guts&Bolts staff can make emotes and animation packs.");
+        if (kind == "bundle" && !isStaff(me)) return fail("Only Guts&Bolts staff can make bundles.");
         if (Online::isAccessory(kind) && !verified && !isStaff(me))
             return fail("Only Verified creators can make hats and accessories. Shirts and pants are open to everyone!");
         long long price = std::clamp(num("price"), 0LL, 1000000LL);
@@ -862,6 +867,15 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             if (!acc.is_object() || acc.value("format", std::string()) != "gbaccessory")
                 return fail("That isn't a Guts&Bolts accessory. Make it in Studio's Accessory window.");
             meta["model"] = true;
+        }
+        if (kind == "bundle") {   // a pack of items, and maybe a Headless Head (worker/server.js has the same)
+            std::vector<std::string> items;
+            if (std::string problem = bundleItems(meta.contains("items") ? meta["items"] : json(), items); !problem.empty()) return fail(problem);
+            const bool headless = meta.value("headless", false) == true;
+            if (items.empty() && !headless) return fail("Put at least one item in the bundle (or make it a Headless Head).");
+            meta = {{"items", items}};
+            if (headless) meta["headless"] = true;
+            data = json{{"format", "gbbundle"}, {"items", items}, {"headless", headless}}.dump();
         }
         if (kind == "face") {
             if (!isOfficial(me)) return fail("Only Guts can make faces.");
@@ -1381,6 +1395,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (a.creator != me.id) tally(&a, "sales");
         if (a.limited) a.copies.push_back({{"serial", a.sales}, {"owner", me.id}, {"price", 0}});   // a numbered copy
         me.owned.insert(a.id);
+        giveBundle(me, a);
         saveAssets();
         saveUsers();
         json r = okay(); r["me"] = meJson(me); return r;
@@ -1423,6 +1438,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         a.sales++;
         if (a.creator != to->id) tally(&a, "sales");
         to->owned.insert(a.id);
+        giveBundle(*to, a);
         notify(to, "gift", me.name + " sent you a gift: " + a.name + "!" + (note.empty() ? std::string() : " \"" + note + "\""), a.id);
         saveAssets();
         saveUsers();
@@ -1693,6 +1709,19 @@ void GbServer::addExampleGames() {
         if (a.size != text.size()) { a.size = text.size(); writeFile(blobPath(a.id), text); }
         changed = true;
     }
+    // The Headless Head (worker/server.js addHeadlessHead): a bundle that hides your head and
+    // face. Added once, owned by Guts; staff can change it afterwards like any item.
+    if (!m_assets.count("item-headless-head")) {
+        Asset& a = m_assets["item-headless-head"];
+        a.id = "item-headless-head"; a.kind = "bundle"; a.creator = Account::officialId(); a.created = Online::unixNow();
+        a.name = "Headless Head"; a.price = 3100;
+        a.description = "Who needs a head anyway? Wear it and your head (and face) disappear, leaving just your hat floating there.";
+        a.meta = {{"builtin", true}, {"items", json::array()}, {"headless", true}};
+        const std::string text = R"({"format":"gbbundle","items":[],"headless":true})";
+        a.size = text.size(); writeFile(blobPath(a.id), text);
+        numberAssets(); saveIds();   // (its item number, for its page)
+        changed = true;
+    }
     addStarterEmotes();
     // Gutstober (worker/server.js timeGutstoberItems): pumpkin items are timed items that
     // go off sale when Gutstober (October) ends, midnight UTC on November 1st. Once per item.
@@ -1857,6 +1886,7 @@ void GbServer::load() {
     }
     loadGroups();
     loadReports();
+    loadConnect();
     loadStaffLog();
     loadForum();
     loadTrades();

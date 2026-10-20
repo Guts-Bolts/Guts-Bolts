@@ -40,9 +40,9 @@ const REVIEWED_KINDS = ['decal', 'audio', 'tshirt'];
 const kCreatorSharePercent = 70;
 const kMaxNotes = 50;   // notifications kept per account (the bell)
 const KINDS = ['hat', 'shirt', 'pants', 'audio', 'plugin', 'game', 'decal', 'model', 'hair', 'faceacc', 'neck', 'shoulder', 'waist', 'face', 'tshirt', 'gear', 'animation',
-  'emote', 'animpack'];
+  'emote', 'animpack', 'bundle'];
 const FEE = { hat: 10, shirt: 10, pants: 10, audio: 20, plugin: 20, game: 0, decal: 5, model: 0,
-  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0, emote: 0, animpack: 0 };
+  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0, emote: 0, animpack: 0, bundle: 0 };
 // Accessories: things worn on the body, made (and placed on a mannequin) in Studio's
 // Accessory window. Verified creators only. Faces are pictures, and only Guts makes them.
 const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
@@ -75,13 +75,18 @@ const kMostGear = 4;
 const isEmoteItem = (k) => k === 'emote' || k === 'animpack';
 const kEmoteSlots = 8;
 const PACK_STATES = ['idle', 'walk', 'run', 'jump', 'fall'];
-const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k);   // sold in the catalog
+// Bundles: a pack of catalog items sold together (buying one gives you everything in it), and
+// maybe a body change: meta.headless hides the head and face (like the Headless Head). Worn like
+// clothes; only staff make them. meta.items lists what's in it. (src/server has the same rules.)
+const kBundleMost = 12;   // items in one bundle
+const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k) || k === 'bundle';   // sold in the catalog
 // Inventory on profiles: what someone owns from the catalog, in these groups. (src/server has the same.)
-const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'gear', 'emotes', 'limited'];
+const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'bundles', 'gear', 'emotes', 'limited'];
 function inventoryCat(cat, a) {
   if (cat === 'accessories') return isAccessory(a.kind);
   if (cat === 'clothing') return a.kind === 'shirt' || a.kind === 'pants' || a.kind === 'tshirt';
   if (cat === 'faces') return a.kind === 'face';
+  if (cat === 'bundles') return a.kind === 'bundle';
   if (cat === 'gear') return a.kind === 'gear';
   if (cat === 'emotes') return isEmoteItem(a.kind);
   if (cat === 'limited') return !!a.limited;
@@ -199,6 +204,24 @@ const TRADE_DONE = ['accepted', 'declined', 'cancelled', 'expired', 'failed'];
 const kMaxShots = 5, kShotSize = 2 << 20;
 const webpFile = (d) => d.length > 12 && [0x52, 0x49, 0x46, 0x46].every((v, i) => d[i] === v) && [0x57, 0x45, 0x42, 0x50].every((v, i) => d[8 + i] === v);
 const pictureType = (d) => (pngSize(d) ? 'png' : jpgFile(d) ? 'jpg' : webpFile(d) ? 'webp' : '');
+// Connected apps: "Log in with Guts&Bolts" for partner apps (OAuth 2.0, the authorization code kind).
+//   1. The app sends you to /api/oauth/authorize?client_id=...&redirect_uri=...&state=..., which
+//      opens the website's Connect page (website/app/app.js pages.connect).
+//   2. You press Approve: the website sends you back to the app with a one-time code.
+//   3. The app swaps the code (with its client secret) for an access token: POST /api/oauth/token.
+//   4. With the token it asks who you are: GET /api/oauth/userinfo gives your user number,
+//      username and avatar picture (/avatar/<user number>.png). Nothing else.
+// worker/index.js turns those web addresses into the connect.* requests below. Each app's
+// secret is made on the Staff page (the official account only); the server keeps only its hash.
+// (src/server/ServerConnect.cpp has the same apps and rules.)
+export const CONNECT_APPS = {
+  lyreto: { name: 'Lyreto', site: 'https://lyreto.com', redirects: ['https://lyreto.com/api/connections/gutsandbolts/callback'] },
+};
+const kConnectCodeLife = 300;              // the one-time code: 5 minutes to swap it
+const kConnectTokenLife = 365 * 86400;     // an access token: a year, or until you disconnect the app
+const kMaxAvatarPicture = 256 << 10, kAvatarPictureSide = 512;
+// The requests that come from an app's server, not a signed-in person, so they aren't signed.
+export const CONNECT_OPEN = new Set(['connect.token', 'connect.userinfo', 'connect.avatarPicture']);
 // The forum (ServerForum.cpp has the same boards and limits). Boards are fixed; anyone can
 // read, signed-up players post, staff pin, lock and delete. Each thread keeps its posts, oldest first.
 const FORUM_BOARDS = [
@@ -495,6 +518,7 @@ function totpCheck(secret, code, t, lastStep = -1) {
 // The Verified Hat: everyone who confirms their email gets one (an original
 // Guts&Bolts cap with our blue check, not a copy of anything). Server.cpp makes the same one.
 const VERIFIED_HAT_ID = 'item-verified-hat';
+const HEADLESS_HEAD_ID = 'item-headless-head';
 // Gutstober: Guts&Bolts' Halloween month (all of October). Things made for it, like
 // the Pumpkin hat, are timed items: they go off sale when it ends (midnight UTC,
 // November 1st).
@@ -570,7 +594,7 @@ export class GbServerObject extends DurableObject {
     this.name = env.SERVER_NAME || 'Guts&Bolts';
     this.users = new Map(); this.assets = new AssetMap(); this.groups = new Map(); this.forum = new Map();
     // What changed and needs writing (set up first: loading can already change things).
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false };
     for (const r of this.sql.exec('SELECT id, data FROM users')) this.users.set(r.id, JSON.parse(r.data));
     for (const r of this.sql.exec('SELECT id, data FROM assets')) {
       const a = JSON.parse(r.data);
@@ -587,6 +611,9 @@ export class GbServerObject extends DurableObject {
     this.reports = this.getMeta('reports', []);  // what players reported, for staff to look at (newest last)
     this.staffLog = this.getMeta('stafflog', []);   // what staff did, newest last
     this.tickets = this.getMeta('tickets', []);   // support tickets (like "I forgot my password"), newest last
+    // Connected apps: { secrets: {app: {hash, at}}, codes: [{hash, account, app, redirect, at}],
+    // tokens: [{hash, account, app, at, expires}], pictures: {account: when its avatar picture was saved} }
+    this.connect = Object.assign({ secrets: {}, codes: [], tokens: [], pictures: {} }, this.getMeta('connect', {}));
     const ids = this.getMeta('ids', { next: 2, taken: [] });
     this.nextUserId = Math.max(2, ids.next || 2);
     this.nextAssetNum = Math.max(1, ids.asset || 1);
@@ -600,6 +627,7 @@ export class GbServerObject extends DurableObject {
     for (const u of this.users.values()) this.gutsFollows(u);
     this.addExampleGames();
     this.addVerifiedHat();
+    this.addHeadlessHead();
     this.addStarterEmotes();
     this.timeGutstoberItems();
     this.numberAssets();
@@ -683,11 +711,13 @@ export class GbServerObject extends DurableObject {
       }
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'tickets', JSON.stringify(this.tickets));
     }
+    if (this.dirty.connect)
+      this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'connect', JSON.stringify(this.connect));
     if (this.dirty.staffLog) {
       if (this.staffLog.length > kMaxStaffLog) this.staffLog.splice(0, this.staffLog.length - kMaxStaffLog);
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'stafflog', JSON.stringify(this.staffLog));
     }
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false };
   }
   // --- Limited items: numbered copies (a.copies = [{ serial, owner, price }]) ---
   copiesOf(u) {   // every limited copy this account holds
@@ -1196,6 +1226,7 @@ export class GbServerObject extends DurableObject {
       const give = (u) => {
         if (!u || u.owned.includes(gift.id)) return;
         u.owned.push(gift.id);
+        this.giveBundle(u, gift);
         gift.sales++;
         this.saveAsset(gift); this.saveUser(u);
         this.notify(u, 'gift', 'Your ' + box.name + ' opened! You got ' + gift.name + '.', gift.id);
@@ -1218,6 +1249,48 @@ export class GbServerObject extends DurableObject {
     if (!a || !u.emailVerified || u.owned.includes(a.id)) return;
     u.owned.push(a.id);
     a.sales++;
+    this.saveAsset(a);
+  }
+
+  // A bundle's items (meta.items from an upload): ids of catalog items that exist, no repeats,
+  // no bundles inside bundles, nothing Limited (numbered copies can't be handed out). A string
+  // says what's wrong.
+  bundleItems(list) {
+    if (list === undefined) return [];
+    if (!Array.isArray(list)) return 'That bundle\'s item list looks wrong.';
+    const out = [];
+    for (const raw of list) {
+      const id = String(raw).trim();
+      const it = this.assets.get(id);
+      if (!it || !isCatalogItem(it.kind)) return 'There\'s no catalog item with ID ' + id + '.';
+      if (it.kind === 'bundle') return 'A bundle can\'t have another bundle in it.';
+      if (it.limited) return it.name + ' is Limited, so it can\'t go in a bundle.';
+      if (!out.includes(it.id)) out.push(it.id);
+    }
+    if (out.length > kBundleMost) return 'A bundle can have at most ' + kBundleMost + ' items.';
+    return out;
+  }
+  // Someone just got a bundle: they get everything in it too (things they already have are skipped).
+  giveBundle(u, a) {
+    if (!a || a.kind !== 'bundle') return;
+    for (const id of (a.meta && a.meta.items) || []) {
+      const it = this.assets.get(id);
+      if (!it || it.limited || u.owned.includes(id)) continue;
+      u.owned.push(id);
+    }
+  }
+  // The Headless Head (see HEADLESS_HEAD_ID): a bundle that hides your head and face. Added
+  // once, owned by Guts; staff can change its price and words afterwards like any item.
+  addHeadlessHead() {
+    if (!this.official) return;
+    let a = this.assets.get(HEADLESS_HEAD_ID);
+    if (a) return;
+    const data = new TextEncoder().encode(JSON.stringify({ format: 'gbbundle', items: [], headless: true }));
+    a = { id: HEADLESS_HEAD_ID, kind: 'bundle', name: 'Headless Head', creator: this.official, price: 3100, created: now(), sales: 0,
+      plays: 0, size: data.length, meta: { items: [], headless: true }, builtin: true, likes: 0, dislikes: 0,
+      description: 'Who needs a head anyway? Wear it and your head (and face) disappear, leaving just your hat floating there.' };
+    this.writeFile(a.id, data);
+    this.assets.set(a.id, a);
     this.saveAsset(a);
   }
 
@@ -1418,6 +1491,7 @@ export class GbServerObject extends DurableObject {
 
   handle(req) {
     try {
+      if (CONNECT_OPEN.has(req.op)) return this.connectOpen(req.op, req.args && typeof req.args === 'object' && !Array.isArray(req.args) ? req.args : {});
       const c = this.checkRequest(req);
       if (c.bad) return c.bad;
       this.openGiftBoxes();
@@ -1531,6 +1605,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
     if (name.startsWith('appeal.')) return this.appealOp(name, me, args);
     if (name.startsWith('support.')) return this.supportOp(name, me, args);
+    if (name.startsWith('connect.')) return this.connectOp(name, me, args);
     // "I'm still here" (for friends' online dots); the answer keeps your account fresh
     // (a new warning, or Bolts someone sent you, shows up within a minute).
     if (name === 'ping') return okay({ me: this.meJson(me) });
@@ -2019,6 +2094,7 @@ export class GbServerObject extends DurableObject {
       if (name === 'admin.tickets') return okay({ tickets: this.ticketsJson(str(args, 'status') === 'closed' ? 'closed' : 'open') });
       if (name === 'admin.replyTicket' || name === 'admin.ticketReset' || name === 'admin.closeTicket') return this.ticketAdminOp(name, me, args);
       if (name === 'admin.mailStatus') return okay({ mail: this.mailStatus() });
+      if (name === 'admin.connectApps' || name === 'admin.connectSecret') return this.connectAdmin(name, me, args);
       if (name === 'admin.mailTest') {
         // Send a test email, to check the email settings work (the Staff page shows how it went).
         const to = lower(cleanText(str(args, 'email'), 254));
@@ -2101,6 +2177,7 @@ export class GbServerObject extends DurableObject {
       if (kind === 'face' && !this.isOfficial(me)) return fail('Only Guts can make faces.');
       if (kind === 'gear' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make gear.');
       if (isEmoteItem(kind) && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make emotes and animation packs.');
+      if (kind === 'bundle' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make bundles.');
       let price = clamp(num(args, 'price'), 0, 1000000);
       if (kind === 'game' || alwaysFree(kind)) price = 0;
       if (price > 0 && !verified) return fail('Only Verified creators can sell things. Upload it for free, or get Verified!');
@@ -2150,6 +2227,16 @@ export class GbServerObject extends DurableObject {
         try { acc = JSON.parse(new TextDecoder().decode(data)); } catch { acc = null; }
         if (!acc || acc.format !== 'gbaccessory' || !acc.node) return fail('That isn\'t a Guts&Bolts accessory. Make it in Studio\'s Accessory window.');
         meta.model = true;
+      }
+      if (kind === 'bundle') {
+        const items = this.bundleItems(meta.items);
+        if (typeof items === 'string') return fail(items);
+        const headless = meta.headless === true;
+        if (!items.length && !headless) return fail('Put at least one item in the bundle (or make it a Headless Head).');
+        for (const k of Object.keys(meta)) delete meta[k];
+        meta.items = items;
+        if (headless) meta.headless = true;
+        data = new TextEncoder().encode(JSON.stringify({ format: 'gbbundle', items, headless }));
       }
       if (kind === 'face') {
         if (!pngSize(data)) return fail('Faces must be .png pictures (see-through around the face).');
@@ -2487,6 +2574,7 @@ export class GbServerObject extends DurableObject {
       if (a.creator !== me.id) this.tally(a, 'sales');
       if (a.limited) { a.copies = a.copies || []; a.copies.push({ serial: a.sales, owner: me.id, price: 0 }); }
       me.owned.push(a.id);
+      this.giveBundle(me, a);
       this.saveAsset(a); this.saveUser(me);
       return okay({ me: this.meJson(me) });
     }
@@ -2520,6 +2608,7 @@ export class GbServerObject extends DurableObject {
       a.sales++;
       if (a.creator !== to.id) this.tally(a, 'sales');
       to.owned.push(a.id);
+      this.giveBundle(to, a);
       this.notify(to, 'gift', me.name + ' sent you a gift: ' + a.name + '!' + (note ? ' "' + note + '"' : ''), a.id);
       this.saveAsset(a); this.saveUser(me, to);
       return okay({ me: this.meJson(me), to: this.publicUser(to) });
@@ -2605,6 +2694,7 @@ export class GbServerObject extends DurableObject {
       if (!u || u.userId === 0) return fail('There\'s nobody called that.');
       if (u.owned.includes(a.id)) return fail(u.name + ' already has it.');
       u.owned.push(a.id);
+      this.giveBundle(u, a);
       a.sales++;
       this.saveAsset(a); this.saveUser(u);
       this.notify(u, 'gift', 'Guts&Bolts staff gave you ' + a.name + '!', a.id);
@@ -3070,6 +3160,7 @@ export class GbServerObject extends DurableObject {
     for (const x of this.tickets)   // email addresses left on support tickets
       if ((x.from === u.id || x.about === u.id) && (x.contact || x.code)) { x.contact = ''; delete x.code; this.dirty.tickets = true; }
     for (const k of u.keys || []) this.aliases.delete(k);   // devices logged in after a password reset
+    this.disconnectApps(u.id, '');   // connected apps (like Lyreto) lose their link, and the avatar picture goes
     // What's left: the ID (so its requests are refused), when it was made, and its Limited copies.
     const { id, created } = u;
     for (const k of Object.keys(u)) delete u[k];
@@ -3314,6 +3405,133 @@ export class GbServerObject extends DurableObject {
     }
     this.saveUser(u);
     return okay({ appeals: this.appealsJson('open') });
+  }
+
+  // --- Connected apps ("Log in with Guts&Bolts", see CONNECT_APPS; ServerConnect.cpp has the same) ---
+  connectApp(args) {   // the app and return address asked for, if both are ones we know
+    const id = str(args, 'client_id'), app = Object.hasOwn(CONNECT_APPS, id) ? CONNECT_APPS[id] : null;
+    if (!app) return { bad: fail('That app isn\'t one Guts&Bolts knows.') };
+    if (!app.redirects.includes(str(args, 'redirect_uri')))
+      return { bad: fail(app.name + ' asked to send you back to an address Guts&Bolts doesn\'t know, so it won\'t.') };
+    return { id, app };
+  }
+  liveTokens(account) {
+    const t = now();
+    return this.connect.tokens.filter((x) => x.account === account && x.expires > t);
+  }
+  // Take away apps' links to an account (one app, or every app with ''), and its avatar picture when none are left.
+  disconnectApps(account, app) {
+    this.connect.tokens = this.connect.tokens.filter((x) => x.account !== account || (app && x.app !== app));
+    if (!this.liveTokens(account).length && this.connect.pictures[account]) {
+      delete this.connect.pictures[account];
+      this.sql.exec('DELETE FROM files WHERE id = ?', 'avatar:' + account);
+    }
+    this.dirty.connect = true;
+  }
+  // The avatar picture apps show: a square PNG the website draws from your avatar (it can't be drawn here).
+  saveAvatarPicture(u, b64) {
+    const data = b64ToBytes(b64), size = pngSize(data);
+    if (!size || data.length > kMaxAvatarPicture || size[0] > kAvatarPictureSide || size[1] > kAvatarPictureSide)
+      return 'That avatar picture is too big, or isn\'t a PNG.';
+    this.writeFile('avatar:' + u.id, data);
+    this.connect.pictures[u.id] = now();
+    this.dirty.connect = true;
+    return '';
+  }
+  connectsJson(u) {
+    return this.liveTokens(u.id).filter((x) => CONNECT_APPS[x.app])
+      .map((x) => ({ id: x.app, name: CONNECT_APPS[x.app].name, site: CONNECT_APPS[x.app].site, at: x.at }));
+  }
+  // Signed requests from the website: the Connect page, and Settings > Connected apps.
+  connectOp(name, me, args) {
+    const t = now();
+    if (name === 'connect.app' || name === 'connect.approve') {
+      const c = this.connectApp(args);
+      if (c.bad) return c.bad;
+      if (!this.connect.secrets[c.id]) return fail(c.app.name + ' isn\'t set up on Guts&Bolts yet. Staff need to make its secret first.');
+      if (name === 'connect.app')
+        return okay({ app: { id: c.id, name: c.app.name, site: c.app.site }, connected: this.liveTokens(me.id).some((x) => x.app === c.id) });
+      if (str(args, 'picture')) {
+        const bad = this.saveAvatarPicture(me, str(args, 'picture'));
+        if (bad) return fail(bad);
+      }
+      const code = randomHex(24);
+      this.connect.codes = this.connect.codes.filter((x) => t - x.at < kConnectCodeLife && x.account !== me.id);
+      this.connect.codes.push({ hash: hashHex(code), account: me.id, app: c.id, redirect: str(args, 'redirect_uri'), at: t });
+      this.dirty.connect = true;
+      return okay({ code });
+    }
+    if (name === 'connect.list') return okay({ apps: this.connectsJson(me) });
+    if (name === 'connect.remove') {
+      this.disconnectApps(me.id, str(args, 'id'));
+      return okay({ apps: this.connectsJson(me) });
+    }
+    if (name === 'connect.picture') {   // a new look: the website sends a new picture, if any app is connected
+      if (!this.liveTokens(me.id).length) return okay({ saved: false });
+      const bad = this.saveAvatarPicture(me, str(args, 'picture'));
+      return bad ? fail(bad) : okay({ saved: true });
+    }
+    return fail('Unknown request.');
+  }
+  // Requests from an app's own server (not signed: the client secret or the access token proves who's asking).
+  // Failures carry `oauth`, the error word OAuth apps expect (worker/index.js sends it on).
+  connectOpen(name, args) {
+    const t = now(), oauthFail = (word, why) => Object.assign(fail(why), { oauth: word });
+    if (name === 'connect.token') {
+      if (str(args, 'grant_type') && str(args, 'grant_type') !== 'authorization_code')
+        return oauthFail('unsupported_grant_type', 'Only grant_type=authorization_code is supported.');
+      const id = str(args, 'client_id'), secret = this.connect.secrets[id];
+      if (!Object.hasOwn(CONNECT_APPS, id) || !secret || hashHex(str(args, 'client_secret')) !== secret.hash)
+        return oauthFail('invalid_client', 'Wrong client_id or client_secret.');
+      const hash = hashHex(str(args, 'code'));
+      const code = this.connect.codes.find((x) => x.hash === hash && x.app === id && t - x.at < kConnectCodeLife);
+      this.connect.codes = this.connect.codes.filter((x) => x !== code && t - x.at < kConnectCodeLife);   // every code works once
+      this.dirty.connect = true;
+      if (!code) return oauthFail('invalid_grant', 'That code is wrong, used or too old (they last 5 minutes).');
+      if (str(args, 'redirect_uri') && str(args, 'redirect_uri') !== code.redirect) return oauthFail('invalid_grant', 'redirect_uri doesn\'t match.');
+      const u = this.users.get(code.account);
+      if (!u || u.deleted || u.userId === 0) return oauthFail('invalid_grant', 'That account is gone.');
+      const token = 'gbt_' + randomHex(32);
+      this.connect.tokens = this.connect.tokens.filter((x) => x.expires > t && !(x.account === u.id && x.app === id));
+      this.connect.tokens.push({ hash: hashHex(token), account: u.id, app: id, at: t, expires: t + kConnectTokenLife });
+      return okay({ access_token: token, token_type: 'Bearer', expires_in: kConnectTokenLife, scope: 'identify' });
+    }
+    if (name === 'connect.userinfo') {
+      const hash = hashHex(str(args, 'token'));
+      const tok = str(args, 'token') ? this.connect.tokens.find((x) => x.hash === hash && x.expires > t) : null;
+      const u = tok ? this.users.get(tok.account) : null;
+      if (!u || u.deleted) return oauthFail('invalid_token', 'That access token is wrong, too old, or the person disconnected the app.');
+      const origin = /^https?:\/\/[a-z0-9.:-]+$/i.test(str(args, 'origin')) ? str(args, 'origin') : 'https://gutsandbolts.net';
+      const pic = this.connect.pictures[u.id];
+      return okay({ user: { id: String(u.userId), username: u.username, avatar: pic ? origin + '/avatar/' + u.userId + '.png?v=' + pic : null } });
+    }
+    if (name === 'connect.avatarPicture') {   // (worker/index.js serves /avatar/<user number>.png with it)
+      const n = Number(str(args, 'id'));
+      const u = Number.isInteger(n) ? this.findUserId(n) : null;
+      const data = u && !u.deleted && this.connect.pictures[u.id] ? this.readFile('avatar:' + u.id) : null;
+      return data ? okay({ data: bytesToB64(data) }) : fail('No picture.');
+    }
+    return fail('Unknown request.');
+  }
+  // The Staff page's Connected apps box (official account only): each app's secret is made here,
+  // shown once, and only its hash is kept. A new secret replaces the old one straight away.
+  connectAdmin(name, me, args) {
+    if (!this.isOfficial(me)) return fail('Only the official Guts account can do that.');
+    if (name === 'admin.connectSecret') {
+      const id = str(args, 'id');
+      if (!Object.hasOwn(CONNECT_APPS, id)) return fail('That app isn\'t one Guts&Bolts knows.');
+      const secret = 'gbs_' + randomHex(32);
+      this.connect.secrets[id] = { hash: hashHex(secret), at: now() };
+      this.dirty.connect = true;
+      this.staffDid(me, 'connect', 'Made a new client secret for ' + CONNECT_APPS[id].name);
+      return okay({ secret, apps: this.connectAppsJson() });
+    }
+    return okay({ apps: this.connectAppsJson() });
+  }
+  connectAppsJson() {
+    const t = now();
+    return Object.entries(CONNECT_APPS).map(([id, app]) => ({ id, name: app.name, site: app.site, redirects: app.redirects,
+      secretAt: (this.connect.secrets[id] || {}).at || 0, people: this.connect.tokens.filter((x) => x.app === id && x.expires > t).length }));
   }
 
   // --- Support tickets (ServerSupport.cpp has the same) ---
@@ -4276,6 +4494,13 @@ export class GbServerObject extends DurableObject {
       if (!data) return new Response('No picture.', { status: 404 });
       const type = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }[pictureType(data)] || 'application/octet-stream';
       return new Response(data, { headers: { 'content-type': type, 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' } });
+    }
+    // GET /avatar/<user number>.png: the avatar picture connected apps (like Lyreto) show. Only
+    // people who connected an app have one.
+    if (url.pathname.startsWith('/avatar/')) {
+      const r = this.connectOpen('connect.avatarPicture', { id: url.pathname.slice(8).replace(/\.png$/, '') });
+      if (!r.ok) return new Response('No picture.', { status: 404 });
+      return new Response(b64ToBytes(r.data), { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
     }
     // GET /thumb/<asset id> and /icon/<asset id>: a game's picture and icon (public, so pages can show them directly).
     if (url.pathname.startsWith('/thumb/') || url.pathname.startsWith('/icon/')) {

@@ -433,6 +433,7 @@ void GbServer::deleteAccount(User& u) {
         }
     for (json& x : m_tickets)   // email addresses left on support tickets
         if (x.value("from", std::string()) == u.id || x.value("about", std::string()) == u.id) { x["contact"] = ""; x.erase("code"); }
+    disconnectApps(u.id, "");   // connected apps (like Lyreto) lose their link, and the avatar picture goes (ServerConnect.cpp)
     // What's left: the ID (so its requests are refused), when it was made, and its Limited copies.
     User left;
     left.id = u.id;

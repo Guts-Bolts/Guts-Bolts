@@ -160,7 +160,7 @@ json avatarJson(const Profile& p) {
             {"rightArm", vec3(c.rightArm)}, {"leftLeg", vec3(c.leftLeg)}, {"rightLeg", vec3(c.rightLeg)},
             {"hat", (int)p.hat}, {"hatColor", vec3(p.hatColor)},
             {"shirtImage", p.shirtImage}, {"pantsImage", p.pantsImage}, {"tshirtImage", p.tshirtImage},
-            {"faceImage", p.faceImage}, {"accessories", p.accessories}};
+            {"faceImage", p.faceImage}, {"headless", p.headless}, {"accessories", p.accessories}};
 }
 
 // Part physics, a SpawnLocation's team and a Model's PrimaryPart (nodeUpdate sends these too).
@@ -880,6 +880,7 @@ void NetServer::handle(Client& c, const std::string& text) {
                 return s.rfind("gb:", 0) == 0 && s.size() < 64 ? s : std::string();
             };
             Player::applyClothing(rig, cloth("shirtImage"), cloth("pantsImage"), cloth("tshirtImage"));
+            Player::applyHeadless(rig, a.value("headless", false) == true);   // (a Headless Head bundle)
             Online::fetchSounds(*m_scene);   // download their clothing pictures
             // Their accessories and face: download them, then dress the rig (if they're still here).
             Player::Accessories acc;

@@ -166,6 +166,7 @@ void GbServer::openGiftBoxes() {
         auto give = [&](User* u) {
             if (!u || u->owned.count(gift.id)) return;
             u->owned.insert(gift.id);
+            giveBundle(*u, gift);
             gift.sales++;
             changed = true;
             notify(u, "gift", "Your " + box.name + " opened! You got " + gift.name + ".", gift.id);
@@ -370,6 +371,7 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         if (!u || u->userId == 0) return fail("There's nobody called that.");
         if (u->owned.count(a.id)) return fail(u->name + " already has it.");
         u->owned.insert(a.id);
+        giveBundle(*u, a);
         a.sales++;
         saveAssets(); saveUsers();
         notify(u, "gift", "Guts&Bolts staff gave you " + a.name + "!", a.id);
@@ -828,4 +830,35 @@ void GbServer::loadUpdates() {
     json all = json::parse(text, nullptr, false);
     if (!all.is_array()) return;
     for (const json& u : all) if (u.is_object() && u.contains("id") && u["id"].is_string()) m_updates.push_back(u);
+}
+
+// A bundle's items (meta.items from an upload): ids of catalog items that exist, no repeats, no
+// bundles inside bundles, nothing Limited. "" if it's fine, or what's wrong. (worker/server.js bundleItems)
+std::string GbServer::bundleItems(const nlohmann::json& list, std::vector<std::string>& out) const {
+    out.clear();
+    if (list.is_null()) return "";
+    if (!list.is_array()) return "That bundle's item list looks wrong.";
+    for (const auto& raw : list) {
+        std::string id = raw.is_string() ? raw.get<std::string>() : raw.is_number_integer() ? std::to_string(raw.get<long long>()) : "";
+        while (!id.empty() && std::isspace((unsigned char)id.back())) id.pop_back();
+        while (!id.empty() && std::isspace((unsigned char)id.front())) id.erase(id.begin());
+        auto it = findAsset(id);
+        if (it == m_assets.end() || !Online::isCatalogItem(it->second.kind)) return "There's no catalog item with ID " + id + ".";
+        if (it->second.kind == "bundle") return "A bundle can't have another bundle in it.";
+        if (it->second.limited) return it->second.name + " is Limited, so it can't go in a bundle.";
+        if (std::find(out.begin(), out.end(), it->second.id) == out.end()) out.push_back(it->second.id);
+    }
+    if ((int)out.size() > Online::kBundleMost) return "A bundle can have at most " + std::to_string(Online::kBundleMost) + " items.";
+    return "";
+}
+
+// Someone just got a bundle: they get everything in it too (things they already have are skipped).
+void GbServer::giveBundle(User& u, const Asset& a) {
+    if (a.kind != "bundle" || !a.meta.is_object() || !a.meta.contains("items") || !a.meta["items"].is_array()) return;
+    for (const auto& id : a.meta["items"]) {
+        if (!id.is_string()) continue;
+        auto it = findAsset(id.get<std::string>());
+        if (it == m_assets.end() || it->second.limited) continue;
+        u.owned.insert(it->second.id);
+    }
 }

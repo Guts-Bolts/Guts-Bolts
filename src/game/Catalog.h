@@ -10,7 +10,8 @@
 namespace Catalog {
 
 // (Gear: a Tool for games, not worn. Emote / AnimPack: moves for your character, equipped not worn.)
-enum class Type { Hat, Shirt, Pants, Hair, FaceAcc, Neck, Shoulder, Waist, Face, TShirt, Gear, Emote, AnimPack, Count };
+// (Bundle: a pack of items from the server; worn, and its headless flag hides the head.)
+enum class Type { Hat, Shirt, Pants, Hair, FaceAcc, Neck, Shoulder, Waist, Face, TShirt, Gear, Emote, AnimPack, Bundle, Count };
 inline bool isMove(Type t) { return t == Type::Emote || t == Type::AnimPack; }   // an emote or an animation pack
 inline bool isEquipped(Type t) { return t == Type::Gear || isMove(t); }        // equipped (not worn)
 const char* typeName(Type t);
@@ -25,6 +26,7 @@ struct Item {
     std::string image;                     // shirts / pants / faces: "gb:<id>" when it has a picture
     std::string model;                     // accessories made in Studio: "gb:<id>" (the placed model)
     std::string kind;                      // the server's kind: "hat", "hair", "faceacc", "neck", ...
+    bool        headless = false;          // bundles: wearing it hides the head (the Headless Head)
     long long   created = 0;               // unix time
     long long   price = 0;                 // in Bolts; 0 = free
     std::string signature;
