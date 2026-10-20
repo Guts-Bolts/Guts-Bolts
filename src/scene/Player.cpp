@@ -1740,21 +1740,15 @@ void Player::animationPack(const std::string& state, float dt, float groundSpeed
     }
     if (m_holdBlend > 0.5f) poses.erase("Right Arm");   // keep holding the tool
     Anim::applyPoses(r, m_rest, poses, m_packBlend);
-
-    for (const auto& [n, s] : poses) {
-        if (SceneNode* p = Anim::findPart(r, n); p && !isLimb(p) && p->name != "Head")
-            m_packMoved.push_back(p->id);
-    }
-
-    for (SceneNode* p : Anim::wornParts(r)) {
-        m_packMoved.push_back(p->id);   // worn parts follow the head
-    }
-
-    // Restore the head to prevent cumulative rotation drift.
-    if (SceneNode* head = part("Head")) {
-        m_packMoved.push_back(head->id);
-    }
+    for (const auto& [n, s] : poses)
+        if (SceneNode* p = Anim::findPart(r, n); p && !isLimb(p) && p->name != "Head") m_packMoved.push_back(p->id);
+    for (SceneNode* p : Anim::wornParts(r)) m_packMoved.push_back(p->id);   // (they turned with the head)
+    // The Head always goes back too: it rides on the Torso, so it moves even when the pack
+    // doesn't pose it, and the walk cycle only puts back its turn. Left where it was, each
+    // frame's bounce piled onto the last and the head wandered off round the body.
+    if (SceneNode* head = part("Head")) m_packMoved.push_back(head->id);
 }
+
 void Player::startDeath() {
     m_seatId = 0;   // (off any seat)
     m_sitHere = m_sitPending = false;
