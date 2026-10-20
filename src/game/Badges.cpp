@@ -18,6 +18,7 @@ const Info kInfo[] = {
     {"verified", "Verified",         "A recognised creator. Verified people can publish anything, upload "
                                      "clothes, audio and plugins for free, and sell their creations.",   true,  true},
     {"staff",    "Staff",            "Helps run Guts&Bolts and can verify people.",                       true,  false},
+    {"partner",  "Partner",          "An official partner of Guts&Bolts, like the people who make Lyreto.", true,  true},
 };
 
 std::string grantMessage(const std::string& key, const std::string& accountId) {
@@ -188,6 +189,14 @@ void drawIcon(ImDrawList* dl, ImVec2 c, float s, Id id) {
         shield(dl, c, s, rgb(30, 45, 90), rgb(120, 200, 255));
         bolt(dl, ImVec2(c.x, c.y - s * 0.04f), s * 0.2f, rgb(120, 200, 255), rgb(30, 45, 90));
         dl->AddText(ImVec2(c.x - s * 0.09f, c.y + s * 0.14f), rgb(200, 230, 255), "S");
+        break;
+    }
+    case Id::Partner: {
+        // Teal shield with two gold rings linked together.
+        shield(dl, c, s, rgb(20, 130, 120), rgb(255, 215, 90));
+        float r = s * 0.13f, t = std::max(1.5f, s * 0.06f);
+        dl->AddCircle(ImVec2(c.x - s * 0.09f, c.y - s * 0.02f), r, rgb(255, 215, 90), 20, t);
+        dl->AddCircle(ImVec2(c.x + s * 0.09f, c.y - s * 0.02f), r, rgb(255, 215, 90), 20, t);
         break;
     }
     default: break;

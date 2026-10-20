@@ -4,26 +4,29 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Guts&amp;Bolts</title>
-<meta name="description" content="Build games, play them with friends, and fall apart in spectacular ragdoll fashion. Free for Windows, Mac, Linux and Android.">
+<meta name="description" content="A free game engine and platform: build games in Studio, play them with friends, and fall apart in spectacular ragdoll fashion. For Windows, Mac, Linux and Android.">
 <link rel="icon" href="img/icon.png">
 <meta property="og:title" content="Guts&amp;Bolts">
-<meta property="og:description" content="Build games, play with friends, fall apart spectacularly.">
-<meta property="og:image" content="img/demolition.jpg">
+<meta property="og:description" content="Build games, play with friends, fall apart spectacularly. Free for Windows, Mac, Linux and Android.">
+<meta property="og:image" content="img/engine-boom.jpg">
 <style>
   /* Dressed like a website from around 2011 (same look as the site in app/). */
   :root {
     --blue: #1d6fd8; --blue-dark: #0b4ea8; --link: #0055b3;
     --panel: #ffffff; --text: #222; --muted: #666; --line: #c9ced6; --bg: #d9dde3;
     --head1: #f7f9fc; --head2: #d9e2ee; --headText: #17407a;
+    --tile1: #ffffff; --tile2: #eef3f9; --code: #1e2430; --codeText: #e6edf7;
   }
   @media (prefers-color-scheme: dark) {
     :root { --panel: #1b212b; --text: #e8ecf2; --muted: #9aa5b5; --line: #334052; --bg: #0e131b; --link: #6fb0ff;
-      --head1: #2a3444; --head2: #1f2835; --headText: #b9d6ff; }
+      --head1: #2a3444; --head2: #1f2835; --headText: #b9d6ff; --tile1: #1f2733; --tile2: #19202a; --code: #10151d; }
   }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body { margin: 0; font-family: Verdana, Tahoma, Arial, sans-serif; font-size: 13px; color: var(--text); background: var(--bg); line-height: 1.5; }
   a { color: var(--link); text-decoration: none; }
   a:hover { text-decoration: underline; }
+  img { max-width: 100%; }
   .wrap { max-width: 970px; margin: 0 auto; padding: 0 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .topbar { background: linear-gradient(#2466c2, #0d3b82); border-bottom: 1px solid #072656; }
   .topbar .wrap { min-height: 52px; }
@@ -33,50 +36,165 @@
     text-shadow: -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 2px 2px 0 #fff, 3px 4px 0 rgba(0,0,0,.45); }
   .acct { margin-left: auto; color: #fff; }
   .acct a { color: #fff; font-weight: bold; }
-  nav { background: linear-gradient(#6cb1f7 0%, #3c8ae4 50%, #2a78d4 51%, #1f69c2 100%); border-top: 1px solid #9ccbff; border-bottom: 1px solid #154f99; }
-  nav .wrap { gap: 0; }
-  nav a { color: #fff; padding: 8px 14px; font-size: 13px; font-weight: bold; text-shadow: 0 1px 1px rgba(0,0,0,.45);
+  nav { background: linear-gradient(#6cb1f7 0%, #3c8ae4 50%, #2a78d4 51%, #1f69c2 100%); border-top: 1px solid #9ccbff; border-bottom: 1px solid #154f99;
+    position: sticky; top: 0; z-index: 5; }
+  nav .wrap { gap: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  nav .wrap::-webkit-scrollbar { display: none; }
+  nav a { color: #fff; padding: 8px 14px; font-size: 13px; font-weight: bold; text-shadow: 0 1px 1px rgba(0,0,0,.45); white-space: nowrap;
     border-right: 1px solid rgba(0,0,0,.18); box-shadow: 1px 0 0 rgba(255,255,255,.2); }
   nav a:first-child { border-left: 1px solid rgba(0,0,0,.18); }
   nav a:hover { background: rgba(255,255,255,.18); text-decoration: none; }
+  nav a.dl-nav { margin-left: auto; background: linear-gradient(#6fe08f 0%, #33bd5d 50%, #1ea447 51%, #178c3b 100%); border-left: 1px solid rgba(0,0,0,.25); }
   main { max-width: 970px; margin: 12px auto 0; background: var(--panel); border: 1px solid #b4bac3; box-shadow: 0 1px 4px rgba(0,0,0,.15); padding: 14px 16px 6px; }
-  .hero { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; align-items: center; padding: 14px; border: 1px solid #9cc3ec;
-    background: linear-gradient(#eaf4ff, #cfe4fb); color: #12325c; }
-  @media (prefers-color-scheme: dark) { .hero { background: linear-gradient(#1b2d47, #13233a); color: #cfe3ff; border-color: #2c4a70; } }
-  .hero img { width: 100%; display: block; border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.3); }
-  .hero h1 { margin: 0 0 6px; font-family: Arial, Verdana, sans-serif; font-size: 26px; }
-  .tag { font-size: 14px; margin: 0 0 14px; }
-  .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* The big banner: a slideshow of real screenshots with the pitch on top. */
+  .hero { position: relative; border: 1px solid #06214a; overflow: hidden; background: #0b1424; aspect-ratio: 16/8; min-height: 300px; }
+  .hero .slide { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 1.2s; }
+  .hero .slide.on { opacity: 1; }
+  .hero::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(90deg, rgba(6,14,30,.88) 0%, rgba(6,14,30,.6) 42%, rgba(6,14,30,0) 70%); }
+  .hero-text { position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 56%; padding: 26px 24px; color: #fff;
+    display: flex; flex-direction: column; justify-content: center; }
+  .hero h1 { margin: 0 0 8px; font-family: Impact, "Arial Black", sans-serif; font-weight: normal; font-size: 40px; line-height: 1.05; letter-spacing: .5px;
+    text-shadow: 0 2px 0 #000, 0 0 18px rgba(0,0,0,.6); }
+  .hero h1 em { font-style: normal; color: #ff5a4a; }
+  .hero .tag { font-size: 14px; margin: 0 0 16px; color: #dbe7f7; max-width: 440px; text-shadow: 0 1px 2px #000; }
+  .hero .small { font-size: 11px; color: #b8c7db; margin-top: 10px; text-shadow: 0 1px 2px #000; }
+  .hero .caption { position: absolute; z-index: 2; right: 10px; bottom: 10px; color: #fff; font-size: 11px; background: rgba(0,0,0,.55);
+    padding: 3px 8px; border-radius: 3px; }
+  .hero .dots { position: absolute; z-index: 2; right: 10px; top: 10px; display: flex; gap: 5px; }
+  .hero .dots button { width: 11px; height: 11px; border-radius: 50%; border: 1px solid #fff; background: transparent; padding: 0; cursor: pointer; }
+  .hero .dots button.on { background: #fff; }
+  .ribbon { display: inline-block; align-self: flex-start; margin-bottom: 10px; padding: 3px 9px; font-size: 11px; font-weight: bold; color: #fff;
+    background: linear-gradient(#ff7a3d, #e2452a); border: 1px solid #a8301b; border-radius: 3px; text-shadow: 0 -1px 0 rgba(0,0,0,.3); }
+  .ribbon:hover { text-decoration: none; filter: brightness(1.08); }
+
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .btn { display: inline-block; padding: 7px 16px; border-radius: 3px; color: #fff; font-weight: bold; text-decoration: none !important;
     text-shadow: 0 -1px 0 rgba(0,0,0,.35); box-shadow: inset 0 1px 0 rgba(255,255,255,.4); }
   .btn.play { border: 1px solid #0d6a2e; background: linear-gradient(#6fe08f 0%, #33bd5d 50%, #1ea447 51%, #178c3b 100%); font-size: 17px; padding: 9px 22px; }
   .btn.blue { border: 1px solid #0d4a96; background: linear-gradient(#6fb3f7 0%, #3d8ce6 50%, #1f6fd0 51%, #1a5fb4 100%); }
+  .btn.grey { border: 1px solid #6b737e; background: linear-gradient(#c5cbd3 0%, #a3abb6 50%, #8c95a1 51%, #7b8490 100%); }
   .btn:hover { filter: brightness(1.07); }
+  .btn small { display: block; font-size: 10px; font-weight: normal; opacity: .9; }
+
+  /* A strip of quick facts under the banner. */
+  .facts { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); border-top: 0; background: linear-gradient(var(--head1), var(--head2)); }
+  .facts div { text-align: center; padding: 8px 4px; border-right: 1px solid var(--line); }
+  .facts div:last-child { border-right: 0; }
+  .facts b { display: block; font-family: Impact, "Arial Black", sans-serif; font-weight: normal; font-size: 22px; color: #e23b3b; line-height: 1.1; }
+  .facts span { font-size: 11px; color: var(--muted); }
+
   section { border: 1px solid var(--line); margin: 14px 0; }
   section > *:not(h2) { margin-left: 12px; margin-right: 12px; }
   h2 { margin: 0 0 12px; padding: 5px 10px; font-size: 13px; color: var(--headText); background: linear-gradient(var(--head1), var(--head2));
-    border-bottom: 1px solid var(--line); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-bottom: 12px; }
+    border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+  h2 a { margin-left: auto; font-weight: normal; font-size: 12px; }
+  h3 { margin: 0 0 6px; font-size: 16px; font-family: Arial, Verdana, sans-serif; color: var(--headText); }
+  .lead { font-size: 13px; color: var(--muted); margin-top: 0; }
+
+  /* What's new */
+  .new { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 6px 16px; padding: 0; list-style: none; margin-bottom: 12px; }
+  .new li { padding-left: 16px; position: relative; font-size: 12px; }
+  .new li::before { content: "★"; position: absolute; left: 0; color: #f0a020; }
+
+  /* The engine: big picture rows, then a grid of everything. */
+  .show { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; align-items: center; padding: 6px 0 14px; border-bottom: 1px dashed var(--line); }
+  .show:last-of-type { border-bottom: 0; }
+  .show.flip { grid-template-columns: 1fr 1.25fr; }
+  .show.flip figure { order: 2; }
+  .show figure { margin: 0; }
+  .show img { width: 100%; display: block; border: 1px solid #9aa1ab; box-shadow: 0 2px 6px rgba(0,0,0,.25); aspect-ratio: 16/9; object-fit: cover; }
+  .show ul { margin: 6px 0 0; padding-left: 18px; }
+  .show li { margin: 2px 0; }
+  .show p { margin: 0 0 6px; }
+  .pill { display: inline-block; font-size: 10px; font-weight: bold; color: #fff; background: #1f6fd0; border-radius: 2px; padding: 1px 5px; vertical-align: middle; margin-left: 4px; }
+  .pill.new { background: #e2452a; }
+
+  .cats { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .cats div { padding: 8px 10px; border: 1px solid var(--line); background: linear-gradient(var(--tile1), var(--tile2)); }
+  .cats b { display: block; margin-bottom: 4px; color: var(--headText); font-size: 13px; }
+  .cats ul { margin: 0; padding-left: 15px; color: var(--muted); font-size: 12px; }
+  .cats li { margin: 1px 0; }
+
+  /* Scripting */
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; margin-bottom: 12px; }
+  .two img { width: 100%; border: 1px solid #9aa1ab; display: block; }
+  pre { margin: 0; background: var(--code); color: var(--codeText); border: 1px solid #000; padding: 10px 12px; font: 12px/1.5 Consolas, "Courier New", monospace;
+    overflow-x: auto; border-radius: 2px; }
+  pre .c { color: #7f8ea3; } pre .k { color: #f78c6c; } pre .s { color: #c3e88d; } pre .f { color: #82aaff; } pre .n { color: #f9d36b; }
+  .ticks { list-style: none; padding: 0; margin: 0; }
+  .ticks li { padding-left: 20px; position: relative; margin: 4px 0; }
+  .ticks li::before { content: "✔"; position: absolute; left: 0; color: #1ea447; font-weight: bold; }
+
+  .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+  .gallery figure { margin: 0; }
+  .gallery img { width: 100%; display: block; border: 1px solid #9aa1ab; aspect-ratio: 16/9; object-fit: cover; }
+  .gallery figcaption { font-size: 11px; color: var(--muted); padding-top: 3px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px; }
   .card img { width: 100%; display: block; aspect-ratio: 772/270; object-fit: cover; border: 1px solid #9aa1ab; }
   .card div { padding: 4px 0; }
   .card b { display: block; color: var(--link); }
   .card span { color: var(--muted); font-size: 12px; }
-  .feat { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; margin-bottom: 12px; }
-  .feat div { padding: 8px 10px; border: 1px solid var(--line); background: linear-gradient(var(--panel), var(--head1)); }
-  .feat b { display: block; margin-bottom: 2px; color: var(--headText); }
-  .feat p { margin: 0; color: var(--muted); font-size: 12px; }
-  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: center; margin-bottom: 12px; }
-  .two img { width: 100%; border: 1px solid #9aa1ab; }
-  .dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
-  .dl div { text-align: center; }
-  .dl small { display: block; color: var(--muted); margin-top: 6px; }
+
+  /* Download */
+  #download { border-color: #0d6a2e; }
+  #download h2 { background: linear-gradient(#e9f9ee, #c7ecd3); color: #0d5a28; border-color: #8fcfa4; }
+  @media (prefers-color-scheme: dark) { #download { border-color: #24603a; } #download h2 { background: linear-gradient(#1e3b29, #16301f); color: #a8f0c0; border-color: #24603a; } }
+  .dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 10px; }
+  .dl > div { text-align: center; padding: 12px 8px; border: 1px solid var(--line); background: linear-gradient(var(--tile1), var(--tile2)); position: relative; }
+  .dl > div.mine { border: 2px solid #1ea447; padding: 11px 7px; }
+  .dl > div.mine::before { content: "Your computer"; position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: #1ea447; color: #fff;
+    font-size: 10px; font-weight: bold; padding: 0 6px; border-radius: 2px; white-space: nowrap; }
+  .dl .os { font-weight: bold; font-size: 15px; margin-bottom: 8px; color: var(--headText); }
+  .dl small { display: block; color: var(--muted); margin-top: 6px; font-size: 11px; }
+  .dl .btn.play { font-size: 15px; padding: 8px 18px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 4px 12px 12px; counter-reset: s; }
+  .steps div { padding-left: 34px; position: relative; font-size: 12px; }
+  .steps div::before { counter-increment: s; content: counter(s); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
+    background: linear-gradient(#6fb3f7, #1a5fb4); color: #fff; font-weight: bold; text-align: center; line-height: 24px; }
+  .steps b { display: block; }
+  #dl-version { color: var(--muted); font-size: 12px; }
+
+  details { border-top: 1px solid var(--line); padding: 7px 0; }
+  details:first-of-type { border-top: 0; }
+  summary { cursor: pointer; font-weight: bold; color: var(--headText); }
+  details p { margin: 6px 0 2px; }
+
   footer { max-width: 970px; margin: 0 auto; text-align: center; color: #555; font-size: 11px; padding: 12px 10px 30px; }
   @media (prefers-color-scheme: dark) { footer { color: #aab4c3; } }
+
+  @media (max-width: 820px) {
+    .hero { aspect-ratio: auto; min-height: 380px; }
+    .hero::after { background: linear-gradient(0deg, rgba(6,14,30,.92) 0%, rgba(6,14,30,.65) 55%, rgba(6,14,30,.15) 100%); }
+    .hero-text { width: 100%; justify-content: flex-end; padding: 18px 14px 40px; }
+    .hero h1 { font-size: 30px; }
+    .hero .caption { left: 10px; right: auto; }
+    .facts { grid-template-columns: repeat(3, 1fr); }
+    .facts div:nth-child(3) { border-right: 0; }
+    .facts div:nth-child(n+4) { border-top: 1px solid var(--line); }
+    .show, .show.flip, .two { grid-template-columns: 1fr; }
+    .show.flip figure { order: 0; }
+    .gallery { grid-template-columns: 1fr 1fr; }
+    .dl { grid-template-columns: 1fr 1fr; }
+    .steps { grid-template-columns: 1fr; }
+  }
   @media (max-width: 720px) {
-    .hero, .two { grid-template-columns: 1fr; }
     main { margin-top: 0; border-left: 0; border-right: 0; padding: 10px; }
     nav a { padding: 7px 10px; font-size: 12px; }
+    .acct { display: none; }
   }
+  @media (max-width: 420px) {
+    .logo b { font-size: 24px; }
+    .facts { grid-template-columns: 1fr 1fr; }
+    .facts div { border-right: 1px solid var(--line) !important; }
+    .facts div:nth-child(2n) { border-right: 0 !important; }
+    .facts div:nth-child(n+3) { border-top: 1px solid var(--line); }
+    .facts div:last-child { grid-column: 1 / -1; border-right: 0 !important; }
+    .gallery { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { .hero .slide { transition: none; } html { scroll-behavior: auto; } }
 </style>
 </head>
 <body>
@@ -88,96 +206,349 @@
 </header>
 <nav>
   <div class="wrap">
-    <a href="app/">Home</a><a href="app/#/games">Games</a><a href="app/#/catalog">Catalog</a>
-    <a href="#features">Features</a><a href="#studio">Studio</a><a href="#download">Download</a>
+    <a href="app/">Home</a><a href="app/#/games">Games</a><a href="#engine">Engine</a><a href="#studio">Studio</a>
+    <a href="#together">Play together</a><a href="#community">Community</a><a class="dl-nav" href="#download">Download</a>
   </div>
 </nav>
 
 <main>
-  <div class="hero">
-    <div>
-      <h1>Build games. Play them with friends.</h1>
-      <p class="tag">Then fall apart spectacularly. Guts&amp;Bolts is free, with a Studio to build in and a Player to play in.</p>
+  <div class="hero" id="hero">
+    <img class="slide on" src="img/engine-boom.jpg" alt="An explosion in the Demolition Yard, crates and barrels flying" data-caption="Demolition Yard: real explosions, real ragdolls">
+    <img class="slide" src="img/engine-fx.jpg" alt="Fire, smoke, sparkles and a fountain of glowing particles on stone braziers at sunset" data-caption="Fire, smoke, sparkles and particle emitters">
+    <img class="slide" src="img/engine-night.jpg" alt="Neon pillars joined by glowing beams around a highlighted glass ball at night" data-caption="Neon, lights, beams and bloom">
+    <img class="slide" src="img/engine-terrain.jpg" alt="Rolling green hills, snowy peaks and a lake made with the terrain tools" data-caption="Terrain and water">
+    <img class="slide" src="img/engine-materials.jpg" alt="Rows of blocks and balls, one for each of the 18 materials" data-caption="18 materials, each with its own look and grip">
+    <div class="hero-text">
+      <a class="ribbon" href="#new" id="ribbon">NEW: Guts&amp;Bolts 0.7.2</a>
+      <h1>Build games.<br>Play them with friends.<br><em>Fall apart spectacularly.</em></h1>
+      <p class="tag">A free game engine with its own Studio, Player and online platform. Real physics, ragdolls that come apart, Lua scripting and multiplayer, ready to go.</p>
       <div class="btns">
-        <a class="btn play" href="#download">Download free</a>
-        <a class="btn blue" href="app/#/signup">Sign Up</a>
-        <a class="btn blue" href="app/">Enter the site</a>
+        <a class="btn play" href="#download" id="hero-dl">Download free<small id="hero-os">Windows, Mac, Linux and Android</small></a>
+        <a class="btn blue" href="app/">Visit the site</a>
       </div>
+      <div class="small">Free to download and play. For adults (18+).</div>
     </div>
-    <img src="img/demolition.jpg" alt="A player standing in the Demolition Yard, surrounded by crates and barrels">
+    <div class="dots" id="dots"></div>
+    <div class="caption" id="caption">Demolition Yard: real explosions, real ragdolls</div>
+  </div>
+  <div class="facts">
+    <div><b>$0</b><span>free to play</span></div>
+    <div><b>4</b><span>platforms</span></div>
+    <div><b>Lua</b><span>Roblox-style scripting</span></div>
+    <div><b>18</b><span>materials</span></div>
+    <div><b>.rbxl</b><span>import and export</span></div>
   </div>
 
-  <section id="games">
-    <h2>Games that come with it</h2>
-    <div class="grid">
-      <div class="card"><img src="img/demolition.jpg" alt="Demolition Yard"><div><b>Demolition Yard</b><span>Exploding barrels, landmines and a very big red button.</span></div></div>
-      <div class="card"><img src="img/obby.jpg" alt="Obby of Doom"><div><b>Obby of Doom</b><span>Reach the golden platform. Don't touch the lava.</span></div></div>
-      <div class="card"><img src="img/plaza.jpg" alt="Night Plaza"><div><b>Night Plaza</b><span>Hang out under the lights on a glowing dance floor.</span></div></div>
+  <section id="new">
+    <h2><span id="new-name">What's new in 0.7.2: Feature Creep</span><a href="app/#/updates">Every update »</a></h2>
+    <ul class="new" id="new-list">
+      <li><b>Emotes</b>: /e dance, an emote wheel, and emotes to buy in the catalog</li>
+      <li><b>Particles</b>: ParticleEmitter, Fire, Smoke and Sparkles</li>
+      <li><b>ClickDetectors</b>: click a part to make things happen</li>
+      <li><b>Eleven new materials</b>, like Brick, Marble and Diamond Plate</li>
+      <li><b>Three new joints</b>: ball sockets, sliders and more</li>
+      <li><b>Collision groups</b> and team-only doors</li>
+      <li><b>Skies and screen effects</b>: bloom, blur, colour grading, sun rays</li>
+      <li><b>Camera control</b>: cutscenes, locked first person and more</li>
+      <li><b>Multiplayer testing in Studio</b> with up to 4 players</li>
+      <li><b>Gifts, gift boxes and Exclusive items</b></li>
+    </ul>
+  </section>
+
+  <section id="engine">
+    <h2>The engine</h2>
+    <p class="lead">Everything below is running in the real engine. These pictures are straight out of the Player, no touch-ups.</p>
+
+    <div class="show">
+      <figure><img src="img/engine-boom.jpg" alt="An explosion in the Demolition Yard" loading="lazy"></figure>
+      <div>
+        <h3>Blow it all up</h3>
+        <p>Explosions send a shockwave racing outwards that breaks joints, flings loose parts and knocks players over.</p>
+        <ul>
+          <li>Fireballs that roll up into smoke and mushroom clouds</li>
+          <li>Happy-Wheels-style ragdolls: limbs come off, oil and bolts fly (you can turn gore down or off)</li>
+          <li>Bombs in water leave a crater and a column of spray</li>
+          <li>One line of Lua: <code>Explode(position, radius, power)</code></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="show flip">
+      <figure><img src="img/engine-fx.jpg" alt="Fire, smoke, sparkles and a particle fountain" loading="lazy"></figure>
+      <div>
+        <h3>Particles and fire <span class="pill new">NEW</span></h3>
+        <p>Drop a ParticleEmitter, Fire, Smoke or Sparkles into any part and it starts spraying.</p>
+        <ul>
+          <li>Rate, colour and size over time, speed, spread, gravity and drag</li>
+          <li>Glowing particles with LightEmission</li>
+          <li><code>Emit(50)</code> for a one-off burst</li>
+          <li>Plus Trails behind swords, Beams between two points, and Highlights that outline anything</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="show">
+      <figure><img src="img/engine-night.jpg" alt="Neon pillars and glowing beams at night" loading="lazy"></figure>
+      <div>
+        <h3>Light it up <span class="pill new">NEW</span></h3>
+        <p>Set the time of day, the sun, the fog and the clouds, then finish the look with screen effects.</p>
+        <ul>
+          <li>Bloom, blur, colour grading, sun rays and depth of field</li>
+          <li>Your own Sky with stars, sun and moon</li>
+          <li>Point lights, spot lights and glowing Neon</li>
+          <li>Real shadows and reflections</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="show flip">
+      <figure><img src="img/engine-terrain.jpg" alt="Green hills, snowy peaks and a lake" loading="lazy"></figure>
+      <div>
+        <h3>Terrain and water</h3>
+        <p>Generate rolling hills in one click, then Raise, Lower, Smooth, Flatten and Paint them with brushes.</p>
+        <ul>
+          <li>Grass, dirt, sand, rock, snow and mud</li>
+          <li>Characters walk up slopes and loose parts roll down them</li>
+          <li>Water with waves that pushes and floats things, so boats work</li>
+          <li>Scripts can sculpt it too: <code>workspace.Terrain:FillBall(...)</code></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="show">
+      <figure><img src="img/engine-materials.jpg" alt="Blocks and balls in all 18 materials" loading="lazy"></figure>
+      <div>
+        <h3>Real physics, 18 materials</h3>
+        <p>Every material has its own look, weight, grip and bounce. Ice is slippery, Brick is grippy, Metal is heavy.</p>
+        <ul>
+          <li>Ropes, springs, hinges, motors, welds, ball sockets and sliders</li>
+          <li>Classic BodyMovers like BodyVelocity and BodyGyro</li>
+          <li>Collision groups so team doors let only one team through</li>
+          <li>Union, Negate and Intersect to carve your own shapes</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 style="margin-top:8px">And all of this too</h3>
+    <div class="cats">
+      <div><b>Characters</b><ul>
+        <li>Classic blocky characters with idle, walk, run, jump and fall</li>
+        <li>Emotes and an emote wheel</li><li>Seats, sitting and tools held the classic way</li>
+        <li>NPCs that walk with navmesh pathfinding</li></ul></div>
+      <div><b>Game UI</b><ul>
+        <li>Frames, buttons, text boxes and scrolling lists</li>
+        <li>List and grid layouts, drop shadows, frosted glass</li>
+        <li>Little 3D worlds inside UI</li><li>ProximityPrompts: walk up and press E</li></ul></div>
+      <div><b>Scripting</b><ul>
+        <li>Scripts, LocalScripts and ModuleScripts</li><li>RemoteEvents and RemoteFunctions</li>
+        <li>TweenService, raycasts, DataStores saved online</li><li>TeleportService and MessagingService</li></ul></div>
+      <div><b>Sound</b><ul>
+        <li>Upload your own sounds</li><li>Sound groups to turn sets up or down</li>
+        <li>Echo, reverb, chorus and distortion</li><li>3D sound that fades with distance</li></ul></div>
+      <div><b>Controls</b><ul>
+        <li>Keyboard and mouse</li><li>Xbox, PlayStation and Switch controllers</li>
+        <li>Touch controls on Android</li><li>Games can bind their own keys and buttons</li></ul></div>
+      <div><b>Camera</b><ul>
+        <li>Cutscenes and scripted cameras</li><li>Locked first person and zoom limits</li>
+        <li>Orthographic camera for 2D and isometric games</li><li>Camera shake</li></ul></div>
     </div>
   </section>
 
-  <section id="features">
-    <h2>What's inside</h2>
-    <div class="feat">
-      <div><b>Ragdolls &amp; gore</b><p>Happy-Wheels-style falls: limbs come off, oil and bolts fly. You can turn it down or off.</p></div>
-      <div><b>Multiplayer</b><p>Public and private servers, friends, chat and a leaderboard, with no IP addresses to share.</p></div>
-      <div><b>Lua scripting</b><p>Roblox-style scripts: Touched, tools, leaderstats, saved data and more.</p></div>
-      <div><b>Real physics</b><p>Tumbling parts, ropes, springs, hinges, motors and welds.</p></div>
-      <div><b>Tools &amp; hotbar</b><p>Give players bats, guns or anything else, equipped with 1–9.</p></div>
-      <div><b>Your own look</b><p>Hats, shirts and pants from the catalog, paid for with Bolts you earn by playing.</p></div>
-      <div><b>Decals &amp; audio</b><p>Upload pictures and sounds on the Create page and use them in your games.</p></div>
-      <div><b>Roblox files</b><p>Import and export .rbxl and .rbxm places and models.</p></div>
+  <section id="scripting">
+    <h2>Lua scripting, the way you already know it</h2>
+    <div class="two">
+      <pre><span class="c">-- A door that opens when you walk up and press E.</span>
+<span class="k">local</span> door = script.Parent
+<span class="k">local</span> prompt = Instance.<span class="f">new</span>(<span class="s">"ProximityPrompt"</span>)
+prompt.ActionText = <span class="s">"Open"</span>
+prompt.Parent = door
+
+prompt.Triggered:<span class="f">Connect</span>(<span class="k">function</span>(player)
+    door.Transparency = <span class="n">0.8</span>
+    door.CanCollide = <span class="k">false</span>
+    task.<span class="f">wait</span>(<span class="n">3</span>)
+    door.Transparency = <span class="n">0</span>
+    door.CanCollide = <span class="k">true</span>
+<span class="k">end</span>)
+
+<span class="c">-- And when things get boring:</span>
+<span class="f">Explode</span>(door.Position, <span class="n">12</span>, <span class="n">2</span>)</pre>
+      <div>
+        <p>If you've scripted on Roblox, you already know how. Guts&amp;Bolts uses the same Luau language and the same names: <code>Instance.new</code>, <code>Touched</code>, <code>leaderstats</code>, <code>Humanoid</code>, <code>TweenService</code> and the rest.</p>
+        <ul class="ticks">
+          <li>Type checking, <code>+=</code>, <code>continue</code> and <code>{name}</code> strings</li>
+          <li>A script editor with autocomplete, line numbers and the error line marked</li>
+          <li>A Developer Console (F9) in every game</li>
+          <li><code>require</code> models straight from the Library</li>
+          <li>Game passes and developer products to sell in your game</li>
+        </ul>
+      </div>
     </div>
   </section>
 
   <section id="studio">
     <h2>Make your own with Studio</h2>
     <div class="two">
-      <img src="img/studio.jpg" alt="Guts&amp;Bolts Studio editing the Demolition Yard">
+      <img src="img/studio.jpg" alt="Guts&amp;Bolts Studio editing the Demolition Yard" loading="lazy">
       <div>
-        <p>Studio looks and works like Roblox Studio: Explorer, Properties, a script editor with autocomplete, and ready-made pieces like spawns, checkpoints and traps.</p>
-        <p>Press <b>Play</b> to test straight away. Build with friends in Team Create, then publish your game to the server so everyone can play it.</p>
+        <p>Studio comes in the same download. It looks and works like the Studio you know: Explorer, Properties, Toolbox and a ribbon of tools.</p>
+        <ul class="ticks">
+          <li>Press <b>Play</b> to test straight away, or test with 2, 3 or 4 players on your own computer</li>
+          <li>Build with friends in <b>Team Create</b></li>
+          <li>Terrain tools, an Animation Editor and Modeling mode</li>
+          <li>Ready-made pieces: spawns, checkpoints, jump pads, bombs, a nuke</li>
+          <li>Open and save Roblox <b>.rbxl</b> and <b>.rbxm</b> files, hats included</li>
+          <li>Plugins, and a Library full of models, decals and sounds</li>
+          <li><b>Publish</b> in one click and everyone can play it</li>
+        </ul>
+      </div>
+    </div>
+    <div class="two">
+      <img src="img/studio-terrain.jpg" alt="The TERRAIN tab in Studio, with the Assistant panel open" loading="lazy">
+      <div>
+        <h3>An AI helper that knows Studio</h3>
+        <p>The <b>Assistant</b> tab can build, fix and explain things for you. Ask "why won't my barrel fall?" and it looks.</p>
+        <p>You can also connect outside AI apps (like Claude Desktop or Claude Code) over MCP. They can see your game, add and change objects, write scripts, run playtests and roll back if something goes wrong.</p>
       </div>
     </div>
   </section>
 
-  <section id="site">
+  <section id="together">
+    <h2>Play together</h2>
+    <div class="gallery">
+      <figure><img src="img/play-prompt.jpg" alt="ProximityPrompts popping up in the Demolition Yard" loading="lazy"><figcaption>ProximityPrompts and the tool hotbar</figcaption></figure>
+      <figure><img src="img/play-beams.jpg" alt="A character with a highlight, a trail and a glowing beam" loading="lazy"><figcaption>Highlights, Trails and Beams</figcaption></figure>
+      <figure><img src="img/play-highlight.jpg" alt="Parts outlined with Highlights" loading="lazy"><figcaption>Outlines that show through walls</figcaption></figure>
+    </div>
+    <div class="cats">
+      <div><b>Voice chat</b><ul><li>Hold V to talk, or open mic</li><li>Voices come from each character and fade with distance</li><li>Mute anyone from the player list</li></ul></div>
+      <div><b>Servers</b><ul><li>Public and private servers, no IP addresses to share</li><li>Games keep running when the host leaves</li><li>Teleport between games with your data</li></ul></div>
+      <div><b>Everywhere</b><ul><li>Windows, Mac and Linux</li><li>Android with touch controls</li><li>Controllers on every computer</li></ul></div>
+    </div>
+  </section>
+
+  <section id="community">
     <h2>The site: in the app and on the web</h2>
     <div class="two">
       <div>
-        <p>The Guts&amp;Bolts Player feels like the classic 2011 site: a games list, a catalog, friends, groups, a Create page and daily Bolts.</p>
-        <p>It works on phones too. The Android app plays every game with touch controls.</p>
-        <p>You can also use it right here in your browser: <a href="app/">sign in</a> to browse games, buy from the
-          catalog, upload decals and audio, manage your games, and chat with friends and groups.</p>
+        <p>The Guts&amp;Bolts Player feels like the classic 2011 site, and you can use it right here in your browser too: <a href="app/">sign in</a> and look around.</p>
+        <ul class="ticks">
+          <li><b>Catalog</b>: hats, shirts, pants, faces, gear and emotes, paid for with Bolts you earn by playing</li>
+          <li><b>Limiteds and trading</b>, plus gifts for friends and surprise gift boxes</li>
+          <li><b>Friends, messages, groups and a forum</b></li>
+          <li><b>Groups that own games</b>, with their own ranks and payouts</li>
+          <li><b>Creator stats</b>: plays, likes and sales with charts</li>
+          <li><b>Lyreto servers</b> on game and group pages for chatting outside the game</li>
+          <li>Always online: your account, Bolts and games live in the cloud</li>
+        </ul>
       </div>
-      <img src="img/site.jpg" alt="The Guts&amp;Bolts Player home page">
+      <img src="img/site.jpg" alt="The Guts&amp;Bolts Player home page" loading="lazy">
+    </div>
+  </section>
+
+  <section id="games">
+    <h2>Games that come with it</h2>
+    <div class="grid">
+      <div class="card"><img src="img/demolition.jpg" alt="Demolition Yard" loading="lazy"><div><b>Demolition Yard</b><span>Exploding barrels, landmines and a very big red button.</span></div></div>
+      <div class="card"><img src="img/obby.jpg" alt="Obby of Doom" loading="lazy"><div><b>Obby of Doom</b><span>Reach the golden platform. Don't touch the lava.</span></div></div>
+      <div class="card"><img src="img/plaza.jpg" alt="Night Plaza" loading="lazy"><div><b>Night Plaza</b><span>Hang out under the lights on a glowing dance floor.</span></div></div>
     </div>
   </section>
 
   <section id="download">
-    <h2>Download</h2>
-    <p>Free, for Windows, Mac, Linux and Android. Each download has both the Player and Studio.</p>
+    <h2>Download Guts&amp;Bolts</h2>
+    <p>Free, for Windows, Mac, Linux and Android. Each computer download has both the <b>Player</b> and <b>Studio</b>.</p>
     <div class="dl">
-      <div><a class="btn play" href="/download/GutsAndBolts-Windows.zip" download>Windows</a><small>GutsAndBolts-Windows.zip</small></div>
-      <div><a class="btn play" href="/download/GutsAndBolts-macOS.zip" download>Mac</a><small>GutsAndBolts-macOS.zip</small></div>
-      <div><a class="btn play" href="/download/GutsAndBolts-Linux.tar.gz" download>Linux</a><small>GutsAndBolts-Linux.tar.gz</small></div>
-      <div><a class="btn play" href="/download/GutsAndBoltsPlayer-Android.apk" download>Android</a><small>GutsAndBoltsPlayer-Android.apk</small></div>
+      <div data-os="windows"><div class="os">Windows</div><a class="btn play" href="/download/GutsAndBolts-Windows.zip" download>Download</a><small>GutsAndBolts-Windows.zip<br>Player + Studio</small></div>
+      <div data-os="mac"><div class="os">Mac</div><a class="btn play" href="/download/GutsAndBolts-macOS.zip" download>Download</a><small>GutsAndBolts-macOS.zip<br>Player + Studio</small></div>
+      <div data-os="linux"><div class="os">Linux</div><a class="btn play" href="/download/GutsAndBolts-Linux.tar.gz" download>Download</a><small>GutsAndBolts-Linux.tar.gz<br>Player + Studio</small></div>
+      <div data-os="android"><div class="os">Android</div><a class="btn play" href="/download/GutsAndBoltsPlayer-Android.apk" download>Download</a><small>GutsAndBoltsPlayer-Android.apk<br>Player only, with touch controls</small></div>
     </div>
-    <p id="dl-version" style="color:var(--muted);font-size:12px">Unzip it and open GutsAndBoltsPlayer (or GutsAndBolts for Studio). It keeps itself up to date.</p>
-    <script>
-      fetch('/download/latest.json').then((r) => r.ok ? r.json() : null).then((m) => {
-        if (m && m.version) document.getElementById('dl-version').textContent = 'Version ' + m.version + (m.name ? ' (' + m.name.replace(/^Guts&Bolts\s+v?[\d.]+:?\s*/, '') + ')' : '') + '. Unzip it and open GutsAndBoltsPlayer (or GutsAndBolts for Studio). It keeps itself up to date.';
-      }).catch(() => {});
-    </script>
+    <div class="steps">
+      <div><b>Download and unzip</b>Pick your computer above and unzip what you get.</div>
+      <div><b>Open the Player</b>Open GutsAndBoltsPlayer to play, or GutsAndBolts for Studio.</div>
+      <div><b>Sign up and press Play</b>Make an account (or <a href="app/#/signup">sign up here</a>) and jump into a game.</div>
+    </div>
+    <p id="dl-version">It keeps itself up to date, so you only download it once.</p>
   </section>
 
-  <section id="server">
-    <h2>Always online</h2>
-    <p>The Guts&amp;Bolts server runs in the cloud, so your account, Bolts, friends and games are there any time.
-      The apps connect to it by themselves: just sign up and press Play.</p>
+  <section id="faq">
+    <h2>Questions</h2>
+    <div style="margin-bottom:10px">
+      <details><summary>Is it really free?</summary><p>Yes. The apps, Studio and the online platform are free. Bolts (the money in the catalog) are earned by playing.</p></details>
+      <details><summary>Who is it for?</summary><p>Adults (18+). Expect strong language, crude humour and cartoon gore. Gore can be turned down or off in the settings.</p></details>
+      <details><summary>Can I bring my Roblox builds?</summary><p>Yes. Studio opens and saves .rbxl and .rbxm places and models, and Roblox hats come in with their real mesh and texture. Scripts use the same names, so most of them only need small changes.</p></details>
+      <details><summary>Do I need to keep updating it?</summary><p>No. The Player and Studio update themselves when you open them.</p></details>
+      <details><summary>Is it made by Roblox?</summary><p>No. Guts&amp;Bolts is a free, independent hobby project and isn't connected to Roblox Corporation.</p></details>
+    </div>
   </section>
 </main>
 
-<footer><a href="app/">The site</a> | <a href="#download">Download</a> | <a href="app/#/terms">Terms</a><br><br>Guts&amp;Bolts is a free, independent hobby game platform for adults (18+): expect strong language, crude humour and cartoon gore.<br>Not affiliated with, endorsed by, or connected to Roblox Corporation.</footer>
+<footer><a href="app/">The site</a> | <a href="#download">Download</a> | <a href="app/#/updates">Updates</a> | <a href="app/#/terms">Terms</a> | <a href="https://lyreto.com/" rel="noopener">Chat on Lyreto</a><br><br>Guts&amp;Bolts is a free, independent hobby game platform for adults (18+): expect strong language, crude humour and cartoon gore.<br>Not affiliated with, endorsed by, or connected to Roblox Corporation.</footer>
+
+<script>
+  // The banner slideshow: a new picture every 5 seconds (stops if you ask for less motion).
+  (function () {
+    const slides = Array.from(document.querySelectorAll('#hero .slide'));
+    const dots = document.getElementById('dots'), caption = document.getElementById('caption');
+    let at = 0, timer = null;
+    const show = (i) => {
+      slides[at].classList.remove('on'); dots.children[at].classList.remove('on');
+      at = (i + slides.length) % slides.length;
+      slides[at].classList.add('on'); dots.children[at].classList.add('on');
+      caption.textContent = slides[at].dataset.caption;
+    };
+    slides.forEach((s, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.setAttribute('aria-label', s.dataset.caption);
+      if (i === 0) b.className = 'on';
+      b.onclick = () => { show(i); restart(); };
+      dots.appendChild(b);
+    });
+    const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const restart = () => { clearInterval(timer); if (!still) timer = setInterval(() => show(at + 1), 5000); };
+    restart();
+  })();
+
+  // Point at the right download for this computer.
+  (function () {
+    const ua = navigator.userAgent;
+    const os = /Android/i.test(ua) ? 'android' : /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac'
+      : /Linux|X11/i.test(ua) ? 'linux' : '';
+    if (!os) return;
+    const box = document.querySelector('.dl [data-os="' + os + '"]');
+    if (!box) return;
+    box.classList.add('mine');
+    const names = { windows: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android' };
+    document.getElementById('hero-os').textContent = 'for ' + names[os];
+  })();
+
+  // The newest version, and what's new in it, from the release itself.
+  fetch('/download/latest.json').then((r) => r.ok ? r.json() : null).then((m) => {
+    if (!m || !m.version) return;
+    const nick = m.name ? m.name.replace(/^Guts&Bolts\s+v?[\d.]+:?\s*/, '') : '';
+    document.getElementById('dl-version').textContent = 'Version ' + m.version + (nick ? ' (' + nick + ')' : '') + '. It keeps itself up to date, so you only download it once.';
+    document.getElementById('ribbon').textContent = 'NEW: Guts&Bolts ' + m.version;
+    // The "## New" list in the release notes: "- **Thing**: what it does".
+    const notes = String(m.notes || '');
+    const part = notes.split(/^## /m).find((s) => /^New\b/.test(s));
+    if (!part) return;
+    const items = part.split('\n- ').slice(1).map((s) => s.replace(/\s+/g, ' ').trim()).slice(0, 10);
+    if (!items.length) return;
+    const list = document.getElementById('new-list');
+    list.textContent = '';
+    for (const it of items) {
+      const li = document.createElement('li');
+      const bold = it.match(/^\*\*(.+?)\*\*:?\s*(.*)$/);
+      let rest = bold ? bold[2] : it;
+      rest = rest.replace(/`([^`]+)`/g, '$1').replace(/\*\*/g, '');
+      const firstSentence = rest.split(/(?<=[.!?])\s/)[0].replace(/[.:]$/, '');
+      if (bold) { const b = document.createElement('b'); b.textContent = bold[1]; li.appendChild(b); if (firstSentence) li.append((/^[,;]/.test(firstSentence) ? '' : ': ') + firstSentence); }
+      else li.textContent = firstSentence;
+      list.appendChild(li);
+    }
+    document.getElementById('new-name').textContent = 'What\'s new in ' + m.version + (nick ? ': ' + nick : '');
+  }).catch(() => {});
+</script>
 </body>
 </html>

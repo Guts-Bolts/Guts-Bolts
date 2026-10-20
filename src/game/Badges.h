@@ -9,7 +9,7 @@
 // so they can't be copied onto someone else's account or made up.
 namespace Badges {
 
-enum class Id { Administrator, Tester, BugHunter, FeaturedCreator, Verified, Staff, Count };
+enum class Id { Administrator, Tester, BugHunter, FeaturedCreator, Verified, Staff, Partner, Count };
 
 struct Info {
     const char* key;          // stored in files / sent over the network
@@ -37,7 +37,7 @@ bool canVerify();
 bool iHave(Id id);
 
 // A code the other player pastes into "Redeem a badge code". The official
-// account can give any badge; Staff members can give Verified.
+// account can give any badge; Staff members can give Verified and Partner.
 std::string makeCode(Id id, const std::string& accountId, std::string& error);
 // The raw grant (badge key + signature) that makeCode wraps, for the server.
 Grant       makeGrant(Id id, const std::string& accountId, std::string& error);
