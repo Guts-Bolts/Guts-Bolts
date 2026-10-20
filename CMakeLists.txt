@@ -615,6 +615,7 @@ set(EDITOR_SOURCES
     src/editor/panels/ViewportTerrain.cpp
     src/editor/EditorModes.cpp
     src/editor/EditorMeshMenus.cpp
+    src/editor/EditorBundles.cpp
     src/editor/EditorArmature.cpp
     src/editor/EditorUV.cpp
     src/editor/EditorSolid.cpp

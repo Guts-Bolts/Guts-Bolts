@@ -73,3 +73,47 @@ test('only staff make bundles, and bundles hold real catalog items', () => {
   assert.ok(r.ok, r.error);
   assert.equal(r.asset.meta.headless, true);
 });
+
+// A bundle with a new body, made in Studio's Bundles window: meshes for the rig's parts.
+const cube = (extra = {}) => Object.assign({
+  v: [-0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5],
+  f: [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [2, 3, 7, 6], [1, 2, 6, 5], [0, 4, 7, 3]],
+  size: [1, 1, 0.5], pos: [0, 1.5, 0],
+}, extra);
+const bodyBundle = (s, me, body, meta = {}) => s.call(me, 'upload', { kind: 'bundle', name: 'Robot Body', price: 0,
+  data: Buffer.from(JSON.stringify({ format: 'gbbundle', body })).toString('base64'), meta: Object.assign({ body: true }, meta) });
+
+test('staff make bundles with a new body, and the body is checked', () => {
+  const s = makeServer();
+  let r = bodyBundle(s, s.staff, { Torso: cube({ smooth: true, junk: 'x' }), 'Left Arm': cube() });
+  assert.ok(r.ok, r.error);
+  assert.equal(r.asset.meta.body, true);
+  const saved = JSON.parse(new TextDecoder().decode(s.readFile(r.asset.id)));
+  assert.deepEqual(Object.keys(saved.body).sort(), ['Left Arm', 'Torso']);
+  assert.equal(saved.body.Torso.smooth, true);
+  assert.equal(saved.body.Torso.junk, undefined, 'only the mesh is kept');
+
+  const maker = s.signUp('maker');
+  r = bodyBundle(s, maker, { Torso: cube() });
+  assert.match(r.error, /staff/);
+  r = bodyBundle(s, s.staff, { Tail: cube() });
+  assert.match(r.error, /Head, Torso, arms and legs/);
+  r = bodyBundle(s, s.staff, { Torso: cube({ f: [[0, 1, 99]] }) });
+  assert.match(r.error, /mesh looks wrong/);
+  r = bodyBundle(s, s.staff, { Torso: cube({ v: [5, 0, 0, 0, 0, 0, 0, 1, 0] }) });
+  assert.match(r.error, /mesh looks wrong/);
+  r = bodyBundle(s, s.staff, { Torso: cube({ size: [100, 1, 1] }) });
+  assert.match(r.error, /size/);
+  r = bodyBundle(s, s.staff, {});
+  assert.match(r.error, /body looks wrong/);
+  r = s.call(s.staff, 'upload', { kind: 'bundle', name: 'X', price: 0, data: '', meta: { body: true } });
+  assert.match(r.error, /Bundles window/);
+});
+
+test('bundles can\'t be swapped for something else afterwards', () => {
+  const s = makeServer();
+  const r = bodyBundle(s, s.staff, { Head: cube() });
+  assert.ok(r.ok, r.error);
+  const u = s.call(s.staff, 'update', { id: r.asset.id, data: Buffer.from('{}').toString('base64') });
+  assert.match(u.error, /can't be changed/);
+});

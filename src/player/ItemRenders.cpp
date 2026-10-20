@@ -35,6 +35,7 @@ std::vector<std::string> sourcesOf(const Catalog::Item& it) {
     std::vector<std::string> s;
     if (!it.image.empty()) s.push_back(it.image);
     if (!it.model.empty()) s.push_back(it.model);
+    if (!it.body.empty()) s.push_back(it.body);
     if (it.type == Catalog::Type::Gear || Catalog::isMove(it.type)) s.push_back("gb:" + it.id);
     return s;
 }
@@ -64,7 +65,10 @@ bool PlayerApp::dressPlayer(Player& p, BodyColors bc, HatStyle hat, glm::vec3 ha
                 break;
             case Catalog::Type::TShirt: look.tshirtImage = it.image; break;
             case Catalog::Type::Face:   look.faceImage = it.image; break;
-            case Catalog::Type::Bundle: look.headless = look.headless || it.headless; break;
+            case Catalog::Type::Bundle:
+                look.headless = look.headless || it.headless;
+                if (!it.body.empty()) look.body = it.body;
+                break;
             case Catalog::Type::Hat:
                 if (!it.model.empty()) { look.hat = HatStyle::None; look.accessories["hat"] = it.model; }
                 else { look.hat = it.hat; look.hatColor = it.color; }

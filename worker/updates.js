@@ -11,6 +11,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'body-swap', name: 'Body Swap', time: 1792522200, tag: 'Studio',
+    summary: 'Bundles can change your whole body now: Guts can reshape the character\'s head, torso, arms and legs in Studio and sell it as a bundle.',
+    items: [
+      'A new Bundles window in Studio (AVATAR tab, staff only) puts a mannequin in the Workspace with a row for each body part',
+      'Edit opens a body part in Modeling mode, Use Selected gives it the shape and size of any part you built, and Reset puts it back to normal',
+      'Add catalog items and a Headless head to the same bundle, give it a name and price, and upload it to the catalog',
+      'Wear the bundle and your character gets the new body everywhere: in games, on your profile and on other players\' screens. Take it off and the normal body comes back',
+      'The server checks every body bundle (only the six body parts, sensible sizes, not too many corners) and bundles can\'t be swapped for something else after they\'re made',
+    ],
+  },
+  {
     id: 'bones-inside', name: 'Bones Inside', time: 1792521600, tag: 'Studio',
     summary: 'Armatures in Studio: put a chain of bones inside a MeshPart and it bends like an arm, a tail or a tentacle.',
     items: [

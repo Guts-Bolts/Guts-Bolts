@@ -202,6 +202,7 @@ void Editor::render(float dt) {
     renderRecoverDialog();
     autoSaveTick();
     renderAccessoryWindow();
+    renderBundleWindow();
     renderArmature();
     renderUVEditor();
     renderPluginLibrary();

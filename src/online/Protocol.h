@@ -43,6 +43,13 @@ bool        isCatalogItem(const std::string& kind);    // sold in the catalog: c
 // Bundles: a pack of catalog items sold together (buying one gives you everything in it), and
 // maybe a body change: meta.headless hides the head and face. Only staff make them.
 constexpr int kBundleMost = 12;                        // items in one bundle
+// A bundle's new body (made in Studio's Bundles window): rig part name ("Head", "Torso",
+// "Left Arm"...) -> {"v": x,y,z..., "f": corner lists, "uv"?, "smooth"?, "size": [x,y,z],
+// "pos": [x,y,z]}. Checks it and puts a tidy copy in `out`. "" if it's fine, or what's wrong.
+// (worker/server.js bundleBody has the same rules.)
+inline constexpr const char* kBodyParts[] = {"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"};
+constexpr int kBodyMostCorners = 20000;                // corners (and faces) in one body part
+std::string bundleBody(const nlohmann::json& body, nlohmann::json& out);
 std::string gearProblem(const std::string& data);      // "" if it's one Tool from Studio
 constexpr int kMostGear = 4;                           // gear equipped at once
 // Emotes and animation packs: keyframes for the character, sold in the catalog. Only staff

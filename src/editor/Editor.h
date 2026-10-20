@@ -164,6 +164,7 @@ private:
     unsigned   libraryPicture(const nlohmann::json& asset);
     void       useLibraryAsset(const nlohmann::json& asset);
     void       renderAccessoryWindow();      // AVATAR > Accessories (Verified creators)
+    void       renderBundleWindow();         // AVATAR > Bundles (staff): bundles with a new body
     void       renderPluginsTab();
     void       insertObject(const std::string& what, SceneNode* parent);
     // "#42", "Workspace.Castle.Door" or a service path like "StarterPack" / "game.ServerScriptService.Main".
@@ -262,6 +263,9 @@ private:
     } m_uv;
     int         m_accessoryKind = 0, m_accessoryPrice = 0;
     std::string m_accessoryName, m_accessoryDesc, m_accessoryMsg;
+    bool        m_showBundles = false, m_bundleHeadless = false;
+    int         m_bundlePrice = 0;
+    std::string m_bundleName, m_bundleDesc, m_bundleItems, m_bundleMsg;
     nlohmann::json m_library = nlohmann::json::array();
     std::map<std::string, std::string> m_libraryThumbs;   // asset id -> picture file ("" = still coming)
     std::string m_libraryKey;                              // what m_library holds (mine/all, kind, search)

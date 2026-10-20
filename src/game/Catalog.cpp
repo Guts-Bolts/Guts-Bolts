@@ -157,6 +157,7 @@ Item fromServer(const json& a) {
         if (m.value("image", false) && it.type != Type::Hat) it.image = "gb:" + it.id;
         if (m.value("model", false)) it.model = "gb:" + it.id;
         it.headless = it.type == Type::Bundle && m.value("headless", false) == true;
+        if (it.type == Type::Bundle && m.value("body", false) == true) it.body = "gb:" + it.id;
         if (m.contains("color") && m["color"].is_array() && m["color"].size() == 3)
             it.color = {m["color"][0].get<int>() / 255.0f, m["color"][1].get<int>() / 255.0f, m["color"][2].get<int>() / 255.0f};
     }
@@ -202,6 +203,7 @@ void applyLook(const Item& it) {
             break;
         case Type::Bundle:
             me.headless = it.headless;
+            me.body = it.body;
             break;
         case Type::TShirt:
             me.tshirtImage = it.image;
@@ -245,7 +247,10 @@ void takeOff(const Item& it) {
             if (auto a = me.accessories.find(it.kind); a != me.accessories.end() && a->second == it.model) me.accessories.erase(a);
             break;
         case Type::Face:   if (me.faceImage == it.image) me.faceImage.clear(); break;
-        case Type::Bundle: if (it.headless) me.headless = false; break;
+        case Type::Bundle:
+            if (it.headless) me.headless = false;
+            if (!it.body.empty() && me.body == it.body) me.body.clear();
+            break;
         case Type::TShirt: if (me.tshirtImage == it.image) me.tshirtImage.clear(); break;
         case Type::Shirt:  if (me.shirtImage == it.image) me.shirtImage.clear(); break;
         case Type::Pants:  if (me.pantsImage == it.image) me.pantsImage.clear(); break;

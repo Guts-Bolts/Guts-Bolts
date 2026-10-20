@@ -6,6 +6,11 @@
 #include "../scene/EditMesh.h"
 #include "../scene/Skin.h"
 #include "../scene/Serializer.h"
+#include "../scene/Player.h"
+#include "../scene/PlayerModel.h"
+#include "../online/Protocol.h"
+#include "../core/Paths.h"
+#include <fstream>
 #include "../core/Log.h"
 #include "../core/Paths.h"
 
@@ -439,6 +444,28 @@ void Editor::testMesh(const std::string& steps) {
         }
         else if (s.rfind("save:", 0) == 0) saveFile(s.substr(5));
         else if (s == "join") joinSelected();
+        else if (s == "bundle") {
+            // A body bundle end to end: a mannequin with a ball for a left arm, saved the way
+            // Upload sends it, then worn by a second character.
+            SceneNode* m = Player::buildRig(*m_scene, "Bundle Mannequin", glm::vec3(0.0f));
+            SceneNode* arm = m->findChild("Left Arm");
+            arm->primitiveType = PrimitiveType::Mesh;
+            MeshEdit::attach(*arm, MeshEdit::fromPrimitive(PrimitiveType::Sphere));
+            arm->transform.scale = glm::vec3(1.2f);
+            nlohmann::json body = {{"Left Arm", Player::bodyPartJson(*arm)}}, tidy;
+            const std::string problem = Online::bundleBody(body, tidy);
+            const std::filesystem::path file = Paths::file("bundle-test.json");
+            std::ofstream(file) << nlohmann::json{{"format", "gbbundle"}, {"body", tidy}}.dump();
+            SceneNode* wearer = Player::buildRig(*m_scene, "Wearer", glm::vec3(4.0f, 0.0f, 0.0f));
+            Player::applyBody(*m_scene, wearer, file.string());
+            SceneNode* worn = wearer->findChild("Left Arm");
+            Log::info("bundle: problem='" + problem + "' worn arm corners " + std::to_string(worn->editMesh ? worn->editMesh->verts.size() : 0) +
+                      " size " + std::to_string(worn->transform.scale.x));
+            Player::applyBody(*m_scene, wearer, "");
+            Log::info("bundle: taken off, normal arm again: " + std::string(PlayerModel::nameOf(worn->editMesh.get()) ? "yes" : "no"));
+            Player::applyBody(*m_scene, wearer, file.string());   // (on again, to look at)
+            m_showBundles = true;
+        }
         else if (s.rfind("pick:", 0) == 0) {   // add a part (by name) to the selection
             m_scene->forEach([&](SceneNode* n) { if (n->name == s.substr(5)) m_scene->addToSelection(n); });
         } else if (s == "parts") {

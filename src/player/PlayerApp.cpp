@@ -671,6 +671,7 @@ void PlayerApp::fetchAvatarParts() {
     std::vector<std::string> want;
     for (const auto& [kind, src] : me.accessories) want.push_back(src);
     want.push_back(me.faceImage);
+    want.push_back(me.body);
     want.push_back(me.shirtImage);   // (without these the character showed up in no clothes)
     want.push_back(me.pantsImage);
     want.push_back(me.tshirtImage);
