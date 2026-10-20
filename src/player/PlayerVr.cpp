@@ -28,7 +28,12 @@ float headingOf(const glm::vec3& f) { return glm::degrees(std::atan2(-f.x, -f.z)
 void PlayerApp::startVr() {
     if (m_vrOn) return;
     std::string error;
-    if (!Vr::start(m_window->handle(), error)) { m_vrStatus = error; return; }
+#ifdef GB_MOBILE
+    GLFWwindow* window = nullptr;   // (phones: no VR in this build yet, start() says so)
+#else
+    GLFWwindow* window = m_window->handle();
+#endif
+    if (!Vr::start(window, error)) { m_vrStatus = error; return; }
     m_vrOn = true;
     m_vrAligned = false;
     m_vrTurned = false;
