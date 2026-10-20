@@ -2059,6 +2059,7 @@ int inst_index(lua_State* L) {
         const WorldSettings& w = E(L)->scene()->world();
         if (is(k, "Gravity"))    { lua_pushnumber(L, w.gravity); return 1; }
         if (is(k, "DeathStyle")) { lua_pushstring(L, w.deathStyle == DeathStyle::Ragdoll ? "Ragdoll" : "Classic"); return 1; }
+        if (is(k, "Knockdowns")) { lua_pushboolean(L, w.knockdowns); return 1; }
         if (is(k, "Gore"))       { lua_pushstring(L, w.gore == GoreLevel::Blood ? "Blood" : w.gore == GoreLevel::OilAndBolts ? "Oil" : "Off"); return 1; }
         if (is(k, "FallDamage")) { lua_pushboolean(L, w.fallDamage); return 1; }
         if (is(k, "SafeFallSpeed"))   { lua_pushnumber(L, w.fallDamageSpeed); return 1; }
@@ -2471,6 +2472,7 @@ int inst_newindex(lua_State* L) {
         WorldSettings& w = scene->world();
         if (is(k, "Gravity"))    { w.gravity = (float)luaL_checknumber(L, 3); return 0; }
         if (is(k, "DeathStyle")) { w.deathStyle = std::string(luaL_checkstring(L, 3)) == "Classic" ? DeathStyle::Classic : DeathStyle::Ragdoll; return 0; }
+        if (is(k, "Knockdowns")) { w.knockdowns = lua_toboolean(L, 3); return 0; }
         if (is(k, "Gore")) {
             std::string g = luaL_checkstring(L, 3);
             w.gore = g == "Blood" ? GoreLevel::Blood : g == "Off" ? GoreLevel::Off : GoreLevel::OilAndBolts;

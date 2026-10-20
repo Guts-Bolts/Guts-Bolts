@@ -11,6 +11,20 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'stuntman-school', name: 'Stuntman School', time: 1792469224, tag: 'Engine',
+    summary: 'Ragdolls got muscles: bodies try to catch themselves, cover up, clutch their wounds, and get back up after a big hit.',
+    items: [
+      'Ragdolls are active now: flying through the air, arms reach out to break the fall and legs scramble',
+      'Just after a hit, hands come up over the face',
+      'Dying bodies fight for a moment (kicking, curling up, a hand clutching the wound), then go limp; a violent death goes limp almost at once',
+      'Knockdowns: a big hit (explosions, crashes, hard landings) throws you around as a ragdoll, then you push up off the floor and get back on your feet',
+      'Turn it off with the Knockdowns box in Game Settings > Damage & Blood (or workspace.Knockdowns in a script)',
+      'Joints only bend the way a body can, and arms and legs no longer pass through the body',
+      'Ragdolls move in small steps, so a body thrown hard doesn\'t fall through the floor',
+      'Accessories made in Studio\'s Accessory window stay on the head or body when you ragdoll',
+    ],
+  },
+  {
     id: 'jenga-champion', name: 'Jenga Champion', time: 1792472969, tag: 'Engine',
     summary: 'Loose parts got steadier and smarter: tall stacks stand still, boxes stay put on slopes, and fast things stop hitting walls instead of passing through them.',
     items: [
