@@ -150,7 +150,59 @@ async function checkClock() {
   } catch { /* offline: requests will say so */ }
 }
 
-export async function call(op, args = {}) {
+// The "are you a person?" check (Cloudflare Turnstile). The server asks for it when a request
+// looks doubtful (worker/shield.js) and always before signing up on the website. A popup shows
+// the check (usually it ticks itself), the server hands back a pass for an hour, and the
+// request is sent again. Resolves true once passed, false if the popup was closed.
+let checking = null;
+function loadTurnstile() {
+  if (window.turnstile) return Promise.resolve();
+  return new Promise((ok, no) => {
+    const tag = document.createElement('script');
+    tag.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    tag.async = true;
+    tag.onload = ok;
+    tag.onerror = no;
+    document.head.appendChild(tag);
+  });
+}
+function personCheck(sitekey) {
+  if (checking) return checking;   // (one popup, however many requests asked)
+  checking = new Promise((done) => {
+    const box = document.createElement('div');
+    box.className = 'modal';
+    box.innerHTML = '<div class="popup"><button class="popup-x" aria-label="Close">\u00d7</button>' +
+      '<div class="popup-title">Quick check</div><p>Making sure you\'re a person, not a bot. This usually takes a second.</p>' +
+      '<div class="person-check" style="display:flex;justify-content:center;min-height:65px"></div><p class="small person-error"></p></div>';
+    document.body.appendChild(box);
+    let widget = null;
+    const finish = (passed) => {
+      try { if (widget !== null) window.turnstile.remove(widget); } catch { /* already gone */ }
+      box.remove();
+      checking = null;
+      done(passed);
+    };
+    box.querySelector('.popup-x').onclick = () => finish(false);
+    const say = (text) => { box.querySelector('.person-error').textContent = text; };
+    loadTurnstile().then(() => {
+      widget = window.turnstile.render(box.querySelector('.person-check'), {
+        sitekey, action: 'gb_check',
+        callback: async (token) => {
+          try {
+            const r = await (await fetch('/api/turnstile', { method: 'POST', body: JSON.stringify({ token }), headers: { 'content-type': 'application/json' } })).json();
+            if (r && r.ok) return finish(true);
+            say((r && r.error) || 'That didn\'t work. Try again.');
+          } catch { say('Couldn\'t reach the website\'s server. Check your internet.'); }
+          window.turnstile.reset(widget);   // (each check works once)
+        },
+        'error-callback': () => say('The check couldn\'t load. Try again in a moment.'),
+      });
+    }).catch(() => say('The check couldn\'t load. Is something blocking challenges.cloudflare.com?'));
+  });
+  return checking;
+}
+
+export async function call(op, args = {}, again = true) {
   await checkClock();
   const key = await loadKey();
   const account = hex(key.slice(32, 64));
@@ -165,6 +217,7 @@ export async function call(op, args = {}) {
     const r = await res.json();
     if (typeof r !== 'object' || r === null) return { ok: false, error: 'The server sent back something odd.' };
     if (!('ok' in r)) r.ok = false;
+    if (r.challenge && r.sitekey && again && await personCheck(r.sitekey)) return call(op, args, false);
     return r;
   } catch {
     return { ok: false, error: 'Couldn\'t reach the website\'s server. Check your internet.' };

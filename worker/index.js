@@ -5,7 +5,11 @@
 //   /download/...  the apps themselves (downloads.js)
 //   /api/oauth/... "Log in with Guts&Bolts" for partner apps like Lyreto (see oauth below)
 //   /avatar/...    the avatar pictures those apps show
+//   /api/turnstile the "are you a person?" check (shield.js)
 //   else   the website's files (website/)
+//
+// Every request to the server goes through the risk check first (shield.js): floods and
+// bots are stopped there, before they reach the server.
 //
 // Normally the Guts&Bolts server itself runs here too (server.js, a Durable
 // Object), so it's online even when your computer is off. If GB_SERVER is set
@@ -13,6 +17,7 @@
 import { connect } from 'cloudflare:sockets';
 import { GbServerObject } from './server.js';
 import { handleDownload } from './downloads.js';
+import { check, passCheck, tagged, cachedPicture } from './shield.js';
 export { GbServerObject };
 
 const MAX_REQUEST = 40 * 1024 * 1024;   // a whole game, base64
@@ -144,47 +149,51 @@ async function handleOauth(request, env, url) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     // The site lives at gutsandbolts.net. The old workers.dev address only keeps answering
     // older apps (the server and its pictures); people opening it in a browser get moved.
     if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|download|avatar)(\/|$)/.test(url.pathname))
       return Response.redirect('https://gutsandbolts.net' + url.pathname + url.search, 301);
     if (url.pathname.startsWith('/download/')) return handleDownload(request, env, url);
-    if (url.pathname.startsWith('/api/oauth/')) return handleOauth(request, env, url);
-    if (url.pathname.startsWith('/avatar/')) {
-      if (!env.GB_SERVER) return env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main')).fetch(request);
-      const r = await serverAsk(env, { op: 'connect.avatarPicture', args: { id: url.pathname.slice(8).replace(/\.png$/, '') } });
-      if (!r.ok) return new Response('No picture.', { status: 404 });
-      const bin = atob(r.data), data = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
-      return new Response(data, { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
+    if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
+    const picture = /^\/(thumb|icon|shot|wear|decal|avatar)\//.test(url.pathname);
+    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') ? 'api' : '';
+    let info = null;
+    if (kind) {
+      info = await check(request, env, url, kind);
+      if (info.stop) return info.stop;
     }
+    if (picture) return cachedPicture(request, ctx, () => pictureFor(request, env, url));
+    if (url.pathname.startsWith('/api/oauth/')) return handleOauth(request, env, url);
     if (url.pathname === '/api/info') {
       return reply({ ok: true, server: env.GB_SERVER || 'cloudflare', time: Math.floor(Date.now() / 1000) });
     }
     // The server on Cloudflare: one Durable Object holds everything.
     const builtIn = () => env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main'));
-    if (url.pathname === '/ws') return builtIn().fetch(request);
-    if ((url.pathname.startsWith('/thumb/') || url.pathname.startsWith('/icon/') || url.pathname.startsWith('/shot/') || url.pathname.startsWith('/wear/') || url.pathname.startsWith('/decal/')) && !env.GB_SERVER) return builtIn().fetch(request);
+    if (url.pathname === '/ws') return builtIn().fetch(tagged(request, info));
     if (url.pathname === '/api') {
       if (request.method !== 'POST') return reply({ ok: false, error: 'Use POST.' }, 405);
       if (!env.GB_SERVER) {
         const len = Number(request.headers.get('content-length') || 0);
         if (len > MAX_REQUEST) return reply({ ok: false, error: 'That\'s too big to send.' }, 413);
-        return builtIn().fetch(request);
+        return builtIn().fetch(tagged(request, info));
       }
       const len = Number(request.headers.get('content-length') || 0);
       if (len > MAX_REQUEST) return reply({ ok: false, error: 'That\'s too big to send.' }, 413);
       const text = await request.text();
       if (text.length > MAX_REQUEST) return reply({ ok: false, error: 'That\'s too big to send.' }, 413);
+      let req;
       try {
-        JSON.parse(text);   // only pass on proper requests
+        req = JSON.parse(text);   // only pass on proper requests
       } catch {
         return reply({ ok: false, error: 'That wasn\'t a proper request.' }, 400);
       }
+      if (!req || typeof req !== 'object' || Array.isArray(req)) return reply({ ok: false, error: 'That wasn\'t a proper request.' }, 400);
+      // Who's asking, for the server's own limits (it trusts this when started with --behind-worker).
+      req.from = { ip: info.ip, web: !!info.web, human: !!info.human, sitekey: info.sitekey || '' };
       try {
-        const answer = await ask(env.GB_SERVER, text);
+        const answer = await ask(env.GB_SERVER, JSON.stringify(req));
         return new Response(answer, { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
       } catch (e) {
         return reply({ ok: false, error: 'Couldn\'t reach the Guts&Bolts server (' + (e && e.message || 'error') + '). Is it running?' });
@@ -193,3 +202,14 @@ export default {
     return env.ASSETS.fetch(request);
   },
 };
+
+// A picture: /thumb, /icon, /shot, /wear and /decal from the server on Cloudflare, /avatar from either.
+async function pictureFor(request, env, url) {
+  if (!env.GB_SERVER) return env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main')).fetch(request);
+  if (!url.pathname.startsWith('/avatar/')) return new Response('No picture.', { status: 404 });
+  const r = await serverAsk(env, { op: 'connect.avatarPicture', args: { id: url.pathname.slice(8).replace(/\.png$/, '') } });
+  if (!r.ok) return new Response('No picture.', { status: 404 });
+  const bin = atob(r.data), data = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
+  return new Response(data, { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
+}
