@@ -560,7 +560,8 @@ async function hello() {
 const pages = {};
 
 pages.home = async () => {
-  const [games, items, fr, recent, favs, featured] = await Promise.all([
+  // Everything the page needs is asked for at once, so it waits for one round trip, not four.
+  const [games, items, fr, recent, favs, featured, , feedR, upd, mine] = await Promise.all([
     pageCall('list', { kind: 'game', sort: 'popular', limit: 8 }),
     pageCall('list', { kind: 'clothing', limit: 6 }),
     signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
@@ -568,12 +569,14 @@ pages.home = async () => {
     signedIn() ? pageCall('games.mine', { which: 'favorites', limit: 8 }) : Promise.resolve({ ok: false }),
     pageCall('list', { kind: 'game', sort: 'featured', limit: 8 }),
     loadPlaying(),
+    signedIn() ? pageCall('feed.list', {}) : Promise.resolve({ ok: false }),
+    pageCall('updates.list', { limit: 1 }),
+    signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
   ]);
   // "Continue playing" and your favourites (only when there's something in them).
   const mineBox = (title, r, more) => r.ok && r.assets.length ? html`<div class="box"><h2 class="boxhead">${title}
       <a href="${more}" style="float:right">See all &raquo;</a></h2><div class="grid">${r.assets.map(gameCard)}</div></div>` : '';
   const continueBox = mineBox('Continue Playing', recent, '#/games/mine/recent');
-  const feedR = signedIn() ? await pageCall('feed.list', {}) : { ok: false };
   const feedBox = signedIn() ? html`<div class="box feed"><h2 class="boxhead">My Feed</h2>
       <form class="row" data-form="statusSet"><input type="text" name="status" maxlength="140" placeholder="Right now I'm..." style="flex:1">
         <button class="btn blue small">Share</button></form>
@@ -594,7 +597,6 @@ pages.home = async () => {
       <a href="#/catalog" style="float:right">See more &raquo;</a></h2>
     ${items.ok && items.assets.length ? html`<div class="grid">${items.assets.map(itemCard)}</div>`
       : html`<p class="muted small">Nothing here yet.</p>`}</div>`;
-  const upd = await pageCall('updates.list', { limit: 1 });
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
@@ -633,7 +635,6 @@ pages.home = async () => {
       <div class="home-right">${updateBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
     </div>`);
   // Dressed in what you're wearing (the server says which items those are).
-  const mine = await pageCall('profile', { id: me.id });
   const worn = mine.ok ? mine.wearing || [] : [];
   if ($('#homeAvatar')) mountAvatar($('#homeAvatar'), me.avatar || defaultAvatar(), worn, { width: 170 }).catch(() => {});
   // My Feed: each person's character next to what they said.
@@ -2220,7 +2221,8 @@ pages.messages = async (box = 'inbox') => {
 };
 
 pages.avatar = async () => {
-  const r = signedIn() ? await pageCall('list', { kind: 'clothing', owned: true, limit: 100 }) : { ok: true, assets: [] };
+  const [r, outfitsR] = signedIn() ? await Promise.all([pageCall('list', { kind: 'clothing', owned: true, limit: 100 }), pageCall('outfit.list', {})])
+    : [{ ok: true, assets: [] }, { ok: true, outfits: [] }];
   const ownedAll = (r.ok ? r.assets : []).filter((a) => (me.owned || []).includes(a.id));
   const owned = ownedAll.filter((a) => !isEmoteItem(a.kind));
   avatarOwned = owned;
@@ -2246,7 +2248,6 @@ pages.avatar = async () => {
   if (!avatarDraft) avatarDraft = Object.assign(defaultAvatar(), JSON.parse(JSON.stringify(me.avatar || {})));
   const a = avatarDraft;
   const wornItems = owned.filter((it) => a.wearing.includes(it.id));
-  const outfitsR = signedIn() ? await pageCall('outfit.list', {}) : { ok: true, outfits: [] };
   const outfits = outfitsR.ok ? outfitsR.outfits : [];
   const outfitBox = html`<h2>My outfits</h2>
     ${signedIn() ? html`<form class="row" data-form="outfitSave"><input type="text" name="name" maxlength="40" placeholder="Name this outfit" style="max-width:200px">
@@ -2718,13 +2719,12 @@ pages.settings = async () => {
             <label>Your password</label><input type="password" name="password" autocomplete="current-password" required>
             <p><button class="btn red">Delete my account</button> <span id="deleteMsg"></span></p></form>`}</div>`}
     </div>`);
-  const blocked = await pageCall('block.list', {});
+  const [blocked, apps] = await Promise.all([pageCall('block.list', {}), pageCall('connect.list', {})]);
   const box = $('#blockedList');
   if (box) box.innerHTML = (!blocked.ok ? html`<p class="error">${blocked.error}</p>`
     : blocked.people.length ? html`${blocked.people.map((u) => html`<div><a class="grow" href="#/user/${u.userId}">${u.username || u.name}</a>
         <button class="btn small" data-act="block" data-user="${u.id}" data-name="${u.username || u.name}" data-on="">Unblock</button></div>`)}`
       : html`<p class="muted small">You haven't blocked anyone.</p>`).s;
-  const apps = await pageCall('connect.list', {});
   const appBox = $('#appsList');
   if (appBox) appBox.innerHTML = (!apps.ok ? html`<p class="error">${apps.error}</p>`
     : apps.apps.length ? html`${apps.apps.map((a) => html`<div><span class="grow"><a href="${a.site}" target="_blank" rel="noopener"><b>${a.name}</b></a>
