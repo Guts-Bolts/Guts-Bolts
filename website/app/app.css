@@ -675,6 +675,7 @@ table.forum tr.pinned td { background: var(--panel2); }
 .forum-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 6px; }
 @media (max-width: 560px) { .forum-post { flex-direction: column; } .forum-author { flex-direction: row; flex-basis: auto; } }
 /* Featured games (picked by staff) */
+.partner-pill { background: linear-gradient(#5fd3c4, #14827a); border-color: #0d5f59; color: #fff; font-weight: bold; }
 .featured-pill { background: linear-gradient(#ffe59a, #f5c542); border-color: #d49a0a; color: #3b2a00; }
 
 /* Inventory on profiles: item cards with the numbers of the Limited copies someone holds */

@@ -10,6 +10,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'friends-in-high-places', name: 'Friends in High Places', version: '0.7.3', time: 1792456200, tag: 'Website',
+    summary: 'A new Partner badge for friends of Guts&Bolts, shown right next to their name.',
+    items: [
+      'Partners are people and projects Guts&Bolts teams up with, like Kermit, who makes Lyreto',
+      'They get a teal Partner badge next to their name on their profile, in the forum and in game comments',
+      'Staff can hand it out (or take it away) with the Make partner button on the Staff page',
+      'It shows up in the Guts&Bolts Badges box on their profile, and in the Player app\'s badge list',
+    ],
+  },
+  {
     id: 'hello-from-the-other-server', name: 'Hello From the Other Server', version: '0.7.2', time: 1792450920, tag: 'Website',
     summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
     items: [
