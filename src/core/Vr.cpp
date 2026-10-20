@@ -29,6 +29,7 @@ const Controls& controls() { return g_none; }
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <unknwn.h>   // (OpenXR's Windows header needs IUnknown, which LEAN_AND_MEAN leaves out)
 #define XR_USE_PLATFORM_WIN32
 #define GLFW_EXPOSE_NATIVE_WIN32
 #define GLFW_EXPOSE_NATIVE_WGL
