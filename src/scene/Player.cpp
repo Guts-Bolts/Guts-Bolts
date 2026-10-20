@@ -264,11 +264,12 @@ void Player::upgradeRig(SceneNode* rig) {
 
 glm::vec3 Player::position() const {
     SceneNode* r = root();
+    if (!m_dead && m_ragdoll.active()) return m_ragdoll.center() - glm::vec3(0.0f, 0.6f, 0.0f);   // knocked over: where the body lies
     return r ? r->transform.position : glm::vec3(0.0f);
 }
 
 glm::vec3 Player::focusPoint() const {
-    if (m_dead && m_ragdoll.active()) return m_ragdoll.center();
+    if (m_ragdoll.active()) return m_ragdoll.center();   // (dead, or knocked over)
     if (m_dead)
         if (SceneNode* t = part("Torso")) return glm::vec3(t->worldMatrix()[3]);
     // Like Roblox, the camera looks at (and in first person, sits in) the head.
@@ -539,7 +540,10 @@ void Player::respawn(bool firstSpawn) {
     m_walkPhase = m_swing = m_airBlend = 0.0f;
     m_dead      = false;
     m_debris.clear();
-    m_ragdoll.stop();
+    m_ragdoll.unhide(*m_scene);   // (blown to pieces last time)
+    m_ragdoll.release(*m_scene);
+    m_knockTool = 0;
+    m_knockTime = 0.0f;
     m_pendingForce = 0.0f;
     m_pendingImpulse = glm::vec3(0.0f);
     m_lastHealth = m_humanoid.health;
@@ -1097,6 +1101,17 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     m_lastHealth = m_humanoid.health;
     if (m_humanoid.health <= 0.0f) { startDeath(); return; }
 
+    // Knocked over as a ragdoll: the body's muscles try to catch the fall; once it
+    // has come to rest (and the trip time is up) we get back up.
+    if (m_ragdoll.active()) {
+        m_ragdoll.update(dt, *m_scene, physics);
+        m_knockTime += dt;
+        if (m_ragdoll.lying()) m_tripTime = std::max(0.0f, m_tripTime - dt);   // (the clock runs once we're down)
+        if (m_ragdoll.center().y < m_scene->world().fallenPartsHeight) m_humanoid.health = 0.0f;
+        else if ((m_tripTime <= 0.0f && m_ragdoll.settled() && !m_humanoid.platformStand) || m_knockTime > 8.0f) getUp();
+        return;
+    }
+
     // Sitting: stay on the seat until you jump.
     m_seatCooldown = std::max(0.0f, m_seatCooldown - dt);
     if (m_seatId) { sitStep(dt, jump); if (m_seatId) return; }
@@ -1515,7 +1530,66 @@ void Player::trip(float seconds, const glm::vec3& spin) {
         if (sitting()) standUp(false);
         m_tiltVel += spin.x;   // (pitch, degrees / second)
         if (std::abs(m_tiltVel) < 60.0f) m_tiltVel = m_tiltVel < 0.0f ? -120.0f : 120.0f;
+        if (canKnockdown()) startKnockdown();
     }
+}
+
+bool Player::canKnockdown() const {
+    const WorldSettings& w = m_scene->world();
+    return w.deathStyle == DeathStyle::Ragdoll && w.knockdowns && !m_dead && !m_ragdoll.active() &&
+           !m_gyro && !m_swimming && !m_climbing && root() && part("Torso") && part("Head");
+}
+
+// Thrown off our feet: the body becomes an (active) ragdoll until it comes to rest.
+void Player::startKnockdown() {
+    SceneNode* r = root();
+    if (!r) return;
+    SceneNode* tool = equippedTool();
+    m_knockTool = tool ? tool->id : 0;
+    if (m_knockTool) equip(0);   // (it'd float where the hand was; we pick it back up after)
+    footsteps(false, glm::vec3(0.0f));
+    stopEmote(0.0f);
+    m_knockTime = 0.0f;
+    m_ragdoll.start(*m_scene, r, m_velocity * 0.7f, m_velocity * 0.3f, 0.0f, true);
+}
+
+// Back on our feet from lying in a heap: the character stands where the body lay,
+// facing the way it fell, and does the usual getting-up (from flat on the floor).
+void Player::getUp() {
+    SceneNode* r = root();
+    if (!r) { m_ragdoll.stop(); return; }
+    const glm::vec3 c = m_ragdoll.center();
+    const glm::mat3 f = m_ragdoll.bodyFrame();
+    // Face down = fell forwards (the head is in front of the feet); face up = fell backwards.
+    const float forwards = f[2].y < 0.0f ? 1.0f : -1.0f;
+    glm::vec3 fwd = f[1] * forwards;
+    fwd.y = 0.0f;
+    if (glm::length(fwd) < 0.2f) { fwd = glm::vec3(f[2].x, 0.0f, f[2].z); }
+    fwd = glm::length(fwd) > 1e-4f ? glm::normalize(fwd) : glm::vec3(0, 0, 1);
+    float dist = 0.0f;
+    const glm::vec3 from = c + glm::vec3(0.0f, 0.5f, 0.0f);
+    glm::vec3 feet = c - fwd * 1.3f;   // (lying flat, the feet are behind the middle of the body)
+    if (Physics::raycast(*m_scene, from, glm::vec3(0, -1, 0), &dist, r) && dist < 6.0f) feet.y = from.y - dist;
+    else feet.y = c.y - 0.6f;
+
+    m_ragdoll.release(*m_scene);
+    for (auto& ch : r->children) {
+        auto it = m_rest.find(ch->id);
+        if (it != m_rest.end()) ch->transform = it->second;
+    }
+    r->transform = m_rootRest;
+    r->transform.position = feet;
+    r->transform.rotation.y = glm::degrees(std::atan2(fwd.x, fwd.z));
+    m_tilt = 90.0f * forwards;   // lying flat: the usual getting-up takes it from here
+    m_tiltVel = 0.0f;
+    m_tripTime = 0.0f;
+    m_getUp = 0.0f;
+    m_velocity = glm::vec3(0.0f);
+    m_grounded = false;
+    m_stepOffset = m_stepShown = 0.0f;
+    m_knockTime = 0.0f;
+    if (m_knockTool) equip(m_knockTool);
+    m_knockTool = 0;
 }
 
 const char* Player::stateName() const {

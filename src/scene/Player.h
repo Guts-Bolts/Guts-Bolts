@@ -359,6 +359,12 @@ private:
 
     Ragdoll   m_ragdoll;
     BloodyFeet m_feet;      // stepped in blood: leaves footprints
+    // Knocked over as a ragdoll (alive): how long we've been down, and the tool to hold again after.
+    float     m_knockTime = 0.0f;
+    uint64_t  m_knockTool = 0;
+    bool      canKnockdown() const;
+    void      startKnockdown();
+    void      getUp();
     float     m_pendingForce = 0.0f;
     glm::vec3 m_pendingImpulse{0.0f};
     float     m_lastHealth = 100.0f;

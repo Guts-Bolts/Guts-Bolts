@@ -154,7 +154,13 @@ Settings** covers the frame rate and graphics.
 
 **File > Import 3D Model, Picture, Sound...** (or the **Import** button on the
 HOME tab) brings in 3D models made in other programs: **.fbx**, **.obj** (with
-its .mtl colours), **.gltf / .glb**, **.stl** and **.ply**. Each object in the
+its .mtl colours), **.gltf / .glb** (including squashed ones: Draco and meshopt,
+like Sketchfab downloads), **.stl**, **.ply**, **.dae** (Collada), **.3ds**,
+**.x**, **.3mf**, **.lwo**, **.ac**, **.off**, **.dxf**, **.b3d**, **.ms3d**,
+**.md2 / .md3 / .md5mesh**, **.ase**, **.smd**, **.x3d**, **.amf**, **.ogex**,
+**.irrmesh**, **.cob**, **.xgl**, **.pmx** and a few more. Program save files
+(.blend, .max, .ma, .c4d, .skp), USD and CAD files (.step) can't be opened:
+Output tells you which format to export from that program instead. Each object in the
 file becomes a mesh part (split by material, in that material's colour; a
 textured material gets its picture's main colour), all inside a Model named
 after the file. 1 metre is 1 stud; something far too big or too small (a model
@@ -163,9 +169,11 @@ made in millimetres) is resized to about 10 studs, and Output says so.
 Or just **drag files from your computer onto Studio**. Where you let go
 matters:
 - a 3D model lands standing on the spot under the mouse;
-- a picture (.png / .jpg) becomes a Decal on the side of the part it's dropped
-  on, or a sign facing you if it lands on the ground;
-- a sound (.wav / .mp3 / .flac) becomes a Sound (inside the part it's dropped on);
+- a picture (.png / .jpg / .gif / .bmp / .tga) becomes a Decal on the side of
+  the part it's dropped on, or a sign facing you if it lands on the ground.
+  Other pictures (.webp, .svg, .psd, .hdr, .ppm) are saved as a PNG in the games
+  folder's **Imported Pictures** folder first, so every Player can show them;
+- a sound (.wav / .mp3 / .ogg / .flac) becomes a Sound (inside the part it's dropped on);
 - a script (.lua / .luau) becomes a Script;
 - a Roblox model is inserted, and a game or Roblox place is opened.
 
@@ -3044,6 +3052,29 @@ you, your public ID goes into `src/core/OfficialKey.h`.
 
 Three sample games come with it: **Obby of Doom**, **Demolition Yard** and
 **Night Plaza** (built by `tools/make_sample_games.py`).
+
+## Log in with Guts&Bolts (for partner apps)
+
+Partner apps (just [Lyreto](https://lyreto.com) for now) can let people link their
+Guts&Bolts account, like "Connect Discord" buttons. It's standard OAuth 2.0 (the
+authorization code kind), and the app only ever gets a user's **id** (their user
+number), **username** and **avatar** picture.
+
+1. Send the person to `https://gutsandbolts.net/api/oauth/authorize?response_type=code&client_id=<id>&redirect_uri=<your callback>&state=<random>`.
+   They log in if they need to and press **Approve**, and come back to
+   `<your callback>?code=...&state=...` (or `?error=access_denied` if they press Cancel).
+2. From your server, swap the code (it lasts 5 minutes and works once):
+   `POST https://gutsandbolts.net/api/oauth/token` with a form (or JSON) body
+   `grant_type=authorization_code&code=...&redirect_uri=...&client_id=...&client_secret=...`
+   (or the id and secret as HTTP Basic auth). You get `{ access_token, token_type: "Bearer", expires_in, scope }`.
+3. `GET https://gutsandbolts.net/api/oauth/userinfo` with `Authorization: Bearer <access_token>` gives
+   `{ "id": "5", "username": "kermit", "avatar": "https://gutsandbolts.net/avatar/5.png?v=..." }`
+   (`avatar` can be `null`). Tokens last a year, or until the person disconnects the app in Settings.
+
+The apps and their callback addresses are listed in `CONNECT_APPS` (worker/server.js) and
+`kConnectApps` (src/server/ServerConnect.cpp). Each app's **client secret** is made on the
+website's Staff page (Connected apps box, official Guts account only): it's shown once,
+so copy it and send it to the app's owner privately. Making a new one stops the old one working.
 
 ## Graphics & performance
 

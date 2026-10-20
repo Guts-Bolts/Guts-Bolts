@@ -1,3 +1,6 @@
+// stb_vorbis lets miniaudio play .ogg sounds (its body is at the bottom of this file).
+#define STB_VORBIS_HEADER_ONLY
+#include <extras/stb_vorbis.c>
 #define MINIAUDIO_IMPLEMENTATION
 #define MA_NO_ENCODING
 #include <miniaudio.h>
@@ -345,7 +348,7 @@ int play(const std::string& soundId, float volume, float pitch, bool loop, const
         }
         if (ma_sound_init_from_file(&g_engine, p.string().c_str(), flags | MA_SOUND_FLAG_STREAM, nullptr, nullptr,
                                     &in->sound) != MA_SUCCESS) {
-            Log::warn("Couldn't play sound \"" + soundId + "\" (use a built-in name or a .wav / .mp3 / .flac file)");
+            Log::warn("Couldn't play sound \"" + soundId + "\" (use a built-in name or a .wav / .mp3 / .ogg / .flac file)");
             return 0;
         }
     }
@@ -459,3 +462,6 @@ void setMasterVolume(float v) {
 }
 
 } // namespace Audio
+
+#undef STB_VORBIS_HEADER_ONLY
+#include <extras/stb_vorbis.c>
