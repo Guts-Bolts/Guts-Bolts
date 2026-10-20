@@ -4,6 +4,7 @@
 #include "panels/ViewportPanel.h"
 #include "../scene/Scene.h"
 #include "../scene/EditMesh.h"
+#include "../scene/Skin.h"
 #include "../scene/Serializer.h"
 #include "../scene/Player.h"
 #include "../scene/PlayerModel.h"
@@ -127,6 +128,7 @@ void Editor::meshOp(MeshOp op) {
         why = "Extrude: pick some faces or edges first.";
         if (ok && op == MeshOp::ExtrudeMove) {
             // Like Blender: the new faces follow the mouse straight out (click to stop there).
+            Skin::carry(*n->editMesh, work);
             MeshEdit::carryUVs(*n->editMesh, work);
             MeshEdit::own(*n) = std::move(work);
             ms.sel = std::move(sel);
@@ -149,6 +151,7 @@ void Editor::meshOp(MeshOp op) {
     case MeshOp::DuplicateMove:
         if (!MeshEdit::duplicate(work, sel)) { Log::warn("Duplicate: pick some faces first."); return; }
         ms.hidden = MeshEdit::carryFlags(*n->editMesh, ms.hidden, work);
+        Skin::carry(*n->editMesh, work);
         MeshEdit::carryUVs(*n->editMesh, work);
         MeshEdit::own(*n) = std::move(work);
         ms.sel = std::move(sel);
@@ -277,6 +280,7 @@ void Editor::meshOp(MeshOp op) {
     if (ok && work.faces.empty()) { ok = false; why = "That would leave nothing - to remove the part, delete it in Build mode."; }
     if (!ok) { if (*why) Log::warn(why); return; }
     std::vector<char> hidden = MeshEdit::carryFlags(*n->editMesh, ms.hidden, work);
+    Skin::carry(*n->editMesh, work);   // bound to bones: new vertices get weights too
     MeshEdit::carryUVs(*n->editMesh, work);
     MeshEdit::own(*n) = std::move(work);
     sel.resize(n->editMesh->verts.size(), 0);
@@ -380,6 +384,28 @@ void Editor::testMesh(const std::string& steps) {
         else if (s == "flip") meshOp(MeshOp::Flip);
         else if (s == "smooth") meshOp(MeshOp::Smooth);
         else if (s == "xray") m_state.modeling.xray = !m_state.modeling.xray;
+        else if (s.rfind("chain:", 0) == 0) { if (SceneNode* p = armaturePart()) addBone(p, std::atoi(s.c_str() + 6)); m_showArmature = true; }
+        else if (s == "bind") { if (SceneNode* p = armaturePart()) { Skin::bindAutomatic(*p); MeshEdit::refresh(*p); } }
+        else if (s.rfind("turn:", 0) == 0) {
+            // turn:Bone2:x:y:z  turns a bone (degrees), like the Rotate tool.
+            char name[64] = {0};
+            float x = 0, y = 0, z = 0;
+            SceneNode* p = armaturePart();
+            if (!p || std::sscanf(s.c_str() + 5, "%63[^:]:%f:%f:%f", name, &x, &y, &z) != 4) continue;
+            for (SceneNode* b : Skin::bones(p)) if (b->name == name) b->transform.rotation += glm::vec3(x, y, z);
+        }
+        else if (s == "skinreport") {
+            SceneNode* p = armaturePart();
+            if (!p || !p->editMesh) { Log::warn("skin: no MeshPart"); continue; }
+            std::vector<glm::vec3> bent;
+            bool ok = Skin::deform(*p, bent);
+            glm::vec3 lo(1e30f), hi(-1e30f);
+            for (auto& v : bent) { lo = glm::min(lo, v * p->transform.scale); hi = glm::max(hi, v * p->transform.scale); }
+            char line[256];
+            std::snprintf(line, sizeof line, "skin: %s, %zu bones, %zu verts, bent box x %.2f..%.2f y %.2f..%.2f z %.2f..%.2f",
+                          ok ? "bound" : "NOT bound", Skin::bones(p).size(), p->editMesh->verts.size(), lo.x, hi.x, lo.y, hi.y, lo.z, hi.z);
+            Log::info(line);
+        }
         else if (s == "new") addMeshPart();
         else if (s.rfind("verts:", 0) == 0) {
             // verts:0:1:5 picks those corners (by number).
@@ -463,6 +489,7 @@ void Editor::testMesh(const std::string& steps) {
             std::pair<uint32_t, uint32_t> e = es.front();
             for (auto [a, b] : es) if (ms.sel[a] && ms.sel[b]) { e = {a, b}; break; }
             if (MeshEdit::loopCut(work, ms.sel, e.first, e.second, std::atoi(s.c_str() + 8))) {
+                Skin::carry(*n->editMesh, work);
                 MeshEdit::own(*n) = std::move(work);
                 ms.hidden.assign(ms.sel.size(), 0);
                 MeshEdit::fit(*n);

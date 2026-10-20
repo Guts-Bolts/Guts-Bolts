@@ -22,6 +22,18 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'bones-inside', name: 'Bones Inside', time: 1792521600, tag: 'Studio',
+    summary: 'Armatures in Studio: put a chain of bones inside a MeshPart and it bends like an arm, a tail or a tentacle.',
+    items: [
+      'Insert > Bone, or the Armature button on the AVATAR tab, opens the Armature window. Add Bone puts one along the part\'s longest side, Add Chain adds a whole row of them',
+      'Bind (Automatic Weights) ties every corner of the mesh to the bones closest to it, so turning a bone bends the mesh smoothly around it',
+      'Turn bones with the Rotate tool, or key them in the Animation Editor like any other part of a rig. Scripts see them as Bone objects (Instance.new("Bone") works too)',
+      'Weight painting in Modeling mode: Show weights colours the corners by how much the picked bone moves them, and Assign to Picked / Remove change it',
+      'Bones show as diamonds in the viewport. Click one to pick it. Rest Pose puts them all back, Unbind lets the mesh go',
+      'Changing a bound mesh (extrude, loop cut, add a shape...) keeps it bound: new corners follow the bone nearest to them',
+    ],
+  },
+  {
     id: 'unfold-the-box', name: 'Unfold the Box', time: 1792521000, tag: 'Studio',
     summary: 'UV mapping in Studio: lay a mesh out flat, mark seams and wrap your own picture around it.',
     items: [

@@ -12,6 +12,7 @@
 #include "../scene/Water.h"
 #include "../scene/Liquid.h"
 #include "../scene/Gerstner.h"
+#include "../scene/Skin.h"
 #include "../core/Settings.h"
 #include "MeshLibrary.h"
 
@@ -486,6 +487,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     const Environment& env = scene.environment();
     glm::vec3 sunDir = env.sunDirection();
     gatherScreenFx(scene);
+    Skin::update(scene.root());   // meshes bent by their bones (armatures)
 
     // Render distance (10 = no limit). Water and liquid out there rest too (less lag).
     m_viewPos = camera.position();

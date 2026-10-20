@@ -121,7 +121,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Sound:      return "Sound";
         case NodeKind::SoundGroup: return "SoundGroup";
         case NodeKind::SoundEffect: return SoundFx::kClassNames[(int)n->soundFx.type];
-        case NodeKind::Attachment: return "Attachment";
+        case NodeKind::Attachment: return n->bone ? "Bone" : "Attachment";
         case NodeKind::FluidSystem:  return "FluidSystem";
         case NodeKind::FluidEmitter: return "FluidEmitter";
         case NodeKind::Mover:        return kMoverClassNames[(int)n->mover.type];
@@ -144,6 +144,7 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
     if (n->kind == NodeKind::Script && (cls == "LuaSourceContainer" || (cls == "BaseScript" && !n->isModule) ||
                                         (cls == "Script" && n->isLocal))) return true;   // LocalScript is a Script
     if (n->kind == NodeKind::Light && cls == "Light") return true;
+    if (n->isBone() && cls == "Attachment") return true;   // a Bone is an Attachment
     if (n->isPostEffect() && cls == "PostEffect") return true;
     if (n->kind == NodeKind::Constraint && cls == "Constraint") return true;
     if (n->isMover() && cls == (isBodyMover(n->mover.type) ? "BodyMover" : "Constraint")) return true;
@@ -183,7 +184,7 @@ void setWorldPosition(lua_State* L, SceneNode* n, const glm::vec3& p) {
         return;
     }
     glm::vec3 local = p;
-    if (n->parent) local = glm::vec3(glm::inverse(n->parent->worldMatrix()) * glm::vec4(p, 1.0f));
+    if (n->parent) local = glm::vec3(glm::inverse(n->parentFrame()) * glm::vec4(p, 1.0f));
     n->transform.position = local;
 }
 
@@ -2554,8 +2555,9 @@ int inst_new(lua_State* L) {
     } else if (std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), cls) != std::end(kParticleClassNames)) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Particles);
         for (int i = 0; i < kParticleTypeCount; ++i) if (cls == kParticleClassNames[i]) n->particle = particleDefaults((ParticleType)i);
-    } else if (cls == "Attachment") {
+    } else if (cls == "Attachment" || cls == "Bone") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Attachment);
+        n->bone = cls == "Bone";
     } else if (auto ct = std::find(std::begin(kConstraintClassNames), std::end(kConstraintClassNames), cls);
                ct != std::end(kConstraintClassNames)) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Constraint);

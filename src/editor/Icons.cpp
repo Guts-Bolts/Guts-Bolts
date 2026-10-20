@@ -623,7 +623,7 @@ Id forNode(const SceneNode& n) {
         case NodeKind::Sound:
         case NodeKind::SoundGroup:
         case NodeKind::SoundEffect: return Id::Sound;
-        case NodeKind::Attachment: return Id::Attachment;
+        case NodeKind::Attachment: return n.bone ? Id::Rig : Id::Attachment;
         case NodeKind::Constraint: return Id::Constraint;
         case NodeKind::ForceField: return Id::ForceField;
         case NodeKind::Tool:       return Id::Tool;

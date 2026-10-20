@@ -6,6 +6,7 @@
 #include "panels/ViewportPanel.h"
 #include "../scene/Scene.h"
 #include "../scene/EditMesh.h"
+#include "../scene/Skin.h"
 #include "../core/Log.h"
 
 #include <imgui.h>
@@ -155,6 +156,7 @@ void Editor::modelingContextMenu() {
     if (ImGui::BeginMenu("Normals")) { meshMenuItems(8); ImGui::EndMenu(); }
     if (ImGui::BeginMenu("Mirror")) { meshMenuItems(7); ImGui::EndMenu(); }
     if (ImGui::BeginMenu("Delete")) { meshMenuItems(5); ImGui::EndMenu(); }
+    if (ImGui::MenuItem("Armature (bones)...", nullptr, m_showArmature)) m_showArmature = !m_showArmature;
     if (ImGui::BeginMenu("UV")) {
         if (ImGui::MenuItem("Unwrap...", "U")) m_uv.openUnwrap = true;
         if (ImGui::MenuItem("Mark Seam")) markSeams(true);
@@ -234,10 +236,12 @@ void Editor::addMeshShape(int shapeIndex) {
     glm::mat4 rot(1.0f);
     for (int k = 0; k < 3; ++k) rot[k] = glm::vec4(glm::normalize(glm::vec3(M[k])), 0.0f);
     glm::mat4 place = glm::inverse(M) * glm::translate(glm::mat4(1.0f), at) * rot;
+    const EditMesh before = *n->editMesh;
     EditMesh& m = MeshEdit::own(*n);
     std::vector<char> hidden = ms.hidden;
     hidden.resize(m.verts.size(), 0);
     MeshEdit::append(m, ms.sel, *src, place);
+    Skin::carry(before, m);   // bound to bones: the new shape follows the nearest bone
     hidden.resize(m.verts.size(), 0);
     ms.hidden = std::move(hidden);
     MeshEdit::fit(*n);
@@ -254,6 +258,7 @@ void Editor::joinSelected() {
     SceneNode* keep = parts.front();
     if (keep->primitiveType != PrimitiveType::Mesh) MeshEdit::attach(*keep, MeshEdit::fromPrimitive(keep->primitiveType));
     const glm::mat4 toKeep = glm::inverse(keep->worldMatrix());
+    const EditMesh before = *keep->editMesh;
     EditMesh& m = MeshEdit::own(*keep);
     MeshEdit::Selection sel;
     for (size_t i = 1; i < parts.size(); ++i) {
@@ -262,6 +267,7 @@ void Editor::joinSelected() {
                                                                                                : MeshEdit::fromPrimitive(p->primitiveType);
         MeshEdit::append(m, sel, *src, toKeep * p->worldMatrix());
     }
+    Skin::carry(before, m);   // the kept part was bound to bones: the joined parts follow the nearest bone
     for (size_t i = 1; i < parts.size(); ++i) m_scene->removeNode(parts[i]);
     MeshEdit::fit(*keep);
     MeshEdit::refresh(*keep);

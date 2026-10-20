@@ -399,7 +399,7 @@ bool ViewportPanel::scaleHandles(SceneNode* sel, const glm::mat4& view, const gl
             SceneNode* o = m_moveNodes[i];
             if (!m_scene->findById(o->id)) continue;
             glm::vec3 d = dir[ax] * by;
-            if (o->parent) d = glm::vec3(glm::inverse(o->parent->worldMatrix()) * glm::vec4(d, 0.0f));
+            if (o->parent) d = glm::vec3(glm::inverse(o->parentFrame()) * glm::vec4(d, 0.0f));
             o->transform = m_moveStart[i];
             o->transform.position += d;
         }
@@ -426,7 +426,7 @@ bool ViewportPanel::scaleHandles(SceneNode* sel, const glm::mat4& view, const gl
         sel->transform.scale[ax] = newSize;
         if (!both) {   // the far side stays where it is: the middle moves half as far
             glm::vec3 shift = dir[ax] * side * (d * 0.5f);
-            if (sel->parent) shift = glm::vec3(glm::inverse(sel->parent->worldMatrix()) * glm::vec4(shift, 0.0f));
+            if (sel->parent) shift = glm::vec3(glm::inverse(sel->parentFrame()) * glm::vec4(shift, 0.0f));
             sel->transform.position += shift;
         }
         m_scene->markDirty();
@@ -546,7 +546,7 @@ void ViewportPanel::drawGizmo(const glm::mat4& view, const glm::mat4& proj,
             for (SceneNode* o : m_scene->selectionRoots()) {
                 if (o == sel || m_scene->isProtected(o) || m_scene->isCharacterPart(o)) continue;
                 glm::mat4 ow = turn * o->worldMatrix();
-                if (o->parent) ow = glm::inverse(o->parent->worldMatrix()) * ow;
+                if (o->parent) ow = glm::inverse(o->parentFrame()) * ow;
                 float ot[3], orr[3], os[3];
                 ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(ow), ot, orr, os);
                 o->transform.position = {ot[0], ot[1], ot[2]};
@@ -557,7 +557,7 @@ void ViewportPanel::drawGizmo(const glm::mat4& view, const glm::mat4& proj,
         // Convert the manipulated world matrix back into a local transform.
         glm::mat4 local = world;
         if (sel->parent)
-            local = glm::inverse(sel->parent->worldMatrix()) * world;
+            local = glm::inverse(sel->parentFrame()) * world;
 
         float t[3], r[3], s[3];
         ImGuizmo::DecomposeMatrixToComponents(glm::value_ptr(local), t, r, s);
@@ -583,7 +583,7 @@ void ViewportPanel::drawGizmo(const glm::mat4& view, const glm::mat4& proj,
             for (SceneNode* o : m_scene->selectionRoots()) {
                 if (o == sel || m_scene->isProtected(o) || m_scene->isCharacterPart(o)) continue;
                 glm::vec3 d = moved;
-                if (o->parent) d = glm::vec3(glm::inverse(o->parent->worldMatrix()) * glm::vec4(moved, 0.0f));
+                if (o->parent) d = glm::vec3(glm::inverse(o->parentFrame()) * glm::vec4(moved, 0.0f));
                 o->transform.position += d;
             }
         }
@@ -768,6 +768,7 @@ void ViewportPanel::render(float dt) {
                         IM_COL32(255, 255, 255, 170), tip);
         } else if (m_state->mode == StudioMode::Modeling) {
             modelingView(view, proj, imgMin, imgSize);
+            drawBones(view, proj, imgMin, imgSize, m_state->modeling.node);
             dl->AddRect(imgPos, imgMax, IM_COL32(255, 150, 40, 255), 0.0f, 0, 3.0f);   // orange frame = modeling
             static const char* kPickNames[] = {"vertices", "edges", "faces"};
             char tip[256];
@@ -827,6 +828,9 @@ void ViewportPanel::render(float dt) {
                 float dx = mouse.x - sp.x, dy = mouse.y - sp.y;
                 if (dx * dx + dy * dy < 12.0f * 12.0f) iconHit = n;
             });
+
+            // Bones of the picked part (or the rig being animated): click a joint to pick it.
+            if (SceneNode* b = drawBones(view, proj, imgMin, imgSize)) iconHit = b;
 
             // Terrain brushes: drag on the ground.
             if (m_state->terrainBrush >= 0) {
