@@ -64,7 +64,7 @@ const hasAccess = (k) => k === 'game' || k === 'model' || k === 'animation';
 const weekOf = (t) => Math.floor(t / (7 * 86400));
 const MAX_SIZE = { audio: 6 << 20, game: 24 << 20, plugin: 512 << 10, decal: 4 << 20, shirt: 1 << 20, pants: 1 << 20, model: 4 << 20,
   hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20,
-  emote: 256 << 10, animpack: 512 << 10 };
+  emote: 256 << 10, animpack: 512 << 10, bundle: 1 << 20 };
 // Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Only staff
 // make gear. You can have up to kMostGear equipped, and you get them in games whose
 // creator ticked "Allow gear". (src/server has the same rules.)
@@ -79,6 +79,37 @@ const PACK_STATES = ['idle', 'walk', 'run', 'jump', 'fall'];
 // maybe a body change: meta.headless hides the head and face (like the Headless Head). Worn like
 // clothes; only staff make them. meta.items lists what's in it. (src/server has the same rules.)
 const kBundleMost = 12;   // items in one bundle
+// A bundle's new body (made in Studio's Bundles window): rig part name -> {v: x,y,z..., f: corner
+// lists, uv?, smooth?, size: [x,y,z], pos: [x,y,z]}. A tidy copy, or a string saying what's wrong.
+// (src/online/Protocol.cpp bundleBody has the same rules.)
+const BODY_PARTS = ['Head', 'Torso', 'Left Arm', 'Right Arm', 'Left Leg', 'Right Leg'];
+const kBodyMostCorners = 20000;
+function bundleBody(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length) return 'That bundle\'s body looks wrong.';
+  const numbers = (a, n, lo, hi) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === 'number' && x >= lo && x <= hi);
+  const out = {};
+  for (const [name, p] of Object.entries(body)) {
+    if (!BODY_PARTS.includes(name)) return 'A bundle\'s body can only change the Head, Torso, arms and legs.';
+    const bad = name + '\'s mesh looks wrong.';
+    if (!p || typeof p !== 'object' || !Array.isArray(p.v) || !Array.isArray(p.f)) return bad;
+    if (p.v.length % 3 || p.v.length < 9 || !p.f.length) return bad;
+    if (p.v.length / 3 > kBodyMostCorners || p.f.length > kBodyMostCorners) return name + ' has too many corners.';
+    if (!p.v.every((x) => typeof x === 'number' && Math.abs(x) <= 1)) return bad;
+    const corners = p.v.length / 3;
+    for (const face of p.f)
+      if (!Array.isArray(face) || face.length < 3 || face.length > 64 || !face.every((k) => Number.isInteger(k) && k >= 0 && k < corners)) return bad;
+    if (!numbers(p.size, 3, 0.1, 8)) return name + '\'s size looks wrong.';
+    if (!numbers(p.pos, 3, -8, 8)) return name + '\'s position looks wrong.';
+    const part = { v: p.v, f: p.f, size: p.size, pos: p.pos, smooth: p.smooth === true };
+    if ('uv' in p) {
+      if (!Array.isArray(p.uv) || p.uv.length !== p.f.length) return bad;
+      for (let i = 0; i < p.uv.length; i++) if (!numbers(p.uv[i], p.f[i].length * 2, -1000, 1000)) return bad;
+      part.uv = p.uv;
+    }
+    out[name] = part;
+  }
+  return out;
+}
 const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k) || k === 'bundle';   // sold in the catalog
 // Inventory on profiles: what someone owns from the catalog, in these groups. (src/server has the same.)
 const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'bundles', 'gear', 'emotes', 'limited'];
@@ -2274,11 +2305,24 @@ export class GbServerObject extends DurableObject {
         const items = this.bundleItems(meta.items);
         if (typeof items === 'string') return fail(items);
         const headless = meta.headless === true;
-        if (!items.length && !headless) return fail('Put at least one item in the bundle (or make it a Headless Head).');
+        // A new body (Studio's Bundles window) comes in the file: meshes for the rig's parts.
+        let body = null;
+        if (meta.body === true) {
+          let file = null;
+          try { file = JSON.parse(new TextDecoder().decode(data)); } catch { file = null; }
+          if (!file || typeof file !== 'object' || file.format !== 'gbbundle' || !('body' in file))
+            return fail('Make bundles with a new body in Studio\'s Bundles window.');
+          body = bundleBody(file.body);
+          if (typeof body === 'string') return fail(body);
+        }
+        if (!items.length && !headless && !body) return fail('Put at least one item in the bundle (or make it a Headless Head).');
         for (const k of Object.keys(meta)) delete meta[k];
         meta.items = items;
         if (headless) meta.headless = true;
-        data = new TextEncoder().encode(JSON.stringify({ format: 'gbbundle', items, headless }));
+        if (body) meta.body = true;
+        const file = { format: 'gbbundle', items, headless };
+        if (body) file.body = body;
+        data = new TextEncoder().encode(JSON.stringify(file));
       }
       if (kind === 'face') {
         if (!pngSize(data)) return fail('Faces must be .png pictures (see-through around the face).');
@@ -2479,6 +2523,7 @@ export class GbServerObject extends DurableObject {
       const a = this.assets.get(str(args, 'id'));
       if (!a) return fail('That doesn\'t exist (any more).');
       if (a.creator !== me.id) return fail('You can only update your own things.');
+      if (a.kind === 'bundle') return fail('Bundles can\'t be changed once they\'re made. Make a new one instead.');
       let data;
       try { data = b64ToBytes(str(args, 'data')); } catch { return fail('The upload got scrambled. Try again.'); }
       if (data.length > maxSize(a.kind)) return fail('That\'s too big.');

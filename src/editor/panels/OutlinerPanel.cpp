@@ -214,7 +214,7 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
         {"Sky & Screen Effects", {"Sky", "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect"}},
         {"Particles", {"ParticleEmitter", "Fire", "Smoke", "Sparkles"}},
         {"Water", {"Water", "WaterSource", "FluidVolume", "FluidSystem", "FluidEmitter"}},
-        {"Constraints", {"Attachment", "HingeConstraint", "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint",
+        {"Constraints", {"Attachment", "Bone", "HingeConstraint", "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint",
                           "RopeConstraint", "RodConstraint", "SpringConstraint", "WeldConstraint", "LinearVelocity", "AlignPosition", "AlignOrientation", "AngularVelocity", "VectorForce", "Torque"}},
         {"Body Movers (classic)", {"BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce"}},
         {"User Interface", {"ScreenGui", "BillboardGui", "SurfaceGui", "Frame", "TextLabel", "TextButton", "ImageLabel", "ImageButton", "TextBox", "ScrollingFrame",
@@ -439,7 +439,7 @@ std::string className(const SceneNode& n) {
         case NodeKind::Sound:      return "Sound";
         case NodeKind::SoundGroup: return "SoundGroup";
         case NodeKind::SoundEffect: return SoundFx::kClassNames[(int)n.soundFx.type];
-        case NodeKind::Attachment: return "Attachment";
+        case NodeKind::Attachment: return n.bone ? "Bone" : "Attachment";
         case NodeKind::ForceField: return "ForceField";
         case NodeKind::Tool:       return "Tool";
         case NodeKind::Value:      return n.valueClass();

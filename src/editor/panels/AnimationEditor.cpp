@@ -20,10 +20,11 @@
 
 namespace {
 
+// The rig's parts, and the bones of armatures inside them (Skin.h).
 void allParts(SceneNode* n, std::vector<SceneNode*>& out) {
     for (auto& c : n->children) {
-        if (c->kind == NodeKind::Part && c->mesh) out.push_back(c.get());
-        if (c->kind == NodeKind::Part || c->kind == NodeKind::Model) allParts(c.get(), out);
+        if ((c->kind == NodeKind::Part && c->mesh) || c->isBone()) out.push_back(c.get());
+        if (c->kind == NodeKind::Part || c->kind == NodeKind::Model || c->isBone()) allParts(c.get(), out);
     }
 }
 
@@ -184,7 +185,7 @@ void AnimationEditor::update(float dt, bool gizmoInUse) {
     // Someone turned or moved one of the rig's parts (Rotate / Move tools,
     // Properties): that's a pose at the playhead.
     SceneNode* sel = m_scene->selected();
-    bool selInRig = sel && sel->isPart() && r->isAncestorOf(sel);
+    bool selInRig = sel && (sel->isPart() || sel->isBone()) && r->isAncestorOf(sel);
     if (selInRig && !m_playing) {
         auto it = m_applied.find(sel->id);
         if (it != m_applied.end() && moved(it->second, sel->transform)) {
@@ -339,7 +340,7 @@ void AnimationEditor::drawToolbar(Anim::Clip& c) {
 
     SceneNode* r = rig();
     SceneNode* sel = m_scene->selected();
-    bool selInRig = r && sel && sel->isPart() && r->isAncestorOf(sel);
+    bool selInRig = r && sel && (sel->isPart() || sel->isBone()) && r->isAncestorOf(sel);
     if (ImGui::Button("+ Keyframe")) {
         // Key everything the animation already moves (or every part, the first time).
         std::vector<SceneNode*> parts = Anim::rigParts(r);
@@ -609,7 +610,7 @@ void AnimationEditor::drawTimeline(Anim::Clip& c) {
 void AnimationEditor::drawPosePanel(Anim::Clip& c) {
     SceneNode* r = rig();
     SceneNode* sel = m_scene->selected();
-    if (!r || !sel || !sel->isPart() || !r->isAncestorOf(sel)) {
+    if (!r || !sel || !(sel->isPart() || sel->isBone()) || !r->isAncestorOf(sel)) {
         ImGui::TextWrapped("Click a part of the rig (in the 3D view or the list) to pose it.");
         ImGui::Spacing();
         ImGui::TextDisabled("Keys: Delete removes the picked keyframe.\nRight-click a keyframe for easing and names.");

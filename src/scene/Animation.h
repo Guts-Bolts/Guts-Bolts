@@ -153,6 +153,7 @@ public:
 private:
     std::map<int, Track>              m_tracks;
     std::map<uint64_t, RestPose>      m_rests;     // rigs we've posed
+    std::map<uint64_t, RestPose>      m_boneRests; // their bones, when the rig's rest came from restFor (which only has parts)
     int                               m_next = 1;
 };
 

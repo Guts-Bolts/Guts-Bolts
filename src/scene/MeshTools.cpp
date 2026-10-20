@@ -975,8 +975,12 @@ std::shared_ptr<EditMesh> shape(AddShape s) {
     return m;
 }
 
-void append(EditMesh& dst, Selection& sel, const EditMesh& src, const glm::mat4& place) {
+void append(EditMesh& dst, Selection& sel, const EditMesh& srcIn, const glm::mat4& place) {
     const bool dstUV = dst.uvs.size() == dst.faces.size() && !dst.faces.empty();
+    // Laid out already: the new faces get the box layout they'd be drawn with (not all squashed to a point).
+    EditMesh boxed;
+    if (dstUV && srcIn.uvs.size() != srcIn.faces.size()) { boxed = srcIn; ensureUVs(boxed); }
+    const EditMesh& src = boxed.faces.empty() ? srcIn : boxed;
     const bool srcUV = src.uvs.size() == src.faces.size();
     const uint32_t base = (uint32_t)dst.verts.size();
     for (auto& p : src.verts) dst.verts.push_back(glm::vec3(place * glm::vec4(p, 1.0f)));

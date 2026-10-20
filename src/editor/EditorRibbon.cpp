@@ -1,5 +1,6 @@
 // Studio's ribbon (HOME / MODEL / TEST / VIEW), laid out like Roblox Studio's.
 #include "Editor.h"
+#include "../online/OnlineClient.h"
 #include "panels/ScriptEditorPanel.h"
 #include "Icons.h"
 #include "Theme.h"
@@ -137,7 +138,7 @@ void Editor::alignSelected(int axis, int where) {
         float cur = where == 0 ? b.min[axis] : where == 2 ? b.max[axis] : (b.min[axis] + b.max[axis]) * 0.5f;
         glm::vec3 d(0.0f);
         d[axis] = target - cur;
-        if (n->parent) d = glm::vec3(glm::inverse(n->parent->worldMatrix()) * glm::vec4(d, 0.0f));
+        if (n->parent) d = glm::vec3(glm::inverse(n->parentFrame()) * glm::vec4(d, 0.0f));
         n->transform.position += d;
     }
 }
@@ -496,12 +497,19 @@ void Editor::renderToolbar() {
             Group g("Rig");
             if (bigButton("Rig Builder", Icons::Id::Rig, false, !m_playing, "Insert a dummy character to animate (or use as an NPC)"))
                 insertObject("Rig", nullptr);
+            if (bigButton("Armature", Icons::Id::Rig, m_showArmature, !m_playing,
+                          "Bones inside a MeshPart that bend it, posed and animated like a rig's parts"))
+                m_showArmature = !m_showArmature;
         }
         {
-            Group g("Accessories");
+            Group g("Catalog");
             if (bigButton("Accessories", Icons::Id::Rig, m_showAccessory, !m_playing,
                           "Verified creators: put a hat or accessory on a mannequin, save where it sits, and upload it"))
                 m_showAccessory = !m_showAccessory;
+            if (Online::staff() &&
+                bigButton("Bundles", Icons::Id::Rig, m_showBundles, !m_playing,
+                          "Staff: give the mannequin a new body (and items) and upload it as a bundle"))
+                m_showBundles = !m_showBundles;
         }
         {
             Group g("Animation");
@@ -628,6 +636,20 @@ void Editor::renderToolbar() {
             if (smallButton("Proportional", Icons::Id::Snap, ms.proportional, true,
                             "Moving corners drags nearby ones along, fading out (O; mouse wheel while moving = how far)"))
                 meshOp(MeshOp::Proportional);
+        }
+        {
+            Group g("UV");
+            // One button with a menu, so the tab still fits a small window.
+            if (bigButton("UV", Icons::Id::GuiImage, m_uv.show, true, "Lay the mesh out flat for a picture: UV Editor, Unwrap, seams"))
+                ImGui::OpenPopup("##uvmenu");
+            if (ImGui::BeginPopup("##uvmenu")) {
+                if (ImGui::MenuItem("UV Editor", nullptr, m_uv.show)) m_uv.show = !m_uv.show;
+                if (ImGui::MenuItem("Unwrap...", "U")) m_uv.openUnwrap = true;
+                ImGui::Separator();
+                if (ImGui::MenuItem("Mark Seam")) markSeams(true);
+                if (ImGui::MenuItem("Clear Seam")) markSeams(false);
+                ImGui::EndPopup();
+            }
         }
         {
             Group g("Mode");

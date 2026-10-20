@@ -11,13 +11,48 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'cut-the-cord', name: 'Cut the Cord', version: '0.7.6', time: 1792521000, tag: 'Player',
+    id: 'cut-the-cord', name: 'Cut the Cord', version: '0.7.6', time: 1792522800, tag: 'Player',
     summary: 'Guts&Bolts runs on a Meta Quest by itself now: no PC, no cable, no Air Link.',
     items: [
       'A new download, GutsAndBoltsPlayer-Quest.apk, is the Player built for Quest 2, 3, 3S and Pro. Install it with SideQuest or the Meta Quest Developer Hub',
       'It opens straight into VR: the games list, the Library and every page float in front of you, and you point and pull the trigger to click',
       'A keyboard pops up in the headset whenever you need to type (signing in, chat, search), on Quest and on PC VR alike',
       'Loading screens no longer freeze in the headset: you see them floating in a dark room until the game is ready',
+    ],
+  },
+  {
+    id: 'body-swap', name: 'Body Swap', time: 1792522200, tag: 'Studio',
+    summary: 'Bundles can change your whole body now: Guts can reshape the character\'s head, torso, arms and legs in Studio and sell it as a bundle.',
+    items: [
+      'A new Bundles window in Studio (AVATAR tab, staff only) puts a mannequin in the Workspace with a row for each body part',
+      'Edit opens a body part in Modeling mode, Use Selected gives it the shape and size of any part you built, and Reset puts it back to normal',
+      'Add catalog items and a Headless head to the same bundle, give it a name and price, and upload it to the catalog',
+      'Wear the bundle and your character gets the new body everywhere: in games, on your profile and on other players\' screens. Take it off and the normal body comes back',
+      'The server checks every body bundle (only the six body parts, sensible sizes, not too many corners) and bundles can\'t be swapped for something else after they\'re made',
+    ],
+  },
+  {
+    id: 'bones-inside', name: 'Bones Inside', time: 1792521600, tag: 'Studio',
+    summary: 'Armatures in Studio: put a chain of bones inside a MeshPart and it bends like an arm, a tail or a tentacle.',
+    items: [
+      'Insert > Bone, or the Armature button on the AVATAR tab, opens the Armature window. Add Bone puts one along the part\'s longest side, Add Chain adds a whole row of them',
+      'Bind (Automatic Weights) ties every corner of the mesh to the bones closest to it, so turning a bone bends the mesh smoothly around it',
+      'Turn bones with the Rotate tool, or key them in the Animation Editor like any other part of a rig. Scripts see them as Bone objects (Instance.new("Bone") works too)',
+      'Weight painting in Modeling mode: Show weights colours the corners by how much the picked bone moves them, and Assign to Picked / Remove change it',
+      'Bones show as diamonds in the viewport. Click one to pick it. Rest Pose puts them all back, Unbind lets the mesh go',
+      'Changing a bound mesh (extrude, loop cut, add a shape...) keeps it bound: new corners follow the bone nearest to them',
+    ],
+  },
+  {
+    id: 'unfold-the-box', name: 'Unfold the Box', time: 1792521000, tag: 'Studio',
+    summary: 'UV mapping in Studio: lay a mesh out flat, mark seams and wrap your own picture around it.',
+    items: [
+      'Press U in Modeling mode to unwrap: Unwrap (cuts along your seams, keeps shapes), Smart UV Project, Cube, Cylinder and Sphere Projection, Project From View and Reset',
+      'Mark Seam and Clear Seam in the UV button on the MESH tab and in the right-click UV menu: seams show red and are where Unwrap cuts the mesh open, like cutting a cardboard box flat',
+      'The new UV Editor window shows where every face sits on the picture. Click, Shift+click or drag a box to pick, then G moves, R turns and S sizes (X / Y lock a direction, Ctrl snaps). L picks a whole piece',
+      'Pack Islands spreads the pieces out so none overlap, and Export UV Layout saves a picture of the layout to paint over in any drawing program',
+      'MeshParts have a Texture in Properties: pick a picture and it wraps onto the mesh the way the UV Editor shows',
+      'Changing the mesh after unwrapping (extrude, inset, subdivide...) keeps the layout of the faces that didn\'t change',
     ],
   },
   {

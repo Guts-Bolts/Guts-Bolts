@@ -11,6 +11,8 @@
 #include "Animation.h"
 #include "Emotes.h"
 #include "Movers.h"
+#include "EditMesh.h"
+#include "../online/Protocol.h"
 #include <fstream>
 #include <sstream>
 #include <nlohmann/json.hpp>
@@ -71,6 +73,7 @@ void Player::build() {
     addAnimateScript(*m_scene, r);
     setHat(m_hat, m_hatTint);
     applyClothing(r, m_shirt, m_pants, m_tshirt);
+    applyBody(*m_scene, r, m_body);
     applyAccessories(*m_scene, r, m_accessories);
     applyFace(*m_scene, r, m_face);
     applyHeadless(r, m_headless);
@@ -160,6 +163,76 @@ void Player::setHeadless(bool on) {
 
 void Player::applyHeadless(SceneNode* r, bool on) {
     if (SceneNode* head = r->findChild("Head")) head->transparency = on ? 1.0f : 0.0f;
+}
+
+void Player::setBody(const std::string& body) {
+    m_body = body;
+    if (SceneNode* r = root()) applyBody(*m_scene, r, body);
+}
+
+nlohmann::json Player::bodyPartJson(const SceneNode& part) {
+    nlohmann::json v = nlohmann::json::array(), f = nlohmann::json::array();
+    if (!part.editMesh) return nullptr;
+    const EditMesh& m = *part.editMesh;
+    for (const glm::vec3& p : m.verts) { v.push_back(p.x); v.push_back(p.y); v.push_back(p.z); }
+    for (const auto& face : m.faces) f.push_back(face);
+    const glm::vec3 s = part.transform.scale, at = part.transform.position;
+    nlohmann::json j = {{"v", v}, {"f", f}, {"smooth", m.smooth}, {"size", {s.x, s.y, s.z}}, {"pos", {at.x, at.y, at.z}}};
+    if (m.uvs.size() == m.faces.size()) {
+        nlohmann::json uv = nlohmann::json::array();
+        for (const auto& face : m.uvs) {
+            nlohmann::json c = nlohmann::json::array();
+            for (const glm::vec2& t : face) { c.push_back(t.x); c.push_back(t.y); }
+            uv.push_back(std::move(c));
+        }
+        j["uv"] = std::move(uv);
+    }
+    return j;
+}
+
+bool Player::setBodyPart(SceneNode& part, const nlohmann::json& j) {
+    auto m = std::make_shared<EditMesh>();
+    const auto& v = j["v"];
+    for (size_t i = 0; i + 2 < v.size(); i += 3) m->verts.push_back({v[i].get<float>(), v[i + 1].get<float>(), v[i + 2].get<float>()});
+    for (const auto& face : j["f"]) m->faces.push_back(face.get<std::vector<uint32_t>>());
+    if (j.contains("uv"))
+        for (const auto& face : j["uv"]) {
+            std::vector<glm::vec2> c;
+            for (size_t k = 0; k + 1 < face.size(); k += 2) c.push_back({face[k].get<float>(), face[k + 1].get<float>()});
+            m->uvs.push_back(std::move(c));
+        }
+    m->smooth = j.value("smooth", false);
+    if (m->faces.empty()) return false;
+    part.primitiveType = PrimitiveType::Mesh;
+    MeshEdit::attach(part, m);
+    part.transform.scale = {j["size"][0].get<float>(), j["size"][1].get<float>(), j["size"][2].get<float>()};
+    part.transform.position = {j["pos"][0].get<float>(), j["pos"][1].get<float>(), j["pos"][2].get<float>()};
+    return true;
+}
+
+void Player::resetBodyPart(SceneNode& part) {
+    glm::vec3 pos, size;
+    // Only a part a body bundle changed (a mesh, but not the normal one); blocky old characters stay blocky.
+    if (part.primitiveType != PrimitiveType::Mesh || PlayerModel::nameOf(part.editMesh.get())) return;
+    if (!PlayerModel::placement(part.name, pos, size) || !PlayerModel::apply(part)) return;
+    part.transform.position = pos;
+    part.transform.scale = size;
+}
+
+void Player::applyBody(Scene& scene, SceneNode* r, const std::string& body) {
+    // Checked like the server checks it (a file someone handed us could say anything).
+    nlohmann::json j = body.empty() ? nlohmann::json() : nlohmann::json::parse(readSource(body), nullptr, false);
+    nlohmann::json parts;
+    if (!j.is_object() || j.value("format", std::string()) != "gbbundle" || !j.contains("body") ||
+        !Online::bundleBody(j["body"], parts).empty())
+        parts = nlohmann::json::object();   // none, or not downloaded yet: the normal body
+    for (const char* name : Online::kBodyParts) {
+        SceneNode* part = r->findChild(name);
+        if (!part) continue;
+        if (parts.contains(name)) setBodyPart(*part, parts[name]);
+        else resetBodyPart(*part);
+    }
+    scene.markDirty();
 }
 
 void Player::removeOldFace(Scene& scene, SceneNode* head) {

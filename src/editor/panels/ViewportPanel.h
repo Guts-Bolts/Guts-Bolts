@@ -38,6 +38,7 @@ public:
     float     swimLook() const;                   // (and swimming up / down)
     glm::vec3 cameraPivot() const { return m_camera.pivot; }
     glm::vec3 cameraPosition() const { return m_camera.position(); }
+    glm::mat4 cameraViewProj() const { return m_camera.projection() * m_camera.view(); }   // world -> screen
     void      frameOn(const glm::vec3& target);   // point the camera at a target
     void      followPlayer(Player& p, float dt);   // Play: the camera follows the head (first person too)
     bool      hovered() const { return m_hovered; }
@@ -114,6 +115,10 @@ private:
     bool modelingModal(SceneNode& node, const glm::mat4& view, const glm::mat4& proj,
                        const glm::vec2& imgMin, const glm::vec2& imgSize);
     bool drawModeMenu(ImVec2 imgPos);   // true while the mouse is on it
+    // Armatures: bones drawn over the view; returns the bone whose joint is under the mouse.
+    // `onlyPart`: just that part's (Modeling mode). ViewportBones.cpp.
+    SceneNode* drawBones(const glm::mat4& view, const glm::mat4& proj, const glm::vec2& imgMin, const glm::vec2& imgSize,
+                         uint64_t onlyPart = 0);
     // The TERRAIN tab's brushes: drag on the ground to sculpt it. ViewportTerrain.cpp.
     void terrainView(const glm::mat4& view, const glm::mat4& proj, const glm::vec2& imgMin, const glm::vec2& imgSize, float dt);
     bool  m_sculpting = false;     // the mouse is down with a brush (one undo step)

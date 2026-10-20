@@ -160,7 +160,7 @@ json avatarJson(const Profile& p) {
             {"rightArm", vec3(c.rightArm)}, {"leftLeg", vec3(c.leftLeg)}, {"rightLeg", vec3(c.rightLeg)},
             {"hat", (int)p.hat}, {"hatColor", vec3(p.hatColor)},
             {"shirtImage", p.shirtImage}, {"pantsImage", p.pantsImage}, {"tshirtImage", p.tshirtImage},
-            {"faceImage", p.faceImage}, {"headless", p.headless}, {"accessories", p.accessories}};
+            {"faceImage", p.faceImage}, {"headless", p.headless}, {"body", p.body}, {"accessories", p.accessories}};
 }
 
 // Part physics, a SpawnLocation's team and a Model's PrimaryPart (nodeUpdate sends these too).
@@ -889,9 +889,11 @@ void NetServer::handle(Client& c, const std::string& text) {
                     if (v.is_string() && v.get<std::string>().rfind("gb:", 0) == 0 && v.get<std::string>().size() < 64)
                         acc[k] = v.get<std::string>();
             const std::string face = cloth("faceImage");
+            const std::string body = cloth("body");   // a bundle's new body
             const uint64_t rigId = rig->id;
-            auto dress = [this, rigId, acc, face]() {
+            auto dress = [this, rigId, acc, face, body]() {
                 if (SceneNode* r = m_scene->findById(rigId)) {
+                    Player::applyBody(*m_scene, r, body);
                     Player::applyAccessories(*m_scene, r, acc);
                     Player::applyFace(*m_scene, r, face);
                 }
@@ -900,6 +902,7 @@ void NetServer::handle(Client& c, const std::string& text) {
             std::vector<std::string> ids;
             for (auto& [k, v] : acc) ids.push_back(v.substr(3));
             if (!face.empty()) ids.push_back(face.substr(3));
+            if (!body.empty()) ids.push_back(body.substr(3));
             for (const std::string& id : ids)
                 if (Paths::downloaded(id).empty()) Online::download(id, [dress](bool ok, const std::filesystem::path&, const json&) { if (ok) dress(); });
         }
