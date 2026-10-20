@@ -100,6 +100,7 @@ json GbServer::handle(const json& req) {
     json args = req.contains("args") && req["args"].is_object() ? req["args"] : json::object();
     try {
         openGiftBoxes();   // (ServerItems.cpp)
+        finishAuctions();
         return op(req.value("op", std::string()), *me, args);
     } catch (const std::exception& e) {
         return fail(std::string("The server hit a problem: ") + e.what());
@@ -343,6 +344,7 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
     j["offsale"] = off > 0 && Online::unixNow() >= off;
     // Exclusive items aren't in the catalog; a gift box hands out another item (ServerItems.cpp).
     if (a.meta.is_object() && a.meta.value("exclusive", false)) j["exclusive"] = true;
+    if (json au = auctionJson(a, me); !au.is_null()) j["auction"] = au;
     if (const std::string gift = a.meta.is_object() ? a.meta.value("giftItem", std::string()) : std::string(); !gift.empty()) {
         j["gift"] = true;
         if (me && isStaff(*me)) {   // (staff only: it's a surprise)
@@ -566,7 +568,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("outfit.", 0) == 0 || name.rfind("message.", 0) == 0 || name.rfind("notes.", 0) == 0 || name == "game.favorite" || name == "games.mine" || name.rfind("comments.", 0) == 0 ||
         name == "profile.set" || name == "feed.list")
         return socialOp(name, me, args);
-    if (name.rfind("item.", 0) == 0 || name.rfind("resale.", 0) == 0 || name.rfind("trade.", 0) == 0 ||
+    if (name.rfind("item.", 0) == 0 || name.rfind("resale.", 0) == 0 || name.rfind("trade.", 0) == 0 || name.rfind("auction.", 0) == 0 ||
         name.rfind("updates.", 0) == 0 || name.rfind("shots.", 0) == 0 || name == "game.vote" || name == "model.vote" || name == "icon.set" || name == "icon.get" || name == "model.access")
         return itemOp(name, me, args);   // ServerItems.cpp
     if (name == "ping") {   // "I'm still here" (for friends' online dots); the answer keeps your account fresh
@@ -1213,11 +1215,14 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::string kind = str("kind"), q = lower(Online::cleanText(str("query"), 64)), creator = lower(str("creator"));
         std::string sort = str("sort");
         const bool ownedOnly = args.value("owned", false);   // your inventory (the Avatar page)
+        const bool auctions = args.value("auctions", false);  // items up for auction right now (Exclusive ones too)
+        const long long listNow = Online::unixNow();
         std::vector<const Asset*> found;
         for (const auto& [id, a] : m_assets) {
+            if (auctions && !auctionOpen(a, listNow)) continue;
             if (!kind.empty() && a.kind != kind && !(kind == "clothing" && Online::isCatalogItem(a.kind))) continue;
             if (ownedOnly && !me.owned.count(a.id)) continue;
-            if (!ownedOnly && !isStaff(me) && a.meta.is_object() && a.meta.value("exclusive", false)) continue;   // Exclusive: not in the catalog
+            if (!ownedOnly && !auctions && !isStaff(me) && a.meta.is_object() && a.meta.value("exclusive", false)) continue;   // Exclusive: not in the catalog (unless up for auction)
             if (sort == "featured" && a.meta.value("featured", 0LL) <= 0) continue;   // picked by staff
             if (!creator.empty() && a.creator != creator) continue;
             if (!q.empty() && lower(a.name).find(q) == std::string::npos) continue;
@@ -1450,6 +1455,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (it->second.creator != me.id && !isStaff(me)) return fail("You can only delete your own things.");
         if (it->second.limited && !it->second.copies.empty() && !isOfficial(me))
             return fail("People own copies of this Limited, so it can't be deleted.");
+        if (auctionOpen(it->second, Online::unixNow()))
+            return fail("This item is up for auction. Cancel the auction first (that gives everyone their Bolts back).");
         if (it->second.creator != me.id)
             staffDid(me, "delete", std::string("Deleted ") + Online::kindTitle(it->second.kind) + " \"" + it->second.name + "\"", it->second.creator);
         std::error_code ec;

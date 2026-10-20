@@ -11,6 +11,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'bidding-war', name: 'Bidding War', time: 1792517600, tag: 'Website',
+    summary: 'Exclusive items can go up for auction, and only the top bidders get one.',
+    items: [
+      'Staff can put an Exclusive item up for auction: how many copies, the starting bid and how long it runs',
+      'Bid with your Bolts on the item\'s page. The top bidders (one per copy) get it when time runs out',
+      'Your Bolts are held while you\'re winning. If someone outbids you, you get every Bolt back straight away and a notification',
+      'Raising your own bid only takes the difference, and a tie goes to whoever bid first',
+      'A bid in the last 5 minutes adds time, so nobody can sneak in a win at the final second',
+      'See every auction that\'s on in the new Auctions part of the Catalog',
+    ],
+  },
+  {
     id: 'code-is-not-a-link', name: 'Code Is Not a Link', time: 1792515600, tag: 'Fix',
     summary: 'The chat filter stops deleting Lua code just because a part is called Shop, Top or Info.',
     items: [

@@ -315,6 +315,12 @@ const hasVotes = (k) => k === 'game' || k === 'model';   // thumbs up / down
 const kMaxUsedModels = 2000;   // Library models someone has inserted (they can rate those), newest kept
 // Gifts: buy a catalog item for a friend, with a short note. (src/server has the same rules.)
 const kGiftNote = 100;
+// Auctions: staff put an Exclusive item up for bids. The top `copies` bidders win it when time
+// runs out. Your Bolts are held while you're winning; if someone outbids you, you get them back
+// straight away. A bid in the last few minutes adds time, so nobody wins by bidding at the last
+// second. The winning Bolts go to nobody (Guts&Bolts keeps them out of the game). (src/server has the same.)
+const kAuctionMostCopies = 100, kAuctionMostHours = 720, kAuctionMostBid = 10000000;
+const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this much is left
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
   'msg.publish', 'msg.poll']);   // (product.* and msg.*: guests can host games too)
@@ -1244,6 +1250,40 @@ export class GbServerObject extends DurableObject {
     }
   }
 
+  // Auctions whose time ran out: every bidder still on the list wins the item. (Checked on
+  // every request; it's quick, only items with a running auction are looked at.)
+  finishAuctions(t = now()) {
+    for (const a of this.assets.values()) {
+      const au = a.auction;
+      if (!au || au.done || t < au.endsAt) continue;
+      au.done = true;
+      for (const b of au.bids) {
+        const u = this.users.get(b.by);
+        if (!u) continue;
+        if (u.owned.includes(a.id)) {   // (they got it some other way meanwhile: their Bolts back)
+          this.add(u, b.amount, 'Auction for ' + a.name + ' (you already had it)', 'auctionback:' + a.id + ':' + randomHex(4));
+          continue;
+        }
+        u.owned.push(a.id);
+        this.giveBundle(u, a);
+        a.sales++;
+        this.saveUser(u);
+        this.notify(u, 'auction', 'You won the auction for ' + a.name + ' with a bid of ' + b.amount + ' Bolts! It\'s yours.', a.id);
+      }
+      this.saveAsset(a);
+    }
+  }
+  // What the item page shows about an auction. need: the least a new bidder has to bid.
+  auctionJson(a, me) {
+    const au = a.auction;
+    if (!au) return undefined;
+    const bids = au.bids.map((b) => { const u = this.users.get(b.by); return { id: b.by, name: u ? u.name : '?', userId: u ? u.userId : 0, amount: b.amount, at: b.at }; });
+    const mine = me ? au.bids.find((b) => b.by === me.id) : null;
+    return { copies: au.copies, minBid: au.minBid, startedAt: au.startedAt, endsAt: au.endsAt, done: !!au.done, cancelled: au.cancelled ? true : undefined,
+      bids, need: au.bids.length < au.copies ? au.minBid : au.bids[au.bids.length - 1].amount + 1, myBid: mine ? mine.amount : 0 };
+  }
+  auctionOpen(a, t = now()) { return !!a.auction && !a.auction.done && t < a.auction.endsAt; }
+
   giveVerifiedHat(u) {
     const a = this.assets.get(VERIFIED_HAT_ID);
     if (!a || !u.emailVerified || u.owned.includes(a.id)) return;
@@ -1338,7 +1378,7 @@ export class GbServerObject extends DurableObject {
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: a.kind === 'game' && me ? (me.favorites || []).includes(a.id) : undefined,
       offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), review: a.review || undefined, reviewNote: a.reviewNote || undefined,
-      exclusive: a.exclusive ? true : undefined, gift: a.giftItem ? true : undefined,
+      exclusive: a.exclusive ? true : undefined, gift: a.giftItem ? true : undefined, auction: this.auctionJson(a, me),
       giftItem: a.giftItem && me && this.isStaff(me) ? this.giftJson(a) : undefined,   // (staff only: it's a surprise)
       privatePrice: a.kind === 'game' ? (a.privatePrice || 0) : undefined,
       lyreto: a.kind === 'game' ? this.lyretoJson(a) : undefined,
@@ -1495,6 +1535,7 @@ export class GbServerObject extends DurableObject {
       const c = this.checkRequest(req);
       if (c.bad) return c.bad;
       this.openGiftBoxes();
+      this.finishAuctions();
       return this.op(c.opName, c.me, c.args);
     } catch (e) {
       return fail('The server hit a problem: ' + (e && e.message || e));
@@ -2498,11 +2539,13 @@ export class GbServerObject extends DurableObject {
       const kind = str(args, 'kind'), q = lower(cleanText(str(args, 'query'), 64)), creator = lower(str(args, 'creator'));
       const sort = str(args, 'sort'), genre = str(args, 'genre');
       const ownedOnly = args.owned === true;   // your inventory (the Avatar page)
+      const auctions = args.auctions === true;   // items up for auction right now (Exclusive ones too)
       const found = [...this.assets.values()].filter((a) =>
+        (!auctions || this.auctionOpen(a, t)) &&
         (sort !== 'featured' || a.featured > 0) &&
         (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
         (!ownedOnly || me.owned.includes(a.id)) &&
-        (!a.exclusive || ownedOnly || this.isStaff(me)) &&   // Exclusive items aren't in the catalog
+        (!a.exclusive || ownedOnly || auctions || this.isStaff(me)) &&   // Exclusive items aren't in the catalog (unless up for auction)
         (!creator || a.creator === creator) && this.canPlay(a, me) &&
         (!genre || (a.genres || []).includes(genre)) &&
         (!q || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
@@ -2735,6 +2778,64 @@ export class GbServerObject extends DurableObject {
       });
       return okay({ copies });
     }
+    // --- Auctions (staff start them on an Exclusive item; anyone signed up bids) ---
+    if (name === 'auction.start') {
+      if (!this.isStaff(me)) return fail('Only staff can start auctions.');
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || !isCatalogItem(a.kind)) return fail('That item doesn\'t exist (any more).');
+      if (!a.exclusive) return fail('Only Exclusive items can be auctioned. Tick Exclusive on the item first.');
+      if (a.limited) return fail('Limited items can\'t be auctioned (their copies are numbered).');
+      if (a.review) return fail('This hasn\'t passed the staff check yet, so nobody else can see it to bid.');
+      if (this.auctionOpen(a, t)) return fail('This item is already up for auction.');
+      const copies = clamp(num(args, 'copies'), 1, kAuctionMostCopies), minBid = clamp(num(args, 'minBid'), 1, kAuctionMostBid);
+      const hours = typeof args.hours === 'number' && isFinite(args.hours) ? args.hours : 0;
+      if (!(hours >= 1 && hours <= kAuctionMostHours)) return fail('An auction runs for 1 to ' + kAuctionMostHours + ' hours.');
+      a.auction = { copies, minBid, startedAt: t, endsAt: t + Math.round(hours * 3600), bids: [], done: false };
+      this.staffDid(me, 'auction', 'Started an auction for "' + a.name + '" (' + copies + (copies === 1 ? ' copy' : ' copies') + ', from ' + minBid + ' Bolts)', a.creator);
+      this.saveAsset(a);
+      return okay({ asset: this.publicAsset(a, me) });
+    }
+    if (name === 'auction.bid') {
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || !a.auction) return fail('That item isn\'t up for auction.');
+      if (!this.auctionOpen(a, t)) return fail('That auction is over.');
+      if (me.owned.includes(a.id)) return fail('You already have ' + a.name + '.');
+      const au = a.auction, amount = num(args, 'amount');
+      const mine = au.bids.find((b) => b.by === me.id);
+      const need = mine ? mine.amount + 1 : au.bids.length < au.copies ? au.minBid : au.bids[au.bids.length - 1].amount + 1;
+      if (amount < need || amount > kAuctionMostBid) return fail(mine ? 'Bid more than your last bid (' + mine.amount + ' Bolts).' : 'Bid at least ' + need + ' Bolts.');
+      const more = amount - (mine ? mine.amount : 0);   // (raising your bid only takes the difference)
+      if (this.balance(me) < more) return fail('You need ' + (more - this.balance(me)) + ' more Bolts for that bid.');
+      this.add(me, -more, (mine ? 'Raised your bid on ' : 'Bid on ') + a.name, 'bid:' + a.id + ':' + randomHex(4));
+      if (mine) { mine.amount = amount; mine.at = t; } else au.bids.push({ by: me.id, amount, at: t });
+      au.bids.sort((x, y) => y.amount - x.amount || x.at - y.at);   // highest first; a tie goes to whoever bid first
+      while (au.bids.length > au.copies) {   // pushed off the list: their Bolts back
+        const out = au.bids.pop(), u = this.users.get(out.by);
+        if (!u) continue;
+        this.add(u, out.amount, 'Outbid on ' + a.name + ' (your Bolts back)', 'outbid:' + a.id + ':' + randomHex(4));
+        this.notify(u, 'auction', 'Someone outbid you on ' + a.name + '. Your ' + out.amount + ' Bolts are back. Bid again to get it!', a.id);
+      }
+      if (au.endsAt - t < kAuctionExtend) au.endsAt = t + kAuctionExtend;
+      this.saveAsset(a);
+      return okay({ asset: this.publicAsset(a, me), me: this.meJson(me) });
+    }
+    if (name === 'auction.cancel') {
+      if (!this.isStaff(me)) return fail('Only staff can cancel auctions.');
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || !this.auctionOpen(a, t)) return fail('That item isn\'t up for auction.');
+      for (const b of a.auction.bids) {
+        const u = this.users.get(b.by);
+        if (!u) continue;
+        this.add(u, b.amount, 'Auction for ' + a.name + ' was cancelled (your Bolts back)', 'auctionback:' + a.id + ':' + randomHex(4));
+        this.notify(u, 'auction', 'The auction for ' + a.name + ' was cancelled. Your ' + b.amount + ' Bolts are back.', a.id);
+      }
+      a.auction.bids = [];
+      a.auction.done = true;
+      a.auction.cancelled = true;
+      this.staffDid(me, 'auction', 'Cancelled the auction for "' + a.name + '"', a.creator);
+      this.saveAsset(a);
+      return okay({ asset: this.publicAsset(a, me), me: this.meJson(me) });
+    }
     if (name === 'resale.list') {
       // Put your copy of a limited up for sale (price 0 = take it off sale).
       const a = this.assets.get(str(args, 'id'));
@@ -2844,6 +2945,7 @@ export class GbServerObject extends DurableObject {
       if (!a) return fail('That doesn\'t exist (any more).');
       if (a.creator !== me.id && !this.isStaff(me)) return fail('You can only delete your own things.');
       if (a.limited && (a.copies || []).length && !this.isOfficial(me)) return fail('People own copies of this Limited, so it can\'t be deleted.');
+      if (this.auctionOpen(a, t)) return fail('This item is up for auction. Cancel the auction first (that gives everyone their Bolts back).');
       if (a.creator !== me.id) this.staffDid(me, 'delete', 'Deleted ' + KIND_TITLE(a) + ' "' + a.name + '"', a.creator);
       this.sql.exec('DELETE FROM files WHERE id = ? OR id = ? OR id = ?', a.id, 'thumb:' + a.id, 'icon:' + a.id);
       for (const sh of a.shots || []) this.sql.exec('DELETE FROM files WHERE id = ?', 'shot:' + a.id + ':' + sh.id);

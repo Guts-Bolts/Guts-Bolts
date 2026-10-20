@@ -185,6 +185,66 @@ void GbServer::openGiftBoxes() {
     if (changed) { saveAssets(); saveUsers(); }
 }
 
+// Auctions (worker/server.js finishAuctions): staff put an Exclusive item up for bids. The top
+// `copies` bidders win it when time runs out. Bolts are held while you're winning and come back
+// as soon as someone outbids you. A bid in the last few minutes adds time. The winning Bolts go
+// to nobody (they leave the game).
+static constexpr long long kAuctionMostCopies = 100, kAuctionMostHours = 720, kAuctionMostBid = 10000000;
+static constexpr long long kAuctionExtend = 300;   // seconds: a late bid makes sure at least this much is left
+
+bool GbServer::auctionOpen(const Asset& a, long long now) {
+    if (!a.meta.is_object() || !a.meta.contains("auction") || !a.meta["auction"].is_object()) return false;
+    const json& au = a.meta["auction"];
+    return !au.value("done", false) && now < au.value("endsAt", 0LL);
+}
+
+json GbServer::auctionJson(const Asset& a, const User* me) const {
+    if (!a.meta.is_object() || !a.meta.contains("auction") || !a.meta["auction"].is_object()) return nullptr;
+    const json& au = a.meta["auction"];
+    const json bidsIn = au.value("bids", json::array());
+    json bids = json::array();
+    long long mine = 0;
+    for (const json& b : bidsIn) {
+        const std::string by = b.value("by", std::string());
+        auto u = m_users.find(by);
+        bids.push_back({{"id", by}, {"name", u != m_users.end() ? u->second.name : std::string("?")}, {"userId", u != m_users.end() ? u->second.userId : 0},
+                        {"amount", b.value("amount", 0LL)}, {"at", b.value("at", 0LL)}});
+        if (me && by == me->id) mine = b.value("amount", 0LL);
+    }
+    const long long copies = au.value("copies", 1LL), minBid = au.value("minBid", 1LL);
+    json j = {{"copies", copies}, {"minBid", minBid}, {"startedAt", au.value("startedAt", 0LL)}, {"endsAt", au.value("endsAt", 0LL)},
+              {"done", au.value("done", false)}, {"bids", bids}, {"myBid", mine},
+              {"need", (long long)bidsIn.size() < copies || bidsIn.empty() ? minBid : bidsIn.back().value("amount", 0LL) + 1}};
+    if (au.value("cancelled", false)) j["cancelled"] = true;
+    return j;
+}
+
+void GbServer::finishAuctions() {
+    const long long now = Online::unixNow();
+    bool changed = false;
+    for (auto& [id, a] : m_assets) {
+        if (!a.meta.is_object() || !a.meta.contains("auction") || !a.meta["auction"].is_object()) continue;
+        json& au = a.meta["auction"];
+        if (au.value("done", false) || now < au.value("endsAt", 0LL)) continue;
+        au["done"] = true;
+        changed = true;
+        for (const json& b : au.value("bids", json::array())) {
+            User* u = findUser(b.value("by", std::string()));
+            if (!u) continue;
+            const long long amount = b.value("amount", 0LL);
+            if (u->owned.count(a.id)) {   // (they got it some other way meanwhile: their Bolts back)
+                add(*u, amount, "Auction for " + a.name + " (you already had it)", "auctionback:" + a.id + ":" + Account::randomHex(4));
+                continue;
+            }
+            u->owned.insert(a.id);
+            giveBundle(*u, a);
+            a.sales++;
+            notify(u, "auction", "You won the auction for " + a.name + " with a bid of " + std::to_string(amount) + " Bolts! It's yours.", a.id);
+        }
+    }
+    if (changed) { saveAssets(); saveUsers(); }
+}
+
 json GbServer::itemOp(const std::string& name, User& me, const json& args) {
     const long long now = Online::unixNow();
     auto str = [&](const char* k) { return args.contains(k) && args[k].is_string() ? args[k].get<std::string>() : std::string(); };
@@ -287,6 +347,84 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         }
         a.meta["access"] = access;
         saveAssets();
+        json r = assetReply(a); r["me"] = meJson(me); return r;
+    }
+
+    // --- Auctions (staff start them on an Exclusive item; anyone signed up bids) ---
+    if (name == "auction.start") {
+        if (!isStaff(me)) return fail("Only staff can start auctions.");
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end() || !Online::isCatalogItem(it->second.kind)) return fail("That item doesn't exist (any more).");
+        Asset& a = it->second;
+        if (!a.meta.is_object() || !a.meta.value("exclusive", false)) return fail("Only Exclusive items can be auctioned. Tick Exclusive on the item first.");
+        if (a.limited) return fail("Limited items can't be auctioned (their copies are numbered).");
+        if (!a.meta.value("review", std::string()).empty()) return fail("This hasn't passed the staff check yet, so nobody else can see it to bid.");
+        if (auctionOpen(a, now)) return fail("This item is already up for auction.");
+        const long long copies = std::clamp(num("copies"), 1LL, kAuctionMostCopies), minBid = std::clamp(num("minBid"), 1LL, kAuctionMostBid);
+        const double hours = args.contains("hours") && args["hours"].is_number() ? args["hours"].get<double>() : 0.0;
+        if (!(hours >= 1 && hours <= (double)kAuctionMostHours)) return fail("An auction runs for 1 to " + std::to_string(kAuctionMostHours) + " hours.");
+        a.meta["auction"] = {{"copies", copies}, {"minBid", minBid}, {"startedAt", now}, {"endsAt", now + (long long)std::llround(hours * 3600)},
+                             {"bids", json::array()}, {"done", false}};
+        staffDid(me, "auction", "Started an auction for \"" + a.name + "\" (" + std::to_string(copies) + (copies == 1 ? " copy" : " copies") +
+                 ", from " + std::to_string(minBid) + " Bolts)", a.creator);
+        saveAssets();
+        return assetReply(a);
+    }
+    if (name == "auction.bid") {
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end() || !it->second.meta.is_object() || !it->second.meta.contains("auction")) return fail("That item isn't up for auction.");
+        Asset& a = it->second;
+        if (!auctionOpen(a, now)) return fail("That auction is over.");
+        if (me.owned.count(a.id)) return fail("You already have " + a.name + ".");
+        json& au = a.meta["auction"];
+        json& bids = au["bids"];
+        const long long copies = au.value("copies", 1LL), amount = num("amount");
+        json* mine = nullptr;
+        for (json& b : bids) if (b.value("by", std::string()) == me.id) mine = &b;
+        const long long had = mine ? mine->value("amount", 0LL) : 0LL;
+        const long long need = mine ? had + 1 : (long long)bids.size() < copies ? au.value("minBid", 1LL) : bids.back().value("amount", 0LL) + 1;
+        if (amount < need || amount > kAuctionMostBid)
+            return fail(mine ? "Bid more than your last bid (" + std::to_string(had) + " Bolts)." : "Bid at least " + std::to_string(need) + " Bolts.");
+        const long long more = amount - had;   // (raising your bid only takes the difference)
+        if (balance(me) < more) return fail("You need " + std::to_string(more - balance(me)) + " more Bolts for that bid.");
+        add(me, -more, std::string(mine ? "Raised your bid on " : "Bid on ") + a.name, "bid:" + a.id + ":" + Account::randomHex(4));
+        if (mine) { (*mine)["amount"] = amount; (*mine)["at"] = now; }
+        else bids.push_back({{"by", me.id}, {"amount", amount}, {"at", now}});
+        std::stable_sort(bids.begin(), bids.end(), [](const json& x, const json& y) {   // highest first; a tie goes to whoever bid first
+            const long long ax = x.value("amount", 0LL), ay = y.value("amount", 0LL);
+            return ax != ay ? ax > ay : x.value("at", 0LL) < y.value("at", 0LL);
+        });
+        while ((long long)bids.size() > copies) {   // pushed off the list: their Bolts back
+            const json out = bids.back();
+            bids.erase(bids.end() - 1);
+            User* u = findUser(out.value("by", std::string()));
+            if (!u) continue;
+            const long long back = out.value("amount", 0LL);
+            add(*u, back, "Outbid on " + a.name + " (your Bolts back)", "outbid:" + a.id + ":" + Account::randomHex(4));
+            notify(u, "auction", "Someone outbid you on " + a.name + ". Your " + std::to_string(back) + " Bolts are back. Bid again to get it!", a.id);
+        }
+        if (au.value("endsAt", 0LL) - now < kAuctionExtend) au["endsAt"] = now + kAuctionExtend;
+        saveAssets(); saveUsers();
+        json r = assetReply(a); r["me"] = meJson(me); return r;
+    }
+    if (name == "auction.cancel") {
+        if (!isStaff(me)) return fail("Only staff can cancel auctions.");
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end() || !auctionOpen(it->second, now)) return fail("That item isn't up for auction.");
+        Asset& a = it->second;
+        json& au = a.meta["auction"];
+        for (const json& b : au.value("bids", json::array())) {
+            User* u = findUser(b.value("by", std::string()));
+            if (!u) continue;
+            const long long back = b.value("amount", 0LL);
+            add(*u, back, "Auction for " + a.name + " was cancelled (your Bolts back)", "auctionback:" + a.id + ":" + Account::randomHex(4));
+            notify(u, "auction", "The auction for " + a.name + " was cancelled. Your " + std::to_string(back) + " Bolts are back.", a.id);
+        }
+        au["bids"] = json::array();
+        au["done"] = true;
+        au["cancelled"] = true;
+        staffDid(me, "auction", "Cancelled the auction for \"" + a.name + "\"", a.creator);
+        saveAssets(); saveUsers();
         json r = assetReply(a); r["me"] = meJson(me); return r;
     }
 
