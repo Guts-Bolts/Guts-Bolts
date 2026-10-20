@@ -1664,7 +1664,13 @@ void PlayerApp::drawGame(float dt) {
     const bool vr = m_vrOn;
     const bool vrDraw = vr && Vr::beginFrame(vrEyes, 0.1f, 1000.0f);
     if (touch) updateTouch(pos, max, acceptInput);
-    else if (vr) vrControls(acceptInput);
+    else if (vr) { vrControls(acceptInput); vrTrack(); }
+    else if (!m_opts.vrTestHands.empty()) {   // tests: the VR body without a headset, facing the way the camera looks
+        const glm::vec3 f = m_camera.forward();
+        m_vrYaw = glm::degrees(std::atan2(-f.x, -f.z));
+        m_vrBodyYaw = glm::degrees(std::atan2(f.x, f.z));
+        vrTrack();
+    }
     else       m_session->setTouchInput(glm::vec2(0.0f), false);
     m_session->update(dt, m_camera.yaw, acceptInput, PlayCamera::swimLook(m_camera));
 
@@ -1738,6 +1744,7 @@ void PlayerApp::drawGame(float dt) {
         if (vr) vrFollow(*p);
         else PlayCamera::follow(m_camera, *p, dt, m_shiftLock);
         PlayCamera::fade(*m_scene, *p, m_camera);
+        if (vr) vrShowBody(*p);
     }
 
 #ifdef GB_MOBILE
@@ -2453,6 +2460,8 @@ void PlayerApp::drawPauseMenu() {
         key("Left stick", "Walk the way you look");
         key("Right stick", "Turn (left / right)");
         key("A", "Jump");
+        key("Right trigger", "Use the tool you're holding");
+        key("Your hands", "Your character's arms reach for your controllers, and its head turns with yours");
         key("Menu", "Open or close this menu (on the computer screen for now)");
     }
     ImGui::EndChild();

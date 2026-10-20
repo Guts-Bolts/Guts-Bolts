@@ -68,6 +68,7 @@ struct PlayerOptions {
     // local test server straight away as that name; the window closes when the test ends.
     std::string studioTest;
     bool        vr = false;            // --vr: show the game in a VR headset once it starts
+    std::string vrTestHands;           // --vr-test-hands "lx,ly,lz,rx,ry,rz": pretend controllers there (metres from the head, tests)
     std::string testName;
 };
 
@@ -257,7 +258,9 @@ private:
     void startVr();
     void stopVr();
     void vrControls(bool acceptInput);
+    void vrTrack();                    // your real head and hands -> the character's head and arms
     void vrFollow(Player& player);
+    void vrShowBody(Player& player);   // in VR you see your own body (all but the head)
     void vrRender(const Vr::View eyes[2]);
     void vrMirror(ImVec2 size);
     // Reporting and blocking — PlayerSafety.cpp
@@ -357,6 +360,9 @@ private:
     bool        m_vrAligned = false;   // turned so the headset starts looking where the character faces
     bool        m_vrTurned = false;    // the right stick is pushed over (one snap turn per push)
     float       m_vrYaw = 0.0f;        // degrees: how far the snap turns (and lining up) turned you
+    bool        m_vrBodyAligned = false;
+    float       m_vrScale = 1.45f;     // studs per real metre (from the character's eye height)
+    float       m_vrBodyYaw = 0.0f;    // degrees: the way the body faces (it follows the head, a little behind)
     std::string m_vrStatus;            // why VR didn't start / stopped (shown in the menu)
     Camera      m_avatarCam;
     Framebuffer m_avatarView;
