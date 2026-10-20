@@ -49,6 +49,14 @@ glm::mat4 head();
 // Where a controller is (0 = left hand, 1 = right), headset space, this frame.
 // False when the headset can't see it (put down, out of view, switched off).
 bool hand(int side, glm::mat4& pose);
+// Where a controller points (0 = left, 1 = right): a beam out of it along -Z.
+bool aim(int side, glm::mat4& pose);
+
+// A flat screen floating in the headset, for the menus and buttons: the picture
+// `colorTexture` (w x h pixels, see-through where it's clear) shown this frame
+// at `pose` (headset space; its front faces +Z), `widthMetres` wide. Call it
+// after beginFrame, before endFrame. The headset draws it on top of the world.
+void showPanel(unsigned colorTexture, int w, int h, const glm::mat4& pose, float widthMetres);
 
 // The controllers (filled in by beginFrame).
 struct Controls {
@@ -57,6 +65,7 @@ struct Controls {
     bool jump = false;      // A (or the right trackpad / stick click)
     bool menu = false;      // the left controller's menu button, pressed this frame
     bool use = false;       // the right trigger, pressed this frame (use the tool you hold)
+    bool useHeld = false;   // the right trigger is down (clicking and dragging on a menu)
 };
 const Controls& controls();
 

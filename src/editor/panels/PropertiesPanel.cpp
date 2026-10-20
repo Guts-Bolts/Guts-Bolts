@@ -1183,6 +1183,20 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
             bool smooth = node->editMesh->smooth;
             if (ImGui::Checkbox("Smooth shading", &smooth)) { MeshEdit::own(*node).smooth = smooth; MeshEdit::refresh(*node); }
             if (ImGui::Button("Edit Mesh (Tab)", ImVec2(-1, 0)) && m_editMesh) m_editMesh(node);
+            // A picture wrapped onto it by its UV layout (the UV Editor shows where each face sits).
+            ImGui::InputText("Texture", &node->texture);
+            if (ImGui::IsItemDeactivatedAfterEdit()) node->texture = Online::assetRef(node->texture);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("A picture wrapped onto the mesh: a .png / .jpg in the games folder, a full path,\n"
+                                  "or gb:<id> for one uploaded on the Create page. The UV Editor shows how it wraps.");
+            if (FileDialog::available()) {
+                ImGui::SameLine();
+                if (ImGui::Button("Browse...##meshtex")) {
+                    std::string path = FileDialog::openImage("Pick a picture to wrap onto the mesh");
+                    if (!path.empty()) { node->texture = Paths::relativeToGames(path); m_scene->markDirty(); }
+                }
+            }
+            if (ImGui::Button("UV Editor", ImVec2(-1, 0)) && m_openUVEditor) m_openUVEditor();
         } else {
             const char* shapes[] = { "Cube", "Sphere", "Plane", "Cylinder" };
             int shape = (int)node->primitiveType - 1;

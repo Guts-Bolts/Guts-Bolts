@@ -38,6 +38,7 @@ public:
     float     swimLook() const;                   // (and swimming up / down)
     glm::vec3 cameraPivot() const { return m_camera.pivot; }
     glm::vec3 cameraPosition() const { return m_camera.position(); }
+    glm::mat4 cameraViewProj() const { return m_camera.projection() * m_camera.view(); }   // world -> screen
     void      frameOn(const glm::vec3& target);   // point the camera at a target
     void      followPlayer(Player& p, float dt);   // Play: the camera follows the head (first person too)
     bool      hovered() const { return m_hovered; }

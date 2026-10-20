@@ -633,6 +633,20 @@ void Editor::renderToolbar() {
                 meshOp(MeshOp::Proportional);
         }
         {
+            Group g("UV");
+            // One button with a menu, so the tab still fits a small window.
+            if (bigButton("UV", Icons::Id::GuiImage, m_uv.show, true, "Lay the mesh out flat for a picture: UV Editor, Unwrap, seams"))
+                ImGui::OpenPopup("##uvmenu");
+            if (ImGui::BeginPopup("##uvmenu")) {
+                if (ImGui::MenuItem("UV Editor", nullptr, m_uv.show)) m_uv.show = !m_uv.show;
+                if (ImGui::MenuItem("Unwrap...", "U")) m_uv.openUnwrap = true;
+                ImGui::Separator();
+                if (ImGui::MenuItem("Mark Seam")) markSeams(true);
+                if (ImGui::MenuItem("Clear Seam")) markSeams(false);
+                ImGui::EndPopup();
+            }
+        }
+        {
             Group g("Mode");
             if (bigButton("Done", Icons::Id::Done, false, true, "Back to Build mode (Tab)")) setMode(StudioMode::Build);
         }

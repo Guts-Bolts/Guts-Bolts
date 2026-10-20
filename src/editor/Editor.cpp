@@ -98,6 +98,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     };
     m_properties   = std::make_unique<PropertiesPanel>(scene, open);
     m_properties->m_editCollisionGroups = [this] { m_showCollisionGroups = true; };
+    m_properties->m_openUVEditor = [this] { m_uv.show = true; };
     m_properties->m_editMesh = [this](SceneNode* n) {
         m_deferred = [this, n] { m_scene->select(n); setMode(StudioMode::Modeling); };   // not while Properties is drawing
     };
@@ -202,6 +203,7 @@ void Editor::render(float dt) {
     autoSaveTick();
     renderAccessoryWindow();
     renderArmature();
+    renderUVEditor();
     renderPluginLibrary();
     if (m_showPanel[kPanelCommandBar]) renderCommandBar();
     renderInsertObject();
@@ -275,7 +277,7 @@ void Editor::resetHistory() {
 
 void Editor::trackChanges() {
     // Wait until a drag / text edit is finished so it becomes one undo step.
-    if (m_playing || ImGui::IsAnyItemActive() || m_viewport->gizmoInUse()) return;
+    if (m_playing || ImGui::IsAnyItemActive() || m_viewport->gizmoInUse() || m_uv.modal) return;
     std::string now = Serializer::saveScene(*m_scene);
     if (now == m_committed) return;
     m_undo.push_back(std::move(m_committed));
@@ -852,6 +854,7 @@ void Editor::handleShortcuts() {
         if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) togglePlay();
         return;
     }
+    if (m_uv.hovered && !io.KeyCtrl) return;   // the UV Editor has its own keys (G, R, S, A, L, U)
     if (m_state.mode == StudioMode::Modeling) { handleModelingKeys(); return; }
     // Tab: reshape the selected part (Blender's Edit Mode).
     if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !io.KeyCtrl && !io.KeyAlt) { setMode(StudioMode::Modeling); return; }

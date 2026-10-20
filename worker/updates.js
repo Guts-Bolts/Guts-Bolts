@@ -11,7 +11,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'bones-inside', name: 'Bones Inside', time: 1792519400, tag: 'Studio',
+    id: 'bones-inside', name: 'Bones Inside', time: 1792521600, tag: 'Studio',
     summary: 'Armatures in Studio: put a chain of bones inside a MeshPart and it bends like an arm, a tail or a tentacle.',
     items: [
       'Insert > Bone, or the Armature button on the AVATAR tab, opens the Armature window. Add Bone puts one along the part\'s longest side, Add Chain adds a whole row of them',
@@ -20,6 +20,38 @@ export const BUILT_IN_UPDATES = [
       'Weight painting in Modeling mode: Show weights colours the corners by how much the picked bone moves them, and Assign to Picked / Remove change it',
       'Bones show as diamonds in the viewport. Click one to pick it. Rest Pose puts them all back, Unbind lets the mesh go',
       'Changing a bound mesh (extrude, loop cut, add a shape...) keeps it bound: new corners follow the bone nearest to them',
+    ],
+  },
+  {
+    id: 'unfold-the-box', name: 'Unfold the Box', time: 1792521000, tag: 'Studio',
+    summary: 'UV mapping in Studio: lay a mesh out flat, mark seams and wrap your own picture around it.',
+    items: [
+      'Press U in Modeling mode to unwrap: Unwrap (cuts along your seams, keeps shapes), Smart UV Project, Cube, Cylinder and Sphere Projection, Project From View and Reset',
+      'Mark Seam and Clear Seam in the UV button on the MESH tab and in the right-click UV menu: seams show red and are where Unwrap cuts the mesh open, like cutting a cardboard box flat',
+      'The new UV Editor window shows where every face sits on the picture. Click, Shift+click or drag a box to pick, then G moves, R turns and S sizes (X / Y lock a direction, Ctrl snaps). L picks a whole piece',
+      'Pack Islands spreads the pieces out so none overlap, and Export UV Layout saves a picture of the layout to paint over in any drawing program',
+      'MeshParts have a Texture in Properties: pick a picture and it wraps onto the mesh the way the UV Editor shows',
+      'Changing the mesh after unwrapping (extrude, inset, subdivide...) keeps the layout of the faces that didn\'t change',
+    ],
+  },
+  {
+    id: 'mind-reader', name: 'Mind Reader', version: '0.7.5', time: 1792520400, tag: 'Engine',
+    summary: 'Game scripts can now tell when someone plays in VR, and where their head and hands are.',
+    items: [
+      'VRService works in LocalScripts: VREnabled is true while you play in a VR headset (UserInputService.VREnabled too)',
+      'VRService:GetUserCFrame(Enum.UserCFrame.Head, LeftHand or RightHand) says where your head or a hand is, in studs, like on Roblox',
+      'VRService.UserCFrameChanged fires every frame with each one the headset can see, so a script can stick a sword or a flashlight to your hand',
+      'Studio\'s script editor suggests the new names, and the AI helper knows about them',
+    ],
+  },
+  {
+    id: 'point-and-click', name: 'Point and Click', version: '0.7.4', time: 1792519800, tag: 'Player',
+    summary: 'In VR the menus, buttons and chat float in front of you, and you click them by pointing with your right hand.',
+    items: [
+      'Everything that sits on top of the game (the menu, health, the hotbar, chat, the game\'s own buttons) now shows on a see-through screen floating in front of you in the headset',
+      'Point at it with your right controller and a ring shows where you\'re pointing; pull the trigger to click, hold it to drag a slider',
+      'Opening the menu puts the screen right in front of you. While you play it drifts back in front of you when you look far away',
+      'Pointing at the screen but not at a button? The trigger still uses your tool, so the screen never gets in your way',
     ],
   },
   {

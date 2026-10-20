@@ -20,7 +20,8 @@ struct EditMesh {
     std::vector<std::vector<uint32_t>> faces;
     bool                               smooth = false;   // smooth shading (no hard edges)
     // Optional texture coordinates, one per corner of each face (the character's
-    // clothing layout). Empty, or out of step with `faces` after an edit = box mapping.
+    // clothing layout, or laid out in Studio's UV Editor). Empty, or out of step
+    // with `faces` after an edit = box mapping.
     std::vector<std::vector<glm::vec2>> uvs;
     // Skinning (an armature, see Skin.h): how much each bone pulls each vertex.
     // `bones` names the Bones inside the part; `bind` is where each bone was (in
@@ -31,6 +32,9 @@ struct EditMesh {
     std::vector<glm::mat4>            bind;
     std::vector<std::vector<Weight>>  weights;
     bool skinned() const { return !bones.empty() && bind.size() == bones.size() && weights.size() == verts.size(); }
+    // Seams: edges (corner pairs, lower number first) where Unwrap may cut the
+    // surface open to lay it flat, like Blender's Mark Seam. Kept sorted.
+    std::vector<std::pair<uint32_t, uint32_t>> seams;
 };
 
 namespace MeshEdit {
@@ -107,5 +111,28 @@ EditMesh extract(const EditMesh& m, const Selection& sel);
 // Carry per-corner flags (like "hidden") across an edit: a corner of `after`
 // gets the flag of a corner of `before` in exactly the same place.
 std::vector<char> carryFlags(const EditMesh& before, const std::vector<char>& flags, const EditMesh& after);
+// ---- UV mapping: how a picture wraps onto the mesh (MeshUV.cpp) -----------
+
+// The ways to lay the picked faces (or all) out flat, like Blender's U menu.
+enum class Unwrap { Unwrap, Smart, Cube, Cylinder, Sphere, View, Reset };
+inline constexpr int kUnwrapCount = 7;
+inline const char* const kUnwrapNames[kUnwrapCount] = {"Unwrap", "Smart UV Project", "Cube Projection", "Cylinder Projection",
+                                                       "Sphere Projection", "Project From View", "Reset"};
+// `scale` is the part's size (so nothing comes out stretched); `view` takes the
+// mesh's own points to the screen (Project From View only).
+bool unwrap(EditMesh& m, const Selection& sel, Unwrap how, glm::vec3 scale, const glm::mat4& view = glm::mat4(1.0f));
+// Give every face texture coordinates (the box mapping it's drawn with now) if it has none.
+void ensureUVs(EditMesh& m);
+// Spread out pieces of the layout so none overlap, filling the square (picked faces, or all).
+void packIslands(EditMesh& m, const std::vector<int>& faces, glm::vec3 scale);
+// Faces joined in the layout (sharing an edge with the same UVs on both sides).
+std::vector<std::vector<int>> uvIslands(const EditMesh& m, const std::vector<int>& faces);
+bool markSeams(EditMesh& m, const Selection& sel, bool on);   // picked edges become (or stop being) seams
+bool isSeam(const EditMesh& m, uint32_t a, uint32_t b);
+// After a tool changed the mesh: keep the layout and seams where the faces are
+// still the same, and give new faces UVs that fit their neighbours'.
+void carryUVs(const EditMesh& before, EditMesh& after);
+// A picture of the layout (for painting a texture in another program), RGBA.
+std::vector<unsigned char> layoutPicture(const EditMesh& m, int size);
 
 } // namespace MeshEdit

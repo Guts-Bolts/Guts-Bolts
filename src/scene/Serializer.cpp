@@ -793,6 +793,12 @@ json toJson(const SceneNode& n) {
                 }
                 j["mesh"]["skin"] = {{"bones", m.bones}, {"bind", std::move(bind)}, {"w", std::move(w)}};
             }
+            // Seams for Unwrap: pairs of corner numbers.
+            if (!n.editMesh->seams.empty()) {
+                json sm = json::array();
+                for (auto [x, y] : n.editMesh->seams) { sm.push_back(x); sm.push_back(y); }
+                j["mesh"]["seams"] = std::move(sm);
+            }
         }
         j["color"]        = vec(n.color);
         j["transparency"] = n.transparency;
@@ -997,6 +1003,14 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
                         if (!good) { m->bones.clear(); m->bind.clear(); m->weights.clear(); }
                     }
                 }
+                if (auto sm = it->find("seams"); sm != it->end() && sm->is_array())
+                    for (size_t i = 0; i + 1 < sm->size(); i += 2) {
+                        if (!(*sm)[i].is_number_unsigned() || !(*sm)[i + 1].is_number_unsigned()) continue;
+                        uint32_t x = (*sm)[i].get<uint32_t>(), y = (*sm)[i + 1].get<uint32_t>();
+                        if (x < m->verts.size() && y < m->verts.size() && x != y) m->seams.push_back({std::min(x, y), std::max(x, y)});
+                    }
+                std::sort(m->seams.begin(), m->seams.end());
+                m->seams.erase(std::unique(m->seams.begin(), m->seams.end()), m->seams.end());
                 m->smooth = get<bool>(*it, "smooth", false);
             }
             if (m->faces.empty()) m = MeshEdit::fromPrimitive(PrimitiveType::Cube);
