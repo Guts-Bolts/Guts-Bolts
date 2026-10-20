@@ -32,3 +32,18 @@ test('the C++ filter (src/core/TextFilter.cpp) has the same word list', () => {
   const words = [...line[1].matchAll(/"([^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(words, FILTER_WORDS);
 });
+
+// Lua code in the Scripting Helpers forum, chat and descriptions: names like Shop, Top and Info
+// end in a web address ending (.shop, .top, .info), but code carries on after them.
+const LUA = ['local door = workspace.Shop.Door', 'script.Parent.Top.Size = 5', 'game.Players.LocalPlayer.PlayerGui.Shop.Enabled = true',
+  'workspace.Shop:Destroy()', 'local t = gui.Top[1]', 'print(button.Info())'];
+const LINKS = ['go to evil.shop', 'evil.shop/free-bolts', 'www.evil.shop.Now', 'https://evil.shop.Door', 'free stuff at evil.com: hurry',
+  'evil.co.uk', 'EVIL.COM'];
+
+test('Lua code that looks a bit like a web address goes through', () => {
+  for (const s of LUA) assert.equal(filterText(s), s, s);
+});
+
+test('real web addresses are still deleted', () => {
+  for (const s of LINKS) assert.equal(filterText(s), CONTENT_DELETED, s);
+});
