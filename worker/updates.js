@@ -11,6 +11,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'fine-print', name: 'The Fine Print', time: 1792537200, tag: 'Website',
+    summary: 'A much fuller Terms of Service, still in plain words: what Bolts are (and aren\'t), trading, what you make, bans and appeals.',
+    items: [
+      'Bolts and items have no real-money value, can\'t be cashed out, and what you spend them on is final. Real-money trading isn\'t allowed',
+      'Clearer rules for trades, resale and auctions (accepted trades are final), and what happens to your stuff if you delete your account',
+      'What you make stays yours: what uploading lets Guts&Bolts do with it, and how to tell staff if someone uploaded your work',
+      'Under-18 accounts get closed, and nobody under 13 should ever be here. Report anyone who seems too young',
+      'New sections on chat and the text filter, warnings, bans and appeals, other people\'s games and apps, limits on liability, and how to contact staff',
+      'The Player app\'s short Terms window says the same things about Bolts, items and appeals',
+    ],
+  },
+  {
     id: 'body-swap', name: 'Body Swap', time: 1792522200, tag: 'Studio',
     summary: 'Bundles can change your whole body now: Guts can reshape the character\'s head, torso, arms and legs in Studio and sell it as a bundle.',
     items: [

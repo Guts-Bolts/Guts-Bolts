@@ -2838,16 +2838,19 @@ pages.login = async () => loginPage(false);
 pages.signup = async () => loginPage(true);
 let authSetup = null;   // Settings: an authenticator app being set up ({secret, uri})
 
-// The Terms of Service. Plain words on purpose. (Also in the Player app: PlayerLogin.cpp.)
+// The Terms of Service. Plain words on purpose. (A short version is in the Player app: PlayerLogin.cpp.)
 pages.terms = async () => {
   show(html`<div class="terms">
     <h1>Guts&amp;Bolts Terms of Service</h1>
-    <p class="muted small">Last updated October 2026. By making an account or playing, you agree to these terms.</p>
+    <p class="muted small">Last updated October 2026. By making an account, playing or using Studio, you agree to these
+      terms. If you don't agree, please don't use Guts&amp;Bolts.</p>
+    <p>"Guts&amp;Bolts", "we" and "us" mean the people who make and run Guts&amp;Bolts. "You" means you, the person
+      using it. These terms cover the website, Studio, the Player and our game servers.</p>
 
     <h2>1. What Guts&amp;Bolts is</h2>
     <p>Guts&amp;Bolts is a free, independent game engine and platform: Studio to build games, the Player to play them,
-      and this website. It's a hobby project made for fun. Nobody makes a profit from it: there are no paid
-      subscriptions, and Bolts (the in-game money) can't be bought with or turned into real money.</p>
+      and this website. It's a hobby project made for fun. There are no paid subscriptions, and Bolts (the money used
+      inside Guts&amp;Bolts) can't be bought with or turned into real money (see section 4).</p>
     <p>Guts&amp;Bolts is <b>not affiliated with, endorsed by, or connected to Roblox Corporation</b>. "Roblox" is
       their trademark. We don't use their name or logos for our own branding, and we don't support or speak for them.
       Guts&amp;Bolts exists because its creator got fed up with update after update on that platform and decided to
@@ -2855,50 +2858,169 @@ pages.terms = async () => {
 
     <h2>2. Adults only (18+)</h2>
     <p>This is the R-rated, non-kid version of the genre. Games and chat can contain <b>strong language, crude
-      humour, cartoon violence and gore, and mature themes</b>, and chat isn't filtered. You must be <b>18 or
+      humour, cartoon violence and gore, and mature themes</b>, and swearing isn't filtered. You must be <b>18 or
       older</b> to make an account or play. If you're under 18, please don't use Guts&amp;Bolts.</p>
+    <ul>
+      <li><b>No kids, and especially no one under 13.</b> Guts&amp;Bolts isn't made for children, and we don't knowingly
+        collect personal information from anyone under 13 (or anyone under 18).</li>
+      <li>If we find out an account belongs to someone under 18, we'll close it and delete what's personal in it.</li>
+      <li>If you think someone is under 18, report them, or tell staff on the <a href="#/support">Support</a> page.
+        Parents can ask us there to close their child's account.</li>
+      <li>Ticking the "I'm 18 or older" box when you sign up is a promise. Lying about your age breaks these terms.</li>
+    </ul>
 
     <h2>3. Your account</h2>
     <ul>
       <li>Keep your password (and your authenticator, if you turn one on) to yourself. You're responsible for
-        what happens on your account.</li>
+        everything that happens on your account.</li>
       <li>Your password never leaves your device in a readable form, so if you lose it and have no recovery email,
-        nobody can get it back.</li>
-      <li>One person, one account is the normal way to play. Don't make accounts to dodge a ban.</li>
+        staff may not be able to get your account back.</li>
+      <li>One person, one account is the normal way to play. Don't make accounts to dodge a ban, to farm Bolts or to
+        vote on your own games.</li>
+      <li>Don't sell, buy, rent or share accounts. An account belongs to the person who made it, and can't be
+        handed over.</li>
+      <li>Usernames have to follow the rules (section 7). A username that breaks them can get the account warned or
+        banned.</li>
+      <li>You can delete your account any time in Settings. That removes what's personal in it (like your password,
+        email, avatar, posts, messages and friends) and can't be undone. Games and items you made stay up as made by
+        "Deleted user", so people who bought them keep them, and your username is never given to anyone else. Bolts
+        and items on a deleted account are gone for good.</li>
     </ul>
 
-    <h2>4. Rules</h2>
+    <h2>4. Bolts and items are not real money</h2>
+    <p>This is the important bit about the in-game money and stuff, so please read it.</p>
+    <ul>
+      <li><b>Bolts have no real-money value.</b> You can't buy them with real money, and you can't cash them out,
+        sell them, or swap them for real money or anything outside Guts&amp;Bolts.</li>
+      <li>You get Bolts by playing: 100 when you sign up, a daily reward, some for playing games, from selling things
+        you made, from groups, and sometimes as gifts or codes from staff.</li>
+      <li>Bolts and items (hats, shirts, Limiteds, game passes and the rest) aren't your property. They're a
+        <b>permission to use</b> them inside Guts&amp;Bolts, which we can change or take away (for example if you're
+        banned, or Guts&amp;Bolts shuts down).</li>
+      <li><b>Everything is final and non-refundable.</b> Bolts spent on items, game passes, private servers, upload
+        fees, username changes, auctions and the rest don't come back, unless staff decide to fix a mistake.</li>
+      <li>We can change prices, rewards, fees and how Bolts work at any time.</li>
+      <li>If you got Bolts or items through a bug, an exploit, a scam or by breaking the rules, staff can take them
+        back, and may take back what you bought with them.</li>
+      <li><b>No real-money trading.</b> Selling or buying Bolts, items or accounts for real money (or gift cards,
+        crypto, or anything else outside Guts&amp;Bolts) isn't allowed, and can get every account involved banned.</li>
+    </ul>
+
+    <h2>5. Selling, trading, resale and auctions</h2>
+    <ul>
+      <li>When someone buys something you made, you get 70% of the price in Bolts (when someone resells a Limited,
+        the seller gets 70%). The rest is gone: it isn't paid to anyone.</li>
+      <li>Trades are between players. Look closely before you accept one: <b>accepted trades, resale purchases and
+        auction wins are final</b>, and staff usually won't undo them.</li>
+      <li>Staff may undo a trade or sale that came from a scam, a hacked account or a bug, but don't have to.</li>
+      <li>Don't scam: no fake trades, tricks, lying about what an item is, or "give me your items first" deals.</li>
+      <li>Limiteds held by a deleted account are out of circulation for good.</li>
+    </ul>
+
+    <h2>6. What you make</h2>
+    <ul>
+      <li>Games, models, clothing, pictures, sounds and anything else you make <b>stay yours</b>.</li>
+      <li>By uploading something, you let Guts&amp;Bolts store it, copy it onto our servers, make pictures of it
+        (thumbnails), show it to other players, and run it in games, for as long as it's on Guts&amp;Bolts. If you make
+        a model or other item public in the Library, you also let other players use it in their own games.</li>
+      <li>You promise you have the right to upload it: you made it yourself, or the person who did said you could.</li>
+      <li>Uploads can be checked by staff before anyone else sees them, and staff can turn down or remove anything that
+        breaks the rules.</li>
+      <li>You can delete what you upload. Copies other people already bought or used in their games may stay.</li>
+      <li>Think something on Guts&amp;Bolts is your work, uploaded without asking? Tell staff on the
+        <a href="#/support">Support</a> page with what it is and why it's yours, and we'll look at it and take it down
+        if it's copied. People who keep uploading other people's work get banned.</li>
+    </ul>
+
+    <h2>7. Rules</h2>
     <p>Mature content is allowed; being a menace isn't. Don't:</p>
     <ul>
-      <li>post anything sexual involving minors, or anything illegal where you live;</li>
+      <li>post anything sexual involving minors (this gets you banned for good and may be reported to the police), or
+        anything illegal where you live;</li>
+      <li>post hate speech or slurs about who people are (race, religion, sexuality, gender, disability and so on);</li>
       <li>threaten, stalk, dox (share someone's personal info) or seriously harass anyone;</li>
-      <li>cheat, exploit bugs to hurt others, or attack the servers;</li>
-      <li>scam people out of their items or Bolts;</li>
+      <li>share your own or anyone else's personal info, like real names, addresses, phone numbers or emails;</li>
+      <li>cheat, exploit bugs to hurt others or gain Bolts and items, or attack, overload or break into the servers;</li>
+      <li>scam people out of their items, Bolts or accounts, or try to get their passwords;</li>
+      <li>spam, or advertise things outside Guts&amp;Bolts;</li>
+      <li>upload viruses, or games or plugins made to harm people's computers or steal from them;</li>
       <li>upload things you don't have the right to share (other people's art, music, or another platform's assets
         passed off as yours);</li>
       <li>pretend to be staff or another player.</li>
     </ul>
-    <p>Staff can warn, ban (for a time or for good) and remove content that breaks these rules, at their own judgement.</p>
 
-    <h2>5. What you make</h2>
-    <p>Games, models, clothing and anything else you make stay yours. By uploading them you let Guts&amp;Bolts store
-      them and show them to other players (and, if you make them public, let others use them in their games, like the
-      Library works). You can delete what you upload.</p>
+    <h2>8. Chat, safety and moderation</h2>
+    <ul>
+      <li>Swearing is allowed. The text filter still hides slurs, links to other sites and personal info (like phone
+        numbers and email addresses) as "[ Content Deleted ]".</li>
+      <li>You can <b>block</b> anyone and <b>report</b> people, games, items, messages, groups, comments and forum posts.
+        Staff look at reports and can see the messages that were reported.</li>
+      <li>Staff can't watch everything, and we aren't responsible for what other players say, make or do. If something
+        is dangerous, report it, and contact the police if someone is in danger.</li>
+      <li>What you post can be seen by others (depending on your Privacy settings), so don't post anything you'd want
+        kept secret.</li>
+    </ul>
 
-    <h2>6. No guarantees</h2>
-    <p>Guts&amp;Bolts is provided <b>"as is"</b>, with no warranty of any kind. It's a hobby project: things may break,
-      be changed, lose data, or shut down at any time. As far as the law allows, the people who make Guts&amp;Bolts aren't
-      liable for any loss or damage from using it, including lost items, Bolts or games.</p>
+    <h2>9. Warnings, bans and appeals</h2>
+    <ul>
+      <li>If you break these terms, staff can remove your content, take back Bolts or items, warn you, or ban you
+        for a time or for good. Staff decide, at their own judgement. Bad enough things can mean a ban without a
+        warning first.</li>
+      <li>While you're banned, you can't use your account, Bolts or items, and you won't get them back if the ban is
+        for good.</li>
+      <li>A banned account can send staff one short appeal per ban from the ban screen. Staff read it and decide; their
+        answer is final.</li>
+      <li>Don't dodge a ban with another account. That account gets banned too, and the first ban can get longer.</li>
+    </ul>
 
-    <h2>7. Privacy, in short</h2>
+    <h2>10. Other people's games, servers and apps</h2>
+    <ul>
+      <li>Games are made by players, not by us. A game can save things about you (like your progress) and sell its own
+        passes and products for Bolts. Its creator is responsible for it.</li>
+      <li>Games hosted by a player (like LAN games) or on a server someone else runs don't go through our servers, and
+        we don't control them.</li>
+      <li>Apps you connect to your account (like Lyreto) are run by other people, with their own rules. You can
+        disconnect them in Settings.</li>
+    </ul>
+
+    <h2>11. Privacy, in short</h2>
     <p>We keep what's needed to run your account: your username, user number, avatar, friends, what you own and make,
-      and an email address if you add one (only used for account emails, like resetting your password). We don't sell
-      anything to anyone. Online play goes through our servers, not straight to other players.</p>
+      your Bolts history, what you post and send, and an email address if you add one (only used for account emails,
+      like codes and resetting your password). We don't sell anything to anyone. Online play goes through our servers,
+      not straight to other players. Staff can see what's needed to keep Guts&amp;Bolts safe, like reports.</p>
 
-    <h2>8. Changes</h2>
-    <p>These terms can change as the platform grows. If they change in a big way, it'll be on the Updates page. Keeping
-      on playing means you accept the new version.</p>
-    <p class="small muted">This page is a plain-words summary written for a hobby project, not legal advice.</p>
+    <h2>12. No guarantees</h2>
+    <p>Guts&amp;Bolts is provided <b>"as is" and "as available"</b>, with no warranty of any kind. It's a hobby
+      project: things may break, change, lose data, or shut down at any time, with or without warning. We don't promise
+      it will always work, be safe from bugs, or keep your games, items or Bolts forever. Keep your own copies of
+      things you make.</p>
+
+    <h2>13. Limits on what we're responsible for</h2>
+    <p>As far as the law allows, the people who make and run Guts&amp;Bolts <b>aren't liable</b> for any loss or damage
+      from using it (or not being able to), including lost items, Bolts, games, data or accounts, or anything other
+      players do. Guts&amp;Bolts is free, so if we're ever found liable anyway, the most we'd owe is nothing more than
+      what you paid us, which is $0. Some places don't allow some of these limits, so they may not all apply to
+      you.</p>
+    <p>If someone makes a claim against us because of something you uploaded or did on Guts&amp;Bolts, you're
+      responsible for it, not us.</p>
+
+    <h2>14. Ending things</h2>
+    <p>You can stop using Guts&amp;Bolts and delete your account at any time. We can suspend or close accounts that
+      break these terms, and we can change, pause or shut down Guts&amp;Bolts (or any part of it) at any time. If it shuts
+      down, Bolts and items end with it. Sections 4, 6, 12, 13 and 15 still count after your account is gone.</p>
+
+    <h2>15. Changes and the law</h2>
+    <p>These terms can change as Guts&amp;Bolts grows. If they change in a big way, it'll be on the
+      <a href="#/updates">Updates</a> page, and the date at the top of this page will change. Keeping on playing
+      after that means you accept the new version. If paid features are ever added, they'll come with their own terms
+      first.</p>
+    <p>These terms follow the laws of the State of Florida, USA. If one part of them can't be enforced, the rest still
+      counts.</p>
+
+    <h2>16. Contact</h2>
+    <p>Questions about these terms, a copyright problem, or anything else? Ask staff on the
+      <a href="#/support">Support</a> page. You don't need to be logged in.</p>
+    <p class="small muted">This page is written in plain words for a hobby project. It isn't legal advice.</p>
   </div>`);
 };
 
@@ -2919,7 +3041,7 @@ function loginPage(signup) {
           <p class="small"><a href="#/forgot">Forgot your password?</a> · <a href="#/support">Get help from staff</a></p>`}
       ${signup ? html`<div class="mature-note"><b>Heads up: Guts&amp;Bolts is for adults (18+).</b> It's the
           uncensored, R-rated cousin of the blocky-game genre: games can have strong language, crude humour,
-          cartoon gore and violence, and other players' chat isn't filtered. It's a free hobby project, not
+          cartoon gore and violence, and swearing in chat isn't filtered. It's a free hobby project, not
           Roblox and not connected to Roblox.</div>
         <label class="check"><input type="checkbox" name="agree" required> <span>I'm 18 or older and I agree to the
           <a href="#/terms" target="_blank">Terms of Service</a>.</span></label>` : ''}
