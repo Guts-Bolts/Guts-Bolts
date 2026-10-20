@@ -23,6 +23,20 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'hold-onto-your-hat',
+    name: 'Hold Onto Your Hat',
+    version: '0.7.3',
+    time: 1792456424,
+    tag: 'Fix',
+    summary: 'Hats and accessories stay on your head now, even when an animation turns it.',
+    items: [
+      'Hats, hair and face accessories turn and tilt with the head in emotes, animation packs and game animations',
+      'Neck, shoulder and waist accessories move with the body the same way',
+      'Other players see your hat follow your head too',
+      'Works for the built-in hats, the ones made in Studio\'s Accessory window, and hats put on in the middle of a game',
+    ],
+  },
+  {
     id: 'shop-window',
     name: 'Shop Window',
     version: '0.7.3',
