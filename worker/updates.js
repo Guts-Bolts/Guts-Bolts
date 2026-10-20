@@ -11,6 +11,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'jenga-champion', name: 'Jenga Champion', time: 1792472969, tag: 'Engine',
+    summary: 'Loose parts got steadier and smarter: tall stacks stand still, boxes stay put on slopes, and fast things stop hitting walls instead of passing through them.',
+    items: [
+      'A tall tower of bricks now stands still instead of slowly leaning and toppling over',
+      'Physics takes smaller steps (about 240 a second), so stacks and piles settle calmly',
+      'Each contact remembers how hard it pushed last time, so heavy piles don\'t sag or jiggle',
+      'Boxes lying on boxes touch over their whole face, not just a few corners, so they don\'t wobble',
+      'Fast little things (a bullet, a thrown brick) hit thin walls and bounce off instead of flying straight through',
+    ],
+  },
+  {
     id: 'shop-window',
     name: 'Shop Window',
     version: '0.7.3',

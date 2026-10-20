@@ -2,6 +2,7 @@
 #include <functional>
 #include <cstdint>
 #include <set>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 #include <glm/glm.hpp>
@@ -161,4 +162,9 @@ private:
     mutable NavMesh                        m_nav;
     mutable uint64_t                       m_navHash = ~0ull;    // m_staticHash when it was baked
     mutable double                         m_navTime = -1e9;
+    // How hard each contact pushed last step, so the solver starts from there
+    // next step instead of from nothing (stacks stay still). See RigidBodies.cpp.
+    // (Per pair of touching parts: where each contact was on the first part, and its pushes.)
+    struct ContactMemory { glm::vec3 local, n; float jn, jt1, jt2; };
+    std::unordered_map<uint64_t, std::vector<ContactMemory>> m_contactMemory;
 };
