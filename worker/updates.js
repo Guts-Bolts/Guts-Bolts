@@ -11,6 +11,15 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'no-more-waiting-room', name: 'No More Waiting Room', time: 1792511700, tag: 'Website',
+    summary: 'The website\'s Home, Avatar and Settings pages load faster: they ask the server for everything at once.',
+    items: [
+      'The Home page used to ask for your games, then your feed, then the latest update, then your outfit, one after another. Now it asks for all of them together',
+      'The Avatar page gets your clothes and your outfits at the same time, and Settings gets your blocked people and connected apps together',
+      'Nothing looks different, it just shows up sooner (most of all on slow phone internet)',
+    ],
+  },
+  {
     id: 'body-double',
     name: 'Body Double',
     version: '0.7.3',
