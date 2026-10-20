@@ -20,6 +20,15 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'tidy-on-tiny-screens', name: 'Tidy on Tiny Screens', time: 1792511100, tag: 'Fix',
+    summary: 'The Sign Up page, the Avatar page and the update log look right again, especially on phones.',
+    items: [
+      'The "I\'m 18 or older" box on Sign Up was squashed into a thin column that covered the Sign Up button. It\'s one neat line now',
+      'On a phone, the Avatar page puts the colours, hats and clothes under your character instead of squeezing them into a sliver',
+      'Long words (like script names in this update log) wrap instead of making the page slide sideways on phones',
+    ],
+  },
+  {
     id: 'body-double',
     name: 'Body Double',
     version: '0.7.3',
