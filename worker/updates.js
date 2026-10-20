@@ -21,6 +21,16 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'point-and-click', name: 'Point and Click', version: '0.7.4', time: 1792519800, tag: 'Player',
+    summary: 'In VR the menus, buttons and chat float in front of you, and you click them by pointing with your right hand.',
+    items: [
+      'Everything that sits on top of the game (the menu, health, the hotbar, chat, the game\'s own buttons) now shows on a see-through screen floating in front of you in the headset',
+      'Point at it with your right controller and a ring shows where you\'re pointing; pull the trigger to click, hold it to drag a slider',
+      'Opening the menu puts the screen right in front of you. While you play it drifts back in front of you when you look far away',
+      'Pointing at the screen but not at a button? The trigger still uses your tool, so the screen never gets in your way',
+    ],
+  },
+  {
     id: 'edit-mode-unlocked', name: 'Edit Mode Unlocked', time: 1792518200, tag: 'Studio',
     summary: 'Modeling mode works like Blender now: G / R / S follow the mouse, right-click menus, loop cuts and a pile of new tools.',
     items: [
