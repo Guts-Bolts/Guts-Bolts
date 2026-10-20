@@ -61,6 +61,7 @@ struct Npc {
     float     pendingForce = 0.0f;
     glm::vec3 pendingImpulse{0.0f};
     Ragdoll   ragdoll;
+    BloodyFeet feet;                    // stepped in blood: leaves footprints
     struct Debris { uint64_t id; glm::vec3 vel; glm::vec3 spin; };
     std::vector<Debris> debris;         // classic death: the pieces fly apart
 };

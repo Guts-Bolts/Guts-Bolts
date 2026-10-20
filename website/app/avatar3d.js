@@ -217,19 +217,37 @@ function trs(pos, rot, size) {
   const S = [sx, 0, 0, 0, 0, sy, 0, 0, 0, 0, sz, 0, 0, 0, 0, 1];
   return mul(T, mul(Rz, mul(Ry, mul(Rx, S))));
 }
-// A custom mesh ("v" = x,y,z,..., "f" = corner lists) -> flat-shaded triangles.
+// A custom mesh ("v" = x,y,z,..., "f" = corner lists) -> triangles. Flat-shaded, or with
+// "smooth" (Studio's Smooth shading, and every imported hat) each corner gets the average
+// of the faces around it, like the game does, so round hats look round.
 // With "uv" (u,v for each corner of each face, like an imported Roblox hat) it keeps them,
 // so the hat's picture lands where it does in the game.
 function meshShape(m) {
   const v = m.v || [], pos = [], nrm = [], uv = [];
   const uvs = Array.isArray(m.uv) && m.uv.length === (m.f || []).length ? m.uv : null;
+  const faceNormal = (a, b, c) => {
+    const e1 = [v[b] - v[a], v[b + 1] - v[a + 1], v[b + 2] - v[a + 2]], e2 = [v[c] - v[a], v[c + 1] - v[a + 1], v[c + 2] - v[a + 2]];
+    return [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+  };
+  let smooth = null;   // corner (vertex index * 3) -> normal
+  if (m.smooth) {
+    smooth = new Float64Array(v.length);
+    for (const f of m.f || [])
+      for (let i = 1; i + 1 < f.length; ++i) {
+        const n = faceNormal(f[0] * 3, f[i] * 3, f[i + 1] * 3);   // (bigger faces count more)
+        for (const k of [f[0], f[i], f[i + 1]]) for (let j = 0; j < 3; ++j) if (k * 3 + j < v.length) smooth[k * 3 + j] += n[j];
+      }
+  }
   (m.f || []).forEach((f, fi) => {
     const fu = uvs && Array.isArray(uvs[fi]) && uvs[fi].length === f.length * 2 ? uvs[fi] : null;
     for (let i = 1; i + 1 < f.length; ++i) {
       const a = f[0] * 3, b = f[i] * 3, c = f[i + 1] * 3;
-      const e1 = [v[b] - v[a], v[b + 1] - v[a + 1], v[b + 2] - v[a + 2]], e2 = [v[c] - v[a], v[c + 1] - v[a + 1], v[c + 2] - v[a + 2]];
-      const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
-      for (const k of [a, b, c]) { pos.push(v[k], v[k + 1], v[k + 2]); nrm.push(...n); }
+      const n = faceNormal(a, b, c);
+      for (const k of [a, b, c]) {
+        pos.push(v[k], v[k + 1], v[k + 2]);
+        const sn = smooth && [smooth[k], smooth[k + 1], smooth[k + 2]];
+        nrm.push(...(sn && Math.hypot(...sn) > 1e-12 ? sn : n));
+      }
       if (fu) for (const j of [0, i, i + 1]) uv.push(fu[j * 2], fu[j * 2 + 1]);
     }
   });
