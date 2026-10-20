@@ -2253,7 +2253,7 @@ pages.avatar = async () => {
           <button class="btn small red" data-act="outfit" data-op="outfit.delete" data-id="${o.id}" data-name="${o.name}">Delete</button></div></div>`)}</div>`
       : signedIn() ? html`<p class="muted small">No outfits yet. Dress up, then save the look here so you can wear it again in one click.</p>` : ''}`;
   show(html`<h1>Avatar</h1>
-    <div class="row top">
+    <div class="row top avatar-edit">
       <div class="box" style="text-align:center;margin-right:16px"><div id="avatarPreview">${avatarSvg(a, 180, wornItems)}</div>
         <div class="small muted">Drag to turn</div>
         <p><button class="btn green" data-act="saveAvatar">Save</button>
@@ -2877,8 +2877,8 @@ function loginPage(signup) {
           uncensored, R-rated cousin of the blocky-game genre: games can have strong language, crude humour,
           cartoon gore and violence, and other players' chat isn't filtered. It's a free hobby project, not
           Roblox and not connected to Roblox.</div>
-        <label class="check"><input type="checkbox" name="agree" required> I'm 18 or older and I agree to the
-          <a href="#/terms" target="_blank">Terms of Service</a>.</label>` : ''}
+        <label class="check"><input type="checkbox" name="agree" required> <span>I'm 18 or older and I agree to the
+          <a href="#/terms" target="_blank">Terms of Service</a>.</span></label>` : ''}
       <p><button class="btn green big" style="width:100%">${signup ? 'Sign Up' : 'Log In'}</button></p>
       <p class="error" id="loginMsg"></p></form>
     <p class="small muted">${signup ? 'Usernames can\'t be changed. Your password never leaves this page: if you forget it, nobody can get it back, so write it down somewhere safe.'
