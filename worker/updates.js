@@ -24,6 +24,15 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'keep-your-head', name: 'Keep Your Head', version: '0.7.2', time: 1792455600, tag: 'Fix',
+    summary: 'The Bouncy Animation Pack no longer sends your head flying round the map.',
+    items: [
+      'Walking or running with the Bouncy Animation Pack made your head drift away from your body and fall off, and now it stays on your shoulders',
+      'The bounce in the pack now moves the head along with the body each step, instead of adding up step after step',
+      'Animation packs that turn the head (like the Robot one) are steadier too',
+    ],
+  },
+  {
     id: 'hello-from-the-other-server', name: 'Hello From the Other Server', version: '0.7.2', time: 1792450920, tag: 'Website',
     summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
     items: [
