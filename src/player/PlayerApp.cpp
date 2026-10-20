@@ -652,8 +652,6 @@ void PlayerApp::leaveGame() {
     m_talkOn = false;
 #ifndef GB_QUEST
     stopVr();   // (Quest: you stay in VR, back at the games list)
-#else
-    if (m_session) m_session->scripts().setVr({});
 #endif
     m_session->stop();
     m_session->setRole(GameSession::Role::Solo);
