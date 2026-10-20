@@ -136,6 +136,11 @@ private:
     std::string m_meshMenu;                       // a menu to open at the mouse next frame
     std::string m_meshSearch;                     // F3: what's typed
     void       addMeshPart();
+    // UV mapping: the UV Editor window and the U menu (EditorUV.cpp)
+    void       renderUVEditor();
+    void       unwrapMesh(int how);          // a MeshEdit::Unwrap
+    void       markSeams(bool on);
+    SceneNode* uvNode();                     // the MeshPart the UV Editor shows
     // Online: the Guts&Bolts server, publishing and the Library (EditorOnline.cpp)
     void       renderServerDialog();
     void       renderPublishDialog();
@@ -233,6 +238,22 @@ private:
     std::string m_modelName, m_modelDesc, m_modelMsg, m_libraryQuery, m_libraryMsg;
     int         m_libraryKind = 0;   // 0 models, 1 decals, 2 audio
     bool        m_showAccessory = false;
+    struct UVEditorState {
+        bool      show = false;
+        bool      hovered = false;      // the mouse was over it last frame: keys go to it
+        bool      openUnwrap = false;   // U: open the Unwrap menu
+        bool      checker = true;       // a checker picture behind the layout when the part has no texture
+        float     zoom = 0.9f;
+        glm::vec2 pan{0.5f, 0.5f};      // the UV point in the middle of the view
+        uint64_t  node = 0;
+        std::vector<std::vector<char>> sel;   // picked UV corners (per face, per corner)
+        int       modal = 0;            // 0 none, 1 move (G), 2 rotate (R), 3 scale (S)
+        int       axis = -1;            // -1 free, 0 only U, 1 only V
+        glm::vec2 startMouse{0.0f}, pivot{0.0f};
+        std::vector<std::vector<glm::vec2>> before;
+        bool      boxing = false;
+        glm::vec2 boxStart{0.0f};
+    } m_uv;
     int         m_accessoryKind = 0, m_accessoryPrice = 0;
     std::string m_accessoryName, m_accessoryDesc, m_accessoryMsg;
     nlohmann::json m_library = nlohmann::json::array();

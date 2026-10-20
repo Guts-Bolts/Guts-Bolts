@@ -360,6 +360,7 @@ add_library(gb_engine STATIC
     src/scene/RobloxMesh.cpp
     src/scene/EditMesh.cpp
     src/scene/MeshTools.cpp
+    src/scene/MeshUV.cpp
     src/scene/Csg.cpp
     src/scripting/Luau.cpp
     src/scripting/ScriptEngine.cpp
@@ -612,6 +613,7 @@ set(EDITOR_SOURCES
     src/editor/panels/ViewportTerrain.cpp
     src/editor/EditorModes.cpp
     src/editor/EditorMeshMenus.cpp
+    src/editor/EditorUV.cpp
     src/editor/EditorSolid.cpp
     src/editor/EditorAutosave.cpp
     src/editor/EditorOnline.cpp

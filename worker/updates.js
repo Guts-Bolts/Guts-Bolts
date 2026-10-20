@@ -11,6 +11,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'unfold-the-box', name: 'Unfold the Box', time: 1792518800, tag: 'Studio',
+    summary: 'UV mapping in Studio: lay a mesh out flat, mark seams and wrap your own picture around it.',
+    items: [
+      'Press U in Modeling mode to unwrap: Unwrap (cuts along your seams, keeps shapes), Smart UV Project, Cube, Cylinder and Sphere Projection, Project From View and Reset',
+      'Mark Seam and Clear Seam in the UV button on the MESH tab and in the right-click UV menu: seams show red and are where Unwrap cuts the mesh open, like cutting a cardboard box flat',
+      'The new UV Editor window shows where every face sits on the picture. Click, Shift+click or drag a box to pick, then G moves, R turns and S sizes (X / Y lock a direction, Ctrl snaps). L picks a whole piece',
+      'Pack Islands spreads the pieces out so none overlap, and Export UV Layout saves a picture of the layout to paint over in any drawing program',
+      'MeshParts have a Texture in Properties: pick a picture and it wraps onto the mesh the way the UV Editor shows',
+      'Changing the mesh after unwrapping (extrude, inset, subdivide...) keeps the layout of the faces that didn\'t change',
+    ],
+  },
+  {
     id: 'edit-mode-unlocked', name: 'Edit Mode Unlocked', time: 1792518200, tag: 'Studio',
     summary: 'Modeling mode works like Blender now: G / R / S follow the mouse, right-click menus, loop cuts and a pile of new tools.',
     items: [
