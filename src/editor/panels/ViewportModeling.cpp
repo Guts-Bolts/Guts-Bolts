@@ -24,6 +24,8 @@ namespace {
 const ImU32 kPicked   = IM_COL32(255, 150, 40, 255);
 const ImU32 kWire     = IM_COL32(20, 20, 24, 220);
 const ImU32 kWireBack = IM_COL32(20, 20, 24, 70);
+const ImU32 kSeam     = IM_COL32(235, 40, 40, 255);
+const ImU32 kSeamBack = IM_COL32(235, 40, 40, 80);
 
 float segmentDistance(ImVec2 p, ImVec2 a, ImVec2 b) {
     float dx = b.x - a.x, dy = b.y - a.y;
@@ -172,7 +174,9 @@ void ViewportPanel::modelingView(const glm::mat4& view, const glm::mat4& proj,
         bool back = !edgeFront[e];
         if (back && !ms.xray) continue;
         bool picked = ms.sel[a] && ms.sel[b];
-        dl->AddLine(screen[a], screen[b], picked ? kPicked : (back ? kWireBack : kWire), picked ? 2.2f : 1.4f);
+        bool seam = !m.seams.empty() && MeshEdit::isSeam(m, a, b);   // UV seams show red, like Blender
+        ImU32 col = picked ? kPicked : seam ? (back ? kSeamBack : kSeam) : (back ? kWireBack : kWire);
+        dl->AddLine(screen[a], screen[b], col, picked || seam ? 2.2f : 1.4f);
     }
     if (ms.selectMode == 0)
         for (size_t i = 0; i < nv; ++i)

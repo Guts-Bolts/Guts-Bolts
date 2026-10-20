@@ -155,6 +155,13 @@ void Editor::modelingContextMenu() {
     if (ImGui::BeginMenu("Normals")) { meshMenuItems(8); ImGui::EndMenu(); }
     if (ImGui::BeginMenu("Mirror")) { meshMenuItems(7); ImGui::EndMenu(); }
     if (ImGui::BeginMenu("Delete")) { meshMenuItems(5); ImGui::EndMenu(); }
+    if (ImGui::BeginMenu("UV")) {
+        if (ImGui::MenuItem("Unwrap...", "U")) m_uv.openUnwrap = true;
+        if (ImGui::MenuItem("Mark Seam")) markSeams(true);
+        if (ImGui::MenuItem("Clear Seam")) markSeams(false);
+        if (ImGui::MenuItem("UV Editor", nullptr, m_uv.show)) m_uv.show = !m_uv.show;
+        ImGui::EndMenu();
+    }
     ImGui::Separator();
     if (ImGui::MenuItem("Search...", "F3")) m_meshMenu = "Search";
     if (ImGui::MenuItem("Done (Build mode)", "Tab")) m_deferred = [this] { setMode(StudioMode::Build); };
