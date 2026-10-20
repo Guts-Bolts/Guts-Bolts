@@ -98,6 +98,8 @@ glm::vec3 jointPivot(const SceneNode* part);
 
 // The parts of a rig that can be posed (in order, for the editor's list).
 std::vector<SceneNode*> rigParts(SceneNode* rig);
+// Hats and other accessories on a rig: they turn with the head (or body) it wears them on.
+std::vector<SceneNode*> wornParts(SceneNode* rig);
 // The part a pose for `name` moves on this rig (null if none).
 SceneNode* findPart(SceneNode* rig, const std::string& name);
 // The model a part belongs to, for animating (the nearest Model above it).

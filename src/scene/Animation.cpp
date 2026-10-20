@@ -235,6 +235,23 @@ const char* jointParent(const std::string& n) {
     return it == parents.end() ? nullptr : it->second;
 }
 
+// Hats and other accessories are worn: they hang off the head (or the body, for
+// neck, shoulder and waist ones) so they turn with it, like Roblox's accessory welds.
+// The built-in hats are parts named "Hat..." in the character; the ones made in
+// Studio's Accessory window are an "Accessory (<kind>)" model of parts.
+// Returns "head", "body", "waist" or "" (not worn).
+std::string wornOn(const SceneNode* n, const SceneNode* rig) {
+    if (n->parent == rig) return n->name.rfind("Hat", 0) == 0 ? "head" : "";
+    for (const SceneNode* p = n->parent; p && p != rig; p = p->parent)
+        if (p->kind == NodeKind::Model && p->name.rfind("Accessory (", 0) == 0) {
+            const std::string kind = p->name.substr(11, p->name.size() > 12 ? p->name.size() - 12 : 0);
+            if (kind == "neck" || kind == "shoulder") return "body";
+            if (kind == "waist") return "waist";
+            return "head";   // hat, hair, faceacc (and anything new)
+        }
+    return "";
+}
+
 // Where a part bends, in its own space (-0.5..0.5 across): an Attachment named
 // "Pivot" inside it wins; otherwise arms and legs bend at the top (shoulder /
 // hip), heads at the bottom (neck), everything else in the middle.
@@ -287,6 +304,20 @@ struct Solver {
 
     bool nested(const SceneNode* n) const { return n->parent && n->parent != rig && n->parent->kind == NodeKind::Part; }
 
+    // The part n hangs off: its joint, or for something worn, the head or body.
+    const SceneNode* parentOf(const SceneNode* n) const {
+        auto find = [&](const char* name) -> const SceneNode* {
+            auto it = byName.find(name);
+            return it == byName.end() || it->second == n || nested(it->second) ? nullptr : it->second;
+        };
+        if (const char* pn = jointParent(n->name)) return find(pn);
+        const std::string on = wornOn(n, rig);
+        if (on.empty()) return nullptr;
+        if (on == "head") return find("Head");
+        const SceneNode* p = find(on == "waist" ? "LowerTorso" : "UpperTorso");   // (R15)
+        return p ? p : find("Torso");
+    }
+
     // The (non-part) containers between the rig and a flat part, as they are now.
     Rigid containerRig(const SceneNode* n) const {
         Rigid r;
@@ -323,13 +354,8 @@ struct Solver {
             own = blend(own, poseMove(n, restRig, it->second), weightOf(n->name));
         // Plus whatever its joint parent does.
         Rigid parentMove;
-        if (const char* pn = jointParent(n->name)) {
-            auto it = byName.find(pn);
-            if (it != byName.end() && it->second != n && !nested(it->second)) {
-                const SceneNode* p = it->second;
-                parentMove = solve(p) * inverse(containerRig(p) * rigidOf(restOf(rest, p)));
-            }
-        }
+        if (const SceneNode* p = parentOf(n))
+            parentMove = solve(p) * inverse(containerRig(p) * rigidOf(restOf(rest, p)));
         posedRig[n] = parentMove * own * restRig;
         return posedRig[n];
     }
@@ -339,16 +365,16 @@ struct Solver {
         if (depth > 16) return false;
         if (poses.count(n->name)) return true;
         if (nested(n)) return false;   // follows its parent part by itself
-        if (const char* pn = jointParent(n->name)) {
-            auto it = byName.find(pn);
-            if (it != byName.end() && it->second != n && !nested(it->second)) return affected(it->second, depth + 1);
-        }
+        if (const SceneNode* p = parentOf(n)) return affected(p, depth + 1);
         return false;
     }
 
     void apply() {
         for (SceneNode* n : parts) {
             if (!affected(n)) continue;
+            // Never seen at rest (say, a hat put on mid-animation): it has nothing to
+            // go back to, so moving it would add up frame after frame. Leave it.
+            if (!rest.count(n->id) && !poses.count(n->name)) continue;
             if (nested(n)) {
                 // Inside another part: pose it in that part's space.
                 auto it = poses.find(n->name);
@@ -418,13 +444,8 @@ bool poseFromTransform(SceneNode* rig, const RestPose& rest, const std::map<std:
     Rigid restRig = s.containerRig(part) * rigidOf(restOf(rest, part));
     Rigid want = s.containerRig(part) * rigidOf(posedLocal);
     Rigid parentMove;
-    if (const char* pn = jointParent(part->name)) {
-        auto it = s.byName.find(pn);
-        if (it != s.byName.end() && it->second != part && !s.nested(it->second)) {
-            const SceneNode* p = it->second;
-            parentMove = s.solve(p) * inverse(s.containerRig(p) * rigidOf(restOf(rest, p)));
-        }
-    }
+    if (const SceneNode* p = s.parentOf(part))
+        parentMove = s.solve(p) * inverse(s.containerRig(p) * rigidOf(restOf(rest, p)));
     // want = parentMove * own * restRig
     solveMove(restRig, inverse(parentMove) * want);
     return true;
@@ -437,6 +458,15 @@ std::vector<SceneNode*> rigParts(SceneNode* rig) {
     std::map<std::string, bool> seen;
     for (SceneNode* n : all)
         if (isPosable(n) && !seen[n->name]) { seen[n->name] = true; out.push_back(n); }
+    return out;
+}
+
+std::vector<SceneNode*> wornParts(SceneNode* rig) {
+    std::vector<SceneNode*> all, out;
+    if (!rig) return out;
+    collectParts(rig, all);
+    for (SceneNode* n : all)
+        if (!wornOn(n, rig).empty()) out.push_back(n);
     return out;
 }
 
