@@ -8,9 +8,14 @@
 //   tag    what it's mostly about: Engine, Studio, Website, Player, Server, Fix
 //   items  what changed, one short line each, in plain words
 
+
 export const BUILT_IN_UPDATES = [
   {
-    id: 'shop-window', name: 'Shop Window', time: 1792456554, tag: 'Website',
+    id: 'shop-window',
+    name: 'Shop Window',
+    version: '0.7.3',
+    time: 1792456554,
+    tag: 'Website',
     summary: 'The front page and download page got a makeover that actually shows off what the engine can do.',
     items: [
       'A big banner that flips through real screenshots: explosions, particles, neon at night, terrain and materials',
@@ -21,7 +26,25 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'keep-your-head', name: 'Keep Your Head', version: '0.7.2', time: 1792455600, tag: 'Fix',
+    id: 'friends-in-high-places',
+    name: 'Friends in High Places',
+    version: '0.7.3',
+    time: 1792456200,
+    tag: 'Website',
+    summary: 'A new Partner badge for friends of Guts&Bolts, shown right next to their name.',
+    items: [
+      'Partners are people and projects Guts&Bolts teams up with, like Kermit, who makes Lyreto',
+      'They get a teal Partner badge next to their name on their profile, in the forum and in game comments',
+      'Staff can hand it out (or take it away) with the Make partner button on the Staff page',
+      'It shows up in the Guts&Bolts Badges box on their profile, and in the Player app\'s badge list',
+    ],
+  },
+  {
+    id: 'keep-your-head',
+    name: 'Keep Your Head',
+    version: '0.7.2',
+    time: 1792455600,
+    tag: 'Fix',
     summary: 'The Bouncy Animation Pack no longer sends your head flying round the map.',
     items: [
       'Walking or running with the Bouncy Animation Pack made your head drift away from your body and fall off, and now it stays on your shoulders',
@@ -30,7 +53,11 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'hello-from-the-other-server', name: 'Hello From the Other Server', version: '0.7.2', time: 1792450920, tag: 'Website',
+    id: 'hello-from-the-other-server',
+    name: 'Hello From the Other Server',
+    version: '0.7.2',
+    time: 1792450920,
+    tag: 'Website',
     summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
     items: [
       'Lyreto is a free chat app for servers, voice and hanging out, and it\'s Guts&Bolts\' chat partner',
@@ -40,6 +67,7 @@ export const BUILT_IN_UPDATES = [
       'There\'s a Chat on Lyreto link at the bottom of every page too',
     ],
   },
+
   {
     id: 'whats-in-the-box', name: 'What\'s in the Box?!', version: '0.7.2', time: 1792438313, tag: 'Website',
     summary: 'Gift boxes and Exclusive items: own a gift box when it goes off sale and a secret item drops into your inventory.',

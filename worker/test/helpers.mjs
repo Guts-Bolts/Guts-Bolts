@@ -90,3 +90,22 @@ export function device(s, n) {
     },
   };
 }
+
+// A key pair that signs any text (like badge grants from the website): signer(n).sign(text).
+export function signer(n) {
+  if (!wasm) wasm = new WebAssembly.Instance(wasmModule, {}).exports;
+  const io = () => new Uint8Array(wasm.memory.buffer, wasm.buf(), wasm.bufSize());
+  io().set(new Uint8Array(32).fill(n), 0);
+  wasm.keyPair();
+  const secret = io().slice(32, 96), account = hexOf(io().slice(96, 128));
+  return {
+    account,
+    sign(text) {
+      const msg = new TextEncoder().encode(text);
+      io().set(secret, 0);
+      io().set(msg, 128);
+      wasm.sign(msg.length);
+      return hexOf(io().slice(64, 128));
+    },
+  };
+}
