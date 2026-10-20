@@ -167,6 +167,11 @@ private:
     void           syncOwned(User& u, const Asset& a);     // `owned` follows the copies they hold
     nlohmann::json limitedJson(const Asset& a) const;      // what the catalog shows about a Limited (null if it isn't one)
     void           openGiftBoxes();                        // gift boxes that went off sale hand out their item
+    // Auctions (ServerItems.cpp, worker/server.js the same): staff put an Exclusive item up for
+    // bids in meta "auction" {copies, minBid, startedAt, endsAt, bids: [{by, amount, at}], done}.
+    void           finishAuctions();                       // ones whose time ran out hand the item to their bidders
+    nlohmann::json auctionJson(const Asset& a, const User* me) const;
+    static bool    auctionOpen(const Asset& a, long long now);
     long long      m_giftsChecked = 0;
     int            publicModelsLeft(const User& u) const;  // -1 = no limit
     void           countPublicModel(User& u);

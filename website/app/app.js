@@ -296,7 +296,7 @@ function officialBadge(a) {
 function itemCard(a) {
   items3d.set(a.id, a);
   return html`<a class="card square" href="#/item/${a.id}">
-    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}
+    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">LIMITED</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}
     <div class="name">${a.name}</div>
     <div class="by">${a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
       : a.price > 0 ? bolts(a.price) : raw('<span class="muted">Free</span>')} · by ${a.creatorName}${verified(a.creatorVerified)}</div></a>`;
@@ -905,7 +905,7 @@ function browseCard(a, href, price) {
     <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="" style="width:100%;height:100%;object-fit:contain;border:0">`
       : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
       : a.kind === 'audio' || a.kind === 'plugin' || a.kind === 'model' || a.kind === 'animation' ? html`<span class="lib-kind">${a.kind === 'audio' ? raw(SPEAKER_SVG) : ''}${KINDS[a.kind] || a.kind}</span>`
-      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
+      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
     <div class="bprice">${price}</div>
     ${a.kind === 'model' ? html`<div class="brating">${ratingLine(a)}</div>` : ''}
@@ -1325,13 +1325,13 @@ function commentsBlock(g, cr) {
 }
 
 // The Catalog, laid out like the old one (see browsePage).
-const CATALOG_CATS = [['featured', 'Featured'], ['collectibles', 'Collectibles'], '-', ['all', 'All Categories'],
+const CATALOG_CATS = [['featured', 'Featured'], ['collectibles', 'Collectibles'], ['auctions', 'Auctions'], '-', ['all', 'All Categories'],
   ['clothes', 'Clothing', [['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants']]],
   ['body', 'Body Parts', [['face', 'Faces'], ['bundle', 'Bundles']]], ['gear', 'Gear'],
   ['emotes', 'Emotes', [['emote', 'Emotes'], ['animpack', 'Animation Packs']]],
   ['accessories', 'Accessories', [['hat', 'Hats'], ['hair', 'Hair'], ['faceacc', 'Face'], ['neck', 'Neck'], ['shoulder', 'Shoulder'], ['waist', 'Waist']]]];
 const CATALOG_PICK = {
-  featured: (a) => a.creatorStaff, collectibles: (a) => !!a.limited, all: () => true,
+  featured: (a) => a.creatorStaff, collectibles: (a) => !!a.limited, auctions: () => true, all: () => true,
   clothes: (a) => ['shirt', 'tshirt', 'pants'].includes(a.kind), body: (a) => a.kind === 'face' || a.kind === 'bundle', accessories: (a) => ACCESSORIES.includes(a.kind),
   emotes: (a) => isEmoteItem(a.kind),
 };
@@ -1341,13 +1341,15 @@ pages.catalog = async () => {
   const flat = CATALOG_CATS.flatMap((c) => c === '-' ? [] : [c, ...(c[2] || [])]);
   let cat = q.get('cat') || q.get('kind') || 'all';
   if (!flat.some((c) => c[0] === cat)) cat = 'all';
-  const r = await listAll({ kind: 'clothing', query: q.get('q') || '' });
+  // (Auctions are asked for by name: they're Exclusive items, which the normal list leaves out.)
+  const r = await listAll({ kind: 'clothing', query: q.get('q') || '', ...(cat === 'auctions' ? { auctions: true } : {}) });
   if (!r.ok) { show(html`<h1>Catalog</h1><p class="error">${r.error}</p>`); return; }
   const pick = CATALOG_PICK[cat] || ((a) => a.kind === cat);
   const price = PRICES[q.get('price')];
   const list = browseSort(r.assets.filter((a) => pick(a) && creatorMatch(a, q.get('creator')) &&
     (!price || ((a.price || 0) >= price[0] && (a.price || 0) <= price[1]))), q.get('sort'));
-  const priceOf = (a) => a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
+  const priceOf = (a) => auctionOpen(a) ? html`bid ${bolts(a.auction.need)}`
+    : a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
     : a.offsale ? raw('<span class="muted">Off sale</span>') : a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>');
   show(browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
     shown: browseSlice(list).map((a) => browseCard(a, '#/item/' + a.id, priceOf(a))), total: list.length,
@@ -1384,6 +1386,7 @@ pages.item = async (id) => {
   const offsale = !!a.offsale;
   const isNew = Date.now() / 1000 - (a.created || 0) < 7 * 86400;
   const timed = a.offsaleAt && !offsale && !a.exclusive;   // (an Exclusive item has no sale to end)
+  const au = a.auction, auOpen = auctionOpen(a);
   // The buy box (like the 2016 catalog): what's left, the price, the button, how many sold.
   const buyButton = owned && a.kind === 'gear'
     ? html`<p class="ok"><b>You own this.</b></p>
@@ -1395,6 +1398,7 @@ pages.item = async (id) => {
       <button class="btn ${packOn ? '' : 'green'} big buy" data-act="animpackEquip" data-id="${packOn ? '' : a.id}">${packOn ? 'Take off' : 'Use this pack'}</button>`
     : owned ? html`<p class="ok"><b>You own this${mineCopies.length ? ' (#' + mineCopies.map((c) => c.serial).join(', #') + ')' : ''}.</b></p>`
     : soldOut ? html`<button class="btn big buy" disabled>Sold out</button>`
+    : auOpen ? auctionBidBox(a)
     : a.exclusive ? html`<button class="btn big buy" disabled>Exclusive</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
     : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
@@ -1427,7 +1431,8 @@ pages.item = async (id) => {
           <p class="item-desc">${a.description || html`<span class="muted">No description.</span>`}</p>
           <hr>
           <p class="small muted">Type: ${KINDS[a.kind]} · Asset ID ${assetNum(a)}</p>
-          ${a.exclusive ? html`<p class="small"><b>Exclusive:</b> not in the catalog and can't be bought. It comes from events and gift boxes.</p>` : ''}
+          ${auOpen ? html`<p class="small"><b>🔨 Auction:</b> the top ${au.copies === 1 ? 'bidder gets' : au.copies + ' bidders get'} this Exclusive item when time runs out. If someone outbids you, your Bolts come straight back.</p>`
+            : a.exclusive ? html`<p class="small"><b>Exclusive:</b> not in the catalog and can't be bought. It comes from events, gift boxes and auctions.</p>` : ''}
           ${a.gift ? html`<p class="small"><b>🎁 Gift box:</b> everyone who owns this when it goes off sale gets a surprise item.${a.giftItem ? html` <span class="muted">(Staff: it gives <a href="#/item/${a.giftItem.id}">${a.giftItem.name}</a>.)</span>` : ''}</p>` : ''}
           ${a.kind === 'bundle' ? html`<p class="small"><b>In this bundle:</b> ${inBundle.length
               ? inBundle.map((x, i) => html`${i ? ', ' : ''}<a href="#/item/${x.id}">${x.name}</a>`) : html`<span class="muted">just itself</span>`}.
@@ -1440,9 +1445,10 @@ pages.item = async (id) => {
         <div class="item-side">
           <div class="item-buybox">
             ${L ? (soldOut ? html`<div class="item-left">Sold out</div>` : html`<div class="item-left">${L.left} Remaining</div>`) : ''}
+            ${auOpen ? html`<div class="item-offsale">Auction ends in <span data-countdown="${au.endsAt}">${countdown(au.endsAt)}</span></div>` : ''}
             ${timed ? html`<div class="item-offsale">Offsale in <span data-countdown="${a.offsaleAt}">${countdown(a.offsaleAt)}</span></div>`
               : offsale ? html`<div class="item-left">Off sale</div>` : ''}
-            <div class="item-price">Price: ${a.price > 0 ? bolts(a.price) : html`<b class="ok">Free</b>`}</div>
+            ${auOpen ? '' : html`<div class="item-price">Price: ${a.price > 0 ? bolts(a.price) : html`<b class="ok">Free</b>`}</div>`}
             ${buyButton}
             ${giftButton}
             <div class="item-sold">( ${a.sales || 0} Sold )</div>
@@ -1474,11 +1480,20 @@ pages.item = async (id) => {
         <label>Give it to someone <span class="muted small">(staff only: free, for event prizes; their user number or username)</span></label>
         <input type="text" name="to" placeholder="like 5 or @username" style="max-width:220px">
         <p><button class="btn blue">Give</button> <span id="itemGiveMsg"></span></p></form>` : ''}
+      ${me.staff && auOpen ? html`<p><button class="btn red" data-act="auctionCancel" data-id="${a.id}">Cancel the auction</button>
+        <span class="muted small">(everyone gets their Bolts back)</span></p>`
+      : me.staff && a.exclusive && !L ? html`<form class="form" data-form="auctionStart"><input type="hidden" name="id" value="${a.id}">
+        <label>Start an auction <span class="muted small">(staff only: the top bidders get it when time runs out)</span></label>
+        <div class="auction-start"><div><label class="small">Copies</label><input type="number" name="copies" min="1" max="100" value="1"></div>
+          <div><label class="small">Starting bid</label><input type="number" name="minBid" min="1" value="100"></div>
+          <div><label class="small">Hours</label><input type="number" name="hours" min="1" max="720" value="24"></div></div>
+        <p><button class="btn gold">Start auction</button> <span id="auctionMsg"></span></p></form>` : ''}
       ${me.official && a.creator === me.id && canBeLimited(a) ? html`<form class="form" data-form="itemLimited"><input type="hidden" name="id" value="${a.id}">
         <label>${L ? 'Change the stock' : 'Make it Limited'} <span class="muted small">(only Guts can do this)</span></label>
         <input type="number" name="stock" min="1" value="${L ? L.stock : 100}" style="max-width:140px">
         <p class="small muted">A Limited has a fixed number of numbered copies. When they're sold out, people buy and sell them from each other, and trade them.</p>
         <p><button class="btn gold">${L ? 'Save stock' : 'Make Limited'}</button></p></form>` : ''}</div>` : ''}
+    ${au && !au.cancelled ? auctionBidders(au, auOpen) : ''}
     ${L ? html`<h2>Resellers</h2>${forSale.length ? html`<table class="stats resellers"><tr><th>Seller</th><th>Copy</th><th>Price</th><th></th></tr>
         ${forSale.map((c) => html`<tr><td><a href="#/user/${c.owner}">${c.ownerName}</a></td><td>#${c.serial}</td><td>${bolts(c.price)}</td>
           <td><button class="btn green small" data-act="resaleBuy" data-id="${a.id}" data-serial="${c.serial}" data-price="${c.price}">Buy</button></td></tr>`)}</table>`
@@ -1497,6 +1512,28 @@ pages.item = async (id) => {
     avatarPicture(p.user.avatar, p.wearing || [], 48).then((url) => { if (url && el.isConnected) el.innerHTML = html`<img src="${url}" alt="">`.s; });
   }).catch(() => {});
 };
+
+// Auctions (worker/server.js auction.*): staff put an Exclusive item up for bids, and the top
+// bidders get it when time runs out.
+const auctionOpen = (a) => !!a.auction && !a.auction.done && a.auction.endsAt > Date.now() / 1000;
+function auctionBidBox(a) {
+  const au = a.auction;
+  const winning = au.myBid > 0;
+  return html`<div class="item-price">${winning ? html`Your bid: ${bolts(au.myBid)}` : html`Bid at least: ${bolts(au.need)}`}</div>
+    ${winning ? html`<p class="ok small"><b>You're winning!</b> You'll get it if nobody outbids you.</p>` : ''}
+    ${signedIn() ? html`<form class="form auction-bid" data-form="auctionBid"><input type="hidden" name="id" value="${a.id}">
+        <input type="number" name="amount" min="${winning ? au.myBid + 1 : au.need}" value="${winning ? au.myBid + 1 : au.need}" aria-label="Your bid in Bolts">
+        <button class="btn green big buy">${winning ? 'Raise bid' : 'Place bid'}</button></form>`
+      : html`<button class="btn green big buy" data-act="auctionBid">Place bid</button>`}`;
+}
+function auctionBidders(au, open) {
+  const top = au.bids;
+  return html`<h2>${open ? 'Top bidders' : 'Auction winners'} <span class="small muted">(${au.copies === 1 ? '1 copy' : au.copies + ' copies'})</span></h2>
+    ${top.length ? html`<table class="stats"><tr><th>#</th><th>Bidder</th><th>Bid</th><th></th></tr>
+      ${top.map((b, i) => html`<tr class="${signedIn() && b.id === me.id ? 'me-row' : ''}"><td>${i + 1}</td><td><a href="#/user/${b.id}">${b.name}</a></td><td>${bolts(b.amount)}</td><td class="small muted">${ago(b.at)}</td></tr>`)}</table>
+      ${open && top.length >= au.copies ? html`<p class="small muted">To get in, bid more than the lowest bid here.</p>` : ''}`
+    : html`<p class="muted">${open ? 'No bids yet. Be the first!' : 'Nobody bid on it.'}</p>`}`;
+}
 
 // "23 h 53 m 35 s" until a timed item goes off sale (days too, when it's further off).
 function countdown(at) {
@@ -2510,7 +2547,7 @@ function noteLink(n) {
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;
   if (n.kind === 'sale' || n.kind === 'upload') return '#/library/' + n.about;
-  if (n.kind === 'gift') return '#/item/' + n.about;
+  if (n.kind === 'gift' || n.kind === 'auction') return '#/item/' + n.about;
   if (n.kind === 'support') return '#/support';
   if (n.kind === 'ticket') return '#/staff';
   return '';
@@ -2991,6 +3028,13 @@ const actions = {
     const r = await call('model.access', { id: d.id, access: d.access });
     if (r.ok && r.me) setMe(r.me);
     toast(r.ok ? (d.access === 'public' ? 'It\'s public now.' : 'It\'s private now.') : r.error);
+    render();
+  },
+  auctionBid() { loginPopup('bid on items'); },
+  async auctionCancel(d) {
+    if (!confirm('Cancel this auction? Everyone gets their Bolts back and nobody gets the item.')) return;
+    const r = await call('auction.cancel', { id: d.id });
+    toast(r.ok ? 'Auction cancelled. Everyone has their Bolts back.' : r.error);
     render();
   },
   async resaleBuy(d) {
@@ -3773,6 +3817,20 @@ const forms = {
     const r = await call('item.give', { id: f.id.value, to: f.to.value.trim() });
     if (!r.ok) { m.className = 'error'; m.textContent = ' ' + r.error; return; }
     toast('Gave it to ' + r.to + '!');
+    render();
+  },
+  async auctionStart(f) {
+    const r = await call('auction.start', { id: f.id.value, copies: Number(f.copies.value) || 1, minBid: Number(f.minBid.value) || 1, hours: Number(f.hours.value) || 0 });
+    if (!r.ok) { const m = $('#auctionMsg'); m.className = 'error'; m.textContent = ' ' + r.error; return; }
+    toast('The auction is on!');
+    render();
+  },
+  async auctionBid(f) {
+    const amount = Number(f.amount.value) || 0;
+    if (!confirm('Bid ' + amount + ' Bolts? They\'re held while you\'re winning, and come back if someone outbids you.')) return;
+    const r = await call('auction.bid', { id: f.id.value, amount });
+    if (r.ok) setMe(r.me);
+    toast(r.ok ? 'Bid placed! You\'re one of the top bidders.' : r.error);
     render();
   },
   async itemLimited(f) {

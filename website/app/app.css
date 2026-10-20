@@ -462,6 +462,12 @@ html.gutstober .foot, html.gutstober .foot a { color: #cbb5dc; }
 .item-left { color: #c8100c; font-weight: bold; font-size: 14px; margin-bottom: 4px; }
 .item-offsale { font-size: 13px; margin-bottom: 4px; color: #444; }
 .item-offsale b { color: #c8100c; font-size: 15px; }
+.item-offsale [data-countdown] { white-space: nowrap; }
+.auction-start { display: flex; flex-wrap: wrap; gap: 10px; }
+.auction-start input { width: 110px; }
+.auction-bid { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.auction-bid input { width: 100%; box-sizing: border-box; }
+.stats tr.me-row td { background: #fff6cc; font-weight: bold; }
 .item-price { font-size: 13px; margin: 2px 0 6px; color: #333; }
 .item-price .price { color: #0a7d2c; font-weight: bold; }
 .item-buybox .btn.buy { width: 100%; font-size: 18px; padding: 8px 6px; }
