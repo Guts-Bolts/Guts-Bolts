@@ -11,6 +11,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'mind-reader', name: 'Mind Reader', version: '0.7.5', time: 1792520400, tag: 'Engine',
+    summary: 'Game scripts can now tell when someone plays in VR, and where their head and hands are.',
+    items: [
+      'VRService works in LocalScripts: VREnabled is true while you play in a VR headset (UserInputService.VREnabled too)',
+      'VRService:GetUserCFrame(Enum.UserCFrame.Head, LeftHand or RightHand) says where your head or a hand is, in studs, like on Roblox',
+      'VRService.UserCFrameChanged fires every frame with each one the headset can see, so a script can stick a sword or a flashlight to your hand',
+      'Studio\'s script editor suggests the new names, and the AI helper knows about them',
+    ],
+  },
+  {
     id: 'point-and-click', name: 'Point and Click', version: '0.7.4', time: 1792519800, tag: 'Player',
     summary: 'In VR the menus, buttons and chat float in front of you, and you click them by pointing with your right hand.',
     items: [

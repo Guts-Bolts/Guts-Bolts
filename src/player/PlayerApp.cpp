@@ -1665,6 +1665,7 @@ void PlayerApp::drawGame(float dt) {
         m_vrOn = false;
         m_window->setHeadsetPaced(false);
         m_vrStatus = Vr::lastError();
+        m_session->scripts().setVr({});
     }
     const bool vr = m_vrOn;
     const bool vrDraw = vr && Vr::beginFrame(vrEyes, 0.1f, 1000.0f);
