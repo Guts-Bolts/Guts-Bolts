@@ -40,6 +40,9 @@ public:
     bool      useCFrame = false;
     glm::mat4 cframe{1.0f};
     bool      noInput = false;
+    // A VR headset's eye: its own lopsided lens shape instead of fov / orthographic.
+    bool      useProjection = false;
+    glm::mat4 projectionOverride{1.0f};
     // Back to the plain orbit camera (Studio's Stop, a new game in the Player).
     void      clearScripted() { useCFrame = false; noInput = false; }
     int width()  const { return m_w; }

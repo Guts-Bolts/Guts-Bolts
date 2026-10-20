@@ -86,12 +86,12 @@ class System:
 
 LINUX_PACKAGES = {
     "apt-get": ["build-essential", "cmake", "ninja-build", "git", "pkg-config",
-                "libglfw3-dev", "libglew-dev", "libglm-dev"],
+                "libglfw3-dev", "libglew-dev", "libglm-dev", "libx11-dev"],
     "dnf":     ["gcc-c++", "cmake", "ninja-build", "git", "pkgconf-pkg-config",
-                "glfw-devel", "glew-devel", "glm-devel"],
-    "pacman":  ["base-devel", "cmake", "ninja", "git", "pkgconf", "glfw", "glew", "glm"],
+                "glfw-devel", "glew-devel", "glm-devel", "libX11-devel"],
+    "pacman":  ["base-devel", "cmake", "ninja", "git", "pkgconf", "glfw", "glew", "glm", "libx11"],
     "zypper":  ["gcc-c++", "cmake", "ninja", "git", "pkg-config",
-                "libglfw-devel", "glew-devel", "glm-devel"],
+                "libglfw-devel", "glew-devel", "glm-devel", "libX11-devel"],
 }
 
 MSYS_PACKAGES = ["mingw-w64-x86_64-gcc", "mingw-w64-x86_64-cmake", "mingw-w64-x86_64-ninja",

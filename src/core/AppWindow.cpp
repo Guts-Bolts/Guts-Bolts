@@ -187,7 +187,7 @@ bool  AppWindow::mouseLocked() { return g_lock.active; }
 
 float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
     const GraphicsSettings& gs = GraphicsSettings::get();
-    int wantVsync = (gs.vsync && !m_fixedDt) ? 1 : 0;
+    int wantVsync = (gs.vsync && !m_fixedDt && !m_headsetPaced) ? 1 : 0;
     if (wantVsync != m_appliedVsync) { glfwSwapInterval(wantVsync); m_appliedVsync = wantVsync; }
 
     double now = glfwGetTime();
@@ -223,7 +223,7 @@ void AppWindow::endFrame(const std::string& screenshotPath) {
 
     // FPS limit (only when VSync is off).
     const GraphicsSettings& gs = GraphicsSettings::get();
-    if (!gs.vsync && gs.fpsCap > 0 && !m_fixedDt) {
+    if (!gs.vsync && gs.fpsCap > 0 && !m_fixedDt && !m_headsetPaced) {
         double step = 1.0 / gs.fpsCap;
         m_nextFrame += step;
         double now = glfwGetTime();

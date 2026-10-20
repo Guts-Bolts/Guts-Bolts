@@ -15,6 +15,7 @@ namespace Catalog { struct Item; }
 #include "../game/Catalog.h"
 #include "../game/PlayerEntry.h"
 #include "../game/TouchControls.h"
+#include "../core/Vr.h"
 #include <imgui.h>
 #include <nlohmann/json.hpp>
 
@@ -66,6 +67,7 @@ struct PlayerOptions {
     // Studio's "Test with N players": --studio-test host:port --name Player2 joins Studio's
     // local test server straight away as that name; the window closes when the test ends.
     std::string studioTest;
+    bool        vr = false;            // --vr: show the game in a VR headset once it starts
     std::string testName;
 };
 
@@ -251,6 +253,13 @@ private:
     void drawAccount();
     void drawNotice();
     void padCamera(float dt);   // a controller's right stick / D-pad
+    // VR headsets (PlayerVr.cpp): start / stop, the controllers, the view from your head.
+    void startVr();
+    void stopVr();
+    void vrControls(bool acceptInput);
+    void vrFollow(Player& player);
+    void vrRender(const Vr::View eyes[2]);
+    void vrMirror(ImVec2 size);
     // Reporting and blocking — PlayerSafety.cpp
     bool canReport() const;   // signed up and online (guests can't report or block)
     void openReport(const std::string& kind, const std::string& id, const std::string& name, const std::string& blockUser = "");
@@ -343,6 +352,12 @@ private:
 
     Camera      m_camera;
     Framebuffer m_view;
+    Framebuffer m_vrEyes[2];     // what each eye sees, in VR
+    bool        m_vrOn = false;
+    bool        m_vrAligned = false;   // turned so the headset starts looking where the character faces
+    bool        m_vrTurned = false;    // the right stick is pushed over (one snap turn per push)
+    float       m_vrYaw = 0.0f;        // degrees: how far the snap turns (and lining up) turned you
+    std::string m_vrStatus;            // why VR didn't start / stopped (shown in the menu)
     Camera      m_avatarCam;
     Framebuffer m_avatarView;
     Framebuffer m_bannerView;

@@ -11,6 +11,21 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'head-in-the-game',
+    name: 'Head in the Game',
+    version: '0.7.3',
+    time: 1792469827,
+    tag: 'Player',
+    summary: 'Play Guts&Bolts games in a VR headset: you see the world in real 3D from inside your character\'s head.',
+    items: [
+      'Works with SteamVR, Quest Link / Air Link, Windows Mixed Reality and other PC headsets (anything that speaks OpenXR)',
+      'Open the in-game menu, go to Settings and press Play in VR',
+      'Look around with your head, walk with the left stick, turn with the right stick, jump with A',
+      'Your character turns to face wherever you look, and the computer screen shows what you see',
+      'Menus still open on the computer screen for now: hands and floating menus come next',
+    ],
+  },
+  {
     id: 'shop-window',
     name: 'Shop Window',
     version: '0.7.3',

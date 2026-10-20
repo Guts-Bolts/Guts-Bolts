@@ -34,6 +34,8 @@ public:
     void endFrame(const std::string& screenshotPath = {});
 
     void setFixedTimestep(bool on) { m_fixedDt = on; }   // deterministic test runs
+    // A VR headset sets the pace (it waits for its own screens): no VSync or FPS cap on top.
+    void setHeadsetPaced(bool on) { m_headsetPaced = on; }
 
     // Touch screens (phones / tablets): the fingers that are down right now.
     const std::vector<TouchPoint>& touches() const { return m_touches; }
@@ -74,4 +76,5 @@ private:
     double      m_nextFrame = 0.0;
     int         m_appliedVsync = -1;
     bool        m_fixedDt = false;
+    bool        m_headsetPaced = false;
 };

@@ -83,6 +83,7 @@ float Camera::viewHeight() const {
 }
 
 glm::mat4 Camera::projection() const {
+    if (useProjection) return projectionOverride;
     float aspect = (m_h > 0) ? (float)m_w / (float)m_h : 1.0f;
     if (orthographic) {
         // The near side reaches back behind the camera too, so nothing between it and
