@@ -353,6 +353,7 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
 void AppWindow::endFrame(const std::string& screenshotPath) {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    if (m_afterUi) m_afterUi();
     if (!screenshotPath.empty()) saveScreenshot(screenshotPath);
     SDL_GL_SwapWindow(m_sdl);
 

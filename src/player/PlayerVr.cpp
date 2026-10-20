@@ -3,11 +3,14 @@
 #include "../core/AppWindow.h"
 #include "../core/Vr.h"
 #include "../game/GameSession.h"
+#include "../renderer/GL.h"
 #include "../renderer/SceneRenderer.h"
 #include "../scene/Player.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <backends/imgui_impl_opengl3.h>
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <cstdio>
 
@@ -17,7 +20,9 @@
 // right trigger uses your tool. The character's head turns with yours and its
 // arms reach for your controllers; the body follows when you walk or turn far.
 // The computer screen keeps showing what your left eye sees, with the usual
-// buttons and menus on top.
+// buttons and menus on top. In the headset those buttons and menus float on a
+// see-through screen in front of you: point at it with your right hand and
+// pull the trigger to click.
 
 namespace {
 // How big you are: your eyes (and how far apart they are, and where your hands
@@ -29,6 +34,13 @@ constexpr float kNeckTwist = 50.0f;  // how far the head turns before the body c
 // Your eyes are at the front of your head, not the middle: without this, looking
 // down shows the top of your own shoulders instead of your chest and feet.
 constexpr float kEyesForward = 0.13f;   // of the eye height
+// The floating screen with the menus: how far in front of you, how much lower
+// than your eyes, and how wide (metres). It glides back in front of you when
+// you look further away than kPanelLookAway (degrees), and snaps there when a
+// menu opens.
+constexpr float kPanelDistance = 1.3f, kPanelDrop = 0.12f, kPanelWidth = 1.4f;
+constexpr float kPanelLookAway = 40.0f;
+constexpr int kPanelPixels = 1600;   // its width in pixels (the height keeps the window's shape)
 
 // From the middle of the character's head to its eyes, in the world.
 glm::vec3 eyesAhead(float bodyYaw, float eyeHeight) {
@@ -54,6 +66,8 @@ void PlayerApp::startVr() {
     m_vrBodyAligned = false;
     m_vrTurned = false;
     m_vrYaw = 0.0f;
+    m_vrPanelPlaced = false;
+    m_vrPointing = m_vrPointerDown = m_vrOverUi = false;
     m_vrStatus.clear();
     m_window->setHeadsetPaced(true);
 }
@@ -64,15 +78,19 @@ void PlayerApp::stopVr() {
     m_vrOn = false;
     m_window->setHeadsetPaced(false);
     for (Framebuffer& e : m_vrEyes) e.resize(0, 0);
+    m_vrPanel.resize(0, 0);
+    if (m_vrPointerDown) ImGui::GetIO().AddMouseButtonEvent(0, false);
+    m_vrPointing = m_vrPointerDown = false;
     if (Player* p = m_scene->player()) p->setVrBody({});
 }
 
 void PlayerApp::vrControls(bool acceptInput) {
     const Vr::Controls& c = Vr::controls();
     if (c.menu) { m_paused = !m_paused; m_menuTab = 0; m_menuConfirm = 0; }
+    vrPointer();
     if (!acceptInput) { m_session->setTouchInput(glm::vec2(0.0f), false); return; }
     m_session->setTouchInput(c.move, c.jump);   // (walks relative to m_camera.yaw: where you look)
-    if (c.use) m_session->click(0);             // swing / fire the tool you're holding
+    if (c.use && !(m_vrPointing && m_vrOverUi)) m_session->click(0);   // swing / fire the tool you're holding
     // Snap turning: one step each time the stick is pushed over.
     if (std::abs(c.turn.x) > 0.7f && !m_vrTurned) {
         m_vrYaw += c.turn.x > 0.0f ? -kSnapTurn : kSnapTurn;
@@ -80,6 +98,113 @@ void PlayerApp::vrControls(bool acceptInput) {
     } else if (std::abs(c.turn.x) < 0.4f) {
         m_vrTurned = false;
     }
+}
+
+void PlayerApp::vrPointer() {
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f) return;
+    const glm::mat4 head = Vr::head();
+    const glm::vec3 headAt(head[3]);
+    const float panelHeight = kPanelWidth * io.DisplaySize.y / io.DisplaySize.x;
+
+    // Where the screen goes: in front of you (the way you face, level), a little
+    // low, turned to face you. It stays put while you look around it.
+    const bool menus = m_paused || m_showSettings || m_chatOpen;
+    const bool opened = menus && !m_vrWasPaused;
+    m_vrWasPaused = menus;
+    glm::vec3 f = -glm::vec3(head[2]);
+    f.y = 0.0f;
+    if (glm::length(f) > 1e-3f) {
+        f = glm::normalize(f);
+        const glm::vec3 want = headAt + f * kPanelDistance - glm::vec3(0.0f, kPanelDrop, 0.0f);
+        glm::vec3 at(m_vrPanelPose[3]);
+        glm::vec3 toPanel = at - headAt;
+        toPanel.y = 0.0f;
+        const float away = glm::length(toPanel) > 1e-3f
+                               ? glm::degrees(std::acos(std::clamp(glm::dot(glm::normalize(toPanel), f), -1.0f, 1.0f)))
+                               : 180.0f;
+        if (!m_vrPanelPlaced || opened) {
+            at = want;
+            m_vrPanelPlaced = true;
+            m_vrPanelMoving = false;
+        } else {
+            if (away > kPanelLookAway) m_vrPanelMoving = true;
+            if (m_vrPanelMoving) {
+                at += (want - at) * std::min(1.0f, io.DeltaTime * 5.0f);
+                if (away < 3.0f) m_vrPanelMoving = false;
+            }
+        }
+        glm::vec3 back = headAt - at;   // (its front faces you)
+        back.y = 0.0f;
+        const float yaw = glm::length(back) > 1e-3f ? std::atan2(back.x, back.z) : 0.0f;
+        m_vrPanelPose = glm::rotate(glm::translate(glm::mat4(1.0f), at), yaw, glm::vec3(0, 1, 0));
+    }
+
+    // The right hand's beam: where it meets the screen is the mouse pointer.
+    const bool wasPointing = m_vrPointing;
+    m_vrPointing = false;
+    glm::mat4 aim;
+    if (Vr::aim(1, aim)) {
+        const glm::vec3 from(aim[3]), dir = glm::normalize(-glm::vec3(aim[2]));
+        const glm::vec3 normal(m_vrPanelPose[2]), centre(m_vrPanelPose[3]);
+        const float facing = glm::dot(dir, normal);
+        if (facing < -1e-4f) {
+            const float t = glm::dot(centre - from, normal) / facing;
+            const glm::vec4 local = glm::inverse(m_vrPanelPose) * glm::vec4(from + dir * t, 1.0f);
+            const float u = local.x / kPanelWidth + 0.5f, v = 0.5f - local.y / panelHeight;
+            if (t > 0.0f && u >= 0.0f && u <= 1.0f && v >= 0.0f && v <= 1.0f) {
+                m_vrPointing = true;
+                m_vrPointer = ImVec2(u * io.DisplaySize.x, v * io.DisplaySize.y);
+            }
+        }
+    }
+    if (m_vrPointing) {
+        io.AddMousePosEvent(m_vrPointer.x, m_vrPointer.y);
+        // The trigger is the mouse button on menus and buttons (else it uses your tool).
+        const bool down = Vr::controls().useHeld && (m_vrOverUi || menus || m_vrPointerDown);
+        if (down != m_vrPointerDown) io.AddMouseButtonEvent(0, down);
+        m_vrPointerDown = down;
+        // The pointer: a ring with a dot (brighter on something you can click).
+        ImDrawList* fg = ImGui::GetForegroundDrawList();
+        const ImU32 col = m_vrOverUi || menus ? IM_COL32(255, 255, 255, 240) : IM_COL32(255, 255, 255, 120);
+        fg->AddCircle(m_vrPointer, 9.0f, IM_COL32(0, 0, 0, 140), 24, 4.0f);
+        fg->AddCircle(m_vrPointer, 9.0f, col, 24, 2.0f);
+        fg->AddCircleFilled(m_vrPointer, 2.5f, col);
+    } else {
+        if (m_vrPointerDown) io.AddMouseButtonEvent(0, false);
+        m_vrPointerDown = false;
+        if (wasPointing) io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);   // (nothing stays lit up)
+    }
+}
+
+void PlayerApp::vrAfterUi() {
+    // The menus and buttons that were just drawn on the computer screen, again on
+    // the headset's floating screen, without the picture of the world behind them.
+    ImDrawData* dd = ImGui::GetDrawData();
+    if (m_vrOn && m_page == Page::Game && dd && dd->Valid && dd->DisplaySize.x > 0.0f && dd->DisplaySize.y > 0.0f) {
+        m_vrOverUi = m_vrOnGameUi || ImGui::IsAnyItemHovered();
+        const int w = kPanelPixels, h = (int)std::lround(kPanelPixels * dd->DisplaySize.y / dd->DisplaySize.x);
+        m_vrPanel.resize(w, h);
+        const unsigned world = m_vrEyes[0].colorTexture();
+        if (world)
+            for (ImDrawList* list : dd->CmdLists)
+                for (ImDrawCmd& cmd : list->CmdBuffer)
+                    if (!cmd.UserCallback && cmd.GetTexID() == (ImTextureID)(intptr_t)world) cmd.ElemCount = 0;
+        const ImVec2 scale = dd->FramebufferScale;
+        dd->FramebufferScale = ImVec2((float)w / dd->DisplaySize.x, (float)h / dd->DisplaySize.y);
+        GLint oldFbo = 0, oldViewport[4];
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &oldFbo);
+        glGetIntegerv(GL_VIEWPORT, oldViewport);
+        m_vrPanel.bind();
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        ImGui_ImplOpenGL3_RenderDrawData(dd);
+        glBindFramebuffer(GL_FRAMEBUFFER, (GLuint)oldFbo);
+        glViewport(oldViewport[0], oldViewport[1], oldViewport[2], oldViewport[3]);
+        dd->FramebufferScale = scale;
+        Vr::showPanel(m_vrPanel.colorTexture(), w, h, m_vrPanelPose, kPanelWidth);
+    }
+    Vr::endFrame();   // (does nothing when the headset isn't drawing)
 }
 
 void PlayerApp::vrTrack() {
