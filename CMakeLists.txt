@@ -476,8 +476,86 @@ FetchContent_Declare(
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(cgltf)
-add_library(gb_models STATIC ${ufbx_SOURCE_DIR}/ufbx.c)
-target_include_directories(gb_models PUBLIC ${ufbx_SOURCE_DIR} ${cgltf_SOURCE_DIR})
+# Draco and meshoptimizer: unpacking squashed glTF / GLB files (KHR_draco_mesh_compression
+# and EXT_meshopt_compression, which Sketchfab, gltfpack and gltf-transform make).
+set(DRACO_JS_GLUE OFF CACHE BOOL "" FORCE)
+set(DRACO_TESTS OFF CACHE BOOL "" FORCE)
+set(DRACO_INSTALL OFF CACHE BOOL "" FORCE)
+set(DRACO_TRANSCODER_SUPPORTED OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    draco
+    GIT_REPOSITORY https://github.com/google/draco.git
+    GIT_TAG        1.5.7
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(draco)
+FetchContent_Declare(
+    meshoptimizer
+    GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
+    GIT_TAG        v0.22
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  cmake-build-disabled
+)
+FetchContent_MakeAvailable(meshoptimizer)
+
+# Assimp: every other 3D format worth having (.dae, .3ds, .x, .3mf, .lwo, .ac,
+# .off, .dxf, ...). Only its readers are built, not its writers or tools.
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
+set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ZLIB ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
+foreach(fmt COLLADA 3DS X 3MF LWO LWS AC OFF DXF B3D MS3D MD2 MD3 MD5 ASE SMD X3D AMF OGRE OPENGEX
+            IRRMESH IRR COB Q3D NFF RAW TERRAGEN XGL NDO HMP MDL MMD SIB)
+    set(ASSIMP_BUILD_${fmt}_IMPORTER ON CACHE BOOL "" FORCE)
+endforeach()
+set(_gb_shared ${BUILD_SHARED_LIBS})
+set(BUILD_SHARED_LIBS OFF)
+FetchContent_Declare(
+    assimp
+    GIT_REPOSITORY https://github.com/assimp/assimp.git
+    GIT_TAG        v5.4.3
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(assimp)
+set(BUILD_SHARED_LIBS ${_gb_shared})
+
+# libwebp (reading .webp pictures) and nanosvg (drawing .svg pictures): Studio
+# turns them into PNGs when they're imported, so every Player can show them.
+set(WEBP_BUILD_ANIM_UTILS OFF CACHE BOOL "" FORCE)
+set(WEBP_BUILD_CWEBP OFF CACHE BOOL "" FORCE)
+set(WEBP_BUILD_DWEBP OFF CACHE BOOL "" FORCE)
+set(WEBP_BUILD_GIF2WEBP OFF CACHE BOOL "" FORCE)
+set(WEBP_BUILD_IMG2WEBP OFF CACHE BOOL "" FORCE)
+set(WEBP_BUILD_VWEBP OFF CACHE BOOL "" FORCE)
+set(WEBP_BUILD_WEBPINFO OFF CACHE BOOL "" FORCE)
+set(WEBP_BUILD_WEBPMUX OFF CACHE BOOL "" FORCE)
+set(WEBP_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
+set(WEBP_BUILD_LIBWEBPMUX OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    libwebp
+    GIT_REPOSITORY https://github.com/webmproject/libwebp.git
+    GIT_TAG        v1.4.0
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(libwebp)
+FetchContent_Declare(
+    nanosvg
+    GIT_REPOSITORY https://github.com/memononen/nanosvg.git
+    GIT_TAG        master
+    GIT_SHALLOW    TRUE
+    SOURCE_SUBDIR  cmake-build-disabled
+)
+FetchContent_MakeAvailable(nanosvg)
+
+file(GLOB MESHOPT_SOURCES "${meshoptimizer_SOURCE_DIR}/src/*.cpp")
+add_library(gb_models STATIC ${ufbx_SOURCE_DIR}/ufbx.c ${MESHOPT_SOURCES})
+target_include_directories(gb_models PUBLIC ${ufbx_SOURCE_DIR} ${cgltf_SOURCE_DIR} ${meshoptimizer_SOURCE_DIR}/src
+                           ${draco_SOURCE_DIR}/src ${CMAKE_BINARY_DIR} ${nanosvg_SOURCE_DIR}/src)
+target_link_libraries(gb_models PUBLIC draco::draco assimp::assimp webpdecoder)
 
 set(EDITOR_SOURCES
     src/main.cpp
@@ -485,6 +563,7 @@ set(EDITOR_SOURCES
     src/editor/Editor.cpp
     src/editor/ModelImport.cpp
     src/editor/EditorImport.cpp
+    src/editor/PictureImport.cpp
     src/editor/AiTools.cpp
     src/editor/AiToolsRun.cpp
     src/editor/StudioMcp.cpp

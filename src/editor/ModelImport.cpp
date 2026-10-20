@@ -15,6 +15,12 @@
 #include <ufbx.h>
 #define CGLTF_IMPLEMENTATION
 #include <cgltf.h>
+#include <meshoptimizer.h>
+#include <draco/compression/decode.h>
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#include <webp/decode.h>
 
 namespace fs = std::filesystem;
 
@@ -46,6 +52,8 @@ bool averageColor(const unsigned char* data, size_t size, glm::vec3& out) {
     if (!data || size == 0) return false;
     int w = 0, h = 0, n = 0;
     unsigned char* px = stbi_load_from_memory(data, (int)size, &w, &h, &n, 4);
+    bool webp = false;
+    if (!px && (px = WebPDecodeRGBA(data, size, &w, &h))) webp = true;   // .webp textures (Sketchfab uses them a lot)
     if (!px) return false;
     glm::dvec3 sum(0.0);
     double count = 0.0;
@@ -58,7 +66,7 @@ bool averageColor(const unsigned char* data, size_t size, glm::vec3& out) {
             for (int c = 0; c < 3; ++c) sum[c] += std::pow(p[c] / 255.0, 2.2);
             count += 1.0;
         }
-    stbi_image_free(px);
+    if (webp) WebPFree(px); else stbi_image_free(px);
     if (count <= 0.0) return false;
     for (int c = 0; c < 3; ++c) out[c] = (float)std::pow(sum[c] / count, 1.0 / 2.2);
     return true;
@@ -264,6 +272,77 @@ bool loadUfbx(const std::string& path, std::vector<Builder>& out, std::string& e
 // glTF / GLB
 // ---------------------------------------------------------------------------
 
+// EXT_meshopt_compression (gltfpack, gltf-transform): the squashed bytes are
+// unpacked into each buffer view's own copy, which cgltf then reads from.
+bool unpackMeshopt(cgltf_data* data) {
+    for (cgltf_size i = 0; i < data->buffer_views_count; ++i) {
+        cgltf_buffer_view& view = data->buffer_views[i];
+        if (!view.has_meshopt_compression || view.data) continue;
+        const cgltf_meshopt_compression& mc = view.meshopt_compression;
+        if (!mc.buffer || !mc.buffer->data || mc.offset + mc.size > mc.buffer->size) return false;
+        const unsigned char* src = (const unsigned char*)mc.buffer->data + mc.offset;
+        void* dst = std::malloc(mc.count * mc.stride);   // cgltf_free() frees it
+        if (!dst) return false;
+        int rc = -1;
+        switch (mc.mode) {
+        case cgltf_meshopt_compression_mode_attributes: rc = meshopt_decodeVertexBuffer(dst, mc.count, mc.stride, src, mc.size); break;
+        case cgltf_meshopt_compression_mode_triangles:  rc = meshopt_decodeIndexBuffer(dst, mc.count, mc.stride, src, mc.size); break;
+        case cgltf_meshopt_compression_mode_indices:    rc = meshopt_decodeIndexSequence(dst, mc.count, mc.stride, src, mc.size); break;
+        default: break;
+        }
+        if (rc != 0) { std::free(dst); return false; }
+        switch (mc.filter) {
+        case cgltf_meshopt_compression_filter_octahedral:  meshopt_decodeFilterOct(dst, mc.count, mc.stride); break;
+        case cgltf_meshopt_compression_filter_quaternion:  meshopt_decodeFilterQuat(dst, mc.count, mc.stride); break;
+        case cgltf_meshopt_compression_filter_exponential: meshopt_decodeFilterExp(dst, mc.count, mc.stride); break;
+        default: break;
+        }
+        view.data = dst;
+    }
+    return true;
+}
+
+// KHR_draco_mesh_compression (Sketchfab, Blender's "Compression" tick box): the
+// points, normals and triangles of one primitive, unpacked by Google's Draco.
+bool readDraco(const cgltf_data* data, const cgltf_primitive& prim, std::vector<glm::vec3>& P,
+               std::vector<glm::vec3>& N, std::vector<uint32_t>& idx) {
+    const cgltf_draco_mesh_compression& dc = prim.draco_mesh_compression;
+    if (!dc.buffer_view) return false;
+    const uint8_t* bytes = cgltf_buffer_view_data(dc.buffer_view);
+    if (!bytes) return false;
+    draco::DecoderBuffer buf;
+    buf.Init((const char*)bytes, dc.buffer_view->size);
+    draco::Decoder decoder;
+    auto got = decoder.DecodeMeshFromBuffer(&buf);
+    if (!got.ok() || !got.value()) return false;
+    const draco::Mesh& mesh = *got.value();
+    // The file says which Draco attribute is which: cgltf keeps that number as
+    // an index into the accessor list.
+    const draco::PointAttribute* posA = nullptr;
+    const draco::PointAttribute* nrmA = nullptr;
+    for (cgltf_size i = 0; i < dc.attributes_count; ++i) {
+        const int id = (int)(dc.attributes[i].data - data->accessors);
+        if (dc.attributes[i].type == cgltf_attribute_type_position) posA = mesh.GetAttributeByUniqueId(id);
+        if (dc.attributes[i].type == cgltf_attribute_type_normal) nrmA = mesh.GetAttributeByUniqueId(id);
+    }
+    if (!posA) return false;
+    for (draco::PointIndex i(0); i < mesh.num_points(); ++i) {
+        float v[3] = {0, 0, 0};
+        posA->ConvertValue<float, 3>(posA->mapped_index(i), v);
+        P.push_back({v[0], v[1], v[2]});
+        if (nrmA) {
+            float n[3] = {0, 0, 0};
+            nrmA->ConvertValue<float, 3>(nrmA->mapped_index(i), n);
+            N.push_back({n[0], n[1], n[2]});
+        }
+    }
+    for (draco::FaceIndex f(0); f < mesh.num_faces(); ++f) {
+        const draco::Mesh::Face& face = mesh.face(f);
+        for (int k = 0; k < 3; ++k) idx.push_back(face[k].value());
+    }
+    return true;
+}
+
 bool loadGltf(const std::string& path, std::vector<Builder>& out, std::string& err, std::vector<std::string>& notes) {
     cgltf_options opts = {};
     cgltf_data* data = nullptr;
@@ -271,6 +350,11 @@ bool loadGltf(const std::string& path, std::vector<Builder>& out, std::string& e
     if (cgltf_load_buffers(&opts, data, path.c_str()) != cgltf_result_success) {
         cgltf_free(data);
         err = "its data (.bin) file is missing: keep it next to the .gltf";
+        return false;
+    }
+    if (!unpackMeshopt(data)) {
+        cgltf_free(data);
+        err = "its squashed (meshopt) data is broken";
         return false;
     }
     const std::string folder = fs::path(path).parent_path().string();
@@ -285,13 +369,14 @@ bool loadGltf(const std::string& path, std::vector<Builder>& out, std::string& e
             c = {f[0], f[1], f[2]};
             alpha = f[3];
             const cgltf_texture* t = m->pbr_metallic_roughness.base_color_texture.texture;
-            if (t && t->image) {
+            const cgltf_image* img = t ? (t->image ? t->image : t->webp_image) : nullptr;
+            if (img) {
                 glm::vec3 tc;
                 bool got = false;
-                if (t->image->buffer_view)
-                    got = averageColor(cgltf_buffer_view_data(t->image->buffer_view), t->image->buffer_view->size, tc);
-                else if (t->image->uri && std::strncmp(t->image->uri, "data:", 5) != 0) {
-                    std::string uri = t->image->uri;
+                if (img->buffer_view)
+                    got = averageColor(cgltf_buffer_view_data(img->buffer_view), img->buffer_view->size, tc);
+                else if (img->uri && std::strncmp(img->uri, "data:", 5) != 0) {
+                    std::string uri = img->uri;
                     uri.resize(cgltf_decode_uri(uri.data()));
                     got = averageColorFile((fs::path(folder) / uri).string(), tc);
                 }
@@ -304,7 +389,7 @@ bool loadGltf(const std::string& path, std::vector<Builder>& out, std::string& e
         return r;
     };
 
-    bool skipped = false;
+    bool skipped = false, brokenDraco = false;
     for (cgltf_size ni = 0; ni < data->nodes_count; ++ni) {
         const cgltf_node* node = &data->nodes[ni];
         if (!node->mesh) continue;
@@ -320,13 +405,31 @@ bool loadGltf(const std::string& path, std::vector<Builder>& out, std::string& e
             const cgltf_primitive& prim = mesh->primitives[pi];
             if (prim.type != cgltf_primitive_type_triangles && prim.type != cgltf_primitive_type_triangle_strip &&
                 prim.type != cgltf_primitive_type_triangle_fan) { skipped = true; continue; }
-            const cgltf_accessor* posA = nullptr;
-            const cgltf_accessor* nrmA = nullptr;
-            for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai) {
-                if (prim.attributes[ai].type == cgltf_attribute_type_position) posA = prim.attributes[ai].data;
-                if (prim.attributes[ai].type == cgltf_attribute_type_normal) nrmA = prim.attributes[ai].data;
+            std::vector<glm::vec3> P, N;
+            std::vector<uint32_t> idx;
+            if (prim.has_draco_mesh_compression) {
+                if (!readDraco(data, prim, P, N, idx)) { brokenDraco = true; continue; }
+            } else {
+                const cgltf_accessor* posA = nullptr;
+                const cgltf_accessor* nrmA = nullptr;
+                for (cgltf_size ai = 0; ai < prim.attributes_count; ++ai) {
+                    if (prim.attributes[ai].type == cgltf_attribute_type_position) posA = prim.attributes[ai].data;
+                    if (prim.attributes[ai].type == cgltf_attribute_type_normal) nrmA = prim.attributes[ai].data;
+                }
+                if (!posA) continue;
+                for (cgltf_size i = 0; i < posA->count; ++i) {
+                    float p[3] = {0, 0, 0}, n[3] = {0, 0, 0};
+                    cgltf_accessor_read_float(posA, i, p, 3);
+                    P.push_back({p[0], p[1], p[2]});
+                    if (nrmA) {
+                        cgltf_accessor_read_float(nrmA, i, n, 3);
+                        N.push_back({n[0], n[1], n[2]});
+                    }
+                }
+                const cgltf_size count = prim.indices ? prim.indices->count : posA->count;
+                for (cgltf_size i = 0; i < count; ++i)
+                    idx.push_back(prim.indices ? (uint32_t)cgltf_accessor_read_index(prim.indices, i) : (uint32_t)i);
             }
-            if (!posA) continue;
             Builder b;
             b.name = baseName;
             if (mesh->primitives_count > 1)
@@ -334,19 +437,8 @@ bool loadGltf(const std::string& path, std::vector<Builder>& out, std::string& e
             auto [col, tr] = colorOf(prim.material);
             b.color = col;
             b.transparency = tr;
-            for (cgltf_size i = 0; i < posA->count; ++i) {
-                float p[3] = {0, 0, 0}, n[3] = {0, 0, 0};
-                cgltf_accessor_read_float(posA, i, p, 3);
-                b.pos.push_back(glm::vec3(world * glm::vec4(p[0], p[1], p[2], 1.0f)));
-                if (nrmA) {
-                    cgltf_accessor_read_float(nrmA, i, n, 3);
-                    b.nrm.push_back(normalM * glm::vec3(n[0], n[1], n[2]));
-                }
-            }
-            std::vector<uint32_t> idx;
-            const cgltf_size count = prim.indices ? prim.indices->count : posA->count;
-            for (cgltf_size i = 0; i < count; ++i)
-                idx.push_back(prim.indices ? (uint32_t)cgltf_accessor_read_index(prim.indices, i) : (uint32_t)i);
+            for (const glm::vec3& p : P) b.pos.push_back(glm::vec3(world * glm::vec4(p, 1.0f)));
+            if (N.size() == P.size()) for (const glm::vec3& n : N) b.nrm.push_back(normalM * n);
             auto tri = [&](uint32_t a, uint32_t c1, uint32_t c2) {
                 if (a >= b.pos.size() || c1 >= b.pos.size() || c2 >= b.pos.size()) return;
                 if (mirrored) std::swap(c1, c2);
@@ -363,6 +455,7 @@ bool loadGltf(const std::string& path, std::vector<Builder>& out, std::string& e
         }
     }
     if (skipped) notes.push_back("Lines and points in the file were skipped (only surfaces come in).");
+    if (brokenDraco) notes.push_back("Some squashed (Draco) pieces couldn't be unpacked and were left out.");
     cgltf_free(data);
     return true;
 }
@@ -518,15 +611,168 @@ bool loadPly(const std::string& path, std::vector<Builder>& out, std::string& er
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Everything else (Collada .dae, 3ds Max .3ds, DirectX .x, 3MF, LightWave, ...): Assimp
+// ---------------------------------------------------------------------------
+
+// The endings Assimp reads for us (the readers turned on in CMakeLists.txt).
+const char* const kAssimpExts[] = {
+    ".dae", ".3ds", ".x", ".3mf", ".lwo", ".lws", ".lxo", ".ac", ".ac3d", ".acc", ".off", ".dxf", ".b3d", ".ms3d",
+    ".md2", ".md3", ".md5mesh", ".ase", ".ask", ".smd", ".vta", ".x3d", ".x3db", ".amf", ".mesh.xml", ".ogex",
+    ".irrmesh", ".irr", ".cob", ".scn", ".q3o", ".q3s", ".nff", ".enff", ".raw", ".ter", ".xgl", ".zgl", ".ndo",
+    ".hmp", ".mdl", ".pmx", ".sib"};
+
+// "thing.mesh.xml" has two dots: check the whole end of the name, not just the last part.
+bool isAssimpFile(const std::string& path) {
+    const std::string name = lower(fs::path(path).filename().string());
+    for (const char* e : kAssimpExts) {
+        const size_t n = std::strlen(e);
+        if (name.size() > n && name.compare(name.size() - n, n, e) == 0) return true;
+    }
+    return false;
+}
+
+glm::vec3 assimpColor(const aiScene* scene, const aiMaterial* m, const std::string& folder, float& transparency) {
+    glm::vec3 c(0.65f, 0.65f, 0.80f);
+    if (!m) return c;
+    aiColor4D col;
+    if (aiGetMaterialColor(m, AI_MATKEY_BASE_COLOR, &col) == AI_SUCCESS ||
+        aiGetMaterialColor(m, AI_MATKEY_COLOR_DIFFUSE, &col) == AI_SUCCESS)
+        c = {col.r, col.g, col.b};
+    aiString tex;
+    if (m->GetTexture(aiTextureType_BASE_COLOR, 0, &tex) == AI_SUCCESS || m->GetTexture(aiTextureType_DIFFUSE, 0, &tex) == AI_SUCCESS) {
+        glm::vec3 t;
+        bool got = false;
+        if (const aiTexture* em = scene->GetEmbeddedTexture(tex.C_Str())) {
+            if (em->mHeight == 0) got = averageColor((const unsigned char*)em->pcData, em->mWidth, t);
+            else if (em->mWidth && em->mHeight) {   // plain pixels
+                glm::dvec3 sum(0.0);
+                const size_t n = (size_t)em->mWidth * em->mHeight;
+                for (size_t i = 0; i < n; ++i) sum += glm::dvec3(em->pcData[i].r, em->pcData[i].g, em->pcData[i].b);
+                t = glm::vec3(sum / (255.0 * (double)n));
+                got = true;
+            }
+        } else {
+            fs::path f(tex.C_Str());
+            got = averageColorFile((fs::path(folder) / f).string(), t) ||
+                  averageColorFile((fs::path(folder) / f.filename()).string(), t) ||
+                  averageColorFile(f.string(), t);
+        }
+        if (got) c = c.x > 0.99f && c.y > 0.99f && c.z > 0.99f ? t : c * t;
+    }
+    float opacity = 1.0f;
+    if (aiGetMaterialFloat(m, AI_MATKEY_OPACITY, &opacity) == AI_SUCCESS) transparency = 1.0f - opacity;
+    transparency = std::clamp(transparency, 0.0f, 1.0f);
+    if (transparency > 0.98f) transparency = 0.0f;   // same exporter mistake as FBX
+    return glm::clamp(c, glm::vec3(0.0f), glm::vec3(1.0f));
+}
+
+void addAssimpNode(const aiScene* scene, const aiNode* node, const aiMatrix4x4& parent, const std::string& folder,
+                   std::vector<Builder>& out, bool& skipped) {
+    const aiMatrix4x4 toWorld = parent * node->mTransformation;
+    glm::mat4 world;
+    for (int r = 0; r < 4; ++r) for (int c = 0; c < 4; ++c) world[c][r] = toWorld[r][c];   // Assimp's rows are glm's columns
+    const glm::mat3 normalM = glm::transpose(glm::inverse(glm::mat3(world)));
+    const bool mirrored = glm::determinant(glm::mat3(world)) < 0.0f;
+    for (unsigned mi = 0; mi < node->mNumMeshes; ++mi) {
+        const aiMesh* mesh = scene->mMeshes[node->mMeshes[mi]];
+        if (!(mesh->mPrimitiveTypes & aiPrimitiveType_POLYGON) && !(mesh->mPrimitiveTypes & aiPrimitiveType_TRIANGLE)) {
+            skipped = true;
+            continue;
+        }
+        Builder b;
+        b.name = node->mName.length ? node->mName.C_Str() : (mesh->mName.length ? mesh->mName.C_Str() : "Mesh");
+        if (node->mNumMeshes > 1) {
+            const aiMaterial* mat = scene->mMaterials[mesh->mMaterialIndex];
+            aiString mname;
+            b.name += mat && mat->Get(AI_MATKEY_NAME, mname) == AI_SUCCESS && mname.length ? " (" + std::string(mname.C_Str()) + ")"
+                                                                                        : " " + std::to_string(mi + 1);
+        }
+        b.color = assimpColor(scene, scene->mMaterials[mesh->mMaterialIndex], folder, b.transparency);
+        for (unsigned v = 0; v < mesh->mNumVertices; ++v) {
+            const aiVector3D& p = mesh->mVertices[v];
+            b.pos.push_back(glm::vec3(world * glm::vec4(p.x, p.y, p.z, 1.0f)));
+            if (mesh->mNormals) b.nrm.push_back(normalM * glm::vec3(mesh->mNormals[v].x, mesh->mNormals[v].y, mesh->mNormals[v].z));
+        }
+        for (unsigned f = 0; f < mesh->mNumFaces; ++f) {
+            const aiFace& face = mesh->mFaces[f];
+            if (face.mNumIndices < 3) { skipped = true; continue; }
+            std::vector<uint32_t> nf(face.mIndices, face.mIndices + face.mNumIndices);
+            bool ok = true;
+            for (uint32_t i : nf) ok = ok && i < mesh->mNumVertices;
+            if (!ok) continue;
+            if (mirrored) std::reverse(nf.begin(), nf.end());
+            b.faces.push_back(std::move(nf));
+        }
+        if (!b.faces.empty()) out.push_back(std::move(b));
+    }
+    for (unsigned i = 0; i < node->mNumChildren; ++i) addAssimpNode(scene, node->mChildren[i], toWorld, folder, out, skipped);
+}
+
+bool loadAssimp(const std::string& path, std::vector<Builder>& out, std::string& err, std::vector<std::string>& notes) {
+    Assimp::Importer importer;
+    importer.SetPropertyBool(AI_CONFIG_IMPORT_NO_SKELETON_MESHES, true);   // no bone sticks
+    const aiScene* scene = importer.ReadFile(path, aiProcess_SortByPType | aiProcess_FindInvalidData | aiProcess_ValidateDataStructure);
+    if (!scene || !scene->mRootNode || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE)) {
+        err = std::string("couldn't read it (") + importer.GetErrorString() + ")";
+        return false;
+    }
+    // 3D printing formats stand on Z, like STL: turn them so Y is up.
+    aiMatrix4x4 root;
+    const std::string e = extOf(path);
+    if (e == ".3mf" || e == ".amf") root = aiMatrix4x4(1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1);
+    bool skipped = false;
+    addAssimpNode(scene, scene->mRootNode, root, fs::path(path).parent_path().string(), out, skipped);
+    bool skinned = false;
+    for (unsigned i = 0; i < scene->mNumMeshes; ++i) skinned = skinned || scene->mMeshes[i]->HasBones();
+    if (skinned) notes.push_back("It has a skeleton: it comes in standing in its rest pose, without the bones.");
+    if (skipped) notes.push_back("Lines and points in the file were skipped (only surfaces come in).");
+    return true;
+}
+
+// Files Studio can't open, with what to do instead.
+std::string cantOpen(const std::string& e) {
+    if (e == ".blend")
+        return "Blender's own .blend files can't be opened directly. In Blender, use File > Export > glTF 2.0 (.glb) and import that";
+    if (e == ".max" || e == ".ma" || e == ".mb" || e == ".c4d" || e == ".skp" || e == ".3dm" || e == ".hip" || e == ".ztl" || e == ".zpr")
+        return "that's a program's own save file (3ds Max, Maya, Cinema 4D, SketchUp, Rhino, Houdini or ZBrush), which only that "
+               "program can open. Export it from there as .fbx, .glb or .obj and import that";
+    if (e == ".usd" || e == ".usda" || e == ".usdc" || e == ".usdz")
+        return "USD files can't be read yet. Export as .glb or .fbx instead (Blender can turn a USD into a .glb)";
+    if (e == ".step" || e == ".stp" || e == ".iges" || e == ".igs" || e == ".sldprt" || e == ".f3d" || e == ".ipt")
+        return "CAD files (STEP, IGES, SolidWorks, Fusion, Inventor) describe exact curved shapes, not meshes. Export as .stl, .3mf or .obj from your CAD program and import that";
+    if (e == ".abc" || e == ".vdb")
+        return "Alembic and VDB files are for animation caches and smoke, not models. Export as .fbx or .glb instead";
+    return std::string("Studio can't read ") + e + " models (it can read " + formatList() + ")";
+}
+
 } // namespace
 
 bool isModelFile(const std::string& path) {
     const std::string e = extOf(path);
-    return e == ".fbx" || e == ".obj" || e == ".gltf" || e == ".glb" || e == ".stl" || e == ".ply";
+    return e == ".fbx" || e == ".obj" || e == ".gltf" || e == ".glb" || e == ".stl" || e == ".ply" || isAssimpFile(path);
 }
 
-const char* patterns() { return "*.fbx *.obj *.gltf *.glb *.stl *.ply"; }
-const char* formatList() { return ".fbx, .obj, .gltf, .glb, .stl, .ply"; }
+// Not quite models we can read, but someone dropping one wants to hear how to get it in.
+bool isOtherModelFile(const std::string& path) {
+    static const char* const kOther[] = {".blend", ".max", ".ma", ".mb", ".c4d", ".skp", ".3dm", ".hip", ".ztl", ".zpr",
+                                         ".usd", ".usda", ".usdc", ".usdz", ".step", ".stp", ".iges", ".igs", ".sldprt",
+                                         ".f3d", ".ipt", ".abc", ".vdb"};
+    const std::string e = extOf(path);
+    for (const char* o : kOther) if (e == o) return true;
+    return false;
+}
+
+const char* patterns() {
+    return "*.fbx *.obj *.gltf *.glb *.stl *.ply *.dae *.3ds *.x *.3mf *.lwo *.lws *.lxo *.ac *.ac3d *.off *.dxf *.b3d "
+           "*.ms3d *.md2 *.md3 *.md5mesh *.ase *.smd *.x3d *.amf *.ogex *.irrmesh *.irr *.cob *.q3o *.nff *.raw *.ter "
+           "*.xgl *.zgl *.ndo *.hmp *.mdl *.pmx *.sib";
+}
+const char* formatList() {
+    return ".fbx, .obj, .gltf, .glb (also Draco and meshopt squashed ones), .stl, .ply, .dae, .3ds, .x, .3mf, .lwo, "
+           ".ac, .off, .dxf, .b3d, .ms3d, .md2, .md3, .md5mesh, .ase, .smd, .x3d, .amf, .ogex, .irrmesh, .cob, .xgl, "
+           ".pmx and a few more";
+}
 
 bool load(const std::string& path, Result& out, std::string& err) {
     out = Result{};
@@ -537,7 +783,8 @@ bool load(const std::string& path, Result& out, std::string& err) {
     else if (e == ".gltf" || e == ".glb") ok = loadGltf(path, raw, err, out.notes);
     else if (e == ".stl") ok = loadStl(path, raw, err);
     else if (e == ".ply") ok = loadPly(path, raw, err);
-    else { err = std::string("Studio can't read ") + e + " models (it can read " + formatList() + ")"; return false; }
+    else if (isAssimpFile(path)) ok = loadAssimp(path, raw, err, out.notes);
+    else { err = cantOpen(e); return false; }
     if (!ok) return false;
 
     size_t faces = 0;

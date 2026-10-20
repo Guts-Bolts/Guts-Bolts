@@ -2,6 +2,7 @@
 // files from the computer onto the window.
 #include "Editor.h"
 #include "ModelImport.h"
+#include "PictureImport.h"
 #include "panels/ViewportPanel.h"
 #include "../core/AppWindow.h"
 #include "../core/FileDialog.h"
@@ -31,11 +32,11 @@ enum class FileType { Model, RobloxModel, Place, Picture, Sound, Script, Unknown
 FileType typeOf(const std::string& path) {
     std::string e = fs::path(path).extension().string();
     for (char& c : e) c = (char)std::tolower((unsigned char)c);
-    if (ModelImport::isModelFile(path)) return FileType::Model;
+    if (ModelImport::isModelFile(path) || ModelImport::isOtherModelFile(path)) return FileType::Model;
     if (e == ".rbxm" || e == ".rbxmx") return FileType::RobloxModel;
     if (e == ".rbxl" || e == ".rbxlx" || e == ".gbscene") return FileType::Place;
-    if (e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".bmp" || e == ".tga" || e == ".gif") return FileType::Picture;
-    if (e == ".wav" || e == ".mp3" || e == ".flac") return FileType::Sound;
+    if (PictureImport::isPicture(path)) return FileType::Picture;
+    if (e == ".wav" || e == ".mp3" || e == ".flac" || e == ".ogg" || e == ".oga") return FileType::Sound;
     if (e == ".lua" || e == ".luau") return FileType::Script;
     return FileType::Unknown;
 }
@@ -166,10 +167,15 @@ void Editor::importFiles(const std::vector<std::string>& paths, ImVec2 mouse, bo
             else openFile(path);
             return;
         case FileType::Picture: {
+            // .webp, .svg and friends become a PNG first, so every Player can show them.
+            std::string err;
+            const std::string pic = PictureImport::usable(path, err);
+            if (pic.empty()) { Log::error("Couldn't import " + name + ": " + err + "."); break; }
+            if (pic != path) Log::system("Saved " + name + " as a PNG: " + fs::path(pic).filename().string() + " in the Imported Pictures folder.");
             // Dropped on a part: a Decal on the side it landed on. Anywhere else: a sign
             // with the picture on it, facing you.
             auto d = std::make_unique<SceneNode>(stem(path), NodeKind::Decal);
-            d->texture = Paths::relativeToGames(fs::path(path));
+            d->texture = Paths::relativeToGames(fs::path(pic));
             d->color = {1.0f, 1.0f, 1.0f};
             SceneNode* target = under && under->isPart() ? under : nullptr;
             if (target) {
@@ -221,11 +227,22 @@ void Editor::importFiles(const std::vector<std::string>& paths, ImVec2 mouse, bo
             Log::system("Added the script " + name + (under ? " inside " + under->name : "") + ".");
             break;
         }
-        case FileType::Unknown:
+        case FileType::Unknown: {
+            std::string e = fs::path(path).extension().string();
+            for (char& c : e) c = (char)std::tolower((unsigned char)c);
+            std::string why = PictureImport::cantOpen(path);
+            if (why.empty() && (e == ".m4a" || e == ".aac" || e == ".wma" || e == ".aif" || e == ".aiff" || e == ".opus" ||
+                                e == ".mid" || e == ".midi"))
+                why = "Studio can't play " + e + " sounds. Turn it into an .mp3 or .ogg first (Audacity, or any free online converter).";
+            if (why.empty() && (e == ".mp4" || e == ".mov" || e == ".webm" || e == ".avi" || e == ".mkv"))
+                why = "Studio can't play videos yet. A picture from the video, or its sound saved as an .mp3, can go in.";
+            if (!why.empty()) { Log::warn(name + ": " + why); break; }
             Log::warn("Studio doesn't know what to do with " + name + ". It can take 3D models (" +
                       ModelImport::formatList() + "), Roblox files (.rbxm, .rbxl), games (.gbscene), "
-                      "pictures (.png, .jpg), sounds (.wav, .mp3, .flac) and scripts (.lua, .luau).");
+                      "pictures (.png, .jpg, .webp, .svg, .gif, .bmp, .tga, .psd, .hdr), sounds (.wav, .mp3, .ogg, .flac) "
+                      "and scripts (.lua, .luau).");
             break;
+        }
         }
     }
     if (added.empty()) return;
@@ -237,8 +254,8 @@ void Editor::importFiles(const std::vector<std::string>& paths, ImVec2 mouse, bo
 void Editor::importDialog() {
     if (m_playing) { Log::warn("Stop the playtest first, then import."); return; }
     if (!FileDialog::available()) { m_pending = Pending::Open; m_openOpen = true; return; }
-    std::string pats = std::string(ModelImport::patterns()) +
-                       " *.rbxm *.rbxmx *.png *.jpg *.jpeg *.bmp *.tga *.wav *.mp3 *.flac *.lua *.luau";
+    std::string pats = std::string(ModelImport::patterns()) + " *.rbxm *.rbxmx " + PictureImport::patterns() +
+                       " *.wav *.mp3 *.ogg *.flac *.lua *.luau";
     std::string path = FileDialog::openAny("Import into your game", "Models, pictures, sounds and scripts", pats);
     if (!path.empty()) importFiles({path}, ImVec2(0, 0), false);
 }
