@@ -44,7 +44,7 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::Sound    ? "Sound"
                     : node->kind == NodeKind::SoundGroup ? "SoundGroup"
                     : node->kind == NodeKind::SoundEffect ? SoundFx::kClassNames[(int)node->soundFx.type]
-                    : node->kind == NodeKind::Attachment ? "Attachment"
+                    : node->kind == NodeKind::Attachment ? (node->bone ? "Bone" : "Attachment")
                     : node->kind == NodeKind::Constraint ? "Constraint"
                     : node->kind == NodeKind::ForceField ? "ForceField"
                     : node->kind == NodeKind::Tool       ? "Tool"

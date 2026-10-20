@@ -153,7 +153,7 @@ void Editor::importFiles(const std::vector<std::string>& paths, ImVec2 mouse, bo
                 glm::vec3 d = glm::vec3(at.x - 0.5f * (box.min.x + box.max.x), at.y - box.min.y + 0.01f,
                                         at.z - 0.5f * (box.min.z + box.max.z)) + right * spread;
                 for (SceneNode* n : got)
-                    n->transform.position += n->parent ? glm::vec3(glm::inverse(n->parent->worldMatrix()) * glm::vec4(d, 0.0f)) : d;
+                    n->transform.position += n->parent ? glm::vec3(glm::inverse(n->parentFrame()) * glm::vec4(d, 0.0f)) : d;
                 spread += std::max(box.max.x - box.min.x, box.max.z - box.min.z) + 2.0f;
             }
             added.insert(added.end(), got.begin(), got.end());

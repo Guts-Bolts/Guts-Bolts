@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 #include <glm/glm.hpp>
 #include "SceneNode.h"
@@ -21,6 +22,15 @@ struct EditMesh {
     // Optional texture coordinates, one per corner of each face (the character's
     // clothing layout). Empty, or out of step with `faces` after an edit = box mapping.
     std::vector<std::vector<glm::vec2>> uvs;
+    // Skinning (an armature, see Skin.h): how much each bone pulls each vertex.
+    // `bones` names the Bones inside the part; `bind` is where each bone was (in
+    // the part's studs space, inverted) when the mesh was bound to it; `weights`
+    // has one list per vertex (up to 4 bones, adding up to 1). Empty = not skinned.
+    struct Weight { uint16_t bone; float w; };
+    std::vector<std::string>          bones;
+    std::vector<glm::mat4>            bind;
+    std::vector<std::vector<Weight>>  weights;
+    bool skinned() const { return !bones.empty() && bind.size() == bones.size() && weights.size() == verts.size(); }
 };
 
 namespace MeshEdit {
@@ -32,7 +42,7 @@ std::shared_ptr<EditMesh> fromPrimitive(PrimitiveType type);
 // Turn `node` into a custom-mesh part using `mesh`.
 void attach(SceneNode& node, std::shared_ptr<EditMesh> mesh);
 // Rebuild what the GPU draws after the mesh changed.
-void refresh(SceneNode& node);
+void refresh(SceneNode& node, const std::vector<glm::vec3>* posed = nullptr);   // posed: bent by bones
 // Wrap the part's box around the mesh again (keeps everything where it is in the world).
 void fit(SceneNode& node);
 // Make sure this node has its own copy of the mesh before changing it.

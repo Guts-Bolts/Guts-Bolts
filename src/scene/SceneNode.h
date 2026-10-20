@@ -598,6 +598,11 @@ public:
     PrimitiveType         primitiveType = PrimitiveType::None;
     std::shared_ptr<Mesh> mesh;
     std::shared_ptr<EditMesh> editMesh;    // primitiveType == Mesh: the shape's points and faces
+    // An Attachment that's a Bone (Roblox's Bone): a joint of an armature inside a
+    // MeshPart. Turning it bends the mesh around it (see Skin.h). Unlike other
+    // children of a part, its position is in studs from the part's middle, and
+    // the part's size doesn't stretch it.
+    bool                  bone = false;
     glm::vec3             color    = {0.65f, 0.65f, 0.80f};
     bool                  selected = false;
     bool                  visible  = true;
@@ -794,6 +799,7 @@ public:
     }
     std::string valueText() const;   // for showing it (the leaderboard, Properties)
     bool isAttachment() const { return kind == NodeKind::Attachment; }
+    bool isBone() const { return kind == NodeKind::Attachment && bone; }
     bool isConstraint() const { return kind == NodeKind::Constraint; }
     bool isMover() const { return kind == NodeKind::Mover; }
     bool isRemote() const { return kind == NodeKind::Remote; }
@@ -819,6 +825,9 @@ public:
     SceneNode*                 findChild(const std::string& name, bool recursive = false) const;
     bool                       isAncestorOf(const SceneNode* other) const;
     glm::mat4                  worldMatrix() const;
+    // The space this node's transform is in (its parent's world matrix; for a bone
+    // in a part, the part without its size).
+    glm::mat4                  parentFrame() const;
     std::string                fullName() const;   // e.g. "Workspace.Door.Script"
 
     // Make sure freshly created nodes never reuse an id loaded from a file.

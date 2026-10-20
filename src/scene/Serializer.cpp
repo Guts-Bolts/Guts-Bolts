@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include "Serializer.h"
 #include "EditMesh.h"
 #include "RobloxFile.h"
@@ -751,6 +752,7 @@ json toJson(const SceneNode& n) {
     j["id"]   = n.id;
     j["name"] = n.name;
     j["kind"] = kindName(n.kind);
+    if (n.isBone()) j["bone"] = true;
     // (A part posed in the Animation Editor is saved where it really is.)
     j["pos"]  = vec(n.restPose ? n.restPose->position : n.transform.position);
     j["rot"]  = vec(n.restPose ? n.restPose->rotation : n.transform.rotation);
@@ -774,6 +776,22 @@ json toJson(const SceneNode& n) {
                     uv.push_back(std::move(c));
                 }
                 j["mesh"]["uv"] = std::move(uv);
+            }
+            // Bound to an armature: bone names, where each was when bound, and each vertex's weights.
+            if (n.editMesh->skinned()) {
+                const EditMesh& m = *n.editMesh;
+                json bind = json::array(), w = json::array();
+                for (const glm::mat4& b : m.bind) {
+                    json f = json::array();
+                    for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r) f.push_back(b[c][r]);
+                    bind.push_back(std::move(f));
+                }
+                for (const auto& vw : m.weights) {
+                    json one = json::array();
+                    for (const auto& x : vw) { one.push_back(x.bone); one.push_back(x.w); }
+                    w.push_back(std::move(one));
+                }
+                j["mesh"]["skin"] = {{"bones", m.bones}, {"bind", std::move(bind)}, {"w", std::move(w)}};
             }
         }
         j["color"]        = vec(n.color);
@@ -913,6 +931,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->id = j["id"].get<uint64_t>();
         SceneNode::reserveId(n->id);
     }
+    n->bone = n->kind == NodeKind::Attachment && get<bool>(j, "bone", false);
     n->transform.position = vec(j, "pos",  {0, 0, 0});
     n->transform.rotation = vec(j, "rot",  {0, 0, 0});
     n->transform.scale    = vec(j, "size", {1, 1, 1});
@@ -947,6 +966,37 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
                     ++fi;
                 }
                 if (m->uvs.size() != m->faces.size()) m->uvs.clear();
+                if (auto sk = it->find("skin"); sk != it->end() && sk->is_object()) {
+                    const json& bones = (*sk)["bones"];
+                    const json& bind = (*sk)["bind"];
+                    const json& w = (*sk)["w"];
+                    if (bones.is_array() && bind.is_array() && w.is_array() && bones.size() == bind.size() &&
+                        w.size() == m->verts.size() && bones.size() < 65535) {
+                        bool good = true;
+                        for (size_t b = 0; b < bones.size() && good; ++b) {
+                            if (!bones[b].is_string() || !bind[b].is_array() || bind[b].size() != 16) { good = false; break; }
+                            m->bones.push_back(bones[b].get<std::string>());
+                            glm::mat4 f;
+                            for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r) {
+                                const json& x = bind[b][c * 4 + r];
+                                f[c][r] = x.is_number() ? x.get<float>() : 0.0f;
+                            }
+                            m->bind.push_back(f);
+                        }
+                        for (size_t v = 0; v < w.size() && good; ++v) {
+                            std::vector<EditMesh::Weight> one;
+                            if (!w[v].is_array()) { good = false; break; }
+                            for (size_t k = 0; k + 1 < w[v].size() && one.size() < 4; k += 2) {
+                                if (!w[v][k].is_number_unsigned() || !w[v][k + 1].is_number()) continue;
+                                uint32_t b = w[v][k].get<uint32_t>();
+                                float wt = w[v][k + 1].get<float>();
+                                if (b < m->bones.size() && std::isfinite(wt)) one.push_back({(uint16_t)b, std::clamp(wt, 0.0f, 1.0f)});
+                            }
+                            m->weights.push_back(std::move(one));
+                        }
+                        if (!good) { m->bones.clear(); m->bind.clear(); m->weights.clear(); }
+                    }
+                }
                 m->smooth = get<bool>(*it, "smooth", false);
             }
             if (m->faces.empty()) m = MeshEdit::fromPrimitive(PrimitiveType::Cube);

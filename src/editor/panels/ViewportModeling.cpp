@@ -8,6 +8,7 @@
 #include "../../scene/SceneNode.h"
 #include "../../scene/EditMesh.h"
 #include "../../core/Log.h"
+#include "../../scene/Skin.h"
 
 #include <imgui.h>
 #include <ImGuizmo.h>
@@ -177,6 +178,15 @@ void ViewportPanel::modelingView(const glm::mat4& view, const glm::mat4& proj,
     if (ms.selectMode == 0)
         for (size_t i = 0; i < nv; ++i)
             if (visibleVert((uint32_t)i)) dl->AddCircleFilled(screen[i], ms.sel[i] ? 4.0f : 3.0f, ms.sel[i] ? kPicked : kWire);
+    // Weights (Armature window): blue = the bone doesn't pull this corner, red = it pulls it all the way.
+    if (!m_state->weightBone.empty() && m.skinned())
+        for (size_t i = 0; i < nv; ++i) {
+            if (!visibleVert((uint32_t)i)) continue;
+            float w = Skin::weightOf(m, i, m_state->weightBone);
+            ImU32 c = ImGui::ColorConvertFloat4ToU32(ImVec4(w, 0.25f + 0.5f * (1.0f - std::abs(w * 2.0f - 1.0f)), 1.0f - w, 1.0f));
+            dl->AddCircleFilled(screen[i], 4.5f, c);
+            if (ms.sel[i]) dl->AddCircle(screen[i], 6.0f, kPicked, 0, 1.5f);
+        }
 
     if (modal || m_modalOn) return;   // (a modal tool has the mouse)
 

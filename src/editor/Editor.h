@@ -136,6 +136,10 @@ private:
     std::string m_meshMenu;                       // a menu to open at the mouse next frame
     std::string m_meshSearch;                     // F3: what's typed
     void       addMeshPart();
+    // Armatures: bones inside MeshParts (EditorArmature.cpp)
+    void       renderArmature();
+    SceneNode* armaturePart();                          // the part the Armature window shows
+    SceneNode* addBone(SceneNode* where, int chain);    // in a part or bone; `chain` bones in a row
     // Online: the Guts&Bolts server, publishing and the Library (EditorOnline.cpp)
     void       renderServerDialog();
     void       renderPublishDialog();
@@ -233,6 +237,8 @@ private:
     std::string m_modelName, m_modelDesc, m_modelMsg, m_libraryQuery, m_libraryMsg;
     int         m_libraryKind = 0;   // 0 models, 1 decals, 2 audio
     bool        m_showAccessory = false;
+    bool        m_showArmature = false;
+    uint64_t    m_armBone = 0;   // the bone picked in the Armature window
     int         m_accessoryKind = 0, m_accessoryPrice = 0;
     std::string m_accessoryName, m_accessoryDesc, m_accessoryMsg;
     nlohmann::json m_library = nlohmann::json::array();

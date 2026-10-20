@@ -284,6 +284,49 @@ const Transform& restOf(const RestPose& rest, const SceneNode* n) {
     return it == rest.end() ? n->transform : it->second;
 }
 
+// Bones (armatures inside MeshParts, see Skin.h), anywhere in the rig.
+void collectBones(SceneNode* n, std::vector<SceneNode*>& out) {
+    for (auto& c : n->children) {
+        if (c->isBone()) out.push_back(c.get());
+        if (c->kind == NodeKind::Part || c->kind == NodeKind::Model || c->isBone()) collectBones(c.get(), out);
+    }
+}
+
+// A bone's pose turns and moves it in its own axes, from where it rests.
+// A bone with no rest in `rest` uses (and the first time, fills in) `more`; with
+// neither it's left alone (posing it from where it is would add up every frame).
+void poseBones(SceneNode* rig, const RestPose& rest, const std::map<std::string, Sample>& poses,
+               const std::map<std::string, float>* weights, RestPose* more = nullptr) {
+    std::vector<SceneNode*> list;
+    collectBones(rig, list);
+    for (SceneNode* b : list) {
+        auto it = poses.find(b->name);
+        if (it == poses.end()) continue;
+        const Transform* r = nullptr;
+        if (auto ri = rest.find(b->id); ri != rest.end()) r = &ri->second;
+        else if (more) r = &more->try_emplace(b->id, b->transform).first->second;
+        if (!r) continue;
+        float w = 1.0f;
+        if (weights) { auto wi = weights->find(b->name); if (wi != weights->end()) w = wi->second; }
+        Rigid restLocal = rigidOf(*r);
+        Rigid own = blend(inverse(restLocal) * rigidOf(b->transform), Rigid{it->second.pos, it->second.rot}, w);
+        Rigid placed = restLocal * own;
+        b->transform.position = placed.t;
+        b->transform.rotation = quatToEuler(placed.q);
+    }
+}
+
+void restoreBones(SceneNode* rig, const RestPose& rest) {
+    std::vector<SceneNode*> list;
+    collectBones(rig, list);
+    for (SceneNode* b : list) {
+        auto it = rest.find(b->id);
+        if (it == rest.end()) continue;
+        b->transform.position = it->second.position;
+        b->transform.rotation = it->second.rotation;
+    }
+}
+
 // Everything worked out for one rig, one frame.
 struct Solver {
     SceneNode* rig;
@@ -400,6 +443,7 @@ void captureRest(const SceneNode* rig, RestPose& rest) {
     rest.clear();
     std::vector<SceneNode*> parts;
     collectParts(const_cast<SceneNode*>(rig), parts);
+    collectBones(const_cast<SceneNode*>(rig), parts);
     for (const SceneNode* n : parts) rest[n->id] = n->transform;
 }
 
@@ -409,6 +453,7 @@ void applyPoses(SceneNode* rig, const RestPose& rest, const std::map<std::string
     if (weight < 0.999f) for (const auto& [n, s] : poses) w[n] = weight;
     Solver s(rig, rest, poses, weight < 0.999f ? &w : nullptr);
     s.apply();
+    poseBones(rig, rest, poses, weight < 0.999f ? &w : nullptr);
 }
 
 void restore(SceneNode* rig, const RestPose& rest) {
@@ -421,6 +466,7 @@ void restore(SceneNode* rig, const RestPose& rest) {
         n->transform.position = it->second.position;
         n->transform.rotation = it->second.rotation;
     }
+    restoreBones(rig, rest);
 }
 
 bool poseFromTransform(SceneNode* rig, const RestPose& rest, const std::map<std::string, Sample>& poses,
@@ -436,6 +482,12 @@ bool poseFromTransform(SceneNode* rig, const RestPose& rest, const std::map<std:
         out.pos = p;
         out.rot = quatToEuler(rq);
     };
+    if (part->isBone()) {   // in its own axes, from its rest
+        Rigid own = inverse(rigidOf(restOf(rest, part))) * rigidOf(posedLocal);
+        out.pos = own.t;
+        out.rot = quatToEuler(own.q);
+        return true;
+    }
     Solver s(rig, rest, poses, nullptr);
     if (s.nested(part)) {
         solveMove(rigidOf(restOf(rest, part)), rigidOf(posedLocal));
@@ -458,6 +510,10 @@ std::vector<SceneNode*> rigParts(SceneNode* rig) {
     std::map<std::string, bool> seen;
     for (SceneNode* n : all)
         if (isPosable(n) && !seen[n->name]) { seen[n->name] = true; out.push_back(n); }
+    std::vector<SceneNode*> bones;
+    collectBones(rig, bones);
+    for (SceneNode* n : bones)
+        if (!seen[n->name]) { seen[n->name] = true; out.push_back(n); }
     return out;
 }
 
@@ -474,6 +530,9 @@ SceneNode* findPart(SceneNode* rig, const std::string& name) {
     std::vector<SceneNode*> all;
     if (!rig) return nullptr;
     collectParts(rig, all);
+    for (SceneNode* n : all) if (n->name == name) return n;
+    all.clear();
+    collectBones(rig, all);
     for (SceneNode* n : all) if (n->name == name) return n;
     return nullptr;
 }
@@ -569,11 +628,16 @@ void Animator::stopRig(uint64_t rigId, bool restoreParts, Scene& scene) {
         if (restoreParts) restore(scene.findById(rigId), it->second);
         m_rests.erase(it);
     }
+    if (auto b = m_boneRests.find(rigId); b != m_boneRests.end()) {
+        if (restoreParts) if (SceneNode* rig = scene.findById(rigId)) restoreBones(rig, b->second);
+        m_boneRests.erase(b);
+    }
 }
 
 void Animator::clear() {
     m_tracks.clear();
     m_rests.clear();
+    m_boneRests.clear();
     events.clear();
 }
 
@@ -636,7 +700,10 @@ void Animator::update(float dt, Scene& scene) {
                     auto r = rest.find(n->id);
                     if (r != rest.end()) { n->transform.position = r->second.position; n->transform.rotation = r->second.rotation; }
                 }
+            restoreBones(rig, rest);
+            restoreBones(rig, m_boneRests[it->first]);
         }
+        m_boneRests.erase(it->first);
         it = m_rests.erase(it);
     }
 
@@ -660,6 +727,8 @@ void Animator::update(float dt, Scene& scene) {
             auto r = rest->find(n->id);
             if (r != rest->end()) { n->transform.position = r->second.position; n->transform.rotation = r->second.rotation; }
         }
+        restoreBones(rig, *rest);
+        restoreBones(rig, m_boneRests[rigId]);
         std::stable_sort(tracks.begin(), tracks.end(), [](const Track* a, const Track* b) { return a->priority < b->priority; });
         std::map<std::string, Sample> mixed;
         std::map<std::string, float> weights;
@@ -677,6 +746,7 @@ void Animator::update(float dt, Scene& scene) {
         }
         Solver solver(rig, *rest, mixed, &weights);
         solver.apply();
+        poseBones(rig, *rest, mixed, &weights, &m_boneRests[rigId]);
     }
 }
 
