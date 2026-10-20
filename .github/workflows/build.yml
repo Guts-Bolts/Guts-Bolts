@@ -70,11 +70,15 @@ jobs:
           GB_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon -PgbVersion=${{ steps.ver.outputs.name }} -PgbVersionCode=${{ steps.ver.outputs.code }}
       - name: Rename
-        run: cp android/app/build/outputs/apk/release/app-release.apk GutsAndBoltsPlayer-Android.apk
+        run: |
+          cp android/app/build/outputs/apk/phone/release/app-phone-release.apk GutsAndBoltsPlayer-Android.apk
+          cp android/app/build/outputs/apk/quest/release/app-quest-release.apk GutsAndBoltsPlayer-Quest.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android
-          path: GutsAndBoltsPlayer-Android.apk
+          path: |
+            GutsAndBoltsPlayer-Android.apk
+            GutsAndBoltsPlayer-Quest.apk
 
   linux:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
@@ -222,7 +226,7 @@ jobs:
           import json, os
           files = {}
           for f in os.listdir("out"):
-              kind = "android" if f.endswith(".apk") else "windows" if "Windows" in f else "mac" if "macOS" in f else "linux" if "Linux" in f else None
+              kind = "quest" if "Quest" in f else "android" if f.endswith(".apk") else "windows" if "Windows" in f else "mac" if "macOS" in f else "linux" if "Linux" in f else None
               if kind: files[kind] = f
           print(json.dumps({"version": os.environ["TAG"], "name": os.environ.get("NAME", ""),
                             "notes": open("release_notes_latest.md", encoding="utf-8").read(), "files": files}))

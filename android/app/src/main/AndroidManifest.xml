@@ -34,6 +34,9 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- (Quest version: open as a VR app; phones: nothing extra) -->
+                <category android:name="${gbVrCategory}" />
+                <category android:name="${gbXrCategory}" />
             </intent-filter>
             <!-- The website's Play button: gutsandbolts://play/<game> -->
             <intent-filter>

@@ -12,8 +12,9 @@ struct GLFWwindow;
 // Positions here are in the headset's own space (metres, y up, you start
 // looking along -Z); the Player app turns them into studs around your character.
 //
-// Built only when GB_VR is on (the computer Player). Without it, start() just
-// says VR isn't in this build.
+// Built only when GB_VR is on: the computer Player, and the Meta Quest build of
+// the Android Player (GB_QUEST, where the game runs on the headset itself).
+// Without it, start() just says VR isn't in this build.
 namespace Vr {
 
 // Connects to the headset's software (SteamVR...) and starts showing the game in
@@ -43,6 +44,8 @@ bool beginFrame(View eyes[2], float nearPlane, float farPlane);
 // the same size as View::width x height.
 void submitEye(int eye, unsigned colorTexture);
 void endFrame();
+// Between beginFrame and endFrame (the headset is waiting for this frame's pictures).
+bool inFrame();
 
 // Where your head is (headset space), this frame.
 glm::mat4 head();

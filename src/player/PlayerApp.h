@@ -263,7 +263,10 @@ private:
     void vrShowBody(Player& player);   // in VR you see your own body (all but the head)
     void vrRender(const Vr::View eyes[2]);
     void vrMirror(ImVec2 size);
-    void vrPointer();                  // the floating menu screen: where it is, and the right hand pointing at it
+    void vrPointer(bool menus);        // the floating menu screen: where it is, and the right hand pointing at it
+    void vrOverlay();                  // on top of everything: the pointer, and the keyboard when you're typing
+    int  vrKeyAt(ImVec2 p) const;      // the headset keyboard's key there (0 = none)
+    void vrPressKey(int code);
     void vrAfterUi();                  // the menus and buttons onto that screen, then the headset's picture is done
     // Reporting and blocking — PlayerSafety.cpp
     bool canReport() const;   // signed up and online (guests can't report or block)
@@ -375,6 +378,11 @@ private:
     bool        m_vrPointerDown = false;
     bool        m_vrOnGameUi = false;  // the pointer is on the game's own buttons or the hotbar (this frame)
     bool        m_vrOverUi = false;    // ...or on any button (last frame): the trigger clicks it, not your tool
+    bool        m_vrMenus = false;     // a menu (or the games list) is open: the pointer clicks it
+    bool        m_vrOnKeyboard = false;   // the pointer is on the headset keyboard
+    bool        m_vrShift = false;
+    bool        m_vrAutoStarted = false;  // Quest: VR started by itself when the app opened
+    std::vector<std::pair<ImVec4, int>> m_vrKeys;   // the headset keyboard's keys (window pixels, what they type)
     ImVec2      m_vrPointer{0, 0};     // where on the screen (window pixels)
     Camera      m_avatarCam;
     Framebuffer m_avatarView;

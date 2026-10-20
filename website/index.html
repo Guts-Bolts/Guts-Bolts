@@ -142,7 +142,7 @@
   #download { border-color: #0d6a2e; }
   #download h2 { background: linear-gradient(#e9f9ee, #c7ecd3); color: #0d5a28; border-color: #8fcfa4; }
   @media (prefers-color-scheme: dark) { #download { border-color: #24603a; } #download h2 { background: linear-gradient(#1e3b29, #16301f); color: #a8f0c0; border-color: #24603a; } }
-  .dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 10px; }
+  .dl { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 10px; }
   .dl > div { text-align: center; padding: 12px 8px; border: 1px solid var(--line); background: linear-gradient(var(--tile1), var(--tile2)); position: relative; }
   .dl > div.mine { border: 2px solid #1ea447; padding: 11px 7px; }
   .dl > div.mine::before { content: "Your computer"; position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: #1ea447; color: #fff;
@@ -457,12 +457,13 @@ prompt.Triggered:<span class="f">Connect</span>(<span class="k">function</span>(
 
   <section id="download">
     <h2>Download Guts&amp;Bolts</h2>
-    <p>Free, for Windows, Mac, Linux and Android. Each computer download has both the <b>Player</b> and <b>Studio</b>.</p>
+    <p>Free, for Windows, Mac, Linux, Android and Meta Quest. Each computer download has both the <b>Player</b> and <b>Studio</b>.</p>
     <div class="dl">
       <div data-os="windows"><div class="os">Windows</div><a class="btn play" href="/download/GutsAndBolts-Windows.zip" download>Download</a><small>GutsAndBolts-Windows.zip<br>Player + Studio</small></div>
       <div data-os="mac"><div class="os">Mac</div><a class="btn play" href="/download/GutsAndBolts-macOS.zip" download>Download</a><small>GutsAndBolts-macOS.zip<br>Player + Studio</small></div>
       <div data-os="linux"><div class="os">Linux</div><a class="btn play" href="/download/GutsAndBolts-Linux.tar.gz" download>Download</a><small>GutsAndBolts-Linux.tar.gz<br>Player + Studio</small></div>
       <div data-os="android"><div class="os">Android</div><a class="btn play" href="/download/GutsAndBoltsPlayer-Android.apk" download>Download</a><small>GutsAndBoltsPlayer-Android.apk<br>Player only, with touch controls</small></div>
+      <div data-os="quest"><div class="os">Meta Quest</div><a class="btn play" href="/download/GutsAndBoltsPlayer-Quest.apk" download>Download</a><small>GutsAndBoltsPlayer-Quest.apk<br>Player in VR, no PC needed (install with SideQuest or the Meta Quest Developer Hub)</small></div>
     </div>
     <div class="steps">
       <div><b>Download and unzip</b>Pick your computer above and unzip what you get.</div>
@@ -513,13 +514,13 @@ prompt.Triggered:<span class="f">Connect</span>(<span class="k">function</span>(
   // Point at the right download for this computer.
   (function () {
     const ua = navigator.userAgent;
-    const os = /Android/i.test(ua) ? 'android' : /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac'
+    const os = /OculusBrowser|Quest/i.test(ua) ? 'quest' : /Android/i.test(ua) ? 'android' : /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac'
       : /Linux|X11/i.test(ua) ? 'linux' : '';
     if (!os) return;
     const box = document.querySelector('.dl [data-os="' + os + '"]');
     if (!box) return;
     box.classList.add('mine');
-    const names = { windows: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android' };
+    const names = { windows: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android', quest: 'Meta Quest' };
     document.getElementById('hero-os').textContent = 'for ' + names[os];
   })();
 

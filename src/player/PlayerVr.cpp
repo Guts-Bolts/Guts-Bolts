@@ -87,10 +87,10 @@ void PlayerApp::stopVr() {
 void PlayerApp::vrControls(bool acceptInput) {
     const Vr::Controls& c = Vr::controls();
     if (c.menu) { m_paused = !m_paused; m_menuTab = 0; m_menuConfirm = 0; }
-    vrPointer();
+    vrPointer(m_paused || m_showSettings || m_chatOpen);
     if (!acceptInput) { m_session->setTouchInput(glm::vec2(0.0f), false); return; }
     m_session->setTouchInput(c.move, c.jump);   // (walks relative to m_camera.yaw: where you look)
-    if (c.use && !(m_vrPointing && m_vrOverUi)) m_session->click(0);   // swing / fire the tool you're holding
+    if (c.use && !(m_vrPointing && (m_vrOverUi || m_vrOnKeyboard))) m_session->click(0);   // swing / fire the tool you're holding
     // Snap turning: one step each time the stick is pushed over.
     if (std::abs(c.turn.x) > 0.7f && !m_vrTurned) {
         m_vrYaw += c.turn.x > 0.0f ? -kSnapTurn : kSnapTurn;
@@ -100,7 +100,7 @@ void PlayerApp::vrControls(bool acceptInput) {
     }
 }
 
-void PlayerApp::vrPointer() {
+void PlayerApp::vrPointer(bool menus) {
     ImGuiIO& io = ImGui::GetIO();
     if (io.DisplaySize.x <= 0.0f || io.DisplaySize.y <= 0.0f) return;
     const glm::mat4 head = Vr::head();
@@ -109,7 +109,6 @@ void PlayerApp::vrPointer() {
 
     // Where the screen goes: in front of you (the way you face, level), a little
     // low, turned to face you. It stays put while you look around it.
-    const bool menus = m_paused || m_showSettings || m_chatOpen;
     const bool opened = menus && !m_vrWasPaused;
     m_vrWasPaused = menus;
     glm::vec3 f = -glm::vec3(head[2]);
@@ -158,18 +157,21 @@ void PlayerApp::vrPointer() {
             }
         }
     }
-    if (m_vrPointing) {
+    m_vrMenus = menus;
+    const int key = m_vrPointing ? vrKeyAt(m_vrPointer) : 0;
+    m_vrOnKeyboard = key != 0;
+    if (m_vrOnKeyboard) {
+        // The headset's keyboard: its keys type into the box you're typing in. (ImGui
+        // doesn't hear these clicks, so that box stays the one you're typing in.)
+        if (m_vrPointerDown) io.AddMouseButtonEvent(0, false);
+        m_vrPointerDown = false;
+        if (Vr::controls().use) vrPressKey(key);
+    } else if (m_vrPointing) {
         io.AddMousePosEvent(m_vrPointer.x, m_vrPointer.y);
         // The trigger is the mouse button on menus and buttons (else it uses your tool).
         const bool down = Vr::controls().useHeld && (m_vrOverUi || menus || m_vrPointerDown);
         if (down != m_vrPointerDown) io.AddMouseButtonEvent(0, down);
         m_vrPointerDown = down;
-        // The pointer: a ring with a dot (brighter on something you can click).
-        ImDrawList* fg = ImGui::GetForegroundDrawList();
-        const ImU32 col = m_vrOverUi || menus ? IM_COL32(255, 255, 255, 240) : IM_COL32(255, 255, 255, 120);
-        fg->AddCircle(m_vrPointer, 9.0f, IM_COL32(0, 0, 0, 140), 24, 4.0f);
-        fg->AddCircle(m_vrPointer, 9.0f, col, 24, 2.0f);
-        fg->AddCircleFilled(m_vrPointer, 2.5f, col);
     } else {
         if (m_vrPointerDown) io.AddMouseButtonEvent(0, false);
         m_vrPointerDown = false;
@@ -177,11 +179,112 @@ void PlayerApp::vrPointer() {
     }
 }
 
+// The keyboard in the headset (there's no real one to reach for): it shows under
+// the floating screen's menus whenever a text box is being typed in. Each key is
+// a label and what it types (or one of these).
+namespace {
+enum { kKeyShift = -1, kKeyBack = -2, kKeyEnter = -3 };
+struct VrKey { const char* label; int code; float units; };
+const std::vector<std::vector<VrKey>>& keyRows() {
+    static const std::vector<std::vector<VrKey>> rows = {
+        {{"1", '1', 1}, {"2", '2', 1}, {"3", '3', 1}, {"4", '4', 1}, {"5", '5', 1}, {"6", '6', 1}, {"7", '7', 1},
+         {"8", '8', 1}, {"9", '9', 1}, {"0", '0', 1}, {"Back", kKeyBack, 1.5f}},
+        {{"q", 'q', 1}, {"w", 'w', 1}, {"e", 'e', 1}, {"r", 'r', 1}, {"t", 't', 1}, {"y", 'y', 1}, {"u", 'u', 1},
+         {"i", 'i', 1}, {"o", 'o', 1}, {"p", 'p', 1}, {"-", '-', 1.5f}},
+        {{"a", 'a', 1}, {"s", 's', 1}, {"d", 'd', 1}, {"f", 'f', 1}, {"g", 'g', 1}, {"h", 'h', 1}, {"j", 'j', 1},
+         {"k", 'k', 1}, {"l", 'l', 1}, {"Enter", kKeyEnter, 2.5f}},
+        {{"Shift", kKeyShift, 2}, {"z", 'z', 1}, {"x", 'x', 1}, {"c", 'c', 1}, {"v", 'v', 1}, {"b", 'b', 1},
+         {"n", 'n', 1}, {"m", 'm', 1}, {".", '.', 1}, {"@", '@', 1.5f}},
+        {{"_", '_', 1}, {",", ',', 1}, {"Space", ' ', 6.5f}, {"?", '?', 1}, {"!", '!', 1}, {"/", '/', 1}},
+    };
+    return rows;
+}
+// What a key types with Shift on.
+int shifted(int c) {
+    if (c >= 'a' && c <= 'z') return c - 'a' + 'A';
+    static const char digits[] = ")!@#$%^&*(";   // 0-9
+    if (c >= '0' && c <= '9') return digits[c - '0'];
+    return c;
+}
+} // namespace
+
+void PlayerApp::vrOverlay() {
+    m_vrKeys.clear();
+    if (!m_vrOn) return;
+    ImGuiIO& io = ImGui::GetIO();
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+    if (io.WantTextInput) {
+        const float width = std::min(io.DisplaySize.x * 0.92f, 820.0f), unit = width / 11.5f, gap = 4.0f;
+        const float height = unit * 5.0f + 16.0f;
+        ImVec2 at((io.DisplaySize.x - width) * 0.5f, io.DisplaySize.y - height - 10.0f);
+        fg->AddRectFilled(ImVec2(at.x - 8, at.y - 8), ImVec2(at.x + width + 8, at.y + height), IM_COL32(24, 26, 32, 235), 10.0f);
+        float y = at.y;
+        for (const auto& row : keyRows()) {
+            float x = at.x;
+            for (const VrKey& k : row) {
+                const ImVec2 a(x, y), b(x + k.units * unit - gap, y + unit - gap);
+                const bool lit = m_vrPointing && m_vrPointer.x >= a.x && m_vrPointer.x < b.x && m_vrPointer.y >= a.y && m_vrPointer.y < b.y;
+                const bool on = k.code == kKeyShift && m_vrShift;
+                fg->AddRectFilled(a, b, lit ? IM_COL32(90, 140, 230, 255) : on ? IM_COL32(70, 100, 160, 255) : IM_COL32(52, 56, 66, 255), 6.0f);
+                char text[8];
+                const char* label = k.label;
+                if (k.code > 0 && m_vrShift) { text[0] = (char)shifted(k.code); text[1] = 0; label = text; }
+                const ImVec2 ts = ImGui::CalcTextSize(label);
+                fg->AddText(ImVec2((a.x + b.x - ts.x) * 0.5f, (a.y + b.y - ts.y) * 0.5f), IM_COL32(235, 235, 240, 255), label);
+                m_vrKeys.push_back({ImVec4(a.x, a.y, b.x, b.y), k.code});
+                x += k.units * unit;
+            }
+            y += unit;
+        }
+    }
+    if (m_vrPointing) {   // the pointer: a ring with a dot (brighter on something you can click)
+        const ImU32 col = m_vrOverUi || m_vrMenus || m_vrOnKeyboard ? IM_COL32(255, 255, 255, 240) : IM_COL32(255, 255, 255, 120);
+        fg->AddCircle(m_vrPointer, 9.0f, IM_COL32(0, 0, 0, 140), 24, 4.0f);
+        fg->AddCircle(m_vrPointer, 9.0f, col, 24, 2.0f);
+        fg->AddCircleFilled(m_vrPointer, 2.5f, col);
+    }
+}
+
+int PlayerApp::vrKeyAt(ImVec2 p) const {
+    for (const auto& [r, code] : m_vrKeys)
+        if (p.x >= r.x && p.x < r.z && p.y >= r.y && p.y < r.w) return code;
+    return 0;
+}
+
+void PlayerApp::vrPressKey(int code) {
+    ImGuiIO& io = ImGui::GetIO();
+    if (code == kKeyShift) { m_vrShift = !m_vrShift; return; }
+    if (code == kKeyBack || code == kKeyEnter) {   // (pressed now, let go on the next frame)
+        const ImGuiKey k = code == kKeyBack ? ImGuiKey_Backspace : ImGuiKey_Enter;
+        io.AddKeyEvent(k, true);
+        io.AddKeyEvent(k, false);
+        return;
+    }
+    io.AddInputCharacter((unsigned)(m_vrShift ? shifted(code) : code));
+    m_vrShift = false;
+}
+
 void PlayerApp::vrAfterUi() {
     // The menus and buttons that were just drawn on the computer screen, again on
     // the headset's floating screen, without the picture of the world behind them.
+    // Away from a game (the games list, loading...) the headset still needs a
+    // picture: the screen floats in an empty, dark space.
     ImDrawData* dd = ImGui::GetDrawData();
-    if (m_vrOn && m_page == Page::Game && dd && dd->Valid && dd->DisplaySize.x > 0.0f && dd->DisplaySize.y > 0.0f) {
+    if (m_vrOn && !Vr::inFrame()) {
+        Vr::View eyes[2];
+        if (Vr::beginFrame(eyes, 0.1f, 1000.0f)) {
+            vrPointer(true);
+            for (int i = 0; i < 2; ++i) {
+                m_vrEyes[i].resize(eyes[i].width, eyes[i].height);
+                m_vrEyes[i].bind();
+                glClearColor(0.05f, 0.06f, 0.09f, 1.0f);
+                glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+                m_vrEyes[i].unbind();
+                Vr::submitEye(i, m_vrEyes[i].colorTexture());
+            }
+        }
+    }
+    if (m_vrOn && Vr::inFrame() && dd && dd->Valid && dd->DisplaySize.x > 0.0f && dd->DisplaySize.y > 0.0f) {
         m_vrOverUi = m_vrOnGameUi || ImGui::IsAnyItemHovered();
         const int w = kPanelPixels, h = (int)std::lround(kPanelPixels * dd->DisplaySize.y / dd->DisplaySize.x);
         m_vrPanel.resize(w, h);

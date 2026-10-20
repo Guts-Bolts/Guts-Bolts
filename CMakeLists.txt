@@ -439,7 +439,10 @@ endif()
 # in the computer Player. Only the loader is built: it finds the headset's own
 # software when the game starts, so nobody needs a headset to build or play.
 option(GB_VR "VR headset support (OpenXR) in the computer apps" ON)
-if(GB_VR AND NOT GB_MOBILE AND NOT APPLE)
+# GB_QUEST: the Meta Quest version of the Android Player (android/app's "quest"
+# flavour). The game runs on the headset itself, always in VR.
+option(GB_QUEST "Build the Android Player for Meta Quest headsets (OpenXR)" OFF)
+if((GB_VR AND NOT GB_MOBILE AND NOT APPLE) OR (GB_QUEST AND ANDROID))
     set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(BUILD_API_LAYERS OFF CACHE BOOL "" FORCE)
     set(BUILD_CONFORMANCE_TESTS OFF CACHE BOOL "" FORCE)
@@ -453,7 +456,9 @@ if(GB_VR AND NOT GB_MOBILE AND NOT APPLE)
     FetchContent_MakeAvailable(openxr)
     target_link_libraries(gb_engine PUBLIC openxr_loader)
     target_compile_definitions(gb_engine PUBLIC GB_VR)
-    if(NOT WIN32)
+    if(GB_QUEST)
+        target_compile_definitions(gb_engine PUBLIC GB_QUEST)
+    elseif(NOT WIN32)
         find_package(X11 REQUIRED)
         target_link_libraries(gb_engine PUBLIC X11::X11)
         if(TARGET OpenGL::GLX)
