@@ -10,6 +10,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'shop-window', name: 'Shop Window', time: 1792456554, tag: 'Website',
+    summary: 'The front page and download page got a makeover that actually shows off what the engine can do.',
+    items: [
+      'A big banner that flips through real screenshots: explosions, particles, neon at night, terrain and materials',
+      'New sections for the engine, Lua scripting, Studio and its AI helper, playing together and the site',
+      'Every picture is straight out of the Player, no touch-ups',
+      'The Download box points at the right download for your computer, with three easy steps',
+      'A "What\'s new" box that fills itself in from the newest release, and a few common questions answered',
+    ],
+  },
+  {
     id: 'keep-your-head', name: 'Keep Your Head', version: '0.7.2', time: 1792455600, tag: 'Fix',
     summary: 'The Bouncy Animation Pack no longer sends your head flying round the map.',
     items: [
