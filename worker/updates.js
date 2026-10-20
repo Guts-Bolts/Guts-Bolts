@@ -23,6 +23,16 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'cut-the-cord', name: 'Cut the Cord', version: '0.7.6', time: 1792522800, tag: 'Player',
+    summary: 'Guts&Bolts runs on a Meta Quest by itself now: no PC, no cable, no Air Link.',
+    items: [
+      'A new download, GutsAndBoltsPlayer-Quest.apk, is the Player built for Quest 2, 3, 3S and Pro. Install it with SideQuest or the Meta Quest Developer Hub',
+      'It opens straight into VR: the games list, the Library and every page float in front of you, and you point and pull the trigger to click',
+      'A keyboard pops up in the headset whenever you need to type (signing in, chat, search), on Quest and on PC VR alike',
+      'Loading screens no longer freeze in the headset: you see them floating in a dark room until the game is ready',
+    ],
+  },
+  {
     id: 'body-swap', name: 'Body Swap', time: 1792522200, tag: 'Studio',
     summary: 'Bundles can change your whole body now: Guts can reshape the character\'s head, torso, arms and legs in Studio and sell it as a bundle.',
     items: [

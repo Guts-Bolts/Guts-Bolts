@@ -348,6 +348,11 @@ void PlayerApp::run() {
                 Pad::injectApply();
             }
         });
+#ifdef GB_QUEST
+        // Quest: the app runs inside the headset, so it's always in VR.
+        if (!m_vrOn && !m_vrAutoStarted) { m_vrAutoStarted = true; startVr(); }
+#endif
+        vrOverlay();   // (VR: the pointer and the headset keyboard, on top of everything)
         // Test helper: real (SDL) touch events, as a phone would send them.
         if (m_opts.touchTest.rfind("sdl-", 0) == 0 && m_frame > 40) {
             float k = std::min(1.0f, (m_frame - 40) / 6.0f);
@@ -645,7 +650,9 @@ void PlayerApp::leaveGame() {
     Voice::setActive(false);
     Voice::forgetAll();
     m_talkOn = false;
-    stopVr();
+#ifndef GB_QUEST
+    stopVr();   // (Quest: you stay in VR, back at the games list)
+#endif
     m_session->stop();
     m_session->setRole(GameSession::Role::Solo);
     m_scene->buildDefault();
@@ -2323,8 +2330,12 @@ void PlayerApp::drawPauseMenu() {
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("VR headset");
         ImGui::SameLine(190.0f);
+#ifdef GB_QUEST
+        ImGui::TextUnformatted(m_vrOn ? "Always on (this is the Quest version)" : "Couldn't start");
+#else
         if (m_vrOn) { if (bigButton("Stop VR", ImVec4(0.75f, 0.25f, 0.25f, 1), ImVec2(160, 0))) stopVr(); }
         else if (bigButton("Play in VR", kAccent, ImVec2(160, 0))) { startVr(); if (m_vrOn) m_paused = false; }
+#endif
         if (!m_vrStatus.empty()) ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1), "%s", m_vrStatus.c_str());
         ImGui::Spacing();
         GraphicsSettings& gs = GraphicsSettings::get();
@@ -2471,6 +2482,7 @@ void PlayerApp::drawPauseMenu() {
         key("Your hands", "Your character's arms reach for your controllers, and its head turns with yours");
         key("Menu", "Open or close this menu");
         key("Point + trigger", "Click buttons on the floating screen (point with your right hand)");
+        key("Typing", "A keyboard shows on the floating screen: point at a key and pull the trigger");
     }
     ImGui::EndChild();
 
