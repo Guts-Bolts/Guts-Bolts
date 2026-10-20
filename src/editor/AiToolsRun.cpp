@@ -71,7 +71,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Sound:      return "Sound";
         case NodeKind::SoundGroup: return "SoundGroup";
         case NodeKind::SoundEffect: return SoundFx::kClassNames[(int)n->soundFx.type];
-        case NodeKind::Attachment: return "Attachment";
+        case NodeKind::Attachment: return n->bone ? "Bone" : "Attachment";
         case NodeKind::Constraint: return kConstraintClassNames[std::clamp((int)n->constraintType, 0, kConstraintTypeCount - 1)];
         default: return n->primitiveType == PrimitiveType::Mesh ? "MeshPart" : "Part";
     }
@@ -1242,7 +1242,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         if (args.contains("friction") && args["friction"].is_number()) n->friction = std::clamp(args["friction"].get<float>(), 0.0f, 2.0f);
         if (args.contains("elasticity") && args["elasticity"].is_number()) n->elasticity = std::clamp(args["elasticity"].get<float>(), 0.0f, 1.0f);
         if (vecArg("position", v)) {
-            glm::vec3 local = n->parent ? glm::vec3(glm::inverse(n->parent->worldMatrix()) * glm::vec4(v, 1.0f)) : v;
+            glm::vec3 local = n->parent ? glm::vec3(glm::inverse(n->parentFrame()) * glm::vec4(v, 1.0f)) : v;
             n->transform.position = local;
         } else if (n->parent == root) {
             n->transform.position.y = n->transform.scale.y * 0.5f;   // standing on the ground near the camera

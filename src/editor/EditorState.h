@@ -67,6 +67,7 @@ struct EditorState {
 
     // Animation Editor: the rig being animated (clicks pick its parts, not the whole model).
     unsigned long long animRig = 0;
+    std::string weightBone;   // Modeling mode: colour the corners by how much this bone pulls them (Armature window)
 
     float snapTranslate = 0.5f;     // world units
     float snapRotate    = 15.0f;    // degrees

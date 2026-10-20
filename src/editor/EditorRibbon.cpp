@@ -137,7 +137,7 @@ void Editor::alignSelected(int axis, int where) {
         float cur = where == 0 ? b.min[axis] : where == 2 ? b.max[axis] : (b.min[axis] + b.max[axis]) * 0.5f;
         glm::vec3 d(0.0f);
         d[axis] = target - cur;
-        if (n->parent) d = glm::vec3(glm::inverse(n->parent->worldMatrix()) * glm::vec4(d, 0.0f));
+        if (n->parent) d = glm::vec3(glm::inverse(n->parentFrame()) * glm::vec4(d, 0.0f));
         n->transform.position += d;
     }
 }
@@ -496,6 +496,9 @@ void Editor::renderToolbar() {
             Group g("Rig");
             if (bigButton("Rig Builder", Icons::Id::Rig, false, !m_playing, "Insert a dummy character to animate (or use as an NPC)"))
                 insertObject("Rig", nullptr);
+            if (bigButton("Armature", Icons::Id::Rig, m_showArmature, !m_playing,
+                          "Bones inside a MeshPart that bend it, posed and animated like a rig's parts"))
+                m_showArmature = !m_showArmature;
         }
         {
             Group g("Accessories");

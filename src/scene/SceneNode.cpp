@@ -94,8 +94,20 @@ bool SceneNode::isAncestorOf(const SceneNode* other) const {
 }
 
 glm::mat4 SceneNode::worldMatrix() const {
-    if (parent) return parent->worldMatrix() * transform.matrix();
+    if (parent) return parentFrame() * transform.matrix();
     return transform.matrix();
+}
+
+glm::mat4 SceneNode::parentFrame() const {
+    if (!parent) return glm::mat4(1.0f);
+    glm::mat4 m = parent->worldMatrix();
+    if (bone && kind == NodeKind::Attachment && parent->kind == NodeKind::Part)
+        for (int i = 0; i < 3; ++i) {   // take the part's size out
+            glm::vec3 axis(m[i]);
+            float len = glm::length(axis);
+            if (len > 1e-9f) m[i] = glm::vec4(axis / len, 0.0f);
+        }
+    return m;
 }
 
 std::string SceneNode::fullName() const {

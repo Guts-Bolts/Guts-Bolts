@@ -1,5 +1,6 @@
 #include "EditMesh.h"
 #include "../renderer/MeshLibrary.h"
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -120,9 +121,17 @@ EditMesh& own(SceneNode& node) {
     return *node.editMesh;
 }
 
-void refresh(SceneNode& node) {
+void refresh(SceneNode& node, const std::vector<glm::vec3>* posed) {
     if (!node.editMesh) return;
-    const EditMesh& m = *node.editMesh;
+    // Posed by its bones: the same faces, the corners where the bones put them.
+    EditMesh bent;
+    if (posed && posed->size() == node.editMesh->verts.size()) {
+        bent.verts = *posed;
+        bent.faces = node.editMesh->faces;
+        bent.smooth = node.editMesh->smooth;
+        bent.uvs = node.editMesh->uvs;
+    }
+    const EditMesh& m = bent.verts.empty() ? *node.editMesh : bent;
     std::vector<Vertex> verts;
     std::vector<uint32_t> idx;
 
@@ -149,13 +158,15 @@ void refresh(SceneNode& node) {
             continue;
         }
         // Box-style texture coordinates: project along the face's main direction.
-        glm::vec3 an = glm::abs(n);
+        // (From the unbent shape, so a picture doesn't slide over a bending mesh.)
+        const EditMesh& rest = *node.editMesh;
+        glm::vec3 an = glm::abs(&m == &rest ? n : faceNormal(rest, f));
         int ax = an.x > an.y && an.x > an.z ? 0 : (an.y > an.z ? 1 : 2);
         int u = ax == 0 ? 2 : 0, v = ax == 1 ? 2 : 1;
         uint32_t base = (uint32_t)verts.size();
         for (uint32_t i : f) {
-            const glm::vec3& p = m.verts[i];
-            verts.push_back({p, m.smooth ? smoothN[i] : n, {p[u] + 0.5f, p[v] + 0.5f}});
+            const glm::vec3& p = rest.verts[i];
+            verts.push_back({m.verts[i], m.smooth ? smoothN[i] : n, {p[u] + 0.5f, p[v] + 0.5f}});
         }
         for (uint32_t k = 1; k + 1 < (uint32_t)f.size(); ++k)
             idx.insert(idx.end(), {base, base + k, base + k + 1});
@@ -177,10 +188,13 @@ void fit(SceneNode& node) {
     node.transform.position = newPos;
     node.transform.scale *= e;
     // Things inside the part (attachments, lights, ...) stay where they were in the world.
+    const glm::vec3 shift = node.transform.scale / e * c;   // the middle moved this far (studs, before the resize)
     for (auto& ch : node.children) {
+        if (ch->isBone()) { ch->transform.position -= shift; continue; }   // (bones are in studs)
         ch->transform.position = (ch->transform.position - c) / e;
         if (ch->isPart()) ch->transform.scale /= e;
     }
+    for (auto& b : m.bind) b = b * glm::translate(glm::mat4(1.0f), shift);
     refresh(node);
 }
 

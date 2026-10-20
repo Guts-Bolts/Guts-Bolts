@@ -202,6 +202,7 @@ void Editor::render(float dt) {
     renderRecoverDialog();
     autoSaveTick();
     renderAccessoryWindow();
+    renderArmature();
     renderUVEditor();
     renderPluginLibrary();
     if (m_showPanel[kPanelCommandBar]) renderCommandBar();
@@ -962,7 +963,7 @@ void Editor::centerModelPivot() {
     glm::vec3 local = glm::vec3(glm::inverse(m->worldMatrix()) * glm::vec4(center, 1.0f));
     for (auto& c : m->children) c->transform.position -= local;
     glm::vec3 d = center - glm::vec3(m->worldMatrix()[3]);
-    if (m->parent) d = glm::vec3(glm::inverse(m->parent->worldMatrix()) * glm::vec4(d, 0.0f));
+    if (m->parent) d = glm::vec3(glm::inverse(m->parentFrame()) * glm::vec4(d, 0.0f));
     m->transform.position += d;
 }
 
@@ -1222,6 +1223,7 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         put(std::move(f));
     }
     else if (what == "Attachment") put(std::make_unique<SceneNode>("Attachment", NodeKind::Attachment));
+    else if (what == "Bone") { if (addBone(parent, 1)) m_showArmature = true; }
     else if (auto mt = std::find(std::begin(kMoverClassNames), std::end(kMoverClassNames), what); mt != std::end(kMoverClassNames)) {
         // BodyVelocity, AlignPosition...: they go inside the part they push. The newer
         // ones push through an Attachment, so the part gets one if it hasn't any.
@@ -1367,7 +1369,7 @@ const std::vector<InsertItem>& insertItems() {
         {"EqualizerSoundEffect", Icons::Id::Sound}, {"DistortionSoundEffect", Icons::Id::Sound}, {"PitchShiftSoundEffect", Icons::Id::Sound},
         {"ChorusSoundEffect", Icons::Id::Sound}, {"CompressorSoundEffect", Icons::Id::Sound}, {"FlangeSoundEffect", Icons::Id::Sound},
         {"TremoloSoundEffect", Icons::Id::Sound},
-        {"Attachment", Icons::Id::Attachment},
+        {"Attachment", Icons::Id::Attachment}, {"Bone", Icons::Id::Rig},
         {"RopeConstraint", Icons::Id::Constraint}, {"RodConstraint", Icons::Id::Constraint}, {"SpringConstraint", Icons::Id::Constraint},
         {"WeldConstraint", Icons::Id::Constraint}, {"HingeConstraint", Icons::Id::Constraint}, {"BallSocketConstraint", Icons::Id::Constraint},
         {"PrismaticConstraint", Icons::Id::Constraint}, {"CylindricalConstraint", Icons::Id::Constraint},
