@@ -10,6 +10,14 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'smooth-operator', name: 'Smooth Operator', version: '0.7.3', time: 1792456528, tag: 'Website',
+    summary: 'Hats on the website are smooth-shaded now, so they look the same as in the game.',
+    items: [
+      'Hats and accessories with Smooth shading on (and every imported hat) look round on the website instead of blocky',
+      'That goes for 3D avatars, the avatar editor and item pictures in the Library',
+    ],
+  },
+  {
     id: 'hello-from-the-other-server', name: 'Hello From the Other Server', version: '0.7.2', time: 1792450920, tag: 'Website',
     summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
     items: [
