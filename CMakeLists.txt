@@ -560,7 +560,8 @@ FetchContent_MakeAvailable(nanosvg)
 file(GLOB MESHOPT_SOURCES "${meshoptimizer_SOURCE_DIR}/src/*.cpp")
 add_library(gb_models STATIC ${ufbx_SOURCE_DIR}/ufbx.c ${MESHOPT_SOURCES})
 target_include_directories(gb_models PUBLIC ${ufbx_SOURCE_DIR} ${cgltf_SOURCE_DIR} ${meshoptimizer_SOURCE_DIR}/src
-                           ${draco_SOURCE_DIR}/src ${CMAKE_BINARY_DIR} ${nanosvg_SOURCE_DIR}/src)
+                           ${draco_SOURCE_DIR}/src ${CMAKE_BINARY_DIR} ${nanosvg_SOURCE_DIR}/src
+                           ${libwebp_SOURCE_DIR}/src)
 target_link_libraries(gb_models PUBLIC draco::draco assimp::assimp webpdecoder)
 
 set(EDITOR_SOURCES
