@@ -10,6 +10,20 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'crime-scene-cleanup', name: 'Crime Scene Cleanup on Aisle 5', time: 1792455993, tag: 'Engine',
+    summary: 'Blood got a lot more real: wounds pump with the heartbeat, bodies leave smears, shoes leave footprints, and it all dries over time.',
+    items: [
+      'Wounds pump blood with every heartbeat, the heart slowing and weakening until it stops, and keep dripping in between',
+      'A body lies in a growing pool from the wound that killed it, and cut-off limbs drain from their ends',
+      'Bloody bodies leave smears when they slide or get dragged along the floor',
+      'Walk through a pool and you leave red footprints, fainter with every step (NPCs too)',
+      'Hits soak into the body: blood stains on the torso and limbs that move with them, washed off when you respawn',
+      'Pools have lumpy edges, a thicker darker rim, and a wet shine; drops that land at an angle splash into teardrops with little droplets ahead',
+      'Pools run over the edge of a ledge and drip off it, and drips running down a wall fall off at the bottom',
+      'Blood darkens and dries over time: the shine goes, it turns dark brown from the edges in, and cracks',
+    ],
+  },
+  {
     id: 'hello-from-the-other-server', name: 'Hello From the Other Server', version: '0.7.2', time: 1792450920, tag: 'Website',
     summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
     items: [
