@@ -44,7 +44,7 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
     const bool staff = isStaff(me);
     auto who = [&](const std::string& id) {
         const User* u = findUser(id);
-        return u ? json{{"id", u->id}, {"userId", u->userId}, {"name", u->name}, {"verified", isVerified(*u)}, {"staff", isStaff(*u)}}
+        return u ? json{{"id", u->id}, {"userId", u->userId}, {"name", u->name}, {"verified", isVerified(*u)}, {"staff", isStaff(*u)}, {"partner", isPartner(*u)}}
                  : json{{"id", id}, {"userId", 0}, {"name", "?"}};
     };
     auto hidden = [&](const std::string& id) { const User* u = findUser(id); return u && blocks(me, *u); };
