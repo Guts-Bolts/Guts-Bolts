@@ -79,6 +79,14 @@ void Player::build() {
 void Player::setAccessories(const Accessories& acc) {
     m_accessories = acc;
     if (SceneNode* r = root()) applyAccessories(*m_scene, r, acc);
+    rememberWornRest();
+}
+
+void Player::rememberWornRest() {
+    // Hats and accessories turn with the head when it's animated, from how they
+    // sat when put on (also when that happens in the middle of Play).
+    if (m_rest.empty()) return;
+    for (SceneNode* p : Anim::wornParts(root())) m_rest.try_emplace(p->id, p->transform);
 }
 
 void Player::setFace(const std::string& face) {
@@ -246,11 +254,12 @@ void Player::upgradeRig(SceneNode* rig) {
 
 glm::vec3 Player::position() const {
     SceneNode* r = root();
+    if (!m_dead && m_ragdoll.active()) return m_ragdoll.center() - glm::vec3(0.0f, 0.6f, 0.0f);   // knocked over: where the body lies
     return r ? r->transform.position : glm::vec3(0.0f);
 }
 
 glm::vec3 Player::focusPoint() const {
-    if (m_dead && m_ragdoll.active()) return m_ragdoll.center();
+    if (m_ragdoll.active()) return m_ragdoll.center();   // (dead, or knocked over)
     if (m_dead)
         if (SceneNode* t = part("Torso")) return glm::vec3(t->worldMatrix()[3]);
     // Like Roblox, the camera looks at (and in first person, sits in) the head.
@@ -319,6 +328,7 @@ void Player::setHat(HatStyle style, glm::vec3 tint) {
     m_hat = style;
     m_hatTint = tint;
     if (SceneNode* r = root()) applyHat(*m_scene, r, style, tint);
+    rememberWornRest();
 }
 
 void Player::applyHat(Scene& scene, SceneNode* r, HatStyle style, glm::vec3 tint) {
@@ -382,8 +392,13 @@ CharacterPose Player::capturePose(const SceneNode* r) {
     CharacterPose pose;
     pose.root = r->transform;
     pose.forceField = r->hasForceField();
-    for (auto& c : r->children)
+    for (auto& c : r->children) {
         if (c->isPart()) pose.parts.push_back({c->name, c->transform});
+        // Accessories' parts too, so they turn with the head for everyone ("Accessory (hat)/Brim").
+        if (c->kind == NodeKind::Model && c->name.rfind("Accessory (", 0) == 0)
+            for (auto& k : c->children)
+                if (k->isPart()) pose.parts.push_back({c->name + "/" + k->name, k->transform});
+    }
     return pose;
 }
 
@@ -396,8 +411,12 @@ void Player::applyPose(SceneNode* r, const CharacterPose& pose) {
         for (auto& c : r->children)
             if (c->kind == NodeKind::ForceField) { r->removeChild(c.get()); break; }
     }
-    for (const auto& [name, t] : pose.parts)
-        if (SceneNode* c = r->findChild(name)) c->transform = t;
+    for (const auto& [name, t] : pose.parts) {
+        const size_t slash = name.find('/');
+        SceneNode* c = r->findChild(name.substr(0, slash));
+        if (c && slash != std::string::npos) c = c->findChild(name.substr(slash + 1));
+        if (c) c->transform = t;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -462,6 +481,7 @@ void Player::beginPlay() {
         m_customClips.clear();
         m_rootRest = r->transform;
         for (auto& c : r->children) m_rest[c->id] = c->transform;
+        rememberWornRest();
     }
     m_dead = m_diedFlag = false;
     respawn(true);
@@ -486,10 +506,14 @@ void Player::respawn(bool firstSpawn) {
     m_humanoid.platformStand = false;
     SceneNode* r = root();
     if (!r) return;
+    m_scene->particles().wipe(*m_scene, r);   // a clean body (no blood stains from the last life)
+    m_feet.reset();
     for (auto& c : r->children) {
         auto it = m_rest.find(c->id);
         if (it != m_rest.end()) c->transform = it->second;
     }
+    for (SceneNode* p : Anim::wornParts(r))
+        if (auto it = m_rest.find(p->id); it != m_rest.end()) p->transform = it->second;
     const glm::vec3 spawnAt = spawnSpot();
     r->transform = m_rootRest;
     r->transform.position = spawnAt;
@@ -506,7 +530,10 @@ void Player::respawn(bool firstSpawn) {
     m_walkPhase = m_swing = m_airBlend = 0.0f;
     m_dead      = false;
     m_debris.clear();
-    m_ragdoll.stop();
+    m_ragdoll.unhide(*m_scene);   // (blown to pieces last time)
+    m_ragdoll.release(*m_scene);
+    m_knockTool = 0;
+    m_knockTime = 0.0f;
     m_pendingForce = 0.0f;
     m_pendingImpulse = glm::vec3(0.0f);
     m_lastHealth = m_humanoid.health;
@@ -555,6 +582,14 @@ void Player::bleed(float damage) {
     glm::vec3 at = glm::vec3(t->worldMatrix()[3]);
     int n = std::clamp((int)(damage * 0.5f), 3, 30);
     m_scene->particles().spray(m_scene->goreKind(), at, glm::vec3(0, 0.5f, 0), n, 2.5f);
+    // The blood soaks into the body where it came out (bigger hits, bigger stains).
+    glm::vec3 spot = at + glm::vec3(rand01() - 0.5f, rand01() - 0.5f, rand01() - 0.5f) * 2.0f;
+    SceneNode* where = t;
+    if (rand01() < 0.35f) {
+        static const char* kOther[] = {"Left Arm", "Right Arm", "Left Leg", "Right Leg", "Head"};
+        if (SceneNode* o = part(kOther[(int)(rand01() * 4.99f)])) { where = o; spot = glm::vec3(o->worldMatrix()[3]) + (spot - at); }
+    }
+    m_scene->particles().stain(m_scene->goreKind(), where, spot, std::clamp(0.3f + damage * 0.02f, 0.3f, 1.0f));
     if (m_scene->goreKind() == GoreKind::Oil) m_scene->particles().sparks(at, n / 2);
 }
 
@@ -1056,6 +1091,17 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     m_lastHealth = m_humanoid.health;
     if (m_humanoid.health <= 0.0f) { startDeath(); return; }
 
+    // Knocked over as a ragdoll: the body's muscles try to catch the fall; once it
+    // has come to rest (and the trip time is up) we get back up.
+    if (m_ragdoll.active()) {
+        m_ragdoll.update(dt, *m_scene, physics);
+        m_knockTime += dt;
+        if (m_ragdoll.lying()) m_tripTime = std::max(0.0f, m_tripTime - dt);   // (the clock runs once we're down)
+        if (m_ragdoll.center().y < m_scene->world().fallenPartsHeight) m_humanoid.health = 0.0f;
+        else if ((m_tripTime <= 0.0f && m_ragdoll.settled() && !m_humanoid.platformStand) || m_knockTime > 8.0f) getUp();
+        return;
+    }
+
     // Sitting: stay on the seat until you jump.
     m_seatCooldown = std::max(0.0f, m_seatCooldown - dt);
     if (m_seatId) { sitStep(dt, jump); if (m_seatId) return; }
@@ -1377,6 +1423,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
 
     animate(dt, m_groundSpeed, m_grounded);
     footsteps(m_groundSpeed > 0.5f && m_grounded && !m_swimming && !m_climbing, res.position);
+    if (m_scene->goreEnabled()) m_scene->particles().walk(m_feet, m_scene->goreKind(), res.position, m_grounded && !m_swimming);
     updateGrip();
 }
 
@@ -1473,7 +1520,66 @@ void Player::trip(float seconds, const glm::vec3& spin) {
         if (sitting()) standUp(false);
         m_tiltVel += spin.x;   // (pitch, degrees / second)
         if (std::abs(m_tiltVel) < 60.0f) m_tiltVel = m_tiltVel < 0.0f ? -120.0f : 120.0f;
+        if (canKnockdown()) startKnockdown();
     }
+}
+
+bool Player::canKnockdown() const {
+    const WorldSettings& w = m_scene->world();
+    return w.deathStyle == DeathStyle::Ragdoll && w.knockdowns && !m_dead && !m_ragdoll.active() &&
+           !m_gyro && !m_swimming && !m_climbing && root() && part("Torso") && part("Head");
+}
+
+// Thrown off our feet: the body becomes an (active) ragdoll until it comes to rest.
+void Player::startKnockdown() {
+    SceneNode* r = root();
+    if (!r) return;
+    SceneNode* tool = equippedTool();
+    m_knockTool = tool ? tool->id : 0;
+    if (m_knockTool) equip(0);   // (it'd float where the hand was; we pick it back up after)
+    footsteps(false, glm::vec3(0.0f));
+    stopEmote(0.0f);
+    m_knockTime = 0.0f;
+    m_ragdoll.start(*m_scene, r, m_velocity * 0.7f, m_velocity * 0.3f, 0.0f, true);
+}
+
+// Back on our feet from lying in a heap: the character stands where the body lay,
+// facing the way it fell, and does the usual getting-up (from flat on the floor).
+void Player::getUp() {
+    SceneNode* r = root();
+    if (!r) { m_ragdoll.stop(); return; }
+    const glm::vec3 c = m_ragdoll.center();
+    const glm::mat3 f = m_ragdoll.bodyFrame();
+    // Face down = fell forwards (the head is in front of the feet); face up = fell backwards.
+    const float forwards = f[2].y < 0.0f ? 1.0f : -1.0f;
+    glm::vec3 fwd = f[1] * forwards;
+    fwd.y = 0.0f;
+    if (glm::length(fwd) < 0.2f) { fwd = glm::vec3(f[2].x, 0.0f, f[2].z); }
+    fwd = glm::length(fwd) > 1e-4f ? glm::normalize(fwd) : glm::vec3(0, 0, 1);
+    float dist = 0.0f;
+    const glm::vec3 from = c + glm::vec3(0.0f, 0.5f, 0.0f);
+    glm::vec3 feet = c - fwd * 1.3f;   // (lying flat, the feet are behind the middle of the body)
+    if (Physics::raycast(*m_scene, from, glm::vec3(0, -1, 0), &dist, r) && dist < 6.0f) feet.y = from.y - dist;
+    else feet.y = c.y - 0.6f;
+
+    m_ragdoll.release(*m_scene);
+    for (auto& ch : r->children) {
+        auto it = m_rest.find(ch->id);
+        if (it != m_rest.end()) ch->transform = it->second;
+    }
+    r->transform = m_rootRest;
+    r->transform.position = feet;
+    r->transform.rotation.y = glm::degrees(std::atan2(fwd.x, fwd.z));
+    m_tilt = 90.0f * forwards;   // lying flat: the usual getting-up takes it from here
+    m_tiltVel = 0.0f;
+    m_tripTime = 0.0f;
+    m_getUp = 0.0f;
+    m_velocity = glm::vec3(0.0f);
+    m_grounded = false;
+    m_stepOffset = m_stepShown = 0.0f;
+    m_knockTime = 0.0f;
+    if (m_knockTool) equip(m_knockTool);
+    m_knockTool = 0;
 }
 
 const char* Player::stateName() const {
@@ -1558,6 +1664,7 @@ bool Player::applyCustomAnimation(const char* state, float dt) {
 }
 
 void Player::animate(float dt, float groundSpeed, bool grounded) {
+    rememberWornRest();   // (a script may have put a hat on)
     m_swing    = approach(m_swing, grounded ? strideSwing(groundSpeed) : 0.0f, 10.0f, dt);
     m_airBlend = approach(m_airBlend, grounded ? 0.0f : 1.0f, 10.0f, dt);
     m_walkPhase += dt * strideRate(groundSpeed);
@@ -1720,6 +1827,7 @@ void Player::animationPack(const std::string& state, float dt, float groundSpeed
     Anim::applyPoses(r, m_rest, poses, m_packBlend);
     for (const auto& [n, s] : poses)
         if (SceneNode* p = Anim::findPart(r, n); p && !isLimb(p) && p->name != "Head") m_packMoved.push_back(p->id);
+    for (SceneNode* p : Anim::wornParts(r)) m_packMoved.push_back(p->id);   // (they turned with the head)
     // The Head always goes back too: it rides on the Torso, so it moves even when the pack
     // doesn't pose it, and the walk cycle only puts back its turn. Left where it was, each
     // frame's bounce piled onto the last and the head wandered off round the body.

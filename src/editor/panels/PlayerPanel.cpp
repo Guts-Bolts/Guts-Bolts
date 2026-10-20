@@ -95,6 +95,12 @@ void drawGameRules(WorldSettings& w) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Classic: the character falls to pieces like in Roblox.\n"
                           "Ragdoll: the body goes limp and tumbles with real joints.");
+    ImGui::BeginDisabled(w.deathStyle != DeathStyle::Ragdoll);
+    ImGui::Checkbox("Knockdowns", &w.knockdowns);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Big hits (explosions, crashes, hard landings) throw you around as a ragdoll:\n"
+                          "you put your arms out to catch yourself, then get back up.");
+    ImGui::EndDisabled();
     ImGui::SliderFloat("Spawn ForceField", &w.spawnForceField, 0.0f, 20.0f, "%.0f s");
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("A glowing shield for a few seconds after spawning.\n"
