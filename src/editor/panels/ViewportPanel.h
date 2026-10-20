@@ -20,6 +20,7 @@ class TeamCreate;
 class SceneNode;
 class Player;
 struct Transform;
+struct EditMesh;
 
 // 3D viewport: renders the scene to an off-screen framebuffer and displays it
 // as an ImGui image. In edit mode it handles camera navigation, click-to-select
@@ -109,6 +110,9 @@ private:
                   const glm::mat4& view, const glm::mat4& proj, glm::vec3& ro, glm::vec3& rd) const;
     void modelingView(const glm::mat4& view, const glm::mat4& proj,
                       const glm::vec2& imgMin, const glm::vec2& imgSize);   // ViewportModeling.cpp
+    // A Blender-style tool that follows the mouse (G / R / S / I / Ctrl+R). True while one runs.
+    bool modelingModal(SceneNode& node, const glm::mat4& view, const glm::mat4& proj,
+                       const glm::vec2& imgMin, const glm::vec2& imgSize);
     bool drawModeMenu(ImVec2 imgPos);   // true while the mouse is on it
     // The TERRAIN tab's brushes: drag on the ground to sculpt it. ViewportTerrain.cpp.
     void terrainView(const glm::mat4& view, const glm::mat4& proj, const glm::vec2& imgMin, const glm::vec2& imgSize, float dt);
@@ -143,6 +147,19 @@ private:
     float     m_glideDistFrom = 8.0f, m_glideDistTo = 8.0f;
 
     // Modeling mode
+    std::shared_ptr<EditMesh> m_modalBefore;   // the mesh when the modal tool started (Esc puts it back)
+    std::vector<char> m_modalSel;
+    bool      m_modalOn = false;
+    ImVec2    m_modalMouse0{0, 0};
+    glm::vec3 m_modalPivot{0.0f};
+    int       m_modalAxis = -1;                // 0..2 = X / Y / Z, 3 = the extrude direction, -1 = free
+    bool      m_modalPlane = false, m_modalLocal = false;
+    float     m_modalAngle = 0.0f, m_modalLastAngle = 0.0f;
+    std::string m_modalTyped;                  // a number typed while moving
+    std::vector<float> m_modalWeight;          // proportional editing: how much each corner moves
+    float     m_modalWeightRadius = -1.0f;
+    int       m_loopCuts = 1;
+    bool      m_eatRightClick = false;         // a right-click that cancelled a tool (no menu)
     glm::mat4 m_meshGizmo{1.0f};
     bool      m_meshDragging = false;
     bool      m_boxing = false;

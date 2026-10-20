@@ -108,12 +108,33 @@ private:
     void       alignSelected(int axis, int where);
     void       startPlay(int mode);       // 0 Play, 1 Play Here, 2 Simulate
     // Modeling mode (EditorModes.cpp)
-    enum class MeshOp { Extrude, Inset, Subdivide, Delete, Merge, Fill, Flip, Smooth, SelectAll, SelectNone, Invert };
+public:   // (the menu tables in EditorMeshMenus.cpp name these)
+    enum class MeshOp {
+        Extrude, Inset, Subdivide, Delete, Merge, Fill, Flip, Smooth, SelectAll, SelectNone, Invert,
+        // Blender-style ones (EditorMeshMenus.cpp has their menus)
+        Grab, Rotate, Scale, ExtrudeMove, DuplicateMove, InsetMove, LoopCut,
+        DeleteVerts, DeleteEdges, DeleteFaces, DissolveVerts, DissolveEdges, DissolveFaces,
+        Bridge, Triangulate, TrisToQuads, NormalsOut, NormalsIn, SmoothVerts, MergeByDistance, Collapse,
+        SubdivideSmooth, MirrorX, MirrorY, MirrorZ, Spin, ShadeSmooth, ShadeFlat, Separate,
+        SelectLinked, SelectGrow, SelectShrink, SelectBoundary, SelectNonManifold, SelectLoop, SelectRing,
+        Hide, HideOthers, Reveal, Proportional,
+    };
+private:
     void       enterModeling();
     void       exitModeling();
     void       checkModeling();
     void       meshOp(MeshOp op);
     void       handleModelingKeys();
+    // Modeling mode's menus (EditorMeshMenus.cpp): right-click, X delete, M merge,
+    // Shift+A add, Ctrl+V / E / F vertex / edge / face, F3 search, Alt+N normals.
+    void       renderModelingMenus();
+    void       modelingContextMenu();             // the right-click menu (inside the viewport's popup)
+    bool       meshMenuItems(int menu);           // one menu's items; true if one was clicked
+    void       addMeshShape(int shape);           // Shift+A: a new shape into the mesh being modelled
+    void       joinSelected();                    // Ctrl+J (Build mode): picked mesh parts -> one
+    bool       meshOpNamed(const std::string& name);   // --test-mesh "op:loop-cut": a menu action by its name
+    std::string m_meshMenu;                       // a menu to open at the mouse next frame
+    std::string m_meshSearch;                     // F3: what's typed
     void       addMeshPart();
     // Online: the Guts&Bolts server, publishing and the Library (EditorOnline.cpp)
     void       renderServerDialog();
