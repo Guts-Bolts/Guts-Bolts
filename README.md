@@ -2685,6 +2685,67 @@ domain you own). Until a key *and* `MAIL_FROM` are set, the settings page says
 email isn't switched on yet. For testing with `wrangler dev`, put `MAIL_DEBUG=1`
 in a `.dev.vars` file: emails are printed in the terminal instead of sent.
 
+#### DDoS and bot protection
+
+**What Cloudflare already does for free:** the site sits behind Cloudflare, so
+the huge floods (the kind that try to knock a whole website offline) are
+soaked up by Cloudflare before they reach anything of ours, and the website's
+own files (pages, pictures in `website/`) are served straight from Cloudflare.
+
+**What the site adds on top**, a risk check in three steps (`worker/shield.js`):
+
+1. **Score every request cheaply.** Before a request reaches the server, the
+   worker looks at how fast its IP is going and whether it looks like a real
+   browser or the Guts&Bolts apps. No User-Agent, a scripting tool's
+   User-Agent, being sent from another website or going very fast each add
+   points. More than 1200 requests a minute from one IP is a flood and is
+   simply blocked for the rest of the minute.
+2. **Challenge the doubtful ones.** A browser with too many points gets a
+   "Quick check" popup (Cloudflare Turnstile, usually a tick that passes by
+   itself) and then a pass for an hour. The apps can't show a popup, so a
+   doubtful app request gets a much tighter speed limit instead. Signing up on
+   the website always needs the check (once Turnstile is on).
+3. **Protect the slow, expensive steps.** Signing up, logging in, emails,
+   uploads, buying, posting and the rest have their own limits inside the
+   server, per account and per IP (`COSTLY` in `worker/server.js`). New
+   accounts get half; staff have no limit. Pictures are kept by Cloudflare for
+   5 minutes, so a flood of picture requests never reaches the server.
+
+Real players shouldn't notice any of it: the limits are well above what a
+person (or a whole school sharing one IP) does. To tune them, the speed limits
+are in `wrangler.jsonc` (`ratelimits`, keep `SHIELD.limits` in
+`worker/shield.js` the same), the points in `SHIELD`, and the expensive-step
+limits in `COSTLY` (and `src/server/ServerShield.cpp` for the C++ server).
+
+**Turning the "Quick check" (Turnstile) on.** Until you do, everything above
+works except the popup (doubtful browsers get the tighter speed limit instead).
+
+1. In the Cloudflare dashboard, open **Turnstile** (in the left menu) and press
+   **Add widget**. Name it "Guts&Bolts", add the hostname `gutsandbolts.net`,
+   leave the mode on **Managed** and press **Create**.
+2. It shows a **Site Key** and a **Secret Key**. Open the Worker
+   (*Workers & Pages > project-guts-and-bolts > Settings > Variables and
+   Secrets*) and add a **Text** variable `TURNSTILE_SITEKEY` (the site key)
+   and a **Secret** `TURNSTILE_SECRET` (the secret key). Don't put them under
+   *Build* variables: the running site never sees those.
+3. Done. Check it: sign up for a test account on the website, and the "Quick
+   check" popup shows for a second before the account is made. (Using another
+   address too, like the workers.dev one? Add it to the widget and list both in
+   an optional `TURNSTILE_HOSTNAMES` variable, split by commas.)
+
+**Dashboard settings to know about:**
+
+- **Leave Bot Fight Mode OFF** (*Security > Settings > Bot traffic*). It
+  challenges anything that isn't a browser, and the Player and Studio aren't
+  browsers, so it would stop them from logging in or playing online. On the
+  free plan there's no way to make an exception for them.
+- **"Under Attack" mode** challenges every visitor. Only use it in an
+  emergency, and know that the apps can't get through while it's on.
+- **Optional extra wall:** a free rate limiting rule (*Security > Security
+  rules > Create rule > Rate limiting rules*): when *URI Path* equals `/api`,
+  with the same IP, more than **200 requests in 10 seconds**, then **Block**
+  for 10 seconds. It stops a flood even before the worker runs.
+
 ### Authenticator app and the Verified Hat
 
 For more account safety, turn on an **authenticator app** (Google

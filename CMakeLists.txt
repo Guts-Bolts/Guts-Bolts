@@ -26,6 +26,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerRelay.cpp
     src/server/ServerData.cpp
     src/server/ServerSafety.cpp
+    src/server/ServerShield.cpp
     src/server/ServerForum.cpp
     src/server/ServerItems.cpp
     src/online/Protocol.cpp
