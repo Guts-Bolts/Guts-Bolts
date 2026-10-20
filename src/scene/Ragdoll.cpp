@@ -186,10 +186,20 @@ void Ragdoll::start(Scene& scene, SceneNode* root, const glm::vec3& velocity,
             if (rnd(0, 1) < force * 0.8f) dismember(scene, i);
         if (force > 0.8f && rnd(0, 1) < force * 0.7f) dismember(scene, 4);
     }
+    m_heartTime = 0.0f;
+    m_beat = 0.15f;
     if (m_gore) {
         glm::vec3 dir = glm::length(impulse) > 0.1f ? glm::normalize(impulse) : glm::vec3(0, 1, 0);
         scene.particles().spray(m_goreKind, c, dir, 25 + (int)(force * 40), 3.0f + force * 4.0f);
         if (m_goreKind == GoreKind::Oil) scene.particles().sparks(c, 15);
+        // The wound that killed them: on the side the hit came from. It keeps bleeding
+        // with the heartbeat, so the body ends up lying in a pool.
+        glm::vec3 hitFrom = glm::length(impulse) > 0.1f ? -dir : glm::normalize(glm::vec3(T[2]));
+        int wound = glm::dot(hitFrom, glm::vec3(T[2])) >= 0.0f ? (int)Chest : (glm::dot(hitFrom, glm::vec3(T[0])) >= 0.0f ? (int)ShR : (int)ShL);
+        m_stumps.push_back({wound, wound, -1, -1, 0.35f + force * 0.5f, true});
+        m_points[wound].blood = 1.0f;
+        scene.particles().stain(m_goreKind, torso, c + hitFrom * 0.6f, 0.7f + force * 0.6f);
+        if (force > 0.5f) scene.particles().stain(m_goreKind, torso, c - hitFrom * 0.6f, 0.5f);   // came out the other side
     }
     place(scene);
 }
@@ -212,10 +222,30 @@ void Ragdoll::dismember(Scene& scene, int limb) {
         scene.particles().gibs(m_goreKind, at, out * 3.0f, 5);
         scene.particles().spray(m_goreKind, at, out, 20, 4.0f);
         if (m_goreKind == GoreKind::Oil) scene.particles().sparks(at, 20);
-        m_stumps.push_back({joint, 2.5f, out});   // the loose piece leaks
-        // ...and so does the body where it came off.
-        int bodyPt = limb == 4 ? ShL : (limb == 0 ? ShL : limb == 1 ? ShR : limb == 2 ? HipL : HipR);
-        m_stumps.push_back({bodyPt, 3.0f, -out});
+        // The loose piece drains from its cut end...
+        if (limb == 4) m_stumps.push_back({Head, Head, HeadTop, HeadTop, 0.8f, false});
+        else           m_stumps.push_back({joint, joint, joint + 1, joint + 1, 0.8f, false});
+        // ...and the body pumps blood out where it came off, with every heartbeat.
+        switch (limb) {
+            case 0:  m_stumps.push_back({ShL, ShL, ShR, ShR, 1.0f, true}); break;
+            case 1:  m_stumps.push_back({ShR, ShR, ShL, ShL, 1.0f, true}); break;
+            case 2:  m_stumps.push_back({HipL, HipL, ShL, ShL, 1.0f, true}); break;
+            case 3:  m_stumps.push_back({HipR, HipR, ShR, ShR, 1.0f, true}); break;
+            default: m_stumps.push_back({ShL, ShR, HipL, HipR, 1.2f, true}); break;   // the neck
+        }
+        // Both cut ends are soaked.
+        const char* names[5] = {"Left Arm", "Right Arm", "Left Leg", "Right Leg", "Head"};
+        SceneNode* piece = nullptr;
+        SceneNode* torso = nullptr;
+        for (auto& b : m_bones) {
+            SceneNode* n = scene.findById(b.id);
+            if (!n) continue;
+            if (n->name == names[limb]) piece = n;
+            if (n->name == "Torso") torso = n;
+        }
+        scene.particles().stain(m_goreKind, piece, at, 0.9f);
+        scene.particles().stain(m_goreKind, torso, at, 0.8f);
+        m_points[joint].blood = 1.0f;
     }
 }
 
@@ -233,7 +263,10 @@ void Ragdoll::solve(const Physics& physics) {
         jointLimits();
         for (auto& p : m_points) {
             glm::vec3 n;
-            if (physics.resolveSphere(p.pos, p.radius, &n) && iter == 9) {
+            if (iter == 0) p.touching = false;
+            bool hit = physics.resolveSphere(p.pos, p.radius, &n);
+            if (hit) { p.touching = true; p.contactN = n; }
+            if (hit && iter == 9) {
                 // Friction: slow sliding along the surface.
                 glm::vec3 v = p.pos - p.prev;
                 glm::vec3 vn = n * glm::dot(v, n);
@@ -265,21 +298,83 @@ void Ragdoll::update(float dt, Scene& scene, const Physics& physics) {
     int steps = 0;
     while (m_accum >= kStep && steps < 8) { m_accum -= kStep; step(kStep, physics); ++steps; }
     if (steps == 8) m_accum = 0.0f;
+    if (m_gore) {
+        bleed(scene, dt);
+        smearAll(scene, dt);
+    }
+    place(scene);
+}
 
-    // Leaking stumps.
-    m_stumpTimer += dt;
-    if (m_gore && m_stumpTimer > 0.05f) {
-        m_stumpTimer = 0.0f;
-        for (auto& s : m_stumps) {
-            if (s.time <= 0.0f) continue;
-            glm::vec3 vel = (m_points[s.point].pos - m_points[s.point].prev) / dt;
-            scene.particles().spray(m_goreKind, m_points[s.point].pos, s.dir, 2, 2.5f * std::min(1.0f, s.time));
-            (void)vel;
+glm::vec3 Ragdoll::stumpPos(const Stump& s) const {
+    return (m_points[s.a].pos + m_points[s.a2].pos) * 0.5f;
+}
+
+glm::vec3 Ragdoll::stumpDir(const Stump& s) const {
+    glm::vec3 from = s.f < 0 ? center() : (m_points[s.f].pos + m_points[s.f2].pos) * 0.5f;
+    glm::vec3 d = stumpPos(s) - from;
+    return glm::length(d) > 1e-4f ? glm::normalize(d) : glm::vec3(0, 1, 0);
+}
+
+// Wounds bleed like a real body: while the heart still beats, the ones joined to it
+// spurt with each beat (the heart slowing and weakening as they die), and every wound
+// keeps dripping in between. Loose pieces just drain.
+void Ragdoll::bleed(Scene& scene, float dt) {
+    if (m_stumps.empty()) return;
+    ParticleSystem& ps = scene.particles();
+    m_heartTime += dt;
+    const float pressure = std::exp(-m_heartTime / 5.0f);        // blood pressure falls as blood runs out
+    const bool  beating  = pressure > 0.12f;                      // ...until the heart stops (about 10 s)
+    auto velAt = [&](const Stump& s) {
+        glm::vec3 now = stumpPos(s);
+        glm::vec3 was = (m_points[s.a].prev + m_points[s.a2].prev) * 0.5f;
+        return (now - was) / kStep;   // (prev is one small step back)
+    };
+    if (beating) {
+        m_beat -= dt;
+        if (m_beat <= 0.0f) {
+            float bpm = 40.0f + 80.0f * pressure;                    // racing at first, then slower
+            m_beat = 60.0f / bpm;
+            for (auto& s : m_stumps)
+                if (s.pumped && s.bleed > 0.0f)
+                    ps.spurt(m_goreKind, stumpPos(s), stumpDir(s), velAt(s), pressure * s.bleed);
         }
     }
-    for (auto& s : m_stumps) s.time -= dt;
+    m_stumpTimer += dt;
+    if (m_stumpTimer > 0.12f) {
+        m_stumpTimer = 0.0f;
+        for (auto& s : m_stumps) {
+            if (s.bleed <= 0.02f) continue;
+            ps.ooze(m_goreKind, stumpPos(s) + stumpDir(s) * 0.05f, velAt(s));
+            m_points[s.a].blood = 1.0f;
+            m_points[s.a2].blood = 1.0f;
+        }
+    }
+    for (auto& s : m_stumps)   // wounds slowly stop (clots; the heart stops; no blood left)
+        s.bleed = std::max(0.0f, s.bleed - dt * (s.pumped ? (beating ? 0.03f : 0.12f) : 0.2f));
+}
 
-    place(scene);
+// Bloody bits of the body sliding along the floor leave smears, and bits that land
+// in a pool get bloody.
+void Ragdoll::smearAll(Scene& scene, float dt) {
+    ParticleSystem& ps = scene.particles();
+    for (auto& p : m_points) {
+        if (!p.touching) continue;
+        glm::vec3 at = p.pos - p.contactN * p.radius;
+        if (p.blood < 0.9f) {
+            float soak = ps.wetBloodAt(at, p.radius, 0.0f);
+            if (soak > p.blood) p.blood = soak;
+        }
+        if (p.blood < 0.05f) continue;
+        glm::vec3 v = (p.pos - p.prev) / kStep;
+        glm::vec3 along = v - p.contactN * glm::dot(v, p.contactN);
+        float speed = glm::length(along);
+        if (speed < 0.3f) continue;
+        p.slid += speed * dt;
+        if (p.slid < 0.22f) continue;
+        p.slid = 0.0f;
+        ps.smear(m_goreKind, at, along, p.contactN, p.radius * 1.5f, p.blood);
+        p.blood *= 0.88f;
+    }
 }
 
 void Ragdoll::place(Scene& scene) {

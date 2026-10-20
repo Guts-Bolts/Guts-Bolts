@@ -429,6 +429,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     const WorldSettings& ws = m_scene->world();
     m_scene->particles().setBlood(ws.bloodColor, ws.bloodAmount, ws.bloodStay);
     m_scene->particles().update(dt, m_scene->world().gravity, m_physics);
+    m_scene->particles().follow(*m_scene);   // blood stains move with the bodies they're on
     // ParticleEmitters, Fire, Smoke, Sparkles: every screen makes its own (a game server
     // with no screen doesn't bother).
     if (!Mesh::headless) m_scene->particles().runEmitters(*m_scene, dt);

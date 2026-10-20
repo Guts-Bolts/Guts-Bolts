@@ -354,6 +354,7 @@ private:
     std::vector<Debris> m_debris;
 
     Ragdoll   m_ragdoll;
+    BloodyFeet m_feet;      // stepped in blood: leaves footprints
     // Knocked over as a ragdoll (alive): how long we've been down, and the tool to hold again after.
     float     m_knockTime = 0.0f;
     uint64_t  m_knockTool = 0;

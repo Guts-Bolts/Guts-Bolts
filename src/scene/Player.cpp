@@ -506,6 +506,8 @@ void Player::respawn(bool firstSpawn) {
     m_humanoid.platformStand = false;
     SceneNode* r = root();
     if (!r) return;
+    m_scene->particles().wipe(*m_scene, r);   // a clean body (no blood stains from the last life)
+    m_feet.reset();
     for (auto& c : r->children) {
         auto it = m_rest.find(c->id);
         if (it != m_rest.end()) c->transform = it->second;
@@ -579,6 +581,14 @@ void Player::bleed(float damage) {
     glm::vec3 at = glm::vec3(t->worldMatrix()[3]);
     int n = std::clamp((int)(damage * 0.5f), 3, 30);
     m_scene->particles().spray(m_scene->goreKind(), at, glm::vec3(0, 0.5f, 0), n, 2.5f);
+    // The blood soaks into the body where it came out (bigger hits, bigger stains).
+    glm::vec3 spot = at + glm::vec3(rand01() - 0.5f, rand01() - 0.5f, rand01() - 0.5f) * 2.0f;
+    SceneNode* where = t;
+    if (rand01() < 0.35f) {
+        static const char* kOther[] = {"Left Arm", "Right Arm", "Left Leg", "Right Leg", "Head"};
+        if (SceneNode* o = part(kOther[(int)(rand01() * 4.99f)])) { where = o; spot = glm::vec3(o->worldMatrix()[3]) + (spot - at); }
+    }
+    m_scene->particles().stain(m_scene->goreKind(), where, spot, std::clamp(0.3f + damage * 0.02f, 0.3f, 1.0f));
     if (m_scene->goreKind() == GoreKind::Oil) m_scene->particles().sparks(at, n / 2);
 }
 
@@ -1412,6 +1422,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
 
     animate(dt, m_groundSpeed, m_grounded);
     footsteps(m_groundSpeed > 0.5f && m_grounded && !m_swimming && !m_climbing, res.position);
+    if (m_scene->goreEnabled()) m_scene->particles().walk(m_feet, m_scene->goreKind(), res.position, m_grounded && !m_swimming);
     updateGrip();
 }
 
