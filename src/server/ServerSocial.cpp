@@ -218,7 +218,7 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             const std::string by = c.value("by", std::string());
             const User* u = findUser(by);
             if (u && blocks(me, *u)) continue;
-            json who = u ? json{{"id", u->id}, {"userId", u->userId}, {"name", u->name}, {"verified", isVerified(*u)}, {"staff", isStaff(*u)}}
+            json who = u ? json{{"id", u->id}, {"userId", u->userId}, {"name", u->name}, {"verified", isVerified(*u)}, {"staff", isStaff(*u)}, {"partner", isPartner(*u)}}
                          : json{{"id", by}, {"userId", 0}, {"name", "?"}};
             out.push_back({{"id", c.value("id", std::string())}, {"text", c.value("text", std::string())}, {"at", c.value("at", 0LL)},
                            {"by", who}, {"creator", by == a.creator}, {"canDelete", me.userId != 0 && (by == me.id || mod)}});
