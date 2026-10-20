@@ -240,6 +240,7 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
 }
 
 PlayerApp::~PlayerApp() {
+    Vr::stop();   // (while the window's OpenGL is still there)
     m_server.reset();
     m_client.reset();
     if (m_session) m_session->stop();
@@ -249,6 +250,7 @@ PlayerApp::~PlayerApp() {
     m_scene.reset();
     m_renderer.reset();
     m_view.resize(0, 0);
+    for (Framebuffer& e : m_vrEyes) e.resize(0, 0);
     m_avatarView.resize(0, 0);
     m_window.reset();
 }
@@ -642,6 +644,7 @@ void PlayerApp::leaveGame() {
     Voice::setActive(false);
     Voice::forgetAll();
     m_talkOn = false;
+    stopVr();
     m_session->stop();
     m_session->setRole(GameSession::Role::Solo);
     m_scene->buildDefault();
@@ -1580,6 +1583,7 @@ void PlayerApp::drawGame(float dt) {
     ImVec2 pos  = ImGui::GetCursorScreenPos();
     ImVec2 size = ImGui::GetContentRegionAvail();
     if (size.x < 1 || size.y < 1) return;
+    if (m_opts.vr) { m_opts.vr = false; startVr(); }   // (--vr)
 
     // Networking first (receive the world), then simulate, then (next tick) send.
     if (m_client) {
@@ -1649,7 +1653,18 @@ void PlayerApp::drawGame(float dt) {
     bool acceptInput = !m_paused && !m_showSettings && !m_chatOpen;
     ImVec2 max(pos.x + size.x, pos.y + size.y);
     const bool touch = GraphicsSettings::get().touchEnabled();
+    // VR: wait for the headset's next picture, read its controllers (they walk you
+    // like the touch screen's thumbstick does).
+    Vr::View vrEyes[2];
+    if (m_vrOn && !Vr::running()) {   // the headset closed us (VR software quit...)
+        m_vrOn = false;
+        m_window->setHeadsetPaced(false);
+        m_vrStatus = Vr::lastError();
+    }
+    const bool vr = m_vrOn;
+    const bool vrDraw = vr && Vr::beginFrame(vrEyes, 0.1f, 1000.0f);
     if (touch) updateTouch(pos, max, acceptInput);
+    else if (vr) vrControls(acceptInput);
     else       m_session->setTouchInput(glm::vec2(0.0f), false);
     m_session->update(dt, m_camera.yaw, acceptInput, PlayCamera::swimLook(m_camera));
 
@@ -1695,7 +1710,7 @@ void PlayerApp::drawGame(float dt) {
     else if (acceptInput && !typing && !firstPerson &&
              (ImGui::IsKeyPressed(ImGuiKey_LeftShift, false) || ImGui::IsKeyPressed(ImGuiKey_RightShift, false)))
         m_shiftLock = !m_shiftLock;
-    if (acceptInput && hovered) {
+    if (acceptInput && hovered && !vr) {   // (in VR your head turns the camera)
         const bool locked = (firstPerson || (m_shiftLock && !m_camera.noInput)) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
         if (locked) {
             ImVec2 c = ImGui::GetCursorScreenPos();
@@ -1718,9 +1733,10 @@ void PlayerApp::drawGame(float dt) {
         }
         if (!GameGui::overScroller(*m_scene, ImGui::GetMousePos())) PlayCamera::zoom(m_camera, io.MouseWheel, m_scene->cameraOptions());   // (else the wheel scrolls the UI)
     }
-    if (acceptInput && Pad::connected()) padCamera(dt);
+    if (acceptInput && Pad::connected() && !vr) padCamera(dt);
     if (Player* p = m_scene->player()) {
-        PlayCamera::follow(m_camera, *p, dt, m_shiftLock);
+        if (vr) vrFollow(*p);
+        else PlayCamera::follow(m_camera, *p, dt, m_shiftLock);
         PlayCamera::fade(*m_scene, *p, m_camera);
     }
 
@@ -1730,10 +1746,15 @@ void PlayerApp::drawGame(float dt) {
 #else
     ImVec2 px = size;
 #endif
-    m_view.resize((int)px.x, (int)px.y);
     m_camera.resize((int)px.x, (int)px.y);
-    m_renderer->render(*m_scene, m_camera, m_view, false);
-    if (GameGui::needsBackdrop(*m_scene)) {   // UIBlur: the world behind the UI, blurred
+    if (vr) {   // each eye for the headset (the screen shows the left one)
+        if (vrDraw) vrRender(vrEyes);
+        Vr::endFrame();
+    } else {
+        m_view.resize((int)px.x, (int)px.y);
+        m_renderer->render(*m_scene, m_camera, m_view, false);
+    }
+    if (GameGui::needsBackdrop(*m_scene) && !vr) {   // UIBlur: the world behind the UI, blurred
         m_renderer->makeBackdrop(m_view);
         unsigned bd[SceneRenderer::kBackdropLevels];
         for (int i = 0; i < SceneRenderer::kBackdropLevels; ++i) bd[i] = m_renderer->backdrop(i);
@@ -1742,7 +1763,8 @@ void PlayerApp::drawGame(float dt) {
         GameGui::setBackdrop(nullptr, 0);
     }
     Audio::setListener(m_camera.position(), m_camera.forward());
-    ImGui::Image((ImTextureID)(intptr_t)m_view.colorTexture(), size, ImVec2(0, 1), ImVec2(1, 0));
+    if (vr) vrMirror(size);
+    else ImGui::Image((ImTextureID)(intptr_t)m_view.colorTexture(), size, ImVec2(0, 1), ImVec2(1, 0));
 
     // Clicking parts (for part.Clicked in scripts). With touch controls, a tap does it.
     ImVec2 tapAt;
@@ -2283,6 +2305,14 @@ void PlayerApp::drawPauseMenu() {
             ImGui::PopID();
         }
     } else if (m_menuTab == 1) {
+        // VR: show the game in a headset (SteamVR, Quest Link...) instead.
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("VR headset");
+        ImGui::SameLine(190.0f);
+        if (m_vrOn) { if (bigButton("Stop VR", ImVec4(0.75f, 0.25f, 0.25f, 1), ImVec2(160, 0))) stopVr(); }
+        else if (bigButton("Play in VR", kAccent, ImVec2(160, 0))) { startVr(); if (m_vrOn) m_paused = false; }
+        if (!m_vrStatus.empty()) ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1), "%s", m_vrStatus.c_str());
+        ImGui::Spacing();
         GraphicsSettings& gs = GraphicsSettings::get();
         bool changed = false;
         const float labelW = 190.0f;
@@ -2419,6 +2449,11 @@ void PlayerApp::drawPauseMenu() {
         key("D-pad", "Up and down zoom in and out");
         key("Start", "Open or close this menu (the D-pad and A pick in it)");
         key("Back / Select", "Show or hide the player list");
+        ImGui::SeparatorText("VR headset (Settings > Play in VR)");
+        key("Left stick", "Walk the way you look");
+        key("Right stick", "Turn (left / right)");
+        key("A", "Jump");
+        key("Menu", "Open or close this menu (on the computer screen for now)");
     }
     ImGui::EndChild();
 

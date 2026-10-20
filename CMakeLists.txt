@@ -316,6 +316,7 @@ add_library(gb_engine STATIC
     src/core/Log.cpp
     src/core/Settings.cpp
     src/core/Pad.cpp
+    src/core/Vr.cpp
     src/core/Paths.cpp
     src/core/FileDialog.cpp
     src/core/Audio.cpp
@@ -432,6 +433,33 @@ target_link_libraries(gb_engine PUBLIC
 if(NOT GB_MOBILE)
     target_link_libraries(gb_engine PUBLIC glfw GLEW::GLEW OpenGL::GL)
 endif()
+
+# OpenXR: VR headsets (SteamVR, Quest Link / Air Link, Windows Mixed Reality...)
+# in the computer Player. Only the loader is built: it finds the headset's own
+# software when the game starts, so nobody needs a headset to build or play.
+option(GB_VR "VR headset support (OpenXR) in the computer apps" ON)
+if(GB_VR AND NOT GB_MOBILE AND NOT APPLE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_API_LAYERS OFF CACHE BOOL "" FORCE)
+    set(BUILD_CONFORMANCE_TESTS OFF CACHE BOOL "" FORCE)
+    set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        openxr
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK.git
+        GIT_TAG        release-1.1.54
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(openxr)
+    target_link_libraries(gb_engine PUBLIC openxr_loader)
+    target_compile_definitions(gb_engine PUBLIC GB_VR)
+    if(NOT WIN32)
+        find_package(X11 REQUIRED)
+        target_link_libraries(gb_engine PUBLIC X11::X11)
+        if(TARGET OpenGL::GLX)
+            target_link_libraries(gb_engine PUBLIC OpenGL::GLX)
+        endif()
+    endif()
+endif()
 target_compile_definitions(gb_engine PUBLIC GLM_ENABLE_EXPERIMENTAL)
 if(WIN32)
     target_link_libraries(gb_engine PUBLIC dbghelp ws2_32 bcrypt)
@@ -440,7 +468,7 @@ endif()
 if(GB_MOBILE)
     # Phones and tablets get the Player only. On Android it's a library that
     # SDL's Java activity loads (it must be called "main").
-    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/LaunchLink.cpp)
+    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/PlayerVr.cpp src/player/LaunchLink.cpp)
     if(ANDROID)
         add_library(main SHARED ${PLAYER_SOURCES})
         target_link_libraries(main PRIVATE gb_engine)
@@ -623,6 +651,7 @@ set(PLAYER_SOURCES
     src/player/PlayerFriends.cpp
     src/player/PlayerLogin.cpp
     src/player/PlayerSafety.cpp
+    src/player/PlayerVr.cpp
     src/player/LaunchLink.cpp
 )
 if(WIN32)
