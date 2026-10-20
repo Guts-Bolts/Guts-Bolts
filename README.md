@@ -3045,6 +3045,29 @@ you, your public ID goes into `src/core/OfficialKey.h`.
 Three sample games come with it: **Obby of Doom**, **Demolition Yard** and
 **Night Plaza** (built by `tools/make_sample_games.py`).
 
+## Log in with Guts&Bolts (for partner apps)
+
+Partner apps (just [Lyreto](https://lyreto.com) for now) can let people link their
+Guts&Bolts account, like "Connect Discord" buttons. It's standard OAuth 2.0 (the
+authorization code kind), and the app only ever gets a user's **id** (their user
+number), **username** and **avatar** picture.
+
+1. Send the person to `https://gutsandbolts.net/api/oauth/authorize?response_type=code&client_id=<id>&redirect_uri=<your callback>&state=<random>`.
+   They log in if they need to and press **Approve**, and come back to
+   `<your callback>?code=...&state=...` (or `?error=access_denied` if they press Cancel).
+2. From your server, swap the code (it lasts 5 minutes and works once):
+   `POST https://gutsandbolts.net/api/oauth/token` with a form (or JSON) body
+   `grant_type=authorization_code&code=...&redirect_uri=...&client_id=...&client_secret=...`
+   (or the id and secret as HTTP Basic auth). You get `{ access_token, token_type: "Bearer", expires_in, scope }`.
+3. `GET https://gutsandbolts.net/api/oauth/userinfo` with `Authorization: Bearer <access_token>` gives
+   `{ "id": "5", "username": "kermit", "avatar": "https://gutsandbolts.net/avatar/5.png?v=..." }`
+   (`avatar` can be `null`). Tokens last a year, or until the person disconnects the app in Settings.
+
+The apps and their callback addresses are listed in `CONNECT_APPS` (worker/server.js) and
+`kConnectApps` (src/server/ServerConnect.cpp). Each app's **client secret** is made on the
+website's Staff page (Connected apps box, official Guts account only): it's shown once,
+so copy it and send it to the app's owner privately. Making a new one stops the old one working.
+
 ## Graphics & performance
 
 **Settings** (in both apps) has VSync, an FPS limit (or unlimited), an FPS

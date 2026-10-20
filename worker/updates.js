@@ -11,6 +11,21 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'same-face-new-place',
+    name: 'Same Face, New Place',
+    version: '0.7.3',
+    time: 1792469700,
+    tag: 'Website',
+    summary: 'Link your Guts&Bolts account to Lyreto with one button, and take your name and avatar with you.',
+    items: [
+      'Partner apps like Lyreto can now show a "Connect Guts&Bolts" button that brings you to a page here asking if it\'s OK',
+      'Press Approve and Lyreto gets your username, user number and a picture of your avatar. Nothing else: no password, email, Bolts or messages',
+      'See what you\'ve connected, and disconnect it, in Settings > Connected apps',
+      'Change your look on the Avatar page and the picture apps show changes too',
+      'Staff make each partner app\'s secret key on the Staff page (for the people who make those apps)',
+    ],
+  },
+  {
     id: 'shop-window',
     name: 'Shop Window',
     version: '0.7.3',
