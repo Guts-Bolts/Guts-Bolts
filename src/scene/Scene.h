@@ -92,6 +92,7 @@ struct WorldSettings {
     DeathStyle deathStyle      = DeathStyle::Ragdoll;
     GoreLevel  gore            = GoreLevel::Blood;
     bool       dismemberment   = true;      // big hits can knock limbs off
+    bool       knockdowns      = true;      // Ragdoll style: big hits knock you over as a ragdoll, then you get back up
     bool       fallDamage      = true;
     float      fallDamageSpeed = 20.0f;     // landing faster than this hurts
     float      fallDamageScale = 1.0f;      // how much it hurts (2 = twice as much)
