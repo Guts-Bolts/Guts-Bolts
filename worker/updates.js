@@ -11,13 +11,25 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'point-and-click', name: 'Point and Click', version: '0.7.4', time: 1792516500, tag: 'Player',
+    id: 'point-and-click', name: 'Point and Click', version: '0.7.4', time: 1792519800, tag: 'Player',
     summary: 'In VR the menus, buttons and chat float in front of you, and you click them by pointing with your right hand.',
     items: [
       'Everything that sits on top of the game (the menu, health, the hotbar, chat, the game\'s own buttons) now shows on a see-through screen floating in front of you in the headset',
       'Point at it with your right controller and a ring shows where you\'re pointing; pull the trigger to click, hold it to drag a slider',
       'Opening the menu puts the screen right in front of you. While you play it drifts back in front of you when you look far away',
       'Pointing at the screen but not at a button? The trigger still uses your tool, so the screen never gets in your way',
+    ],
+  },
+  {
+    id: 'bidding-war', name: 'Bidding War', time: 1792517600, tag: 'Website',
+    summary: 'Exclusive items can go up for auction, and only the top bidders get one.',
+    items: [
+      'Staff can put an Exclusive item up for auction: how many copies, the starting bid and how long it runs',
+      'Bid with your Bolts on the item\'s page. The top bidders (one per copy) get it when time runs out',
+      'Your Bolts are held while you\'re winning. If someone outbids you, you get every Bolt back straight away and a notification',
+      'Raising your own bid only takes the difference, and a tie goes to whoever bid first',
+      'A bid in the last 5 minutes adds time, so nobody can sneak in a win at the final second',
+      'See every auction that\'s on in the new Auctions part of the Catalog',
     ],
   },
   {
