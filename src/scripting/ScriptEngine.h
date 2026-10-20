@@ -239,6 +239,16 @@ public:
     float&     clockTime();
     void       applyClockTime();
     bool       isKeyDown(const std::string& key) const;
+    // VRService: this player's VR headset, this frame (the Player app keeps it up to
+    // date). Positions are in studs from where VR started, turned with the snap turns.
+    struct VrPose {
+        bool on = false;                       // playing in a headset (VRService.VREnabled)
+        glm::mat4 head{1.0f};
+        glm::mat4 hand[2] = {glm::mat4(1.0f), glm::mat4(1.0f)};   // 0 = left, 1 = right
+        bool handOk[2] = {false, false};       // the headset can see that controller
+    };
+    void          setVr(const VrPose& v) { m_vr = v; }
+    const VrPose& vr() const { return m_vr; }
     // Stop (or restart) every script in this part of the tree, like
     // Destroy() / Disabled in Roblox.
     void       stopScripts(SceneNode* root);
@@ -349,6 +359,8 @@ private:
     std::string                             m_playerName = "Player";
     bool                                    m_noLocalPlayer = false;
     bool m_padSeen = false;   // a controller was plugged in (UserInputService.GamepadEnabled)
+    VrPose m_vr;
+    bool m_vrSeen = false;    // VRService.VREnabled, as the scripts last heard it
 
     // ContextActionService (ScriptActions.cpp)
     friend struct ActionLua;
