@@ -86,6 +86,8 @@ h2 .btn { margin-top: -2px; }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .row.top { align-items: flex-start; }
 .grow { flex: 1; min-width: 0; }
+/* Long words (code in the update log, links in posts) wrap instead of pushing the page sideways on phones. */
+.content { overflow-wrap: break-word; }
 /* Shiny buttons: a lighter top half, like everything was in 2011. */
 .btn { display: inline-block; border: 1px solid #8f969f; border-radius: 3px; padding: 5px 12px; cursor: pointer;
   font: inherit; font-size: 12px; font-weight: bold; color: #333; text-decoration: none !important;
@@ -125,7 +127,7 @@ label { display: block; margin: 10px 0 4px; font-weight: bold; font-size: 12px; 
 .card .by { color: var(--muted); font-size: 12px; }
 .price { color: var(--gold); font-weight: bold; }
 .bolt { display: inline-block; width: 1em; height: 1em; vertical-align: -2px; margin-right: 3px; }
-.check { display: inline-block; width: 1em; height: 1em; vertical-align: -2px; margin-left: 3px; }
+svg.check { display: inline-block; width: 1em; height: 1em; vertical-align: -2px; margin-left: 3px; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #aaa; margin-right: 5px; }
 .dot.on { background: #22b35e; }
 .list > div { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -146,6 +148,8 @@ label { display: block; margin: 10px 0 4px; font-weight: bold; font-size: 12px; 
 
 @media (max-width: 640px) {
   body { font-size: 13px; }
+  .avatar-edit > .box { margin-right: 0 !important; flex: 1 1 100%; }
+  .avatar-edit > .grow { flex-basis: 100%; }
   .page { margin-top: 0; }
   .content { border-left: 0; border-right: 0; padding: 12px 12px 20px; }
   .topsearch { order: 3; margin: 0; flex: 1 1 100%; }
