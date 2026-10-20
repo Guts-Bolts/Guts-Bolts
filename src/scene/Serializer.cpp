@@ -1165,7 +1165,7 @@ json settingsJson(Scene& scene) {
     const WorldSettings& ws = scene.world();
     j["world"] = {{"gravity", ws.gravity}, {"fallenPartsHeight", ws.fallenPartsHeight},
                   {"deathStyle", (int)ws.deathStyle}, {"gore", (int)ws.gore},
-                  {"dismemberment", ws.dismemberment}, {"fallDamage", ws.fallDamage},
+                  {"dismemberment", ws.dismemberment}, {"knockdowns", ws.knockdowns}, {"fallDamage", ws.fallDamage},
                   {"fallDamageSpeed", ws.fallDamageSpeed}, {"spawnForceField", ws.spawnForceField},
                   {"fallDamageScale", ws.fallDamageScale}, {"bloodColor", vec(ws.bloodColor)},
                   {"bloodAmount", ws.bloodAmount}, {"bloodStay", ws.bloodStay},
@@ -1213,6 +1213,7 @@ void applySettings(Scene& scene, const json& j) {
         w.deathStyle        = (DeathStyle)get<int>(j["world"], "deathStyle", (int)w.deathStyle);
         w.gore              = (GoreLevel)get<int>(j["world"], "gore", (int)w.gore);
         w.dismemberment     = get<bool>(j["world"], "dismemberment", w.dismemberment);
+        w.knockdowns        = get<bool>(j["world"], "knockdowns", w.knockdowns);
         w.fallDamage        = get<bool>(j["world"], "fallDamage", w.fallDamage);
         w.fallDamageSpeed   = get<float>(j["world"], "fallDamageSpeed", w.fallDamageSpeed);
         w.spawnForceField   = get<float>(j["world"], "spawnForceField", w.spawnForceField);
