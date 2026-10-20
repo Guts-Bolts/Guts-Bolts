@@ -2383,6 +2383,17 @@ function mailBox(ml) {
       <button class="btn small blue">Send test</button></form>` : ''}</div>`;
 }
 
+// Partner apps that can "Log in with Guts&Bolts" (official account only): make each one's client secret.
+function connectBox(ca) {
+  if (!ca || !ca.ok) return '';
+  return html`<div class="box"><h2 class="boxhead">Connected apps</h2>
+    <p class="small muted">Partner apps people can link their account to. Each needs a client secret: make it here, then send it to the
+      app's owner privately. It's only shown once, and making a new one stops the old one working.</p>
+    <div class="list">${ca.apps.map((a) => html`<div><span class="grow"><b>${a.name}</b>
+        <span class="small muted">client id <code>${a.id}</code> · ${a.people} connected · ${a.secretAt ? 'secret made ' + ago(a.secretAt) : 'no secret yet'}</span></span>
+        <button class="btn small${a.secretAt ? '' : ' green'}" data-act="connectSecret" data-id="${a.id}" data-name="${a.name}" data-made="${a.secretAt ? '1' : ''}">${a.secretAt ? 'Make a new secret' : 'Make secret'}</button></div>`)}</div></div>`;
+}
+
 // New decals, sounds and T-shirts from creators who aren't Verified: look, listen, then OK or turn down.
 function uploadsBox(up) {
   if (!up.ok) return html`<div class="box"><h2 class="boxhead">Uploads to check</h2><p class="error">${up.error}</p></div>`;
@@ -2415,16 +2426,17 @@ pages.staff = async () => {
   const logFor = new URLSearchParams(location.hash.split('?')[1] || '').get('log') || '';
   const ticketsClosed = new URLSearchParams(location.hash.split('?')[1] || '').get('tickets') === 'closed';
   const appealsClosed = new URLSearchParams(location.hash.split('?')[1] || '').get('appeals') === 'closed';
-  const [r, rep, up, lg, tk, ml, ap] = await Promise.all([pageCall('admin.find', { query }), pageCall('admin.reports', { status: closed ? 'closed' : 'open' }),
+  const [r, rep, up, lg, tk, ml, ap, ca] = await Promise.all([pageCall('admin.find', { query }), pageCall('admin.reports', { status: closed ? 'closed' : 'open' }),
     pageCall('admin.uploads', {}), pageCall('admin.log', logFor ? { user: logFor } : {}),
     pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.mailStatus', {}),
-    pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' })]);
+    pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }), me.official ? pageCall('admin.connectApps', {}) : null]);
   show(html`<h1>Staff</h1>
     ${ticketsBox(tk, ticketsClosed)}
     ${uploadsBox(up)}
     ${reportsBox(rep, closed)}
     ${appealsBox(ap, appealsClosed)}
     ${mailBox(ml)}
+    ${connectBox(ca)}
     <h2>People</h2>
     <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make partners, make staff, give Bolts and ban.'
       : 'Staff can verify people, make them a Partner, and take those badges away.'}</p>
@@ -2451,7 +2463,7 @@ pages.staff = async () => {
 };
 
 // The staff action log: who banned, warned, verified, checked or deleted what (newest first).
-const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤' };
+const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤', connect: '🔑' };
 function staffLogBox(lg, logFor) {
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.name}</a>` : '');
   const body = !lg.ok ? html`<p class="error">${lg.error}</p>`
@@ -2642,6 +2654,10 @@ pages.settings = async () => {
         <p class="small muted">People you block can't message, friend, follow, trade with or join you, and you won't see each other online.
           Block someone from their profile.</p>
         <div class="list" id="blockedList"><p class="muted small">Loading...</p></div></div>
+      <div class="box"><h2 class="boxhead">Connected apps</h2>
+        <p class="small muted">Apps you linked your account to with "Log in with Guts&amp;Bolts" (like Lyreto). They can see your
+          username, user number and a picture of your avatar, and nothing else.</p>
+        <div class="list" id="appsList"><p class="muted small">Loading...</p></div></div>
       <div class="box"><h2 class="boxhead">Authenticator app</h2>
         ${me.authApp ? html`<p><b class="ok">On.</b> Logging in on a new device needs your password <i>and</i> the 6-digit code
             from your authenticator app (Google Authenticator, Authy, 2FAS, Aegis, Microsoft Authenticator...).</p>
@@ -2685,7 +2701,78 @@ pages.settings = async () => {
     : blocked.people.length ? html`${blocked.people.map((u) => html`<div><a class="grow" href="#/user/${u.userId}">${u.username || u.name}</a>
         <button class="btn small" data-act="block" data-user="${u.id}" data-name="${u.username || u.name}" data-on="">Unblock</button></div>`)}`
       : html`<p class="muted small">You haven't blocked anyone.</p>`).s;
+  const apps = await pageCall('connect.list', {});
+  const appBox = $('#appsList');
+  if (appBox) appBox.innerHTML = (!apps.ok ? html`<p class="error">${apps.error}</p>`
+    : apps.apps.length ? html`${apps.apps.map((a) => html`<div><span class="grow"><a href="${a.site}" target="_blank" rel="noopener"><b>${a.name}</b></a>
+        <span class="small muted">connected ${ago(a.at)}</span></span>
+        <button class="btn small" data-act="connectRemove" data-id="${a.id}" data-name="${a.name}">Disconnect</button></div>`)}`
+      : html`<p class="muted small">You haven't connected any apps.</p>`).s;
 };
+
+// --- "Log in with Guts&Bolts" ---------------------------------------------------------
+// A partner app (like Lyreto) sent you here to link your account (worker/index.js
+// /api/oauth/authorize). Approve sends you back to the app with a one-time code, which it
+// swaps for your user number, username and avatar picture. Nothing else.
+pages.connect = async () => {
+  const q = hashParams();
+  if (!signedIn()) {
+    try { sessionStorage.setItem('gb.back', location.hash); } catch { /* (then they come back by hand) */ }
+    show(html`<div class="form" style="margin:0 auto"><h1>Connect your account</h1>
+      <p>An app wants to link your Guts&amp;Bolts account. Log in first, and you'll come straight back here.</p>
+      <p class="popup-buttons"><a class="btn blue big" href="#/login">Log In</a> <a class="btn green big" href="#/signup">Sign Up</a></p></div>`);
+    return;
+  }
+  const r = await pageCall('connect.app', { client_id: q.get('client_id') || '', redirect_uri: q.get('redirect_uri') || '' });
+  if (!r.ok) {
+    show(html`<div class="form" style="margin:0 auto"><h1>Can't connect</h1><p class="error">${r.error}</p>
+      <p><a class="btn" href="#/">Home</a></p></div>`);
+    return;
+  }
+  const host = r.app.site.replace(/^https?:\/\//, '');
+  show(html`<div class="form" style="margin:0 auto">
+    <h1>Connect to ${r.app.name}?</h1>
+    <p><b>${r.app.name}</b> (<a href="${r.app.site}" target="_blank" rel="noopener">${host}</a>) wants to link your
+      Guts&amp;Bolts account, <b>${me.username}</b>.${r.connected ? ' (It\'s already linked: approving again just refreshes it.)' : ''}</p>
+    <p>It will be able to see:</p>
+    <ul><li>Your username and user number (#${me.userId})</li><li>A picture of your avatar</li></ul>
+    <p class="small muted">It can't see your password, email, Bolts or messages, and it can't do anything as you.
+      You can disconnect it any time in Settings.</p>
+    <p class="popup-buttons"><button class="btn green big" data-act="connectApprove">Approve</button>
+      <a class="btn big" href="${connectReturn({ error: 'access_denied' })}">Cancel</a></p>
+    <p class="small" id="connectMsg"></p></div>`);
+};
+// Where to send them back to: the app's return address (the server checked it) with the answer and its state.
+function connectReturn(params) {
+  const q = hashParams(), u = new URL(q.get('redirect_uri') || '');
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  if (q.get('state')) u.searchParams.set('state', q.get('state'));
+  return u.toString();
+}
+// The square avatar picture connected apps show: drawn here from your avatar and what you wear
+// (the server can't draw), as PNG base64; '' if this browser can't draw it.
+async function connectPicture() {
+  try {
+    const p = await call('profile', { id: String(me.userId) });
+    const url = p.ok ? await avatarPicture(p.user.avatar, p.wearing || [], 160) : null;
+    if (!url) return '';
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const side = Math.min(256, img.width), c = document.createElement('canvas');
+    c.width = c.height = side;
+    c.getContext('2d').drawImage(img, 0, 0, img.width, img.width, 0, 0, side, side);   // the top square: head and body
+    return c.toDataURL('image/png').split(',')[1];
+  } catch {
+    return '';
+  }
+}
+// After logging in or signing up: back to the Connect page, if that's where they came from.
+function afterLogin() {
+  let back = '';
+  try { back = sessionStorage.getItem('gb.back') || ''; sessionStorage.removeItem('gb.back'); } catch { back = ''; }
+  location.hash = back.startsWith('#/connect?') ? back : '#/';
+}
 
 pages.login = async () => loginPage(false);
 pages.signup = async () => loginPage(true);
@@ -2991,6 +3078,34 @@ const actions = {
     if (!r.ok) toast(r.error);
     render();
   },
+  async connectApprove() {
+    const msg = $('#connectMsg');
+    msg.className = 'muted'; msg.textContent = 'Connecting...';
+    const q = hashParams();
+    const r = await call('connect.approve', { client_id: q.get('client_id') || '', redirect_uri: q.get('redirect_uri') || '', picture: await connectPicture() });
+    if (!r.ok) { msg.className = 'error'; msg.textContent = r.error; return; }
+    msg.textContent = 'Taking you back...';
+    location.href = connectReturn({ code: r.code });
+  },
+  async connectRemove(d) {
+    if (!confirm('Disconnect ' + d.name + '? It won\'t be able to see your Guts&Bolts account any more.')) return;
+    const r = await call('connect.remove', { id: d.id });
+    toast(r.ok ? 'Disconnected ' + d.name + '.' : r.error);
+    if (r.ok) render();
+  },
+  async connectSecret(d) {
+    if (d.made && !confirm('Make a new secret for ' + d.name + '? The old one stops working straight away, so ' + d.name + ' will need the new one.')) return;
+    const r = await call('admin.connectSecret', { id: d.id });
+    if (!r.ok) { toast(r.error); return; }
+    popup(html`<h1 class="popup-title">${d.name}'s client secret</h1>
+      <p>Copy it now and send it to ${d.name}'s owner privately (a direct message, not a public chat). It's only shown this once.</p>
+      <p class="secret-key"><code>${r.secret}</code></p>
+      <p class="popup-buttons"><button class="btn blue" data-act="copySecret" data-text="${r.secret}">Copy</button>
+        <a href="#" class="btn" data-act="closeModal">Done</a></p>`);
+  },
+  async copySecret(d) {
+    try { await navigator.clipboard.writeText(d.text); toast('Copied!'); } catch { prompt('Copy this:', d.text); }
+  },
   async copyText(d) {
     try { await navigator.clipboard.writeText(d.text); toast('Copied ' + d.text); } catch { prompt('Copy this:', d.text); }
   },
@@ -3178,7 +3293,7 @@ const actions = {
     PARTS.forEach((p) => { avatar[p] = a[p].map((x) => x | 0); });
     const r = await call('avatar.set', { avatar });
     toast(r.ok ? 'Saved! You\'ll look like this in every game.' : r.error);
-    if (r.ok) { avatarDraft = null; render(); }
+    if (r.ok) { avatarDraft = null; render(); connectPicture().then((picture) => picture && call('connect.picture', { picture })); }   // (for connected apps)
   },
   async staff(d) {
     let r;
@@ -3558,7 +3673,7 @@ const forms = {
     if (!r.ok) { msg.className = r.needCode ? 'muted' : 'error'; msg.textContent = r.error; return; }
     await hello();
     toast('Welcome back, ' + me.username + '!');
-    location.hash = '#/';
+    afterLogin();
   },
   async signup(f) {
     const msg = $('#loginMsg');
@@ -3569,7 +3684,7 @@ const forms = {
     if (!r.ok) { msg.className = 'error'; msg.textContent = r.error; return; }
     await hello();
     toast('Welcome to Guts&Bolts, ' + me.username + '! You\'re user #' + me.userId + '.', 6000);
-    location.hash = '#/';
+    afterLogin();
   },
   async upload(f) {
     const kind = f.kind.value, msg = $('#uploadMsg');

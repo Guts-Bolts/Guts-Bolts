@@ -92,6 +92,8 @@ void GbServer::step(int waitMs) {
 // ---------------------------------------------------------------------------
 
 json GbServer::handle(const json& req) {
+    if (isConnectOpen(req.value("op", std::string())))   // (ServerConnect.cpp: an app's server, not a person)
+        return connectOpen(req.value("op", std::string()), req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     User* me = nullptr;
     json bad = checkRequest(req, me);
     if (!bad.is_null()) return bad;
@@ -552,6 +554,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
     if (name.rfind("account.", 0) == 0) return accountOp(name, me, args);
     if (name.rfind("support.", 0) == 0) return supportOp(name, me, args);
+    if (name.rfind("connect.", 0) == 0) return connectOp(name, me, args);
     if (name.rfind("groups.", 0) == 0) return groupOp(name, me, args);
     if (name.rfind("forum.", 0) == 0) return forumOp(name, me, args);
     if (name.rfind("friends.", 0) == 0 || name.rfind("follow.", 0) == 0) return friendOp(name, me, args);
@@ -736,6 +739,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             return r;
         }
         if (name == "admin.mailTest") return fail("This server can't send email.");
+        if (name == "admin.connectApps" || name == "admin.connectSecret") return connectAdmin(name, me, args);
         // Featured games (worker/server.js has the same): staff pick games for the Featured row.
         if (name == "admin.feature") {
             auto it = findAsset(str("id"));
@@ -1857,6 +1861,7 @@ void GbServer::load() {
     }
     loadGroups();
     loadReports();
+    loadConnect();
     loadStaffLog();
     loadForum();
     loadTrades();

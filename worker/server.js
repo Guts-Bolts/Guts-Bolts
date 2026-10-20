@@ -199,6 +199,24 @@ const TRADE_DONE = ['accepted', 'declined', 'cancelled', 'expired', 'failed'];
 const kMaxShots = 5, kShotSize = 2 << 20;
 const webpFile = (d) => d.length > 12 && [0x52, 0x49, 0x46, 0x46].every((v, i) => d[i] === v) && [0x57, 0x45, 0x42, 0x50].every((v, i) => d[8 + i] === v);
 const pictureType = (d) => (pngSize(d) ? 'png' : jpgFile(d) ? 'jpg' : webpFile(d) ? 'webp' : '');
+// Connected apps: "Log in with Guts&Bolts" for partner apps (OAuth 2.0, the authorization code kind).
+//   1. The app sends you to /api/oauth/authorize?client_id=...&redirect_uri=...&state=..., which
+//      opens the website's Connect page (website/app/app.js pages.connect).
+//   2. You press Approve: the website sends you back to the app with a one-time code.
+//   3. The app swaps the code (with its client secret) for an access token: POST /api/oauth/token.
+//   4. With the token it asks who you are: GET /api/oauth/userinfo gives your user number,
+//      username and avatar picture (/avatar/<user number>.png). Nothing else.
+// worker/index.js turns those web addresses into the connect.* requests below. Each app's
+// secret is made on the Staff page (the official account only); the server keeps only its hash.
+// (src/server/ServerConnect.cpp has the same apps and rules.)
+export const CONNECT_APPS = {
+  lyreto: { name: 'Lyreto', site: 'https://lyreto.com', redirects: ['https://lyreto.com/api/connections/gutsandbolts/callback'] },
+};
+const kConnectCodeLife = 300;              // the one-time code: 5 minutes to swap it
+const kConnectTokenLife = 365 * 86400;     // an access token: a year, or until you disconnect the app
+const kMaxAvatarPicture = 256 << 10, kAvatarPictureSide = 512;
+// The requests that come from an app's server, not a signed-in person, so they aren't signed.
+export const CONNECT_OPEN = new Set(['connect.token', 'connect.userinfo', 'connect.avatarPicture']);
 // The forum (ServerForum.cpp has the same boards and limits). Boards are fixed; anyone can
 // read, signed-up players post, staff pin, lock and delete. Each thread keeps its posts, oldest first.
 const FORUM_BOARDS = [
@@ -570,7 +588,7 @@ export class GbServerObject extends DurableObject {
     this.name = env.SERVER_NAME || 'Guts&Bolts';
     this.users = new Map(); this.assets = new AssetMap(); this.groups = new Map(); this.forum = new Map();
     // What changed and needs writing (set up first: loading can already change things).
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false };
     for (const r of this.sql.exec('SELECT id, data FROM users')) this.users.set(r.id, JSON.parse(r.data));
     for (const r of this.sql.exec('SELECT id, data FROM assets')) {
       const a = JSON.parse(r.data);
@@ -587,6 +605,9 @@ export class GbServerObject extends DurableObject {
     this.reports = this.getMeta('reports', []);  // what players reported, for staff to look at (newest last)
     this.staffLog = this.getMeta('stafflog', []);   // what staff did, newest last
     this.tickets = this.getMeta('tickets', []);   // support tickets (like "I forgot my password"), newest last
+    // Connected apps: { secrets: {app: {hash, at}}, codes: [{hash, account, app, redirect, at}],
+    // tokens: [{hash, account, app, at, expires}], pictures: {account: when its avatar picture was saved} }
+    this.connect = Object.assign({ secrets: {}, codes: [], tokens: [], pictures: {} }, this.getMeta('connect', {}));
     const ids = this.getMeta('ids', { next: 2, taken: [] });
     this.nextUserId = Math.max(2, ids.next || 2);
     this.nextAssetNum = Math.max(1, ids.asset || 1);
@@ -683,11 +704,13 @@ export class GbServerObject extends DurableObject {
       }
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'tickets', JSON.stringify(this.tickets));
     }
+    if (this.dirty.connect)
+      this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'connect', JSON.stringify(this.connect));
     if (this.dirty.staffLog) {
       if (this.staffLog.length > kMaxStaffLog) this.staffLog.splice(0, this.staffLog.length - kMaxStaffLog);
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'stafflog', JSON.stringify(this.staffLog));
     }
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false };
   }
   // --- Limited items: numbered copies (a.copies = [{ serial, owner, price }]) ---
   copiesOf(u) {   // every limited copy this account holds
@@ -1418,6 +1441,7 @@ export class GbServerObject extends DurableObject {
 
   handle(req) {
     try {
+      if (CONNECT_OPEN.has(req.op)) return this.connectOpen(req.op, req.args && typeof req.args === 'object' && !Array.isArray(req.args) ? req.args : {});
       const c = this.checkRequest(req);
       if (c.bad) return c.bad;
       this.openGiftBoxes();
@@ -1531,6 +1555,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
     if (name.startsWith('appeal.')) return this.appealOp(name, me, args);
     if (name.startsWith('support.')) return this.supportOp(name, me, args);
+    if (name.startsWith('connect.')) return this.connectOp(name, me, args);
     // "I'm still here" (for friends' online dots); the answer keeps your account fresh
     // (a new warning, or Bolts someone sent you, shows up within a minute).
     if (name === 'ping') return okay({ me: this.meJson(me) });
@@ -2019,6 +2044,7 @@ export class GbServerObject extends DurableObject {
       if (name === 'admin.tickets') return okay({ tickets: this.ticketsJson(str(args, 'status') === 'closed' ? 'closed' : 'open') });
       if (name === 'admin.replyTicket' || name === 'admin.ticketReset' || name === 'admin.closeTicket') return this.ticketAdminOp(name, me, args);
       if (name === 'admin.mailStatus') return okay({ mail: this.mailStatus() });
+      if (name === 'admin.connectApps' || name === 'admin.connectSecret') return this.connectAdmin(name, me, args);
       if (name === 'admin.mailTest') {
         // Send a test email, to check the email settings work (the Staff page shows how it went).
         const to = lower(cleanText(str(args, 'email'), 254));
@@ -3070,6 +3096,7 @@ export class GbServerObject extends DurableObject {
     for (const x of this.tickets)   // email addresses left on support tickets
       if ((x.from === u.id || x.about === u.id) && (x.contact || x.code)) { x.contact = ''; delete x.code; this.dirty.tickets = true; }
     for (const k of u.keys || []) this.aliases.delete(k);   // devices logged in after a password reset
+    this.disconnectApps(u.id, '');   // connected apps (like Lyreto) lose their link, and the avatar picture goes
     // What's left: the ID (so its requests are refused), when it was made, and its Limited copies.
     const { id, created } = u;
     for (const k of Object.keys(u)) delete u[k];
@@ -3314,6 +3341,133 @@ export class GbServerObject extends DurableObject {
     }
     this.saveUser(u);
     return okay({ appeals: this.appealsJson('open') });
+  }
+
+  // --- Connected apps ("Log in with Guts&Bolts", see CONNECT_APPS; ServerConnect.cpp has the same) ---
+  connectApp(args) {   // the app and return address asked for, if both are ones we know
+    const id = str(args, 'client_id'), app = Object.hasOwn(CONNECT_APPS, id) ? CONNECT_APPS[id] : null;
+    if (!app) return { bad: fail('That app isn\'t one Guts&Bolts knows.') };
+    if (!app.redirects.includes(str(args, 'redirect_uri')))
+      return { bad: fail(app.name + ' asked to send you back to an address Guts&Bolts doesn\'t know, so it won\'t.') };
+    return { id, app };
+  }
+  liveTokens(account) {
+    const t = now();
+    return this.connect.tokens.filter((x) => x.account === account && x.expires > t);
+  }
+  // Take away apps' links to an account (one app, or every app with ''), and its avatar picture when none are left.
+  disconnectApps(account, app) {
+    this.connect.tokens = this.connect.tokens.filter((x) => x.account !== account || (app && x.app !== app));
+    if (!this.liveTokens(account).length && this.connect.pictures[account]) {
+      delete this.connect.pictures[account];
+      this.sql.exec('DELETE FROM files WHERE id = ?', 'avatar:' + account);
+    }
+    this.dirty.connect = true;
+  }
+  // The avatar picture apps show: a square PNG the website draws from your avatar (it can't be drawn here).
+  saveAvatarPicture(u, b64) {
+    const data = b64ToBytes(b64), size = pngSize(data);
+    if (!size || data.length > kMaxAvatarPicture || size[0] > kAvatarPictureSide || size[1] > kAvatarPictureSide)
+      return 'That avatar picture is too big, or isn\'t a PNG.';
+    this.writeFile('avatar:' + u.id, data);
+    this.connect.pictures[u.id] = now();
+    this.dirty.connect = true;
+    return '';
+  }
+  connectsJson(u) {
+    return this.liveTokens(u.id).filter((x) => CONNECT_APPS[x.app])
+      .map((x) => ({ id: x.app, name: CONNECT_APPS[x.app].name, site: CONNECT_APPS[x.app].site, at: x.at }));
+  }
+  // Signed requests from the website: the Connect page, and Settings > Connected apps.
+  connectOp(name, me, args) {
+    const t = now();
+    if (name === 'connect.app' || name === 'connect.approve') {
+      const c = this.connectApp(args);
+      if (c.bad) return c.bad;
+      if (!this.connect.secrets[c.id]) return fail(c.app.name + ' isn\'t set up on Guts&Bolts yet. Staff need to make its secret first.');
+      if (name === 'connect.app')
+        return okay({ app: { id: c.id, name: c.app.name, site: c.app.site }, connected: this.liveTokens(me.id).some((x) => x.app === c.id) });
+      if (str(args, 'picture')) {
+        const bad = this.saveAvatarPicture(me, str(args, 'picture'));
+        if (bad) return fail(bad);
+      }
+      const code = randomHex(24);
+      this.connect.codes = this.connect.codes.filter((x) => t - x.at < kConnectCodeLife && x.account !== me.id);
+      this.connect.codes.push({ hash: hashHex(code), account: me.id, app: c.id, redirect: str(args, 'redirect_uri'), at: t });
+      this.dirty.connect = true;
+      return okay({ code });
+    }
+    if (name === 'connect.list') return okay({ apps: this.connectsJson(me) });
+    if (name === 'connect.remove') {
+      this.disconnectApps(me.id, str(args, 'id'));
+      return okay({ apps: this.connectsJson(me) });
+    }
+    if (name === 'connect.picture') {   // a new look: the website sends a new picture, if any app is connected
+      if (!this.liveTokens(me.id).length) return okay({ saved: false });
+      const bad = this.saveAvatarPicture(me, str(args, 'picture'));
+      return bad ? fail(bad) : okay({ saved: true });
+    }
+    return fail('Unknown request.');
+  }
+  // Requests from an app's own server (not signed: the client secret or the access token proves who's asking).
+  // Failures carry `oauth`, the error word OAuth apps expect (worker/index.js sends it on).
+  connectOpen(name, args) {
+    const t = now(), oauthFail = (word, why) => Object.assign(fail(why), { oauth: word });
+    if (name === 'connect.token') {
+      if (str(args, 'grant_type') && str(args, 'grant_type') !== 'authorization_code')
+        return oauthFail('unsupported_grant_type', 'Only grant_type=authorization_code is supported.');
+      const id = str(args, 'client_id'), secret = this.connect.secrets[id];
+      if (!Object.hasOwn(CONNECT_APPS, id) || !secret || hashHex(str(args, 'client_secret')) !== secret.hash)
+        return oauthFail('invalid_client', 'Wrong client_id or client_secret.');
+      const hash = hashHex(str(args, 'code'));
+      const code = this.connect.codes.find((x) => x.hash === hash && x.app === id && t - x.at < kConnectCodeLife);
+      this.connect.codes = this.connect.codes.filter((x) => x !== code && t - x.at < kConnectCodeLife);   // every code works once
+      this.dirty.connect = true;
+      if (!code) return oauthFail('invalid_grant', 'That code is wrong, used or too old (they last 5 minutes).');
+      if (str(args, 'redirect_uri') && str(args, 'redirect_uri') !== code.redirect) return oauthFail('invalid_grant', 'redirect_uri doesn\'t match.');
+      const u = this.users.get(code.account);
+      if (!u || u.deleted || u.userId === 0) return oauthFail('invalid_grant', 'That account is gone.');
+      const token = 'gbt_' + randomHex(32);
+      this.connect.tokens = this.connect.tokens.filter((x) => x.expires > t && !(x.account === u.id && x.app === id));
+      this.connect.tokens.push({ hash: hashHex(token), account: u.id, app: id, at: t, expires: t + kConnectTokenLife });
+      return okay({ access_token: token, token_type: 'Bearer', expires_in: kConnectTokenLife, scope: 'identify' });
+    }
+    if (name === 'connect.userinfo') {
+      const hash = hashHex(str(args, 'token'));
+      const tok = str(args, 'token') ? this.connect.tokens.find((x) => x.hash === hash && x.expires > t) : null;
+      const u = tok ? this.users.get(tok.account) : null;
+      if (!u || u.deleted) return oauthFail('invalid_token', 'That access token is wrong, too old, or the person disconnected the app.');
+      const origin = /^https?:\/\/[a-z0-9.:-]+$/i.test(str(args, 'origin')) ? str(args, 'origin') : 'https://gutsandbolts.net';
+      const pic = this.connect.pictures[u.id];
+      return okay({ user: { id: String(u.userId), username: u.username, avatar: pic ? origin + '/avatar/' + u.userId + '.png?v=' + pic : null } });
+    }
+    if (name === 'connect.avatarPicture') {   // (worker/index.js serves /avatar/<user number>.png with it)
+      const n = Number(str(args, 'id'));
+      const u = Number.isInteger(n) ? this.findUserId(n) : null;
+      const data = u && !u.deleted && this.connect.pictures[u.id] ? this.readFile('avatar:' + u.id) : null;
+      return data ? okay({ data: bytesToB64(data) }) : fail('No picture.');
+    }
+    return fail('Unknown request.');
+  }
+  // The Staff page's Connected apps box (official account only): each app's secret is made here,
+  // shown once, and only its hash is kept. A new secret replaces the old one straight away.
+  connectAdmin(name, me, args) {
+    if (!this.isOfficial(me)) return fail('Only the official Guts account can do that.');
+    if (name === 'admin.connectSecret') {
+      const id = str(args, 'id');
+      if (!Object.hasOwn(CONNECT_APPS, id)) return fail('That app isn\'t one Guts&Bolts knows.');
+      const secret = 'gbs_' + randomHex(32);
+      this.connect.secrets[id] = { hash: hashHex(secret), at: now() };
+      this.dirty.connect = true;
+      this.staffDid(me, 'connect', 'Made a new client secret for ' + CONNECT_APPS[id].name);
+      return okay({ secret, apps: this.connectAppsJson() });
+    }
+    return okay({ apps: this.connectAppsJson() });
+  }
+  connectAppsJson() {
+    const t = now();
+    return Object.entries(CONNECT_APPS).map(([id, app]) => ({ id, name: app.name, site: app.site, redirects: app.redirects,
+      secretAt: (this.connect.secrets[id] || {}).at || 0, people: this.connect.tokens.filter((x) => x.app === id && x.expires > t).length }));
   }
 
   // --- Support tickets (ServerSupport.cpp has the same) ---
@@ -4276,6 +4430,13 @@ export class GbServerObject extends DurableObject {
       if (!data) return new Response('No picture.', { status: 404 });
       const type = { png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' }[pictureType(data)] || 'application/octet-stream';
       return new Response(data, { headers: { 'content-type': type, 'cache-control': 'public, max-age=31536000, immutable', 'x-content-type-options': 'nosniff' } });
+    }
+    // GET /avatar/<user number>.png: the avatar picture connected apps (like Lyreto) show. Only
+    // people who connected an app have one.
+    if (url.pathname.startsWith('/avatar/')) {
+      const r = this.connectOpen('connect.avatarPicture', { id: url.pathname.slice(8).replace(/\.png$/, '') });
+      if (!r.ok) return new Response('No picture.', { status: 404 });
+      return new Response(b64ToBytes(r.data), { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
     }
     // GET /thumb/<asset id> and /icon/<asset id>: a game's picture and icon (public, so pages can show them directly).
     if (url.pathname.startsWith('/thumb/') || url.pathname.startsWith('/icon/')) {
