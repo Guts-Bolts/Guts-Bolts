@@ -11,7 +11,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'fine-print', name: 'The Fine Print', time: 1792537200, tag: 'Website',
+    id: 'fine-print', name: 'The Fine Print', time: 1792541400, tag: 'Website',
     summary: 'A much fuller Terms of Service, still in plain words: what Bolts are (and aren\'t), trading, what you make, bans and appeals.',
     items: [
       'Bolts and items have no real-money value, can\'t be cashed out, and what you spend them on is final. Real-money trading isn\'t allowed',
