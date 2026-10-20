@@ -156,12 +156,15 @@ function pieces(model, av, items) {
   // A Studio-made hat or hair takes the place of the built-in hat (Player::hideBuiltInHat).
   if ((items || []).some((it) => isModelAccessory(it) && (it.kind === 'hat' || it.kind === 'hair'))) hat = 0;
   const out = [];
+  // A Headless Head bundle (meta.headless): no head, so no face either (Player::setHeadless).
+  const headless = (items || []).some((it) => it && it.kind === 'bundle' && it.meta && it.meta.headless);
   // Clothing pictures (Player::applyClothing): the shirt on the torso and arms, the
   // pants on the legs (and on the torso when there's no shirt).
   const shirt = clothOf(items, 'shirt'), pants = clothOf(items, 'pants');
   const clothFor = { torso: shirt ? 1 : pants ? 2 : 0, leftArm: shirt ? 1 : 0, rightArm: shirt ? 1 : 0, leftLeg: pants ? 2 : 0, rightLeg: pants ? 2 : 0 };
   for (const [name, part] of Object.entries(model)) {
     const key = PART_OF[name];
+    if (key === 'head' && headless) continue;
     if (key) out.push({ mesh: part, color: col[key], face: name === 'Head', torso: name === 'Torso', cloth: clothFor[key] || 0 });
   }
   // The face is a flat picture painted onto the front of the head (see FS / faceTexture).

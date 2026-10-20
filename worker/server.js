@@ -40,9 +40,9 @@ const REVIEWED_KINDS = ['decal', 'audio', 'tshirt'];
 const kCreatorSharePercent = 70;
 const kMaxNotes = 50;   // notifications kept per account (the bell)
 const KINDS = ['hat', 'shirt', 'pants', 'audio', 'plugin', 'game', 'decal', 'model', 'hair', 'faceacc', 'neck', 'shoulder', 'waist', 'face', 'tshirt', 'gear', 'animation',
-  'emote', 'animpack'];
+  'emote', 'animpack', 'bundle'];
 const FEE = { hat: 10, shirt: 10, pants: 10, audio: 20, plugin: 20, game: 0, decal: 5, model: 0,
-  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0, emote: 0, animpack: 0 };
+  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0, emote: 0, animpack: 0, bundle: 0 };
 // Accessories: things worn on the body, made (and placed on a mannequin) in Studio's
 // Accessory window. Verified creators only. Faces are pictures, and only Guts makes them.
 const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
@@ -75,13 +75,18 @@ const kMostGear = 4;
 const isEmoteItem = (k) => k === 'emote' || k === 'animpack';
 const kEmoteSlots = 8;
 const PACK_STATES = ['idle', 'walk', 'run', 'jump', 'fall'];
-const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k);   // sold in the catalog
+// Bundles: a pack of catalog items sold together (buying one gives you everything in it), and
+// maybe a body change: meta.headless hides the head and face (like the Headless Head). Worn like
+// clothes; only staff make them. meta.items lists what's in it. (src/server has the same rules.)
+const kBundleMost = 12;   // items in one bundle
+const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k) || k === 'bundle';   // sold in the catalog
 // Inventory on profiles: what someone owns from the catalog, in these groups. (src/server has the same.)
-const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'gear', 'emotes', 'limited'];
+const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'bundles', 'gear', 'emotes', 'limited'];
 function inventoryCat(cat, a) {
   if (cat === 'accessories') return isAccessory(a.kind);
   if (cat === 'clothing') return a.kind === 'shirt' || a.kind === 'pants' || a.kind === 'tshirt';
   if (cat === 'faces') return a.kind === 'face';
+  if (cat === 'bundles') return a.kind === 'bundle';
   if (cat === 'gear') return a.kind === 'gear';
   if (cat === 'emotes') return isEmoteItem(a.kind);
   if (cat === 'limited') return !!a.limited;
@@ -513,6 +518,7 @@ function totpCheck(secret, code, t, lastStep = -1) {
 // The Verified Hat: everyone who confirms their email gets one (an original
 // Guts&Bolts cap with our blue check, not a copy of anything). Server.cpp makes the same one.
 const VERIFIED_HAT_ID = 'item-verified-hat';
+const HEADLESS_HEAD_ID = 'item-headless-head';
 // Gutstober: Guts&Bolts' Halloween month (all of October). Things made for it, like
 // the Pumpkin hat, are timed items: they go off sale when it ends (midnight UTC,
 // November 1st).
@@ -621,6 +627,7 @@ export class GbServerObject extends DurableObject {
     for (const u of this.users.values()) this.gutsFollows(u);
     this.addExampleGames();
     this.addVerifiedHat();
+    this.addHeadlessHead();
     this.addStarterEmotes();
     this.timeGutstoberItems();
     this.numberAssets();
@@ -1219,6 +1226,7 @@ export class GbServerObject extends DurableObject {
       const give = (u) => {
         if (!u || u.owned.includes(gift.id)) return;
         u.owned.push(gift.id);
+        this.giveBundle(u, gift);
         gift.sales++;
         this.saveAsset(gift); this.saveUser(u);
         this.notify(u, 'gift', 'Your ' + box.name + ' opened! You got ' + gift.name + '.', gift.id);
@@ -1241,6 +1249,48 @@ export class GbServerObject extends DurableObject {
     if (!a || !u.emailVerified || u.owned.includes(a.id)) return;
     u.owned.push(a.id);
     a.sales++;
+    this.saveAsset(a);
+  }
+
+  // A bundle's items (meta.items from an upload): ids of catalog items that exist, no repeats,
+  // no bundles inside bundles, nothing Limited (numbered copies can't be handed out). A string
+  // says what's wrong.
+  bundleItems(list) {
+    if (list === undefined) return [];
+    if (!Array.isArray(list)) return 'That bundle\'s item list looks wrong.';
+    const out = [];
+    for (const raw of list) {
+      const id = String(raw).trim();
+      const it = this.assets.get(id);
+      if (!it || !isCatalogItem(it.kind)) return 'There\'s no catalog item with ID ' + id + '.';
+      if (it.kind === 'bundle') return 'A bundle can\'t have another bundle in it.';
+      if (it.limited) return it.name + ' is Limited, so it can\'t go in a bundle.';
+      if (!out.includes(it.id)) out.push(it.id);
+    }
+    if (out.length > kBundleMost) return 'A bundle can have at most ' + kBundleMost + ' items.';
+    return out;
+  }
+  // Someone just got a bundle: they get everything in it too (things they already have are skipped).
+  giveBundle(u, a) {
+    if (!a || a.kind !== 'bundle') return;
+    for (const id of (a.meta && a.meta.items) || []) {
+      const it = this.assets.get(id);
+      if (!it || it.limited || u.owned.includes(id)) continue;
+      u.owned.push(id);
+    }
+  }
+  // The Headless Head (see HEADLESS_HEAD_ID): a bundle that hides your head and face. Added
+  // once, owned by Guts; staff can change its price and words afterwards like any item.
+  addHeadlessHead() {
+    if (!this.official) return;
+    let a = this.assets.get(HEADLESS_HEAD_ID);
+    if (a) return;
+    const data = new TextEncoder().encode(JSON.stringify({ format: 'gbbundle', items: [], headless: true }));
+    a = { id: HEADLESS_HEAD_ID, kind: 'bundle', name: 'Headless Head', creator: this.official, price: 3100, created: now(), sales: 0,
+      plays: 0, size: data.length, meta: { items: [], headless: true }, builtin: true, likes: 0, dislikes: 0,
+      description: 'Who needs a head anyway? Wear it and your head (and face) disappear, leaving just your hat floating there.' };
+    this.writeFile(a.id, data);
+    this.assets.set(a.id, a);
     this.saveAsset(a);
   }
 
@@ -2127,6 +2177,7 @@ export class GbServerObject extends DurableObject {
       if (kind === 'face' && !this.isOfficial(me)) return fail('Only Guts can make faces.');
       if (kind === 'gear' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make gear.');
       if (isEmoteItem(kind) && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make emotes and animation packs.');
+      if (kind === 'bundle' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make bundles.');
       let price = clamp(num(args, 'price'), 0, 1000000);
       if (kind === 'game' || alwaysFree(kind)) price = 0;
       if (price > 0 && !verified) return fail('Only Verified creators can sell things. Upload it for free, or get Verified!');
@@ -2176,6 +2227,16 @@ export class GbServerObject extends DurableObject {
         try { acc = JSON.parse(new TextDecoder().decode(data)); } catch { acc = null; }
         if (!acc || acc.format !== 'gbaccessory' || !acc.node) return fail('That isn\'t a Guts&Bolts accessory. Make it in Studio\'s Accessory window.');
         meta.model = true;
+      }
+      if (kind === 'bundle') {
+        const items = this.bundleItems(meta.items);
+        if (typeof items === 'string') return fail(items);
+        const headless = meta.headless === true;
+        if (!items.length && !headless) return fail('Put at least one item in the bundle (or make it a Headless Head).');
+        for (const k of Object.keys(meta)) delete meta[k];
+        meta.items = items;
+        if (headless) meta.headless = true;
+        data = new TextEncoder().encode(JSON.stringify({ format: 'gbbundle', items, headless }));
       }
       if (kind === 'face') {
         if (!pngSize(data)) return fail('Faces must be .png pictures (see-through around the face).');
@@ -2513,6 +2574,7 @@ export class GbServerObject extends DurableObject {
       if (a.creator !== me.id) this.tally(a, 'sales');
       if (a.limited) { a.copies = a.copies || []; a.copies.push({ serial: a.sales, owner: me.id, price: 0 }); }
       me.owned.push(a.id);
+      this.giveBundle(me, a);
       this.saveAsset(a); this.saveUser(me);
       return okay({ me: this.meJson(me) });
     }
@@ -2546,6 +2608,7 @@ export class GbServerObject extends DurableObject {
       a.sales++;
       if (a.creator !== to.id) this.tally(a, 'sales');
       to.owned.push(a.id);
+      this.giveBundle(to, a);
       this.notify(to, 'gift', me.name + ' sent you a gift: ' + a.name + '!' + (note ? ' "' + note + '"' : ''), a.id);
       this.saveAsset(a); this.saveUser(me, to);
       return okay({ me: this.meJson(me), to: this.publicUser(to) });
@@ -2631,6 +2694,7 @@ export class GbServerObject extends DurableObject {
       if (!u || u.userId === 0) return fail('There\'s nobody called that.');
       if (u.owned.includes(a.id)) return fail(u.name + ' already has it.');
       u.owned.push(a.id);
+      this.giveBundle(u, a);
       a.sales++;
       this.saveAsset(a); this.saveUser(u);
       this.notify(u, 'gift', 'Guts&Bolts staff gave you ' + a.name + '!', a.id);

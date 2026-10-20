@@ -39,7 +39,10 @@ inline constexpr size_t kMaxDecal  = 4u * 1024u * 1024u;   // a .png or .jpg pic
 // Kinds of things people upload.
 bool        validKind(const std::string& kind);        // hat, shirt, pants, audio, plugin, game, decal
 bool        isClothing(const std::string& kind);       // anything you wear (clothes, accessories, faces)
-bool        isCatalogItem(const std::string& kind);    // sold in the catalog: clothing and gear
+bool        isCatalogItem(const std::string& kind);    // sold in the catalog: clothing, gear, emotes and bundles
+// Bundles: a pack of catalog items sold together (buying one gives you everything in it), and
+// maybe a body change: meta.headless hides the head and face. Only staff make them.
+constexpr int kBundleMost = 12;                        // items in one bundle
 std::string gearProblem(const std::string& data);      // "" if it's one Tool from Studio
 constexpr int kMostGear = 4;                           // gear equipped at once
 // Emotes and animation packs: keyframes for the character, sold in the catalog. Only staff
