@@ -12,13 +12,13 @@ namespace Online {
 
 bool validKind(const std::string& k) {
     return k == "shirt" || k == "pants" || k == "audio" || k == "plugin" || k == "game" || k == "decal" ||
-           k == "model" || k == "face" || k == "tshirt" || k == "gear" || k == "animation" || isEmoteItem(k) || isAccessory(k);
+           k == "model" || k == "face" || k == "tshirt" || k == "gear" || k == "animation" || k == "bundle" || isEmoteItem(k) || isAccessory(k);
 }
 bool isAccessory(const std::string& k) {
     return k == "hat" || k == "hair" || k == "faceacc" || k == "neck" || k == "shoulder" || k == "waist";
 }
 bool isClothing(const std::string& k) { return k == "shirt" || k == "pants" || k == "tshirt" || k == "face" || isAccessory(k); }
-bool isCatalogItem(const std::string& k) { return isClothing(k) || k == "gear" || isEmoteItem(k); }
+bool isCatalogItem(const std::string& k) { return isClothing(k) || k == "gear" || isEmoteItem(k) || k == "bundle"; }
 bool isEmoteItem(const std::string& k) { return k == "emote" || k == "animpack"; }
 // A clip needs keyframes, and at most 30 seconds of them (worker/server.js clipProblem). "" if it's fine.
 static std::string clipProblem(const nlohmann::json& c) {
@@ -122,6 +122,7 @@ const char* kindTitle(const std::string& k) {
     if (k == "emote") return "Emote";
     if (k == "animpack") return "Animation Pack";
     if (k == "gamepass") return "Game Pass";
+    if (k == "bundle") return "Bundle";
     return "?";
 }
 

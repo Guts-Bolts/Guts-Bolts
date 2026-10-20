@@ -10,6 +10,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'off-with-your-head', name: 'Off With Your Head', version: '0.7.3', time: 1792456724, tag: 'Website',
+    summary: 'Bundles are here: packs of items sold together, starting with the Headless Head for 3,100 Bolts.',
+    items: [
+      'Bundles: a pack of catalog items in one buy, and you get everything inside it',
+      'Wearing a bundle on the Avatar page puts on everything in it (you can still take pieces off one by one)',
+      'The Headless Head is the first one: wear it and your head and face vanish, so your hat just floats there',
+      'Headless shows everywhere: the website, your profile, the Player app and in games for everyone else',
+      'Find bundles under Body Parts > Bundles in the Catalog, and in a Bundles tab in your inventory',
+      'Staff make new bundles from Create > Bundles',
+    ],
+  },
+  {
     id: 'hello-from-the-other-server', name: 'Hello From the Other Server', version: '0.7.2', time: 1792450920, tag: 'Website',
     summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
     items: [

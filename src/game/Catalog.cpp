@@ -78,6 +78,7 @@ const char* typeName(Type t) {
         case Type::Gear:     return "Gear";
         case Type::Emote:    return "Emote";
         case Type::AnimPack: return "AnimPack";
+        case Type::Bundle:   return "Bundle";
         default:          return "?";
     }
 }
@@ -147,7 +148,7 @@ Item fromServer(const json& a) {
     it.type = kind == "hat" ? Type::Hat : kind == "shirt" ? Type::Shirt : kind == "pants" ? Type::Pants
             : kind == "hair" ? Type::Hair : kind == "faceacc" ? Type::FaceAcc : kind == "neck" ? Type::Neck
             : kind == "shoulder" ? Type::Shoulder : kind == "waist" ? Type::Waist : kind == "tshirt" ? Type::TShirt : kind == "gear" ? Type::Gear
-            : kind == "emote" ? Type::Emote : kind == "animpack" ? Type::AnimPack : Type::Face;
+            : kind == "emote" ? Type::Emote : kind == "animpack" ? Type::AnimPack : kind == "bundle" ? Type::Bundle : Type::Face;
     it.price = a.value("price", 0LL);
     it.created = a.value("created", 0LL);
     if (a.contains("meta") && a["meta"].is_object()) {
@@ -155,6 +156,7 @@ Item fromServer(const json& a) {
         it.hat = (HatStyle)std::clamp(m.value("style", 2), 1, 3);
         if (m.value("image", false) && it.type != Type::Hat) it.image = "gb:" + it.id;
         if (m.value("model", false)) it.model = "gb:" + it.id;
+        it.headless = it.type == Type::Bundle && m.value("headless", false) == true;
         if (m.contains("color") && m["color"].is_array() && m["color"].size() == 3)
             it.color = {m["color"][0].get<int>() / 255.0f, m["color"][1].get<int>() / 255.0f, m["color"][2].get<int>() / 255.0f};
     }
@@ -198,6 +200,9 @@ void applyLook(const Item& it) {
         case Type::Face:
             me.faceImage = it.image;
             break;
+        case Type::Bundle:
+            me.headless = it.headless;
+            break;
         case Type::TShirt:
             me.tshirtImage = it.image;
             break;
@@ -240,6 +245,7 @@ void takeOff(const Item& it) {
             if (auto a = me.accessories.find(it.kind); a != me.accessories.end() && a->second == it.model) me.accessories.erase(a);
             break;
         case Type::Face:   if (me.faceImage == it.image) me.faceImage.clear(); break;
+        case Type::Bundle: if (it.headless) me.headless = false; break;
         case Type::TShirt: if (me.tshirtImage == it.image) me.tshirtImage.clear(); break;
         case Type::Shirt:  if (me.shirtImage == it.image) me.shirtImage.clear(); break;
         case Type::Pants:  if (me.pantsImage == it.image) me.pantsImage.clear(); break;

@@ -294,6 +294,10 @@ private:
 
     // Files
     void load();
+    // Bundles (worker/server.js bundleItems / giveBundle): a bundle's item list ("" + the ids, or
+    // what's wrong), and handing out what's in one to someone who just got it.
+    std::string bundleItems(const nlohmann::json& list, std::vector<std::string>& out) const;
+    void giveBundle(User& u, const Asset& a);
     void addStarterEmotes();  // the starter emotes and animation packs (assets/emotes), as the staff account's
     void addExampleGames();   // the games folder's example games, as the staff account's
     void saveUsers();
