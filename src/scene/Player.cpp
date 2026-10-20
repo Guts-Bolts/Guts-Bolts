@@ -73,6 +73,7 @@ void Player::build() {
     applyClothing(r, m_shirt, m_pants, m_tshirt);
     applyAccessories(*m_scene, r, m_accessories);
     applyFace(*m_scene, r, m_face);
+    applyHeadless(r, m_headless);
     m_scene->markDirty();
 }
 
@@ -150,6 +151,15 @@ void Player::applyFace(Scene& scene, SceneNode* r, const std::string& face) {
     removeOldFace(scene, head);
     head->texture = picture ? face : std::string(Textures::kClassicFace);
     scene.markDirty();
+}
+
+void Player::setHeadless(bool on) {
+    m_headless = on;
+    if (SceneNode* r = root()) { applyHeadless(r, on); m_scene->markDirty(); }
+}
+
+void Player::applyHeadless(SceneNode* r, bool on) {
+    if (SceneNode* head = r->findChild("Head")) head->transparency = on ? 1.0f : 0.0f;
 }
 
 void Player::removeOldFace(Scene& scene, SceneNode* head) {

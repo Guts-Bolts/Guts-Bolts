@@ -28,10 +28,12 @@ function show(content) { view.innerHTML = content.s; setTimeout(() => upgradeIte
 const view = $('#view');
 const KINDS = { hat: 'Hat', shirt: 'Shirt', pants: 'Pants', audio: 'Audio', plugin: 'Plugin', game: 'Game', decal: 'Decal', model: 'Model',
   hair: 'Hair', faceacc: 'Face Accessory', neck: 'Neck Accessory', shoulder: 'Shoulder Accessory', waist: 'Waist Accessory', face: 'Face',
-  tshirt: 'T-Shirt', gear: 'Gear', animation: 'Animation', emote: 'Emote', animpack: 'Animation Pack' };
+  tshirt: 'T-Shirt', gear: 'Gear', animation: 'Animation', emote: 'Emote', animpack: 'Animation Pack', bundle: 'Bundle' };
 // Things you wear on the body, made in Studio's Accessory window (old-style hats are just a shape).
 const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
-const WEARABLE = ['shirt', 'pants', 'tshirt', 'face', ...ACCESSORIES];
+// Bundles: a pack of items sold together (you get them all), maybe with a body change: meta.headless hides the head.
+const WEARABLE = ['shirt', 'pants', 'tshirt', 'face', ...ACCESSORIES, 'bundle'];
+const isHeadless = (items) => (items || []).some((it) => it && it.kind === 'bundle' && it.meta && it.meta.headless);
 // An asset's ID, the way people see and type it: its number (like Roblox's), or the old ID for anything that hasn't got one.
 const assetNum = (a) => String(a.num || a.id);
 // Emotes and animation packs: moves for your character, equipped on the Avatar page (8 emote slots, 1 pack).
@@ -191,10 +193,11 @@ function avatarSvg(av, size = 160, items = [], head = false) {
     4: `<path d="M35 20 Q35 9 50 9 Q65 9 65 20 Q58 14 50 15 Q42 14 35 20 Z" fill="${hatCol}"/><circle cx="50" cy="6" r="6" fill="${hatCol}"/>`,
   };
   const box = head ? '28 -6 44 44' : '0 -8 100 128', tall = head ? size : size * 1.28;
-  const svg = `<svg viewBox="${box}" width="${size}" height="${tall}" role="img" aria-label="Avatar">
-    <rect x="37" y="12" width="26" height="22" rx="4" fill="${col.head}" stroke="rgba(0,0,0,.25)"/>
+  const headPart = isHeadless(items) ? '' : `<rect x="37" y="12" width="26" height="22" rx="4" fill="${col.head}" stroke="rgba(0,0,0,.25)"/>
     <ellipse cx="47.5" cy="19.5" rx="1.3" ry="2.4" fill="#111"/><ellipse cx="52.5" cy="19.5" rx="1.3" ry="2.4" fill="#111"/>
-    <path d="M44.5 24.5 Q46 30.5 50 30.5 Q54 30.5 55.5 24.5" stroke="#111" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <path d="M44.5 24.5 Q46 30.5 50 30.5 Q54 30.5 55.5 24.5" stroke="#111" stroke-width="1.8" fill="none" stroke-linecap="round"/>`;
+  const svg = `<svg viewBox="${box}" width="${size}" height="${tall}" role="img" aria-label="Avatar">
+    ${headPart}
     <rect x="30" y="35" width="40" height="38" fill="${col.torso}" stroke="rgba(0,0,0,.25)"/>
     <rect x="12" y="35" width="17" height="38" fill="${col.rightArm}" stroke="rgba(0,0,0,.25)"/>
     <rect x="71" y="35" width="17" height="38" fill="${col.leftArm}" stroke="rgba(0,0,0,.25)"/>
@@ -1316,12 +1319,12 @@ function commentsBlock(g, cr) {
 // The Catalog, laid out like the old one (see browsePage).
 const CATALOG_CATS = [['featured', 'Featured'], ['collectibles', 'Collectibles'], '-', ['all', 'All Categories'],
   ['clothes', 'Clothing', [['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants']]],
-  ['body', 'Body Parts', [['face', 'Faces']]], ['gear', 'Gear'],
+  ['body', 'Body Parts', [['face', 'Faces'], ['bundle', 'Bundles']]], ['gear', 'Gear'],
   ['emotes', 'Emotes', [['emote', 'Emotes'], ['animpack', 'Animation Packs']]],
   ['accessories', 'Accessories', [['hat', 'Hats'], ['hair', 'Hair'], ['faceacc', 'Face'], ['neck', 'Neck'], ['shoulder', 'Shoulder'], ['waist', 'Waist']]]];
 const CATALOG_PICK = {
   featured: (a) => a.creatorStaff, collectibles: (a) => !!a.limited, all: () => true,
-  clothes: (a) => ['shirt', 'tshirt', 'pants'].includes(a.kind), body: (a) => a.kind === 'face', accessories: (a) => ACCESSORIES.includes(a.kind),
+  clothes: (a) => ['shirt', 'tshirt', 'pants'].includes(a.kind), body: (a) => a.kind === 'face' || a.kind === 'bundle', accessories: (a) => ACCESSORIES.includes(a.kind),
   emotes: (a) => isEmoteItem(a.kind),
 };
 const PRICES = { free: [0, 0], '1-100': [1, 100], '101-1000': [101, 1000], over: [1001, Infinity] };
@@ -1364,6 +1367,9 @@ pages.item = async (id) => {
   const canEdit = signedIn() && (a.creator === me.id || me.staff);
   const L = a.limited;
   const copies = L ? ((await pageCall('item.copies', { id: a.id })).copies || []) : [];
+  // A bundle: what's in it (each one gets its own page).
+  const inBundle = a.kind === 'bundle' ? (await Promise.all(((a.meta && a.meta.items) || []).map((i) => pageCall('asset.info', { id: i }))))
+    .filter((x) => x.ok).map((x) => x.asset) : [];
   const forSale = copies.filter((c) => c.price > 0 && !c.mine).sort((x, y) => x.price - y.price);
   const mineCopies = copies.filter((c) => c.mine);
   const soldOut = L && L.left <= 0;
@@ -1415,6 +1421,9 @@ pages.item = async (id) => {
           <p class="small muted">Type: ${KINDS[a.kind]} · Asset ID ${assetNum(a)}</p>
           ${a.exclusive ? html`<p class="small"><b>Exclusive:</b> not in the catalog and can't be bought. It comes from events and gift boxes.</p>` : ''}
           ${a.gift ? html`<p class="small"><b>🎁 Gift box:</b> everyone who owns this when it goes off sale gets a surprise item.${a.giftItem ? html` <span class="muted">(Staff: it gives <a href="#/item/${a.giftItem.id}">${a.giftItem.name}</a>.)</span>` : ''}</p>` : ''}
+          ${a.kind === 'bundle' ? html`<p class="small"><b>In this bundle:</b> ${inBundle.length
+              ? inBundle.map((x, i) => html`${i ? ', ' : ''}<a href="#/item/${x.id}">${x.name}</a>`) : html`<span class="muted">just itself</span>`}.
+            ${a.meta && a.meta.headless ? 'Wearing it hides your head and face.' : ''} Buying it gives you everything in it; wear it on the <a href="#/avatar">Avatar</a> page.</p>` : ''}
           ${a.kind === 'gear' ? html`<p class="small muted">Equipped gear goes in your backpack in games that allow gear (up to 4 at once).</p>`
             : a.kind === 'emote' ? html`<p class="small muted">Put it in one of your 8 emote slots, then press B in any game (or tap the smiley on a phone) and pick it. You can also type /e and its name in the chat.</p>`
             : a.kind === 'animpack' ? html`<p class="small muted">An animation pack changes how your character stands, walks, runs, jumps and falls, in every game.</p>`
@@ -1521,7 +1530,7 @@ async function decalPicture(img) {
 
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ...(signedIn() && me.official ? [['face', 'Faces']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
@@ -1536,7 +1545,7 @@ pages.create = async (tab = 'games') => {
     : me.verified ? html`<b>You're Verified!</b> Uploading is free, with no daily limit, and you can sell what you make.`
     : html`Uploading costs a few Bolts (decals 5, clothes 10, audio 20, plugins 20; games are free).
       <span class="muted">${me.uploadsLeft} uploads left today.</span>`;
-  const clothing = ['shirt', 'pants'].includes(kind), face = kind === 'face', tee = kind === 'tshirt';
+  const clothing = ['shirt', 'pants'].includes(kind), face = kind === 'face', tee = kind === 'tshirt', bundle = kind === 'bundle';
   const accept = { decal: '.png,.jpg,.jpeg', audio: '.mp3,.wav,.ogg,.flac', plugin: '.lua', game: '.gbscene' }[kind] || '';
   const form = html`<h2>${kind === 'game' ? 'Publish a game' : 'Upload a new ' + KINDS[kind]}</h2>
     <form class="form" data-form="upload"><input type="hidden" name="kind" value="${kind}">
@@ -1550,11 +1559,15 @@ pages.create = async (tab = 'games') => {
           Square pictures fit best; see-through bits show the shirt underneath.</p>`
       : face ? html`<label>Picture</label><input type="file" name="file" accept="image/png" required>
         <p class="small muted">A square .png of the face, see-through around the eyes and mouth (like 256 x 256). It's drawn on the front of the head.</p>`
+      : bundle ? html`<label>Items in it <span class="muted small">(their IDs, with commas between)</span></label>
+        <input type="text" name="items" placeholder="like 85, 102, 230">
+        <p class="small muted">Up to 12 catalog items. Buying the bundle gives you all of them, and wearing it puts them all on.</p>
+        <label style="font-weight:normal"><input type="checkbox" name="headless"> Headless: wearing it hides the head and face</label>`
       : html`<label>File</label><input type="file" name="file" accept="${accept}" required>
         <p class="small muted">${{ decal: 'A .png or .jpg picture (up to 4 MB).', audio: 'An .mp3, .wav, .ogg or .flac file (up to 6 MB).',
           plugin: 'A Lua plugin for Studio.', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).' }[kind]}</p>`}
       ${['decal', 'audio'].includes(kind) ? html`<p class="small muted">${kind === 'decal' ? 'Decals' : 'Sounds'} are always free: anyone can use them in their games.</p>`
-        : (me.verified || face) && kind !== 'game' ? html`<label>Price (Bolts)</label><input type="number" name="price" min="0" value="0">` : ''}
+        : (me.verified || face || bundle) && kind !== 'game' ? html`<label>Price (Bolts)</label><input type="number" name="price" min="0" value="0">` : ''}
       ${kind === 'decal' || face || tee ? html`<img class="thumb" id="preview" alt="Preview" hidden style="width:120px;height:120px;margin-top:10px">` : ''}
       <p><button class="btn green">${FEES[kind] && !me.verified ? 'Upload for ' + FEES[kind] + ' Bolts' : 'Upload (free)'}</button>
         <span id="uploadMsg"></span></p></form>`;
@@ -1563,12 +1576,13 @@ pages.create = async (tab = 'games') => {
   const shownForm = hatLocked ? html`<h2>Upload a new Hat</h2><p class="error">Only Verified creators can make hats.</p>
     <p class="muted">You can still make <a href="#/create/shirt">shirts</a> and <a href="#/create/pants">pants</a>!</p>`
     : face && !(signedIn() && me.official) ? html`<p class="error">Only Guts can make faces.</p>`
+    : bundle && !(signedIn() && me.staff) ? html`<p class="error">Only Guts&Bolts staff can make bundles.</p>`
     : kind === 'hat' ? html`<h2>Upload a new Hat</h2><p>Hats are made in <b>Studio</b>: build the hat, then use
       <b>Avatar &gt; Accessories</b> to place it on the head and upload it from there.</p>` : form;
   const row = (a) => html`<div>
       ${a.kind === 'game' ? gameIcon(a, 48) : ''}
       ${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="">` : ''}
-      ${clothing || face || kind === 'hat' ? html`<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#fff">${itemIcon(a)}</div>` : ''}
+      ${clothing || face || bundle || kind === 'hat' ? html`<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#fff">${itemIcon(a)}</div>` : ''}
       <div class="grow"><b>${a.kind === 'decal' || a.kind === 'audio' || a.kind === 'plugin' ? html`<a href="#/library/${assetNum(a)}">${a.name}</a>` : a.name}</b><br><span class="small muted">
         ${a.kind === 'game' ? html`${a.plays} plays · ${ACCESS_NAMES[a.access || 'public']}` : html`${a.price > 0 ? bolts(a.price) : 'free'} · ${a.sales} sold`}
         ${a.kind === 'decal' || a.kind === 'audio' ? html` · ID ${assetNum(a)}` : ''}</span></div>
@@ -1878,7 +1892,7 @@ async function peoplePage(id, which, page) {
 }
 
 // Someone's inventory: #/user/5/inventory (or /inventory/limited/2 for a group and a page).
-const INVENTORY_TABS = [['all', 'All'], ['accessories', 'Accessories'], ['clothing', 'Clothing'], ['faces', 'Faces'], ['gear', 'Gear'], ['emotes', 'Emotes'], ['limited', 'Limiteds']];
+const INVENTORY_TABS = [['all', 'All'], ['accessories', 'Accessories'], ['clothing', 'Clothing'], ['faces', 'Faces'], ['bundles', 'Bundles'], ['gear', 'Gear'], ['emotes', 'Emotes'], ['limited', 'Limiteds']];
 function inventoryCard(a) {   // an item card, plus which numbered copies of a Limited they hold
   return html`<div class="inv-item">${itemCard(a)}${(a.serials || []).length ? html`<div class="small serials">${a.serials.map((n) => '#' + n).join(', ')}</div>` : ''}</div>`;
 }
@@ -2144,6 +2158,7 @@ pages.group = async (id) => {
 };
 
 let avatarDraft = null;   // the avatar being edited (saved with the Save button)
+let avatarOwned = [];     // the clothes we own (on the Avatar page), so Wear knows each one's kind
 
 // Private messages, like the old Roblox inbox: Inbox, Sent, and writing a new one.
 pages.messages = async (box = 'inbox') => {
@@ -2201,6 +2216,7 @@ pages.avatar = async () => {
   const r = signedIn() ? await pageCall('list', { kind: 'clothing', owned: true, limit: 100 }) : { ok: true, assets: [] };
   const ownedAll = (r.ok ? r.assets : []).filter((a) => (me.owned || []).includes(a.id));
   const owned = ownedAll.filter((a) => !isEmoteItem(a.kind));
+  avatarOwned = owned;
   const myEmotes = ownedAll.filter((a) => a.kind === 'emote'), myPacks = ownedAll.filter((a) => a.kind === 'animpack');
   const slots = signedIn() ? (me.emotes || []) : [];
   const emoteBox = html`<h2>Emotes</h2>
@@ -2383,6 +2399,17 @@ function mailBox(ml) {
       <button class="btn small blue">Send test</button></form>` : ''}</div>`;
 }
 
+// Partner apps that can "Log in with Guts&Bolts" (official account only): make each one's client secret.
+function connectBox(ca) {
+  if (!ca || !ca.ok) return '';
+  return html`<div class="box"><h2 class="boxhead">Connected apps</h2>
+    <p class="small muted">Partner apps people can link their account to. Each needs a client secret: make it here, then send it to the
+      app's owner privately. It's only shown once, and making a new one stops the old one working.</p>
+    <div class="list">${ca.apps.map((a) => html`<div><span class="grow"><b>${a.name}</b>
+        <span class="small muted">client id <code>${a.id}</code> · ${a.people} connected · ${a.secretAt ? 'secret made ' + ago(a.secretAt) : 'no secret yet'}</span></span>
+        <button class="btn small${a.secretAt ? '' : ' green'}" data-act="connectSecret" data-id="${a.id}" data-name="${a.name}" data-made="${a.secretAt ? '1' : ''}">${a.secretAt ? 'Make a new secret' : 'Make secret'}</button></div>`)}</div></div>`;
+}
+
 // New decals, sounds and T-shirts from creators who aren't Verified: look, listen, then OK or turn down.
 function uploadsBox(up) {
   if (!up.ok) return html`<div class="box"><h2 class="boxhead">Uploads to check</h2><p class="error">${up.error}</p></div>`;
@@ -2415,16 +2442,17 @@ pages.staff = async () => {
   const logFor = new URLSearchParams(location.hash.split('?')[1] || '').get('log') || '';
   const ticketsClosed = new URLSearchParams(location.hash.split('?')[1] || '').get('tickets') === 'closed';
   const appealsClosed = new URLSearchParams(location.hash.split('?')[1] || '').get('appeals') === 'closed';
-  const [r, rep, up, lg, tk, ml, ap] = await Promise.all([pageCall('admin.find', { query }), pageCall('admin.reports', { status: closed ? 'closed' : 'open' }),
+  const [r, rep, up, lg, tk, ml, ap, ca] = await Promise.all([pageCall('admin.find', { query }), pageCall('admin.reports', { status: closed ? 'closed' : 'open' }),
     pageCall('admin.uploads', {}), pageCall('admin.log', logFor ? { user: logFor } : {}),
     pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.mailStatus', {}),
-    pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' })]);
+    pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }), me.official ? pageCall('admin.connectApps', {}) : null]);
   show(html`<h1>Staff</h1>
     ${ticketsBox(tk, ticketsClosed)}
     ${uploadsBox(up)}
     ${reportsBox(rep, closed)}
     ${appealsBox(ap, appealsClosed)}
     ${mailBox(ml)}
+    ${connectBox(ca)}
     <h2>People</h2>
     <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make partners, make staff, give Bolts and ban.'
       : 'Staff can verify people, make them a Partner, and take those badges away.'}</p>
@@ -2451,7 +2479,7 @@ pages.staff = async () => {
 };
 
 // The staff action log: who banned, warned, verified, checked or deleted what (newest first).
-const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤' };
+const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤', connect: '🔑' };
 function staffLogBox(lg, logFor) {
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.name}</a>` : '');
   const body = !lg.ok ? html`<p class="error">${lg.error}</p>`
@@ -2642,6 +2670,10 @@ pages.settings = async () => {
         <p class="small muted">People you block can't message, friend, follow, trade with or join you, and you won't see each other online.
           Block someone from their profile.</p>
         <div class="list" id="blockedList"><p class="muted small">Loading...</p></div></div>
+      <div class="box"><h2 class="boxhead">Connected apps</h2>
+        <p class="small muted">Apps you linked your account to with "Log in with Guts&amp;Bolts" (like Lyreto). They can see your
+          username, user number and a picture of your avatar, and nothing else.</p>
+        <div class="list" id="appsList"><p class="muted small">Loading...</p></div></div>
       <div class="box"><h2 class="boxhead">Authenticator app</h2>
         ${me.authApp ? html`<p><b class="ok">On.</b> Logging in on a new device needs your password <i>and</i> the 6-digit code
             from your authenticator app (Google Authenticator, Authy, 2FAS, Aegis, Microsoft Authenticator...).</p>
@@ -2685,7 +2717,78 @@ pages.settings = async () => {
     : blocked.people.length ? html`${blocked.people.map((u) => html`<div><a class="grow" href="#/user/${u.userId}">${u.username || u.name}</a>
         <button class="btn small" data-act="block" data-user="${u.id}" data-name="${u.username || u.name}" data-on="">Unblock</button></div>`)}`
       : html`<p class="muted small">You haven't blocked anyone.</p>`).s;
+  const apps = await pageCall('connect.list', {});
+  const appBox = $('#appsList');
+  if (appBox) appBox.innerHTML = (!apps.ok ? html`<p class="error">${apps.error}</p>`
+    : apps.apps.length ? html`${apps.apps.map((a) => html`<div><span class="grow"><a href="${a.site}" target="_blank" rel="noopener"><b>${a.name}</b></a>
+        <span class="small muted">connected ${ago(a.at)}</span></span>
+        <button class="btn small" data-act="connectRemove" data-id="${a.id}" data-name="${a.name}">Disconnect</button></div>`)}`
+      : html`<p class="muted small">You haven't connected any apps.</p>`).s;
 };
+
+// --- "Log in with Guts&Bolts" ---------------------------------------------------------
+// A partner app (like Lyreto) sent you here to link your account (worker/index.js
+// /api/oauth/authorize). Approve sends you back to the app with a one-time code, which it
+// swaps for your user number, username and avatar picture. Nothing else.
+pages.connect = async () => {
+  const q = hashParams();
+  if (!signedIn()) {
+    try { sessionStorage.setItem('gb.back', location.hash); } catch { /* (then they come back by hand) */ }
+    show(html`<div class="form" style="margin:0 auto"><h1>Connect your account</h1>
+      <p>An app wants to link your Guts&amp;Bolts account. Log in first, and you'll come straight back here.</p>
+      <p class="popup-buttons"><a class="btn blue big" href="#/login">Log In</a> <a class="btn green big" href="#/signup">Sign Up</a></p></div>`);
+    return;
+  }
+  const r = await pageCall('connect.app', { client_id: q.get('client_id') || '', redirect_uri: q.get('redirect_uri') || '' });
+  if (!r.ok) {
+    show(html`<div class="form" style="margin:0 auto"><h1>Can't connect</h1><p class="error">${r.error}</p>
+      <p><a class="btn" href="#/">Home</a></p></div>`);
+    return;
+  }
+  const host = r.app.site.replace(/^https?:\/\//, '');
+  show(html`<div class="form" style="margin:0 auto">
+    <h1>Connect to ${r.app.name}?</h1>
+    <p><b>${r.app.name}</b> (<a href="${r.app.site}" target="_blank" rel="noopener">${host}</a>) wants to link your
+      Guts&amp;Bolts account, <b>${me.username}</b>.${r.connected ? ' (It\'s already linked: approving again just refreshes it.)' : ''}</p>
+    <p>It will be able to see:</p>
+    <ul><li>Your username and user number (#${me.userId})</li><li>A picture of your avatar</li></ul>
+    <p class="small muted">It can't see your password, email, Bolts or messages, and it can't do anything as you.
+      You can disconnect it any time in Settings.</p>
+    <p class="popup-buttons"><button class="btn green big" data-act="connectApprove">Approve</button>
+      <a class="btn big" href="${connectReturn({ error: 'access_denied' })}">Cancel</a></p>
+    <p class="small" id="connectMsg"></p></div>`);
+};
+// Where to send them back to: the app's return address (the server checked it) with the answer and its state.
+function connectReturn(params) {
+  const q = hashParams(), u = new URL(q.get('redirect_uri') || '');
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  if (q.get('state')) u.searchParams.set('state', q.get('state'));
+  return u.toString();
+}
+// The square avatar picture connected apps show: drawn here from your avatar and what you wear
+// (the server can't draw), as PNG base64; '' if this browser can't draw it.
+async function connectPicture() {
+  try {
+    const p = await call('profile', { id: String(me.userId) });
+    const url = p.ok ? await avatarPicture(p.user.avatar, p.wearing || [], 160) : null;
+    if (!url) return '';
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const side = Math.min(256, img.width), c = document.createElement('canvas');
+    c.width = c.height = side;
+    c.getContext('2d').drawImage(img, 0, 0, img.width, img.width, 0, 0, side, side);   // the top square: head and body
+    return c.toDataURL('image/png').split(',')[1];
+  } catch {
+    return '';
+  }
+}
+// After logging in or signing up: back to the Connect page, if that's where they came from.
+function afterLogin() {
+  let back = '';
+  try { back = sessionStorage.getItem('gb.back') || ''; sessionStorage.removeItem('gb.back'); } catch { back = ''; }
+  location.hash = back.startsWith('#/connect?') ? back : '#/';
+}
 
 pages.login = async () => loginPage(false);
 pages.signup = async () => loginPage(true);
@@ -2991,6 +3094,34 @@ const actions = {
     if (!r.ok) toast(r.error);
     render();
   },
+  async connectApprove() {
+    const msg = $('#connectMsg');
+    msg.className = 'muted'; msg.textContent = 'Connecting...';
+    const q = hashParams();
+    const r = await call('connect.approve', { client_id: q.get('client_id') || '', redirect_uri: q.get('redirect_uri') || '', picture: await connectPicture() });
+    if (!r.ok) { msg.className = 'error'; msg.textContent = r.error; return; }
+    msg.textContent = 'Taking you back...';
+    location.href = connectReturn({ code: r.code });
+  },
+  async connectRemove(d) {
+    if (!confirm('Disconnect ' + d.name + '? It won\'t be able to see your Guts&Bolts account any more.')) return;
+    const r = await call('connect.remove', { id: d.id });
+    toast(r.ok ? 'Disconnected ' + d.name + '.' : r.error);
+    if (r.ok) render();
+  },
+  async connectSecret(d) {
+    if (d.made && !confirm('Make a new secret for ' + d.name + '? The old one stops working straight away, so ' + d.name + ' will need the new one.')) return;
+    const r = await call('admin.connectSecret', { id: d.id });
+    if (!r.ok) { toast(r.error); return; }
+    popup(html`<h1 class="popup-title">${d.name}'s client secret</h1>
+      <p>Copy it now and send it to ${d.name}'s owner privately (a direct message, not a public chat). It's only shown this once.</p>
+      <p class="secret-key"><code>${r.secret}</code></p>
+      <p class="popup-buttons"><button class="btn blue" data-act="copySecret" data-text="${r.secret}">Copy</button>
+        <a href="#" class="btn" data-act="closeModal">Done</a></p>`);
+  },
+  async copySecret(d) {
+    try { await navigator.clipboard.writeText(d.text); toast('Copied!'); } catch { prompt('Copy this:', d.text); }
+  },
   async copyText(d) {
     try { await navigator.clipboard.writeText(d.text); toast('Copied ' + d.text); } catch { prompt('Copy this:', d.text); }
   },
@@ -3164,12 +3295,19 @@ const actions = {
   avatarHat(d) { avatarDraft.hat = Number(d.i); avatarDraft.hatColor = [-1, -1, -1]; render(); },
   avatarWear(d) {
     const w = avatarDraft.wearing;
-    const kindOf = (id) => id.slice(0, id.lastIndexOf('-'));   // item ids are "<kind>-<hex>"
+    const item = (id) => avatarOwned.find((x) => x.id === id);
+    const kindOf = (id) => (item(id) ? item(id).kind : id.slice(0, id.lastIndexOf('-')));   // (old item ids are "<kind>-<hex>")
+    const putOn = (id) => {
+      // One of each kind: a new T-shirt replaces the old one.
+      for (let i = w.length - 1; i >= 0; --i) if (kindOf(w[i]) === kindOf(id)) w.splice(i, 1);
+      if (w.length < 12) w.push(id);
+    };
     if (w.includes(d.id)) w.splice(w.indexOf(d.id), 1);
     else {
-      // One of each kind: a new T-shirt replaces the old one.
-      for (let i = w.length - 1; i >= 0; --i) if (kindOf(w[i]) === kindOf(d.id)) w.splice(i, 1);
-      if (w.length < 12) w.push(d.id);
+      putOn(d.id);
+      // A bundle puts on everything in it too (the things in it can be taken off one by one).
+      const b = item(d.id);
+      if (b && b.kind === 'bundle') for (const id of (b.meta && b.meta.items) || []) if (item(id) && !w.includes(id)) putOn(id);
     }
     render();
   },
@@ -3178,7 +3316,7 @@ const actions = {
     PARTS.forEach((p) => { avatar[p] = a[p].map((x) => x | 0); });
     const r = await call('avatar.set', { avatar });
     toast(r.ok ? 'Saved! You\'ll look like this in every game.' : r.error);
-    if (r.ok) { avatarDraft = null; render(); }
+    if (r.ok) { avatarDraft = null; render(); connectPicture().then((picture) => picture && call('connect.picture', { picture })); }   // (for connected apps)
   },
   async staff(d) {
     let r;
@@ -3558,7 +3696,7 @@ const forms = {
     if (!r.ok) { msg.className = r.needCode ? 'muted' : 'error'; msg.textContent = r.error; return; }
     await hello();
     toast('Welcome back, ' + me.username + '!');
-    location.hash = '#/';
+    afterLogin();
   },
   async signup(f) {
     const msg = $('#loginMsg');
@@ -3569,12 +3707,15 @@ const forms = {
     if (!r.ok) { msg.className = 'error'; msg.textContent = r.error; return; }
     await hello();
     toast('Welcome to Guts&Bolts, ' + me.username + '! You\'re user #' + me.userId + '.', 6000);
-    location.hash = '#/';
+    afterLogin();
   },
   async upload(f) {
     const kind = f.kind.value, msg = $('#uploadMsg');
     const args = { kind, name: f.name.value, description: f.description.value, price: f.price ? Number(f.price.value) || 0 : 0 };
-    if (kind === 'shirt' || kind === 'pants') {
+    if (kind === 'bundle') {
+      args.data = '';
+      args.meta = { items: f.items.value.split(/[\s,]+/).filter(Boolean), headless: f.headless.checked };
+    } else if (kind === 'shirt' || kind === 'pants') {
       const pic = f.picture && f.picture.files[0];
       if (!pic) { msg.textContent = 'Pick your picture made from the ' + kind + ' template first.'; return; }
       args.data = await gb.fileBase64(pic);

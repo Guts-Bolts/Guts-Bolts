@@ -159,7 +159,7 @@ const std::vector<Browse::Cat>& catalogCats() {
         {"featured", "Featured", {}}, {"collectibles", "Collectibles", {}},
         {"all", "All Categories", {}, true},
         {"clothes", "Clothing", {{"shirt", "Shirts"}, {"tshirt", "T-Shirts"}, {"pants", "Pants"}}},
-        {"body", "Body Parts", {{"face", "Faces"}}},
+        {"body", "Body Parts", {{"face", "Faces"}, {"bundle", "Bundles"}}},
         {"gear", "Gear", {}},
         {"emotes", "Emotes", {{"emote", "Emotes"}, {"animpack", "Animation Packs"}}},
         {"accessories", "Accessories", {{"hat", "Hats"}, {"hair", "Hair"}, {"faceacc", "Face"}, {"neck", "Neck"}, {"shoulder", "Shoulder"}, {"waist", "Waist"}}},
@@ -172,7 +172,7 @@ bool inCatalogCat(const json& a, const std::string& cat) {
     if (cat == "collectibles") return a.contains("limited") && a["limited"].is_object();
     if (cat == "all") return true;
     if (cat == "clothes") return k == "shirt" || k == "tshirt" || k == "pants";
-    if (cat == "body") return k == "face";
+    if (cat == "body") return k == "face" || k == "bundle";
     if (cat == "emotes") return k == "emote" || k == "animpack";
     if (cat == "accessories") return k == "hat" || k == "hair" || k == "faceacc" || k == "neck" || k == "shoulder" || k == "waist";
     return k == cat;
@@ -1466,9 +1466,9 @@ void PlayerApp::drawWardrobe() {
     if (ImGui::GetTime() - m_wardrobeAt > 20.0) refreshOnline("wardrobe");   // new things you just got show up
 
     // What kinds there are ("acc" = face, neck, shoulder and waist accessories).
-    static const char* tabs[] = {"All", "Shirts", "Pants", "T-Shirts", "Faces", "Hats", "Hair", "Accessories", "Gear", "Emotes"};
-    static const char* kinds[] = {"", "shirt", "pants", "tshirt", "face", "hat", "hair", "acc", "gear", "moves"};
-    const int nTabs = 10;
+    static const char* tabs[] = {"All", "Shirts", "Pants", "T-Shirts", "Faces", "Bundles", "Hats", "Hair", "Accessories", "Gear", "Emotes"};
+    static const char* kinds[] = {"", "shirt", "pants", "tshirt", "face", "bundle", "hat", "hair", "acc", "gear", "moves"};
+    const int nTabs = 11;
     auto matches = [&](const std::string& k, int tab) {
         const std::string want = kinds[tab];
         bool acc = k == "faceacc" || k == "neck" || k == "shoulder" || k == "waist";

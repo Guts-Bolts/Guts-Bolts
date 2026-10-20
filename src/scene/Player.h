@@ -194,6 +194,9 @@ public:
     // A face picture instead of the smiley ("gb:<id>" or a file; "" = the smiley).
     void        setFace(const std::string& face);
     static void applyFace(Scene& scene, SceneNode* root, const std::string& face);
+    // Headless (the Headless Head bundle): the head (and so its face) can't be seen. Hats stay.
+    void        setHeadless(bool on);
+    static void applyHeadless(SceneNode* root, bool on);
     // An accessory file's contents -> its objects (placed relative to the character's feet).
     static std::unique_ptr<SceneNode> accessoryFrom(const std::string& json);
 
@@ -272,6 +275,7 @@ private:
     HatStyle m_hat = HatStyle::None;
     glm::vec3 m_hatTint = glm::vec3(-1.0f);
     std::string m_shirt, m_pants, m_tshirt, m_face;
+    bool        m_headless = false;
     Accessories m_accessories;
 
     glm::vec3 m_spawn{0.0f};
