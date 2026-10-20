@@ -20,6 +20,10 @@ const LINK = /(?:https?:\/\/|www\.)[^\s]+|[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|ne
 const EMAIL = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g;
 const PHONE = /\+?\(?[0-9](?:[ .()-]*[0-9]){9,14}/g;
 const ALLOWED_LINK = /^(?:https?:\/\/)?(?:www\.)?gutsandbolts\.net(?:[\/?#].*)?$/;
+// Lua code isn't a link: in workspace.Shop.Door or script.Parent.Top:Destroy() the "shop" and
+// "top" carry on into a Name with a capital letter, a :Method or a ( [, which a web address never
+// does. (Only for bare names: anything with http://, www. or a /path is still a link.)
+const isLuaCode = (match, after) => !/^(?:https?:\/\/|www\.)/.test(match) && !match.includes('/') && /^(?:\.[A-Z]|:[A-Za-z]|[([])/.test(after);
 
 // Lower-case A-Z only, so every position still lines up with the original text.
 const lowerAscii = (s) => s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32));
@@ -31,7 +35,8 @@ function coverText(text) {
   const mask = new Array(s.length).fill(false);
   const cover = (from, to) => { for (let i = from; i < to; i++) mask[i] = true; };
   for (const m of low.matchAll(EMAIL)) cover(m.index, m.index + m[0].length);
-  for (const m of low.matchAll(LINK)) if (!ALLOWED_LINK.test(m[0])) cover(m.index, m.index + m[0].length);
+  for (const m of low.matchAll(LINK))
+    if (!ALLOWED_LINK.test(m[0]) && !isLuaCode(m[0], s.slice(m.index + m[0].length, m.index + m[0].length + 2))) cover(m.index, m.index + m[0].length);
   for (const m of low.matchAll(PHONE)) cover(m.index, m.index + m[0].length);
   for (const m of low.matchAll(SLURS)) cover(m.index + m[1].length, m.index + m[0].length);
   let out = '';

@@ -50,6 +50,19 @@ struct Rules {
 };
 const Rules& rules() { static Rules r; return r; }
 
+// Lua code isn't a link: in workspace.Shop.Door or script.Parent.Top:Destroy() the "shop" and
+// "top" carry on into a Name with a capital letter, a :Method or a ( [, which a web address never
+// does. (Only for bare names: anything with http://, www. or a /path is still a link.)
+// `after` is the original text right after the match. (worker/textfilter.js has the same.)
+bool isLuaCode(const std::string& match, const std::string& after) {
+    if (match.rfind("http://", 0) == 0 || match.rfind("https://", 0) == 0 || match.rfind("www.", 0) == 0) return false;
+    if (match.find('/') != std::string::npos || after.empty()) return false;
+    const auto upper = [](char c) { return c >= 'A' && c <= 'Z'; };
+    const auto letter = [&](char c) { return upper(c) || (c >= 'a' && c <= 'z'); };
+    if (after[0] == '(' || after[0] == '[') return true;
+    return after.size() >= 2 && ((after[0] == '.' && upper(after[1])) || (after[0] == ':' && letter(after[1])));
+}
+
 } // namespace
 
 static std::string cover(const std::string& text) {
@@ -62,7 +75,9 @@ static std::string cover(const std::string& text) {
     for (std::sregex_iterator it(low.begin(), low.end(), r.email), end; it != end; ++it)
         cover((size_t)it->position(0), (size_t)(it->position(0) + it->length(0)));
     for (std::sregex_iterator it(low.begin(), low.end(), r.link), end; it != end; ++it)
-        if (!std::regex_match(it->str(0), r.allowedLink)) cover((size_t)it->position(0), (size_t)(it->position(0) + it->length(0)));
+        if (!std::regex_match(it->str(0), r.allowedLink) &&
+            !isLuaCode(it->str(0), text.substr((size_t)(it->position(0) + it->length(0)), 2)))
+            cover((size_t)it->position(0), (size_t)(it->position(0) + it->length(0)));
     for (std::sregex_iterator it(low.begin(), low.end(), r.phone), end; it != end; ++it)
         cover((size_t)it->position(0), (size_t)(it->position(0) + it->length(0)));
     for (std::sregex_iterator it(low.begin(), low.end(), r.slurs), end; it != end; ++it)

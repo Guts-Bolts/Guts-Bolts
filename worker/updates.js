@@ -11,6 +11,15 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'code-is-not-a-link', name: 'Code Is Not a Link', time: 1792515600, tag: 'Fix',
+    summary: 'The chat filter stops deleting Lua code just because a part is called Shop, Top or Info.',
+    items: [
+      'Posting code like workspace.Shop.Door or script.Parent.Top.Size used to turn the whole post into [ Content Deleted ], because "shop" and "top" look like the end of a web address',
+      'Now code that carries on after the name (a capital letter, a :Method, a bracket) goes through, in chat, the forum, comments and descriptions',
+      'Real links are still blocked: anything with http://, www. or a /page, and plain addresses like something.shop',
+    ],
+  },
+  {
     id: 'picture-perfect', name: 'Picture Perfect', time: 1792512900, tag: 'Fix',
     summary: 'Pictures waiting for a staff check stay hidden properly, and item pictures on the website load faster.',
     items: [
