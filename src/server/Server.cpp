@@ -874,10 +874,21 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             std::vector<std::string> items;
             if (std::string problem = bundleItems(meta.contains("items") ? meta["items"] : json(), items); !problem.empty()) return fail(problem);
             const bool headless = meta.value("headless", false) == true;
-            if (items.empty() && !headless) return fail("Put at least one item in the bundle (or make it a Headless Head).");
+            // A new body (Studio's Bundles window) comes in the file: meshes for the rig's parts.
+            json body;
+            if (meta.value("body", false) == true) {
+                json file = json::parse(data, nullptr, false);
+                if (!file.is_object() || file.value("format", std::string()) != "gbbundle" || !file.contains("body"))
+                    return fail("Make bundles with a new body in Studio's Bundles window.");
+                if (std::string problem = Online::bundleBody(file["body"], body); !problem.empty()) return fail(problem);
+            }
+            if (items.empty() && !headless && body.empty()) return fail("Put at least one item in the bundle (or make it a Headless Head).");
             meta = {{"items", items}};
             if (headless) meta["headless"] = true;
-            data = json{{"format", "gbbundle"}, {"items", items}, {"headless", headless}}.dump();
+            if (!body.empty()) meta["body"] = true;
+            json file = {{"format", "gbbundle"}, {"items", items}, {"headless", headless}};
+            if (!body.empty()) file["body"] = std::move(body);
+            data = file.dump();
         }
         if (kind == "face") {
             if (!isOfficial(me)) return fail("Only Guts can make faces.");
@@ -1143,6 +1154,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (it == m_assets.end()) return fail("That doesn't exist (any more).");
         Asset& a = it->second;
         if (a.creator != me.id) return fail("You can only update your own things.");
+        if (a.kind == "bundle") return fail("Bundles can't be changed once they're made. Make a new one instead.");
         std::string data;
         if (!Online::base64Decode(str("data"), data)) return fail("The upload got scrambled. Try again.");
         if (data.size() > Online::maxSize(a.kind)) return fail("That's too big.");

@@ -9,6 +9,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <nlohmann/json.hpp>
 #include "SceneNode.h"
 #include "Ragdoll.h"
 
@@ -210,6 +211,14 @@ public:
     // Headless (the Headless Head bundle): the head (and so its face) can't be seen. Hats stay.
     void        setHeadless(bool on);
     static void applyHeadless(SceneNode* root, bool on);
+    // A bundle's new body (made in Studio's Bundles window): "gb:<id>" of the bundle or a
+    // file holding it; "" = the normal body. Parts it doesn't change keep the normal shape.
+    void        setBody(const std::string& body);
+    static void applyBody(Scene& scene, SceneNode* root, const std::string& body);
+    // One rig part's shape as a bundle stores it (Online::bundleBody), and back.
+    static nlohmann::json bodyPartJson(const SceneNode& part);
+    static bool           setBodyPart(SceneNode& part, const nlohmann::json& j);
+    static void           resetBodyPart(SceneNode& part);   // the normal shape, size and spot
     // An accessory file's contents -> its objects (placed relative to the character's feet).
     static std::unique_ptr<SceneNode> accessoryFrom(const std::string& json);
 
@@ -291,6 +300,7 @@ private:
     glm::vec3 m_hatTint = glm::vec3(-1.0f);
     std::string m_shirt, m_pants, m_tshirt, m_face;
     bool        m_headless = false;
+    std::string m_body;
     Accessories m_accessories;
 
     glm::vec3 m_spawn{0.0f};

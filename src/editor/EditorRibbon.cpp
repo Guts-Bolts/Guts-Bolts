@@ -1,5 +1,6 @@
 // Studio's ribbon (HOME / MODEL / TEST / VIEW), laid out like Roblox Studio's.
 #include "Editor.h"
+#include "../online/OnlineClient.h"
 #include "panels/ScriptEditorPanel.h"
 #include "Icons.h"
 #include "Theme.h"
@@ -498,10 +499,14 @@ void Editor::renderToolbar() {
                 insertObject("Rig", nullptr);
         }
         {
-            Group g("Accessories");
+            Group g("Catalog");
             if (bigButton("Accessories", Icons::Id::Rig, m_showAccessory, !m_playing,
                           "Verified creators: put a hat or accessory on a mannequin, save where it sits, and upload it"))
                 m_showAccessory = !m_showAccessory;
+            if (Online::staff() &&
+                bigButton("Bundles", Icons::Id::Rig, m_showBundles, !m_playing,
+                          "Staff: give the mannequin a new body (and items) and upload it as a bundle"))
+                m_showBundles = !m_showBundles;
         }
         {
             Group g("Animation");

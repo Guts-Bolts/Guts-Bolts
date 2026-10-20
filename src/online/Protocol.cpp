@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <chrono>
 #include <cstring>
 #include <ctime>
@@ -64,6 +65,45 @@ std::string gearProblem(const std::string& data) {
         return "Gear must be a Tool (with a Handle part inside).";
     return "";
 }
+std::string bundleBody(const nlohmann::json& body, nlohmann::json& out) {
+    using nlohmann::json;
+    out = json::object();
+    if (!body.is_object() || body.empty()) return "That bundle's body looks wrong.";
+    auto numbers = [](const json& a, size_t n, float lo, float hi) {
+        if (!a.is_array() || a.size() != n) return false;
+        for (const json& x : a) if (!x.is_number() || !(x.get<double>() >= lo && x.get<double>() <= hi)) return false;
+        return true;
+    };
+    for (const auto& [name, p] : body.items()) {
+        if (std::find_if(std::begin(kBodyParts), std::end(kBodyParts), [&](const char* k) { return name == k; }) == std::end(kBodyParts))
+            return "A bundle's body can only change the Head, Torso, arms and legs.";
+        const std::string bad = name + "'s mesh looks wrong.";
+        if (!p.is_object() || !p.contains("v") || !p.contains("f") || !p["v"].is_array() || !p["f"].is_array()) return bad;
+        const json& v = p["v"];
+        const json& f = p["f"];
+        if (v.size() % 3 || v.size() < 9 || f.empty()) return bad;
+        if ((int)(v.size() / 3) > kBodyMostCorners || (int)f.size() > kBodyMostCorners) return name + " has too many corners.";
+        for (const json& x : v) if (!x.is_number() || !(std::abs(x.get<double>()) <= 1.0)) return bad;
+        const size_t corners = v.size() / 3;
+        for (const json& face : f) {
+            if (!face.is_array() || face.size() < 3 || face.size() > 64) return bad;
+            for (const json& k : face) if (!k.is_number_integer() || k.get<long long>() < 0 || k.get<long long>() >= (long long)corners) return bad;
+        }
+        if (!numbers(p.value("size", json()), 3, 0.1f, 8.0f)) return name + "'s size looks wrong.";
+        if (!numbers(p.value("pos", json()), 3, -8.0f, 8.0f)) return name + "'s position looks wrong.";
+        json part = {{"v", v}, {"f", f}, {"size", p["size"]}, {"pos", p["pos"]}, {"smooth", p.value("smooth", false) == true}};
+        if (p.contains("uv")) {
+            const json& uv = p["uv"];
+            if (!uv.is_array() || uv.size() != f.size()) return bad;
+            for (size_t i = 0; i < uv.size(); ++i)
+                if (!numbers(uv[i], f[i].size() * 2, -1000.0f, 1000.0f)) return bad;
+            part["uv"] = uv;
+        }
+        out[name] = std::move(part);
+    }
+    return "";
+}
+
 bool alwaysFree(const std::string& k) { return k == "decal" || k == "audio" || k == "animation"; }
 
 const char* banReasonTitle(const std::string& key) {
@@ -97,7 +137,7 @@ size_t maxSize(const std::string& k) {
     if (k == "emote") return 256u * 1024u;                         // keyframes for the character
     if (k == "animpack") return 512u * 1024u;                      // five of them
     if (k == "shirt" || k == "pants" || k == "tshirt") return 1024u * 1024u;   // a template picture / a T-shirt picture
-    if (k == "face" || isAccessory(k)) return 1024u * 1024u;  // a face picture / an accessory from Studio
+    if (k == "face" || isAccessory(k) || k == "bundle") return 1024u * 1024u;   // a face picture / an accessory or new body from Studio  // a face picture / an accessory from Studio
     return 64u * 1024u;   // clothing is just a little description of the look
 }
 

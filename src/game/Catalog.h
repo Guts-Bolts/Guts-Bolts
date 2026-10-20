@@ -27,6 +27,7 @@ struct Item {
     std::string model;                     // accessories made in Studio: "gb:<id>" (the placed model)
     std::string kind;                      // the server's kind: "hat", "hair", "faceacc", "neck", ...
     bool        headless = false;          // bundles: wearing it hides the head (the Headless Head)
+    std::string body;                      // bundles with a new body: "gb:<id>" (the bundle's file holds the meshes)
     long long   created = 0;               // unix time
     long long   price = 0;                 // in Bolts; 0 = free
     std::string signature;

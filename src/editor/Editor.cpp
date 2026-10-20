@@ -201,6 +201,7 @@ void Editor::render(float dt) {
     renderRecoverDialog();
     autoSaveTick();
     renderAccessoryWindow();
+    renderBundleWindow();
     renderPluginLibrary();
     if (m_showPanel[kPanelCommandBar]) renderCommandBar();
     renderInsertObject();

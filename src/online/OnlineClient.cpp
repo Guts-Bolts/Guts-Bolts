@@ -197,6 +197,7 @@ void takeMe(const json& reply) {
                     Profile& me = Profile::get();
                     me.shirtImage.clear(); me.pantsImage.clear(); me.tshirtImage.clear(); me.faceImage.clear();
                     me.headless = false;
+                    me.body.clear();
                     me.accessories.clear();
                     const std::vector<std::string> wearing = me.wearing;
                     for (const json& a : r["wearing"]) if (a.is_object()) Catalog::applyLook(Catalog::fromServer(a));
