@@ -532,7 +532,7 @@ const grantMessage = (key, accountId) => 'gb-badge:' + key + ':' + accountId;
 function grantValid(official, key, accountId, sig) {
   if (!official || typeof sig !== 'string') return false;
   if (!sig.startsWith('s:')) return verify(official, grantMessage(key, accountId), sig);
-  if (key !== 'verified') return false;   // the only badge Staff members can give
+  if (key !== 'verified' && key !== 'partner') return false;   // the only badges Staff members can give
   const a = sig.indexOf(':', 2), b = a < 0 ? -1 : sig.indexOf(':', a + 1);
   if (b < 0) return false;
   const staffId = sig.slice(2, a), staffSig = sig.slice(a + 1, b), grantSig = sig.slice(b + 1);
@@ -834,6 +834,7 @@ export class GbServerObject extends DurableObject {
   isOfficial(u) { return !!this.official && u.id === this.official; }
   isStaff(u) { return this.isOfficial(u) || grantValid(this.official, 'staff', u.id, (u.grants || {}).staff); }
   isVerified(u) { return this.isOfficial(u) || grantValid(this.official, 'verified', u.id, (u.grants || {}).verified); }
+  isPartner(u) { return grantValid(this.official, 'partner', u.id, (u.grants || {}).partner); }
   claimOfficial(u) {
     if (!this.isOfficial(u) || u.userId === 1) return;
     u.userId = 1; u.username = kStaffName;
@@ -986,7 +987,7 @@ export class GbServerObject extends DurableObject {
 
   publicUser(u) {
     return { id: u.id, name: u.name, username: u.username, userId: u.userId, verified: this.isVerified(u),
-      staff: this.isStaff(u), official: this.isOfficial(u), created: u.created, banned: u.banned,
+      staff: this.isStaff(u), partner: this.isPartner(u), official: this.isOfficial(u), created: u.created, banned: u.banned,
       pastNames: u.pastNames || [],
       banReason: u.banned ? (u.banReason || '') : undefined };
   }
@@ -1971,7 +1972,7 @@ export class GbServerObject extends DurableObject {
       // A page of comments: "before" is the id of the last one you already have.
       const before = str(args, 'before'), from = before ? list.findIndex((c) => c.id === before) + 1 : 0;
       const shown = list.slice(from, from + kCommentsPage).filter((c) => !this.blocks(me, this.users.get(c.by)));
-      const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), staff: this.isStaff(u) } : { id, userId: 0, name: '?' }; };
+      const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), staff: this.isStaff(u), partner: this.isPartner(u) } : { id, userId: 0, name: '?' }; };
       return okay({ comments: shown.map((c) => ({ id: c.id, text: c.text, at: c.at, by: who(c.by), creator: c.by === a.creator,
         canDelete: me.userId !== 0 && (c.by === me.id || mod) })), more: from + kCommentsPage < list.length, off: !!a.commentsOff, count: list.length });
     }
@@ -2106,7 +2107,7 @@ export class GbServerObject extends DurableObject {
       }
       if (name === 'admin.revoke') {
         const key = str(args, 'key');
-        if (key !== 'verified' && !this.isOfficial(me)) return fail('Only the official account can take that badge away.');
+        if (key !== 'verified' && key !== 'partner' && !this.isOfficial(me)) return fail('Only the official account can take that badge away.');
         delete to.grants[key];
         this.staffDid(me, 'unbadge', 'Took the ' + key + ' badge from ' + to.name, to.id);
         this.saveUser(to);
@@ -3509,7 +3510,7 @@ export class GbServerObject extends DurableObject {
   forumOp(name, me, args) {
     const t = now();
     const staff = this.isStaff(me);
-    const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), staff: this.isStaff(u) } : { id, userId: 0, name: '?' }; };
+    const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), staff: this.isStaff(u), partner: this.isPartner(u) } : { id, userId: 0, name: '?' }; };
     const hidden = (id) => { const u = this.users.get(id); return !!u && this.blocks(me, u); };
     const boardOf = (id) => FORUM_BOARDS.find((b) => b.id === id);
     const threadsIn = (board) => [...this.forum.values()].filter((th) => th.board === board)

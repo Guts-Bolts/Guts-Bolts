@@ -210,6 +210,11 @@ bool GbServer::isStaff(const User& u) const {
     return it != u.grants.end() && Online::grantValid(Account::officialId(), "staff", u.id, it->second);
 }
 
+bool GbServer::isPartner(const User& u) const {
+    auto it = u.grants.find("partner");
+    return it != u.grants.end() && Online::grantValid(Account::officialId(), "partner", u.id, it->second);
+}
+
 bool GbServer::isVerified(const User& u) const {
     if (isOfficial(u)) return true;
     auto it = u.grants.find("verified");
@@ -218,7 +223,7 @@ bool GbServer::isVerified(const User& u) const {
 
 json GbServer::publicUser(const User& u) const {
     return {{"id", u.id}, {"name", u.name}, {"username", u.username}, {"userId", u.userId},
-            {"verified", isVerified(u)}, {"staff", isStaff(u)},
+            {"verified", isVerified(u)}, {"staff", isStaff(u)}, {"partner", isPartner(u)},
             {"official", isOfficial(u)}, {"created", u.created}, {"banned", u.banned},
             {"pastNames", u.pastNames},
             {"banReason", u.banned ? u.banReason : std::string()}};
@@ -767,7 +772,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         }
         if (name == "admin.revoke") {
             std::string key = str("key");
-            if (key != "verified" && !isOfficial(me)) return fail("Only the official account can take that badge away.");
+            if (key != "verified" && key != "partner" && !isOfficial(me)) return fail("Only the official account can take that badge away.");
             to->grants.erase(key);
             saveUsers();
             staffDid(me, "unbadge", "Took the " + key + " badge from " + to->name, to->id);

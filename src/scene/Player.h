@@ -188,6 +188,7 @@ public:
     // Ones not downloaded yet are skipped (set them again once they arrive).
     using Accessories = std::map<std::string, std::string>;
     void        setAccessories(const Accessories& acc);
+    void        rememberWornRest();   // (Play) where new hats / accessories sit before animating
     static void applyAccessories(Scene& scene, SceneNode* root, const Accessories& acc);
     static void hideBuiltInHat(SceneNode* root);
     // A face picture instead of the smiley ("gb:<id>" or a file; "" = the smiley).
@@ -357,6 +358,7 @@ private:
     std::vector<Debris> m_debris;
 
     Ragdoll   m_ragdoll;
+    BloodyFeet m_feet;      // stepped in blood: leaves footprints
     float     m_pendingForce = 0.0f;
     glm::vec3 m_pendingImpulse{0.0f};
     float     m_lastHealth = 100.0f;

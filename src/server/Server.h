@@ -291,6 +291,7 @@ private:
     bool      isOfficial(const User& u) const;
     bool      isStaff(const User& u) const;         // official, or has the Staff badge
     bool      isVerified(const User& u) const;      // staff always are
+    bool      isPartner(const User& u) const;       // has the Partner badge (a friend of Guts&Bolts)
 
     // Files
     void load();

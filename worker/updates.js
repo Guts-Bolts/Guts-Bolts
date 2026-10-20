@@ -8,6 +8,7 @@
 //   tag    what it's mostly about: Engine, Studio, Website, Player, Server, Fix
 //   items  what changed, one short line each, in plain words
 
+
 export const BUILT_IN_UPDATES = [
   {
     id: 'off-with-your-head', name: 'Off With Your Head', version: '0.7.3', time: 1792456724, tag: 'Website',
@@ -22,7 +23,80 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'keep-your-head', name: 'Keep Your Head', version: '0.7.2', time: 1792455600, tag: 'Fix',
+    id: 'crime-scene-cleanup', name: 'Crime Scene Cleanup on Aisle 5', time: 1792455993, tag: 'Engine',
+    summary: 'Blood got a lot more real: wounds pump with the heartbeat, bodies leave smears, shoes leave footprints, and it all dries over time.',
+    items: [
+      'Wounds pump blood with every heartbeat, the heart slowing and weakening until it stops, and keep dripping in between',
+      'A body lies in a growing pool from the wound that killed it, and cut-off limbs drain from their ends',
+      'Bloody bodies leave smears when they slide or get dragged along the floor',
+      'Walk through a pool and you leave red footprints, fainter with every step (NPCs too)',
+      'Hits soak into the body: blood stains on the torso and limbs that move with them, washed off when you respawn',
+      'Pools have lumpy edges, a thicker darker rim, and a wet shine; drops that land at an angle splash into teardrops with little droplets ahead',
+      'Pools run over the edge of a ledge and drip off it, and drips running down a wall fall off at the bottom',
+      'Blood darkens and dries over time: the shine goes, it turns dark brown from the edges in, and cracks',
+    ],
+  },
+  {
+    id: 'smooth-operator',
+    name: 'Smooth Operator',
+    version: '0.7.3',
+    time: 1792456528,
+    tag: 'Website',
+    summary: 'Hats on the website are smooth-shaded now, so they look the same as in the game.',
+    items: [
+      'Hats and accessories with Smooth shading on (and every imported hat) look round on the website instead of blocky',
+      'That goes for 3D avatars, the avatar editor and item pictures in the Library',
+    ],
+  },
+  {
+    id: 'hold-onto-your-hat',
+    name: 'Hold Onto Your Hat',
+    version: '0.7.3',
+    time: 1792456424,
+    tag: 'Fix',
+    summary: 'Hats and accessories stay on your head now, even when an animation turns it.',
+    items: [
+      'Hats, hair and face accessories turn and tilt with the head in emotes, animation packs and game animations',
+      'Neck, shoulder and waist accessories move with the body the same way',
+      'Other players see your hat follow your head too',
+      'Works for the built-in hats, the ones made in Studio\'s Accessory window, and hats put on in the middle of a game',
+    ],
+  },
+  {
+    id: 'shop-window',
+    name: 'Shop Window',
+    version: '0.7.3',
+    time: 1792456554,
+    tag: 'Website',
+    summary: 'The front page and download page got a makeover that actually shows off what the engine can do.',
+    items: [
+      'A big banner that flips through real screenshots: explosions, particles, neon at night, terrain and materials',
+      'New sections for the engine, Lua scripting, Studio and its AI helper, playing together and the site',
+      'Every picture is straight out of the Player, no touch-ups',
+      'The Download box points at the right download for your computer, with three easy steps',
+      'A "What\'s new" box that fills itself in from the newest release, and a few common questions answered',
+    ],
+  },
+  {
+    id: 'friends-in-high-places',
+    name: 'Friends in High Places',
+    version: '0.7.3',
+    time: 1792456200,
+    tag: 'Website',
+    summary: 'A new Partner badge for friends of Guts&Bolts, shown right next to their name.',
+    items: [
+      'Partners are people and projects Guts&Bolts teams up with, like Kermit, who makes Lyreto',
+      'They get a teal Partner badge next to their name on their profile, in the forum and in game comments',
+      'Staff can hand it out (or take it away) with the Make partner button on the Staff page',
+      'It shows up in the Guts&Bolts Badges box on their profile, and in the Player app\'s badge list',
+    ],
+  },
+  {
+    id: 'keep-your-head',
+    name: 'Keep Your Head',
+    version: '0.7.2',
+    time: 1792455600,
+    tag: 'Fix',
     summary: 'The Bouncy Animation Pack no longer sends your head flying round the map.',
     items: [
       'Walking or running with the Bouncy Animation Pack made your head drift away from your body and fall off, and now it stays on your shoulders',
@@ -31,7 +105,11 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'hello-from-the-other-server', name: 'Hello From the Other Server', version: '0.7.2', time: 1792450920, tag: 'Website',
+    id: 'hello-from-the-other-server',
+    name: 'Hello From the Other Server',
+    version: '0.7.2',
+    time: 1792450920,
+    tag: 'Website',
     summary: 'Guts&Bolts teams up with Lyreto: games and groups can show their Lyreto chat server right on their page.',
     items: [
       'Lyreto is a free chat app for servers, voice and hanging out, and it\'s Guts&Bolts\' chat partner',
@@ -41,6 +119,7 @@ export const BUILT_IN_UPDATES = [
       'There\'s a Chat on Lyreto link at the bottom of every page too',
     ],
   },
+
   {
     id: 'whats-in-the-box', name: 'What\'s in the Box?!', version: '0.7.2', time: 1792438313, tag: 'Website',
     summary: 'Gift boxes and Exclusive items: own a gift box when it goes off sale and a secret item drops into your inventory.',

@@ -159,9 +159,14 @@ void NpcSystem::step(Npc& n, SceneNode* r, float dt, Scene& scene, Physics& phys
     if (h.health < n.lastHealth - 0.5f) {
         glm::vec3 at = r->transform.position + glm::vec3(0, 1.5f, 0);
         if (h.health > 0.0f) Audio::play("hit", 0.5f, 0.9f, false, &at);
-        if (scene.goreEnabled())
+        if (scene.goreEnabled()) {
+            float lost = n.lastHealth - h.health;
             scene.particles().spray(scene.goreKind(), at, glm::vec3(0, 1, 0),
-                                    (int)std::clamp((n.lastHealth - h.health) * 0.3f, 3.0f, 20.0f), 3.0f);
+                                    (int)std::clamp(lost * 0.3f, 3.0f, 20.0f), 3.0f);
+            if (SceneNode* t = r->findChild("Torso"))
+                scene.particles().stain(scene.goreKind(), t, at + glm::vec3(rand01() - 0.5f, rand01() - 0.5f, rand01() - 0.5f) * 2.0f,
+                                        std::clamp(0.3f + lost * 0.02f, 0.3f, 1.0f));
+        }
     }
     n.lastHealth = h.health;
     if (h.health <= 0.0f) { startDeath(n, r, scene); return; }
@@ -233,6 +238,7 @@ void NpcSystem::step(Npc& n, SceneNode* r, float dt, Scene& scene, Physics& phys
     if (res.hitCeiling && n.velocity.y > 0.0f) n.velocity.y = 0.0f;
     r->transform.position = res.position;
     if (res.position.y < scene.world().fallenPartsHeight) h.health = 0.0f;
+    if (scene.goreEnabled()) scene.particles().walk(n.feet, scene.goreKind(), res.position, res.grounded);
 
     const float moved = dt > 0.0f ? glm::length(got) / dt : 0.0f;
     n.groundSpeed = approach(n.groundSpeed, moving ? std::min(moved, h.walkSpeed * 2.0f + 2.0f) : 0.0f, 12.0f, dt);

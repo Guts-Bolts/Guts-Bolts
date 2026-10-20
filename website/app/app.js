@@ -71,6 +71,8 @@ const boltIcon = raw('<svg class="bolt" viewBox="0 0 16 16" aria-hidden="true"><
 const checkIcon = raw('<svg class="check" viewBox="0 0 16 16" aria-label="Verified"><circle cx="8" cy="8" r="7" fill="#1d9bf0"/><path d="M4.5 8.2l2.3 2.3 4.7-4.9" stroke="#fff" stroke-width="1.8" fill="none"/></svg>');
 const bolts = (n) => html`<span class="price">${boltIcon}${Number(n).toLocaleString()}</span>`;
 const verified = (v) => (v ? checkIcon : '');
+// The Partner badge next to a name: friends of Guts&Bolts (like the people who make Lyreto). Staff give it out.
+const partner = (u) => (u && u.partner ? html` <span class="badge-pill partner-pill" title="Official Guts&amp;Bolts partner">&#129309; Partner</span>` : '');
 const signedIn = () => me && me.userId > 0;
 
 // A game's picture: a colourful gradient made from its id (like the Player).
@@ -703,7 +705,7 @@ const forumPager = (base, page, pages) => pages <= 1 ? '' : html`<p class="pager
   ${page > 0 ? html`<a class="btn small" href="${base}/${page}">&lt; Back</a>` : ''}
   <span class="muted small">Page ${page + 1} of ${pages}</span>
   ${page + 1 < pages ? html`<a class="btn small" href="${base}/${page + 2}">Next &gt;</a>` : ''}</p>`;
-const forumWho = (u) => html`<a href="#/user/${u.userId || u.id}"><b>${u.name}</b></a>${verified(u.verified)}${u.staff ? html` <span class="badge-pill staff">Staff</span>` : ''}`;
+const forumWho = (u) => html`<a href="#/user/${u.userId || u.id}"><b>${u.name}</b></a>${verified(u.verified)}${u.staff ? html` <span class="badge-pill staff">Staff</span>` : ''}${partner(u)}`;
 pages.forum = async (board, a, b) => {
   if (board === 't') { await forumThread(a, Math.max(0, (Number(b) || 1) - 1)); return; }
   if (!board) {
@@ -1296,7 +1298,7 @@ pages.game = async (id) => {
 // Comments under a game, newest first, 20 at a time.
 const commentRow = (g, c) => html`<div class="comment" data-comment="${c.id}">
     <a class="face" href="#/user/${c.by.userId || c.by.id}">${c.by.name.slice(0, 1).toUpperCase()}</a>
-    <div class="grow"><p class="comment-head"><a href="#/user/${c.by.userId || c.by.id}"><b>${c.by.name}</b></a>${verified(c.by.verified)}
+    <div class="grow"><p class="comment-head"><a href="#/user/${c.by.userId || c.by.id}"><b>${c.by.name}</b></a>${verified(c.by.verified)}${partner(c.by)}
         ${c.creator ? html` <span class="badge-pill" title="Made this game">Creator</span>` : ''}
         <span class="small muted">${ago(c.at)}</span></p>
       <p class="comment-text">${c.text}</p>
@@ -1865,7 +1867,7 @@ pages.people = async () => {
   show(html`<h1>People</h1>
     <form class="row" data-form="peopleSearch"><input type="search" name="q" placeholder="Search by username or #number" value="${query}" style="max-width:280px">
       <button class="btn blue">Search</button></form>
-    <div class="list">${r.ok ? r.users.map((u) => html`<div><a class="grow" href="#/user/${u.userId}"><b>${u.username}</b></a>${verified(u.verified)}
+    <div class="list">${r.ok ? r.users.map((u) => html`<div><a class="grow" href="#/user/${u.userId}"><b>${u.username}</b></a>${verified(u.verified)}${partner(u)}
       <span class="muted small">#${u.userId}${u.official ? ' · Guts&Bolts staff' : ''}</span></div>`) : html`<p class="error">${r.error}</p>`}</div>`);
 };
 
@@ -1944,10 +1946,10 @@ pages.user = async (id, tab, page, more) => {
     worn = ids.length ? ((await pageCall('list', { kind: 'clothing', limit: 100 })).assets || []).filter((a) => ids.includes(a.id)) : [];
   }
   const friends = r.friends || [];
-  const badgeNames = { admin: 'Administrator', verified: 'Verified', staff: 'Staff', tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
+  const badgeNames = { admin: 'Administrator', verified: 'Verified', staff: 'Staff', tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator', partner: 'Partner' };
   const online = r.online === undefined ? null : r.online;
   show(html`<div class="profile-head">
-      <h1>${u.username}${verified(u.verified)}</h1><span class="small muted user-number">#${u.userId}</span>
+      <h1>${u.username}${verified(u.verified)}${partner(u)}</h1><span class="small muted user-number">#${u.userId}</span>
       ${online === null ? '' : html`<span class="presence ${online ? 'on' : ''}">${online ? '[ Online ]' : '[ Offline ]'}</span>`}
       ${r.playing ? html`<span class="small playing-now">Playing <a href="#/game/${r.playing.game}">${r.playing.title}</a></span>
         ${r.playing.session && f !== 'self' ? html` <button class="btn green small" data-act="joinServer" data-id="${r.playing.game}"
@@ -2440,16 +2442,18 @@ pages.staff = async () => {
     ${appealsBox(ap, appealsClosed)}
     ${mailBox(ml)}
     <h2>People</h2>
-    <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make staff, give Bolts and ban.'
-      : 'Staff can verify people and take Verified away.'}</p>
+    <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make partners, make staff, give Bolts and ban.'
+      : 'Staff can verify people, make them a Partner, and take those badges away.'}</p>
     <form class="row" data-form="staffSearch"><input type="search" name="q" placeholder="Search by name or user number (#5)" value="${query}" style="max-width:320px">
       <button class="btn blue">Search</button></form>
     <div class="list">${r.ok ? r.users.map((u) => html`<div>
-      <a class="grow" href="#/user/${u.id}"><b>${u.username || u.name}</b></a>${verified(u.verified)}
+      <a class="grow" href="#/user/${u.id}"><b>${u.username || u.name}</b></a>${verified(u.verified)}${partner(u)}
       <span class="small muted">${u.userId ? '#' + u.userId : 'not signed up'}${u.staff ? ' · staff' : ''}${u.banned ? ' · banned' : ''}</span>
       ${u.official ? '' : html`
         ${u.verified ? html`<button class="btn small" data-act="staff" data-op="revoke" data-key="verified" data-id="${u.id}">Unverify</button>`
           : html`<button class="btn small green" data-act="staff" data-op="grant" data-key="verified" data-id="${u.id}">Verify</button>`}
+        ${u.partner ? html`<button class="btn small" data-act="staff" data-op="revoke" data-key="partner" data-id="${u.id}">Remove partner</button>`
+          : html`<button class="btn small" data-act="staff" data-op="grant" data-key="partner" data-id="${u.id}" title="Give them the Partner badge (for friends of Guts&amp;Bolts, like Lyreto)">Make partner</button>`}
         ${me.official ? html`
           ${u.staff ? html`<button class="btn small" data-act="staff" data-op="revoke" data-key="staff" data-id="${u.id}">Remove staff</button>`
             : html`<button class="btn small" data-act="staff" data-op="grant" data-key="staff" data-id="${u.id}">Make staff</button>`}
@@ -3203,7 +3207,7 @@ const actions = {
     let r;
     if (d.op === 'grant') {
       // A badge is a signature: the official account signs it, or a staff member
-      // signs it and adds their own Staff badge (only for Verified).
+      // signs it and adds their own Staff badge (only for Verified and Partner).
       const message = 'gb-badge:' + d.key + ':' + d.id;
       let sig = await gb.sign(message);
       if (!me.official) {

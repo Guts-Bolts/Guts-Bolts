@@ -138,7 +138,7 @@ std::string grantMessage(const std::string& key, const std::string& accountId) {
 bool grantValid(const std::string& official, const std::string& key, const std::string& accountId, const std::string& sig) {
     if (official.empty()) return false;
     if (sig.rfind("s:", 0) != 0) return Account::verify(official, grantMessage(key, accountId), sig);
-    if (key != "verified") return false;   // the only badge Staff members can give
+    if (key != "verified" && key != "partner") return false;   // the only badges Staff members can give
     size_t a = sig.find(':', 2), b = a == std::string::npos ? a : sig.find(':', a + 1);
     if (b == std::string::npos) return false;
     std::string staffId = sig.substr(2, a - 2), staffSig = sig.substr(a + 1, b - a - 1), grantSig = sig.substr(b + 1);
