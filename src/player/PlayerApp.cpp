@@ -79,6 +79,7 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
         m_window = std::make_unique<AppWindow>("Guts&Bolts Player", 1280, 720, "player_layout.ini");
     }
     m_window->setFixedTimestep(!m_opts.screenshot.empty());
+    m_window->setAfterUi([this] { vrAfterUi(); });
     m_renderer = std::make_unique<SceneRenderer>();
     m_scene    = std::make_unique<Scene>();
     m_session  = std::make_unique<GameSession>(m_scene.get());
@@ -776,7 +777,11 @@ void PlayerApp::frame(float dt) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    // VR: no background (the headset's floating screen shows just the menus and buttons).
+    const bool clearHost = m_vrOn && m_page == Page::Game;
+    if (clearHost) ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(0, 0, 0, 0));
     ImGui::Begin("##PlayerHost", nullptr, flags);
+    if (clearHost) ImGui::PopStyleColor();
     ImGui::PopStyleVar(3);
 
     Classic::seasonal(GraphicsSettings::get().seasonTheme && Classic::isOctober());
@@ -1755,8 +1760,7 @@ void PlayerApp::drawGame(float dt) {
 #endif
     m_camera.resize((int)px.x, (int)px.y);
     if (vr) {   // each eye for the headset (the screen shows the left one)
-        if (vrDraw) vrRender(vrEyes);
-        Vr::endFrame();
+        if (vrDraw) vrRender(vrEyes);   // (vrAfterUi finishes the headset's picture, once the menus are drawn)
     } else {
         m_view.resize((int)px.x, (int)px.y);
         m_renderer->render(*m_scene, m_camera, m_view, false);
@@ -1786,6 +1790,7 @@ void PlayerApp::drawGame(float dt) {
     const bool onGui = GameGui::handle(*m_scene, pos, max, pointer, acceptInput && (hovered || tapped) && !onHotbar,
                                        !touch && ImGui::IsMouseClicked(ImGuiMouseButton_Left),
                                        !touch && ImGui::IsMouseReleased(ImGuiMouseButton_Left), tapped, m_guiInput, guiEvents);
+    m_vrOnGameUi = vr && (onGui || onHotbar);
     // ProximityPrompts near our character ("E  Open").
     {
         Player* me = m_session->runOnly() ? nullptr : m_scene->player();
@@ -2462,7 +2467,8 @@ void PlayerApp::drawPauseMenu() {
         key("A", "Jump");
         key("Right trigger", "Use the tool you're holding");
         key("Your hands", "Your character's arms reach for your controllers, and its head turns with yours");
-        key("Menu", "Open or close this menu (on the computer screen for now)");
+        key("Menu", "Open or close this menu");
+        key("Point + trigger", "Click buttons on the floating screen (point with your right hand)");
     }
     ImGui::EndChild();
 

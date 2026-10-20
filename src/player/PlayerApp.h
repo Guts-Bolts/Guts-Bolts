@@ -263,6 +263,8 @@ private:
     void vrShowBody(Player& player);   // in VR you see your own body (all but the head)
     void vrRender(const Vr::View eyes[2]);
     void vrMirror(ImVec2 size);
+    void vrPointer();                  // the floating menu screen: where it is, and the right hand pointing at it
+    void vrAfterUi();                  // the menus and buttons onto that screen, then the headset's picture is done
     // Reporting and blocking — PlayerSafety.cpp
     bool canReport() const;   // signed up and online (guests can't report or block)
     void openReport(const std::string& kind, const std::string& id, const std::string& name, const std::string& blockUser = "");
@@ -364,6 +366,16 @@ private:
     float       m_vrScale = 1.45f;     // studs per real metre (from the character's eye height)
     float       m_vrBodyYaw = 0.0f;    // degrees: the way the body faces (it follows the head, a little behind)
     std::string m_vrStatus;            // why VR didn't start / stopped (shown in the menu)
+    Framebuffer m_vrPanel;             // the menus and buttons, for the floating screen in the headset
+    glm::mat4   m_vrPanelPose{1.0f};   // where that screen is (headset space, metres)
+    bool        m_vrPanelPlaced = false;
+    bool        m_vrPanelMoving = false;   // gliding back in front of you (you looked far away)
+    bool        m_vrWasPaused = false;
+    bool        m_vrPointing = false;  // the right hand points at the screen (its trigger clicks it)
+    bool        m_vrPointerDown = false;
+    bool        m_vrOnGameUi = false;  // the pointer is on the game's own buttons or the hotbar (this frame)
+    bool        m_vrOverUi = false;    // ...or on any button (last frame): the trigger clicks it, not your tool
+    ImVec2      m_vrPointer{0, 0};     // where on the screen (window pixels)
     Camera      m_avatarCam;
     Framebuffer m_avatarView;
     Framebuffer m_bannerView;
