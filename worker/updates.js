@@ -11,7 +11,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'cut-the-cord', name: 'Cut the Cord', version: '0.7.6', time: 1792522800, tag: 'Player',
+    id: 'cut-the-cord', name: 'Cut the Cord', version: '0.7.3', time: 1792522800, tag: 'Player',
     summary: 'Guts&Bolts runs on a Meta Quest by itself now: no PC, no cable, no Air Link.',
     items: [
       'A new download, GutsAndBoltsPlayer-Quest.apk, is the Player built for Quest 2, 3, 3S and Pro. Install it with SideQuest or the Meta Quest Developer Hub',
@@ -21,7 +21,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'body-swap', name: 'Body Swap', time: 1792522200, tag: 'Studio',
+    id: 'body-swap', name: 'Body Swap', version: '0.7.3', time: 1792522200, tag: 'Studio',
     summary: 'Bundles can change your whole body now: Guts can reshape the character\'s head, torso, arms and legs in Studio and sell it as a bundle.',
     items: [
       'A new Bundles window in Studio (AVATAR tab, staff only) puts a mannequin in the Workspace with a row for each body part',
@@ -32,7 +32,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'bones-inside', name: 'Bones Inside', time: 1792521600, tag: 'Studio',
+    id: 'bones-inside', name: 'Bones Inside', version: '0.7.3', time: 1792521600, tag: 'Studio',
     summary: 'Armatures in Studio: put a chain of bones inside a MeshPart and it bends like an arm, a tail or a tentacle.',
     items: [
       'Insert > Bone, or the Armature button on the AVATAR tab, opens the Armature window. Add Bone puts one along the part\'s longest side, Add Chain adds a whole row of them',
@@ -44,7 +44,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'unfold-the-box', name: 'Unfold the Box', time: 1792521000, tag: 'Studio',
+    id: 'unfold-the-box', name: 'Unfold the Box', version: '0.7.3', time: 1792521000, tag: 'Studio',
     summary: 'UV mapping in Studio: lay a mesh out flat, mark seams and wrap your own picture around it.',
     items: [
       'Press U in Modeling mode to unwrap: Unwrap (cuts along your seams, keeps shapes), Smart UV Project, Cube, Cylinder and Sphere Projection, Project From View and Reset',
@@ -56,7 +56,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'mind-reader', name: 'Mind Reader', version: '0.7.5', time: 1792520400, tag: 'Engine',
+    id: 'mind-reader', name: 'Mind Reader', version: '0.7.3', time: 1792520400, tag: 'Engine',
     summary: 'Game scripts can now tell when someone plays in VR, and where their head and hands are.',
     items: [
       'VRService works in LocalScripts: VREnabled is true while you play in a VR headset (UserInputService.VREnabled too)',
@@ -66,7 +66,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'point-and-click', name: 'Point and Click', version: '0.7.4', time: 1792519800, tag: 'Player',
+    id: 'point-and-click', name: 'Point and Click', version: '0.7.3', time: 1792519800, tag: 'Player',
     summary: 'In VR the menus, buttons and chat float in front of you, and you click them by pointing with your right hand.',
     items: [
       'Everything that sits on top of the game (the menu, health, the hotbar, chat, the game\'s own buttons) now shows on a see-through screen floating in front of you in the headset',
@@ -76,7 +76,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'edit-mode-unlocked', name: 'Edit Mode Unlocked', time: 1792518200, tag: 'Studio',
+    id: 'edit-mode-unlocked', name: 'Edit Mode Unlocked', version: '0.7.3', time: 1792518200, tag: 'Studio',
     summary: 'Modeling mode works like Blender now: G / R / S follow the mouse, right-click menus, loop cuts and a pile of new tools.',
     items: [
       'G moves, R rotates and S scales what you picked with the mouse. Press X, Y or Z to lock an axis, type a number for an exact amount, click to finish or right-click to put it back',
@@ -88,7 +88,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'bidding-war', name: 'Bidding War', time: 1792517600, tag: 'Website',
+    id: 'bidding-war', name: 'Bidding War', version: '0.7.3', time: 1792517600, tag: 'Website',
     summary: 'Exclusive items can go up for auction, and only the top bidders get one.',
     items: [
       'Staff can put an Exclusive item up for auction: how many copies, the starting bid and how long it runs',
@@ -100,7 +100,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'code-is-not-a-link', name: 'Code Is Not a Link', time: 1792515600, tag: 'Fix',
+    id: 'code-is-not-a-link', name: 'Code Is Not a Link', version: '0.7.3', time: 1792515600, tag: 'Fix',
     summary: 'The chat filter stops deleting Lua code just because a part is called Shop, Top or Info.',
     items: [
       'Posting code like workspace.Shop.Door or script.Parent.Top.Size used to turn the whole post into [ Content Deleted ], because "shop" and "top" look like the end of a web address',
@@ -109,7 +109,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'picture-perfect', name: 'Picture Perfect', time: 1792512900, tag: 'Fix',
+    id: 'picture-perfect', name: 'Picture Perfect', version: '0.7.3', time: 1792512900, tag: 'Fix',
     summary: 'Pictures waiting for a staff check stay hidden properly, and item pictures on the website load faster.',
     items: [
       'A T-shirt\'s picture could be seen by anyone before staff checked it. Now only its creator and staff see it until it passes, like the T-shirt itself',
@@ -118,7 +118,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'no-more-waiting-room', name: 'No More Waiting Room', time: 1792511700, tag: 'Website',
+    id: 'no-more-waiting-room', name: 'No More Waiting Room', version: '0.7.3', time: 1792511700, tag: 'Website',
     summary: 'The website\'s Home, Avatar and Settings pages load faster: they ask the server for everything at once.',
     items: [
       'The Home page used to ask for your games, then your feed, then the latest update, then your outfit, one after another. Now it asks for all of them together',
@@ -127,7 +127,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'tidy-on-tiny-screens', name: 'Tidy on Tiny Screens', time: 1792511100, tag: 'Fix',
+    id: 'tidy-on-tiny-screens', name: 'Tidy on Tiny Screens', version: '0.7.3', time: 1792511100, tag: 'Fix',
     summary: 'The Sign Up page, the Avatar page and the update log look right again, especially on phones.',
     items: [
       'The "I\'m 18 or older" box on Sign Up was squashed into a thin column that covered the Sign Up button. It\'s one neat line now',
@@ -210,7 +210,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'chunky-salsa', name: 'Chunky Salsa', time: 1792469579, tag: 'Engine',
+    id: 'chunky-salsa', name: 'Chunky Salsa', version: '0.7.3', time: 1792469579, tag: 'Engine',
     summary: 'A point-blank explosion no longer just knocks a body over: it blows it apart into real chunks.',
     items: [
       'With Dismemberment and blood on, a huge blast bursts the whole body into pieces of meat, bone and skin',
@@ -221,7 +221,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'stuntman-school', name: 'Stuntman School', time: 1792469224, tag: 'Engine',
+    id: 'stuntman-school', name: 'Stuntman School', version: '0.7.3', time: 1792469224, tag: 'Engine',
     summary: 'Ragdolls got muscles: bodies try to catch themselves, cover up, clutch their wounds, and get back up after a big hit.',
     items: [
       'Ragdolls are active now: flying through the air, arms reach out to break the fall and legs scramble',
@@ -235,7 +235,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'jenga-champion', name: 'Jenga Champion', time: 1792472969, tag: 'Engine',
+    id: 'jenga-champion', name: 'Jenga Champion', version: '0.7.3', time: 1792472969, tag: 'Engine',
     summary: 'Loose parts got steadier and smarter: tall stacks stand still, boxes stay put on slopes, and fast things stop hitting walls instead of passing through them.',
     items: [
       'A tall tower of bricks now stands still instead of slowly leaning and toppling over',
@@ -246,7 +246,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'crime-scene-cleanup', name: 'Crime Scene Cleanup on Aisle 5', time: 1792455993, tag: 'Engine',
+    id: 'crime-scene-cleanup', name: 'Crime Scene Cleanup on Aisle 5', version: '0.7.3', time: 1792455993, tag: 'Engine',
     summary: 'Blood got a lot more real: wounds pump with the heartbeat, bodies leave smears, shoes leave footprints, and it all dries over time.',
     items: [
       'Wounds pump blood with every heartbeat, the heart slowing and weakening until it stops, and keep dripping in between',
@@ -317,7 +317,7 @@ export const BUILT_IN_UPDATES = [
   {
     id: 'keep-your-head',
     name: 'Keep Your Head',
-    version: '0.7.2',
+    version: '0.7.3',
     time: 1792455600,
     tag: 'Fix',
     summary: 'The Bouncy Animation Pack no longer sends your head flying round the map.',
