@@ -109,7 +109,7 @@ function itemIcon(a) {
     items3d.set(a.id, a);
     return html`<span class="item-render loading" data-item3d="${a.id}" aria-label="${a.name}"></span>`;
   }
-  if (a.thumb) return html`<img class="item-thumb" data-thumb="${a.id}" alt="${a.name}">`;
+  if (a.thumb) return html`<img class="item-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="${a.name}">`;
   return html`<span class="item-render no-picture">${KINDS[a.kind] || ''}</span>`;
 }
 
@@ -253,13 +253,20 @@ const items3d = new Map();   // id -> item, for the pictures below
 // shapes on, the way the game shows them).
 const drawable3d = (a) => !!a && WEARABLE.includes(a.kind);   // all of it: clothes, faces, hats, hair and accessories
 
-// Fills in <img data-thumb="id"> with the item's picture.
+// Fills in <img data-thumb="id" data-v="when it changed"> with the item's picture. It loads from
+// the picture's own address, which the browser keeps, so it's instant the next time. If that
+// doesn't work (your own upload still waiting for a staff check, or a server on a computer),
+// it asks the server for it instead.
 function loadThumbs(root = view) {
-  root.querySelectorAll('img[data-thumb]').forEach(async (img) => {
+  root.querySelectorAll('img[data-thumb]').forEach((img) => {
     if (img.src || img.dataset.loading) return;
     img.dataset.loading = '1';
-    const t = await call('thumb.get', { id: img.dataset.thumb });
-    if (t.ok && t.data) img.src = 'data:image/png;base64,' + t.data;
+    img.addEventListener('error', async () => {
+      const t = await call('thumb.get', { id: img.dataset.thumb });
+      if (t.ok && t.data) img.src = 'data:image/png;base64,' + t.data;
+      else img.removeAttribute('src');
+    }, { once: true });
+    img.src = '/thumb/' + encodeURIComponent(img.dataset.thumb) + (img.dataset.v ? '?v=' + img.dataset.v : '');
   });
 }
 
@@ -300,7 +307,7 @@ const PASS_SVG = '<svg viewBox="0 0 64 64" width="100%" height="100%" aria-hidde
   + '<circle cx="6" cy="32" r="6" fill="#fff"/><circle cx="58" cy="32" r="6" fill="#fff"/><path d="M22 16v32" stroke="#fff" stroke-width="2" stroke-dasharray="3 3"/>'
   + '<path d="M38 24l2.4 5 5.4.6-4 3.7 1.1 5.4-4.9-2.8-4.9 2.8 1.1-5.4-4-3.7 5.4-.6z" fill="#ffd34d"/></svg>';
 function passPic(p) {
-  return p.thumb ? html`<img class="lib-thumb" data-thumb="${p.id}" alt="">` : raw(PASS_SVG);
+  return p.thumb ? html`<img class="lib-thumb" data-thumb="${p.id}" data-v="${p.thumb}" alt="">` : raw(PASS_SVG);
 }
 // A pass on a game's page: picture, name, price and Buy (or Owned).
 function passCard(p) {
@@ -896,7 +903,7 @@ const lower = (s) => String(s || '').toLowerCase();
 function browseCard(a, href, price) {
   return html`<div class="card square bcard">
     <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="" style="width:100%;height:100%;object-fit:contain;border:0">`
-      : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" alt="">`
+      : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
       : a.kind === 'audio' || a.kind === 'plugin' || a.kind === 'model' || a.kind === 'animation' ? html`<span class="lib-kind">${a.kind === 'audio' ? raw(SPEAKER_SVG) : ''}${KINDS[a.kind] || a.kind}</span>`
       : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
@@ -1026,7 +1033,7 @@ pages.library = async (id = '') => {
       <div class="item-cols asset-cols">
         <div class="item-pic">
           <div class="pic" id="assetPic">${a.kind === 'decal' ? html`<span class="muted">Loading...</span>`
-            : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" alt="">`
+            : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
             : a.kind === 'audio' ? html`<span class="lib-kind audio-big">${raw(SPEAKER_SVG)}Audio</span>`
             : html`<span class="lib-kind">${KINDS[a.kind] || a.kind}</span>`}</div>
           ${officialBadge(a)}

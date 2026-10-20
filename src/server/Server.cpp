@@ -626,10 +626,10 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         saveAssets();
         json r = okay(); r["asset"] = publicAsset(a); return r;
     }
-    if (name == "thumb.get") {
+    if (name == "thumb.get") {   // (not for things waiting for a staff check, or private ones, unless they're yours)
         auto it = findAsset(str("id"));
         std::string data;
-        if (it == m_assets.end() || !it->second.thumb || !readFile(m_opts.data / "files" / ("thumb-" + it->first), data))
+        if (it == m_assets.end() || !it->second.thumb || !canSee(it->second, me) || !readFile(m_opts.data / "files" / ("thumb-" + it->first), data))
             return fail("No picture.");
         json r = okay(); r["data"] = Online::base64Encode(data); return r;
     }

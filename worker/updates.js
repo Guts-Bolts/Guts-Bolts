@@ -11,6 +11,15 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'picture-perfect', name: 'Picture Perfect', time: 1792512900, tag: 'Fix',
+    summary: 'Pictures waiting for a staff check stay hidden properly, and item pictures on the website load faster.',
+    items: [
+      'A T-shirt\'s picture could be seen by anyone before staff checked it. Now only its creator and staff see it until it passes, like the T-shirt itself',
+      'The same goes for the picture of a private Library model',
+      'Item pictures on the website (emotes, models, game passes) load straight from their own address, so your browser keeps them and they show up instantly the next time',
+    ],
+  },
+  {
     id: 'no-more-waiting-room', name: 'No More Waiting Room', time: 1792511700, tag: 'Website',
     summary: 'The website\'s Home, Avatar and Settings pages load faster: they ask the server for everything at once.',
     items: [
