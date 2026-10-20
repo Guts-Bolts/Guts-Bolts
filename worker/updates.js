@@ -22,6 +22,32 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'smooth-operator',
+    name: 'Smooth Operator',
+    version: '0.7.3',
+    time: 1792456528,
+    tag: 'Website',
+    summary: 'Hats on the website are smooth-shaded now, so they look the same as in the game.',
+    items: [
+      'Hats and accessories with Smooth shading on (and every imported hat) look round on the website instead of blocky',
+      'That goes for 3D avatars, the avatar editor and item pictures in the Library',
+    ],
+  },
+  {
+    id: 'hold-onto-your-hat',
+    name: 'Hold Onto Your Hat',
+    version: '0.7.3',
+    time: 1792456424,
+    tag: 'Fix',
+    summary: 'Hats and accessories stay on your head now, even when an animation turns it.',
+    items: [
+      'Hats, hair and face accessories turn and tilt with the head in emotes, animation packs and game animations',
+      'Neck, shoulder and waist accessories move with the body the same way',
+      'Other players see your hat follow your head too',
+      'Works for the built-in hats, the ones made in Studio\'s Accessory window, and hats put on in the middle of a game',
+    ],
+  },
+  {
     id: 'shop-window',
     name: 'Shop Window',
     version: '0.7.3',
