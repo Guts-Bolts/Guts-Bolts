@@ -79,6 +79,14 @@ void Player::build() {
 void Player::setAccessories(const Accessories& acc) {
     m_accessories = acc;
     if (SceneNode* r = root()) applyAccessories(*m_scene, r, acc);
+    rememberWornRest();
+}
+
+void Player::rememberWornRest() {
+    // Hats and accessories turn with the head when it's animated, from how they
+    // sat when put on (also when that happens in the middle of Play).
+    if (m_rest.empty()) return;
+    for (SceneNode* p : Anim::wornParts(root())) m_rest.try_emplace(p->id, p->transform);
 }
 
 void Player::setFace(const std::string& face) {
@@ -319,6 +327,7 @@ void Player::setHat(HatStyle style, glm::vec3 tint) {
     m_hat = style;
     m_hatTint = tint;
     if (SceneNode* r = root()) applyHat(*m_scene, r, style, tint);
+    rememberWornRest();
 }
 
 void Player::applyHat(Scene& scene, SceneNode* r, HatStyle style, glm::vec3 tint) {
@@ -382,8 +391,13 @@ CharacterPose Player::capturePose(const SceneNode* r) {
     CharacterPose pose;
     pose.root = r->transform;
     pose.forceField = r->hasForceField();
-    for (auto& c : r->children)
+    for (auto& c : r->children) {
         if (c->isPart()) pose.parts.push_back({c->name, c->transform});
+        // Accessories' parts too, so they turn with the head for everyone ("Accessory (hat)/Brim").
+        if (c->kind == NodeKind::Model && c->name.rfind("Accessory (", 0) == 0)
+            for (auto& k : c->children)
+                if (k->isPart()) pose.parts.push_back({c->name + "/" + k->name, k->transform});
+    }
     return pose;
 }
 
@@ -396,8 +410,12 @@ void Player::applyPose(SceneNode* r, const CharacterPose& pose) {
         for (auto& c : r->children)
             if (c->kind == NodeKind::ForceField) { r->removeChild(c.get()); break; }
     }
-    for (const auto& [name, t] : pose.parts)
-        if (SceneNode* c = r->findChild(name)) c->transform = t;
+    for (const auto& [name, t] : pose.parts) {
+        const size_t slash = name.find('/');
+        SceneNode* c = r->findChild(name.substr(0, slash));
+        if (c && slash != std::string::npos) c = c->findChild(name.substr(slash + 1));
+        if (c) c->transform = t;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -462,6 +480,7 @@ void Player::beginPlay() {
         m_customClips.clear();
         m_rootRest = r->transform;
         for (auto& c : r->children) m_rest[c->id] = c->transform;
+        rememberWornRest();
     }
     m_dead = m_diedFlag = false;
     respawn(true);
@@ -490,6 +509,8 @@ void Player::respawn(bool firstSpawn) {
         auto it = m_rest.find(c->id);
         if (it != m_rest.end()) c->transform = it->second;
     }
+    for (SceneNode* p : Anim::wornParts(r))
+        if (auto it = m_rest.find(p->id); it != m_rest.end()) p->transform = it->second;
     const glm::vec3 spawnAt = spawnSpot();
     r->transform = m_rootRest;
     r->transform.position = spawnAt;
@@ -1558,6 +1579,7 @@ bool Player::applyCustomAnimation(const char* state, float dt) {
 }
 
 void Player::animate(float dt, float groundSpeed, bool grounded) {
+    rememberWornRest();   // (a script may have put a hat on)
     m_swing    = approach(m_swing, grounded ? strideSwing(groundSpeed) : 0.0f, 10.0f, dt);
     m_airBlend = approach(m_airBlend, grounded ? 0.0f : 1.0f, 10.0f, dt);
     m_walkPhase += dt * strideRate(groundSpeed);
@@ -1720,6 +1742,7 @@ void Player::animationPack(const std::string& state, float dt, float groundSpeed
     Anim::applyPoses(r, m_rest, poses, m_packBlend);
     for (const auto& [n, s] : poses)
         if (SceneNode* p = Anim::findPart(r, n); p && !isLimb(p) && p->name != "Head") m_packMoved.push_back(p->id);
+    for (SceneNode* p : Anim::wornParts(r)) m_packMoved.push_back(p->id);   // (they turned with the head)
 }
 
 void Player::startDeath() {
