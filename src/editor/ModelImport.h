@@ -9,7 +9,9 @@
 // Tinkercad, ...) into Studio. Each object in the file (split by material)
 // becomes one mesh part; together they go in a Model.
 //
-// Formats: .fbx, .obj (+ its .mtl), .gltf / .glb, .stl and .ply.
+// Formats: .fbx, .obj (+ its .mtl), .gltf / .glb (also squashed with Draco or
+// meshopt), .stl and .ply read here; Collada (.dae), .3ds, .x, .3mf, LightWave
+// and about 30 more go through Assimp.
 // Sizes: 1 metre (or 1 unit, for files with no units) is 1 stud. Something far
 // too big or too small (like a model made in millimetres) is shrunk or grown to
 // about 10 studs, and the Output says so.
@@ -33,6 +35,8 @@ struct Result {
 
 // True for the file endings above (any capitalisation).
 bool isModelFile(const std::string& path);
+// A 3D file Studio can't read (.blend, .max, .usd, CAD files, ...): load() says what to do instead.
+bool isOtherModelFile(const std::string& path);
 // "*.fbx *.obj ..." for the Open window, and ".fbx, .obj, ..." for people.
 const char* patterns();
 const char* formatList();

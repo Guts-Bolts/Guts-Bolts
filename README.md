@@ -154,7 +154,13 @@ Settings** covers the frame rate and graphics.
 
 **File > Import 3D Model, Picture, Sound...** (or the **Import** button on the
 HOME tab) brings in 3D models made in other programs: **.fbx**, **.obj** (with
-its .mtl colours), **.gltf / .glb**, **.stl** and **.ply**. Each object in the
+its .mtl colours), **.gltf / .glb** (including squashed ones: Draco and meshopt,
+like Sketchfab downloads), **.stl**, **.ply**, **.dae** (Collada), **.3ds**,
+**.x**, **.3mf**, **.lwo**, **.ac**, **.off**, **.dxf**, **.b3d**, **.ms3d**,
+**.md2 / .md3 / .md5mesh**, **.ase**, **.smd**, **.x3d**, **.amf**, **.ogex**,
+**.irrmesh**, **.cob**, **.xgl**, **.pmx** and a few more. Program save files
+(.blend, .max, .ma, .c4d, .skp), USD and CAD files (.step) can't be opened:
+Output tells you which format to export from that program instead. Each object in the
 file becomes a mesh part (split by material, in that material's colour; a
 textured material gets its picture's main colour), all inside a Model named
 after the file. 1 metre is 1 stud; something far too big or too small (a model
@@ -163,9 +169,11 @@ made in millimetres) is resized to about 10 studs, and Output says so.
 Or just **drag files from your computer onto Studio**. Where you let go
 matters:
 - a 3D model lands standing on the spot under the mouse;
-- a picture (.png / .jpg) becomes a Decal on the side of the part it's dropped
-  on, or a sign facing you if it lands on the ground;
-- a sound (.wav / .mp3 / .flac) becomes a Sound (inside the part it's dropped on);
+- a picture (.png / .jpg / .gif / .bmp / .tga) becomes a Decal on the side of
+  the part it's dropped on, or a sign facing you if it lands on the ground.
+  Other pictures (.webp, .svg, .psd, .hdr, .ppm) are saved as a PNG in the games
+  folder's **Imported Pictures** folder first, so every Player can show them;
+- a sound (.wav / .mp3 / .ogg / .flac) becomes a Sound (inside the part it's dropped on);
 - a script (.lua / .luau) becomes a Script;
 - a Roblox model is inserted, and a game or Roblox place is opened.
 

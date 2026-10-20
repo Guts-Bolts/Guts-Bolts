@@ -1337,6 +1337,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         auto cube = MeshLibrary::get(PrimitiveType::Cube);
         auto cyl  = MeshLibrary::get(PrimitiveType::Cylinder);
         m_lit->setBool("uSelected", false);
+        const float dryTime = scene.particles().dryTime();
         auto drawParticle = [&](const Particle& p, float alpha) {
             glm::mat4 m = glm::translate(glm::mat4(1.0f), p.pos);
             const float speed = glm::length(p.vel);
@@ -1347,6 +1348,16 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 glm::vec3 z = glm::cross(x, y);
                 m = m * glm::mat4(glm::vec4(x, 0), glm::vec4(y, 0), glm::vec4(z, 0), glm::vec4(0, 0, 0, 1));
                 m = glm::scale(m, glm::vec3(p.size.x * 0.8f, p.size.y * std::min(3.5f, 1.0f + speed * 0.12f), p.size.z * 0.8f));
+            } else if (p.kind == Particle::Splat) {
+                // Lying flat on its surface (up = the surface's normal), turned about it.
+                glm::vec3 up = p.normal, x0;
+                if (glm::length(p.tangent) > 0.5f) x0 = glm::normalize(p.tangent - up * glm::dot(p.tangent, up));
+                else x0 = std::abs(up.y) > 0.9f ? glm::vec3(1, 0, 0) : glm::normalize(glm::cross(glm::vec3(0, 1, 0), up));
+                glm::vec3 z0 = glm::cross(x0, up);
+                float a = glm::radians(p.rot.y), c = std::cos(a), sn = std::sin(a);
+                glm::vec3 x = x0 * c - z0 * sn, z = z0 * c + x0 * sn;
+                m = m * glm::mat4(glm::vec4(x, 0), glm::vec4(up, 0), glm::vec4(z, 0), glm::vec4(0, 0, 0, 1));
+                m = glm::scale(m, p.size);
             } else {
                 m = glm::rotate(m, glm::radians(p.rot.z), {0, 0, 1});
                 m = glm::rotate(m, glm::radians(p.rot.y), {0, 1, 0});
@@ -1359,13 +1370,26 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
             int mat = (p.kind == Particle::Fire || p.kind == Particle::Spark) ? (int)Material::Neon
                     : p.wet ? 8   // wet liquid (see the shader)
                     : p.glossy ? (int)Material::Metal : (int)Material::Plastic;
+            if (p.kind == Particle::Chunk && p.gib == 0) {   // meat (with skin, if it was a body part)
+                mat = 31;
+                m_lit->setBool("uGibSkinOn", p.skin.x >= 0.0f);
+                m_lit->setVec3("uGibSkin", glm::max(p.skin, glm::vec3(0.0f)));
+                m_lit->setFloat("uGibSeed", p.gibSeed);
+            } else if (p.kind == Particle::Splat) {
+                // Pools, smears, footprints and stains: wobbly-edged, and drying as they age.
+                mat = 30;
+                m_lit->setInt("uSplatLook", p.look);
+                m_lit->setFloat("uSplatSeed", p.seed);
+                m_lit->setFloat("uSplatDry", std::clamp(p.age / dryTime, 0.0f, 1.0f));
+            }
             m_lit->setInt("uMaterial", mat);
             m_lit->setFloat("uAlpha", alpha);
-            (p.kind == Particle::Bolt || p.kind == Particle::Splat || (p.kind == Particle::Drop && p.wet) ? cyl : cube)->draw();
+            (p.kind == Particle::Splat ? cube
+             : p.kind == Particle::Bolt || (p.kind == Particle::Drop && p.wet) ? cyl : cube)->draw();
         };
         for (const Particle& p : parts) {
             if (tooFar(p.pos, 1.0f)) continue;
-            bool fade = p.kind == Particle::Smoke || p.kind == Particle::Spray || (p.kind == Particle::Splat && p.life < 1.0f);
+            bool fade = p.kind == Particle::Smoke || p.kind == Particle::Spray || (p.kind == Particle::Splat && (p.life < 1.0f || p.alpha < 0.99f));
             if (fade) fading.push_back(&p);
             else      drawParticle(p, 1.0f);
         }
@@ -1374,7 +1398,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         for (const Particle* p : fading) {
             float a = p->kind == Particle::Smoke ? 0.55f * std::min(1.0f, p->life / p->maxLife * 2.0f)
                     : p->kind == Particle::Spray ? 0.8f * std::min(1.0f, p->life / p->maxLife * 3.0f)
-                                                 : std::max(0.0f, p->life);
+                                                 : std::max(0.0f, std::min(p->life, p->alpha));
             drawParticle(*p, a);
         }
         glDepthMask(GL_TRUE);

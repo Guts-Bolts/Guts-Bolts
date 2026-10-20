@@ -4,8 +4,10 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 
 class Physics;
+class SceneNode;
 
 // Small flying bits used for gore and effects: blood / oil drops that splat
 // and stick where they land, meat chunks, bolts, sparks, fire and smoke.
@@ -25,9 +27,36 @@ struct Particle {
     float     slide = 0.0f;             // seconds left running down a wall
     float     trail = 0.0f;             // (how far it's run since leaving the last drip mark)
     glm::vec3 normal{0.0f, 1.0f, 0.0f}; // the surface it's on
+    // Blood that has landed:
+    int       look = 0;                 // Splat shape: 0 pool / splash, 1 smear, 2 footprint
+    float     age = 0.0f;               // seconds since it landed (it darkens and dries)
+    float     seed = 0.0f;              // 0..1: makes every edge a different wobbly shape
+    float     drips = 0.0f;             // pools: how much can still run off an edge
+    float     dripTimer = 0.0f;
+    // A stain on a body part (moves with it): which part, and where on it in its own space.
+    uint64_t  onPart = 0;
+    glm::vec3 localPos{0.0f}, localNormal{0.0f, 1.0f, 0.0f}, localTangent{1.0f, 0.0f, 0.0f};
+    glm::vec3 tangent{0.0f};            // (stains: which way the part's side runs, so it turns with it)
+    float     alpha = 1.0f;             // footprints and smears get fainter
+    // Gibs (Chunk):
+    int       gib = 0;                  // 0 meat, 1 bone
+    glm::vec3 skin{-1.0f};              // a piece of a body part: its colour on one side (negative = plain meat)
+    float     bleed = 0.0f;             // seconds it still drips blood
+    float     gibSeed = 0.0f;           // 0..1: so no two look the same
 };
 
 enum class GoreKind { Blood, Oil };
+
+// Bloody shoes: walk through a pool and the next steps leave red footprints,
+// fainter each step. A Player and every NPC carry one.
+struct BloodyFeet {
+    float     wet = 0.0f;               // 1 = just stepped in a pool, 0 = clean
+    float     walked = 0.0f;            // since the last footprint
+    glm::vec3 last{0.0f};
+    bool      left = false;
+    bool      started = false;
+    void reset() { wet = walked = 0.0f; started = false; }
+};
 
 // A particle from a ParticleEmitter, Fire, Smoke or Sparkles object: a flat picture
 // that always faces the camera. runEmitters() moves them and works out how each looks
@@ -78,7 +107,30 @@ public:
     void spray(GoreKind kind, const glm::vec3& pos, const glm::vec3& dir, int count, float speed);
     // Chunks of meat / bolts and metal scraps.
     void gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel, int count);
+    // A body part bursting into pieces: chunks from all through it, with its colour on
+    // the outside and meat (or metal) inside, a few bits of bone, and a lot of blood.
+    void burst(GoreKind kind, const SceneNode* part, const glm::vec3& vel, float violence);
     void sparks(const glm::vec3& pos, int count);
+    // An arterial spurt: a tight jet of drops (one heartbeat). `inherit` = how the wound is moving.
+    void spurt(GoreKind kind, const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& inherit, float strength);
+    // A slow drip from a wound (between heartbeats, or after the heart stops).
+    void ooze(GoreKind kind, const glm::vec3& pos, const glm::vec3& inherit);
+    // Something bloody sliding along a surface: a streak in the way it's moving.
+    void smear(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel, const glm::vec3& normal, float width, float wet);
+    // How much wet (not yet dried) blood is on the floor at `pos` (0 none, 1 a puddle).
+    // Taking some (`take` > 0) shrinks the pool a little, like a foot soaking it up.
+    float wetBloodAt(const glm::vec3& pos, float radius, float take = 0.0f);
+    // A footprint on the floor, its toe pointing along `dir`.
+    void footprint(GoreKind kind, const glm::vec3& pos, const glm::vec3& dir, float wet);
+    // Walking with `feet`: soak up blood from pools and leave footprints. `at` = the feet.
+    void walk(BloodyFeet& feet, GoreKind kind, const glm::vec3& at, bool onGround);
+    // Blood soaking into a body part where it was hurt (`at` is a world point near it).
+    void stain(GoreKind kind, const SceneNode* part, const glm::vec3& at, float size);
+    // Stains ride along with their parts (and go when the part does). Call once a frame.
+    void follow(Scene& scene);
+    // Wash a character clean (respawning): drop every stain on parts under `root`.
+    void wipe(Scene& scene, const SceneNode* root);
+    float dryTime() const { return std::max(8.0f, m_bloodStay * 0.6f); }
     void explosion(const glm::vec3& pos, float radius);
     // Water thrown up by a splash (droplets that vanish when they land).
     void waterSpray(const glm::vec3& pos, int count, float speed, const glm::vec3& color, float radius = 0.3f);   // radius: a ring around what fell in
@@ -88,6 +140,8 @@ public:
 
 private:
     void add(const Particle& p);
+    // A chunk flying, tumbling, bouncing off things and sliding to a stop (bleeding as it goes).
+    void stepGib(Particle& p, float dt, float gravity, const Physics& physics, std::vector<Particle>& born);
     std::vector<Particle> m_items;
     std::vector<Sprite>   m_sprites;
     std::vector<std::string> m_spriteTex;
