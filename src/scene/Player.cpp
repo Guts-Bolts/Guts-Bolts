@@ -530,6 +530,7 @@ void Player::respawn(bool firstSpawn) {
     m_walkPhase = m_swing = m_airBlend = 0.0f;
     m_dead      = false;
     m_debris.clear();
+    m_ragdoll.unhide(*m_scene);   // (blown to pieces last time)
     m_ragdoll.release(*m_scene);
     m_knockTool = 0;
     m_knockTime = 0.0f;

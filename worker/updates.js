@@ -11,6 +11,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'chunky-salsa', name: 'Chunky Salsa', time: 1792469579, tag: 'Engine',
+    summary: 'A point-blank explosion no longer just knocks a body over: it blows it apart into real chunks.',
+    items: [
+      'With Dismemberment and blood on, a huge blast bursts the whole body into pieces of meat, bone and skin',
+      'Each chunk has skin on the outside in the body part\'s own colour, with meat, fat and torn edges inside',
+      'Chunks tumble, bounce, roll and slide across the floor and bounce off walls, instead of sinking into them',
+      'Fresh chunks drip a blood trail as they fly and leave a splat where they land hard',
+      'Bone bits bounce more and click when they land; meaty bits land with a wet slap',
+    ],
+  },
+  {
     id: 'stuntman-school', name: 'Stuntman School', time: 1792469224, tag: 'Engine',
     summary: 'Ragdolls got muscles: bodies try to catch themselves, cover up, clutch their wounds, and get back up after a big hit.',
     items: [

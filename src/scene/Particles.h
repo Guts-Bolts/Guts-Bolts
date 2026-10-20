@@ -38,6 +38,11 @@ struct Particle {
     glm::vec3 localPos{0.0f}, localNormal{0.0f, 1.0f, 0.0f}, localTangent{1.0f, 0.0f, 0.0f};
     glm::vec3 tangent{0.0f};            // (stains: which way the part's side runs, so it turns with it)
     float     alpha = 1.0f;             // footprints and smears get fainter
+    // Gibs (Chunk):
+    int       gib = 0;                  // 0 meat, 1 bone
+    glm::vec3 skin{-1.0f};              // a piece of a body part: its colour on one side (negative = plain meat)
+    float     bleed = 0.0f;             // seconds it still drips blood
+    float     gibSeed = 0.0f;           // 0..1: so no two look the same
 };
 
 enum class GoreKind { Blood, Oil };
@@ -102,6 +107,9 @@ public:
     void spray(GoreKind kind, const glm::vec3& pos, const glm::vec3& dir, int count, float speed);
     // Chunks of meat / bolts and metal scraps.
     void gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel, int count);
+    // A body part bursting into pieces: chunks from all through it, with its colour on
+    // the outside and meat (or metal) inside, a few bits of bone, and a lot of blood.
+    void burst(GoreKind kind, const SceneNode* part, const glm::vec3& vel, float violence);
     void sparks(const glm::vec3& pos, int count);
     // An arterial spurt: a tight jet of drops (one heartbeat). `inherit` = how the wound is moving.
     void spurt(GoreKind kind, const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& inherit, float strength);
@@ -132,6 +140,8 @@ public:
 
 private:
     void add(const Particle& p);
+    // A chunk flying, tumbling, bouncing off things and sliding to a stop (bleeding as it goes).
+    void stepGib(Particle& p, float dt, float gravity, const Physics& physics, std::vector<Particle>& born);
     std::vector<Particle> m_items;
     std::vector<Sprite>   m_sprites;
     std::vector<std::string> m_spriteTex;

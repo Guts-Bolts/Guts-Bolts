@@ -110,6 +110,9 @@ uniform int   uWetCount;
 uniform vec4  uWetSpots[16];
 uniform float uWetAmt[16];
 uniform float uWetPart;
+uniform vec3  uGibSkin;       // a gib (uMaterial 31) cut from a body part: that part's colour on its outer side
+uniform bool  uGibSkinOn;
+uniform float uGibSeed;       // 0..1: every chunk looks a bit different
 uniform int   uSplatLook;     // landed blood (uMaterial 30): 0 pool / splash / stain, 1 smear, 2 footprint
 uniform float uSplatSeed;     // 0..1: every splat gets its own wobbly edge
 uniform float uSplatDry;      // 0 fresh and wet .. 1 dried dark and dull
@@ -444,6 +447,24 @@ void main() {
         rough = 0.15;
         albedo *= 0.7;
     }
+    else if (uMaterial == 31) {                                   // a gib: lumpy wet meat (skin on one side if cut from a body part)
+        vec3 lp = vLocalPos + uGibSeed * 7.0;
+        float lumps = fbm(lp.xz * 4.0 + lp.y * 3.0);
+        vec2 cid;
+        vec3 cell = voronoi(vLocalPos.xy * 5.0 + vLocalPos.zx * 3.0 + uGibSeed * 11.0, cid);
+        albedo *= 0.6 + 0.6 * lumps;
+        albedo = mix(albedo, lin(vec3(0.85, 0.7, 0.62)), smoothstep(0.72, 0.9, vnoise(lp.xy * 7.0 + lp.z * 4.0)) * 0.55);   // fat and sinew
+        albedo *= 1.0 - (1.0 - smoothstep(0.0, 0.06, cell.y)) * 0.5;   // dark torn gaps
+        rough = 0.22;
+        N = bump(N, lumps * 0.03 * detail);
+        if (uGibSkinOn && vLocalNormal.y > 0.5) {
+            // The outside of the body part, with a ragged, bloody edge where it tore.
+            float edge = max(abs(vLocalPos.x), abs(vLocalPos.z)) * 2.0;
+            float torn = smoothstep(0.62, 0.8, edge + 0.25 * (vnoise(vLocalPos.xz * 10.0 + uGibSeed * 5.0) - 0.5));
+            albedo = mix(lin(uGibSkin) * (0.9 + 0.1 * lumps), albedo, torn);
+            rough = mix(0.55, 0.22, torn);
+        }
+    }
     else if (uMaterial == 30) {                                   // blood that has landed: pools, smears, footprints, stains
         if (vLocalNormal.y < 0.5) discard;                        // just a film on top of the surface
         vec2 q = vLocalPos.xz * 2.0;                              // -1..1 across
@@ -495,7 +516,7 @@ void main() {
 
     // Wet things: darker (water soaks into wood, concrete and the like) and shinier,
     // with little puddles on flat tops. Patchy as they dry.
-    if (uMaterial != 2 && uMaterial != 7 && uMaterial != 8 && uMaterial != 30) {
+    if (uMaterial != 2 && uMaterial != 7 && uMaterial != 8 && uMaterial != 30 && uMaterial != 31) {
         float wet = uWetPart;
         for (int i = 0; i < uWetCount; ++i) {
             float d = length(vWorldPos - uWetSpots[i].xyz);
@@ -551,7 +572,7 @@ void main() {
         vec3  env = lin(skyGradient(R, uZenith, uHorizon, uGround));
         vec3  avg = lin((uZenith + uHorizon + uGround) / 3.0);
         env = mix(env, avg, rough);
-        color += env * F * (uMaterial == 7 ? max(uReflections, 0.8) : uMaterial == 8 ? uReflections * 0.2 : uMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : uReflections) * (1.0 - rough * 0.7);
+        color += env * F * (uMaterial == 7 ? max(uReflections, 0.8) : uMaterial == 8 ? uReflections * 0.2 : uMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : uMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
 
         // Glass & ice get more opaque at glancing angles.
         if (uMaterial == 4 || uMaterial == 6 || uMaterial == 7)
