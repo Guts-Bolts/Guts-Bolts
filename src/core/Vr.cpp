@@ -15,6 +15,8 @@ void submitEye(int, unsigned) {}
 void endFrame() {}
 glm::mat4 head() { return glm::mat4(1.0f); }
 bool hand(int, glm::mat4&) { return false; }
+bool aim(int, glm::mat4&) { return false; }
+void showPanel(unsigned, int, int, const glm::mat4&, float) {}
 const Controls& controls() { return g_none; }
 } // namespace Vr
 
@@ -61,6 +63,16 @@ struct Eye {
     bool submitted = false;
 };
 
+// The floating menu screen (its own picture, shown as a flat "quad" layer).
+struct Panel {
+    XrSwapchain swapchain = XR_NULL_HANDLE;
+    int w = 0, h = 0;
+    std::vector<XrSwapchainImageOpenGLKHR> images;
+    bool shown = false;   // this frame
+    XrPosef pose{};
+    XrExtent2Df size{};
+};
+
 struct State {
     XrInstance instance = XR_NULL_HANDLE;
     XrSystemId system = XR_NULL_SYSTEM_ID;
@@ -70,17 +82,21 @@ struct State {
     bool sessionRunning = false;
     XrEnvironmentBlendMode blend = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
     Eye eyes[2];
+    Panel panel;
+    int64_t format = 0;
     XrView views[2] = {{XR_TYPE_VIEW}, {XR_TYPE_VIEW}};
     XrFrameState frame{XR_TYPE_FRAME_STATE};
     bool frameBegun = false, shouldRender = false;
     GLuint readFbo = 0, drawFbo = 0;
     XrActionSet actionSet = XR_NULL_HANDLE;
     XrAction move = XR_NULL_HANDLE, turn = XR_NULL_HANDLE, jump = XR_NULL_HANDLE, menu = XR_NULL_HANDLE;
-    XrAction use = XR_NULL_HANDLE, grip = XR_NULL_HANDLE;
+    XrAction use = XR_NULL_HANDLE, grip = XR_NULL_HANDLE, aimPose = XR_NULL_HANDLE;
     XrPath handPath[2] = {XR_NULL_PATH, XR_NULL_PATH};
     XrSpace handSpace[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
+    XrSpace aimSpace[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
     glm::mat4 hands[2] = {glm::mat4(1.0f), glm::mat4(1.0f)};
-    bool handOk[2] = {false, false};
+    glm::mat4 aims[2] = {glm::mat4(1.0f), glm::mat4(1.0f)};
+    bool handOk[2] = {false, false}, aimOk[2] = {false, false};
     Controls controls;
     glm::mat4 head{1.0f};
     std::string error;
@@ -154,33 +170,38 @@ bool makeActions() {
     g.handPath[0] = path("/user/hand/left");
     g.handPath[1] = path("/user/hand/right");
     g.grip = makeAction("hand", "Hand", XR_ACTION_TYPE_POSE_INPUT, true);
+    g.aimPose = makeAction("point", "Point", XR_ACTION_TYPE_POSE_INPUT, true);
     const char* gripL = "/user/hand/left/input/grip/pose";
     const char* gripR = "/user/hand/right/input/grip/pose";
+    const char* aimL = "/user/hand/left/input/aim/pose";
+    const char* aimR = "/user/hand/right/input/aim/pose";
     suggest("/interaction_profiles/oculus/touch_controller", {
         {g.move, "/user/hand/left/input/thumbstick"}, {g.turn, "/user/hand/right/input/thumbstick"},
         {g.jump, "/user/hand/right/input/a/click"}, {g.menu, "/user/hand/left/input/menu/click"},
-        {g.use, "/user/hand/right/input/trigger/value"}, {g.grip, gripL}, {g.grip, gripR}});
+        {g.use, "/user/hand/right/input/trigger/value"}, {g.grip, gripL}, {g.grip, gripR}, {g.aimPose, aimL}, {g.aimPose, aimR}});
     suggest("/interaction_profiles/valve/index_controller", {
         {g.move, "/user/hand/left/input/thumbstick"}, {g.turn, "/user/hand/right/input/thumbstick"},
         {g.jump, "/user/hand/right/input/a/click"}, {g.menu, "/user/hand/left/input/b/click"},
-        {g.use, "/user/hand/right/input/trigger/click"}, {g.grip, gripL}, {g.grip, gripR}});
+        {g.use, "/user/hand/right/input/trigger/click"}, {g.grip, gripL}, {g.grip, gripR}, {g.aimPose, aimL}, {g.aimPose, aimR}});
     suggest("/interaction_profiles/htc/vive_controller", {
         {g.move, "/user/hand/left/input/trackpad"}, {g.turn, "/user/hand/right/input/trackpad"},
         {g.jump, "/user/hand/right/input/trackpad/click"}, {g.menu, "/user/hand/left/input/menu/click"},
-        {g.use, "/user/hand/right/input/trigger/click"}, {g.grip, gripL}, {g.grip, gripR}});
+        {g.use, "/user/hand/right/input/trigger/click"}, {g.grip, gripL}, {g.grip, gripR}, {g.aimPose, aimL}, {g.aimPose, aimR}});
     suggest("/interaction_profiles/microsoft/motion_controller", {
         {g.move, "/user/hand/left/input/thumbstick"}, {g.turn, "/user/hand/right/input/thumbstick"},
         {g.jump, "/user/hand/right/input/thumbstick/click"}, {g.menu, "/user/hand/left/input/menu/click"},
-        {g.use, "/user/hand/right/input/trigger/value"}, {g.grip, gripL}, {g.grip, gripR}});
+        {g.use, "/user/hand/right/input/trigger/value"}, {g.grip, gripL}, {g.grip, gripR}, {g.aimPose, aimL}, {g.aimPose, aimR}});
     suggest("/interaction_profiles/khr/simple_controller", {
         {g.use, "/user/hand/right/input/select/click"}, {g.menu, "/user/hand/left/input/menu/click"},
-        {g.grip, gripL}, {g.grip, gripR}});
+        {g.grip, gripL}, {g.grip, gripR}, {g.aimPose, aimL}, {g.aimPose, aimR}});
     for (int i = 0; i < 2; ++i) {   // where each controller is
         XrActionSpaceCreateInfo ai{XR_TYPE_ACTION_SPACE_CREATE_INFO};
         ai.action = g.grip;
         ai.subactionPath = g.handPath[i];
         ai.poseInActionSpace.orientation.w = 1.0f;
         xrCreateActionSpace(g.session, &ai, &g.handSpace[i]);
+        ai.action = g.aimPose;   // and where it points
+        xrCreateActionSpace(g.session, &ai, &g.aimSpace[i]);
     }
     XrSessionActionSetsAttachInfo at{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
     at.countActionSets = 1;
@@ -210,6 +231,7 @@ bool makeSwapchains() {
         for (int64_t f : formats) has = has || f == want;
         if (has) { format = want; break; }
     }
+    g.format = format;
 
     for (int i = 0; i < 2; ++i) {
         Eye& e = g.eyes[i];
@@ -238,10 +260,12 @@ void closeAll() {
         if (e.swapchain) xrDestroySwapchain(e.swapchain);
         e = Eye{};
     }
+    if (g.panel.swapchain) xrDestroySwapchain(g.panel.swapchain);
     if (g.readFbo) glDeleteFramebuffers(1, &g.readFbo);
     if (g.drawFbo) glDeleteFramebuffers(1, &g.drawFbo);
     g.readFbo = g.drawFbo = 0;
     for (XrSpace s : g.handSpace) if (s) xrDestroySpace(s);
+    for (XrSpace s : g.aimSpace) if (s) xrDestroySpace(s);
     if (g.viewSpace) xrDestroySpace(g.viewSpace);
     if (g.local) xrDestroySpace(g.local);
     if (g.actionSet) xrDestroyActionSet(g.actionSet);   // (its actions go with it)
@@ -316,7 +340,7 @@ void readControls() {
             c.turn = vec(g.turn);
             c.jump = button(g.jump, nullptr);
             button(g.menu, &c.menu);
-            button(g.use, &c.use);
+            c.useHeld = button(g.use, &c.use);
         }
     }
     g.controls = c;
@@ -442,6 +466,7 @@ bool beginFrame(View eyes[2], float nearPlane, float farPlane) {
     if (XR_FAILED(xrBeginFrame(g.session, &bi))) return false;
     g.frameBegun = true;
     for (Eye& e : g.eyes) e.submitted = false;
+    g.panel.shown = false;
     readControls();
     if (!g.frame.shouldRender) return false;
 
@@ -465,6 +490,10 @@ bool beginFrame(View eyes[2], float nearPlane, float farPlane) {
         g.handOk[i] = g.handSpace[i] && XR_SUCCEEDED(xrLocateSpace(g.handSpace[i], g.local, g.frame.predictedDisplayTime, &loc)) &&
                       (loc.locationFlags & need) == need;
         if (g.handOk[i]) g.hands[i] = toMat(loc.pose);
+        XrSpaceLocation al{XR_TYPE_SPACE_LOCATION};
+        g.aimOk[i] = g.aimSpace[i] && XR_SUCCEEDED(xrLocateSpace(g.aimSpace[i], g.local, g.frame.predictedDisplayTime, &al)) &&
+                     (al.locationFlags & need) == need;
+        if (g.aimOk[i]) g.aims[i] = toMat(al.pose);
     }
     for (int i = 0; i < 2; ++i) {
         eyes[i].pose = toMat(g.views[i].pose);
@@ -476,33 +505,76 @@ bool beginFrame(View eyes[2], float nearPlane, float farPlane) {
     return true;
 }
 
-void submitEye(int eye, unsigned colorTexture) {
-    if (!g.frameBegun || !g.shouldRender || eye < 0 || eye > 1) return;
-    Eye& e = g.eyes[eye];
+namespace {
+// Copy a picture (w x h) into the headset's next one in `swapchain`.
+bool copyInto(XrSwapchain swapchain, const std::vector<XrSwapchainImageOpenGLKHR>& images, unsigned colorTexture, int w, int h) {
     uint32_t index = 0;
     XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-    if (XR_FAILED(xrAcquireSwapchainImage(e.swapchain, &ai, &index))) return;
+    if (XR_FAILED(xrAcquireSwapchainImage(swapchain, &ai, &index))) return false;
     XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
     wi.timeout = XR_INFINITE_DURATION;
-    if (XR_FAILED(xrWaitSwapchainImage(e.swapchain, &wi))) return;
+    if (XR_FAILED(xrWaitSwapchainImage(swapchain, &wi))) return false;
 
-    // Copy the eye's picture into the headset's.
     GLint oldRead = 0, oldDraw = 0;
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldRead);
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oldDraw);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, g.readFbo);
     glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTexture, 0);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g.drawFbo);
-    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, e.images[index].image, 0);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, images[index].image, 0);
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_FRAMEBUFFER_SRGB);   // (copy the bytes as they are)
-    glBlitFramebuffer(0, 0, e.w, e.h, 0, 0, e.w, e.h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)oldRead);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)oldDraw);
 
     XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-    xrReleaseSwapchainImage(e.swapchain, &ri);
-    e.submitted = true;
+    xrReleaseSwapchainImage(swapchain, &ri);
+    return true;
+}
+
+XrPosef toPose(const glm::mat4& m) {
+    const glm::quat q = glm::quat_cast(glm::mat3(m));
+    XrPosef p;
+    p.orientation = {q.x, q.y, q.z, q.w};
+    p.position = {m[3].x, m[3].y, m[3].z};
+    return p;
+}
+} // namespace
+
+void submitEye(int eye, unsigned colorTexture) {
+    if (!g.frameBegun || !g.shouldRender || eye < 0 || eye > 1) return;
+    Eye& e = g.eyes[eye];
+    if (copyInto(e.swapchain, e.images, colorTexture, e.w, e.h)) e.submitted = true;
+}
+
+void showPanel(unsigned colorTexture, int w, int h, const glm::mat4& pose, float widthMetres) {
+    if (!g.frameBegun || !g.shouldRender || w <= 0 || h <= 0) return;
+    Panel& p = g.panel;
+    if (p.w != w || p.h != h) {   // (a new size: a new picture for it)
+        if (p.swapchain) xrDestroySwapchain(p.swapchain);
+        p = Panel{};
+        XrSwapchainCreateInfo sc{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+        sc.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+        sc.format = g.format;
+        sc.sampleCount = 1;
+        sc.width = (uint32_t)w;
+        sc.height = (uint32_t)h;
+        sc.faceCount = 1;
+        sc.arraySize = 1;
+        sc.mipCount = 1;
+        if (XR_FAILED(xrCreateSwapchain(g.session, &sc, &p.swapchain))) { p.swapchain = XR_NULL_HANDLE; return; }
+        uint32_t ni = 0;
+        xrEnumerateSwapchainImages(p.swapchain, 0, &ni, nullptr);
+        p.images.assign(ni, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR});
+        xrEnumerateSwapchainImages(p.swapchain, ni, &ni, (XrSwapchainImageBaseHeader*)p.images.data());
+        p.w = w;
+        p.h = h;
+    }
+    if (!copyInto(p.swapchain, p.images, colorTexture, w, h)) return;
+    p.pose = toPose(pose);
+    p.size = {widthMetres, widthMetres * (float)h / (float)w};
+    p.shown = true;
 }
 
 void endFrame() {
@@ -511,7 +583,8 @@ void endFrame() {
     XrCompositionLayerProjectionView pv[2] = {{XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW},
                                               {XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW}};
     XrCompositionLayerProjection layer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};
-    const XrCompositionLayerBaseHeader* layers[1] = {(XrCompositionLayerBaseHeader*)&layer};
+    XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    const XrCompositionLayerBaseHeader* layers[2] = {(XrCompositionLayerBaseHeader*)&layer, (XrCompositionLayerBaseHeader*)&quad};
     const bool both = g.shouldRender && g.eyes[0].submitted && g.eyes[1].submitted;
     if (both) {
         for (int i = 0; i < 2; ++i) {
@@ -528,6 +601,17 @@ void endFrame() {
     ei.displayTime = g.frame.predictedDisplayTime;
     ei.environmentBlendMode = g.blend;
     ei.layerCount = both ? 1 : 0;
+    if (both && g.panel.shown) {   // the menu screen, over the world
+        // (ImGui's see-through edges are already multiplied by their alpha: no UNPREMULTIPLIED flag)
+        quad.layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+        quad.space = g.local;
+        quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+        quad.subImage.swapchain = g.panel.swapchain;
+        quad.subImage.imageRect = {{0, 0}, {g.panel.w, g.panel.h}};
+        quad.pose = g.panel.pose;
+        quad.size = g.panel.size;
+        ei.layerCount = 2;
+    }
     ei.layers = layers;
     xrEndFrame(g.session, &ei);
 }
@@ -536,6 +620,11 @@ glm::mat4 head() { return g.head; }
 bool hand(int side, glm::mat4& pose) {
     if (side < 0 || side > 1 || !g.handOk[side]) return false;
     pose = g.hands[side];
+    return true;
+}
+bool aim(int side, glm::mat4& pose) {
+    if (side < 0 || side > 1 || !g.aimOk[side]) return false;
+    pose = g.aims[side];
     return true;
 }
 const Controls& controls() { return g.controls; }

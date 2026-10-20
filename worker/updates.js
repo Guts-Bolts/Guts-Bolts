@@ -11,7 +11,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'unfold-the-box', name: 'Unfold the Box', time: 1792518800, tag: 'Studio',
+    id: 'unfold-the-box', name: 'Unfold the Box', time: 1792521000, tag: 'Studio',
     summary: 'UV mapping in Studio: lay a mesh out flat, mark seams and wrap your own picture around it.',
     items: [
       'Press U in Modeling mode to unwrap: Unwrap (cuts along your seams, keeps shapes), Smart UV Project, Cube, Cylinder and Sphere Projection, Project From View and Reset',
@@ -20,6 +20,26 @@ export const BUILT_IN_UPDATES = [
       'Pack Islands spreads the pieces out so none overlap, and Export UV Layout saves a picture of the layout to paint over in any drawing program',
       'MeshParts have a Texture in Properties: pick a picture and it wraps onto the mesh the way the UV Editor shows',
       'Changing the mesh after unwrapping (extrude, inset, subdivide...) keeps the layout of the faces that didn\'t change',
+    ],
+  },
+  {
+    id: 'mind-reader', name: 'Mind Reader', version: '0.7.5', time: 1792520400, tag: 'Engine',
+    summary: 'Game scripts can now tell when someone plays in VR, and where their head and hands are.',
+    items: [
+      'VRService works in LocalScripts: VREnabled is true while you play in a VR headset (UserInputService.VREnabled too)',
+      'VRService:GetUserCFrame(Enum.UserCFrame.Head, LeftHand or RightHand) says where your head or a hand is, in studs, like on Roblox',
+      'VRService.UserCFrameChanged fires every frame with each one the headset can see, so a script can stick a sword or a flashlight to your hand',
+      'Studio\'s script editor suggests the new names, and the AI helper knows about them',
+    ],
+  },
+  {
+    id: 'point-and-click', name: 'Point and Click', version: '0.7.4', time: 1792519800, tag: 'Player',
+    summary: 'In VR the menus, buttons and chat float in front of you, and you click them by pointing with your right hand.',
+    items: [
+      'Everything that sits on top of the game (the menu, health, the hotbar, chat, the game\'s own buttons) now shows on a see-through screen floating in front of you in the headset',
+      'Point at it with your right controller and a ring shows where you\'re pointing; pull the trigger to click, hold it to drag a slider',
+      'Opening the menu puts the screen right in front of you. While you play it drifts back in front of you when you look far away',
+      'Pointing at the screen but not at a button? The trigger still uses your tool, so the screen never gets in your way',
     ],
   },
   {

@@ -1274,6 +1274,31 @@ do
     setmetatable(PhysicsService, { __tostring = function() return "PhysicsService" end })
 end
 
+-- VRService: the player's VR headset (Guts&Bolts Player, Settings > Play in VR).
+-- VREnabled is kept up to date. GetUserCFrame(Enum.UserCFrame.Head / LeftHand /
+-- RightHand) is where that is, in studs from where VR started (like Roblox, add it
+-- to the place you want it relative to). UserCFrameChanged fires every frame for
+-- each one the headset can see.
+do
+    local vrCFrame = __gb_vrCFrame
+    VRService = { Name = "VRService", ClassName = "VRService", VREnabled = false,
+                  GuiInputUserCFrame = "RightHand", UserCFrameChanged = luaSignal() }
+    function VRService:GetUserCFrame(kind) return (vrCFrame(tostring(kind))) end
+    function VRService:GetUserCFrameEnabled(kind) return select(2, vrCFrame(tostring(kind))) end
+    function VRService:RecenterUserHeadCFrame() end
+    function VRService:IsA(c) return c == "VRService" or c == "Instance" end
+    setmetatable(VRService, { __tostring = function() return "VRService" end })
+    UserInputService.VREnabled = false
+    local kinds = { "Head", "LeftHand", "RightHand" }
+    RunService.Heartbeat:Connect(function()
+        if not VRService.VREnabled then return end
+        for _, k in ipairs(kinds) do
+            local cf, ok = vrCFrame(k)
+            if ok then VRService.UserCFrameChanged:Fire(k, cf) end
+        end
+    end)
+end
+
 local services = { Workspace = workspace, PathfindingService = PathfindingService, BadgeService = BadgeService, TeleportService = TeleportService, Debris = Debris, Teams = Teams, Players = Players, Lighting = Lighting,
                    MarketplaceService = MarketplaceService, GamePassService = GamePassService,
                    RunService = RunService, UserInputService = UserInputService, Gui = Gui,
@@ -1281,7 +1306,7 @@ local services = { Workspace = workspace, PathfindingService = PathfindingServic
                    MessagingService = MessagingService,
                    TweenService = TweenService, HttpService = HttpService,
                    ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService,
-                   ContextActionService = ContextActionService }
+                   ContextActionService = ContextActionService, VRService = VRService }
 -- The container services are folders at the top of the game (Studio shows them in the Explorer).
 local storageNames = { ReplicatedStorage = true, ServerStorage = true, ReplicatedFirst = true, ServerScriptService = true,
                        StarterPack = true, StarterPlayer = true, SoundService = true, Chat = true, TextChatService = true }
@@ -1295,7 +1320,7 @@ local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, Scri
     MaterialService = {}, VoiceChatService = {},
     MemoryStoreService = {}, InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
-    VRService = {}, GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
+    GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
 local made = {}
 local function quietService(name)
     if made[name] then return made[name] end
@@ -1756,6 +1781,16 @@ int l_padState(lua_State* L) {   // the controller's sticks and triggers
     lua_pushnumber(L, rs.x); lua_pushnumber(L, rs.y);
     lua_pushnumber(L, on ? Pad::leftTrigger() : 0.0f); lua_pushnumber(L, on ? Pad::rightTrigger() : 0.0f);
     return 6;
+}
+
+int l_vrCFrame(lua_State* L) {   // VRService:GetUserCFrame: the CFrame, and whether the headset sees it
+    const ScriptEngine::VrPose& vr = LuaApi::engine(L)->vr();
+    const std::string kind = luaL_checkstring(L, 1);
+    const int hand = kind == "LeftHand" ? 0 : kind == "RightHand" ? 1 : -1;
+    const bool ok = vr.on && (hand < 0 ? kind == "Head" : vr.handOk[hand]);
+    LuaApi::pushCFrame(L, !ok ? glm::mat4(1.0f) : hand < 0 ? vr.head : vr.hand[hand]);
+    lua_pushboolean(L, ok);
+    return 2;
 }
 
 int l_isKeyDown(lua_State* L) {
@@ -2687,6 +2722,7 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_spawn", l_spawn);
     lua_register(L, "__gb_delay", l_delay);
     lua_register(L, "__gb_isKeyDown", l_isKeyDown);
+    lua_register(L, "__gb_vrCFrame", l_vrCFrame);
     lua_register(L, "__gb_padState", l_padState);
     lua_register(L, "__gb_playerNode", l_playerNode);
     lua_register(L, "__gb_setRespawn", l_setRespawn);
@@ -3089,6 +3125,15 @@ void ScriptEngine::update(float dt) {
         lua_getglobal(m_L, "UserInputService");
         if (lua_istable(m_L, -1)) { lua_pushboolean(m_L, pad); lua_setfield(m_L, -2, "GamepadEnabled"); }
         lua_pop(m_L, 1);
+    }
+    // VRService.VREnabled (and UserInputService.VREnabled): playing in a headset?
+    if (m_vr.on != m_vrSeen) {
+        m_vrSeen = m_vr.on;
+        for (const char* service : {"VRService", "UserInputService"}) {
+            lua_getglobal(m_L, service);
+            if (lua_istable(m_L, -1)) { lua_pushboolean(m_L, m_vr.on); lua_setfield(m_L, -2, "VREnabled"); }
+            lua_pop(m_L, 1);
+        }
     }
 
     // Wake threads whose wait() is over.
