@@ -82,6 +82,41 @@ float effMass(const Body& a, const Body& b, const glm::vec3& ra, const glm::vec3
     return k > 1e-9f ? k : 1e-9f;
 }
 
+// Contacts are found afresh every step; this names a pair of touching parts, so
+// how hard their contacts pushed last step can be found again.
+uint64_t pairKey(const Body& A, const Body& B) {
+    const uint64_t a = A.node ? A.node->id : 0, b = B.node ? B.node->id : 0;
+    uint64_t k = a * 0x9E3779B97F4A7C15ull;
+    return k ^ (b + 0x632BE59BD9B4E019ull + (k << 6) + (k >> 2));
+}
+
+// Where a ray from `from` along `dir` first enters a box grown by `grow` on every
+// side (false if it starts inside, misses, or gets there after `maxT`).
+bool rayIntoBox(const glm::vec3& from, const glm::vec3& dir, float maxT, const OBB& o, float grow,
+                float& t, glm::vec3& normal) {
+    const glm::vec3 rel = from - o.center;
+    float enter = -1e30f, leave = 1e30f;
+    int enterAxis = -1;
+    float enterSign = 1.0f;
+    for (int i = 0; i < 3; ++i) {
+        const float p = glm::dot(rel, o.axis[i]), d = glm::dot(dir, o.axis[i]), h = o.half[i] + grow;
+        if (std::abs(d) < 1e-8f) {
+            if (std::abs(p) > h) return false;
+            continue;
+        }
+        float t0 = (-h - p) / d, t1 = (h - p) / d;
+        float sign = -1.0f;                         // (entering the -side face)
+        if (t0 > t1) { std::swap(t0, t1); sign = 1.0f; }
+        if (t0 > enter) { enter = t0; enterAxis = i; enterSign = sign; }
+        leave = std::min(leave, t1);
+        if (enter > leave) return false;
+    }
+    if (enterAxis < 0 || enter < 0.0f || enter > maxT) return false;
+    t = enter;
+    normal = o.axis[enterAxis] * enterSign;
+    return true;
+}
+
 // --- contact generation -------------------------------------------------------
 
 void boxCorners(const OBB& o, glm::vec3 out[8]) {
@@ -103,18 +138,78 @@ glm::vec3 support(const OBB& o, const glm::vec3& dir) {
     return p;
 }
 
+// Face against face (the usual case: a box lying on another, or on the floor): the
+// touching patch is the other box's face cut down to fit inside this one's face,
+// so the contacts are the patch's corners. Corners sitting right on an edge don't
+// flicker in and out from step to step, which is what made stacks shuffle.
+bool faceContacts(int ia, int ib, const OBB& a, const OBB& b, const glm::vec3& n, float depth,
+                  std::vector<Contact>& out) {
+    // The reference face is the one `n` comes straight out of: B's face towards A,
+    // else A's face towards B.
+    const OBB* ref = nullptr; const OBB* inc = nullptr;
+    glm::vec3 rn; int axis = -1;
+    for (int i = 0; i < 3 && axis < 0; ++i)
+        if (std::abs(glm::dot(n, b.axis[i])) > 0.9999f) { ref = &b; inc = &a; rn = n; axis = i; }
+    for (int i = 0; i < 3 && axis < 0; ++i)
+        if (std::abs(glm::dot(n, a.axis[i])) > 0.9999f) { ref = &a; inc = &b; rn = -n; axis = i; }
+    if (axis < 0) return false;                     // (edge against edge)
+    const int u = (axis + 1) % 3, v = (axis + 2) % 3;
+    const glm::vec3 refCenter = ref->center + rn * ref->half[axis];
+
+    // The incident face: the other box's face that points most against `rn`.
+    int k = 0;
+    for (int i = 1; i < 3; ++i)
+        if (std::abs(glm::dot(inc->axis[i], rn)) > std::abs(glm::dot(inc->axis[k], rn))) k = i;
+    const float s = glm::dot(inc->axis[k], rn) > 0.0f ? -1.0f : 1.0f;
+    const int ku = (k + 1) % 3, kv = (k + 2) % 3;
+    const glm::vec3 fc = inc->center + inc->axis[k] * (inc->half[k] * s);
+    const glm::vec3 eu = inc->axis[ku] * inc->half[ku], ev = inc->axis[kv] * inc->half[kv];
+    std::vector<glm::vec3> poly{fc + eu + ev, fc - eu + ev, fc - eu - ev, fc + eu - ev}, next;
+
+    // Cut it by the four sides of the reference face.
+    for (int side = 0; side < 4; ++side) {
+        const glm::vec3 dir = ref->axis[side < 2 ? u : v] * (side % 2 ? -1.0f : 1.0f);
+        const float lim = ref->half[side < 2 ? u : v] + glm::dot(ref->center, dir);
+        next.clear();
+        for (size_t i = 0; i < poly.size(); ++i) {
+            const glm::vec3 &p = poly[i], &q = poly[(i + 1) % poly.size()];
+            const float dp = glm::dot(p, dir) - lim, dq = glm::dot(q, dir) - lim;
+            if (dp <= 0.0f) next.push_back(p);
+            if ((dp < 0.0f) != (dq < 0.0f) && std::abs(dp - dq) > 1e-9f) next.push_back(p + (q - p) * (dp / (dp - dq)));
+        }
+        poly.swap(next);
+        if (poly.empty()) return false;
+    }
+    const size_t before = out.size();
+    for (size_t i = 0; i < poly.size(); ++i) {
+        const float sep = glm::dot(poly[i] - refCenter, rn);
+        if (sep > 0.0f) continue;                   // (that bit of the face isn't touching)
+        bool twice = false;                         // (a corner the cut landed right on)
+        for (size_t j = before; j < out.size(); ++j)
+            if (glm::length(out[j].p - (poly[i] - rn * (sep * 0.5f))) < 0.01f) twice = true;
+        if (twice) continue;
+        // On the reference face, halfway between the two surfaces.
+        out.push_back({ia, ib, poly[i] - rn * (sep * 0.5f), n, std::min(-sep, depth)});
+    }
+    return out.size() > before;
+}
+
 void boxBox(int ia, int ib, const Body& A, const Body& B, std::vector<Contact>& out) {
     OBB a = A.obb(), b = B.obb();
     glm::vec3 n; float depth;
     if (!Physics::obbOverlap(a, b, n, depth)) return;
+    if (faceContacts(ia, ib, a, b, n, depth, out)) return;
     glm::vec3 ca[8], cb[8];
     boxCorners(a, ca);
     boxCorners(b, cb);
     size_t before = out.size();
-    for (auto& p : ca)
-        if (inside(b, p, 0.02f)) out.push_back({ia, ib, p, n, depth});
-    for (auto& p : cb)
-        if (inside(a, p, 0.02f)) out.push_back({ia, ib, p, n, depth});
+    // Each corner is as deep as it really is (not all as deep as the deepest), so a
+    // box tipped onto one corner isn't shoved off it, and a stack doesn't jiggle.
+    const float topB = glm::dot(support(b, n), n), bottomA = glm::dot(support(a, -n), n);
+    for (const glm::vec3& p : ca)
+        if (inside(b, p, 0.02f)) out.push_back({ia, ib, p, n, std::clamp(topB - glm::dot(p, n), 0.0f, depth)});
+    for (const glm::vec3& p : cb)
+        if (inside(a, p, 0.02f)) out.push_back({ia, ib, p, n, std::clamp(glm::dot(p, n) - bottomA, 0.0f, depth)});
     if (out.size() == before) {                     // edge against edge
         glm::vec3 p = (support(a, -n) + support(b, n)) * 0.5f;
         out.push_back({ia, ib, p, n, depth});
@@ -825,7 +920,9 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     }
 
     const float g = scene.world().gravity;
-    const int   substeps = 2;
+    // Small steps (about 240 a second) with fewer solver passes each hold a tall
+    // stack still far better than a couple of big steps with lots of passes.
+    const int   substeps = std::clamp((int)std::ceil(dt * 240.0f - 0.01f), 2, 8);
     const float h = dt / substeps;
 
     for (int step = 0; step < substeps; ++step) {
@@ -931,9 +1028,33 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             c.bias = 0.25f / h * std::max(c.depth - 0.01f, 0.0f);
             if (vn < -1.5f) c.bias = std::max(c.bias, -e * vn);
         }
+        // Warm start: each contact begins pushing as hard as it did last step, so
+        // the solver only has to fix what changed. Without it a tall stack never
+        // quite settles (it shuffles and slowly topples) and boxes creep down slopes.
+        for (auto& c : contacts) {
+            Body &A = bodies[c.a], &B = bodies[c.b];
+            auto it = m_contactMemory.find(pairKey(A, B));
+            if (it == m_contactMemory.end()) continue;
+            // The one from last step in (nearly) the same spot on the part.
+            const glm::vec3 local = glm::inverse(A.rot) * c.ra;
+            const Physics::ContactMemory* was = nullptr;
+            float best = 0.15f * 0.15f;
+            for (const auto& m : it->second) {
+                const glm::vec3 d = m.local - local;
+                if (glm::dot(d, d) < best && glm::dot(m.n, c.n) > 0.95f) { best = glm::dot(d, d); was = &m; }
+            }
+            if (!was) continue;
+            c.jn = was->jn;
+            const float maxF = c.mu * c.jn;
+            c.jt1 = std::clamp(was->jt1, -maxF, maxF);
+            c.jt2 = std::clamp(was->jt2, -maxF, maxF);
+            const glm::vec3 j = c.n * c.jn + c.t1 * c.jt1 + c.t2 * c.jt2;
+            applyImpulse(A, c.ra, j);
+            applyImpulse(B, c.rb, -j);
+        }
 
         // ---- 5. Solve (sequential impulses) ------------------------------------
-        for (int iter = 0; iter < 12; ++iter) {
+        for (int iter = 0; iter < 8; ++iter) {
             for (auto& c : contacts) {
                 Body &A = bodies[c.a], &B = bodies[c.b];
                 glm::vec3 vrel = A.velocityAt(c.p) - B.velocityAt(c.p);
@@ -1046,16 +1167,64 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             j.accMotor = 0.0f;
             for (float& a : j.acc) a = 0.0f;
         }
+        m_contactMemory.clear();
+        for (const auto& c : contacts)
+            if (c.jn > 0.0f)
+                m_contactMemory[pairKey(bodies[c.a], bodies[c.b])].push_back(
+                    {glm::inverse(bodies[c.a].rot) * c.ra, c.n, c.jn, c.jt1, c.jt2});
 
         // ---- 6. Move ------------------------------------------------------------------
-        for (auto& b : bodies) {
+        for (int bi = 0; bi < (int)bodies.size(); ++bi) {
+            Body& b = bodies[bi];
             if (!b.dynamic || !b.awake) continue;
             // Keep things sane even if a script launches something at warp speed.
             float sp = glm::length(b.v);
             if (sp > 200.0f) b.v *= 200.0f / sp;
             float ws = glm::length(b.w);
             if (ws > 60.0f) b.w *= 60.0f / ws;
-            b.pos += b.v * h;
+            // Fast and small (a bullet, a thrown brick): something it would jump right
+            // over in one step stops it instead, so it can't pass through a wall.
+            const float thin = b.sphere ? b.radius : std::min(b.half.x, std::min(b.half.y, b.half.z));
+            const float travel = glm::length(b.v) * h;
+            bool stopped = false;
+            if (b.solid && travel > thin) {
+                const glm::vec3 dir = b.v * (h / travel);
+                const glm::vec3 lo = glm::min(b.pos, b.pos + b.v * h) - glm::vec3(thin);
+                const glm::vec3 hi = glm::max(b.pos, b.pos + b.v * h) + glm::vec3(thin);
+                float best = travel;
+                int hit = -1;
+                glm::vec3 hitN(0.0f);
+                for (int k = 0; k < (int)bodies.size(); ++k) {
+                    const Body& o = bodies[k];
+                    if (k == bi || !o.solid) continue;
+                    if (o.aabbMax.x < lo.x || o.aabbMin.x > hi.x || o.aabbMax.y < lo.y || o.aabbMin.y > hi.y ||
+                        o.aabbMax.z < lo.z || o.aabbMin.z > hi.z)
+                        continue;
+                    if (noCollide.count({std::min(bi, k), std::max(bi, k)})) continue;
+                    if (useGroups && !groups.collides(b.group, o.group)) continue;
+                    OBB box = o.obb();
+                    if (o.sphere) box.half = glm::vec3(o.radius);
+                    float t;
+                    glm::vec3 n;
+                    if (rayIntoBox(b.pos, dir, best, box, thin, t, n)) { best = t; hit = k; hitN = n; }
+                }
+                if (hit >= 0) {
+                    Body& o = bodies[hit];
+                    b.pos += dir * std::max(0.0f, best - 0.01f);
+                    const float vn = glm::dot(b.v - (o.dynamic ? o.v : glm::vec3(0.0f)), hitN);
+                    if (vn < 0.0f) {
+                        const float e = std::max(b.elasticity, o.elasticity);
+                        const float j = -(1.0f + e) * vn / (b.invMass + (o.dynamic ? o.invMass : 0.0f));
+                        b.v += hitN * (j * b.invMass);
+                        if (o.dynamic) { o.v -= hitN * (j * o.invMass); o.awake = true; }
+                    }
+                    // The rest of the step it slides along what it hit (no stutter skimming a floor).
+                    const glm::vec3 slide = b.v - hitN * std::max(0.0f, glm::dot(b.v, hitN));
+                    b.pos += slide * (h * (1.0f - best / travel));
+                    stopped = true;
+                }
+            }
+            if (!stopped) b.pos += b.v * h;
             glm::quat spin(0.0f, b.w.x, b.w.y, b.w.z);
             b.rot = glm::normalize(b.rot + (spin * b.rot) * (0.5f * h));
             // Update the broad-phase box.
