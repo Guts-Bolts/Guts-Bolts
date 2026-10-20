@@ -13,6 +13,7 @@ const std::string& lastError() { static const std::string empty; return empty; }
 bool beginFrame(View[2], float, float) { return false; }
 void submitEye(int, unsigned) {}
 void endFrame() {}
+bool inFrame() { return false; }
 glm::mat4 head() { return glm::mat4(1.0f); }
 bool hand(int, glm::mat4&) { return false; }
 bool aim(int, glm::mat4&) { return false; }
@@ -23,8 +24,17 @@ const Controls& controls() { return g_none; }
 #else
 
 #include "Log.h"
-#include <GL/glew.h>
-#ifdef _WIN32
+#include "../renderer/GL.h"
+#if defined(GB_QUEST)
+// Meta Quest (and other standalone Android headsets): OpenGL ES through EGL,
+// and OpenXR needs the app's Java side (SDL's activity) to start.
+#include <EGL/egl.h>
+#include <jni.h>
+#include <SDL.h>
+#include <SDL_system.h>
+#define XR_USE_PLATFORM_ANDROID
+#define XR_USE_GRAPHICS_API_OPENGL_ES
+#elif defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -43,9 +53,11 @@ const Controls& controls() { return g_none; }
 #define GLFW_EXPOSE_NATIVE_X11
 #define GLFW_EXPOSE_NATIVE_GLX
 #endif
+#ifndef GB_QUEST
 #define XR_USE_GRAPHICS_API_OPENGL
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
+#endif
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 #include <glm/gtc/quaternion.hpp>
@@ -56,10 +68,23 @@ const Controls& controls() { return g_none; }
 namespace Vr {
 namespace {
 
+#ifdef GB_QUEST
+using SwapImage = XrSwapchainImageOpenGLESKHR;
+constexpr XrStructureType kSwapImageType = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR;
+const char* const kGlExtension = XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME;
+#else
+using SwapImage = XrSwapchainImageOpenGLKHR;
+constexpr XrStructureType kSwapImageType = XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR;
+const char* const kGlExtension = XR_KHR_OPENGL_ENABLE_EXTENSION_NAME;
+#endif
+#ifndef GL_SRGB8_ALPHA8
+#define GL_SRGB8_ALPHA8 0x8C43
+#endif
+
 struct Eye {
     XrSwapchain swapchain = XR_NULL_HANDLE;
     int w = 0, h = 0;
-    std::vector<XrSwapchainImageOpenGLKHR> images;
+    std::vector<SwapImage> images;
     bool submitted = false;
 };
 
@@ -67,7 +92,7 @@ struct Eye {
 struct Panel {
     XrSwapchain swapchain = XR_NULL_HANDLE;
     int w = 0, h = 0;
-    std::vector<XrSwapchainImageOpenGLKHR> images;
+    std::vector<SwapImage> images;
     bool shown = false;   // this frame
     XrPosef pose{};
     XrExtent2Df size{};
@@ -88,6 +113,11 @@ struct State {
     XrFrameState frame{XR_TYPE_FRAME_STATE};
     bool frameBegun = false, shouldRender = false;
     GLuint readFbo = 0, drawFbo = 0;
+    bool srgb = false;           // the headset's pictures are sRGB (see copyInto)
+    GLuint copyProgram = 0;      // OpenGL ES: copies a picture into an sRGB one unchanged
+#ifdef GB_QUEST
+    jobject activity = nullptr;  // (kept between starts: a global reference)
+#endif
     XrActionSet actionSet = XR_NULL_HANDLE;
     XrAction move = XR_NULL_HANDLE, turn = XR_NULL_HANDLE, jump = XR_NULL_HANDLE, menu = XR_NULL_HANDLE;
     XrAction use = XR_NULL_HANDLE, grip = XR_NULL_HANDLE, aimPose = XR_NULL_HANDLE;
@@ -232,6 +262,7 @@ bool makeSwapchains() {
         if (has) { format = want; break; }
     }
     g.format = format;
+    g.srgb = format == (int64_t)GL_SRGB8_ALPHA8;
 
     for (int i = 0; i < 2; ++i) {
         Eye& e = g.eyes[i];
@@ -249,7 +280,7 @@ bool makeSwapchains() {
         if (XR_FAILED(xrCreateSwapchain(g.session, &sc, &e.swapchain))) return false;
         uint32_t ni = 0;
         xrEnumerateSwapchainImages(e.swapchain, 0, &ni, nullptr);
-        e.images.assign(ni, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR});
+        e.images.assign(ni, {kSwapImageType});
         xrEnumerateSwapchainImages(e.swapchain, ni, &ni, (XrSwapchainImageBaseHeader*)e.images.data());
     }
     return true;
@@ -271,9 +302,16 @@ void closeAll() {
     if (g.actionSet) xrDestroyActionSet(g.actionSet);   // (its actions go with it)
     if (g.session) xrDestroySession(g.session);
     if (g.instance) xrDestroyInstance(g.instance);
+    if (g.copyProgram) glDeleteProgram(g.copyProgram);
     std::string error = std::move(g.error);
+#ifdef GB_QUEST
+    jobject activity = g.activity;
+#endif
     g = State{};
     g.error = std::move(error);
+#ifdef GB_QUEST
+    g.activity = activity;
+#endif
 }
 
 bool fail(std::string& error, const std::string& why) {
@@ -352,6 +390,25 @@ bool start(GLFWwindow* window, std::string& error) {
     if (g.instance) return true;
     g.error.clear();
 
+#ifdef GB_QUEST
+    // Android: OpenXR's loader finds the headset's VR software through the app's
+    // Java side, so it needs that first.
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    JavaVM* vm = nullptr;
+    if (!env || env->GetJavaVM(&vm) != JNI_OK || !vm) return fail(error, "Couldn't reach the app's Java side.");
+    if (!g.activity) {
+        jobject act = (jobject)SDL_AndroidGetActivity();
+        if (act) { g.activity = env->NewGlobalRef(act); env->DeleteLocalRef(act); }
+    }
+    PFN_xrInitializeLoaderKHR initLoader = nullptr;
+    xrGetInstanceProcAddr(XR_NULL_HANDLE, "xrInitializeLoaderKHR", (PFN_xrVoidFunction*)&initLoader);
+    if (initLoader) {
+        XrLoaderInitInfoAndroidKHR li{XR_TYPE_LOADER_INIT_INFO_ANDROID_KHR};
+        li.applicationVM = vm;
+        li.applicationContext = g.activity;
+        initLoader((const XrLoaderInitInfoBaseHeaderKHR*)&li);
+    }
+#endif
     // The VR software on this computer (SteamVR, the Oculus / Meta app...).
     uint32_t n = 0;
     if (XR_FAILED(xrEnumerateInstanceExtensionProperties(nullptr, 0, &n, nullptr)))
@@ -359,17 +416,25 @@ bool start(GLFWwindow* window, std::string& error) {
     std::vector<XrExtensionProperties> exts(n, {XR_TYPE_EXTENSION_PROPERTIES});
     xrEnumerateInstanceExtensionProperties(nullptr, n, &n, exts.data());
     bool gl = false;
-    for (auto& e : exts) gl = gl || !std::strcmp(e.extensionName, XR_KHR_OPENGL_ENABLE_EXTENSION_NAME);
+    for (auto& e : exts) gl = gl || !std::strcmp(e.extensionName, kGlExtension);
     if (!gl) return fail(error, "Your VR software can't show OpenGL games. Try SteamVR as the OpenXR runtime.");
 
-    const char* want[] = {XR_KHR_OPENGL_ENABLE_EXTENSION_NAME};
     XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};
+#ifdef GB_QUEST
+    const char* want[] = {kGlExtension, XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME};
+    XrInstanceCreateInfoAndroidKHR android{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
+    android.applicationVM = vm;
+    android.applicationActivity = g.activity;
+    ci.next = &android;
+#else
+    const char* want[] = {kGlExtension};
+#endif
     std::strcpy(ci.applicationInfo.applicationName, "Guts&Bolts");
     ci.applicationInfo.applicationVersion = 1;
     std::strcpy(ci.applicationInfo.engineName, "Guts&Bolts");
     ci.applicationInfo.engineVersion = 1;
     ci.applicationInfo.apiVersion = XR_MAKE_VERSION(1, 0, 0);   // (works with every runtime, old ones too)
-    ci.enabledExtensionCount = 1;
+    ci.enabledExtensionCount = (uint32_t)(sizeof(want) / sizeof(want[0]));
     ci.enabledExtensionNames = want;
     if (XR_FAILED(xrCreateInstance(&ci, &g.instance)))
         return fail(error, "Couldn't start the VR software. Is SteamVR (or your headset's app) running?");
@@ -380,14 +445,32 @@ bool start(GLFWwindow* window, std::string& error) {
         return fail(error, "No VR headset found. Plug it in and turn it on (or start Quest Link / Air Link), then try again.");
 
     // OpenXR asks every OpenGL game to check this first.
+#ifdef GB_QUEST
+    PFN_xrGetOpenGLESGraphicsRequirementsKHR getReqs = nullptr;
+    xrGetInstanceProcAddr(g.instance, "xrGetOpenGLESGraphicsRequirementsKHR", (PFN_xrVoidFunction*)&getReqs);
+    XrGraphicsRequirementsOpenGLESKHR reqs{XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR};
+#else
     PFN_xrGetOpenGLGraphicsRequirementsKHR getReqs = nullptr;
     xrGetInstanceProcAddr(g.instance, "xrGetOpenGLGraphicsRequirementsKHR", (PFN_xrVoidFunction*)&getReqs);
     XrGraphicsRequirementsOpenGLKHR reqs{XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_KHR};
+#endif
     if (!getReqs || XR_FAILED(getReqs(g.instance, g.system, &reqs)))
         return fail(error, "The VR software didn't answer. Try restarting it.");
 
     // Share the window's OpenGL context with the headset.
-#ifdef _WIN32
+#if defined(GB_QUEST)
+    (void)window;
+    XrGraphicsBindingOpenGLESAndroidKHR binding{XR_TYPE_GRAPHICS_BINDING_OPENGL_ES_ANDROID_KHR};
+    binding.display = eglGetCurrentDisplay();
+    binding.context = eglGetCurrentContext();
+    EGLint configId = 0, count = 0;
+    eglQueryContext(binding.display, binding.context, EGL_CONFIG_ID, &configId);
+    const EGLint attrs[] = {EGL_CONFIG_ID, configId, EGL_NONE};
+    EGLConfig config = nullptr;
+    if (!binding.context || !eglChooseConfig(binding.display, attrs, &config, 1, &count) || count < 1)
+        return fail(error, "Couldn't share the game's picture with the headset.");
+    binding.config = config;
+#elif defined(_WIN32)
     XrGraphicsBindingOpenGLWin32KHR binding{XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR};
     binding.hDC = GetDC(glfwGetWin32Window(window));
     binding.hGLRC = glfwGetWGLContext(window);
@@ -506,8 +589,74 @@ bool beginFrame(View eyes[2], float nearPlane, float farPlane) {
 }
 
 namespace {
+#ifdef GB_GLES
+// OpenGL ES: draw `source` (sRGB bytes in a plain texture) into the sRGB `target`.
+// Writing to an sRGB picture always encodes, so the shader decodes first and the
+// bytes come out as they went in.
+GLuint compile(GLenum type, const char* src) {
+    GLuint sh = glCreateShader(type);
+    glShaderSource(sh, 1, &src, nullptr);
+    glCompileShader(sh);
+    return sh;
+}
+void drawDecoded(GLuint target, GLuint source, int w, int h) {
+    if (!g.copyProgram) {
+        const char* vs = "#version 300 es\n"
+                         "out vec2 uv;\n"
+                         "void main() { vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));\n"
+                         "  uv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }\n";
+        const char* fs = "#version 300 es\n"
+                         "precision mediump float;\n"
+                         "uniform sampler2D picture;\n"
+                         "in vec2 uv; out vec4 colour;\n"
+                         "void main() { vec4 c = texture(picture, uv);\n"
+                         "  vec3 lin = mix(c.rgb / 12.92, pow((c.rgb + 0.055) / 1.055, vec3(2.4)), step(0.04045, c.rgb));\n"
+                         "  colour = vec4(lin, c.a); }\n";
+        GLuint v = compile(GL_VERTEX_SHADER, vs), f = compile(GL_FRAGMENT_SHADER, fs);
+        g.copyProgram = glCreateProgram();
+        glAttachShader(g.copyProgram, v);
+        glAttachShader(g.copyProgram, f);
+        glLinkProgram(g.copyProgram);
+        glDeleteShader(v);
+        glDeleteShader(f);
+    }
+    GLint oldFbo = 0, oldProgram = 0, oldTex = 0, oldActive = 0, oldVao = 0, vp[4];
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oldFbo);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &oldProgram);
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &oldActive);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &oldVao);
+    glGetIntegerv(GL_VIEWPORT, vp);
+    const GLboolean blend = glIsEnabled(GL_BLEND), depth = glIsEnabled(GL_DEPTH_TEST),
+                    cull = glIsEnabled(GL_CULL_FACE), scissor = glIsEnabled(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g.drawFbo);
+    glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target, 0);
+    glViewport(0, 0, w, h);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    glUseProgram(g.copyProgram);
+    glActiveTexture(GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &oldTex);
+    glBindTexture(GL_TEXTURE_2D, source);
+    glUniform1i(glGetUniformLocation(g.copyProgram, "picture"), 0);
+    glBindVertexArray(0);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glBindTexture(GL_TEXTURE_2D, (GLuint)oldTex);
+    glActiveTexture((GLenum)oldActive);
+    glBindVertexArray((GLuint)oldVao);
+    glUseProgram((GLuint)oldProgram);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)oldFbo);
+    glViewport(vp[0], vp[1], vp[2], vp[3]);
+    if (blend) glEnable(GL_BLEND);
+    if (depth) glEnable(GL_DEPTH_TEST);
+    if (cull) glEnable(GL_CULL_FACE);
+    if (scissor) glEnable(GL_SCISSOR_TEST);
+}
+#endif
+
 // Copy a picture (w x h) into the headset's next one in `swapchain`.
-bool copyInto(XrSwapchain swapchain, const std::vector<XrSwapchainImageOpenGLKHR>& images, unsigned colorTexture, int w, int h) {
+bool copyInto(XrSwapchain swapchain, const std::vector<SwapImage>& images, unsigned colorTexture, int w, int h) {
     uint32_t index = 0;
     XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
     if (XR_FAILED(xrAcquireSwapchainImage(swapchain, &ai, &index))) return false;
@@ -515,6 +664,14 @@ bool copyInto(XrSwapchain swapchain, const std::vector<XrSwapchainImageOpenGLKHR
     wi.timeout = XR_INFINITE_DURATION;
     if (XR_FAILED(xrWaitSwapchainImage(swapchain, &wi))) return false;
 
+#ifdef GB_GLES
+    if (g.srgb) {   // (OpenGL ES always converts when writing to sRGB, even when copying: undo it first)
+        drawDecoded(images[index].image, colorTexture, w, h);
+        XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        xrReleaseSwapchainImage(swapchain, &ri);
+        return true;
+    }
+#endif
     GLint oldRead = 0, oldDraw = 0;
     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &oldRead);
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &oldDraw);
@@ -523,7 +680,9 @@ bool copyInto(XrSwapchain swapchain, const std::vector<XrSwapchainImageOpenGLKHR
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g.drawFbo);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, images[index].image, 0);
     glDisable(GL_SCISSOR_TEST);
+#ifndef GB_GLES
     glDisable(GL_FRAMEBUFFER_SRGB);   // (copy the bytes as they are)
+#endif
     glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)oldRead);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)oldDraw);
@@ -566,7 +725,7 @@ void showPanel(unsigned colorTexture, int w, int h, const glm::mat4& pose, float
         if (XR_FAILED(xrCreateSwapchain(g.session, &sc, &p.swapchain))) { p.swapchain = XR_NULL_HANDLE; return; }
         uint32_t ni = 0;
         xrEnumerateSwapchainImages(p.swapchain, 0, &ni, nullptr);
-        p.images.assign(ni, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR});
+        p.images.assign(ni, {kSwapImageType});
         xrEnumerateSwapchainImages(p.swapchain, ni, &ni, (XrSwapchainImageBaseHeader*)p.images.data());
         p.w = w;
         p.h = h;
@@ -616,6 +775,7 @@ void endFrame() {
     xrEndFrame(g.session, &ei);
 }
 
+bool inFrame() { return g.frameBegun; }
 glm::mat4 head() { return g.head; }
 bool hand(int side, glm::mat4& pose) {
     if (side < 0 || side > 1 || !g.handOk[side]) return false;

@@ -193,6 +193,10 @@ void AppWindow::close() { m_quit = true; }
 void AppWindow::setTitle(const std::string& t) { SDL_SetWindowTitle(m_sdl, t.c_str()); }
 
 void AppWindow::lockLandscape(bool on) {
+#ifdef GB_QUEST
+    (void)on;   // (headsets don't turn)
+    return;
+#endif
     if (m_landscape == (int)on) return;
     m_landscape = on;
 #ifdef __ANDROID__
@@ -262,7 +266,7 @@ std::vector<std::string> AppWindow::takeDroppedFiles() { return {}; }   // nothi
 
 float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
     const GraphicsSettings& gs = GraphicsSettings::get();
-    int wantVsync = (gs.vsync && !m_fixedDt) ? 1 : 0;
+    int wantVsync = (gs.vsync && !m_fixedDt && !m_headsetPaced) ? 1 : 0;
     if (wantVsync != m_appliedVsync) { SDL_GL_SetSwapInterval(wantVsync); m_appliedVsync = wantVsync; }
 
     double t = now();
@@ -358,7 +362,7 @@ void AppWindow::endFrame(const std::string& screenshotPath) {
     SDL_GL_SwapWindow(m_sdl);
 
     const GraphicsSettings& gs = GraphicsSettings::get();
-    if (!gs.vsync && gs.fpsCap > 0 && !m_fixedDt) {
+    if (!gs.vsync && gs.fpsCap > 0 && !m_fixedDt && !m_headsetPaced) {
         double step = 1.0 / gs.fpsCap;
         m_nextFrame += step;
         double t = now();

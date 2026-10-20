@@ -24,8 +24,27 @@ android {
                 arguments '-DANDROID_STL=c++_shared', '-DCMAKE_BUILD_TYPE=Release'
             }
         }
-        ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+    }
+
+    // Two versions from the same code: phones and tablets, and Meta Quest
+    // headsets (GB_QUEST: the game runs on the headset itself, always in VR).
+    flavorDimensions 'device'
+    productFlavors {
+        phone {
+            dimension 'device'
+            ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
+            manifestPlaceholders = [gbVrCategory: 'android.intent.category.DEFAULT',
+                                    gbXrCategory: 'android.intent.category.DEFAULT']
+        }
+        quest {
+            dimension 'device'
+            applicationIdSuffix '.quest'
+            minSdk 29
+            ndk { abiFilters 'arm64-v8a' }
+            externalNativeBuild { cmake { arguments '-DGB_QUEST=ON' } }
+            // Makes Quest open it as a VR app (not a flat window).
+            manifestPlaceholders = [gbVrCategory: 'com.oculus.intent.category.VR',
+                                    gbXrCategory: 'org.khronos.openxr.intent.category.IMMERSIVE_HMD']
         }
     }
 
