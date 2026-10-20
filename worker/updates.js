@@ -11,7 +11,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'body-swap', name: 'Body Swap', time: 1792520000, tag: 'Studio',
+    id: 'body-swap', name: 'Body Swap', time: 1792522200, tag: 'Studio',
     summary: 'Bundles can change your whole body now: Guts can reshape the character\'s head, torso, arms and legs in Studio and sell it as a bundle.',
     items: [
       'A new Bundles window in Studio (AVATAR tab, staff only) puts a mannequin in the Workspace with a row for each body part',
@@ -19,6 +19,38 @@ export const BUILT_IN_UPDATES = [
       'Add catalog items and a Headless head to the same bundle, give it a name and price, and upload it to the catalog',
       'Wear the bundle and your character gets the new body everywhere: in games, on your profile and on other players\' screens. Take it off and the normal body comes back',
       'The server checks every body bundle (only the six body parts, sensible sizes, not too many corners) and bundles can\'t be swapped for something else after they\'re made',
+    ],
+  },
+  {
+    id: 'unfold-the-box', name: 'Unfold the Box', time: 1792521000, tag: 'Studio',
+    summary: 'UV mapping in Studio: lay a mesh out flat, mark seams and wrap your own picture around it.',
+    items: [
+      'Press U in Modeling mode to unwrap: Unwrap (cuts along your seams, keeps shapes), Smart UV Project, Cube, Cylinder and Sphere Projection, Project From View and Reset',
+      'Mark Seam and Clear Seam in the UV button on the MESH tab and in the right-click UV menu: seams show red and are where Unwrap cuts the mesh open, like cutting a cardboard box flat',
+      'The new UV Editor window shows where every face sits on the picture. Click, Shift+click or drag a box to pick, then G moves, R turns and S sizes (X / Y lock a direction, Ctrl snaps). L picks a whole piece',
+      'Pack Islands spreads the pieces out so none overlap, and Export UV Layout saves a picture of the layout to paint over in any drawing program',
+      'MeshParts have a Texture in Properties: pick a picture and it wraps onto the mesh the way the UV Editor shows',
+      'Changing the mesh after unwrapping (extrude, inset, subdivide...) keeps the layout of the faces that didn\'t change',
+    ],
+  },
+  {
+    id: 'mind-reader', name: 'Mind Reader', version: '0.7.5', time: 1792520400, tag: 'Engine',
+    summary: 'Game scripts can now tell when someone plays in VR, and where their head and hands are.',
+    items: [
+      'VRService works in LocalScripts: VREnabled is true while you play in a VR headset (UserInputService.VREnabled too)',
+      'VRService:GetUserCFrame(Enum.UserCFrame.Head, LeftHand or RightHand) says where your head or a hand is, in studs, like on Roblox',
+      'VRService.UserCFrameChanged fires every frame with each one the headset can see, so a script can stick a sword or a flashlight to your hand',
+      'Studio\'s script editor suggests the new names, and the AI helper knows about them',
+    ],
+  },
+  {
+    id: 'point-and-click', name: 'Point and Click', version: '0.7.4', time: 1792519800, tag: 'Player',
+    summary: 'In VR the menus, buttons and chat float in front of you, and you click them by pointing with your right hand.',
+    items: [
+      'Everything that sits on top of the game (the menu, health, the hotbar, chat, the game\'s own buttons) now shows on a see-through screen floating in front of you in the headset',
+      'Point at it with your right controller and a ring shows where you\'re pointing; pull the trigger to click, hold it to drag a slider',
+      'Opening the menu puts the screen right in front of you. While you play it drifts back in front of you when you look far away',
+      'Pointing at the screen but not at a button? The trigger still uses your tool, so the screen never gets in your way',
     ],
   },
   {

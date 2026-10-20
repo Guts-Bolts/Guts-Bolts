@@ -11,12 +11,14 @@
 #include "../core/Paths.h"
 #include <fstream>
 #include "../core/Log.h"
+#include "../core/Paths.h"
 
 #include <imgui.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <stb_image_write.h>   // (its code is in renderer/Textures.cpp)
 
 void Editor::setMode(StudioMode mode) {
     StudioMode cur = m_state.mode;
@@ -83,6 +85,7 @@ void Editor::meshOp(MeshOp op) {
     if (ms.modal != MeshModal::None) return;   // one thing at a time
     // Work on a copy so a tool that goes wrong can't leave a broken mesh.
     EditMesh work = *n->editMesh;
+    work.uvs.clear();   // the tools don't keep UVs; carryUVs below puts the layout back
     MeshEdit::Selection sel = ms.sel;
     sel.resize(work.verts.size(), 0);
     ms.hidden.resize(work.verts.size(), 0);
@@ -124,6 +127,7 @@ void Editor::meshOp(MeshOp op) {
         why = "Extrude: pick some faces or edges first.";
         if (ok && op == MeshOp::ExtrudeMove) {
             // Like Blender: the new faces follow the mouse straight out (click to stop there).
+            MeshEdit::carryUVs(*n->editMesh, work);
             MeshEdit::own(*n) = std::move(work);
             ms.sel = std::move(sel);
             ms.hidden.assign(ms.sel.size(), 0);
@@ -145,6 +149,7 @@ void Editor::meshOp(MeshOp op) {
     case MeshOp::DuplicateMove:
         if (!MeshEdit::duplicate(work, sel)) { Log::warn("Duplicate: pick some faces first."); return; }
         ms.hidden = MeshEdit::carryFlags(*n->editMesh, ms.hidden, work);
+        MeshEdit::carryUVs(*n->editMesh, work);
         MeshEdit::own(*n) = std::move(work);
         ms.sel = std::move(sel);
         for (size_t i = 0; i < ms.sel.size(); ++i) if (ms.sel[i]) ms.hidden[i] = 0;
@@ -272,6 +277,7 @@ void Editor::meshOp(MeshOp op) {
     if (ok && work.faces.empty()) { ok = false; why = "That would leave nothing - to remove the part, delete it in Build mode."; }
     if (!ok) { if (*why) Log::warn(why); return; }
     std::vector<char> hidden = MeshEdit::carryFlags(*n->editMesh, ms.hidden, work);
+    MeshEdit::carryUVs(*n->editMesh, work);
     MeshEdit::own(*n) = std::move(work);
     sel.resize(n->editMesh->verts.size(), 0);
     for (size_t i = 0; i < sel.size(); ++i) if (sel[i]) hidden[i] = 0;
@@ -345,6 +351,7 @@ void Editor::handleModelingKeys() {
     if (pressed(ImGuiKey_O)) meshOp(MeshOp::Proportional);
     if (pressed(ImGuiKey_P)) meshOp(MeshOp::Separate);
     if (pressed(ImGuiKey_W)) m_meshMenu = "Context";
+    if (pressed(ImGuiKey_U)) m_uv.openUnwrap = true;   // the UV Unwrap menu
     if (pressed(ImGuiKey_Tab) || pressed(ImGuiKey_Escape)) setMode(StudioMode::Build);
 }
 
@@ -373,8 +380,43 @@ void Editor::testMesh(const std::string& steps) {
         else if (s == "flip") meshOp(MeshOp::Flip);
         else if (s == "smooth") meshOp(MeshOp::Smooth);
         else if (s == "xray") m_state.modeling.xray = !m_state.modeling.xray;
-        else if (s.rfind("save:", 0) == 0) saveFile(s.substr(5));
         else if (s == "new") addMeshPart();
+        else if (s.rfind("verts:", 0) == 0) {
+            // verts:0:1:5 picks those corners (by number).
+            auto& ms = m_state.modeling;
+            std::fill(ms.sel.begin(), ms.sel.end(), 0);
+            for (size_t at = 6; at < s.size();) {
+                size_t i = (size_t)std::atoi(s.c_str() + at);
+                if (i < ms.sel.size()) ms.sel[i] = 1;
+                size_t colon = s.find(':', at);
+                if (colon == std::string::npos) break;
+                at = colon + 1;
+            }
+        }
+        else if (s.rfind("unwrap:", 0) == 0) unwrapMesh(std::clamp(std::atoi(s.c_str() + 7), 0, MeshEdit::kUnwrapCount - 1));
+        else if (s == "seam" || s == "noseam") markSeams(s == "seam");
+        else if (s == "uveditor") m_uv.show = !m_uv.show;
+        else if (s.rfind("texture:", 0) == 0) { if (SceneNode* n = uvNode()) n->texture = s.substr(8); }
+        else if (s == "uvlayout" || s == "uvreport") {
+            SceneNode* n = uvNode();
+            if (!n) { Log::warn("uv: no MeshPart"); continue; }
+            const EditMesh& m = *n->editMesh;
+            glm::vec2 lo(1e30f), hi(-1e30f);
+            size_t corners = 0;
+            for (auto& f : m.uvs) for (auto& t : f) { lo = glm::min(lo, t); hi = glm::max(hi, t); ++corners; }
+            auto islands = MeshEdit::uvIslands(m, [&] { std::vector<int> v(m.faces.size()); for (size_t i = 0; i < v.size(); ++i) v[i] = (int)i; return v; }());
+            char line[256];
+            std::snprintf(line, sizeof line, "uv: %zu faces with UVs (%zu corners), %zu pieces, %zu seams, spread %.3f..%.3f x %.3f..%.3f",
+                          m.uvs.size(), corners, islands.size(), m.seams.size(), lo.x, hi.x, lo.y, hi.y);
+            Log::info(line);
+            if (s == "uvlayout") {
+                std::vector<unsigned char> px = MeshEdit::layoutPicture(m, 512);
+                std::string out = (Paths::gamesFolder() / "uv-test.png").string();
+                stbi_write_png(out.c_str(), 512, 512, 4, px.data(), 512 * 4);
+                Log::info("uv: layout picture at " + out);
+            }
+        }
+        else if (s.rfind("save:", 0) == 0) saveFile(s.substr(5));
         else if (s == "join") joinSelected();
         else if (s == "bundle") {
             // A body bundle end to end: a mannequin with a ball for a left arm, saved the way
