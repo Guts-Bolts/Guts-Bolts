@@ -30,7 +30,13 @@ public:
     void unhide(Scene& scene);
 
 private:
-    struct Point { glm::vec3 pos, prev; float radius; };
+    struct Point {
+        glm::vec3 pos, prev; float radius;
+        bool      touching = false;     // resting on / sliding along something this frame
+        glm::vec3 contactN{0.0f, 1.0f, 0.0f};
+        float     blood = 0.0f;         // how bloody this bit of the body is (it smears what it slides on)
+        float     slid = 0.0f;          // distance slid since its last smear
+    };
     struct Stick { int a, b; float length; int limb; bool alive; };   // limb -1 = body
     struct Bone  {
         uint64_t  id;
@@ -39,7 +45,10 @@ private:
         glm::vec3 right;           // remembered sideways axis (for detached parts)
         glm::mat4 offset{1.0f};    // attached-to-head: transform relative to head
     };
-    struct Stump { int point; float time; glm::vec3 dir; };
+    // A bleeding wound: blood comes out at the middle of a..a2, pointing away from the middle
+    // of f..f2 (f -1 = the torso's centre). `pumped` ones are still joined to the heart:
+    // they spurt with every beat. The others just drain.
+    struct Stump { int a, a2, f, f2; float bleed; bool pumped; };
 
     void solve(const Physics& physics);
     glm::mat3 torsoFrame() const;
@@ -53,6 +62,12 @@ private:
     std::vector<uint64_t> m_hidden;     // parts blown to pieces (shown again by unhide)
     bool      m_cut[5] = {};
     float     m_stumpTimer = 0.0f;
+    float     m_heartTime = 0.0f;       // since death: the heart slows and weakens, then stops
+    float     m_beat = 0.0f;            // until the next heartbeat
+    void      bleed(Scene& scene, float dt);
+    void      smearAll(Scene& scene, float dt);
+    glm::vec3 stumpPos(const Stump& s) const;
+    glm::vec3 stumpDir(const Stump& s) const;
     bool      m_gore = false;
     GoreKind  m_goreKind = GoreKind::Blood;
     float     m_gravity = 22.0f;

@@ -113,6 +113,9 @@ uniform float uWetPart;
 uniform vec3  uGibSkin;       // a gib (uMaterial 31) cut from a body part: that part's colour on its outer side
 uniform bool  uGibSkinOn;
 uniform float uGibSeed;       // 0..1: every chunk looks a bit different
+uniform int   uSplatLook;     // landed blood (uMaterial 30): 0 pool / splash / stain, 1 smear, 2 footprint
+uniform float uSplatSeed;     // 0..1: every splat gets its own wobbly edge
+uniform float uSplatDry;      // 0 fresh and wet .. 1 dried dark and dull
 uniform float uFogSunGlow;
 
 uniform bool      uShadowsEnabled;
@@ -299,6 +302,7 @@ void main() {
     // Fine surface detail fades out when it gets smaller than a pixel (no shimmering).
     float detail = clamp(1.5 - length(fwidth(vWorldPos)) * 24.0, 0.0, 1.0);
     float rough = 0.5, metal = 0.0;
+    float splatWet = 0.0;     // landed blood: how wet and shiny it still is
     if (uMaterial == 1) { rough = 0.3; metal = 1.0;
         albedo *= mix(1.0, 0.92 + 0.08 * vnoise(vec2(dot(vWorldPos.xz, vec2(1.0)) * 60.0, vWorldPos.y * 2.0)), detail * 0.5); }
     else if (uMaterial == 3) {                                    // wood grain
@@ -461,6 +465,44 @@ void main() {
             rough = mix(0.55, 0.22, torn);
         }
     }
+    else if (uMaterial == 30) {                                   // blood that has landed: pools, smears, footprints, stains
+        if (vLocalNormal.y < 0.5) discard;                        // just a film on top of the surface
+        vec2 q = vLocalPos.xz * 2.0;                              // -1..1 across
+        float sd = uSplatSeed * 37.0;
+        float inside;                                             // 0 at the edge of the shape, up to 1 in the middle
+        if (uSplatLook == 2) {                                    // footprint: sole and heel (toe along +z), patchy tread
+            float sole = length((q - vec2(0.0, 0.28)) / vec2(0.92, 0.66));
+            float heel = length((q - vec2(0.0, -0.55)) / vec2(0.72, 0.42));
+            float d = min(sole, heel);
+            float tread = vnoise(q * vec2(9.0, 5.0) + sd) * 0.55 + vnoise(q * 22.0 + sd) * 0.45;
+            if (d > 1.0 || tread < 0.3 + 0.25 * (1.0 - uAlpha)) discard;   // fainter prints are patchier
+            inside = 1.0 - d;
+        } else if (uSplatLook == 1) {                             // smear: streaks along the way it was dragged (z)
+            float streak = vnoise(vec2(q.x * 7.0 + sd, q.y * 0.6)) * 0.7 + vnoise(vec2(q.x * 19.0 - sd, q.y * 1.3)) * 0.3;
+            float ends  = abs(q.y) + (vnoise(vec2(q.x * 4.0, sd)) - 0.5) * 0.5;
+            float sides = abs(q.x) + (vnoise(vec2(q.y * 3.0, sd + 5.0)) - 0.5) * 0.3;
+            if (ends > 1.0 || sides > 0.95 || streak < 0.28 + 0.35 * smoothstep(0.3, 1.0, ends)) discard;
+            inside = clamp(min(1.0 - ends, 0.95 - sides) * 2.0, 0.0, 1.0);
+        } else {                                                  // pool / splash / stain: a blob with lumpy, rounded edges
+            float r = length(q);
+            vec2 ring = q / max(r, 1e-4);
+            float edge = 0.8 + 0.26 * (vnoise(ring * 1.6 + sd) - 0.5) + 0.14 * (vnoise(ring * 4.5 + sd + 3.0) - 0.5);
+            if (r > edge) discard;
+            inside = (edge - r) / edge;
+        }
+        float rim = 1.0 - smoothstep(0.0, 0.2, inside);           // the edge, where it's thickest and clots first
+        float dry = clamp(uSplatDry * 1.5 - inside * 0.6, 0.0, 1.0);   // dries from the edge in
+        albedo *= mix(1.0, 0.7, rim) * (0.85 + 0.15 * vnoise(vLocalPos.xz * 30.0 + sd));
+        albedo = mix(albedo, albedo * vec3(0.32, 0.2, 0.17), dry);      // dried: dark brown
+        // Dried blood cracks into little flakes.
+        vec2 cid;
+        vec3 cell = voronoi(vObjPos.xz * 9.0 + sd, cid);
+        albedo *= 1.0 - (1.0 - smoothstep(0.0, 0.05, cell.y)) * 0.55 * smoothstep(0.65, 1.0, dry);
+        rough = mix(0.04, 0.8, dry);
+        splatWet = 1.0 - dry;
+        // A domed surface (surface tension) catches the light along the rim.
+        N = bump(N, smoothstep(0.0, 0.3, inside) * 0.008 * splatWet);
+    }
     else if (uMaterial == 7) {                                    // water: little moving ripples on top
         rough = 0.02;
         if (N.y > 0.3) {
@@ -474,7 +516,7 @@ void main() {
 
     // Wet things: darker (water soaks into wood, concrete and the like) and shinier,
     // with little puddles on flat tops. Patchy as they dry.
-    if (uMaterial != 2 && uMaterial != 7 && uMaterial != 8 && uMaterial != 31) {
+    if (uMaterial != 2 && uMaterial != 7 && uMaterial != 8 && uMaterial != 30 && uMaterial != 31) {
         float wet = uWetPart;
         for (int i = 0; i < uWetCount; ++i) {
             float d = length(vWorldPos - uWetSpots[i].xyz);
@@ -530,7 +572,7 @@ void main() {
         vec3  env = lin(skyGradient(R, uZenith, uHorizon, uGround));
         vec3  avg = lin((uZenith + uHorizon + uGround) / 3.0);
         env = mix(env, avg, rough);
-        color += env * F * (uMaterial == 7 ? max(uReflections, 0.8) : uMaterial == 8 ? uReflections * 0.2 : uMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
+        color += env * F * (uMaterial == 7 ? max(uReflections, 0.8) : uMaterial == 8 ? uReflections * 0.2 : uMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : uMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
 
         // Glass & ice get more opaque at glancing angles.
         if (uMaterial == 4 || uMaterial == 6 || uMaterial == 7)
