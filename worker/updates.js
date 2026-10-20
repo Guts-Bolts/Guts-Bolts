@@ -11,6 +11,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'who-goes-there', name: 'Who Goes There?', version: '0.7.3', time: 1792539900, tag: 'Server',
+    summary: 'A guard in front of the server: floods and bots get stopped at the door, and real players walk straight in.',
+    items: [
+      'Every request is checked first: one that comes way too fast, or looks like a script instead of a browser or the Guts&Bolts apps, gets points',
+      'Doubtful visitors on the website get a quick "are you a person?" check (it usually ticks itself), then a pass for an hour. Signing up on the website always has one',
+      'Signing up, logging in, emails, uploads, buying, posting and other slow steps have their own limits now, so nobody can spam them. Brand-new accounts get half',
+      'Floods of requests from one place are blocked for a minute, and pictures are kept by Cloudflare for a few minutes so they never pile up on the server',
+      'The C++ server has the same limits (and a new --behind-worker option for when the website passes requests on to it)',
+    ],
+  },
+  {
     id: 'cut-the-cord', name: 'Cut the Cord', version: '0.7.3', time: 1792522800, tag: 'Player',
     summary: 'Guts&Bolts runs on a Meta Quest by itself now: no PC, no cable, no Air Link.',
     items: [

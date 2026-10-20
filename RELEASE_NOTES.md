@@ -25,6 +25,9 @@ go to the highest bidder, and ragdolls now bleed, flail and blow apart.
   bidders get one.
 - **Log in with Guts&Bolts** on Lyreto: take your name and avatar with you.
 - **Partner badge** for friends of Guts&Bolts.
+- **Bot and flood protection**: a guard in front of the server stops request
+  floods and bots, gives doubtful visitors a quick "are you a person?" check,
+  and puts limits on sign-ups, logins, uploads, buying and posting.
 - **Way more imports in Studio**: squashed Sketchfab models, about 30 more 3D
   formats, and new picture and sound types.
 

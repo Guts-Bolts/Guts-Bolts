@@ -290,6 +290,46 @@ const defaultRanks = () => [
   { id: 'Member', name: 'Member', level: 1, perms: [] },
 ];
 const kMaxWrongPasswords = 5, kLockoutSeconds = 600;
+
+// Step 3 of the risk check (worker/shield.js does steps 1 and 2): the slow, expensive requests
+// get their own limits, per IP and per account (src/server/ServerShield.cpp has the same).
+//   op: [per account, per IP, seconds]
+// Only requests that worked count, except GUESSES (where every wrong guess counts, so nobody
+// can try passwords or codes over and over). Accounts less than a day old get half. Staff have
+// no limit. The IP numbers are bigger because a school or a house shares one IP between lots of people.
+const COSTLY = {
+  'account.signup':      [3, 20, 3600],
+  'account.salt':        [30, 120, 600],   // (the first half of logging in)
+  'account.login':       [20, 60, 600],    // (wrong passwords also lock the account for a while)
+  'account.forgot':      [3, 10, 3600],    // these send an email
+  'account.email':       [5, 15, 3600],
+  'account.reset':       [10, 30, 3600],
+  'account.emailVerify': [10, 30, 600],
+  'account.password':    [10, 30, 3600],
+  'support.send':        [5, 15, 3600],
+  'upload':              [30, 90, 3600],   // (unverified creators also have kDailyUploadsUnverified a day)
+  'update':              [60, 180, 3600],  // publishing a game
+  'thumb.set':           [30, 90, 600],
+  'icon.set':            [30, 90, 600],
+  'shots.add':           [30, 90, 600],
+  'buy':                 [60, 180, 600],
+  'gift.buy':            [30, 90, 600],
+  'resale.buy':          [30, 90, 600],
+  'product.buy':         [120, 360, 600],  // (games can sell lots of small things)
+  'auction.bid':         [60, 180, 600],
+  'servers.buyPrivate':  [10, 30, 600],
+  'trade.send':          [30, 90, 600],
+  'report.send':         [20, 60, 600],
+  'message.send':        [60, 180, 600],
+  'comments.post':       [30, 90, 600],
+  'forum.post':          [10, 30, 600],
+  'forum.reply':         [30, 90, 600],
+  'groups.create':       [5, 15, 3600],
+};
+const GUESSES = new Set(['account.salt', 'account.login', 'account.reset', 'account.emailVerify']);
+// The apps' connection (/ws) can send this many requests every 10 seconds (games sending
+// messages and saving data use it too, so it's roomy). More gets "slow down" answers.
+const kWsRequestsPer10s = 600;
 const kRenameCost = 1000;   // Bolts to change your username
 const kDefaultMax = 12, kMostPlayers = 30, kHostedEach = 3, kJoinWait = 15, kHostSilence = 90, kPipeSilence = 120;
 // Paid private servers (ServerRelay.cpp has the same): a game's creator can charge Bolts for a
@@ -680,6 +720,7 @@ export class GbServerObject extends DurableObject {
     this.mailLast = null;   // how the last email went: { at, to, ok, error } (for the Staff page)
     this.failedLogins = new Map();
     this.lastPost = new Map();
+    this.costly = new Map();   // "op|ip:..." or "op|acct:..." -> { start, n } (Step 3's counters, in memory)
     // The relay (in memory: a restart closes every game, like the C++ server).
     this.conns = new Map();      // conn id -> { ws, mode, account, session, ticket, peer, since, lastActive, closing }
     this.sessions = new Map();   // session id -> { id, game, title, host, code, priv, max, created, control, players:Set, dedicated }
@@ -1560,14 +1601,46 @@ export class GbServerObject extends DurableObject {
     return { me, args, opName };
   }
 
-  handle(req) {
+  // Step 3 of the risk check: is this an expensive request someone's sending too often?
+  // from: what worker/shield.js found out ({ ip, web, human, sitekey }), {} in the tests.
+  // Returns { stop: reply } to refuse it, or { count() } to call once it's done (or {}).
+  costlyCheck(opName, me, from) {
+    // Signing up on the website needs the "are you a person?" check (once Turnstile is on).
+    if (opName === 'account.signup' && from.web && from.sitekey && !from.human)
+      return { stop: Object.assign(fail('Quick check that you\'re a person, then try again.'), { challenge: true, sitekey: from.sitekey }) };
+    const rule = COSTLY[opName];
+    if (!rule || this.isStaff(me)) return {};
+    const t = now(), young = me.userId > 0 && t - (me.created || 0) < 86400;
+    const [each, perIp, per] = rule;
+    const counts = [['acct:' + me.id, each]];
+    if (from.ip) counts.push(['ip:' + from.ip, perIp]);
+    if (this.costly.size > 50000) for (const [k, c] of this.costly) if (t - c.start >= c.per) this.costly.delete(k);
+    const counters = [];
+    for (const [who, allowed] of counts) {
+      const key = opName + '|' + who;
+      let c = this.costly.get(key);
+      if (!c || t - c.start >= per) { c = { start: t, n: 0, per }; this.costly.set(key, c); }
+      if (c.n >= Math.max(1, young ? Math.floor(allowed / 2) : allowed)) {
+        const wait = Math.max(1, Math.ceil((c.start + per - t) / 60));
+        return { stop: Object.assign(fail('You\'re doing that too often. Try again in ' + wait + (wait === 1 ? ' minute.' : ' minutes.')), { slowDown: true }) };
+      }
+      counters.push(c);
+    }
+    return { count: () => { for (const c of counters) c.n++; } };
+  }
+
+  handle(req, from = {}) {
     try {
       if (CONNECT_OPEN.has(req.op)) return this.connectOpen(req.op, req.args && typeof req.args === 'object' && !Array.isArray(req.args) ? req.args : {});
       const c = this.checkRequest(req);
       if (c.bad) return c.bad;
+      const gate = this.costlyCheck(c.opName, c.me, from);
+      if (gate.stop) return gate.stop;
       this.openGiftBoxes();
       this.finishAuctions();
-      return this.op(c.opName, c.me, c.args);
+      const reply = this.op(c.opName, c.me, c.args);
+      if (gate.count && (reply.ok || GUESSES.has(c.opName))) gate.count();
+      return reply;
     } catch (e) {
       return fail('The server hit a problem: ' + (e && e.message || e));
     } finally {
@@ -4573,7 +4646,10 @@ export class GbServerObject extends DurableObject {
     if (!req || typeof req !== 'object' || Array.isArray(req)) { this.sendTo(c, fail('That wasn\'t a proper request.')); return; }
     if (req.t === 'accept') { this.relayAccept(c, req.ticket); return; }
     if (typeof req.op === 'string' && req.op.startsWith('relay.')) { this.relayRequest(c, req); return; }
-    const reply = this.handle(req);
+    const t = Date.now();
+    if (!c.window || t - c.window >= 10000) { c.window = t; c.sent = 0; }
+    const reply = ++c.sent > kWsRequestsPer10s ? Object.assign(fail('Whoa, that\'s a lot of requests. Slow down a little.'), { slowDown: true })
+      : this.handle(req, { ip: c.ip });
     if ('id' in req) reply.id = req.id;
     this.sendTo(c, reply);
   }
@@ -4585,7 +4661,8 @@ export class GbServerObject extends DurableObject {
       const pair = new WebSocketPair();
       const ws = pair[1];
       ws.accept();
-      const c = { id: randomHex(8), ws, mode: 'request', account: '', session: '', ticket: '', peer: '', since: now(), lastActive: now() };
+      const c = { id: randomHex(8), ws, mode: 'request', account: '', session: '', ticket: '', peer: '', since: now(), lastActive: now(),
+        ip: request.headers.get('x-gb-ip') || '' };   // (worker/shield.js says who it is)
       this.conns.set(c.id, c);
       // Messages are handled one at a time, in order (some arrive as Blobs, which take a moment to read).
       let queue = Promise.resolve();
@@ -4667,7 +4744,8 @@ export class GbServerObject extends DurableObject {
     try { req = JSON.parse(await request.text()); } catch { req = null; }
     if (!req || typeof req !== 'object' || Array.isArray(req)) return json(fail('That wasn\'t a proper request.'), 400);
     if (typeof req.op === 'string' && req.op.startsWith('relay.')) return json(fail('Multiplayer needs the Guts&Bolts app.'));
-    const answer = this.handle(req);
+    const h = request.headers;   // (set by worker/shield.js, which replaces anything a visitor sent in them)
+    const answer = this.handle(req, { ip: h.get('x-gb-ip') || '', web: h.get('x-gb-web') === '1', human: h.get('x-gb-human') === '1', sitekey: h.get('x-gb-sitekey') || '' });
     if (this.outbox.length) await this.sendMail();
     if (this.lyretoQueue.length) await this.fetchLyretoCards();
     return json(answer);
