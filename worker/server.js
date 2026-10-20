@@ -2011,8 +2011,9 @@ export class GbServerObject extends DurableObject {
       return okay({ data: data ? bytesToB64(data) : '', icon: data ? a.icon : 0, name: a.name, creatorName: c ? c.name : '' });
     }
     if (name === 'thumb.get') {
+      // (Not for things waiting for a staff check, or private ones: only their creator and staff see those.)
       const a = this.assets.get(str(args, 'id'));
-      const data = a && a.thumb ? this.readFile('thumb:' + a.id) : null;
+      const data = a && a.thumb && this.canPlay(a, me) ? this.readFile('thumb:' + a.id) : null;
       return data ? okay({ data: bytesToB64(data) }) : fail('No picture.');
     }
     if (name === 'bolts.history') {
