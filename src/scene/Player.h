@@ -188,6 +188,7 @@ public:
     // Ones not downloaded yet are skipped (set them again once they arrive).
     using Accessories = std::map<std::string, std::string>;
     void        setAccessories(const Accessories& acc);
+    void        rememberWornRest();   // (Play) where new hats / accessories sit before animating
     static void applyAccessories(Scene& scene, SceneNode* root, const Accessories& acc);
     static void hideBuiltInHat(SceneNode* root);
     // A face picture instead of the smiley ("gb:<id>" or a file; "" = the smiley).
