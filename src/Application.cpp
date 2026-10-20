@@ -44,6 +44,8 @@ Chord parseChord(const std::string& text) {
         else if (part == "enter") c.key = ImGuiKey_Enter;
         else if (part == "tab") c.key = ImGuiKey_Tab;
         else if (part == "home") c.key = ImGuiKey_Home;
+        else if (part == "period") c.key = ImGuiKey_Period;
+        else if (part == "minus") c.key = ImGuiKey_Minus;
         else if (part.size() >= 2 && part[0] == 'f') c.key = (ImGuiKey)(ImGuiKey_F1 + std::stoi(part.substr(1)) - 1);
         else if (part.size() == 1 && part[0] >= '0' && part[0] <= '9') c.key = (ImGuiKey)(ImGuiKey_0 + (part[0] - '0'));
         else if (part.size() == 1 && part[0] >= 'a' && part[0] <= 'z') c.key = (ImGuiKey)(ImGuiKey_A + (part[0] - 'a'));
@@ -159,7 +161,10 @@ void Application::run() {
             m_opts.testTools = sp == std::string::npos ? "" : m_opts.testTools.substr(sp + 1);
         }
         if (!m_opts.testSelect.empty() && frame == 10) m_editor->testSelect(m_opts.testSelect);
-        if (!m_opts.testMesh.empty() && frame == 14) m_editor->testMesh(m_opts.testMesh);
+        // "steps|more steps": the part after | runs later (after --test-keys / --test-mouse).
+        if (!m_opts.testMesh.empty() && frame == 14) m_editor->testMesh(m_opts.testMesh.substr(0, m_opts.testMesh.find('|')));
+        if (m_opts.testMesh.find('|') != std::string::npos && frame == m_opts.frames - 2)
+            m_editor->testMesh(m_opts.testMesh.substr(m_opts.testMesh.find('|') + 1));
         if (m_opts.testAnim) m_editor->testAnimation(frame);
         if (m_opts.testCollide && frame == 5) m_editor->testCollisions();
         if (!m_opts.testCommand.empty() && frame == 12) m_editor->runCommand(m_opts.testCommand);

@@ -134,7 +134,7 @@ void ViewportPanel::followPlayer(Player& p, float dt) {
     PlayCamera::fade(*m_scene, p, m_camera);
 }
 
-bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsing() || m_sculpting; }
+bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsing() || m_sculpting || m_modalOn || m_state->modeling.modal != MeshModal::None; }
 
 bool ViewportPanel::focusSelected() {
     // The box around every part in the selection (and inside selected models / tools).
@@ -210,18 +210,34 @@ void ViewportPanel::handleInput(float dt) {
     // Roblox Studio camera: right-drag looks around, middle-drag pans, the
     // wheel zooms, and WASD / Q E fly (hold Shift to go faster).
     static bool looking = false;
-    if (m_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) looking = true;
+    const bool modal = m_state->mode == StudioMode::Modeling && (m_modalOn || m_state->modeling.modal != MeshModal::None);
+    if (m_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !modal) looking = true;
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Right)) looking = false;
     if (looking) m_camera.look(io.MouseDelta.x, io.MouseDelta.y);
     if (m_hovered && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
         if (io.KeyShift) m_camera.orbit(io.MouseDelta.x, io.MouseDelta.y);   // Shift+middle: orbit
         else             m_camera.pan(io.MouseDelta.x, io.MouseDelta.y);
     }
-    if (m_hovered && io.MouseWheel != 0.0f) m_camera.zoom(io.MouseWheel);
+    if (m_hovered && io.MouseWheel != 0.0f && !modal) m_camera.zoom(io.MouseWheel);   // (a modal tool uses the wheel)
 
     // Numpad 5: orthographic / perspective, like Blender.
     if ((focused || m_hovered) && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Keypad5, false))
         m_state->orthographic = !m_state->orthographic;
+    // Numpad 1 / 3 / 7: look from the front / right / top (Ctrl: back / left / bottom);
+    // 2 / 4 / 6 / 8 turn the view in steps, 9 looks from the other side. All like Blender.
+    if ((focused || m_hovered) && !io.WantTextInput) {
+        auto key = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
+        bool snapped = false;
+        if (key(ImGuiKey_Keypad1)) { m_camera.yaw = io.KeyCtrl ? -90.0f : 90.0f; m_camera.pitch = 0.0f; snapped = true; }
+        if (key(ImGuiKey_Keypad3)) { m_camera.yaw = io.KeyCtrl ? 180.0f : 0.0f; m_camera.pitch = 0.0f; snapped = true; }
+        if (key(ImGuiKey_Keypad7)) { m_camera.pitch = io.KeyCtrl ? -89.9f : 89.9f; m_camera.yaw = 90.0f; snapped = true; }
+        if (key(ImGuiKey_Keypad9)) { m_camera.yaw += 180.0f; m_camera.pitch = -m_camera.pitch; }
+        if (ImGui::IsKeyPressed(ImGuiKey_Keypad4)) m_camera.yaw -= 15.0f;
+        if (ImGui::IsKeyPressed(ImGuiKey_Keypad6)) m_camera.yaw += 15.0f;
+        if (ImGui::IsKeyPressed(ImGuiKey_Keypad8)) m_camera.pitch = std::min(89.9f, m_camera.pitch + 15.0f);
+        if (ImGui::IsKeyPressed(ImGuiKey_Keypad2)) m_camera.pitch = std::max(-89.9f, m_camera.pitch - 15.0f);
+        if (snapped) m_glide = -1.0f;
+    }
 
     // Modeling mode: Home (or numpad .) looks at the picked points, like Blender.
     if (m_state->mode == StudioMode::Modeling && (focused || m_hovered) && !io.WantTextInput &&
@@ -756,8 +772,7 @@ void ViewportPanel::render(float dt) {
             static const char* kPickNames[] = {"vertices", "edges", "faces"};
             char tip[256];
             std::snprintf(tip, sizeof(tip),
-                          "MODELING (picking %s)  -  1/2/3 vertex/edge/face, click / Shift+click / drag a box, A all, "
-                          "E extrude, I inset, X delete, M merge, F fill, Tab done",
+                          "MODELING (%s)  -  G move  R rotate  S scale  E extrude  right-click = menu  F3 search  F1 keys  Tab done",
                           kPickNames[std::clamp(m_state->modeling.selectMode, 0, 2)]);
             dl->AddText(ImVec2(imgPos.x + 12, imgMax.y - ImGui::GetFontSize() - 10), IM_COL32(255, 255, 255, 200), tip);
         } else {
@@ -981,8 +996,11 @@ void ViewportPanel::render(float dt) {
     // A right-click that didn't turn the camera: a menu for what's selected (the Explorer's
     // right-click menu, with Publish to Guts&Bolts), like Roblox Studio's.
     if (!m_session && contextMenu) {
-        if (m_hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) && ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] < 25.0f)
-            ImGui::OpenPopup("##viewportMenu");
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+            if (m_hovered && ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] < 25.0f && !m_eatRightClick)
+                ImGui::OpenPopup("##viewportMenu");
+            m_eatRightClick = false;   // (that right-click cancelled a modeling tool: no menu)
+        }
         if (ImGui::BeginPopup("##viewportMenu")) {
             contextMenu();
             ImGui::EndPopup();

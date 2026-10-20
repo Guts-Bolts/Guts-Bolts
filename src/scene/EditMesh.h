@@ -56,4 +56,46 @@ bool flip(EditMesh& m, const Selection& sel);       // turn selected faces insid
 // Drop vertices no face uses (keeps `sel` in step).
 void compact(EditMesh& m, Selection& sel);
 
+// ---- More tools, like Blender's (MeshTools.cpp) ----------------------------
+
+// Picking helpers. A "loop" runs along a line of four-sided faces (Alt+click),
+// a "ring" goes across them (Ctrl+Alt+click).
+std::vector<uint32_t> edgeLoop(const EditMesh& m, uint32_t a, uint32_t b);   // its corners
+std::vector<std::pair<uint32_t, uint32_t>> edgeRing(const EditMesh& m, uint32_t a, uint32_t b);
+void selectLinked(const EditMesh& m, Selection& sel);   // everything joined to what's picked (Ctrl+L)
+void grow(const EditMesh& m, Selection& sel);           // one step out (Ctrl+Plus)
+void shrink(const EditMesh& m, Selection& sel);         // one step in (Ctrl+Minus)
+void selectBoundary(const EditMesh& m, Selection& sel); // just the outline of the picked faces
+void selectNonManifold(const EditMesh& m, Selection& sel);   // holes and odd edges
+
+// Shaping tools. Each works on the selection and leaves the result selected.
+bool duplicate(EditMesh& m, Selection& sel);   // copy the picked faces (Shift+D)
+// Cut `cuts` new edge loops across the ring through edge a-b (Ctrl+R).
+bool loopCut(EditMesh& m, Selection& sel, uint32_t a, uint32_t b, int cuts);
+bool bridge(EditMesh& m, Selection& sel);      // join two picked edge loops with faces
+bool dissolve(EditMesh& m, Selection& sel, int what);   // like delete, but the faces around close up (0 verts, 1 edges, 2 faces)
+bool triangulate(EditMesh& m, Selection& sel);  // picked faces (or all) -> triangles (Ctrl+T)
+bool trisToQuads(EditMesh& m, Selection& sel);  // pairs of triangles -> four-sided faces (Alt+J)
+bool recalcNormals(EditMesh& m, const Selection& sel, bool inside);   // faces all point out (Shift+N)
+bool smoothVerts(EditMesh& m, const Selection& sel, float amount);    // round off the picked corners
+bool mergeByDistance(EditMesh& m, Selection& sel, float dist, int* removed = nullptr);
+bool collapse(EditMesh& m, Selection& sel);     // each joined group of picked corners -> its middle
+bool subdivideSmooth(EditMesh& m, Selection& sel);   // Catmull-Clark: smaller faces AND rounder
+bool mirror(EditMesh& m, Selection& sel, int axis);   // flip the picked part across its middle (local axis)
+bool spin(EditMesh& m, Selection& sel, glm::vec3 axis, glm::vec3 center, float degrees, int steps);
+
+// Shapes you can add into a mesh (Shift+A).
+enum class AddShape { Cube, Plane, Circle, Cylinder, Cone, Sphere, IcoSphere, Torus, Grid, Capsule };
+inline constexpr int kAddShapeCount = 10;
+inline const char* const kAddShapeNames[kAddShapeCount] = {"Cube", "Plane", "Circle", "Cylinder", "Cone",
+                                                            "UV Sphere", "Ico Sphere", "Torus", "Grid", "Capsule"};
+std::shared_ptr<EditMesh> shape(AddShape s);   // about 1 across, centred on 0
+// Add `src` (moved by `place`) to `dst`; the new part is picked. Used by Shift+A and Join.
+void append(EditMesh& dst, Selection& sel, const EditMesh& src, const glm::mat4& place);
+// The picked faces as a mesh of their own (Separate, P).
+EditMesh extract(const EditMesh& m, const Selection& sel);
+// Carry per-corner flags (like "hidden") across an edit: a corner of `after`
+// gets the flag of a corner of `before` in exactly the same place.
+std::vector<char> carryFlags(const EditMesh& before, const std::vector<char>& flags, const EditMesh& after);
+
 } // namespace MeshEdit

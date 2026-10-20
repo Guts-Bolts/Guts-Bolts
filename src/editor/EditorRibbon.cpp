@@ -594,9 +594,27 @@ void Editor::renderToolbar() {
             if (bigButton("Subdivide", Icons::Id::Subdivide, false, true, "Cut the picked faces (or all) into smaller ones"))
                 meshOp(MeshOp::Subdivide);
             Stack st;
-            if (smallButton("Merge", Icons::Id::Merge, false, true, "Squash the picked corners into one (M)")) meshOp(MeshOp::Merge);
+            if (smallButton("Merge", Icons::Id::Merge, false, true, "Squash the picked corners into one (M for more)")) meshOp(MeshOp::Merge);
             if (smallButton("Fill", Icons::Id::Fill, false, true, "Make a face between the picked corners (F)")) meshOp(MeshOp::Fill);
-            if (smallButton("Delete", Icons::Id::Delete, false, true, "Delete what's picked (X / Del)")) meshOp(MeshOp::Delete);
+            if (smallButton("Delete", Icons::Id::Delete, false, true, "Delete what's picked (Del; X for the Delete menu)")) meshOp(MeshOp::Delete);
+        }
+        {
+            Group g("Cut");
+            Stack st;
+            if (smallButton("Loop Cut", Icons::Id::Subdivide, false, true, "Cut a new loop of edges round the mesh: point at an edge, click (Ctrl+R)"))
+                meshOp(MeshOp::LoopCut);
+            if (smallButton("Bridge", Icons::Id::Edge, false, true, "Join two picked edge loops with faces")) meshOp(MeshOp::Bridge);
+            if (smallButton("Smooth Sub.", Icons::Id::Smooth, false, true, "Subdivide smooth: smaller AND rounder faces (Ctrl+1)"))
+                meshOp(MeshOp::SubdivideSmooth);
+        }
+        {
+            // Blender's header menus; each opens at the mouse (the same ones the keys open).
+            Group g("Menus");
+            Stack st;
+            if (smallButton("Select", Icons::Id::Select, false, true, "Pick more, less, linked, loops...")) m_meshMenu = "Select";
+            if (smallButton("Add", Icons::Id::Part, false, true, "Add a shape into this mesh (Shift+A)")) m_meshMenu = "Add";
+            if (smallButton("Mesh", Icons::Id::Mesh, false, true, "Move, mirror, hide, separate... (right-click and F3 have the rest)"))
+                m_meshMenu = "Mesh";
         }
         {
             Group g("Surface");
@@ -604,7 +622,12 @@ void Editor::renderToolbar() {
             bool smooth = mn && mn->editMesh && mn->editMesh->smooth;
             if (bigButton(smooth ? "Smooth" : "Flat", Icons::Id::Smooth, smooth, true, "Smooth or flat shading"))
                 meshOp(MeshOp::Smooth);
-            if (bigButton("Flip", Icons::Id::Flip, false, true, "Turn the picked faces (or all) inside out")) meshOp(MeshOp::Flip);
+            Stack st;
+            if (smallButton("Flip", Icons::Id::Flip, false, true, "Turn the picked faces (or all) inside out")) meshOp(MeshOp::Flip);
+            if (smallButton("Outside", Icons::Id::Face, false, true, "Make every face point outwards (Shift+N)")) meshOp(MeshOp::NormalsOut);
+            if (smallButton("Proportional", Icons::Id::Snap, ms.proportional, true,
+                            "Moving corners drags nearby ones along, fading out (O; mouse wheel while moving = how far)"))
+                meshOp(MeshOp::Proportional);
         }
         {
             Group g("Mode");

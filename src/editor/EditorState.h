@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
+#include <glm/glm.hpp>
 
 // The currently active manipulation tool, shared between the toolbar (which
 // sets it) and the viewport (which draws the matching gizmo).
@@ -14,12 +15,23 @@ enum class GizmoTool { Select, Translate, Rotate, Scale };
 enum class StudioMode { Build, Modeling, Simulate, Play };
 inline const char* const kStudioModeNames[4] = {"Build", "Modeling", "Simulate", "Play"};
 
+// A Blender-style tool that follows the mouse in Modeling mode: G grab, R rotate,
+// S scale (X / Y / Z lock an axis, type a number, click or Enter to finish,
+// right-click or Esc to put it back), I inset and Ctrl+R loop cut.
+enum class MeshModal { None, Grab, Rotate, Scale, Inset, LoopCut };
+
 // Modeling mode: which part is being reshaped and what's picked on it.
 struct ModelingState {
     unsigned long long node = 0;
     int               selectMode = 0;   // 0 = vertices, 1 = edges, 2 = faces
     std::vector<char> sel;              // one flag per vertex
+    std::vector<char> hidden;           // one flag per vertex: hidden with H (Alt+H shows them again)
     bool              xray = false;     // show (and pick) the back too
+    MeshModal         modal = MeshModal::None;
+    glm::vec3         modalAxis{0.0f};  // Grab after Extrude: slide along this way (world); 0 = free
+    bool              proportional = false;   // O: moving corners drags nearby ones along, fading out
+    float             propRadius = 2.0f;      // how far that reaches (studs; mouse wheel while moving)
+    int               modalEnded = -1;  // the frame a modal tool finished (its Esc / Enter are used up)
 };
 
 // Editor-wide UI state shared across panels.

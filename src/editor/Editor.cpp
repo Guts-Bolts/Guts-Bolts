@@ -86,6 +86,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     };
     // Right-clicking the 3D view: the same things for what's selected.
     m_viewport->contextMenu = [this] {
+        if (m_state.mode == StudioMode::Modeling) { modelingContextMenu(); return; }
         if (!m_scene->selected()) {
             ImGui::TextDisabled("Click something to select it first.");
             if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_clipboard.empty())) m_deferred = [this] { paste(); };
@@ -205,6 +206,7 @@ void Editor::render(float dt) {
     renderInsertObject();
     renderDialogs();
     renderShortcuts();
+    renderModelingMenus();
     renderCollisionGroups();
     if (m_showPanel[kPanelTeam]) renderTeamPanel();
     m_assistant->update();
@@ -868,6 +870,7 @@ void Editor::handleShortcuts() {
     if (io.KeyCtrl) {
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) { io.KeyShift ? redo() : undo(); }
         if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) redo();
+        if (ImGui::IsKeyPressed(ImGuiKey_J, false)) joinSelected();   // Blender's Join
         if (ImGui::IsKeyPressed(ImGuiKey_C, false)) copySelected();
         if (ImGui::IsKeyPressed(ImGuiKey_X, false) && !io.KeyShift) cutSelected();   // Ctrl+Shift+X = Explorer search
         if (ImGui::IsKeyPressed(ImGuiKey_V, false)) { if (io.KeyShift) pasteInto(); else paste(); }
@@ -1485,7 +1488,7 @@ void Editor::renderCommandBar() {
 void Editor::renderShortcuts() {
     if (!m_showShortcuts) return;
     struct Row { const char* keys; const char* what; };
-    static const Row kSections[][14] = {
+    static const Row kSections[][34] = {
         {{"Ctrl+1 / 2 / 3 / 4", "Select / Move / Scale / Rotate tool"},
          {"Ctrl+L", "Switch the gizmo between local and world"},
          {"W A S D", "Fly the camera (hold Shift to go faster)"},
@@ -1525,14 +1528,36 @@ void Editor::renderShortcuts() {
         {{"1 / 2 / 3", "Pick vertices / edges / faces"},
          {"Click / Shift+click / Ctrl+click", "Pick / add or toggle / take away"},
          {"Drag a box", "Pick everything inside it"},
+         {"Alt+click / Ctrl+Alt+click", "Pick an edge loop / edge ring"},
+         {"L / Ctrl+L", "Pick everything joined (under the mouse / to what's picked)"},
+         {"Ctrl+Plus / Ctrl+Minus", "Pick more / less"},
          {"A / Alt+A / Ctrl+I", "Pick all (again = none) / none / swap"},
-         {"E", "Extrude: pull faces or edges out"},
-         {"I", "Inset: a smaller face inside each face"},
-         {"X / Del", "Delete what's picked"},
-         {"M", "Merge the picked corners into one"},
+         {"G / R / S", "Move / rotate / scale with the mouse (click = done, right-click = cancel)"},
+         {"  then X / Y / Z", "Lock to an axis (twice = the part's own); Shift+X = not X"},
+         {"  then a number", "Type how far (2 = 2 studs, R 90 = 90 degrees, S 2 = twice as big)"},
+         {"  then Ctrl / O", "Go in steps / proportional editing (wheel = how far)"},
+         {"E / Shift+E", "Extrude and move / extrude 1 stud out"},
+         {"I", "Inset: a smaller face inside each face (mouse = how much)"},
+         {"Ctrl+R", "Loop cut (wheel = how many cuts)"},
+         {"Shift+D", "Duplicate and move"},
+         {"Shift+A", "Add a shape into the mesh"},
+         {"X / Del", "Delete menu / delete what's picked"},
+         {"Ctrl+X", "Dissolve (take away, faces close up)"},
+         {"M", "Merge menu (at center, collapse, by distance)"},
          {"F", "Fill: make a face between picked corners"},
+         {"Ctrl+V / Ctrl+E / Ctrl+F", "Vertex / edge / face menus"},
+         {"Ctrl+T / Alt+J", "Triangulate / triangles to quads"},
+         {"Ctrl+1", "Subdivide smooth (rounder)"},
+         {"Shift+N / Alt+N", "Faces point outwards / normals menu"},
+         {"Ctrl+M", "Mirror menu"},
+         {"H / Shift+H / Alt+H", "Hide picked / hide the rest / show all"},
+         {"P", "Separate the picked faces into a new part"},
+         {"Right-click / W", "The menu for what you're picking"},
+         {"F3", "Search every modeling tool"},
          {"Alt+Z", "X-ray: see and pick through the mesh"},
-         {"Right-drag + WASD", "Fly the camera (letters are tools here)"}},
+         {"Numpad 1 / 3 / 7 (Ctrl)", "Front / right / top view (back / left / bottom)"},
+         {"Right-drag + WASD", "Fly the camera (letters are tools here)"},
+         {"Ctrl+J (Build mode)", "Join the selected parts into one mesh"}},
     };
     static const char* kTitles[] = {"Camera & tools", "Selecting", "Explorer", "Editing", "Files",
                                     "Modes", "Modeling mode"};
@@ -2109,7 +2134,7 @@ void Editor::renderStatusBar() {
 
     ImGui::SameLine();
     const char* hint = m_state.mode == StudioMode::Modeling
-        ? "1/2/3 pick mode   E extrude   I inset   X delete   M merge   F fill   A all   Right-drag + WASD fly   Tab done"
+        ? "1/2/3 pick mode   G/R/S move/turn/size   E extrude   Ctrl+R loop cut   X delete   Right-click menu   F3 search   Tab done"
         : m_playing && m_session->runOnly()
         ? "Click to inspect   Drag with gizmo   Right-drag + WASDQE fly   F6 pause   Shift+F5 stop"
         : m_playing
