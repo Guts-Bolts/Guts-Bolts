@@ -46,6 +46,9 @@ void endFrame();
 
 // Where your head is (headset space), this frame.
 glm::mat4 head();
+// Where a controller is (0 = left hand, 1 = right), headset space, this frame.
+// False when the headset can't see it (put down, out of view, switched off).
+bool hand(int side, glm::mat4& pose);
 
 // The controllers (filled in by beginFrame).
 struct Controls {
@@ -53,6 +56,7 @@ struct Controls {
     glm::vec2 turn{0.0f};   // right stick: turn (x)
     bool jump = false;      // A (or the right trackpad / stick click)
     bool menu = false;      // the left controller's menu button, pressed this frame
+    bool use = false;       // the right trigger, pressed this frame (use the tool you hold)
 };
 const Controls& controls();
 

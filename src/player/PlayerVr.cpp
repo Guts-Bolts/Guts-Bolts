@@ -6,20 +6,35 @@
 #include "../renderer/SceneRenderer.h"
 #include "../scene/Player.h"
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 // Playing in a VR headset. You're inside your character's head: turning your
-// head turns the camera (and the character), the left stick walks the way you
-// look, the right stick turns you in steps (smooth turning makes people feel
-// sick), A jumps. The computer screen keeps showing what your left eye sees,
-// with the usual buttons and menus on top.
+// head turns the camera, the left stick walks the way you look, the right stick
+// turns you in steps (smooth turning makes people feel sick), A jumps, the
+// right trigger uses your tool. The character's head turns with yours and its
+// arms reach for your controllers; the body follows when you walk or turn far.
+// The computer screen keeps showing what your left eye sees, with the usual
+// buttons and menus on top.
 
 namespace {
-// Roblox-sized worlds: a stud is about 28 cm, so a metre is about 3.6 studs.
-// Your eyes (and how far apart they are) are scaled to match.
-constexpr float kStudsPerMetre = 1.0f / 0.28f;
+// How big you are: your eyes (and how far apart they are, and where your hands
+// are) are scaled so your real eye height (about 1.6 m standing) is the
+// character's. Smaller characters make the world feel bigger, like it should.
+constexpr float kRealEyeHeight = 1.6f;   // metres
 constexpr float kSnapTurn = 30.0f;   // degrees per push of the right stick
+constexpr float kNeckTwist = 50.0f;  // how far the head turns before the body comes along
+// Your eyes are at the front of your head, not the middle: without this, looking
+// down shows the top of your own shoulders instead of your chest and feet.
+constexpr float kEyesForward = 0.13f;   // of the eye height
+
+// From the middle of the character's head to its eyes, in the world.
+glm::vec3 eyesAhead(float bodyYaw, float eyeHeight) {
+    const float y = glm::radians(bodyYaw);
+    return glm::vec3(std::sin(y), 0.0f, std::cos(y)) * (kEyesForward * eyeHeight);
+}
 
 // The way you face, as an angle around the up axis (0 = looking along -Z).
 float headingOf(const glm::vec3& f) { return glm::degrees(std::atan2(-f.x, -f.z)); }
@@ -36,6 +51,7 @@ void PlayerApp::startVr() {
     if (!Vr::start(window, error)) { m_vrStatus = error; return; }
     m_vrOn = true;
     m_vrAligned = false;
+    m_vrBodyAligned = false;
     m_vrTurned = false;
     m_vrYaw = 0.0f;
     m_vrStatus.clear();
@@ -48,6 +64,7 @@ void PlayerApp::stopVr() {
     m_vrOn = false;
     m_window->setHeadsetPaced(false);
     for (Framebuffer& e : m_vrEyes) e.resize(0, 0);
+    if (Player* p = m_scene->player()) p->setVrBody({});
 }
 
 void PlayerApp::vrControls(bool acceptInput) {
@@ -55,12 +72,62 @@ void PlayerApp::vrControls(bool acceptInput) {
     if (c.menu) { m_paused = !m_paused; m_menuTab = 0; m_menuConfirm = 0; }
     if (!acceptInput) { m_session->setTouchInput(glm::vec2(0.0f), false); return; }
     m_session->setTouchInput(c.move, c.jump);   // (walks relative to m_camera.yaw: where you look)
+    if (c.use) m_session->click(0);             // swing / fire the tool you're holding
     // Snap turning: one step each time the stick is pushed over.
     if (std::abs(c.turn.x) > 0.7f && !m_vrTurned) {
         m_vrYaw += c.turn.x > 0.0f ? -kSnapTurn : kSnapTurn;
         m_vrTurned = true;
     } else if (std::abs(c.turn.x) < 0.4f) {
         m_vrTurned = false;
+    }
+}
+
+void PlayerApp::vrTrack() {
+    Player* p = m_scene->player();
+    if (!p) return;
+    m_vrScale = p->eyeHeight() / kRealEyeHeight;   // studs per real metre
+    // Headset space -> the world: the snap turns, and metres -> studs.
+    const glm::quat turn = glm::angleAxis(glm::radians(m_vrYaw), glm::vec3(0, 1, 0));
+    const glm::mat4 head = Vr::head();
+    const glm::vec3 headAt(head[3]);
+    Player::VrBody body;
+    body.on = true;
+    body.head = turn * glm::quat_cast(glm::mat3(head));
+    for (int i = 0; i < 2; ++i) {
+        glm::mat4 hand;
+        if (!Vr::hand(i, hand)) continue;
+        body.hand[i] = true;
+        body.handAt[i] = eyesAhead(m_vrBodyYaw, p->eyeHeight()) + turn * ((glm::vec3(hand[3]) - headAt) * m_vrScale);
+    }
+    // Tests: controllers held at fixed spots (in front of / around the head).
+    float t[6];
+    if (!m_opts.vrTestHands.empty() &&
+        std::sscanf(m_opts.vrTestHands.c_str(), "%f,%f,%f,%f,%f,%f", &t[0], &t[1], &t[2], &t[3], &t[4], &t[5]) == 6)
+        for (int i = 0; i < 2; ++i) {
+            body.hand[i] = true;
+            body.handAt[i] = eyesAhead(m_vrBodyYaw, p->eyeHeight()) +
+                             turn * glm::quat_cast(glm::mat3(head)) * (glm::vec3(t[i * 3], t[i * 3 + 1], t[i * 3 + 2]) * m_vrScale);
+        }
+    p->setVrBody(body);
+}
+
+void PlayerApp::vrShowBody(Player& player) {
+    // First person hides your whole character; in VR you see your body, arms and
+    // legs (like looking down at yourself), just not the head you're inside. The
+    // blocky arms are a little see-through for you, so one reaching across your
+    // face doesn't hide the world (everyone else sees them solid).
+    SceneNode* root = player.root();
+    if (!root) return;
+    for (auto& c : root->children) {
+        if (!c->isPart() || !(Player::isLimb(c.get()) || c->name == "Torso")) continue;
+        const bool arm = c->name == "Left Arm" || c->name == "Right Arm";
+        std::vector<SceneNode*> stack{c.get()};
+        while (!stack.empty()) {
+            SceneNode* n = stack.back();
+            stack.pop_back();
+            n->localTransparency = arm ? 0.35f : 0.0f;
+            for (auto& k : n->children) stack.push_back(k.get());
+        }
     }
 }
 
@@ -87,7 +154,18 @@ void PlayerApp::vrFollow(Player& player) {
     m_camera.pivot = player.focusPoint();
     if (f.x * f.x + f.z * f.z > 1e-6f) m_camera.yaw = glm::degrees(std::atan2(-f.z, -f.x));
     m_camera.pitch = std::clamp(glm::degrees(std::asin(std::clamp(-f.y, -1.0f, 1.0f))), -89.0f, 89.0f);
-    if (!player.isDead() && f.x * f.x + f.z * f.z > 1e-6f) player.faceYaw(glm::degrees(std::atan2(f.x, f.z)));
+    // The body follows the head: straight away when you walk, else only once you've
+    // turned your head further than a neck goes (so looking around doesn't spin you).
+    if (f.x * f.x + f.z * f.z > 1e-6f) {
+        const float headYaw = glm::degrees(std::atan2(f.x, f.z));
+        float diff = std::remainder(headYaw - m_vrBodyYaw, 360.0f);
+        const bool walking = glm::length(Vr::controls().move) > 0.1f;
+        if (m_vrBodyAligned && !walking) diff = std::abs(diff) > kNeckTwist ? diff - std::copysign(kNeckTwist, diff) : 0.0f;
+        m_vrBodyYaw += diff;
+        m_vrBodyAligned = true;
+    }
+    if (!player.isDead()) player.faceYaw(m_vrBodyYaw);
+    m_camera.pivot += eyesAhead(m_vrBodyYaw, player.eyeHeight());
 }
 
 void PlayerApp::vrRender(const Vr::View eyes[2]) {
@@ -96,7 +174,7 @@ void PlayerApp::vrRender(const Vr::View eyes[2]) {
     for (int i = 0; i < 2; ++i) {
         // The eye sits in the character's head, a little to the side (how far your
         // own eyes are from the middle of your head, in studs).
-        const glm::vec3 offset = (glm::vec3(eyes[i].pose[3]) - headAt) * kStudsPerMetre;
+        const glm::vec3 offset = (glm::vec3(eyes[i].pose[3]) - headAt) * m_vrScale;
         glm::mat4 world = turn * eyes[i].pose;
         world[3] = glm::vec4(m_camera.pivot + glm::vec3(turn * glm::vec4(offset, 0.0f)), 1.0f);
         Camera eye = m_camera;

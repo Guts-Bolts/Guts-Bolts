@@ -14,6 +14,7 @@ bool beginFrame(View[2], float, float) { return false; }
 void submitEye(int, unsigned) {}
 void endFrame() {}
 glm::mat4 head() { return glm::mat4(1.0f); }
+bool hand(int, glm::mat4&) { return false; }
 const Controls& controls() { return g_none; }
 } // namespace Vr
 
@@ -75,6 +76,11 @@ struct State {
     GLuint readFbo = 0, drawFbo = 0;
     XrActionSet actionSet = XR_NULL_HANDLE;
     XrAction move = XR_NULL_HANDLE, turn = XR_NULL_HANDLE, jump = XR_NULL_HANDLE, menu = XR_NULL_HANDLE;
+    XrAction use = XR_NULL_HANDLE, grip = XR_NULL_HANDLE;
+    XrPath handPath[2] = {XR_NULL_PATH, XR_NULL_PATH};
+    XrSpace handSpace[2] = {XR_NULL_HANDLE, XR_NULL_HANDLE};
+    glm::mat4 hands[2] = {glm::mat4(1.0f), glm::mat4(1.0f)};
+    bool handOk[2] = {false, false};
     Controls controls;
     glm::mat4 head{1.0f};
     std::string error;
@@ -109,8 +115,12 @@ XrPath path(const char* s) {
     return p;
 }
 
-XrAction makeAction(const char* name, const char* shown, XrActionType type) {
+XrAction makeAction(const char* name, const char* shown, XrActionType type, bool perHand = false) {
     XrActionCreateInfo info{XR_TYPE_ACTION_CREATE_INFO};
+    if (perHand) {   // one action, read separately for each hand
+        info.countSubactionPaths = 2;
+        info.subactionPaths = g.handPath;
+    }
     std::strncpy(info.actionName, name, sizeof(info.actionName) - 1);
     std::strncpy(info.localizedActionName, shown, sizeof(info.localizedActionName) - 1);
     info.actionType = type;
@@ -140,20 +150,38 @@ bool makeActions() {
     g.turn = makeAction("turn", "Turn", XR_ACTION_TYPE_VECTOR2F_INPUT);
     g.jump = makeAction("jump", "Jump", XR_ACTION_TYPE_BOOLEAN_INPUT);
     g.menu = makeAction("menu", "Menu", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    g.use = makeAction("use", "Use tool", XR_ACTION_TYPE_BOOLEAN_INPUT);
+    g.handPath[0] = path("/user/hand/left");
+    g.handPath[1] = path("/user/hand/right");
+    g.grip = makeAction("hand", "Hand", XR_ACTION_TYPE_POSE_INPUT, true);
+    const char* gripL = "/user/hand/left/input/grip/pose";
+    const char* gripR = "/user/hand/right/input/grip/pose";
     suggest("/interaction_profiles/oculus/touch_controller", {
         {g.move, "/user/hand/left/input/thumbstick"}, {g.turn, "/user/hand/right/input/thumbstick"},
-        {g.jump, "/user/hand/right/input/a/click"}, {g.menu, "/user/hand/left/input/menu/click"}});
+        {g.jump, "/user/hand/right/input/a/click"}, {g.menu, "/user/hand/left/input/menu/click"},
+        {g.use, "/user/hand/right/input/trigger/value"}, {g.grip, gripL}, {g.grip, gripR}});
     suggest("/interaction_profiles/valve/index_controller", {
         {g.move, "/user/hand/left/input/thumbstick"}, {g.turn, "/user/hand/right/input/thumbstick"},
-        {g.jump, "/user/hand/right/input/a/click"}, {g.menu, "/user/hand/left/input/b/click"}});
+        {g.jump, "/user/hand/right/input/a/click"}, {g.menu, "/user/hand/left/input/b/click"},
+        {g.use, "/user/hand/right/input/trigger/click"}, {g.grip, gripL}, {g.grip, gripR}});
     suggest("/interaction_profiles/htc/vive_controller", {
         {g.move, "/user/hand/left/input/trackpad"}, {g.turn, "/user/hand/right/input/trackpad"},
-        {g.jump, "/user/hand/right/input/trackpad/click"}, {g.menu, "/user/hand/left/input/menu/click"}});
+        {g.jump, "/user/hand/right/input/trackpad/click"}, {g.menu, "/user/hand/left/input/menu/click"},
+        {g.use, "/user/hand/right/input/trigger/click"}, {g.grip, gripL}, {g.grip, gripR}});
     suggest("/interaction_profiles/microsoft/motion_controller", {
         {g.move, "/user/hand/left/input/thumbstick"}, {g.turn, "/user/hand/right/input/thumbstick"},
-        {g.jump, "/user/hand/right/input/thumbstick/click"}, {g.menu, "/user/hand/left/input/menu/click"}});
+        {g.jump, "/user/hand/right/input/thumbstick/click"}, {g.menu, "/user/hand/left/input/menu/click"},
+        {g.use, "/user/hand/right/input/trigger/value"}, {g.grip, gripL}, {g.grip, gripR}});
     suggest("/interaction_profiles/khr/simple_controller", {
-        {g.jump, "/user/hand/right/input/select/click"}, {g.menu, "/user/hand/left/input/menu/click"}});
+        {g.use, "/user/hand/right/input/select/click"}, {g.menu, "/user/hand/left/input/menu/click"},
+        {g.grip, gripL}, {g.grip, gripR}});
+    for (int i = 0; i < 2; ++i) {   // where each controller is
+        XrActionSpaceCreateInfo ai{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        ai.action = g.grip;
+        ai.subactionPath = g.handPath[i];
+        ai.poseInActionSpace.orientation.w = 1.0f;
+        xrCreateActionSpace(g.session, &ai, &g.handSpace[i]);
+    }
     XrSessionActionSetsAttachInfo at{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
     at.countActionSets = 1;
     at.actionSets = &g.actionSet;
@@ -213,6 +241,7 @@ void closeAll() {
     if (g.readFbo) glDeleteFramebuffers(1, &g.readFbo);
     if (g.drawFbo) glDeleteFramebuffers(1, &g.drawFbo);
     g.readFbo = g.drawFbo = 0;
+    for (XrSpace s : g.handSpace) if (s) xrDestroySpace(s);
     if (g.viewSpace) xrDestroySpace(g.viewSpace);
     if (g.local) xrDestroySpace(g.local);
     if (g.actionSet) xrDestroyActionSet(g.actionSet);   // (its actions go with it)
@@ -287,6 +316,7 @@ void readControls() {
             c.turn = vec(g.turn);
             c.jump = button(g.jump, nullptr);
             button(g.menu, &c.menu);
+            button(g.use, &c.use);
         }
     }
     g.controls = c;
@@ -429,6 +459,13 @@ bool beginFrame(View eyes[2], float nearPlane, float farPlane) {
     if (XR_SUCCEEDED(xrLocateSpace(g.viewSpace, g.local, g.frame.predictedDisplayTime, &hl)) &&
         (hl.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))
         g.head = toMat(hl.pose);
+    for (int i = 0; i < 2; ++i) {   // the controllers
+        XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
+        const XrSpaceLocationFlags need = XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+        g.handOk[i] = g.handSpace[i] && XR_SUCCEEDED(xrLocateSpace(g.handSpace[i], g.local, g.frame.predictedDisplayTime, &loc)) &&
+                      (loc.locationFlags & need) == need;
+        if (g.handOk[i]) g.hands[i] = toMat(loc.pose);
+    }
     for (int i = 0; i < 2; ++i) {
         eyes[i].pose = toMat(g.views[i].pose);
         eyes[i].projection = lens(g.views[i].fov, nearPlane, farPlane);
@@ -496,6 +533,11 @@ void endFrame() {
 }
 
 glm::mat4 head() { return g.head; }
+bool hand(int side, glm::mat4& pose) {
+    if (side < 0 || side > 1 || !g.handOk[side]) return false;
+    pose = g.hands[side];
+    return true;
+}
 const Controls& controls() { return g.controls; }
 
 } // namespace Vr

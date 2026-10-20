@@ -11,6 +11,23 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'body-double',
+    name: 'Body Double',
+    version: '0.7.3',
+    time: 1792506005,
+    tag: 'Player',
+    summary: 'In VR your character moves like you: its head turns with yours, its arms reach for your hands, and its body follows.',
+    items: [
+      'Your controllers are your character\'s hands: each arm swings round its shoulder to reach for one',
+      'The head nods, turns and tilts with yours; the body turns with you when you walk, or when you look further than a neck can turn',
+      'The legs keep walking, jumping and sitting like normal',
+      'Look down and you see your own body (your arms are a little see-through for you, so they don\'t block the view)',
+      'Everyone else in the server sees you move, VR headset or not',
+      'Pull the right trigger to use the tool you\'re holding',
+      'You\'re sized to your character, so the world feels the right size around you',
+    ],
+  },
+  {
     id: 'head-in-the-game',
     name: 'Head in the Game',
     version: '0.7.3',

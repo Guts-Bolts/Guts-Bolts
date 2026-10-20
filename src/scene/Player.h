@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <vector>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include "SceneNode.h"
 #include "Ragdoll.h"
 
@@ -157,6 +158,18 @@ public:
     glm::vec3 position() const;
     glm::vec3 focusPoint() const;     // where the play camera should look (the head)
     void      faceYaw(float degrees) { m_faceLock = true; m_faceYaw = degrees; }   // first person: turn to the camera
+    // VR: the player's real head and hands, from the headset. The head turns the
+    // way you look and each arm reaches for its controller; the legs keep walking.
+    // Hands are offsets from the head (focusPoint), in world studs. Others see it
+    // too (every part's pose goes over the network).
+    struct VrBody {
+        bool      on = false;
+        glm::quat head{1.0f, 0.0f, 0.0f, 0.0f};   // the way your head faces, in the world
+        bool      hand[2] = {false, false};        // left, right: tracked this frame
+        glm::vec3 handAt[2] = {glm::vec3(0.0f), glm::vec3(0.0f)};
+    };
+    void      setVrBody(const VrBody& body) { m_vr = body; }
+    float     eyeHeight() const;   // how high the head is above the feet, standing (studs)
 
     Humanoid& humanoid() { return m_humanoid; }
     // How the character's parts were when Play started (animations pose from there).
@@ -225,6 +238,8 @@ private:
     void bleed(float damage);
     void updateDeath(float dt, Physics& physics);
     void respawn(bool firstSpawn = false);   // firstSpawn: arriving in the game (a different sound)
+    void applyVrBody();               // VR: head and arms to the headset (PlayerVrBody.cpp)
+    VrBody m_vr;
 
     std::vector<uint64_t> m_slots;    // tool ids in hotbar order
     float    m_holdBlend = 0.0f;       // right arm raised to hold a tool

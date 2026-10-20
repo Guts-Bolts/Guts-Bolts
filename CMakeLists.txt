@@ -337,6 +337,7 @@ add_library(gb_engine STATIC
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
     src/scene/Player.cpp
+    src/scene/PlayerVrBody.cpp
     src/scene/Emotes.cpp
     src/scene/Physics.cpp
     src/scene/NavMesh.cpp

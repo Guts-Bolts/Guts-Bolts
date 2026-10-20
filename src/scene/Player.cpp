@@ -1696,7 +1696,7 @@ void Player::animate(float dt, float groundSpeed, bool grounded) {
     else if (!grounded) state = m_velocity.y > 0.0f && m_airTime < 0.6f ? "jump" : "fall";
     else if (!m_emote.empty()) state = m_emote.c_str();
     else if (groundSpeed > 0.3f) state = groundSpeed > m_humanoid.walkSpeed * 1.2f ? "run" : "walk";
-    if (!tripped() && applyCustomAnimation(state, dt)) return;   // your own animation from the Animate script
+    if (!tripped() && applyCustomAnimation(state, dt)) { applyVrBody(); return; }   // your own animation from the Animate script
 
     m_holdBlend = approach(m_holdBlend, equippedTool() ? 1.0f : 0.0f, 12.0f, dt);
     float s = std::sin(m_walkPhase) * m_swing;
@@ -1767,6 +1767,7 @@ void Player::animate(float dt, float groundSpeed, bool grounded) {
         if (it != m_rest.end()) head->transform.rotation = it->second.rotation;
     }
     animationPack(m_emote.empty() ? state : "idle", dt, groundSpeed);
+    applyVrBody();
 }
 
 // An animation pack from the catalog: its idle / walk / run / jump / fall play instead of
