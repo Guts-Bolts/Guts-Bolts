@@ -82,6 +82,7 @@ void PlayerApp::stopVr() {
     if (m_vrPointerDown) ImGui::GetIO().AddMouseButtonEvent(0, false);
     m_vrPointing = m_vrPointerDown = false;
     if (Player* p = m_scene->player()) p->setVrBody({});
+    if (m_session) m_session->scripts().setVr({});
 }
 
 void PlayerApp::vrControls(bool acceptInput) {
@@ -337,6 +338,23 @@ void PlayerApp::vrTrack() {
                              turn * glm::quat_cast(glm::mat3(head)) * (glm::vec3(t[i * 3], t[i * 3 + 1], t[i * 3 + 2]) * m_vrScale);
         }
     p->setVrBody(body);
+
+    // VRService for the game's scripts: your head and hands in studs, from where VR
+    // started (turned with the snap turns), like Roblox's GetUserCFrame.
+    ScriptEngine::VrPose pose;
+    pose.on = m_vrOn;
+    auto toStuds = [&](const glm::mat4& m) {
+        glm::mat4 r = glm::mat4_cast(turn) * m;
+        r[3] = glm::vec4(turn * (glm::vec3(m[3]) * m_vrScale), 1.0f);
+        return r;
+    };
+    pose.head = toStuds(head);
+    for (int i = 0; i < 2; ++i) {
+        glm::mat4 hand;
+        pose.handOk[i] = Vr::hand(i, hand);
+        if (pose.handOk[i]) pose.hand[i] = toStuds(hand);
+    }
+    m_session->scripts().setVr(pose);
 }
 
 void PlayerApp::vrShowBody(Player& player) {
