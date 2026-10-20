@@ -1370,7 +1370,12 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
             int mat = (p.kind == Particle::Fire || p.kind == Particle::Spark) ? (int)Material::Neon
                     : p.wet ? 8   // wet liquid (see the shader)
                     : p.glossy ? (int)Material::Metal : (int)Material::Plastic;
-            if (p.kind == Particle::Splat) {
+            if (p.kind == Particle::Chunk && p.gib == 0) {   // meat (with skin, if it was a body part)
+                mat = 31;
+                m_lit->setBool("uGibSkinOn", p.skin.x >= 0.0f);
+                m_lit->setVec3("uGibSkin", glm::max(p.skin, glm::vec3(0.0f)));
+                m_lit->setFloat("uGibSeed", p.gibSeed);
+            } else if (p.kind == Particle::Splat) {
                 // Pools, smears, footprints and stains: wobbly-edged, and drying as they age.
                 mat = 30;
                 m_lit->setInt("uSplatLook", p.look);

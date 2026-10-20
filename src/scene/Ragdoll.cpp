@@ -188,18 +188,22 @@ void Ragdoll::start(Scene& scene, SceneNode* root, const glm::vec3& velocity,
     }
     m_heartTime = 0.0f;
     m_beat = 0.15f;
+    // Point blank: nothing left but pieces.
+    if (scene.world().dismemberment && m_gore && force >= 0.9f) { place(scene); explode(scene, velocity + impulse, force); }
     if (m_gore) {
         glm::vec3 dir = glm::length(impulse) > 0.1f ? glm::normalize(impulse) : glm::vec3(0, 1, 0);
         scene.particles().spray(m_goreKind, c, dir, 25 + (int)(force * 40), 3.0f + force * 4.0f);
         if (m_goreKind == GoreKind::Oil) scene.particles().sparks(c, 15);
         // The wound that killed them: on the side the hit came from. It keeps bleeding
-        // with the heartbeat, so the body ends up lying in a pool.
+        // with the heartbeat, so the body ends up lying in a pool. (Not if there's no body left.)
         glm::vec3 hitFrom = glm::length(impulse) > 0.1f ? -dir : glm::normalize(glm::vec3(T[2]));
         int wound = glm::dot(hitFrom, glm::vec3(T[2])) >= 0.0f ? (int)Chest : (glm::dot(hitFrom, glm::vec3(T[0])) >= 0.0f ? (int)ShR : (int)ShL);
-        m_stumps.push_back({wound, wound, -1, -1, 0.35f + force * 0.5f, true});
-        m_points[wound].blood = 1.0f;
-        scene.particles().stain(m_goreKind, torso, c + hitFrom * 0.6f, 0.7f + force * 0.6f);
-        if (force > 0.5f) scene.particles().stain(m_goreKind, torso, c - hitFrom * 0.6f, 0.5f);   // came out the other side
+        if (m_hidden.empty()) {
+            m_stumps.push_back({wound, wound, -1, -1, 0.35f + force * 0.5f, true});
+            m_points[wound].blood = 1.0f;
+            scene.particles().stain(m_goreKind, torso, c + hitFrom * 0.6f, 0.7f + force * 0.6f);
+            if (force > 0.5f) scene.particles().stain(m_goreKind, torso, c - hitFrom * 0.6f, 0.5f);   // came out the other side
+        }
     }
     place(scene);
 }
@@ -298,7 +302,7 @@ void Ragdoll::update(float dt, Scene& scene, const Physics& physics) {
     int steps = 0;
     while (m_accum >= kStep && steps < 8) { m_accum -= kStep; step(kStep, physics); ++steps; }
     if (steps == 8) m_accum = 0.0f;
-    if (m_gore) {
+    if (m_gore && m_hidden.empty()) {   // (blown to pieces: the chunks do the bleeding)
         bleed(scene, dt);
         smearAll(scene, dt);
     }
@@ -426,6 +430,26 @@ void Ragdoll::place(Scene& scene) {
         for (int i = 0; i < 3; ++i) r[i] = glm::normalize(r[i]);
         setNode(n, r, glm::vec3(m[3]));
     }
+}
+
+void Ragdoll::explode(Scene& scene, const glm::vec3& velocity, float force) {
+    for (auto& b : m_bones) {
+        SceneNode* n = scene.findById(b.id);
+        if (!n || !n->visible) continue;
+        if (b.kind != 3 && n->name != "HumanoidRootPart")
+            scene.particles().burst(m_goreKind, n, velocity * 0.6f, force);
+        n->visible = false;
+        m_hidden.push_back(n->id);
+    }
+    for (int i = 0; i < 5; ++i) m_cut[i] = true;   // (nothing holds together any more)
+    for (auto& s : m_sticks) s.alive = s.limb < 0;
+    m_stumps.clear();
+}
+
+void Ragdoll::unhide(Scene& scene) {
+    for (uint64_t id : m_hidden)
+        if (SceneNode* n = scene.findById(id)) n->visible = true;
+    m_hidden.clear();
 }
 
 void Ragdoll::release(Scene& scene) {
