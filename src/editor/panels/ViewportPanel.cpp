@@ -134,7 +134,7 @@ void ViewportPanel::followPlayer(Player& p, float dt) {
     PlayCamera::fade(*m_scene, p, m_camera);
 }
 
-bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsing() || m_sculpting || m_modalOn || m_state->modeling.modal != MeshModal::None; }
+bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsing() || m_scaleDrag >= 0 || m_sculpting || m_modalOn || m_state->modeling.modal != MeshModal::None; }
 
 bool ViewportPanel::focusSelected() {
     // The box around every part in the selection (and inside selected models / tools).
@@ -333,12 +333,15 @@ bool ViewportPanel::scaleHandles(SceneNode* sel, const glm::mat4& view, const gl
     const ImVec2 mouse = ImGui::GetMousePos();
     glm::vec3 ro, rd;
     mouseRay({mouse.x, mouse.y}, imgMin, imgSize, view, proj, ro, rd);
-    // Where along the line through the part's middle (along `d`) the mouse ray passes closest.
-    auto alongAxis = [&](const glm::vec3& d) {
-        const glm::vec3 w0 = c - ro;
+    // Where along the line through `from` (along `d`) the mouse ray passes closest.
+    // When that line points almost straight at the camera the answer jumps wildly
+    // with tiny mouse moves, so it keeps the last good value instead.
+    auto alongAxis = [&](const glm::vec3& from, const glm::vec3& d) {
+        const glm::vec3 w0 = from - ro;
         const float b = glm::dot(d, rd), dd = glm::dot(d, w0), e = glm::dot(rd, w0);
         const float den = 1.0f - b * b;
-        return den < 1e-5f ? 0.0f : (b * e - dd) / den;
+        if (den < 0.01f) return m_scaleLastT;
+        return m_scaleLastT = (b * e - dd) / den;
     };
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -379,7 +382,10 @@ bool ViewportPanel::scaleHandles(SceneNode* sel, const glm::mat4& view, const gl
     if (m_scaleDrag < 0 && m_scaleHover >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         m_scaleDrag = m_scaleHover;
         m_scaleStart = sel->transform;
-        m_scaleT0 = alongAxis(dir[m_scaleDrag / 2]);
+        m_scaleC0 = c;
+        m_scaleDir = dir[m_scaleDrag / 2];
+        m_scaleLastT = 0.0f;
+        m_scaleT0 = alongAxis(m_scaleC0, m_scaleDir);
         if (move) {   // everything selected moves together
             m_moveNodes = {sel};
             for (SceneNode* o : m_scene->selectionRoots())
@@ -391,14 +397,13 @@ bool ViewportPanel::scaleHandles(SceneNode* sel, const glm::mat4& view, const gl
     }
     if (move && m_scaleDrag >= 0) {
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_scaleDrag = -1; return true; }
-        const int ax = m_scaleDrag / 2;
-        float by = alongAxis(dir[ax]) - m_scaleT0;
+        float by = alongAxis(m_scaleC0, m_scaleDir) - m_scaleT0;
         const float step = m_state->snapEnabled && m_state->snapTranslate > 0.01f ? m_state->snapTranslate : 0.0f;
         if (step > 0.0f) by = std::round(by / step) * step;
         for (size_t i = 0; i < m_moveNodes.size(); ++i) {
             SceneNode* o = m_moveNodes[i];
             if (!m_scene->findById(o->id)) continue;
-            glm::vec3 d = dir[ax] * by;
+            glm::vec3 d = m_scaleDir * by;
             if (o->parent) d = glm::vec3(glm::inverse(o->parentFrame()) * glm::vec4(d, 0.0f));
             o->transform = m_moveStart[i];
             o->transform.position += d;
@@ -415,17 +420,19 @@ bool ViewportPanel::scaleHandles(SceneNode* sel, const glm::mat4& view, const gl
         const int ax = m_scaleDrag / 2;
         const float side = (m_scaleDrag % 2) ? -1.0f : 1.0f;
         const bool both = ImGui::GetIO().KeyCtrl;   // Ctrl: both sides at once (like Roblox)
-        float grow = (alongAxis(dir[ax]) - m_scaleT0) * side * (both ? 2.0f : 1.0f);
+        float grow = (alongAxis(m_scaleC0, m_scaleDir) - m_scaleT0) * side * (both ? 2.0f : 1.0f);
         const float step = m_state->snapEnabled && m_state->snapTranslate > 0.01f ? m_state->snapTranslate : 0.0f;
         if (step > 0.0f) grow = std::round(grow / step) * step;
-        const float minSize = step > 0.0f ? step : 0.05f;
         const float startSize = m_scaleStart.scale[ax];
+        // Never smaller than one step, but a part that is already thinner than a step (a
+        // coin, a thin disc) keeps its size instead of jumping up the moment you grab it.
+        const float minSize = std::min(step > 0.0f ? step : 0.05f, startSize);
         const float newSize = std::max(minSize, startSize + grow);
         const float d = newSize - startSize;
         sel->transform = m_scaleStart;
         sel->transform.scale[ax] = newSize;
         if (!both) {   // the far side stays where it is: the middle moves half as far
-            glm::vec3 shift = dir[ax] * side * (d * 0.5f);
+            glm::vec3 shift = m_scaleDir * side * (d * 0.5f);
             if (sel->parent) shift = glm::vec3(glm::inverse(sel->parentFrame()) * glm::vec4(shift, 0.0f));
             sel->transform.position += shift;
         }
@@ -590,12 +597,12 @@ void ViewportPanel::drawGizmo(const glm::mat4& view, const glm::mat4& proj,
         sel->transform.position = {t[0], t[1], t[2]};
         sel->transform.rotation += deltaRot;
         sel->transform.scale    = {s[0], s[1], s[2]};
-        if (snapSize) {   // sizes in whole steps of the Move increment (never smaller than one step)
+        if (snapSize) {   // sizes in whole steps of the Move increment (never smaller than one step, or than it started)
             const float st = m_state->snapTranslate;
             for (int i = 0; i < 3; ++i)
                 if (std::abs(sel->transform.scale[i] - m_dragStart.scale[i]) > 1e-5f) {
                     const float d = std::round((sel->transform.scale[i] - m_dragStart.scale[i]) / st) * st;
-                    sel->transform.scale[i] = std::max(st, m_dragStart.scale[i] + d);
+                    sel->transform.scale[i] = std::max(std::min(st, m_dragStart.scale[i]), m_dragStart.scale[i] + d);
                 }
         }
 

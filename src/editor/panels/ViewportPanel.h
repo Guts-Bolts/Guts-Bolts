@@ -105,8 +105,11 @@ private:
     std::vector<Transform>  m_moveStart;
     std::vector<uint64_t>   m_moveHits;
     int       m_scaleHover = -1, m_scaleDrag = -1;   // handle 0..5 (axis * 2 + side)
-    float     m_scaleT0 = 0.0f;
+    float     m_scaleT0 = 0.0f, m_scaleLastT = 0.0f;
     Transform m_scaleStart;
+    // Where the part's middle and the dragged axis were when the drag started. The math
+    // measures from these, not from the part as it is now (it moves while you drag).
+    glm::vec3 m_scaleC0{0.0f}, m_scaleDir{0.0f, 1.0f, 0.0f};
     void mouseRay(const glm::vec2& mouse, const glm::vec2& imgMin, const glm::vec2& imgSize,
                   const glm::mat4& view, const glm::mat4& proj, glm::vec3& ro, glm::vec3& rd) const;
     void modelingView(const glm::mat4& view, const glm::mat4& proj,
