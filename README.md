@@ -2789,20 +2789,44 @@ uses), which must be a **staff** account. It builds with the rest of the
 programs. Each game runs in its own copy of the program, so one broken game
 can't take the others down. Game scripts on these servers have no
 `Players.LocalPlayer` (nobody plays there): use `Players.PlayerAdded` and
-`Players:GetPlayers()`, like Roblox server scripts. Private servers are still
-hosted by the person who starts them.
+`Players:GetPlayers()`, like Roblox server scripts. **Private servers** run on
+a game server machine too when one is free (with the same code, and the same
+"friends of its owner" rule), so they stay up after their owner leaves. And if a
+player was hosting (because no machine was free) and leaves, a free machine takes
+that server over and everyone follows, so from then on nobody is the host.
+
+**Setting one up on a cloud server (easiest).** Rent the smallest Linux server
+from any cloud company (Ubuntu 22.04 or 24.04; about $5 a month is plenty for a
+few games at once). Log in to it and paste this one line:
+
+```
+curl -fsSL https://raw.githubusercontent.com/useofscript/Project-Guts-And-Bolts/main/tools/game-server-setup.sh | bash
+```
+
+It installs everything, starts the game server, and makes it start by itself
+whenever the server reboots (and fetch the newest Guts&Bolts each time). At the
+end it prints the machine's **account ID**. In the Player, open the **Staff**
+page, search for the start of that ID and press **Make Staff**. A minute later
+it's running games. (`journalctl -u gutsandbolts-games -f` shows what it's doing.
+`SLOTS=8` in front of `bash` lets it run 8 games at once.) The machine has its own
+account, so your own account key never leaves your computer.
 
 **Hat pictures:** a hat or gear made from an imported Roblox file uses a picture
 file. Studio uploads it when you publish. For older items whose pictures never got
 uploaded (they look plain white on the website), use **File > Upload Missing Item
 Pictures** in Studio on the computer that made them.
 
-**When the host leaves**, nobody gets kicked. The Guts&Bolts server picks
+**When the host leaves**, nobody gets kicked. If a game server machine is
+free, it takes the server over (see below). Otherwise the Guts&Bolts server picks
 whoever has been in the game longest, their Player starts a new server of the
 same game (same name, same private code), and everyone else follows them there
-on their own. It takes a few seconds and the world starts fresh, but everybody
-stays together. If that player can't do it within about 12 seconds, the next
-one in line is asked.
+on their own. There's no loading screen: the world stays on screen with a note
+at the top for a few seconds. The new host **carries on in the world as it
+was**: parts stay where they were, things that broke stay broken, and things
+people built are still there. The game's server scripts start again from the
+top, though (a round timer starts over), so a script that adds things to the
+world when it starts adds them again. If that player can't do it within about
+12 seconds, the next one in line is asked.
 
 **Private servers** get a 6-letter code (it shows in the pause menu). Your
 friends can join straight from their Friends list; anyone else needs the

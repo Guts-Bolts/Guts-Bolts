@@ -50,6 +50,18 @@ std::string upper(std::string s) {
 }
 } // namespace
 
+std::string GbServer::freeCode() const {
+    auto used = [&](const std::string& code) {
+        for (const auto& [id, x] : m_sessions) if (x.code == code) return true;
+        for (const auto& [ctl, pool] : m_pools) if (pool.starting.count("code:" + code)) return true;
+        return false;
+    };
+    std::string code;
+    do code = makeCode();
+    while (used(code));
+    return code;
+}
+
 json GbServer::sessionJson(const Session& s) const {
     const User* h = nullptr;
     if (auto it = m_users.find(s.host); it != m_users.end()) h = &it->second;
@@ -110,12 +122,39 @@ json GbServer::serverOp(const std::string& name, User& me, const json& args) {
         else r["host"] = true;
         return r;
     }
+    // Your own private server. Like servers.play, a game server machine runs it if one is free
+    // ("wait", then ask again with the code), so it stays up whoever leaves, you included.
+    // Otherwise you host it yourself ("host").
+    if (name == "servers.private") {
+        auto a = m_assets.find(game);
+        if (a == m_assets.end() || a->second.kind != "game") return fail("That game doesn't exist (any more).");
+        if (const std::string blocked = privateBlocked(me, game); !blocked.empty()) return fail(blocked);
+        const std::string code = upper(Online::cleanText(args.value("code", std::string()), 12));
+        json r = okay();
+        if (!code.empty()) {
+            for (const auto& [id, s] : m_sessions)
+                if (s.code == code) { r["join"] = id; r["code"] = code; return r; }
+            const long long now = Online::unixNow();
+            for (const auto& [ctl, pool] : m_pools)
+                if (auto w = pool.starting.find("code:" + code); w != pool.starting.end() && now - w->second <= kPoolStartWait) {
+                    r["wait"] = 2; r["code"] = code; return r;
+                }
+            r["host"] = true;   // the machine didn't start it: host it yourself
+            return r;
+        }
+        if (args.value("dedicated", true)) {
+            const std::string fresh = freeCode();
+            if (startOnPool(a->second, {{"private", true}, {"code", fresh}, {"owner", me.id}})) { r["wait"] = 2; r["code"] = fresh; return r; }
+        }
+        r["host"] = true;
+        return r;
+    }
     if (name == "servers.list") {
         json list = json::array();
         for (const auto& [id, s] : m_sessions) {
             if (!game.empty() && s.game != game) continue;
-            bool friendHost = me.friends.count(s.host) > 0;
-            if (s.priv && !friendHost && s.host != me.id) continue;   // private: only the host's friends see it
+            bool friendHost = me.friends.count(ownerOf(s)) > 0;
+            if (s.priv && !friendHost && ownerOf(s) != me.id) continue;   // private: only its owner's friends see it
             json j = sessionJson(s);
             int friends = friendHost ? 1 : 0;
             for (const Client* p : s.players) if (me.friends.count(p->account)) ++friends;
@@ -155,23 +194,28 @@ json GbServer::serverOp(const std::string& name, User& me, const json& args) {
     return fail("Unknown request.");
 }
 
-bool GbServer::startOnPool(const Asset& game) {
+bool GbServer::startOnPool(const Asset& game, const json& extra) {
     const long long now = Online::unixNow();
+    const std::string continues = extra.value("continues", std::string()), code = extra.value("code", std::string());
+    const std::string what = !continues.empty() ? "moved:" + continues : !code.empty() ? "code:" + code : game.id;
     Client* pick = nullptr;
     int pickFree = 0;
     for (auto& [ctl, pool] : m_pools) {
         for (auto it = pool.starting.begin(); it != pool.starting.end();)
             it = now - it->second > kPoolStartWait ? pool.starting.erase(it) : std::next(it);
-        if (pool.starting.count(game.id)) return true;   // on its way
+        if (pool.starting.count(what)) return true;   // on its way
         int running = 0;
         for (const auto& [id, s] : m_sessions) if (s.dedicated && s.host == pool.account) ++running;
         const int free = pool.slots - running - (int)pool.starting.size();
         if (free > pickFree && !ctl->closing) { pick = ctl; pickFree = free; }
     }
     if (!pick) return false;
-    m_pools[pick].starting[game.id] = now;
+    m_pools[pick].starting[what] = now;
     const int max = game.meta.contains("maxPlayers") && game.meta["maxPlayers"].is_number_integer() ? game.meta["maxPlayers"].get<int>() : kDefaultMax;
-    pick->conn->send(json{{"t", "start"}, {"game", game.id}, {"title", game.name}, {"max", std::clamp(max, 2, kMostPlayers)}}.dump());
+    json start = {{"t", "start"}, {"game", game.id}, {"title", game.name}, {"max", std::clamp(max, 2, kMostPlayers)}};
+    if (!continues.empty()) start["continues"] = continues;
+    else if (!code.empty()) { start["private"] = true; start["code"] = code; start["owner"] = extra.value("owner", std::string()); }
+    pick->conn->send(start.dump());
     return true;
 }
 
@@ -218,20 +262,33 @@ void GbServer::relayRequest(Client& c, const json& req) {
         s.created = now;
         s.control = &c;
         s.dedicated = dedicated;
-        // Taking over a server whose host left: same game, name, privacy and code, so everyone can follow.
+        if (s.dedicated) {
+            // Someone's private server (we gave the machine its code and owner in startOnPool).
+            const std::string code = upper(Online::cleanText(args.value("code", std::string()), 12));
+            s.priv = s.priv && !code.empty();
+            if (s.priv) {
+                s.code = code;
+                std::string owner = Online::cleanText(args.value("owner", std::string()), 64);
+                for (char& ch : owner) ch = (char)std::tolower((unsigned char)ch);
+                if (isHex(owner, 64, 64)) s.owner = owner;
+            }
+            for (auto& [ctl, pool] : m_pools) {
+                if (pool.account != me->id) continue;
+                pool.starting.erase(s.priv ? "code:" + s.code : s.game);
+                pool.starting.erase("moved:" + args.value("continues", std::string()));
+            }
+        }
+        // Taking over a server whose host left: same game, name, privacy and code, so everyone can
+        // follow. (One of its players, or a game server machine.)
         if (auto old = m_moved.find(args.value("continues", std::string())); old != m_moved.end()) {
             Moved& m = old->second;
-            if (!m.newId.empty() || std::find(m.members.begin(), m.members.end(), me->id) == m.members.end()) {
+            if (!m.newId.empty() || (!dedicated && std::find(m.members.begin(), m.members.end(), me->id) == m.members.end())) {
                 reply(fail("Someone else is already hosting the new server."));
                 c.closing = true;
                 return;
             }
-            s.game = m.game; s.title = m.title; s.priv = m.priv; s.code = m.code; s.max = m.max;
+            s.game = m.game; s.title = m.title; s.priv = m.priv; s.code = m.code; s.owner = m.owner; s.max = m.max;
             m.newId = s.id;
-        }
-        if (s.dedicated) {
-            s.priv = false;
-            for (auto& [ctl, pool] : m_pools) if (pool.account == me->id) pool.starting.erase(s.game);
         }
         if (s.priv && !dedicated && args.value("continues", std::string()).empty()) {
             if (const std::string blocked = privateBlocked(*me, s.game); !blocked.empty()) { reply(fail(blocked)); c.closing = true; return; }
@@ -270,6 +327,14 @@ void GbServer::relayRequest(Client& c, const json& req) {
             if (auto it = m.newId.empty() ? m_sessions.end() : m_sessions.find(m.newId); it != m_sessions.end()) s = &it->second;
             if (!s) {
                 if (!m.newId.empty()) { reply(fail("The new server closed too.")); c.closing = true; return; }
+                if (m.machineUntil) {
+                    if (now <= m.machineUntil) {   // a game server machine is starting it: everyone just waits
+                        reply(json{{"ok", false}, {"hostLeft", true}, {"you", false}, {"error", "The host left. Moving to a new server..."}});
+                        c.closing = true;
+                        return;
+                    }
+                    m.machineUntil = 0; m.heirSince = now;   // it didn't: one of the players hosts it after all
+                }
                 if (now - m.heirSince > kHeirWait) { ++m.heir; m.heirSince = now; }   // they didn't start it: next in line
                 if (m.heir >= m.members.size()) { reply(fail("That server has closed.")); c.closing = true; return; }
                 reply(json{{"ok", false}, {"hostLeft", true}, {"you", m.members[m.heir] == me->id},
@@ -281,7 +346,7 @@ void GbServer::relayRequest(Client& c, const json& req) {
         }
         if (!s) { reply(fail("That server has closed.")); c.closing = true; return; }
         if (s->host == me->id && !s->dedicated) { reply(fail("That's your own server.")); c.closing = true; return; }
-        if (s->priv && code.empty() && !following && !me->friends.count(s->host)) {
+        if (s->priv && code.empty() && !following && !me->friends.count(ownerOf(*s)) && ownerOf(*s) != me->id) {
             reply(fail("That's a private server. You need to be the host's friend, or have its code."));
             c.closing = true;
             return;
@@ -361,10 +426,15 @@ void GbServer::dropClients(long long now) {
             if (!left.empty()) {
                 Moved m;
                 m.game = it->second.game; m.title = it->second.title; m.code = it->second.code;
-                m.priv = it->second.priv; m.max = it->second.max;
+                m.owner = ownerOf(it->second); m.priv = it->second.priv; m.max = it->second.max;
                 for (Client* p : left) m.members.push_back(p->account);
                 m.heirSince = now;
                 m.until = now + kMoveWait;
+                // A free game server machine takes it over, so nobody has to host it (and it won't
+                // happen again when the next person leaves). If none is free, one of the players does.
+                if (auto a = m_assets.find(m.game); a != m_assets.end() && a->second.kind == "game" &&
+                    startOnPool(a->second, {{"continues", it->first}}))
+                    m.machineUntil = now + kPoolStartWait;
                 m_moved[it->first] = std::move(m);
             }
             for (Client* p : it->second.players) if (dead.insert(p).second) grew = true;

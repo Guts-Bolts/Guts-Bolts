@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 #include <cstdio>
+#include <iterator>
+#include <vector>
 
 namespace EditorTheme {
 
@@ -60,6 +62,52 @@ void loadFonts(float scale) {
         ImFontConfig def;
         def.SizePixels = 13.0f * scale;
         io.Fonts->AddFontDefault(&def);
+    }
+
+    // Letters the font above doesn't have (Cyrillic, Polish, accents in the
+    // built-in font) come from a bigger system font, so every language shows.
+    const char* moreLetters[] = {
+        "C:/Windows/Fonts/arial.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/Library/Fonts/Arial Unicode.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+        "/system/fonts/Roboto-Regular.ttf",
+    };
+    for (const char* path : moreLetters) {
+        if (FILE* f = std::fopen(path, "rb")) {
+            std::fclose(f);
+            ImFontConfig merge = cfg;
+            merge.MergeMode = true;
+            if (io.Fonts->AddFontFromFileTTF(path, (loaded ? 17.0f : 13.0f) * scale, &merge)) break;
+        }
+    }
+    // Chinese, Japanese and Korean (chat in those, and translated text): the
+    // first font found of each list. (Fonts only load the letters that show up.)
+    const char* cjk[] = {
+        "C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/meiryo.ttc",
+        "/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        "/system/fonts/NotoSansCJK-Regular.ttc",
+    };
+    const char* korean[] = {
+        "C:/Windows/Fonts/malgun.ttf", "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+    };
+    for (const auto& list : {std::vector<const char*>(std::begin(cjk), std::end(cjk)),
+                             std::vector<const char*>(std::begin(korean), std::end(korean))}) {
+        for (const char* path : list) {
+            if (FILE* f = std::fopen(path, "rb")) {
+                std::fclose(f);
+                ImFontConfig merge = cfg;
+                merge.MergeMode = true;
+                if (io.Fonts->AddFontFromFileTTF(path, (loaded ? 17.0f : 13.0f) * scale, &merge)) break;
+            }
+        }
     }
 
     // Monospace font for code. ImGui's built-in font is monospace too, so it

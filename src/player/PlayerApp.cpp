@@ -447,6 +447,12 @@ void PlayerApp::joinGame(const std::filesystem::path& path, HostMode mode, const
         m_page = Page::Home;
         return;
     }
+    // Taking over from a host who left: carry on in the world as it was.
+    const bool carried = !m_continues.empty() && !m_carry.empty() && gameKey == m_carryGame &&
+                         mode != HostMode::Lan && handoffRestore(*m_scene, m_carry);
+    m_carry.clear();
+    m_handoff = false;
+    if (carried) Log::info("The host left: carrying on in the world as it was.");
     Online::fetchSounds(*m_scene);   // server audio ("gb:" sounds) this game uses
     m_iMadeThis = gameKey.empty() || (!m_gameOwner.empty() && m_gameOwner == Account::id());
     m_playingKey = gameKey;
@@ -472,19 +478,21 @@ void PlayerApp::joinGame(const std::filesystem::path& path, HostMode mode, const
 
     m_currentTitle = m_scene->info().title;
     m_currentAuthor = m_scene->info().author;
-    m_loadingT = 1.4f;
+    m_loadingT = carried ? 0.0f : 1.4f;
     if (gameKey != m_loadingGameId) {   // not the icon of the last game
         m_loadingGameId = gameKey; m_loadingIcon.clear(); m_loadingTitle.clear(); m_loadingAuthor.clear();
     }
     if (!m_loadingTitle.empty()) m_currentTitle = m_loadingTitle;    // a published game: its name on the site
     if (!m_loadingAuthor.empty()) m_currentAuthor = m_loadingAuthor;
     m_window->setTitle(m_currentTitle + " - Guts&Bolts Player");
-    frameSpawn(*m_scene, m_camera);
-    m_camera.clearScripted();    // (a script may have had it in the last game)
-    m_camera.distance = 12.0f;
-    m_camera.pitch = 20.0f;
-    m_camera.yaw = 90.0f;        // behind the character, looking the way it faces (-Z)
-    if (m_opts.cameraYaw > -999.0f) m_camera.yaw = m_opts.cameraYaw;
+    if (!carried) {   // (carrying on: the camera stays where it was)
+        frameSpawn(*m_scene, m_camera);
+        m_camera.clearScripted();    // (a script may have had it in the last game)
+        m_camera.distance = 12.0f;
+        m_camera.pitch = 20.0f;
+        m_camera.yaw = 90.0f;        // behind the character, looking the way it faces (-Z)
+        if (m_opts.cameraYaw > -999.0f) m_camera.yaw = m_opts.cameraYaw;
+    }
     m_paused = false;
     m_status.clear();
     Log::clear();
@@ -645,6 +653,8 @@ void PlayerApp::teleportMe(const std::string& place, const nlohmann::json& data,
 
 void PlayerApp::leaveGame() {
     m_waitKey.clear();   // (stop waiting for a game server machine)
+    m_carry.clear();
+    m_handoff = false;
     m_playingKey.clear();
     m_server.reset();
     m_client.reset();
@@ -700,7 +710,8 @@ void PlayerApp::frame(float dt) {
     if (!m_waitKey.empty() && ImGui::GetTime() >= m_waitAt) {   // a game server machine was starting it: ask again
         const std::string key = std::move(m_waitKey), title = std::move(m_waitTitle);
         m_waitKey.clear();
-        playGame(key, title, std::move(m_waitStart), m_waitTries);
+        if (m_waitPrivate) playPrivate(key, title, std::move(m_waitStart), m_waitCode, m_waitTries);
+        else playGame(key, title, std::move(m_waitStart), m_waitTries);
     }
     fetchAvatarParts();
     if (m_autoServers && Online::online()) {
@@ -1607,6 +1618,8 @@ void PlayerApp::drawGame(float dt) {
             // The host left (or we're already following everyone): don't kick, move to a new server.
             if (m_client->hostLeft() && !m_client->relaySession().empty()) {
                 std::string from = m_client->relaySession(), game = m_client->relayGame();
+                m_carry = handoffSnapshot(*m_scene, m_client->otherCharacters());   // (in case we're the one who takes over)
+                m_carryGame = game;
                 m_client.reset();
                 startMove(from, game, m_currentTitle);
             } else if (moving() && m_client->movingTurn()) {
@@ -1624,7 +1637,11 @@ void PlayerApp::drawGame(float dt) {
                 return;
             }
         }
-        if (m_client && m_client->state() == NetClient::State::Joined && moving()) m_moveFrom.clear();   // made it
+        if (m_client && m_client->state() == NetClient::State::Joined && moving()) {   // made it
+            m_moveFrom.clear();
+            m_carry.clear();
+            m_handoff = false;
+        }
     }
     // We were going to host the new server, but someone else already does: follow them instead.
     if (!m_tookOver.empty() && ImGui::GetTime() > m_tookOverUntil) m_tookOver.clear();
@@ -1634,11 +1651,12 @@ void PlayerApp::drawGame(float dt) {
         m_server.reset();
         startMove(from, m_moveGame, m_currentTitle);
     }
+    // Moving to the new server: the world stays on screen (frozen for a moment) instead of a
+    // loading screen, with a note at the top (drawn below).
     if (moving() && !m_client) {
         moveStep();
-        drawLoading(pos, size, 1.0f, "The host left. Moving everyone to a new server");
-        if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) { m_moveFrom.clear(); leaveGame(); }
-        return;
+        if (m_page != Page::Game) return;   // (nobody could start it)
+        if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) { m_moveFrom.clear(); leaveGame(); return; }
     }
     if (m_client) {
         if (m_client->state() == NetClient::State::Joined) {
@@ -1651,7 +1669,7 @@ void PlayerApp::drawGame(float dt) {
     if (!m_server && !m_client) m_soloChat->update(dt);
 
     bool connecting = m_client && m_client->state() != NetClient::State::Joined;
-    if (connecting) {
+    if (connecting && !m_handoff) {
         drawLoading(pos, size, 1.0f, "Connecting to server");
         if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) leaveGame();
         return;
@@ -1921,6 +1939,13 @@ void PlayerApp::drawGame(float dt) {
     if (m_loadingT > 0.0f) {   // the loading screen fades away as the game appears
         m_loadingT -= dt;
         drawLoading(pos, size, std::clamp(m_loadingT / 0.6f, 0.0f, 1.0f), "Starting");
+    }
+    if (m_handoff) {   // the host left: a note at the top while someone else takes over
+        const char* note = "The host left. Someone else is taking over, hang on...";
+        const ImVec2 ts = ImGui::CalcTextSize(note);
+        const ImVec2 a(pos.x + (size.x - ts.x) * 0.5f - 14, pos.y + 18), b(a.x + ts.x + 28, a.y + ts.y + 14);
+        dl->AddRectFilled(a, b, IM_COL32(20, 20, 24, 210), 6.0f);
+        dl->AddText(ImVec2(a.x + 14, a.y + 7), IM_COL32(255, 230, 140, 255), note);
     }
 
     if (m_paused) drawPauseMenu();
@@ -2375,6 +2400,8 @@ void PlayerApp::drawPauseMenu() {
             if (bigButton("Off", !v ? ImVec4(0.55f, 0.25f, 0.25f, 1) : ImVec4(0.2f, 0.21f, 0.24f, 1), ImVec2(bw, 0)) && v) { v = false; changed = true; }
             ImGui::PopID();
         };
+        row("Language");
+        SettingsWindow::languagePicker(-1.0f);
         ImGui::SeparatorText("Camera");
         onOff("Shift Lock Switch", gs.shiftLockSwitch);
         row("Camera Sensitivity");

@@ -18,6 +18,8 @@ understand.
 ## Also in this update
 - A much fuller Terms of Service, still in plain words.
 - Resizing and moving parts with the handles in Studio no longer shakes.
+- Servers stay up without a host: when the host leaves, the game carries on
+  in the same world, and private servers can run on game server machines.
 - The download page counts VR: Guts&Bolts runs on 5 platforms.
 
 # Guts&Bolts 0.7.3: Going Once, Going Twice, Going VR (October 20, 2026)

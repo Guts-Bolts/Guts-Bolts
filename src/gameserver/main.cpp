@@ -9,8 +9,13 @@
 //   GutsAndBoltsGameServer [--slots N]       wait for games to run (up to N at once, 4 if not given)
 //   GutsAndBoltsGameServer --game <id>       run one game (the waiting one starts these by itself)
 //
+// It also runs people's private servers (with the code the Guts&Bolts server gave them), and
+// takes over servers whose host left, so their players can carry on.
+//
 // It signs in with the account on this computer (like the Player app), which must
 // be a Guts&Bolts staff account. No window or graphics card is needed.
+//
+//   GutsAndBoltsGameServer --id              say this computer's account ID (to give it the Staff badge)
 #include "../core/Account.h"
 #include "../core/Log.h"
 #include "../game/GameSession.h"
@@ -74,7 +79,11 @@ void setUpImGui() {
 
 // --- One game ---------------------------------------------------------------
 
-int runGame(const std::string& gameId, int max) {
+// What the Guts&Bolts server asked for besides the game: a private server's code and owner, or
+// the old server (whose host left) this one carries on from.
+struct GameExtra { std::string code, owner, continues; };
+
+int runGame(const std::string& gameId, int max, const GameExtra& extra) {
     Mesh::headless = true;
     setUpImGui();
     if (!goOnline(30.0)) { say("Couldn't reach the Guts&Bolts server: " + Online::statusText()); return 1; }
@@ -114,7 +123,9 @@ int runGame(const std::string& gameId, int max) {
     int port = 0;
     if (!Online::serverHostPort(host, port)) { say("No Guts&Bolts server address."); return 1; }
     const std::string title = info.value("name", scene.info().title);
-    json args = {{"game", gameId}, {"title", title}, {"private", false}, {"max", std::clamp(max, 2, 30)}, {"dedicated", true}};
+    json args = {{"game", gameId}, {"title", title}, {"private", !extra.code.empty()}, {"max", std::clamp(max, 2, 30)}, {"dedicated", true}};
+    if (!extra.code.empty()) { args["code"] = extra.code; args["owner"] = extra.owner; }
+    if (!extra.continues.empty()) args["continues"] = extra.continues;
     if (!server.startRelay(host, port, Online::signedRequest("relay.host", args).dump(), err)) {
         say("Couldn't open the server: " + err);
         return 1;
@@ -231,10 +242,18 @@ bool safeId(const std::string& id) {
 }
 
 // Each game runs in its own copy of this program, so one broken game can't take the others down.
-void startGame(const std::string& self, const std::string& gameId, int max) {
+void startGame(const std::string& self, const json& m) {
+    const std::string gameId = m.value("game", std::string());
     if (!safeId(gameId)) return;
-    const std::string cmd = quoted(self) + " --game " + gameId + " --max " + std::to_string(max);
-    say("Starting game " + gameId);
+    std::string cmd = quoted(self) + " --game " + gameId + " --max " + std::to_string(m.value("max", 12));
+    const std::string code = m.value("code", std::string()), owner = m.value("owner", std::string()),
+                      continues = m.value("continues", std::string());
+    if (m.value("private", false) && safeId(code)) {
+        cmd += " --code " + code;
+        if (safeId(owner)) cmd += " --owner " + owner;
+    }
+    if (safeId(continues)) cmd += " --continues " + continues;
+    say("Starting game " + gameId + (continues.empty() ? code.empty() ? "" : " (a private server)" : " (its host left)"));
     std::thread([cmd] { if (std::system(cmd.c_str()) != 0) {} }).detach();   // (it says how it went itself)
 }
 
@@ -263,10 +282,13 @@ int runPool(const std::string& self, int slots) {
                 const std::string t = m.value("t", std::string());
                 if (t == "relay" && !m.value("ok", false)) {
                     say("The Guts&Bolts server said no: " + m.value("error", std::string("?")));
+                    say("This computer's account ID is " + Account::id() + ".\n"
+                        "To let it run games, give it the Staff badge: in the Player, open the Staff page, search for " +
+                        Account::id().substr(0, 12) + " and press Make Staff.");
                     return 1;   // (not staff: no point trying again)
                 }
                 if (t == "relay") say("Ready.");
-                if (t == "start") startGame(self, m.value("game", std::string()), m.value("max", 12));
+                if (t == "start") startGame(self, m);
             }
             if (!alive || !control->alive()) {
                 say("Lost the Guts&Bolts server, reconnecting...");
@@ -284,16 +306,22 @@ int runPool(const std::string& self, int slots) {
 
 int main(int argc, char** argv) {
     std::string game, place;
+    GameExtra extra;
     int slots = 4, max = 12, port = kDefaultPort;
     for (int i = 1; i < argc; ++i) {
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
         if (!std::strcmp(argv[i], "--game"))       game = next();
         else if (!std::strcmp(argv[i], "--slots")) slots = std::clamp(std::atoi(next()), 1, 50);
         else if (!std::strcmp(argv[i], "--max"))   max = std::atoi(next());
+        else if (!std::strcmp(argv[i], "--code"))      extra.code = next();
+        else if (!std::strcmp(argv[i], "--owner"))     extra.owner = next();
+        else if (!std::strcmp(argv[i], "--continues")) extra.continues = next();
         else if (!std::strcmp(argv[i], "--place")) place = next();
         else if (!std::strcmp(argv[i], "--port"))  port = std::atoi(next());
+        else if (!std::strcmp(argv[i], "--id"))    { say(Account::id()); return 0; }
         else if (!std::strcmp(argv[i], "--help") || !std::strcmp(argv[i], "-h")) {
             say("GutsAndBoltsGameServer [--slots N]   wait for games to run (up to N at once)\n"
+                "GutsAndBoltsGameServer --id          say this computer's account ID\n"
                 "GutsAndBoltsGameServer --game <id>   run one game\n"
                 "GutsAndBoltsGameServer --place <file> [--port N]   Studio's multiplayer test: run a game file\n"
                 "                                     on this computer's network (Player windows join it)");
@@ -301,7 +329,7 @@ int main(int argc, char** argv) {
         }
     }
     if (!place.empty()) return runLocalTest(place, port > 0 && port < 65536 ? port : kDefaultPort);
-    if (!game.empty()) return runGame(game, max);
+    if (!game.empty()) return runGame(game, max, extra);
     std::error_code ec;
     std::filesystem::path self = std::filesystem::canonical(argv[0], ec);
     if (ec) self = std::filesystem::absolute(argv[0]);

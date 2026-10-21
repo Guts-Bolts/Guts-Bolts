@@ -3,6 +3,7 @@
 #include "SettingsWindow.h"
 #include "../core/Settings.h"
 #include "../core/UpdateChecker.h"
+#include "../core/I18n.h"
 
 #include <imgui.h>
 #include <cstring>
@@ -14,6 +15,28 @@ void help(const char* text) {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", text);
 }
 } // namespace
+
+void languagePicker(float width) {
+    const auto& langs = I18n::languages();
+    const std::string saved = GraphicsSettings::get().language;
+    auto nameOf = [&](const std::string& code) {
+        for (const auto& l : langs) if (l.code == code) return l.name;
+        return code;
+    };
+    // "Same as this computer" is translated; the languages show their own names.
+    std::string preview = saved.empty() ? std::string(I18n::tr("Same as this computer")) + " (" + nameOf(I18n::current()) + ")"
+                                        : nameOf(saved);
+    if (width > 0) ImGui::SetNextItemWidth(width);
+    I18n::Pause keep;
+    if (ImGui::BeginCombo("##language", preview.c_str())) {
+        std::string pick = "-";
+        if (ImGui::Selectable(I18n::tr("Same as this computer"), saved.empty())) pick = "";
+        for (const auto& l : langs)
+            if (ImGui::Selectable(l.name.c_str(), saved == l.code)) pick = l.code;
+        ImGui::EndCombo();
+        if (pick != "-") I18n::setLanguage(pick);
+    }
+}
 
 void draw(bool* open) {
     if (!*open) return;
@@ -29,6 +52,10 @@ void draw(bool* open) {
 
     GraphicsSettings& s = GraphicsSettings::get();
     GraphicsSettings before = s;
+
+    ImGui::SeparatorText("Language");
+    languagePicker(-1.0f);
+    help("The language for the menus and buttons in the Player and Studio. The words inside games are up to each game.");
 
     ImGui::SeparatorText("Frame rate");
     ImGui::Checkbox("VSync", &s.vsync);

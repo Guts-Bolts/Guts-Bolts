@@ -15,6 +15,10 @@ struct GraphicsSettings {
     bool  allowGore   = true;   // false hides blood / gore in every game
     bool  seasonTheme = true;   // the Player dresses up for the season (Gutstober in October)
     bool  checkUpdates = true;  // look for a newer version on GitHub at startup
+    // Language for the menus and buttons ("es", "ru"...; "" = the computer's language).
+    // See I18n.h. (A plain array, not std::string: the settings window compares
+    // settings with memcmp.)
+    char  language[16] = "";
 
     // Controls
     enum TouchMode { TouchAuto, TouchOn, TouchOff };
