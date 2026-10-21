@@ -2816,12 +2816,17 @@ file. Studio uploads it when you publish. For older items whose pictures never g
 uploaded (they look plain white on the website), use **File > Upload Missing Item
 Pictures** in Studio on the computer that made them.
 
-**When the host leaves**, nobody gets kicked. The Guts&Bolts server picks
+**When the host leaves**, nobody gets kicked. If a game server machine is
+free, it takes the server over (see below). Otherwise the Guts&Bolts server picks
 whoever has been in the game longest, their Player starts a new server of the
 same game (same name, same private code), and everyone else follows them there
-on their own. It takes a few seconds and the world starts fresh, but everybody
-stays together. If that player can't do it within about 12 seconds, the next
-one in line is asked.
+on their own. There's no loading screen: the world stays on screen with a note
+at the top for a few seconds. The new host **carries on in the world as it
+was**: parts stay where they were, things that broke stay broken, and things
+people built are still there. The game's server scripts start again from the
+top, though (a round timer starts over), so a script that adds things to the
+world when it starts adds them again. If that player can't do it within about
+12 seconds, the next one in line is asked.
 
 **Private servers** get a 6-letter code (it shows in the pause menu). Your
 friends can join straight from their Friends list; anyone else needs the

@@ -203,6 +203,11 @@ void PlayerApp::joinRelay(const std::string& session, const std::string& code, c
         m_client.reset();
         return;
     }
+    if (m_handoff) {   // following everyone to the new server: no loading screen
+        m_paused = false;
+        m_status.clear();
+        return;
+    }
     m_currentTitle = title.empty() ? std::string("Joining...") : "Joining " + title + "...";
     if (!m_connectScreen) { m_currentAuthor.clear(); m_loadingGameId.clear(); m_loadingIcon.clear(); m_loadingTitle.clear(); m_loadingAuthor.clear(); }   // (keep what Play knew)
     m_loadingT = 0.9f;
@@ -214,7 +219,8 @@ void PlayerApp::joinRelay(const std::string& session, const std::string& code, c
 
 // The host left the game. Instead of kicking everyone, the Guts&Bolts server picks one of the
 // players (whoever has been there longest) to host a new server of the same game, and the
-// rest follow them there. The world starts fresh, but everyone stays together.
+// rest follow them there. The new host carries on in the world as it was (handoffSnapshot),
+// so parts stay where they were; the game's scripts start again.
 void PlayerApp::startMove(const std::string& session, const std::string& game, const std::string& title) {
     m_session->stop();
     m_moveFrom = session;
@@ -222,6 +228,7 @@ void PlayerApp::startMove(const std::string& session, const std::string& game, c
     m_moveTitle = title;
     m_moveUntil = ImGui::GetTime() + 80.0;
     m_moveRetryAt = ImGui::GetTime() + 0.5;   // give the server a moment to notice the host is gone
+    m_handoff = true;
     Log::info("The host left. Moving everyone to a new server...");
 }
 

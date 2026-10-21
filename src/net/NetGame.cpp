@@ -468,6 +468,62 @@ struct HideServerCode {
     ~HideServerCode() { for (auto& [n, src] : kept) n->source = std::move(src); }
 };
 
+// Where a node sits, by names ("Workspace/Map/Door/Script"), to find the same one in the game file.
+std::string namePath(const SceneNode* n) {
+    std::string path;
+    for (; n && n->parent; n = n->parent) path = n->name + "/" + path;
+    return path;
+}
+} // namespace
+
+std::string handoffSnapshot(Scene& live, const std::vector<uint64_t>& others) {
+    // The other players' characters, and what only this computer made (our LocalScripts'
+    // things, ids from kLocalIdBase up) except our own character.
+    std::set<uint64_t> chars(others.begin(), others.end());
+    for (const RemoteCharacter& r : live.remotes()) chars.insert(r.rootId);
+    std::vector<SceneNode*> drop, stack{live.root()};
+    while (!stack.empty()) {
+        SceneNode* n = stack.back(); stack.pop_back();
+        if (n != live.root() && (chars.count(n->id) || (n->id >= kLocalIdBase && !live.isCharacterPart(n)))) {
+            drop.push_back(n);   // (and everything inside it)
+            continue;
+        }
+        for (auto& c : n->children) stack.push_back(c.get());
+    }
+    for (SceneNode* n : drop) live.removeNode(n);
+    live.remotes().clear();
+    return Serializer::saveScene(live);
+}
+
+bool handoffRestore(Scene& scene, const std::string& snapshot) {
+    // The server Scripts' code, from the game file: by where they sit, and by name for ones a
+    // script moved or copied (a clone from ServerStorage keeps its name).
+    std::map<std::string, std::string> byPath;
+    std::map<std::string, std::vector<std::string>> byName;
+    std::vector<SceneNode*> stack{scene.root()};
+    while (!stack.empty()) {
+        SceneNode* n = stack.back(); stack.pop_back();
+        if (serverOnlyCode(n) && !n->source.empty()) { byPath[namePath(n)] = n->source; byName[n->name].push_back(n->source); }
+        for (auto& c : n->children) stack.push_back(c.get());
+    }
+    if (!Serializer::loadScene(scene, snapshot)) return false;
+    stack = {scene.root()};
+    while (!stack.empty()) {
+        SceneNode* n = stack.back(); stack.pop_back();
+        if (serverOnlyCode(n) && n->source.empty()) {
+            if (auto it = byPath.find(namePath(n)); it != byPath.end()) n->source = it->second;
+            else if (auto nm = byName.find(n->name); nm != byName.end() && !nm->second.empty()) {
+                // (Several with that name: only if they're all the same code.)
+                if (std::all_of(nm->second.begin(), nm->second.end(), [&](const std::string& s) { return s == nm->second[0]; }))
+                    n->source = nm->second[0];
+            }
+        }
+        for (auto& c : n->children) stack.push_back(c.get());
+    }
+    return true;
+}
+
+namespace {
 // A tool as it is, without where it sits right now (held tools move every frame).
 std::string toolString(SceneNode* t) {
     const Transform keep = t->transform;
@@ -1373,6 +1429,8 @@ void NetClient::disconnect() {
         m_session->scripts().idFromServer = nullptr;
         if (Player* p = m_scene->player()) p->clearTools();
         m_toolSeen.clear();
+        m_otherChars.clear();
+        for (const RemoteCharacter& r : m_scene->remotes()) m_otherChars.push_back(r.rootId);
         m_scene->remotes().clear();
     }
     m_state = State::Idle;

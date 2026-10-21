@@ -12,8 +12,11 @@
 export const BUILT_IN_UPDATES = [
   {
     id: 'nobody-home', name: 'Nobody Home', time: 1792549053, tag: 'Server',
-    summary: 'Servers stay up as long as anyone is in them: game server machines now run private servers too, and take over when a host leaves.',
+    summary: 'When the host leaves, the next player takes over in the same world: no loading screen, nothing starts over except the scripts.',
     items: [
+      'The player who takes over carries on in the world as it was: parts stay where they were, broken things stay broken, built things are still there',
+      'Everyone else stays in the game while it happens, with a note at the top instead of a loading screen',
+      'The game\'s server scripts start again from the top on the new host (so round timers start over)',
       'Private servers run on a game server machine when one is free, so your friends keep playing after you leave',
       'If a player was hosting and leaves, a game server machine takes the server over and everyone follows. After that nobody is the host, so it never happens again',
       'If no machine is free, things work like before: the player who\'s been there longest hosts the new server',

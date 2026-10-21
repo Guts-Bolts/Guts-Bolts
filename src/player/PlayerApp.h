@@ -560,6 +560,11 @@ private:
     std::string    m_continues;                    // hosting: the old server we're taking over
     std::string    m_tookOver;                     // ...and while the server says yes or no to that
     double         m_tookOverUntil = 0.0;
+    // The world as it was when the host left (handoffSnapshot): if we're the one who takes
+    // over, we carry on in it instead of starting the game over. Everyone stays in the game
+    // (no loading screen) while the new host gets going; m_handoff shows the note about it.
+    std::string    m_carry, m_carryGame;
+    bool           m_handoff = false;
     void startMove(const std::string& session, const std::string& game, const std::string& title);
     void moveStep();
     bool moving() const { return !m_moveFrom.empty(); }
