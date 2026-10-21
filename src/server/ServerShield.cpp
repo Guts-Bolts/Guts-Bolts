@@ -48,6 +48,7 @@ constexpr Rule kCostly[] = {
     {"forum.reply", 30, 90, 600},
     {"chat.translate", 400, 1200, 600},
     {"groups.create", 5, 15, 3600},
+    {"bolts.redeem", 20, 60, 600},   // (so nobody can guess promo codes over and over)
 };
 // One connection can send this many requests every 10 seconds (games use it to send
 // messages and save data too, so it's roomy).
@@ -59,7 +60,7 @@ long long nowMs() {
 } // namespace
 
 bool GbServer::isGuess(const std::string& op) {
-    return op == "account.salt" || op == "account.login" || op == "account.reset" || op == "account.emailVerify";
+    return op == "account.salt" || op == "account.login" || op == "account.reset" || op == "account.emailVerify" || op == "bolts.redeem";
 }
 
 bool GbServer::tooFast(Client& c) {

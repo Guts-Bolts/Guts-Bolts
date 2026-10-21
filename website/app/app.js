@@ -2449,6 +2449,30 @@ function mailBox(ml) {
       <button class="btn small blue">Send test</button></form>` : ''}</div>`;
 }
 
+// Promo codes (official account only): make codes like GUTSTOBER2026 that give Bolts, for a limited time if you like.
+const PROMO_STATUS = { live: ['ok', 'Live'], waiting: ['muted', 'Not started yet'], ended: ['muted', 'Ended'], stopped: ['error', 'Stopped'] };
+function promoBox(pr) {
+  if (!pr) return '';
+  if (!pr.ok) return html`<div class="box"><h2 class="boxhead">Promo codes</h2><p class="error">${pr.error}</p></div>`;
+  const until = (p) => p.end ? (p.status === 'ended' ? 'ended ' : 'ends ') + dateText(p.end) : 'never ends';
+  return html`<div class="box"><h2 class="boxhead">Promo codes</h2>
+    <p class="small muted">Make a code that gives Bolts. Everyone can use it once, on the <a href="#/redeem">Redeem codes</a> page.
+      Leave the start empty to start now, and the end empty to keep it going until you stop it. Times are in your own time zone.</p>
+    <form class="promo-form" data-form="promoMake">
+      <div><label class="small">Code</label><input type="text" name="code" required maxlength="30" placeholder="GUTSTOBER2026" autocomplete="off" class="notranslate" style="text-transform:uppercase"></div>
+      <div><label class="small">Bolts</label><input type="number" name="bolts" required min="1" max="1000000" value="1000"></div>
+      <div><label class="small">Starts (optional)</label><input type="datetime-local" name="start"></div>
+      <div><label class="small">Ends (optional)</label><input type="datetime-local" name="end"></div>
+      <div><button class="btn green">Make code</button></div></form>
+    <div class="list">${pr.promos.length ? pr.promos.map((p) => html`<div>
+        <span class="grow"><b class="notranslate">${p.code}</b> · ${bolts(p.bolts)}
+          <span class="small muted">· ${p.uses} used · ${p.status === 'waiting' ? 'starts ' + dateText(p.start) + ', ' : ''}${until(p)}</span></span>
+        <span class="small ${PROMO_STATUS[p.status][0]}">${PROMO_STATUS[p.status][1]}</span>
+        <button class="btn small" data-act="copyText" data-text="${location.origin + location.pathname}#/redeem?code=${p.code}" title="Copy a link that fills the code in">Copy link</button>
+        ${p.status === 'live' || p.status === 'waiting' ? html`<button class="btn small red" data-act="promoStop" data-code="${p.code}">Stop</button>` : ''}</div>`)
+      : html`<p class="muted">No codes yet.</p>`}</div></div>`;
+}
+
 // Partner apps that can "Log in with Guts&Bolts" (official account only): make each one's client secret.
 function connectBox(ca) {
   if (!ca || !ca.ok) return '';
@@ -2496,11 +2520,13 @@ pages.staff = async () => {
     pageCall('admin.uploads', {}), pageCall('admin.log', logFor ? { user: logFor } : {}),
     pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.mailStatus', {}),
     pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }), me.official ? pageCall('admin.connectApps', {}) : null]);
+  const pr = me.official ? await pageCall('admin.promos', {}) : null;
   show(html`<h1>Staff</h1>
     ${ticketsBox(tk, ticketsClosed)}
     ${uploadsBox(up)}
     ${reportsBox(rep, closed)}
     ${appealsBox(ap, appealsClosed)}
+    ${promoBox(pr)}
     ${mailBox(ml)}
     ${connectBox(ca)}
     <h2>People</h2>
@@ -2581,13 +2607,28 @@ pages.bolts = async () => {
     <div class="box row"><div class="grow" style="font-size:24px">${bolts(signedIn() ? me.bolts : 0)}</div>
       ${!signedIn() || me.canDaily ? html`<button class="btn green" data-act="daily">Claim today's 25 Bolts</button>` : html`<span class="muted">Daily Bolts claimed. Come back tomorrow!</span>`}</div>
     <p class="muted">Earn Bolts every day, by playing games in the app (5 every 5 minutes, up to 50 a day) and by selling things you make.</p>
-    <h2>Redeem a code</h2><form class="row" data-form="redeem"><input type="text" name="code" placeholder="BOLTS-..." style="max-width:360px">
+    <h2>Redeem a code</h2><form class="row" data-form="redeem"><input type="text" name="code" placeholder="Type your code here" style="max-width:360px">
       <button class="btn blue">Redeem</button></form>
+    <p class="small"><a href="#/redeem">Got a promo code? Redeem it here</a></p>
     <h2>History</h2>
     <div class="list">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div>${h.gift ? html`<span class="note-icon" aria-hidden="true">🎁</span>` : ''}<span class="grow">${h.reason}</span>
       ${h.gift === 'got' && !h.amount ? html`<span class="ok">Gift</span>`
         : html`<span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span>`}<span class="small muted">${ago(h.time)}</span></div>`)
       : html`<p class="muted">${signedIn() ? 'Nothing yet.' : 'Log in to see your Bolts. New accounts start with 100!'}</p>`}</div>`);
+};
+
+// Promo codes: type one (like GUTSTOBER2026) to get Bolts. #/redeem?code=... fills the box in.
+pages.redeem = async () => {
+  const code = new URLSearchParams(location.hash.split('?')[1] || '').get('code') || '';
+  show(html`<div class="form" style="margin:0 auto">
+    <h1>Redeem a code</h1>
+    <p class="muted">Got a promo code from Guts&amp;Bolts? Type it here to get free Bolts. Each code works once per account, and some only work for a limited time.</p>
+    ${signedIn() ? '' : html`<p class="error">Log in first to redeem codes.</p>`}
+    <form data-form="redeem"><label>Code</label>
+      <input type="text" name="code" required maxlength="80" autocomplete="off" spellcheck="false" placeholder="Type your code here" value="${code}" class="notranslate" style="text-transform:uppercase">
+      <p><button class="btn green big">Redeem</button></p></form>
+    <p id="redeemMsg" class="muted" role="status"></p>
+    <p class="small muted">Look out for new codes on the Updates page and the forum.</p></div>`);
 };
 
 // Forgot password: a code goes to the account's email, then pick a new password.
@@ -3301,6 +3342,12 @@ const actions = {
       <p class="popup-buttons"><button class="btn blue" data-act="copySecret" data-text="${r.secret}">Copy</button>
         <a href="#" class="btn" data-act="closeModal">Done</a></p>`);
   },
+  async promoStop(d) {
+    if (!confirm('Stop this code? Nobody will be able to use it after this.')) return;
+    const r = await call('admin.promoStop', { code: d.code });
+    if (!r.ok) { toast(r.error); return; }
+    render();
+  },
   async copySecret(d) {
     try { await navigator.clipboard.writeText(d.text); toast('Copied!'); } catch { prompt('Copy this:', d.text); }
   },
@@ -3862,8 +3909,17 @@ const forms = {
   },
   async redeem(f) {
     const r = await call('bolts.redeem', { code: f.code.value });
+    const msg = $('#redeemMsg');
+    if (msg) { msg.className = r.ok ? 'ok' : 'error'; msg.textContent = r.ok ? 'You got ' + r.got + ' Bolts!' : r.error; }
     toast(r.ok ? 'You got ' + r.got + ' Bolts!' : r.error);
-    if (r.ok) render();
+    if (r.ok) { if (r.me) setMe(r.me); f.code.value = ''; if (!msg) render(); }
+  },
+  async promoMake(f) {
+    const when = (box) => (box.value ? Math.floor(new Date(box.value).getTime() / 1000) : 0);
+    const r = await call('admin.promoMake', { code: f.code.value, bolts: Number(f.bolts.value), start: when(f.start), end: when(f.end) });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Code made! People can redeem it on the Redeem codes page.');
+    render();
   },
   async login(f) {
     setTimeout(checkRequests, 1500);

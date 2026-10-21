@@ -11,6 +11,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'code-red', name: 'Code Red', version: '0.7.4', time: 1792598783, tag: 'Website',
+    summary: 'Promo codes are here! Type a code on the new Redeem codes page to get free Bolts.',
+    items: [
+      'New Redeem codes page (in the menu, and on the Bolts page): type a code like GUTSTOBER2026 to get its Bolts',
+      'Every code works once per account. Capitals and spaces don\'t matter',
+      'Some codes only work for a limited time, so use them before they run out',
+      'Staff can make new codes on the Staff page, with a start and end time, and stop a code early',
+    ],
+  },
+  {
     id: 'fine-print', name: 'The Fine Print', version: '0.7.4', time: 1792551108, tag: 'Website',
     summary: 'A much fuller Terms of Service, still in plain words: what Bolts are (and aren\'t), trading, what you make, bans and appeals.',
     items: [

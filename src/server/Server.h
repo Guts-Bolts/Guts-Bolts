@@ -97,6 +97,7 @@ private:
         std::vector<std::string> usedModels;  // Library models they've inserted (model.vote needs it), oldest first
         long long   publicWeek = 0;           // the week (unix time / 7 days) publicThisWeek counts
         int         publicThisWeek = 0;       // models made public that week (Verified: no limit)
+        std::vector<std::string> promos;      // promo codes they've used (ServerPromos.cpp)
     };
     struct Asset {
         std::string id, kind, name, description, creator;
@@ -238,6 +239,12 @@ private:
     nlohmann::json ticketAdminOp(const std::string& name, const User& staff, const nlohmann::json& args);
     void saveTickets();
     void loadTickets();
+    // ServerPromos.cpp: promo codes like GUTSTOBER2026 that give Bolts (promos.json).
+    nlohmann::json redeemPromo(User& me, const std::string& typed);
+    nlohmann::json promoAdmin(const std::string& name, const User& me, const nlohmann::json& args);
+    nlohmann::json promoJson(const nlohmann::json& p, long long now) const;
+    void savePromos();
+    void loadPromos();
     // The staff action log (stafflog.json): what staff did, newest last. about: who it was done to.
     void staffDid(const User& staff, const std::string& action, const std::string& text, const std::string& about = "");
     nlohmann::json staffLogJson(const std::string& who) const;
@@ -368,6 +375,8 @@ private:
     nlohmann::json m_reports = nlohmann::json::array();
     nlohmann::json m_staffLog = nlohmann::json::array();
     nlohmann::json m_tickets = nlohmann::json::array();   // support tickets (ServerSupport.cpp), newest last
+    // Promo codes (ServerPromos.cpp): {code, bolts, start, end (0 = never), made, by, uses, stopped}, newest last.
+    nlohmann::json m_promos = nlohmann::json::array();
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.
     struct Moved {

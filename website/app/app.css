@@ -465,6 +465,10 @@ html.gutstober .foot, html.gutstober .foot a { color: #cbb5dc; }
 .item-offsale [data-countdown] { white-space: nowrap; }
 .auction-start { display: flex; flex-wrap: wrap; gap: 10px; }
 .auction-start input { width: 110px; }
+.promo-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 12px; }
+.promo-form input[name=code] { width: 200px; }
+.promo-form input[name=bolts] { width: 110px; }
+.promo-form input[type=datetime-local] { width: 210px; max-width: 100%; }
 .auction-bid { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
 .auction-bid input { width: 100%; box-sizing: border-box; }
 .stats tr.me-row td { background: #fff6cc; font-weight: bold; }
