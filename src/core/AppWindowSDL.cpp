@@ -3,6 +3,7 @@
 #include "AppWindow.h"
 #include "Pad.h"
 #include "Settings.h"
+#include "I18n.h"
 #include "Audio.h"
 #include "Paths.h"
 #include "../editor/Theme.h"
@@ -161,6 +162,7 @@ AppWindow::AppWindow(const char* title, int width, int height, const char* layou
     ini = (Paths::appFolder() / layoutFile).string();
     io.IniFilename = ini.c_str();
 
+    I18n::init();   // the saved language (or the computer's), before any text
     EditorTheme::loadFonts();
     EditorTheme::apply();
     if (m_touchScreen) {

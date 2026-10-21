@@ -2,6 +2,7 @@
 // "[E] Open  Door". Press E (or click / tap the card) and the prompt's Triggered
 // event fires. With a HoldDuration you hold the key while a ring fills up.
 #include "GameGui.h"
+#include "../core/I18n.h"
 #include "../core/Pad.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
@@ -192,6 +193,7 @@ bool prompts(Scene& scene, ImVec2 min, ImVec2 max, const glm::vec3* player, ImVe
 }
 
 void drawPrompts(ImDrawList* dl) {
+    I18n::Pause keep;   // text the game made stays as it is
     ImFont* font = ImGui::GetFont();
     // Farthest first, so the nearest card is on top.
     for (auto it = g_shown.rbegin(); it != g_shown.rend(); ++it) {

@@ -2,7 +2,8 @@
 #include <string>
 
 // The language you read and write in, as a short code ("en", "ru", "es"...), for
-// translating the in-game chat. It's the computer's (or phone's) language.
+// translating the in-game chat. It's the one picked in Settings, or else the
+// computer's (or phone's) language.
 namespace Lang {
 
 // Your language's two-letter code, or "" if it can't be told (then chat isn't translated).

@@ -1,4 +1,5 @@
 #include "GameGui.h"
+#include "../core/I18n.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
 #include "../renderer/Textures.h"
@@ -890,6 +891,7 @@ void emitSurface(ImDrawList* dl, const ImDrawList& src, const Surface& s, ImVec2
 }
 
 void draw(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const Input* input, uint64_t selected) {
+    I18n::Pause keep;   // text the game made stays as it is
     g_lastMin = min;
     g_lastMax = max;
     g_drawScene = &scene;

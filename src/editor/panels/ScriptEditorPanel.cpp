@@ -1,4 +1,5 @@
 #include "ScriptEditorPanel.h"
+#include "../../core/I18n.h"
 #include "../Premades.h"
 #include "../Theme.h"
 #include "../../scene/Scene.h"
@@ -132,6 +133,7 @@ void ScriptEditorPanel::open(uint64_t scriptId) {
 // Called by the text box every frame while it's active (and when Tab completes a word).
 // Roblox Studio's dark script colours.
 void ScriptEditorPanel::drawColoredCode(ImDrawList* dl, const std::string& src, ImVec2 origin, float lineH, int first, int last) {
+    I18n::Pause keep;   // code and comments stay as they are
     static const std::set<std::string> kKeywords = {"and", "break", "do", "else", "elseif", "end", "for", "function", "goto", "if",
         "in", "local", "not", "or", "repeat", "return", "then", "until", "while", "continue", "self"};
     static const std::set<std::string> kLiterals = {"true", "false", "nil"};

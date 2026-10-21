@@ -2,6 +2,7 @@
 #include "Pad.h"
 #include <cmath>
 #include "Settings.h"
+#include "I18n.h"
 #include "Audio.h"
 #include "../editor/Theme.h"
 #include "../renderer/MeshLibrary.h"
@@ -97,6 +98,7 @@ AppWindow::AppWindow(const char* title, int width, int height, const char* layou
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.IniFilename = layoutFile;
 
+    I18n::init();   // the saved language (or the computer's), before any text
     EditorTheme::loadFonts();
     EditorTheme::apply();
 

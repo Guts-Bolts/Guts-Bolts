@@ -3,6 +3,7 @@
 // Pages are picked by the address after '#', like #/games or #/user/12.
 import * as gb from './gb.js';
 import { mountAvatar, avatarPicture, itemPicture, itemCamera } from './avatar3d.js';
+import { startTranslating, languagePicker } from '../lang/i18n.js';
 
 // --- small helpers ------------------------------------------------------------
 
@@ -24,7 +25,11 @@ function html(strings, ...vals) {
 
 const $ = (sel, root = document) => root.querySelector(sel);
 
-function show(content) { view.innerHTML = content.s; setTimeout(() => upgradeItemPictures(), 0); }   // (item renders on every page)
+function show(content) {
+  view.innerHTML = content.s;
+  view.querySelectorAll('.lang-slot:empty').forEach((slot) => slot.append(languagePicker()));
+  setTimeout(() => upgradeItemPictures(), 0);   // (item renders on every page)
+}
 const view = $('#view');
 const KINDS = { hat: 'Hat', shirt: 'Shirt', pants: 'Pants', audio: 'Audio', plugin: 'Plugin', game: 'Game', decal: 'Decal', model: 'Model',
   hair: 'Hair', faceacc: 'Face Accessory', neck: 'Neck Accessory', shoulder: 'Shoulder Accessory', waist: 'Waist Accessory', face: 'Face',
@@ -2651,6 +2656,10 @@ pages.support = async () => {
 };
 
 // Account Settings: email, two-step verification, password.
+// The language for the website (the Player and Studio have their own, in their Settings).
+const langBox = () => html`<div class="box"><h2 class="boxhead">Language</h2>
+    <p>The language for the website's menus and buttons. Things people wrote stay as they are.</p>
+    <p><span class="lang-slot"></span> <span class="small muted">(only for this browser)</span></p></div>`;
 function themeBox() {
   const on = gutstoberWanted();
   return html`<div class="box"><h2 class="boxhead">Site theme</h2>
@@ -2660,10 +2669,10 @@ function themeBox() {
       <span class="small muted">(only for this browser)</span></p></div>`;
 }
 pages.settings = async () => {
-  if (!signedIn()) { show(html`<h1>Account Settings</h1>${themeBox()}${needSignIn('change your account settings')}`); return; }
+  if (!signedIn()) { show(html`<h1>Account Settings</h1>${langBox()}${themeBox()}${needSignIn('change your account settings')}`); return; }
   const noPw = !me.hasPassword;
   show(html`<h1>Account Settings</h1>
-    <div class="settings">${themeBox()}
+    <div class="settings">${langBox()}${themeBox()}
       <div class="box"><h2 class="boxhead">Account</h2>
         <table class="stats"><tr><td>Username</td><td><b>${me.username}</b></td></tr><tr><td>User number</td><td>#${me.userId}</td></tr>
           <tr><td>Password</td><td>${noPw ? html`<span class="error">Not set yet</span> (set one in the app: Avatar &gt; Your account)` : 'Set'}</td></tr>
@@ -4079,8 +4088,11 @@ window.addEventListener('hashchange', () => {
   window.scrollTo(0, 0);
   render();
 });
+const langReady = startTranslating();   // (loads while we say hello)
+document.querySelector('.foot').append(languagePicker());
 (async () => {
   await hello();
+  await langReady;
   render();
   checkRequests();
   checkUpdates();

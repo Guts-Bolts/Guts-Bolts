@@ -1,4 +1,5 @@
 #include "Hud.h"
+#include "../core/I18n.h"
 #include "../scene/Scene.h"
 #include "../scene/Player.h"
 #include "../scripting/ScriptEngine.h"
@@ -22,6 +23,7 @@ void shadowText(ImDrawList* dl, ImFont* font, float size, ImVec2 pos, ImU32 col,
 } // namespace
 
 void draw(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const GuiState& gui, float topOffset, bool character) {
+    I18n::Pause keep;   // text the game made stays as it is
     ImFont* font = ImGui::GetFont();
     float   base = ImGui::GetFontSize();
 
@@ -42,13 +44,13 @@ void draw(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const GuiState& 
                     IM_COL32(255, 255, 255, 230), buf);
 
         if (p->isDead()) {
-            const char* oof = "You died!";
+            const char* oof = I18n::tr("You died!");
             float big = base * 3.0f;
             ImVec2 s = font->CalcTextSizeA(big, FLT_MAX, 0, oof);
             ImVec2 c((min.x + max.x) * 0.5f, (min.y + max.y) * 0.4f);
             shadowText(dl, font, big, ImVec2(c.x - s.x * 0.5f, c.y - s.y * 0.5f), IM_COL32(255, 90, 80, 255), oof);
             char r[48];
-            std::snprintf(r, sizeof(r), "Respawning in %.0f...", std::max(0.0f, p->respawnIn()) + 0.49f);
+            std::snprintf(r, sizeof(r), I18n::tr("Respawning in %.0f..."), std::max(0.0f, p->respawnIn()) + 0.49f);
             ImVec2 rs = ImGui::CalcTextSize(r);
             shadowText(dl, font, base, ImVec2(c.x - rs.x * 0.5f, c.y + s.y * 0.6f), IM_COL32(255, 255, 255, 230), r);
         }
@@ -84,6 +86,7 @@ void draw(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const GuiState& 
 void drawBubbles(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const glm::mat4& viewProj,
                  const std::unordered_map<std::string, std::pair<std::string, float>>& bubbles) {
     if (bubbles.empty()) return;
+    I18n::Pause keep;   // what people said stays as it is
     auto drawFor = [&](SceneNode* root) {
         if (!root) return;
         auto it = bubbles.find(root->name);
@@ -111,6 +114,7 @@ void drawBubbles(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const glm
 
 void drawNameTags(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const glm::mat4& viewProj,
                   const glm::vec3& cameraPos) {
+    I18n::Pause keep;   // text the game made stays as it is
     constexpr float kShowUntil = 60.0f, kFadeFrom = 45.0f;   // units away
     ImFont* font = ImGui::GetFont();
     const float size = ImGui::GetFontSize();
