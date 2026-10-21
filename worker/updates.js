@@ -11,6 +11,41 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'fine-print', name: 'The Fine Print', time: 1792551108, tag: 'Website',
+    summary: 'A much fuller Terms of Service, still in plain words: what Bolts are (and aren\'t), trading, what you make, bans and appeals.',
+    items: [
+      'Bolts and items have no real-money value, can\'t be cashed out, and what you spend them on is final. Real-money trading isn\'t allowed',
+      'Clearer rules for trades, resale and auctions (accepted trades are final), and what happens to your stuff if you delete your account',
+      'What you make stays yours: what uploading lets Guts&Bolts do with it, and how to tell staff if someone uploaded your work',
+      'Under-18 accounts get closed, and nobody under 13 should ever be here. Report anyone who seems too young',
+      'New sections on chat and the text filter, warnings, bans and appeals, other people\'s games and apps, limits on liability, and how to contact staff',
+      'The Player app\'s short Terms window says the same things about Bolts, items and appeals',
+    ],
+  },
+  {
+    id: 'language-barrier', name: 'Fuck the Language Barrier', time: 1792550508, tag: 'Player',
+    summary: 'The world has approximately 7,000 languages, and we got tired of not understanding any of them. Guts and Bolts now supports multiple languages, so you can experience the exact same horrible physics in a language you actually understand.',
+    items: [
+      'Added multiple language options.',
+      'Translated menus, buttons, and other things we swear were English yesterday.',
+      'Added international support. The Geneva Convention has not reviewed our methods.',
+      'Fixed a bug where players couldn\'t understand each other. They can now insult each other internationally.',
+      'Added several new ways to misunderstand instructions.',
+      'English has been demoted from its position of global dictator.',
+    ],
+  },
+  {
+    id: 'steady-hands', name: 'Steady Hands', time: 1792549573, tag: 'Fix',
+    summary: 'Resizing and moving parts with the handles in Studio is smooth now: no more shaking back and forth.',
+    items: [
+      'Dragging a resize orb no longer makes the part twitch between two sizes. The part now grows exactly as far as your mouse goes',
+      'The move arrows had the same problem and are fixed too',
+      'Thin parts (coins, discs, flat cylinders) no longer jump to 1 stud thick the moment you grab one of their orbs',
+      'Dragging a handle that points almost straight at the camera no longer sends the part flying',
+      'A whole resize or move drag is one step for Ctrl+Z now, instead of lots of tiny steps, and Studio no longer saves the whole place on every frame while you drag',
+    ],
+  },
+  {
     id: 'nobody-home', name: 'Nobody Home', time: 1792549053, tag: 'Server',
     summary: 'When the host leaves, the next player takes over in the same world: no loading screen, nothing starts over except the scripts.',
     items: [
