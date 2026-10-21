@@ -11,6 +11,15 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'high-five', name: 'High Five', time: 1792542589, tag: 'Website',
+    summary: 'The download page now counts VR: Guts&Bolts runs on 5 platforms.',
+    items: [
+      'The quick facts under the banner say 5 platforms, VR included',
+      'The page\'s description and the Download button mention Meta Quest VR alongside Windows, Mac, Linux and Android',
+      'The Play together section lists VR headsets, and Meta Quest with no PC',
+    ],
+  },
+  {
     id: 'who-goes-there', name: 'Who Goes There?', version: '0.7.3', time: 1792539900, tag: 'Server',
     summary: 'A guard in front of the server: floods and bots get stopped at the door, and real players walk straight in.',
     items: [
