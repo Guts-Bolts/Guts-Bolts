@@ -1,3 +1,25 @@
+# Guts&Bolts 0.7.4: Fuck the Language Barrier (October 21, 2026)
+
+The world has approximately 7,000 languages, and we got tired of not
+understanding any of them. Guts and Bolts now supports multiple languages, so
+you can experience the exact same horrible physics in a language you actually
+understand.
+
+## Patch notes
+- Added multiple language options.
+- Translated menus, buttons, and other things we swear were English yesterday.
+- Added international support. The Geneva Convention has not reviewed our
+  methods.
+- Fixed a bug where players couldn't understand each other. They can now
+  insult each other internationally.
+- Added several new ways to misunderstand instructions.
+- English has been demoted from its position of global dictator.
+
+## Also in this update
+- A much fuller Terms of Service, still in plain words.
+- Resizing and moving parts with the handles in Studio no longer shakes.
+- The download page counts VR: Guts&Bolts runs on 5 platforms.
+
 # Guts&Bolts 0.7.3: Going Once, Going Twice, Going VR (October 20, 2026)
 
 Put on a headset and you're inside your character. Studio grew a Blender
