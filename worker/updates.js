@@ -11,6 +11,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'steady-hands', name: 'Steady Hands', time: 1792549573, tag: 'Fix',
+    summary: 'Resizing and moving parts with the handles in Studio is smooth now: no more shaking back and forth.',
+    items: [
+      'Dragging a resize orb no longer makes the part twitch between two sizes. The part now grows exactly as far as your mouse goes',
+      'The move arrows had the same problem and are fixed too',
+      'Thin parts (coins, discs, flat cylinders) no longer jump to 1 stud thick the moment you grab one of their orbs',
+      'Dragging a handle that points almost straight at the camera no longer sends the part flying',
+      'A whole resize or move drag is one step for Ctrl+Z now, instead of lots of tiny steps, and Studio no longer saves the whole place on every frame while you drag',
+    ],
+  },
+  {
     id: 'high-five', name: 'High Five', time: 1792542589, tag: 'Website',
     summary: 'The download page now counts VR: Guts&Bolts runs on 5 platforms.',
     items: [
