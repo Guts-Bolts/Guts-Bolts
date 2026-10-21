@@ -399,18 +399,23 @@ void showSmoothly(Scene& scene, std::unordered_map<uint64_t, PoseBuffer>& poses)
 
 // What players say goes through the text filter on the way in ("[ Content Deleted ]") (the host filters it too,
 // this catches a host that doesn't).
-void ChatLog::add(const std::string& from, const std::string& said, bool system, bool admin, bool verified) {
+void ChatLog::add(const std::string& from, const std::string& said, bool system, bool admin, bool verified,
+                  const std::string& lang) {
     const std::string text = system ? said : TextFilter::filter(said);
     lines.push_back({from, text, system, admin, verified});
+    lines.back().lang = system ? "" : cleanLanguage(lang);
+    lines.back().id = m_nextId++;
     if (lines.size() > 100) lines.erase(lines.begin());
     if (!system) bubbles[from] = {text, 6.0f};
 }
 
 void ChatLog::addWhisper(const std::string& from, const std::string& to, const std::string& said, bool admin,
-                         bool verified) {
+                         bool verified, const std::string& lang) {
     Line l{from, TextFilter::filter(said), false, admin, verified};
     l.whisper = true;
     l.to = to;
+    l.lang = cleanLanguage(lang);
+    l.id = m_nextId++;
     lines.push_back(l);
     if (lines.size() > 100) lines.erase(lines.begin());
 }
@@ -432,6 +437,7 @@ bool ChatLog::parseWhisper(const std::string& text, std::string& to, std::string
 }
 
 void ChatLog::update(float dt) {
+    if (translate) translateNew();
     for (auto it = bubbles.begin(); it != bubbles.end();) {
         it->second.second -= dt;
         if (it->second.second <= 0.0f) it = bubbles.erase(it);
@@ -638,6 +644,7 @@ void NetServer::say(const std::string& text) {
     if (t.empty()) return;
     if (Online::isGuest() && Online::online()) { m_chat.add("", Online::kGuestChatText, true); return; }
     bool admin = Account::iAmStaff(), ver = Badges::iHave(Badges::Id::Verified);
+    const std::string lang = ChatLog::myLanguage();
     std::string to, msg;
     if (ChatLog::parseWhisper(t, to, msg)) {
         if (to.empty() || msg.empty()) { m_chat.add("", ChatLog::kWhisperHelp, true); return; }
@@ -648,12 +655,12 @@ void NetServer::say(const std::string& text) {
             return;
         }
         target->conn->send(json{{"t", "chat"}, {"from", Online::playerName()}, {"to", target->name}, {"text", msg},
-                                {"wh", true}, {"adm", admin}, {"ver", ver}}.dump());
-        m_chat.addWhisper(Online::playerName(), target->name, msg, admin, ver);
+                                {"wh", true}, {"adm", admin}, {"ver", ver}, {"lang", lang}}.dump());
+        m_chat.addWhisper(Online::playerName(), target->name, msg, admin, ver, lang);
         return;
     }
-    m_chat.add(Online::playerName(), t, false, admin, ver);
-    broadcast(json{{"t", "chat"}, {"from", Online::playerName()}, {"text", t}, {"adm", admin}, {"ver", ver}}.dump());
+    m_chat.add(Online::playerName(), t, false, admin, ver, lang);
+    broadcast(json{{"t", "chat"}, {"from", Online::playerName()}, {"text", t}, {"adm", admin}, {"ver", ver}, {"lang", lang}}.dump());
 }
 
 NetServer::Client* NetServer::findClient(const std::string& name) {
@@ -1100,16 +1107,17 @@ void NetServer::handle(Client& c, const std::string& text) {
             c.conn->send(json{{"t", "chat"}, {"from", ""}, {"text", Online::kGuestChatText}, {"sys", true}}.dump());
             return;
         }
+        const std::string lang = ChatLog::cleanLanguage(m.value("lang", std::string()));   // (what they write in, for translating)
         std::string to, said;
         if (ChatLog::parseWhisper(msg, to, said)) {
             auto tell = [&](const std::string& text) {
                 c.conn->send(json{{"t", "chat"}, {"from", ""}, {"text", text}, {"sys", true}}.dump());
             };
             if (to.empty() || said.empty()) { tell(ChatLog::kWhisperHelp); return; }
-            json w{{"t", "chat"}, {"from", c.name}, {"text", said}, {"wh", true}, {"adm", c.admin}, {"ver", c.verified}};
+            json w{{"t", "chat"}, {"from", c.name}, {"text", said}, {"wh", true}, {"adm", c.admin}, {"ver", c.verified}, {"lang", lang}};
             if (!m_dedicated && sameName(to, Online::playerName())) {   // to the host
                 w["to"] = Online::playerName();
-                m_chat.addWhisper(c.name, Online::playerName(), said, c.admin, c.verified);
+                m_chat.addWhisper(c.name, Online::playerName(), said, c.admin, c.verified, lang);
             } else if (Client* target = findClient(to); target && target != &c) {
                 w["to"] = target->name;
                 target->conn->send(w.dump());
@@ -1120,8 +1128,8 @@ void NetServer::handle(Client& c, const std::string& text) {
             c.conn->send(w.dump());   // their own copy ("To ...")
             return;
         }
-        m_chat.add(c.name, msg, false, c.admin, c.verified);
-        broadcast(json{{"t", "chat"}, {"from", c.name}, {"text", msg}, {"adm", c.admin}, {"ver", c.verified}}.dump());
+        m_chat.add(c.name, msg, false, c.admin, c.verified, lang);
+        broadcast(json{{"t", "chat"}, {"from", c.name}, {"text", msg}, {"adm", c.admin}, {"ver", c.verified}, {"lang", lang}}.dump());
     }
 }
 
@@ -1382,7 +1390,7 @@ void NetClient::say(const std::string& text) {
     std::string t = cleanText(text, 200);
     if (t.empty() || !m_conn) return;
     if (Online::isGuest() && Online::online()) { m_chat.add("", Online::kGuestChatText, true); return; }
-    m_conn->send(json{{"t", "chat"}, {"text", t}}.dump());
+    m_conn->send(json{{"t", "chat"}, {"text", t}, {"lang", ChatLog::myLanguage()}}.dump());
 }
 
 void NetClient::reportTouch(uint64_t part, const std::string& limb) {
@@ -1589,10 +1597,10 @@ void NetClient::handle(const std::string& text) {
     if (t == "chat") {
         if (m.value("wh", false))
             m_chat.addWhisper(m.value("from", std::string()), m.value("to", std::string()), m.value("text", std::string()),
-                              m.value("adm", false), m.value("ver", false));
+                              m.value("adm", false), m.value("ver", false), m.value("lang", std::string()));
         else
             m_chat.add(m.value("from", std::string()), m.value("text", std::string()), m.value("sys", false),
-                       m.value("adm", false), m.value("ver", false));
+                       m.value("adm", false), m.value("ver", false), m.value("lang", std::string()));
         return;
     }
     if (m_state != State::Joined) return;

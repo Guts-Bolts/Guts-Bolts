@@ -152,7 +152,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get",
                                                     "get", "servers.play", "relay.host", "relay.join", "product.pending", "product.grant",
-                                                    "msg.publish", "msg.poll"};   // (guests can host games too)
+                                                    "msg.publish", "msg.poll", "chat.translate"};   // (guests can host games too, and read chat)
     if (me.userId == 0 && opName != "hello" && opName != "ping" && opName.rfind("account.", 0) != 0 &&
         !kLookOnly.count(opName) && opName != "support.send" && opName != "support.mine")
         return fail("Sign up or log in first.");
@@ -582,6 +582,19 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         return itemOp(name, me, args);   // ServerItems.cpp
     if (name == "ping") {   // "I'm still here" (for friends' online dots); the answer keeps your account fresh
         json r = okay(); r["me"] = meJson(me); return r;
+    }
+
+    // In-game chat translation (worker/server.js chat.translate). The translator is Cloudflare's,
+    // so this server only answers when both languages are the same; the apps then show the line as it was said.
+    if (name == "chat.translate") {
+        static const std::set<std::string> kLangs = {"en", "es", "fr", "de", "it", "pt", "nl", "sv", "da", "no", "fi", "pl",
+                                                     "cs", "sk", "hu", "ro", "bg", "el", "ru", "uk", "tr", "ar", "he", "fa",
+                                                     "hi", "bn", "id", "ms", "vi", "th", "tl", "zh", "ja", "ko"};
+        const std::string text = Online::cleanText(str("text"), 200), from = lower(str("from")), to = lower(str("to"));
+        if (text.empty()) return fail("Nothing to translate.");
+        if (!kLangs.count(from) || !kLangs.count(to)) return fail("Chat can't be translated between those languages yet.");
+        if (from != to) return fail("Chat translation isn't turned on for this server.");
+        json r = okay(); r["text"] = TextFilter::filter(text); r["from"] = from; r["to"] = to; return r;
     }
 
     // --- Your look, and pictures of games --------------------------------------

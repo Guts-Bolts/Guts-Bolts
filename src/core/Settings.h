@@ -32,6 +32,8 @@ struct GraphicsSettings {
     bool  voiceChat     = false;
     bool  voiceOpenMic  = false;       // false = hold V (or the Talk button) to talk
     float voiceVolume   = 1.0f;        // other people's voices, 0..2
+    // Chat said in another language shows in yours (core/Language: the computer's language).
+    bool  translateChat = true;
     bool  touchEnabled() const;
 
     // Graphics

@@ -11,6 +11,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'language-barrier', name: 'Fuck the Language Barrier', time: 1792548900, tag: 'Player',
+    summary: 'The world has approximately 7,000 languages, and we got tired of not understanding any of them. Guts and Bolts now supports multiple languages, so you can experience the exact same horrible physics in a language you actually understand.',
+    items: [
+      'Added multiple language options.',
+      'Translated menus, buttons, and other things we swear were English yesterday.',
+      'Added international support. The Geneva Convention has not reviewed our methods.',
+      'Fixed a bug where players couldn\'t understand each other. They can now insult each other internationally.',
+      'Added several new ways to misunderstand instructions.',
+      'English has been demoted from its position of global dictator.',
+    ],
+  },
+  {
     id: 'high-five', name: 'High Five', time: 1792542589, tag: 'Website',
     summary: 'The download page now counts VR: Guts&Bolts runs on 5 platforms.',
     items: [

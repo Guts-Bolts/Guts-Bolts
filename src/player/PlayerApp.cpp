@@ -1,4 +1,5 @@
 #include "PlayerApp.h"
+#include "../core/Language.h"
 #include "../core/Pad.h"
 #include <map>
 #include "SiteUi.h"
@@ -2067,6 +2068,22 @@ void PlayerApp::drawConnectScreen() {
     ImGui::End();
 }
 
+// Under a line that was translated into your language: a small "(translated from Russian)"; hover
+// it (or tap it) to see what they really wrote.
+static void translatedTag(const ChatLog::Line& l) {
+    if (!l.translated) return;
+    const char* from = Lang::name(l.lang);
+    ImGui::TextDisabled(*from ? "(translated from %s)" : "(translated)", from);
+    if (ImGui::IsItemHovered()) {
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 22.0f);
+        ImGui::TextDisabled("What they wrote:");
+        ImGui::TextUnformatted(l.original.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+}
+
 void PlayerApp::drawChat(ImVec2 min, ImVec2 max) {
     ChatLog& log = chat();
     const bool touchUi = GraphicsSettings::get().touchEnabled();
@@ -2108,6 +2125,7 @@ void PlayerApp::drawChat(ImVec2 min, ImVec2 max) {
             ImGui::PushTextWrapPos(0);
             ImGui::TextColored(ImVec4(0.98f, 0.88f, 1.0f, 1), "%s", l.text.c_str());
             ImGui::PopTextWrapPos();
+            translatedTag(l);
         } else {
             if (l.admin) {
                 Badges::icon(Badges::Id::Administrator, ImGui::GetTextLineHeight());
@@ -2121,6 +2139,7 @@ void PlayerApp::drawChat(ImVec2 min, ImVec2 max) {
             ImGui::PushTextWrapPos(0);
             ImGui::TextUnformatted(l.text.c_str());
             ImGui::PopTextWrapPos();
+            translatedTag(l);
         }
     }
     if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 5) ImGui::SetScrollHereY(1.0f);
@@ -2436,6 +2455,15 @@ void PlayerApp::drawPauseMenu() {
                                 "Games can turn voice chat off.");
             ImGui::PopTextWrapPos();
         }
+        ImGui::SeparatorText("Chat");
+        onOff("Translate Chat", gs.translateChat);
+        ImGui::SetCursorPosX(labelW);
+        ImGui::PushTextWrapPos(0);
+        if (const char* me = Lang::name(ChatLog::myLanguage()); *me)
+            ImGui::TextDisabled("Messages in other languages show in %s (your computer's language).", me);
+        else
+            ImGui::TextDisabled("Your computer's language can't be translated to yet, so chat shows as it was written.");
+        ImGui::PopTextWrapPos();
         ImGui::SeparatorText("Other");
         onOff("Blood and Gore", gs.allowGore);
         row("Touch Controls");
