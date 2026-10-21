@@ -324,6 +324,7 @@ const COSTLY = {
   'comments.post':       [30, 90, 600],
   'forum.post':          [10, 30, 600],
   'forum.reply':         [30, 90, 600],
+  'chat.translate':      [400, 1200, 600],  // (a busy game's chat, read in another language)
   'groups.create':       [5, 15, 3600],
 };
 const GUESSES = new Set(['account.salt', 'account.login', 'account.reset', 'account.emailVerify']);
@@ -394,7 +395,16 @@ const kAuctionMostCopies = 100, kAuctionMostHours = 720, kAuctionMostBid = 10000
 const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this much is left
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
-  'msg.publish', 'msg.poll']);   // (product.* and msg.*: guests can host games too)
+  'msg.publish', 'msg.poll', 'chat.translate']);   // (product.* and msg.*: guests can host games too; guests can't chat, but can read it)
+
+// In-game chat translation: each player's app asks for the lines that were said in another
+// language, and Cloudflare's translator (Workers AI, the "AI" binding) turns them into theirs.
+// The chat filter runs on what comes back too, so a translation can't sneak a bad word in.
+// (src/server has no translator: it only answers when both languages are the same.)
+export const TRANSLATE_LANGS = new Set(['en', 'es', 'fr', 'de', 'it', 'pt', 'nl', 'sv', 'da', 'no', 'fi', 'pl', 'cs', 'sk', 'hu', 'ro',
+  'bg', 'el', 'ru', 'uk', 'tr', 'ar', 'he', 'fa', 'hi', 'bn', 'id', 'ms', 'vi', 'th', 'tl', 'zh', 'ja', 'ko']);
+const kTranslateModel = '@cf/meta/m2m100-1.2b';
+const kTranslateCache = 3000;   // recent translations kept, so ten people reading one line cost one translation
 
 // Assets have plain numbers counting up, like Roblox's asset IDs (1, 2, 3...). New ones
 // use the number as their ID; older ones ("decal-1a2b3c4d5e") got a number too and
@@ -1191,6 +1201,21 @@ export class GbServerObject extends DurableObject {
     return true;
   }
   lyretoJson(o) { return o.lyreto ? Object.assign({ link: o.lyreto }, o.lyretoCard || {}) : undefined; }
+  // The second half of chat.translate: ask the translator, then filter and remember what it said.
+  async translate(answer) {
+    const { text, from, to } = answer.translate;
+    let said = '';
+    try {
+      const r = await this.env.AI.run(kTranslateModel, { text, source_lang: from, target_lang: to });
+      said = cleanText(r && typeof r.translated_text === 'string' ? r.translated_text : '', 400);
+    } catch { /* the translator is busy or out of today's free use */ }
+    if (!said) return fail('Couldn\'t translate that right now.');
+    said = filterText(said);
+    if (!this.translations) this.translations = new Map();
+    this.translations.set(from + '|' + to + '|' + text, said);
+    if (this.translations.size > kTranslateCache) this.translations.delete(this.translations.keys().next().value);
+    return okay({ text: said, from, to });
+  }
   // Send what's in the outbox (after the request, so the answer isn't held up by much).
   async sendMail() {
     const mails = this.outbox.splice(0);
@@ -1754,6 +1779,19 @@ export class GbServerObject extends DurableObject {
     // "I'm still here" (for friends' online dots); the answer keeps your account fresh
     // (a new warning, or Bolts someone sent you, shows up within a minute).
     if (name === 'ping') return okay({ me: this.meJson(me) });
+
+    // chat.translate { text, from, to }: one chat line in `to`'s language. The answer comes after
+    // the request (fetch() calls translate()), since the translator takes a moment.
+    if (name === 'chat.translate') {
+      const text = cleanText(str(args, 'text'), 200), from = lower(str(args, 'from')), to = lower(str(args, 'to'));
+      if (!text) return fail('Nothing to translate.');
+      if (!TRANSLATE_LANGS.has(from) || !TRANSLATE_LANGS.has(to)) return fail('Chat can\'t be translated between those languages yet.');
+      if (from === to) return okay({ text: filterText(text), from, to });
+      const done = this.translations && this.translations.get(from + '|' + to + '|' + text);
+      if (done !== undefined) return okay({ text: done, from, to });
+      if (!this.env.AI) return fail('Chat translation isn\'t turned on for this server.');
+      return okay({ translate: { text, from, to } });
+    }
 
     if (name === 'avatar.set') {
       // Your look, shared by the website and the apps. Colours are 0-255 whole numbers.
@@ -4745,7 +4783,8 @@ export class GbServerObject extends DurableObject {
     if (!req || typeof req !== 'object' || Array.isArray(req)) return json(fail('That wasn\'t a proper request.'), 400);
     if (typeof req.op === 'string' && req.op.startsWith('relay.')) return json(fail('Multiplayer needs the Guts&Bolts app.'));
     const h = request.headers;   // (set by worker/shield.js, which replaces anything a visitor sent in them)
-    const answer = this.handle(req, { ip: h.get('x-gb-ip') || '', web: h.get('x-gb-web') === '1', human: h.get('x-gb-human') === '1', sitekey: h.get('x-gb-sitekey') || '' });
+    let answer = this.handle(req, { ip: h.get('x-gb-ip') || '', web: h.get('x-gb-web') === '1', human: h.get('x-gb-human') === '1', sitekey: h.get('x-gb-sitekey') || '' });
+    if (answer.ok && answer.translate) answer = await this.translate(answer);
     if (this.outbox.length) await this.sendMail();
     if (this.lyretoQueue.length) await this.fetchLyretoCards();
     return json(answer);

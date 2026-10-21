@@ -46,6 +46,7 @@ constexpr Rule kCostly[] = {
     {"comments.post", 30, 90, 600},
     {"forum.post", 10, 30, 600},
     {"forum.reply", 30, 90, 600},
+    {"chat.translate", 400, 1200, 600},
     {"groups.create", 5, 15, 3600},
 };
 // One connection can send this many requests every 10 seconds (games use it to send
