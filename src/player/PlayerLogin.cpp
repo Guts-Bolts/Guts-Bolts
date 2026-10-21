@@ -145,15 +145,22 @@ static void drawTermsWindow(bool& open) {
                                "for them. It exists because its creator got fed up with Roblox's updates and built their own.");
         head("Adults only (18+)");
         ImGui::TextUnformatted("This is the R-rated, non-kid version of the genre: strong language, crude humour, cartoon "
-                               "violence and gore, mature themes, and chat that isn't filtered. You must be 18 or older.");
+                               "violence and gore, mature themes, and swearing that isn't filtered. You must be 18 or older, "
+                               "and accounts found to belong to anyone younger are closed.");
         head("Your account");
         ImGui::TextUnformatted("Keep your password and authenticator to yourself; you're responsible for your account. "
-                               "Don't make new accounts to dodge a ban.");
+                               "Don't make new accounts to dodge a ban, and don't sell or share accounts.");
+        head("Bolts and items");
+        ImGui::TextUnformatted("Bolts have no real-money value: they can't be bought with, sold for or cashed out as real money. "
+                               "Bolts and items are a permission to use them inside Guts&Bolts, not your property, and "
+                               "everything you spend them on is final and non-refundable. Accepted trades are final too. "
+                               "Buying or selling Bolts, items or accounts for real money isn't allowed.");
         head("Rules");
         ImGui::TextUnformatted("Mature content is allowed; being a menace isn't. No sexual content involving minors or anything "
                                "illegal, no threats, stalking, doxxing or serious harassment, no cheating or attacking the "
                                "servers, no scams, no uploading things you don't have the right to share, and no pretending "
-                               "to be staff or someone else. Staff can warn, ban and remove content.");
+                               "to be staff or someone else. Staff can warn, ban and remove content; a banned account can appeal "
+                               "once per ban.");
         head("What you make");
         ImGui::TextUnformatted("Stays yours. Uploading lets Guts&Bolts store and show it (and others use it, if you make it public).");
         head("No guarantees");
