@@ -11,7 +11,7 @@
 
 export const BUILT_IN_UPDATES = [
   {
-    id: 'fine-print', name: 'The Fine Print', time: 1792551108, tag: 'Website',
+    id: 'fine-print', name: 'The Fine Print', version: '0.7.4', time: 1792551108, tag: 'Website',
     summary: 'A much fuller Terms of Service, still in plain words: what Bolts are (and aren\'t), trading, what you make, bans and appeals.',
     items: [
       'Bolts and items have no real-money value, can\'t be cashed out, and what you spend them on is final. Real-money trading isn\'t allowed',
@@ -23,7 +23,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'language-barrier', name: 'Fuck the Language Barrier', time: 1792550508, tag: 'Player',
+    id: 'language-barrier', name: 'Fuck the Language Barrier', version: '0.7.4', time: 1792550508, tag: 'Player',
     summary: 'The world has approximately 7,000 languages, and we got tired of not understanding any of them. Guts and Bolts now supports multiple languages, so you can experience the exact same horrible physics in a language you actually understand.',
     items: [
       'Added multiple language options.',
@@ -35,7 +35,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'steady-hands', name: 'Steady Hands', time: 1792549573, tag: 'Fix',
+    id: 'steady-hands', name: 'Steady Hands', version: '0.7.4', time: 1792549573, tag: 'Fix',
     summary: 'Resizing and moving parts with the handles in Studio is smooth now: no more shaking back and forth.',
     items: [
       'Dragging a resize orb no longer makes the part twitch between two sizes. The part now grows exactly as far as your mouse goes',
@@ -46,7 +46,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'nobody-home', name: 'Nobody Home', time: 1792549053, tag: 'Server',
+    id: 'nobody-home', name: 'Nobody Home', version: '0.7.4', time: 1792549053, tag: 'Server',
     summary: 'When the host leaves, the next player takes over in the same world: no loading screen, nothing starts over except the scripts.',
     items: [
       'The player who takes over carries on in the world as it was: parts stay where they were, broken things stay broken, built things are still there',
@@ -60,7 +60,7 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
-    id: 'high-five', name: 'High Five', time: 1792542589, tag: 'Website',
+    id: 'high-five', name: 'High Five', version: '0.7.4', time: 1792542589, tag: 'Website',
     summary: 'The download page now counts VR: Guts&Bolts runs on 5 platforms.',
     items: [
       'The quick facts under the banner say 5 platforms, VR included',
