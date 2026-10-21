@@ -1,4 +1,5 @@
 #include "Language.h"
+#include "Settings.h"
 #include <cctype>
 #include <cstdlib>
 #include <utility>
@@ -81,6 +82,8 @@ std::string fromSystem() {
 std::string code() {
     // (GB_LANG picks one by hand, for testing.)
     if (const char* v = std::getenv("GB_LANG"); v && *v) return shorten(v);
+    // The language picked in Settings (the menus' language) wins over the computer's.
+    if (const char* picked = GraphicsSettings::get().language; *picked) return shorten(picked);
     static const std::string system = fromSystem();
     return system;
 }

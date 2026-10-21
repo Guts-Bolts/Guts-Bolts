@@ -1,4 +1,5 @@
 #include "OutlinerPanel.h"
+#include "../../core/I18n.h"
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
 #include "../../scene/Player.h"
@@ -86,8 +87,12 @@ void OutlinerPanel::drawNode(SceneNode* node) {
     const bool filtering = !m_filter.empty();
     if (hasVisibleKids) ImGui::SetNextItemOpen(filtering ? true : isOpen(node), ImGuiCond_Always);
     const float iconW = ImGui::GetTextLineHeight() + 4;
-    bool open = ImGui::TreeNodeEx("##node", flags, "%*s%s", (int)(iconW / ImGui::CalcTextSize(" ").x) + 1, "",
-                                  renaming ? "" : node->name.c_str());
+    bool open;
+    {
+        I18n::Pause keep;   // object names stay as they are
+        open = ImGui::TreeNodeEx("##node", flags, "%*s%s", (int)(iconW / ImGui::CalcTextSize(" ").x) + 1, "",
+                                 renaming ? "" : node->name.c_str());
+    }
     {
         // Icon drawn over the gap left before the name.
         ImVec2 mn = ImGui::GetItemRectMin();
@@ -270,6 +275,7 @@ void OutlinerPanel::folderService(const char* name, int icon, const char* tip, c
 }
 
 bool OutlinerPanel::serviceRow(const char* name, int icon, bool hasKids, bool selected) {
+    I18n::Pause keep;   // service names (scripts use them) stay as they are
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
     if (!hasKids) flags |= ImGuiTreeNodeFlags_Leaf;
     if (selected) flags |= ImGuiTreeNodeFlags_Selected;

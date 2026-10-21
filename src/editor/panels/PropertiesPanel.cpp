@@ -1,4 +1,5 @@
 #include "PropertiesPanel.h"
+#include "../../core/I18n.h"
 #include "../../online/Protocol.h"
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
@@ -28,6 +29,8 @@ void PropertiesPanel::render() {
         ImGui::End();
         return;
     }
+    // Properties keep the names scripts use (part.Transparency), in every language.
+    I18n::Pause keep;
 
     const char* cls = node == m_scene->root()          ? "Workspace"
                     : node->kind == NodeKind::Script   ? (node->isModule ? "ModuleScript" : node->isLocal ? "LocalScript" : "Script")

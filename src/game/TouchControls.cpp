@@ -1,4 +1,5 @@
 #include "TouchControls.h"
+#include "../core/I18n.h"
 
 #include "../renderer/Textures.h"
 
@@ -250,6 +251,7 @@ void TouchControls::draw(ImDrawList* dl) const {
                                     ImVec2(0, 1), ImVec2(1, 0), IM_COL32(255, 255, 255, 235), r * 0.2f);
         dl->AddCircle(c, r, IM_COL32(255, 255, 255, 200), 36, 2.5f);
         if (!b.title.empty()) {
+        I18n::Pause keep;   // text the game made stays as it is
             ImFont* font = ImGui::GetFont();
             float size = std::max(10.0f, 15.0f * s);
             ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, b.title.c_str());

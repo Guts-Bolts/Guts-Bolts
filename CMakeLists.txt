@@ -258,10 +258,13 @@ endif()
 # ---------------------------------------------------------------------------
 # Dear ImGui + ImGuizmo (UI for both apps)
 # ---------------------------------------------------------------------------
+# imgui.cpp and imgui_draw.cpp are copies with hooks for translations (see the file).
+include(cmake/PatchImGui.cmake)
+gb_patch_imgui("${CMAKE_BINARY_DIR}/imgui_i18n")
 add_library(gb_imgui STATIC
-    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${CMAKE_BINARY_DIR}/imgui_i18n/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_demo.cpp
-    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${CMAKE_BINARY_DIR}/imgui_i18n/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
@@ -291,6 +294,25 @@ file(MAKE_DIRECTORY "${GB_GENERATED}")
 # The default character (assets/models/player.obj), baked into the program.
 include(cmake/Embed.cmake)
 gb_embed("${CMAKE_SOURCE_DIR}/assets/models/player.obj" kPlayerObj "${GB_GENERATED}/PlayerObj.h")
+# Translations (website/lang/*.json, shared with the website): one header each,
+# plus LangData.h listing them all for src/core/I18n.cpp.
+file(GLOB GB_LANG_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/website/lang/*.json")
+set(GB_LANG_LIST "")
+set(GB_LANG_INCLUDES "")
+foreach(lang_file ${GB_LANG_FILES})
+    get_filename_component(lang_code "${lang_file}" NAME_WE)
+    string(MAKE_C_IDENTIFIER "${lang_code}" lang_id)
+    gb_embed("${lang_file}" kLang_${lang_id} "${GB_GENERATED}/Lang_${lang_id}.h")
+    string(APPEND GB_LANG_INCLUDES "#include \"Lang_${lang_id}.h\"\n")
+    string(APPEND GB_LANG_LIST "    {\"${lang_code}\", kLang_${lang_id}, kLang_${lang_id}Size},\n")
+endforeach()
+set(lang_text "#pragma once\n// Made by CMakeLists.txt from website/lang/*.json. Don't edit.\n#include <cstddef>\n${GB_LANG_INCLUDES}struct GbLangFile { const char* code; const unsigned char* data; std::size_t size; };\ninline const GbLangFile kLangFiles[] = {\n${GB_LANG_LIST}    {nullptr, nullptr, 0},\n};\n")
+if(EXISTS "${GB_GENERATED}/LangData.h")
+    file(READ "${GB_GENERATED}/LangData.h" lang_old)
+endif()
+if(NOT "${lang_old}" STREQUAL "${lang_text}")
+    file(WRITE "${GB_GENERATED}/LangData.h" "${lang_text}")
+endif()
 gb_embed("${CMAKE_SOURCE_DIR}/assets/templates/shirt_template.png" kShirtTemplate "${GB_GENERATED}/ShirtTemplate.h")
 gb_embed("${CMAKE_SOURCE_DIR}/assets/templates/pants_template.png" kPantsTemplate "${GB_GENERATED}/PantsTemplate.h")
 # Recorded sound effects (the rest are made in code, see Audio.cpp).
@@ -316,6 +338,7 @@ add_library(gb_engine STATIC
     src/core/CrashHandler.cpp
     src/core/Log.cpp
     src/core/Settings.cpp
+    src/core/I18n.cpp
     src/core/Pad.cpp
     src/core/Vr.cpp
     src/core/Paths.cpp

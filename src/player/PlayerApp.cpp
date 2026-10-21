@@ -2400,6 +2400,8 @@ void PlayerApp::drawPauseMenu() {
             if (bigButton("Off", !v ? ImVec4(0.55f, 0.25f, 0.25f, 1) : ImVec4(0.2f, 0.21f, 0.24f, 1), ImVec2(bw, 0)) && v) { v = false; changed = true; }
             ImGui::PopID();
         };
+        row("Language");
+        SettingsWindow::languagePicker(-1.0f);
         ImGui::SeparatorText("Camera");
         onOff("Shift Lock Switch", gs.shiftLockSwitch);
         row("Camera Sensitivity");

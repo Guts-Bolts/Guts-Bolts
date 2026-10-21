@@ -1,6 +1,7 @@
 #include "Settings.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <cstdio>
 #include <fstream>
 #include <string>
 #include "Paths.h"
@@ -64,6 +65,8 @@ void GraphicsSettings::load() {
     rd("quality", quality); rd("shadowRes", shadowRes); rd("shadowQuality", shadowQuality);
     rd("ssao", ssao); rd("bloom", bloom); rd("fxaa", fxaa); rd("postFx", postFx);
     rd("renderScale", renderScale); rd("maxLights", maxLights); rd("allowGore", allowGore); rd("checkUpdates", checkUpdates); rd("seasonTheme", seasonTheme);
+    if (j.contains("language") && j["language"].is_string())
+        std::snprintf(language, sizeof language, "%s", j["language"].get<std::string>().c_str());
     rd("touchControls", touchControls); rd("touchSize", touchSize);
     rd("shiftLockSwitch", shiftLockSwitch); rd("mouseSensitivity", mouseSensitivity); rd("invertCamera", invertCamera);
     rd("volume", volume); rd("fullscreen", fullscreen);
@@ -104,7 +107,7 @@ void GraphicsSettings::save() const {
         {"vsync", vsync}, {"fpsCap", fpsCap}, {"showFps", showFps},
         {"quality", quality}, {"shadowRes", shadowRes}, {"shadowQuality", shadowQuality},
         {"ssao", ssao}, {"bloom", bloom}, {"fxaa", fxaa}, {"postFx", postFx},
-        {"renderScale", renderScale}, {"maxLights", maxLights}, {"allowGore", allowGore}, {"checkUpdates", checkUpdates}, {"seasonTheme", seasonTheme},
+        {"renderScale", renderScale}, {"maxLights", maxLights}, {"allowGore", allowGore}, {"checkUpdates", checkUpdates}, {"seasonTheme", seasonTheme}, {"language", std::string(language)},
         {"touchControls", touchControls}, {"touchSize", touchSize},
         {"shiftLockSwitch", shiftLockSwitch}, {"mouseSensitivity", mouseSensitivity}, {"invertCamera", invertCamera},
         {"volume", volume}, {"fullscreen", fullscreen},
