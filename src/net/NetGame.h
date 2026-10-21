@@ -163,6 +163,17 @@ private:
 };
 
 // Joining someone else's game.
+// The host left: the player who takes over carries on in the world as it was (parts where
+// they were, things that broke still broken) instead of the game starting over.
+//   handoffSnapshot: this player's copy of the world, without the other players' characters
+//                    (they come back when they join) or anything only this computer made.
+//                    `others`: their characters (NetClient::otherCharacters()).
+//   handoffRestore:  `scene` has just been loaded from the game file: put the snapshot in its
+//                    place, giving the server Scripts back their code (players never get it).
+// The game's server scripts start again from the top.
+std::string handoffSnapshot(Scene& live, const std::vector<uint64_t>& others = {});
+bool        handoffRestore(Scene& scene, const std::string& snapshot);
+
 class NetClient {
 public:
     enum class State { Idle, Connecting, Joined, Failed };
@@ -189,6 +200,8 @@ public:
     const std::string& relayGame() const { return m_relayGame; }
     // We were in the game and then the host went away (closed it, crashed, or lost internet).
     bool hostLeft() const { return m_hostGone; }
+    // Everyone else's characters (and the host's), as they were when we lost the host.
+    const std::vector<uint64_t>& otherCharacters() const { return m_otherChars; }
     // The dev console: the host said we own this game, so we see its server log and can run commands.
     bool devOwner() const { return m_devOwner; }
     const std::vector<Log::Entry>& serverLog() const { return m_serverLog; }
@@ -234,6 +247,7 @@ private:
     std::string  m_passPrompt;
     std::vector<Log::Entry> m_serverLog;
     bool         m_hostGone = false;
+    std::vector<uint64_t> m_otherChars;
     int          m_movingTurn = 0;
     nlohmann::json m_joinData, m_teleport;
     bool         m_voiceAllowed = false;

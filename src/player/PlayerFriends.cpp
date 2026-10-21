@@ -152,11 +152,38 @@ void PlayerApp::playGame(const std::string& key, const std::string& title, Start
         if (r.contains("join")) joinRelay(r["join"].get<std::string>(), "", title);
         else if (r.contains("wait")) {
             m_waitKey = key; m_waitTitle = title; m_waitStart = start; m_waitTries = tries + 1;
+            m_waitPrivate = false;
             m_waitAt = ImGui::GetTime() + std::clamp(r.value("wait", 2.0), 0.5, 10.0);
             m_busy = true;
             m_playMsg = "Starting a server...";
         }
         else start(HostMode::Public);   // nobody's playing: you're the first in a new public server
+    }, 10);
+}
+
+void PlayerApp::playPrivate(const std::string& key, const std::string& title, Starter start, const std::string& code, int tries) {
+    if (!Online::online()) { m_status = "You need to be connected to the Guts&Bolts server to play."; return; }
+    if (key.rfind("local:", 0) == 0) { start(HostMode::Private); return; }   // (a game file on this computer: only you have it)
+    if (tries == 0) startLoadingScreen(key, title);
+    m_busy = true;
+    m_playMsg = "Starting your private server...";
+    constexpr int kMostTries = 12;
+    json args = {{"game", key}, {"dedicated", tries < kMostTries}};
+    if (!code.empty()) args["code"] = code;
+    Online::request("servers.private", args, [this, key, title, start, tries](const json& r) {
+        m_busy = false;
+        m_playMsg.clear();
+        if (!r.value("ok", false)) { m_status = r.value("error", std::string("Couldn't start your private server. Try again.")); return; }
+        const std::string code = r.value("code", std::string());
+        if (r.contains("join")) joinRelay("", code, title);
+        else if (r.contains("wait") && tries + 1 < kMostTries) {   // a game server machine is starting it
+            m_waitKey = key; m_waitTitle = title; m_waitStart = start; m_waitTries = tries + 1;
+            m_waitPrivate = true; m_waitCode = code;
+            m_waitAt = ImGui::GetTime() + std::clamp(r.value("wait", 2.0), 0.5, 10.0);
+            m_busy = true;
+            m_playMsg = "Starting your private server...";
+        }
+        else start(HostMode::Private);   // no game server machine free: you host it, like before
     }, 10);
 }
 
@@ -176,6 +203,11 @@ void PlayerApp::joinRelay(const std::string& session, const std::string& code, c
         m_client.reset();
         return;
     }
+    if (m_handoff) {   // following everyone to the new server: no loading screen
+        m_paused = false;
+        m_status.clear();
+        return;
+    }
     m_currentTitle = title.empty() ? std::string("Joining...") : "Joining " + title + "...";
     if (!m_connectScreen) { m_currentAuthor.clear(); m_loadingGameId.clear(); m_loadingIcon.clear(); m_loadingTitle.clear(); m_loadingAuthor.clear(); }   // (keep what Play knew)
     m_loadingT = 0.9f;
@@ -187,7 +219,8 @@ void PlayerApp::joinRelay(const std::string& session, const std::string& code, c
 
 // The host left the game. Instead of kicking everyone, the Guts&Bolts server picks one of the
 // players (whoever has been there longest) to host a new server of the same game, and the
-// rest follow them there. The world starts fresh, but everyone stays together.
+// rest follow them there. The new host carries on in the world as it was (handoffSnapshot),
+// so parts stay where they were; the game's scripts start again.
 void PlayerApp::startMove(const std::string& session, const std::string& game, const std::string& title) {
     m_session->stop();
     m_moveFrom = session;
@@ -195,6 +228,7 @@ void PlayerApp::startMove(const std::string& session, const std::string& game, c
     m_moveTitle = title;
     m_moveUntil = ImGui::GetTime() + 80.0;
     m_moveRetryAt = ImGui::GetTime() + 0.5;   // give the server a moment to notice the host is gone
+    m_handoff = true;
     Log::info("The host left. Moving everyone to a new server...");
 }
 
@@ -259,7 +293,11 @@ void PlayerApp::drawServersDialog() {
         if (Classic::button(label.c_str(), Classic::kPlay, ImVec2(std::min(300.0f, ImGui::GetContentRegionAvail().x), 34)))
             ImGui::OpenPopup("##buyprivate");
     } else if (Classic::button("Private server", Classic::kBlue, ImVec2(bw, 34))) {
-        start(HostMode::Private);
+        const std::string key = m_serversKey, title = m_serversTitle;
+        Starter s = m_serversStart;
+        m_serversOpen = false;
+        ImGui::CloseCurrentPopup();
+        playPrivate(key, title, s);
     }
     ImGui::EndDisabled();
     if (ImGui::BeginPopup("##buyprivate")) {
