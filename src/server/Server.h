@@ -153,6 +153,7 @@ private:
     // players never learn each other's IP addresses.
     struct Session {
         std::string id, game, title, host, code;   // code: private servers only
+        std::string owner;                         // whose private server a game server machine runs ("" = the host's)
         bool        priv = false;
         int         max = 12;
         long long   created = 0;
@@ -370,18 +371,24 @@ private:
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.
     struct Moved {
-        std::string game, title, code, newId;
+        std::string game, title, code, owner, newId;
         bool        priv = false;
         int         max = 12;
         std::vector<std::string> members;   // accounts, longest-playing first
         size_t      heir = 0;               // whose turn it is to host
         long long   heirSince = 0, until = 0;
+        long long   machineUntil = 0;           // a game server machine is starting the new one until then
     };
     std::map<std::string, Moved> m_moved;   // old session id ->
     // Game server machines (GutsAndBoltsGameServer), by their control line.
-    struct Pool { std::string account; int slots = 4; std::map<std::string, long long> starting; };   // game -> when asked
+    // starting: what it was asked to start -> when. A game id for a public server, "code:K7PQ2M" for
+    // someone's private server, "moved:<old session>" for one taking over from a host who left.
+    struct Pool { std::string account; int slots = 4; std::map<std::string, long long> starting; };
     std::map<Client*, Pool> m_pools;
-    bool startOnPool(const Asset& game);
+    // extra: {} for a public server, {private, code, owner} for someone's private one, {continues}.
+    bool startOnPool(const Asset& game, const nlohmann::json& extra = nlohmann::json::object());
+    const std::string& ownerOf(const Session& s) const { return s.owner.empty() ? s.host : s.owner; }
+    std::string freeCode() const;   // a private server code nobody's using (or waiting for)
     int  headcount(const Session& s) const { return (int)s.players.size() + (s.dedicated ? 0 : 1); }
     long long m_nextUserId = 2;                      // 1 is Guts (the staff account)
     std::set<std::string> m_takenNames;              // every username ever used (lower case)

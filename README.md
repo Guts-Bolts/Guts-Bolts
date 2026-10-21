@@ -2789,8 +2789,27 @@ uses), which must be a **staff** account. It builds with the rest of the
 programs. Each game runs in its own copy of the program, so one broken game
 can't take the others down. Game scripts on these servers have no
 `Players.LocalPlayer` (nobody plays there): use `Players.PlayerAdded` and
-`Players:GetPlayers()`, like Roblox server scripts. Private servers are still
-hosted by the person who starts them.
+`Players:GetPlayers()`, like Roblox server scripts. **Private servers** run on
+a game server machine too when one is free (with the same code, and the same
+"friends of its owner" rule), so they stay up after their owner leaves. And if a
+player was hosting (because no machine was free) and leaves, a free machine takes
+that server over and everyone follows, so from then on nobody is the host.
+
+**Setting one up on a cloud server (easiest).** Rent the smallest Linux server
+from any cloud company (Ubuntu 22.04 or 24.04; about $5 a month is plenty for a
+few games at once). Log in to it and paste this one line:
+
+```
+curl -fsSL https://raw.githubusercontent.com/useofscript/Project-Guts-And-Bolts/main/tools/game-server-setup.sh | bash
+```
+
+It installs everything, starts the game server, and makes it start by itself
+whenever the server reboots (and fetch the newest Guts&Bolts each time). At the
+end it prints the machine's **account ID**. In the Player, open the **Staff**
+page, search for the start of that ID and press **Make Staff**. A minute later
+it's running games. (`journalctl -u gutsandbolts-games -f` shows what it's doing.
+`SLOTS=8` in front of `bash` lets it run 8 games at once.) The machine has its own
+account, so your own account key never leaves your computer.
 
 **Hat pictures:** a hat or gear made from an imported Roblox file uses a picture
 file. Studio uploads it when you publish. For older items whose pictures never got

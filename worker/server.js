@@ -393,7 +393,7 @@ const kGiftNote = 100;
 const kAuctionMostCopies = 100, kAuctionMostHours = 720, kAuctionMostBid = 10000000;
 const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this much is left
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
-export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
+export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'servers.private', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
   'msg.publish', 'msg.poll']);   // (product.* and msg.*: guests can host games too)
 
 // Assets have plain numbers counting up, like Roblox's asset IDs (1, 2, 3...). New ones
@@ -723,10 +723,14 @@ export class GbServerObject extends DurableObject {
     this.costly = new Map();   // "op|ip:..." or "op|acct:..." -> { start, n } (Step 3's counters, in memory)
     // The relay (in memory: a restart closes every game, like the C++ server).
     this.conns = new Map();      // conn id -> { ws, mode, account, session, ticket, peer, since, lastActive, closing }
-    this.sessions = new Map();   // session id -> { id, game, title, host, code, priv, max, created, control, players:Set, dedicated }
-    // Game server machines: control connection id -> { account, slots, starting: Map(game -> when asked) }
+    // (owner: whose server it is, for private ones a game server machine runs; host otherwise)
+    this.sessions = new Map();   // session id -> { id, game, title, host, owner, code, priv, max, created, control, players:Set, dedicated }
+    // Game server machines: control connection id -> { account, slots, starting: Map(what -> when asked) }
+    // (what: a game id for a public server, "code:K7PQ2M" for a private one, "moved:<old session>" for
+    // one taking over from a host who left)
     this.pools = new Map();
-    // Servers whose host left: old session id -> { game, title, priv, code, max, members:[accounts], heir, heirSince, newId, until }
+    // Servers whose host left: old session id -> { game, title, priv, code, owner, max, members:[accounts], heir, heirSince,
+    // newId, until, machineUntil } (machineUntil: a game server machine is starting the new one until then)
     this.moved = new Map();
     this.sweepTimer = null;
     // MessagingService: game id -> { seq, list: [{ n, topic, message, sent }] }, and who sent
@@ -1596,7 +1600,8 @@ export class GbServerObject extends DurableObject {
     }
     // A banned account can only say hello (to see its ban screen) and appeal the ban.
     if (me.banned && opName !== 'hello' && opName !== 'appeal.send') return { bad: fail(banMessage(me)) };
-    if (me.userId === 0 && opName !== 'hello' && opName !== 'ping' && !opName.startsWith('account.') && !GUEST_OK.has(opName))
+    // (A game server machine's own account is never signed up, but staff are let in.)
+    if (me.userId === 0 && opName !== 'hello' && opName !== 'ping' && !opName.startsWith('account.') && !GUEST_OK.has(opName) && !this.isStaff(me))
       return { bad: fail('Sign up or log in first.') };
     return { me, args, opName };
   }
@@ -4240,6 +4245,16 @@ export class GbServerObject extends DurableObject {
       hostName: s.dedicated ? 'Guts&Bolts' : h ? h.name : '?', hostVerified: s.dedicated || (!!h && this.isVerified(h)),
       dedicated: !!s.dedicated, people };
   }
+  // Whose server it is: private servers go by their owner's friends.
+  ownerOf(s) { return s.owner || s.host; }
+  // A private server code nobody's using (or waiting for).
+  freeCode() {
+    const used = (code) => [...this.sessions.values()].some((x) => x.code === code) ||
+      [...this.pools.values()].some((p) => p.starting.has('code:' + code));
+    let code;
+    do code = makeCode(); while (used(code));
+    return code;
+  }
   sessionOf(userId) {
     for (const s of this.sessions.values()) {
       if (s.host === userId && !s.dedicated) return s;
@@ -4301,12 +4316,34 @@ export class GbServerObject extends DurableObject {
       if (asset && asset.kind === 'game' && args.dedicated !== false && this.startOnPool(asset)) return okay({ wait: 2 });
       return okay({ host: true });
     }
+    // Your own private server. Like servers.play, a game server machine runs it if one is free
+    // ("wait", then ask again with the code), so it stays up whoever leaves, you included.
+    // Otherwise you host it yourself ("host").
+    if (name === 'servers.private') {
+      if (!asset || asset.kind !== 'game') return fail('That game doesn\'t exist (any more).');
+      const blocked = this.privateBlocked(me, game);
+      if (blocked) return fail(blocked);
+      const code = upper(cleanText(typeof args.code === 'string' ? args.code : '', 12));
+      if (code) {
+        for (const s of this.sessions.values()) if (s.code === code) return okay({ join: s.id, code });
+        for (const pool of this.pools.values()) {
+          const when = pool.starting.get('code:' + code);
+          if (when && t - when <= kPoolStartWait) return okay({ wait: 2, code });
+        }
+        return okay({ host: true });   // the machine didn't start it: host it yourself
+      }
+      if (args.dedicated !== false) {
+        const fresh = this.freeCode();
+        if (this.startOnPool(asset, { priv: true, code: fresh, owner: me.id })) return okay({ wait: 2, code: fresh });
+      }
+      return okay({ host: true });
+    }
     if (name === 'servers.list') {
       const list = [];
       for (const s of this.sessions.values()) {
         if (game && s.game !== game) continue;
-        const friendHost = me.friends.includes(s.host);
-        if (s.priv && !friendHost && s.host !== me.id) continue;
+        const friendHost = me.friends.includes(this.ownerOf(s));
+        if (s.priv && !friendHost && this.ownerOf(s) !== me.id) continue;
         let friends = friendHost ? 1 : 0;
         for (const p of s.players) { const c = this.conns.get(p); if (c && me.friends.includes(c.account)) friends++; }
         list.push(Object.assign(this.sessionJson(s), { friends }));
@@ -4444,12 +4481,15 @@ export class GbServerObject extends DurableObject {
   }
 
   // Ask a game server machine with room to start `asset` (true if one is, or already was asked).
-  startOnPool(asset) {
+  // A public server unless `extra` says otherwise: { priv, code, owner } for someone's private
+  // server, { continues } for one taking over from a host who left.
+  startOnPool(asset, extra = {}) {
     const t = now();
+    const what = extra.continues ? 'moved:' + extra.continues : extra.code ? 'code:' + extra.code : asset.id;
     let pick = null, pickFree = 0;
     for (const [cid, pool] of this.pools) {
       for (const [g, when] of pool.starting) if (t - when > kPoolStartWait) pool.starting.delete(g);
-      if (pool.starting.has(asset.id)) return true;   // on its way
+      if (pool.starting.has(what)) return true;   // on its way
       let running = 0;
       for (const s of this.sessions.values()) if (s.dedicated && s.host === pool.account) running++;
       const free = pool.slots - running - pool.starting.size;
@@ -4457,9 +4497,11 @@ export class GbServerObject extends DurableObject {
     }
     if (!pick) return false;
     const pool = this.pools.get(pick);
-    pool.starting.set(asset.id, t);
-    this.sendTo(this.conns.get(pick), { t: 'start', game: asset.id, title: asset.name,
-      max: clamp(asset.maxPlayers || kDefaultMax, 2, kMostPlayers) });
+    pool.starting.set(what, t);
+    const start = { t: 'start', game: asset.id, title: asset.name, max: clamp(asset.maxPlayers || kDefaultMax, 2, kMostPlayers) };
+    if (extra.continues) start.continues = extra.continues;
+    else if (extra.code) Object.assign(start, { private: true, code: extra.code, owner: extra.owner || '' });
+    this.sendTo(this.conns.get(pick), start);
     return true;
   }
 
@@ -4491,19 +4533,27 @@ export class GbServerObject extends DurableObject {
       for (const s of this.sessions.values()) if (s.host === me.id && !s.dedicated) hosting++;
       if (!dedicated && hosting >= kHostedEach) { reply(fail('You\'re already running ' + kHostedEach + ' servers.')); close(); return; }
       const s = { id: 's-' + randomHex(6), game: this.assets.resolve(cleanText(typeof args.game === 'string' ? args.game : '', 80)),
-        title: say(typeof args.title === 'string' ? args.title : '', 60) || 'A game', host: me.id, code: '',
+        title: say(typeof args.title === 'string' ? args.title : '', 60) || 'A game', host: me.id, owner: '', code: '',
         priv: !!args.private, created: t,
         max: clamp((this.assets.get(args.game) || {}).maxPlayers || (Number.isInteger(args.max) ? args.max : kDefaultMax), 2, kMostPlayers),
         control: c.id, players: new Set(), dedicated };
       if (dedicated) {
-        s.priv = false;
-        for (const pool of this.pools.values()) if (pool.account === me.id) pool.starting.delete(s.game);
+        // Someone's private server (we gave the machine its code and owner in startOnPool).
+        const code = upper(cleanText(typeof args.code === 'string' ? args.code : '', 12));
+        s.priv = !!args.private && !!code;
+        if (s.priv) { s.code = code; s.owner = isHex(lower(str(args, 'owner')), 64, 64) ? lower(str(args, 'owner')) : ''; }
+        for (const pool of this.pools.values()) {
+          if (pool.account !== me.id) continue;
+          pool.starting.delete(s.priv ? 'code:' + s.code : s.game);
+          if (typeof args.continues === 'string') pool.starting.delete('moved:' + args.continues);
+        }
       }
-      // Taking over a server whose host left: same game, name, privacy and code, so everyone can follow.
+      // Taking over a server whose host left: same game, name, privacy and code, so everyone can
+      // follow. (One of its players, or a game server machine.)
       const old = typeof args.continues === 'string' ? this.moved.get(args.continues) : null;
       if (old) {
-        if (old.newId || !old.members.includes(me.id)) { reply(fail('Someone else is already hosting the new server.')); close(); return; }
-        Object.assign(s, { game: old.game, title: old.title, priv: old.priv, code: old.code, max: old.max });
+        if (old.newId || (!dedicated && !old.members.includes(me.id))) { reply(fail('Someone else is already hosting the new server.')); close(); return; }
+        Object.assign(s, { game: old.game, title: old.title, priv: old.priv, code: old.code, owner: old.owner, max: old.max });
         old.newId = s.id;
       }
       if (s.priv && !old && !dedicated) {
@@ -4534,6 +4584,14 @@ export class GbServerObject extends DurableObject {
         s = old.newId ? this.sessions.get(old.newId) || null : null;
         if (!s) {
           if (old.newId) { reply(fail('The new server closed too.')); close(); return; }
+          if (old.machineUntil) {
+            if (t <= old.machineUntil) {   // a game server machine is starting it: everyone just waits
+              reply({ ok: false, hostLeft: true, you: false, error: 'The host left. Moving to a new server...' });
+              close();
+              return;
+            }
+            old.machineUntil = 0; old.heirSince = t;   // it didn't: one of the players hosts it after all
+          }
           if (t - old.heirSince > kHeirWait) { old.heir++; old.heirSince = t; }   // they didn't start it: next in line
           if (old.heir >= old.members.length) { reply(fail('That server has closed.')); close(); return; }
           reply({ ok: false, hostLeft: true, you: old.members[old.heir] === me.id, error: 'The host left. Moving to a new server...' });
@@ -4544,7 +4602,7 @@ export class GbServerObject extends DurableObject {
       }
       if (!s) { reply(fail('That server has closed.')); close(); return; }
       if (s.host === me.id && !s.dedicated) { reply(fail('That\'s your own server.')); close(); return; }
-      if (s.priv && !code && !following && !me.friends.includes(s.host)) {
+      if (s.priv && !code && !following && !me.friends.includes(this.ownerOf(s)) && this.ownerOf(s) !== me.id) {
         reply(fail('That\'s a private server. You need to be the host\'s friend, or have its code.'));
         close();
         return;
@@ -4591,9 +4649,15 @@ export class GbServerObject extends DurableObject {
         const members = [];
         // (Their pipes die with the host, but they're still here.)
         for (const p of s.players) { const pc = this.conns.get(p); if (pc && pc.account) members.push(pc.account); }
-        if (members.length)
-          this.moved.set(sid, { game: s.game, title: s.title, priv: s.priv, code: s.code, max: s.max, members,
-            heir: 0, heirSince: now(), newId: '', until: now() + kMoveWait });
+        if (members.length) {
+          const m = { game: s.game, title: s.title, priv: s.priv, code: s.code, owner: this.ownerOf(s), max: s.max, members,
+            heir: 0, heirSince: now(), newId: '', until: now() + kMoveWait, machineUntil: 0 };
+          this.moved.set(sid, m);
+          // A free game server machine takes it over, so nobody has to host it (and it won't
+          // happen again when the next person leaves). If none is free, one of the players does.
+          const asset = this.assets.get(s.game);
+          if (asset && asset.kind === 'game' && this.startOnPool(asset, { continues: sid })) m.machineUntil = now() + kPoolStartWait;
+        }
         for (const p of s.players) if (!dead.has(p)) { dead.add(p); grew = true; }
         this.sessions.delete(sid);
       }

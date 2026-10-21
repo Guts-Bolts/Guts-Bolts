@@ -302,7 +302,12 @@ private:
     void friendButton(const std::string& accountId, const std::string& status);   // Add / Accept / Friends
     // Play: a public server. `tries`: asking again while a game server machine starts one.
     void playGame(const std::string& gameKey, const std::string& title, Starter start, int tries = 0);
+    // Your own private server: a game server machine runs it if one is free (so it stays up after
+    // you leave), otherwise you host it. `code`: the one it's starting, while we wait for it.
+    void playPrivate(const std::string& gameKey, const std::string& title, Starter start, const std::string& code = "", int tries = 0);
     std::string    m_waitKey, m_waitTitle;   // a game server machine is starting this game: ask again at m_waitAt
+    std::string    m_waitCode;               // (a private server: its code)
+    bool           m_waitPrivate = false;
     Starter        m_waitStart;
     double         m_waitAt = 0.0;
     int            m_waitTries = 0;

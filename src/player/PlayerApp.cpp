@@ -699,7 +699,8 @@ void PlayerApp::frame(float dt) {
     if (!m_waitKey.empty() && ImGui::GetTime() >= m_waitAt) {   // a game server machine was starting it: ask again
         const std::string key = std::move(m_waitKey), title = std::move(m_waitTitle);
         m_waitKey.clear();
-        playGame(key, title, std::move(m_waitStart), m_waitTries);
+        if (m_waitPrivate) playPrivate(key, title, std::move(m_waitStart), m_waitCode, m_waitTries);
+        else playGame(key, title, std::move(m_waitStart), m_waitTries);
     }
     fetchAvatarParts();
     if (m_autoServers && Online::online()) {

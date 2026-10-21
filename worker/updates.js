@@ -11,6 +11,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'nobody-home', name: 'Nobody Home', time: 1792549053, tag: 'Server',
+    summary: 'Servers stay up as long as anyone is in them: game server machines now run private servers too, and take over when a host leaves.',
+    items: [
+      'Private servers run on a game server machine when one is free, so your friends keep playing after you leave',
+      'If a player was hosting and leaves, a game server machine takes the server over and everyone follows. After that nobody is the host, so it never happens again',
+      'If no machine is free, things work like before: the player who\'s been there longest hosts the new server',
+      'New tools/game-server-setup.sh: one command turns a cheap Linux cloud server into a game server machine that starts by itself and keeps itself up to date',
+      'GutsAndBoltsGameServer --id says the machine\'s account ID, so you can give it the Staff badge from the Staff page',
+    ],
+  },
+  {
     id: 'high-five', name: 'High Five', time: 1792542589, tag: 'Website',
     summary: 'The download page now counts VR: Guts&Bolts runs on 5 platforms.',
     items: [
