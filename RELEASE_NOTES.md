@@ -1,3 +1,53 @@
+# Guts&Bolts 0.7.3: Going Once, Going Twice, Going VR (October 20, 2026)
+
+Put on a headset and you're inside your character. Studio grew a Blender
+under its hat, with UV mapping, bones and a body bundle maker. Exclusive items
+go to the highest bidder, and ragdolls now bleed, flail and blow apart.
+
+## New
+- **VR**: play any game in a VR headset (OpenXR). Your character's head and
+  arms follow yours, menus and chat float in front of you, and you click by
+  pointing. A keyboard pops up in the headset when you need to type.
+- **Meta Quest without a PC**: the new GutsAndBoltsPlayer-Quest.apk download
+  runs on Quest 2, 3, 3S and Pro by itself. Install it with SideQuest.
+- **VRService for scripts**: `VREnabled`, `GetUserCFrame` and
+  `UserCFrameChanged`, so a script can stick a sword to your hand.
+- **Blender-style modeling**: G / R / S follow the mouse, right-click menus,
+  loop cuts and a pile of new mesh tools.
+- **UV mapping**: press U to unwrap, mark seams, use the new UV Editor and
+  wrap your own picture around a MeshPart.
+- **Armatures**: put bones inside a MeshPart, bind them with automatic
+  weights, paint weights and pose them in the Animation Editor.
+- **Body bundles**: staff can reshape the character's body in Studio's new
+  Bundles window and sell it as a bundle.
+- **Bundles in the catalog**, starting with the Headless Head (3,100 Bolts).
+- **Auctions**: Exclusive items can go up for auction, and only the top
+  bidders get one.
+- **Log in with Guts&Bolts** on Lyreto: take your name and avatar with you.
+- **Partner badge** for friends of Guts&Bolts.
+- **Bot and flood protection**: a guard in front of the server stops request
+  floods and bots, gives doubtful visitors a quick "are you a person?" check,
+  and puts limits on sign-ups, logins, uploads, buying and posting.
+- **Way more imports in Studio**: squashed Sketchfab models, about 30 more 3D
+  formats, and new picture and sound types.
+
+## Changed
+- Blood pumps with the heartbeat, smears, leaves footprints and dries.
+- Ragdolls catch themselves, clutch their wounds and get back up, and
+  point-blank explosions blow bodies apart into chunks.
+- Tall stacks stand still, boxes stay put on slopes, and fast things stop
+  passing through walls.
+- The front page and download page show off what the engine can do.
+- Hats on the website are smooth-shaded like in the game.
+- The Home, Avatar and Settings pages load faster, and so do item pictures.
+
+## Fixed
+- The chat filter no longer deletes Lua code like `workspace.Shop.Door`.
+- Hats stay on your head when an animation turns it, and the Bouncy
+  Animation Pack no longer sends your head flying.
+- Pictures waiting for a staff check stay hidden properly.
+- The Sign Up page, the Avatar page and the update log look right on phones.
+
 # Guts&Bolts 0.7.2: Feature Creep (October 19, 2026)
 
 We said "just a few things" and then added twenty-six. Games can dance, sell
