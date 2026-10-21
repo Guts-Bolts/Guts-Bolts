@@ -42,6 +42,9 @@
   "durable_objects": {
     "bindings": [{ "name": "GB_SERVER_OBJECT", "class_name": "GbServerObject" }]
   },
+  // Cloudflare's translator for in-game chat (chat.translate in worker/server.js). Free up to a
+  // daily amount; after that, lines just show as they were said until the next day.
+  "ai": { "binding": "AI" },
   // The Player / Studio / Android downloads (worker/downloads.js).
   "r2_buckets": [{ "binding": "DOWNLOADS", "bucket_name": "gutsandbolts-downloads" }],
   // The risk check's speed limits (worker/shield.js), counted by Cloudflare per IP. "limit" is

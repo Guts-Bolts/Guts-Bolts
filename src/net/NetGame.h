@@ -22,21 +22,36 @@ struct ChatLog {
         std::string from, text;
         bool system = false; bool admin = false; bool verified = false;
         bool whisper = false; std::string to;   // a private message (/w name message): only the two see it
+        // Translation: the language it was said in ("" = not known), and once it's been put
+        // into yours, what was really said (text is then the translation).
+        std::string lang, original;
+        bool translated = false, asked = false;
+        uint64_t id = 0;
     };
     std::vector<Line> lines;
     std::unordered_map<std::string, std::pair<std::string, float>> bubbles;   // name -> text, seconds left
+    bool translate = true;   // put lines said in other languages into yours (not on a dedicated server: nobody reads it)
 
+    // `lang`: the language the sender writes in (see myLanguage).
     void add(const std::string& from, const std::string& text, bool system = false, bool admin = false,
-             bool verified = false);
+             bool verified = false, const std::string& lang = "");
     // Private messages get no speech bubble (everyone would see it).
     void addWhisper(const std::string& from, const std::string& to, const std::string& text, bool admin = false,
-                    bool verified = false);
+                    bool verified = false, const std::string& lang = "");
     void update(float dt);
+    // The language to send with what you say ("" when it can't be told), and a sender's one checked.
+    static std::string myLanguage();
+    static std::string cleanLanguage(const std::string& lang);
 
     // "/w name message" or "/whisper name message" (like Roblox). True if `text` is
     // a whisper command; `to` and `message` may be empty if it's incomplete.
     static bool parseWhisper(const std::string& text, std::string& to, std::string& message);
     static constexpr const char* kWhisperHelp = "To whisper to someone: /w PlayerName your message";
+
+private:
+    void translateNew();   // ask the server to translate lines said in another language (ChatTranslate.cpp)
+    uint64_t m_nextId = 1;
+    std::shared_ptr<int> m_alive = std::make_shared<int>(0);   // (translations that come back after the log is gone are dropped)
 };
 
 inline constexpr int kDefaultPort = 7777;
@@ -91,7 +106,7 @@ public:
     const std::string& relayError() const { return m_relayError; }
     // A game server machine (GutsAndBoltsGameServer): nobody plays here, so there's
     // no host in the player list, and the game goes on whoever leaves.
-    void setDedicated(bool on) { m_dedicated = on; }
+    void setDedicated(bool on) { m_dedicated = on; m_chat.translate = !on; }
     int  playerCount() const;                          // people who've joined (not counting the host)
     // The dev console's server side (F9) is only for the game's owner (their account ID).
     void setOwner(const std::string& accountId) { m_owner = accountId; }

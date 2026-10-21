@@ -326,6 +326,7 @@ add_library(gb_engine STATIC
     src/core/UpdateChecker.cpp
     src/core/Account.cpp
     src/core/TextFilter.cpp
+    src/core/Language.cpp
     src/scene/ObjImport.cpp
     src/scene/PlayerModel.cpp
     src/renderer/Shader.cpp
@@ -389,6 +390,7 @@ add_library(gb_engine STATIC
     src/game/TouchControls.cpp
     src/net/Socket.cpp
     src/net/NetGame.cpp
+    src/net/ChatTranslate.cpp
     src/editor/Theme.cpp
 )
 if(GB_MOBILE)
