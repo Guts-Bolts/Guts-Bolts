@@ -211,6 +211,10 @@ const kMaxBlurb = 1000, kMaxStatus = 140, kMaxPosts = 10, kStatusesPerDay = 30;
 const kMaxBlocked = 200, kReportsPerDay = 20, kMaxReports = 3000;
 // The staff action log: what staff did (bans, checks, badges...), newest kept (ServerSafety.cpp has the same).
 const kMaxStaffLog = 3000;
+// Promo codes the official account makes (like GUTSTOBER2026 for 1000 Bolts): everyone can use
+// each one once, between its start and end (src/server/Server.cpp has the same rules).
+const kPromoMaxBolts = 1000000, kMaxPromos = 500;
+const PROMO_NAME = /^[A-Z0-9]{3,30}$/;
 // Ban appeals (ServerSafety.cpp has the same): a banned account can send staff one short
 // "please unban me" note per ban; a new one only once staff have answered (or the ban changed).
 const kAppealLength = 500;
@@ -326,8 +330,9 @@ const COSTLY = {
   'forum.reply':         [30, 90, 600],
   'chat.translate':      [400, 1200, 600],  // (a busy game's chat, read in another language)
   'groups.create':       [5, 15, 3600],
+  'bolts.redeem':        [20, 60, 600],    // (so nobody can guess promo codes over and over)
 };
-const GUESSES = new Set(['account.salt', 'account.login', 'account.reset', 'account.emailVerify']);
+const GUESSES = new Set(['account.salt', 'account.login', 'account.reset', 'account.emailVerify', 'bolts.redeem']);
 // The apps' connection (/ws) can send this many requests every 10 seconds (games sending
 // messages and saving data use it too, so it's roomy). More gets "slow down" answers.
 const kWsRequestsPer10s = 600;
@@ -681,7 +686,7 @@ export class GbServerObject extends DurableObject {
     this.name = env.SERVER_NAME || 'Guts&Bolts';
     this.users = new Map(); this.assets = new AssetMap(); this.groups = new Map(); this.forum = new Map();
     // What changed and needs writing (set up first: loading can already change things).
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false };
     for (const r of this.sql.exec('SELECT id, data FROM users')) this.users.set(r.id, JSON.parse(r.data));
     for (const r of this.sql.exec('SELECT id, data FROM assets')) {
       const a = JSON.parse(r.data);
@@ -698,6 +703,9 @@ export class GbServerObject extends DurableObject {
     this.reports = this.getMeta('reports', []);  // what players reported, for staff to look at (newest last)
     this.staffLog = this.getMeta('stafflog', []);   // what staff did, newest last
     this.tickets = this.getMeta('tickets', []);   // support tickets (like "I forgot my password"), newest last
+    // Promo codes: { code, bolts, start, end (0 = never), made, by, uses, stopped }, newest last.
+    // Who used one is kept on their account (u.promos), so each person can use it once.
+    this.promos = this.getMeta('promos', []);
     // Connected apps: { secrets: {app: {hash, at}}, codes: [{hash, account, app, redirect, at}],
     // tokens: [{hash, account, app, at, expires}], pictures: {account: when its avatar picture was saved} }
     this.connect = Object.assign({ secrets: {}, codes: [], tokens: [], pictures: {} }, this.getMeta('connect', {}));
@@ -803,13 +811,15 @@ export class GbServerObject extends DurableObject {
       }
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'tickets', JSON.stringify(this.tickets));
     }
+    if (this.dirty.promos)
+      this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'promos', JSON.stringify(this.promos));
     if (this.dirty.connect)
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'connect', JSON.stringify(this.connect));
     if (this.dirty.staffLog) {
       if (this.staffLog.length > kMaxStaffLog) this.staffLog.splice(0, this.staffLog.length - kMaxStaffLog);
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'stafflog', JSON.stringify(this.staffLog));
     }
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false };
   }
   // --- Limited items: numbered copies (a.copies = [{ serial, owner, price }]) ---
   copiesOf(u) {   // every limited copy this account holds
@@ -1044,6 +1054,55 @@ export class GbServerObject extends DurableObject {
   staffDid(me, action, text, about = '') {
     this.staffLog.push({ at: now(), by: me.id, action, text, about });
     this.dirty.staffLog = true;
+  }
+  // --- Promo codes ---
+  promoJson(p, t = now()) {
+    const status = p.stopped ? 'stopped' : t < p.start ? 'waiting' : p.end && t >= p.end ? 'ended' : 'live';
+    return { code: p.code, bolts: p.bolts, start: p.start, end: p.end, made: p.made, uses: p.uses, status };
+  }
+  redeemPromo(me, typed) {
+    const code = typed.toUpperCase();
+    const p = this.promos.find((x) => x.code === code);
+    const t = now();
+    if (!PROMO_NAME.test(code) || !p || p.stopped) return fail('That code doesn\'t exist. Check the spelling and try again.');
+    if (t < p.start) return fail('That code doesn\'t work yet. Try again later!');
+    if (p.end && t >= p.end) return fail('That code has run out.');
+    me.promos = me.promos || [];
+    if (me.promos.includes(code)) return fail('You already used that code.');
+    me.promos.push(code);
+    p.uses = (p.uses || 0) + 1;
+    this.dirty.promos = true;
+    this.add(me, p.bolts, 'Promo code ' + code, 'promo:' + code);   // (add saves the account)
+    return okay({ me: this.meJson(me), got: p.bolts, code });
+  }
+  // admin.promos: the list (newest first). admin.promoMake {code, bolts, start, end}. admin.promoStop {code}.
+  promoAdmin(name, me, args) {
+    const t = now();
+    const list = () => okay({ promos: this.promos.slice().reverse().map((p) => this.promoJson(p, t)) });
+    if (name === 'admin.promos') return list();
+    const code = str(args, 'code').replace(/\s/g, '').toUpperCase();
+    if (name === 'admin.promoStop') {
+      const p = this.promos.find((x) => x.code === code);
+      if (!p) return fail('That code doesn\'t exist.');
+      p.stopped = t;
+      this.dirty.promos = true;
+      this.staffDid(me, 'bolts', 'Stopped the promo code ' + code);
+      return list();
+    }
+    if (!PROMO_NAME.test(code)) return fail('Codes are 3-30 letters and numbers (no spaces or symbols).');
+    if (code.startsWith('BOLTS')) return fail('Codes can\'t start with BOLTS (those are the one-person codes).');
+    if (this.promos.some((x) => x.code === code)) return fail('There\'s already a code called ' + code + '. Pick another name.');
+    const bolts = num(args, 'bolts');
+    if (!Number.isInteger(bolts) || bolts < 1 || bolts > kPromoMaxBolts) return fail('Pick an amount between 1 and 1,000,000 Bolts.');
+    const start = Math.max(0, Math.floor(num(args, 'start'))) || t;
+    const end = Math.max(0, Math.floor(num(args, 'end')));
+    if (end && end <= start) return fail('The end has to be after the start.');
+    if (end && end <= t) return fail('That end time has already gone by.');
+    if (this.promos.length >= kMaxPromos) this.promos.splice(0, 1);   // (the oldest goes)
+    this.promos.push({ code, bolts, start, end, made: t, by: me.id, uses: 0 });
+    this.dirty.promos = true;
+    this.staffDid(me, 'bolts', 'Made the promo code ' + code + ' (' + bolts + ' Bolts' + (end ? ', ends ' + new Date(end * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '') + ')');
+    return list();
   }
   // Ban (on) or unban someone, and write it in the staff log ('' = done, else why not).
   // admin.ban and accepting a ban appeal both come here.
@@ -2226,6 +2285,7 @@ export class GbServerObject extends DurableObject {
     }
     if (name === 'bolts.redeem') {
       const code = str(args, 'code').replace(/\s/g, '');
+      if (!/^BOLTS-/i.test(code)) return this.redeemPromo(me, code);
       const a = code.indexOf('-'), b = a < 0 ? -1 : code.indexOf('-', a + 1), c = b < 0 ? -1 : code.indexOf('-', b + 1);
       if (!code.startsWith('BOLTS-') || c < 0) return fail('That doesn\'t look like a Bolts code.');
       const amount = parseInt(code.slice(a + 1, b), 10) || 0;
@@ -2311,6 +2371,8 @@ export class GbServerObject extends DurableObject {
         this.dirty.reports = true;
         return okay({ reports: this.reportsJson('open') });
       }
+      if (name === 'admin.promos' || name === 'admin.promoMake' || name === 'admin.promoStop')
+        return this.isOfficial(me) ? this.promoAdmin(name, me, args) : fail('Only the official Guts account can do that.');
       if (!to) return fail('There\'s no account with that ID on this server.');
       if (name === 'admin.grant') {
         const key = str(args, 'key'), sig = str(args, 'sig');

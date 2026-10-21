@@ -694,6 +694,9 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         // BOLTS-<amount>-<nonce>-<signature>, made by the official account for this account.
         std::string code;
         for (char c : str("code")) if (!std::isspace((unsigned char)c)) code += c;
+        std::string head = code.substr(0, 6);
+        for (char& ch : head) ch = (char)std::toupper((unsigned char)ch);
+        if (head != "BOLTS-") return redeemPromo(me, code);   // a promo code (ServerPromos.cpp)
         size_t a = code.find('-'), b = a == std::string::npos ? a : code.find('-', a + 1),
                c = b == std::string::npos ? b : code.find('-', b + 1);
         if (code.rfind("BOLTS-", 0) != 0 || c == std::string::npos) return fail("That doesn't look like a Bolts code.");
@@ -789,6 +792,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             }
             json r = okay(); r["log"] = staffLogJson(who); return r;
         }
+        if (name == "admin.promos" || name == "admin.promoMake" || name == "admin.promoStop")
+            return isOfficial(me) ? promoAdmin(name, me, args) : fail("Only the official Guts account can do that.");
         if (!to) return fail("There's no account with that ID on this server.");
         if (name == "admin.grant") {
             // The signed badge comes from the app (made with the staff member's own key).
@@ -1637,6 +1642,7 @@ void GbServer::saveUsers() {
         all[id]["pastNames"] = u.pastNames;
         all[id]["played"] = u.played;
         if (!u.usedModels.empty()) all[id]["usedModels"] = u.usedModels;
+        if (!u.promos.empty()) all[id]["promos"] = u.promos;
         all[id]["publicWeek"] = u.publicWeek;
         all[id]["publicThisWeek"] = u.publicThisWeek;
     }
@@ -1838,11 +1844,12 @@ void GbServer::load() {
                     for (const auto& b : j["blocked"]) if (b.is_string()) u.blocked.push_back(b.get<std::string>());
                 u.reportDay = j.value("reportDay", std::string());
                 u.reportsToday = j.value("reportsToday", 0);
-                for (const char* k : {"pastNames", "played", "usedModels"})
+                for (const char* k : {"pastNames", "played", "usedModels", "promos"})
                     if (j.contains(k) && j[k].is_array())
                         for (const auto& v : j[k])
                             if (v.is_string())
-                                (std::string(k) == "played" ? u.played : std::string(k) == "usedModels" ? u.usedModels : u.pastNames).push_back(v.get<std::string>());
+                                (std::string(k) == "played" ? u.played : std::string(k) == "usedModels" ? u.usedModels
+                                 : std::string(k) == "promos" ? u.promos : u.pastNames).push_back(v.get<std::string>());
                 u.publicWeek = j.value("publicWeek", 0LL);
                 u.publicThisWeek = j.value("publicThisWeek", 0);
                 if (j.contains("gear") && j["gear"].is_array())
@@ -1930,6 +1937,7 @@ void GbServer::load() {
     loadReports();
     loadConnect();
     loadStaffLog();
+    loadPromos();
     loadForum();
     loadTrades();
     loadPastTrades();
