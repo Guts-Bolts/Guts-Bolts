@@ -120,6 +120,22 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(lua)
 
+# Lua's default os.execute implementation calls system(), which the iOS SDK
+# marks unavailable. Replace only that shell hook on iOS; os.execute then
+# reports failure instead of trying to launch a shell in the app sandbox.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(LUA_LOSLIB "${lua_SOURCE_DIR}/loslib.c")
+    file(READ "${LUA_LOSLIB}" LUA_LOSLIB_ORIGINAL)
+    set(LUA_SYSTEM_DEFAULT "#define l_system(cmd)   system(cmd)  /* default definition */")
+    set(LUA_SYSTEM_IOS "#define l_system(cmd)   (-1)  /* shell execution unavailable on iOS */")
+    string(REPLACE "${LUA_SYSTEM_DEFAULT}" "${LUA_SYSTEM_IOS}"
+           LUA_LOSLIB_CONTENT "${LUA_LOSLIB_ORIGINAL}")
+    if("${LUA_LOSLIB_CONTENT}" STREQUAL "${LUA_LOSLIB_ORIGINAL}")
+        message(FATAL_ERROR "Could not patch Lua os.execute for iOS: expected l_system definition not found")
+    endif()
+    file(WRITE "${LUA_LOSLIB}" "${LUA_LOSLIB_CONTENT}")
+endif()
+
 file(GLOB LUA_SOURCES "${lua_SOURCE_DIR}/*.c")
 list(REMOVE_ITEM LUA_SOURCES
     "${lua_SOURCE_DIR}/lua.c"       # stand-alone interpreter
