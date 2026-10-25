@@ -564,9 +564,22 @@ async function hello() {
 
 const pages = {};
 
+function auctionBanner(a) {
+  const au = a.auction;
+  if (!auctionOpen(a)) return '';
+  items3d.set(a.id, a);
+  const urgent = au.endsAt - Date.now() / 1000 <= 3600;
+  return html`<a class="auction-home-banner${urgent ? ' urgent' : ''}" href="#/item/${a.id}" aria-label="Auction: ${a.name}">
+    <div class="auction-home-ribbon"><span>AUCTION</span><b>${urgent ? 'ENDING SOON' : 'LIVE BIDDING'}</b></div>
+    <div class="auction-home-picture"><div class="pic">${itemIcon(a)}</div></div>
+    <div class="auction-home-copy"><span class="auction-home-kicker">THE CLOCK IS TICKING</span><h2>${a.name}</h2><p>${a.description || 'A limited-time chance to claim this exclusive item.'}</p>
+      <div class="auction-home-bid"><span>CURRENT HIGH BID</span><strong>${bolts(au.bids.length ? Math.max(...au.bids.map((b) => b.amount)) : 0)}</strong></div></div>
+    <div class="auction-home-clock"><span>TIME REMAINING</span><strong data-countdown="${au.endsAt}">${countdown(au.endsAt)}</strong><b class="auction-home-cta">BID NOW <span aria-hidden="true">&rarr;</span></b></div>
+  </a>`;
+}
 pages.home = async () => {
   // Everything the page needs is asked for at once, so it waits for one round trip, not four.
-  const [games, items, fr, recent, favs, featured, , feedR, upd, mine] = await Promise.all([
+  const [games, items, fr, recent, favs, featured, , feedR, upd, mine, auctions] = await Promise.all([
     pageCall('list', { kind: 'game', sort: 'popular', limit: 8 }),
     pageCall('list', { kind: 'clothing', limit: 6 }),
     signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
@@ -577,6 +590,7 @@ pages.home = async () => {
     signedIn() ? pageCall('feed.list', {}) : Promise.resolve({ ok: false }),
     pageCall('updates.list', { limit: 1 }),
     signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
+    pageCall('list', { kind: 'clothing', auctions: true, limit: 12 }),
   ]);
   // "Continue playing" and your favourites (only when there's something in them).
   const mineBox = (title, r, more) => r.ok && r.assets.length ? html`<div class="box"><h2 class="boxhead">${title}
@@ -603,6 +617,8 @@ pages.home = async () => {
     ${items.ok && items.assets.length ? html`<div class="grid">${items.assets.map(itemCard)}</div>`
       : html`<p class="muted small">Nothing here yet.</p>`}</div>`;
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
+  const activeAuctions = auctions.ok ? auctions.assets.filter(auctionOpen).sort((a, b) => a.auction.endsAt - b.auction.endsAt) : [];
+  const auctionBox = activeAuctions.length ? html`<section class="auction-home-section"><div class="auction-home-section-head"><h2>LIVE AUCTIONS</h2><a href="#/catalog?cat=auctions">VIEW ALL AUCTIONS &raquo;</a></div>${auctionBanner(activeAuctions[0])}${activeAuctions.length > 1 ? html`<div class="auction-home-more"><span>MORE LIVE AUCTIONS</span>${activeAuctions.slice(1, 4).map((a) => html`<a href="#/item/${a.id}"><span class="auction-mini-tag">AUCTION</span><b>${a.name}</b><span data-countdown="${a.auction.endsAt}">${countdown(a.auction.endsAt)}</span></a>`)}</div>` : ''}</section>` : '';
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
     <p><b>${latest.name}</b>${latest.version ? html` <span class="small muted">v${latest.version}</span>` : ''}
@@ -616,7 +632,8 @@ pages.home = async () => {
           <p><a class="btn green big" href="#/signup">Sign Up and Play</a>
             <a class="btn" href="#/login">Login</a></p></div>
         <div class="welcome-guy" id="homeAvatar">${avatarSvg(defaultAvatar(), 150)}</div></div>
-      ${updateBox}${featuredBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
+      ${updateBox}${auctionBox}${featuredBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
+    tickCountdowns();
     mountAvatar($('#homeAvatar'), defaultAvatar(), [], { width: 170 }).catch(() => {});
     return;
   }
@@ -637,8 +654,9 @@ pages.home = async () => {
               <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
-      <div class="home-right">${updateBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
+      <div class="home-right">${updateBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
     </div>`);
+  tickCountdowns();
   // Dressed in what you're wearing (the server says which items those are).
   const worn = mine.ok ? mine.wearing || [] : [];
   if ($('#homeAvatar')) mountAvatar($('#homeAvatar'), me.avatar || defaultAvatar(), worn, { width: 170 }).catch(() => {});
