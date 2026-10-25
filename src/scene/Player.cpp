@@ -553,6 +553,7 @@ void Player::placeAtSpawn() {
 }
 
 void Player::beginPlay() {
+    m_nativeControlsEnabled = true; // reset a legacy ControlScript toggle from the previous play session
     m_seatId = 0;   // (off any seat)
     m_sitHere = m_sitPending = false;
     m_checkpoint = 0;
@@ -571,6 +572,7 @@ void Player::beginPlay() {
 }
 
 void Player::endPlay() {
+    m_nativeControlsEnabled = true;
     footsteps(false, glm::vec3(0.0f));
     m_checkpoint = 0;
     m_dead = false;
