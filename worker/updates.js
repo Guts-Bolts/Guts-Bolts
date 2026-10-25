@@ -12,12 +12,14 @@
 export const BUILT_IN_UPDATES = [
   {
     id: 'dependency-map-health-checks', name: 'Your Scripts Have Questions', version: '0.7.6', time: 1792962000, tag: 'Studio',
-    summary: 'The Project Dependency Map now surfaces isolated scripts and duplicate script names so creators can spot suspicious project structure faster.',
+    summary: 'The Project Dependency Map now includes project health checks and transitive impact analysis to help creators investigate script relationships.',
     items: [
-      'Adds an isolated-script count for scripts with no statically detected incoming or outgoing links.',
-      'Adds a filter to focus the script list on isolated scripts.',
-      'Highlights duplicate script-name entries that can make name-based dependency matching ambiguous.',
-      'Keeps static-analysis limits explicit: isolated does not automatically mean unused, and dynamic relationships may not be detected.',
+      'Adds isolated-script counts and a filter for scripts with no statically detected incoming or outgoing links.',
+      'Highlights duplicate script names that can make name-based dependency matching ambiguous.',
+      'Adds transitive dependency traversal to show direct and indirect dependencies of the selected script.',
+      'Adds a potential change-impact view for scripts that may depend on the selected script through multiple links.',
+      'Double-click a graph neighbor to open it in the script editor, and use Open actions from impact results to jump directly to a script.',
+      'Static-analysis limits remain explicit: isolated does not automatically mean unused, and dynamic relationships may not be detected.',
     ],
   },
   {
