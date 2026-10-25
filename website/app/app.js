@@ -4146,7 +4146,7 @@ const forms = {
   },
   async promoMake(f) {
     const when = (box) => (box.value ? Math.floor(new Date(box.value).getTime() / 1000) : 0);
-    const r = await call('admin.promoMake', { code: f.code.value, bolts: Number(f.bolts.value), start: when(f.start), end: when(f.end) });
+    const r = await call('admin.promoMake', { code: f.code.value, rewardType: f.rewardType.value, bolts: Number(f.bolts.value), itemId: f.itemId.value, start: when(f.start), end: when(f.end) });
     if (!r.ok) { toast(r.error); return; }
     toast('Code made! People can redeem it on the Redeem codes page.');
     render();
