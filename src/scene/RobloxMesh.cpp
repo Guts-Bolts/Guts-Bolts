@@ -226,6 +226,11 @@ std::string fetch(const std::string& id, const char* ext) {
     const std::string rel = std::string("roblox/") + id + ext;
     fs::path file = Paths::gamesFolder() / "roblox" / (id + ext);
     if (fs::exists(file, ec) && fs::file_size(file, ec) > 0) return rel;
+#if defined(GB_IOS)
+    // iOS cannot launch shell commands. Keep cached meshes usable, but leave
+    // uncached Roblox asset downloads unavailable until a native HTTP client is added.
+    return {};
+#endif
     fs::create_directories(file.parent_path(), ec);
     fs::path part = file;
     part += ".part";
