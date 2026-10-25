@@ -2,10 +2,6 @@
 
 The gore overhaul now extends the existing gib system with occasional rounded, wet organ-like fragments alongside flesh and bone pieces. They use the existing gore color and particle budgets, inherit the existing physics/collision handling, and continue to bleed briefly while moving. Torso and leg bursts also spawn a bounded coil of thin, intestine-like segments around the wound. These are stylized procedural effects, not anatomically accurate organ models. Airborne blood now uses a wider droplet-size spectrum with size-dependent drag, and high-energy surface impacts can form elongated splashes with irregular spines aligned to impact direction. The existing shader already darkens and roughens splashes as they dry. Screen-space decals, GPU simulation, and surface-material-aware flow remain future work rather than implemented features.
 
-# The Floor Is Now A Crime Scene (October 25, 2026)
-
-The engine gore overhaul is being scoped around the existing R6 ragdoll and dismemberment systems, with the next iteration focused on gravity-driven blood streaks, persistent floor pooling, surface-aware splashes, configurable anatomical visual layers, and bounded multiplayer effects. The design prioritizes convincing results without unbounded particles or per-droplet network replication. This change records the implementation plan; the simulation features themselves are not yet implemented.
-
 # The Bug Has a Paper Trail (October 25, 2026)
 
 Studio can export a multiplayer test session bundle from **Mode > Players**. The JSON file combines the scene snapshot used for the test with a chronological timeline of server and Player-window output. Each line includes its source, severity, displayed log time, and seconds since the test started. The export path is printed in Studio Output and the bundle is saved under the temporary `GutsAndBoltsTestSessions` directory.
