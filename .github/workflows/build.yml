@@ -103,8 +103,14 @@ jobs:
             exit 1
           fi
           echo "Built app bundle: $app"
-          find "$app" -maxdepth 3 -print | sort | head -200
           test -f "$app/Info.plist" || { echo "::error::Missing Info.plist"; exit 1; }
+          # Xcode's generated post-build script does not reliably stage these
+          # directories into the .app. Copy them explicitly before packaging.
+          mkdir -p "$app/Resources"
+          for resource in games catalog assets; do
+            ditto "$resource" "$app/Resources/$resource"
+          done
+          find "$app" -maxdepth 3 -print | sort | head -200
           for resource in games catalog assets; do
             if [ ! -d "$app/Resources/$resource" ]; then
               echo "::error::Missing packaged resource directory: $app/Resources/$resource"
