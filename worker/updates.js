@@ -11,6 +11,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'multiplayer-input-traces', name: 'The Replay Button Is Getting Closer', version: '0.7.5', time: 1792961160, tag: 'Studio',
+    summary: 'Multiplayer test bundles now include sampled per-player movement and control traces alongside the existing server and Player output timeline.',
+    items: [
+      'Capture camera-relative movement, jump, dive, touch controls, equipped tool, and controller availability at roughly 20 samples per second.',
+      'Embed each Player window trace directly in the exported JSON bundle.',
+      'Keep traces diagnostic rather than claiming deterministic replay; clicks, script randomness, and authoritative physics state are not captured.',
+      'Limit each player trace to 50,000 samples so long tests cannot grow the bundle without bound.'
+    ]
+  },
+  {
     id: 'boltworks-club-teaser', name: 'The Club Is Coming', version: '0.7.5', time: 1792957200, tag: 'Website',
     summary: 'The Bolts page gets a new wallet layout and an early-registration teaser for Boltworks Club, a future paid membership with multiple tiers.',
     items: [
