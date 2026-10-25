@@ -28,6 +28,7 @@ extern "C" {
 #include <algorithm>
 #include <cctype>
 #include <functional>
+#include <map>
 #include <sstream>
 
 using nlohmann::json;
@@ -1143,6 +1144,181 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         diagnose(n, args.value("recursive", true), findings);
         return done({{"object_id", idOf(n)}, {"resulting_state", state(n)}, {"findings", findings},
                      {"error_count", count(findings, "error")}, {"warning_count", count(findings, "warning")}});
+    }
+    if (name == "analyze_scene_performance") {
+        int objects = 0, parts = 0, dynamicParts = 0, lights = 0, emitters = 0;
+        int scripts = 0, enabledScripts = 0;
+        size_t totalScriptBytes = 0;
+        json scriptSizes = json::array();
+        m_scene->forEach([&](SceneNode* n) {
+            if (n->internal) return;
+            ++objects;
+            if (isPartLike(n)) {
+                ++parts;
+                if (!n->anchored) ++dynamicParts;
+            }
+            if (n->isLight() && n->enabled) ++lights;
+            if (n->isParticles() && n->enabled) ++emitters;
+            if (n->isScript()) {
+                ++scripts;
+                if (n->enabled && !n->isModule) ++enabledScripts;
+                totalScriptBytes += n->source.size();
+                scriptSizes.push_back({{"path", n->fullName()}, {"object_id", idOf(n)},
+                                       {"bytes", n->source.size()}, {"enabled", n->enabled},
+                                       {"type", n->isModule ? "ModuleScript" : (n->isLocal ? "LocalScript" : "Script")}});
+            }
+        });
+        std::vector<json> ranked;
+        for (const auto& item : scriptSizes) ranked.push_back(item);
+        std::sort(ranked.begin(), ranked.end(), [](const json& x, const json& y) {
+            return x.value("bytes", size_t(0)) > y.value("bytes", size_t(0));
+        });
+        json largest = json::array();
+        for (size_t i = 0; i < ranked.size() && i < 10; ++i) largest.push_back(ranked[i]);
+        json findings = json::array();
+        auto finding = [&](const char* severity, const char* code, const std::string& message, const std::string& recommendation) {
+            findings.push_back({{"severity", severity}, {"code", code}, {"message", message}, {"recommendation", recommendation}});
+        };
+        if (parts >= 1000) finding("warning", "HIGH_PART_COUNT", std::to_string(parts) + " parts are present in the scene.",
+                                   "Profile the scene in Play mode; reduce unnecessary geometry and consider grouping or simplifying repeated detail.");
+        if (dynamicParts >= 250) finding("warning", "MANY_DYNAMIC_BODIES", std::to_string(dynamicParts) + " parts are unanchored and may participate in physics.",
+                                          "Anchor static scenery and reduce the number of simultaneously simulated bodies where gameplay permits.");
+        if (lights >= 40) finding("warning", "MANY_ENABLED_LIGHTS", std::to_string(lights) + " enabled lights are present.",
+                                  "Check shadow-casting and overlapping lights, then compare frame time with lights disabled in a test copy.");
+        if (emitters >= 75) finding("warning", "MANY_PARTICLE_EMITTERS", std::to_string(emitters) + " enabled particle emitters are present.",
+                                    "Reduce emitter count or particle rates where effects overlap; verify the result visually.");
+        if (totalScriptBytes >= 100000) finding("info", "LARGE_SCRIPT_SOURCE_TOTAL", "Scripts contain " + std::to_string(totalScriptBytes) + " bytes of source in total.",
+                                                 "Review large scripts for duplicated logic; source size alone does not prove runtime cost.");
+        for (const auto& s : ranked) {
+            if (s.value("bytes", size_t(0)) >= 20000) {
+                finding("info", "LARGE_SCRIPT_SOURCE", s.value("path", std::string("Script")) + " contains " +
+                        std::to_string(s.value("bytes", size_t(0))) + " bytes of source.",
+                        "Consider splitting large scripts into focused modules. Large source is a maintainability signal, not a runtime performance measurement.");
+            }
+        }
+        return done({{"metrics", {{"object_count", objects}, {"part_count", parts}, {"unanchored_part_count", dynamicParts},
+                                  {"enabled_light_count", lights}, {"enabled_particle_emitter_count", emitters},
+                                  {"script_count", scripts}, {"enabled_non_module_script_count", enabledScripts},
+                                  {"total_script_source_bytes", totalScriptBytes}}},
+                     {"findings", findings}, {"largest_scripts", largest},
+                     {"note", "Static heuristic only. Counts do not measure actual CPU/GPU time, draw calls, memory use or frame rate. Validate suspected hotspots with Play-mode measurements."}});
+    }
+    if (name == "analyze_script_dependencies") {
+        // Static-only dependency scan. Never execute scripts or evaluate require expressions.
+        std::vector<SceneNode*> scripts;
+        std::vector<SceneNode*> modules;
+        m_scene->forEach([&](SceneNode* n) {
+            if (!n->isScript() || n->internal) return;
+            scripts.push_back(n);
+            if (n->isModule) modules.push_back(n);
+        });
+        auto trim = [](std::string s) {
+            const size_t first = s.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) return std::string();
+            const size_t last = s.find_last_not_of(" \t\r\n");
+            return s.substr(first, last - first + 1);
+        };
+        auto pathOfNode = [&](const SceneNode* n) { return n->fullName(); };
+        json dependencies = json::array();
+        json unresolved = json::array();
+        std::map<uint64_t, int> incoming;
+        for (SceneNode* source : scripts) {
+            const std::string& code = source->source;
+            size_t scan = 0;
+            while (scan < code.size()) {
+                // Skip Lua comments and quoted strings so text in comments / messages
+                // cannot create fake dependency edges.
+                if (code[scan] == '-' && scan + 1 < code.size() && code[scan + 1] == '-') {
+                    scan += 2;
+                    if (scan < code.size() && code[scan] == '[') {
+                        size_t eq = scan + 1;
+                        while (eq < code.size() && code[eq] == '=') ++eq;
+                        if (eq < code.size() && code[eq] == '[') {
+                            const std::string close = "]" + std::string(eq - scan - 1, '=') + "]";
+                            const size_t closeAt = code.find(close, eq + 1);
+                            scan = closeAt == std::string::npos ? code.size() : closeAt + close.size();
+                            continue;
+                        }
+                    }
+                    const size_t nl = code.find('\n', scan);
+                    scan = nl == std::string::npos ? code.size() : nl + 1;
+                    continue;
+                }
+                if (code[scan] == '[') {
+                    size_t eq = scan + 1;
+                    while (eq < code.size() && code[eq] == '=') ++eq;
+                    if (eq < code.size() && code[eq] == '[') {
+                        const std::string close = "]" + std::string(eq - scan - 1, '=') + "]";
+                        const size_t closeAt = code.find(close, eq + 1);
+                        scan = closeAt == std::string::npos ? code.size() : closeAt + close.size();
+                        continue;
+                    }
+                }
+                if (code[scan] == '"' || code[scan] == '\'') {
+                    const char quote = code[scan++];
+                    while (scan < code.size()) {
+                        if (code[scan] == '\\') { scan = std::min(scan + 2, code.size()); continue; }
+                        if (code[scan++] == quote) break;
+                    }
+                    continue;
+                }
+                if (!(std::isalpha((unsigned char)code[scan]) || code[scan] == '_')) { ++scan; continue; }
+                const size_t wordStart = scan++;
+                while (scan < code.size() && (std::isalnum((unsigned char)code[scan]) || code[scan] == '_')) ++scan;
+                if (code.compare(wordStart, scan - wordStart, "require") != 0) continue;
+                size_t open = scan;
+                while (open < code.size() && std::isspace((unsigned char)code[open])) ++open;
+                if (open >= code.size() || code[open] != '(') continue;
+                size_t argStart = open + 1, end = argStart;
+                char quote = 0;
+                while (end < code.size()) {
+                    const char ch = code[end];
+                    if (quote) {
+                        if (ch == '\\') { end = std::min(end + 2, code.size()); continue; }
+                        if (ch == quote) quote = 0;
+                    } else if (ch == '"' || ch == '\'') quote = ch;
+                    else if (ch == ')') break;
+                    ++end;
+                }
+                if (end >= code.size()) continue;
+                std::string expr = trim(code.substr(argStart, end - argStart));
+                scan = end + 1;
+                if (expr.empty()) continue;
+                // Resolve simple quoted module names as well as bare paths. More
+                // complex expressions are intentionally reported as unresolved.
+                if (expr.size() >= 2 && ((expr.front() == '"' && expr.back() == '"') ||
+                                         (expr.front() == '\'' && expr.back() == '\''))) {
+                    expr = expr.substr(1, expr.size() - 2);
+                }
+                SceneNode* target = nullptr;
+                for (SceneNode* candidate : modules) {
+                    const std::string full = pathOfNode(candidate);
+                    const std::string name = candidate->name;
+                    if (expr == name || expr == full || expr == ("game." + full) ||
+                        expr == ("script.Parent." + name)) {
+                        if (target) { target = nullptr; break; } // ambiguous: don't guess
+                        target = candidate;
+                    }
+                }
+                if (target) {
+                    dependencies.push_back({{"from", pathOfNode(source)}, {"to", pathOfNode(target)}, {"expression", expr}});
+                    ++incoming[target->id];
+                } else {
+                    unresolved.push_back({{"from", pathOfNode(source)}, {"expression", expr}});
+                }
+            }
+        }
+        json unused = json::array();
+        for (SceneNode* module : modules) {
+            if (incoming[module->id] == 0)
+                unused.push_back({{"path", pathOfNode(module)}, {"object_id", idOf(module)},
+                                  {"name", module->name}, {"note", "No static require(...) reference was found. Dynamic or external use may still exist."}});
+        }
+        return done({{"script_count", scripts.size()}, {"module_count", modules.size()},
+                     {"dependencies", dependencies}, {"dependency_count", dependencies.size()},
+                     {"unresolved", unresolved}, {"unresolved_count", unresolved.size()},
+                     {"unreferenced_modules", unused},
+                     {"note", "Static heuristic only: scripts were not executed. Dynamic require expressions, string-built paths and runtime-only references may be missed."}});
     }
     if (name == "validate_scene") {
         json all = json::array();

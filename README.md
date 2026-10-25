@@ -286,7 +286,7 @@ what it needs, what it gives back and how risky it is):
   `bake_navmesh`, `find_path`, `walk_character_to`
 - Docs: `get_engine_info` (overview, capabilities, concepts, coordinates,
   workflows, classes)
-- Debug: `get_output`, `get_errors`, `diagnose_object`, `validate_scene`
+- Debug: `get_output`, `get_errors`, `diagnose_object`, `validate_scene`, `analyze_script_dependencies` (static ModuleScript dependency map, unresolved references and potentially unreferenced modules), `analyze_scene_performance` (static counts for parts, dynamic physics bodies, lights, particle emitters and script sizes; not a live profiler)
 - View and history: `screenshot`, `undo`, `redo`, `checkpoint` (named save
   points to try things and roll back)
 - Publish: `publish_game` (only when you ask for it)

@@ -78,6 +78,25 @@ def choices(d):
 def run_tests(m):
     tools = {t["name"] for t in m.rpc("tools/list")["tools"]}
     check("publish_game" in tools, "tools/list has publish_game")
+    check("analyze_script_dependencies" in tools, "tools/list has analyze_script_dependencies")
+    check("analyze_scene_performance" in tools, "tools/list has analyze_scene_performance")
+    perf = m.call("analyze_scene_performance")
+    metrics = perf.get("metrics", {})
+    check(ok(perf) and isinstance(metrics.get("part_count"), int) and
+          isinstance(perf.get("findings"), list) and "Static heuristic" in perf.get("note", ""),
+          "scene performance audit returns static metrics and clearly labels limitations", perf)
+
+    dep_module = m.call("create_script", parent="ServerScriptService", name="AiDependencyModule",
+                        type="ModuleScript", source="return { answer = 42 }")
+    dep_user = m.call("create_script", parent="ServerScriptService", name="AiDependencyUser",
+                      source='local mod = require("AiDependencyModule")')
+    dep_report = m.call("analyze_script_dependencies")
+    edges = dep_report.get("dependencies", [])
+    check(ok(dep_module) and ok(dep_user) and ok(dep_report) and
+          any(e.get("from", "").endswith("AiDependencyUser") and
+              e.get("to", "").endswith("AiDependencyModule") for e in edges),
+          "dependency analysis finds a literal require(ModuleScript) edge", dep_report)
+
 
     print("1. Inserting into services")
     targets = [("Tool", "StarterPack"), ("Script", "ServerScriptService"), ("ScreenGui", "StarterGui"),
