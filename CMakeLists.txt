@@ -553,7 +553,7 @@ if(GB_MOBILE)
         target_link_libraries(main PRIVATE gb_engine)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         add_executable(GutsAndBoltsPlayer MACOSX_BUNDLE ${PLAYER_SOURCES})
-        target_compile_definitions(GutsAndBoltsPlayer PRIVATE GB_IOS)
+        target_compile_definitions(GutsAndBoltsPlayer PRIVATE GB_IOS GB_APP_VERSION=\"${PROJECT_VERSION}\")
         set_target_properties(GutsAndBoltsPlayer PROPERTIES
             MACOSX_BUNDLE_GUI_IDENTIFIER "net.gutsandbolts.player"
             MACOSX_BUNDLE_BUNDLE_NAME "Guts & Bolts"
@@ -566,6 +566,7 @@ if(GB_MOBILE)
             COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources"
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/games" "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources/games"
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/catalog" "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources/catalog"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources/assets"
             VERBATIM)
     else()
         add_executable(GutsAndBoltsPlayer ${PLAYER_SOURCES})

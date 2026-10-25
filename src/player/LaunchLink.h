@@ -14,6 +14,10 @@ struct Link {
 };
 bool parse(const std::string& url, Link& out);
 
+// Queue a URL received after startup (iOS SDL drop-file delivery and other
+// platform callbacks). poll() returns it to the Player's normal link handler.
+void enqueue(const std::string& url);
+
 // Computers: make gutsandbolts:// links open this program (Windows, Linux and Mac;
 // quietly does nothing where it can't). On a Mac that means a small app in
 // ~/Applications ("Guts&Bolts Player.app") that runs this program.

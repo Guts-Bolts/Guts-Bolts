@@ -6,6 +6,7 @@
 #include "I18n.h"
 #include "Audio.h"
 #include "Paths.h"
+#include "../player/LaunchLink.h"
 #include "../editor/Theme.h"
 #include "../renderer/GL.h"
 #include "../renderer/MeshLibrary.h"
@@ -297,6 +298,18 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
         case SDL_WINDOWEVENT:
             if (e.window.event == SDL_WINDOWEVENT_CLOSE && e.window.windowID == SDL_GetWindowID(m_sdl)) m_quit = true;
             break;
+#ifdef GB_IOS
+        case SDL_DROPFILE:
+            // SDL's iOS application delegate forwards URLs opened while the app
+            // is already running as drop-file events. Route them through the
+            // same validated launch-link flow used at startup.
+            if (e.drop.file) {
+                LaunchLink::enqueue(e.drop.file);
+                SDL_free(e.drop.file);
+                e.drop.file = nullptr;
+            }
+            break;
+#endif
         case SDL_KEYDOWN:
             if (e.key.keysym.sym == SDLK_AC_BACK) {           // Android back button / gesture
                 io.AddKeyEvent(ImGuiKey_Escape, true);

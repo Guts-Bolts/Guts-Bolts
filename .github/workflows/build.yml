@@ -81,19 +81,61 @@ jobs:
             GutsAndBoltsPlayer-Quest.apk
 
   ios-simulator:
-    name: iOS Player (simulator compile)
+    name: iOS Player (simulator and device compile)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Configure iOS simulator
         run: |
-          cmake -S . -B build-ios -G Xcode \
+          cmake -S . -B build-ios-sim -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphonesimulator \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=Release
-      - name: Compile Player
-        run: cmake --build build-ios --config Release --target GutsAndBoltsPlayer
+      - name: Compile simulator Player
+        run: cmake --build build-ios-sim --config Release --target GutsAndBoltsPlayer
+      - name: Package simulator app for inspection
+        run: |
+          app="build-ios-sim/Release-iphonesimulator/GutsAndBoltsPlayer.app"
+          if [ ! -d "$app" ]; then
+            echo "::error::Simulator app bundle was not produced at $app"
+            find build-ios-sim -type d -name GutsAndBoltsPlayer.app -print
+            exit 1
+          fi
+          echo "Built app bundle: $app"
+          test -f "$app/Info.plist" || { echo "::error::Missing Info.plist"; exit 1; }
+          # Xcode's generated post-build script does not reliably stage these
+          # directories into the .app. Copy them explicitly before packaging.
+          mkdir -p "$app/Resources"
+          for resource in games catalog assets; do
+            ditto "$resource" "$app/Resources/$resource"
+          done
+          find "$app" -maxdepth 3 -print | sort | head -200
+          for resource in games catalog assets; do
+            if [ ! -d "$app/Resources/$resource" ]; then
+              echo "::error::Missing packaged resource directory: $app/Resources/$resource"
+              echo "Bundle directories:"
+              find "$app" -maxdepth 3 -type d -print | sort
+              exit 1
+            fi
+            echo "Verified resource directory: $resource"
+          done
+          ditto -c -k --sequesterRsrc --keepParent "$app" GutsAndBoltsPlayer-iOS-Simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-app
+          path: GutsAndBoltsPlayer-iOS-Simulator.zip
+          if-no-files-found: error
+      - name: Configure iOS device target (unsigned)
+        run: |
+          cmake -S . -B build-ios-device -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_BUILD_TYPE=Release
+      - name: Compile device Player (signing not required for compile)
+        run: |
+          cmake --build build-ios-device --config Release --target GutsAndBoltsPlayer -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY=""
 
   linux:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
