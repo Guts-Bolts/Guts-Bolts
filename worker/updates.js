@@ -20,6 +20,8 @@ export const BUILT_IN_UPDATES = [
       'Adds a potential change-impact view for scripts that may depend on the selected script through multiple links.',
       'Double-click a graph neighbor to open it in the script editor, and use Open actions from impact results to jump directly to a script.',
       'Inventories texture, decal, T-shirt, sound, particle, effect, GUI image, and skybox resource values on scene objects.',
+      'Adds a project-wide searchable resource inventory, with filters for broken object links and quick selection of the owning object.',
+      'Shows how often resource values are reused, making shared assets easier to identify without treating reuse as an error.',
       'Checks object links such as constraints, attachments, sound groups, fluid systems, primary parts, and adornee targets for scene IDs that no longer resolve.',
       'Resource IDs and file paths are shown for inspection but are not claimed to be verified against disk or a remote asset service; isolated does not automatically mean unused.',
     ],
