@@ -4,6 +4,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BUILT_IN_UPDATES } from '../updates.js';
 
+test('Publish readiness is documented in the website update log', () => {
+  const update = BUILT_IN_UPDATES.find((u) => u.id === 'publish-readiness');
+  assert.ok(update, 'Publish readiness must be visible on the website update log');
+  assert.equal(update.tag, 'Studio');
+  const text = [update.name, update.summary, ...update.items].join(' ');
+  assert.match(text, /scene structure/);
+  assert.match(text, /local assets/);
+  assert.match(text, /security review/);
+  assert.match(text, /never executed/);
+});
+
 test('Scene Validator is published in the website update log', () => {
   const update = BUILT_IN_UPDATES.find((u) => u.id === 'scene-validator');
   assert.ok(update, 'Scene Validator must be visible on the website update log');
