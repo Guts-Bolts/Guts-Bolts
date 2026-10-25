@@ -747,14 +747,44 @@ const forumAvatar = (u, size) => {
 function loadForumAvatars(root = view) {
   root.querySelectorAll('[data-forum-avatar]').forEach(async (el) => {
     if (el.dataset.loading) return;
-    const u = forumAvatarUsers.get(el.dataset.forumAvatar);
-    if (!u) return;
+    const key = el.dataset.forumAvatar;
+    const listedUser = forumAvatarUsers.get(key);
+    if (!listedUser) return;
     el.dataset.loading = '1';
     const size = Number(el.dataset.size) || 72;
     try {
-      const url = await avatarPicture(u.avatar, u.wearing || [], size);
-      if (url && el.isConnected) el.innerHTML = html`<img src="${url}" alt="${u.name || 'Player'}" width="${size}" height="${Math.round(size * 1.25)}" style="display:block;object-fit:contain">`.s;
-    } catch (_) { /* Keep the 2D SVG fallback if rendering fails. */ }
+      // Forum payloads can contain both the internal account ID and public player number.
+      // Try both, preferring the public number used by profile URLs.
+      const ids = [...new Set([listedUser.userId, listedUser.id, key].filter((x) => x != null && String(x)))];
+      let profile = null;
+      let lastError = null;
+      for (const id of ids) {
+        try {
+          const r = await pageCall('profile', { id: String(id) });
+          if (r.ok && r.user && r.user.avatar && typeof r.user.avatar === 'object') {
+            profile = r;
+            break;
+          }
+          lastError = new Error(r.error || 'Profile response did not include avatar data');
+        } catch (err) { lastError = err; }
+      }
+      if (!profile) throw lastError || new Error('Could not load player avatar profile');
+      const user = profile.user;
+      const avatar = user.avatar;
+      const worn = Array.isArray(profile.wearing) ? profile.wearing : [];
+      const url = await avatarPicture(avatar, worn, size);
+      if (url && el.isConnected) {
+        el.innerHTML = html`<img src="${url}" alt="${user.username || user.name || listedUser.name || 'Player'}" width="${size}" height="${Math.round(size * 1.28)}" style="display:block;object-fit:contain">`.s;
+      } else if (el.isConnected) {
+        el.innerHTML = avatarSvg(avatar, size, worn, false).s;
+      }
+    } catch (err) {
+      console.warn('Forum avatar render failed for player', key, err);
+      // Do not replace the visible fallback with another default noob.
+      if (el.isConnected && listedUser.avatar && typeof listedUser.avatar === 'object') {
+        el.innerHTML = avatarSvg(listedUser.avatar, size, listedUser.wearing || [], false).s;
+      }
+    }
   });
 }
 pages.forum = async (board, a, b) => {
