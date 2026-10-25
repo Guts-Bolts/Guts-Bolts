@@ -1372,7 +1372,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
             int mat = (p.kind == Particle::Fire || p.kind == Particle::Spark) ? (int)Material::Neon
                     : p.wet ? 8   // wet liquid (see the shader)
                     : p.glossy ? (int)Material::Metal : (int)Material::Plastic;
-            if (p.kind == Particle::Chunk && (p.gib == 0 || p.gib == 2)) {   // flesh / rounded organ-like pieces
+            if (p.kind == Particle::Chunk && (p.gib == 0 || p.gib == 2 || p.gib == 3)) {   // flesh / organ / intestine-like pieces
                 mat = 31;
                 m_lit->setBool("uGibSkinOn", p.gib == 0 && p.skin.x >= 0.0f);
                 m_lit->setVec3("uGibSkin", glm::max(p.skin, glm::vec3(0.0f)));
@@ -1388,7 +1388,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
             m_lit->setFloat("uAlpha", alpha);
             (p.kind == Particle::Splat ? cube
              : p.kind == Particle::Bolt || (p.kind == Particle::Drop && p.wet) ||
-               (p.kind == Particle::Chunk && p.gib == 2) ? cyl : cube)->draw();
+               (p.kind == Particle::Chunk && (p.gib == 2 || p.gib == 3)) ? cyl : cube)->draw();
         };
         for (const Particle& p : parts) {
             if (tooFar(p.pos, 1.0f)) continue;
