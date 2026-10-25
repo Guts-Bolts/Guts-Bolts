@@ -244,7 +244,7 @@ void ScriptEditorPanel::runDependencyMap() {
     // Only claim relationships when a require() expression or a named child lookup
     // explicitly mentions another script's name. This is static evidence, not runtime tracing.
     const std::regex requirePattern(R"(\brequire\s*\(\s*([^\)]*)\))");
-    const std::regex childPattern(R"((?:WaitForChild|FindFirstChild)\s*\(\s*["']([^"']+)["'])");
+    const std::regex childPattern(R"rx((?:WaitForChild|FindFirstChild)\s*\(\s*["']([^"']+)["']\s*\))rx");
     auto addEdge = [&](uint64_t from, uint64_t to, const std::string& reason) {
         if (from == to) return;
         for (const auto& edge : m_dependencyEdges)
