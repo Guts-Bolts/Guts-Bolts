@@ -2414,20 +2414,27 @@ pages.avatar = async () => {
       previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
       return;
     }
+    const fallbackTo2d = () => {
+      previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
+      if (hint) hint.textContent = '3D preview unavailable; showing 2D instead';
+      avatarViewMode = '2d';
+      view.querySelectorAll('[data-avatar-view]').forEach((button) => {
+        const active = button.dataset.avatarView === '2d';
+        button.classList.toggle('blue', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+    };
     try {
       const controller = await mountAvatar(previewEl, a, wornItems, { width: 240 });
-      if (request === avatarViewRequest && avatarViewMode === '3d') avatar3d = controller;
-    } catch (_) {
-      if (request === avatarViewRequest && avatarViewMode === '3d') {
-        previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
-        if (hint) hint.textContent = '3D preview unavailable; showing 2D instead';
-        avatarViewMode = '2d';
-        view.querySelectorAll('[data-avatar-view]').forEach((button) => {
-          const active = button.dataset.avatarView === '2d';
-          button.classList.toggle('blue', active);
-          button.setAttribute('aria-pressed', String(active));
-        });
+      if (request !== avatarViewRequest || avatarViewMode !== '3d') {
+        if (avatarViewMode === '2d') previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
+        else showAvatarView('3d');
+        return;
       }
+      if (controller) avatar3d = controller;
+      else fallbackTo2d();
+    } catch (_) {
+      if (request === avatarViewRequest && avatarViewMode === '3d') fallbackTo2d();
     }
   };
   view.querySelectorAll('[data-avatar-view]').forEach((button) =>
