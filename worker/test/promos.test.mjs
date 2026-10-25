@@ -67,3 +67,33 @@ test('promo codes and who used them are still there after a restart', async () =
   assert.equal(again.promos[0].uses, 1);
   assert.equal(again.op('bolts.redeem', again.users.get(bob.id), { code: 'KEEPME' }).error, 'You already used that code.');
 });
+
+test('promo codes can grant catalog items that cannot be bought or found in the catalog', () => {
+  const s = makeServer();
+  const bob = s.signUp('bob');
+  const item = {
+    id: 'promo-hat', kind: 'hat', name: 'Promo Hat', description: 'A test reward',
+    creator: s.staff.id, price: 50, created: now(), updated: now(), sales: 0, plays: 0,
+    limited: false, exclusive: false, meta: {}
+  };
+  s.assets.set(item.id, item);
+
+  const made = s.call(s.staff, 'admin.promoMake', {
+    code: 'FREEHAT', rewardType: 'item', itemId: item.id
+  });
+  assert.ok(made.ok, made.error);
+  assert.equal(made.promos[0].rewardType, 'item');
+  assert.equal(item.promoOnly, true);
+
+  const catalog = s.call(bob, 'list', { kind: 'hat' });
+  assert.ok(catalog.ok);
+  assert.equal(catalog.assets.some((a) => a.id === item.id), false);
+  assert.match(s.call(bob, 'buy', { id: item.id }).error, /only available through a promo code/);
+
+  const redeemed = s.call(bob, 'bolts.redeem', { code: 'FREEHAT' });
+  assert.ok(redeemed.ok, redeemed.error);
+  assert.equal(redeemed.rewardType, 'item');
+  assert.equal(redeemed.itemId, item.id);
+  assert.ok(bob.owned.includes(item.id));
+  assert.equal(s.call(bob, 'bolts.redeem', { code: 'FREEHAT' }).error, 'You already used that code.');
+});

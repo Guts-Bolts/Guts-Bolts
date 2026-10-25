@@ -2662,23 +2662,25 @@ function mailBox(ml) {
       <button class="btn small blue">Send test</button></form>` : ''}</div>`;
 }
 
-// Promo codes (official account only): make codes like GUTSTOBER2026 that give Bolts, for a limited time if you like.
+// Promo codes (official account only): codes can grant Bolts or an item that cannot be bought in the catalog.
 const PROMO_STATUS = { live: ['ok', 'Live'], waiting: ['muted', 'Not started yet'], ended: ['muted', 'Ended'], stopped: ['error', 'Stopped'] };
 function promoBox(pr) {
   if (!pr) return '';
   if (!pr.ok) return html`<div class="box"><h2 class="boxhead">Promo codes</h2><p class="error">${pr.error}</p></div>`;
   const until = (p) => p.end ? (p.status === 'ended' ? 'ended ' : 'ends ') + dateText(p.end) : 'never ends';
   return html`<div class="box"><h2 class="boxhead">Promo codes</h2>
-    <p class="small muted">Make a code that gives Bolts. Everyone can use it once, on the <a href="#/redeem">Redeem codes</a> page.
+    <p class="small muted">Create a code that grants Bolts or an item directly to a player's inventory. Item rewards are hidden from the catalog and cannot be purchased. Each account can redeem a code once, on the <a href="#/redeem">Redeem codes</a> page. For item rewards, enter an existing catalog item's ID.
       Leave the start empty to start now, and the end empty to keep it going until you stop it. Times are in your own time zone.</p>
     <form class="promo-form" data-form="promoMake">
       <div><label class="small">Code</label><input type="text" name="code" required maxlength="30" placeholder="GUTSTOBER2026" autocomplete="off" class="notranslate" style="text-transform:uppercase"></div>
-      <div><label class="small">Bolts</label><input type="number" name="bolts" required min="1" max="1000000" value="1000"></div>
+      <div><label class="small">Reward type</label><select name="rewardType"><option value="bolts">Bolts</option><option value="item">Exclusive item</option></select></div>
+      <div><label class="small">Bolts (for Bolts rewards)</label><input type="number" name="bolts" min="1" max="1000000" value="1000"></div>
+      <div><label class="small">Item ID (for item rewards)</label><input type="text" name="itemId" maxlength="80" placeholder="Item ID"></div>
       <div><label class="small">Starts (optional)</label><input type="datetime-local" name="start"></div>
       <div><label class="small">Ends (optional)</label><input type="datetime-local" name="end"></div>
       <div><button class="btn green">Make code</button></div></form>
     <div class="list">${pr.promos.length ? pr.promos.map((p) => html`<div>
-        <span class="grow"><b class="notranslate">${p.code}</b> · ${bolts(p.bolts)}
+        <span class="grow"><b class="notranslate">${p.code}</b> · ${p.rewardType === 'item' ? 'Exclusive item: ' + (p.itemName || p.itemId) : bolts(p.bolts)}
           <span class="small muted">· ${p.uses} used · ${p.status === 'waiting' ? 'starts ' + dateText(p.start) + ', ' : ''}${until(p)}</span></span>
         <span class="small ${PROMO_STATUS[p.status][0]}">${PROMO_STATUS[p.status][1]}</span>
         <button class="btn small" data-act="copyText" data-text="${location.origin + location.pathname}#/redeem?code=${p.code}" title="Copy a link that fills the code in">Copy link</button>
@@ -4137,13 +4139,14 @@ const forms = {
   async redeem(f) {
     const r = await call('bolts.redeem', { code: f.code.value });
     const msg = $('#redeemMsg');
-    if (msg) { msg.className = r.ok ? 'ok' : 'error'; msg.textContent = r.ok ? 'You got ' + r.got + ' Bolts!' : r.error; }
-    toast(r.ok ? 'You got ' + r.got + ' Bolts!' : r.error);
+    const rewardMessage = r.rewardType === 'item' ? 'You got ' + (r.itemName || 'an exclusive item') + '!' : 'You got ' + r.got + ' Bolts!';
+    if (msg) { msg.className = r.ok ? 'ok' : 'error'; msg.textContent = r.ok ? rewardMessage : r.error; }
+    toast(r.ok ? rewardMessage : r.error);
     if (r.ok) { if (r.me) setMe(r.me); f.code.value = ''; if (!msg) render(); }
   },
   async promoMake(f) {
     const when = (box) => (box.value ? Math.floor(new Date(box.value).getTime() / 1000) : 0);
-    const r = await call('admin.promoMake', { code: f.code.value, bolts: Number(f.bolts.value), start: when(f.start), end: when(f.end) });
+    const r = await call('admin.promoMake', { code: f.code.value, rewardType: f.rewardType.value, bolts: Number(f.bolts.value), itemId: f.itemId.value, start: when(f.start), end: when(f.end) });
     if (!r.ok) { toast(r.error); return; }
     toast('Code made! People can redeem it on the Redeem codes page.');
     render();

@@ -1262,7 +1262,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             if (auctions && !auctionOpen(a, listNow)) continue;
             if (!kind.empty() && a.kind != kind && !(kind == "clothing" && Online::isCatalogItem(a.kind))) continue;
             if (ownedOnly && !me.owned.count(a.id)) continue;
-            if (!ownedOnly && !auctions && !isStaff(me) && a.meta.is_object() && a.meta.value("exclusive", false)) continue;   // Exclusive: not in the catalog (unless up for auction)
+            if (a.meta.is_object() && a.meta.value("promoOnly", false) && (!ownedOnly || !me.owned.count(a.id))) continue; // Promo-only items never appear in the catalog
+            if (!ownedOnly && !auctions && !isStaff(me) && a.meta.is_object() && a.meta.value("exclusive", false)) continue;
             if (sort == "featured" && a.meta.value("featured", 0LL) <= 0) continue;   // picked by staff
             if (!creator.empty() && a.creator != creator) continue;
             if (!q.empty() && lower(a.name).find(q) == std::string::npos) continue;
@@ -1424,6 +1425,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (a.kind == "devproduct") return fail("Developer products are bought inside their game.");
         if (a.meta.is_object() && a.meta.value("award", std::string()) == "email")
             return fail("This hat can't be bought: confirm an email in Settings and it's yours.");
+        if (a.meta.is_object() && a.meta.value("promoOnly", false))
+            return fail("This item is only available through a promo code.");
         if (a.meta.is_object() && a.meta.value("exclusive", false))
             return fail("This is an Exclusive item: it can't be bought. It comes from events and gift boxes.");
         if (const long long off = a.meta.is_object() ? a.meta.value("offsaleAt", 0LL) : 0LL; off > 0 && now >= off)
