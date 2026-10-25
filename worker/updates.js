@@ -12,7 +12,7 @@
 export const BUILT_IN_UPDATES = [
   {
     id: 'catalog-item-workshop', name: 'Catalog Repair Shop', version: '0.7.5', time: 1792940400, tag: 'Studio',
-    summary: 'Creators can load their existing 3D catalog accessories into Studio, fix their mesh or placement, and update the same listing.',
+    summary: 'Creators can load their existing 3D catalog accessories into Studio, fix their mesh or placement, and update the existing listing.',
     items: [
       'Load an existing accessory by catalog ID into the Studio scene.',
       'Adjust position, rotation and scale on the accessory mannequin with numeric controls or viewport tools.',
