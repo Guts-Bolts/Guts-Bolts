@@ -38,6 +38,17 @@ test('Studio workflow update is published in the website update log', () => {
   assert.match(text, /Script Analysis/);
 });
 
+test('Project Dependency Map is published in the website update log', () => {
+  const update = BUILT_IN_UPDATES.find((u) => u.id === 'project-dependency-map');
+  assert.ok(update, 'the Project Dependency Map must be visible on the website');
+  assert.equal(update.tag, 'Studio');
+  const text = [update.name, update.summary, ...update.items].join(' ');
+  assert.match(text, /incoming relationship counts/);
+  assert.match(text, /require\(\)/);
+  assert.match(text, /code editor/);
+  assert.match(text, /static code patterns/);
+});
+
 test('says "Library", never "Marketplace"', () => {
   // (Roblox's MarketplaceService is a script name, so that one's fine.)
   for (const u of BUILT_IN_UPDATES)
