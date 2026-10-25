@@ -57,6 +57,7 @@ int main(int argc, char** argv) {
         else if (!std::strcmp(argv[i], "--test-accessory")) opts.testAccessory = next();
         else if (!std::strcmp(argv[i], "--test-face")) opts.testFace = next();
         else if (!std::strcmp(argv[i], "--studio-test")) opts.studioTest = next();   // Studio's "Test with N players"
+        else if (!std::strcmp(argv[i], "--studio-input-trace")) opts.studioInputTrace = next(); // Studio's per-player input trace
         else if (!std::strcmp(argv[i], "--vr"))          opts.vr = true;   // straight into the VR headset
         else if (!std::strcmp(argv[i], "--vr-test-hands")) opts.vrTestHands = next();
         else if (!std::strcmp(argv[i], "--name"))        opts.testName = next();
