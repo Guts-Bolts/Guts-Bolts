@@ -81,11 +81,8 @@ endif()
 # touch controls). It's on automatically for Android; turning it on for Linux
 # lets you try the phone version on a computer.
 option(GB_MOBILE "Build the phone/tablet Player (SDL2 + OpenGL ES 3)" OFF)
-if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(ANDROID)
     set(GB_MOBILE ON)
-endif()
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum iOS deployment target" FORCE)
 endif()
 
 # ImGui (docking branch — includes the full editor UI system)
@@ -248,8 +245,6 @@ if(GB_MOBILE)
 
     if(ANDROID)
         set(GB_GL_LIBS GLESv3 EGL android log)
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        set(GB_GL_LIBS "-framework OpenGLES" "-framework UIKit" "-framework Foundation")
     else()
         set(GB_GL_LIBS GLESv2 EGL)
     endif()
@@ -377,7 +372,6 @@ add_library(gb_engine STATIC
     src/scene/Water.cpp
     src/scene/Terrain.cpp
     src/scene/Liquid.cpp
-    src/scene/LiquidGpu.cpp
     src/scene/Flood.cpp
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
@@ -422,12 +416,15 @@ add_library(gb_engine STATIC
     src/net/ChatTranslate.cpp
     src/editor/Theme.cpp
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # OpenGL ES on iOS is limited to 3.0; use the CPU liquid solver there.
+    target_sources(gb_engine PRIVATE src/scene/LiquidGpuIOS.cpp)
+else()
+    target_sources(gb_engine PRIVATE src/scene/LiquidGpu.cpp)
+endif()
 if(GB_MOBILE)
     target_sources(gb_engine PRIVATE src/core/AppWindowSDL.cpp)
     target_compile_definitions(gb_engine PUBLIC GB_MOBILE GB_GLES)
-    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        target_compile_definitions(gb_engine PUBLIC GB_IOS)
-    endif()
 else()
     target_sources(gb_engine PRIVATE src/core/AppWindow.cpp)
 endif()
@@ -516,24 +513,14 @@ if(GB_MOBILE)
     if(ANDROID)
         add_library(main SHARED ${PLAYER_SOURCES})
         target_link_libraries(main PRIVATE gb_engine)
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        # Build a normal iOS application bundle around the shared SDL2 Player.
-        add_executable(GutsAndBoltsPlayer MACOSX_BUNDLE ${PLAYER_SOURCES})
-        target_compile_definitions(GutsAndBoltsPlayer PRIVATE GB_IOS)
-        set_target_properties(GutsAndBoltsPlayer PROPERTIES
-            MACOSX_BUNDLE_GUI_IDENTIFIER "net.gutsandbolts.player"
-            MACOSX_BUNDLE_BUNDLE_NAME "Guts & Bolts"
-            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/ios/Info.plist"
-            XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
-            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
-            XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "NO")
-        target_link_libraries(GutsAndBoltsPlayer PRIVATE gb_engine)
     else()
         add_executable(GutsAndBoltsPlayer ${PLAYER_SOURCES})
         target_link_libraries(GutsAndBoltsPlayer PRIVATE gb_engine)
         add_custom_command(TARGET GutsAndBoltsPlayer POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/games" "$<TARGET_FILE_DIR:GutsAndBoltsPlayer>/games"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/catalog" "$<TARGET_FILE_DIR:GutsAndBoltsPlayer>/catalog"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/games"
+                    "$<TARGET_FILE_DIR:GutsAndBoltsPlayer>/games"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/catalog"
+                    "$<TARGET_FILE_DIR:GutsAndBoltsPlayer>/catalog"
             VERBATIM)
     endif()
     return()
