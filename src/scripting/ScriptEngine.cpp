@@ -123,6 +123,22 @@ local function uiFolder()
     end
     return f
 end
+-- PlayerScripts.ControlScript is a compatibility placeholder for old LocalScripts.
+-- Guts & Bolts' actual movement controller is native; toggling this empty stub does
+-- not disable native controls, but it lets legacy scripts inspect/toggle the old path.
+local function playerScripts(t)
+    local f = rawget(t, "__PlayerScripts")
+    if f and f.Parent then return f end
+    f = Instance.new("Folder")
+    f.Name = "PlayerScripts"
+    f.Parent = rawget(t, "__node")
+    local controller = Instance.new("LocalScript")
+    controller.Name = "ControlScript"
+    controller.Disabled = false
+    controller.Parent = f
+    rawset(t, "__PlayerScripts", f)
+    return f
+end
 __gb_uiFolder = uiFolder
 local joinData = __gb_joinData
 local function getJoinData(self) return joinData(rawget(self, "Name")) end
@@ -135,6 +151,7 @@ local getMouse  -- filled in below, after Ray and the legacy raycast helpers exi
 local playerMeta = {
     __index = function(t, k)
         if k == "PlayerGui" then return uiFolder() end
+        if k == "PlayerScripts" then return playerScripts(t) end
         if k == "GetMouse" then return function(self) return getMouse(self) end end
         if k == "GetJoinData" then return getJoinData end
         if k == "Team" or k == "TeamColor" or k == "Neutral" then return rawget(t, "__" .. k) end
@@ -1480,6 +1497,8 @@ function game:GetService(name)
     end
     return s
 end
+-- Older Roblox scripts used the lowercase alias game:service(...).
+game.service = game.GetService
 game.FindService = function(_, name) return findService(name) end
 Workspace = workspace
 
