@@ -573,7 +573,7 @@ function auctionBanner(a) {
     <div class="auction-home-ribbon"><span>AUCTION</span><b>${urgent ? 'ENDING SOON' : 'LIVE BIDDING'}</b></div>
     <div class="auction-home-picture"><div class="pic">${itemIcon(a)}</div></div>
     <div class="auction-home-copy"><span class="auction-home-kicker">THE CLOCK IS TICKING</span><h2>${a.name}</h2><p>${a.description || 'A limited-time chance to claim this exclusive item.'}</p>
-      <div class="auction-home-bid"><span>CURRENT HIGH BID</span><strong>${bolts(au.top || au.need || 0)}</strong></div></div>
+      <div class="auction-home-bid"><span>CURRENT HIGH BID</span><strong>${bolts(au.bids.length ? Math.max(...au.bids.map((b) => b.amount)) : 0)}</strong></div></div>
     <div class="auction-home-clock"><span>TIME REMAINING</span><strong data-countdown="${au.endsAt}">${countdown(au.endsAt)}</strong><b class="auction-home-cta">BID NOW <span aria-hidden="true">&rarr;</span></b></div>
   </a>`;
 }
@@ -633,6 +633,7 @@ pages.home = async () => {
             <a class="btn" href="#/login">Login</a></p></div>
         <div class="welcome-guy" id="homeAvatar">${avatarSvg(defaultAvatar(), 150)}</div></div>
       ${updateBox}${auctionBox}${featuredBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
+    tickCountdowns();
     mountAvatar($('#homeAvatar'), defaultAvatar(), [], { width: 170 }).catch(() => {});
     return;
   }
@@ -655,6 +656,7 @@ pages.home = async () => {
       </div>
       <div class="home-right">${updateBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
     </div>`);
+  tickCountdowns();
   // Dressed in what you're wearing (the server says which items those are).
   const worn = mine.ok ? mine.wearing || [] : [];
   if ($('#homeAvatar')) mountAvatar($('#homeAvatar'), me.avatar || defaultAvatar(), worn, { width: 170 }).catch(() => {});
