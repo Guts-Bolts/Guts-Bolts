@@ -322,22 +322,22 @@ void Editor::renderPerformanceWindow() {
     }
     if (ImGui::Button("Copy performance report")) {
         std::ostringstream report;
-        report << "Guts&Bolts Studio performance report\\n"
-               << "Average FPS: " << fps << "\\n"
-               << "Average frame time (ms): " << average << "\\n"
-               << "P95 frame time (ms): " << p95 << "\\n"
-               << "Maximum frame time (ms): " << maximum << "\\n"
+        report << "Guts&Bolts Studio performance report\n"
+               << "Average FPS: " << fps << "\n"
+               << "Average frame time (ms): " << average << "\n"
+               << "P95 frame time (ms): " << p95 << "\n"
+               << "Maximum frame time (ms): " << maximum << "\n"
                << "Frames over 33 ms in rolling window: " << m_perfHitchCount << "/"
-               << m_perfFrameSamples.size() << "\\n"
-               << "Editor update / UI (ms): " << m_perfCpuFrameMs << "\\n"
-               << "Viewport CPU time (ms): " << m_perfViewportMs << "\\n"
-               << "Simulation update (ms): " << m_perfSimulationMs << "\\n"
-               << "Scene objects: " << objects << "\\n"
-               << "Parts: " << parts << "\\n"
-               << "Unanchored parts: " << dynamicParts << "\\n"
-               << "Enabled lights: " << lights << "\\n"
-               << "Enabled particle emitters: " << emitters << "\\n"
-               << "Scripts: " << scripts << "\\n"
+               << m_perfFrameSamples.size() << "\n"
+               << "Editor update / UI (ms): " << m_perfCpuFrameMs << "\n"
+               << "Viewport CPU time (ms): " << m_perfViewportMs << "\n"
+               << "Simulation update (ms): " << m_perfSimulationMs << "\n"
+               << "Scene objects: " << objects << "\n"
+               << "Parts: " << parts << "\n"
+               << "Unanchored parts: " << dynamicParts << "\n"
+               << "Enabled lights: " << lights << "\n"
+               << "Enabled particle emitters: " << emitters << "\n"
+               << "Scripts: " << scripts << "\n"
                << "Note: CPU timings exclude GPU execution and presentation; frame delta includes waiting/presentation time.";
         const std::string reportText = report.str();
         ImGui::SetClipboardText(reportText.c_str());
