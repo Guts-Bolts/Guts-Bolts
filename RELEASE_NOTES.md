@@ -1,3 +1,9 @@
+# The Bug Has a Paper Trail (October 25, 2026)
+
+Studio can export a multiplayer test session bundle from **Mode > Players**. The JSON file combines the scene snapshot used for the test with a chronological timeline of server and Player-window output. Each line includes its source, severity, displayed log time, and seconds since the test started. The export path is printed in Studio Output and the bundle is saved under the temporary `GutsAndBoltsTestSessions` directory.
+
+This is a diagnostic replay timeline, not deterministic gameplay playback: input events and physics state are not recorded. The scene snapshot may include unpublished game content or scripts, so review the file before sharing it.
+
 # Your Game Before the Public Sees It (October 25, 2026)
 
 Studio's publish dialog now includes a readiness review before a game goes public.

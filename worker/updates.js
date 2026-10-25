@@ -11,6 +11,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'multiplayer-session-recorder', name: 'The Bug Has a Paper Trail', version: '0.7.5', time: 1792953600, tag: 'Studio',
+    summary: 'Studio can export a multiplayer test session bundle with the scene snapshot and a timestamped server/player output timeline for debugging and sharing.',
+    items: [
+      'Capture the scene snapshot and the server and player process output in one portable JSON bundle.',
+      'Keep each output line in chronological order with elapsed seconds, source window, severity, and display time.',
+      'Export the current or most recent test from Mode > Players, including while a test is running.',
+      'Find exported bundles in the temporary GutsAndBoltsTestSessions folder; the full path is printed in Studio Output.',
+      'Bundles are diagnostic replay timelines, not deterministic gameplay recordings: player inputs and physics state are not captured.',
+      'The included scene snapshot can contain unpublished content or scripts, so review it before sharing.'
+    ]
+  },
+  {
     id: 'publish-readiness', name: 'Your Game Before the Public Sees It', version: '0.7.5', time: 1792950000, tag: 'Studio',
     summary: 'Studio adds a pre-publish readiness review for scene structure, performance risk, local assets, and script patterns.',
     items: [
