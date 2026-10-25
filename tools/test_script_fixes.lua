@@ -34,6 +34,11 @@ task.spawn(function()
     -- Legacy Player:GetMouse() and the removed RbxUtility.Create helper.
     local Players = game:GetService("Players")
     local me = Players.LocalPlayer
+    local controller = me.PlayerScripts:WaitForChild("ControlScript")
+    check(controller ~= nil and controller.Disabled == false, "legacy PlayerScripts.ControlScript placeholder exists")
+    controller.Disabled = true
+    controller.Disabled = false
+    check(game:service("Workspace") == workspace, "lowercase game:service alias works")
     local mouse = me:GetMouse()
     check(type(mouse.X) == "number" and type(mouse.Y) == "number", "Mouse exposes cursor X/Y")
     check(mouse.UnitRay ~= nil and mouse.UnitRay.Direction.Magnitude > 0.99, "Mouse.UnitRay is a unit camera ray")
