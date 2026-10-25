@@ -10,6 +10,7 @@
 #include "../../scripting/ScriptEngine.h"
 #include "../../scripting/Luau.h"
 
+#include <algorithm>
 #include <cctype>
 #include <set>
 #include <regex>
