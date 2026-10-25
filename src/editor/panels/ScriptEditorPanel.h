@@ -95,6 +95,8 @@ private:
     double m_dependencyAnalysedAt = -100.0;
     uint64_t m_dependencySelected = 0;
     std::string m_dependencySearch;
+    std::string m_assetSearch;
+    bool m_assetOnlyBrokenLinks = false;
     std::vector<DependencyNode> m_dependencyNodes;
     std::vector<DependencyEdge> m_dependencyEdges;
     std::vector<UnresolvedDependency> m_unresolvedDependencies;
