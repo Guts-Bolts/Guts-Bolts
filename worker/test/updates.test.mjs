@@ -37,6 +37,17 @@ test('Multiplayer Session Recorder is published in the website update log', () =
   assert.match(text, /review it before sharing/);
 });
 
+test('Multiplayer input traces are documented in the website update log', () => {
+  const update = BUILT_IN_UPDATES.find((u) => u.id === 'multiplayer-input-traces');
+  assert.ok(update, 'Multiplayer input traces must be visible on the website update log');
+  assert.equal(update.tag, 'Studio');
+  const text = [update.name, update.summary, ...update.items].join(' ');
+  assert.match(text, /per-player/);
+  assert.match(text, /20 samples per second/);
+  assert.match(text, /deterministic replay/);
+  assert.match(text, /50,000 samples/);
+});
+
 test('the update log loads and has updates', () => {
   assert.ok(Array.isArray(BUILT_IN_UPDATES));
   assert.ok(BUILT_IN_UPDATES.length > 10);
