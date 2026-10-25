@@ -2309,6 +2309,9 @@ export class GbServerObject extends DurableObject {
         const q = lower(cleanText(str(args, 'query'), 64));
         const list = [];
         for (const u of this.users.values()) {
+          // Guest sessions have no registered user number and must not fill the staff directory.
+          // Filter them before enforcing the result cap so registered accounts remain discoverable.
+          if (!u.userId || u.userId <= 0) continue;
           if (list.length >= 40) break;
           const num = /^#?[0-9]+$/.test(q) ? Number(q.replace('#', '')) : -1;
           if (!q || u.userId === num || lower(u.name).includes(q) || u.id.startsWith(q)) list.push(this.publicUser(u));
