@@ -108,6 +108,7 @@ This section records the full hybrid-rendering target. The items below are not a
 **Current PR implementation**
 - High-energy floor and wall impacts can select a procedural irregular-spine shape.
 - Impact speed changes the splash stretch; impact direction informs the orientation.
+- Fast wall impacts also spawn one to three bounded, surface-aligned satellite stains offset along the projected impact direction, creating a small directional splatter field without extra airborne particle bursts.
 - Current decals are surface-aligned meshes. The depth-buffer/screen-space projection path is still future work.
 
 ### C. Surface flow, pooling, and wetting
