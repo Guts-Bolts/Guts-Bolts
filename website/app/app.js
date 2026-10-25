@@ -724,8 +724,7 @@ pages.forum = async (board, a, b) => {
   if (!board) {
     const r = await pageCall('forum.boards', {});
     if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p>`); return; }
-    show(html`<h1>Forum</h1>
-      <p class="muted">Ask for help, show off your games and talk to other players. Be kind: the forum follows the same <a href="#/terms">rules</a> as chat.</p>
+    show(html`<div class="forum-retro-masthead"><div><span class="forum-retro-kicker">GUTS &amp; BOLTS COMMUNITY · EST. 2004</span><h1>Forum</h1><p>Games, questions, arguments, and whatever else is on your mind.</p></div><span class="forum-retro-stamp">STILL<br>POSTING</span></div><p class="muted forum-intro">Old-school boards, real player avatars. Be kind: the forum follows the same <a href="#/terms">rules</a> as chat.</p>
       <div class="table-wrap"><table class="forum">
         <thead><tr><th>Board</th><th class="num">Threads</th><th class="num">Posts</th><th>Last post</th></tr></thead>
         <tbody>${r.boards.map((x) => html`<tr>
@@ -739,12 +738,12 @@ pages.forum = async (board, a, b) => {
   const r = await pageCall('forum.list', { board, page });
   if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p><p><a href="#/forum">&lt; All boards</a></p>`); return; }
   const base = '#/forum/' + r.board.id;
-  show(html`<p><a href="#/forum">&lt; Forum</a></p><h1>${r.board.name}</h1><p class="muted">${r.board.about}</p>
+  show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; ${r.board.name}</p><div class="forum-retro-masthead forum-retro-board-head"><div><span class="forum-retro-kicker">COMMUNITY BOARD</span><h1>${r.board.name}</h1><p>${r.board.about}</p></div><a class="btn small" href="#/forum">All boards</a></div>
     ${r.threads.length ? html`<div class="table-wrap"><table class="forum">
       <thead><tr><th>Thread</th><th class="num">Replies</th><th class="num">Views</th><th>Last post</th></tr></thead>
       <tbody>${r.threads.map((t) => html`<tr class="${t.pinned ? 'pinned' : ''}">
         <td>${t.pinned ? html`<span class="badge-pill" title="Pinned by staff">Pinned</span> ` : ''}${t.locked ? html`<span class="badge-pill" title="Nobody can reply">Locked</span> ` : ''}
-          <a href="#/forum/t/${t.id}"><b>${t.title}</b></a><br><span class="small muted">by ${t.by.name}, ${ago(t.at)}</span></td>
+          <span class="forum-list-avatar">${avatarSvg(t.by.avatar, 40, [], true)}</span><span class="forum-list-thread"><a href="#/forum/t/${t.id}"><b>${t.title}</b></a><br><span class="small muted">by ${forumWho(t.by)}, ${ago(t.at)}</span></span></td>
         <td class="num">${t.replies}</td><td class="num">${t.views}</td>
         <td class="small"><a href="#/forum/t/${t.id}/9999">${ago(t.last)}</a><br><span class="muted">by ${t.lastBy.name}</span></td></tr>`)}</tbody></table></div>`
       : html`<p class="muted">No threads here yet. Be the first!</p>`}
@@ -762,13 +761,13 @@ async function forumThread(id, page) {
   if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p><p><a href="#/forum">&lt; All boards</a></p>`); return; }
   const t = r.thread, base = '#/forum/t/' + t.id;
   const post = (p) => html`<div class="forum-post" data-post="${p.id}">
-    <div class="forum-author"><a class="face" href="#/user/${p.by.userId || p.by.id}">${p.by.name.slice(0, 1).toUpperCase()}</a>${forumWho(p.by)}</div>
+    <div class="forum-author"><a class="forum-player-avatar" href="#/user/${p.by.userId || p.by.id}" title="View ${p.by.name}’s profile">${avatarSvg(p.by.avatar, 72, [], true)}</a>${forumWho(p.by)}<span class="forum-player-number">PLAYER #${p.by.userId || p.by.id}</span></div>
     <div class="grow"><p class="small muted">${ago(p.at)}</p>
       <div class="forum-text">${p.text}</div>
       <p class="small">${p.canDelete ? html`<a href="#" data-act="forumDelete" data-thread="${t.id}" data-post="${p.id}" data-first="${p.first ? 1 : ''}" data-page="${r.page}">${p.first ? 'Delete thread' : 'Delete'}</a> ` : ''}
         ${signedIn() && p.by.id !== me.id ? reportLink('forum', t.id + ':' + p.id, p.by.name) : ''}</p></div></div>`;
-  show(html`<p><a href="#/forum">Forum</a> &gt; <a href="#/forum/${t.board}">${t.boardName}</a></p>
-    <h1>${t.pinned ? html`<span class="badge-pill">Pinned</span> ` : ''}${t.locked ? html`<span class="badge-pill">Locked</span> ` : ''}${t.title}</h1>
+  show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; <a href="#/forum/${t.board}">${t.boardName}</a></p>
+    <div class="forum-retro-masthead forum-retro-thread-head"><div><span class="forum-retro-kicker">${t.pinned ? 'PINNED DISCUSSION' : 'COMMUNITY DISCUSSION'}${t.locked ? ' · LOCKED' : ''}</span><h1>${t.title}</h1><p>Posted in <a href="#/forum/${t.board}">${t.boardName}</a></p></div></div>
     ${r.canModerate ? html`<p class="row"><button class="btn small" data-act="forumMod" data-thread="${t.id}" data-pinned="${t.pinned ? '' : 1}" data-locked="${t.locked ? 1 : ''}" data-page="${r.page}">${t.pinned ? 'Unpin' : 'Pin'}</button>
       <button class="btn small" data-act="forumMod" data-thread="${t.id}" data-pinned="${t.pinned ? 1 : ''}" data-locked="${t.locked ? '' : 1}" data-page="${r.page}">${t.locked ? 'Unlock' : 'Lock'}</button></p>` : ''}
     ${forumPager(base, r.page, r.pages)}
