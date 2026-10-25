@@ -9,10 +9,12 @@
 #include "../../scene/SceneNode.h"
 #include "../../scripting/ScriptEngine.h"
 #include "../../scripting/Luau.h"
+#include "../../core/Paths.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <functional>
 #include <set>
 #include <regex>
@@ -228,6 +230,27 @@ std::string trimDependencyExpression(std::string s) {
     return s.substr(first, last - first + 1);
 }
 
+// Match the engine's local texture lookup rules without downloading anything or
+// making network requests. Remote IDs that cannot be verified offline stay unknown.
+std::string resourceAvailability(const std::string& value) {
+    if (value.rfind("builtin:", 0) == 0) return "BUILT-IN";
+    if (value.rfind("gb:", 0) == 0) {
+        return Paths::downloaded(value.substr(3)).empty()
+            ? "NOT CACHED" : "CACHED";
+    }
+    if (value.find("://") != std::string::npos) return "REMOTE / UNVERIFIED";
+    const bool numericId = !value.empty() && std::all_of(value.begin(), value.end(),
+        [](unsigned char c) { return std::isdigit(c); });
+    if (numericId) return "REMOTE ID / UNVERIFIED";
+
+    std::error_code ec;
+    const std::filesystem::path relative = Paths::gamesFolder() / value;
+    if (std::filesystem::exists(relative, ec)) return "LOCAL FILE";
+    ec.clear();
+    if (std::filesystem::exists(std::filesystem::path(value), ec)) return "LOCAL FILE";
+    return "MISSING LOCAL FILE";
+}
+
 } // namespace
 
 void ScriptEditorPanel::runDependencyMap() {
@@ -251,14 +274,14 @@ void ScriptEditorPanel::runDependencyMap() {
     m_scene->forEach([&](SceneNode* node) { sceneNodesById[node->id] = node; });
     auto addAsset = [&](SceneNode* owner, const std::string& property, const std::string& value) {
         if (value.empty()) return;
-        m_assetReferences.push_back({owner->id, 0, owner->fullName(), property, value, false, false});
+        m_assetReferences.push_back({owner->id, 0, owner->fullName(), property, value, resourceAvailability(value), false, false});
     };
     auto addNodeLink = [&](SceneNode* owner, const std::string& property, uint64_t targetId) {
         if (!targetId) return;
         const auto target = sceneNodesById.find(targetId);
         const bool unresolved = target == sceneNodesById.end();
         m_assetReferences.push_back({owner->id, targetId, owner->fullName(), property,
-            unresolved ? ("missing object #" + std::to_string(targetId)) : target->second->fullName(), true, unresolved});
+            unresolved ? ("missing object #" + std::to_string(targetId)) : target->second->fullName(), "", true, unresolved});
     };
     m_scene->forEach([&](SceneNode* node) {
         if (!node->texture.empty()) addAsset(node, "Texture", node->texture);
@@ -443,11 +466,14 @@ void ScriptEditorPanel::renderDependencyMap() {
         }
         ImGui::SameLine();
         ImGui::Checkbox("Only broken object links", &m_assetOnlyBrokenLinks);
+        ImGui::SameLine();
+        ImGui::Checkbox("Only missing local files", &m_assetOnlyMissingFiles);
         ImGui::BeginChild("##assetInventoryRows", ImVec2(0, 210.0f), true);
         int visibleReferences = 0;
         for (size_t i = 0; i < m_assetReferences.size(); ++i) {
             const auto& reference = m_assetReferences[i];
             if (m_assetOnlyBrokenLinks && !(reference.nodeLink && reference.unresolvedNode)) continue;
+            if (m_assetOnlyMissingFiles && (reference.nodeLink || reference.availability != "MISSING LOCAL FILE")) continue;
             const std::string haystack = reference.ownerPath + " " + reference.property + " " + reference.value;
             if (!m_assetSearch.empty() && haystack.find(m_assetSearch) == std::string::npos) continue;
             ++visibleReferences;
@@ -461,6 +487,14 @@ void ScriptEditorPanel::renderDependencyMap() {
             ImGui::TextDisabled("%s", reference.ownerPath.c_str());
             ImGui::SameLine();
             ImGui::TextWrapped("%s", reference.value.c_str());
+            if (!reference.nodeLink) {
+                ImGui::SameLine();
+                const bool missing = reference.availability == "MISSING LOCAL FILE";
+                const ImVec4 statusColor = missing ? ImVec4(0.95f, 0.35f, 0.3f, 1.0f)
+                    : reference.availability == "CACHED" || reference.availability == "LOCAL FILE" || reference.availability == "BUILT-IN"
+                        ? ImVec4(0.45f, 0.8f, 0.5f, 1.0f) : ImVec4(0.75f, 0.72f, 0.5f, 1.0f);
+                ImGui::TextColored(statusColor, "%s", reference.availability.c_str());
+            }
             if (!reference.nodeLink) {
                 const auto uses = resourceUseCounts.find(reference.value);
                 if (uses != resourceUseCounts.end() && uses->second > 1) {
