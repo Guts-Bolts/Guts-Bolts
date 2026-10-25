@@ -24,6 +24,10 @@ public:
     void runAnalysis();
     struct Issue { uint64_t script; std::string name; int line; bool error; std::string text; };
     const std::vector<Issue>& issues() const { return m_issues; }
+    // Project Dependency Map (View menu): static, best-effort script relationships.
+    void showDependencyMap() { m_showDependencyMap = true; m_dependencyAnalysedAt = -100.0; }
+    void renderDependencyMap();
+    void runDependencyMap();
 
 private:
     static int onEdit(ImGuiInputTextCallbackData* d);
@@ -65,4 +69,26 @@ private:
     bool               m_showAnalysis = false;
     double             m_analysedAt = -100.0;
     std::vector<Issue> m_issues;
+
+    // Project Dependency Map. Edges are static clues, not proof that a code path executes.
+    struct DependencyNode {
+        uint64_t id = 0;
+        std::string name, path;
+        int sourceBytes = 0, outgoing = 0, incoming = 0;
+    };
+    struct DependencyEdge {
+        uint64_t from = 0, to = 0;
+        std::string reason;
+    };
+    struct UnresolvedDependency {
+        uint64_t script = 0;
+        std::string path, expression;
+    };
+    bool m_showDependencyMap = false, m_dependencyOnlyUnresolved = false;
+    double m_dependencyAnalysedAt = -100.0;
+    uint64_t m_dependencySelected = 0;
+    std::string m_dependencySearch;
+    std::vector<DependencyNode> m_dependencyNodes;
+    std::vector<DependencyEdge> m_dependencyEdges;
+    std::vector<UnresolvedDependency> m_unresolvedDependencies;
 };
