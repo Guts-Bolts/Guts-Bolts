@@ -1150,8 +1150,10 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     // Knocked over (tripped, flung) or PlatformStand: the controls do nothing.
     const bool knocked = tripped();
     // (No keys pushed: a script's humanoid:Move(direction) walks us instead.)
-    const glm::vec3 moveDir = knocked ? glm::vec3(0.0f) : glm::length(moveIn) > 1e-4f ? moveIn : m_scriptMove;
-    const bool jump = knocked ? false : (jumpIn || m_scriptJump);
+    const glm::vec3 moveDir = (knocked || !m_nativeControlsEnabled)
+        ? (knocked ? glm::vec3(0.0f) : m_scriptMove)
+        : glm::length(moveIn) > 1e-4f ? moveIn : m_scriptMove;
+    const bool jump = knocked ? false : ((m_nativeControlsEnabled && jumpIn) || m_scriptJump);
     m_scriptJump = false;
     if (knocked && sitting()) standUp(false);
 
