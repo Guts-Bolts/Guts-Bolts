@@ -6,6 +6,9 @@
 #include <algorithm>
 #include <cstdlib>
 #include <string>
+#if defined(GB_IOS)
+#include <SDL.h>
+#endif
 
 namespace UpdateToast {
 
@@ -22,7 +25,10 @@ std::string g_error;
 std::string g_appName;
 
 void openUrl(const std::string& url) {
-#ifdef _WIN32
+#if defined(GB_IOS)
+    // SDL delegates URL opening to the platform; iOS forbids shell execution.
+    SDL_OpenURL(url.c_str());
+#elif defined(_WIN32)
     std::system(("start \"\" \"" + url + "\"").c_str());
 #elif defined(__APPLE__)
     std::system(("open \"" + url + "\"").c_str());
