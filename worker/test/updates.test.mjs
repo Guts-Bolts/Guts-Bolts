@@ -77,3 +77,15 @@ test('says "Library", never "Marketplace"', () => {
   for (const u of BUILT_IN_UPDATES)
     assert.ok(!/marketplace(?!service)/i.test(JSON.stringify(u)), `update "${u.id}" says Marketplace`);
 });
+
+
+test('Catalog Repair Shop is published in the website update log', () => {
+  const update = BUILT_IN_UPDATES.find((u) => u.id === 'catalog-item-workshop');
+  assert.ok(update, 'Catalog Repair Shop must be visible on the website update log');
+  assert.equal(update.tag, 'Studio');
+  const text = [update.name, update.summary, ...update.items].join(' ');
+  assert.match(text, /existing listing/);
+  assert.match(text, /position/);
+  assert.match(text, /mesh/);
+  assert.match(text, /ownership checks/);
+});
