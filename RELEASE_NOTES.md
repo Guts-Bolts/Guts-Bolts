@@ -1,3 +1,20 @@
+# Doctor, My Frame Rate Is Dying (October 25, 2026)
+
+Studio's new **Performance Doctor** explains likely performance problems using recent frame timings and scene complexity.
+
+## What it checks
+- Frame pacing, including the 95th-percentile frame delta and the share of recent frames over 33 ms.
+- Editor-thread update/UI timing, viewport CPU timing and simulation update timing.
+- Heuristic risk indicators for high part counts, unanchored physics bodies, enabled lights, particle emitters and large script source.
+- The five largest script sources, with a direct action to open each in the editor.
+- A copyable diagnosis report containing measurements, scene context, findings and recommended next steps.
+
+## Accuracy notes
+- Scene thresholds are risk indicators, not proof that an object count caused a slowdown.
+- Script source size is not execution-time data.
+- Frame deltas include waiting/presentation; CPU subtimings exclude GPU execution. Confirm suspected GPU bottlenecks with an appropriate external profiler.
+- The doctor does not modify the project automatically.
+
 # Who Depends on What? (October 24, 2026)
 
 Studio now has a **Project Dependency Map** for understanding how scripts reference one another.
