@@ -376,14 +376,14 @@ void ScriptEditorPanel::renderDependencyMap() {
             ImGui::TextWrapped("%s", selected.path.c_str());
             ImGui::TextDisabled("%d bytes of source", selected.sourceBytes);
             ImGui::Text("Relationship graph");
-            ImGui::BeginChild("##dependencyGraphCanvas", ImVec2(0, 220), true);
+            ImGui::BeginChild("##dependencyGraphCanvas", ImVec2(0, 250), true);
             const ImVec2 canvasPos = ImGui::GetCursorScreenPos();
             ImVec2 canvasSize = ImGui::GetContentRegionAvail();
             canvasSize.y = std::max(120.0f, canvasSize.y);
             ImDrawList* graphDraw = ImGui::GetWindowDrawList();
             const ImVec2 graphCenter(canvasPos.x + canvasSize.x * 0.5f,
                                      canvasPos.y + canvasSize.y * 0.5f);
-            const float centerW = 112.0f, centerH = 30.0f, neighborW = 96.0f, neighborH = 28.0f;
+            const float centerW = 100.0f, centerH = 30.0f, neighborW = 86.0f, neighborH = 26.0f;
             struct GraphNeighbor { uint64_t id; std::string name, path, relation; bool outgoing; };
             std::vector<GraphNeighbor> neighbors;
             for (const auto& edge : m_dependencyEdges) {
@@ -400,7 +400,7 @@ void ScriptEditorPanel::renderDependencyMap() {
                     neighbors.push_back({other, target->name, target->path, edge.reason, outgoing});
             }
             const size_t shown = std::min<size_t>(neighbors.size(), 6);
-            const float radius = std::max(42.0f, std::min(canvasSize.x * 0.37f, canvasSize.y * 0.40f));
+            const float radius = std::max(48.0f, std::min(canvasSize.x * 0.38f, canvasSize.y * 0.43f));
             std::vector<ImVec2> neighborCenters;
             for (size_t i = 0; i < shown; ++i) {
                 const float angle = -1.57079632679f + 6.28318530718f * (float)i / (float)shown;
