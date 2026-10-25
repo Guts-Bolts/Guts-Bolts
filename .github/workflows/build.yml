@@ -81,19 +81,42 @@ jobs:
             GutsAndBoltsPlayer-Quest.apk
 
   ios-simulator:
-    name: iOS Player (simulator compile)
+    name: iOS Player (simulator and device compile)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Configure iOS simulator
         run: |
-          cmake -S . -B build-ios -G Xcode \
+          cmake -S . -B build-ios-sim -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
             -DCMAKE_OSX_SYSROOT=iphonesimulator \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=Release
-      - name: Compile Player
-        run: cmake --build build-ios --config Release --target GutsAndBoltsPlayer
+      - name: Compile simulator Player
+        run: cmake --build build-ios-sim --config Release --target GutsAndBoltsPlayer
+      - name: Package simulator app for inspection
+        run: |
+          app="$(find build-ios-sim -type d -name GutsAndBoltsPlayer.app -print -quit)"
+          test -n "$app"
+          test -f "$app/Info.plist"
+          test -d "$app/Resources/games"
+          test -d "$app/Resources/catalog"
+          test -d "$app/Resources/assets"
+          ditto -c -k --sequesterRsrc --keepParent "$app" GutsAndBoltsPlayer-iOS-Simulator.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-app
+          path: GutsAndBoltsPlayer-iOS-Simulator.zip
+          if-no-files-found: error
+      - name: Configure iOS device target (unsigned)
+        run: |
+          cmake -S . -B build-ios-device -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_BUILD_TYPE=Release
+      - name: Compile device Player (signing not required for compile)
+        run: cmake --build build-ios-device --config Release --target GutsAndBoltsPlayer
 
   linux:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
