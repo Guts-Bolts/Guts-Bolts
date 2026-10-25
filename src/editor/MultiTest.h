@@ -54,6 +54,7 @@ public:
     struct Process;   // a program we started, and what it prints (MultiTest.cpp)
 
 private:
+    struct InputTrace { std::string player; std::string path; };
     bool startPlayer(std::string& error);
     void take(Process& p);   // its new lines -> Output
 
@@ -69,5 +70,6 @@ private:
     int64_t      m_sessionEndedEpoch = 0;
     size_t       m_playerWindowsOpened = 0;
     std::string  m_placeSnapshot;
+    std::vector<InputTrace> m_inputTraces;
     std::deque<Line> m_output;
 };
