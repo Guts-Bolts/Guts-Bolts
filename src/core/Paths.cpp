@@ -129,17 +129,28 @@ void installBundledFiles() {
 #endif
     if (installed != version) {
         std::error_code ec;
-        for (const char* name : {"games", "catalog"}) {
+        bool complete = true;
+        // Runtime code uses appFolder() for both built-in content and writable
+        // user data. The signed .app is read-only, so install each packaged
+        // resource tree into the app's writable sandbox before the Player loads.
+        for (const char* name : {"games", "catalog", "assets"}) {
             const auto src = resources / name;
             const auto dst = appFolder() / name;
-            if (std::filesystem::exists(src, ec)) {
-                std::filesystem::create_directories(dst, ec);
+            ec.clear();
+            if (!std::filesystem::exists(src, ec) || ec) {
+                complete = false;
+                continue;
+            }
+            std::filesystem::create_directories(dst, ec);
+            if (!ec) {
                 std::filesystem::copy(src, dst, std::filesystem::copy_options::recursive |
                     std::filesystem::copy_options::overwrite_existing, ec);
-                ec.clear();
             }
+            if (ec) complete = false;
         }
-        std::ofstream(stamp, std::ios::trunc) << version << "\n";
+        // Do not mark a partial installation as current. The next launch will
+        // retry any copy that failed rather than silently keeping broken assets.
+        if (complete) std::ofstream(stamp, std::ios::trunc) << version << "\n";
     }
     SDL_free((void*)base);
 #endif
