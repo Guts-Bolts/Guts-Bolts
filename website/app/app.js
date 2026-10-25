@@ -2077,7 +2077,12 @@ pages.user = async (id, tab, page, more) => {
   if (tab === 'friends' || tab === 'following' || tab === 'followers') { await peoplePage(id, tab, page); return; }
   if (tab === 'inventory') { await inventoryPage(id, page, more); return; }
   const r = await pageCall('profile', { id });
-  if (!r.ok) { show(html`<h1>Not found</h1><p class="muted">${r.error}</p>`); return; }
+  if (!r.ok) {
+    if (r.code === 'USER_DELETED' || /USER_DELETED/.test(r.error || '')) {
+      show(html`<div class="box" role="status"><h1>[ Content Deleted ]</h1><p class="muted">This user has been deleted.</p><p class="small muted">Error Code: USER_DELETED</p></div>`);
+    } else show(html`<h1>Not found</h1><p class="muted">${r.error}</p>`);
+    return;
+  }
   const u = r.user;
   const f = r.friendship;
   // People are known by their user number: show #/user/5, not the long account key.
