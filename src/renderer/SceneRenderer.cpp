@@ -1775,9 +1775,7 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
     };
     auto done = [&]() {
 #if !defined(GB_IOS)
-    #if !defined(GB_IOS)
-    if (onGpu) glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
-#endif
+        if (onGpu) glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 #endif
         glBindVertexArray(0);
     };
@@ -1876,7 +1874,9 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
     glDisable(GL_BLEND);
 
     // 3. Smooth the surface (twice across, twice down).
+#if !defined(GB_IOS)
     if (onGpu) glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
+#endif
     glBindVertexArray(m_emptyVao);
     m_fluidBlur->bind();
     m_fluidBlur->setInt("uSrc", 0);
