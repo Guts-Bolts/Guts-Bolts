@@ -222,6 +222,7 @@ bool MultiTest::start(const std::string& place, int players, std::string& error)
     stop();
     m_output.clear();
     m_placeSnapshot.clear();
+    m_inputTraces.clear();
     m_sessionStartedEpoch = 0;
     m_sessionEndedEpoch = 0;
     m_lastDuration = 0.0;
@@ -264,9 +265,17 @@ bool MultiTest::start(const std::string& place, int players, std::string& error)
 bool MultiTest::startPlayer(std::string& error) {
     auto p = std::make_unique<Process>();
     p->name = "Player" + std::to_string(m_players.size() + 1);
+    std::error_code ec;
+    const auto directory = std::filesystem::temp_directory_path(ec) / "GutsAndBoltsTestSessions";
+    if (ec) { error = "Couldn't find a temporary folder for the player input trace."; return false; }
+    std::filesystem::create_directories(directory, ec);
+    if (ec) { error = "Couldn't create the input-trace folder: " + directory.string(); return false; }
+    const auto tracePath = directory / ("input-" + std::to_string(m_sessionStartedEpoch) + "-" + p->name + ".jsonl");
     if (!p->start(Paths::sibling("GutsAndBoltsPlayer"),
-                  {"--studio-test", "127.0.0.1:" + std::to_string(m_port), "--name", p->name}, error))
+                  {"--studio-test", "127.0.0.1:" + std::to_string(m_port), "--name", p->name,
+                   "--studio-input-trace", tracePath.string()}, error))
         return false;
+    m_inputTraces.push_back({p->name, tracePath.string()});
     m_players.push_back(std::move(p));
     ++m_playerWindowsOpened;
     return true;
@@ -406,6 +415,25 @@ bool MultiTest::exportSession(std::string& path, std::string& error) const {
         return a.at("elapsed_seconds").get<double>() < b.at("elapsed_seconds").get<double>();
     });
 
+    // Embed each player's sampled controls so the bundle is self-contained. Incomplete
+    // final JSONL records (for example, if a process was force-closed) are skipped.
+    nlohmann::json inputTraces = nlohmann::json::array();
+    for (const auto& trace : m_inputTraces) {
+        nlohmann::json samples = nlohmann::json::array();
+        std::ifstream input(trace.path, std::ios::binary);
+        std::string record;
+        while (std::getline(input, record)) {
+            if (record.empty()) continue;
+            try { samples.push_back(nlohmann::json::parse(record)); }
+            catch (const nlohmann::json::parse_error&) { /* ignore a partial final line */ }
+        }
+        inputTraces.push_back({
+            {"player", trace.player},
+            {"sample_interval_seconds", 0.05},
+            {"samples", std::move(samples)}
+        });
+    }
+
     nlohmann::json bundle = {
         {"format", "gutsandbolts-multiplayer-session"},
         {"format_version", 1},
@@ -416,9 +444,11 @@ bool MultiTest::exportSession(std::string& path, std::string& error) const {
         {"player_windows_opened", m_playerWindowsOpened},
         {"scene_snapshot", m_placeSnapshot},
         {"timeline", lines},
+        {"input_traces", inputTraces},
         {"limitations", {
-            "This bundle captures the scene snapshot and timestamped process output for diagnosis.",
-            "It does not record inputs or physics state and cannot deterministically replay gameplay.",
+            "Input traces sample effective character movement, jump, dive, camera, touch, and tool state at roughly 20 samples per second.",
+            "The traces are diagnostic only: they do not capture every click, UI edit, script event, random value, or authoritative physics state and cannot deterministically replay gameplay.",
+            "Each player trace stops after 50,000 samples to keep session files bounded.",
             "The scene snapshot may contain private scripts or unpublished game content; review before sharing."
         }}
     };
