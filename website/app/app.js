@@ -753,14 +753,14 @@ function loadForumAvatars(root = view) {
     el.dataset.loading = '1';
     const size = Number(el.dataset.size) || 72;
     try {
-      // Forum payloads can contain both the internal account ID and public player number.
-      // Try both, preferring the public number used by profile URLs.
+      // Use the same profile lookup and worn-item resolution as the actual player page.
+      // This is a background avatar request, so it must not be cancelled by pageToken.
       const ids = [...new Set([listedUser.userId, listedUser.id, key].filter((x) => x != null && String(x)))];
       let profile = null;
       let lastError = null;
       for (const id of ids) {
         try {
-          const r = await pageCall('profile', { id: String(id) });
+          const r = await call('profile', { id: String(id) });
           if (r.ok && r.user && r.user.avatar && typeof r.user.avatar === 'object') {
             profile = r;
             break;
@@ -770,20 +770,23 @@ function loadForumAvatars(root = view) {
       }
       if (!profile) throw lastError || new Error('Could not load player avatar profile');
       const user = profile.user;
-      const avatar = user.avatar;
-      const worn = Array.isArray(profile.wearing) ? profile.wearing : [];
-      const url = await avatarPicture(avatar, worn, size);
-      if (url && el.isConnected) {
+      let worn = profile.wearing;
+      if (!worn) {
+        const idsToResolve = user.avatar && Array.isArray(user.avatar.wearing) ? user.avatar.wearing : [];
+        worn = idsToResolve.length
+          ? ((await call('list', { kind: 'clothing', limit: 100 })).assets || []).filter((item) => idsToResolve.includes(item.id))
+          : [];
+      }
+      const url = await avatarPicture(user.avatar, worn, size);
+      if (!el.isConnected) return;
+      if (url) {
         el.innerHTML = html`<img src="${url}" alt="${user.username || user.name || listedUser.name || 'Player'}" width="${size}" height="${Math.round(size * 1.28)}" style="display:block;object-fit:contain">`.s;
-      } else if (el.isConnected) {
-        el.innerHTML = avatarSvg(avatar, size, worn, false).s;
+      } else {
+        el.innerHTML = avatarSvg(user.avatar, size, worn, false).s;
       }
     } catch (err) {
       console.warn('Forum avatar render failed for player', key, err);
-      // Do not replace the visible fallback with another default noob.
-      if (el.isConnected && listedUser.avatar && typeof listedUser.avatar === 'object') {
-        el.innerHTML = avatarSvg(listedUser.avatar, size, listedUser.wearing || [], false).s;
-      }
+      // Keep the initial avatar placeholder rather than incorrectly presenting a default noob as their real avatar.
     }
   });
 }
