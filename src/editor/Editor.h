@@ -265,7 +265,7 @@ private:
         glm::vec2 boxStart{0.0f};
     } m_uv;
     int         m_accessoryKind = 0, m_accessoryPrice = 0;
-    std::string m_accessoryName, m_accessoryDesc, m_accessoryMsg;
+    std::string m_accessoryName, m_accessoryDesc, m_accessoryMsg, m_accessoryEditId;
     bool        m_showBundles = false, m_bundleHeadless = false;
     int         m_bundlePrice = 0;
     std::string m_bundleName, m_bundleDesc, m_bundleItems, m_bundleMsg;
