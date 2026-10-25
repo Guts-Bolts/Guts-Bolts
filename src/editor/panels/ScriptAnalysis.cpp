@@ -10,8 +10,12 @@
 #include "../../scripting/ScriptEngine.h"
 #include "../../scripting/Luau.h"
 
+#include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <set>
+#include <regex>
+#include <unordered_map>
 #include <imgui.h>
 
 extern "C" {
@@ -196,5 +200,315 @@ void ScriptEditorPanel::renderAnalysis() {
         ImGui::PopID();
     }
     ImGui::EndChild();
+    ImGui::End();
+}
+
+
+namespace {
+
+// Matches a complete identifier so "Door" does not accidentally match "DoorFrame".
+bool containsIdentifier(const std::string& text, const std::string& name) {
+    if (name.empty()) return false;
+    size_t at = 0;
+    while ((at = text.find(name, at)) != std::string::npos) {
+        const bool left = at == 0 || !(std::isalnum((unsigned char)text[at - 1]) || text[at - 1] == '_');
+        const size_t end = at + name.size();
+        const bool right = end >= text.size() || !(std::isalnum((unsigned char)text[end]) || text[end] == '_');
+        if (left && right) return true;
+        at = end;
+    }
+    return false;
+}
+
+std::string trimDependencyExpression(std::string s) {
+    const size_t first = s.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return {};
+    const size_t last = s.find_last_not_of(" \t\r\n");
+    return s.substr(first, last - first + 1);
+}
+
+} // namespace
+
+void ScriptEditorPanel::runDependencyMap() {
+    m_dependencyNodes.clear();
+    m_dependencyEdges.clear();
+    m_unresolvedDependencies.clear();
+
+    std::vector<SceneNode*> scripts;
+    m_scene->forEach([&](SceneNode* node) {
+        if (!node->isScript()) return;
+        scripts.push_back(node);
+        m_dependencyNodes.push_back({node->id, node->name, node->fullName(),
+                                     (int)node->source.size(), 0, 0});
+    });
+
+    // Only claim relationships when a require() expression or a named child lookup
+    // explicitly mentions another script's name. This is static evidence, not runtime tracing.
+    const std::regex requirePattern(R"(\brequire\s*\(\s*([^\)]*)\))");
+    const std::regex childPattern(R"rx((?:WaitForChild|FindFirstChild)\s*\(\s*["']([^"']+)["']\s*\))rx");
+    auto addEdge = [&](uint64_t from, uint64_t to, const std::string& reason) {
+        if (from == to) return;
+        for (const auto& edge : m_dependencyEdges)
+            if (edge.from == from && edge.to == to && edge.reason == reason) return;
+        m_dependencyEdges.push_back({from, to, reason});
+    };
+
+    for (SceneNode* source : scripts) {
+        const std::string& text = source->source;
+        for (std::sregex_iterator it(text.begin(), text.end(), requirePattern), end; it != end; ++it) {
+            const std::string expression = trimDependencyExpression((*it)[1].str());
+            if (expression.empty()) continue;
+            bool found = false;
+            for (SceneNode* target : scripts) {
+                if (target == source || !containsIdentifier(expression, target->name)) continue;
+                addEdge(source->id, target->id, "require()");
+                found = true;
+            }
+            // Numeric module IDs are external assets, not missing local scripts.
+            const bool numericId = std::all_of(expression.begin(), expression.end(),
+                [](unsigned char c) { return std::isdigit(c) || std::isspace(c); });
+            if (!found && !numericId)
+                m_unresolvedDependencies.push_back({source->id, source->fullName(), expression});
+        }
+
+        for (std::sregex_iterator it(text.begin(), text.end(), childPattern), end; it != end; ++it) {
+            const std::string childName = (*it)[1].str();
+            for (SceneNode* target : scripts) {
+                if (target != source && target->name == childName)
+                    addEdge(source->id, target->id, "child lookup");
+            }
+        }
+    }
+
+    std::unordered_map<uint64_t, DependencyNode*> byId;
+    for (auto& node : m_dependencyNodes) byId[node.id] = &node;
+    for (const auto& edge : m_dependencyEdges) {
+        if (auto it = byId.find(edge.from); it != byId.end()) ++it->second->outgoing;
+        if (auto it = byId.find(edge.to); it != byId.end()) ++it->second->incoming;
+    }
+    if (!m_dependencySelected || !byId.count(m_dependencySelected))
+        m_dependencySelected = m_dependencyNodes.empty() ? 0 : m_dependencyNodes.front().id;
+}
+
+void ScriptEditorPanel::renderDependencyMap() {
+    if (!m_showDependencyMap) return;
+    ImGui::SetNextWindowSize(ImVec2(900, 540), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Project Dependency Map", &m_showDependencyMap)) { ImGui::End(); return; }
+    if (ImGui::GetTime() - m_dependencyAnalysedAt > 2.0) {
+        runDependencyMap();
+        m_dependencyAnalysedAt = ImGui::GetTime();
+    }
+
+    ImGui::Text("%d scripts", (int)m_dependencyNodes.size());
+    ImGui::SameLine();
+    ImGui::TextDisabled("%d relationships", (int)m_dependencyEdges.size());
+    ImGui::SameLine();
+    ImGui::TextColored(m_unresolvedDependencies.empty() ? ImVec4(0.45f, 0.8f, 0.5f, 1.0f)
+                                                         : ImVec4(0.95f, 0.7f, 0.25f, 1.0f),
+                       "%d unresolved require() expressions", (int)m_unresolvedDependencies.size());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Refresh")) {
+        runDependencyMap();
+        m_dependencyAnalysedAt = ImGui::GetTime();
+    }
+    ImGui::SetNextItemWidth(260.0f);
+    char dependencySearchBuffer[512] = {};
+    std::copy(m_dependencySearch.begin(),
+              m_dependencySearch.begin() + std::min(m_dependencySearch.size(), sizeof(dependencySearchBuffer) - 1),
+              dependencySearchBuffer);
+    if (ImGui::InputTextWithHint("##dependencySearch", "Filter by script name or path...",
+                                 dependencySearchBuffer, sizeof(dependencySearchBuffer))) {
+        m_dependencySearch = dependencySearchBuffer;
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Only scripts with unresolved require()", &m_dependencyOnlyUnresolved);
+    ImGui::TextDisabled("Relationships are inferred from require() and named child lookups. They are not runtime call traces.");
+    ImGui::Separator();
+
+    if (ImGui::BeginTable("##dependencyLayout", 2,
+            ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV)) {
+        ImGui::TableSetupColumn("Scripts", ImGuiTableColumnFlags_WidthStretch, 1.2f);
+        ImGui::TableSetupColumn("Selected script", ImGuiTableColumnFlags_WidthStretch, 1.0f);
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::BeginChild("##dependencyScripts", ImVec2(0, 0), false);
+        if (ImGui::BeginTable("##dependencyScriptRows", 4,
+                ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH |
+                ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY)) {
+            ImGui::TableSetupColumn("Script", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Uses", ImGuiTableColumnFlags_WidthFixed, 42.0f);
+            ImGui::TableSetupColumn("Used by", ImGuiTableColumnFlags_WidthFixed, 58.0f);
+            ImGui::TableSetupColumn("Bytes", ImGuiTableColumnFlags_WidthFixed, 55.0f);
+            ImGui::TableHeadersRow();
+            for (const auto& node : m_dependencyNodes) {
+                const bool unresolved = std::any_of(m_unresolvedDependencies.begin(), m_unresolvedDependencies.end(),
+                    [&](const UnresolvedDependency& d) { return d.script == node.id; });
+                if (m_dependencyOnlyUnresolved && !unresolved) continue;
+                if (!m_dependencySearch.empty() &&
+                    node.path.find(m_dependencySearch) == std::string::npos &&
+                    node.name.find(m_dependencySearch) == std::string::npos) continue;
+                ImGui::TableNextRow();
+                ImGui::PushID((int)(node.id & 0x7fffffff));
+                ImGui::TableNextColumn();
+                if (ImGui::Selectable((node.name + "##dependency").c_str(),
+                                      m_dependencySelected == node.id,
+                                      ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
+                    m_dependencySelected = node.id;
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        if (SceneNode* selected = m_scene->findById(node.id)) {
+                            m_scene->select(selected);
+                            open(node.id);
+                            m_focusCode = true;
+                        }
+                    }
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", node.path.c_str());
+                ImGui::TableNextColumn(); ImGui::Text("%d", node.outgoing);
+                ImGui::TableNextColumn(); ImGui::Text("%d", node.incoming);
+                ImGui::TableNextColumn(); ImGui::Text("%d", node.sourceBytes);
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+        ImGui::EndChild();
+
+        ImGui::TableNextColumn();
+        ImGui::BeginChild("##dependencyDetails", ImVec2(0, 0), false);
+        const auto selectedIt = std::find_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+            [&](const DependencyNode& node) { return node.id == m_dependencySelected; });
+        if (selectedIt == m_dependencyNodes.end()) {
+            ImGui::TextDisabled("No scripts in this project yet.");
+        } else {
+            const DependencyNode& selected = *selectedIt;
+            ImGui::TextWrapped("%s", selected.path.c_str());
+            ImGui::TextDisabled("%d bytes of source", selected.sourceBytes);
+            ImGui::Text("Relationship graph");
+            ImGui::BeginChild("##dependencyGraphCanvas", ImVec2(0, 250), true);
+            const ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+            ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+            canvasSize.y = std::max(120.0f, canvasSize.y);
+            ImDrawList* graphDraw = ImGui::GetWindowDrawList();
+            const ImVec2 graphCenter(canvasPos.x + canvasSize.x * 0.5f,
+                                     canvasPos.y + canvasSize.y * 0.5f);
+            const float centerW = 100.0f, centerH = 30.0f, neighborW = 86.0f, neighborH = 26.0f;
+            struct GraphNeighbor { uint64_t id; std::string name, path, relation; bool outgoing; };
+            std::vector<GraphNeighbor> neighbors;
+            for (const auto& edge : m_dependencyEdges) {
+                uint64_t other = 0;
+                bool outgoing = false;
+                if (edge.from == selected.id) { other = edge.to; outgoing = true; }
+                else if (edge.to == selected.id) { other = edge.from; outgoing = false; }
+                else continue;
+                if (std::any_of(neighbors.begin(), neighbors.end(),
+                    [&](const GraphNeighbor& n) { return n.id == other; })) continue;
+                auto target = std::find_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+                    [&](const DependencyNode& n) { return n.id == other; });
+                if (target != m_dependencyNodes.end())
+                    neighbors.push_back({other, target->name, target->path, edge.reason, outgoing});
+            }
+            const size_t shown = std::min<size_t>(neighbors.size(), 6);
+            const float radius = std::max(48.0f, std::min(canvasSize.x * 0.38f, canvasSize.y * 0.43f));
+            std::vector<ImVec2> neighborCenters;
+            for (size_t i = 0; i < shown; ++i) {
+                const float angle = -1.57079632679f + 6.28318530718f * (float)i / (float)shown;
+                neighborCenters.emplace_back(graphCenter.x + std::cos(angle) * radius,
+                                             graphCenter.y + std::sin(angle) * radius);
+                const ImU32 edgeColor = ImGui::ColorConvertFloat4ToU32(
+                    neighbors[i].outgoing ? ImVec4(0.35f, 0.72f, 1.0f, 1.0f)
+                                           : ImVec4(0.95f, 0.72f, 0.32f, 1.0f));
+                graphDraw->AddLine(graphCenter, neighborCenters.back(), edgeColor, 2.0f);
+            }
+            graphDraw->AddRectFilled(ImVec2(graphCenter.x - centerW * 0.5f, graphCenter.y - centerH * 0.5f),
+                                     ImVec2(graphCenter.x + centerW * 0.5f, graphCenter.y + centerH * 0.5f),
+                                     ImGui::ColorConvertFloat4ToU32(ImVec4(0.18f, 0.36f, 0.58f, 1.0f)), 5.0f);
+            graphDraw->AddRect(ImVec2(graphCenter.x - centerW * 0.5f, graphCenter.y - centerH * 0.5f),
+                               ImVec2(graphCenter.x + centerW * 0.5f, graphCenter.y + centerH * 0.5f),
+                               ImGui::ColorConvertFloat4ToU32(ImVec4(0.45f, 0.68f, 1.0f, 1.0f)), 5.0f);
+            const std::string centerLabel = selected.name.size() > 16 ? selected.name.substr(0, 15) + "…" : selected.name;
+            const ImVec2 centerText = ImGui::CalcTextSize(centerLabel.c_str());
+            graphDraw->AddText(ImVec2(graphCenter.x - centerText.x * 0.5f, graphCenter.y - centerText.y * 0.5f),
+                               IM_COL32(255, 255, 255, 255), centerLabel.c_str());
+            ImGui::Dummy(canvasSize);
+            ImGui::SetCursorScreenPos(ImVec2(graphCenter.x - centerW * 0.5f, graphCenter.y - centerH * 0.5f));
+            ImGui::InvisibleButton("##dependencyGraphCenter", ImVec2(centerW, centerH));
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", selected.path.c_str());
+            for (size_t i = 0; i < shown; ++i) {
+                const ImVec2 p(neighborCenters[i].x - neighborW * 0.5f, neighborCenters[i].y - neighborH * 0.5f);
+                const ImU32 fill = ImGui::ColorConvertFloat4ToU32(
+                    neighbors[i].outgoing ? ImVec4(0.12f, 0.22f, 0.31f, 1.0f)
+                                           : ImVec4(0.30f, 0.23f, 0.12f, 1.0f));
+                graphDraw->AddRectFilled(p, ImVec2(p.x + neighborW, p.y + neighborH), fill, 4.0f);
+                graphDraw->AddRect(p, ImVec2(p.x + neighborW, p.y + neighborH),
+                    ImGui::ColorConvertFloat4ToU32(neighbors[i].outgoing ? ImVec4(0.35f, 0.72f, 1.0f, 1.0f)
+                                                                          : ImVec4(0.95f, 0.72f, 0.32f, 1.0f)), 4.0f);
+                const std::string label = neighbors[i].name.size() > 13 ? neighbors[i].name.substr(0, 12) + "…" : neighbors[i].name;
+                const ImVec2 labelSize = ImGui::CalcTextSize(label.c_str());
+                graphDraw->AddText(ImVec2(p.x + (neighborW - labelSize.x) * 0.5f,
+                                          p.y + (neighborH - labelSize.y) * 0.5f),
+                                   IM_COL32(235, 240, 248, 255), label.c_str());
+                ImGui::SetCursorScreenPos(p);
+                ImGui::PushID((int)(neighbors[i].id & 0x7fffffff));
+                ImGui::InvisibleButton("##dependencyGraphNode", ImVec2(neighborW, neighborH));
+                if (ImGui::IsItemClicked()) m_dependencySelected = neighbors[i].id;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s\n%s", neighbors[i].path.c_str(),
+                                                               neighbors[i].outgoing ? "Used by selected script" : "Uses selected script");
+                ImGui::PopID();
+            }
+            if (neighbors.size() > shown) {
+                ImGui::SetCursorScreenPos(ImVec2(canvasPos.x + 8.0f, canvasPos.y + canvasSize.y - ImGui::GetTextLineHeightWithSpacing()));
+                ImGui::TextDisabled("+%d more relationship(s) listed below", (int)(neighbors.size() - shown));
+            }
+            ImGui::SetCursorScreenPos(ImVec2(canvasPos.x, canvasPos.y + canvasSize.y + ImGui::GetStyle().ItemSpacing.y));
+            ImGui::EndChild();
+            ImGui::TextDisabled("Blue: selected script uses target. Gold: another script uses selected.");
+            if (ImGui::Button("Open script")) {
+                if (SceneNode* node = m_scene->findById(selected.id)) {
+                    m_scene->select(node);
+                    open(selected.id);
+                    m_focusCode = true;
+                }
+            }
+            ImGui::SeparatorText("Depends on");
+            bool anyOutgoing = false;
+            for (const auto& edge : m_dependencyEdges) if (edge.from == selected.id) {
+                anyOutgoing = true;
+                auto target = std::find_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+                    [&](const DependencyNode& node) { return node.id == edge.to; });
+                if (target == m_dependencyNodes.end()) continue;
+                ImGui::PushID((int)(edge.to & 0x7fffffff));
+                if (ImGui::Selectable((target->path + "##outgoing").c_str())) m_dependencySelected = edge.to;
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", edge.reason.c_str());
+                ImGui::PopID();
+            }
+            if (!anyOutgoing) ImGui::TextDisabled("No statically detected local script dependencies.");
+            ImGui::SeparatorText("Used by");
+            bool anyIncoming = false;
+            for (const auto& edge : m_dependencyEdges) if (edge.to == selected.id) {
+                anyIncoming = true;
+                auto source = std::find_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+                    [&](const DependencyNode& node) { return node.id == edge.from; });
+                if (source == m_dependencyNodes.end()) continue;
+                ImGui::PushID((int)(edge.from & 0x7fffffff));
+                if (ImGui::Selectable((source->path + "##incoming").c_str())) m_dependencySelected = edge.from;
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", edge.reason.c_str());
+                ImGui::PopID();
+            }
+            if (!anyIncoming) ImGui::TextDisabled("No statically detected callers or lookups.");
+            ImGui::SeparatorText("Unresolved require() expressions");
+            bool anyUnresolved = false;
+            for (const auto& dep : m_unresolvedDependencies) if (dep.script == selected.id) {
+                anyUnresolved = true;
+                ImGui::PushID((int)(&dep - m_unresolvedDependencies.data()));
+                ImGui::TextWrapped("%s", dep.expression.c_str());
+                ImGui::TextDisabled("Could not match this expression to another local script by name.");
+                ImGui::PopID();
+            }
+            if (!anyUnresolved) ImGui::TextDisabled("No unresolved require() expressions for this script.");
+        }
+        ImGui::EndChild();
+        ImGui::EndTable();
+    }
     ImGui::End();
 }

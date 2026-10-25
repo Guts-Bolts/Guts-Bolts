@@ -1,3 +1,18 @@
+# Who Depends on What? (October 24, 2026)
+
+Studio now has a **Project Dependency Map** for understanding how scripts reference one another.
+
+## What changed
+- A searchable list of all scripts, with incoming and outgoing relationship counts.
+- A detail view showing detected dependencies, scripts that reference the selected script, and unresolved `require()` expressions.
+- Double-click a script in the list or use **Open script** to jump into the code editor.
+- The map refreshes automatically and includes a manual refresh button.
+- A website update entry and automated regression test keep the feature documented.
+
+## Accuracy notes
+- Relationships are inferred from static `require()` expressions and named `WaitForChild()` / `FindFirstChild()` lookups.
+- This is not a runtime call graph. Dynamic module selection, aliases, and computed paths may not be resolvable; those `require()` expressions are reported as unresolved rather than confirmed missing scripts.
+
 # Studio: Better Tools, Fewer Guessing Games (October 24, 2026)
 
 Studio's diagnostics and everyday creation tools got a substantial pass.

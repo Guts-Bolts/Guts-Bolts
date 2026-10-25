@@ -205,6 +205,7 @@ void Editor::render(float dt) {
     if (m_showPanel[kPanelScript])     m_scriptEditor->render();
     m_scriptEditor->renderFindAll();
     m_scriptEditor->renderAnalysis();
+    m_scriptEditor->renderDependencyMap();
     renderServerDialog();
     renderPublishDialog();
     renderPublishModelDialog();
@@ -1981,6 +1982,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Collapse All", "Ctrl+Shift+Left")) m_outliner->collapseAll();
         ImGui::Separator();
         if (ImGui::MenuItem("Script Analysis", nullptr, m_scriptEditor->analysisShown())) m_scriptEditor->showAnalysis();
+        if (ImGui::MenuItem("Project Dependency Map")) m_scriptEditor->showDependencyMap();
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
