@@ -80,6 +80,7 @@ private:
     void renderDialogs();
     void renderTeamPanel();
     void renderPerformanceWindow();
+    void renderPerformanceDoctor();
     void handleShortcuts();
 
     // Creating / removing things
@@ -280,6 +281,13 @@ private:
     bool m_firstLayout = true;
     bool m_showSettings = false;
     bool m_showPerformance = false;
+    bool m_showPerformanceDoctor = false;
+    struct PerformanceDoctorScript { uint64_t id = 0; std::string path; std::size_t sourceBytes = 0; };
+    double m_perfDoctorLastScan = -100.0;
+    int m_perfDoctorObjects = 0, m_perfDoctorParts = 0, m_perfDoctorDynamicParts = 0;
+    int m_perfDoctorLights = 0, m_perfDoctorEmitters = 0, m_perfDoctorScriptsCount = 0;
+    std::size_t m_perfDoctorTotalScriptBytes = 0;
+    std::vector<PerformanceDoctorScript> m_perfDoctorLargestScripts;
     float m_perfCpuFrameMs = 0.0f, m_perfViewportMs = 0.0f, m_perfSimulationMs = 0.0f;
     std::vector<float> m_perfFrameSamples; // rolling frame-delta samples in milliseconds
     int m_perfHitchCount = 0; // frames over 33 ms in the current rolling sample window
