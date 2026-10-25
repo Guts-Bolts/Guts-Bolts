@@ -1,3 +1,7 @@
+# The Floor Is Now A Crime Scene (October 25, 2026)
+
+The engine gore overhaul is being scoped around the existing R6 ragdoll and dismemberment systems, with the next iteration focused on gravity-driven blood streaks, persistent floor pooling, surface-aware splashes, configurable anatomical visual layers, and bounded multiplayer effects. The design prioritizes convincing results without unbounded particles or per-droplet network replication. This change records the implementation plan; the simulation features themselves are not yet implemented.
+
 # The Bug Has a Paper Trail (October 25, 2026)
 
 Studio can export a multiplayer test session bundle from **Mode > Players**. The JSON file combines the scene snapshot used for the test with a chronological timeline of server and Player-window output. Each line includes its source, severity, displayed log time, and seconds since the test started. The export path is printed in Studio Output and the bundle is saved under the temporary `GutsAndBoltsTestSessions` directory.
