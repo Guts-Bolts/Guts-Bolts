@@ -286,6 +286,29 @@ void ScriptEditorPanel::runDependencyMap() {
         if (auto it = byId.find(edge.from); it != byId.end()) ++it->second->outgoing;
         if (auto it = byId.find(edge.to); it != byId.end()) ++it->second->incoming;
     }
+    // Mark scripts participating in a directed dependency cycle. A cycle can cause
+    // recursive module loading or make the order of initialization difficult to reason about.
+    std::unordered_map<uint64_t, int> visitState;
+    std::vector<uint64_t> visitStack;
+    std::function<void(uint64_t)> visit = [&](uint64_t current) {
+        visitState[current] = 1;
+        visitStack.push_back(current);
+        for (const auto& edge : m_dependencyEdges) {
+            if (edge.from != current) continue;
+            if (visitState[edge.to] == 0) {
+                visit(edge.to);
+            } else if (visitState[edge.to] == 1) {
+                auto cycleStart = std::find(visitStack.begin(), visitStack.end(), edge.to);
+                for (auto it = cycleStart; it != visitStack.end(); ++it)
+                    if (auto found = byId.find(*it); found != byId.end()) found->second->cyclic = true;
+            }
+        }
+        visitStack.pop_back();
+        visitState[current] = 2;
+    };
+    for (const auto& node : m_dependencyNodes)
+        if (visitState[node.id] == 0) visit(node.id);
+
     if (!m_dependencySelected || !byId.count(m_dependencySelected))
         m_dependencySelected = m_dependencyNodes.empty() ? 0 : m_dependencyNodes.front().id;
 }
@@ -308,6 +331,11 @@ void ScriptEditorPanel::renderDependencyMap() {
     ImGui::Text("%d scripts", (int)m_dependencyNodes.size());
     ImGui::SameLine();
     ImGui::TextDisabled("%d relationships", (int)m_dependencyEdges.size());
+    ImGui::SameLine();
+    const int cyclicCount = (int)std::count_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+        [](const DependencyNode& node) { return node.cyclic; });
+    ImGui::TextColored(cyclicCount ? ImVec4(0.95f, 0.45f, 0.35f, 1.0f) : ImVec4(0.45f, 0.8f, 0.5f, 1.0f),
+                       "%d in cycles", cyclicCount);
     ImGui::SameLine();
     ImGui::TextColored(isolatedCount ? ImVec4(0.95f, 0.7f, 0.25f, 1.0f) : ImVec4(0.45f, 0.8f, 0.5f, 1.0f),
                        "%d isolated", isolatedCount);
@@ -576,6 +604,9 @@ void ScriptEditorPanel::renderDependencyMap() {
             if (sameNameCount > 1)
                 ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.25f, 1.0f),
                                    "Warning: %d scripts share this name; name-based matches may be ambiguous.", sameNameCount);
+            if (selected.cyclic)
+                ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f),
+                                   "Warning: this script participates in a detected dependency cycle.");
             
             ImGui::SeparatorText("Unresolved require() expressions");
             bool anyUnresolved = false;
