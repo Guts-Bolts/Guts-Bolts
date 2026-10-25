@@ -700,7 +700,8 @@ export async function mountAvatar(el, avatar, items = [], opts = {}) {
   let curAv = avatar, curIts = items;
   const whenLoaded = () => {   // repaint as the pictures (and Studio accessories) arrive
     const want = curIts;
-    loadAccessories(want).then(() => {
+    const gearReady = opts.itemOnly && want[0] && want[0].kind === 'gear' ? loadAccessory(want[0].id).ready : Promise.resolve();
+    Promise.all([loadAccessories(want), gearReady]).then(() => {
       if (!canvas.isConnected || want !== curIts) return;
       buffer = build(opts.itemOnly ? itemOnlyPieces(model, curIts[0]) : pieces(model, curAv, curIts)); count = buffer.length / STRIDE;
       paint();
