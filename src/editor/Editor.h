@@ -82,6 +82,7 @@ private:
     void renderPerformanceWindow();
     void renderPerformanceDoctor();
     void renderSceneValidator();
+    void renderProjectTimeMachine();
     void handleShortcuts();
 
     // Creating / removing things
@@ -284,6 +285,12 @@ private:
     bool m_showPerformance = false;
     bool m_showPerformanceDoctor = false;
     bool m_showSceneValidator = false;
+    bool m_showProjectTimeMachine = false;
+    bool m_timeMachineLoaded = false;
+    std::string m_timeMachineProjectKey, m_timeMachineCheckpointName;
+    int m_timeMachineSelected = -1;
+    struct TimeMachineCheckpoint { std::string project, name, snapshot; long long time = 0; };
+    std::vector<TimeMachineCheckpoint> m_timeMachineCheckpoints;
     int m_sceneValidatorSeverityFilter = 0; // 0 = all, 1 = errors, 2 = warnings, 3 = info
     std::string m_sceneValidatorSearch;
     double m_sceneValidatorLastScan = -100.0;
