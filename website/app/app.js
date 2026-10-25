@@ -1491,11 +1491,11 @@ pages.item = async (id) => {
       <div class="item-cols">
         <div class="item-pic">
           <div class="pic" id="item3d">${itemIcon(a)}</div>
-          ${drawable3d(a) && me ? html`<button class="btn blue item-try-on" id="itemTryOn" type="button">Try On</button>` : ''}
+          ${drawable3d(a) ? html`<button class="btn blue item-try-on" id="itemTryOn" type="button">Try On</button>` : ''}
           ${isNew ? html`<span class="item-ribbon">NEW</span>` : ''}
           ${timed ? html`<span class="item-clock" title="${offsaleText(a)}"><i></i></span>` : ''}
           ${L ? html`<span class="item-limited">LIMITED<b>U</b></span>` : ''}
-          ${drawable3d(a) ? html`<span class="item-3d" title="Drag the picture to turn it">3D</span>` : ''}
+          ${drawable3d(a) ? html`<button class="item-3d" id="item3dToggle" type="button" title="Switch to an interactive 3D avatar preview">3D</button>` : ''}
         </div>
         <div class="item-info">
           <div class="item-creator">
@@ -1587,6 +1587,7 @@ pages.item = async (id) => {
      mountAvatar($('#item3d'), {}, [a], { width: 328, height: 328, cam: itemCamera(a.kind), autoSpin: true, itemOnly: true }).catch(() => {});
   const tryOnButton = $('#itemTryOn');
   if (tryOnButton) tryOnButton.addEventListener('click', async () => {
+    if (!me) { loginPopup('try on catalog items'); return; }
     tryOnButton.disabled = true;
     tryOnButton.textContent = 'Loading avatar…';
     try {
@@ -1611,6 +1612,47 @@ pages.item = async (id) => {
       alert(error.message || 'Could not load the try-on preview.');
     } finally {
       if (tryOnButton.isConnected) { tryOnButton.disabled = false; tryOnButton.textContent = 'Try On'; }
+    }
+  });
+  const item3dToggle = $('#item3dToggle');
+  let itemShowing3d = false;
+  if (item3dToggle) item3dToggle.addEventListener('click', async () => {
+    const el = $('#item3d');
+    if (!el) return;
+    if (itemShowing3d) {
+      itemShowing3d = false;
+      el.innerHTML = itemIcon(a).s;
+      item3dToggle.textContent = '3D';
+      item3dToggle.title = 'Switch to an interactive 3D avatar preview';
+      upgradeItemPictures();
+      return;
+    }
+    item3dToggle.disabled = true;
+    item3dToggle.textContent = '…';
+    try {
+      let avatar = defaultAvatar(), wearing = [];
+      if (me) {
+        const profile = await call('profile', { id: me.userId });
+        if (!profile.ok || !profile.user) throw new Error(profile.error || 'Could not load your avatar.');
+        avatar = profile.user.avatar || defaultAvatar();
+        wearing = Array.isArray(profile.wearing) ? profile.wearing : [];
+      }
+      const previewItems = [...wearing.filter((item) => String(item.id) !== String(a.id)), a];
+      el.innerHTML = '';
+      const viewer = await mountAvatar(el, avatar, previewItems, { width: 328, height: 328, cam: itemCamera(a.kind) });
+      if (!viewer) {
+        el.innerHTML = itemIcon(a).s;
+        upgradeItemPictures();
+        throw new Error('3D preview is unavailable in this browser. Try enabling WebGL.');
+      }
+      itemShowing3d = true;
+      item3dToggle.textContent = '2D';
+      item3dToggle.title = 'Switch back to the item picture';
+    } catch (error) {
+      item3dToggle.textContent = '3D';
+      alert(error.message || 'Could not load the 3D preview.');
+    } finally {
+      item3dToggle.disabled = false;
     }
   });
   tickCountdowns();
