@@ -234,6 +234,7 @@ void ScriptEditorPanel::runDependencyMap() {
     m_dependencyNodes.clear();
     m_dependencyEdges.clear();
     m_unresolvedDependencies.clear();
+    m_assetReferences.clear();
 
     std::vector<SceneNode*> scripts;
     m_scene->forEach([&](SceneNode* node) {
@@ -241,6 +242,48 @@ void ScriptEditorPanel::runDependencyMap() {
         scripts.push_back(node);
         m_dependencyNodes.push_back({node->id, node->name, node->fullName(),
                                      (int)node->source.size(), 0, 0});
+    });
+
+    // Inventory resource-bearing properties and object links from the actual scene tree.
+    // External asset IDs/paths are listed for inspection; only scene-object links can be
+    // classified as broken with certainty without the asset resolver or filesystem context.
+    std::unordered_map<uint64_t, SceneNode*> sceneNodesById;
+    m_scene->forEach([&](SceneNode* node) { sceneNodesById[node->id] = node; });
+    auto addAsset = [&](SceneNode* owner, const std::string& property, const std::string& value) {
+        if (value.empty()) return;
+        m_assetReferences.push_back({owner->id, 0, owner->fullName(), property, value, false, false});
+    };
+    auto addNodeLink = [&](SceneNode* owner, const std::string& property, uint64_t targetId) {
+        if (!targetId) return;
+        const auto target = sceneNodesById.find(targetId);
+        const bool unresolved = target == sceneNodesById.end();
+        m_assetReferences.push_back({owner->id, targetId, owner->fullName(), property,
+            unresolved ? ("missing object #" + std::to_string(targetId)) : target->second->fullName(), true, unresolved});
+    };
+    m_scene->forEach([&](SceneNode* node) {
+        if (!node->texture.empty()) addAsset(node, "Texture", node->texture);
+        if (!node->tshirt.empty()) addAsset(node, "TShirt", node->tshirt);
+        if (node->kind == NodeKind::Sound && !node->soundId.empty()) addAsset(node, "SoundId", node->soundId);
+        if (!node->particle.texture.empty()) addAsset(node, "Particle.Texture", node->particle.texture);
+        if (!node->effect.texture.empty()) addAsset(node, "Effect.Texture", node->effect.texture);
+        if (!node->gui.image.empty()) addAsset(node, "Image", node->gui.image);
+        if (!node->sky.bk.empty()) addAsset(node, "SkyboxBk", node->sky.bk);
+        if (!node->sky.dn.empty()) addAsset(node, "SkyboxDn", node->sky.dn);
+        if (!node->sky.ft.empty()) addAsset(node, "SkyboxFt", node->sky.ft);
+        if (!node->sky.lf.empty()) addAsset(node, "SkyboxLf", node->sky.lf);
+        if (!node->sky.rt.empty()) addAsset(node, "SkyboxRt", node->sky.rt);
+        if (!node->sky.up.empty()) addAsset(node, "SkyboxUp", node->sky.up);
+        if (!node->sky.sun.empty()) addAsset(node, "SunTextureId", node->sky.sun);
+        if (!node->sky.moon.empty()) addAsset(node, "MoonTextureId", node->sky.moon);
+        addNodeLink(node, "PrimaryPart", node->primaryPart);
+        addNodeLink(node, "Adornee", node->highlight.adornee);
+        addNodeLink(node, "Attachment0", node->effect.a0);
+        addNodeLink(node, "Attachment1", node->effect.a1);
+        addNodeLink(node, "Constraint.Ref0", node->ref0);
+        addNodeLink(node, "Constraint.Ref1", node->ref1);
+        addNodeLink(node, "SoundGroup", node->soundGroup);
+        addNodeLink(node, "FluidSystem", node->fluidSystem);
+        addNodeLink(node, "ViewportFrame.CurrentCamera", node->gui.camera);
     });
 
     // Only claim relationships when a require() expression or a named child lookup
@@ -347,6 +390,14 @@ void ScriptEditorPanel::renderDependencyMap() {
     ImGui::TextColored(m_unresolvedDependencies.empty() ? ImVec4(0.45f, 0.8f, 0.5f, 1.0f)
                                                          : ImVec4(0.95f, 0.7f, 0.25f, 1.0f),
                        "%d unresolved require() expressions", (int)m_unresolvedDependencies.size());
+    const int assetReferenceCount = (int)m_assetReferences.size();
+    const int brokenObjectReferenceCount = (int)std::count_if(m_assetReferences.begin(), m_assetReferences.end(),
+        [](const AssetReference& reference) { return reference.nodeLink && reference.unresolvedNode; });
+    ImGui::SameLine();
+    ImGui::TextDisabled("%d resource refs", assetReferenceCount);
+    ImGui::SameLine();
+    ImGui::TextColored(brokenObjectReferenceCount ? ImVec4(0.95f, 0.35f, 0.3f, 1.0f) : ImVec4(0.45f, 0.8f, 0.5f, 1.0f),
+                       "%d broken object refs", brokenObjectReferenceCount);
     ImGui::SameLine();
     if (ImGui::SmallButton("Refresh")) {
         runDependencyMap();
@@ -609,6 +660,24 @@ void ScriptEditorPanel::renderDependencyMap() {
                 ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f),
                                    "Warning: this script participates in a detected dependency cycle.");
             
+            ImGui::SeparatorText("Asset and object references");
+            int selectedReferenceCount = 0;
+            for (const auto& reference : m_assetReferences) {
+                if (reference.owner != selected.id) continue;
+                ++selectedReferenceCount;
+                ImGui::PushID((int)(reference.owner ^ (uint64_t)selectedReferenceCount));
+                if (reference.nodeLink && reference.unresolvedNode) {
+                    ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.3f, 1.0f), "%s: %s", reference.property.c_str(), reference.value.c_str());
+                } else {
+                    ImGui::Text("%s:", reference.property.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextWrapped("%s", reference.value.c_str());
+                }
+                ImGui::PopID();
+            }
+            if (!selectedReferenceCount) ImGui::TextDisabled("No resource or object references detected on this object.");
+            ImGui::TextDisabled("Resource IDs and file paths are inventoried, not verified against disk or a remote asset service. Broken object refs are scene IDs that no longer resolve.");
+
             ImGui::SeparatorText("Unresolved require() expressions");
             bool anyUnresolved = false;
             for (const auto& dep : m_unresolvedDependencies) if (dep.script == selected.id) {
