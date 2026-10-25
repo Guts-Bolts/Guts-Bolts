@@ -283,7 +283,7 @@ void ScriptEditorPanel::runDependencyMap() {
         addNodeLink(node, "Constraint.Ref1", node->ref1);
         addNodeLink(node, "SoundGroup", node->soundGroup);
         addNodeLink(node, "FluidSystem", node->fluidSystem);
-        addNodeLink(node, "ViewportFrame.CurrentCamera", node->gui.camera);
+        addNodeLink(node, "ViewportFrame.CurrentCamera", node->camera);
     });
 
     // Only claim relationships when a require() expression or a named child lookup
