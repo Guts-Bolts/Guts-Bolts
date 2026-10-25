@@ -1759,6 +1759,10 @@ export class GbServerObject extends DurableObject {
       const want = str(args, 'id');
       const u = want && want.length < 12 && /^[0-9]+$/.test(want) ? this.findUserId(Number(want)) : this.findPerson(want);
       if (!u || u.userId === 0) return fail('There\'s no account with that ID on this server.');
+      // Redact permanent terminations from public profiles. Timed bans remain visible.
+      if ((u.banned && !u.bannedUntil) || u.name === kDeletedName) {
+        return { bad: { error: 'USER_DELETED: [ Content Deleted ] — This user has been deleted.', code: 'USER_DELETED' } };
+      }
       const user = Object.assign(this.publicUser(u), { badges: this.badgesOf(u), avatar: u.avatar || null });
       const creations = [...this.assets.values()].filter((a) => a.creator === u.id && this.canPlay(a, me)).map((a) => this.publicAsset(a));
       const groups = this.groupsOf(u.id).map((g) => Object.assign(this.publicGroup(g), { role: this.rankIn(g, u.id).name }));
