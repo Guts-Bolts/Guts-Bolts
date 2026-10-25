@@ -654,9 +654,9 @@ void Editor::renderSceneValidator() {
         std::vector<SceneNode*> nodes;
         std::unordered_map<uint64_t, SceneNode*> byId;
         m_scene->forEach([&](SceneNode* node) {
-            if (!node || node->internal) return;
-            nodes.push_back(node);
+            if (!node) return;
             byId[node->id] = node;
+            if (!node->internal) nodes.push_back(node);
         });
         m_sceneValidatorObjectCount = (int)nodes.size();
 
