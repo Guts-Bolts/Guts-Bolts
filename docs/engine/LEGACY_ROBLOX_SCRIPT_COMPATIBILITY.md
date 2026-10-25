@@ -18,6 +18,7 @@ The uploaded script is a stress test because it combines old client-side APIs, R
 - `Enum.Material:GetEnumItems()`, `Enum.MeshType:GetEnumItems()`, and `Enum.Font:GetEnumItems()`.
 - A legacy `Player:GetMouse()` object exposing cursor coordinates, `UnitRay`, `Hit`, `Target`, `TargetFilter`, and common key/mouse button signals. Rays are generated through the active camera and use the engine's existing raycast path.
 - A limited `LoadLibrary("RbxUtility").Create(className)(properties)` shim for old object-construction helpers.
+- Built-in `SpecialMesh` primitive rendering for `Head` / `Sphere`, `Cylinder`, `Brick` / `Torso`, and approximate `Wedge`, including `Scale` and `Offset`. `FileMesh` IDs still fall back to the host part geometry until a compatible asset importer exists.
 - The legacy `game:service("Workspace")` lowercase alias.
 - A `PlayerScripts.ControlScript` placeholder so old scripts can find and toggle the expected object. This is only a compatibility placeholder: it does not disable Guts & Bolts' native movement controller.
 - Regression checks in `tools/test_script_fixes.lua` for enum enumeration, mouse API shape/ray direction, the legacy helper, the lowercase service alias, and the controller placeholder.
@@ -29,9 +30,9 @@ Mouse coordinates are currently scaled from the application viewport to the acti
 This PR is a compatibility increment, not a claim that the entire script now works.
 
 1. **Character controller assumptions** — `PlayerScripts.ControlScript` now exists as a placeholder, but toggling its `Disabled` property does not yet disable the native Guts & Bolts movement controller. A real controller integration needs careful input-ownership behavior and play tests.
-2. **Legacy asset classes and properties** — `SpecialMesh`, `MeshType.FileMesh`, and imported mesh identifiers must map to actual renderable geometry, not only accepted attributes.
-3. **Rig mutation and animation conflicts** — the script edits R6 shoulder/hip/neck joints while the built-in character animator is active. Verify script-driven joints can be controlled without being overwritten each frame.
-4. **Legacy event details** — verify key and button events fire once with the correct legacy arguments, including focus changes and script shutdown.
+2. **Legacy asset classes and properties** — built-in `SpecialMesh` primitives now render approximately, but `MeshType.FileMesh` and imported mesh identifiers still need a compatible asset importer. Mesh rendering also needs validation in all render passes (shadows, highlights, water interactions) and the full Star Glitcher fixture.
+3. **Rig mutation and animation conflicts** — the script edits R6 shoulder/hip/neck joints while the built-in character animator is active. Motor6D C0/C1 semantics and script-owned joint pose precedence still need end-to-end implementation and play testing.
+4. **Legacy event details** — verify key and button events fire once with the correct legacy arguments, including focus changes and script shutdown. Input-signal connection cleanup on script stop still needs an explicit lifecycle test.
 5. **Execution lifecycle** — long-lived `BindableEvent` loops, input callbacks, and `Debris` cleanup need to remain safe through character respawn, script stop, and game exit.
 6. **Asset and property gaps** — old BrickColor names, surface values, mesh URLs, animation properties, and sound assets need end-to-end coverage where used by the script.
 
