@@ -87,7 +87,7 @@ private:
     };
     struct AssetReference {
         uint64_t owner = 0, targetNode = 0;
-        std::string ownerPath, property, value;
+        std::string ownerPath, property, value, availability;
         bool nodeLink = false, unresolvedNode = false;
     };
     bool m_showDependencyMap = false, m_dependencyOnlyUnresolved = false;
@@ -97,6 +97,7 @@ private:
     std::string m_dependencySearch;
     std::string m_assetSearch;
     bool m_assetOnlyBrokenLinks = false;
+    bool m_assetOnlyMissingFiles = false;
     std::vector<DependencyNode> m_dependencyNodes;
     std::vector<DependencyEdge> m_dependencyEdges;
     std::vector<UnresolvedDependency> m_unresolvedDependencies;
