@@ -763,8 +763,8 @@ void Editor::renderAccessoryWindow() {
     if (!m_showAccessory) return;
     // Opens over the right of the viewport, big enough to see every step.
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 470, vp->WorkPos.y + 150), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(440, 520), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 550, vp->WorkPos.y + 100), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(520, 650), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Accessories", &m_showAccessory)) { ImGui::End(); return; }
     onlineLine();
     const bool allowed = Online::online() && (Online::verified() || Online::staff());
