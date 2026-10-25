@@ -25,6 +25,8 @@ Extend the existing R6 ragdoll and gore systems into a configurable, performance
 
 ### 3. Layered wound effects
 
+The first implementation slice adds stylized rounded organ-like fragments to the existing flesh/bone gib system. These are deliberately procedural visual cues rather than anatomically accurate organ models; creators can later replace them with authored assets.
+
 - Define wound profiles by body region, damage source, impact energy, and creator-selected gore preset.
 - Support optional skin/muscle/bone/organ visual layers as assets or material effects, with non-graphic defaults and a creator-controlled intensity setting.
 - Keep visual layers separate from gameplay damage rules so effects do not accidentally change health, hitboxes, or network authority.
