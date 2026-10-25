@@ -79,6 +79,13 @@ def run_tests(m):
     tools = {t["name"] for t in m.rpc("tools/list")["tools"]}
     check("publish_game" in tools, "tools/list has publish_game")
     check("analyze_script_dependencies" in tools, "tools/list has analyze_script_dependencies")
+    check("analyze_scene_performance" in tools, "tools/list has analyze_scene_performance")
+    perf = m.call("analyze_scene_performance")
+    metrics = perf.get("metrics", {})
+    check(ok(perf) and isinstance(metrics.get("part_count"), int) and
+          isinstance(perf.get("findings"), list) and "Static heuristic" in perf.get("note", ""),
+          "scene performance audit returns static metrics and clearly labels limitations", perf)
+
     dep_module = m.call("create_script", parent="ServerScriptService", name="AiDependencyModule",
                         type="ModuleScript", source="return { answer = 42 }")
     dep_user = m.call("create_script", parent="ServerScriptService", name="AiDependencyUser",
