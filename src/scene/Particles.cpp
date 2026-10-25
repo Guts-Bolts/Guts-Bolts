@@ -635,7 +635,35 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                         pool->color = glm::mix(pool->color, p.color, 0.15f);
                         pool->life = std::max(pool->life, m_bloodStay * 0.8f);
                         pool->age *= 0.6f;          // fresh blood on top: wet again
-                        pool->drips += 0.6f;
+                        pool->drips = std::min(12.0f, pool->drips + 0.6f);
+
+                        // Fold nearby floor stains into this pool as well. This keeps repeated
+                        // impacts from leaving a cluster of overlapping discs, while the radius
+                        // cap and existing splat budget keep the merge bounded.
+                        for (size_t k = 0; k < m_items.size(); ++k) {
+                            Particle& q = m_items[k];
+                            if (&q == pool || k == i || q.life <= 0.0f ||
+                                q.kind != Particle::Splat || q.slide > 0.0f ||
+                                q.normal.y < 0.9f || q.onPart || q.look != 0 ||
+                                std::abs(q.pos.y - pool->pos.y) > 0.08f) continue;
+                            glm::vec2 offset(q.pos.x - pool->pos.x, q.pos.z - pool->pos.z);
+                            float poolRadius = std::max(pool->spread, pool->size.x) * 0.5f;
+                            float otherRadius = std::max(q.spread, q.size.x) * 0.5f;
+                            float reach = poolRadius + otherRadius;
+                            if (glm::dot(offset, offset) >= reach * reach) continue;
+
+                            const float otherSize = std::max(q.spread, q.size.x);
+                            const float merged = std::min(2.6f, std::sqrt(
+                                std::max(pool->spread, pool->size.x) *
+                                std::max(pool->spread, pool->size.x) +
+                                otherSize * otherSize * 0.5f));
+                            pool->spread = std::max(pool->spread, merged);
+                            pool->color = glm::mix(pool->color, q.color, 0.12f);
+                            pool->life = std::max(pool->life, q.life);
+                            pool->age = std::min(pool->age, q.age);
+                            pool->drips = std::min(12.0f, pool->drips + q.drips * 0.35f);
+                            q.life = 0.0f; // removed by the normal particle cleanup pass
+                        }
                         p.life = 0.0f;
                     } else {
                         // A drop coming in at an angle lands as a teardrop, stretched the way it was going,
