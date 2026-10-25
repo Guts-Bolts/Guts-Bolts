@@ -515,6 +515,9 @@ void Editor::renderPerformanceDoctor() {
                    std::to_string(m_perfDoctorTotalScriptBytes / 1024) + " KiB of script source was found in the scene.",
                    "This is not execution time. Inspect large scripts for unbounded loops or repeated expensive work, then measure during Play.");
 
+    std::stable_sort(findings.begin(), findings.end(),
+                     [](const Finding& a, const Finding& b) { return a.severity > b.severity; });
+
     int critical = 0, warnings = 0;
     for (const auto& finding : findings) {
         if (finding.severity == 2) ++critical;
