@@ -534,11 +534,15 @@ prompt.Triggered:<span class="f">Connect</span>(<span class="k">function</span>(
     const os = /iPhone|iPad|iPod/i.test(ua) ? 'ios' : /OculusBrowser|Quest/i.test(ua) ? 'quest' : /Android/i.test(ua) ? 'android' : /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) ? 'mac'
       : /Linux|X11/i.test(ua) ? 'linux' : '';
     if (!os) return;
+    const names = { windows: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android', quest: 'Meta Quest', ios: 'iOS — in development' };
+    if (os === 'ios') {
+      document.getElementById('hero-os').textContent = 'iOS Player in development';
+      return; // Don't mark an unavailable download as ready for this device.
+    }
     const box = document.querySelector('.dl [data-os="' + os + '"]');
     if (!box) return;
     box.classList.add('mine');
-    const names = { windows: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android', quest: 'Meta Quest', ios: 'iOS — in development' };
-    document.getElementById('hero-os').textContent = os === 'ios' ? 'iOS Player in development' : 'for ' + names[os];
+    document.getElementById('hero-os').textContent = 'for ' + names[os];
   })();
 
   // The newest version, and what's new in it, from the release itself.
