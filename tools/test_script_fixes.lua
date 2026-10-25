@@ -25,7 +25,9 @@ task.spawn(function()
     -- Legacy enum enumeration: old scripts use this to select a random material.
     local materials = Enum.Material:GetEnumItems()
     check(type(materials) == "table" and #materials > 0, "Enum.Material:GetEnumItems returns material names")
-    check(table.find(materials, "Neon") ~= nil, "material enum list contains Neon")
+    local hasNeon = false
+    for _, material in ipairs(materials) do if material == "Neon" then hasNeon = true end end
+    check(hasNeon, "material enum list contains Neon")
     check(type(Enum.Font:GetEnumItems()) == "table" and #Enum.Font:GetEnumItems() > 0,
           "Enum.Font:GetEnumItems returns font names")
 
