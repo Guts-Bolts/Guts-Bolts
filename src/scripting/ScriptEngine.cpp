@@ -44,7 +44,7 @@ local enumItems = {
         "LeafyGrass", "Sand", "Snow", "Ice", "Glacier", "Salt", "Water", "Fabric",
         "Foil", "Metal", "DiamondPlate", "CorrodedMetal", "Rust", "Glass",
     },
-    MeshType = { "Head", "Torso", "Wedge", "Sphere", "Cylinder", "FileMesh" },
+    MeshType = { "Head", "Torso", "Wedge", "Sphere", "Cylinder", "Brick", "FileMesh" },
     Font = { "Legacy", "Arial", "ArialBold", "SourceSans", "SourceSansBold",
         "SourceSansLight", "SourceSansItalic", "Bodoni", "Garamond", "Cartoon",
         "Code", "Highway", "SciFi", "Fantasy", "Antique" },
