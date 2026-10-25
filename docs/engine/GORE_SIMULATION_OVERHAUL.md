@@ -13,7 +13,7 @@ Extend the existing R6 ragdoll and gore systems into a configurable, performance
 - Use a size spectrum for airborne drops, with stronger drag on fine mist than heavy beads.
 - Shape high-energy impacts into velocity-oriented, elongated splashes with irregular directional spines.
 - Preserve the existing age-driven wet-to-dry PBR response; extend surface projection and material-aware flow as later phases.
-- Accumulate and merge puddles using a bounded representation rather than spawning an unbounded number of particles. The current implementation now folds nearby overlapping floor stains into the impacted pool, with a capped spread radius, bounded drip budget, and normal cleanup of absorbed stains. The current implementation now folds nearby overlapping floor stains into the impacted pool, with a capped spread radius, bounded drip budget, and normal cleanup of absorbed stains.
+- Accumulate and merge puddles using a bounded representation rather than spawning an unbounded number of particles. The current implementation now folds nearby overlapping floor stains into the impacted pool, with a capped spread radius, bounded drip budget, and normal cleanup of absorbed stains.
 - Make spread, absorption, streaking, and lifetime depend on surface material.
 - Keep decals and droplets persistent for a configurable lifetime, with a global budget and distance-based cleanup.
 - Reuse the existing gore setting and expose quality controls so creators can disable gore or lower simulation cost.
