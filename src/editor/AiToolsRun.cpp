@@ -1224,26 +1224,68 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         std::map<uint64_t, int> incoming;
         for (SceneNode* source : scripts) {
             const std::string& code = source->source;
-            size_t pos = 0;
-            while ((pos = code.find("require", pos)) != std::string::npos) {
-                const size_t wordStart = pos;
-                pos += 7;
-                if ((wordStart > 0 && (std::isalnum((unsigned char)code[wordStart - 1]) || code[wordStart - 1] == '_')) ||
-                    (pos < code.size() && (std::isalnum((unsigned char)code[pos]) || code[pos] == '_'))) continue;
-                size_t open = pos;
+            size_t scan = 0;
+            while (scan < code.size()) {
+                // Skip Lua comments and quoted strings so text in comments / messages
+                // cannot create fake dependency edges.
+                if (code[scan] == '-' && scan + 1 < code.size() && code[scan + 1] == '-') {
+                    scan += 2;
+                    if (scan < code.size() && code[scan] == '[') {
+                        size_t eq = scan + 1;
+                        while (eq < code.size() && code[eq] == '=') ++eq;
+                        if (eq < code.size() && code[eq] == '[') {
+                            const std::string close = "]" + std::string(eq - scan - 1, '=') + "]";
+                            const size_t closeAt = code.find(close, eq + 1);
+                            scan = closeAt == std::string::npos ? code.size() : closeAt + close.size();
+                            continue;
+                        }
+                    }
+                    const size_t nl = code.find('\n', scan);
+                    scan = nl == std::string::npos ? code.size() : nl + 1;
+                    continue;
+                }
+                if (code[scan] == '"' || code[scan] == '\'') {
+                    const char quote = code[scan++];
+                    while (scan < code.size()) {
+                        if (code[scan] == '\\') { scan = std::min(scan + 2, code.size()); continue; }
+                        if (code[scan++] == quote) break;
+                    }
+                    continue;
+                }
+                if (!(std::isalpha((unsigned char)code[scan]) || code[scan] == '_')) { ++scan; continue; }
+                const size_t wordStart = scan++;
+                while (scan < code.size() && (std::isalnum((unsigned char)code[scan]) || code[scan] == '_')) ++scan;
+                if (code.compare(wordStart, scan - wordStart, "require") != 0) continue;
+                size_t open = scan;
                 while (open < code.size() && std::isspace((unsigned char)code[open])) ++open;
                 if (open >= code.size() || code[open] != '(') continue;
-                size_t end = code.find(')', open + 1);
-                if (end == std::string::npos) continue;
-                std::string expr = trim(code.substr(open + 1, end - open - 1));
-                pos = end + 1;
+                size_t argStart = open + 1, end = argStart;
+                char quote = 0;
+                while (end < code.size()) {
+                    const char ch = code[end];
+                    if (quote) {
+                        if (ch == '\\') { end = std::min(end + 2, code.size()); continue; }
+                        if (ch == quote) quote = 0;
+                    } else if (ch == '"' || ch == '\'') quote = ch;
+                    else if (ch == ')') break;
+                    ++end;
+                }
+                if (end >= code.size()) continue;
+                std::string expr = trim(code.substr(argStart, end - argStart));
+                scan = end + 1;
                 if (expr.empty()) continue;
+                // Resolve simple quoted module names as well as bare paths. More
+                // complex expressions are intentionally reported as unresolved.
+                if (expr.size() >= 2 && ((expr.front() == '"' && expr.back() == '"') ||
+                                         (expr.front() == '\'' && expr.back() == '\''))) {
+                    expr = expr.substr(1, expr.size() - 2);
+                }
                 SceneNode* target = nullptr;
                 for (SceneNode* candidate : modules) {
                     const std::string full = pathOfNode(candidate);
                     const std::string name = candidate->name;
-                    if (expr == name || expr == full || expr == ("Workspace." + full) ||
-                        expr == ("game." + full) || expr == ("script.Parent." + name)) {
+                    if (expr == name || expr == full || expr == ("game." + full) ||
+                        expr == ("script.Parent." + name)) {
                         if (target) { target = nullptr; break; } // ambiguous: don't guess
                         target = candidate;
                     }
