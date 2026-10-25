@@ -43,8 +43,12 @@ void ParticleSystem::spray(GoreKind kind, const glm::vec3& pos, const glm::vec3&
         p.pos    = pos + rndDir() * 0.05f;
         p.vel    = (dir + rndDir() * 0.6f) * speed * rnd(0.4f, 1.2f) + glm::vec3(0, rnd(0.5f, 2.0f), 0);
         p.color  = kind == GoreKind::Blood ? m_bloodColor * rnd(0.62f, 1.0f) : kOil;
-        float s  = rnd(0.04f, 0.11f);
-        p.size   = glm::vec3(s);
+        // A wound emits heavy beads, medium drops, and fine mist.
+        float roll = rnd(0.0f, 1.0f);
+        float s = roll < 0.12f ? rnd(0.085f, 0.14f)
+                : roll < 0.43f ? rnd(0.045f, 0.085f)
+                               : rnd(0.018f, 0.045f);
+        p.size   = glm::vec3(s, s * rnd(0.85f, 1.35f), s);
         p.life   = p.maxLife = rnd(1.5f, 3.0f);
         p.wet    = true;
         add(p);
@@ -577,6 +581,12 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                 p.vel.y -= gravity * dt;
                 break;
         }
+        // Fine mist has a higher area-to-mass ratio and loses momentum faster.
+        if (p.kind == Particle::Drop && p.wet) {
+            const float radius = std::max(0.012f, p.size.x);
+            const float drag = 0.18f + 0.95f / (radius * 18.0f);
+            p.vel *= std::max(0.0f, 1.0f - drag * dt);
+        }
         p.pos += p.vel * dt;
         p.rot += p.spin * dt;
         if (p.kind == Particle::Spray) { if (physics.solidAt(p.pos)) p.life = 0.0f; continue; }   // lands: gone
@@ -616,11 +626,14 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                     } else {
                         // A drop coming in at an angle lands as a teardrop, stretched the way it was going,
                         // and a fast one throws little droplets on ahead.
-                        float stretch = 1.0f + std::min(1.6f, hs * 0.14f);
+                        // High-energy impacts produce elongated splashes with irregular spines.
+                        const float impactSpeed = glm::length(p.vel);
+                        float stretch = 1.0f + std::min(2.4f, hs * 0.22f);
                         p.pos = at + (hs > 0.5f ? hv / hs * r * 0.12f * (stretch - 1.0f) : glm::vec3(0.0f));
                         float s = r * 0.35f;
                         p.size = glm::vec3(s, 0.02f, s * rnd(0.8f, 1.2f) * stretch);
                         p.spread = r;
+                        p.look = (impactSpeed > 5.0f && hs > 2.0f) ? 3 : 0;
                         p.rot = glm::vec3(0, hs > 0.5f ? glm::degrees(std::atan2(hv.x, hv.z)) : rnd(0, 360), 0);
                         p.normal = glm::vec3(0, 1, 0);
                         p.seed = rnd(0, 1);
@@ -654,9 +667,12 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                     p.normal = n;
                     p.pos += n * 0.02f;
                     for (int step = 0; step < 6 && physics.solidAt(p.pos); ++step) p.pos += n * 0.03f;   // out onto the surface
+                    float impactSpeed = glm::length(p.vel);
                     float s = p.size.x * rnd(2.0f, 3.0f);
-                    p.size = glm::vec3(s, 0.02f, s * rnd(0.8f, 1.4f));
-                    p.rot = glm::vec3(0, rnd(-15.0f, 15.0f), 0);   // (along the wall: the run goes straight down)
+                    float wallStretch = 1.0f + std::min(2.0f, impactSpeed * 0.16f);
+                    p.size = glm::vec3(s, 0.02f, s * rnd(0.8f, 1.4f) * wallStretch);
+                    p.rot = glm::vec3(0, impactSpeed > 4.0f ? turnAlong(n, glm::vec3(p.vel.x, 0.0f, p.vel.z)) : rnd(-15.0f, 15.0f), 0);
+                    p.look = impactSpeed > 5.0f ? 3 : 0;
                     p.seed = rnd(0, 1);
                     p.slide = p.drips < 0.0f ? 0.0f : rnd(0.6f, 2.2f);
                     p.kind = Particle::Splat;
