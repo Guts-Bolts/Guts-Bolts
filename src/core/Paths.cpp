@@ -2,6 +2,9 @@
 #include <algorithm>
 #include <cstdlib>
 #include <system_error>
+#if defined(GB_MOBILE)
+#include <SDL.h>
+#endif
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -9,8 +12,11 @@
 #endif
 #include <windows.h>
 #elif defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
 #include <mach-o/dyld.h>
 #include <climits>
+#endif
 #endif
 #ifdef __ANDROID__
 #include <SDL.h>
@@ -26,6 +32,14 @@ std::filesystem::path appFolder() {
 #if defined(__ANDROID__)
         // The app's private storage (the APK itself is read-only).
         if (const char* p = SDL_AndroidGetInternalStoragePath()) return std::filesystem::path(p);
+#elif defined(GB_IOS)
+        // Keep mutable data outside the signed, read-only .app bundle.
+        if (const char* p = SDL_GetPrefPath("GutsAndBolts", "Player")) {
+            std::filesystem::path out(p);
+            SDL_free((void*)p);
+            std::filesystem::create_directories(out, ec);
+            return out;
+        }
 #elif defined(_WIN32)
         wchar_t buf[MAX_PATH];
         DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);

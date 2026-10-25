@@ -80,6 +80,21 @@ jobs:
             GutsAndBoltsPlayer-Android.apk
             GutsAndBoltsPlayer-Quest.apk
 
+  ios-simulator:
+    name: iOS Player (simulator compile)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure iOS simulator
+        run: |
+          cmake -S . -B build-ios -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_BUILD_TYPE=Release
+      - name: Compile Player
+        run: cmake --build build-ios --config Release --target GutsAndBoltsPlayer
+
   linux:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
     name: Linux
