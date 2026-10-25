@@ -11,6 +11,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'dependency-map-health-checks', name: 'Your Scripts Have Questions', version: '0.7.6', time: 1792962000, tag: 'Studio',
+    summary: 'The Project Dependency Map now surfaces isolated scripts and duplicate script names so creators can spot suspicious project structure faster.',
+    items: [
+      'Adds an isolated-script count for scripts with no statically detected incoming or outgoing links.',
+      'Adds a filter to focus the script list on isolated scripts.',
+      'Highlights duplicate script-name entries that can make name-based dependency matching ambiguous.',
+      'Keeps static-analysis limits explicit: isolated does not automatically mean unused, and dynamic relationships may not be detected.',
+    ],
+  },
+  {
     id: 'multiplayer-input-traces', name: 'The Replay Button Is Getting Closer', version: '0.7.5', time: 1792961160, tag: 'Studio',
     summary: 'Multiplayer test bundles now include sampled per-player movement and control traces alongside the existing server and Player output timeline.',
     items: [
