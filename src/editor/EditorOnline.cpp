@@ -848,12 +848,19 @@ void Editor::renderAccessoryWindow() {
             for (int i = 0; i < (int)std::size(kAccessoryKinds); ++i)
                 if (kind == kAccessoryKinds[i].key) { m_accessoryKind = i; break; }
             SceneNode* loaded = m_scene->insert(std::move(node), m_scene->root());
-            if (loaded) m_scene->select(loaded);
+            if (loaded) {
+                // The saved placement is relative to the mannequin, not world origin.
+                if (SceneNode* currentMannequin = m_scene->root()->findChild("Accessory Mannequin")) {
+                    const glm::mat4 world = currentMannequin->worldMatrix() * loaded->transform.matrix();
+                    loaded->transform = relativeTo(loaded->parent ? loaded->parent->worldMatrix() : glm::mat4(1.0f), world);
+                }
+                m_scene->select(loaded);
+            }
             m_scene->markDirty();
             m_accessoryMsg = "Loaded item for editing. Change its placement or mesh, then choose Update existing item.";
         }, 120);
     }
-    ImGui::TextDisabled("The server checks the original creator before accepting an update.");
+    ImGui::TextDisabled("Creators can update their own items; staff can repair accessories with an audit entry.");
 
     // 2. What kind, and which Model.
     ImGui::SeparatorText("Accessory");
