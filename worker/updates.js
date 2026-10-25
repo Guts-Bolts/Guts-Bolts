@@ -11,6 +11,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'project-time-machine', name: 'Yesterday, But Make It Recoverable', version: '0.7.5', time: 1792944000, tag: 'Studio',
+    summary: 'Project Time Machine saves named local scene checkpoints, compares a checkpoint with the current scene, and restores an earlier version.',
+    items: [
+      'Create named checkpoints before risky edits or major milestones.',
+      'Compare added, removed, and modified scene objects against a saved checkpoint.',
+      'Restore an earlier checkpoint without overwriting the original project file.',
+      'Keep a rolling set of checkpoints per project on this computer; checkpoints are not cloud-synced.'
+    ]
+  },
+  {
     id: 'scene-validator', name: 'Your Scene Is Under Review', version: '0.7.4', time: 1792965600, tag: 'Studio',
     summary: 'Scene Validator scans a project for broken references and common setup mistakes before you publish.',
     items: [
