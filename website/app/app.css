@@ -819,3 +819,15 @@ table.forum a { color: var(--link); }
   .forum-player-avatar { width: 56px; height: 70px; }
   .forum-list-avatar { width: 32px; height: 42px; margin-right: 6px; }
 }
+
+
+/* Item-page try-on preview */
+.item-try-on { display: block; width: calc(100% - 20px); margin: 10px auto 0; }
+.try-on-overlay { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(7, 12, 22, .78); }
+.try-on-dialog { position: relative; width: min(100%, 520px); max-height: calc(100dvh - 32px); overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); box-shadow: 0 18px 60px rgba(0,0,0,.4); text-align: center; }
+.try-on-dialog h2 { margin: 0 34px 6px; }
+.try-on-close { position: absolute; right: 12px; top: 8px; border: 0; background: transparent; color: var(--text); font-size: 28px; cursor: pointer; }
+.try-on-render { min-height: 300px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.try-on-render canvas { max-width: 100%; height: auto !important; touch-action: none !important; }
+.try-on-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+@media (max-width: 480px) { .try-on-dialog { padding: 12px; } .try-on-render { min-height: 250px; } }

@@ -1436,6 +1436,7 @@ pages.item = async (id) => {
       <div class="item-cols">
         <div class="item-pic">
           <div class="pic" id="item3d">${itemIcon(a)}</div>
+          ${drawable3d(a) && me ? html`<button class="btn blue item-try-on" id="itemTryOn" type="button">Try On</button>` : ''}
           ${isNew ? html`<span class="item-ribbon">NEW</span>` : ''}
           ${timed ? html`<span class="item-clock" title="${offsaleText(a)}"><i></i></span>` : ''}
           ${L ? html`<span class="item-limited">LIMITED<b>U</b></span>` : ''}
@@ -1525,7 +1526,38 @@ pages.item = async (id) => {
           <input type="number" name="price" min="0" value="${c.price || ''}" placeholder="Price in Bolts" style="max-width:150px">
           <button class="btn small ${c.price ? '' : 'blue'}">${c.price ? 'Change price' : 'Sell'}</button>
           ${c.price ? html`<span class="muted small">On sale for ${c.price}. Set 0 to take it off sale.</span>` : html`<span class="muted small">You get ${70}% when it sells.</span>`}</form>`)}` : ''}` : ''}`);
-  if (drawable3d(a)) mountAvatar($('#item3d'), MANNEQUIN, [a], { width: 328, height: 328, cam: itemCamera(a.kind) }).catch(() => {});   // a turnable 3D view
+  // Catalog pages show the item preview rotating gently on its own. The user's avatar
+  // is only rendered after they explicitly choose Try On.
+  if (drawable3d(a) && (['gear', 'hat', 'hair'].includes(a.kind) || (a.meta && a.meta.model && ['faceacc', 'neck', 'shoulder', 'waist'].includes(a.kind))))
+     mountAvatar($('#item3d'), {}, [a], { width: 328, height: 328, cam: itemCamera(a.kind), autoSpin: true, itemOnly: true }).catch(() => {});
+  const tryOnButton = $('#itemTryOn');
+  if (tryOnButton) tryOnButton.addEventListener('click', async () => {
+    tryOnButton.disabled = true;
+    tryOnButton.textContent = 'Loading avatar…';
+    try {
+      const profile = await call('profile', { id: me.userId });
+      if (!profile.ok || !profile.user) throw new Error(profile.error || 'Could not load your avatar.');
+      const overlay = document.createElement('div');
+      overlay.className = 'try-on-overlay';
+      overlay.innerHTML = '<section class="try-on-dialog" role="dialog" aria-modal="true" aria-labelledby="tryOnTitle"><button type="button" class="try-on-close" aria-label="Close preview">×</button><h2 id="tryOnTitle">Try on this item</h2><p class="small muted">Drag to rotate horizontally and vertically. Double-click the avatar to reset the view.</p><div class="try-on-render"></div><div class="try-on-actions"><button type="button" class="btn" data-try-reset>Reset view</button><button type="button" class="btn blue" data-try-close>Close preview</button></div></section>';
+      document.body.appendChild(overlay);
+      const close = () => { overlay.remove(); };
+      overlay.querySelectorAll('.try-on-close,[data-try-close]').forEach((el) => el.addEventListener('click', close));
+      overlay.addEventListener('click', (event) => { if (event.target === overlay) close(); });
+      const render = overlay.querySelector('.try-on-render');
+      const wearing = Array.isArray(profile.wearing) ? profile.wearing : [];
+      const previewItems = [...wearing.filter((item) => String(item.id) !== String(a.id)), a];
+      const viewer = await mountAvatar(render, profile.user.avatar || defaultAvatar(), previewItems, { width: 360, height: 430, cam: itemCamera(a.kind) });
+      overlay.querySelector('[data-try-reset]').addEventListener('click', () => {
+        if (viewer) viewer.set(profile.user.avatar || defaultAvatar(), previewItems);
+        if (viewer) render.querySelector('canvas')?.dispatchEvent(new MouseEvent('dblclick'));
+      });
+    } catch (error) {
+      alert(error.message || 'Could not load the try-on preview.');
+    } finally {
+      if (tryOnButton.isConnected) { tryOnButton.disabled = false; tryOnButton.textContent = 'Try On'; }
+    }
+  });
   tickCountdowns();
   // The creator's character, small, next to their name.
   call('profile', { id: a.creator }).then((p) => {
@@ -2321,7 +2353,11 @@ pages.avatar = async () => {
   show(html`<h1>Avatar</h1>
     <div class="row top avatar-edit">
       <div class="box" style="text-align:center;margin-right:16px"><div id="avatarPreview">${avatarSvg(a, 180, wornItems)}</div>
-        <div class="small muted">Drag to turn</div>
+        <div class="row avatar-view-toggle" role="group" aria-label="Avatar preview mode" style="justify-content:center;margin-top:8px">
+          <button class="btn small" type="button" data-avatar-view="2d" aria-pressed="true">2D View</button>
+          <button class="btn small blue" type="button" data-avatar-view="3d" aria-pressed="false">3D View</button>
+        </div>
+        <div class="small muted" id="avatarPreviewHint">Flat preview</div>
         <p><button class="btn green" data-act="saveAvatar">Save</button>
           <button class="btn" data-act="resetAvatar">Undo changes</button></p>
         <p class="small muted" style="max-width:200px">${signedIn() ? 'Your avatar is the same in the app and on the website.'
@@ -2356,12 +2392,69 @@ pages.avatar = async () => {
     }).catch(() => {});
   }
   // Colours change the preview straight away (without redrawing the page, so the colour picker stays open).
-  let avatar3d = null;
-  const preview = () => {
-    if (avatar3d) avatar3d.set(a, wornItems);
-    else $('#avatarPreview').innerHTML = avatarSvg(a, 180, wornItems).s;
+  let avatar3d = null, avatarViewMode = '2d', avatarViewRequest = 0;
+  const render2dPreview = async (request = ++avatarViewRequest) => {
+    const previewEl = $('#avatarPreview');
+    if (!previewEl) return;
+    try {
+      // Roblox-style 2D mode: show a still PNG rendered by the same 3D avatar
+      // renderer, including actual clothing textures, faces and Studio accessories.
+      const url = await avatarPicture(a, wornItems, 180);
+      if (request !== avatarViewRequest || avatarViewMode !== '2d') return;
+      previewEl.innerHTML = url
+        ? html`<img src="${url}" alt="Avatar preview" width="180" height="225" style="display:block;object-fit:contain">`.s
+        : avatarSvg(a, 180, wornItems).s;
+    } catch (_) {
+      if (request === avatarViewRequest && avatarViewMode === '2d') previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
+    }
   };
-  mountAvatar($('#avatarPreview'), a, wornItems, { width: 240 }).then((c) => { avatar3d = c; }).catch(() => {});
+  const preview = () => {
+    if (avatarViewMode === '3d') {
+      if (avatar3d) avatar3d.set(a, wornItems);
+      else showAvatarView('3d');
+    } else render2dPreview();
+  };
+  const showAvatarView = async (mode) => {
+    avatarViewMode = mode;
+    const request = ++avatarViewRequest;
+    view.querySelectorAll('[data-avatar-view]').forEach((button) => {
+      const active = button.dataset.avatarView === mode;
+      button.classList.toggle('blue', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    const hint = $('#avatarPreviewHint');
+    if (hint) hint.textContent = mode === '3d' ? 'Drag to rotate horizontally and vertically' : '2D image rendered from your 3D avatar';
+    const previewEl = $('#avatarPreview');
+    if (mode === '2d') {
+      await render2dPreview(request);
+      return;
+    }
+    const fallbackTo2d = () => {
+      avatarViewMode = '2d';
+      view.querySelectorAll('[data-avatar-view]').forEach((button) => {
+        const active = button.dataset.avatarView === '2d';
+        button.classList.toggle('blue', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+      if (hint) hint.textContent = '3D preview unavailable; showing a rendered 2D image';
+      render2dPreview(++avatarViewRequest);
+    };
+    try {
+      const controller = await mountAvatar(previewEl, a, wornItems, { width: 240 });
+      if (request !== avatarViewRequest || avatarViewMode !== '3d') {
+        if (avatarViewMode === '2d') render2dPreview();
+        else showAvatarView('3d');
+        return;
+      }
+      if (controller) avatar3d = controller;
+      else fallbackTo2d();
+    } catch (_) {
+      if (request === avatarViewRequest && avatarViewMode === '3d') fallbackTo2d();
+    }
+  };
+  view.querySelectorAll('[data-avatar-view]').forEach((button) =>
+    button.addEventListener('click', () => showAvatarView(button.dataset.avatarView)));
+  showAvatarView('2d');
   view.querySelectorAll('[data-avatar-part]').forEach((inp) => inp.addEventListener('input', () => {
     a[inp.dataset.avatarPart] = fromHex(inp.value); preview();
   }));
