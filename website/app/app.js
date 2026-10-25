@@ -1526,7 +1526,9 @@ pages.item = async (id) => {
           <input type="number" name="price" min="0" value="${c.price || ''}" placeholder="Price in Bolts" style="max-width:150px">
           <button class="btn small ${c.price ? '' : 'blue'}">${c.price ? 'Change price' : 'Sell'}</button>
           ${c.price ? html`<span class="muted small">On sale for ${c.price}. Set 0 to take it off sale.</span>` : html`<span class="muted small">You get ${70}% when it sells.</span>`}</form>`)}` : ''}` : ''}`);
-  if (drawable3d(a)) mountAvatar($('#item3d'), MANNEQUIN, [a], { width: 328, height: 328, cam: itemCamera(a.kind) }).catch(() => {});   // a turnable 3D view
+  // Catalog pages show the item preview rotating gently on its own. The user's avatar
+  // is only rendered after they explicitly choose Try On.
+  if (drawable3d(a)) mountAvatar($('#item3d'), MANNEQUIN, [a], { width: 328, height: 328, cam: itemCamera(a.kind), autoSpin: true }).catch(() => {});
   const tryOnButton = $('#itemTryOn');
   if (tryOnButton) tryOnButton.addEventListener('click', async () => {
     tryOnButton.disabled = true;
