@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <set>
 #include <regex>
 #include <unordered_map>
@@ -374,6 +375,85 @@ void ScriptEditorPanel::renderDependencyMap() {
             const DependencyNode& selected = *selectedIt;
             ImGui::TextWrapped("%s", selected.path.c_str());
             ImGui::TextDisabled("%d bytes of source", selected.sourceBytes);
+            ImGui::Text("Relationship graph");
+            ImGui::BeginChild("##dependencyGraphCanvas", ImVec2(0, 220), true);
+            const ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+            ImVec2 canvasSize = ImGui::GetContentRegionAvail();
+            canvasSize.y = std::max(120.0f, canvasSize.y);
+            ImDrawList* graphDraw = ImGui::GetWindowDrawList();
+            const ImVec2 graphCenter(canvasPos.x + canvasSize.x * 0.5f,
+                                     canvasPos.y + canvasSize.y * 0.5f);
+            const float centerW = 112.0f, centerH = 30.0f, neighborW = 96.0f, neighborH = 28.0f;
+            struct GraphNeighbor { uint64_t id; std::string name, path, relation; bool outgoing; };
+            std::vector<GraphNeighbor> neighbors;
+            for (const auto& edge : m_dependencyEdges) {
+                uint64_t other = 0;
+                bool outgoing = false;
+                if (edge.from == selected.id) { other = edge.to; outgoing = true; }
+                else if (edge.to == selected.id) { other = edge.from; outgoing = false; }
+                else continue;
+                if (std::any_of(neighbors.begin(), neighbors.end(),
+                    [&](const GraphNeighbor& n) { return n.id == other; })) continue;
+                auto target = std::find_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+                    [&](const DependencyNode& n) { return n.id == other; });
+                if (target != m_dependencyNodes.end())
+                    neighbors.push_back({other, target->name, target->path, edge.reason, outgoing});
+            }
+            const size_t shown = std::min<size_t>(neighbors.size(), 6);
+            const float radius = std::max(42.0f, std::min(canvasSize.x * 0.37f, canvasSize.y * 0.40f));
+            std::vector<ImVec2> neighborCenters;
+            for (size_t i = 0; i < shown; ++i) {
+                const float angle = -1.57079632679f + 6.28318530718f * (float)i / (float)shown;
+                neighborCenters.emplace_back(graphCenter.x + std::cos(angle) * radius,
+                                             graphCenter.y + std::sin(angle) * radius);
+                const ImU32 edgeColor = ImGui::ColorConvertFloat4ToU32(
+                    neighbors[i].outgoing ? ImVec4(0.35f, 0.72f, 1.0f, 1.0f)
+                                           : ImVec4(0.95f, 0.72f, 0.32f, 1.0f));
+                graphDraw->AddLine(graphCenter, neighborCenters.back(), edgeColor, 2.0f);
+            }
+            graphDraw->AddRectFilled(ImVec2(graphCenter.x - centerW * 0.5f, graphCenter.y - centerH * 0.5f),
+                                     ImVec2(graphCenter.x + centerW * 0.5f, graphCenter.y + centerH * 0.5f),
+                                     ImGui::ColorConvertFloat4ToU32(ImVec4(0.18f, 0.36f, 0.58f, 1.0f)), 5.0f);
+            graphDraw->AddRect(ImVec2(graphCenter.x - centerW * 0.5f, graphCenter.y - centerH * 0.5f),
+                               ImVec2(graphCenter.x + centerW * 0.5f, graphCenter.y + centerH * 0.5f),
+                               ImGui::ColorConvertFloat4ToU32(ImVec4(0.45f, 0.68f, 1.0f, 1.0f)), 5.0f);
+            const std::string centerLabel = selected.name.size() > 16 ? selected.name.substr(0, 15) + "…" : selected.name;
+            const ImVec2 centerText = ImGui::CalcTextSize(centerLabel.c_str());
+            graphDraw->AddText(ImVec2(graphCenter.x - centerText.x * 0.5f, graphCenter.y - centerText.y * 0.5f),
+                               IM_COL32(255, 255, 255, 255), centerLabel.c_str());
+            ImGui::Dummy(canvasSize);
+            ImGui::SetCursorScreenPos(ImVec2(graphCenter.x - centerW * 0.5f, graphCenter.y - centerH * 0.5f));
+            ImGui::InvisibleButton("##dependencyGraphCenter", ImVec2(centerW, centerH));
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", selected.path.c_str());
+            for (size_t i = 0; i < shown; ++i) {
+                const ImVec2 p(neighborCenters[i].x - neighborW * 0.5f, neighborCenters[i].y - neighborH * 0.5f);
+                const ImU32 fill = ImGui::ColorConvertFloat4ToU32(
+                    neighbors[i].outgoing ? ImVec4(0.12f, 0.22f, 0.31f, 1.0f)
+                                           : ImVec4(0.30f, 0.23f, 0.12f, 1.0f));
+                graphDraw->AddRectFilled(p, ImVec2(p.x + neighborW, p.y + neighborH), fill, 4.0f);
+                graphDraw->AddRect(p, ImVec2(p.x + neighborW, p.y + neighborH),
+                    ImGui::ColorConvertFloat4ToU32(neighbors[i].outgoing ? ImVec4(0.35f, 0.72f, 1.0f, 1.0f)
+                                                                          : ImVec4(0.95f, 0.72f, 0.32f, 1.0f)), 4.0f);
+                const std::string label = neighbors[i].name.size() > 13 ? neighbors[i].name.substr(0, 12) + "…" : neighbors[i].name;
+                const ImVec2 labelSize = ImGui::CalcTextSize(label.c_str());
+                graphDraw->AddText(ImVec2(p.x + (neighborW - labelSize.x) * 0.5f,
+                                          p.y + (neighborH - labelSize.y) * 0.5f),
+                                   IM_COL32(235, 240, 248, 255), label.c_str());
+                ImGui::SetCursorScreenPos(p);
+                ImGui::PushID((int)(neighbors[i].id & 0x7fffffff));
+                ImGui::InvisibleButton("##dependencyGraphNode", ImVec2(neighborW, neighborH));
+                if (ImGui::IsItemClicked()) m_dependencySelected = neighbors[i].id;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s\n%s", neighbors[i].path.c_str(),
+                                                               neighbors[i].outgoing ? "Used by selected script" : "Uses selected script");
+                ImGui::PopID();
+            }
+            if (neighbors.size() > shown) {
+                ImGui::SetCursorScreenPos(ImVec2(canvasPos.x + 8.0f, canvasPos.y + canvasSize.y - ImGui::GetTextLineHeightWithSpacing()));
+                ImGui::TextDisabled("+%d more relationship(s) listed below", (int)(neighbors.size() - shown));
+            }
+            ImGui::SetCursorScreenPos(ImVec2(canvasPos.x, canvasPos.y + canvasSize.y + ImGui::GetStyle().ItemSpacing.y));
+            ImGui::EndChild();
+            ImGui::TextDisabled("Blue: selected script uses target. Gold: another script uses selected.");
             if (ImGui::Button("Open script")) {
                 if (SceneNode* node = m_scene->findById(selected.id)) {
                     m_scene->select(node);
