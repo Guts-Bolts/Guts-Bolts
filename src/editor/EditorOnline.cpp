@@ -793,6 +793,75 @@ void Editor::renderAccessoryWindow() {
         ImGui::TextDisabled("\"Accessory Mannequin\" is in the Workspace.");
     }
 
+    // Load an existing catalog accessory so it can be repaired in place.
+    ImGui::SeparatorText("Edit an existing catalog item");
+    ImGui::SetNextItemWidth(220);
+    ImGui::InputTextWithHint("Catalog item ID", "Paste the item's ID", &m_accessoryEditId);
+    ImGui::SameLine();
+    if (ImGui::Button("Load item") && !m_accessoryEditId.empty() && !m_onlineBusy) {
+        const std::string id = m_accessoryEditId;
+        m_onlineBusy = true;
+        m_accessoryMsg = "Loading catalog item...";
+        Online::request("get", {{"id", id}}, [this, id](const json& r) {
+            m_onlineBusy = false;
+            if (!r.value("ok", false)) { m_accessoryMsg = r.value("error", std::string("Couldn't load that item.")); return; }
+            const json asset = r.value("asset", json::object());
+            const std::string kind = asset.value("kind", std::string());
+            if (kind != "hat" && kind != "hair" && kind != "faceacc" &&
+                kind != "neck" && kind != "shoulder" && kind != "waist") {
+                m_accessoryMsg = "That item isn't a 3D accessory supported by this editor.";
+                return;
+            }
+            std::string bytes;
+            if (!Online::base64Decode(r.value("data", std::string()), bytes)) {
+                m_accessoryMsg = "The catalog item's data could not be decoded.";
+                return;
+            }
+            json acc = json::parse(bytes, nullptr, false);
+            if (!acc.is_object() || acc.value("format", std::string()) != "gbaccessory" ||
+                !acc.contains("node") || !acc["node"].is_object()) {
+                m_accessoryMsg = "That item doesn't contain an editable Studio accessory model.";
+                return;
+            }
+            auto node = Serializer::nodeFromString(acc["node"].dump(), true);
+            if (!node || node->kind != NodeKind::Model) {
+                m_accessoryMsg = "The accessory model couldn't be opened.";
+                return;
+            }
+            const json raw = acc["node"];
+            auto vec3 = [](const json& value, glm::vec3 fallback) {
+                if (!value.is_array() || value.size() != 3) return fallback;
+                try { return glm::vec3(value[0].get<float>(), value[1].get<float>(), value[2].get<float>()); }
+                catch (...) { return fallback; }
+            };
+            const glm::vec3 pos = vec3(raw.value("pos", json()), glm::vec3(0.0f));
+            const glm::vec3 rot = vec3(raw.value("rot", json()), glm::vec3(0.0f));
+            const glm::vec3 scale = vec3(raw.value("size", json()), glm::vec3(1.0f));
+            json placement = {{"kind", kind}, {"position", {pos.x, pos.y, pos.z}},
+                              {"rotation", {rot.x, rot.y, rot.z}}, {"scale", {scale.x, scale.y, scale.z}}};
+            setString(*node, "AccessoryPlacement", placement.dump());
+            setString(*node, "CatalogItemId", id);
+            setString(*node, "CatalogItemKind", kind);
+            m_accessoryName = asset.value("name", node->name);
+            m_accessoryDesc = asset.value("description", std::string());
+            m_accessoryPrice = (int)std::clamp((long long)asset.value("price", 0LL), 0LL, 1000000LL);
+            for (int i = 0; i < (int)std::size(kAccessoryKinds); ++i)
+                if (kind == kAccessoryKinds[i].key) { m_accessoryKind = i; break; }
+            SceneNode* loaded = m_scene->insert(std::move(node), m_scene->root());
+            if (loaded) {
+                // The saved placement is relative to the mannequin, not world origin.
+                if (SceneNode* currentMannequin = m_scene->root()->findChild("Accessory Mannequin")) {
+                    const glm::mat4 world = currentMannequin->worldMatrix() * loaded->transform.matrix();
+                    loaded->transform = relativeTo(loaded->parent ? loaded->parent->worldMatrix() : glm::mat4(1.0f), world);
+                }
+                m_scene->select(loaded);
+            }
+            m_scene->markDirty();
+            m_accessoryMsg = "Loaded item for editing. Change its placement or mesh, then choose Update existing item.";
+        }, 120);
+    }
+    ImGui::TextDisabled("Creators can update their own items; staff can repair accessories with an audit entry.");
+
     // 2. What kind, and which Model.
     ImGui::SeparatorText("Accessory");
     ImGui::SetNextItemWidth(220);
@@ -918,6 +987,36 @@ void Editor::renderAccessoryWindow() {
         }
     }
     ImGui::EndDisabled();
+    const Attribute* catalogId = model->findAttribute("CatalogItemId");
+    const std::string existingId = catalogId && catalogId->type == Attribute::String ? catalogId->s : std::string();
+    ImGui::BeginDisabled(existingId.empty() || !saved || m_onlineBusy);
+    if (ImGui::Button("Update existing item", ImVec2(190, 30))) {
+        json place = json::parse(saved->s, nullptr, false);
+        json node = json::parse(Serializer::nodeToString(*model), nullptr, false);
+        if (place.is_object() && node.is_object()) {
+            node["pos"] = place["position"];
+            node["rot"] = place["rotation"];
+            node["size"] = place["scale"];
+            const std::string name = m_accessoryName.empty() ? model->name : m_accessoryName;
+            const std::string kind = place.value("kind", std::string("hat"));
+            m_onlineBusy = true;
+            m_accessoryMsg = "Updating existing catalog item...";
+            uploadLocalTextures(node, name, [this, existingId, name, kind](json node, std::string error) {
+                if (!error.empty()) { m_onlineBusy = false; m_accessoryMsg = error; return; }
+                json acc = {{"format", "gbaccessory"}, {"version", 1}, {"kind", kind}, {"node", node}};
+                json args = {{"id", existingId}, {"name", name}, {"description", m_accessoryDesc},
+                             {"price", m_accessoryPrice}, {"data", Online::base64Encode(acc.dump())}};
+                Online::request("update", args, [this, name](const json& r) {
+                    m_onlineBusy = false;
+                    if (!r.value("ok", false)) { m_accessoryMsg = r.value("error", std::string("The update didn't work.")); return; }
+                    m_accessoryMsg = "Updated catalog item \"" + name + "\". The existing item ID and listing are preserved.";
+                    Log::system(m_accessoryMsg);
+                }, 120);
+            });
+        }
+    }
+    ImGui::EndDisabled();
+    if (!existingId.empty()) ImGui::TextDisabled("Item ID: %s. This updates the existing listing.", existingId.c_str());
     if (!saved) { ImGui::SameLine(); ImGui::TextDisabled("Save its position first."); }
     if (!m_accessoryMsg.empty()) { ImGui::PushTextWrapPos(0); ImGui::TextUnformatted(m_accessoryMsg.c_str()); ImGui::PopTextWrapPos(); }
     ImGui::End();
