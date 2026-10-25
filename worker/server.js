@@ -1058,7 +1058,9 @@ export class GbServerObject extends DurableObject {
   // --- Promo codes ---
   promoJson(p, t = now()) {
     const status = p.stopped ? 'stopped' : t < p.start ? 'waiting' : p.end && t >= p.end ? 'ended' : 'live';
-    return { code: p.code, bolts: p.bolts, start: p.start, end: p.end, made: p.made, uses: p.uses, status };
+    const item = p.rewardType === 'item' ? this.assets.get(p.itemId) : null;
+    return { code: p.code, rewardType: p.rewardType || 'bolts', itemId: p.itemId || '', itemName: item?.name || '',
+      bolts: p.bolts || 0, start: p.start, end: p.end, made: p.made, uses: p.uses, status };
   }
   redeemPromo(me, typed) {
     const code = typed.toUpperCase();
@@ -1069,13 +1071,24 @@ export class GbServerObject extends DurableObject {
     if (p.end && t >= p.end) return fail('That code has run out.');
     me.promos = me.promos || [];
     if (me.promos.includes(code)) return fail('You already used that code.');
+    let item = null;
+    if (p.rewardType === 'item') {
+      item = this.assets.get(p.itemId);
+      if (!item || !item.promoOnly) return fail('This promo item is no longer available.');
+      if (me.owned.includes(item.id)) return fail('You already own this item.');
+    }
     me.promos.push(code);
     p.uses = (p.uses || 0) + 1;
     this.dirty.promos = true;
-    this.add(me, p.bolts, 'Promo code ' + code, 'promo:' + code);   // (add saves the account)
-    return okay({ me: this.meJson(me), got: p.bolts, code });
+    if (item) {
+      me.owned.push(item.id);
+      this.saveUser(me);
+      return okay({ me: this.meJson(me), got: 0, code, rewardType: 'item', itemId: item.id, itemName: item.name });
+    }
+    this.add(me, p.bolts, 'Promo code ' + code, 'promo:' + code);
+    return okay({ me: this.meJson(me), got: p.bolts, code, rewardType: 'bolts' });
   }
-  // admin.promos: the list (newest first). admin.promoMake {code, bolts, start, end}. admin.promoStop {code}.
+  // admin.promos: the list (newest first). admin.promoMake {code, rewardType, bolts|itemId, start, end}. admin.promoStop {code}.
   promoAdmin(name, me, args) {
     const t = now();
     const list = () => okay({ promos: this.promos.slice().reverse().map((p) => this.promoJson(p, t)) });
@@ -1092,16 +1105,30 @@ export class GbServerObject extends DurableObject {
     if (!PROMO_NAME.test(code)) return fail('Codes are 3-30 letters and numbers (no spaces or symbols).');
     if (code.startsWith('BOLTS')) return fail('Codes can\'t start with BOLTS (those are the one-person codes).');
     if (this.promos.some((x) => x.code === code)) return fail('There\'s already a code called ' + code + '. Pick another name.');
-    const bolts = num(args, 'bolts');
-    if (!Number.isInteger(bolts) || bolts < 1 || bolts > kPromoMaxBolts) return fail('Pick an amount between 1 and 1,000,000 Bolts.');
+    const rewardType = str(args, 'rewardType') === 'item' ? 'item' : 'bolts';
+    let bolts = 0, itemId = '';
+    if (rewardType === 'item') {
+      itemId = str(args, 'itemId').trim().replace(/^gb:/, '');
+      const item = this.assets.get(itemId);
+      if (!item || !isCatalogItem(item.kind)) return fail('Enter the ID of an existing catalog item.');
+      if (item.limited) return fail('Limited items cannot be promo-code rewards.');
+      if (item.meta && item.meta.award === 'email') return fail('Email-award items cannot be promo-code rewards.');
+      item.promoOnly = true;
+      item.exclusive = true;
+      this.saveAsset(item);
+    } else {
+      bolts = num(args, 'bolts');
+      if (!Number.isInteger(bolts) || bolts < 1 || bolts > kPromoMaxBolts) return fail('Pick an amount between 1 and 1,000,000 Bolts.');
+    }
     const start = Math.max(0, Math.floor(num(args, 'start'))) || t;
     const end = Math.max(0, Math.floor(num(args, 'end')));
     if (end && end <= start) return fail('The end has to be after the start.');
     if (end && end <= t) return fail('That end time has already gone by.');
-    if (this.promos.length >= kMaxPromos) this.promos.splice(0, 1);   // (the oldest goes)
-    this.promos.push({ code, bolts, start, end, made: t, by: me.id, uses: 0 });
+    if (this.promos.length >= kMaxPromos) this.promos.splice(0, 1);
+    this.promos.push({ code, rewardType, bolts, ...(itemId ? { itemId } : {}), start, end, made: t, by: me.id, uses: 0 });
     this.dirty.promos = true;
-    this.staffDid(me, 'bolts', 'Made the promo code ' + code + ' (' + bolts + ' Bolts' + (end ? ', ends ' + new Date(end * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '') + ')');
+    const rewardText = rewardType === 'item' ? 'item ' + itemId : bolts + ' Bolts';
+    this.staffDid(me, 'bolts', 'Made the promo code ' + code + ' (' + rewardText + (end ? ', ends ' + new Date(end * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '') + ')');
     return list();
   }
   // Ban (on) or unban someone, and write it in the staff log ('' = done, else why not).
@@ -2792,7 +2819,8 @@ export class GbServerObject extends DurableObject {
         (sort !== 'featured' || a.featured > 0) &&
         (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
         (!ownedOnly || me.owned.includes(a.id)) &&
-        (!a.exclusive || ownedOnly || auctions || this.isStaff(me)) &&   // Exclusive items aren't in the catalog (unless up for auction)
+        (!a.exclusive || ownedOnly || auctions || this.isStaff(me)) &&
+        (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
         (!creator || a.creator === creator) && this.canPlay(a, me) &&
         (!genre || (a.genres || []).includes(genre)) &&
         (!q || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
@@ -2853,6 +2881,7 @@ export class GbServerObject extends DurableObject {
       if (a.review && a.creator !== me.id) return fail(this.noPlay(a));
       if (a.kind === 'devproduct') return fail('Developer products are bought inside their game.');
       if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: confirm an email in Settings and it\'s yours.');
+      if (a.promoOnly) return fail('This item is only available through a promo code.');
       if (a.exclusive) return fail('This is an Exclusive item: it can\'t be bought. It comes from events and gift boxes.');
       if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited ? ' Buy one from a reseller on the item\'s page.' : ''));
       if (a.limited && a.sales >= a.stock) return fail('Sold out! Buy one from a reseller on the item\'s page.');
