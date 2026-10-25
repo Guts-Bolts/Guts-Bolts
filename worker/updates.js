@@ -23,7 +23,8 @@ export const BUILT_IN_UPDATES = [
       'Adds a project-wide searchable resource inventory, with filters for broken object links and quick selection of the owning object.',
       'Shows how often resource values are reused, making shared assets easier to identify without treating reuse as an error.',
       'Checks object links such as constraints, attachments, sound groups, fluid systems, primary parts, and adornee targets for scene IDs that no longer resolve.',
-      'Resource IDs and file paths are shown for inspection but are not claimed to be verified against disk or a remote asset service; isolated does not automatically mean unused.',
+      'Classifies local file references as present or missing, identifies cached gb: assets, and labels remote IDs/URIs as unverified without downloading or making network requests.',
+      'Remote IDs and uncached gb: assets are not called broken because they may still resolve online; isolated scripts are not automatically unused.',
     ],
   },
   {
