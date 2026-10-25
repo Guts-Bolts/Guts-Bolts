@@ -81,8 +81,17 @@ endif()
 # touch controls). It's on automatically for Android; turning it on for Linux
 # lets you try the phone version on a computer.
 option(GB_MOBILE "Build the phone/tablet Player (SDL2 + OpenGL ES 3)" OFF)
-if(ANDROID)
+if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(GB_MOBILE ON)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum iOS deployment target" FORCE)
+
+    # miniaudio includes Apple AVFoundation headers for its iOS backend. Those
+    # headers contain Objective-C declarations, so compile its implementation
+    # translation unit as Objective-C++ rather than plain C++ on iOS.
+    enable_language(OBJCXX)
+    set_source_files_properties(src/core/Audio.cpp PROPERTIES LANGUAGE OBJCXX)
 endif()
 
 # ImGui (docking branch — includes the full editor UI system)
@@ -117,6 +126,27 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(lua)
 
+# Lua's default os.execute implementation calls system(), which the iOS SDK
+# marks unavailable. Replace only that shell hook on iOS; os.execute then
+# reports failure instead of trying to launch a shell in the app sandbox.
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(LUA_LOSLIB "${lua_SOURCE_DIR}/loslib.c")
+    file(READ "${LUA_LOSLIB}" LUA_LOSLIB_ORIGINAL)
+    # Temporarily rename the macro identifier before replacing the call.
+    # Otherwise a plain "system(cmd)" replacement also corrupts
+    # "l_system(cmd)" itself into the invalid token "l_(-1)".
+    string(REPLACE "l_system(cmd)" "l_system__ios(cmd)"
+           LUA_LOSLIB_CONTENT "${LUA_LOSLIB_ORIGINAL}")
+    string(REPLACE "system(cmd)" "(-1)"
+           LUA_LOSLIB_CONTENT "${LUA_LOSLIB_CONTENT}")
+    string(REPLACE "l_system__ios(cmd)" "l_system(cmd)"
+           LUA_LOSLIB_CONTENT "${LUA_LOSLIB_CONTENT}")
+    if("${LUA_LOSLIB_CONTENT}" STREQUAL "${LUA_LOSLIB_ORIGINAL}")
+        message(FATAL_ERROR "Could not patch Lua os.execute for iOS: system(cmd) token not found")
+    endif()
+    file(WRITE "${LUA_LOSLIB}" "${LUA_LOSLIB_CONTENT}")
+endif()
+
 file(GLOB LUA_SOURCES "${lua_SOURCE_DIR}/*.c")
 list(REMOVE_ITEM LUA_SOURCES
     "${lua_SOURCE_DIR}/lua.c"       # stand-alone interpreter
@@ -126,7 +156,11 @@ list(REMOVE_ITEM LUA_SOURCES
 add_library(lua_static STATIC ${LUA_SOURCES})
 target_include_directories(lua_static PUBLIC ${lua_SOURCE_DIR})
 set_target_properties(lua_static PROPERTIES C_STANDARD 99)
-if(NOT WIN32)
+# Lua's POSIX helpers include system()/popen(), which iOS explicitly marks
+# unavailable. Keep the POSIX extension enabled on desktop Unix, but use Lua's
+# built-in unsupported-command fallback on iOS (os.execute cannot launch shells
+# inside an iOS app sandbox anyway).
+if(NOT WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_compile_definitions(lua_static PRIVATE LUA_USE_POSIX)   # safe temp files, etc.
 endif()
 
@@ -245,6 +279,8 @@ if(GB_MOBILE)
 
     if(ANDROID)
         set(GB_GL_LIBS GLESv3 EGL android log)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(GB_GL_LIBS "-framework OpenGLES" "-framework UIKit" "-framework Foundation")
     else()
         set(GB_GL_LIBS GLESv2 EGL)
     endif()
@@ -372,7 +408,6 @@ add_library(gb_engine STATIC
     src/scene/Water.cpp
     src/scene/Terrain.cpp
     src/scene/Liquid.cpp
-    src/scene/LiquidGpu.cpp
     src/scene/Flood.cpp
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
@@ -417,9 +452,17 @@ add_library(gb_engine STATIC
     src/net/ChatTranslate.cpp
     src/editor/Theme.cpp
 )
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    target_sources(gb_engine PRIVATE src/scene/LiquidGpuIOS.cpp)
+else()
+    target_sources(gb_engine PRIVATE src/scene/LiquidGpu.cpp)
+endif()
 if(GB_MOBILE)
     target_sources(gb_engine PRIVATE src/core/AppWindowSDL.cpp)
     target_compile_definitions(gb_engine PUBLIC GB_MOBILE GB_GLES)
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        target_compile_definitions(gb_engine PUBLIC GB_IOS GB_APP_VERSION="${PROJECT_VERSION}")
+    endif()
 else()
     target_sources(gb_engine PRIVATE src/core/AppWindow.cpp)
 endif()
@@ -508,14 +551,28 @@ if(GB_MOBILE)
     if(ANDROID)
         add_library(main SHARED ${PLAYER_SOURCES})
         target_link_libraries(main PRIVATE gb_engine)
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        add_executable(GutsAndBoltsPlayer MACOSX_BUNDLE ${PLAYER_SOURCES})
+        target_compile_definitions(GutsAndBoltsPlayer PRIVATE GB_IOS)
+        set_target_properties(GutsAndBoltsPlayer PROPERTIES
+            MACOSX_BUNDLE_GUI_IDENTIFIER "net.gutsandbolts.player"
+            MACOSX_BUNDLE_BUNDLE_NAME "Guts & Bolts"
+            MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/ios/Info.plist"
+            XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
+            XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+            XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "NO")
+        target_link_libraries(GutsAndBoltsPlayer PRIVATE gb_engine)
+        add_custom_command(TARGET GutsAndBoltsPlayer POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/games" "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources/games"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/catalog" "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources/catalog"
+            VERBATIM)
     else()
         add_executable(GutsAndBoltsPlayer ${PLAYER_SOURCES})
         target_link_libraries(GutsAndBoltsPlayer PRIVATE gb_engine)
         add_custom_command(TARGET GutsAndBoltsPlayer POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/games"
-                    "$<TARGET_FILE_DIR:GutsAndBoltsPlayer>/games"
-            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/catalog"
-                    "$<TARGET_FILE_DIR:GutsAndBoltsPlayer>/catalog"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/games" "$<TARGET_FILE_DIR:GutsAndBoltsPlayer>/games"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/catalog" "$<TARGET_FILE_DIR:GutsAndBoltsPlayer>/catalog"
             VERBATIM)
     endif()
     return()

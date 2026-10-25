@@ -5,6 +5,9 @@
 #include <sstream>
 #include <filesystem>
 #include <algorithm>
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -17,7 +20,7 @@
 #if defined(__linux__) && !defined(__ANDROID__)
 #include <unistd.h>
 #endif
-#ifdef __APPLE__
+#if defined(__APPLE__) && TARGET_OS_OSX
 #define __ASSERT_MACROS_DEFINE_VERSIONS_WITHOUT_UNDERSCORES 0   // (no check()/verify() macros)
 #include <CoreServices/CoreServices.h>
 #include <mach-o/dyld.h>
@@ -73,7 +76,7 @@ bool parse(const std::string& url, Link& out) {
     return true;
 }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) && TARGET_OS_OSX
 namespace {
 std::deque<std::string>& macLinks() { static std::deque<std::string> q; return q; }
 
@@ -116,7 +119,7 @@ std::string macPlist() {
 #endif
 
 void listen() {
-#ifdef __APPLE__
+#if defined(__APPLE__) && TARGET_OS_OSX
     AEInstallEventHandler(kGetUrlClass, kGetUrlId, NewAEEventHandlerUPP(onGetUrl), 0, false);
 #endif
 }
@@ -159,7 +162,7 @@ void registerScheme() {
     if (old == text) return;   // already set up
     { std::ofstream out(file); out << text; }
     std::system("xdg-mime default gutsandbolts-link.desktop x-scheme-handler/gutsandbolts >/dev/null 2>&1 &");
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && TARGET_OS_OSX
     listen();   // (again, now the window is up, in case anything replaced our handler)
     // Links only open apps (bundles) on a Mac, so we make a small one that runs this program:
     // ~/Applications/Guts&Bolts Player.app, whose program is a link to this file.
@@ -220,7 +223,7 @@ std::string poll() {
     env->DeleteLocalRef(cls);
     env->DeleteLocalRef(activity);
     return link;
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) && TARGET_OS_OSX
     if (macLinks().empty()) return "";
     std::string link = macLinks().front();
     macLinks().pop_front();

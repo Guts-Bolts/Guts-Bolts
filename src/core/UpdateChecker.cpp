@@ -153,6 +153,12 @@ bool canUpdate() {
 // can't replace itself). Your own games are kept: only files the update brings
 // that you don't have yet are added to games/ and catalog/.
 bool launchUpdater(const char* relaunchApp) {
+#if defined(GB_IOS)
+    // iOS apps cannot replace their installed bundle or launch shell scripts.
+    // The user must install updates through the platform distribution channel.
+    (void)relaunchApp;
+    return false;
+#else
     if (!canUpdate()) return false;
     std::string url;
     { std::lock_guard<std::mutex> lock(g_mutex); url = g_downloadUrl; }
@@ -200,6 +206,7 @@ bool launchUpdater(const char* relaunchApp) {
     std::string cmd = "(sh \"" + script.string() + "\" >/dev/null 2>&1 &)";
 #endif
     return std::system(cmd.c_str()) == 0;
+#endif
 }
 
 } // namespace UpdateChecker

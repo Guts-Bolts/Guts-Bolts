@@ -2,6 +2,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <system_error>
+#include <fstream>
+#if defined(GB_MOBILE)
+#include <SDL.h>
+#endif
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -9,8 +13,11 @@
 #endif
 #include <windows.h>
 #elif defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_OSX
 #include <mach-o/dyld.h>
 #include <climits>
+#endif
 #endif
 #ifdef __ANDROID__
 #include <SDL.h>
@@ -26,6 +33,14 @@ std::filesystem::path appFolder() {
 #if defined(__ANDROID__)
         // The app's private storage (the APK itself is read-only).
         if (const char* p = SDL_AndroidGetInternalStoragePath()) return std::filesystem::path(p);
+#elif defined(GB_IOS)
+        // Keep mutable data outside the signed, read-only .app bundle.
+        if (const char* p = SDL_GetPrefPath("GutsAndBolts", "Player")) {
+            std::filesystem::path out(p);
+            SDL_free((void*)p);
+            std::filesystem::create_directories(out, ec);
+            return out;
+        }
 #elif defined(_WIN32)
         wchar_t buf[MAX_PATH];
         DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);
@@ -86,7 +101,7 @@ void installBundledFiles() {
     std::filesystem::path stamp = appFolder() / "bundle_version.txt";
     std::string have;
     { std::ifstream f(stamp); std::getline(f, have); }
-    if (have == version) return;                      // already unpacked this version
+    if (have == version) return;
     std::string name;
     std::error_code ec;
     while (std::getline(lines, name)) {
@@ -99,6 +114,34 @@ void installBundledFiles() {
         out.write(data.data(), (std::streamsize)data.size());
     }
     std::ofstream(stamp) << version << "\n";
+#elif defined(GB_IOS)
+    // The signed app bundle is read-only; copy packaged content into writable storage.
+    const char* base = SDL_GetBasePath();
+    if (!base) return;
+    const std::filesystem::path resources = std::filesystem::path(base) / "Resources";
+    const std::filesystem::path stamp = appFolder() / "bundle_version.txt";
+    std::string installed;
+    { std::ifstream in(stamp); std::getline(in, installed); }
+#ifdef GB_APP_VERSION
+    const std::string version = GB_APP_VERSION;
+#else
+    const std::string version = "unknown";
+#endif
+    if (installed != version) {
+        std::error_code ec;
+        for (const char* name : {"games", "catalog"}) {
+            const auto src = resources / name;
+            const auto dst = appFolder() / name;
+            if (std::filesystem::exists(src, ec)) {
+                std::filesystem::create_directories(dst, ec);
+                std::filesystem::copy(src, dst, std::filesystem::copy_options::recursive |
+                    std::filesystem::copy_options::overwrite_existing, ec);
+                ec.clear();
+            }
+        }
+        std::ofstream(stamp, std::ios::trunc) << version << "\n";
+    }
+    SDL_free((void*)base);
 #endif
 }
 
@@ -152,6 +195,10 @@ bool launch(const std::filesystem::path& program, const std::string& argument) {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     return true;
+#elif defined(GB_IOS)
+    // iOS apps cannot spawn sibling executables or invoke a shell.
+    (void)argument;
+    return false;
 #else
     std::string cmd = "\"" + program.string() + "\"";
     if (!argument.empty()) cmd += " \"" + argument + "\"";

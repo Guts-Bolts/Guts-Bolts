@@ -226,6 +226,11 @@ std::string fetch(const std::string& id, const char* ext) {
     const std::string rel = std::string("roblox/") + id + ext;
     fs::path file = Paths::gamesFolder() / "roblox" / (id + ext);
     if (fs::exists(file, ec) && fs::file_size(file, ec) > 0) return rel;
+#if defined(GB_IOS)
+    // iOS cannot launch shell commands. Cached meshes remain usable; uncached
+    // downloads require a native HTTP client, so report a cache miss.
+    return {};
+#else
     fs::create_directories(file.parent_path(), ec);
     fs::path part = file;
     part += ".part";
@@ -241,6 +246,7 @@ std::string fetch(const std::string& id, const char* ext) {
     if (rc != 0 || !fs::exists(part, ec) || fs::file_size(part, ec) == 0) { fs::remove(part, ec); return {}; }
     fs::rename(part, file, ec);
     return ec ? std::string() : rel;
+#endif
 }
 
 } // namespace RobloxMesh
