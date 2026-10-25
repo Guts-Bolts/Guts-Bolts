@@ -2267,6 +2267,18 @@ export class GbServerObject extends DurableObject {
       const data = a && a.thumb && this.canPlay(a, me) ? this.readFile('thumb:' + a.id) : null;
       return data ? okay({ data: bytesToB64(data) }) : fail('No picture.');
     }
+    if (name === 'boltworks.status') {
+      const registrations = this.getMeta('boltworksWaitlist', []);
+      return okay({ registered: registrations.some((entry) => entry.id === me.id), total: registrations.length });
+    }
+    if (name === 'boltworks.register') {
+      const registrations = this.getMeta('boltworksWaitlist', []);
+      if (registrations.some((entry) => entry.id === me.id))
+        return okay({ registered: true, already: true });
+      registrations.push({ id: me.id, username: me.name, at: t });
+      this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'boltworksWaitlist', JSON.stringify(registrations));
+      return okay({ registered: true, already: false });
+    }
     if (name === 'bolts.history') {
       const h = me.ledger.slice(-100).map((e) => Object.assign({ amount: e[0], reason: e[1], time: e[2] },
         /^gift(for|from):/.test(e[3] || '') ? { gift: e[3].startsWith('giftfor:') ? 'sent' : 'got' } : {}));

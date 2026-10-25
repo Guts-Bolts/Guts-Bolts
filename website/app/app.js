@@ -402,6 +402,7 @@ function loginPopup(what) {
 }
 // Which clicks and forms need an account, and what to say.
 const NEEDS_ACCOUNT = {
+  boltworksRegister: 'register for the Boltworks Club launch discount',
   buy: 'get items from the catalog', gift: 'send gifts', modelVote: 'rate models', buyPass: 'buy game passes', buyPrivate: 'buy private servers', daily: 'claim your daily Bolts', saveAvatar: 'save your avatar',
   friend: 'add friends', follow: 'follow people', group: 'join groups', redeem: 'redeem codes', upload: 'upload things and publish games',
   groupCreate: 'make a group', groupPost: 'post on group walls', groupShout: 'shout to a group',
@@ -2815,18 +2816,26 @@ pages.notifications = async () => {
 
 pages.bolts = async () => {
   const r = signedIn() ? await pageCall('bolts.history', {}) : { ok: true, history: [] };
+  const club = signedIn() ? await pageCall('boltworks.status', {}) : { ok: true, registered: false };
   show(html`<h1>Bolts</h1>
-    <div class="box row"><div class="grow" style="font-size:24px">${bolts(signedIn() ? me.bolts : 0)}</div>
-      ${!signedIn() || me.canDaily ? html`<button class="btn green" data-act="daily">Claim today's 25 Bolts</button>` : html`<span class="muted">Daily Bolts claimed. Come back tomorrow!</span>`}</div>
-    <p class="muted">Earn Bolts every day, by playing games in the app (5 every 5 minutes, up to 50 a day) and by selling things you make.</p>
-    <h2>Redeem a code</h2><form class="row" data-form="redeem"><input type="text" name="code" placeholder="Type your code here" style="max-width:360px">
-      <button class="btn blue">Redeem</button></form>
-    <p class="small"><a href="#/redeem">Got a promo code? Redeem it here</a></p>
-    <h2>History</h2>
-    <div class="list">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div>${h.gift ? html`<span class="note-icon" aria-hidden="true">🎁</span>` : ''}<span class="grow">${h.reason}</span>
-      ${h.gift === 'got' && !h.amount ? html`<span class="ok">Gift</span>`
-        : html`<span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span>`}<span class="small muted">${ago(h.time)}</span></div>`)
-      : html`<p class="muted">${signedIn() ? 'Nothing yet.' : 'Log in to see your Bolts. New accounts start with 100!'}</p>`}</div>`);
+    <section class="bolts-hero">
+      <div class="bolts-hero-copy"><span class="bolts-eyebrow">YOUR GUTS &amp; BOLTS WALLET</span><h2>Make every Bolt count.</h2><p>Earn Bolts by playing, create things worth buying, and spend them across the platform.</p></div>
+      <div class="bolts-balance"><span>YOUR BALANCE</span><strong>${bolts(signedIn() ? me.bolts : 0)}</strong>
+        ${!signedIn() || me.canDaily ? html`<button class="btn green" data-act="daily">Claim today's 25 Bolts</button>` : html`<span class="muted">Daily reward claimed. Come back tomorrow.</span>`}</div>
+    </section>
+    <div class="bolts-earn-grid"><div class="bolts-earn-card"><span class="bolts-earn-icon">⚡</span><strong>Show up daily</strong><p>Claim 25 Bolts every day.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🎮</span><strong>Play games</strong><p>Earn 5 Bolts every 5 minutes, up to 50 a day.</p></div><div class="bolts-earn-card"><span class="bolts-earn-icon">🛠️</span><strong>Make stuff</strong><p>Earn Bolts when people buy your creations.</p></div></div>
+    <section class="boltworks-teaser">
+      <div class="boltworks-topline"><span class="boltworks-stamp">COMING LATER</span><span class="boltworks-mini">G&amp;B MEMBERSHIP</span></div>
+      <div class="boltworks-content"><div class="boltworks-emblem" aria-hidden="true"><span>✦</span><b>B</b><i></i></div><div class="boltworks-copy">
+        <p class="boltworks-kicker">THE NEXT LEVEL OF GUTS &amp; BOLTS</p><h2>Boltworks Club</h2><p class="boltworks-lede">For the builders, collectors, and absolute agents of chaos.</p>
+        <p>Boltworks Club is a future paid membership with multiple tiers, exclusive perks, and a little extra status around the platform. The tiers, benefits, and prices will be revealed closer to launch.</p>
+        <div class="boltworks-tier-preview" aria-label="Membership tiers coming soon"><div><span>01</span><strong>FOUNDATION</strong><small>First details soon</small></div><div><span>02</span><strong>WORKSHOP</strong><small>First details soon</small></div><div><span>03</span><strong>MASTERWORK</strong><small>First details soon</small></div></div>
+        <div class="boltworks-cta">${!signedIn() ? html`<a class="btn gold big" href="#/signup">Sign up for early access</a>` : club.registered ? html`<span class="boltworks-registered"><b>✓</b> You're on the early list</span>` : html`<button class="btn gold big" data-act="boltworksRegister">Register for the launch discount</button>`}
+          <span class="boltworks-note">${signedIn() ? 'Register now to qualify for a discount when memberships launch. No payment today.' : 'Create a free account to reserve your early-registration discount. No payment today.'}</span></div>
+      </div></div><div class="boltworks-footer"><span>NOT AVAILABLE YET</span><span>EARLY REGISTRATION = FUTURE DISCOUNT ELIGIBILITY</span></div>
+    </section>
+    <h2>Redeem a code</h2><form class="row" data-form="redeem"><input type="text" name="code" placeholder="Type your code here" style="max-width:360px"><button class="btn blue">Redeem</button></form><p class="small"><a href="#/redeem">Got a promo code? Redeem it here</a></p>
+    <h2>Transaction history</h2><div class="list bolts-history">${r.ok && r.history.length ? r.history.slice().reverse().map((h) => html`<div>${h.gift ? html`<span class="note-icon" aria-hidden="true">🎁</span>` : ''}<span class="grow">${h.reason}</span>${h.gift === 'got' && !h.amount ? html`<span class="ok">Gift</span>` : html`<span class="${h.amount >= 0 ? 'ok' : 'error'}">${h.amount >= 0 ? '+' : ''}${h.amount}</span>`}<span class="small muted">${ago(h.time)}</span></div>`) : html`<p class="muted">${signedIn() ? 'Nothing yet.' : 'Log in to see your Bolts. New accounts start with 100!'}</p>`}</div>`);
 };
 
 // Promo codes: type one (like GUTSTOBER2026) to get Bolts. #/redeem?code=... fills the box in.
@@ -3331,6 +3340,12 @@ function loginPage(signup) {
 // --- clicks and forms ----------------------------------------------------------
 
 const actions = {
+  async boltworksRegister() {
+    const r = await call('boltworks.register', {});
+    if (!r.ok) { toast(r.error || 'Could not register right now.'); return; }
+    toast('You’re on the Boltworks Club early list. Your launch discount eligibility is saved.');
+    render();
+  },
   async favorite(d) {
     const r = await call('game.favorite', { id: d.id, on: !!d.on });
     if (!r.ok) { toast(r.error); return; }

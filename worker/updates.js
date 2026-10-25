@@ -11,6 +11,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'boltworks-club-teaser', name: 'The Club Is Coming', version: '0.7.5', time: 1792957200, tag: 'Website',
+    summary: 'The Bolts page gets a new wallet layout and an early-registration teaser for Boltworks Club, a future paid membership with multiple tiers.',
+    items: [
+      'Preview the upcoming Boltworks Club membership and its planned tier structure.',
+      'Register early from the Bolts page to qualify for a launch discount; no payment is taken now.',
+      'Membership prices, exact tier benefits, and launch timing will be announced later.',
+      'Improve the Bolts balance panel, earning-method cards, and transaction-history layout.'
+    ]
+  },
+  {
     id: 'multiplayer-session-recorder', name: 'The Bug Has a Paper Trail', version: '0.7.5', time: 1792953600, tag: 'Studio',
     summary: 'Studio can export a multiplayer test session bundle with the scene snapshot and a timestamped server/player output timeline for debugging and sharing.',
     items: [
