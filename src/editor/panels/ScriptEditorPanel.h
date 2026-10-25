@@ -75,6 +75,7 @@ private:
         uint64_t id = 0;
         std::string name, path;
         int sourceBytes = 0, outgoing = 0, incoming = 0;
+        bool cyclic = false;
     };
     struct DependencyEdge {
         uint64_t from = 0, to = 0;
