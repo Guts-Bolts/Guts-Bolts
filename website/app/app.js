@@ -2390,14 +2390,26 @@ pages.avatar = async () => {
   }
   // Colours change the preview straight away (without redrawing the page, so the colour picker stays open).
   let avatar3d = null, avatarViewMode = '2d', avatarViewRequest = 0;
-  const preview = () => {
+  const render2dPreview = async (request = ++avatarViewRequest) => {
     const previewEl = $('#avatarPreview');
+    if (!previewEl) return;
+    try {
+      // Roblox-style 2D mode: show a still PNG rendered by the same 3D avatar
+      // renderer, including actual clothing textures, faces and Studio accessories.
+      const url = await avatarPicture(a, wornItems, 180);
+      if (request !== avatarViewRequest || avatarViewMode !== '2d') return;
+      previewEl.innerHTML = url
+        ? html`<img src="${url}" alt="Avatar preview" width="180" height="225" style="display:block;object-fit:contain">`.s
+        : avatarSvg(a, 180, wornItems).s;
+    } catch (_) {
+      if (request === avatarViewRequest && avatarViewMode === '2d') previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
+    }
+  };
+  const preview = () => {
     if (avatarViewMode === '3d') {
       if (avatar3d) avatar3d.set(a, wornItems);
       else showAvatarView('3d');
-    } else {
-      previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
-    }
+    } else render2dPreview();
   };
   const showAvatarView = async (mode) => {
     avatarViewMode = mode;
@@ -2408,26 +2420,26 @@ pages.avatar = async () => {
       button.setAttribute('aria-pressed', String(active));
     });
     const hint = $('#avatarPreviewHint');
-    if (hint) hint.textContent = mode === '3d' ? 'Drag to rotate horizontally and vertically' : 'Flat preview';
+    if (hint) hint.textContent = mode === '3d' ? 'Drag to rotate horizontally and vertically' : '2D image rendered from your 3D avatar';
     const previewEl = $('#avatarPreview');
     if (mode === '2d') {
-      previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
+      await render2dPreview(request);
       return;
     }
     const fallbackTo2d = () => {
-      previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
-      if (hint) hint.textContent = '3D preview unavailable; showing 2D instead';
       avatarViewMode = '2d';
       view.querySelectorAll('[data-avatar-view]').forEach((button) => {
         const active = button.dataset.avatarView === '2d';
         button.classList.toggle('blue', active);
         button.setAttribute('aria-pressed', String(active));
       });
+      if (hint) hint.textContent = '3D preview unavailable; showing a rendered 2D image';
+      render2dPreview(++avatarViewRequest);
     };
     try {
       const controller = await mountAvatar(previewEl, a, wornItems, { width: 240 });
       if (request !== avatarViewRequest || avatarViewMode !== '3d') {
-        if (avatarViewMode === '2d') previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
+        if (avatarViewMode === '2d') render2dPreview();
         else showAvatarView('3d');
         return;
       }
