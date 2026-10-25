@@ -58,6 +58,7 @@ test('Performance Doctor is published in the website update log', () => {
   assert.match(text, /viewport and simulation/);
   assert.match(text, /diagnosis report/);
   assert.match(text, /heuristics/);
+  assert.match(text, /separate/);
 });
 
 test('says "Library", never "Marketplace"', () => {
