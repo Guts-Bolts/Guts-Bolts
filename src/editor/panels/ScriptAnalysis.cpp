@@ -312,7 +312,14 @@ void ScriptEditorPanel::renderDependencyMap() {
         m_dependencyAnalysedAt = ImGui::GetTime();
     }
     ImGui::SetNextItemWidth(260.0f);
-    ImGui::InputTextWithHint("##dependencySearch", "Filter by script name or path...", &m_dependencySearch);
+    char dependencySearchBuffer[512] = {};
+    std::copy(m_dependencySearch.begin(),
+              m_dependencySearch.begin() + std::min(m_dependencySearch.size(), sizeof(dependencySearchBuffer) - 1),
+              dependencySearchBuffer);
+    if (ImGui::InputTextWithHint("##dependencySearch", "Filter by script name or path...",
+                                 dependencySearchBuffer, sizeof(dependencySearchBuffer))) {
+        m_dependencySearch = dependencySearchBuffer;
+    }
     ImGui::SameLine();
     ImGui::Checkbox("Only scripts with unresolved require()", &m_dependencyOnlyUnresolved);
     ImGui::TextDisabled("Relationships are inferred from require() and named child lookups. They are not runtime call traces.");
