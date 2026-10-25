@@ -541,8 +541,13 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
             // ...and on a wall it runs down, leaving a trail, thinning as it goes.
             if (p.slide > 0.0f) {
                 p.slide -= dt;
-                float d = 0.35f * dt * std::min(1.0f, p.slide * 1.5f);
-                p.pos.y -= d;
+                // Gravity projected onto the surface makes stains follow sloped walls
+                // instead of always moving straight down the world Y axis.
+                const glm::vec3 gravityDir(0.0f, -1.0f, 0.0f);
+                const glm::vec3 surfaceFlow = gravityDir - p.normal * glm::dot(gravityDir, p.normal);
+                const float flowStrength = glm::length(surfaceFlow);
+                const float d = 0.35f * dt * std::min(1.0f, p.slide * 1.5f) * flowStrength;
+                if (flowStrength > 1e-4f) p.pos += (surfaceFlow / flowStrength) * d;
                 p.trail += d;
                 p.size.x *= 1.0f - 0.12f * dt;
                 if (p.trail > 0.2f) {
