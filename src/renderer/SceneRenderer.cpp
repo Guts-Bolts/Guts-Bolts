@@ -1264,6 +1264,34 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         const bool water = Player::isWater(node);
         const WaterSystem::Body* wb = water ? waves.find(node->id) : nullptr;
         glm::mat4 model = wb ? glm::mat4(1.0f) : it.model;
+        std::shared_ptr<Mesh> renderMesh = node->mesh;
+        // Legacy Roblox SpecialMesh instances are stored as child objects with
+        // RobloxClass / MeshType / Scale / Offset attributes. Render built-in
+        // primitive mesh types on the parent part instead of silently ignoring them.
+        // FileMesh asset IDs still require the future asset importer and intentionally
+        // fall back to the parent part's current geometry.
+        if (!water && node->kind == NodeKind::Part) {
+            for (const auto& child : node->children) {
+                const SceneNode* sm = child.get();
+                const Attribute* cls = sm->findAttribute("RobloxClass");
+                if (!cls || cls->type != Attribute::String || cls->s != "SpecialMesh") continue;
+                const Attribute* type = sm->findAttribute("MeshType");
+                const std::string meshType = type && type->type == Attribute::String ? type->s : "Head";
+                if (meshType == "Sphere" || meshType == "Head")
+                    renderMesh = MeshLibrary::get(PrimitiveType::Sphere);
+                else if (meshType == "Cylinder")
+                    renderMesh = MeshLibrary::get(PrimitiveType::Cylinder);
+                else if (meshType == "Brick" || meshType == "Torso" || meshType == "Wedge")
+                    renderMesh = MeshLibrary::get(PrimitiveType::Cube);
+                const Attribute* offset = sm->findAttribute("Offset");
+                if (offset && offset->type == Attribute::Vector3)
+                    model = glm::translate(model, offset->v);
+                const Attribute* scale = sm->findAttribute("Scale");
+                if (scale && scale->type == Attribute::Vector3)
+                    model = model * glm::scale(glm::mat4(1.0f), scale->v);
+                break;
+            }
+        }
         glm::mat3 nrm = glm::transpose(glm::inverse(glm::mat3(model)));
         m_lit->setMat4("uModel", model);
         m_lit->setMat3("uNormalMat", nrm);
@@ -1303,7 +1331,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 m_lit->setInt("uTShirt", 7);
                 m_lit->setBool("uHasTShirt", true);
             }
-            node->mesh->draw();
+            (renderMesh ? renderMesh : node->mesh)->draw();
             if (cloth) m_lit->setBool(face ? "uFace" : "uClothing", false);
             if (tee) m_lit->setBool("uHasTShirt", false);
         }
