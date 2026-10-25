@@ -10,6 +10,9 @@ Extend the existing R6 ragdoll and gore systems into a configurable, performance
 
 - Add a dedicated blood simulation layer that consumes impact, wound, and body-contact events from the existing ragdoll system.
 - Support gravity-driven wall streaks, droplets, splashes, and floor pooling.
+- Use a size spectrum for airborne drops, with stronger drag on fine mist than heavy beads.
+- Shape high-energy impacts into velocity-oriented, elongated splashes with irregular directional spines.
+- Preserve the existing age-driven wet-to-dry PBR response; extend surface projection and material-aware flow as later phases.
 - Accumulate and merge puddles using a bounded representation rather than spawning an unbounded number of particles.
 - Make spread, absorption, streaking, and lifetime depend on surface material.
 - Keep decals and droplets persistent for a configurable lifetime, with a global budget and distance-based cleanup.
@@ -49,12 +52,13 @@ The first implementation slice adds stylized rounded organ-like fragments and sh
 ## Suggested implementation sequence
 
 1. Audit and document current ragdoll, gore settings, contact smearing, and cleanup paths.
-2. Introduce a small blood-event/data model and surface-material response table.
-3. Implement gravity-driven streaks and bounded floor pooling.
-4. Integrate event generation with existing hit, dismemberment, and ragdoll-contact paths.
-5. Add creator settings, quality budgets, and multiplayer event replication.
-6. Add optional skeletal and layered wound assets through data-driven presets.
-7. Add deterministic tests for lifetime cleanup, pool budgets, respawn restoration, and gore-disabled behavior, followed by in-engine visual tests.
+2. Add a size spectrum and size-dependent air drag for airborne blood.
+3. Shape high-energy floor and wall impacts into velocity-oriented directional splashes.
+4. Introduce a small blood-event/data model and surface-material response table.
+5. Improve surface projection and material-aware flow while keeping pooling bounded.
+6. Add creator settings, quality budgets, and multiplayer event replication.
+7. Add optional skeletal and layered wound assets through data-driven presets.
+8. Add deterministic tests for lifetime cleanup, pool budgets, respawn restoration, and gore-disabled behavior, followed by in-engine visual tests.
 
 ## Acceptance criteria
 
