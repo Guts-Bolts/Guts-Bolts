@@ -652,6 +652,7 @@ set(EDITOR_SOURCES
     src/editor/EditorUV.cpp
     src/editor/EditorSolid.cpp
     src/editor/EditorAutosave.cpp
+    src/editor/EditorTimeMachine.cpp
     src/editor/EditorOnline.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp

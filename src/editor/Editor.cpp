@@ -254,6 +254,7 @@ void Editor::render(float dt) {
     renderPerformanceWindow();
     renderPerformanceDoctor();
     renderSceneValidator();
+    renderProjectTimeMachine();
 
     trackChanges();
     updateTitle();
@@ -2524,6 +2525,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
+        if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;

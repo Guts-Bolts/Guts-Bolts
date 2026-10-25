@@ -10,6 +10,18 @@ Studio's **Catalog Repair Shop** lets a creator load an existing 3D accessory by
 
 The server remains authoritative: creators can update their own items, and staff can repair accessories with an audit entry. Other users cannot update someone else's item. This workflow supports 3D accessories (hats, hair, face accessories, neck, shoulder, and waist items); clothing, bundles, and non-model catalog items are not editable through this window.
 
+# Yesterday, But Make It Recoverable (October 25, 2026)
+
+Project Time Machine adds named scene checkpoints to Studio, so large edits have a recovery point beyond the regular undo history.
+
+## Features
+- Create named checkpoints at important milestones.
+- Compare a checkpoint with the current scene to see added, removed, and modified objects.
+- Restore a checkpoint after automatically checkpointing the current state first.
+- Store up to 15 checkpoints per project in a local file next to the application.
+- Keep checkpoint history separate by project path (or project title for unsaved projects).
+
+Checkpoints are local to this computer and are not uploaded or synced. Restoring changes the open scene in memory; save the project normally when ready.
 # Your Scene Is Under Review (October 25, 2026)
 
 Studio's **Scene Validator** checks common project-structure and reference mistakes before publishing.
