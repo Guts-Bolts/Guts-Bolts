@@ -2662,7 +2662,7 @@ function mailBox(ml) {
       <button class="btn small blue">Send test</button></form>` : ''}</div>`;
 }
 
-// Promo codes (official account only): make codes like GUTSTOBER2026 that give Bolts, for a limited time if you like.
+// Promo codes (official account only): codes can grant Bolts or an item that cannot be bought in the catalog.
 const PROMO_STATUS = { live: ['ok', 'Live'], waiting: ['muted', 'Not started yet'], ended: ['muted', 'Ended'], stopped: ['error', 'Stopped'] };
 function promoBox(pr) {
   if (!pr) return '';
