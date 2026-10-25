@@ -22,6 +22,13 @@ task.spawn(function()
         return test()
     end
 
+    -- Legacy enum enumeration: old scripts use this to select a random material.
+    local materials = Enum.Material:GetEnumItems()
+    check(type(materials) == "table" and #materials > 0, "Enum.Material:GetEnumItems returns material names")
+    check(table.find(materials, "Neon") ~= nil, "material enum list contains Neon")
+    check(type(Enum.Font:GetEnumItems()) == "table" and #Enum.Font:GetEnumItems() > 0,
+          "Enum.Font:GetEnumItems returns font names")
+
     local Players = game:GetService("Players")
     local me = Players.LocalPlayer
     local character = me.Character
