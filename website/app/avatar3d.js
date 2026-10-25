@@ -661,6 +661,18 @@ function draw(buffer, count, w, h, yaw, pitch, face = '', tee = '', shirt = '', 
 
 export function supported() { return !!initGl(); }
 
+// Build only the catalog item's geometry. Never include the avatar body in the catalog viewer.
+function itemOnlyPieces(model, item) {
+  if (!item) return [];
+  if (item.kind === 'gear') return accessories.get(item.id)?.pieces || [];
+  if (isModelAccessory(item)) return accessories.get(item.id)?.pieces || [];
+  // Classic built-in hats are procedural shapes; discard the mannequin's body meshes.
+  if (item.kind === 'hat' || item.kind === 'hair') {
+    return pieces(model, MANNEQUIN_GREY, [item]).filter((p) => !p.mesh);
+  }
+  return [];
+}
+
 // --- avatars on the page ---------------------------------------------------------
 
 // A turnable 3D avatar inside `el` (replacing what's there once it's ready).
@@ -683,14 +695,14 @@ export async function mountAvatar(el, avatar, items = [], opts = {}) {
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', 'Avatar in 3D');
   const ctx = canvas.getContext('2d');
-  let buffer = build(pieces(model, avatar, items)), count = buffer.length / STRIDE;
+  let buffer = build(opts.itemOnly ? itemOnlyPieces(model, items[0]) : pieces(model, avatar, items)), count = buffer.length / STRIDE;
   let face = faceOf(items), tee = teeOf(items), shirt = clothOf(items, 'shirt'), pants = clothOf(items, 'pants');
   let curAv = avatar, curIts = items;
   const whenLoaded = () => {   // repaint as the pictures (and Studio accessories) arrive
     const want = curIts;
     loadAccessories(want).then(() => {
       if (!canvas.isConnected || want !== curIts) return;
-      buffer = build(pieces(model, curAv, curIts)); count = buffer.length / STRIDE;
+      buffer = build(opts.itemOnly ? itemOnlyPieces(model, curIts[0]) : pieces(model, curAv, curIts)); count = buffer.length / STRIDE;
       paint();
     });
     faceTexture(face).ready.then(() => { if (canvas.isConnected) paint(); });
@@ -735,7 +747,7 @@ export async function mountAvatar(el, avatar, items = [], opts = {}) {
   return {
     set(av, its = []) {
       curAv = av; curIts = its;
-      buffer = build(pieces(model, av, its)); count = buffer.length / STRIDE;
+      buffer = build(opts.itemOnly ? itemOnlyPieces(model, its[0]) : pieces(model, av, its)); count = buffer.length / STRIDE;
       face = faceOf(its);
       tee = teeOf(its);
       shirt = clothOf(its, 'shirt');
