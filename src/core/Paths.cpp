@@ -195,6 +195,10 @@ bool launch(const std::filesystem::path& program, const std::string& argument) {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     return true;
+#elif defined(GB_IOS)
+    // iOS apps cannot spawn sibling executables or invoke a shell.
+    (void)argument;
+    return false;
 #else
     std::string cmd = "\"" + program.string() + "\"";
     if (!argument.empty()) cmd += " \"" + argument + "\"";
