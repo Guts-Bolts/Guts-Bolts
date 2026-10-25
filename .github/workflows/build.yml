@@ -134,7 +134,8 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=Release
       - name: Compile device Player (signing not required for compile)
-        run: cmake --build build-ios-device --config Release --target GutsAndBoltsPlayer
+        run: |
+          cmake --build build-ios-device --config Release --target GutsAndBoltsPlayer -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY=""
 
   linux:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
