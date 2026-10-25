@@ -26,6 +26,18 @@ test('every update has an id, a name, a time, a tag, a summary and what changed'
   }
 });
 
+test('Studio workflow update is published in the website update log', () => {
+  const update = BUILT_IN_UPDATES.find((u) => u.id === 'studio-under-the-hood');
+  assert.ok(update, 'the Studio improvements must be visible on the website');
+  assert.equal(update.tag, 'Studio');
+  const text = [update.name, update.summary, ...update.items].join(' ');
+  assert.match(text, /Performance Monitor/);
+  assert.match(text, /Accessory maker/);
+  assert.match(text, /Bundle maker/);
+  assert.match(text, /Properties panel/);
+  assert.match(text, /Script Analysis/);
+});
+
 test('says "Library", never "Marketplace"', () => {
   // (Roblox's MarketplaceService is a script name, so that one's fine.)
   for (const u of BUILT_IN_UPDATES)
