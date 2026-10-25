@@ -763,8 +763,8 @@ void Editor::renderAccessoryWindow() {
     if (!m_showAccessory) return;
     // Opens over the right of the viewport, big enough to see every step.
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 470, vp->WorkPos.y + 150), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(440, 520), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 550, vp->WorkPos.y + 100), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(520, 650), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Accessories", &m_showAccessory)) { ImGui::End(); return; }
     onlineLine();
     const bool allowed = Online::online() && (Online::verified() || Online::staff());
@@ -850,6 +850,31 @@ void Editor::renderAccessoryWindow() {
     }
     ImGui::EndDisabled();
     ImGui::EndDisabled();
+
+    // Precise offsets are much easier than repeatedly dragging a tiny accessory in 3D.
+    // These values are relative to the mannequin, independent of the accessory's parent.
+    if (mannequin) {
+        Transform rel = relativeTo(mannequin->worldMatrix(), model->worldMatrix());
+        ImGui::SeparatorText("Fine positioning");
+        ImGui::TextDisabled("Offset, rotation and scale relative to the mannequin.");
+        bool transformChanged = false;
+        transformChanged |= ImGui::DragFloat3("Offset", &rel.position.x, 0.01f, -100.0f, 100.0f, "%.3f");
+        transformChanged |= ImGui::DragFloat3("Rotation", &rel.rotation.x, 0.5f, -360.0f, 360.0f, "%.1f deg");
+        transformChanged |= ImGui::DragFloat3("Scale", &rel.scale.x, 0.01f, 0.001f, 100.0f, "%.3f");
+        if (ImGui::Button("Center offset")) { rel.position = kind.spot; transformChanged = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset rotation")) { rel.rotation = glm::vec3(0.0f); transformChanged = true; }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset scale")) { rel.scale = glm::vec3(1.0f); transformChanged = true; }
+        if (transformChanged) {
+            rel.scale = glm::max(rel.scale, glm::vec3(0.001f));
+            const glm::mat4 world = mannequin->worldMatrix() * rel.matrix();
+            model->transform = relativeTo(model->parent ? model->parent->worldMatrix() : glm::mat4(1.0f), world);
+            m_scene->markDirty();
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Use these numeric controls for exact placement; the Move / Rotate tools still work in the viewport.");
+    }
+
     if (saved) {
         json j = json::parse(saved->s, nullptr, false);
         std::string k = j.is_object() ? j.value("kind", std::string()) : std::string();

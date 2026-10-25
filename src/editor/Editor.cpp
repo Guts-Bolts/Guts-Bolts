@@ -45,6 +45,7 @@
 #include <ImGuizmo.h>
 #include <string>
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <vector>
 
@@ -148,6 +149,8 @@ Editor::~Editor() {
 }
 
 void Editor::render(float dt) {
+    const auto frameStart = std::chrono::steady_clock::now();
+    m_perfSimulationMs = 0.0f;
     Online::update();   // replies from the Guts&Bolts server
     m_multiTest->update();   // the multiplayer test's output -> Output
     ImGuizmo::BeginFrame();
@@ -167,7 +170,10 @@ void Editor::render(float dt) {
     checkModeling();
     if (m_playing && (!m_state.simPaused || m_state.simStep)) {
         // F6 pauses the world; F7 moves it on by one frame.
+        const auto simulationStart = std::chrono::steady_clock::now();
         m_session->update(m_state.simStep ? 1.0f / 60.0f : dt, m_viewport->cameraYaw(), true, m_viewport->swimLook());
+        m_perfSimulationMs = std::chrono::duration<float, std::milli>(
+            std::chrono::steady_clock::now() - simulationStart).count();
         m_state.simStep = false;
         // Game pass Buy windows only show in the Player: a test here answers "not bought".
         for (auto& [userId, pass] : m_session->scripts().takePassPrompts()) {
@@ -182,7 +188,10 @@ void Editor::render(float dt) {
     buildDockspace();
     if (!m_playing) m_animEditor->update(dt, m_viewport->gizmoInUse());   // show the rig posed
     if (!m_playing) m_scene->particles().runEmitters(*m_scene, dt);       // particle effects show while you edit too
+    const auto viewportStart = std::chrono::steady_clock::now();
     m_viewport->render(dt);
+    m_perfViewportMs = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - viewportStart).count();
     // Files dragged from the computer onto Studio.
     if (auto dropped = AppWindow::takeDroppedFiles(); !dropped.empty()) importFiles(dropped, ImGui::GetMousePos(), true);
     if (m_showPanel[kPanelExplorer]) m_outliner->render();
@@ -226,8 +235,88 @@ void Editor::render(float dt) {
     SettingsWindow::draw(&m_showSettings);
     if (UpdateToast::draw("GutsAndBolts", !m_dirty)) glfwSetWindowShouldClose(m_window, GLFW_TRUE);
 
+    // Frame delta captures pacing between calls; CPU time measures the editor's own
+    // render/update work before the monitor is drawn.
+    m_perfFrameSamples.push_back(std::max(0.0f, dt * 1000.0f));
+    if (m_perfFrameSamples.size() > 180) m_perfFrameSamples.erase(m_perfFrameSamples.begin());
+    m_perfCpuFrameMs = std::chrono::duration<float, std::milli>(
+        std::chrono::steady_clock::now() - frameStart).count();
+    renderPerformanceWindow();
+
     trackChanges();
     updateTitle();
+}
+
+// Live frame-pacing and scene-complexity monitor. Timings are sampled on the editor
+// thread; viewport time includes viewport rendering, and simulation time is the GameSession
+// update. This is not a GPU timestamp profiler.
+void Editor::renderPerformanceWindow() {
+    if (!m_showPerformance) return;
+    ImGui::SetNextWindowSize(ImVec2(430, 390), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Performance Monitor", &m_showPerformance)) { ImGui::End(); return; }
+
+    std::vector<float> sorted = m_perfFrameSamples;
+    std::sort(sorted.begin(), sorted.end());
+    float average = 0.0f;
+    for (float ms : sorted) average += ms;
+    if (!sorted.empty()) average /= (float)sorted.size();
+    const float minimum = sorted.empty() ? 0.0f : sorted.front();
+    const float maximum = sorted.empty() ? 0.0f : sorted.back();
+    const size_t p95Index = sorted.empty() ? 0 : std::min(sorted.size() - 1, (sorted.size() * 95) / 100);
+    const float p95 = sorted.empty() ? 0.0f : sorted[p95Index];
+    const float fps = average > 0.001f ? 1000.0f / average : 0.0f;
+
+    ImGui::Text("Frame rate");
+    ImGui::SameLine();
+    ImGui::TextColored(fps >= 58.0f ? ImVec4(0.35f, 0.85f, 0.45f, 1.0f)
+                                    : fps >= 30.0f ? ImVec4(0.95f, 0.75f, 0.25f, 1.0f)
+                                                   : ImVec4(1.0f, 0.4f, 0.35f, 1.0f),
+                       "%.1f FPS", fps);
+    if (!m_perfFrameSamples.empty()) {
+        ImGui::Text("Frame time   avg %.2f ms   p95 %.2f ms", average, p95);
+        ImGui::Text("Range        %.2f - %.2f ms", minimum, maximum);
+        ImGui::PlotLines("Frame time (ms)", m_perfFrameSamples.data(), (int)m_perfFrameSamples.size(),
+                         0, nullptr, 0.0f, std::max(33.0f, maximum), ImVec2(-1, 72));
+    } else {
+        ImGui::TextDisabled("Waiting for frame samples...");
+    }
+    ImGui::SeparatorText("CPU time (editor thread)");
+    ImGui::Text("Editor update / UI: %.2f ms", m_perfCpuFrameMs);
+    ImGui::Text("Viewport:           %.2f ms", m_perfViewportMs);
+    ImGui::Text("Simulation:         %.2f ms", m_perfSimulationMs);
+    ImGui::TextDisabled("Frame delta includes waiting between frames. CPU time excludes GPU execution and presentation.");
+
+    int objects = 0, parts = 0, dynamicParts = 0, lights = 0, emitters = 0, scripts = 0;
+    m_scene->forEach([&](SceneNode* n) {
+        if (n->internal) return;
+        ++objects;
+        if (n->isPart()) { ++parts; if (!n->anchored) ++dynamicParts; }
+        if (n->isLight() && n->enabled) ++lights;
+        if (n->isParticles() && n->enabled) ++emitters;
+        if (n->isScript()) ++scripts;
+    });
+    ImGui::SeparatorText("Scene");
+    if (ImGui::BeginTable("##performanceScene", 2,
+                          ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH |
+                          ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("Metric", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableHeadersRow();
+        auto metric = [](const char* label, int value) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ImGui::TextUnformatted(label);
+            ImGui::TableNextColumn(); ImGui::Text("%d", value);
+        };
+        metric("Objects", objects);
+        metric("Parts", parts);
+        metric("Unanchored parts", dynamicParts);
+        metric("Enabled lights", lights);
+        metric("Enabled particle emitters", emitters);
+        metric("Scripts", scripts);
+        ImGui::EndTable();
+    }
+    ImGui::TextDisabled("Use Play / Simulate and compare frame-time samples before and after changes.");
+    ImGui::End();
 }
 
 // ---------------------------------------------------------------------------
@@ -1863,6 +1952,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Collapse All", "Ctrl+Shift+Left")) m_outliner->collapseAll();
         ImGui::Separator();
         if (ImGui::MenuItem("Script Analysis", nullptr, m_scriptEditor->analysisShown())) m_scriptEditor->showAnalysis();
+        if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;

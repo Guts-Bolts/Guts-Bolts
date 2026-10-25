@@ -21,6 +21,9 @@ PropertiesPanel::PropertiesPanel(Scene* scene, std::function<void(SceneNode*)> o
 
 void PropertiesPanel::render() {
     ImGui::Begin("Properties");
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputTextWithHint("##propertyFilter", "Search properties...", &m_propertyFilter);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Search common properties by name, like Position, Anchored, Color or Transparency.");
 
     SceneNode* node = m_scene->selected();
     if (!node) {
@@ -60,7 +63,68 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::Gui        ? kGuiClassNames[(int)node->gui.type]
                     : node->kind == NodeKind::Camera     ? "Camera"
                     : node->kind == NodeKind::Model    ? "Model" : "Part";
-    ImGui::TextDisabled("%s", cls);
+    ImGui::Separator();
+    ImGui::Text("%s", node->name.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("(%s)", cls);
+
+    // Searching switches to a compact two-column inspector, similar to Roblox Studio's
+    // Properties panel. Normal browsing keeps the complete class-specific property editor.
+    if (!m_propertyFilter.empty()) {
+        auto lower = [](std::string s) {
+            std::transform(s.begin(), s.end(), s.begin(),
+                           [](unsigned char ch) { return (char)std::tolower(ch); });
+            return s;
+        };
+        const std::string query = lower(m_propertyFilter);
+        auto matches = [&](const char* label) { return lower(label).find(query) != std::string::npos; };
+        bool any = false;
+        if (ImGui::BeginTable("##filteredProperties", 2,
+                              ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV |
+                              ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 112.0f);
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
+            auto row = [&](const char* label, auto&& draw) {
+                if (!matches(label)) return;
+                any = true;
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(label);
+                ImGui::TableNextColumn();
+                ImGui::SetNextItemWidth(-1.0f);
+                draw();
+            };
+            row("Name", [&] {
+                ImGui::BeginDisabled(m_scene->isProtected(node));
+                ImGui::InputText("##Name", &node->name);
+                ImGui::EndDisabled();
+            });
+            row("ClassName", [&] { ImGui::TextUnformatted(cls); });
+            row("Position", [&] { ImGui::DragFloat3("##Position", &node->transform.position.x, 0.05f, 0.0f, 0.0f, "%.3f"); });
+            row("Rotation", [&] { ImGui::DragFloat3("##Rotation", &node->transform.rotation.x, 0.5f, 0.0f, 0.0f, "%.2f"); });
+            row("Size", [&] { ImGui::DragFloat3("##Size", &node->transform.scale.x, 0.05f, 0.001f, 1000.0f, "%.3f"); });
+            row("Visible", [&] { ImGui::Checkbox("##Visible", &node->visible); });
+            row("Enabled", [&] { ImGui::Checkbox("##Enabled", &node->enabled); });
+            if (node->isPart()) {
+                row("Anchored", [&] { ImGui::Checkbox("##Anchored", &node->anchored); });
+                row("CanCollide", [&] { ImGui::Checkbox("##CanCollide", &node->canCollide); });
+                row("CastShadow", [&] { ImGui::Checkbox("##CastShadow", &node->castShadow); });
+                row("Color", [&] { ImGui::ColorEdit3("##Color", &node->color.x, ImGuiColorEditFlags_NoLabel); });
+                row("Transparency", [&] { ImGui::SliderFloat("##Transparency", &node->transparency, 0.0f, 1.0f, "%.2f"); });
+                row("Texture", [&] { ImGui::InputText("##Texture", &node->texture); });
+            }
+            ImGui::EndTable();
+        }
+        if (!any) {
+            ImGui::Spacing();
+            ImGui::TextDisabled("No quick-search match. Clear the search to browse every property.");
+        }
+        if (node != m_scene->root()) renderAttributes(node);
+        ImGui::End();
+        return;
+    }
 
     renderProperties(node);
     if (node != m_scene->root()) renderAttributes(node);

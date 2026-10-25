@@ -51,8 +51,8 @@ std::vector<std::string> itemIds(const std::string& text) {
 void Editor::renderBundleWindow() {
     if (!m_showBundles) return;
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 470, vp->WorkPos.y + 150), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(440, 560), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 590, vp->WorkPos.y + 100), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(560, 700), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Bundles", &m_showBundles)) { ImGui::End(); return; }
     ImGui::PushTextWrapPos(0);
     if (!Online::online() || !Online::staff()) {
@@ -98,6 +98,11 @@ void Editor::renderBundleWindow() {
             if (same) ImGui::TextDisabled("Normal");
             else ImGui::TextColored(ImVec4(0.3f, 0.8f, 0.4f, 1), "New (%d corners)", part->editMesh ? (int)part->editMesh->verts.size() : 0);
             ImGui::TableNextColumn();
+            if (ImGui::SmallButton("Select")) {
+                m_scene->select(part);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Select this body part to adjust its position, rotation and size below.");
+            ImGui::SameLine();
             if (ImGui::SmallButton("Edit")) {
                 m_scene->select(part);
                 setMode(StudioMode::Modeling);
@@ -126,6 +131,26 @@ void Editor::renderBundleWindow() {
             ImGui::PopID();
         }
         ImGui::EndTable();
+    }
+
+    // Give body parts direct transform controls so small placement changes don't require
+    // repeatedly entering and leaving Modeling mode.
+    SceneNode* bodySelected = m_scene->selected();
+    if (bodySelected && bodySelected->parent == mannequin && bodySelected->isPart()) {
+        ImGui::SeparatorText(("Position: " + bodySelected->name).c_str());
+        bool transformChanged = false;
+        transformChanged |= ImGui::DragFloat3("Position", &bodySelected->transform.position.x, 0.01f, -100.0f, 100.0f, "%.3f");
+        transformChanged |= ImGui::DragFloat3("Rotation", &bodySelected->transform.rotation.x, 0.5f, -360.0f, 360.0f, "%.1f deg");
+        transformChanged |= ImGui::DragFloat3("Size", &bodySelected->transform.scale.x, 0.01f, 0.001f, 100.0f, "%.3f");
+        if (ImGui::Button("Reset position and rotation")) {
+            glm::vec3 pos, size;
+            if (PlayerModel::placement(bodySelected->name, pos, size)) bodySelected->transform.position = pos;
+            bodySelected->transform.rotation = glm::vec3(0.0f);
+            transformChanged = true;
+        }
+        if (transformChanged) m_scene->markDirty();
+    } else {
+        ImGui::TextDisabled("Select a body part to edit its position, rotation and size here.");
     }
 
     // 3. What else comes with it.
