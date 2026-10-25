@@ -46,6 +46,22 @@ std::string unescape(const std::string& s) {
 }
 } // namespace
 
+#if defined(GB_IOS)
+namespace {
+std::string pendingIOSLink;
+}
+#endif
+
+void enqueue(const std::string& url) {
+#if defined(GB_IOS)
+    // Only retain the registered scheme; parse() performs the stricter game-id
+    // and query validation before any link can trigger an action.
+    if (url.rfind("gutsandbolts://", 0) == 0) pendingIOSLink = url;
+#else
+    (void)url;
+#endif
+}
+
 bool parse(const std::string& url, Link& out) {
     const std::string play = "gutsandbolts://play/", edit = "gutsandbolts://edit/";
     const bool editing = url.compare(0, edit.size(), edit) == 0;
@@ -227,6 +243,10 @@ std::string poll() {
     if (macLinks().empty()) return "";
     std::string link = macLinks().front();
     macLinks().pop_front();
+    return link;
+#elif defined(GB_IOS)
+    std::string link = std::move(pendingIOSLink);
+    pendingIOSLink.clear();
     return link;
 #else
     return "";
