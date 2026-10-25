@@ -144,6 +144,46 @@ void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3
     }
     // Bits of bone (or bolts and scraps), and the blood.
     gibs(kind, c, vel * 0.5f, 2 + (int)(violence * 3.0f));
+
+    // Leg and torso destruction can expose a short, stylized intestinal coil.
+    // Keep it procedural and bounded: no meshes/assets or unbounded particle spawning.
+    if (kind == GoreKind::Blood) {
+        std::string region = part->name;
+        std::transform(region.begin(), region.end(), region.begin(),
+                       [](unsigned char ch) { return (char)std::tolower(ch); });
+        const bool torsoWound = region.find("torso") != std::string::npos ||
+                                region.find("upperbody") != std::string::npos ||
+                                region.find("lowerbody") != std::string::npos ||
+                                region.find("body") != std::string::npos;
+        const bool legWound = region.find("leg") != std::string::npos ||
+                              region.find("thigh") != std::string::npos ||
+                              region.find("hip") != std::string::npos;
+        if (torsoWound || legWound) {
+            const int loops = torsoWound ? 7 : 4;
+            const float coilRadius = torsoWound ? 0.16f : 0.10f;
+            for (int i = 0; i < loops; ++i) {
+                const float t = (float)i / (float)loops * 6.2831853f;
+                Particle p;
+                p.kind = Particle::Chunk;
+                p.gib = 3;  // intestine-like strand segment
+                p.color = glm::mix(glm::vec3(0.62f, 0.16f, 0.20f),
+                                   glm::vec3(0.82f, 0.34f, 0.35f), rnd(0.0f, 1.0f));
+                p.wet = true;
+                p.bleed = rnd(2.0f, 3.5f);
+                p.size = glm::vec3(rnd(0.035f, 0.055f), rnd(0.18f, 0.29f), rnd(0.035f, 0.055f));
+                p.pos = c + glm::vec3(std::cos(t) * coilRadius,
+                                      rnd(-0.08f, 0.10f) + (torsoWound ? 0.0f : -0.04f),
+                                      std::sin(t) * coilRadius);
+                p.vel = vel * 0.22f + rndDir() * rnd(0.15f, 0.55f);
+                p.spin = rndDir() * rnd(18.0f, 55.0f);
+                p.rot = glm::vec3(55.0f + std::sin(t) * 35.0f,
+                                  glm::degrees(t), std::cos(t) * 40.0f);
+                p.life = p.maxLife = rnd(10.0f, 16.0f);
+                p.gibSeed = rnd(0.0f, 1.0f);
+                add(p);
+            }
+        }
+    }
     spray(kind, c, glm::vec3(0, 1, 0), 30 + (int)(violence * 40.0f), 4.0f + violence * 6.0f);
     if (kind == GoreKind::Oil) sparks(c, 20);
 }
