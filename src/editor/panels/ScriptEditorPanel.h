@@ -85,6 +85,7 @@ private:
         std::string path, expression;
     };
     bool m_showDependencyMap = false, m_dependencyOnlyUnresolved = false;
+    bool m_dependencyOnlyIsolated = false;
     double m_dependencyAnalysedAt = -100.0;
     uint64_t m_dependencySelected = 0;
     std::string m_dependencySearch;
