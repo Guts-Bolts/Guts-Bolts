@@ -8,7 +8,7 @@ Studio's **Catalog Repair Shop** lets a creator load an existing 3D accessory by
 - Select a mesh part and use Modeling mode to repair the geometry.
 - Save the placement and choose **Update existing item** to publish the change to the same item ID.
 
-The server remains authoritative: the update operation rejects changes from anyone other than the original creator. This workflow supports 3D accessories (hats, hair, face accessories, neck, shoulder, and waist items); clothing, bundles, and non-model catalog items are not editable through this window.
+The server remains authoritative: creators can update their own items, and staff can repair accessories with an audit entry. Other users cannot update someone else's item. This workflow supports 3D accessories (hats, hair, face accessories, neck, shoulder, and waist items); clothing, bundles, and non-model catalog items are not editable through this window.
 
 # Your Scene Is Under Review (October 25, 2026)
 
