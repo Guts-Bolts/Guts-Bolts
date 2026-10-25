@@ -85,6 +85,11 @@ private:
         uint64_t script = 0;
         std::string path, expression;
     };
+    struct AssetReference {
+        uint64_t owner = 0, targetNode = 0;
+        std::string ownerPath, property, value;
+        bool nodeLink = false, unresolvedNode = false;
+    };
     bool m_showDependencyMap = false, m_dependencyOnlyUnresolved = false;
     bool m_dependencyOnlyIsolated = false;
     double m_dependencyAnalysedAt = -100.0;
@@ -93,4 +98,5 @@ private:
     std::vector<DependencyNode> m_dependencyNodes;
     std::vector<DependencyEdge> m_dependencyEdges;
     std::vector<UnresolvedDependency> m_unresolvedDependencies;
+    std::vector<AssetReference> m_assetReferences;
 };
