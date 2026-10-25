@@ -32,8 +32,35 @@ namespace {
 // Lua code that builds the friendly Roblox-style globals on top of the C API.
 const char* kPrelude = R"LUA(
 -- Enum.KeyCode.E -> "E", Enum.Material.Neon -> "Neon", Enum.UserInputType.Keyboard -> "Keyboard"
+-- Enum values remain strings for compatibility with the existing property bindings,
+-- but categories also expose GetEnumItems(), which older Roblox scripts use to pick
+-- a random Material / Font / MeshType. Previously Enum.Material.Neon worked while
+-- Enum.Material:GetEnumItems() crashed because the category had no method.
+local enumItems = {
+    Material = {
+        "Plastic", "SmoothPlastic", "Neon", "Wood", "WoodPlanks", "Marble", "Slate",
+        "Concrete", "Granite", "Brick", "Pebble", "Cobblestone", "Rock", "Sandstone",
+        "Basalt", "CrackedLava", "Limestone", "Pavement", "Mud", "Ground", "Grass",
+        "LeafyGrass", "Sand", "Snow", "Ice", "Glacier", "Salt", "Water", "Fabric",
+        "Foil", "Metal", "DiamondPlate", "CorrodedMetal", "Rust", "Glass",
+    },
+    MeshType = { "Head", "Torso", "Wedge", "Sphere", "Cylinder", "FileMesh" },
+    Font = { "Legacy", "Arial", "ArialBold", "SourceSans", "SourceSansBold",
+        "SourceSansLight", "SourceSansItalic", "Bodoni", "Garamond", "Cartoon",
+        "Code", "Highway", "SciFi", "Fantasy", "Antique" },
+}
 Enum = setmetatable({}, { __index = function(t, category)
-    local e = setmetatable({}, { __index = function(_, name) return name end })
+    local e = setmetatable({}, { __index = function(_, name)
+        if name == "GetEnumItems" then
+            return function()
+                local names = enumItems[category] or {}
+                local result = {}
+                for i, item in ipairs(names) do result[i] = item end
+                return result
+            end
+        end
+        return name
+    end })
     rawset(t, category, e)
     return e
 end })
