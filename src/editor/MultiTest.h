@@ -1,5 +1,6 @@
 #pragma once
 #include <deque>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -39,11 +40,16 @@ public:
         std::string from;    // "Server", "Player1"...
         std::string level;   // info, warning, error, system
         std::string text, time;
+        double elapsedSeconds = 0.0; // relative to the start of this test session
     };
     // The test's own output, oldest first: the last `lines` lines (from one of them, or "" = all).
     std::vector<Line> output(int lines, const std::string& from = "") const;
     // {running, ready, port, server: {running}, players: [{name, running}]}
     nlohmann::json status() const;
+
+    // Export the current or most recent test as a portable diagnostic/replay bundle.
+    bool hasSession() const { return m_sessionStartedEpoch > 0; }
+    bool exportSession(std::string& path, std::string& error) const;
 
     struct Process;   // a program we started, and what it prints (MultiTest.cpp)
 
@@ -58,5 +64,10 @@ private:
     int         m_wanted = 0;      // windows to open once the server is ready
     bool        m_ready = false;
     double      m_startedAt = 0.0;
+    double      m_lastDuration = 0.0;
+    int64_t      m_sessionStartedEpoch = 0;
+    int64_t      m_sessionEndedEpoch = 0;
+    size_t       m_playerWindowsOpened = 0;
+    std::string  m_placeSnapshot;
     std::deque<Line> m_output;
 };

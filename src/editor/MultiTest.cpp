@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -220,6 +221,11 @@ MultiTest::~MultiTest() { stop(); }
 bool MultiTest::start(const std::string& place, int players, std::string& error) {
     stop();
     m_output.clear();
+    m_placeSnapshot.clear();
+    m_sessionStartedEpoch = 0;
+    m_sessionEndedEpoch = 0;
+    m_lastDuration = 0.0;
+    m_playerWindowsOpened = 0;
     const auto serverProgram = Paths::sibling("GutsAndBoltsGameServer");
     const auto playerProgram = Paths::sibling("GutsAndBoltsPlayer");
     std::error_code ec;
@@ -247,6 +253,9 @@ bool MultiTest::start(const std::string& place, int players, std::string& error)
     m_wanted = std::clamp(players, 1, kMostPlayers);
     m_ready = false;
     m_startedAt = seconds();
+    m_sessionStartedEpoch = static_cast<int64_t>(std::time(nullptr));
+    m_sessionEndedEpoch = 0;
+    m_placeSnapshot = place;
     Log::system("Multiplayer test: starting a test server for " + std::to_string(m_wanted) + " players (port " +
                 std::to_string(m_port) + ")...");
     return true;
@@ -259,6 +268,7 @@ bool MultiTest::startPlayer(std::string& error) {
                   {"--studio-test", "127.0.0.1:" + std::to_string(m_port), "--name", p->name}, error))
         return false;
     m_players.push_back(std::move(p));
+    ++m_playerWindowsOpened;
     return true;
 }
 
@@ -272,6 +282,10 @@ bool MultiTest::addPlayer(std::string& error) {
 void MultiTest::stop() {
     if (!m_server && m_players.empty() && m_placeFile.empty()) return;
     const bool was = running();
+    if (was) {
+        m_lastDuration = std::max(0.0, seconds() - m_startedAt);
+        m_sessionEndedEpoch = static_cast<int64_t>(std::time(nullptr));
+    }
     // Ask everything to stop at once, then wait for each (so it's quick).
     if (m_server) m_server->kill();
     for (auto& p : m_players) p->kill();
@@ -313,7 +327,7 @@ void MultiTest::take(Process& p) {
             default:                 Log::info(shown); break;
         }
         const std::string time = Log::entries().empty() ? "" : Log::entries().back().time;
-        m_output.push_back({p.name, levelName, text, time});
+        m_output.push_back({p.name, levelName, text, time, std::max(0.0, seconds() - m_startedAt)});
         if (m_output.size() > kMaxOutput) m_output.pop_front();
     }
 }
@@ -356,6 +370,71 @@ std::vector<MultiTest::Line> MultiTest::output(int lines, const std::string& fro
         if (from.empty() || it->from == from) out.push_back(*it);
     std::reverse(out.begin(), out.end());
     return out;
+}
+
+bool MultiTest::exportSession(std::string& path, std::string& error) const {
+    if (!hasSession()) {
+        error = "There isn't a multiplayer test session to export yet.";
+        return false;
+    }
+
+    std::error_code ec;
+    const auto directory = std::filesystem::temp_directory_path(ec) / "GutsAndBoltsTestSessions";
+    if (ec) {
+        error = "Couldn't find a writable temporary folder for the session bundle.";
+        return false;
+    }
+    std::filesystem::create_directories(directory, ec);
+    if (ec) {
+        error = "Couldn't create the session folder: " + directory.string();
+        return false;
+    }
+
+    const int64_t ended = m_sessionEndedEpoch > 0 ? m_sessionEndedEpoch : static_cast<int64_t>(std::time(nullptr));
+    const double duration = running() ? std::max(0.0, seconds() - m_startedAt) : m_lastDuration;
+    nlohmann::json lines = nlohmann::json::array();
+    for (const auto& line : m_output) {
+        lines.push_back({
+            {"elapsed_seconds", line.elapsedSeconds},
+            {"source", line.from},
+            {"level", line.level},
+            {"text", line.text},
+            {"display_time", line.time}
+        });
+    }
+    std::sort(lines.begin(), lines.end(), [](const nlohmann::json& a, const nlohmann::json& b) {
+        return a.at("elapsed_seconds").get<double>() < b.at("elapsed_seconds").get<double>();
+    });
+
+    nlohmann::json bundle = {
+        {"format", "gutsandbolts-multiplayer-session"},
+        {"format_version", 1},
+        {"started_at_epoch", m_sessionStartedEpoch},
+        {"ended_at_epoch", ended},
+        {"duration_seconds", duration},
+        {"port", m_port},
+        {"player_windows_opened", m_playerWindowsOpened},
+        {"scene_snapshot", m_placeSnapshot},
+        {"timeline", lines},
+        {"limitations", {
+            "This bundle captures the scene snapshot and timestamped process output for diagnosis.",
+            "It does not record inputs or physics state and cannot deterministically replay gameplay.",
+            "The scene snapshot may contain private scripts or unpublished game content; review before sharing."
+        }}
+    };
+
+    path = (directory / ("multiplayer-session-" + std::to_string(m_sessionStartedEpoch) + ".json")).string();
+    std::ofstream file(path, std::ios::binary);
+    if (!file) {
+        error = "Couldn't write the session bundle to " + path;
+        return false;
+    }
+    file << bundle.dump(2) << '\n';
+    if (!file) {
+        error = "Writing the session bundle failed: " + path;
+        return false;
+    }
+    return true;
 }
 
 nlohmann::json MultiTest::status() const {

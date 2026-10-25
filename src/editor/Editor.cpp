@@ -2549,6 +2549,14 @@ void Editor::renderMenuBar() {
             if (ImGui::MenuItem(label.c_str(), nullptr, false, !multi)) startMultiTest(n, err);
         }
         if (ImGui::MenuItem("Stop multiplayer test", nullptr, false, multi)) stopMultiTest();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Export session replay bundle...", nullptr, false, m_multiTest->hasSession())) {
+            std::string path, err;
+            if (m_multiTest->exportSession(path, err))
+                Log::system("Multiplayer session bundle exported to " + path);
+            else
+                Log::error("Couldn't export multiplayer session: " + err);
+        }
         ImGui::EndMenu();
     }
 
