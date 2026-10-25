@@ -2700,7 +2700,10 @@ export class GbServerObject extends DurableObject {
     if (name === 'update') {
       const a = this.assets.get(str(args, 'id'));
       if (!a) return fail('That doesn\'t exist (any more).');
-      if (a.creator !== me.id) return fail('You can only update your own things.');
+      // Staff can repair catalog accessories for moderation/support; other assets still
+      // require the original creator. Keep a staff audit entry for every override.
+      const staffAccessoryEdit = a.creator !== me.id && this.isStaff(me) && isAccessory(a.kind);
+      if (a.creator !== me.id && !staffAccessoryEdit) return fail('You can only update your own things.');
       if (a.kind === 'bundle') return fail('Bundles can\'t be changed once they\'re made. Make a new one instead.');
       let data;
       try { data = b64ToBytes(str(args, 'data')); } catch { return fail('The upload got scrambled. Try again.'); }
@@ -2735,6 +2738,8 @@ export class GbServerObject extends DurableObject {
       if (!isClothing(a.kind)) a.size = data.length;
       a.updated = t;
       this.saveAsset(a);
+      if (staffAccessoryEdit)
+        this.staffDid(me, 'asset-edit', 'Updated catalog accessory "' + a.name + '" (' + a.id + ')', a.creator);
       return okay({ asset: this.publicAsset(a), version: a.kind === 'game' ? this.versionsOf(a).slice(-1)[0].v : undefined, newVersion: !!version });
     }
     // --- Version history: a game's creator sees its published versions and can put an old one
