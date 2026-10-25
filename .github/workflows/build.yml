@@ -96,7 +96,7 @@ jobs:
         run: cmake --build build-ios-sim --config Release --target GutsAndBoltsPlayer
       - name: Package simulator app for inspection
         run: |
-          app="$(find build-ios-sim -type d -name GutsAndBoltsPlayer.app -print -quit)"
+          app="$(find build-ios-sim/Release-iphonesimulator -maxdepth 1 -type d -name GutsAndBoltsPlayer.app -print -quit)"
           test -n "$app"
           test -f "$app/Info.plist"
           test -d "$app/Resources/games"
