@@ -697,6 +697,7 @@ export async function mountAvatar(el, avatar, items = [], opts = {}) {
     for (const id of [tee, shirt, pants]) if (id) teeTexture(id).ready.then(() => { if (canvas.isConnected) paint(); });
   };
   let yaw = opts.yaw ?? -0.35, pitch = opts.pitch ?? 0.12, spin = 0, dragging = false, lastX = 0, lastY = 0, frame = 0;
+  const autoSpin = opts.autoSpin === true;
   const paint = () => {
     draw(buffer, count, canvas.width, canvas.height, yaw, pitch, face, tee, shirt, pants, opts.cam || null);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -705,9 +706,12 @@ export async function mountAvatar(el, avatar, items = [], opts = {}) {
   const loop = () => {
     frame = 0;
     if (!canvas.isConnected) return;
-    if (!dragging && Math.abs(spin) > 0.0005) { yaw += spin; spin *= 0.92; }
+    if (!dragging) {
+      if (autoSpin && Math.abs(spin) < 0.0005) yaw += 0.006;
+      else if (Math.abs(spin) > 0.0005) { yaw += spin; spin *= 0.92; }
+    }
     paint();
-    if (dragging || Math.abs(spin) > 0.0005) frame = requestAnimationFrame(loop);
+    if (autoSpin || dragging || Math.abs(spin) > 0.0005) frame = requestAnimationFrame(loop);
   };
   const kick = () => { if (!frame) frame = requestAnimationFrame(loop); };
   canvas.addEventListener('pointerdown', (e) => {
@@ -727,6 +731,7 @@ export async function mountAvatar(el, avatar, items = [], opts = {}) {
   el.replaceChildren(canvas);
   paint();
   whenLoaded();
+  if (autoSpin) kick();
   return {
     set(av, its = []) {
       curAv = av; curIts = its;
