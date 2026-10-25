@@ -84,6 +84,8 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
     m_renderer = std::make_unique<SceneRenderer>();
     m_scene    = std::make_unique<Scene>();
     m_session  = std::make_unique<GameSession>(m_scene.get());
+    if (studioTest() && !m_opts.studioInputTrace.empty())
+        m_session->setInputTracePath(m_opts.studioInputTrace);
     m_session->scripts().setTeleportsWork(true);   // (Studio leaves it off: there it only prints a note)
     m_soloChat = std::make_unique<ChatLog>();
     if (!m_opts.touchTest.empty() && m_opts.touchTest.rfind("sdl-", 0) != 0)

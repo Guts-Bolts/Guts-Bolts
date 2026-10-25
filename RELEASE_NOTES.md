@@ -1,3 +1,9 @@
+# The Replay Button Is Getting Closer (October 25, 2026)
+
+Studio's multiplayer session bundle now includes a sampled input trace for each Player window, alongside the scene snapshot and timestamped process output. Traces capture effective character movement, camera yaw, jump and dive state, touch controls, equipped tool, and controller availability at roughly 20 samples per second. The traces are embedded in the JSON bundle and capped at 50,000 samples per player.
+
+This is an incremental debugging aid, not deterministic gameplay playback. Click positions, UI edits, script randomness, and authoritative physics state are not captured, so a trace cannot reproduce every session exactly.
+
 # The Bug Has a Paper Trail (October 25, 2026)
 
 Studio can export a multiplayer test session bundle from **Mode > Players**. The JSON file combines the scene snapshot used for the test with a chronological timeline of server and Player-window output. Each line includes its source, severity, displayed log time, and seconds since the test started. The export path is printed in Studio Output and the bundle is saved under the temporary `GutsAndBoltsTestSessions` directory.

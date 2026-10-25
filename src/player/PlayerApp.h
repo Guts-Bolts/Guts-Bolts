@@ -67,6 +67,7 @@ struct PlayerOptions {
     // Studio's "Test with N players": --studio-test host:port --name Player2 joins Studio's
     // local test server straight away as that name; the window closes when the test ends.
     std::string studioTest;
+    std::string studioInputTrace;   // --studio-input-trace <path>: sampled gameplay input for a Studio test bundle
     bool        vr = false;            // --vr: show the game in a VR headset once it starts
     std::string vrTestHands;           // --vr-test-hands "lx,ly,lz,rx,ry,rz": pretend controllers there (metres from the head, tests)
     std::string testName;
