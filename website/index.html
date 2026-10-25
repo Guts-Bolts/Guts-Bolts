@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Guts&amp;Bolts</title>
-<meta name="description" content="A free game engine and platform: build games in Studio, play them with friends, and fall apart in spectacular ragdoll fashion. For Windows, Mac, Linux, Android and Meta Quest VR.">
+<meta name="description" content="A free game engine and platform: build games in Studio, play them with friends, and fall apart in spectacular ragdoll fashion. Supports Windows, Mac, Linux, Android and Meta Quest VR, with iOS in development.">
 <link rel="icon" href="img/icon.png">
 <meta property="og:title" content="Guts&amp;Bolts">
-<meta property="og:description" content="Build games, play with friends, fall apart spectacularly. Free for Windows, Mac, Linux, Android and Meta Quest VR.">
+<meta property="og:description" content="Build games, play with friends, fall apart spectacularly. Free for Windows, Mac, Linux, Android and Meta Quest VR, with iOS in development.">
 <meta property="og:image" content="img/engine-boom.jpg">
 <style>
   /* Dressed like a website from around 2011 (same look as the site in app/). */
@@ -138,18 +138,27 @@
   .card b { display: block; color: var(--link); }
   .card span { color: var(--muted); font-size: 12px; }
 
-  /* Download */
-  #download { border-color: #0d6a2e; }
-  #download h2 { background: linear-gradient(#e9f9ee, #c7ecd3); color: #0d5a28; border-color: #8fcfa4; }
-  @media (prefers-color-scheme: dark) { #download { border-color: #24603a; } #download h2 { background: linear-gradient(#1e3b29, #16301f); color: #a8f0c0; border-color: #24603a; } }
-  .dl { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 10px; }
-  .dl > div { text-align: center; padding: 12px 8px; border: 1px solid var(--line); background: linear-gradient(var(--tile1), var(--tile2)); position: relative; }
-  .dl > div.mine { border: 2px solid #1ea447; padding: 11px 7px; }
-  .dl > div.mine::before { content: "Your computer"; position: absolute; top: -9px; left: 50%; transform: translateX(-50%); background: #1ea447; color: #fff;
-    font-size: 10px; font-weight: bold; padding: 0 6px; border-radius: 2px; white-space: nowrap; }
-  .dl .os { font-weight: bold; font-size: 15px; margin-bottom: 8px; color: var(--headText); }
-  .dl small { display: block; color: var(--muted); margin-top: 6px; font-size: 11px; }
-  .dl .btn.play { font-size: 15px; padding: 8px 18px; }
+  /* Download: glossy platform tiles with a classic early-web beveled look. */
+  #download { border-color: #0d6a2e; box-shadow: 0 2px 0 rgba(13,106,46,.15); }
+  #download h2 { background: linear-gradient(#f2fff5 0%, #d9f5e1 48%, #c1e8ce 49%, #b2dfc0 100%); color: #0d5a28; border-color: #8fcfa4; }
+  #download .dl-intro { margin-bottom: 14px; }
+  #download .platform-count { display: inline-block; margin-left: 5px; padding: 2px 7px; border: 1px solid #0d6a2e; border-radius: 3px; color: #fff; background: linear-gradient(#39b65e,#16863a); font-size: 10px; font-weight: bold; letter-spacing: .7px; vertical-align: 2px; text-shadow: 0 1px rgba(0,0,0,.25); }
+  @media (prefers-color-scheme: dark) { #download { border-color: #24603a; } #download h2 { background: linear-gradient(#244a30,#183b24); color: #a8f0c0; border-color: #24603a; } }
+  .dl { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin: 18px 0 14px; }
+  .dl > div { min-width: 0; text-align: center; padding: 12px 7px 13px; border: 1px solid #aeb8c5; border-radius: 3px; background: linear-gradient(#fff 0%, #f7f9fc 48%, #e7edf5 49%, #f2f5f9 100%); position: relative; box-shadow: inset 0 1px 0 #fff, 0 2px 0 rgba(0,0,0,.08); transition: transform .15s, box-shadow .15s, border-color .15s; }
+  .dl > div:not(.coming-soon):hover { transform: translateY(-2px); border-color: #5c91cf; box-shadow: inset 0 1px 0 #fff, 0 4px 8px rgba(20,70,130,.16); }
+  .dl > div.mine { border: 2px solid #1ea447; padding: 11px 6px 12px; box-shadow: 0 0 0 2px rgba(30,164,71,.12), inset 0 1px 0 #fff; }
+  .dl > div.mine::before { content: "YOUR DEVICE"; position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: linear-gradient(#42c96b,#16863a); border: 1px solid #0d6a2e; color: #fff; font-size: 9px; font-weight: bold; padding: 2px 6px; border-radius: 2px; white-space: nowrap; text-shadow: 0 1px rgba(0,0,0,.25); }
+  .dl .platform-icon { display: flex; align-items: center; justify-content: center; width: 42px; height: 34px; margin: 0 auto 7px; border: 1px solid #879bb4; border-radius: 3px; color: #fff; font: bold 12px Arial,sans-serif; letter-spacing: -.3px; background: linear-gradient(#6fa9e7 0%, #3978c4 48%, #225da7 49%, #3974b8 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(0,0,0,.18); text-shadow: 0 1px 1px rgba(0,0,0,.4); }
+  .dl .os { font-weight: bold; font-size: 14px; margin-bottom: 9px; color: var(--headText); white-space: nowrap; }
+  .dl small { display: block; color: var(--muted); margin-top: 7px; font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+  .dl .btn.play { display: block; font-size: 13px; padding: 7px 5px; }
+  .dl .coming-soon { background: repeating-linear-gradient(135deg,#f6f7f9 0 8px,#e9edf2 8px 16px); border-style: dashed; border-color: #9ba6b4; }
+  .dl .coming-soon .platform-icon { background: linear-gradient(#a4aab3,#727b87); border-color: #606975; }
+  .dl .soon-label { display: block; padding: 7px 2px; border: 1px solid #a7afb9; border-radius: 3px; background: linear-gradient(#e7eaee,#cbd1d9); color: #454d58; font-size: 11px; font-weight: bold; text-shadow: 0 1px #fff; }
+  .dl .coming-soon small { margin-top: 8px; }
+  @media (max-width: 850px) { .dl { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 460px) { .dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 8px; } }
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 4px 12px 12px; counter-reset: s; }
   .steps div { padding-left: 34px; position: relative; font-size: 12px; }
   .steps div::before { counter-increment: s; content: counter(s); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%;
@@ -223,7 +232,7 @@
       <h1>Build games.<br>Play them with friends.<br><em>Fall apart spectacularly.</em></h1>
       <p class="tag">A free game engine with its own Studio, Player and online platform. Real physics, ragdolls that come apart, Lua scripting and multiplayer, ready to go.</p>
       <div class="btns">
-        <a class="btn play" href="#download" id="hero-dl">Download free<small id="hero-os">Windows, Mac, Linux, Android and VR</small></a>
+        <a class="btn play" href="#download" id="hero-dl">Download free<small id="hero-os">5 available now · iOS in development</small></a>
         <a class="btn blue" href="app/">Visit the site</a>
       </div>
       <div class="small">Free to download and play. For adults (18+).</div>
@@ -233,7 +242,7 @@
   </div>
   <div class="facts">
     <div><b>$0</b><span>free to play</span></div>
-    <div><b>5</b><span>platforms, VR included</span></div>
+    <div><b>6</b><span>platforms, VR included</span></div>
     <div><b>Lua</b><span>Roblox-style scripting</span></div>
     <div><b>18</b><span>materials</span></div>
     <div><b>.rbxl</b><span>import and export</span></div>
@@ -456,14 +465,15 @@ prompt.Triggered:<span class="f">Connect</span>(<span class="k">function</span>(
   </section>
 
   <section id="download">
-    <h2>Download Guts&amp;Bolts</h2>
-    <p>Free, for Windows, Mac, Linux, Android and Meta Quest. Each computer download has both the <b>Player</b> and <b>Studio</b>.</p>
+    <h2>Download Guts&amp;Bolts <span class="platform-count">6 PLATFORMS</span></h2>
+    <p class="dl-intro">Guts&amp;Bolts is free on six platforms. Five downloads are available now, and the <b>iOS Player is in development</b>. Computer downloads include both the <b>Player</b> and <b>Studio</b>.</p>
     <div class="dl">
-      <div data-os="windows"><div class="os">Windows</div><a class="btn play" href="/download/GutsAndBolts-Windows.zip" download>Download</a><small>GutsAndBolts-Windows.zip<br>Player + Studio</small></div>
-      <div data-os="mac"><div class="os">Mac</div><a class="btn play" href="/download/GutsAndBolts-macOS.zip" download>Download</a><small>GutsAndBolts-macOS.zip<br>Player + Studio</small></div>
-      <div data-os="linux"><div class="os">Linux</div><a class="btn play" href="/download/GutsAndBolts-Linux.tar.gz" download>Download</a><small>GutsAndBolts-Linux.tar.gz<br>Player + Studio</small></div>
-      <div data-os="android"><div class="os">Android</div><a class="btn play" href="/download/GutsAndBoltsPlayer-Android.apk" download>Download</a><small>GutsAndBoltsPlayer-Android.apk<br>Player only, with touch controls</small></div>
-      <div data-os="quest"><div class="os">Meta Quest</div><a class="btn play" href="/download/GutsAndBoltsPlayer-Quest.apk" download>Download</a><small>GutsAndBoltsPlayer-Quest.apk<br>Player in VR, no PC needed (install with SideQuest or the Meta Quest Developer Hub)</small></div>
+      <div data-os="windows"><div class="platform-icon">PC</div><div class="os">Windows</div><a class="btn play" href="/download/GutsAndBolts-Windows.zip" download>Download</a><small>ZIP package<br>Player + Studio</small></div>
+      <div data-os="mac"><div class="platform-icon">MAC</div><div class="os">Mac</div><a class="btn play" href="/download/GutsAndBolts-macOS.zip" download>Download</a><small>ZIP package<br>Player + Studio</small></div>
+      <div data-os="linux"><div class="platform-icon">LIN</div><div class="os">Linux</div><a class="btn play" href="/download/GutsAndBolts-Linux.tar.gz" download>Download</a><small>TAR.GZ package<br>Player + Studio</small></div>
+      <div data-os="android"><div class="platform-icon">APK</div><div class="os">Android</div><a class="btn play" href="/download/GutsAndBoltsPlayer-Android.apk" download>Download</a><small>APK package<br>Player + touch controls</small></div>
+      <div data-os="quest"><div class="platform-icon">VR</div><div class="os">Meta Quest</div><a class="btn play" href="/download/GutsAndBoltsPlayer-Quest.apk" download>Download</a><small>VR Player<br>No PC needed</small></div>
+      <div data-os="ios" class="coming-soon"><div class="platform-icon">iOS</div><div class="os">iPhone &amp; iPad</div><span class="soon-label">In Development</span><small>Native iOS Player<br>Not available yet</small></div>
     </div>
     <div class="steps">
       <div><b>Download and unzip</b>Pick your computer above and unzip what you get.</div>
@@ -521,14 +531,14 @@ prompt.Triggered:<span class="f">Connect</span>(<span class="k">function</span>(
   // Point at the right download for this computer.
   (function () {
     const ua = navigator.userAgent;
-    const os = /OculusBrowser|Quest/i.test(ua) ? 'quest' : /Android/i.test(ua) ? 'android' : /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) && !/iPhone|iPad/i.test(ua) ? 'mac'
+    const os = /iPhone|iPad|iPod/i.test(ua) ? 'ios' : /OculusBrowser|Quest/i.test(ua) ? 'quest' : /Android/i.test(ua) ? 'android' : /Windows/i.test(ua) ? 'windows' : /Mac/i.test(ua) ? 'mac'
       : /Linux|X11/i.test(ua) ? 'linux' : '';
     if (!os) return;
     const box = document.querySelector('.dl [data-os="' + os + '"]');
     if (!box) return;
     box.classList.add('mine');
-    const names = { windows: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android', quest: 'Meta Quest' };
-    document.getElementById('hero-os').textContent = 'for ' + names[os];
+    const names = { windows: 'Windows', mac: 'Mac', linux: 'Linux', android: 'Android', quest: 'Meta Quest', ios: 'iOS — in development' };
+    document.getElementById('hero-os').textContent = os === 'ios' ? 'iOS Player in development' : 'for ' + names[os];
   })();
 
   // The newest version, and what's new in it, from the release itself.
