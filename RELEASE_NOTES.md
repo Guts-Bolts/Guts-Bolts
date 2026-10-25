@@ -1,3 +1,18 @@
+# Your Game Before the Public Sees It (October 25, 2026)
+
+Studio's publish dialog now includes a readiness review before a game goes public.
+
+## Checks included
+- Scene integrity: empty names, duplicate sibling names, non-finite transforms, near-zero part scale, and parts without geometry.
+- Performance risk indicators for object counts, parts, unanchored physics, enabled lights, particle emitters, and script source size.
+- Local texture references that do not resolve on this computer.
+- Static script keyword checks for APIs that deserve manual security review.
+
+## Workflow and limitations
+- Open Scene Validator or Performance Doctor directly from the publish dialog.
+- An empty game name disables the publish actions.
+- Warnings are advisory. Static keyword matches can be false positives, remote and server-hosted assets are not verified, scripts are not executed, and the checklist cannot prove runtime safety or performance.
+
 # Catalog Repair Shop (October 25, 2026)
 
 Studio's **Catalog Repair Shop** lets a creator load an existing 3D accessory by catalog ID, adjust its placement on the accessory mannequin, edit its mesh in Modeling mode, and update the original listing.

@@ -11,6 +11,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'publish-readiness', name: 'Your Game Before the Public Sees It', version: '0.7.5', time: 1792950000, tag: 'Studio',
+    summary: 'Studio adds a pre-publish readiness review for scene structure, performance risk, local assets, and script patterns.',
+    items: [
+      'Review empty names, duplicate sibling names, invalid transforms, and parts without geometry before publishing.',
+      'See scene-size indicators for parts, unanchored physics, lights, particles, and script source size.',
+      'Find missing local texture files without pretending remote or server-hosted assets were verified.',
+      'Flag script API names that deserve manual security review; checks are static and can produce false positives.',
+      'Open Scene Validator and Performance Doctor directly from the publish checklist.',
+      'Warnings are advisory and scripts are never executed by the checklist; runtime behavior still needs playtesting.'
+    ]
+  },
+  {
     id: 'catalog-item-workshop', name: 'Catalog Repair Shop', version: '0.7.5', time: 1792940400, tag: 'Studio',
     summary: 'Creators can load their existing 3D catalog accessories into Studio, fix their mesh or placement, and update the existing listing.',
     items: [
