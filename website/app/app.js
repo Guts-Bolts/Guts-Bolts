@@ -761,7 +761,7 @@ pages.forum = async (board, a, b) => {
       <thead><tr><th>Thread</th><th class="num">Replies</th><th class="num">Views</th><th>Last post</th></tr></thead>
       <tbody>${r.threads.map((t) => html`<tr class="${t.pinned ? 'pinned' : ''}">
         <td>${t.pinned ? html`<span class="badge-pill" title="Pinned by staff">Pinned</span> ` : ''}${t.locked ? html`<span class="badge-pill" title="Nobody can reply">Locked</span> ` : ''}
-          <span class="forum-list-avatar">${avatarSvg(t.by.avatar, 40, [], true)}</span><span class="forum-list-thread"><a href="#/forum/t/${t.id}"><b>${t.title}</b></a><br><span class="small muted">by ${forumWho(t.by)}, ${ago(t.at)}</span></span></td>
+          <span class="forum-list-avatar">${avatarSvg(t.by.avatar, 40, [], false)}</span><span class="forum-list-thread"><a href="#/forum/t/${t.id}"><b>${t.title}</b></a><br><span class="small muted">by ${forumWho(t.by)}, ${ago(t.at)}</span></span></td>
         <td class="num">${t.replies}</td><td class="num">${t.views}</td>
         <td class="small"><a href="#/forum/t/${t.id}/9999">${ago(t.last)}</a><br><span class="muted">by ${t.lastBy.name}</span></td></tr>`)}</tbody></table></div>`
       : html`<p class="muted">No threads here yet. Be the first!</p>`}
@@ -779,7 +779,7 @@ async function forumThread(id, page) {
   if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p><p><a href="#/forum">&lt; All boards</a></p>`); return; }
   const t = r.thread, base = '#/forum/t/' + t.id;
   const post = (p) => html`<div class="forum-post" data-post="${p.id}">
-    <div class="forum-author"><a class="forum-player-avatar" href="#/user/${p.by.userId || p.by.id}" title="View ${p.by.name}’s profile">${avatarSvg(p.by.avatar, 72, [], true)}</a>${forumWho(p.by)}<span class="forum-player-number">PLAYER #${p.by.userId || p.by.id}</span></div>
+    <div class="forum-author"><a class="forum-player-avatar" href="#/user/${p.by.userId || p.by.id}" title="View ${p.by.name}’s profile">${avatarSvg(p.by.avatar, 72, [], false)}</a>${forumWho(p.by)}<span class="forum-player-number">PLAYER #${p.by.userId || p.by.id}</span></div>
     <div class="grow"><p class="small muted">${ago(p.at)}</p>
       <div class="forum-text">${p.text}</div>
       <p class="small">${p.canDelete ? html`<a href="#" data-act="forumDelete" data-thread="${t.id}" data-post="${p.id}" data-first="${p.first ? 1 : ''}" data-page="${r.page}">${p.first ? 'Delete thread' : 'Delete'}</a> ` : ''}
