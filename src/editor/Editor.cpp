@@ -46,6 +46,7 @@
 #include <string>
 #include <algorithm>
 #include <chrono>
+#include <sstream>
 #include <filesystem>
 #include <vector>
 
@@ -275,6 +276,10 @@ void Editor::renderPerformanceWindow() {
     if (!m_perfFrameSamples.empty()) {
         ImGui::Text("Frame time   avg %.2f ms   p95 %.2f ms", average, p95);
         ImGui::Text("Range        %.2f - %.2f ms", minimum, maximum);
+        m_perfHitchCount = (int)std::count_if(m_perfFrameSamples.begin(), m_perfFrameSamples.end(),
+                                              [](float ms) { return ms > 33.0f; });
+        ImGui::Text("Hitches over 33 ms: %d in the last %d samples",
+                    m_perfHitchCount, (int)m_perfFrameSamples.size());
         ImGui::PlotLines("Frame time (ms)", m_perfFrameSamples.data(), (int)m_perfFrameSamples.size(),
                          0, nullptr, 0.0f, std::max(33.0f, maximum), ImVec2(-1, 72));
     } else {
@@ -315,6 +320,30 @@ void Editor::renderPerformanceWindow() {
         metric("Scripts", scripts);
         ImGui::EndTable();
     }
+    if (ImGui::Button("Copy performance report")) {
+        std::ostringstream report;
+        report << "Guts&Bolts Studio performance report\\n"
+               << "Average FPS: " << fps << "\\n"
+               << "Average frame time (ms): " << average << "\\n"
+               << "P95 frame time (ms): " << p95 << "\\n"
+               << "Maximum frame time (ms): " << maximum << "\\n"
+               << "Frames over 33 ms in rolling window: " << m_perfHitchCount << "/"
+               << m_perfFrameSamples.size() << "\\n"
+               << "Editor update / UI (ms): " << m_perfCpuFrameMs << "\\n"
+               << "Viewport CPU time (ms): " << m_perfViewportMs << "\\n"
+               << "Simulation update (ms): " << m_perfSimulationMs << "\\n"
+               << "Scene objects: " << objects << "\\n"
+               << "Parts: " << parts << "\\n"
+               << "Unanchored parts: " << dynamicParts << "\\n"
+               << "Enabled lights: " << lights << "\\n"
+               << "Enabled particle emitters: " << emitters << "\\n"
+               << "Scripts: " << scripts << "\\n"
+               << "Note: CPU timings exclude GPU execution and presentation; frame delta includes waiting/presentation time.";
+        const std::string reportText = report.str();
+        ImGui::SetClipboardText(reportText.c_str());
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Copies timings and scene counts; CPU timings are not GPU measurements.");
     ImGui::TextDisabled("Use Play / Simulate and compare frame-time samples before and after changes.");
     ImGui::End();
 }
