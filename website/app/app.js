@@ -737,6 +737,26 @@ const forumPager = (base, page, pages) => pages <= 1 ? '' : html`<p class="pager
   <span class="muted small">Page ${page + 1} of ${pages}</span>
   ${page + 1 < pages ? html`<a class="btn small" href="${base}/${page + 2}">Next &gt;</a>` : ''}</p>`;
 const forumWho = (u) => html`<a href="#/user/${u.userId || u.id}"><b>${u.name}</b></a>${verified(u.verified)}${u.staff ? html` <span class="badge-pill staff">Staff</span>` : ''}${partner(u)}`;
+// Use the same rendered 2D PNG as the avatar page's 2D mode, with SVG as a fast fallback.
+const forumAvatarUsers = new Map();
+const forumAvatar = (u, size) => {
+  const id = String(u && (u.userId || u.id) || '');
+  if (id) forumAvatarUsers.set(id, u);
+  return html`<span data-forum-avatar="${id}" data-size="${size}">${avatarSvg(u && u.avatar, size, u && Array.isArray(u.wearing) ? u.wearing : [], false)}</span>`;
+};
+function loadForumAvatars(root = view) {
+  root.querySelectorAll('[data-forum-avatar]').forEach(async (el) => {
+    if (el.dataset.loading) return;
+    const u = forumAvatarUsers.get(el.dataset.forumAvatar);
+    if (!u) return;
+    el.dataset.loading = '1';
+    const size = Number(el.dataset.size) || 72;
+    try {
+      const url = await avatarPicture(u.avatar, u.wearing || [], size);
+      if (url && el.isConnected) el.innerHTML = html`<img src="${url}" alt="${u.name || 'Player'}" width="${size}" height="${Math.round(size * 1.25)}" style="display:block;object-fit:contain">`.s;
+    } catch (_) { /* Keep the 2D SVG fallback if rendering fails. */ }
+  });
+}
 pages.forum = async (board, a, b) => {
   if (board === 't') { await forumThread(a, Math.max(0, (Number(b) || 1) - 1)); return; }
   if (!board) {
@@ -761,7 +781,7 @@ pages.forum = async (board, a, b) => {
       <thead><tr><th>Thread</th><th class="num">Replies</th><th class="num">Views</th><th>Last post</th></tr></thead>
       <tbody>${r.threads.map((t) => html`<tr class="${t.pinned ? 'pinned' : ''}">
         <td>${t.pinned ? html`<span class="badge-pill" title="Pinned by staff">Pinned</span> ` : ''}${t.locked ? html`<span class="badge-pill" title="Nobody can reply">Locked</span> ` : ''}
-          <span class="forum-list-avatar">${avatarSvg(t.by.avatar, 40, [], false)}</span><span class="forum-list-thread"><a href="#/forum/t/${t.id}"><b>${t.title}</b></a><br><span class="small muted">by ${forumWho(t.by)}, ${ago(t.at)}</span></span></td>
+          <span class="forum-list-avatar">${forumAvatar(t.by, 40)}</span><span class="forum-list-thread"><a href="#/forum/t/${t.id}"><b>${t.title}</b></a><br><span class="small muted">by ${forumWho(t.by)}, ${ago(t.at)}</span></span></td>
         <td class="num">${t.replies}</td><td class="num">${t.views}</td>
         <td class="small"><a href="#/forum/t/${t.id}/9999">${ago(t.last)}</a><br><span class="muted">by ${t.lastBy.name}</span></td></tr>`)}</tbody></table></div>`
       : html`<p class="muted">No threads here yet. Be the first!</p>`}
@@ -773,13 +793,14 @@ pages.forum = async (board, a, b) => {
         <label>Message</label><textarea name="text" maxlength="3000" rows="7" required></textarea>
         <p><button class="btn green">Post thread</button> <span class="small muted">Be kind, and don't share personal info.</span></p></form>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to post.</p>`}`);
+  loadForumAvatars();
 };
 async function forumThread(id, page) {
   const r = await pageCall('forum.thread', { thread: id, page: page >= 9998 ? -1 : page });
   if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p><p><a href="#/forum">&lt; All boards</a></p>`); return; }
   const t = r.thread, base = '#/forum/t/' + t.id;
   const post = (p) => html`<div class="forum-post" data-post="${p.id}">
-    <div class="forum-author"><a class="forum-player-avatar" href="#/user/${p.by.userId || p.by.id}" title="View ${p.by.name}’s profile">${avatarSvg(p.by.avatar, 72, [], false)}</a>${forumWho(p.by)}<span class="forum-player-number">PLAYER #${p.by.userId || p.by.id}</span></div>
+    <div class="forum-author"><a class="forum-player-avatar" href="#/user/${p.by.userId || p.by.id}" title="View ${p.by.name}’s profile">${forumAvatar(p.by, 72)}</a>${forumWho(p.by)}<span class="forum-player-number">PLAYER #${p.by.userId || p.by.id}</span></div>
     <div class="grow"><p class="small muted">${ago(p.at)}</p>
       <div class="forum-text">${p.text}</div>
       <p class="small">${p.canDelete ? html`<a href="#" data-act="forumDelete" data-thread="${t.id}" data-post="${p.id}" data-first="${p.first ? 1 : ''}" data-page="${r.page}">${p.first ? 'Delete thread' : 'Delete'}</a> ` : ''}
@@ -796,6 +817,7 @@ async function forumThread(id, page) {
         <p><button class="btn blue">Post reply</button></p></form>`
       : t.locked ? html`<p class="muted">This thread is locked, so nobody can reply.</p>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to reply.</p>`}`);
+  loadForumAvatars();
 }
 
 pages.updates = async () => {
