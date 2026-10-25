@@ -126,10 +126,15 @@ FetchContent_MakeAvailable(lua)
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(LUA_LOSLIB "${lua_SOURCE_DIR}/loslib.c")
     file(READ "${LUA_LOSLIB}" LUA_LOSLIB_ORIGINAL)
-    # Match the function token rather than the entire macro line; whitespace
-    # differs between Lua source revisions.
-    string(REPLACE "system(cmd)" "(-1)"
+    # Temporarily rename the macro identifier before replacing the call.
+    # Otherwise a plain "system(cmd)" replacement also corrupts
+    # "l_system(cmd)" itself into the invalid token "l_(-1)".
+    string(REPLACE "l_system(cmd)" "l_system__ios(cmd)"
            LUA_LOSLIB_CONTENT "${LUA_LOSLIB_ORIGINAL}")
+    string(REPLACE "system(cmd)" "(-1)"
+           LUA_LOSLIB_CONTENT "${LUA_LOSLIB_CONTENT}")
+    string(REPLACE "l_system__ios(cmd)" "l_system(cmd)"
+           LUA_LOSLIB_CONTENT "${LUA_LOSLIB_CONTENT}")
     if("${LUA_LOSLIB_CONTENT}" STREQUAL "${LUA_LOSLIB_ORIGINAL}")
         message(FATAL_ERROR "Could not patch Lua os.execute for iOS: system(cmd) token not found")
     endif()
