@@ -78,7 +78,14 @@ void ParticleSystem::gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
             p.wet   = true;
             p.size  = glm::vec3(rnd(0.12f, 0.25f), rnd(0.08f, 0.2f), rnd(0.1f, 0.22f));
             p.bleed = rnd(1.0f, 2.5f);
-            if (rnd(0, 1) < 0.15f) {   // a bit of bone
+            const float anatomyRoll = rnd(0.0f, 1.0f);
+            if (anatomyRoll < 0.10f) {   // rounded, wet organ-like pieces (stylized, not anatomical models)
+                p.gib = 2;
+                p.color = glm::mix(glm::vec3(0.24f, 0.015f, 0.035f), m_bloodColor, 0.35f) * rnd(0.85f, 1.15f);
+                p.wet = true;
+                p.size = glm::vec3(rnd(0.10f, 0.18f), rnd(0.08f, 0.14f), rnd(0.10f, 0.19f));
+                p.bleed = rnd(1.5f, 3.0f);
+            } else if (anatomyRoll < 0.25f) {   // exposed bone fragments
                 p.gib = 1;
                 p.color = glm::vec3(0.86f, 0.82f, 0.72f);
                 p.wet = false;
@@ -144,7 +151,7 @@ void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3
 void ParticleSystem::stepGib(Particle& p, float dt, float gravity, const Physics& physics, std::vector<Particle>& born) {
     // (Moved and spun by the caller already.)
     const float r = std::max(0.05f, (p.size.x + p.size.y + p.size.z) / 6.0f);
-    const bool meat = p.kind == Particle::Chunk && p.gib == 0;
+    const bool meat = p.kind == Particle::Chunk && p.gib != 1;
     // Fresh meat drips a trail of blood as it flies and slides.
     p.bleed -= dt;
     if (meat && p.bleed > 0.0f) {
