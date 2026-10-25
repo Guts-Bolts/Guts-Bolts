@@ -28,6 +28,7 @@ extern "C" {
 #include <algorithm>
 #include <cctype>
 #include <functional>
+#include <map>
 #include <sstream>
 
 using nlohmann::json;
@@ -1143,6 +1144,71 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         diagnose(n, args.value("recursive", true), findings);
         return done({{"object_id", idOf(n)}, {"resulting_state", state(n)}, {"findings", findings},
                      {"error_count", count(findings, "error")}, {"warning_count", count(findings, "warning")}});
+    }
+    if (name == "analyze_script_dependencies") {
+        // Static-only dependency scan. Never execute scripts or evaluate require expressions.
+        std::vector<SceneNode*> scripts;
+        std::vector<SceneNode*> modules;
+        m_scene->forEach([&](SceneNode* n) {
+            if (!n->isScript() || n->internal) return;
+            scripts.push_back(n);
+            if (n->isModule) modules.push_back(n);
+        });
+        auto trim = [](std::string s) {
+            const size_t first = s.find_first_not_of(" \t\r\n");
+            if (first == std::string::npos) return std::string();
+            const size_t last = s.find_last_not_of(" \t\r\n");
+            return s.substr(first, last - first + 1);
+        };
+        auto pathOfNode = [&](const SceneNode* n) { return n->fullName(); };
+        json dependencies = json::array();
+        json unresolved = json::array();
+        std::map<uint64_t, int> incoming;
+        for (SceneNode* source : scripts) {
+            const std::string& code = source->source;
+            size_t pos = 0;
+            while ((pos = code.find("require", pos)) != std::string::npos) {
+                const size_t wordStart = pos;
+                pos += 7;
+                if ((wordStart > 0 && (std::isalnum((unsigned char)code[wordStart - 1]) || code[wordStart - 1] == '_')) ||
+                    (pos < code.size() && (std::isalnum((unsigned char)code[pos]) || code[pos] == '_'))) continue;
+                size_t open = pos;
+                while (open < code.size() && std::isspace((unsigned char)code[open])) ++open;
+                if (open >= code.size() || code[open] != '(') continue;
+                size_t end = code.find(')', open + 1);
+                if (end == std::string::npos) continue;
+                std::string expr = trim(code.substr(open + 1, end - open - 1));
+                pos = end + 1;
+                if (expr.empty()) continue;
+                SceneNode* target = nullptr;
+                for (SceneNode* candidate : modules) {
+                    const std::string full = pathOfNode(candidate);
+                    const std::string name = candidate->name;
+                    if (expr == name || expr == full || expr == ("Workspace." + full) ||
+                        expr == ("game." + full) || expr == ("script.Parent." + name)) {
+                        if (target) { target = nullptr; break; } // ambiguous: don't guess
+                        target = candidate;
+                    }
+                }
+                if (target) {
+                    dependencies.push_back({{"from", pathOfNode(source)}, {"to", pathOfNode(target)}, {"expression", expr}});
+                    ++incoming[target->id];
+                } else {
+                    unresolved.push_back({{"from", pathOfNode(source)}, {"expression", expr}});
+                }
+            }
+        }
+        json unused = json::array();
+        for (SceneNode* module : modules) {
+            if (incoming[module->id] == 0)
+                unused.push_back({{"path", pathOfNode(module)}, {"object_id", idOf(module)},
+                                  {"name", module->name}, {"note", "No static require(...) reference was found. Dynamic or external use may still exist."}});
+        }
+        return done({{"script_count", scripts.size()}, {"module_count", modules.size()},
+                     {"dependencies", dependencies}, {"dependency_count", dependencies.size()},
+                     {"unresolved", unresolved}, {"unresolved_count", unresolved.size()},
+                     {"unreferenced_modules", unused},
+                     {"note", "Static heuristic only: scripts were not executed. Dynamic require expressions, string-built paths and runtime-only references may be missed."}});
     }
     if (name == "validate_scene") {
         json all = json::array();
