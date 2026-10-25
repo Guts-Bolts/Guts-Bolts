@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <system_error>
+#include <fstream>
 #if defined(GB_MOBILE)
 #include <SDL.h>
 #endif
@@ -100,7 +101,7 @@ void installBundledFiles() {
     std::filesystem::path stamp = appFolder() / "bundle_version.txt";
     std::string have;
     { std::ifstream f(stamp); std::getline(f, have); }
-    if (have == version) return;                      // already unpacked this version
+    if (have == version) return;
     std::string name;
     std::error_code ec;
     while (std::getline(lines, name)) {
@@ -113,6 +114,34 @@ void installBundledFiles() {
         out.write(data.data(), (std::streamsize)data.size());
     }
     std::ofstream(stamp) << version << "\n";
+#elif defined(GB_IOS)
+    // The signed app bundle is read-only; copy packaged content into writable storage.
+    const char* base = SDL_GetBasePath();
+    if (!base) return;
+    const std::filesystem::path resources = std::filesystem::path(base) / "Resources";
+    const std::filesystem::path stamp = appFolder() / "bundle_version.txt";
+    std::string installed;
+    { std::ifstream in(stamp); std::getline(in, installed); }
+#ifdef GB_APP_VERSION
+    const std::string version = GB_APP_VERSION;
+#else
+    const std::string version = "unknown";
+#endif
+    if (installed != version) {
+        std::error_code ec;
+        for (const char* name : {"games", "catalog"}) {
+            const auto src = resources / name;
+            const auto dst = appFolder() / name;
+            if (std::filesystem::exists(src, ec)) {
+                std::filesystem::create_directories(dst, ec);
+                std::filesystem::copy(src, dst, std::filesystem::copy_options::recursive |
+                    std::filesystem::copy_options::overwrite_existing, ec);
+                ec.clear();
+            }
+        }
+        std::ofstream(stamp, std::ios::trunc) << version << "\n";
+    }
+    SDL_free((void*)base);
 #endif
 }
 
