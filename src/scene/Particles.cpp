@@ -43,8 +43,12 @@ void ParticleSystem::spray(GoreKind kind, const glm::vec3& pos, const glm::vec3&
         p.pos    = pos + rndDir() * 0.05f;
         p.vel    = (dir + rndDir() * 0.6f) * speed * rnd(0.4f, 1.2f) + glm::vec3(0, rnd(0.5f, 2.0f), 0);
         p.color  = kind == GoreKind::Blood ? m_bloodColor * rnd(0.62f, 1.0f) : kOil;
-        float s  = rnd(0.04f, 0.11f);
-        p.size   = glm::vec3(s);
+        // A wound emits heavy beads, medium drops, and fine mist.
+        float roll = rnd(0.0f, 1.0f);
+        float s = roll < 0.12f ? rnd(0.085f, 0.14f)
+                : roll < 0.43f ? rnd(0.045f, 0.085f)
+                               : rnd(0.018f, 0.045f);
+        p.size   = glm::vec3(s, s * rnd(0.85f, 1.35f), s);
         p.life   = p.maxLife = rnd(1.5f, 3.0f);
         p.wet    = true;
         add(p);
@@ -78,7 +82,14 @@ void ParticleSystem::gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
             p.wet   = true;
             p.size  = glm::vec3(rnd(0.12f, 0.25f), rnd(0.08f, 0.2f), rnd(0.1f, 0.22f));
             p.bleed = rnd(1.0f, 2.5f);
-            if (rnd(0, 1) < 0.15f) {   // a bit of bone
+            const float anatomyRoll = rnd(0.0f, 1.0f);
+            if (anatomyRoll < 0.10f) {   // rounded, wet organ-like pieces (stylized, not anatomical models)
+                p.gib = 2;
+                p.color = glm::mix(glm::vec3(0.24f, 0.015f, 0.035f), m_bloodColor, 0.35f) * rnd(0.85f, 1.15f);
+                p.wet = true;
+                p.size = glm::vec3(rnd(0.10f, 0.18f), rnd(0.08f, 0.14f), rnd(0.10f, 0.19f));
+                p.bleed = rnd(1.5f, 3.0f);
+            } else if (anatomyRoll < 0.25f) {   // exposed bone fragments
                 p.gib = 1;
                 p.color = glm::vec3(0.86f, 0.82f, 0.72f);
                 p.wet = false;
@@ -102,6 +113,23 @@ void ParticleSystem::gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
 
 void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3& vel, float violence) {
     if (!part) return;
+
+    // Region-aware wound profiles shape the initial spray without changing damage or hitboxes.
+    std::string region = part->name;
+    std::transform(region.begin(), region.end(), region.begin(),
+                   [](unsigned char ch) { return (char)std::tolower(ch); });
+    const bool torsoWound = region.find("torso") != std::string::npos ||
+                            region.find("upperbody") != std::string::npos ||
+                            region.find("lowerbody") != std::string::npos ||
+                            region.find("body") != std::string::npos;
+    const bool legWound = region.find("leg") != std::string::npos ||
+                          region.find("thigh") != std::string::npos ||
+                          region.find("hip") != std::string::npos;
+    const bool headWound = region.find("head") != std::string::npos ||
+                           region.find("neck") != std::string::npos;
+    const float woundCountScale = torsoWound ? 1.25f : (headWound ? 0.78f : (legWound ? 0.88f : 1.0f));
+    const float woundSpeedScale = torsoWound ? 1.08f : (headWound ? 1.22f : (legWound ? 0.88f : 1.0f));
+
     const glm::mat4 M = part->worldMatrix();
     const glm::vec3 c(M[3]);
     const glm::vec3 scale = part->transform.scale;
@@ -137,14 +165,48 @@ void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3
     }
     // Bits of bone (or bolts and scraps), and the blood.
     gibs(kind, c, vel * 0.5f, 2 + (int)(violence * 3.0f));
-    spray(kind, c, glm::vec3(0, 1, 0), 30 + (int)(violence * 40.0f), 4.0f + violence * 6.0f);
+
+    // Leg and torso destruction can expose a short, stylized intestinal coil.
+    // Keep it procedural and bounded: no meshes/assets or unbounded particle spawning.
+    if (kind == GoreKind::Blood) {
+        if (torsoWound || legWound) {
+            const int loops = torsoWound ? 7 : 4;
+            const float coilRadius = torsoWound ? 0.16f : 0.10f;
+            for (int i = 0; i < loops; ++i) {
+                const float t = (float)i / (float)loops * 6.2831853f;
+                Particle p;
+                p.kind = Particle::Chunk;
+                p.gib = 3;  // intestine-like strand segment
+                p.color = glm::mix(glm::vec3(0.62f, 0.16f, 0.20f),
+                                   glm::vec3(0.82f, 0.34f, 0.35f), rnd(0.0f, 1.0f));
+                p.wet = true;
+                p.bleed = rnd(2.0f, 3.5f);
+                p.size = glm::vec3(rnd(0.035f, 0.055f), rnd(0.18f, 0.29f), rnd(0.035f, 0.055f));
+                // Leg parts meet the pelvis at their upper end; torso wounds sit near the split.
+                const float woundY = torsoWound ? 0.0f : std::max(0.0f, scale.y * 0.42f);
+                p.pos = c + glm::vec3(std::cos(t) * coilRadius,
+                                      woundY + rnd(-0.06f, 0.08f),
+                                      std::sin(t) * coilRadius);
+                p.vel = vel * 0.22f + rndDir() * rnd(0.15f, 0.55f);
+                p.spin = rndDir() * rnd(18.0f, 55.0f);
+                p.rot = glm::vec3(55.0f + std::sin(t) * 35.0f,
+                                  glm::degrees(t), std::cos(t) * 40.0f);
+                p.life = p.maxLife = rnd(10.0f, 16.0f);
+                p.gibSeed = rnd(0.0f, 1.0f);
+                add(p);
+            }
+        }
+    }
+    const int woundSprayCount = (int)std::round((30.0f + violence * 40.0f) * woundCountScale);
+    const float woundSpraySpeed = (4.0f + violence * 6.0f) * woundSpeedScale;
+    spray(kind, c, glm::vec3(0, 1, 0), woundSprayCount, woundSpraySpeed);
     if (kind == GoreKind::Oil) sparks(c, 20);
 }
 
 void ParticleSystem::stepGib(Particle& p, float dt, float gravity, const Physics& physics, std::vector<Particle>& born) {
     // (Moved and spun by the caller already.)
     const float r = std::max(0.05f, (p.size.x + p.size.y + p.size.z) / 6.0f);
-    const bool meat = p.kind == Particle::Chunk && p.gib == 0;
+    const bool meat = p.kind == Particle::Chunk && p.gib != 1;
     // Fresh meat drips a trail of blood as it flies and slides.
     p.bleed -= dt;
     if (meat && p.bleed > 0.0f) {
@@ -479,8 +541,13 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
             // ...and on a wall it runs down, leaving a trail, thinning as it goes.
             if (p.slide > 0.0f) {
                 p.slide -= dt;
-                float d = 0.35f * dt * std::min(1.0f, p.slide * 1.5f);
-                p.pos.y -= d;
+                // Gravity projected onto the surface makes stains follow sloped walls
+                // instead of always moving straight down the world Y axis.
+                const glm::vec3 gravityDir(0.0f, -1.0f, 0.0f);
+                const glm::vec3 surfaceFlow = gravityDir - p.normal * glm::dot(gravityDir, p.normal);
+                const float flowStrength = glm::length(surfaceFlow);
+                const float d = 0.35f * dt * std::min(1.0f, p.slide * 1.5f) * flowStrength;
+                if (flowStrength > 1e-4f) p.pos += (surfaceFlow / flowStrength) * d;
                 p.trail += d;
                 p.size.x *= 1.0f - 0.12f * dt;
                 if (p.trail > 0.2f) {
@@ -528,6 +595,12 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                 p.vel.y -= gravity * dt;
                 break;
         }
+        // Fine mist has a higher area-to-mass ratio and loses momentum faster.
+        if (p.kind == Particle::Drop && p.wet) {
+            const float radius = std::max(0.012f, p.size.x);
+            const float drag = 0.18f + 0.95f / (radius * 18.0f);
+            p.vel *= std::max(0.0f, 1.0f - drag * dt);
+        }
         p.pos += p.vel * dt;
         p.rot += p.spin * dt;
         if (p.kind == Particle::Spray) { if (physics.solidAt(p.pos)) p.life = 0.0f; continue; }   // lands: gone
@@ -562,16 +635,47 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                         pool->color = glm::mix(pool->color, p.color, 0.15f);
                         pool->life = std::max(pool->life, m_bloodStay * 0.8f);
                         pool->age *= 0.6f;          // fresh blood on top: wet again
-                        pool->drips += 0.6f;
+                        pool->drips = std::min(12.0f, pool->drips + 0.6f);
+
+                        // Fold nearby floor stains into this pool as well. This keeps repeated
+                        // impacts from leaving a cluster of overlapping discs, while the radius
+                        // cap and existing splat budget keep the merge bounded.
+                        for (size_t k = 0; k < m_items.size(); ++k) {
+                            Particle& q = m_items[k];
+                            if (&q == pool || k == i || q.life <= 0.0f ||
+                                q.kind != Particle::Splat || q.slide > 0.0f ||
+                                q.normal.y < 0.9f || q.onPart || q.look != 0 ||
+                                std::abs(q.pos.y - pool->pos.y) > 0.08f) continue;
+                            glm::vec2 offset(q.pos.x - pool->pos.x, q.pos.z - pool->pos.z);
+                            float poolRadius = std::max(pool->spread, pool->size.x) * 0.5f;
+                            float otherRadius = std::max(q.spread, q.size.x) * 0.5f;
+                            float reach = poolRadius + otherRadius;
+                            if (glm::dot(offset, offset) >= reach * reach) continue;
+
+                            const float otherSize = std::max(q.spread, q.size.x);
+                            const float merged = std::min(2.6f, std::sqrt(
+                                std::max(pool->spread, pool->size.x) *
+                                std::max(pool->spread, pool->size.x) +
+                                otherSize * otherSize * 0.5f));
+                            pool->spread = std::max(pool->spread, merged);
+                            pool->color = glm::mix(pool->color, q.color, 0.12f);
+                            pool->life = std::max(pool->life, q.life);
+                            pool->age = std::min(pool->age, q.age);
+                            pool->drips = std::min(12.0f, pool->drips + q.drips * 0.35f);
+                            q.life = 0.0f; // removed by the normal particle cleanup pass
+                        }
                         p.life = 0.0f;
                     } else {
                         // A drop coming in at an angle lands as a teardrop, stretched the way it was going,
                         // and a fast one throws little droplets on ahead.
-                        float stretch = 1.0f + std::min(1.6f, hs * 0.14f);
+                        // High-energy impacts produce elongated splashes with irregular spines.
+                        const float impactSpeed = glm::length(p.vel);
+                        float stretch = 1.0f + std::min(2.4f, hs * 0.22f);
                         p.pos = at + (hs > 0.5f ? hv / hs * r * 0.12f * (stretch - 1.0f) : glm::vec3(0.0f));
                         float s = r * 0.35f;
                         p.size = glm::vec3(s, 0.02f, s * rnd(0.8f, 1.2f) * stretch);
                         p.spread = r;
+                        p.look = (impactSpeed > 5.0f && hs > 2.0f) ? 3 : 0;
                         p.rot = glm::vec3(0, hs > 0.5f ? glm::degrees(std::atan2(hv.x, hv.z)) : rnd(0, 360), 0);
                         p.normal = glm::vec3(0, 1, 0);
                         p.seed = rnd(0, 1);
@@ -605,12 +709,43 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                     p.normal = n;
                     p.pos += n * 0.02f;
                     for (int step = 0; step < 6 && physics.solidAt(p.pos); ++step) p.pos += n * 0.03f;   // out onto the surface
+                    float impactSpeed = glm::length(p.vel);
                     float s = p.size.x * rnd(2.0f, 3.0f);
-                    p.size = glm::vec3(s, 0.02f, s * rnd(0.8f, 1.4f));
-                    p.rot = glm::vec3(0, rnd(-15.0f, 15.0f), 0);   // (along the wall: the run goes straight down)
+                    float wallStretch = 1.0f + std::min(2.0f, impactSpeed * 0.16f);
+                    p.size = glm::vec3(s, 0.02f, s * rnd(0.8f, 1.4f) * wallStretch);
+                    p.rot = glm::vec3(0, impactSpeed > 4.0f ? turnAlong(n, glm::vec3(p.vel.x, 0.0f, p.vel.z)) : rnd(-15.0f, 15.0f), 0);
+                    p.look = impactSpeed > 5.0f ? 3 : 0;
                     p.seed = rnd(0, 1);
                     p.slide = p.drips < 0.0f ? 0.0f : rnd(0.6f, 2.2f);
                     p.kind = Particle::Splat;
+
+                    // Fast wall strikes throw a few small satellite stains along the surface.
+                    // Keep these bounded and surface-aligned rather than spawning more flying drops.
+                    glm::vec3 wallTangent = p.vel - n * glm::dot(p.vel, n);
+                    const float tangentSpeed = glm::length(wallTangent);
+                    if (impactSpeed > 4.0f && tangentSpeed > 1.0f) {
+                        wallTangent /= tangentSpeed;
+                        glm::vec3 wallSide = glm::normalize(glm::cross(n, wallTangent));
+                        const int satellites = std::clamp((int)((impactSpeed - 3.0f) * 0.45f), 1, 3);
+                        for (int e = 0; e < satellites; ++e) {
+                            Particle sat = p;
+                            const float along = rnd(0.12f, 0.38f) * std::min(1.8f, impactSpeed * 0.2f);
+                            sat.pos = p.pos + wallTangent * along + wallSide * rnd(-0.16f, 0.16f) + n * 0.006f;
+                            const float ss = rnd(0.025f, 0.055f);
+                            sat.size = glm::vec3(ss, 0.018f, ss * rnd(0.8f, 1.5f));
+                            sat.spread = 0.0f;
+                            sat.slide = 0.0f;
+                            sat.trail = 0.0f;
+                            sat.drips = 0.0f;
+                            sat.dripTimer = 0.0f;
+                            sat.look = 0;
+                            sat.seed = rnd(0.0f, 1.0f);
+                            sat.age = 0.0f;
+                            sat.vel = sat.spin = glm::vec3(0.0f);
+                            sat.life = sat.maxLife = m_bloodStay * rnd(0.65f, 0.9f);
+                            born.push_back(sat);
+                        }
+                    }
                 }
                 if (p.kind == Particle::Splat) {
                     p.vel = p.spin = glm::vec3(0.0f);
