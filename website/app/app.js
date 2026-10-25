@@ -2350,7 +2350,11 @@ pages.avatar = async () => {
   show(html`<h1>Avatar</h1>
     <div class="row top avatar-edit">
       <div class="box" style="text-align:center;margin-right:16px"><div id="avatarPreview">${avatarSvg(a, 180, wornItems)}</div>
-        <div class="small muted">Drag to turn</div>
+        <div class="row avatar-view-toggle" role="group" aria-label="Avatar preview mode" style="justify-content:center;margin-top:8px">
+          <button class="btn small" type="button" data-avatar-view="2d" aria-pressed="true">2D View</button>
+          <button class="btn small blue" type="button" data-avatar-view="3d" aria-pressed="false">3D View</button>
+        </div>
+        <div class="small muted" id="avatarPreviewHint">Flat preview</div>
         <p><button class="btn green" data-act="saveAvatar">Save</button>
           <button class="btn" data-act="resetAvatar">Undo changes</button></p>
         <p class="small muted" style="max-width:200px">${signedIn() ? 'Your avatar is the same in the app and on the website.'
@@ -2385,12 +2389,50 @@ pages.avatar = async () => {
     }).catch(() => {});
   }
   // Colours change the preview straight away (without redrawing the page, so the colour picker stays open).
-  let avatar3d = null;
+  let avatar3d = null, avatarViewMode = '2d', avatarViewRequest = 0;
   const preview = () => {
-    if (avatar3d) avatar3d.set(a, wornItems);
-    else $('#avatarPreview').innerHTML = avatarSvg(a, 180, wornItems).s;
+    const previewEl = $('#avatarPreview');
+    if (avatarViewMode === '3d') {
+      if (avatar3d) avatar3d.set(a, wornItems);
+      else showAvatarView('3d');
+    } else {
+      previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
+    }
   };
-  mountAvatar($('#avatarPreview'), a, wornItems, { width: 240 }).then((c) => { avatar3d = c; }).catch(() => {});
+  const showAvatarView = async (mode) => {
+    avatarViewMode = mode;
+    const request = ++avatarViewRequest;
+    view.querySelectorAll('[data-avatar-view]').forEach((button) => {
+      const active = button.dataset.avatarView === mode;
+      button.classList.toggle('blue', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    const hint = $('#avatarPreviewHint');
+    if (hint) hint.textContent = mode === '3d' ? 'Drag to rotate horizontally and vertically' : 'Flat preview';
+    const previewEl = $('#avatarPreview');
+    if (mode === '2d') {
+      previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
+      return;
+    }
+    try {
+      const controller = await mountAvatar(previewEl, a, wornItems, { width: 240 });
+      if (request === avatarViewRequest && avatarViewMode === '3d') avatar3d = controller;
+    } catch (_) {
+      if (request === avatarViewRequest && avatarViewMode === '3d') {
+        previewEl.innerHTML = avatarSvg(a, 180, wornItems).s;
+        if (hint) hint.textContent = '3D preview unavailable; showing 2D instead';
+        avatarViewMode = '2d';
+        view.querySelectorAll('[data-avatar-view]').forEach((button) => {
+          const active = button.dataset.avatarView === '2d';
+          button.classList.toggle('blue', active);
+          button.setAttribute('aria-pressed', String(active));
+        });
+      }
+    }
+  };
+  view.querySelectorAll('[data-avatar-view]').forEach((button) =>
+    button.addEventListener('click', () => showAvatarView(button.dataset.avatarView)));
+  showAvatarView('2d');
   view.querySelectorAll('[data-avatar-part]').forEach((inp) => inp.addEventListener('input', () => {
     a[inp.dataset.avatarPart] = fromHex(inp.value); preview();
   }));
