@@ -1145,6 +1145,64 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         return done({{"object_id", idOf(n)}, {"resulting_state", state(n)}, {"findings", findings},
                      {"error_count", count(findings, "error")}, {"warning_count", count(findings, "warning")}});
     }
+    if (name == "analyze_scene_performance") {
+        int objects = 0, parts = 0, dynamicParts = 0, lights = 0, emitters = 0;
+        int scripts = 0, enabledScripts = 0;
+        size_t totalScriptBytes = 0;
+        json scriptSizes = json::array();
+        m_scene->forEach([&](SceneNode* n) {
+            if (n->internal) return;
+            ++objects;
+            if (isPartLike(n)) {
+                ++parts;
+                if (!n->anchored) ++dynamicParts;
+            }
+            if (n->isLight() && n->enabled) ++lights;
+            if (n->isParticles() && n->enabled) ++emitters;
+            if (n->isScript()) {
+                ++scripts;
+                if (n->enabled && !n->isModule) ++enabledScripts;
+                totalScriptBytes += n->source.size();
+                scriptSizes.push_back({{"path", n->fullName()}, {"object_id", idOf(n)},
+                                       {"bytes", n->source.size()}, {"enabled", n->enabled},
+                                       {"type", n->isModule ? "ModuleScript" : (n->isLocal ? "LocalScript" : "Script")}});
+            }
+        });
+        std::vector<json> ranked;
+        for (const auto& item : scriptSizes) ranked.push_back(item);
+        std::sort(ranked.begin(), ranked.end(), [](const json& x, const json& y) {
+            return x.value("bytes", size_t(0)) > y.value("bytes", size_t(0));
+        });
+        json largest = json::array();
+        for (size_t i = 0; i < ranked.size() && i < 10; ++i) largest.push_back(ranked[i]);
+        json findings = json::array();
+        auto finding = [&](const char* severity, const char* code, const std::string& message, const std::string& recommendation) {
+            findings.push_back({{"severity", severity}, {"code", code}, {"message", message}, {"recommendation", recommendation}});
+        };
+        if (parts >= 1000) finding("warning", "HIGH_PART_COUNT", std::to_string(parts) + " parts are present in the scene.",
+                                   "Profile the scene in Play mode; reduce unnecessary geometry and consider grouping or simplifying repeated detail.");
+        if (dynamicParts >= 250) finding("warning", "MANY_DYNAMIC_BODIES", std::to_string(dynamicParts) + " parts are unanchored and may participate in physics.",
+                                          "Anchor static scenery and reduce the number of simultaneously simulated bodies where gameplay permits.");
+        if (lights >= 40) finding("warning", "MANY_ENABLED_LIGHTS", std::to_string(lights) + " enabled lights are present.",
+                                  "Check shadow-casting and overlapping lights, then compare frame time with lights disabled in a test copy.");
+        if (emitters >= 75) finding("warning", "MANY_PARTICLE_EMITTERS", std::to_string(emitters) + " enabled particle emitters are present.",
+                                    "Reduce emitter count or particle rates where effects overlap; verify the result visually.");
+        if (totalScriptBytes >= 100000) finding("info", "LARGE_SCRIPT_SOURCE_TOTAL", "Scripts contain " + std::to_string(totalScriptBytes) + " bytes of source in total.",
+                                                 "Review large scripts for duplicated logic; source size alone does not prove runtime cost.");
+        for (const auto& s : ranked) {
+            if (s.value("bytes", size_t(0)) >= 20000) {
+                finding("info", "LARGE_SCRIPT_SOURCE", s.value("path", std::string("Script")) + " contains " +
+                        std::to_string(s.value("bytes", size_t(0))) + " bytes of source.",
+                        "Consider splitting large scripts into focused modules. Large source is a maintainability signal, not a runtime performance measurement.");
+            }
+        }
+        return done({{"metrics", {{"object_count", objects}, {"part_count", parts}, {"unanchored_part_count", dynamicParts},
+                                  {"enabled_light_count", lights}, {"enabled_particle_emitter_count", emitters},
+                                  {"script_count", scripts}, {"enabled_non_module_script_count", enabledScripts},
+                                  {"total_script_source_bytes", totalScriptBytes}}},
+                     {"findings", findings}, {"largest_scripts", largest},
+                     {"note", "Static heuristic only. Counts do not measure actual CPU/GPU time, draw calls, memory use or frame rate. Validate suspected hotspots with Play-mode measurements."}});
+    }
     if (name == "analyze_script_dependencies") {
         // Static-only dependency scan. Never execute scripts or evaluate require expressions.
         std::vector<SceneNode*> scripts;
