@@ -171,8 +171,10 @@ void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3
                 p.wet = true;
                 p.bleed = rnd(2.0f, 3.5f);
                 p.size = glm::vec3(rnd(0.035f, 0.055f), rnd(0.18f, 0.29f), rnd(0.035f, 0.055f));
+                // Leg parts meet the pelvis at their upper end; torso wounds sit near the split.
+                const float woundY = torsoWound ? 0.0f : std::max(0.0f, scale.y * 0.42f);
                 p.pos = c + glm::vec3(std::cos(t) * coilRadius,
-                                      rnd(-0.08f, 0.10f) + (torsoWound ? 0.0f : -0.04f),
+                                      woundY + rnd(-0.06f, 0.08f),
                                       std::sin(t) * coilRadius);
                 p.vel = vel * 0.22f + rndDir() * rnd(0.15f, 0.55f);
                 p.spin = rndDir() * rnd(18.0f, 55.0f);
