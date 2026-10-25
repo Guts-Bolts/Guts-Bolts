@@ -1105,6 +1105,10 @@ export class GbServerObject extends DurableObject {
     if (!PROMO_NAME.test(code)) return fail('Codes are 3-30 letters and numbers (no spaces or symbols).');
     if (code.startsWith('BOLTS')) return fail('Codes can\'t start with BOLTS (those are the one-person codes).');
     if (this.promos.some((x) => x.code === code)) return fail('There\'s already a code called ' + code + '. Pick another name.');
+    const start = Math.max(0, Math.floor(num(args, 'start'))) || t;
+    const end = Math.max(0, Math.floor(num(args, 'end')));
+    if (end && end <= start) return fail('The end has to be after the start.');
+    if (end && end <= t) return fail('That end time has already gone by.');
     const rewardType = str(args, 'rewardType') === 'item' ? 'item' : 'bolts';
     let bolts = 0, itemId = '';
     if (rewardType === 'item') {
@@ -1120,10 +1124,6 @@ export class GbServerObject extends DurableObject {
       bolts = num(args, 'bolts');
       if (!Number.isInteger(bolts) || bolts < 1 || bolts > kPromoMaxBolts) return fail('Pick an amount between 1 and 1,000,000 Bolts.');
     }
-    const start = Math.max(0, Math.floor(num(args, 'start'))) || t;
-    const end = Math.max(0, Math.floor(num(args, 'end')));
-    if (end && end <= start) return fail('The end has to be after the start.');
-    if (end && end <= t) return fail('That end time has already gone by.');
     if (this.promos.length >= kMaxPromos) this.promos.splice(0, 1);
     this.promos.push({ code, rewardType, bolts, ...(itemId ? { itemId } : {}), start, end, made: t, by: me.id, uses: 0 });
     this.dirty.promos = true;
