@@ -25,10 +25,11 @@ Extend the existing R6 ragdoll and gore systems into a configurable, performance
 
 ### 3. Layered wound effects
 
-The first implementation slice adds stylized rounded organ-like fragments to the existing flesh/bone gib system. These are deliberately procedural visual cues rather than anatomically accurate organ models; creators can later replace them with authored assets.
+The first implementation slice adds stylized rounded organ-like fragments and short intestine-like strand segments to the existing flesh/bone gib system. Torso, upper-body, lower-body, leg, thigh, and hip part names trigger a bounded coil when those parts burst. These are procedural visual cues rather than anatomically accurate organ models; creators can later replace them with authored assets.
 
 - Define wound profiles by body region, damage source, impact energy, and creator-selected gore preset.
 - Support optional skin/muscle/bone/organ visual layers as assets or material effects, with non-graphic defaults and a creator-controlled intensity setting.
+- On torso or leg destruction, show a short, bounded intestine-like coil at the wound, with strand segments using existing particle physics, cleanup, and budgets.
 - Keep visual layers separate from gameplay damage rules so effects do not accidentally change health, hitboxes, or network authority.
 
 ### 4. Blood trails and pooling
