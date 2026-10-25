@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <string>
@@ -44,6 +45,8 @@ public:
     void start();
     void stop();
     bool running() const { return m_running; }
+    // Studio multiplayer tests can collect a low-rate trace of effective character input.
+    void setInputTracePath(const std::string& path);
 
     // One frame. `cameraYaw` makes WASD move relative to the camera;
     // `acceptInput` = false ignores the keyboard (e.g. while typing).
@@ -91,6 +94,10 @@ private:
     glm::vec2    m_touchMove{0.0f};
     bool         m_touchJump = false;
     bool         m_runOnly = false;
+    std::ofstream m_inputTrace;
+    double       m_traceStartTime = 0.0;
+    double       m_traceNextAt = 0.0;
+    uint64_t     m_traceSamples = 0;
 
     // Tools
     void setupTools();                         // take StarterPack tools out, hand them out
