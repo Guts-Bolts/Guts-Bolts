@@ -79,6 +79,7 @@ private:
     void renderStatusBar();
     void renderDialogs();
     void renderTeamPanel();
+    void renderPerformanceWindow();
     void handleShortcuts();
 
     // Creating / removing things
@@ -278,6 +279,9 @@ private:
 
     bool m_firstLayout = true;
     bool m_showSettings = false;
+    bool m_showPerformance = false;
+    float m_perfCpuFrameMs = 0.0f, m_perfViewportMs = 0.0f, m_perfSimulationMs = 0.0f;
+    std::vector<float> m_perfFrameSamples; // rolling frame-delta samples in milliseconds
     bool m_playing     = false;
     int  m_objCounter  = 0;
     int  m_frame       = 0;
