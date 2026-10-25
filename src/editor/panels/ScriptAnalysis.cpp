@@ -299,9 +299,21 @@ void ScriptEditorPanel::renderDependencyMap() {
         m_dependencyAnalysedAt = ImGui::GetTime();
     }
 
+    const int isolatedCount = (int)std::count_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+        [](const DependencyNode& node) { return node.outgoing == 0 && node.incoming == 0; });
+    std::unordered_map<std::string, int> scriptNameCounts;
+    for (const auto& node : m_dependencyNodes) ++scriptNameCounts[node.name];
+    const int duplicateNameCount = (int)std::count_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+        [&](const DependencyNode& node) { return scriptNameCounts[node.name] > 1; });
     ImGui::Text("%d scripts", (int)m_dependencyNodes.size());
     ImGui::SameLine();
     ImGui::TextDisabled("%d relationships", (int)m_dependencyEdges.size());
+    ImGui::SameLine();
+    ImGui::TextColored(isolatedCount ? ImVec4(0.95f, 0.7f, 0.25f, 1.0f) : ImVec4(0.45f, 0.8f, 0.5f, 1.0f),
+                       "%d isolated", isolatedCount);
+    ImGui::SameLine();
+    ImGui::TextColored(duplicateNameCount ? ImVec4(0.95f, 0.7f, 0.25f, 1.0f) : ImVec4(0.45f, 0.8f, 0.5f, 1.0f),
+                       "%d duplicate-name entries", duplicateNameCount);
     ImGui::SameLine();
     ImGui::TextColored(m_unresolvedDependencies.empty() ? ImVec4(0.45f, 0.8f, 0.5f, 1.0f)
                                                          : ImVec4(0.95f, 0.7f, 0.25f, 1.0f),
@@ -322,6 +334,9 @@ void ScriptEditorPanel::renderDependencyMap() {
     }
     ImGui::SameLine();
     ImGui::Checkbox("Only scripts with unresolved require()", &m_dependencyOnlyUnresolved);
+    ImGui::SameLine();
+    ImGui::Checkbox("Only isolated scripts", &m_dependencyOnlyIsolated);
+    ImGui::TextDisabled("Isolated means no static links were detected; dynamic relationships may still exist. Duplicate names can make name-based matches ambiguous.");
     ImGui::TextDisabled("Relationships are inferred from require() and named child lookups. They are not runtime call traces.");
     ImGui::Separator();
 
@@ -344,6 +359,7 @@ void ScriptEditorPanel::renderDependencyMap() {
                 const bool unresolved = std::any_of(m_unresolvedDependencies.begin(), m_unresolvedDependencies.end(),
                     [&](const UnresolvedDependency& d) { return d.script == node.id; });
                 if (m_dependencyOnlyUnresolved && !unresolved) continue;
+                if (m_dependencyOnlyIsolated && (node.outgoing != 0 || node.incoming != 0)) continue;
                 if (!m_dependencySearch.empty() &&
                     node.path.find(m_dependencySearch) == std::string::npos &&
                     node.name.find(m_dependencySearch) == std::string::npos) continue;
