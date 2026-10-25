@@ -483,6 +483,14 @@ void main() {
             float sides = abs(q.x) + (vnoise(vec2(q.y * 3.0, sd + 5.0)) - 0.5) * 0.3;
             if (ends > 1.0 || sides > 0.95 || streak < 0.28 + 0.35 * smoothstep(0.3, 1.0, ends)) discard;
             inside = clamp(min(1.0 - ends, 0.95 - sides) * 2.0, 0.0, 1.0);
+        } else if (uSplatLook == 3) {                          // high-energy impact with irregular spines
+            float r = length(q);
+            float a = atan(q.y, q.x);
+            float spokes = pow(max(0.0, 0.5 + 0.5 * sin(a * 11.0 + sd + vnoise(q * 7.0 + sd) * 2.2)), 5.0);
+            float edge = 0.64 + 0.17 * (vnoise(vec2(a * 2.0, sd)) - 0.5)
+                       + spokes * (0.12 + 0.12 * vnoise(vec2(a * 5.0 + sd, sd + 4.0)));
+            if (r > edge) discard;
+            inside = (edge - r) / max(edge, 1e-4);
         } else {                                                  // pool / splash / stain: a blob with lumpy, rounded edges
             float r = length(q);
             vec2 ring = q / max(r, 1e-4);
