@@ -18,7 +18,9 @@ The uploaded script is a stress test because it combines old client-side APIs, R
 - `Enum.Material:GetEnumItems()`, `Enum.MeshType:GetEnumItems()`, and `Enum.Font:GetEnumItems()`.
 - A legacy `Player:GetMouse()` object exposing cursor coordinates, `UnitRay`, `Hit`, `Target`, `TargetFilter`, and common key/mouse button signals. Rays are generated through the active camera and use the engine's existing raycast path.
 - A limited `LoadLibrary("RbxUtility").Create(className)(properties)` shim for old object-construction helpers.
-- Regression checks in `tools/test_script_fixes.lua` for enum enumeration, mouse API shape/ray direction, and `RbxUtility.Create`.
+- The legacy `game:service("Workspace")` lowercase alias.
+- A `PlayerScripts.ControlScript` placeholder so old scripts can find and toggle the expected object. This is only a compatibility placeholder: it does not disable Guts & Bolts' native movement controller.
+- Regression checks in `tools/test_script_fixes.lua` for enum enumeration, mouse API shape/ray direction, the legacy helper, the lowercase service alias, and the controller placeholder.
 
 Mouse coordinates are currently scaled from the application viewport to the active camera viewport. Embedded/docked editor viewports may require an explicit viewport-origin offset, so the API must be tested in both the standalone player and Studio's embedded play view.
 
@@ -26,7 +28,7 @@ Mouse coordinates are currently scaled from the application viewport to the acti
 
 This PR is a compatibility increment, not a claim that the entire script now works.
 
-1. **Character controller assumptions** — the script waits for `PlayerScripts.ControlScript` and toggles its `Disabled` property. Guts & Bolts needs an intentional, tested compatibility behavior for this script-facing controller.
+1. **Character controller assumptions** — `PlayerScripts.ControlScript` now exists as a placeholder, but toggling its `Disabled` property does not yet disable the native Guts & Bolts movement controller. A real controller integration needs careful input-ownership behavior and play tests.
 2. **Legacy asset classes and properties** — `SpecialMesh`, `MeshType.FileMesh`, and imported mesh identifiers must map to actual renderable geometry, not only accepted attributes.
 3. **Rig mutation and animation conflicts** — the script edits R6 shoulder/hip/neck joints while the built-in character animator is active. Verify script-driven joints can be controlled without being overwritten each frame.
 4. **Legacy event details** — verify key and button events fire once with the correct legacy arguments, including focus changes and script shutdown.
