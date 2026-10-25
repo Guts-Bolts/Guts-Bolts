@@ -4,6 +4,7 @@ Studio's new **Performance Doctor** explains likely performance problems using r
 
 ## What it checks
 - Frame pacing, including the 95th-percentile frame delta and the share of recent frames over 33 ms.
+- Rolling frame samples reset when switching between Edit and Play/Simulate, avoiding a mixed-mode sample window.
 - Editor-thread update/UI timing, viewport CPU timing and simulation update timing.
 - Heuristic risk indicators for high part counts, unanchored physics bodies, enabled lights, particle emitters and large script source.
 - The five largest script sources, with a direct action to open each in the editor.
