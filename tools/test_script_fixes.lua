@@ -31,8 +31,18 @@ task.spawn(function()
     check(type(Enum.Font:GetEnumItems()) == "table" and #Enum.Font:GetEnumItems() > 0,
           "Enum.Font:GetEnumItems returns font names")
 
+    -- Legacy Player:GetMouse() and the removed RbxUtility.Create helper.
     local Players = game:GetService("Players")
     local me = Players.LocalPlayer
+    local mouse = me:GetMouse()
+    check(type(mouse.X) == "number" and type(mouse.Y) == "number", "Mouse exposes cursor X/Y")
+    check(mouse.UnitRay ~= nil and mouse.UnitRay.Direction.Magnitude > 0.99, "Mouse.UnitRay is a unit camera ray")
+    check(mouse.Hit ~= nil and mouse.KeyDown ~= nil and mouse.Button1Down ~= nil,
+          "Mouse exposes Hit and legacy input signals")
+    local legacyPart = LoadLibrary("RbxUtility").Create("Part")({ Name = "LegacyCreateTest", Anchored = true })
+    check(legacyPart.Name == "LegacyCreateTest" and legacyPart.Anchored, "RbxUtility.Create applies properties")
+    legacyPart:Destroy()
+
     local character = me.Character
 
     -- 6. Luau extras ------------------------------------------------------------------
