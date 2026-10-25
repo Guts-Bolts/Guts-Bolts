@@ -678,8 +678,8 @@ export async function mountAvatar(el, avatar, items = [], opts = {}) {
   canvas.style.width = width + 'px';
   canvas.style.height = height + 'px';
   canvas.style.cursor = 'grab';
-  canvas.style.touchAction = 'pan-y';
-  canvas.title = 'Drag to turn';
+  canvas.style.touchAction = 'none';
+  canvas.title = 'Drag to rotate horizontally and vertically. Double-click to reset.';
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', 'Avatar in 3D');
   const ctx = canvas.getContext('2d');
@@ -696,9 +696,9 @@ export async function mountAvatar(el, avatar, items = [], opts = {}) {
     faceTexture(face).ready.then(() => { if (canvas.isConnected) paint(); });
     for (const id of [tee, shirt, pants]) if (id) teeTexture(id).ready.then(() => { if (canvas.isConnected) paint(); });
   };
-  let yaw = opts.yaw ?? -0.35, spin = 0, dragging = false, lastX = 0, frame = 0;
+  let yaw = opts.yaw ?? -0.35, pitch = opts.pitch ?? 0.12, spin = 0, dragging = false, lastX = 0, lastY = 0, frame = 0;
   const paint = () => {
-    draw(buffer, count, canvas.width, canvas.height, yaw, 0.12, face, tee, shirt, pants, opts.cam || null);
+    draw(buffer, count, canvas.width, canvas.height, yaw, pitch, face, tee, shirt, pants, opts.cam || null);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(glCanvas, 0, 0);
   };
@@ -711,19 +711,19 @@ export async function mountAvatar(el, avatar, items = [], opts = {}) {
   };
   const kick = () => { if (!frame) frame = requestAnimationFrame(loop); };
   canvas.addEventListener('pointerdown', (e) => {
-    dragging = true; lastX = e.clientX; spin = 0;
+    dragging = true; lastX = e.clientX; lastY = e.clientY; spin = 0;
     canvas.setPointerCapture(e.pointerId); canvas.style.cursor = 'grabbing'; kick();
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!dragging) return;
-    const dx = e.clientX - lastX;
-    lastX = e.clientX;
-    yaw += dx * 0.012; spin = dx * 0.012;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    yaw += dx * 0.012; pitch = Math.max(-1.45, Math.min(1.45, pitch + dy * 0.012)); spin = dx * 0.012;
   });
   const up = () => { dragging = false; canvas.style.cursor = 'grab'; kick(); };
   canvas.addEventListener('pointerup', up);
   canvas.addEventListener('pointercancel', up);
-  canvas.addEventListener('dblclick', () => { yaw = opts.yaw ?? -0.35; spin = 0; kick(); });
+  canvas.addEventListener('dblclick', () => { yaw = opts.yaw ?? -0.35; pitch = opts.pitch ?? 0.12; spin = 0; kick(); });
   el.replaceChildren(canvas);
   paint();
   whenLoaded();
