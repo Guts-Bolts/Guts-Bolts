@@ -1,3 +1,20 @@
+# Studio: Better Tools, Fewer Guessing Games (October 24, 2026)
+
+Studio's diagnostics and everyday creation tools got a substantial pass.
+
+## Studio improvements
+- Script Analysis highlights likely missing references and dependency issues.
+- Scene analysis flags potentially expensive scene setups before they become a performance problem.
+- The Performance Monitor tracks rolling frame times, average and p95 frame time, frame-rate history, editor/viewport CPU timings, simulation update time and scene counts.
+- Copy a performance summary to the clipboard to share measurements or compare before and after a change.
+- The Accessory maker adds numeric mannequin-relative offset, rotation and scale controls, plus reset actions.
+- The Bundle maker can select body parts and edit their position, rotation and size without repeatedly entering Modeling mode.
+- The Properties panel adds property search and a compact two-column inspector for common properties.
+
+## Notes
+- The monitor's CPU timings are editor-thread timings, not GPU timestamp measurements. Frame delta includes waiting/presentation time.
+- Scene and script diagnostics are advisory; review findings in context before changing a project.
+
 # Guts&Bolts 0.7.4: Fuck the Language Barrier (October 21, 2026)
 
 The world has approximately 7,000 languages, and we got tired of not
