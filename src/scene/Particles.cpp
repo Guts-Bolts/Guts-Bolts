@@ -113,6 +113,23 @@ void ParticleSystem::gibs(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
 
 void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3& vel, float violence) {
     if (!part) return;
+
+    // Region-aware wound profiles shape the initial spray without changing damage or hitboxes.
+    std::string region = part->name;
+    std::transform(region.begin(), region.end(), region.begin(),
+                   [](unsigned char ch) { return (char)std::tolower(ch); });
+    const bool torsoWound = region.find("torso") != std::string::npos ||
+                            region.find("upperbody") != std::string::npos ||
+                            region.find("lowerbody") != std::string::npos ||
+                            region.find("body") != std::string::npos;
+    const bool legWound = region.find("leg") != std::string::npos ||
+                          region.find("thigh") != std::string::npos ||
+                          region.find("hip") != std::string::npos;
+    const bool headWound = region.find("head") != std::string::npos ||
+                           region.find("neck") != std::string::npos;
+    const float woundCountScale = torsoWound ? 1.25f : (headWound ? 0.78f : (legWound ? 0.88f : 1.0f));
+    const float woundSpeedScale = torsoWound ? 1.08f : (headWound ? 1.22f : (legWound ? 0.88f : 1.0f));
+
     const glm::mat4 M = part->worldMatrix();
     const glm::vec3 c(M[3]);
     const glm::vec3 scale = part->transform.scale;
@@ -152,16 +169,6 @@ void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3
     // Leg and torso destruction can expose a short, stylized intestinal coil.
     // Keep it procedural and bounded: no meshes/assets or unbounded particle spawning.
     if (kind == GoreKind::Blood) {
-        std::string region = part->name;
-        std::transform(region.begin(), region.end(), region.begin(),
-                       [](unsigned char ch) { return (char)std::tolower(ch); });
-        const bool torsoWound = region.find("torso") != std::string::npos ||
-                                region.find("upperbody") != std::string::npos ||
-                                region.find("lowerbody") != std::string::npos ||
-                                region.find("body") != std::string::npos;
-        const bool legWound = region.find("leg") != std::string::npos ||
-                              region.find("thigh") != std::string::npos ||
-                              region.find("hip") != std::string::npos;
         if (torsoWound || legWound) {
             const int loops = torsoWound ? 7 : 4;
             const float coilRadius = torsoWound ? 0.16f : 0.10f;
@@ -190,7 +197,9 @@ void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3
             }
         }
     }
-    spray(kind, c, glm::vec3(0, 1, 0), 30 + (int)(violence * 40.0f), 4.0f + violence * 6.0f);
+    const int woundSprayCount = (int)std::round((30.0f + violence * 40.0f) * woundCountScale);
+    const float woundSpraySpeed = (4.0f + violence * 6.0f) * woundSpeedScale;
+    spray(kind, c, glm::vec3(0, 1, 0), woundSprayCount, woundSpraySpeed);
     if (kind == GoreKind::Oil) sparks(c, 20);
 }
 
