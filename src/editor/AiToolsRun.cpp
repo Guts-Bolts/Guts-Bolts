@@ -1244,6 +1244,16 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                     scan = nl == std::string::npos ? code.size() : nl + 1;
                     continue;
                 }
+                if (code[scan] == '[') {
+                    size_t eq = scan + 1;
+                    while (eq < code.size() && code[eq] == '=') ++eq;
+                    if (eq < code.size() && code[eq] == '[') {
+                        const std::string close = "]" + std::string(eq - scan - 1, '=') + "]";
+                        const size_t closeAt = code.find(close, eq + 1);
+                        scan = closeAt == std::string::npos ? code.size() : closeAt + close.size();
+                        continue;
+                    }
+                }
                 if (code[scan] == '"' || code[scan] == '\'') {
                     const char quote = code[scan++];
                     while (scan < code.size()) {
