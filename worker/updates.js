@@ -11,6 +11,17 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'scene-validator', name: 'Your Scene Is Under Review', version: '0.7.4', time: 1792965600, tag: 'Studio',
+    summary: 'Scene Validator scans a project for broken references and common setup mistakes before you publish.',
+    items: [
+      'Checks constraints, Trail and Beam attachments, model PrimaryParts, SoundGroups, fluid systems, and Tool Handle setup.',
+      'Flags invalid transforms, missing part geometry, duplicate sibling names, and misplaced SoundEffects.',
+      'Groups findings by errors, warnings, and informational notes, with search and object-selection shortcuts.',
+      'Copy a full validation report to share with collaborators or use during a publish review.',
+      'Validation is static and conservative. It does not run scripts or automatically modify your scene.',
+    ],
+  },
+  {
     id: 'performance-doctor', name: 'Doctor, My Frame Rate Is Dying', version: '0.7.4', time: 1792962000, tag: 'Studio',
     summary: 'Performance Doctor turns recent frame timings and scene complexity into ranked, practical troubleshooting advice.',
     items: [
