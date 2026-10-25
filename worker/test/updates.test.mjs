@@ -34,7 +34,7 @@ test('Multiplayer Session Recorder is published in the website update log', () =
   assert.match(text, /scene snapshot/);
   assert.match(text, /timestamped/);
   assert.match(text, /not deterministic/);
-  assert.match(text, /review before sharing/);
+  assert.match(text, /review it before sharing/);
 });
 
 test('the update log loads and has updates', () => {
