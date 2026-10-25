@@ -465,7 +465,16 @@ void ScriptEditorPanel::renderDependencyMap() {
                 ImGui::SetCursorScreenPos(p);
                 ImGui::PushID((int)(neighbors[i].id & 0x7fffffff));
                 ImGui::InvisibleButton("##dependencyGraphNode", ImVec2(neighborW, neighborH));
-                if (ImGui::IsItemClicked()) m_dependencySelected = neighbors[i].id;
+                if (ImGui::IsItemClicked()) {
+                    m_dependencySelected = neighbors[i].id;
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        if (SceneNode* node = m_scene->findById(neighbors[i].id)) {
+                            m_scene->select(node);
+                            open(neighbors[i].id);
+                            m_focusCode = true;
+                        }
+                    }
+                }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s\n%s", neighbors[i].path.c_str(),
                                                                neighbors[i].outgoing ? "Used by selected script" : "Uses selected script");
                 ImGui::PopID();
@@ -512,6 +521,62 @@ void ScriptEditorPanel::renderDependencyMap() {
                 ImGui::PopID();
             }
             if (!anyIncoming) ImGui::TextDisabled("No statically detected callers or lookups.");
+            // Transitive traversal is static and intentionally cycle-safe. A script may
+            // be affected indirectly even when it does not directly reference the selection.
+            auto renderDependencyReach = [&](bool affected) {
+                std::vector<std::pair<uint64_t, int>> reached;
+                std::unordered_map<uint64_t, int> depth;
+                std::vector<uint64_t> queue{selected.id};
+                depth[selected.id] = 0;
+                for (size_t q = 0; q < queue.size(); ++q) {
+                    const uint64_t current = queue[q];
+                    for (const auto& edge : m_dependencyEdges) {
+                        uint64_t next = 0;
+                        if (!affected && edge.from == current) next = edge.to;
+                        if (affected && edge.to == current) next = edge.from;
+                        if (!next || depth.count(next)) continue;
+                        depth[next] = depth[current] + 1;
+                        queue.push_back(next);
+                        reached.emplace_back(next, depth[next]);
+                    }
+                }
+                for (const auto& item : reached) {
+                    auto target = std::find_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+                        [&](const DependencyNode& n) { return n.id == item.first; });
+                    if (target == m_dependencyNodes.end()) continue;
+                    ImGui::PushID((int)(target->id & 0x7fffffff));
+                    if (ImGui::Selectable((target->path + "##transitive").c_str())) m_dependencySelected = target->id;
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%d hop(s)", item.second);
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", affected ? "May depend on the selected script indirectly" : "Indirect dependency of the selected script");
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Open")) {
+                        if (SceneNode* node = m_scene->findById(target->id)) {
+                            m_scene->select(node);
+                            open(target->id);
+                            m_focusCode = true;
+                        }
+                    }
+                    ImGui::PopID();
+                }
+                return reached.size();
+            };
+            ImGui::SeparatorText("Transitive dependency impact");
+            ImGui::TextDisabled("Reachability is inferred from static references; it is not runtime execution tracing.");
+            if (ImGui::TreeNode("All dependencies (direct and indirect)")) {
+                if (renderDependencyReach(false) == 0) ImGui::TextDisabled("No downstream dependencies detected.");
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNode("Potentially affected by changes")) {
+                if (renderDependencyReach(true) == 0) ImGui::TextDisabled("No dependent scripts detected.");
+                ImGui::TreePop();
+            }
+            const int sameNameCount = (int)std::count_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+                [&](const DependencyNode& n) { return n.name == selected.name; });
+            if (sameNameCount > 1)
+                ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.25f, 1.0f),
+                                   "Warning: %d scripts share this name; name-based matches may be ambiguous.", sameNameCount);
+            
             ImGui::SeparatorText("Unresolved require() expressions");
             bool anyUnresolved = false;
             for (const auto& dep : m_unresolvedDependencies) if (dep.script == selected.id) {
