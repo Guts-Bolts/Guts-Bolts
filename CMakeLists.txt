@@ -86,6 +86,12 @@ if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum iOS deployment target" FORCE)
+
+    # miniaudio includes Apple AVFoundation headers for its iOS backend. Those
+    # headers contain Objective-C declarations, so compile its implementation
+    # translation unit as Objective-C++ rather than plain C++ on iOS.
+    enable_language(OBJCXX)
+    set_source_files_properties(src/core/Audio.cpp PROPERTIES LANGUAGE OBJCXX)
 endif()
 
 # ImGui (docking branch — includes the full editor UI system)
