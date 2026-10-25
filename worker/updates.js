@@ -11,6 +11,18 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'project-dependency-map', name: 'Who Depends on What?', version: '0.7.4', time: 1792899780, tag: 'Studio',
+    summary: 'A new Project Dependency Map makes script relationships easier to inspect without digging through the whole Explorer by hand.',
+    items: [
+      'View all scripts in one searchable list, with outgoing and incoming relationship counts.',
+      'Select a script to inspect what it appears to depend on and which scripts reference it.',
+      'Jump directly from the map into a script in the code editor.',
+      'Highlights require() expressions that could not be matched to a local script by name.',
+      'The map refreshes automatically and can be manually refreshed while you work.',
+      'Relationships are inferred from static code patterns, not runtime call traces; ambiguous expressions are marked unresolved rather than treated as confirmed missing files.',
+    ],
+  },
+  {
     id: 'studio-under-the-hood', name: 'Studio Gets Serious', version: '0.7.4', time: 1792875600, tag: 'Studio',
     summary: 'Studio can now spot script and scene problems, measure performance, and make accessories and body bundles much less fiddly to build.',
     items: [
