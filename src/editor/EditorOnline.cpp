@@ -24,6 +24,8 @@
 #include <misc/cpp/imgui_stdlib.h>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
+#include <unordered_map>
 #include <fstream>
 #include <sstream>
 
@@ -140,6 +142,105 @@ void Editor::renderPublishDialog() {
     ImGui::SetNextItemWidth(-90);
     ImGui::InputText("Name", &m_publishName);
     ImGui::InputTextMultiline("Description", &m_publishDesc, ImVec2(-90, 80));
+
+    // A conservative pre-publish review. These checks are static: scripts are never run here,
+    // and heuristic warnings never prevent a creator from publishing a valid project.
+    if (ImGui::CollapsingHeader("Publish readiness", ImGuiTreeNodeFlags_DefaultOpen)) {
+        int objects = 0, parts = 0, dynamicParts = 0, lights = 0, emitters = 0, scripts = 0;
+        int unnamed = 0, duplicateNames = 0, invalidTransforms = 0, missingGeometry = 0;
+        int emptyScripts = 0, missingTextures = 0, riskyScripts = 0;
+        std::size_t scriptBytes = 0;
+        std::unordered_map<SceneNode*, std::vector<std::string>> namesByParent;
+        auto finite3 = [](const glm::vec3& v) {
+            return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+        };
+        auto localAssetMissing = [](const std::string& ref) {
+            if (ref.empty() || ref.rfind("gb:", 0) == 0 || ref.rfind("builtin:", 0) == 0 ||
+                ref.find("://") != std::string::npos) return false;
+            std::error_code ec;
+            if (std::filesystem::is_regular_file(ref, ec)) return false;
+            ec.clear();
+            return !std::filesystem::is_regular_file(Paths::gamesFolder() / ref, ec);
+        };
+        m_scene->forEach([&](SceneNode* n) {
+            if (!n || n->internal || n == m_scene->root()) return;
+            ++objects;
+            if (n->name.empty()) ++unnamed;
+            if (n->parent) namesByParent[n->parent].push_back(n->name);
+            if (!finite3(n->transform.position) || !finite3(n->transform.rotation) ||
+                !finite3(n->transform.scale)) ++invalidTransforms;
+            if (n->kind == NodeKind::Part && !n->mesh) ++missingGeometry;
+            if (n->isPart()) {
+                ++parts;
+                if (!n->anchored) ++dynamicParts;
+                if (std::abs(n->transform.scale.x) < 0.0001f ||
+                    std::abs(n->transform.scale.y) < 0.0001f ||
+                    std::abs(n->transform.scale.z) < 0.0001f) ++invalidTransforms;
+            }
+            if (n->isLight() && n->enabled) ++lights;
+            if (n->isParticles() && n->enabled) ++emitters;
+            if (!n->texture.empty() && localAssetMissing(n->texture)) ++missingTextures;
+            if (n->isScript()) {
+                ++scripts;
+                scriptBytes += n->source.size();
+                if (n->enabled && n->source.find_first_not_of(" \t\r\n") == std::string::npos) ++emptyScripts;
+                std::string lower = n->source;
+                std::transform(lower.begin(), lower.end(), lower.begin(),
+                               [](unsigned char c) { return (char)std::tolower(c); });
+                if (lower.find("loadstring") != std::string::npos ||
+                    lower.find("dofile") != std::string::npos ||
+                    lower.find("os.execute") != std::string::npos ||
+                    lower.find("io.popen") != std::string::npos ||
+                    lower.find("debug.") != std::string::npos) ++riskyScripts;
+            }
+        });
+        for (auto& entry : namesByParent) {
+            auto& names = entry.second;
+            std::sort(names.begin(), names.end());
+            for (size_t i = 1; i < names.size(); ++i)
+                if (!names[i].empty() && names[i] == names[i - 1]) ++duplicateNames;
+        }
+
+        const int errors = unnamed + invalidTransforms + missingGeometry;
+        const int warnings = duplicateNames + emptyScripts + missingTextures + riskyScripts;
+        ImGui::TextColored(errors ? ImVec4(1.0f, 0.4f, 0.35f, 1.0f)
+                                  : warnings ? ImVec4(0.95f, 0.75f, 0.25f, 1.0f)
+                                             : ImVec4(0.35f, 0.85f, 0.45f, 1.0f),
+                           "%s", errors ? "Review recommended before publishing"
+                                       : warnings ? "No critical scene issues found; review warnings"
+                                                  : "No issues found by these checks");
+        ImGui::TextDisabled("%d scene objects · %d parts · %d scripts", objects, parts, scripts);
+        ImGui::SeparatorText("Scene integrity");
+        if (unnamed) ImGui::BulletText("%d object(s) have an empty name.", unnamed);
+        if (duplicateNames) ImGui::BulletText("%d duplicate sibling name(s) may confuse name-based lookups.", duplicateNames);
+        if (invalidTransforms) ImGui::BulletText("%d object(s) have non-finite transforms or near-zero part scale.", invalidTransforms);
+        if (missingGeometry) ImGui::BulletText("%d Part object(s) have no mesh geometry.", missingGeometry);
+        if (!unnamed && !duplicateNames && !invalidTransforms && !missingGeometry)
+            ImGui::TextDisabled("No basic scene-structure issues detected.");
+
+        ImGui::SeparatorText("Performance");
+        ImGui::Text("Parts: %d   Unanchored: %d   Lights: %d   Particle emitters: %d", parts, dynamicParts, lights, emitters);
+        if (objects > 1000 || parts > 700 || dynamicParts > 150 || lights > 40 || emitters > 40 || scriptBytes > 250000)
+            ImGui::BulletText("Large scene counts may affect frame time; profile with Performance Doctor in Play/Simulate.");
+        else
+            ImGui::TextDisabled("No high-count performance thresholds were crossed. This is only a heuristic.");
+
+        ImGui::SeparatorText("Assets");
+        if (missingTextures) ImGui::BulletText("%d local texture reference(s) could not be found on this computer.", missingTextures);
+        else ImGui::TextDisabled("No missing local texture files detected.");
+        ImGui::TextDisabled("Server-hosted (gb:) assets and remote URLs are not downloaded or verified by this check.");
+
+        ImGui::SeparatorText("Script review");
+        if (emptyScripts) ImGui::BulletText("%d enabled script(s) have no source code.", emptyScripts);
+        if (riskyScripts) ImGui::BulletText("%d script(s) use API names that deserve manual security review.", riskyScripts);
+        if (!scripts) ImGui::TextDisabled("No scripts in this scene.");
+        else ImGui::TextDisabled("%d script(s), %zu source bytes. Static keyword matches can be false positives.", scripts, scriptBytes);
+
+        if (ImGui::Button("Open Scene Validator")) m_showSceneValidator = true;
+        ImGui::SameLine();
+        if (ImGui::Button("Open Performance Doctor")) m_showPerformanceDoctor = true;
+        ImGui::TextDisabled("Checks are advisory, do not execute scripts, and cannot prove runtime safety or performance.");
+    }
     const std::string& published = m_scene->info().publishedId;
     auto send = [this](bool update) {
         m_publishMsg = "Publishing...";
@@ -153,7 +254,7 @@ void Editor::renderPublishDialog() {
                                 " (older ones are under Version history on the game's Configure page on the website).";
         });
     };
-    ImGui::BeginDisabled(m_onlineBusy);
+    ImGui::BeginDisabled(m_onlineBusy || m_publishName.empty());
     if (!published.empty()) {
         if (ImGui::Button("Update published game", ImVec2(200, 30))) send(true);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Publish this as the newest version (the old ones are kept in the game's Version history on the website)");
