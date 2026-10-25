@@ -1,5 +1,7 @@
 #include "Editor.h"
 #include <sstream>
+#include <cmath>
+#include <unordered_map>
 #include "../scene/Guis.h"
 #include "../game/Profile.h"
 #include "../scene/EditMesh.h"
@@ -251,6 +253,7 @@ void Editor::render(float dt) {
         std::chrono::steady_clock::now() - frameStart).count();
     renderPerformanceWindow();
     renderPerformanceDoctor();
+    renderSceneValidator();
 
     trackChanges();
     updateTitle();
@@ -630,6 +633,257 @@ void Editor::renderPerformanceDoctor() {
                   "Scene counts and thresholds are heuristic risk indicators, not proof of cause.";
         ImGui::SetClipboardText(report.str().c_str());
     }
+    ImGui::End();
+}
+
+// Scene Validator checks saved scene relationships and common setup mistakes without
+// executing scripts or modifying the project. Findings are cached while the window is open.
+void Editor::renderSceneValidator() {
+    if (!m_showSceneValidator) return;
+    ImGui::SetNextWindowSize(ImVec2(860, 620), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Scene Validator", &m_showSceneValidator)) { ImGui::End(); return; }
+
+    const bool manualScan = ImGui::Button("Validate scene");
+    ImGui::SameLine();
+    ImGui::TextDisabled("Rescans automatically every 2 seconds; no changes are made to your project.");
+
+    if (manualScan || m_sceneValidatorLastScan < 0.0 ||
+        ImGui::GetTime() - m_sceneValidatorLastScan >= 2.0) {
+        m_sceneValidationIssues.clear();
+        m_sceneValidatorObjectCount = 0;
+        std::vector<SceneNode*> nodes;
+        std::unordered_map<uint64_t, SceneNode*> byId;
+        m_scene->forEach([&](SceneNode* node) {
+            if (!node) return;
+            byId[node->id] = node;
+            if (!node->internal) nodes.push_back(node);
+        });
+        m_sceneValidatorObjectCount = (int)nodes.size();
+
+        auto add = [&](SceneNode* node, int severity, const char* category,
+                       const std::string& message, const std::string& recommendation) {
+            m_sceneValidationIssues.push_back({
+                node ? node->id : 0, severity,
+                node ? node->fullName() : std::string("Scene"),
+                category, message, recommendation
+            });
+        };
+        auto reference = [&](SceneNode* owner, uint64_t id, const char* label,
+                             const char* expected, const std::string& recommendation) -> SceneNode* {
+            if (id == 0) {
+                add(owner, 1, "Missing reference",
+                    std::string(label) + " is not assigned.",
+                    recommendation);
+                return nullptr;
+            }
+            auto it = byId.find(id);
+            if (it == byId.end()) {
+                add(owner, 2, "Broken reference",
+                    std::string(label) + " points to an object that no longer exists.",
+                    recommendation);
+                return nullptr;
+            }
+            SceneNode* target = it->second;
+            bool valid = true;
+            if (std::string(expected) == "Part") valid = target->isPart();
+            else if (std::string(expected) == "Attachment") valid = target->isAttachment();
+            else if (std::string(expected) == "SoundGroup") valid = target->isSoundGroup();
+            else if (std::string(expected) == "FluidSystem") valid = target->kind == NodeKind::FluidSystem;
+            if (!valid) {
+                add(owner, 2, "Wrong reference type",
+                    std::string(label) + " must reference a " + expected + ".",
+                    recommendation);
+                return nullptr;
+            }
+            return target;
+        };
+
+        for (SceneNode* node : nodes) {
+            const auto finite3 = [](const glm::vec3& v) {
+                return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+            };
+            if (!finite3(node->transform.position) || !finite3(node->transform.rotation) ||
+                !finite3(node->transform.scale)) {
+                add(node, 2, "Invalid transform", "Position, rotation, or scale contains a non-finite number.",
+                    "Reset the affected transform values to finite numbers in Properties.");
+            }
+            if (node->isPart() &&
+                (std::abs(node->transform.scale.x) < 0.000001f ||
+                 std::abs(node->transform.scale.y) < 0.000001f ||
+                 std::abs(node->transform.scale.z) < 0.000001f)) {
+                add(node, 1, "Degenerate scale", "This part has a zero or near-zero scale on at least one axis.",
+                    "Check whether the part should be visible or collide; restore a non-zero scale if this was accidental.");
+            }
+            if (node->kind == NodeKind::Part && !node->mesh) {
+                add(node, 2, "Missing geometry", "This object is typed as a Part but has no mesh assigned.",
+                    "Choose a primitive shape or restore the missing mesh before publishing.");
+            }
+            if (node->name.empty()) {
+                add(node, 1, "Empty name", "This object has an empty name.",
+                    "Give it a descriptive name so it is easier to find and reference from scripts.");
+            }
+
+            if (node->primaryPart != 0) {
+                SceneNode* primary = reference(node, node->primaryPart, "PrimaryPart", "Part",
+                    "Assign the model's PrimaryPart to a Part contained inside that model.");
+                if (primary && !node->isAncestorOf(primary)) {
+                    add(node, 2, "Invalid PrimaryPart", "PrimaryPart is not a descendant of this object.",
+                        "Choose a Part inside this model as its PrimaryPart, or clear the reference.");
+                }
+            }
+
+            if (node->isConstraint()) {
+                const bool weld = node->constraintType == ConstraintType::Weld;
+                const char* expected = weld ? "Part" : "Attachment";
+                reference(node, node->ref0, weld ? "Part0" : "Attachment0", expected,
+                          "Assign this constraint to two existing endpoints of the required type.");
+                reference(node, node->ref1, weld ? "Part1" : "Attachment1", expected,
+                          "Assign this constraint to two existing endpoints of the required type.");
+            }
+            if (node->isEffect()) {
+                reference(node, node->effect.a0, "Attachment0", "Attachment",
+                          "Choose an Attachment for the first end of this Trail or Beam.");
+                reference(node, node->effect.a1, "Attachment1", "Attachment",
+                          "Choose an Attachment for the second end of this Trail or Beam.");
+            }
+            if (node->isHighlight() && node->highlight.adornee != 0) {
+                reference(node, node->highlight.adornee, "Adornee", "any",
+                          "Choose an existing object to highlight or clear Adornee to use its parent.");
+            }
+            if (node->isSound() && node->soundGroup != 0) {
+                reference(node, node->soundGroup, "SoundGroup", "SoundGroup",
+                          "Assign an existing SoundGroup or clear the SoundGroup property.");
+            }
+            if (node->kind == NodeKind::FluidEmitter && node->fluidSystem != 0) {
+                reference(node, node->fluidSystem, "FluidSystem", "FluidSystem",
+                          "Assign an existing FluidSystem or clear the FluidSystem reference.");
+            }
+            if (node->isTool()) {
+                SceneNode* handle = node->findChild("Handle", true);
+                if (!handle || !handle->isPart()) {
+                    add(node, 1, "Tool setup", "This Tool has no descendant Part named Handle.",
+                        "Add a Part named Handle under the Tool; tools may not equip or grip correctly without it.");
+                }
+            }
+            if (node->isSoundEffect() && node->parent &&
+                !node->parent->isSound() && !node->parent->isSoundGroup()) {
+                add(node, 1, "Sound effect placement", "This SoundEffect is not parented to a Sound or SoundGroup.",
+                    "Move the effect under a Sound or SoundGroup so it can be applied during playback.");
+            }
+            if (node->isScript() && node->enabled && node->source.empty()) {
+                add(node, 0, "Empty script", "This enabled script contains no source code.",
+                    "Add the intended code or disable/remove the script if it is only a placeholder.");
+            }
+        }
+
+        // Duplicate sibling names can make name-based lookups such as FindFirstChild ambiguous.
+        for (SceneNode* parent : nodes) {
+            std::unordered_map<std::string, std::vector<SceneNode*>> byName;
+            for (const auto& child : parent->children) {
+                if (child && !child->internal && !child->name.empty())
+                    byName[child->name].push_back(child.get());
+            }
+            for (const auto& entry : byName) {
+                if (entry.second.size() < 2) continue;
+                for (SceneNode* duplicate : entry.second) {
+                    add(duplicate, 1, "Duplicate sibling name",
+                        "'" + duplicate->name + "' appears " + std::to_string(entry.second.size()) +
+                        " times under the same parent; name-based script lookups may be ambiguous.",
+                        "Rename the objects uniquely or update scripts to identify the intended object another way.");
+                }
+            }
+        }
+
+        std::stable_sort(m_sceneValidationIssues.begin(), m_sceneValidationIssues.end(),
+            [](const SceneValidationIssue& a, const SceneValidationIssue& b) {
+                if (a.severity != b.severity) return a.severity > b.severity;
+                if (a.path != b.path) return a.path < b.path;
+                return a.category < b.category;
+            });
+        m_sceneValidatorLastScan = ImGui::GetTime();
+    }
+
+    int errors = 0, warnings = 0, info = 0;
+    for (const auto& issue : m_sceneValidationIssues) {
+        if (issue.severity == 2) ++errors;
+        else if (issue.severity == 1) ++warnings;
+        else ++info;
+    }
+    ImGui::Text("%d objects scanned", m_sceneValidatorObjectCount);
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(1.0f, 0.38f, 0.32f, 1.0f), "%d errors", errors);
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.95f, 0.73f, 0.3f, 1.0f), "%d warnings", warnings);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%d info", info);
+
+    const char* filters[] = {"All findings", "Errors", "Warnings", "Info"};
+    ImGui::SetNextItemWidth(150.0f);
+    ImGui::Combo("Severity", &m_sceneValidatorSeverityFilter, filters, IM_ARRAYSIZE(filters));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(260.0f);
+    ImGui::InputText("Search", &m_sceneValidatorSearch);
+    ImGui::SameLine();
+    if (ImGui::Button("Copy report")) {
+        std::ostringstream report;
+        report << "Guts & Bolts Scene Validator\nObjects scanned: " << m_sceneValidatorObjectCount
+               << "\nErrors: " << errors << "\nWarnings: " << warnings << "\nInfo: " << info << "\n\n";
+        for (const auto& issue : m_sceneValidationIssues) {
+            report << (issue.severity == 2 ? "[ERROR] " : issue.severity == 1 ? "[WARNING] " : "[INFO] ")
+                   << issue.category << " | " << issue.path << "\n"
+                   << "  " << issue.message << "\n  Recommendation: " << issue.recommendation << "\n\n";
+        }
+        ImGui::SetClipboardText(report.str().c_str());
+    }
+
+    ImGui::Separator();
+    if (ImGui::BeginTable("##sceneValidatorResults", 4,
+                          ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV |
+                          ImGuiTableFlags_BordersOuterH | ImGuiTableFlags_RowBg |
+                          ImGuiTableFlags_ScrollY, ImVec2(0, 390))) {
+        ImGui::TableSetupColumn("Severity", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+        ImGui::TableSetupColumn("Object / check", ImGuiTableColumnFlags_WidthStretch, 0.8f);
+        ImGui::TableSetupColumn("Finding and recommendation", ImGuiTableColumnFlags_WidthStretch, 1.4f);
+        ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 75.0f);
+        ImGui::TableHeadersRow();
+        bool anyVisible = false;
+        for (size_t i = 0; i < m_sceneValidationIssues.size(); ++i) {
+            const auto& issue = m_sceneValidationIssues[i];
+            if (m_sceneValidatorSeverityFilter == 1 && issue.severity != 2) continue;
+            if (m_sceneValidatorSeverityFilter == 2 && issue.severity != 1) continue;
+            if (m_sceneValidatorSeverityFilter == 3 && issue.severity != 0) continue;
+            if (!m_sceneValidatorSearch.empty()) {
+                const std::string haystack = issue.path + " " + issue.category + " " + issue.message;
+                if (haystack.find(m_sceneValidatorSearch) == std::string::npos) continue;
+            }
+            anyVisible = true;
+            ImGui::PushID((int)i);
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            const ImVec4 color = issue.severity == 2 ? ImVec4(1.0f, 0.38f, 0.32f, 1.0f)
+                                  : issue.severity == 1 ? ImVec4(0.95f, 0.73f, 0.3f, 1.0f)
+                                                        : ImVec4(0.55f, 0.75f, 0.95f, 1.0f);
+            ImGui::TextColored(color, "%s", issue.severity == 2 ? "ERROR" : issue.severity == 1 ? "WARNING" : "INFO");
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextWrapped("%s", issue.path.c_str());
+            ImGui::TextDisabled("%s", issue.category.c_str());
+            ImGui::TableSetColumnIndex(2);
+            ImGui::TextWrapped("%s", issue.message.c_str());
+            ImGui::TextDisabled("Try: %s", issue.recommendation.c_str());
+            ImGui::TableSetColumnIndex(3);
+            if (issue.nodeId != 0 && ImGui::SmallButton("Select")) {
+                if (SceneNode* node = m_scene->findById(issue.nodeId)) m_scene->select(node);
+            }
+            ImGui::PopID();
+        }
+        if (!anyVisible) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(1);
+            ImGui::TextDisabled("No findings match this filter.");
+        }
+        ImGui::EndTable();
+    }
+    ImGui::TextDisabled("Validation is static and conservative. Review each recommendation; findings do not automatically change the scene.");
     ImGui::End();
 }
 
@@ -2269,6 +2523,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Project Dependency Map")) m_scriptEditor->showDependencyMap();
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
+        if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;

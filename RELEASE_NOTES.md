@@ -1,3 +1,24 @@
+# Your Scene Is Under Review (October 25, 2026)
+
+Studio's **Scene Validator** checks common project-structure and reference mistakes before publishing.
+
+## Checks included
+- Broken or incorrectly typed references for model PrimaryParts, constraints, Trail/Beam attachments, SoundGroups, and fluid systems.
+- Tool setup (a descendant Part named `Handle`), SoundEffect parent placement, and missing Part geometry.
+- Non-finite transforms and zero/near-zero part scale.
+- Duplicate sibling names that can make name-based script lookups ambiguous.
+- Empty names and enabled scripts with no source, as informational or warning-level findings.
+
+## Workflow
+- Filter by errors, warnings, or informational notes.
+- Search findings by object path, category, or message.
+- Select the affected object in the scene.
+- Copy a full report for review or collaboration.
+- Findings are cached and rescanned automatically while the window is open, with a manual validation action.
+
+## Limitations
+The validator inspects serialized scene structure and references; it does not execute scripts, prove runtime behavior, or automatically repair objects. Review each recommendation before changing a project.
+
 # Doctor, My Frame Rate Is Dying (October 25, 2026)
 
 Studio's new **Performance Doctor** explains likely performance problems using recent frame timings and scene complexity.
