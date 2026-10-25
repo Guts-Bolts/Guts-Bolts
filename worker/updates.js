@@ -11,6 +11,19 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'studio-under-the-hood', name: 'Studio Gets Serious', version: '0.7.4', time: 1792875600, tag: 'Studio',
+    summary: 'Studio can now spot script and scene problems, measure performance, and make accessories and body bundles much less fiddly to build.',
+    items: [
+      'Script Analysis finds likely missing references and dependency problems before you press Play.',
+      'Scene analysis points out expensive setups, including physics-heavy scenes and costly effects.',
+      'The Performance Monitor shows frame rate, frame-time history, editor and viewport CPU timings, simulation time, and live scene counts.',
+      'The Accessory maker has precise mannequin-relative position, rotation and scale controls, with quick reset buttons.',
+      'The Bundle maker lets you select body parts and adjust their position, rotation and size without constantly switching tools.',
+      'The Properties panel has a search field and a compact Roblox-style inspector for common properties.',
+      'The Performance Monitor can copy a diagnostic summary to the clipboard for sharing and comparing tests.',
+    ],
+  },
+  {
     id: 'code-red', name: 'Code Red', version: '0.7.4', time: 1792598783, tag: 'Website',
     summary: 'Promo codes are here! Type a code on the new Redeem codes page to get free Bolts.',
     items: [
