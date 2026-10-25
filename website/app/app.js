@@ -1528,7 +1528,8 @@ pages.item = async (id) => {
           ${c.price ? html`<span class="muted small">On sale for ${c.price}. Set 0 to take it off sale.</span>` : html`<span class="muted small">You get ${70}% when it sells.</span>`}</form>`)}` : ''}` : ''}`);
   // Catalog pages show the item preview rotating gently on its own. The user's avatar
   // is only rendered after they explicitly choose Try On.
-  if (drawable3d(a)) mountAvatar($('#item3d'), {}, [a], { width: 328, height: 328, cam: itemCamera(a.kind), autoSpin: true, itemOnly: true }).catch(() => {});
+  if (drawable3d(a) && (['gear', 'hat', 'hair'].includes(a.kind) || (a.meta && a.meta.model && ['faceacc', 'neck', 'shoulder', 'waist'].includes(a.kind))))
+     mountAvatar($('#item3d'), {}, [a], { width: 328, height: 328, cam: itemCamera(a.kind), autoSpin: true, itemOnly: true }).catch(() => {});
   const tryOnButton = $('#itemTryOn');
   if (tryOnButton) tryOnButton.addEventListener('click', async () => {
     tryOnButton.disabled = true;
