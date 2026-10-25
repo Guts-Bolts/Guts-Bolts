@@ -239,6 +239,12 @@ void Editor::render(float dt) {
 
     // Frame delta captures pacing between calls; CPU time measures the editor's own
     // render/update work before the monitor is drawn.
+    // Keep Edit and Play/Simulate samples separate so the doctor does not attribute
+    // editor-only frame deltas to a game session (or vice versa).
+    if (m_perfSampleMode != m_playing) {
+        m_perfFrameSamples.clear();
+        m_perfSampleMode = m_playing;
+    }
     m_perfFrameSamples.push_back(std::max(0.0f, dt * 1000.0f));
     if (m_perfFrameSamples.size() > 180) m_perfFrameSamples.erase(m_perfFrameSamples.begin());
     m_perfCpuFrameMs = std::chrono::duration<float, std::milli>(
@@ -518,6 +524,8 @@ void Editor::renderPerformanceDoctor() {
         ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "Diagnosis: %d critical indicator(s), %d warning(s)", critical, warnings);
     } else if (warnings) {
         ImGui::TextColored(ImVec4(0.95f, 0.72f, 0.25f, 1.0f), "Diagnosis: %d warning(s); %d critical indicator(s)", warnings, critical);
+    } else if (sampleCount < 30) {
+        ImGui::TextColored(ImVec4(0.55f, 0.75f, 0.95f, 1.0f), "Diagnosis: collecting enough frame samples");
     } else {
         ImGui::TextColored(ImVec4(0.4f, 0.82f, 0.5f, 1.0f), "Diagnosis: no major hotspot detected by the current heuristics");
     }
