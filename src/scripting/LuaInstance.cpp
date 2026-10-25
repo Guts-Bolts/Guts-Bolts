@@ -2374,8 +2374,19 @@ int inst_newindex(lua_State* L) {
         if (is(k, "OnClientInvoke")) return 0;   // InvokeClient isn't supported, so nothing calls it
     }
     if (n->kind == NodeKind::Script) {
-        if (is(k, "Enabled"))  { LuaApi::engine(L)->setScriptEnabled(n, lua_toboolean(L, 3)); return 0; }
-        if (is(k, "Disabled")) { LuaApi::engine(L)->setScriptEnabled(n, !lua_toboolean(L, 3)); return 0; }
+        const bool legacyControlScript = n->name == "ControlScript" && n->parent && n->parent->name == "PlayerScripts";
+        if (is(k, "Enabled")) {
+            const bool enabled = lua_toboolean(L, 3);
+            LuaApi::engine(L)->setScriptEnabled(n, enabled);
+            if (legacyControlScript) if (Player* p = E(L)->scene()->player()) p->setNativeControlsEnabled(enabled);
+            return 0;
+        }
+        if (is(k, "Disabled")) {
+            const bool enabled = !lua_toboolean(L, 3);
+            LuaApi::engine(L)->setScriptEnabled(n, enabled);
+            if (legacyControlScript) if (Player* p = E(L)->scene()->player()) p->setNativeControlsEnabled(enabled);
+            return 0;
+        }
         if (is(k, "Source")) {   // like Roblox: Studio's command bar and plugins may, game scripts may not
             if (E(L)->currentScript()) return luaL_error(L, "Source can only be set from the command bar or a plugin");
             n->source = luaL_checkstring(L, 3);
