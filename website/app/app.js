@@ -4139,8 +4139,9 @@ const forms = {
   async redeem(f) {
     const r = await call('bolts.redeem', { code: f.code.value });
     const msg = $('#redeemMsg');
-    if (msg) { msg.className = r.ok ? 'ok' : 'error'; msg.textContent = r.ok ? 'You got ' + r.got + ' Bolts!' : r.error; }
-    toast(r.ok ? 'You got ' + r.got + ' Bolts!' : r.error);
+    const rewardMessage = r.rewardType === 'item' ? 'You got ' + (r.itemName || 'an exclusive item') + '!' : 'You got ' + r.got + ' Bolts!';
+    if (msg) { msg.className = r.ok ? 'ok' : 'error'; msg.textContent = r.ok ? rewardMessage : r.error; }
+    toast(r.ok ? rewardMessage : r.error);
     if (r.ok) { if (r.me) setMe(r.me); f.code.value = ''; if (!msg) render(); }
   },
   async promoMake(f) {
