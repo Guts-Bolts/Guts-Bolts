@@ -418,6 +418,69 @@ void ScriptEditorPanel::renderDependencyMap() {
     ImGui::Checkbox("Only isolated scripts", &m_dependencyOnlyIsolated);
     ImGui::TextDisabled("Isolated means no static links were detected; dynamic relationships may still exist. Duplicate names can make name-based matches ambiguous.");
     ImGui::TextDisabled("Relationships are inferred from require() and named child lookups. They are not runtime call traces.");
+
+    // Project-wide inventory: this remains separate from script dependency edges because
+    // a resource reference is not proof that one script depends on another.
+    if (ImGui::TreeNode("Project-wide resource inventory")) {
+        std::unordered_map<std::string, int> resourceUseCounts;
+        for (const auto& reference : m_assetReferences)
+            if (!reference.nodeLink) ++resourceUseCounts[reference.value];
+        const int uniqueResourceValues = (int)resourceUseCounts.size();
+        const int repeatedResourceValues = (int)std::count_if(resourceUseCounts.begin(), resourceUseCounts.end(),
+            [](const auto& item) { return item.second > 1; });
+        ImGui::Text("%d references across %d distinct resource values; %d values are reused.",
+                    (int)std::count_if(m_assetReferences.begin(), m_assetReferences.end(),
+                        [](const AssetReference& reference) { return !reference.nodeLink; }),
+                    uniqueResourceValues, repeatedResourceValues);
+        ImGui::SetNextItemWidth(300.0f);
+        char assetSearchBuffer[512] = {};
+        std::copy(m_assetSearch.begin(),
+                  m_assetSearch.begin() + std::min(m_assetSearch.size(), sizeof(assetSearchBuffer) - 1),
+                  assetSearchBuffer);
+        if (ImGui::InputTextWithHint("##assetInventorySearch", "Filter by object, property, or asset value...",
+                                     assetSearchBuffer, sizeof(assetSearchBuffer))) {
+            m_assetSearch = assetSearchBuffer;
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Only broken object links", &m_assetOnlyBrokenLinks);
+        ImGui::BeginChild("##assetInventoryRows", ImVec2(0, 210.0f), true);
+        int visibleReferences = 0;
+        for (size_t i = 0; i < m_assetReferences.size(); ++i) {
+            const auto& reference = m_assetReferences[i];
+            if (m_assetOnlyBrokenLinks && !(reference.nodeLink && reference.unresolvedNode)) continue;
+            const std::string haystack = reference.ownerPath + " " + reference.property + " " + reference.value;
+            if (!m_assetSearch.empty() && haystack.find(m_assetSearch) == std::string::npos) continue;
+            ++visibleReferences;
+            ImGui::PushID((int)i);
+            if (reference.nodeLink && reference.unresolvedNode) {
+                ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.3f, 1.0f), "BROKEN  %s", reference.property.c_str());
+            } else {
+                ImGui::Text("%s", reference.property.c_str());
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", reference.ownerPath.c_str());
+            ImGui::SameLine();
+            ImGui::TextWrapped("%s", reference.value.c_str());
+            if (!reference.nodeLink) {
+                const auto uses = resourceUseCounts.find(reference.value);
+                if (uses != resourceUseCounts.end() && uses->second > 1) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(reused %d times)", uses->second);
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Select owner")) {
+                if (SceneNode* owner = m_scene->findById(reference.owner)) m_scene->select(owner);
+            }
+            ImGui::PopID();
+            ImGui::Separator();
+        }
+        if (!visibleReferences)
+            ImGui::TextDisabled(m_assetOnlyBrokenLinks ? "No broken scene-object links match this filter."
+                                                       : "No resource or object references match this filter.");
+        ImGui::EndChild();
+        ImGui::TreePop();
+    }
     ImGui::Separator();
 
     if (ImGui::BeginTable("##dependencyLayout", 2,
