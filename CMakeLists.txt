@@ -129,7 +129,11 @@ list(REMOVE_ITEM LUA_SOURCES
 add_library(lua_static STATIC ${LUA_SOURCES})
 target_include_directories(lua_static PUBLIC ${lua_SOURCE_DIR})
 set_target_properties(lua_static PROPERTIES C_STANDARD 99)
-if(NOT WIN32)
+# Lua's POSIX helpers include system()/popen(), which iOS explicitly marks
+# unavailable. Keep the POSIX extension enabled on desktop Unix, but use Lua's
+# built-in unsupported-command fallback on iOS (os.execute cannot launch shells
+# inside an iOS app sandbox anyway).
+if(NOT WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_compile_definitions(lua_static PRIVATE LUA_USE_POSIX)   # safe temp files, etc.
 endif()
 
