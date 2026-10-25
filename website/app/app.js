@@ -737,8 +737,26 @@ const forumPager = (base, page, pages) => pages <= 1 ? '' : html`<p class="pager
   <span class="muted small">Page ${page + 1} of ${pages}</span>
   ${page + 1 < pages ? html`<a class="btn small" href="${base}/${page + 2}">Next &gt;</a>` : ''}</p>`;
 const forumWho = (u) => html`<a href="#/user/${u.userId || u.id}"><b>${u.name}</b></a>${verified(u.verified)}${u.staff ? html` <span class="badge-pill staff">Staff</span>` : ''}${partner(u)}`;
-// Forums always use the flat front-facing 2D avatar, including worn items when the API supplies them.
-const forumAvatar = (u, size) => avatarSvg(u && u.avatar, size, u && Array.isArray(u.wearing) ? u.wearing : [], false);
+// Use the same rendered 2D PNG as the avatar page's 2D mode, with SVG as a fast fallback.
+const forumAvatarUsers = new Map();
+const forumAvatar = (u, size) => {
+  const id = String(u && (u.userId || u.id) || '');
+  if (id) forumAvatarUsers.set(id, u);
+  return html`<span data-forum-avatar="${id}" data-size="${size}">${avatarSvg(u && u.avatar, size, u && Array.isArray(u.wearing) ? u.wearing : [], false)}</span>`;
+};
+function loadForumAvatars(root = view) {
+  root.querySelectorAll('[data-forum-avatar]').forEach(async (el) => {
+    if (el.dataset.loading) return;
+    const u = forumAvatarUsers.get(el.dataset.forumAvatar);
+    if (!u) return;
+    el.dataset.loading = '1';
+    const size = Number(el.dataset.size) || 72;
+    try {
+      const url = await avatarPicture(u.avatar, u.wearing || [], size);
+      if (url && el.isConnected) el.innerHTML = html`<img src="${url}" alt="${u.name || 'Player'}" width="${size}" height="${Math.round(size * 1.25)}" style="display:block;object-fit:contain">`.s;
+    } catch (_) { /* Keep the 2D SVG fallback if rendering fails. */ }
+  });
+}
 pages.forum = async (board, a, b) => {
   if (board === 't') { await forumThread(a, Math.max(0, (Number(b) || 1) - 1)); return; }
   if (!board) {
@@ -775,6 +793,7 @@ pages.forum = async (board, a, b) => {
         <label>Message</label><textarea name="text" maxlength="3000" rows="7" required></textarea>
         <p><button class="btn green">Post thread</button> <span class="small muted">Be kind, and don't share personal info.</span></p></form>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to post.</p>`}`);
+  loadForumAvatars();
 };
 async function forumThread(id, page) {
   const r = await pageCall('forum.thread', { thread: id, page: page >= 9998 ? -1 : page });
@@ -798,6 +817,7 @@ async function forumThread(id, page) {
         <p><button class="btn blue">Post reply</button></p></form>`
       : t.locked ? html`<p class="muted">This thread is locked, so nobody can reply.</p>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to reply.</p>`}`);
+  loadForumAvatars();
 }
 
 pages.updates = async () => {
