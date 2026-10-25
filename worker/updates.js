@@ -12,14 +12,16 @@
 export const BUILT_IN_UPDATES = [
   {
     id: 'dependency-map-health-checks', name: 'Your Scripts Have Questions', version: '0.7.6', time: 1792962000, tag: 'Studio',
-    summary: 'The Project Dependency Map now includes project health checks and transitive impact analysis to help creators investigate script relationships.',
+    summary: 'The Project Dependency Map now traces script relationships, inventories resource references, and flags broken scene-object links.',
     items: [
       'Adds isolated-script counts and a filter for scripts with no statically detected incoming or outgoing links.',
       'Highlights duplicate script names that can make name-based dependency matching ambiguous.',
       'Adds transitive dependency traversal to show direct and indirect dependencies of the selected script.',
       'Adds a potential change-impact view for scripts that may depend on the selected script through multiple links.',
       'Double-click a graph neighbor to open it in the script editor, and use Open actions from impact results to jump directly to a script.',
-      'Static-analysis limits remain explicit: isolated does not automatically mean unused, and dynamic relationships may not be detected.',
+      'Inventories texture, decal, T-shirt, sound, particle, effect, GUI image, and skybox resource values on scene objects.',
+      'Checks object links such as constraints, attachments, sound groups, fluid systems, primary parts, and adornee targets for scene IDs that no longer resolve.',
+      'Resource IDs and file paths are shown for inspection but are not claimed to be verified against disk or a remote asset service; isolated does not automatically mean unused.',
     ],
   },
   {
