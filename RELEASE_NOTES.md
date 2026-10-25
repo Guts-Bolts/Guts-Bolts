@@ -1,5 +1,9 @@
 # The Floor Is Now A Crime Scene (October 25, 2026)
 
+The gore overhaul now extends the existing gib system with occasional rounded, wet organ-like fragments alongside flesh and bone pieces. They use the existing gore color and particle budgets, inherit the existing physics/collision handling, and continue to bleed briefly while moving. These are stylized procedural effects, not anatomically accurate organ models. The engine already supports gravity-driven wall streaks, floor-pool spreading and merging, and blood footprints; the broader overhaul plan focuses on improving those existing systems and adding configurable anatomy assets, material responses, and performance controls.
+
+# The Floor Is Now A Crime Scene (October 25, 2026)
+
 The engine gore overhaul is being scoped around the existing R6 ragdoll and dismemberment systems, with the next iteration focused on gravity-driven blood streaks, persistent floor pooling, surface-aware splashes, configurable anatomical visual layers, and bounded multiplayer effects. The design prioritizes convincing results without unbounded particles or per-droplet network replication. This change records the implementation plan; the simulation features themselves are not yet implemented.
 
 # The Bug Has a Paper Trail (October 25, 2026)
