@@ -51,8 +51,8 @@ std::vector<std::string> itemIds(const std::string& text) {
 void Editor::renderBundleWindow() {
     if (!m_showBundles) return;
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 470, vp->WorkPos.y + 150), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(440, 560), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 590, vp->WorkPos.y + 100), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(560, 700), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Bundles", &m_showBundles)) { ImGui::End(); return; }
     ImGui::PushTextWrapPos(0);
     if (!Online::online() || !Online::staff()) {
