@@ -13,6 +13,18 @@ Studio's publish dialog now includes a readiness review before a game goes publi
 - An empty game name disables the publish actions.
 - Warnings are advisory. Static keyword matches can be false positives, remote and server-hosted assets are not verified, scripts are not executed, and the checklist cannot prove runtime safety or performance.
 
+# Catalog Repair Shop (October 25, 2026)
+
+Studio's **Catalog Repair Shop** lets a creator load an existing 3D accessory by catalog ID, adjust its placement on the accessory mannequin, edit its mesh in Modeling mode, and update the original listing.
+
+## Workflow
+- Open **Avatar > Accessories** and paste the existing accessory's catalog ID.
+- Load it into the scene, then adjust its placement using the mannequin, viewport tools, or numeric offset/rotation/scale controls.
+- Select a mesh part and use Modeling mode to repair the geometry.
+- Save the placement and choose **Update existing item** to publish the change to the same item ID.
+
+The server remains authoritative: creators can update their own items, and staff can repair accessories with an audit entry. Other users cannot update someone else's item. This workflow supports 3D accessories (hats, hair, face accessories, neck, shoulder, and waist items); clothing, bundles, and non-model catalog items are not editable through this window.
+
 # Yesterday, But Make It Recoverable (October 25, 2026)
 
 Project Time Machine adds named scene checkpoints to Studio, so large edits have a recovery point beyond the regular undo history.
