@@ -105,6 +105,11 @@ json GbServer::promoAdmin(const std::string& name, const User& me, const json& a
     if (!goodName(code)) return fail("Codes are 3-30 letters and numbers (no spaces or symbols).");
     if (code.rfind("BOLTS", 0) == 0) return fail("Codes can't start with BOLTS (those are the one-person codes).");
     if (!findPromo(m_promos, code).is_null()) return fail("There's already a code called " + code + ". Pick another name.");
+    long long start = std::max(0LL, num("start"));
+    if (!start) start = now;
+    const long long end = std::max(0LL, num("end"));
+    if (end && end <= start) return fail("The end has to be after the start.");
+    if (end && end <= now) return fail("That end time has already gone by.");
     const std::string rewardType = str("rewardType") == "item" ? "item" : "bolts";
     long long bolts = 0;
     std::string itemId;
@@ -123,11 +128,6 @@ json GbServer::promoAdmin(const std::string& name, const User& me, const json& a
         bolts = num("bolts");
         if (bolts < 1 || bolts > kPromoMaxBolts) return fail("Pick an amount between 1 and 1,000,000 Bolts.");
     }
-    long long start = std::max(0LL, num("start"));
-    if (!start) start = now;
-    const long long end = std::max(0LL, num("end"));
-    if (end && end <= start) return fail("The end has to be after the start.");
-    if (end && end <= now) return fail("That end time has already gone by.");
     if (m_promos.size() >= kMaxPromos) m_promos.erase(m_promos.begin());
     json promo = {{"code", code}, {"rewardType", rewardType}, {"bolts", bolts}, {"start", start}, {"end", end}, {"made", now}, {"by", me.id}, {"uses", 0}};
     if (!itemId.empty()) promo["itemId"] = itemId;
