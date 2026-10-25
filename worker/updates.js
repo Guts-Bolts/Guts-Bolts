@@ -15,6 +15,7 @@ export const BUILT_IN_UPDATES = [
     summary: 'Performance Doctor turns recent frame timings and scene complexity into ranked, practical troubleshooting advice.',
     items: [
       'Ranks frame-pacing, editor-thread, viewport and simulation timing indicators.',
+      'Keeps Edit and Play/Simulate frame samples separate to avoid mixing the two modes.',
       'Flags potential physics, part, light, particle and script-source hotspots with explanations of what each measure means.',
       'Shows the largest script sources and lets you open them directly in the code editor.',
       'Copy a diagnosis report to share measured timings, scene counts and recommended next steps.',
