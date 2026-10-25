@@ -96,12 +96,24 @@ jobs:
         run: cmake --build build-ios-sim --config Release --target GutsAndBoltsPlayer
       - name: Package simulator app for inspection
         run: |
-          app="$(find build-ios-sim/Release-iphonesimulator -maxdepth 1 -type d -name GutsAndBoltsPlayer.app -print -quit)"
-          test -n "$app"
-          test -f "$app/Info.plist"
-          test -d "$app/Resources/games"
-          test -d "$app/Resources/catalog"
-          test -d "$app/Resources/assets"
+          app="build-ios-sim/Release-iphonesimulator/GutsAndBoltsPlayer.app"
+          if [ ! -d "$app" ]; then
+            echo "::error::Simulator app bundle was not produced at $app"
+            find build-ios-sim -type d -name GutsAndBoltsPlayer.app -print
+            exit 1
+          fi
+          echo "Built app bundle: $app"
+          find "$app" -maxdepth 3 -print | sort | head -200
+          test -f "$app/Info.plist" || { echo "::error::Missing Info.plist"; exit 1; }
+          for resource in games catalog assets; do
+            if [ ! -d "$app/Resources/$resource" ]; then
+              echo "::error::Missing packaged resource directory: $app/Resources/$resource"
+              echo "Bundle directories:"
+              find "$app" -maxdepth 3 -type d -print | sort
+              exit 1
+            fi
+            echo "Verified resource directory: $resource"
+          done
           ditto -c -k --sequesterRsrc --keepParent "$app" GutsAndBoltsPlayer-iOS-Simulator.zip
       - uses: actions/upload-artifact@v4
         with:
