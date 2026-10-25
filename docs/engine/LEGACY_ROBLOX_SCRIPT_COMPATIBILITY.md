@@ -18,7 +18,7 @@ The uploaded script is a stress test because it combines old client-side APIs, R
 - `Enum.Material:GetEnumItems()`, `Enum.MeshType:GetEnumItems()`, and `Enum.Font:GetEnumItems()`.
 - A legacy `Player:GetMouse()` object exposing cursor coordinates, `UnitRay`, `Hit`, `Target`, `TargetFilter`, and common key/mouse button signals. Rays are generated through the active camera and use the engine's existing raycast path.
 - A limited `LoadLibrary("RbxUtility").Create(className)(properties)` shim for old object-construction helpers.
-- Built-in `SpecialMesh` primitive rendering for `Head` / `Sphere`, `Cylinder`, `Brick` / `Torso`, and approximate `Wedge`, including `Scale` and `Offset`. `FileMesh` IDs still fall back to the host part geometry until a compatible asset importer exists.
+- Built-in `SpecialMesh` primitive rendering for `Head` / `Sphere`, `Cylinder`, `Brick` / `Torso`, and `Wedge` currently falls back to cube geometry, including `Scale` and `Offset`. `FileMesh` IDs still fall back to the host part geometry until a compatible asset importer exists.
 - The legacy `game:service("Workspace")` lowercase alias.
 - A `PlayerScripts.ControlScript` compatibility object whose `Disabled` / `Enabled` state toggles native keyboard/gamepad movement. Script-driven `Humanoid:Move()` / `Humanoid.Jump` remain available, and control state resets when Play stops or restarts.
 - Regression checks in `tools/test_script_fixes.lua` for enum enumeration, mouse API shape/ray direction, the legacy helper, the lowercase service alias, and the controller placeholder.
