@@ -748,31 +748,43 @@ const forumAvatar = (u, size) => {
 function loadForumAvatars(root = view) {
   root.querySelectorAll('[data-forum-avatar]').forEach(async (el) => {
     if (el.dataset.loading) return;
-    const id = el.dataset.forumAvatar;
-    const listedUser = forumAvatarUsers.get(id);
+    const key = el.dataset.forumAvatar;
+    const listedUser = forumAvatarUsers.get(key);
     if (!listedUser) return;
     el.dataset.loading = '1';
     const size = Number(el.dataset.size) || 72;
     try {
-      // Forum summaries don't reliably include the full avatar or resolved worn-item records.
-      // Load the same profile payload used by the profile page before rendering the 2D image.
-      if (!forumAvatarProfiles.has(id)) {
-        forumAvatarProfiles.set(id, pageCall('profile', { id }).then((r) => {
-          if (!r.ok || !r.user) throw new Error('Profile unavailable');
-          return { avatar: r.user.avatar, wearing: r.wearing || [] };
-        }));
+      // Prefer the internal account ID from the forum record; the public player
+      // number is a separate identifier on some older forum responses.
+      const ids = [...new Set([listedUser.id, listedUser.userId, key].filter((x) => x != null && String(x)))];
+      let profile = null;
+      for (const id of ids) {
+        try {
+          const r = await pageCall('profile', { id: String(id) });
+          if (r.ok && r.user && r.user.avatar) { profile = r; break; }
+        } catch (_) {}
       }
-      const profile = await forumAvatarProfiles.get(id);
-      const avatar = profile.avatar || listedUser.avatar || defaultAvatar();
-      const url = await avatarPicture(avatar, profile.wearing, size);
+      if (!profile) throw new Error('Could not load player avatar profile');
+      const user = profile.user;
+      const avatar = user.avatar || listedUser.avatar || defaultAvatar();
+      let worn = Array.isArray(profile.wearing) ? profile.wearing : null;
+      if (!worn) {
+        const wornIds = avatar && Array.isArray(avatar.wearing) ? avatar.wearing : [];
+        if (wornIds.length) {
+          const catalog = await pageCall('list', { kind: 'clothing', limit: 100 });
+          worn = (catalog.assets || []).filter((item) => wornIds.includes(item.id));
+        } else worn = [];
+      }
+      const url = await avatarPicture(avatar, worn, size);
       if (url && el.isConnected) {
-        el.innerHTML = html`<img src="${url}" alt="${listedUser.name || 'Player'}" width="${size}" height="${Math.round(size * 1.25)}" style="display:block;object-fit:contain">`.s;
+        el.innerHTML = html`<img src="${url}" alt="${user.username || user.name || listedUser.name || 'Player'}" width="${size}" height="${Math.round(size * 1.28)}" style="display:block;object-fit:contain">`.s;
       } else if (el.isConnected) {
-        el.innerHTML = avatarSvg(avatar, size, profile.wearing, false).s;
+        el.innerHTML = avatarSvg(avatar, size, worn, false).s;
       }
-    } catch (_) {
-      // If profile lookup fails, retain the forum's local 2D SVG fallback.
-      if (el.isConnected) el.innerHTML = avatarSvg(listedUser.avatar || defaultAvatar(), size, listedUser.wearing || [], false).s;
+    } catch (err) {
+      // Keep the failure visible in the console instead of silently hiding bad profile data.
+      console.warn('Forum avatar render failed for player', key, err);
+      if (el.isConnected && listedUser.avatar) el.innerHTML = avatarSvg(listedUser.avatar, size, listedUser.wearing || [], false).s;
     }
   });
 }
