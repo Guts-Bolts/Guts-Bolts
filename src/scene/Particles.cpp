@@ -676,6 +676,34 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
                     p.seed = rnd(0, 1);
                     p.slide = p.drips < 0.0f ? 0.0f : rnd(0.6f, 2.2f);
                     p.kind = Particle::Splat;
+
+                    // Fast wall strikes throw a few small satellite stains along the surface.
+                    // Keep these bounded and surface-aligned rather than spawning more flying drops.
+                    glm::vec3 wallTangent = p.vel - n * glm::dot(p.vel, n);
+                    const float tangentSpeed = glm::length(wallTangent);
+                    if (impactSpeed > 4.0f && tangentSpeed > 1.0f) {
+                        wallTangent /= tangentSpeed;
+                        glm::vec3 wallSide = glm::normalize(glm::cross(n, wallTangent));
+                        const int satellites = std::clamp((int)((impactSpeed - 3.0f) * 0.45f), 1, 3);
+                        for (int e = 0; e < satellites; ++e) {
+                            Particle sat = p;
+                            const float along = rnd(0.12f, 0.38f) * std::min(1.8f, impactSpeed * 0.2f);
+                            sat.pos = p.pos + wallTangent * along + wallSide * rnd(-0.16f, 0.16f) + n * 0.006f;
+                            const float ss = rnd(0.025f, 0.055f);
+                            sat.size = glm::vec3(ss, 0.018f, ss * rnd(0.8f, 1.5f));
+                            sat.spread = 0.0f;
+                            sat.slide = 0.0f;
+                            sat.trail = 0.0f;
+                            sat.drips = 0.0f;
+                            sat.dripTimer = 0.0f;
+                            sat.look = 0;
+                            sat.seed = rnd(0.0f, 1.0f);
+                            sat.age = 0.0f;
+                            sat.vel = sat.spin = glm::vec3(0.0f);
+                            sat.life = sat.maxLife = m_bloodStay * rnd(0.65f, 0.9f);
+                            born.push_back(sat);
+                        }
+                    }
                 }
                 if (p.kind == Particle::Splat) {
                     p.vel = p.spin = glm::vec3(0.0f);
