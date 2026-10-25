@@ -1,3 +1,15 @@
+# Catalog Repair Shop (October 25, 2026)
+
+Studio's **Catalog Repair Shop** lets a creator load an existing 3D accessory by catalog ID, adjust its placement on the accessory mannequin, edit its mesh in Modeling mode, and update the original listing.
+
+## Workflow
+- Open **Avatar > Accessories** and paste the existing accessory's catalog ID.
+- Load it into the scene, then adjust its placement using the mannequin, viewport tools, or numeric offset/rotation/scale controls.
+- Select a mesh part and use Modeling mode to repair the geometry.
+- Save the placement and choose **Update existing item** to publish the change to the same item ID.
+
+The server remains authoritative: the update operation rejects changes from anyone other than the original creator. This workflow supports 3D accessories (hats, hair, face accessories, neck, shoulder, and waist items); clothing, bundles, and non-model catalog items are not editable through this window.
+
 # Your Scene Is Under Review (October 25, 2026)
 
 Studio's **Scene Validator** checks common project-structure and reference mistakes before publishing.
