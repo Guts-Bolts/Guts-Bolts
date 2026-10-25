@@ -11,6 +11,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'catalog-item-workshop', name: 'Catalog Repair Shop', version: '0.7.5', time: 1792940400, tag: 'Studio',
+    summary: 'Creators can load their existing 3D catalog accessories into Studio, fix their mesh or placement, and update the same listing.',
+    items: [
+      'Load an existing accessory by catalog ID into the Studio scene.',
+      'Adjust position, rotation and scale on the accessory mannequin with numeric controls or viewport tools.',
+      'Edit the accessory mesh in Modeling mode and update the existing catalog listing.',
+      'Server-side creator ownership checks protect existing catalog items; unsupported item types are rejected.'
+    ]
+  },
+  {
     id: 'scene-validator', name: 'Your Scene Is Under Review', version: '0.7.4', time: 1792965600, tag: 'Studio',
     summary: 'Scene Validator scans a project for broken references and common setup mistakes before you publish.',
     items: [
