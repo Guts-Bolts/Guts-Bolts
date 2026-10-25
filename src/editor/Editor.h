@@ -81,6 +81,7 @@ private:
     void renderTeamPanel();
     void renderPerformanceWindow();
     void renderPerformanceDoctor();
+    void renderSceneValidator();
     void handleShortcuts();
 
     // Creating / removing things
@@ -282,6 +283,17 @@ private:
     bool m_showSettings = false;
     bool m_showPerformance = false;
     bool m_showPerformanceDoctor = false;
+    bool m_showSceneValidator = false;
+    int m_sceneValidatorSeverityFilter = 0; // 0 = all, 1 = errors, 2 = warnings, 3 = info
+    std::string m_sceneValidatorSearch;
+    double m_sceneValidatorLastScan = -100.0;
+    struct SceneValidationIssue {
+        uint64_t nodeId = 0;
+        int severity = 1; // 2 = error, 1 = warning, 0 = info
+        std::string path, category, message, recommendation;
+    };
+    std::vector<SceneValidationIssue> m_sceneValidationIssues;
+    int m_sceneValidatorObjectCount = 0;
     struct PerformanceDoctorScript { uint64_t id = 0; std::string path; std::size_t sourceBytes = 0; };
     double m_perfDoctorLastScan = -100.0;
     int m_perfDoctorObjects = 0, m_perfDoctorParts = 0, m_perfDoctorDynamicParts = 0;
