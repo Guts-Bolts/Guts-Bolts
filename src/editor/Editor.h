@@ -289,6 +289,7 @@ private:
     std::size_t m_perfDoctorTotalScriptBytes = 0;
     std::vector<PerformanceDoctorScript> m_perfDoctorLargestScripts;
     float m_perfCpuFrameMs = 0.0f, m_perfViewportMs = 0.0f, m_perfSimulationMs = 0.0f;
+    bool m_perfSampleMode = false; // last mode represented by the rolling frame samples
     std::vector<float> m_perfFrameSamples; // rolling frame-delta samples in milliseconds
     int m_perfHitchCount = 0; // frames over 33 ms in the current rolling sample window
     bool m_playing     = false;
