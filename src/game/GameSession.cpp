@@ -12,7 +12,24 @@
 #include <glm/glm.hpp>
 #include <algorithm>
 #include <cmath>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <vector>
+
+void GameSession::setInputTracePath(const std::string& path) {
+    if (m_inputTrace.is_open()) m_inputTrace.close();
+    if (path.empty()) return;
+    m_inputTrace.open(path, std::ios::out | std::ios::trunc);
+    if (m_inputTrace) {
+        m_inputTrace << nlohmann::json{
+            {"type", "header"},
+            {"format", "gutsandbolts-player-input-trace"},
+            {"format_version", 1},
+            {"sample_interval_seconds", 0.05}
+        }.dump() << '\n';
+        m_inputTrace.flush();
+    }
+}
 
 GameSession::GameSession(Scene* scene) : m_scene(scene), m_scripts(scene) {
     m_scripts.setPhysics(&m_physics);
@@ -41,6 +58,9 @@ void GameSession::start() {
         p->consumeRespawned();   // (arriving isn't a respawn: the scripts hear CharacterAdded once they've started)
     }
     m_running = true;
+    m_traceStartTime = m_time;
+    m_traceNextAt = m_time;
+    m_traceSamples = 0;
     // Sounds marked "Autoplay" (e.g. background music) start with the game.
     m_scene->forEach([this](SceneNode* n) {
         if (!n->isSound() || !n->autoplay) return;
@@ -300,6 +320,10 @@ void GameSession::stop() {
     m_scene->particles().clear();
     m_scene->blasts().clear();
     m_scene->camera() = ScriptCamera{};
+    if (m_inputTrace.is_open()) {
+        m_inputTrace.flush();
+        m_inputTrace.close();
+    }
     m_running = false;
     m_hoverDetector = 0;
 }
@@ -378,6 +402,36 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
                 if (client && onToolRequest) onToolRequest("use", t->id, false);
                 m_scripts.fireTool(SignalKind::Deactivated, t->id);
             }
+        }
+        // Keep a compact, sampled trace of the effective character controls for Studio's
+        // session bundle. This is diagnostic data, not a deterministic replay recording.
+        if (m_inputTrace.is_open() && m_time >= m_traceNextAt && m_traceSamples < 50000) {
+            const SceneNode* held = p->equippedTool();
+            const nlohmann::json sample = {
+                {"type", "input"},
+                {"sample", m_traceSamples},
+                {"elapsed_seconds", std::max(0.0, m_time - m_traceStartTime)},
+                {"dt", dt},
+                {"camera_yaw", cameraYaw},
+                {"accept_input", acceptInput && !ImGui::GetIO().WantTextInput},
+                {"move", {move.x, move.y, move.z}},
+                {"jump", jump},
+                {"dive", dive},
+                {"swim_look", acceptInput ? swimLook : 0.0f},
+                {"touch_move", {m_touchMove.x, m_touchMove.y}},
+                {"touch_jump", m_touchJump},
+                {"equipped_tool", held ? held->id : uint64_t(0)},
+                {"tool_down", m_toolDown},
+                {"controller_connected", Pad::connected()}
+            };
+            m_inputTrace << sample.dump() << '\n';
+            ++m_traceSamples;
+            m_traceNextAt = m_time + 0.05;
+            if (m_traceSamples % 20 == 0) m_inputTrace.flush();
+        } else if (m_inputTrace.is_open() && m_traceSamples >= 50000) {
+            m_inputTrace << nlohmann::json{{"type", "truncated"}, {"reason", "sample_limit"}, {"limit", 50000}}.dump() << '\n';
+            m_inputTrace.flush();
+            m_inputTrace.close();
         }
         p->setSwimInput(acceptInput ? swimLook : 0.0f, dive);
         p->update(dt, move, jump, m_physics);
