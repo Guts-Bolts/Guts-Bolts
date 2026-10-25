@@ -126,12 +126,12 @@ FetchContent_MakeAvailable(lua)
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(LUA_LOSLIB "${lua_SOURCE_DIR}/loslib.c")
     file(READ "${LUA_LOSLIB}" LUA_LOSLIB_ORIGINAL)
-    set(LUA_SYSTEM_DEFAULT "#define l_system(cmd)   system(cmd)  /* default definition */")
-    set(LUA_SYSTEM_IOS "#define l_system(cmd)   (-1)  /* shell execution unavailable on iOS */")
-    string(REPLACE "${LUA_SYSTEM_DEFAULT}" "${LUA_SYSTEM_IOS}"
+    # Match the function token rather than the entire macro line; whitespace
+    # differs between Lua source revisions.
+    string(REPLACE "system(cmd)" "(-1)"
            LUA_LOSLIB_CONTENT "${LUA_LOSLIB_ORIGINAL}")
     if("${LUA_LOSLIB_CONTENT}" STREQUAL "${LUA_LOSLIB_ORIGINAL}")
-        message(FATAL_ERROR "Could not patch Lua os.execute for iOS: expected l_system definition not found")
+        message(FATAL_ERROR "Could not patch Lua os.execute for iOS: system(cmd) token not found")
     endif()
     file(WRITE "${LUA_LOSLIB}" "${LUA_LOSLIB_CONTENT}")
 endif()
