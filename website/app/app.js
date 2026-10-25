@@ -739,6 +739,7 @@ const forumPager = (base, page, pages) => pages <= 1 ? '' : html`<p class="pager
 const forumWho = (u) => html`<a href="#/user/${u.userId || u.id}"><b>${u.name}</b></a>${verified(u.verified)}${u.staff ? html` <span class="badge-pill staff">Staff</span>` : ''}${partner(u)}`;
 // Use the same rendered 2D PNG as the avatar page's 2D mode, with SVG as a fast fallback.
 const forumAvatarUsers = new Map();
+const forumAvatarProfiles = new Map();
 const forumAvatar = (u, size) => {
   const id = String(u && (u.userId || u.id) || '');
   if (id) forumAvatarUsers.set(id, u);
@@ -747,14 +748,32 @@ const forumAvatar = (u, size) => {
 function loadForumAvatars(root = view) {
   root.querySelectorAll('[data-forum-avatar]').forEach(async (el) => {
     if (el.dataset.loading) return;
-    const u = forumAvatarUsers.get(el.dataset.forumAvatar);
-    if (!u) return;
+    const id = el.dataset.forumAvatar;
+    const listedUser = forumAvatarUsers.get(id);
+    if (!listedUser) return;
     el.dataset.loading = '1';
     const size = Number(el.dataset.size) || 72;
     try {
-      const url = await avatarPicture(u.avatar, u.wearing || [], size);
-      if (url && el.isConnected) el.innerHTML = html`<img src="${url}" alt="${u.name || 'Player'}" width="${size}" height="${Math.round(size * 1.25)}" style="display:block;object-fit:contain">`.s;
-    } catch (_) { /* Keep the 2D SVG fallback if rendering fails. */ }
+      // Forum summaries don't reliably include the full avatar or resolved worn-item records.
+      // Load the same profile payload used by the profile page before rendering the 2D image.
+      if (!forumAvatarProfiles.has(id)) {
+        forumAvatarProfiles.set(id, pageCall('profile', { id }).then((r) => {
+          if (!r.ok || !r.user) throw new Error('Profile unavailable');
+          return { avatar: r.user.avatar, wearing: r.wearing || [] };
+        }));
+      }
+      const profile = await forumAvatarProfiles.get(id);
+      const avatar = profile.avatar || listedUser.avatar || defaultAvatar();
+      const url = await avatarPicture(avatar, profile.wearing, size);
+      if (url && el.isConnected) {
+        el.innerHTML = html`<img src="${url}" alt="${listedUser.name || 'Player'}" width="${size}" height="${Math.round(size * 1.25)}" style="display:block;object-fit:contain">`.s;
+      } else if (el.isConnected) {
+        el.innerHTML = avatarSvg(avatar, size, profile.wearing, false).s;
+      }
+    } catch (_) {
+      // If profile lookup fails, retain the forum's local 2D SVG fallback.
+      if (el.isConnected) el.innerHTML = avatarSvg(listedUser.avatar || defaultAvatar(), size, listedUser.wearing || [], false).s;
+    }
   });
 }
 pages.forum = async (board, a, b) => {
