@@ -244,6 +244,7 @@ void Editor::render(float dt) {
     m_perfCpuFrameMs = std::chrono::duration<float, std::milli>(
         std::chrono::steady_clock::now() - frameStart).count();
     renderPerformanceWindow();
+    renderPerformanceDoctor();
 
     trackChanges();
     updateTitle();
@@ -346,6 +347,278 @@ void Editor::renderPerformanceWindow() {
     ImGui::SameLine();
     ImGui::TextDisabled("Copies timings and scene counts; CPU timings are not GPU measurements.");
     ImGui::TextDisabled("Use Play / Simulate and compare frame-time samples before and after changes.");
+    ImGui::End();
+}
+
+// Performance Doctor turns the monitor's recent samples into ranked, explainable advice.
+// Scene thresholds are heuristics; they are not a claim that a particular count caused a hitch.
+void Editor::renderPerformanceDoctor() {
+    if (!m_showPerformanceDoctor) return;
+    ImGui::SetNextWindowSize(ImVec2(700, 600), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Performance Doctor", &m_showPerformanceDoctor)) { ImGui::End(); return; }
+
+    const bool rescanScene = ImGui::Button("Rescan scene");
+    ImGui::SameLine();
+    ImGui::TextDisabled("Scene scan refreshes automatically about once per second.");
+
+    if (rescanScene || m_perfDoctorLastScan < 0.0 || ImGui::GetTime() - m_perfDoctorLastScan >= 1.0) {
+        m_perfDoctorObjects = m_perfDoctorParts = m_perfDoctorDynamicParts = 0;
+        m_perfDoctorLights = m_perfDoctorEmitters = m_perfDoctorScriptsCount = 0;
+        m_perfDoctorTotalScriptBytes = 0;
+        m_perfDoctorLargestScripts.clear();
+        m_scene->forEach([&](SceneNode* node) {
+            if (node->internal) return;
+            ++m_perfDoctorObjects;
+            if (node->isPart()) {
+                ++m_perfDoctorParts;
+                if (!node->anchored) ++m_perfDoctorDynamicParts;
+            }
+            if (node->isLight() && node->enabled) ++m_perfDoctorLights;
+            if (node->isParticles() && node->enabled) ++m_perfDoctorEmitters;
+            if (node->isScript()) {
+                ++m_perfDoctorScriptsCount;
+                m_perfDoctorTotalScriptBytes += node->source.size();
+                m_perfDoctorLargestScripts.push_back({node->id, node->fullName(), node->source.size()});
+            }
+        });
+        std::sort(m_perfDoctorLargestScripts.begin(), m_perfDoctorLargestScripts.end(),
+                  [](const PerformanceDoctorScript& a, const PerformanceDoctorScript& b) {
+                      return a.sourceBytes > b.sourceBytes;
+                  });
+        if (m_perfDoctorLargestScripts.size() > 5) m_perfDoctorLargestScripts.resize(5);
+        m_perfDoctorLastScan = ImGui::GetTime();
+    }
+
+    std::vector<float> sorted = m_perfFrameSamples;
+    std::sort(sorted.begin(), sorted.end());
+    const int sampleCount = (int)sorted.size();
+    float averageMs = 0.0f;
+    for (float ms : sorted) averageMs += ms;
+    if (!sorted.empty()) averageMs /= (float)sorted.size();
+    const float p95Ms = sorted.empty() ? 0.0f : sorted[std::min(sorted.size() - 1, (sorted.size() * 95) / 100)];
+    const float maxMs = sorted.empty() ? 0.0f : sorted.back();
+    const int hitches = (int)std::count_if(sorted.begin(), sorted.end(), [](float ms) { return ms > 33.0f; });
+    const float hitchPercent = sampleCount ? 100.0f * (float)hitches / (float)sampleCount : 0.0f;
+    const float averageFps = averageMs > 0.001f ? 1000.0f / averageMs : 0.0f;
+
+    struct Finding {
+        int severity; // 2 critical, 1 warning, 0 information
+        std::string title;
+        std::string evidence;
+        std::string action;
+    };
+    std::vector<Finding> findings;
+    auto addFinding = [&](int severity, const std::string& title,
+                          const std::string& evidence, const std::string& action) {
+        findings.push_back({severity, title, evidence, action});
+    };
+
+    if (sampleCount < 30) {
+        addFinding(0, "Collect more measurements",
+                   "Only " + std::to_string(sampleCount) + " frame samples are available; short samples can exaggerate one-off spikes.",
+                   "Run Play or Simulate while reproducing the slowdown, then review the report again.");
+    } else {
+        if (p95Ms >= 33.0f)
+            addFinding(2, "Frame pacing is poor",
+                       "The 95th-percentile frame delta is " + std::to_string((int)(p95Ms * 100) / 100.0f) +
+                       " ms; the slowest tail of the sample window is around 30 FPS or worse.",
+                       "Reproduce the hitch and compare the editor-thread, viewport and simulation timings below.");
+        else if (p95Ms >= 20.0f)
+            addFinding(1, "Frame pacing is inconsistent",
+                       "The 95th-percentile frame delta is " + std::to_string((int)(p95Ms * 100) / 100.0f) + " ms.",
+                       "Use the Performance Monitor graph to check whether the spikes are isolated or continuous.");
+
+        if (hitchPercent >= 25.0f)
+            addFinding(2, "Frequent long frames",
+                       std::to_string(hitches) + " of " + std::to_string(sampleCount) +
+                       " samples exceed 33 ms (" + std::to_string((int)(hitchPercent * 10) / 10.0f) + "%).",
+                       "Check whether the hitches line up with physics, script work, importing or other editor operations.");
+        else if (hitchPercent >= 8.0f)
+            addFinding(1, "Occasional long frames",
+                       std::to_string(hitches) + " of " + std::to_string(sampleCount) +
+                       " samples exceed 33 ms (" + std::to_string((int)(hitchPercent * 10) / 10.0f) + "%).",
+                       "Repeat the same playtest after one change at a time to identify which change affects the hitch count.");
+    }
+
+    if (m_perfCpuFrameMs >= 33.0f)
+        addFinding(2, "Editor-thread work is taking a long time",
+                   "The latest measured editor update and UI work took " +
+                   std::to_string((int)(m_perfCpuFrameMs * 100) / 100.0f) + " ms.",
+                   "Close panels you do not need and compare the result. If this occurs during Play, use script and scene diagnostics before changing content.");
+    else if (m_perfCpuFrameMs >= 16.7f)
+        addFinding(1, "Editor-thread work uses the frame budget",
+                   "The latest editor update and UI measurement is at or above 16.7 ms.",
+                   "Check the viewport and simulation subtimings to narrow down where the measured CPU work is concentrated.");
+
+    if (m_perfViewportMs >= 20.0f)
+        addFinding(2, "Viewport CPU work is high",
+                   "Viewport rendering took " + std::to_string((int)(m_perfViewportMs * 100) / 100.0f) + " ms in the latest sample.",
+                   "Compare with fewer visible objects, lights and effects. This is CPU-side timing, not a direct GPU measurement.");
+    else if (m_perfViewportMs >= 10.0f)
+        addFinding(1, "Viewport CPU work may be a bottleneck",
+                   "Viewport rendering took " + std::to_string((int)(m_perfViewportMs * 100) / 100.0f) + " ms in the latest sample.",
+                   "Temporarily reduce visible scene complexity and compare timings. Use a GPU profiler to confirm any GPU limitation.");
+
+    if (m_playing && m_perfSimulationMs >= 16.7f)
+        addFinding(2, "Simulation step exceeds a 60 FPS budget",
+                   "The latest GameSession update took " + std::to_string((int)(m_perfSimulationMs * 100) / 100.0f) + " ms.",
+                   "Inspect unanchored parts, constraints and scripts that do repeated work during simulation; change one variable and measure again.");
+    else if (m_playing && m_perfSimulationMs >= 8.0f)
+        addFinding(1, "Simulation is using a large share of the frame",
+                   "The latest GameSession update took " + std::to_string((int)(m_perfSimulationMs * 100) / 100.0f) + " ms.",
+                   "Check the physics-heavy scene indicators and test with fewer moving bodies to see whether simulation time changes.");
+
+    if (m_perfDoctorDynamicParts >= 2500)
+        addFinding(2, "Very high number of unanchored parts",
+                   std::to_string(m_perfDoctorDynamicParts) + " unanchored parts were found in the scene.",
+                   "Anchor parts that should not move, simplify repeated assemblies, and compare a playtest. This count is a risk indicator, not proof of the cause.");
+    else if (m_perfDoctorDynamicParts >= 800)
+        addFinding(1, "Many unanchored parts",
+                   std::to_string(m_perfDoctorDynamicParts) + " unanchored parts were found in the scene.",
+                   "Review which parts actually need physics. Static floors, walls and decorations should usually be anchored.");
+
+    if (m_perfDoctorParts >= 10000)
+        addFinding(2, "Very large part count",
+                   std::to_string(m_perfDoctorParts) + " parts were found in the scene.",
+                   "Simplify distant or hidden geometry and reuse meshes where appropriate; verify the change in a repeatable playtest.");
+    else if (m_perfDoctorParts >= 4000)
+        addFinding(1, "Large part count",
+                   std::to_string(m_perfDoctorParts) + " parts were found in the scene.",
+                   "Inspect repeated small parts and hidden geometry. The best fix depends on visibility, collision and target hardware.");
+
+    if (m_perfDoctorLights >= 128)
+        addFinding(2, "Many enabled lights",
+                   std::to_string(m_perfDoctorLights) + " enabled lights were found in the scene.",
+                   "Disable lights that do not contribute to the current view and compare the result on target hardware.");
+    else if (m_perfDoctorLights >= 64)
+        addFinding(1, "High enabled-light count",
+                   std::to_string(m_perfDoctorLights) + " enabled lights were found in the scene.",
+                   "Review overlapping lights and remove lights that do not change the scene meaningfully.");
+
+    if (m_perfDoctorEmitters >= 64)
+        addFinding(2, "Many enabled particle emitters",
+                   std::to_string(m_perfDoctorEmitters) + " enabled emitters were found in the scene.",
+                   "Check emitter Rate, lifetime and whether off-screen effects should be disabled.");
+    else if (m_perfDoctorEmitters >= 32)
+        addFinding(1, "High particle-emitter count",
+                   std::to_string(m_perfDoctorEmitters) + " enabled emitters were found in the scene.",
+                   "Review active emission rates and lifetimes; count alone does not measure how many particles are being drawn.");
+
+    if (m_perfDoctorTotalScriptBytes >= 1024 * 1024)
+        addFinding(1, "Large total script source",
+                   std::to_string(m_perfDoctorTotalScriptBytes / 1024) + " KiB of script source was found in the scene.",
+                   "This is not execution time. Inspect large scripts for unbounded loops or repeated expensive work, then measure during Play.");
+
+    int critical = 0, warnings = 0;
+    for (const auto& finding : findings) {
+        if (finding.severity == 2) ++critical;
+        else if (finding.severity == 1) ++warnings;
+    }
+    if (critical) {
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.3f, 1.0f), "Diagnosis: %d critical indicator(s), %d warning(s)", critical, warnings);
+    } else if (warnings) {
+        ImGui::TextColored(ImVec4(0.95f, 0.72f, 0.25f, 1.0f), "Diagnosis: %d warning(s); %d critical indicator(s)", warnings, critical);
+    } else {
+        ImGui::TextColored(ImVec4(0.4f, 0.82f, 0.5f, 1.0f), "Diagnosis: no major hotspot detected by the current heuristics");
+    }
+
+    ImGui::Text("%s mode | %d samples | average %.1f FPS | p95 %.2f ms | peak %.2f ms",
+                m_playing ? "Play / Simulate" : "Edit", sampleCount, averageFps, p95Ms, maxMs);
+    ImGui::TextDisabled("Frame deltas include waiting/presentation. CPU subtimings exclude GPU execution and may miss short spikes.");
+    ImGui::SeparatorText("Findings and recommended next steps");
+    if (findings.empty()) {
+        ImGui::TextDisabled("No threshold was crossed. If the game still feels slow, capture measurements while reproducing the problem.");
+    }
+    ImGui::BeginChild("##performanceDoctorFindings", ImVec2(0, 225), true);
+    for (size_t i = 0; i < findings.size(); ++i) {
+        const Finding& f = findings[i];
+        ImGui::PushID((int)i);
+        const ImVec4 color = f.severity == 2 ? ImVec4(1.0f, 0.38f, 0.32f, 1.0f)
+                              : f.severity == 1 ? ImVec4(0.95f, 0.73f, 0.3f, 1.0f)
+                                                : ImVec4(0.55f, 0.75f, 0.95f, 1.0f);
+        ImGui::TextColored(color, "%s", f.severity == 2 ? "CRITICAL" : f.severity == 1 ? "WARNING" : "INFO");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", f.title.c_str());
+        ImGui::TextWrapped("Evidence: %s", f.evidence.c_str());
+        ImGui::TextWrapped("Try: %s", f.action.c_str());
+        ImGui::Separator();
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+
+    ImGui::SeparatorText("Scene context");
+    if (ImGui::BeginTable("##performanceDoctorScene", 2,
+                          ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("Metric", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Count", ImGuiTableColumnFlags_WidthFixed, 110.0f);
+        ImGui::TableHeadersRow();
+        auto metric = [](const char* label, long long value) {
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ImGui::TextUnformatted(label);
+            ImGui::TableNextColumn(); ImGui::Text("%lld", value);
+        };
+        metric("Objects", m_perfDoctorObjects);
+        metric("Parts", m_perfDoctorParts);
+        metric("Unanchored parts", m_perfDoctorDynamicParts);
+        metric("Enabled lights", m_perfDoctorLights);
+        metric("Enabled particle emitters", m_perfDoctorEmitters);
+        metric("Scripts", m_perfDoctorScriptsCount);
+        ImGui::EndTable();
+    }
+    ImGui::TextDisabled("Scene counts are clues, not direct performance measurements. Thresholds are intentionally conservative heuristics.");
+
+    if (!m_perfDoctorLargestScripts.empty()) {
+        ImGui::SeparatorText("Largest script sources (not execution-time rankings)");
+        for (const auto& script : m_perfDoctorLargestScripts) {
+            ImGui::PushID((int)(script.id & 0x7fffffff));
+            ImGui::Text("%s", script.path.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("%zu bytes", script.sourceBytes);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Open")) {
+                if (SceneNode* node = m_scene->findById(script.id)) {
+                    m_scene->select(node);
+                    m_scriptEditor->open(script.id);
+                    m_showPanel[kPanelScript] = true;
+                }
+            }
+            ImGui::PopID();
+        }
+    }
+
+    if (ImGui::Button("Open Performance Monitor")) m_showPerformance = true;
+    ImGui::SameLine();
+    if (ImGui::Button("Open Script Analysis")) m_scriptEditor->showAnalysis();
+    ImGui::SameLine();
+    if (ImGui::Button("Copy diagnosis report")) {
+        std::ostringstream report;
+        report << "Guts&Bolts Performance Doctor\n"
+               << "Mode: " << (m_playing ? "Play / Simulate" : "Edit") << "\n"
+               << "Samples: " << sampleCount << "\n"
+               << "Average FPS: " << averageFps << "\n"
+               << "Average frame delta (ms): " << averageMs << "\n"
+               << "P95 frame delta (ms): " << p95Ms << "\n"
+               << "Peak frame delta (ms): " << maxMs << "\n"
+               << "Frames over 33 ms: " << hitches << "/" << sampleCount << "\n"
+               << "Editor-thread update/UI (ms): " << m_perfCpuFrameMs << "\n"
+               << "Viewport CPU (ms): " << m_perfViewportMs << "\n"
+               << "Simulation update (ms): " << m_perfSimulationMs << "\n"
+               << "Objects: " << m_perfDoctorObjects << "\n"
+               << "Parts: " << m_perfDoctorParts << "\n"
+               << "Unanchored parts: " << m_perfDoctorDynamicParts << "\n"
+               << "Enabled lights: " << m_perfDoctorLights << "\n"
+               << "Enabled particle emitters: " << m_perfDoctorEmitters << "\n"
+               << "Scripts: " << m_perfDoctorScriptsCount << "\n"
+               << "Total script source bytes: " << m_perfDoctorTotalScriptBytes << "\n"
+               << "\nFindings:\n";
+        for (const auto& finding : findings) {
+            report << (finding.severity == 2 ? "[CRITICAL] " : finding.severity == 1 ? "[WARNING] " : "[INFO] ")
+                   << finding.title << "\n  Evidence: " << finding.evidence << "\n  Try: " << finding.action << "\n";
+        }
+        report << "\nLimitations: frame delta includes waiting/presentation; CPU subtimings exclude GPU execution. "
+                  "Scene counts and thresholds are heuristic risk indicators, not proof of cause.";
+        ImGui::SetClipboardText(report.str().c_str());
+    }
     ImGui::End();
 }
 
@@ -1984,6 +2257,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Script Analysis", nullptr, m_scriptEditor->analysisShown())) m_scriptEditor->showAnalysis();
         if (ImGui::MenuItem("Project Dependency Map")) m_scriptEditor->showDependencyMap();
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
+        if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;
