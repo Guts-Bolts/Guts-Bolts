@@ -46,6 +46,16 @@ task.spawn(function()
           "Mouse exposes Hit and legacy input signals")
     local legacyPart = LoadLibrary("RbxUtility").Create("Part")({ Name = "LegacyCreateTest", Anchored = true })
     check(legacyPart.Name == "LegacyCreateTest" and legacyPart.Anchored, "RbxUtility.Create applies properties")
+    local special = Instance.new("SpecialMesh")
+    special.MeshType = Enum.MeshType.Sphere
+    special.Scale = Vector3.new(1.5, 0.75, 1.25)
+    special.Offset = Vector3.new(0, 0.25, 0)
+    special.Parent = legacyPart
+    check(special.ClassName == "SpecialMesh" and special.MeshType == "Sphere",
+          "legacy SpecialMesh keeps its class and primitive MeshType")
+    check(special.Scale == Vector3.new(1.5, 0.75, 1.25) and special.Offset == Vector3.new(0, 0.25, 0),
+          "legacy SpecialMesh Scale and Offset round-trip")
+    special:Destroy()
     legacyPart:Destroy()
 
     local character = me.Character
