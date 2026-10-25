@@ -49,6 +49,18 @@ test('Project Dependency Map is published in the website update log', () => {
   assert.match(text, /static code patterns/);
 });
 
+test('Performance Doctor is published in the website update log', () => {
+  const update = BUILT_IN_UPDATES.find((u) => u.id === 'performance-doctor');
+  assert.ok(update, 'Performance Doctor must be visible on the website update log');
+  assert.equal(update.tag, 'Studio');
+  const text = [update.name, update.summary, ...update.items].join(' ');
+  assert.match(text, /frame timings/);
+  assert.match(text, /viewport and simulation/);
+  assert.match(text, /diagnosis report/);
+  assert.match(text, /heuristics/);
+  assert.match(text, /separate/);
+});
+
 test('says "Library", never "Marketplace"', () => {
   // (Roblox's MarketplaceService is a script name, so that one's fine.)
   for (const u of BUILT_IN_UPDATES)
