@@ -737,7 +737,6 @@ std::vector<SceneNode*> Player::tools() {
 
 bool Player::give(SceneNode* tool) {
     if (!tool || !tool->isTool() || !root()) return false;
-    if ((int)tools().size() >= kMaxTools) return false;
     SceneNode* bag = m_scene->findById(backpackId());
     if (!bag || tool->parent == bag) return false;
     auto owned = m_scene->detach(tool);
