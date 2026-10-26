@@ -1069,18 +1069,25 @@ struct Converter {
                 // Create a matching Bone tree so Skin's normal deformation path can
                 // evaluate the imported weights rather than leaving a static mesh.
                 std::vector<SceneNode*> importedBones(look.bones.size(), nullptr);
+                std::vector<glm::mat4> sourceFrames(look.bones.size(), glm::mat4(1.0f));
                 for (size_t bi = 0; bi < look.bones.size(); ++bi) {
                     const auto& source = look.bones[bi];
-                    auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
-                    bone->bone = true;
                     glm::vec3 normalized = (source.position - look.meshCenter) /
                                            glm::max(look.meshSize, glm::vec3(1e-5f));
-                    bone->transform.position = normalized * node->transform.scale;
-                    float rz, ry, rx;
-                    glm::extractEulerAngleZYX(glm::mat4(source.rotation), rz, ry, rx);
-                    bone->transform.rotation = glm::degrees(glm::vec3(rx, ry, rz));
+                    glm::mat4 worldFrame = glm::translate(glm::mat4(1.0f), normalized * node->transform.scale) *
+                                           glm::mat4(source.rotation);
                     SceneNode* boneParent = source.parent >= 0 && (size_t)source.parent < bi
                                            ? importedBones[(size_t)source.parent] : nullptr;
+                    glm::mat4 localFrame = boneParent
+                        ? glm::inverse(sourceFrames[(size_t)source.parent]) * worldFrame
+                        : worldFrame;
+                    auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
+                    bone->bone = true;
+                    bone->transform.position = glm::vec3(localFrame[3]);
+                    float rz, ry, rx;
+                    glm::extractEulerAngleZYX(localFrame, rz, ry, rx);
+                    bone->transform.rotation = glm::degrees(glm::vec3(rx, ry, rz));
+                    sourceFrames[bi] = worldFrame;
                     if (boneParent) importedBones[bi] = boneParent->addChild(std::move(bone));
                     else importedBones[bi] = node->addChild(std::move(bone));
                 }
