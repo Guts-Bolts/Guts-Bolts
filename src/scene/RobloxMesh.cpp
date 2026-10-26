@@ -5,6 +5,7 @@
 #include "../core/Paths.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
@@ -28,7 +29,9 @@ struct Corner {
 // Raw triangles (three corners each) -> an EditMesh. Corners at the same spot with
 // the same normal become one point, so smooth shading works but hard edges (where
 // Roblox split the point on purpose) stay hard.
-Shape build(const std::vector<Corner>& verts, const std::vector<uint32_t>& tris, bool flipV, std::string* err = nullptr) {
+Shape build(const std::vector<Corner>& verts, const std::vector<uint32_t>& tris, bool flipV, std::string* err = nullptr,
+            const std::vector<std::vector<EditMesh::Weight>>* skinWeights = nullptr,
+            const std::vector<Bone>* bones = nullptr) {
     Shape s;
     // Reject corrupt/non-finite coordinates before they reach bounding boxes, UVs,
     // the editor mesh, or GPU buffers. The same validation applies to every format.
@@ -46,8 +49,15 @@ Shape build(const std::vector<Corner>& verts, const std::vector<uint32_t>& tris,
     std::map<std::tuple<long, long, long, int, int, int>, uint32_t> weld;
     auto q = [](float f, float k) { return (long)std::lround(f * k); };
     std::vector<uint32_t> remap(verts.size());
+    const bool preserveSkinVertices = skinWeights && skinWeights->size() == verts.size() && bones && !bones->empty();
     for (size_t i = 0; i < verts.size(); ++i) {
         const Corner& c = verts[i];
+        if (preserveSkinVertices) {
+            // Welding vertices with different bone weights corrupts the rig.
+            remap[i] = (uint32_t)mesh->verts.size();
+            mesh->verts.push_back(c.pos);
+            continue;
+        }
         auto key = std::make_tuple(q(c.pos.x, 1e4f), q(c.pos.y, 1e4f), q(c.pos.z, 1e4f),
                                    (int)q(c.normal.x, 20.0f), (int)q(c.normal.y, 20.0f), (int)q(c.normal.z, 20.0f));
         auto [it, fresh] = weld.try_emplace(key, (uint32_t)mesh->verts.size());
@@ -71,6 +81,12 @@ Shape build(const std::vector<Corner>& verts, const std::vector<uint32_t>& tris,
     s.size = hi - lo;
     glm::vec3 div = glm::max(s.size, glm::vec3(1e-6f));   // a flat shape stays flat
     for (auto& p : mesh->verts) p = (p - s.center) / div;
+    if (preserveSkinVertices) {
+        mesh->weights = *skinWeights;
+        for (const Bone& b : *bones) mesh->bones.push_back(b.name);
+        mesh->bind.assign(mesh->bones.size(), glm::mat4(1.0f));
+        s.bones = *bones;
+    }
     s.mesh = std::move(mesh);
     return s;
 }
@@ -272,14 +288,125 @@ Shape parse(const std::string& bytes, std::string* err) {
     } else if (major == 4 || major == 5) {
         size_t start = r.pos;
         uint16_t headerSize = r.u16();
-        r.u16();                                        // kind of levels of detail
+        r.u16();
         uint32_t nv = r.u32(), nf = r.u32();
         uint16_t lodCount = r.u16(), boneCount = r.u16();
+        uint32_t boneNamesSize = r.u32();
+        uint16_t subsetCount = r.u16();
+        r.u8(); r.u8();
+        uint32_t facsFormat = 0, facsSize = 0;
+        if (major == 5) { facsFormat = r.u32(); facsSize = r.u32(); }
+        if (r.bad || headerSize < (major == 4 ? 24 : 32) || headerSize > bytes.size() - start ||
+            nv > 5'000'000 || nf > 10'000'000 || boneCount > 4096 ||
+            boneNamesSize > 16u * 1024u * 1024u || facsSize > 64u * 1024u * 1024u) {
+            if (err) *err = "the FileMesh v4/v5 header contains invalid sizes";
+            return {};
+        }
         r.pos = start + headerSize;
         if (!readVerts(r, nv, 40, verts)) { if (err) *err = "the mesh file is cut short"; return {}; }
-        if (boneCount > 0) r.pos += (size_t)nv * 8;    // which bones move each point: not used
+
+        std::vector<std::array<uint8_t, 4>> vertexSubsetIndices(nv), vertexWeights(nv);
+        if (boneCount > 0) {
+            if (!r.has((size_t)nv * 8)) { if (err) *err = "the mesh skin-weight table is truncated"; return {}; }
+            for (uint32_t i = 0; i < nv; ++i) {
+                for (int j = 0; j < 4; ++j) vertexSubsetIndices[i][j] = r.u8();
+                for (int j = 0; j < 4; ++j) vertexWeights[i][j] = r.u8();
+            }
+        }
         if (!readFaces(r, nf, 12, tris)) { if (err) *err = "the mesh file is cut short"; return {}; }
-        for (uint16_t i = 0; i < lodCount && r.has(4); ++i) lods.push_back(r.u32());
+        for (uint16_t i = 0; i < lodCount; ++i) {
+            if (!r.has(4)) { if (err) *err = "the mesh LOD table is truncated"; return {}; }
+            lods.push_back(r.u32());
+        }
+
+        std::vector<uint32_t> boneNameOffsets;
+        std::vector<Bone> embeddedBones;
+        boneNameOffsets.reserve(boneCount);
+        embeddedBones.reserve(boneCount);
+        for (uint16_t i = 0; i < boneCount; ++i) {
+            if (!r.has(60)) { if (err) *err = "the mesh bone table is truncated"; return {}; }
+            uint32_t nameOffset = r.u32();
+            uint16_t parentIndex = r.u16();
+            r.u16();
+            r.f32(r.pos); r.pos += 4;
+            Bone b;
+            b.parent = parentIndex == 0xffffu ? -1 : (parentIndex < boneCount ? (int)parentIndex : -1);
+            for (int row = 0; row < 3; ++row)
+                for (int col = 0; col < 3; ++col) b.rotation[col][row] = r.f32(r.pos + (size_t)(row * 3 + col) * 4);
+            r.pos += 36;
+            b.position = {r.f32(r.pos), r.f32(r.pos + 4), r.f32(r.pos + 8)};
+            r.pos += 12;
+            if (r.bad) { if (err) *err = "the mesh bone table is truncated"; return {}; }
+            boneNameOffsets.push_back(nameOffset);
+            embeddedBones.push_back(b);
+        }
+        if (!r.has(boneNamesSize)) { if (err) *err = "the mesh bone-name table is truncated"; return {}; }
+        std::string boneNameTable((const char*)r.p + r.pos, boneNamesSize);
+        r.pos += boneNamesSize;
+        for (size_t i = 0; i < embeddedBones.size(); ++i) {
+            size_t off = boneNameOffsets[i];
+            if (off >= boneNameTable.size()) {
+                embeddedBones[i].name = "Bone" + std::to_string(i);
+                continue;
+            }
+            size_t end = boneNameTable.find('\0', off);
+            if (end == std::string::npos) end = boneNameTable.size();
+            embeddedBones[i].name = boneNameTable.substr(off, end - off);
+            if (embeddedBones[i].name.empty()) embeddedBones[i].name = "Bone" + std::to_string(i);
+        }
+
+        struct Subset {
+            uint32_t vertsBegin = 0, vertsLength = 0;
+            uint16_t boneIndices[26]{};
+        };
+        std::vector<Subset> subsets;
+        subsets.reserve(subsetCount);
+        for (uint16_t i = 0; i < subsetCount; ++i) {
+            if (!r.has(72)) { if (err) *err = "the mesh subset table is truncated"; return {}; }
+            r.u32(); r.u32();
+            Subset s;
+            s.vertsBegin = r.u32();
+            s.vertsLength = r.u32();
+            r.u32();
+            for (int j = 0; j < 26; ++j) s.boneIndices[j] = r.u16();
+            subsets.push_back(s);
+        }
+        std::vector<std::vector<EditMesh::Weight>> skinWeights(nv);
+        if (boneCount > 0 && subsetCount > 0) {
+            for (const Subset& subset : subsets) {
+                const size_t end = std::min<size_t>((size_t)subset.vertsBegin + subset.vertsLength, nv);
+                for (size_t v = subset.vertsBegin; v < end; ++v) {
+                    auto& weights = skinWeights[v];
+                    for (int j = 0; j < 4; ++j) {
+                        const uint8_t subsetIndex = vertexSubsetIndices[v][j];
+                        const float weight = vertexWeights[v][j] / 255.0f;
+                        if (weight <= 0.0f || subsetIndex >= 26) continue;
+                        const uint16_t boneIndex = subset.boneIndices[subsetIndex];
+                        if (boneIndex >= boneCount) continue;
+                        auto found = std::find_if(weights.begin(), weights.end(), [&](const EditMesh::Weight& w) { return w.bone == boneIndex; });
+                        if (found == weights.end()) weights.push_back({boneIndex, weight});
+                        else found->w += weight;
+                    }
+                }
+            }
+            for (auto& weights : skinWeights) {
+                float sum = 0.0f;
+                for (const auto& w : weights) sum += w.w;
+                if (sum > 1e-6f) for (auto& w : weights) w.w /= sum;
+            }
+        }
+        if (major == 5 && facsSize > 0) {
+            if (!r.has(facsSize)) { if (err) *err = "the mesh FACS payload is truncated"; return {}; }
+            r.pos += facsSize;
+            (void)facsFormat;
+        }
+        if (boneCount > 0 && !embeddedBones.empty() &&
+            std::any_of(skinWeights.begin(), skinWeights.end(), [](const auto& w) { return !w.empty(); })) {
+            firstLod(tris, lods);
+            Shape s = build(verts, tris, true, err, &skinWeights, &embeddedBones);
+            if (!s.mesh && err) *err = "the mesh has no triangles";
+            return s;
+        }
     } else if (major == 6 || major == 7) {
         // Labelled chunks: "COREMESH" holds the points and triangles, "LODS" the detail levels.
         bool core = false;
