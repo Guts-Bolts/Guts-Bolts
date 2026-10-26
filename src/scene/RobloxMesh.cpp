@@ -80,7 +80,7 @@ struct Bytes {
     const uint8_t* p;
     size_t n, pos = 0;
     bool bad = false;
-    bool has(size_t k) { if (pos + k > n) { bad = true; return false; } return true; }
+    bool has(size_t k) { if (pos > n || k > n - pos) { bad = true; return false; } return true; }
     uint8_t  u8()  { return has(1) ? p[pos++] : 0; }
     uint16_t u16() { if (!has(2)) return 0; uint16_t v; std::memcpy(&v, p + pos, 2); pos += 2; return v; }
     uint32_t u32() { if (!has(4)) return 0; uint32_t v; std::memcpy(&v, p + pos, 4); pos += 4; return v; }
@@ -336,7 +336,12 @@ std::string assetId(const std::string& content) {
 }
 
 std::string fetch(const std::string& id, const char* ext) {
-    if (id.empty()) return {};
+    // Asset IDs become part of a shell command below; accept decimal IDs only.
+    // Restrict extensions too, so this public helper cannot be used for command injection.
+    if (id.empty() || !std::all_of(id.begin(), id.end(), [](unsigned char ch) { return std::isdigit(ch); })) return {};
+    if (!ext || (std::string(ext) != ".mesh" && std::string(ext) != ".png" &&
+                 std::string(ext) != ".jpg" && std::string(ext) != ".jpeg" &&
+                 std::string(ext) != ".webp")) return {};
     namespace fs = std::filesystem;
     std::error_code ec;
     const std::string rel = std::string("roblox/") + id + ext;
@@ -363,6 +368,19 @@ std::string fetch(const std::string& id, const char* ext) {
     fs::rename(part, file, ec);
     return ec ? std::string() : rel;
 #endif
+}
+
+Shape loadAsset(const std::string& content, std::string* err) {
+    const std::string id = assetId(content);
+    if (id.empty()) { if (err) *err = "not a downloadable Roblox asset ID"; return {}; }
+    const std::string rel = fetch(id, ".mesh");
+    if (rel.empty()) { if (err) *err = "could not download or find the Roblox mesh asset in the local cache"; return {}; }
+    const std::filesystem::path path = Paths::gamesFolder() / rel;
+    std::ifstream file(path, std::ios::binary);
+    if (!file) { if (err) *err = "could not open the cached Roblox mesh asset"; return {}; }
+    std::string bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (bytes.empty()) { if (err) *err = "the downloaded Roblox mesh asset is empty"; return {}; }
+    return parse(bytes, err);
 }
 
 } // namespace RobloxMesh
