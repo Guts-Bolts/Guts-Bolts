@@ -192,6 +192,22 @@ private:
     void       toggleHidden();
     void       renderShortcuts();
     void       renderCollisionGroups();   // the Collision Groups editor (PhysicsService's table)
+public:
+    // Find and Change (EditorBulkEdit.cpp): find objects by kind / name / tag / value and change them all at once.
+    struct BulkQuery {
+        std::string name, cls, nameHas, tag, notTag, whereProp, whereOp = "=", whereVal, setProp, op = "Set to", value;
+        bool        inSelection = false;
+    };
+private:
+    struct BulkRow { uint64_t id; std::string old, now, error; };
+    void       renderBulkEdit();
+    void       bulkRun(bool apply);
+    bool                   m_showBulkEdit = false, m_bulkPreviewed = false, m_bulkLoaded = false;
+    BulkQuery              m_bulk;
+    std::vector<BulkRow>   m_bulkRows;
+    std::vector<BulkQuery> m_bulkSaved;
+    std::string            m_bulkStatus, m_bulkSaveName;
+    int                    m_bulkChanged = -1, m_bulkBad = 0;   // after Apply
     bool       canEdit(const SceneNode* n) const;
     glm::vec3  spawnPoint() const;
 

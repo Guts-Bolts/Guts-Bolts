@@ -939,6 +939,51 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         if (!aliasNote.is_null()) d["warnings"] = json::array({aliasNote});
         return done(d);
     }
+    if (name == "find_and_change") {
+        // Studio's Find and Change window does the work (EditorBulkEdit.cpp); the window keeps its own search.
+        const BulkQuery keep = m_bulk;
+        auto text = [&](const json& j, const char* k) {
+            if (!j.is_object() || !j.contains(k)) return std::string();
+            return j[k].is_string() ? j[k].get<std::string>() : j[k].dump();
+        };
+        const json where = args.value("where", json::object()), change = args.value("change", json::object());
+        m_bulk = BulkQuery{};
+        m_bulk.cls = str("kind");
+        m_bulk.nameHas = str("name_contains");
+        m_bulk.tag = str("has_tag");
+        m_bulk.notTag = str("not_tag");
+        m_bulk.whereProp = text(where, "property");
+        m_bulk.whereOp = text(where, "op").empty() ? "=" : text(where, "op");
+        m_bulk.whereVal = text(where, "value");
+        m_bulk.setProp = text(change, "property");
+        m_bulk.op = text(change, "op").empty() ? "Set to" : text(change, "op");
+        m_bulk.value = text(change, "value");
+        m_bulk.inSelection = args.value("inside_selection", false);
+        const bool apply = args.value("apply", false);
+        static const char* ops[] = {"Set to", "Add", "Multiply by", "Add tag", "Remove tag"};
+        const bool okOp = std::find_if(std::begin(ops), std::end(ops), [&](const char* o) { return m_bulk.op == o; }) != std::end(ops);
+        if (!okOp) { m_bulk = keep; return failWith("INVALID_INPUT", "change.op \"" + text(change, "op") + "\" isn't an operation.",
+                                                    "Use one of valid_choices.", json(std::vector<std::string>(std::begin(ops), std::end(ops)))); }
+        if (apply && m_playing) { m_bulk = keep; return fail("PLAYTEST_RUNNING", "Can't change the saved game during a playtest.", "playtest stop first."); }
+        bulkRun(apply);
+        json results = json::array();
+        int bad = 0;
+        for (const BulkRow& r : m_bulkRows) {
+            bad += !r.error.empty();
+            if (results.size() >= 200) continue;
+            SceneNode* n = m_scene->findById(r.id);
+            json row = {{"object_id", "#" + std::to_string(r.id)}, {"name", n ? n->name : std::string()}, {"now", r.old}};
+            if (!m_bulk.setProp.empty() || m_bulk.op == "Add tag" || m_bulk.op == "Remove tag") row["becomes"] = r.now;
+            if (!r.error.empty()) row["error"] = r.error;
+            results.push_back(row);
+        }
+        json d = {{"count", m_bulkRows.size()}, {"results", results}, {"applied", apply}};
+        if (apply) d["changed"] = (int)m_bulkRows.size() - bad;
+        if (!m_bulkStatus.empty() && m_bulkRows.empty()) d["note"] = m_bulkStatus;
+        if (apply) trackChanges();   // one undo step
+        m_bulk = keep;
+        return done(d);
+    }
     if (name == "select") {
         m_scene->deselect();
         json picked = json::array(), missing = json::array();

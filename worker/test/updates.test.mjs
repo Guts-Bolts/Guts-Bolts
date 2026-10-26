@@ -2,7 +2,20 @@
 // (A broken bracket here once stopped the whole website server from starting.)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readdirSync } from 'node:fs';
 import { BUILT_IN_UPDATES } from '../updates.js';
+
+test('every file in worker/updates/ is one update, named after its id', async () => {
+  const files = readdirSync(new URL('../updates/', import.meta.url)).filter((f) => f.endsWith('.js'));
+  assert.ok(files.length > 0);
+  for (const f of files) {
+    assert.match(f, /^[a-z0-9-]+\.js$/, `worker/updates/${f}: name it after the id (letters, numbers and dashes)`);
+    const u = (await import(`../updates/${f}`)).default;
+    assert.ok(u && typeof u === 'object', `worker/updates/${f}: needs "export default { ... }"`);
+    assert.equal(u.id + '.js', f, `worker/updates/${f}: the file name must be the id`);
+    assert.ok(BUILT_IN_UPDATES.includes(u), `worker/updates/${f} isn't on the Updates page`);
+  }
+});
 
 test('Publish readiness is documented in the website update log', () => {
   const update = BUILT_IN_UPDATES.find((u) => u.id === 'publish-readiness');

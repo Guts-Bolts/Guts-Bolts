@@ -13,13 +13,13 @@ namespace Online {
 
 bool validKind(const std::string& k) {
     return k == "shirt" || k == "pants" || k == "audio" || k == "plugin" || k == "game" || k == "decal" ||
-           k == "model" || k == "face" || k == "tshirt" || k == "gear" || k == "animation" || k == "bundle" || isEmoteItem(k) || isAccessory(k);
+           k == "model" || k == "face" || k == "tshirt" || k == "gear" || k == "animation" || k == "bundle" || k == "bodypart" || isEmoteItem(k) || isAccessory(k);
 }
 bool isAccessory(const std::string& k) {
     return k == "hat" || k == "hair" || k == "faceacc" || k == "neck" || k == "shoulder" || k == "waist";
 }
 bool isClothing(const std::string& k) { return k == "shirt" || k == "pants" || k == "tshirt" || k == "face" || isAccessory(k); }
-bool isCatalogItem(const std::string& k) { return isClothing(k) || k == "gear" || isEmoteItem(k) || k == "bundle"; }
+bool isCatalogItem(const std::string& k) { return isClothing(k) || k == "gear" || isEmoteItem(k) || k == "bundle" || k == "bodypart"; }
 bool isEmoteItem(const std::string& k) { return k == "emote" || k == "animpack"; }
 // A clip needs keyframes, and at most 30 seconds of them (worker/server.js clipProblem). "" if it's fine.
 static std::string clipProblem(const nlohmann::json& c) {
@@ -137,7 +137,7 @@ size_t maxSize(const std::string& k) {
     if (k == "emote") return 256u * 1024u;                         // keyframes for the character
     if (k == "animpack") return 512u * 1024u;                      // five of them
     if (k == "shirt" || k == "pants" || k == "tshirt") return 1024u * 1024u;   // a template picture / a T-shirt picture
-    if (k == "face" || isAccessory(k) || k == "bundle") return 1024u * 1024u;   // a face picture / an accessory or new body from Studio  // a face picture / an accessory from Studio
+    if (k == "face" || isAccessory(k) || k == "bundle" || k == "bodypart") return 1024u * 1024u;   // a face picture / an accessory or new body from Studio  // a face picture / an accessory from Studio
     return 64u * 1024u;   // clothing is just a little description of the look
 }
 
@@ -163,6 +163,7 @@ const char* kindTitle(const std::string& k) {
     if (k == "animpack") return "Animation Pack";
     if (k == "gamepass") return "Game Pass";
     if (k == "bundle") return "Bundle";
+    if (k == "bodypart") return "Body Part";
     return "?";
 }
 

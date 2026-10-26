@@ -1,6 +1,10 @@
 // The update log on the website (the "Updates" page). Every update gets its own
-// name. Newest first. Add a new one at the top whenever an update ships; staff can
-// also post updates from the website (those are kept in the server's database).
+// name. Staff can also post updates from the website (those are kept in the
+// server's database). The page sorts them by time, newest first.
+//
+// NEW UPDATES DON'T GO IN THIS FILE: each one is its own file in worker/updates/
+// (see worker/updates/README.md), so pull requests don't conflict. This file keeps
+// the older ones.
 //
 //   id     short and unique (letters, numbers, dashes)
 //   name   the update's name: make it fun and about what changed
@@ -8,18 +12,17 @@
 //   tag    what it's mostly about: Engine, Studio, Website, Player, Server, Fix
 //   items  what changed, one short line each, in plain words
 
+import NEW_UPDATES from './updates-gathered.js';
 
-export const BUILT_IN_UPDATES = [
+const OLDER_UPDATES = [
   {
-    id: 'snap-together-code', name: 'Snap-Together Code', time: 1793042100, tag: 'Studio',
-    summary: 'Make scripts without typing: connect blocks like "When touched", "If it\'s a player" and "Give points" in the new Visual Scripting window.',
+    id: 'clean-slate-usernames', name: 'Clean Slate Usernames', version: '0.7.6', time: 1793037600, tag: 'Website',
+    summary: 'Staff can now reset a username that isn\'t allowed. It becomes "User" and the player\'s user number.',
     items: [
-      'New Visual Scripting window (VIEW > Blocks): drag blocks onto a board and connect them with lines.',
-      '26 blocks to start with: events (touched, clicked, prompts, players joining, every few seconds), actions, player blocks (points, damage, teleport) and ifs, repeats and cooldowns.',
-      'The blocks turn into real Lua, shown right next to them, so you can read how they work and learn from it.',
-      'Block scripts are normal Scripts: they save, publish and run like any other, and the Script Editor has an "Edit as blocks" button.',
-      'Blocks that can\'t work where they are (like "the part that touched" outside When touched) are listed under Problems instead of breaking the game.',
-      'The Assistant and AI apps can make block scripts too, with the new visual_script tool.',
+      'A new Reset username button on the Staff page, next to each person (staff only).',
+      'The name becomes "User 5" (with their own user number), and they get a notification saying why.',
+      'The old name stays reserved, so nobody else can take it, and it doesn\'t show in their past names.',
+      'Only the official Guts account can reset a staff member\'s username. It shows up in the staff log like everything else.',
     ],
   },
   {
@@ -1674,3 +1677,5 @@ export const BUILT_IN_UPDATES = [
     ],
   },
 ];
+
+export const BUILT_IN_UPDATES = [...NEW_UPDATES, ...OLDER_UPDATES];

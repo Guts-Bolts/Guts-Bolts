@@ -264,6 +264,9 @@ void Editor::renderToolbar() {
                     ungroupSelected();
                 if (smallButton("Lock", Icons::Id::Lock, sel && sel->locked, editable, "Lock: can't be clicked in the Viewport (Alt+L)"))
                     toggleLocked();
+                if (smallButton("Find", Icons::Id::Select, m_showBulkEdit, true,
+                                "Find and Change: find objects by kind, tag or value and change them all at once (Ctrl+Shift+E)"))
+                    m_showBulkEdit = !m_showBulkEdit;
             }
             {
                 Stack st;

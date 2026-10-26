@@ -217,7 +217,7 @@ const std::vector<Tool>& tools() {
           "\"Move/resize/recolour/rename X\", \"make it red/glow/see-through\", \"make it fall\" (Anchored false), "
           "\"make it solid / walk-through\" (CanCollide), \"put X inside Y\" (Parent).",
           "To create something new use insert_object. To change a script's code use edit_script. To change many objects "
-          "at once, run_lua with a loop is faster.",
+          "at once, use find_and_change.",
           "object (required, or \"Lighting\"); property (required, the name scripts use); value (required: number, "
           "true/false, text, [x, y, z] for Vector3 / Color3, [x, y] Vector2, [[xs, xo], [ys, yo]] or [xs, xo, ys, yo] UDim2, "
           "\"#id\" or a path for object properties like Parent / Adornee / Part0 / Attachment0).",
@@ -231,6 +231,30 @@ const std::vector<Tool>& tools() {
          schema({{"object", kObject}, {"property", {{"type", "string"}, {"description", "The name scripts use (Position, CanCollide...)"}}},
                  {"value", {{"description", "number, boolean, string, [x, y, z], [x, y], UDim2 [[xs, xo], [ys, yo]], or an object (\"#42\")"}}}},
                 {"object", "property", "value"})},
+        {"find_and_change", "Find many objects and change them all", "OBJECTS", false, false, false, Risk::Medium,
+         {"Studio's Find and Change: finds every object that matches (kind, name, tags, and a rule on a property's value) "
+          "and, optionally, changes one property on all of them at once: set it, add to it or multiply it, or add / remove a "
+          "tag. Values are read and set exactly like a script would (the same property names). Without apply it only "
+          "previews: each match with its value now and what it would become. With apply it changes them all as ONE undo step.",
+          "\"Make every light dimmer\", \"all the crates 50% heavier\", \"turn off CanCollide on every part tagged Ghost\", "
+          "\"which parts are lighter than 2?\", \"tag every coin\".",
+          "One object: set_property. Finding by name only: find_objects.",
+          "kind (class name, IsA: \"BasePart\" = any part; empty = any), name_contains, has_tag, not_tag, "
+          "where {property, op: = | is not | < | > | <= | >= | contains, value}, change {property, op: \"Set to\" | \"Add\" | "
+          "\"Multiply by\" | \"Add tag\" | \"Remove tag\", value}, apply (default false = preview), inside_selection. "
+          "Values are text the way the window takes them: 1.5, true, Neon, \"1, 2, 3\" (Vector3), \"255, 0, 0\" (Color3 0-255).",
+          "{count, changed (with apply), results: [{object_id, name, now, becomes, error?}] (first 200)}.",
+          "Not playtesting when applying.",
+          "Preview: nothing changes. Apply: every match is changed (one Ctrl+Z / undo puts all of them back).",
+          "find_and_change (preview) -> find_and_change apply -> get_object / screenshot.",
+          "\"Make every PointLight half as bright.\" \"Unanchor all the parts in the Tower model.\""},
+         schema({{"kind", {{"type", "string"}}}, {"name_contains", {{"type", "string"}}}, {"has_tag", {{"type", "string"}}},
+                 {"not_tag", {{"type", "string"}}},
+                 {"where", {{"type", "object"}, {"properties", {{"property", {{"type", "string"}}}, {"op", {{"type", "string"}}},
+                                                                 {"value", {{"type", "string"}}}}}}},
+                 {"change", {{"type", "object"}, {"properties", {{"property", {{"type", "string"}}}, {"op", {{"type", "string"}}},
+                                                                  {"value", {{"type", "string"}}}}}}},
+                 {"apply", {{"type", "boolean"}}}, {"inside_selection", {{"type", "boolean"}}}}, {})},
         {"select", "Select objects in Studio", "OBJECTS", false, false, true, Risk::None,
          {"Selects objects in Studio so the person can see them highlighted (or clears the selection). Doesn't change the game.",
           "\"Show me which one\", \"select the doors\", pointing the person at what you changed.",
@@ -607,6 +631,7 @@ json workflowOf(const std::string& name) {
         {"get_object", {{"find_objects", "get_game_tree"}, {"set_property", "diagnose_object"}}},
         {"set_property", {{"get_object"}, {"get_object", "screenshot", "playtest"}}},
         {"select", {{"find_objects"}, {}}},
+        {"find_and_change", {{"find_objects"}, {"find_and_change", "get_object"}}},
         {"create_script", {{"get_game_tree"}, {"diagnose_object", "playtest"}}},
         {"read_script", {{"find_objects"}, {"edit_script"}}},
         {"visual_script", {{"get_game_tree"}, {"playtest", "get_output"}}},

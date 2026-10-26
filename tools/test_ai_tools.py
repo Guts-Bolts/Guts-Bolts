@@ -14,6 +14,7 @@ server that doesn't exist (GB_SERVER) and a throwaway account folder, so nothing
 is published and your own account isn't touched.
 """
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -229,60 +231,62 @@ def run_tests(m):
     d = m.call("validate_scene")
     check(ok(d), "validate_scene still works", d)
 
-    print("8. Visual Scripting (blocks)")
-    d = m.call("visual_script", action="blocks")
-    types = [b["type"] for b in d.get("blocks", [])]
-    check(ok(d) and len(types) >= 20 and "touched" in types and "ifPlayer" in types, "blocks lists the blocks", d)
-    part = m.call("insert_object", kind="Part", name="BlockPart")
-    n = lambda i, t, **f: {"id": i, "type": t, "x": 0, "y": i * 100, "f": f}
-    graph = {"nodes": [n(1, "start"), n(2, "print", text="blocks-said-hi"), n(3, "transparency", target="this", value="0.8"),
-                       n(4, "repeat", times="2"), n(5, "print", text="blocks-loop"), n(6, "print", text="blocks-after"),
-                       n(7, "ifChance", percent="100"), n(8, "print", text="blocks-lucky"), n(9, "print", text="blocks-unlucky")],
-             "links": [{"from": 1, "pin": "next", "to": 2}, {"from": 2, "pin": "next", "to": 3}, {"from": 3, "pin": "next", "to": 4},
-                       {"from": 4, "pin": "do", "to": 5}, {"from": 4, "pin": "next", "to": 6}, {"from": 6, "pin": "next", "to": 7},
-                       {"from": 7, "pin": "then", "to": 8}, {"from": 7, "pin": "else", "to": 9}]}
-    d = m.call("visual_script", action="write", parent=part["object_id"], name="Blocky", graph=graph)
-    sid = d.get("object_id")
-    check(ok(d) and d.get("problems") == [] and d["syntax"]["ok"] and "task.spawn" in d.get("lua", ""), "write makes a block script", d)
-    d = m.call("read_script", object=sid)
-    check(d.get("source", "").startswith("--[==[blocks") and "for _ = 1, 2 do" in d["source"], "its code keeps the blocks, then the Lua", d)
-    d = m.call("visual_script", action="read", object=sid)
-    check(ok(d) and len(d["graph"]["nodes"]) == 9 and len(d["graph"]["links"]) == 8 and d["edited"] is False,
-          "read gives the same blocks back", d)
-    d = m.call("playtest", action="start")
-    time.sleep(1.5)
-    out = [l["text"] for l in m.call("get_output", run="latest", lines=400).get("lines", [])]
-    check(any("blocks-said-hi" in t for t in out) and sum("blocks-loop" in t for t in out) == 2
-          and any("blocks-after" in t for t in out) and any("blocks-lucky" in t for t in out)
-          and not any("blocks-unlucky" in t for t in out), "the blocks run in order in a playtest", out)
-    r = m.call("run_lua", code="print(workspace.BlockPart.Transparency)")
-    check(ok(r) and r["output"] and abs(float(r["output"][-1]) - 0.8) < 1e-3, "Set see-through changed the part", r)
-    m.call("playtest", action="stop")
-    d = m.call("visual_script", action="write", object=sid,
-               graph={"nodes": [n(1, "start"), n(2, "destroy", target="other")], "links": [{"from": 1, "to": 2}]})
-    check(ok(d) and d["problems"] and "When touched" in d["problems"][0] and "Destroy" not in d["lua"],
-          "\"the part that touched\" outside When touched is a problem, and is left out", d)
-    d = m.call("visual_script", action="write", object=sid, graph={"nodes": [n(1, "explode")]})
-    check(code(d) == "UNKNOWN_BLOCK", "an unknown block is refused", d)
-    every = {"nodes": [n(1, "touched"), n(2, "ifPlayer"), n(3, "points"), n(4, "damage"), n(5, "teleport"), n(6, "ifPoints"),
-                       n(7, "sound"), n(8, "color", target="other"), n(9, "ifTag"), n(10, "cooldown"), n(11, "destroy", target="other"),
-                       n(20, "joins"), n(21, "makeStat"), n(22, "print", text="Hi {player}!"),
-                       n(30, "clicked"), n(31, "clone"), n(40, "prompt"), n(41, "move", target="character"),
-                       n(50, "every"), n(51, "ifAttr"), n(52, "property", property="CanCollide", value="false"), n(53, "wait")],
-             "links": [{"from": 1, "to": 2}, {"from": 2, "pin": "then", "to": 3}, {"from": 3, "to": 4}, {"from": 4, "to": 5},
-                       {"from": 5, "to": 6}, {"from": 6, "pin": "then", "to": 7}, {"from": 2, "pin": "next", "to": 8},
-                       {"from": 8, "to": 9}, {"from": 9, "pin": "then", "to": 10}, {"from": 10, "to": 11},
-                       {"from": 20, "to": 21}, {"from": 21, "to": 22}, {"from": 30, "to": 31}, {"from": 40, "to": 41},
-                       {"from": 50, "to": 51}, {"from": 51, "pin": "then", "to": 52}, {"from": 52, "to": 53}]}
-    d = m.call("visual_script", action="write", object=sid, graph=every)
-    check(ok(d) and d["problems"] == [] and d["syntax"]["ok"], "every kind of block makes Lua with no syntax errors", d)
-    check("local function stat(" in d.get("lua", "") and "local function find(" in d["lua"] and "ClickDetector" in d["lua"]
-          and "ProximityPrompt" in d["lua"] and "PlayerAdded" in d["lua"], "the helpers and events are in the Lua", d)
-    e = m.call("edit_script", object=sid, old='"Hi "', new='"Hey "')
-    d = m.call("visual_script", action="read", object=sid)
-    check(ok(e) and ok(d) and d["edited"] is True, "a change by hand is noticed", d)
-    d = m.call("visual_script", action="read", object=s["object_id"])
-    check(code(d) == "NOT_BLOCKS", "a normal script isn't read as blocks", d)
+    print("8. Find and Change (many objects at once)")
+    ids = []
+    for i, mass_tag in enumerate([None, "Lightweight", None]):
+        d = m.call("insert_object", kind="Part", name=f"BulkCrate{i}")
+        ids.append(d["object_id"])
+        m.call("set_property", object=d["object_id"], property="Anchored", value=False)
+        if mass_tag:
+            m.call("run_lua", code=f"__gb_byId({d['object_id'][1:]}):AddTag('{mass_tag}')")
+    d = m.call("find_and_change", kind="BasePart", name_contains="bulkcrate")
+    check(ok(d) and d.get("count") == 3, "finds by kind and name (any case)", d)
+    d = m.call("find_and_change", name_contains="BulkCrate", not_tag="Lightweight",
+               change={"property": "Density", "op": "Multiply by", "value": "1.5"})
+    rows = d.get("results", [])
+    check(ok(d) and d.get("count") == 2 and all(r.get("becomes") and not r.get("error") for r in rows) and not d.get("applied"),
+          "preview skips the tagged one and shows new values", d)
+    before = m.call("get_object", object=ids[0])["properties"]["Density"]
+    check(abs(before - float(rows[0]["now"])) < 1e-3 if rows else False, "preview changed nothing", before)
+    d = m.call("find_and_change", name_contains="BulkCrate", not_tag="Lightweight",
+               change={"property": "Density", "op": "Multiply by", "value": "1.5"}, apply=True)
+    check(ok(d) and d.get("changed") == 2, "apply changes both", d)
+    after = m.call("get_object", object=ids[0])["properties"]["Density"]
+    tagged = m.call("get_object", object=ids[1])["properties"]["Density"]
+    check(abs(after - before * 1.5) < 1e-3 and abs(tagged - before) < 1e-3, "Density x1.5, the tagged one untouched", [before, after, tagged])
+    d = m.call("find_and_change", name_contains="BulkCrate", where={"property": "Density", "op": ">", "value": str(before + 0.01)})
+    check(ok(d) and d.get("count") == 2, "where Density > old value finds the two changed ones", d)
+    d = m.call("undo")
+    back = m.call("get_object", object=ids[2])["properties"]["Density"]
+    check(ok(d) and abs(back - before) < 1e-3, "one undo puts every change back", [back, before])
+    d = m.call("find_and_change", name_contains="BulkCrate", change={"property": "Color", "op": "Set to", "value": "255, 0, 0"}, apply=True)
+    col = m.call("get_object", object=ids[2])["properties"]["Color"]
+    check(ok(d) and d.get("changed") == 3 and abs(col[0] - 1) < 1e-3 and col[1] < 1e-3, "set a colour on all of them", [d, col])
+    d = m.call("find_and_change", name_contains="BulkCrate", change={"op": "Add tag", "value": "Crate"}, apply=True)
+    d2 = m.call("find_and_change", has_tag="Crate")
+    check(ok(d) and d2.get("count") == 3, "add a tag to all of them", d2)
+    d = m.call("find_and_change", name_contains="BulkCrate", change={"property": "Nope", "op": "Set to", "value": "1"})
+    check(ok(d) and all("has no Nope" in r.get("error", "") for r in d.get("results", [])), "a missing property is reported per object", d)
+    d = m.call("find_and_change", change={"property": "Density", "op": "Squish", "value": "1"})
+    check(code(d) == "INVALID_INPUT" and "Multiply by" in choices(d), "bad op lists the choices", d)
+
+    run_folder_tests(m)
+
+
+def run_folder_tests(m):
+    """Runs the tests in tools/ai_tool_tests/: one file per feature, so two pull
+    requests adding tests never change the same lines. Each file has a TITLE and a
+    run(m, t) function; t has check, ok, code and choices (the helpers above)."""
+    folder = os.path.join(ROOT, "tools", "ai_tool_tests")
+    t = types.SimpleNamespace(check=check, ok=ok, code=code, choices=choices)
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".py") or name.startswith("_"):
+            continue
+        spec = importlib.util.spec_from_file_location("ai_tool_test_" + name[:-3], os.path.join(folder, name))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        print(f"{name[:-3]}: {getattr(mod, 'TITLE', name)}")
+        mod.run(m, t)
 
 
 def main():
