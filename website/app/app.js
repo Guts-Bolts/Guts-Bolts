@@ -2792,7 +2792,7 @@ pages.staff = async () => {
     ${connectBox(ca)}
     <h2>People</h2>
     <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make partners, make staff, give Bolts and ban.'
-      : 'Staff can verify people, make them a Partner, and take those badges away.'}</p>
+      : 'Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren\'t allowed.'}</p>
     <form class="row" data-form="staffSearch"><input type="search" name="q" placeholder="Search by name or user number (#5)" value="${query}" style="max-width:320px">
       <button class="btn blue">Search</button></form>
     <div class="list">${r.ok ? r.users.map((u) => html`<div>
@@ -2803,6 +2803,7 @@ pages.staff = async () => {
           : html`<button class="btn small green" data-act="staff" data-op="grant" data-key="verified" data-id="${u.id}">Verify</button>`}
         ${u.partner ? html`<button class="btn small" data-act="staff" data-op="revoke" data-key="partner" data-id="${u.id}">Remove partner</button>`
           : html`<button class="btn small" data-act="staff" data-op="grant" data-key="partner" data-id="${u.id}" title="Give them the Partner badge (for friends of Guts&amp;Bolts, like Lyreto)">Make partner</button>`}
+        ${u.userId && (me.official || !u.staff) ? html`<button class="btn small" data-act="staff" data-op="resetName" data-id="${u.id}" data-name="${u.username || u.name}" title="For usernames that aren't allowed: it becomes User ${u.userId}">Reset username</button>` : ''}
         ${me.official ? html`
           ${u.staff ? html`<button class="btn small" data-act="staff" data-op="revoke" data-key="staff" data-id="${u.id}">Remove staff</button>`
             : html`<button class="btn small" data-act="staff" data-op="grant" data-key="staff" data-id="${u.id}">Make staff</button>`}
@@ -2816,7 +2817,7 @@ pages.staff = async () => {
 };
 
 // The staff action log: who banned, warned, verified, checked or deleted what (newest first).
-const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤', connect: '🔑' };
+const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤', connect: '🔑', rename: '✏️' };
 function staffLogBox(lg, logFor) {
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.name}</a>` : '');
   const body = !lg.ok ? html`<p class="error">${lg.error}</p>`
@@ -2842,6 +2843,7 @@ function noteLink(n) {
   if (n.kind === 'gift' || n.kind === 'auction') return '#/item/' + n.about;
   if (n.kind === 'support') return '#/support';
   if (n.kind === 'ticket') return '#/staff';
+  if (n.kind === 'rename') return '#/settings';
   return '';
 }
 pages.notifications = async () => {
@@ -3860,6 +3862,9 @@ const actions = {
         return;
       }
       r = await call('admin.ban', { to: d.id, on: false });
+    } else if (d.op === 'resetName') {   // a username that isn't allowed becomes "User <number>"
+      if (!confirm('Reset ' + d.name + '\'s username? It becomes "User" and their user number, and nobody can use "' + d.name + '" again.')) return;
+      r = await call('admin.resetName', { to: d.id });
     } else if (d.op === 'warn') {   // a warning they see next time they come (and must say they understand)
       popup(html`<h1 class="popup-title">Warn this account</h1>
         <p>What did they do? They'll see this.</p>
