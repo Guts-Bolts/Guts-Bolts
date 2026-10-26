@@ -835,7 +835,7 @@ endif()
 
 
 # Format-level regression fixtures for Roblox's binary mesh files. These
-# tests build tiny v4/v5/v6 payloads in memory, so no proprietary user assets are needed.
+# tests build tiny v1-v7 payloads in memory, including a generated Draco stream, so no proprietary user assets are needed.
 if(BUILD_TESTING)
     add_executable(RobloxMeshFormatTests tests/RobloxMeshFormatTests.cpp)
     target_link_libraries(RobloxMeshFormatTests PRIVATE gb_engine)
