@@ -4,7 +4,7 @@ Studio can now import standalone Roblox `.mesh` files directly through the Open/
 
 FileMesh v4/v5 and chunked v6/v7 now decode embedded bone tables, name offsets, subset bone maps, and per-vertex four-influence weights, then connect those weights to the engine's existing Skin deformation path. v7 Draco geometry also reads its tangent and color attributes; binary mesh tangents and RGBA vertex colors are retained through EditMesh, GPU vertex buffers, and the lit shader. Live script changes to imported MeshPart / SpecialMesh MeshId and texture-ID properties trigger cached asset resolution and visual refresh. Synthetic regression fixtures for v1.00/v1.01, v2.00, v3.00/v3.01, v4.00/v4.01, v5.00, v6.00 and v7.00 are registered with CTest; the v7 fixture builds a Draco bitstream at test time.
 
-This is still partial coverage, not a claim that every Roblox mesh feature works. Facial animation (FACS) payloads, a synthetic Draco v7 fixture and broader real-world Roblox asset fixtures, and successful native Studio/Player build validation remain outstanding.
+This is still partial coverage, not a claim that every Roblox mesh feature works. Facial animation (FACS) payloads, broader real-world Roblox asset fixtures, and successful native Studio/Player build validation remain outstanding.
 
 # The Floor Is Now A Crime Scene (October 25, 2026)
 
