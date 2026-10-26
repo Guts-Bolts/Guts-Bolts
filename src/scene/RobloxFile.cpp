@@ -1024,6 +1024,10 @@ struct Converter {
             if (const Value* v = in.get("Color3uint8")) node->color = v->v;
             else if (const Value* v2 = in.get("Color")) node->color = v2->v;
             node->transparency = (float)in.num("Transparency", 0.0);
+            if (look.special) {
+                Attribute baseColor; baseColor.name = "RobloxBaseColor"; baseColor.type = Attribute::Color3; baseColor.v = node->color;
+                node->attributes.push_back(baseColor);
+            }
             node->anchored = in.flag("Anchored", false);
             node->canCollide = in.flag("CanCollide", true);
             // Its collision group: by name (newer files) or by number (older ones).
