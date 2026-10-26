@@ -2138,6 +2138,7 @@
   "Reset Camera": "Réinitialiser la caméra",
   "Reset part": "Réinitialiser la pièce",
   "Reset to High": "Revenir à Élevé",
+  "Reset username": "Réinitialiser le pseudo",
   "Reshape it in Modeling mode (Tab goes back)": "Remodèle-la en mode Modélisation (Tab pour revenir)",
   "Reshape the selected part's mesh (corners, edges, faces)": "Modifie le maillage de la pièce sélectionnée (coins, arêtes, faces)",
   "Rest Pose": "Pose de repos",
@@ -2474,6 +2475,7 @@
   "Staff Tools": "Outils du staff",
   "Staff action log": "Journal des actions du staff",
   "Staff can verify people, make them a Partner, and take those badges away.": "Le staff peut vérifier des gens, en faire des Partenaires, et retirer ces badges.",
+  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "Le staff peut vérifier des gens, les rendre Partenaires, retirer ces badges et réinitialiser les pseudos qui ne sont pas autorisés.",
   "Staff can't watch everything, and we aren't responsible for what other players say, make or do. If something is dangerous, report it, and contact the police if someone is in danger.": "Le staff ne peut pas tout surveiller, et nous ne sommes pas responsables de ce que disent, font ou créent les autres joueurs. Si quelque chose est dangereux, signale-le, et contacte la police si quelqu'un est en danger.",
   "Staff may undo a trade or sale that came from a scam, a hacked account or a bug, but don't have to.": "Le staff peut annuler un échange ou une vente issus d'une arnaque, d'un compte piraté ou d'un bug, mais n'y est pas obligé.",
   "Staff sent a reset code for": "Le staff a envoyé un code de réinitialisation pour",
@@ -3315,8 +3317,6 @@
   "🎁 Buy as a gift": "🎁 Acheter en cadeau",
   "🎁 Gift box:": "🎁 Boîte cadeau :",
   "🔨 Auction:": "🔨 Enchère :",
-  "🤝 Partner": "🤝 Partenaire",
-  "Reset username": "Réinitialiser le pseudo",
-  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "Le staff peut vérifier des gens, les rendre Partenaires, retirer ces badges et réinitialiser les pseudos qui ne sont pas autorisés."
+  "🤝 Partner": "🤝 Partenaire"
  }
 }

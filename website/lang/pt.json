@@ -2138,6 +2138,7 @@
   "Reset Camera": "Redefinir câmera",
   "Reset part": "Redefinir parte",
   "Reset to High": "Voltar para Alto",
+  "Reset username": "Redefinir nome de usuário",
   "Reshape it in Modeling mode (Tab goes back)": "Remodele no modo Modelagem (Tab volta)",
   "Reshape the selected part's mesh (corners, edges, faces)": "Remodele a malha da parte selecionada (cantos, arestas, faces)",
   "Rest Pose": "Pose de descanso",
@@ -2474,6 +2475,7 @@
   "Staff Tools": "Ferramentas da equipe",
   "Staff action log": "Registro de ações da equipe",
   "Staff can verify people, make them a Partner, and take those badges away.": "A equipe pode verificar pessoas, torná-las Parceiras e tirar esses emblemas.",
+  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "A equipe pode verificar pessoas, torná-las Parceiras, tirar essas insígnias e redefinir nomes de usuário que não são permitidos.",
   "Staff can't watch everything, and we aren't responsible for what other players say, make or do. If something is dangerous, report it, and contact the police if someone is in danger.": "A equipe não consegue ver tudo, e não somos responsáveis pelo que outros jogadores dizem, fazem ou criam. Se algo for perigoso, denuncie, e chame a polícia se alguém estiver em perigo.",
   "Staff may undo a trade or sale that came from a scam, a hacked account or a bug, but don't have to.": "A equipe pode desfazer uma troca ou venda que veio de golpe, conta hackeada ou bug, mas não é obrigada.",
   "Staff sent a reset code for": "A equipe enviou um código de redefinição para",
@@ -3315,8 +3317,6 @@
   "🎁 Buy as a gift": "🎁 Comprar como presente",
   "🎁 Gift box:": "🎁 Caixa de presente:",
   "🔨 Auction:": "🔨 Leilão:",
-  "🤝 Partner": "🤝 Parceiro",
-  "Reset username": "Redefinir nome de usuário",
-  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "A equipe pode verificar pessoas, torná-las Parceiras, tirar essas insígnias e redefinir nomes de usuário que não são permitidos."
+  "🤝 Partner": "🤝 Parceiro"
  }
 }
