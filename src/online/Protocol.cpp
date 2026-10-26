@@ -163,6 +163,7 @@ const char* kindTitle(const std::string& k) {
     if (k == "animpack") return "Animation Pack";
     if (k == "gamepass") return "Game Pass";
     if (k == "bundle") return "Bundle";
+    if (k == "bodypart") return "Body Part";
     return "?";
 }
 
