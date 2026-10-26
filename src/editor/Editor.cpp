@@ -71,6 +71,9 @@ print("Hello from " .. game.Players.LocalPlayer.Name)
 Editor::Editor(GLFWwindow* window, Scene* scene)
     : m_window(window), m_scene(scene) {
     m_session  = std::make_unique<GameSession>(scene);
+    m_showAiActivity = std::getenv("GB_TEST_AIACTIVITY") != nullptr;   // (tests: start with it showing)
+    m_session->scripts().setHistory(true);   // (Script History records this one's scripts)
+    m_showScriptHistory = std::getenv("GB_TEST_SCRIPTHISTORY") != nullptr;   // (tests: start with it showing)
     m_viewport = std::make_unique<ViewportPanel>(window, scene, &m_state);
     auto open  = [this](SceneNode* n) { openScript(n); };
     m_outliner = std::make_unique<OutlinerPanel>(scene, open, [this](SceneNode* n) { addScript(n); });
@@ -257,6 +260,8 @@ void Editor::render(float dt) {
     renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
+    renderAiActivity();
+    renderScriptHistory();
 
     trackChanges();
     updateTitle();
@@ -2572,10 +2577,13 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
+        if (ImGui::MenuItem("AI Activity", nullptr, &m_showAiActivity)) {}
+        if (ImGui::MenuItem("Script History", nullptr, &m_showScriptHistory)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;
         if (ImGui::MenuItem("Collision Groups", nullptr, m_showCollisionGroups)) m_showCollisionGroups = !m_showCollisionGroups;
+        if (ImGui::MenuItem("Physics View", nullptr, m_state.showPhysics)) m_state.showPhysics = !m_state.showPhysics;
         ImGui::EndMenu();
     }
 

@@ -95,6 +95,8 @@ private:
     void handleInput(float dt);
     void drawGizmo(const glm::mat4& view, const glm::mat4& proj,
                    const glm::vec2& imgMin, const glm::vec2& imgSize);
+    void drawPhysicsView(const glm::mat4& view, const glm::mat4& proj,
+                         const glm::vec2& imgMin, const glm::vec2& imgSize, bool running);
     void drawSelectionBoxes(const glm::mat4& view, const glm::mat4& proj,
                             const glm::vec2& imgMin, const glm::vec2& imgSize);
     // Roblox-style handles on each of the 6 sides. Scale: orbs, drag one to move just that side.

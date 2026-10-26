@@ -420,6 +420,8 @@ struct Joint {
     glm::quat      qa{1, 0, 0, 0}, qb{1, 0, 0, 0};   // each attachment's turn in its body's own space
     float          length = 0.0f;
     float          accMotor = 0.0f;
+    glm::vec3      imp{0.0f};               // impulse it has given this substep (for BreakForce)
+    float          peak = 0.0f;             // the hardest it was pulled this step (force)
     // Ball socket / prismatic / cylindrical: the impulse each limit or actuator row
     // has added up this substep (so limits only push, and actuators stay under
     // their force), and how fast a limit row bounces back (Restitution).
@@ -751,6 +753,8 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     std::vector<Body> bodies;
     std::unordered_map<uint64_t, int> index;
     std::vector<SceneNode*> constraintNodes, moverNodes;
+    struct Zone { SceneNode* node; OBB box; };
+    std::vector<Zone> zones;
     std::vector<SceneNode*> stack{scene.root()};
     while (!stack.empty()) {
         SceneNode* n = stack.back();
@@ -762,6 +766,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         if (scene.isCharacterPart(n)) continue;
         for (auto& c : n->children) stack.push_back(c.get());
         if (!n->isPart() || n->internal) continue;
+        if (n->isForceZone() && n->enabled) zones.push_back({n, Physics::worldOBB(n)});
         bool dynamic = !n->anchored && !hasDynamicAncestorPart(n);
         if (!dynamic && !n->canCollide) {
             // Only matters as an anchor for constraints.
@@ -936,6 +941,13 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                 b.v.y -= g * h;
                 b.w *= std::max(0.0f, 1.0f - 0.05f * h);        // a little rolling resistance
             }
+        // Force zones: wind, push and pull on whatever loose part is inside one.
+        for (const Zone& z : zones)
+            for (auto& b : bodies) {
+                if (!b.dynamic || !inside(z.box, b.pos, 0.0f)) continue;
+                if (!b.awake) { b.awake = true; b.node->sleepTime = 0.0f; }
+                b.v += Physics::zonePush(z.node, z.box, b.pos) * h;
+            }
         for (const ActiveMover& am : movers)
             if (group[am.body] >= 0) applyMover(am, bodies, assemblies[group[am.body]], h);
         for (auto& j : joints) {
@@ -951,6 +963,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             glm::vec3 imp = dir * f * h;
             applyImpulse(A, ra, imp);
             applyImpulse(B, rb, -imp);
+            j.imp += imp;
         }
 
         // ---- 4. Contacts ----------------------------------------------------------
@@ -1083,6 +1096,14 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
 
             for (auto& j : joints) {
                 Body &A = bodies[j.a], &B = bodies[j.b];
+                // How much this joint pushes B (or A) this pass, whichever way it leaves the loop below.
+                struct Measure {
+                    Joint& j; const Body &A, &B; glm::vec3 va, vb;
+                    ~Measure() {
+                        if (B.dynamic) j.imp += (B.v - vb) / B.invMass;
+                        else if (A.dynamic) j.imp -= (A.v - va) / A.invMass;
+                    }
+                } measure{j, A, B, A.v, B.v};
                 glm::vec3 ra = A.rot * j.la, rb = B.rot * j.lb;
                 glm::vec3 pa = A.pos + ra, pb = B.pos + rb;
                 const float beta = 0.2f / h;
@@ -1166,6 +1187,13 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         for (auto& j : joints) {
             j.accMotor = 0.0f;
             for (float& a : j.acc) a = 0.0f;
+            j.peak = std::max(j.peak, glm::length(j.imp) / h);
+            j.imp = glm::vec3(0.0f);
+        }
+        if (Physics::debugOn() && step == substeps - 1) {
+            auto& dbg = Physics::debugView().contacts;
+            dbg.clear();
+            for (const auto& c : contacts) if (dbg.size() < 4000) dbg.push_back({c.p, c.n});
         }
         m_contactMemory.clear();
         for (const auto& c : contacts)
@@ -1237,6 +1265,28 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         }
     }
 
+    // Breakable joints: pulled harder than BreakForce, they snap (and switch themselves off).
+    for (const Joint& j : joints) {
+        j.node->jointForce = j.peak;
+        if (j.node->breakForce > 0.0f && j.peak > j.node->breakForce) {
+            j.node->enabled = false;
+            j.node->broken = true;
+            bodies[j.a].node->sleepTime = 0.0f;
+            bodies[j.b].node->sleepTime = 0.0f;
+        }
+    }
+    if (Physics::debugOn()) {
+        Physics::DebugView& dbg = Physics::debugView();
+        dbg.joints.clear();
+        for (const Joint& j : joints) {
+            const Body &A = bodies[j.a], &B = bodies[j.b];
+            // (a weld's two anchors are the same point: draw it from part to part instead)
+            if (j.type == ConstraintType::Weld) dbg.joints.push_back({A.pos, B.pos, j.peak, j.node->breakForce});
+            else dbg.joints.push_back({A.pos + A.rot * j.la, B.pos + B.rot * j.lb, j.peak, j.node->breakForce});
+        }
+        ++dbg.steps;
+    }
+
     // Where sliders and spinners are now (CurrentPosition / CurrentAngle).
     for (const Joint& j : joints) {
         if (!jointSlides(j.type)) continue;
@@ -1261,3 +1311,32 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
 }
 
 void Physics::wake(SceneNode* n) { if (n) n->sleepTime = 0.0f; }
+
+bool& Physics::debugOn() {
+    static bool on = false;
+    return on;
+}
+
+Physics::DebugView& Physics::debugView() {
+    static DebugView view;
+    return view;
+}
+
+glm::vec3 Physics::zonePush(const SceneNode* zone, const OBB& box, const glm::vec3& p) {
+    std::string mode = "Wind";
+    float strength = 250.0f;
+    glm::vec3 dir(0.0f, 1.0f, 0.0f);
+    for (const Attribute& a : zone->attributes) {
+        if (a.name == "Mode" && a.type == Attribute::String) mode = a.s;
+        else if (a.name == "Strength" && a.type == Attribute::Number) strength = (float)a.n;
+        else if (a.name == "Direction" && a.type == Attribute::Vector3 && glm::length(a.v) > 1e-4f) dir = glm::normalize(a.v);
+    }
+    if (mode == "Push" || mode == "Pull") {
+        glm::vec3 out = p - box.center;
+        const float len = glm::length(out);
+        if (len < 1e-3f) return glm::vec3(0.0f);
+        return out / len * (mode == "Push" ? strength : -strength);
+    }
+    // Wind: Direction is in the zone's own space, so turning the zone turns the wind.
+    return glm::normalize(box.axis[0] * dir.x + box.axis[1] * dir.y + box.axis[2] * dir.z) * strength;
+}

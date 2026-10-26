@@ -334,6 +334,22 @@ const std::vector<Tool>& tools() {
           "playtest start -> get_output / get_errors / screenshot / get_object (runtime) -> playtest stop -> fix -> repeat.",
           "\"Play the game and tell me if the door works.\""},
          schema({{"action", {{"type", "string"}, {"enum", {"start", "simulate", "stop", "pause", "resume", "step"}}}}}, {"action"})},
+        {"script_history", "See what scripts changed during a playtest", "DEBUG", false, false, false, Risk::None,
+         {"Studio's Script History: while it records, playtests write down every property a script sets (the object, "
+          "the value before and after, which script and which line did it) and every event that ran a script's function "
+          "(Touched, Clicked, PlayerAdded... not Heartbeat). It keeps the newest 5000 entries, also after the playtest stops.",
+          "\"Why did the door turn red?\", \"what changed my part?\", \"which script keeps moving this?\", \"did Touched fire?\".",
+          "For printed text use get_output; for errors use get_errors.",
+          "action: record (start recording), stop (stop recording), clear, read (default). read filters: object (only "
+          "entries about it), script (name or path contains), kind (set | event), limit (newest first, default 50, max 500).",
+          "{recording, total, entries: [{time, kind, object_id, object, script_id, script, line, what, before, after}]}.",
+          "None.",
+          "record / stop / clear only change the recording, never the game.",
+          "script_history record -> playtest start -> (wait) -> script_history read -> read_script / edit_script.",
+          "\"Something keeps making the lamp invisible: find out which script.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"read", "record", "stop", "clear"}}}}, {"object", kObject},
+                 {"script", {{"type", "string"}}}, {"kind", {{"type", "string"}, {"enum", {"set", "event"}}}},
+                 {"limit", {{"type", "integer"}}}}, {})},
         {"multiplayer_test", "Test with several players", "RUNTIME", false, false, false, Risk::Medium,
          {"Studio's \"Test with N players\": starts the game (as it is now in Studio, saved or not) on a local test "
           "server on this computer and opens N Player windows that join it as Player1, Player2... Server Scripts run "
@@ -537,6 +553,23 @@ const std::vector<Tool>& tools() {
          schema({{"moving_limit", {{"type", "integer"}, {"minimum", 0}, {"maximum", 200}}}}, {})},
 
         // -------------------------------------------------------------- HISTORY
+        {"ai_activity", "See everything you changed", "HISTORY", false, false, false, Risk::Medium,
+         {"Studio's AI Activity report: every object added, removed or changed (and which properties, and how many lines "
+          "of code) since the person last pressed Keep or Undo all, plus a log of every tool call made by an AI. The "
+          "person sees the same report in Studio and can undo all of it in one click.",
+          "Before you say you're done: read the report and make sure it's only what the person asked for. "
+          "undo_all if you made a mess and want to start again from before your changes.",
+          "For one step back use undo. For a save point you choose use checkpoint.",
+          "action: report (default), log (the last calls, newest first; limit default 30), keep (the person is happy: "
+          "start a new report), undo_all (put the game back how it was before your first change; undo brings it back).",
+          "report: {pending, added: [{object_id, name, class, path}], removed: [...], changed: [{..., properties, "
+          "lines_added?, lines_removed?}], settings}. log: {entries: [{time, source, tool, args, result, added, removed, changed}]}.",
+          "undo_all: not playtesting.",
+          "report / log: nothing changes. keep: only the report starts over. undo_all: the game goes back to before the AI's changes.",
+          "(build) -> validate_scene -> ai_activity -> tell the person what changed.",
+          "\"What did you change?\" \"Undo everything you did.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"report", "log", "keep", "undo_all"}}}},
+                 {"limit", {{"type", "integer"}}}}, {})},
         {"checkpoint", "Save or restore a save point", "HISTORY", false, true, false, Risk::Medium,
          {"Named save points of the whole game, for trying things safely (like a transaction): save one, experiment, "
           "then keep the result or restore the save point. Restoring is itself undoable.",
@@ -622,6 +655,8 @@ json workflowOf(const std::string& name) {
         {"playtest", {{"validate_scene"}, {"get_errors", "get_output", "get_object", "screenshot"}}},
         {"multiplayer_test", {{"create_script", "playtest"}, {"multiplayer_test", "get_errors", "edit_script"}}},
         {"get_output", {{"playtest", "run_lua"}, {}}},
+        {"ai_activity", {{"validate_scene"}, {"undo"}}},
+        {"script_history", {{"playtest"}, {"read_script", "edit_script"}}},
         {"get_errors", {{"playtest"}, {"read_script", "edit_script"}}},
         {"diagnose_object", {{"find_objects"}, {"set_property", "edit_script"}}},
         {"validate_scene", {{}, {"diagnose_object", "playtest"}}},
@@ -705,6 +740,11 @@ When a tool fails, read error.code / message / suggested_action, fix the cause (
 - Each tool says its RISK. delete_object is HIGH: only delete what the person clearly asked to delete. Never delete things because they look unused or oddly named.
 - If a destructive request is ambiguous ("remove the trees" when there are 40 trees and some are in a model), ask or list what you'd remove first.
 - Everything can be undone with undo (outside playtests). Publishing can't: publish_game only when the person asks, with confirm: true.
+- Studio can be set to ask the person before delete_object or checkpoint restore / delete. Then the call fails with NEEDS_PERSON_OK: tell the person to press Allow in Studio's AI Activity window, wait until they say they did, then make exactly the same call again. NOT_ALLOWED means they said no: don't find another way to do it.
+- Studio shows the person a report of everything you changed (AI Activity), and they can undo all of it in one click.
+
+## Before you say "done"
+Check your work: validate_scene, a playtest if scripts or physics are involved (then get_errors run "latest"), and ai_activity to see the full list of what you changed. Make sure it's only what the person asked for, then tell them what changed.
 
 ## Don't invent capabilities
 A request mentioning something doesn't mean Guts and Bolts has it. Only use the tools you were given and the engine API that exists. Don't make up tools, classes, properties, paths or features. If no tool can do something, say the current tools can't do it.
@@ -787,10 +827,11 @@ Guts and Bolts is Roblox-style: there is no separate component system. What an o
 - Mesh renderer -> the Part itself: its shape (Part = box, Sphere, Cylinder, MeshPart = a mesh made in Studio's Modeling mode), Color, Material, Transparency. Materials: Plastic, SmoothPlastic, Metal, DiamondPlate, Foil, Neon (glows), Wood, Glass, Ice, Concrete, Brick, Cobblestone, Slate, Granite, Marble, Sand, Grass, Fabric; each has its own look and its own default weight, grip and bounce (Ice is slippery, Brick grippy, Metal heavy). Enum.Material.Brick and "Brick" both work.
 - Collider -> the same Part: CanCollide on/off. Collision uses the part's own shape (boxes, also rotated; spheres; cylinders). There's no separate collider object.
 - Rigidbody -> Anchored = false makes a part simulated (gravity, collisions, forces). Mass comes from Size x Density (Material sets the default; the Density, Friction and Elasticity properties override it).
-- Joints -> Constraint objects between two Attachments (a Weld joins two Parts): RopeConstraint, RodConstraint, SpringConstraint, WeldConstraint, HingeConstraint (optional motor: ActuatorType Motor, AngularVelocity, MotorMaxTorque), and:
+- Joints -> Constraint objects between two Attachments (a Weld joins two Parts): RopeConstraint, RodConstraint, SpringConstraint, WeldConstraint, HingeConstraint (optional motor: ActuatorType Motor, AngularVelocity, MotorMaxTorque). Any of them can snap: BreakForce (0 = never) is how hard a pull breaks it; when it breaks it turns Enabled off and Broken reads true (a 1x1x1 part hanging still pulls about 130; a heavy impact pulls thousands). Setting Enabled true joins it again. Also:
   - BallSocketConstraint: the attachments stay together and turn any way (ragdoll joints, chains). LimitsEnabled + UpperAngle (degrees) keeps Attachment1's X axis within a cone around Attachment0's; TwistLimitsEnabled + TwistLowerAngle / TwistUpperAngle limit twisting; Restitution 0-1 bounces off the limits.
   - PrismaticConstraint: a slider. Attachment1 slides along Attachment0's X axis (rotate the attachments to aim it) and can't turn. LimitsEnabled + LowerLimit / UpperLimit (studs). ActuatorType "Motor" (Velocity studs/s, MotorMaxForce) or "Servo" (TargetPosition studs, Speed, ServoMaxForce). Read CurrentPosition. Forces default to 0, so set MotorMaxForce / ServoMaxForce (e.g. 5000) or nothing moves.
   - CylindricalConstraint: slides like a prismatic AND spins around the axis. Same slide properties, plus AngularActuatorType "Motor" (AngularVelocity rad/s, MotorMaxTorque) or "Servo" (TargetAngle degrees, AngularSpeed rad/s, ServoMaxTorque), AngularLimitsEnabled + LowerAngle / UpperAngle, InclinationAngle (tilts the spin axis from X towards Y). Read CurrentAngle.
+- Force zones -> a Part (usually Anchored, CanCollide false, see-through) with the tag "ForceZone" pushes loose parts inside it. Attributes: Mode "Wind" (push along Direction, a Vector3 in the zone's own space, default up), "Push" (away from the middle) or "Pull" (towards it); Strength in studs/s^2 (default 250; gravity is about 196). Characters aren't pushed.
 - Forces -> Mover objects inside a part (BodyVelocity, BodyPosition, BodyGyro, BodyForce, BodyThrust, BodyAngularVelocity, LinearVelocity, AngularVelocity, AlignPosition, AlignOrientation, VectorForce, Torque) or script calls (part:ApplyImpulse, part:ApplyAngularImpulse, part.AssemblyLinearVelocity).
 - Character controller -> a character Model (HumanoidRootPart, Torso, Head...) with a Humanoid: the player's character, a Rig, or the ready-made "Zombie". Scripts drive it through humanoid (MoveTo, PathfindTo, Health, WalkSpeed, Jump).
 - Navigation agent -> any Humanoid character + PathfindingService (CreatePath, ComputeAsync, GetWaypoints) or humanoid:PathfindTo(target), which walks the whole way by itself.

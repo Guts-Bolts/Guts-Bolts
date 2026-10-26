@@ -110,7 +110,7 @@ std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& any
         if (method == "tools/call") {
             std::string name = params.value("name", "");
             json args = params.value("arguments", json::object());
-            AiToolResult r = editor.runAiTool(name, args.is_object() ? args : json::object());
+            AiToolResult r = editor.runAiToolFrom("AI app", name, args.is_object() ? args : json::object());
             ++m_calls;
             m_lastTool = name;
             json content = json::array({{{"type", "text"}, {"text", r.text}}});

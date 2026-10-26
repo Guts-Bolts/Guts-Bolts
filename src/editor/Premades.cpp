@@ -656,6 +656,8 @@ const std::vector<PremadeInfo>& premadeList() {
         {Premade::MotorCart,            "Motor Cart",      "Hop on and drive with the arrow keys"},
         {Premade::DominoRun,            "Domino Run",      "Knock the first one over..."},
         {Premade::CratePyramid,         "Crate Pyramid",   "A stack of loose crates to knock down"},
+        {Premade::WindZone,             "Wind Zone",       "Blows loose parts upwards (change Mode, Strength and Direction in its Attributes)"},
+        {Premade::BreakableBridge,      "Breakable Bridge","Planks held by welds that snap when a heavy ball lands on them"},
         {Premade::Trampoline,           "Trampoline",      "Super bouncy - throws players and parts up"},
         {Premade::Zombie,               "Zombie",          "Chases the nearest player and bites (finds its way around walls)"},
         {Premade::Landmine,             "Landmine",        "Explodes when stepped on"},
@@ -832,6 +834,44 @@ SceneNode* buildPremade(Scene& scene, Premade kind, const glm::vec3& at) {
                 d->transform.rotation = {i == 0 ? -14.0f : 0.0f, -glm::degrees(ang), 0.0f};
                 scene.reparent(d, n);
             }
+            break;
+        }
+        case Premade::WindZone: {
+            // A see-through box: loose parts inside get pushed (Physics::zonePush).
+            n = addPart(scene, "WindZone", Cube, at + glm::vec3(0, 6, 0), {8, 12, 8}, {0.65f, 0.4f, 1.0f});
+            n->transparency = 0.85f;
+            n->canCollide = false;
+            n->castShadow = false;
+            n->tags.push_back("ForceZone");
+            Attribute mode;     mode.name = "Mode";          mode.type = Attribute::String;  mode.s = "Wind";
+            Attribute strength; strength.name = "Strength";  strength.type = Attribute::Number; strength.n = 260.0;
+            Attribute dir;      dir.name = "Direction";      dir.type = Attribute::Vector3;  dir.v = {0, 1, 0};
+            n->attributes = {mode, strength, dir};
+            break;
+        }
+        case Premade::BreakableBridge: {
+            n = scene.insert(std::make_unique<SceneNode>("BreakableBridge", NodeKind::Model));
+            const glm::vec3 wood{0.62f, 0.42f, 0.22f};
+            const int planks = 8;
+            const float w = 1.5f, span = planks * w;
+            SceneNode* left  = addPart(scene, "PostL", Cube, at + glm::vec3(-span * 0.5f - 1.0f, 2.5f, 0), {2, 5, 4}, {0.5f, 0.5f, 0.52f}, Material::Concrete);
+            SceneNode* right = addPart(scene, "PostR", Cube, at + glm::vec3(span * 0.5f + 1.0f, 2.5f, 0), {2, 5, 4}, {0.5f, 0.5f, 0.52f}, Material::Concrete);
+            scene.reparent(left, n); scene.reparent(right, n);
+            SceneNode* prev = left;
+            for (int i = 0; i < planks; ++i) {
+                SceneNode* p = addPart(scene, "Plank", Cube, at + glm::vec3(-span * 0.5f + w * (i + 0.5f), 4.75f, 0), {w - 0.05f, 0.5f, 3.6f}, wood, Material::Wood);
+                p->anchored = false;
+                scene.reparent(p, n);
+                SceneNode* weld = makeConstraint(scene, ConstraintType::Weld, prev, {}, p, {}, {1, 0, 0}, false);
+                weld->breakForce = 9000.0f;
+                prev = p;
+            }
+            makeConstraint(scene, ConstraintType::Weld, prev, {}, right, {}, {1, 0, 0}, false)->breakForce = 9000.0f;
+            // A heavy ball that drops on the middle when the game starts.
+            SceneNode* ball = addPart(scene, "HeavyBall", PrimitiveType::Sphere, at + glm::vec3(0, 14, 0), {2.5f, 2.5f, 2.5f}, {0.25f, 0.25f, 0.28f}, Material::Metal);
+            ball->anchored = false;
+            ball->density = 12.0f;
+            scene.reparent(ball, n);
             break;
         }
         case Premade::CratePyramid: {
