@@ -180,7 +180,17 @@ function pieces(model, av, items) {
     if (bodyBundle && key) continue;
     if (key) out.push({ mesh: part, color: col[key], face: name === 'Head', torso: name === 'Torso', cloth: clothFor[key] || 0 });
   }
-  if (bodyBundle && bodyModel && bodyModel.pieces) out.push(...bodyModel.pieces);
+  if (bodyBundle && bodyModel && bodyModel.pieces) {
+    for (const p of bodyModel.pieces) {
+      const key = PART_OF[p.bodyPart];
+      out.push(Object.assign({}, p, {
+        color: key ? col[key] : p.color,
+        face: p.bodyPart === 'Head',
+        torso: p.bodyPart === 'Torso',
+        cloth: key ? clothFor[key] || 0 : 0,
+      }));
+    }
+  }
   // The face is a flat picture painted onto the front of the head (see FS / faceTexture).
   const head = model.Head;
   const hc = head ? head.min.map((m, i) => (m + head.max[i]) / 2) : [0, 2.325, 0];
@@ -307,6 +317,23 @@ function accessoryPieces(acc) {
   const I = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   if (acc && acc.format === 'gbaccessory' && acc.node) walk(acc.node, I);
   else if (acc && Array.isArray(acc.nodes)) for (const n of acc.nodes) walk(n, I);   // gear: the tool's parts
+  else if (acc && acc.format === 'gbbundle' && acc.body && typeof acc.body === 'object') {
+    // Body bundles store each replacement part as indexed mesh data plus its transform,
+    // not as the gbaccessory node tree. Expand those meshes into the same world-space
+    // triangles used by the avatar renderer.
+    for (const [name, part] of Object.entries(acc.body)) {
+      if (!part || !Array.isArray(part.v) || !Array.isArray(part.f)) continue;
+      const shape = meshShape(part), pos = [], nrm = [];
+      const at = part.pos || [0, 0, 0], size = part.size || [1, 1, 1];
+      for (let i = 0; i < shape.pos.length; i += 3) {
+        pos.push(at[0] + shape.pos[i] * size[0], at[1] + shape.pos[i + 1] * size[1], at[2] + shape.pos[i + 2] * size[2]);
+        const nx = shape.nrm[i] / (size[0] || 1), ny = shape.nrm[i + 1] / (size[1] || 1), nz = shape.nrm[i + 2] / (size[2] || 1);
+        const l = Math.hypot(nx, ny, nz) || 1;
+        nrm.push(nx / l, ny / l, nz / l);
+      }
+      out.push({ mesh: { pos, nrm, uv: shape.uv }, color: [0.8, 0.81, 0.83], bodyPart: name });
+    }
+  }
   return out;
 }
 function loadAccessory(id) {
