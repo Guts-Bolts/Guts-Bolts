@@ -1,4 +1,8 @@
 #include "scene/RobloxMesh.h"
+#include <draco/attributes/geometry_attribute.h>
+#include <draco/compression/encode.h>
+#include <draco/core/encoder_buffer.h>
+#include <draco/mesh/mesh.h>
 
 #include <array>
 #include <bit>
@@ -66,6 +70,72 @@ void chunk(std::string& out, const char* name, const std::string& payload) {
     out += payload;
 }
 
+std::string skinPayload() {
+    std::string skin;
+    u32(skin, 3);
+    for (int i = 0; i < 3; ++i) {
+        u8(skin, 0); u8(skin, 0); u8(skin, 0); u8(skin, 0);
+        u8(skin, 255); u8(skin, 0); u8(skin, 0); u8(skin, 0);
+    }
+    u32(skin, 1);
+    u32(skin, 0); u16(skin, 0xffff); u16(skin, 0xffff); f32(skin, 0);
+    for (float v : std::array<float, 9>{1,0,0, 0,1,0, 0,0,1}) f32(skin, v);
+    f32(skin, 0); f32(skin, 0); f32(skin, 0);
+    u32(skin, 5); skin += std::string("Root\\0", 5);
+    u32(skin, 1);
+    u32(skin, 0); u32(skin, 1); u32(skin, 0); u32(skin, 3); u32(skin, 1);
+    for (int i = 0; i < 26; ++i) u16(skin, 0);
+    return skin;
+}
+
+std::string dracoCorePayload() {
+    draco::Mesh mesh;
+    mesh.set_num_points(3);
+    mesh.SetNumFaces(1);
+    auto addAttribute = [&](draco::GeometryAttribute::Type type, int components,
+                            draco::DataType dataType, bool normalized, int stride) {
+        draco::GeometryAttribute attr;
+        attr.Init(type, nullptr, (int8_t)components, dataType, normalized, stride, 0);
+        return mesh.AddAttribute(attr, true, 3);
+    };
+    const int posId = addAttribute(draco::GeometryAttribute::POSITION, 3, draco::DT_FLOAT32, false, 12);
+    const int normalId = addAttribute(draco::GeometryAttribute::NORMAL, 3, draco::DT_FLOAT32, false, 12);
+    const int uvId = addAttribute(draco::GeometryAttribute::TEX_COORD, 2, draco::DT_FLOAT32, false, 8);
+    const int tangentId = addAttribute(draco::GeometryAttribute::GENERIC, 4, draco::DT_UINT8, false, 4);
+    const int colorId = addAttribute(draco::GeometryAttribute::COLOR, 4, draco::DT_UINT8, true, 4);
+    const std::array<std::array<float, 3>, 3> positions{{{{-1,0,0}},{{1,0,0}},{{0,1,0}}}};
+    const std::array<float, 3> normal{0,0,1};
+    const std::array<std::array<float, 2>, 3> uv{{{{0,0}},{{1,0}},{{0.5f,1}}}};
+    const std::array<uint8_t, 4> tangent{127,0,0,127}, color{255,128,64,255};
+    for (int i = 0; i < 3; ++i) {
+        mesh.attribute(posId)->SetAttributeValue(draco::AttributeValueIndex(i), positions[i].data());
+        mesh.attribute(normalId)->SetAttributeValue(draco::AttributeValueIndex(i), normal.data());
+        mesh.attribute(uvId)->SetAttributeValue(draco::AttributeValueIndex(i), uv[i].data());
+        mesh.attribute(tangentId)->SetAttributeValue(draco::AttributeValueIndex(i), tangent.data());
+        mesh.attribute(colorId)->SetAttributeValue(draco::AttributeValueIndex(i), color.data());
+    }
+    draco::Mesh::Face face;
+    face[0] = draco::PointIndex(0); face[1] = draco::PointIndex(1); face[2] = draco::PointIndex(2);
+    mesh.SetFace(draco::FaceIndex(0), face);
+    draco::Encoder encoder;
+    draco::EncoderBuffer buffer;
+    const draco::Status status = encoder.EncodeMeshToBuffer(mesh, &buffer);
+    if (!status.ok()) return {};
+    std::string payload;
+    u32(payload, (uint32_t)buffer.size());
+    payload.append(buffer.data(), buffer.size());
+    return payload;
+}
+
+std::string chunkedV7Fixture() {
+    std::string out = "version 7.00\\n";
+    const std::string core = dracoCorePayload();
+    if (core.empty()) return {};
+    chunk(out, "COREMESH", core);
+    chunk(out, "SKINNING", skinPayload());
+    return out;
+}
+
 std::string chunkedV6Fixture() {
     std::string out = "version 6.00\n";
     std::string core;
@@ -83,22 +153,28 @@ std::string chunkedV6Fixture() {
     u32(core, 1); u32(core, 0); u32(core, 1); u32(core, 2);
     chunk(out, "COREMESH", core);
 
-    std::string skin;
-    u32(skin, 3);
-    for (int i = 0; i < 3; ++i) {
-        u8(skin, 0); u8(skin, 0); u8(skin, 0); u8(skin, 0);
-        u8(skin, 255); u8(skin, 0); u8(skin, 0); u8(skin, 0);
-    }
-    u32(skin, 1);
-    u32(skin, 0); u16(skin, 0xffff); u16(skin, 0xffff); f32(skin, 0);
-    for (float v : std::array<float, 9>{1,0,0, 0,1,0, 0,0,1}) f32(skin, v);
-    f32(skin, 0); f32(skin, 0); f32(skin, 0);
-    u32(skin, 5); skin += std::string("Root\0", 5);
-    u32(skin, 1);
-    u32(skin, 0); u32(skin, 1); u32(skin, 0); u32(skin, 3); u32(skin, 1);
-    for (int i = 0; i < 26; ++i) u16(skin, 0);
-    chunk(out, "SKINNING", skin);
+    chunk(out, "SKINNING", skinPayload());
     return out;
+}
+
+bool runChunkedV7() {
+    std::string error;
+    const std::string bytes = chunkedV7Fixture();
+    if (bytes.empty()) { std::cerr << "v7 Draco fixture encoding failed\\n"; return false; }
+    RobloxMesh::Shape shape = RobloxMesh::parse(bytes, &error);
+    if (!shape.mesh) {
+        std::cerr << "v7 parse failed: " << error << "\\n";
+        return false;
+    }
+    const auto& mesh = *shape.mesh;
+    if (mesh.faces.size() != 1 || shape.bones.size() != 1 || !mesh.skinned() ||
+        mesh.weights.empty() || mesh.weights[0].empty() || mesh.weights[0][0].w < 0.99f ||
+        mesh.colors.empty() || mesh.colors[0].g < 0.49f || mesh.colors[0].g > 0.51f ||
+        mesh.tangents.empty() || mesh.tangents[0].x < 0.99f) {
+        std::cerr << "v7 Draco geometry, skinning, or attributes were not retained\\n";
+        return false;
+    }
+    return true;
 }
 
 bool runChunkedV6() {
