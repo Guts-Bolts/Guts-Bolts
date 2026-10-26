@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 #include "EditorState.h"
 #include "Premades.h"
+#include "LevelGen.h"
 #include "../scene/SceneNode.h"
 #include <imgui.h>
 
@@ -84,6 +85,7 @@ private:
     void renderLuaDebugger();
     void renderSceneValidator();
     void renderProjectTimeMachine();
+    void renderLevelGenerator();               // (EditorLevelGen.cpp)
     void handleShortcuts();
 
     // Creating / removing things
@@ -96,6 +98,10 @@ private:
     void       addSound();
     void       connectParts(int type, SceneNode* a, glm::vec3 pa, SceneNode* b, glm::vec3 pb);
     void       openScript(SceneNode* script);
+    // Procedural levels: tries `tries` seeds from settings.seed and keeps the first that passes
+    // the checks (else the last); builds it (at `at`, or next to everything) when buildIt.
+    nlohmann::json generateLevel(const LevelGen::Settings& settings, int tries, bool buildIt, const glm::vec3* at,
+                                 SceneNode* replace, SceneNode** made);
     void       duplicateSelected();
     void       deleteSelected();
     void       copySelected();
@@ -305,6 +311,11 @@ private:
     int m_debugLineInput = 1;
     bool m_showSceneValidator = false;
     bool m_showProjectTimeMachine = false;
+    // Level Generator (EditorLevelGen.cpp)
+    bool m_showLevelGen = false, m_levelGenReplace = true, m_levelGenBrowse = false;
+    LevelGen::Settings m_levelGen;
+    uint64_t m_levelGenLast = 0;
+    nlohmann::json m_levelGenResult;
     bool m_timeMachineLoaded = false;
     std::string m_timeMachineProjectKey, m_timeMachineCheckpointName;
     int m_timeMachineSelected = -1;

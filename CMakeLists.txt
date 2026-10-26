@@ -723,6 +723,8 @@ set(EDITOR_SOURCES
     src/editor/EditorSolid.cpp
     src/editor/EditorAutosave.cpp
     src/editor/EditorTimeMachine.cpp
+    src/editor/EditorLevelGen.cpp
+    src/editor/LevelGen.cpp
     src/editor/EditorBulkEdit.cpp
     src/editor/EditorOnline.cpp
     src/editor/Thumbnailer.cpp

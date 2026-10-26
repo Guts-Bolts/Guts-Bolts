@@ -1497,6 +1497,32 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     }
 
     // ------------------------------------------------------------- NAVIGATION
+    if (name == "generate_level") {
+        LevelGen::Settings ls;
+        const std::string style = str("style");
+        if (!style.empty() && style != "Dungeon" && style != "Obby")
+            return failWith("INVALID_ENUM_VALUE", "style must be Dungeon or Obby.", "Leave it out for a Dungeon.", json::array({"Dungeon", "Obby"}));
+        ls.style = style == "Obby" ? LevelGen::Style::Obby : LevelGen::Style::Dungeon;
+        ls.seed = (uint32_t)std::max(0, args.value("seed", 1));
+        ls.count = args.value("count", 8);
+        ls.roomMin = args.value("room_min", ls.roomMin);
+        ls.roomMax = args.value("room_max", std::max(ls.roomMax, ls.roomMin));
+        ls.wallHeight = args.value("wall_height", ls.wallHeight);
+        ls.props = args.value("props", true);
+        ls.coins = args.value("coins", true);
+        SceneNode* old = nullptr;
+        if (!str("replace").empty() && !need("replace", old)) return refErr;
+        glm::vec3 at;
+        const bool hasAt = vecArg("at", at);
+        const bool dry = args.value("dry_run", false);
+        if (!dry && m_playing) return fail("PLAYING", "Stop the playtest first: levels are made in the editor.", "playtest stop.");
+        SceneNode* made = nullptr;
+        json d = generateLevel(ls, args.value("tries", 1), !dry, hasAt ? &at : nullptr, old, &made);
+        if (made) { d["object_id"] = idOf(made); d["path"] = pathOf(made); }
+        if (!d.value("ok", false))
+            d["warnings"] = json::array({"No seed passed every check: see tried[].problems. Try more seeds (tries) or fewer rooms."});
+        return done(d);
+    }
     if (name == "bake_navmesh") {
         if (!m_aiNav) m_aiNav = std::make_unique<Physics>();
         m_aiNav->gather(*m_scene);

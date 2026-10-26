@@ -110,6 +110,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_player       = std::make_unique<PlayerPanel>(scene);
     m_output       = std::make_unique<OutputPanel>();
     m_scriptEditor = std::make_unique<ScriptEditorPanel>(scene);
+    if (std::getenv("GB_TEST_LEVELGEN")) m_showLevelGen = true;   // (tests: start with it showing)
     m_animEditor   = std::make_unique<AnimationEditor>(scene, &m_state);
     m_assistant    = std::make_unique<AssistantPanel>(*this);
     m_team         = std::make_unique<TeamCreate>(scene);
@@ -257,6 +258,7 @@ void Editor::render(float dt) {
     renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
+    renderLevelGenerator();
 
     trackChanges();
     updateTitle();
@@ -2572,6 +2574,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
+        if (ImGui::MenuItem("Level Generator", nullptr, &m_showLevelGen)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;
