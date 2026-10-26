@@ -733,6 +733,9 @@ public:
     float       motorTorque = 0.0f;        // hinge motor strength (0 = no motor)
     float       thickness   = 0.1f;        // how thick the rope / rod looks
     JointProps  joint;                     // ball socket / prismatic / cylindrical settings
+    float       breakForce  = 0.0f;        // BreakForce: pulled harder than this, it snaps (0 = never)
+    bool        broken      = false;       // it snapped (and switched itself off) in this play session
+    float       jointForce  = 0.0f;        // (play: how hard it's being pulled right now, for Studio's physics view)
 
     // Decal (kind == Decal): which picture, on which side. `color` tints it
     // (white = as it is), `transparency` fades it.
@@ -837,6 +840,11 @@ public:
     bool isPostEffect() const { return kind == NodeKind::PostEffect; }
     bool isSky() const { return kind == NodeKind::Sky; }
     bool isMaterialVariant() const { return kind == NodeKind::MaterialVariant; }
+    // A force zone: a part tagged "ForceZone". Loose parts inside it are pushed (attributes
+    // Mode = Wind / Push / Pull, Strength in studs/s^2, Direction for Wind).
+    bool isForceZone() const {
+        return isPart() && std::find(tags.begin(), tags.end(), "ForceZone") != tags.end();
+    }
     bool isSpawnLocation() const {
         return isPart() && (name == "SpawnLocation" || std::find(tags.begin(), tags.end(), "SpawnLocation") != tags.end());
     }

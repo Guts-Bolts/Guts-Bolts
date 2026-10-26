@@ -1226,6 +1226,17 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
             ImGui::ColorEdit3("Color", &node->color.x);
             ImGui::SliderFloat("Thickness", &node->thickness, 0.02f, 1.0f);
         }
+        // Breakable joints: pulled harder than BreakForce, it snaps and switches itself off.
+        bool breakable = node->breakForce > 0.0f;
+        if (ImGui::Checkbox("Breakable", &breakable)) node->breakForce = breakable ? 2000.0f : 0.0f;
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", I18n::tr("Snaps when it's pulled too hard (BreakForce). Turn on Physics View (MODEL tab) "
+                                             "while testing to see how hard each joint is pulled."));
+        if (breakable) {
+            ImGui::DragFloat("BreakForce", &node->breakForce, 10.0f, 1.0f, 1e9f, "%.0f");
+            if (node->jointForce > 0.0f) ImGui::TextDisabled("%s %.0f", I18n::tr("Pulled now:"), node->jointForce);
+        }
+        if (node->broken && !node->enabled) ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", I18n::tr("Broken"));
         return;
     }
 
