@@ -81,6 +81,7 @@ private:
     void renderTeamPanel();
     void renderPerformanceWindow();
     void renderPerformanceDoctor();
+    void renderLuaDebugger();
     void renderSceneValidator();
     void renderProjectTimeMachine();
     void handleShortcuts();
@@ -284,6 +285,8 @@ private:
     bool m_showSettings = false;
     bool m_showPerformance = false;
     bool m_showPerformanceDoctor = false;
+    bool m_showLuaDebugger = false;
+    int m_debugLineInput = 1;
     bool m_showSceneValidator = false;
     bool m_showProjectTimeMachine = false;
     bool m_timeMachineLoaded = false;
