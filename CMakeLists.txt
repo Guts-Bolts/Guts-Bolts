@@ -382,6 +382,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/google/draco.git
     GIT_TAG        1.5.7
     GIT_SHALLOW    TRUE
+    GIT_SUBMODULES ""
 )
 FetchContent_MakeAvailable(draco)
 
@@ -723,6 +724,7 @@ set(EDITOR_SOURCES
     src/editor/EditorAutosave.cpp
     src/editor/EditorTimeMachine.cpp
     src/editor/EditorAiActivity.cpp
+    src/editor/EditorBulkEdit.cpp
     src/editor/EditorOnline.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp

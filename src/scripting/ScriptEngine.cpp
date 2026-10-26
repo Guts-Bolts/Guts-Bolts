@@ -68,6 +68,12 @@ end })
 task = { wait = __gb_wait, spawn = __gb_spawn, delay = __gb_delay, defer = __gb_spawn }
 wait, spawn, delay = task.wait, task.spawn, task.delay
 
+-- Return the current mouse position in viewport pixels as a Vector2.
+-- Kept separate from Player:GetMouse(), which exposes legacy raycasting and input events.
+function getmouse()
+    return __gb_mousePosition()
+end
+
 -- ColorSequence / NumberSequence: a colour or number that changes along a Trail or
 -- Beam. ColorSequence.new(c), .new(c0, c1) or .new({ ColorSequenceKeypoint.new(t, c), ... })
 local function keypoint(kind)
@@ -201,6 +207,9 @@ if not __gb_noLocalPlayer then
 end
 Players = { LocalPlayer = LocalPlayer, PlayerAdded = __gb_playerAdded,
             PlayerRemoving = __gb_playerRemoving }
+-- Convenience alias for LocalScripts that use `LocalPlayer:GetMouse()` directly.
+-- Dedicated server script worlds intentionally expose nil when no local player exists.
+rawset(_G, "LocalPlayer", LocalPlayer)
 function Players:GetPlayers()
     local t = {}
     for i, p in ipairs(playerList) do t[i] = p end
@@ -3182,6 +3191,11 @@ void ScriptEngine::setScriptEnabled(SceneNode* script, bool on) {
 }
 
 void ScriptEngine::stop() {
+    // A paused coroutine must never outlive its Lua VM. Release its registry reference
+    // before closing the state and reset transient stepping state; configured breakpoints
+    // remain available for the next local session.
+    m_debugPaused=false; m_debugThread=nullptr; m_debugRef=-2; m_debugLine=0; m_debugScript=0;
+    m_debugMode=0; m_debugSkipOnce={0,0}; m_debugEnabled=!m_debugBreakpoints.empty();
     if (m_L) lua_close(m_L);
     m_L = nullptr;
     m_waiting.clear();
@@ -3226,6 +3240,7 @@ void ScriptEngine::checkTimeout(lua_State* L) {
 }
 
 void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, std::string* result) {
+    if (m_debugEnabled && co) lua_sethook(co, &ScriptEngine::debugHook, LUA_MASKLINE | LUA_MASKCOUNT, 20000);
     if (result) result->clear();
     if (!m_L) return;
     if (m_depth == 0) m_resumeStart = nowSeconds();
@@ -3235,6 +3250,12 @@ void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, st
     --m_depth;
 
     if (status == LUA_YIELD) {
+        // A line-hook yield belongs to the debugger, not wait()/delay(). Keep the registry
+        // reference alive so the exact coroutine can resume from the paused instruction.
+        if (m_debugPaused && m_debugThread == co) {
+            m_debugRef = ref;
+            return;
+        }
         // Parked by Signal:Wait()? Then the connection owns the thread now.
         for (auto& c : m_conns) {
             if (c.alive && c.waiter == co && c.threadRef == LUA_NOREF) {
@@ -3251,6 +3272,141 @@ void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, st
     if (status != LUA_OK) reportError(co);
     else if (result && nres > 0 && lua_type(co, -nres) == LUA_TSTRING) *result = lua_tostring(co, -nres);
     luaL_unref(m_L, LUA_REGISTRYINDEX, ref);
+}
+
+void ScriptEngine::debugSetBreakpoint(uint64_t scriptId, int line, bool enabled) {
+    if (!scriptId || line < 1) return;
+    const auto key = std::make_pair(scriptId, line);
+    if (enabled) m_debugBreakpoints.insert(key); else m_debugBreakpoints.erase(key);
+    m_debugEnabled = !m_debugBreakpoints.empty() || m_debugMode != 0 || m_debugPaused;
+}
+
+int ScriptEngine::debugStackDepth(lua_State* L) const {
+    int depth = 0;
+    lua_Debug frame{};
+    while (lua_getstack(L, depth, &frame)) ++depth;
+    return depth;
+}
+
+bool ScriptEngine::debugShouldPause(lua_State* L, lua_Debug* ar) {
+    if (!m_debugEnabled || m_debugPaused || !ar) return false;
+    if (!lua_getinfo(L, "Sl", ar) || ar->currentline < 1) return false;
+
+    std::string source = ar->source ? ar->source : "";
+    if (!source.empty() && (source.front() == '=' || source.front() == '@')) source.erase(source.begin());
+    uint64_t scriptId = 0;
+    if (m_scene) m_scene->forEach([&](SceneNode* node) {
+        if (!scriptId && node && node->isScript() && node->fullName() == source) scriptId = node->id;
+    });
+    const int line = ar->currentline;
+    const auto key = std::make_pair(scriptId, line);
+    bool hit = scriptId && m_debugBreakpoints.count(key) != 0;
+    if (m_debugSkipOnce == key) {
+        m_debugSkipOnce = {0, 0};
+        hit = false;
+    }
+    if (!hit && m_debugMode != 0) {
+        const int depth = debugStackDepth(L);
+        hit = m_debugMode == 1 ||
+              (m_debugMode == 2 && depth <= m_debugStepDepth) ||
+              (m_debugMode == 3 && depth < m_debugStepDepth);
+    }
+    if (!hit) return false;
+
+    m_debugPaused = true;
+    m_debugThread = L;
+    m_debugLine = line;
+    m_debugScript = scriptId;
+    m_debugSource = source;
+    m_debugMode = 0;
+    return true;
+}
+
+void ScriptEngine::debugHook(lua_State* L, lua_Debug* ar) {
+    // Keep non-trivial C++ temporaries out of the Lua yield/longjmp frame. The helper
+    // finishes and destroys its strings before lua_yield unwinds back to lua_resume.
+    auto** slot = static_cast<ScriptEngine**>(lua_getextraspace(L));
+    ScriptEngine* engine = slot ? *slot : nullptr;
+    if (!engine || !ar) return;
+    // Preserve the existing per-resume instruction budget while adding line events.
+    if (ar->event == LUA_HOOKCOUNT) { engine->checkTimeout(L); return; }
+    if (ar->event == LUA_HOOKLINE && engine->debugShouldPause(L, ar)) lua_yield(L, 0);
+}
+
+void ScriptEngine::debugContinue() {
+    if (!m_debugPaused || !m_debugThread || m_debugRef == -2 || !m_L) return;
+    lua_State* co = m_debugThread;
+    const int ref = m_debugRef;
+    m_debugSkipOnce = {m_debugScript, m_debugLine};
+    m_debugPaused = false; m_debugThread = nullptr; m_debugRef = -2; m_debugMode = 0;
+    const uint64_t was = m_current; m_current = m_debugScript;
+    resume(co, ref, 0, m_L);
+    m_current = was;
+    m_debugEnabled = !m_debugBreakpoints.empty() || m_debugPaused || m_debugMode != 0;
+}
+
+static void gb_debugStep(ScriptEngine* engine, int mode) {
+    if (!engine || !engine->debugPaused()) return;
+    engine->debugContinue();
+}
+
+void ScriptEngine::debugStepInto() {
+    if (!m_debugPaused || !m_debugThread || m_debugRef == -2 || !m_L) return;
+    lua_State* co=m_debugThread; const int ref=m_debugRef;
+    m_debugStepDepth=debugStackDepth(co); m_debugMode=1; m_debugPaused=false; m_debugThread=nullptr; m_debugRef=-2; m_debugEnabled=true;
+    const uint64_t was=m_current; m_current=m_debugScript; resume(co,ref,0,m_L); m_current=was;
+}
+void ScriptEngine::debugStepOver() {
+    if (!m_debugPaused || !m_debugThread || m_debugRef == -2 || !m_L) return;
+    lua_State* co=m_debugThread; const int ref=m_debugRef;
+    m_debugStepDepth=debugStackDepth(co); m_debugMode=2; m_debugPaused=false; m_debugThread=nullptr; m_debugRef=-2; m_debugEnabled=true;
+    const uint64_t was=m_current; m_current=m_debugScript; resume(co,ref,0,m_L); m_current=was;
+}
+void ScriptEngine::debugStepOut() {
+    if (!m_debugPaused || !m_debugThread || m_debugRef == -2 || !m_L) return;
+    lua_State* co=m_debugThread; const int ref=m_debugRef;
+    m_debugStepDepth=debugStackDepth(co); m_debugMode=3; m_debugPaused=false; m_debugThread=nullptr; m_debugRef=-2; m_debugEnabled=true;
+    const uint64_t was=m_current; m_current=m_debugScript; resume(co,ref,0,m_L); m_current=was;
+}
+
+std::vector<std::string> ScriptEngine::debugCallStack() {
+    std::vector<std::string> out;
+    if (!m_debugPaused || !m_debugThread) return out;
+    for (int level=0; level<64; ++level) {
+        lua_Debug ar{}; if (!lua_getstack(m_debugThread, level, &ar)) break;
+        lua_getinfo(m_debugThread, "nSl", &ar);
+        std::string source = ar.source ? ar.source : "[unknown source]";
+        if (!source.empty() && (source.front()=='=' || source.front()=='@')) source.erase(source.begin());
+        std::string name = ar.name ? ar.name : "<chunk>";
+        out.push_back(name + "  —  " + source + ":" + std::to_string(ar.currentline));
+    }
+    return out;
+}
+
+std::vector<std::string> ScriptEngine::debugLocals() {
+    std::vector<std::string> out;
+    if (!m_debugPaused || !m_debugThread) return out;
+    lua_State* L=m_debugThread; const int top=lua_gettop(L); lua_Debug ar{};
+    if (!lua_getstack(L, 0, &ar)) return out;
+    for (int i=1; i<=128; ++i) {
+        const char* name=lua_getlocal(L, &ar, i); if (!name) break;
+        std::string value;
+        switch (lua_type(L, -1)) {
+            case LUA_TNIL: value="nil"; break;
+            case LUA_TBOOLEAN: value=lua_toboolean(L,-1)?"true":"false"; break;
+            case LUA_TNUMBER: value=lua_tostring(L,-1); break;
+            case LUA_TSTRING: { size_t n=0; const char* s=lua_tolstring(L,-1,&n); value="\"" + std::string(s?s:"",std::min<size_t>(n,160)) + (n>160?"…\"":"\""); break; }
+            case LUA_TTABLE: value="table (raw, not expanded)"; break;
+            case LUA_TFUNCTION: value="function"; break;
+            case LUA_TUSERDATA: value="userdata"; break;
+            case LUA_TTHREAD: value="thread"; break;
+            case LUA_TLIGHTUSERDATA: value="light userdata"; break;
+            default: value="unknown"; break;
+        }
+        out.push_back(std::string(name) + " = " + value); lua_pop(L,1);
+        if (out.size() >= 128) break;
+    }
+    lua_settop(L,top); return out;
 }
 
 void ScriptEngine::schedule(lua_State* co, int ref, double delay, int startArgs) {

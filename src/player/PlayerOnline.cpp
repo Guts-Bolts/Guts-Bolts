@@ -159,7 +159,7 @@ const std::vector<Browse::Cat>& catalogCats() {
         {"featured", "Featured", {}}, {"collectibles", "Collectibles", {}},
         {"all", "All Categories", {}, true},
         {"clothes", "Clothing", {{"shirt", "Shirts"}, {"tshirt", "T-Shirts"}, {"pants", "Pants"}}},
-        {"body", "Body Parts", {{"face", "Faces"}, {"bundle", "Bundles"}}},
+        {"body", "Body Parts", {{"face", "Faces"}, {"bundle", "Bundles"}, {"bodypart", "Individual Parts"}}},
         {"gear", "Gear", {}},
         {"emotes", "Emotes", {{"emote", "Emotes"}, {"animpack", "Animation Packs"}}},
         {"accessories", "Accessories", {{"hat", "Hats"}, {"hair", "Hair"}, {"faceacc", "Face"}, {"neck", "Neck"}, {"shoulder", "Shoulder"}, {"waist", "Waist"}}},
@@ -172,7 +172,7 @@ bool inCatalogCat(const json& a, const std::string& cat) {
     if (cat == "collectibles") return a.contains("limited") && a["limited"].is_object();
     if (cat == "all") return true;
     if (cat == "clothes") return k == "shirt" || k == "tshirt" || k == "pants";
-    if (cat == "body") return k == "face" || k == "bundle";
+    if (cat == "body") return k == "face" || k == "bundle" || k == "bodypart";
     if (cat == "emotes") return k == "emote" || k == "animpack";
     if (cat == "accessories") return k == "hat" || k == "hair" || k == "faceacc" || k == "neck" || k == "shoulder" || k == "waist";
     return k == cat;
@@ -315,6 +315,15 @@ void PlayerApp::drawOnlineItemDialog() {
     auto wearIt = [this, it]() {
         if (it.type == Catalog::Type::Gear) { toggleGear(it.id, true); return; }
         if (Catalog::isMove(it.type)) { toggleMove(it, true); return; }
+        // Body geometry lives in the asset file, so fetch it before applying the look.
+        if ((it.type == Catalog::Type::Bundle && !it.body.empty()) || it.type == Catalog::Type::BodyPart) {
+            Online::download(it.id, [this, it](bool ok, const std::filesystem::path&, const json& info) {
+                if (!ok) { m_onlineMsg = info.value("error", std::string("Couldn't download that body part.")); return; }
+                Catalog::applyLook(it);
+                if (Player* pl = m_avatarScene->player()) Profile::get().applyTo(*pl);
+            });
+            return;
+        }
         Catalog::applyLook(it);
         if (Player* pl = m_avatarScene->player()) Profile::get().applyTo(*pl);
         Online::fetchSounds(*m_avatarScene);   // its clothing picture, if it has one

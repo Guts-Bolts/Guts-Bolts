@@ -79,6 +79,7 @@ const char* typeName(Type t) {
         case Type::Emote:    return "Emote";
         case Type::AnimPack: return "AnimPack";
         case Type::Bundle:   return "Bundle";
+        case Type::BodyPart: return "BodyPart";
         default:          return "?";
     }
 }
@@ -145,7 +146,7 @@ Item fromServer(const json& a) {
     it.description = a.value("description", std::string());
     std::string kind = a.value("kind", std::string());
     it.kind = kind;
-    it.type = kind == "hat" ? Type::Hat : kind == "shirt" ? Type::Shirt : kind == "pants" ? Type::Pants
+    it.type = kind == "bodypart" ? Type::BodyPart : kind == "hat" ? Type::Hat : kind == "shirt" ? Type::Shirt : kind == "pants" ? Type::Pants
             : kind == "hair" ? Type::Hair : kind == "faceacc" ? Type::FaceAcc : kind == "neck" ? Type::Neck
             : kind == "shoulder" ? Type::Shoulder : kind == "waist" ? Type::Waist : kind == "tshirt" ? Type::TShirt : kind == "gear" ? Type::Gear
             : kind == "emote" ? Type::Emote : kind == "animpack" ? Type::AnimPack : kind == "bundle" ? Type::Bundle : Type::Face;
@@ -158,6 +159,7 @@ Item fromServer(const json& a) {
         if (m.value("model", false)) it.model = "gb:" + it.id;
         it.headless = it.type == Type::Bundle && m.value("headless", false) == true;
         if (it.type == Type::Bundle && m.value("body", false) == true) it.body = "gb:" + it.id;
+        if (it.type == Type::BodyPart) { it.body = "gb:" + it.id; it.bodyPart = m.value("bodyPart", std::string()); }
         if (m.contains("color") && m["color"].is_array() && m["color"].size() == 3)
             it.color = {m["color"][0].get<int>() / 255.0f, m["color"][1].get<int>() / 255.0f, m["color"][2].get<int>() / 255.0f};
     }
@@ -190,6 +192,7 @@ void wear(const Item& it) {
 void applyLook(const Item& it) {
     if (isEquipped(it.type)) return;   // gear, emotes and packs aren't worn (they're equipped on the server)
     Profile& me = Profile::get();
+    const std::string previousBodyPart = it.type == Type::BodyPart && me.bodyParts.contains(it.bodyPart) ? me.bodyParts[it.bodyPart] : std::string();
     switch (it.type) {
         case Type::Hat:
             if (!it.model.empty()) { me.hat = HatStyle::None; me.accessories["hat"] = it.model; }
@@ -204,6 +207,9 @@ void applyLook(const Item& it) {
         case Type::Bundle:
             me.headless = it.headless;
             me.body = it.body;
+            break;
+        case Type::BodyPart:
+            if (!it.bodyPart.empty() && !it.body.empty()) me.bodyParts[it.bodyPart] = it.body;
             break;
         case Type::TShirt:
             me.tshirtImage = it.image;
@@ -228,7 +234,10 @@ void applyLook(const Item& it) {
     };
     for (const std::string& w : me.wearing) {
         bool sameType = lowerPrefix(w);
-        for (const Item& other : load()) if (other.id == w && other.type == it.type) sameType = true;
+        for (const Item& other : load()) if (other.id == w && other.type == it.type) {
+            if (it.type != Type::BodyPart || other.bodyPart == it.bodyPart) sameType = true;
+        }
+        if (it.type == Type::BodyPart && !previousBodyPart.empty() && previousBodyPart == "gb:" + w) sameType = true;
         if (!sameType && w != it.id) keep.push_back(w);
     }
     keep.push_back(it.id);
@@ -250,6 +259,9 @@ void takeOff(const Item& it) {
         case Type::Bundle:
             if (it.headless) me.headless = false;
             if (!it.body.empty() && me.body == it.body) me.body.clear();
+            break;
+        case Type::BodyPart:
+            if (auto p = me.bodyParts.find(it.bodyPart); p != me.bodyParts.end() && p->second == it.body) me.bodyParts.erase(p);
             break;
         case Type::TShirt: if (me.tshirtImage == it.image) me.tshirtImage.clear(); break;
         case Type::Shirt:  if (me.shirtImage == it.image) me.shirtImage.clear(); break;

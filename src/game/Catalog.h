@@ -11,7 +11,7 @@ namespace Catalog {
 
 // (Gear: a Tool for games, not worn. Emote / AnimPack: moves for your character, equipped not worn.)
 // (Bundle: a pack of items from the server; worn, and its headless flag hides the head.)
-enum class Type { Hat, Shirt, Pants, Hair, FaceAcc, Neck, Shoulder, Waist, Face, TShirt, Gear, Emote, AnimPack, Bundle, Count };
+enum class Type { Hat, Shirt, Pants, Hair, FaceAcc, Neck, Shoulder, Waist, Face, TShirt, Gear, Emote, AnimPack, Bundle, BodyPart, Count };
 inline bool isMove(Type t) { return t == Type::Emote || t == Type::AnimPack; }   // an emote or an animation pack
 inline bool isEquipped(Type t) { return t == Type::Gear || isMove(t); }        // equipped (not worn)
 const char* typeName(Type t);
@@ -27,7 +27,8 @@ struct Item {
     std::string model;                     // accessories made in Studio: "gb:<id>" (the placed model)
     std::string kind;                      // the server's kind: "hat", "hair", "faceacc", "neck", ...
     bool        headless = false;          // bundles: wearing it hides the head (the Headless Head)
-    std::string body;                      // bundles with a new body: "gb:<id>" (the bundle's file holds the meshes)
+    std::string body;                      // bundles/body parts: "gb:<id>" (the file holds the meshes)
+    std::string bodyPart;                 // standalone replacement slot: Head, Torso, Left Arm, Right Arm, Left Leg, Right Leg
     long long   created = 0;               // unix time
     long long   price = 0;                 // in Bolts; 0 = free
     std::string signature;

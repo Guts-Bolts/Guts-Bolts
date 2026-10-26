@@ -82,6 +82,36 @@ const cube = (extra = {}) => Object.assign({
 }, extra);
 const bodyBundle = (s, me, body, meta = {}) => s.call(me, 'upload', { kind: 'bundle', name: 'Robot Body', price: 0,
   data: Buffer.from(JSON.stringify({ format: 'gbbundle', body })).toString('base64'), meta: Object.assign({ body: true }, meta) });
+const bodyPart = (s, me, name, part) => s.call(me, 'upload', { kind: 'bodypart', name, price: 0,
+  data: Buffer.from(JSON.stringify({ format: 'gbbundle', body: { [part]: cube() } })).toString('base64'), meta: { bodyPart: part } });
+
+test('standalone body parts can be catalogued and equipped separately', () => {
+  const s = makeServer(), bob = s.signUp('bob');
+  const torso = bodyPart(s, s.staff, 'Steel Torso', 'Torso');
+  const arm = bodyPart(s, s.staff, 'Steel Left Arm', 'Left Arm');
+  assert.ok(torso.ok, torso.error);
+  assert.ok(arm.ok, arm.error);
+  assert.equal(torso.asset.kind, 'bodypart');
+  assert.equal(torso.asset.meta.bodyPart, 'Torso');
+  assert.ok(bob.owned.includes(torso.asset.id) === false);
+  assert.ok(s.call(bob, 'buy', { id: torso.asset.id }).ok);
+  assert.ok(s.call(bob, 'buy', { id: arm.asset.id }).ok);
+  const set = s.call(bob, 'avatar.set', { avatar: { head: [1,2,3], torso: [1,2,3], leftArm: [1,2,3], rightArm: [1,2,3], leftLeg: [1,2,3], rightLeg: [1,2,3], wearing: [torso.asset.id, arm.asset.id] } });
+  assert.ok(set.ok, set.error);
+  const profile = s.call(bob, 'profile', { id: String(bob.userId) });
+  assert.ok(profile.wearing.some((x) => x.id === torso.asset.id && x.meta.bodyPart === 'Torso'));
+  assert.ok(profile.wearing.some((x) => x.id === arm.asset.id && x.meta.bodyPart === 'Left Arm'));
+});
+
+test('standalone body parts must contain exactly their declared slot and only staff can upload them', () => {
+  const s = makeServer(), maker = s.signUp('maker');
+  let r = bodyPart(s, maker, 'Unauthorized Torso', 'Torso');
+  assert.equal(r.ok, false);
+  r = s.call(s.staff, 'upload', { kind: 'bodypart', name: 'Wrong Slot', price: 0,
+    data: Buffer.from(JSON.stringify({ format: 'gbbundle', body: { Head: cube(), Torso: cube() } })).toString('base64'), meta: { bodyPart: 'Torso' } });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /only its selected body part/);
+});
 
 test('staff make bundles with a new body, and the body is checked', () => {
   const s = makeServer();

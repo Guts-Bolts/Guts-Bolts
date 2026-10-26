@@ -1,6 +1,10 @@
 // The update log on the website (the "Updates" page). Every update gets its own
-// name. Newest first. Add a new one at the top whenever an update ships; staff can
-// also post updates from the website (those are kept in the server's database).
+// name. Staff can also post updates from the website (those are kept in the
+// server's database). The page sorts them by time, newest first.
+//
+// NEW UPDATES DON'T GO IN THIS FILE: each one is its own file in worker/updates/
+// (see worker/updates/README.md), so pull requests don't conflict. This file keeps
+// the older ones.
 //
 //   id     short and unique (letters, numbers, dashes)
 //   name   the update's name: make it fun and about what changed
@@ -8,18 +12,17 @@
 //   tag    what it's mostly about: Engine, Studio, Website, Player, Server, Fix
 //   items  what changed, one short line each, in plain words
 
+import NEW_UPDATES from './updates-gathered.js';
 
-export const BUILT_IN_UPDATES = [
+const OLDER_UPDATES = [
   {
-    id: 'show-your-work', name: 'Show Your Work', time: 1793039900, tag: 'Studio',
-    summary: 'The AI assistant now shows you everything it changed, lets you undo all of it in one click, and asks before it deletes things.',
+    id: 'clean-slate-usernames', name: 'Clean Slate Usernames', version: '0.7.6', time: 1793037600, tag: 'Website',
+    summary: 'Staff can now reset a username that isn\'t allowed. It becomes "User" and the player\'s user number.',
     items: [
-      'New AI Activity window (VIEW tab, View menu, or the button under the Assistant chat).',
-      'It lists every object the AI added, removed or changed, which properties changed, and how many lines of code. Click one to select it.',
-      'Keep these changes, or Undo all of it in one click (Ctrl+Z brings it back if you change your mind).',
-      'A log of every single thing the AI did, from the Assistant tab or from AI apps like Claude Code.',
-      'The AI now has to ask before it deletes something or restores a save point. You press Allow or Don\'t allow (you can turn this off).',
-      'The AI is told to check its work (and read the change report) before it says it is done.'
+      'A new Reset username button on the Staff page, next to each person (staff only).',
+      'The name becomes "User 5" (with their own user number), and they get a notification saying why.',
+      'The old name stays reserved, so nobody else can take it, and it doesn\'t show in their past names.',
+      'Only the official Guts account can reset a staff member\'s username. It shows up in the staff log like everything else.',
     ],
   },
   {
@@ -1674,3 +1677,5 @@ export const BUILT_IN_UPDATES = [
     ],
   },
 ];
+
+export const BUILT_IN_UPDATES = [...NEW_UPDATES, ...OLDER_UPDATES];

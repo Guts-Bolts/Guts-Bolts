@@ -14,6 +14,7 @@ server that doesn't exist (GB_SERVER) and a throwaway account folder, so nothing
 is published and your own account isn't touched.
 """
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -229,48 +231,62 @@ def run_tests(m):
     d = m.call("validate_scene")
     check(ok(d), "validate_scene still works", d)
 
-    print("8. AI Activity: change report, log, asking first")
-    d = m.call("ai_activity", action="keep")
-    check(ok(d), "ai_activity keep", d)
-    d = m.call("ai_activity")
-    check(ok(d) and d.get("pending") is False and d["added"] == [], "nothing to report after keep", d)
-    box = m.call("insert_object", kind="Part", name="AiReportBox")
-    bid = box["object_id"]
-    d = m.call("ai_activity")
-    check(ok(d) and d.get("pending") and [a["object_id"] for a in d["added"]] == [bid], "the new part is in the report", d)
-    m.call("ai_activity", action="keep")
-    m.call("set_property", object=bid, property="Color", value=[1, 0, 0])
-    d = m.call("ai_activity")
-    ch = [c for c in d.get("changed", []) if c["object_id"] == bid]
-    check(ok(d) and ch and "Color" in ch[0]["properties"] and not d["added"], "a changed property is in the report", d)
-    s = m.call("create_script", name="AiReportScript", source="print('a')\nprint('b')")
-    m.call("ai_activity", action="keep")
-    m.call("edit_script", object=s["object_id"], source="print('a')\nprint('c')\nprint('d')")
-    d = m.call("ai_activity")
-    ch = [c for c in d.get("changed", []) if c["object_id"] == s["object_id"]]
-    check(ch and ch[0].get("lines_added") == 2 and ch[0].get("lines_removed") == 1, "script changes count lines", d)
-    d = m.call("delete_object", object=bid)
-    check(not ok(d) and code(d) == "NEEDS_PERSON_OK", "delete waits for the person's OK", d)
-    d = m.call("get_object", object=bid)
-    check(ok(d), "...and the part is still there", d)
-    d = m.call("ai_activity", action="log", limit=10)
-    tools = [(e["tool"], e["result"]) for e in d.get("entries", [])]
-    check(ok(d) and len(tools) > 1 and tools[0][0] == "get_object" and tools[1] == ("delete_object", "NEEDS_PERSON_OK") and ("edit_script", "") in tools,
-          "the log has every call, newest first", d)
-    ins = [e for e in d["entries"] if e["tool"] == "edit_script"]
-    check(ins and ins[0]["changed"] == 1 and ins[0]["source"] == "AI app", "the log says what each call changed", d)
-    m.call("ai_activity", action="keep")
-    m.call("insert_object", kind="Part", name="AiUndoMe")
-    d = m.call("ai_activity", action="undo_all")
-    check(ok(d) and d.get("undone"), "undo_all", d)
-    d = m.call("find_objects", name="AiUndoMe")
-    check(ok(d) and d.get("count") == 0, "undo_all took the new part away", d)
-    m.call("undo")
-    d = m.call("find_objects", name="AiUndoMe")
-    check(ok(d) and d.get("count") == 1, "undo brings it back", d)
-    m.call("ai_activity", action="keep")
-    d = m.call("ai_activity", action="undo_all")
-    check(not ok(d) and code(d) == "NOTHING_TO_UNDO", "nothing left to undo", d)
+    print("8. Find and Change (many objects at once)")
+    ids = []
+    for i, mass_tag in enumerate([None, "Lightweight", None]):
+        d = m.call("insert_object", kind="Part", name=f"BulkCrate{i}")
+        ids.append(d["object_id"])
+        m.call("set_property", object=d["object_id"], property="Anchored", value=False)
+        if mass_tag:
+            m.call("run_lua", code=f"__gb_byId({d['object_id'][1:]}):AddTag('{mass_tag}')")
+    d = m.call("find_and_change", kind="BasePart", name_contains="bulkcrate")
+    check(ok(d) and d.get("count") == 3, "finds by kind and name (any case)", d)
+    d = m.call("find_and_change", name_contains="BulkCrate", not_tag="Lightweight",
+               change={"property": "Density", "op": "Multiply by", "value": "1.5"})
+    rows = d.get("results", [])
+    check(ok(d) and d.get("count") == 2 and all(r.get("becomes") and not r.get("error") for r in rows) and not d.get("applied"),
+          "preview skips the tagged one and shows new values", d)
+    before = m.call("get_object", object=ids[0])["properties"]["Density"]
+    check(abs(before - float(rows[0]["now"])) < 1e-3 if rows else False, "preview changed nothing", before)
+    d = m.call("find_and_change", name_contains="BulkCrate", not_tag="Lightweight",
+               change={"property": "Density", "op": "Multiply by", "value": "1.5"}, apply=True)
+    check(ok(d) and d.get("changed") == 2, "apply changes both", d)
+    after = m.call("get_object", object=ids[0])["properties"]["Density"]
+    tagged = m.call("get_object", object=ids[1])["properties"]["Density"]
+    check(abs(after - before * 1.5) < 1e-3 and abs(tagged - before) < 1e-3, "Density x1.5, the tagged one untouched", [before, after, tagged])
+    d = m.call("find_and_change", name_contains="BulkCrate", where={"property": "Density", "op": ">", "value": str(before + 0.01)})
+    check(ok(d) and d.get("count") == 2, "where Density > old value finds the two changed ones", d)
+    d = m.call("undo")
+    back = m.call("get_object", object=ids[2])["properties"]["Density"]
+    check(ok(d) and abs(back - before) < 1e-3, "one undo puts every change back", [back, before])
+    d = m.call("find_and_change", name_contains="BulkCrate", change={"property": "Color", "op": "Set to", "value": "255, 0, 0"}, apply=True)
+    col = m.call("get_object", object=ids[2])["properties"]["Color"]
+    check(ok(d) and d.get("changed") == 3 and abs(col[0] - 1) < 1e-3 and col[1] < 1e-3, "set a colour on all of them", [d, col])
+    d = m.call("find_and_change", name_contains="BulkCrate", change={"op": "Add tag", "value": "Crate"}, apply=True)
+    d2 = m.call("find_and_change", has_tag="Crate")
+    check(ok(d) and d2.get("count") == 3, "add a tag to all of them", d2)
+    d = m.call("find_and_change", name_contains="BulkCrate", change={"property": "Nope", "op": "Set to", "value": "1"})
+    check(ok(d) and all("has no Nope" in r.get("error", "") for r in d.get("results", [])), "a missing property is reported per object", d)
+    d = m.call("find_and_change", change={"property": "Density", "op": "Squish", "value": "1"})
+    check(code(d) == "INVALID_INPUT" and "Multiply by" in choices(d), "bad op lists the choices", d)
+
+    run_folder_tests(m)
+
+
+def run_folder_tests(m):
+    """Runs the tests in tools/ai_tool_tests/: one file per feature, so two pull
+    requests adding tests never change the same lines. Each file has a TITLE and a
+    run(m, t) function; t has check, ok, code and choices (the helpers above)."""
+    folder = os.path.join(ROOT, "tools", "ai_tool_tests")
+    t = types.SimpleNamespace(check=check, ok=ok, code=code, choices=choices)
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".py") or name.startswith("_"):
+            continue
+        spec = importlib.util.spec_from_file_location("ai_tool_test_" + name[:-3], os.path.join(folder, name))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        print(f"{name[:-3]}: {getattr(mod, 'TITLE', name)}")
+        mod.run(m, t)
 
 
 def main():
