@@ -92,7 +92,10 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
         const std::string id = RobloxMesh::assetId(url);
         const std::string file = id.empty() ? std::string{} : RobloxMesh::fetch(id, ".png");
         part->texture = file;
-        if (!meshPart && !file.empty()) part->color = vectorAttr(instance, "VertexColor", glm::vec3(1.0f));
+        if (!meshPart) {
+            part->color = !file.empty() ? vectorAttr(instance, "VertexColor", glm::vec3(1.0f))
+                                        : vectorAttr(part, "RobloxBaseColor", part->color);
+        }
         E(L)->scene()->markDirty();
         return;
     }
@@ -121,7 +124,6 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
 
     MeshEdit::attach(*part, shape.mesh);
     part->primitiveType = PrimitiveType::Mesh;
-    part->mesh = part->mesh; // MeshEdit::attach builds the GPU mesh from the new EditMesh.
 
     // Replace old embedded joints if this asset carries a rig.
     for (auto it = part->children.begin(); it != part->children.end();) {
