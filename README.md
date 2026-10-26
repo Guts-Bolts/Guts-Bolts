@@ -277,7 +277,7 @@ The tools, by area (each one's description says when to use it, when not to,
 what it needs, what it gives back and how risky it is):
 
 - Scene: `get_game_tree`, `find_objects`, `insert_object`, `delete_object`
-- Objects: `get_object`, `set_property`, `select`
+- Objects: `get_object`, `set_property`, `find_and_change` (many objects at once), `select`
 - Scripting: `create_script`, `read_script`, `edit_script`, `run_lua`
 - Runtime: `playtest` (start, simulate, stop, pause, resume, step), `get_runtime_state`,
   `multiplayer_test` (start a test with 2-4 players, `add_player`, `status`,

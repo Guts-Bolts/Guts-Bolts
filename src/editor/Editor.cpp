@@ -227,6 +227,7 @@ void Editor::render(float dt) {
     renderShortcuts();
     renderModelingMenus();
     renderCollisionGroups();
+    renderBulkEdit();
     if (m_showPanel[kPanelTeam]) renderTeamPanel();
     m_assistant->update();
     if (m_showPanel[kPanelAssistant]) m_assistant->render(&m_showPanel[kPanelAssistant]);
@@ -255,6 +256,7 @@ void Editor::render(float dt) {
         std::chrono::steady_clock::now() - frameStart).count();
     renderPerformanceWindow();
     renderPerformanceDoctor();
+    renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
     renderScriptHistory();
@@ -365,6 +367,59 @@ void Editor::renderPerformanceWindow() {
 
 // Performance Doctor turns the monitor's recent samples into ranked, explainable advice.
 // Scene thresholds are heuristics; they are not a claim that a particular count caused a hitch.
+void Editor::renderLuaDebugger() {
+    if (!m_showLuaDebugger) return;
+    ImGui::SetNextWindowSize(ImVec2(620, 520), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Lua Debugger", &m_showLuaDebugger)) { ImGui::End(); return; }
+    if (!m_session || !m_session->running()) {
+        ImGui::TextDisabled("Start Play or Simulate to debug scripts. Breakpoints can be configured during the session.");
+        ImGui::End(); return;
+    }
+    ScriptEngine& scripts=m_session->scripts();
+    SceneNode* selected=m_scene->findById(m_scriptEditor->current());
+    if (!selected || !selected->isScript()) selected=m_scene->selected();
+    if (selected && selected->isScript()) {
+        ImGui::Text("Script: %s", selected->fullName().c_str());
+        ImGui::SetNextItemWidth(90);
+        ImGui::InputInt("Line", &m_debugLineInput);
+        if (m_debugLineInput<1) m_debugLineInput=1;
+        ImGui::SameLine();
+        const auto key=std::make_pair(selected->id,m_debugLineInput);
+        const bool exists=scripts.debugBreakpoints().count(key)!=0;
+        if (ImGui::Button(exists?"Remove breakpoint":"Add breakpoint"))
+            scripts.debugSetBreakpoint(selected->id,m_debugLineInput,!exists);
+    } else {
+        ImGui::TextDisabled("Select a Script in the Explorer or open it in the Script Editor to add a breakpoint.");
+    }
+    ImGui::Separator();
+    if (scripts.debugPaused()) {
+        ImGui::TextColored(ImVec4(1.0f,0.72f,0.25f,1.0f),"Paused at %s:%d",
+                           scripts.debugSourceForUi().c_str(),scripts.debugLine());
+        if (ImGui::Button("Continue")) scripts.debugContinue();
+        ImGui::SameLine(); if (ImGui::Button("Step Into")) scripts.debugStepInto();
+        ImGui::SameLine(); if (ImGui::Button("Step Over")) scripts.debugStepOver();
+        ImGui::SameLine(); if (ImGui::Button("Step Out")) scripts.debugStepOut();
+        ImGui::SeparatorText("Call stack");
+        for (const auto& frame:scripts.debugCallStack()) ImGui::BulletText("%s",frame.c_str());
+        ImGui::SeparatorText("Locals");
+        for (const auto& local:scripts.debugLocals()) ImGui::BulletText("%s",local.c_str());
+    } else {
+        ImGui::TextDisabled("Waiting for a breakpoint. Script execution pauses only at Lua line boundaries.");
+    }
+    ImGui::SeparatorText("Breakpoints");
+    if (scripts.debugBreakpoints().empty()) ImGui::TextDisabled("No breakpoints configured.");
+    for (const auto& bp:scripts.debugBreakpoints()) {
+        SceneNode* node=m_scene->findById(bp.first);
+        ImGui::PushID((int)(bp.first & 0x7fffffff)); ImGui::PushID(bp.second);
+        ImGui::BulletText("%s:%d",node?node->fullName().c_str():"[deleted script]",bp.second);
+        ImGui::SameLine(); if (ImGui::SmallButton("Remove")) scripts.debugSetBreakpoint(bp.first,bp.second,false);
+        ImGui::PopID(); ImGui::PopID();
+    }
+    ImGui::TextDisabled("Locals are read without evaluating expressions. Tables are intentionally not expanded.");
+    ImGui::End();
+}
+
+
 void Editor::renderPerformanceDoctor() {
     if (!m_showPerformanceDoctor) return;
     ImGui::SetNextWindowSize(ImVec2(700, 600), ImGuiCond_FirstUseEver);
@@ -780,24 +835,10 @@ void Editor::renderSceneValidator() {
             }
         }
 
-        // Duplicate sibling names can make name-based lookups such as FindFirstChild ambiguous.
-        for (SceneNode* parent : nodes) {
-            std::unordered_map<std::string, std::vector<SceneNode*>> byName;
-            for (const auto& child : parent->children) {
-                if (child && !child->internal && !child->name.empty())
-                    byName[child->name].push_back(child.get());
-            }
-            for (const auto& entry : byName) {
-                if (entry.second.size() < 2) continue;
-                for (SceneNode* duplicate : entry.second) {
-                    add(duplicate, 1, "Duplicate sibling name",
-                        "'" + duplicate->name + "' appears " + std::to_string(entry.second.size()) +
-                        " times under the same parent; name-based script lookups may be ambiguous.",
-                        "Rename the objects uniquely or update scripts to identify the intended object another way.");
-                }
-            }
-        }
-
+        // Duplicate sibling names are valid (and common in Roblox projects).
+        // FindFirstChild intentionally returns a matching child; scripts that need a
+        // particular duplicate should use class/ancestry checks or iterate GetChildren().
+ 
         std::stable_sort(m_sceneValidationIssues.begin(), m_sceneValidationIssues.end(),
             [](const SceneValidationIssue& a, const SceneValidationIssue& b) {
                 if (a.severity != b.severity) return a.severity > b.severity;
@@ -1274,7 +1315,8 @@ void Editor::duplicateSelected() {
     for (SceneNode* sel : m_scene->selectionRoots()) {
         if (!canEdit(sel)) continue;
         auto copy = Serializer::clone(*sel);
-        copy->name += " Copy";
+        // Keep the original name. Roblox Instances do not acquire "Copy" suffixes
+        // when duplicated, and sibling Instances are allowed to share names.
         if (copy->kind == NodeKind::Part) copy->transform.position.x += 1.0f;   // so it's visible
         copies.push_back(m_scene->insert(std::move(copy), sel->parent));
     }
@@ -1551,6 +1593,7 @@ void Editor::handleShortcuts() {
         if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_I, false)) unionSelected(1);
         else if (ImGui::IsKeyPressed(ImGuiKey_I, false)) { m_insertParent = m_scene->selected(); m_openInsert = true; }
         if (ImGui::IsKeyPressed(ImGuiKey_L, false)) m_state.gizmoLocal = !m_state.gizmoLocal;
+        if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_E, false)) m_showBulkEdit = !m_showBulkEdit;
         // Roblox's tool keys.
         if (ImGui::IsKeyPressed(ImGuiKey_1, false)) m_state.tool = GizmoTool::Select;
         if (ImGui::IsKeyPressed(ImGuiKey_2, false)) m_state.tool = GizmoTool::Translate;
@@ -2169,6 +2212,7 @@ void Editor::renderShortcuts() {
          {"Ctrl+click / Shift+click", "Add to the selection"},
          {"Ctrl+A", "Select everything in the Workspace"},
          {"Ctrl+Up / Ctrl+Down", "Select parent / children"},
+         {"Ctrl+Shift+E", "Find and Change: change lots of objects at once"},
          {"Esc", "Select nothing"}},
         {{"Ctrl+Right / Ctrl+Left", "Expand / collapse selected (everything inside)"},
          {"Ctrl+Shift+Left", "Collapse the whole Explorer"},
@@ -2482,6 +2526,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Select All", "Ctrl+A")) selectAll();
         if (ImGui::MenuItem("Select Parent", "Ctrl+Up", false, sel != nullptr)) selectParent();
         if (ImGui::MenuItem("Select Children", "Ctrl+Down", false, sel != nullptr)) selectChildren();
+        if (ImGui::MenuItem("Find and Change...", "Ctrl+Shift+E", m_showBulkEdit)) m_showBulkEdit = !m_showBulkEdit;
         ImGui::Separator();
         if (ImGui::MenuItem("Group", "Ctrl+G", false, editable)) groupSelected();
         if (ImGui::MenuItem("Ungroup", "Ctrl+U", false, editable && sel->kind == NodeKind::Model)) ungroupSelected();
@@ -2527,6 +2572,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Project Dependency Map")) m_scriptEditor->showDependencyMap();
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
+        if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
         if (ImGui::MenuItem("Script History", nullptr, &m_showScriptHistory)) {}

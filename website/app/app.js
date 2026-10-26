@@ -33,11 +33,11 @@ function show(content) {
 const view = $('#view');
 const KINDS = { hat: 'Hat', shirt: 'Shirt', pants: 'Pants', audio: 'Audio', plugin: 'Plugin', game: 'Game', decal: 'Decal', model: 'Model',
   hair: 'Hair', faceacc: 'Face Accessory', neck: 'Neck Accessory', shoulder: 'Shoulder Accessory', waist: 'Waist Accessory', face: 'Face',
-  tshirt: 'T-Shirt', gear: 'Gear', animation: 'Animation', emote: 'Emote', animpack: 'Animation Pack', bundle: 'Bundle' };
+  tshirt: 'T-Shirt', gear: 'Gear', animation: 'Animation', emote: 'Emote', animpack: 'Animation Pack', bundle: 'Bundle', bodypart: 'Body Part' };
 // Things you wear on the body, made in Studio's Accessory window (old-style hats are just a shape).
 const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
 // Bundles: a pack of items sold together (you get them all), maybe with a body change: meta.headless hides the head.
-const WEARABLE = ['shirt', 'pants', 'tshirt', 'face', ...ACCESSORIES, 'bundle'];
+const WEARABLE = ['shirt', 'pants', 'tshirt', 'face', ...ACCESSORIES, 'bundle', 'bodypart'];
 const isHeadless = (items) => (items || []).some((it) => it && it.kind === 'bundle' && it.meta && it.meta.headless);
 // An asset's ID, the way people see and type it: its number (like Roblox's), or the old ID for anything that hasn't got one.
 const assetNum = (a) => String(a.num || a.id);
@@ -1439,12 +1439,12 @@ function commentsBlock(g, cr) {
 // The Catalog, laid out like the old one (see browsePage).
 const CATALOG_CATS = [['featured', 'Featured'], ['collectibles', 'Collectibles'], ['auctions', 'Auctions'], '-', ['all', 'All Categories'],
   ['clothes', 'Clothing', [['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants']]],
-  ['body', 'Body Parts', [['face', 'Faces'], ['bundle', 'Bundles']]], ['gear', 'Gear'],
+  ['body', 'Body Parts', [['face', 'Faces'], ['bundle', 'Bundles'], ['bodypart', 'Individual Parts']]], ['gear', 'Gear'],
   ['emotes', 'Emotes', [['emote', 'Emotes'], ['animpack', 'Animation Packs']]],
   ['accessories', 'Accessories', [['hat', 'Hats'], ['hair', 'Hair'], ['faceacc', 'Face'], ['neck', 'Neck'], ['shoulder', 'Shoulder'], ['waist', 'Waist']]]];
 const CATALOG_PICK = {
   featured: (a) => a.creatorStaff, collectibles: (a) => !!a.limited, auctions: () => true, all: () => true,
-  clothes: (a) => ['shirt', 'tshirt', 'pants'].includes(a.kind), body: (a) => a.kind === 'face' || a.kind === 'bundle', accessories: (a) => ACCESSORIES.includes(a.kind),
+  clothes: (a) => ['shirt', 'tshirt', 'pants'].includes(a.kind), body: (a) => a.kind === 'face' || a.kind === 'bundle' || a.kind === 'bodypart', accessories: (a) => ACCESSORIES.includes(a.kind),
   emotes: (a) => isEmoteItem(a.kind),
 };
 const PRICES = { free: [0, 0], '1-100': [1, 100], '101-1000': [101, 1000], over: [1001, Infinity] };
@@ -2125,7 +2125,7 @@ async function peoplePage(id, which, page) {
 }
 
 // Someone's inventory: #/user/5/inventory (or /inventory/limited/2 for a group and a page).
-const INVENTORY_TABS = [['all', 'All'], ['accessories', 'Accessories'], ['clothing', 'Clothing'], ['faces', 'Faces'], ['bundles', 'Bundles'], ['gear', 'Gear'], ['emotes', 'Emotes'], ['limited', 'Limiteds']];
+const INVENTORY_TABS = [['all', 'All'], ['accessories', 'Accessories'], ['clothing', 'Clothing'], ['faces', 'Faces'], ['bundles', 'Bundles'], ['bodyparts', 'Body Parts'], ['gear', 'Gear'], ['emotes', 'Emotes'], ['limited', 'Limiteds']];
 function inventoryCard(a) {   // an item card, plus which numbered copies of a Limited they hold
   return html`<div class="inv-item">${itemCard(a)}${(a.serials || []).length ? html`<div class="small serials">${a.serials.map((n) => '#' + n).join(', ')}</div>` : ''}</div>`;
 }
@@ -2792,7 +2792,7 @@ pages.staff = async () => {
     ${connectBox(ca)}
     <h2>People</h2>
     <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make partners, make staff, give Bolts and ban.'
-      : 'Staff can verify people, make them a Partner, and take those badges away.'}</p>
+      : 'Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren\'t allowed.'}</p>
     <form class="row" data-form="staffSearch"><input type="search" name="q" placeholder="Search by name or user number (#5)" value="${query}" style="max-width:320px">
       <button class="btn blue">Search</button></form>
     <div class="list">${r.ok ? r.users.map((u) => html`<div>
@@ -2803,6 +2803,7 @@ pages.staff = async () => {
           : html`<button class="btn small green" data-act="staff" data-op="grant" data-key="verified" data-id="${u.id}">Verify</button>`}
         ${u.partner ? html`<button class="btn small" data-act="staff" data-op="revoke" data-key="partner" data-id="${u.id}">Remove partner</button>`
           : html`<button class="btn small" data-act="staff" data-op="grant" data-key="partner" data-id="${u.id}" title="Give them the Partner badge (for friends of Guts&amp;Bolts, like Lyreto)">Make partner</button>`}
+        ${u.userId && (me.official || !u.staff) ? html`<button class="btn small" data-act="staff" data-op="resetName" data-id="${u.id}" data-name="${u.username || u.name}" title="For usernames that aren't allowed: it becomes User ${u.userId}">Reset username</button>` : ''}
         ${me.official ? html`
           ${u.staff ? html`<button class="btn small" data-act="staff" data-op="revoke" data-key="staff" data-id="${u.id}">Remove staff</button>`
             : html`<button class="btn small" data-act="staff" data-op="grant" data-key="staff" data-id="${u.id}">Make staff</button>`}
@@ -2816,7 +2817,7 @@ pages.staff = async () => {
 };
 
 // The staff action log: who banned, warned, verified, checked or deleted what (newest first).
-const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤', connect: '🔑' };
+const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤', connect: '🔑', rename: '✏️' };
 function staffLogBox(lg, logFor) {
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.name}</a>` : '');
   const body = !lg.ok ? html`<p class="error">${lg.error}</p>`
@@ -2842,6 +2843,7 @@ function noteLink(n) {
   if (n.kind === 'gift' || n.kind === 'auction') return '#/item/' + n.about;
   if (n.kind === 'support') return '#/support';
   if (n.kind === 'ticket') return '#/staff';
+  if (n.kind === 'rename') return '#/settings';
   return '';
 }
 pages.notifications = async () => {
@@ -3801,12 +3803,14 @@ const actions = {
     const w = avatarDraft.wearing;
     const item = (id) => avatarOwned.find((x) => x.id === id);
     const kindOf = (id) => (item(id) ? item(id).kind : id.slice(0, id.lastIndexOf('-')));   // (old item ids are "<kind>-<hex>")
+    const slotOf = (id) => { const a = item(id); return a && a.kind === 'bodypart' ? 'bodypart:' + String(a.meta && a.meta.bodyPart || '') : kindOf(id); };
     const putOn = (id) => {
       const kind = kindOf(id);
       // Hats are stackable: keep every selected hat, up to the 12-item avatar limit.
       // Other wearable categories retain their existing one-of-each-kind behavior.
       if (kind !== 'hat') {
-        for (let i = w.length - 1; i >= 0; --i) if (kindOf(w[i]) === kind) w.splice(i, 1);
+        const slot = slotOf(id);
+        for (let i = w.length - 1; i >= 0; --i) if (slotOf(w[i]) === slot) w.splice(i, 1);
       }
       if (w.length >= 12) { toast('You can wear up to 12 items at once. Remove an item first.'); return false; }
       if (!w.includes(id)) w.push(id);
@@ -3860,6 +3864,9 @@ const actions = {
         return;
       }
       r = await call('admin.ban', { to: d.id, on: false });
+    } else if (d.op === 'resetName') {   // a username that isn't allowed becomes "User <number>"
+      if (!confirm('Reset ' + d.name + '\'s username? It becomes "User" and their user number, and nobody can use "' + d.name + '" again.')) return;
+      r = await call('admin.resetName', { to: d.id });
     } else if (d.op === 'warn') {   // a warning they see next time they come (and must say they understand)
       popup(html`<h1 class="popup-title">Warn this account</h1>
         <p>What did they do? They'll see this.</p>

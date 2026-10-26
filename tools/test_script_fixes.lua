@@ -303,5 +303,23 @@ workspace:SetAttribute("LuauWords", words)
     for sp, neutral in pairs(old) do sp.Neutral = neutral end
     redSpawn:Destroy() blueSpawn:Destroy() redTeam:Destroy() blueTeam:Destroy()
 
+    -- Common Roblox Instance lookup helpers.
+    local apiRoot = Instance.new("Folder")
+    apiRoot.Name = "ApiCompatibilityRoot"
+    apiRoot.Parent = workspace
+    local apiNested = Instance.new("Model")
+    apiNested.Name = "ApiCompatibilityModel"
+    apiNested.Parent = apiRoot
+    local apiPart = Instance.new("Part")
+    apiPart.Name = "ApiCompatibilityPart"
+    apiPart.Parent = apiNested
+    check(apiRoot:FindFirstChildWhichIsA("Model") == apiNested, "FindFirstChildWhichIsA searches direct children")
+    check(apiRoot:FindFirstChildWhichIsA("BasePart", true) == apiPart, "FindFirstChildWhichIsA recursive search")
+    check(apiPart:FindFirstAncestor("ApiCompatibilityModel") == apiNested, "FindFirstAncestor finds by name")
+    check(apiPart:FindFirstAncestorOfClass("Model") == apiNested, "FindFirstAncestorOfClass finds nearest matching class")
+    check(apiPart:FindFirstAncestorWhichIsA("Instance") == apiNested, "FindFirstAncestorWhichIsA aliases class hierarchy lookup")
+    check(apiPart:FindFirstAncestor("MissingAncestor") == nil, "FindFirstAncestor returns nil when absent")
+    apiRoot:Destroy()
+
     print(string.format("SCRIPT FIXES TEST DONE: %d passed, %d failed", passes, fails))
 end)

@@ -1,4 +1,5 @@
 #include "OnlineClient.h"
+#include "AssetCache.h"
 #include "Protocol.h"
 #include "../core/Account.h"
 #include "../game/Profile.h"
@@ -198,9 +199,15 @@ void takeMe(const json& reply) {
                     me.shirtImage.clear(); me.pantsImage.clear(); me.tshirtImage.clear(); me.faceImage.clear();
                     me.headless = false;
                     me.body.clear();
+                    me.bodyParts.clear();
                     me.accessories.clear();
                     const std::vector<std::string> wearing = me.wearing;
-                    for (const json& a : r["wearing"]) if (a.is_object()) Catalog::applyLook(Catalog::fromServer(a));
+                    for (const json& a : r["wearing"]) if (a.is_object()) {
+                        Catalog::Item item = Catalog::fromServer(a);
+                        if (item.type == Catalog::Type::BodyPart || (item.type == Catalog::Type::Bundle && !item.body.empty()))
+                            Online::download(item.id);  // warm the mesh cache for the next avatar apply
+                        Catalog::applyLook(item);
+                    }
                     me.wearing = wearing;   // (applyLook tidies the list; the server's is right)
                     me.save();
                 });

@@ -22,6 +22,28 @@ export const BUILT_IN_UPDATES = [
     ],
   },
   {
+    id: 'crowd-control', name: 'Crowd Control', time: 1793037789, tag: 'Studio',
+    summary: 'Change a hundred things as fast as one: edit lots of objects together, or find them by kind, tag or value and change them all at once.',
+    items: [
+      'Select lots of objects and change a box in Properties: every selected object of that kind changes too. Only the box you touched is copied',
+      'New Find and Change window (Edit menu, the Find button on the Home tab, or Ctrl+Shift+E)',
+      'Find by kind (Part, PointLight, BasePart...), name, tags, and a rule like Mass < 2 or Material = Neon',
+      'Change what you found: set a property, add to it or multiply it (Density x 1.5), or add and remove tags',
+      'Preview shows every old and new value before anything changes, and one Ctrl+Z puts it all back',
+      'Save a search with a name and use it again any time',
+    ],
+  },
+  {
+    id: 'clean-slate-usernames', name: 'Clean Slate Usernames', version: '0.7.6', time: 1793037600, tag: 'Website',
+    summary: 'Staff can now reset a username that isn\'t allowed. It becomes "User" and the player\'s user number.',
+    items: [
+      'A new Reset username button on the Staff page, next to each person (staff only).',
+      'The name becomes "User 5" (with their own user number), and they get a notification saying why.',
+      'The old name stays reserved, so nobody else can take it, and it doesn\'t show in their past names.',
+      'Only the official Guts account can reset a staff member\'s username. It shows up in the staff log like everything else.',
+    ],
+  },
+  {
     id: 'roblox-meshes-unsquashed', name: 'Roblox Meshes, Un-squashed', version: '0.7.6', time: 1793030400, tag: 'Studio',
     summary: 'Studio can now import Roblox .mesh files directly, including Draco-compressed geometry, and preserve more of the data that makes complex meshes work.',
     items: [
