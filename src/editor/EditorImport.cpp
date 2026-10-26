@@ -12,6 +12,7 @@
 #include "../scene/EditMesh.h"
 #include "../scene/Physics.h"
 #include "../scene/RobloxFile.h"
+#include "../scene/RobloxMesh.h"
 #include "../scene/Scene.h"
 #include "../scripting/Luau.h"
 
@@ -27,12 +28,13 @@ namespace fs = std::filesystem;
 
 namespace {
 
-enum class FileType { Model, RobloxModel, Place, Picture, Sound, Script, Unknown };
+enum class FileType { Model, RobloxMesh, RobloxModel, Place, Picture, Sound, Script, Unknown };
 
 FileType typeOf(const std::string& path) {
     std::string e = fs::path(path).extension().string();
     for (char& c : e) c = (char)std::tolower((unsigned char)c);
     if (ModelImport::isModelFile(path) || ModelImport::isOtherModelFile(path)) return FileType::Model;
+    if (e == ".mesh") return FileType::RobloxMesh;
     if (e == ".rbxm" || e == ".rbxmx") return FileType::RobloxModel;
     if (e == ".rbxl" || e == ".rbxlx" || e == ".gbscene") return FileType::Place;
     if (PictureImport::isPicture(path)) return FileType::Picture;
@@ -128,6 +130,24 @@ void Editor::importFiles(const std::vector<std::string>& paths, ImVec2 mouse, bo
                 added.push_back(n);
                 spread += half + 2.0f;
             }
+            break;
+        }
+        case FileType::RobloxMesh: {
+            std::ifstream file(path, std::ios::binary);
+            if (!file) { Log::error("Couldn't open Roblox mesh " + name + "."); break; }
+            std::string bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            std::string err;
+            RobloxMesh::Shape shape = RobloxMesh::parse(bytes, &err);
+            if (!shape.mesh) { Log::error("Couldn't import Roblox mesh " + name + ": " + err + "."); break; }
+            auto part = std::make_unique<SceneNode>(fs::path(path).stem().string());
+            part->anchored = true;
+            MeshEdit::attach(*part, shape.mesh);
+            part->transform.position = at + shape.center + right * spread;
+            part->transform.scale = glm::max(shape.size, glm::vec3(0.001f));
+            SceneNode* imported = m_scene->insert(std::move(part), m_scene->root());
+            added.push_back(imported);
+            spread += std::max(shape.size.x, shape.size.z) + 2.0f;
+            Log::system("Imported Roblox mesh " + name + ": " + std::to_string(shape.mesh->faces.size()) + " faces.");
             break;
         }
         case FileType::RobloxModel: {
@@ -238,7 +258,7 @@ void Editor::importFiles(const std::vector<std::string>& paths, ImVec2 mouse, bo
                 why = "Studio can't play videos yet. A picture from the video, or its sound saved as an .mp3, can go in.";
             if (!why.empty()) { Log::warn(name + ": " + why); break; }
             Log::warn("Studio doesn't know what to do with " + name + ". It can take 3D models (" +
-                      ModelImport::formatList() + "), Roblox files (.rbxm, .rbxl), games (.gbscene), "
+                      ModelImport::formatList() + "), Roblox meshes (.mesh), Roblox files (.rbxm, .rbxl), games (.gbscene), "
                       "pictures (.png, .jpg, .webp, .svg, .gif, .bmp, .tga, .psd, .hdr), sounds (.wav, .mp3, .ogg, .flac) "
                       "and scripts (.lua, .luau).");
             break;
@@ -254,7 +274,7 @@ void Editor::importFiles(const std::vector<std::string>& paths, ImVec2 mouse, bo
 void Editor::importDialog() {
     if (m_playing) { Log::warn("Stop the playtest first, then import."); return; }
     if (!FileDialog::available()) { m_pending = Pending::Open; m_openOpen = true; return; }
-    std::string pats = std::string(ModelImport::patterns()) + " *.rbxm *.rbxmx " + PictureImport::patterns() +
+    std::string pats = std::string(ModelImport::patterns()) + " *.mesh *.rbxm *.rbxmx " + PictureImport::patterns() +
                        " *.wav *.mp3 *.ogg *.flac *.lua *.luau";
     std::string path = FileDialog::openAny("Import into your game", "Models, pictures, sounds and scripts", pats);
     if (!path.empty()) importFiles({path}, ImVec2(0, 0), false);
