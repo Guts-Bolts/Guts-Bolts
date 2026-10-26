@@ -2124,6 +2124,7 @@
   "Reset Camera": "Resetuj kamerę",
   "Reset part": "Resetuj część",
   "Reset to High": "Przywróć Wysokie",
+  "Reset username": "Zresetuj nazwę użytkownika",
   "Reshape it in Modeling mode (Tab goes back)": "Zmień kształt w trybie modelowania (Tab wraca)",
   "Reshape the selected part's mesh (corners, edges, faces)": "Zmień siatkę zaznaczonej części (wierzchołki, krawędzie, ściany)",
   "Rest Pose": "Poza spoczynkowa",
@@ -2457,6 +2458,7 @@
   "Staff Tools": "Narzędzia obsługi",
   "Staff action log": "Dziennik działań obsługi",
   "Staff can verify people, make them a Partner, and take those badges away.": "Obsługa może weryfikować ludzi, robić ich Partnerami i odbierać te odznaki.",
+  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "Obsługa może weryfikować ludzi, nadawać im status Partnera, odbierać te odznaki i resetować niedozwolone nazwy użytkownika.",
   "Staff can't watch everything, and we aren't responsible for what other players say, make or do. If something is dangerous, report it, and contact the police if someone is in danger.": "Obsługa nie widzi wszystkiego i nie odpowiadamy za to, co mówią, tworzą lub robią inni gracze. Jeśli coś jest niebezpieczne, zgłoś to, a jeśli ktoś jest w niebezpieczeństwie, zawiadom policję.",
   "Staff may undo a trade or sale that came from a scam, a hacked account or a bug, but don't have to.": "Obsługa może cofnąć wymianę lub sprzedaż wynikającą z oszustwa, włamania na konto lub błędu, ale nie musi.",
   "Staff sent a reset code for": "Obsługa wysłała kod resetu dla",
@@ -3293,8 +3295,6 @@
   "🎁 Buy as a gift": "🎁 Kup jako prezent",
   "🎁 Gift box:": "🎁 Pudełko z prezentem:",
   "🔨 Auction:": "🔨 Aukcja:",
-  "🤝 Partner": "🤝 Partner",
-  "Reset username": "Zresetuj nazwę użytkownika",
-  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "Obsługa może weryfikować ludzi, nadawać im status Partnera, odbierać te odznaki i resetować niedozwolone nazwy użytkownika."
+  "🤝 Partner": "🤝 Partner"
  }
 }

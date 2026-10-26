@@ -16,6 +16,8 @@
     `tools/test_ai_tools.py`.
   - `tools/i18n/strings.txt` is made by `python3 tools/i18n/extract.py`: if it
     conflicts, take main's copy and run the script again instead of fixing it by hand.
+  - Translations in `website/lang/*.json` are kept in A-Z order: after adding
+    some, run `python3 tools/i18n/check.py --sort`.
   - Before pushing, merge the latest `main` into your branch and fix any conflict.
 - Say "Library", never "Marketplace".
 - Keep the Guts&Bolts branding; don't copy Roblox's name or logos.
