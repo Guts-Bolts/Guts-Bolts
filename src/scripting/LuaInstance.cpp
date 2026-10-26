@@ -132,16 +132,22 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
     }
     if (!shape.bones.empty() && part->editMesh) {
         std::vector<SceneNode*> imported(shape.bones.size(), nullptr);
+        std::vector<glm::mat4> sourceFrames(shape.bones.size(), glm::mat4(1.0f));
         for (size_t i = 0; i < shape.bones.size(); ++i) {
             const auto& source = shape.bones[i];
+            glm::vec3 normalized = (source.position - shape.center) /
+                                   glm::max(shape.size, glm::vec3(1e-5f));
+            glm::mat4 worldFrame = glm::translate(glm::mat4(1.0f), normalized * part->transform.scale) *
+                                   glm::mat4(source.rotation);
+            SceneNode* parent = source.parent >= 0 && (size_t)source.parent < i ? imported[(size_t)source.parent] : nullptr;
+            glm::mat4 localFrame = parent ? glm::inverse(sourceFrames[(size_t)source.parent]) * worldFrame : worldFrame;
             auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
             bone->bone = true;
-            bone->transform.position = ((source.position - shape.center) /
-                glm::max(shape.size, glm::vec3(1e-5f))) * part->transform.scale;
+            bone->transform.position = glm::vec3(localFrame[3]);
             float rz, ry, rx;
-            glm::extractEulerAngleZYX(glm::mat4(source.rotation), rz, ry, rx);
+            glm::extractEulerAngleZYX(localFrame, rz, ry, rx);
             bone->transform.rotation = glm::degrees(glm::vec3(rx, ry, rz));
-            SceneNode* parent = source.parent >= 0 && (size_t)source.parent < i ? imported[(size_t)source.parent] : nullptr;
+            sourceFrames[i] = worldFrame;
             imported[i] = parent ? parent->addChild(std::move(bone)) : part->addChild(std::move(bone));
         }
         part->editMesh->bind.resize(part->editMesh->bones.size(), glm::mat4(1.0f));
