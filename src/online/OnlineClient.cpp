@@ -1,4 +1,5 @@
 #include "OnlineClient.h"
+#include "AssetCache.h"
 #include "Protocol.h"
 #include "../core/Account.h"
 #include "../game/Profile.h"
