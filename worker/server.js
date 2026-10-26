@@ -65,10 +65,9 @@ const weekOf = (t) => Math.floor(t / (7 * 86400));
 const MAX_SIZE = { audio: 6 << 20, game: 24 << 20, plugin: 512 << 10, decal: 4 << 20, shirt: 1 << 20, pants: 1 << 20, model: 4 << 20,
   hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20,
   emote: 256 << 10, animpack: 512 << 10, bundle: 1 << 20 };
-// Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Only staff
-// make gear. You can have up to kMostGear equipped, and you get them in games whose
+// Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Verified
+// creators can upload it. You can equip any number of owned gear items, and you get them in games whose
 // creator ticked "Allow gear". (src/server has the same rules.)
-const kMostGear = 4;
 // Emotes and animation packs: keyframes for the character, sold in the catalog. Only staff
 // make them. Owners equip up to kEmoteSlots emotes (the emote menu's slots) and one animation
 // pack on the Avatar page; they play in every game. (src/server has the same rules.)
@@ -359,7 +358,7 @@ const kMsgKept = 500;            // messages kept per game at most
 const kMsgPerPoll = 200;         // handed out per msg.poll
 const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
-const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get']);
+const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
 const kCodeMinutes = 15, kCodeTries = 5, kMailGap = 60, kMailsPerDay = 8;
@@ -1945,7 +1944,6 @@ export class GbServerObject extends DurableObject {
       if (on) {
         if (!a || a.kind !== 'gear') return fail('That gear doesn\'t exist (any more).');
         if (!me.owned.includes(id)) return fail('Get it from the catalog first.');
-        if (me.gear.length >= kMostGear) return fail('You can have ' + kMostGear + ' gear equipped at once. Take one off first.');
         me.gear.push(id);
       }
       this.saveUser(me);
@@ -2472,7 +2470,7 @@ export class GbServerObject extends DurableObject {
       const verified = this.isVerified(me);
       if (isAccessory(kind) && !verified && !this.isStaff(me)) return fail('Only Verified creators can make hats and accessories. Shirts and pants are open to everyone!');
       if (kind === 'face' && !this.isOfficial(me)) return fail('Only Guts can make faces.');
-      if (kind === 'gear' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make gear.');
+      if (kind === 'gear' && !verified && !this.isStaff(me)) return fail('Only Verified creators can upload gear.');
       if (isEmoteItem(kind) && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make emotes and animation packs.');
       if (kind === 'bundle' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make bundles.');
       let price = clamp(num(args, 'price'), 0, 1000000);
@@ -4069,6 +4067,32 @@ export class GbServerObject extends DurableObject {
           posts: list.reduce((n, th) => n + th.posts.length, 0),
           last: newest ? { thread: newest.id, title: newest.title, by: who(newest.lastBy), at: newest.last } : null };
       }) });
+    }
+    if (name === 'forum.search') {
+      const q = str(args, 'q').trim().slice(0, 100).toLocaleLowerCase();
+      if (q.length < 2) return fail('Enter at least two characters to search.');
+      const requestedBoard = str(args, 'board');
+      const boardFilter = requestedBoard && requestedBoard !== 'all' ? boardOf(requestedBoard) : null;
+      if (requestedBoard && requestedBoard !== 'all' && !boardFilter) return fail('That board doesn’t exist.');
+      const all = [...this.forum.values()].filter((th) => (!boardFilter || th.board === boardFilter.id) && !hidden(th.by)).sort((x, y) => y.last - x.last);
+      const matches = [];
+      for (const th of all) {
+        const titleMatch = th.title.toLocaleLowerCase().includes(q);
+        let matchedPost = -1;
+        if (!titleMatch) matchedPost = th.posts.findIndex((post) => {
+          const author = this.users.get(post.by);
+          return (!author || !this.blocks(me, author)) && String(post.text || '').toLocaleLowerCase().includes(q);
+        });
+        if (!titleMatch && matchedPost < 0) continue;
+        const b = boardOf(th.board) || { name: '?' }, postIndex = matchedPost < 0 ? 0 : matchedPost;
+        const text = titleMatch ? th.title : String(th.posts[matchedPost].text || ''), at = text.toLocaleLowerCase().indexOf(q);
+        const start = Math.max(0, at - 65);
+        const snippet = (start ? '…' : '') + text.slice(start, Math.min(text.length, at + q.length + 95)) + (start + 160 < text.length ? '…' : '');
+        matches.push({ id: th.id, title: th.title, board: th.board, boardName: b.name, by: who(th.by), last: th.last,
+          replies: th.posts.length - 1, match: titleMatch ? 'title' : 'post', snippet, postPage: Math.floor(postIndex / kForumPage) });
+      }
+      const pageSize = 20, pages = Math.max(1, Math.ceil(matches.length / pageSize)), page = clamp(num(args, 'page'), 0, pages - 1);
+      return okay({ results: matches.slice(page * pageSize, (page + 1) * pageSize), total: matches.length, page, pages });
     }
     if (name === 'forum.list') {
       const b = boardOf(str(args, 'board'));

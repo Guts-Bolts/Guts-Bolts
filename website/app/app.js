@@ -791,12 +791,45 @@ function loadForumAvatars(root = view) {
     }
   });
 }
+
+function forumSearchForm(boards, selected = 'all', query = '') {
+  return html`<form class="forum-search form" data-form="forumSearch">
+    <label for="forumSearchQuery">Search discussions</label>
+    <div class="forum-search-row">
+      <input id="forumSearchQuery" type="search" name="q" value="${query}" maxlength="100" placeholder="Thread titles and post text…" required>
+      <select name="board" aria-label="Search board">
+        <option value="all" ${selected === 'all' ? 'selected' : ''}>All boards</option>
+        ${boards.map((b) => html`<option value="${b.id}" ${selected === b.id ? 'selected' : ''}>${b.name}</option>`)}
+      </select><button class="btn blue">Search</button>
+    </div>
+  </form>`;
+}
+pages.forumsearch = async (query, board = 'all', page = '1') => {
+  query = String(query || '').trim().slice(0, 100); board = board || 'all';
+  const p = Math.max(0, (Number(page) || 1) - 1);
+  const [br, r] = await Promise.all([pageCall('forum.boards', {}), pageCall('forum.search', { q: query, board, page: p })]);
+  if (!br.ok || !r.ok) { show(html`<h1>Forum search</h1><p class="error">${!br.ok ? br.error : r.error}</p><p><a href="#/forum">Back to forums</a></p>`); return; }
+  const base = '#/forumsearch/' + encodeURIComponent(query) + '/' + encodeURIComponent(board);
+  show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; Search</p>
+    <div class="forum-retro-masthead"><div><span class="forum-retro-kicker">SEARCH THE ARCHIVES</span><h1>Forum Search</h1><p>Find old arguments, answers, and half-forgotten threads.</p></div></div>
+    ${forumSearchForm(br.boards, board, query)}
+    ${r.total ? html`<p class="small muted">Showing ${r.results.length} of ${r.total} matching discussions · Page ${r.page + 1} of ${r.pages}</p>
+      <div class="forum-search-results">${r.results.map((x) => html`<article class="forum-search-result">
+        <div class="forum-search-result-main"><span class="forum-retro-kicker">${x.boardName} · ${x.match === 'title' ? 'TITLE MATCH' : 'POST MATCH'}</span>
+          <h2><a href="#/forum/t/${x.id}/${x.postPage + 1}">${x.title}</a></h2><p>${x.snippet}</p>
+          <span class="small muted">Started by ${forumWho(x.by)} · ${x.replies} replies · last activity ${ago(x.last)}</span>
+        </div><a class="forum-search-open" href="#/forum/t/${x.id}/${x.postPage + 1}">Open thread &raquo;</a>
+      </article>`)}</div>
+      ${r.pages > 1 ? html`<p class="pager">${r.page > 0 ? html`<a class="btn small" href="${base}/${r.page}">&lt; Back</a>` : ''}<span class="muted small">Page ${r.page + 1} of ${r.pages}</span>${r.page + 1 < r.pages ? html`<a class="btn small" href="${base}/${r.page + 2}">Next &gt;</a>` : ''}</p>` : ''}`
+      : html`<div class="box forum-search-empty"><h2>No matching discussions</h2><p class="muted">Try a shorter phrase or search all boards.</p></div>`}`);
+};
 pages.forum = async (board, a, b) => {
   if (board === 't') { await forumThread(a, Math.max(0, (Number(b) || 1) - 1)); return; }
   if (!board) {
     const r = await pageCall('forum.boards', {});
     if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p>`); return; }
     show(html`<div class="forum-retro-masthead"><div><span class="forum-retro-kicker">GUTS &amp; BOLTS COMMUNITY · EST. 2004</span><h1>Forum</h1><p>Games, questions, arguments, and whatever else is on your mind.</p></div><span class="forum-retro-stamp">STILL<br>POSTING</span></div><p class="muted forum-intro">Old-school boards, real player avatars. Be kind: the forum follows the same <a href="#/terms">rules</a> as chat.</p>
+      ${forumSearchForm(r.boards)}
       <div class="table-wrap"><table class="forum">
         <thead><tr><th>Board</th><th class="num">Threads</th><th class="num">Posts</th><th>Last post</th></tr></thead>
         <tbody>${r.boards.map((x) => html`<tr>
@@ -811,6 +844,7 @@ pages.forum = async (board, a, b) => {
   if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p><p><a href="#/forum">&lt; All boards</a></p>`); return; }
   const base = '#/forum/' + r.board.id;
   show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; ${r.board.name}</p><div class="forum-retro-masthead forum-retro-board-head"><div><span class="forum-retro-kicker">COMMUNITY BOARD</span><h1>${r.board.name}</h1><p>${r.board.about}</p></div><a class="btn small" href="#/forum">All boards</a></div>
+    ${forumSearchForm((await pageCall('forum.boards', {})).boards || [], r.board.id)}
     ${r.threads.length ? html`<div class="table-wrap"><table class="forum">
       <thead><tr><th>Thread</th><th class="num">Replies</th><th class="num">Views</th><th>Last post</th></tr></thead>
       <tbody>${r.threads.map((t) => html`<tr class="${t.pinned ? 'pinned' : ''}">
@@ -1516,7 +1550,7 @@ pages.item = async (id) => {
           ${a.kind === 'bundle' ? html`<p class="small"><b>In this bundle:</b> ${inBundle.length
               ? inBundle.map((x, i) => html`${i ? ', ' : ''}<a href="#/item/${x.id}">${x.name}</a>`) : html`<span class="muted">just itself</span>`}.
             ${a.meta && a.meta.headless ? 'Wearing it hides your head and face.' : ''} Buying it gives you everything in it; wear it on the <a href="#/avatar">Avatar</a> page.</p>` : ''}
-          ${a.kind === 'gear' ? html`<p class="small muted">Equipped gear goes in your backpack in games that allow gear (up to 4 at once).</p>`
+          ${a.kind === 'gear' ? html`<p class="small muted">Equipped gear goes in your backpack in games that allow gear. Equip as many owned gear items as you want.</p>`
             : a.kind === 'emote' ? html`<p class="small muted">Put it in one of your 8 emote slots, then press B in any game (or tap the smiley on a phone) and pick it. You can also type /e and its name in the chat.</p>`
             : a.kind === 'animpack' ? html`<p class="small muted">An animation pack changes how your character stands, walks, runs, jumps and falls, in every game.</p>`
             : owned ? html`<p class="small muted">Wear it from the Avatar page.</p>` : ''}
@@ -1727,7 +1761,7 @@ async function decalPicture(img) {
 
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
@@ -1743,7 +1777,7 @@ pages.create = async (tab = 'games') => {
     : html`Uploading costs a few Bolts (decals 5, clothes 10, audio 20, plugins 20; games are free).
       <span class="muted">${me.uploadsLeft} uploads left today.</span>`;
   const clothing = ['shirt', 'pants'].includes(kind), face = kind === 'face', tee = kind === 'tshirt', bundle = kind === 'bundle';
-  const accept = { decal: '.png,.jpg,.jpeg', audio: '.mp3,.wav,.ogg,.flac', plugin: '.lua', game: '.gbscene' }[kind] || '';
+  const accept = { decal: '.png,.jpg,.jpeg', audio: '.mp3,.wav,.ogg,.flac', plugin: '.lua', game: '.gbscene', gear: '.gbmodel,.json' }[kind] || '';
   const form = html`<h2>${kind === 'game' ? 'Publish a game' : 'Upload a new ' + KINDS[kind]}</h2>
     <form class="form" data-form="upload"><input type="hidden" name="kind" value="${kind}">
       <label>Name</label><input type="text" name="name" maxlength="50" required>
@@ -1762,7 +1796,7 @@ pages.create = async (tab = 'games') => {
         <label style="font-weight:normal"><input type="checkbox" name="headless"> Headless: wearing it hides the head and face</label>`
       : html`<label>File</label><input type="file" name="file" accept="${accept}" required>
         <p class="small muted">${{ decal: 'A .png or .jpg picture (up to 4 MB).', audio: 'An .mp3, .wav, .ogg or .flac file (up to 6 MB).',
-          plugin: 'A Lua plugin for Studio.', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).' }[kind]}</p>`}
+          plugin: 'A Lua plugin for Studio.', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).', gear: 'A .gbmodel file exported from Studio containing one Tool with a Handle. Gear is equipped from the catalog and appears in games that allow gear.' }[kind]}</p>`}
       ${['decal', 'audio'].includes(kind) ? html`<p class="small muted">${kind === 'decal' ? 'Decals' : 'Sounds'} are always free: anyone can use them in their games.</p>`
         : (me.verified || face || bundle) && kind !== 'game' ? html`<label>Price (Bolts)</label><input type="number" name="price" min="0" value="0">` : ''}
       ${kind === 'decal' || face || tee ? html`<img class="thumb" id="preview" alt="Preview" hidden style="width:120px;height:120px;margin-top:10px">` : ''}
@@ -1770,7 +1804,9 @@ pages.create = async (tab = 'games') => {
         <span id="uploadMsg"></span></p></form>`;
   // Hats are for Verified creators; shirts and pants are open to everyone.
   const hatLocked = kind === 'hat' && signedIn() && !me.verified;
-  const shownForm = hatLocked ? html`<h2>Upload a new Hat</h2><p class="error">Only Verified creators can make hats.</p>
+  const gearLocked = kind === 'gear' && signedIn() && !me.verified;
+  const shownForm = gearLocked ? html`<h2>Upload new Gear</h2><p class="error">Only Verified creators can upload gear.</p><p class="muted">Make a Tool in Studio, publish/export it as a model, and upload the .gbmodel file here. Your gear will appear in the Catalog's Gear category.</p>`
+    : hatLocked ? html`<h2>Upload a new Hat</h2><p class="error">Only Verified creators can make hats.</p>
     <p class="muted">You can still make <a href="#/create/shirt">shirts</a> and <a href="#/create/pants">pants</a>!</p>`
     : face && !(signedIn() && me.official) ? html`<p class="error">Only Guts can make faces.</p>`
     : bundle && !(signedIn() && me.staff) ? html`<p class="error">Only Guts&Bolts staff can make bundles.</p>`
@@ -1779,7 +1815,7 @@ pages.create = async (tab = 'games') => {
   const row = (a) => html`<div>
       ${a.kind === 'game' ? gameIcon(a, 48) : ''}
       ${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="">` : ''}
-      ${clothing || face || bundle || kind === 'hat' ? html`<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#fff">${itemIcon(a)}</div>` : ''}
+      ${clothing || face || bundle || kind === 'hat' || kind === 'gear' ? html`<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#fff">${itemIcon(a)}</div>` : ''}
       <div class="grow"><b>${a.kind === 'decal' || a.kind === 'audio' || a.kind === 'plugin' ? html`<a href="#/library/${assetNum(a)}">${a.name}</a>` : a.name}</b><br><span class="small muted">
         ${a.kind === 'game' ? html`${a.plays} plays · ${ACCESS_NAMES[a.access || 'public']}` : html`${a.price > 0 ? bolts(a.price) : 'free'} · ${a.sales} sold`}
         ${a.kind === 'decal' || a.kind === 'audio' ? html` · ID ${assetNum(a)}` : ''}</span></div>
@@ -2442,6 +2478,8 @@ pages.avatar = async () => {
   if (!avatarDraft) avatarDraft = Object.assign(defaultAvatar(), JSON.parse(JSON.stringify(me.avatar || {})));
   const a = avatarDraft;
   const wornItems = owned.filter((it) => a.wearing.includes(it.id));
+  const ownedHats = owned.filter((it) => it.kind === 'hat');
+  const wornHatCount = ownedHats.filter((it) => a.wearing.includes(it.id)).length;
   const outfits = outfitsR.ok ? outfitsR.outfits : [];
   const outfitBox = html`<h2>My outfits</h2>
     ${signedIn() ? html`<form class="row" data-form="outfitSave"><input type="text" name="name" maxlength="40" placeholder="Name this outfit" style="max-width:200px">
@@ -2475,13 +2513,21 @@ pages.avatar = async () => {
         ${a.hat ? html`<p class="row"><label style="margin:0;font-weight:normal"><input type="checkbox" data-avatar-hatcolor-on
           ${a.hatColor[0] >= 0 ? 'checked' : ''}> My own colour</label>
           <input type="color" data-avatar-hatcolor value="${hexOf(a.hatColor[0] >= 0 ? a.hatColor : HAT_COLORS[a.hat])}"></p>` : ''}
-        <h2>My clothes</h2>
-        ${owned.length ? html`<div class="grid">${owned.map((it) => html`<div class="card square">
+        <h2>Hats <span class="small muted">(${wornHatCount}/12 equipped)</span></h2>
+        <p class="small muted">Equip multiple hats at once. Select up to 12 owned hats; equipped hats stay on when you add another. Your built-in avatar hat is controlled separately above.</p>
+        ${ownedHats.length ? html`<div class="grid">${ownedHats.map((it) => html`<div class="card square">
+            <div class="pic" style="${a.wearing.includes(it.id) ? 'outline:3px solid #16a34a' : ''}">${itemIcon(it)}</div>
+            <div class="name">${it.name}</div>
+            <button class="btn small ${a.wearing.includes(it.id) ? 'green' : ''}" data-act="avatarWear" data-id="${it.id}" data-kind="hat">
+              ${a.wearing.includes(it.id) ? 'Wearing' : 'Wear hat'}</button></div>`)}</div>`
+          : html`<p class="muted">You don't own any hats yet. Find some in the <a href="#/catalog?cat=hat">Catalog</a>.</p>`}
+        <h2>My clothes and accessories</h2>
+        ${owned.filter((it) => it.kind !== 'hat').length ? html`<div class="grid">${owned.filter((it) => it.kind !== 'hat').map((it) => html`<div class="card square">
             <div class="pic" style="${a.wearing.includes(it.id) ? 'outline:3px solid #16a34a' : ''}">${itemIcon(it)}</div>
             <div class="name">${it.name}</div>
             <button class="btn small ${a.wearing.includes(it.id) ? 'green' : ''}" data-act="avatarWear" data-id="${it.id}" data-kind="${it.kind}">
               ${a.wearing.includes(it.id) ? 'Wearing' : 'Wear'}</button></div>`)}</div>`
-          : html`<p class="muted">You don't have any clothes yet. Get some in the <a href="#/catalog">Catalog</a>!</p>`}
+          : html`<p class="muted">You don't have any clothes or accessories yet. Get some in the <a href="#/catalog">Catalog</a>!</p>`}
         ${emoteBox}
         ${outfitBox}
       </div></div>`);
@@ -3756,13 +3802,19 @@ const actions = {
     const item = (id) => avatarOwned.find((x) => x.id === id);
     const kindOf = (id) => (item(id) ? item(id).kind : id.slice(0, id.lastIndexOf('-')));   // (old item ids are "<kind>-<hex>")
     const putOn = (id) => {
-      // One of each kind: a new T-shirt replaces the old one.
-      for (let i = w.length - 1; i >= 0; --i) if (kindOf(w[i]) === kindOf(id)) w.splice(i, 1);
-      if (w.length < 12) w.push(id);
+      const kind = kindOf(id);
+      // Hats are stackable: keep every selected hat, up to the 12-item avatar limit.
+      // Other wearable categories retain their existing one-of-each-kind behavior.
+      if (kind !== 'hat') {
+        for (let i = w.length - 1; i >= 0; --i) if (kindOf(w[i]) === kind) w.splice(i, 1);
+      }
+      if (w.length >= 12) { toast('You can wear up to 12 items at once. Remove an item first.'); return false; }
+      if (!w.includes(id)) w.push(id);
+      return true;
     };
     if (w.includes(d.id)) w.splice(w.indexOf(d.id), 1);
     else {
-      putOn(d.id);
+      if (!putOn(d.id)) { render(); return; }
       // A bundle puts on everything in it too (the things in it can be taken off one by one).
       const b = item(d.id);
       if (b && b.kind === 'bundle') for (const id of (b.meta && b.meta.items) || []) if (item(id) && !w.includes(id)) putOn(id);
@@ -3866,6 +3918,11 @@ const actions = {
 };
 
 const forms = {
+  forumSearch(f) {
+    const q = f.q.value.trim();
+    if (!q) return;
+    location.hash = '#/forumsearch/' + encodeURIComponent(q) + '/' + encodeURIComponent(f.board.value || 'all') + '/1';
+  },
   async forumPost(f) {
     const r = await call('forum.post', { board: f.board.value, title: f.title.value, text: f.text.value });
     if (!r.ok) { toast(r.error); return; }
