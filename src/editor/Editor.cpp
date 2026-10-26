@@ -49,6 +49,7 @@
 #include <string>
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <sstream>
 #include <filesystem>
 #include <fstream>
