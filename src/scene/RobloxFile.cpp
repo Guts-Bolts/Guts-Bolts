@@ -1451,18 +1451,24 @@ struct Converter {
             node->soundFx.priority = (int)in.num("Priority", 0.0);
             node->enabled = in.flag("Enabled", true);
             ++report.sounds;
-        } else if (c == "Attachment") {
+        } else if (c == "Attachment" || c == "Bone") {
             node = std::make_unique<SceneNode>(name, NodeKind::Attachment);
+            node->bone = c == "Bone";
             glm::vec3 pos(0.0f);
             glm::mat3 rot(1.0f);
             if (const Value* v = in.get("CFrame")) { pos = v->v * kImportScale; rot = v->r; }
-            // Attachments are placed relative to their part (in studs).
-            glm::vec3 psize = parent ? parent->transform.scale : glm::vec3(1.0f);
-            node->transform.position = pos / glm::max(psize, glm::vec3(1e-4f));
+            // Bone transforms are in the part's studs space (or their parent Bone's
+            // space); unlike ordinary Attachments, part size must not stretch them.
+            if (node->bone) {
+                node->transform.position = pos;
+            } else {
+                glm::vec3 psize = parent ? parent->transform.scale : glm::vec3(1.0f);
+                node->transform.position = pos / glm::max(psize, glm::vec3(1e-4f));
+            }
             float z, y, x;
             glm::extractEulerAngleZYX(glm::mat4(rot), z, y, x);
             node->transform.rotation = glm::degrees(glm::vec3(x, y, z));
-            ++report.constraints;
+            if (!node->bone) ++report.constraints;
         } else if (c == "RopeConstraint" || c == "RodConstraint" || c == "SpringConstraint" || c == "HingeConstraint" ||
                    c == "WeldConstraint" || c == "Weld" || c == "ManualWeld" || c == "Snap") {
             node = std::make_unique<SceneNode>(name, NodeKind::Constraint);
