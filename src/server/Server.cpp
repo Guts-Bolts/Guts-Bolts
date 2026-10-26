@@ -1302,8 +1302,6 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             auto it = findAsset(id);
             if (it == m_assets.end() || it->second.kind != "gear") return fail("That gear doesn't exist (any more).");
             if (!me.owned.count(id)) return fail("Get it from the catalog first.");
-            if ((int)me.gear.size() >= Online::kMostGear)
-                return fail("You can have " + std::to_string(Online::kMostGear) + " gear equipped at once. Take one off first.");
             me.gear.push_back(id);
         }
         saveUsers();
