@@ -1,6 +1,10 @@
 // The update log on the website (the "Updates" page). Every update gets its own
-// name. Newest first. Add a new one at the top whenever an update ships; staff can
-// also post updates from the website (those are kept in the server's database).
+// name. Staff can also post updates from the website (those are kept in the
+// server's database). The page sorts them by time, newest first.
+//
+// NEW UPDATES DON'T GO IN THIS FILE: each one is its own file in worker/updates/
+// (see worker/updates/README.md), so pull requests don't conflict. This file keeps
+// the older ones.
 //
 //   id     short and unique (letters, numbers, dashes)
 //   name   the update's name: make it fun and about what changed
@@ -8,32 +12,9 @@
 //   tag    what it's mostly about: Engine, Studio, Website, Player, Server, Fix
 //   items  what changed, one short line each, in plain words
 
+import NEW_UPDATES from './updates-gathered.js';
 
-export const BUILT_IN_UPDATES = [
-  {
-    id: 'lua-debugger-breakpoints', name: 'Stop Right There, Script', version: '0.7.6', time: 1793044800, tag: 'Studio',
-    summary: 'The Lua Debugger is easier to use and stops where it should: click a line number to add a breakpoint.',
-    items: [
-      'Click a line number in the Script Editor to add a breakpoint (a red dot). Click it again to take it away.',
-      'When a script stops at a breakpoint, the Script Editor jumps to that line and lights it up, and the game waits too.',
-      'Fixed: a breakpoint inside a loop only stopped every other time round.',
-      'Fixed: Step Over and Step Out could stop in a different script that happened to run next.',
-      'Code that Lua can\'t pause (like a table.sort comparison) now keeps running with a warning instead of an error.',
-      'AI apps can use the debugger too, with the new lua_debugger tool.',
-    ],
-  },
-  {
-    id: 'crowd-control', name: 'Crowd Control', time: 1793037789, tag: 'Studio',
-    summary: 'Change a hundred things as fast as one: edit lots of objects together, or find them by kind, tag or value and change them all at once.',
-    items: [
-      'Select lots of objects and change a box in Properties: every selected object of that kind changes too. Only the box you touched is copied',
-      'New Find and Change window (Edit menu, the Find button on the Home tab, or Ctrl+Shift+E)',
-      'Find by kind (Part, PointLight, BasePart...), name, tags, and a rule like Mass < 2 or Material = Neon',
-      'Change what you found: set a property, add to it or multiply it (Density x 1.5), or add and remove tags',
-      'Preview shows every old and new value before anything changes, and one Ctrl+Z puts it all back',
-      'Save a search with a name and use it again any time',
-    ],
-  },
+const OLDER_UPDATES = [
   {
     id: 'clean-slate-usernames', name: 'Clean Slate Usernames', version: '0.7.6', time: 1793037600, tag: 'Website',
     summary: 'Staff can now reset a username that isn\'t allowed. It becomes "User" and the player\'s user number.',
@@ -1696,3 +1677,5 @@ export const BUILT_IN_UPDATES = [
     ],
   },
 ];
+
+export const BUILT_IN_UPDATES = [...NEW_UPDATES, ...OLDER_UPDATES];
