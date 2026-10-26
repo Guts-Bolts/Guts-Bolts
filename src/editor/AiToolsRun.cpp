@@ -1320,6 +1320,49 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                      {"unreferenced_modules", unused},
                      {"note", "Static heuristic only: scripts were not executed. Dynamic require expressions, string-built paths and runtime-only references may be missed."}});
     }
+    if (name == "lua_debugger") {
+        ScriptEngine& scripts = m_session->scripts();
+        const std::string action = str("action");
+        if (action == "add_breakpoint" || action == "remove_breakpoint") {
+            SceneNode* n;
+            if (!need("object", n)) return refErr;
+            if (!n->isScript()) return fail("NOT_A_SCRIPT", label(n) + " isn't a script.", "find_objects with class Script to find it.");
+            const int line = args.value("line", 0);
+            if (line < 1) return fail("INVALID_INPUT", "Give the line number (1 or more).", "read_script shows the lines.");
+            scripts.debugSetBreakpoint(n->id, line, action == "add_breakpoint");
+        } else if (action == "clear_breakpoints") {
+            scripts.debugClearBreakpoints();
+        } else if (action == "continue" || action == "step_over" || action == "step_into" || action == "step_out") {
+            if (!m_playing) return fail("NOT_PLAYING", "There's no playtest.", "Add a breakpoint, then playtest start.");
+            if (!scripts.debugPaused()) return fail("NOT_PAUSED", "No script is paused at a breakpoint.", "lua_debugger status shows the breakpoints.");
+            if (action == "continue") scripts.debugContinue();
+            else if (action == "step_over") scripts.debugStepOver();
+            else if (action == "step_into") scripts.debugStepInto();
+            else scripts.debugStepOut();
+        } else if (action != "status") {
+            return fail("INVALID_INPUT", "action must be status, add_breakpoint, remove_breakpoint, clear_breakpoints, continue, "
+                                         "step_over, step_into or step_out.", "");
+        }
+        json d = {{"playing", m_playing}, {"paused", m_playing && scripts.debugPaused()}, {"pauses", scripts.debugPauses()}};
+        if (m_playing && scripts.debugPaused()) {
+            SceneNode* at = m_scene->findById(scripts.debugScript());
+            d["at"] = {{"object_id", at ? idOf(at) : std::string()}, {"source", scripts.debugSourceForUi()},
+                       {"line", scripts.debugLine()}, {"reason", scripts.debugReason()}};
+            d["call_stack"] = scripts.debugCallStack();
+            d["locals"] = scripts.debugLocals();
+        }
+        json bps = json::array();
+        for (const auto& bp : scripts.debugBreakpoints()) {
+            SceneNode* n = m_scene->findById(bp.first);
+            bps.push_back({{"object_id", n ? idOf(n) : std::string()}, {"name", n ? n->fullName() : std::string("[deleted script]")},
+                           {"line", bp.second}});
+        }
+        d["breakpoints"] = bps;
+        if (m_playing && !scripts.debugPaused() && !bps.empty())
+            d["note"] = "Running: a script pauses when it reaches a breakpoint. Call status again to see.";
+        return done(d);
+    }
+
     if (name == "validate_scene") {
         json all = json::array();
         diagnose(root, true, all);

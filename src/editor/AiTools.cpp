@@ -398,6 +398,22 @@ const std::vector<Tool>& tools() {
           "analyze_script_dependencies -> inspect findings -> edit_script -> analyze_script_dependencies again.",
           "\"Show me the ModuleScript dependency graph.\""},
          schema(json::object(), {})},
+        {"lua_debugger", "Pause scripts at breakpoints and step", "DEBUG", false, false, false, Risk::Low,
+         {"Studio's Lua Debugger. Breakpoints (a script and a line) pause a script during a playtest when it reaches "
+          "that line; the whole game waits while it is paused. Then read where it stopped, the call stack and the "
+          "local variables, and continue or step one line at a time. Breakpoints stay set between playtests.",
+          "\"Why is this variable wrong?\", \"does this line ever run?\", following a script line by line.",
+          "For what scripts printed use get_output; for errors use get_errors.",
+          "action (required): status, add_breakpoint, remove_breakpoint, clear_breakpoints, continue, step_over, "
+          "step_into, step_out. object and line for add_breakpoint / remove_breakpoint.",
+          "{paused, at: {object_id, source, line, reason}, call_stack, locals, breakpoints: [{object_id, name, line}], pauses}.",
+          "continue and the steps need a playtest that is paused at a breakpoint.",
+          "Stepping runs the script's code (it can change the game, like playing does).",
+          "lua_debugger add_breakpoint -> playtest start -> lua_debugger status -> step_over -> status -> continue.",
+          "\"Stop my Door script at line 12 and tell me what `open` is.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"status", "add_breakpoint", "remove_breakpoint", "clear_breakpoints",
+                                                         "continue", "step_over", "step_into", "step_out"}}}},
+                 {"object", kObject}, {"line", {{"type", "integer"}, {"minimum", 1}}}}, {"action"})},
         {"validate_scene", "Check the whole game for problems", "DEBUG", true, false, true, Risk::None,
          {"Runs diagnose_object over the whole game and adds up the results: script syntax errors, broken constraints, "
           "misplaced objects, invisible or falling-through parts, plus recent errors in the Output.",
