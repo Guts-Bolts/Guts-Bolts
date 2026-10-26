@@ -67,6 +67,7 @@ private:
     SDL_Window* m_sdl = nullptr;
     void*       m_gl = nullptr;
     bool        m_quit = false;
+    bool        m_background = false;   // the phone went to the home screen (see beginFrame)
     int         m_backPressed = 0;
     int         m_landscape = -1;
 #else
