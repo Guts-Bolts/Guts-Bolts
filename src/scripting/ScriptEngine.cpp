@@ -1449,7 +1449,8 @@ local services = { Workspace = workspace, PathfindingService = PathfindingServic
                    ContextActionService = ContextActionService, VRService = VRService }
 -- The container services are folders at the top of the game (Studio shows them in the Explorer).
 local storageNames = { ReplicatedStorage = true, ServerStorage = true, ReplicatedFirst = true, ServerScriptService = true,
-                       StarterPack = true, StarterPlayer = true, SoundService = true, Chat = true, TextChatService = true }
+                       StarterPack = true, StarterPlayer = true, SoundService = true, Chat = true, TextChatService = true,
+                       MaterialService = true }
 local storage = __gb_storage
 -- Services Guts and Bolts doesn't do much with yet: they exist (so scripts written for
 -- Roblox start), their harmless calls do nothing, and anything else says so clearly.
@@ -1457,7 +1458,7 @@ local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, Scri
     Stats = {}, GuiService = {}, HapticService = {}, LocalizationService = {},
     AnalyticsService = { LogCustomEvent = true, LogEconomyEvent = true, LogProgressionEvent = true },
     PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {}, TextService = {},
-    MaterialService = {}, VoiceChatService = {},
+    VoiceChatService = {},
     MemoryStoreService = {}, InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
     GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }

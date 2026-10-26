@@ -234,6 +234,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Beam:      return "Beam";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
         case NodeKind::Sky:        return "Sky";
+        case NodeKind::MaterialVariant: return "MaterialVariant";
         case NodeKind::Particles: return n->particleClass();
         case NodeKind::Light:  return n->lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::ForceField: return "ForceField";
@@ -1227,6 +1228,42 @@ bool skyNewIndex(lua_State* L, SceneNode* n, const char* k) {
     return false;
 }
 
+std::string* variantPicture(MaterialVariantProps& v, const char* k) {
+    if (is(k, "ColorMap"))     return &v.colorMap;
+    if (is(k, "NormalMap"))    return &v.normalMap;
+    if (is(k, "RoughnessMap")) return &v.roughnessMap;
+    if (is(k, "MetalnessMap")) return &v.metalnessMap;
+    return nullptr;
+}
+
+// A MaterialVariant: Roblox's properties, plus Roughness / Metalness / Glow (ours).
+bool variantIndex(lua_State* L, SceneNode* n, const char* k) {
+    MaterialVariantProps& v = n->variant;
+    if (std::string* pic = variantPicture(v, k)) { lua_pushstring(L, pic->c_str()); return true; }
+    if (is(k, "BaseMaterial")) { lua_pushstring(L, kMaterialNames[(int)v.base]); return true; }
+    if (is(k, "StudsPerTile")) { lua_pushnumber(L, v.studsPerTile); return true; }
+    if (is(k, "Roughness"))    { lua_pushnumber(L, v.roughness); return true; }
+    if (is(k, "Metalness"))    { lua_pushnumber(L, v.metalness); return true; }
+    if (is(k, "Glow"))         { lua_pushnumber(L, v.glow); return true; }
+    return false;
+}
+
+bool variantNewIndex(lua_State* L, SceneNode* n, const char* k) {
+    MaterialVariantProps& v = n->variant;
+    if (std::string* pic = variantPicture(v, k)) { *pic = luaL_checkstring(L, 3); clampVariant(v); return true; }
+    if (is(k, "BaseMaterial")) {
+        if (!parseMaterial(luaL_checkstring(L, 3), v.base))
+            luaL_error(L, "Unknown material '%s' (the materials are %s)", lua_tostring(L, 3), materialNameList());
+        return true;
+    }
+    if (is(k, "StudsPerTile")) { v.studsPerTile = (float)luaL_checknumber(L, 3); clampVariant(v); return true; }
+    if (is(k, "Roughness"))    { v.roughness = (float)luaL_checknumber(L, 3); clampVariant(v); return true; }
+    if (is(k, "Metalness"))    { v.metalness = (float)luaL_checknumber(L, 3); clampVariant(v); return true; }
+    if (is(k, "Glow"))         { v.glow = (float)luaL_checknumber(L, 3); clampVariant(v); return true; }
+    if (is(k, "MaterialPattern") || is(k, "TexturePack") || is(k, "CustomPhysicalProperties")) return true;   // (accepted)
+    return false;
+}
+
 bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
     const GuiProps& g = n->gui;
     if (is(k, "AbsoluteSize") || is(k, "AbsolutePosition")) GameGui::refresh(*E(L)->scene());
@@ -1919,6 +1956,7 @@ int inst_index(lua_State* L) {
     if (n->isMover() && moverIndex(L, n, k)) return 1;
     if (n->isPostEffect() && postIndex(L, n, k)) return 1;
     if (n->isSky() && skyIndex(L, n, k)) return 1;
+    if (n->isMaterialVariant() && variantIndex(L, n, k)) return 1;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointIndex(L, n, k)) return 1;
     if (n->isParticles() && particleIndex(L, n, k)) return 1;
     if (n->isConstraint()) {
@@ -1987,6 +2025,7 @@ int inst_index(lua_State* L) {
         }
         if (is(k, "CastShadow"))   { lua_pushboolean(L, n->castShadow); return 1; }
         if (is(k, "Material"))     { lua_pushstring(L, kMaterialNames[(int)n->material]); return 1; }
+        if (is(k, "MaterialVariant")) { lua_pushstring(L, n->materialVariant.c_str()); return 1; }
         if (is(k, "Shape"))        { lua_pushstring(L, shapeName(n->primitiveType)); return 1; }
         if (is(k, "Velocity") || is(k, "AssemblyLinearVelocity")) { LuaApi::pushVector3(L, n->velocity); return 1; }
         if (is(k, "RotVelocity") || is(k, "AssemblyAngularVelocity")) { LuaApi::pushVector3(L, n->angularVelocity); return 1; }
@@ -2250,6 +2289,7 @@ int inst_newindex(lua_State* L) {
     if (n->isMover() && moverNewIndex(L, n, k)) return 0;
     if (n->isPostEffect() && postNewIndex(L, n, k)) return 0;
     if (n->isSky() && skyNewIndex(L, n, k)) return 0;
+    if (n->isMaterialVariant() && variantNewIndex(L, n, k)) return 0;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointNewIndex(L, n, k)) return 0;
     if (n->isParticles() && particleNewIndex(L, n, k)) return 0;
     if (n->isConstraint()) {
@@ -2361,6 +2401,7 @@ int inst_newindex(lua_State* L) {
                 return luaL_error(L, "Unknown material '%s' (the materials are %s)", lua_tostring(L, 3), materialNameList());
             return 0;
         }
+        if (is(k, "MaterialVariant")) { n->materialVariant = std::string(luaL_checkstring(L, 3)).substr(0, 100); return 0; }
         if (is(k, "Shape")) {
             PrimitiveType t;
             if (!parseShape(luaL_checkstring(L, 3), t))
@@ -2690,6 +2731,8 @@ int inst_new(lua_State* L) {
         for (int i = 0; i < kPostEffectCount; ++i) if (cls == kPostEffectClassNames[i]) n->post = postEffectDefaults((PostEffectType)i);
     } else if (cls == "Sky") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Sky);
+    } else if (cls == "MaterialVariant") {
+        n = std::make_unique<SceneNode>(cls, NodeKind::MaterialVariant);
     } else if (std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), cls) != std::end(kParticleClassNames)) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Particles);
         for (int i = 0; i < kParticleTypeCount; ++i) if (cls == kParticleClassNames[i]) n->particle = particleDefaults((ParticleType)i);

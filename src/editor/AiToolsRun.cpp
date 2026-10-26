@@ -54,6 +54,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Highlight: return "Highlight";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
         case NodeKind::Sky:       return "Sky";
+        case NodeKind::MaterialVariant: return "MaterialVariant";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
@@ -139,7 +140,7 @@ std::string canon(const std::string& s) {
 const std::vector<std::string>& serviceList() {
     static const std::vector<std::string> list = {"Workspace", "Players", "Lighting", "ReplicatedFirst", "ReplicatedStorage",
         "ServerScriptService", "ServerStorage", "StarterGui", "StarterPack", "StarterPlayer", "Teams", "SoundService",
-        "Chat", "TextChatService"};
+        "Chat", "TextChatService", "MaterialService"};
     return list;
 }
 // Where objects can go (Players fills itself while the game runs; Lighting holds settings).
@@ -191,6 +192,8 @@ const char* const kLuaProperties[] = {
     "Responsiveness", "RigidityEnabled", "ReactionForceEnabled", "ReactionTorqueEnabled", "ApplyAtCenterOfMass",
     "RelativeTo", "Mode", "AlignType", "PrimaryAxisOnly", "ForceLimitMode", "ForceLimitsEnabled",
     "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart",
+    "MaterialVariant", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "StudsPerTile",
+    "Roughness", "Metalness", "Glow",
 };
 
 // The names as a Lua table, for __gb_aiProps.

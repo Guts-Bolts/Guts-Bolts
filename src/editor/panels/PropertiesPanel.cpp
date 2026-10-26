@@ -1,4 +1,5 @@
 #include "PropertiesPanel.h"
+#include "../MaterialUi.h"
 #include "../../core/I18n.h"
 #include "../../online/Protocol.h"
 #include "../../scene/Scene.h"
@@ -42,6 +43,7 @@ void PropertiesPanel::render() {
                     : node->kind == NodeKind::Highlight ? "Highlight"
                     : node->kind == NodeKind::PostEffect ? kPostEffectClassNames[(int)node->post.type]
                     : node->kind == NodeKind::Sky      ? "Sky"
+                    : node->kind == NodeKind::MaterialVariant ? "MaterialVariant"
                     : node->kind == NodeKind::ClickDetector ? "ClickDetector"
                     : node->kind == NodeKind::Trail    ? "Trail"
                     : node->kind == NodeKind::Beam     ? "Beam"
@@ -597,6 +599,17 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::Spacing();
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("%s Works right inside Lighting (or the Camera, from a script). Several add up.", about);
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    if (node->isMaterialVariant()) {
+        ImGui::SeparatorText("MaterialVariant");
+        MaterialUi::edit(node->variant);
+        if (ImGui::Button("Open in the Material Editor", ImVec2(-1, 0)) && m_openMaterials) m_openMaterials(node->id);
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Put it in MaterialService. A part shows it when its Material is the BaseMaterial and its MaterialVariant is this one's name.");
         ImGui::PopTextWrapPos();
         return;
     }
@@ -1278,6 +1291,31 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         int mat = (int)node->material;
         if (ImGui::Combo("Material", &mat, kMaterialNames, kMaterialCount))
             node->material = (Material)mat;
+        // MaterialVariant: one of the game's own materials (MaterialService). Picking one
+        // also sets Material to its BaseMaterial, which it needs to show.
+        {
+            std::vector<SceneNode*> vars;
+            if (SceneNode* ms = m_scene->serviceFolder("MaterialService", false))
+                for (auto& c : ms->children) if (c->isMaterialVariant()) vars.push_back(c.get());
+            SceneNode* on = nullptr;
+            for (SceneNode* v : vars) if (v->name == node->materialVariant) { on = v; break; }
+            std::string shown = node->materialVariant.empty() ? std::string("(none)")
+                              : !on ? node->materialVariant + " (not in MaterialService)"
+                              : on->variant.base != node->material ? node->materialVariant + " (needs Material " + kMaterialNames[(int)on->variant.base] + ")"
+                              : node->materialVariant;
+            if (ImGui::BeginCombo("MaterialVariant", shown.c_str())) {
+                if (ImGui::Selectable("(none)", node->materialVariant.empty())) node->materialVariant.clear();
+                for (SceneNode* v : vars) {
+                    ImGui::PushID(v);
+                    if (ImGui::Selectable(v->name.c_str(), v == on)) { node->materialVariant = v->name; node->material = v->variant.base; }
+                    ImGui::PopID();
+                }
+                ImGui::Separator();
+                if (ImGui::Selectable("Material Editor...") && m_openMaterials) m_openMaterials(on ? on->id : 0);
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Your own materials, made in the Material Editor (VIEW > Materials)");
+        }
 
         ImGui::SliderFloat("Transparency", &node->transparency, 0.0f, 1.0f);
     }

@@ -49,11 +49,13 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //   PostEffect — a screen effect in Lighting (or the Camera): ColorCorrectionEffect,
 //                SunRaysEffect, DepthOfFieldEffect, BloomEffect, BlurEffect
 //   Sky        — in Lighting: skybox pictures, the sun and moon, how many stars
+//   MaterialVariant — in MaterialService: your own material, made from pictures (colour,
+//                bumps, shininess, metal) on top of a built-in one. Parts use it by name.
 //   Particles  — a ParticleEmitter, Fire, Smoke or Sparkles inside a part (or an
 //                Attachment): little pictures that fly out of it (see ParticleProps)
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
                       FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector, Particles, Camera,
-                      PostEffect, Sky, SoundGroup, SoundEffect };
+                      PostEffect, Sky, SoundGroup, SoundEffect, MaterialVariant };
 
 // A sound effect's settings (kind == SoundEffect; `enabled` is Enabled). Which numbers mean
 // what depends on the type: SoundFx::params(type) names them (DecayTime, Delay, Level...).
@@ -560,6 +562,28 @@ inline MaterialPhysics materialPhysics(Material m) {
 // number; 7-9 are water, liquid and terrain, so the newer ones start at 10.
 inline int materialShaderId(Material m) { return (int)m < 7 ? (int)m : (int)m + 3; }
 
+// A MaterialVariant (kind == MaterialVariant), in MaterialService, like Roblox's. A part
+// whose Material is this one's BaseMaterial and whose MaterialVariant is this one's name
+// is drawn with these pictures (ids like a Decal's: "gb:<id>" or a file; "" = none). It
+// still weighs, grips and bounces like the BaseMaterial.
+struct MaterialVariantProps {
+    Material    base = Material::Plastic;                       // BaseMaterial
+    std::string colorMap, normalMap, roughnessMap, metalnessMap; // ColorMap, NormalMap, RoughnessMap, MetalnessMap
+    float       studsPerTile = 10.0f;    // StudsPerTile: how big one copy of the pictures is (Roblox studs)
+    // Ours, for when there's no picture for it: 0 smooth .. 1 rough, 0 not metal .. 1 metal,
+    // and how much it glows (0 = not at all; the part's colour times its ColorMap).
+    float       roughness = 0.5f, metalness = 0.0f, glow = 0.0f;
+};
+inline void clampVariant(MaterialVariantProps& v) {
+    auto c = [](float& f, float lo, float hi) { f = (f == f) ? (f < lo ? lo : f > hi ? hi : f) : lo; };
+    c(v.studsPerTile, 0.1f, 1000.0f);
+    c(v.roughness, 0.0f, 1.0f);
+    c(v.metalness, 0.0f, 1.0f);
+    c(v.glow, 0.0f, 10.0f);
+    for (std::string* t : {&v.colorMap, &v.normalMap, &v.roughnessMap, &v.metalnessMap})
+        if (t->size() > 500) t->resize(500);
+}
+
 // A custom value on an object, like Roblox Attributes (Properties panel >
 // Attributes, or part:SetAttribute("Coins", 5) in a script).
 // Tool.Grip's default turn (see SceneNode::gripRot): none, like Roblox's. The Handle's
@@ -616,6 +640,7 @@ public:
     float    localTransparency = 0.0f;
     float    shownTransparency() const { return 1.0f - (1.0f - transparency) * (1.0f - localTransparency); }
     Material material      = Material::Plastic;
+    std::string materialVariant;             // a MaterialVariant's name in MaterialService ("" = none)
 
     // Behaviour
     bool     anchored   = true;              // false = falls with gravity in Play
@@ -645,6 +670,7 @@ public:
     EffectProps effect;                   // (kind == Trail / Beam)
     PostEffectProps post;                 // (kind == PostEffect)
     SkyProps    sky;                      // (kind == Sky)
+    MaterialVariantProps variant;         // (kind == MaterialVariant)
     ParticleProps particle;               // (kind == Particles)
 
     // Anything
@@ -810,6 +836,7 @@ public:
     bool isEffect() const { return kind == NodeKind::Trail || kind == NodeKind::Beam; }
     bool isPostEffect() const { return kind == NodeKind::PostEffect; }
     bool isSky() const { return kind == NodeKind::Sky; }
+    bool isMaterialVariant() const { return kind == NodeKind::MaterialVariant; }
     bool isSpawnLocation() const {
         return isPart() && (name == "SpawnLocation" || std::find(tags.begin(), tags.end(), "SpawnLocation") != tags.end());
     }

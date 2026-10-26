@@ -675,6 +675,9 @@ void Editor::renderToolbar() {
             if (bigButton("Script Analysis", Icons::Id::Script, m_scriptEditor->analysisShown(), true,
                           "Find mistakes in every script without pressing Play"))
                 m_scriptEditor->showAnalysis();
+            if (bigButton("Materials", Icons::Id::Lighting, m_showMaterialEditor, true,
+                          "Material Editor: make your own materials from pictures (colours, bumps, shine)"))
+                m_showMaterialEditor = !m_showMaterialEditor;
             if (bigButton("Shortcuts", Icons::Id::Keyboard, m_showShortcuts, true, "Every keyboard shortcut (F1)"))
                 m_showShortcuts = !m_showShortcuts;
             if (bigButton("Settings", Icons::Id::Settings, false, true, "Graphics and frame rate")) m_showSettings = true;
