@@ -144,17 +144,22 @@ function pieces(model, av, items) {
   const def = { head: [245, 205, 48], torso: [13, 105, 172], leftArm: [245, 205, 48], rightArm: [245, 205, 48], leftLeg: [75, 151, 75], rightLeg: [75, 151, 75] };
   const col = {};
   for (const k of Object.keys(def)) col[k] = colorOf(a[k], def[k]);
-  let hat = a.hat | 0;
-  let hatTint = Array.isArray(a.hatColor) && a.hatColor[0] >= 0 ? colorOf(a.hatColor) : null;
+  const hatsToDraw = [];
+  const builtInHat = a.hat | 0;
+  const builtInTint = Array.isArray(a.hatColor) && a.hatColor[0] >= 0 ? colorOf(a.hatColor) : null;
   for (const it of items || []) {
     const c = it.meta && Array.isArray(it.meta.color) ? colorOf(it.meta.color) : null;
-    if (!c) continue;
-    if (it.kind === 'shirt') { col.torso = c; col.leftArm = c; col.rightArm = c; }
-    if (it.kind === 'pants') { col.leftLeg = c; col.rightLeg = c; }
-    if (it.kind === 'hat' && !isModelAccessory(it)) { hat = Number(it.meta.style) || 2; hatTint = c; }
+    if (c) {
+      if (it.kind === 'shirt') { col.torso = c; col.leftArm = c; col.rightArm = c; }
+      if (it.kind === 'pants') { col.leftLeg = c; col.rightLeg = c; }
+    }
+    if (it.kind === 'hat' && !isModelAccessory(it)) {
+      hatsToDraw.push({ style: Number(it.meta && it.meta.style) || 2, tint: c });
+    }
   }
-  // A Studio-made hat or hair takes the place of the built-in hat (Player::hideBuiltInHat).
-  if ((items || []).some((it) => isModelAccessory(it) && (it.kind === 'hat' || it.kind === 'hair'))) hat = 0;
+  // Keep the built-in hat unless a Studio accessory explicitly replaces it.
+  const hasModelHat = (items || []).some((it) => isModelAccessory(it) && (it.kind === 'hat' || it.kind === 'hair'));
+  if (builtInHat && !hasModelHat) hatsToDraw.unshift({ style: builtInHat, tint: builtInTint });
   const out = [];
   // A Headless Head bundle (meta.headless): no head, so no face either (Player::setHeadless).
   const headless = (items || []).some((it) => it && it.kind === 'bundle' && it.meta && it.meta.headless);
@@ -171,28 +176,30 @@ function pieces(model, av, items) {
   const head = model.Head;
   const hc = head ? head.min.map((m, i) => (m + head.max[i]) / 2) : [0, 2.325, 0];
   const hs = head ? head.min.map((m, i) => head.max[i] - m) : [0.72, 0.65, 0.72];
-  // The hat (Player::applyHat).
+  // Stack classic hats vertically so multiple owned hats remain visible together.
   const top = hc[1] + hs[1] * 0.5, w = hs[0] / 0.72;
-  const main = (normal) => hatTint || normal;
-  const H = (shape, p, s, c, extra = {}) => out.push(Object.assign({ shape, at: [p[0] * w, p[1], p[2] * w], size: [s[0] * w, s[1], s[2] * w], color: c }, extra));
-  const hatDefault = HAT_COLORS[hat] ? HAT_COLORS[hat].map(clamp255) : [0.1, 0.1, 0.1];
-  if (hat === 1) {
-    H('cylinder', [0, top + 0.025, 0], [1.0, 0.05, 1.0], main(hatDefault));
-    H('cylinder', [0, top + 0.325, 0], [0.62, 0.55, 0.62], main(hatDefault));
-    H('cylinder', [0, top + 0.11, 0], [0.64, 0.1, 0.64], [0.75, 0.12, 0.12]);
-  } else if (hat === 2) {
-    H('sphere', [0, top - 0.05, 0], [0.78, 0.5, 0.78], main([0.85, 0.15, 0.15]));
-    H('cube', [0, top - 0.03, 0.46], [0.52, 0.04, 0.36], main([0.85, 0.15, 0.15]));
-  } else if (hat === 3) {
-    H('cylinder', [0, top + 0.14, 0], [0.74, 0.28, 0.74], main([1.0, 0.78, 0.2]), { shine: 1 });
-    H('cube', [0, top + 0.14, 0.37], [0.12, 0.12, 0.05], [0.9, 0.1, 0.2], { glow: 1 });
-  } else if (hat === 4) {   // hair (Player::applyHat, Ponytail)
-    const hair = main([0.86, 0.2, 0.62]);
-    H('sphere', [0, top - 0.1, -0.05], [0.8, 0.46, 0.82], hair);
-    H('cube', [0, top - 0.3, -0.3], [0.74, 0.42, 0.16], hair);
-    H('sphere', [0, top + 0.12, -0.3], [0.36, 0.34, 0.36], hair);
-    H('sphere', [0, top - 0.14, -0.5], [0.26, 0.56, 0.26], hair);
-  }
+  const H = (shape, p, size, c, extra = {}) => out.push(Object.assign({ shape, at: [p[0] * w, p[1], p[2] * w], size: [size[0] * w, size[1], size[2] * w], color: c }, extra));
+  hatsToDraw.slice(0, 12).forEach(({ style, tint }, index) => {
+    const lift = index * 0.16, hatDefault = HAT_COLORS[style] ? HAT_COLORS[style].map(clamp255) : [0.1, 0.1, 0.1];
+    const main = (normal) => tint || normal;
+    if (style === 1) {
+      H('cylinder', [0, top + 0.025 + lift, 0], [1.0, 0.05, 1.0], main(hatDefault));
+      H('cylinder', [0, top + 0.325 + lift, 0], [0.62, 0.55, 0.62], main(hatDefault));
+      H('cylinder', [0, top + 0.11 + lift, 0], [0.64, 0.1, 0.64], [0.75, 0.12, 0.12]);
+    } else if (style === 2) {
+      H('sphere', [0, top - 0.05 + lift, 0], [0.78, 0.5, 0.78], main([0.85, 0.15, 0.15]));
+      H('cube', [0, top - 0.03 + lift, 0.46], [0.52, 0.04, 0.36], main([0.85, 0.15, 0.15]));
+    } else if (style === 3) {
+      H('cylinder', [0, top + 0.14 + lift, 0], [0.74, 0.28, 0.74], main([1.0, 0.78, 0.2]), { shine: 1 });
+      H('cube', [0, top + 0.14 + lift, 0.37], [0.12, 0.12, 0.05], [0.9, 0.1, 0.2], { glow: 1 });
+    } else if (style === 4) {
+      const hair = main([0.86, 0.2, 0.62]);
+      H('sphere', [0, top - 0.1 + lift, -0.05], [0.8, 0.46, 0.82], hair);
+      H('cube', [0, top - 0.3 + lift, -0.3], [0.74, 0.42, 0.16], hair);
+      H('sphere', [0, top + 0.12 + lift, -0.3], [0.36, 0.34, 0.36], hair);
+      H('sphere', [0, top - 0.14 + lift, -0.5], [0.26, 0.56, 0.26], hair);
+    }
+  });
   for (const it of items || []) {
     const a = isModelAccessory(it) && accessories.get(it.id);
     if (a && a.pieces) out.push(...a.pieces);
