@@ -14,6 +14,7 @@ class ScriptEditorPanel {
 public:
     explicit ScriptEditorPanel(Scene* scene);
     void open(uint64_t scriptId);   // show this script and bring the tab forward
+    void openAtLine(uint64_t scriptId, int line);   // ...with the text cursor at the start of that line
     void render();
     void renderFindAll();           // the "Find in All Scripts" window
     uint64_t current() const { return m_id; }

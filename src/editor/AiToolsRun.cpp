@@ -4,6 +4,7 @@
 // it can be fixed and what to try next.
 #include "AiTools.h"
 #include "Editor.h"
+#include "../scripting/ScriptHistory.h"
 #include "MultiTest.h"
 #include "panels/ViewportPanel.h"
 #include "../scene/Scene.h"
@@ -1057,6 +1058,37 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     }
 
     // ---------------------------------------------------------------- RUNTIME
+    if (name == "script_history") {
+        const std::string action = str("action").empty() ? "read" : str("action");
+        if (action == "record") ScriptHistory::setRecording(true);
+        else if (action == "stop") ScriptHistory::setRecording(false);
+        else if (action == "clear") ScriptHistory::clear();
+        else if (action != "read") return fail("INVALID_INPUT", "action must be read, record, stop or clear.", "");
+        uint64_t only = 0;
+        if (!str("object").empty()) {
+            SceneNode* n = nullptr;
+            if (!need("object", n)) return refErr;
+            only = n->id;
+        }
+        std::string script = str("script"), kind = str("kind");
+        const int limit = std::clamp(args.value("limit", 50), 1, 500);
+        const auto& all = ScriptHistory::entries();
+        json list = json::array();
+        for (auto it = all.rbegin(); it != all.rend() && (int)list.size() < limit; ++it) {
+            const ScriptHistory::Entry& e = *it;
+            const bool set = e.kind == ScriptHistory::Entry::Set;
+            if (only && e.object != only) continue;
+            if (!script.empty() && e.scriptName.find(script) == std::string::npos) continue;
+            if ((kind == "set" && !set) || (kind == "event" && set)) continue;
+            json j = {{"time", e.time}, {"kind", set ? "set" : "event"}, {"object", e.objectName}, {"script", e.scriptName},
+                      {"what", e.what}};
+            if (e.object) j["object_id"] = "#" + std::to_string(e.object);
+            if (e.script) j["script_id"] = "#" + std::to_string(e.script);
+            if (set) { j["line"] = e.line; j["before"] = e.before; j["after"] = e.after; }
+            list.push_back(j);
+        }
+        return done({{"recording", ScriptHistory::recording()}, {"total", all.size()}, {"entries", list}});
+    }
     if (name == "playtest") {
         const std::string action = str("action");
         json warn = json::array();

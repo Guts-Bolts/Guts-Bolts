@@ -681,6 +681,9 @@ void Editor::renderToolbar() {
             if (bigButton("Script Analysis", Icons::Id::Script, m_scriptEditor->analysisShown(), true,
                           "Find mistakes in every script without pressing Play"))
                 m_scriptEditor->showAnalysis();
+            if (bigButton("Script History", Icons::Id::Output, m_showScriptHistory, true,
+                          "Record what your scripts change while you playtest, and see why something changed"))
+                m_showScriptHistory = !m_showScriptHistory;
             if (bigButton("Shortcuts", Icons::Id::Keyboard, m_showShortcuts, true, "Every keyboard shortcut (F1)"))
                 m_showShortcuts = !m_showShortcuts;
             if (bigButton("Settings", Icons::Id::Settings, false, true, "Graphics and frame rate")) m_showSettings = true;
