@@ -84,6 +84,7 @@ private:
     void renderLuaDebugger();
     void renderSceneValidator();
     void renderProjectTimeMachine();
+    void renderScriptHistory();     // EditorScriptHistory.cpp
     void handleShortcuts();
 
     // Creating / removing things
@@ -306,6 +307,10 @@ private:
     int m_debugSeenPauses = 0;   // the Lua Debugger's pause count we've already jumped to
     bool m_showSceneValidator = false;
     bool m_showProjectTimeMachine = false;
+    bool m_showScriptHistory = false;
+    std::string m_historyFilter;
+    int  m_historyKind = 0;           // 0 every entry, 1 property changes, 2 events
+    bool m_historySelected = false;   // only the selected object's
     bool m_timeMachineLoaded = false;
     std::string m_timeMachineProjectKey, m_timeMachineCheckpointName;
     int m_timeMachineSelected = -1;

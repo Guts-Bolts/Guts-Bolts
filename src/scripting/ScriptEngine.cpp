@@ -1,4 +1,5 @@
 #include "ScriptEngine.h"
+#include "ScriptHistory.h"
 #include "../core/Pad.h"
 #include "../core/Account.h"
 #include "../online/OnlineClient.h"
@@ -3548,8 +3549,11 @@ void ScriptEngine::update(float dt) {
     }
 }
 
+bool ScriptEngine::historyOn() const { return m_history && ScriptHistory::recording(); }
+
 void ScriptEngine::fire(SignalKind kind, uint64_t id, const std::function<int(lua_State*)>& pushArgs) {
     if (!m_L) return;
+    const bool history = historyOn() && kind != SignalKind::Heartbeat;   // (every frame: too much)
     size_t n = m_conns.size();   // connections made while firing wait for next time
     for (size_t i = 0; i < n; ++i) {
         if (!m_L) return;
@@ -3557,6 +3561,17 @@ void ScriptEngine::fire(SignalKind kind, uint64_t id, const std::function<int(lu
         if (!c.alive || c.kind != kind || c.id != id) continue;
         if (m_joinerEvent && c.owner)
             if (SceneNode* s = resolve(c.owner); s && s->isLocal) continue;
+        if (history) {
+            ScriptHistory::Entry e;
+            e.kind = ScriptHistory::Entry::Event;
+            e.time = m_time;
+            e.object = id;
+            if (SceneNode* o = id ? resolve(id) : nullptr) e.objectName = o->fullName();
+            e.script = c.owner;
+            if (SceneNode* s = c.owner ? resolve(c.owner) : nullptr) e.scriptName = s->fullName();
+            e.what = ScriptHistory::signalName(kind);
+            ScriptHistory::add(std::move(e));
+        }
         uint64_t prev = m_current;
         m_current = c.owner;
         struct Restore { uint64_t& cur; uint64_t val; ~Restore() { cur = val; } } restore{m_current, prev};

@@ -144,6 +144,16 @@ void ScriptEditorPanel::goToLine(int line) {
     m_focusCode = true;
 }
 
+void ScriptEditorPanel::openAtLine(uint64_t scriptId, int line) {
+    SceneNode* n = m_scene->findById(scriptId);
+    if (!n) return;
+    open(scriptId);
+    int pos = 0, at = 1;
+    for (; pos < (int)n->source.size() && at < line; ++pos) if (n->source[pos] == '\n') ++at;
+    m_selectStart = m_selectEnd = pos;
+    m_focusCode = true;
+}
+
 // Called by the text box every frame while it's active (and when Tab completes a word).
 // Roblox Studio's dark script colours.
 void ScriptEditorPanel::drawColoredCode(ImDrawList* dl, const std::string& src, ImVec2 origin, float lineH, int first, int last) {
