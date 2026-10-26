@@ -6,6 +6,7 @@
 #include "Serializer.h"
 #include "EditMesh.h"
 #include "RobloxMesh.h"
+#include "Skin.h"
 #include "Physics.h"
 #include "../core/Paths.h"
 #include "../renderer/MeshLibrary.h"
@@ -123,6 +124,12 @@ struct Document {
     std::vector<Inst*> roots;
     std::string error;
 };
+
+bool containsBoneInstance(const Inst& in) {
+    for (const Inst* child : in.children)
+        if (child && (child->className == "Bone" || containsBoneInstance(*child))) return true;
+    return false;
+}
 
 // ===========================================================================
 // Binary format (.rbxl / .rbxm)
@@ -863,6 +870,9 @@ struct Converter {
         std::string texture;               // its picture ("roblox/<id>.png" in the games folder)
         glm::vec3 tint{1.0f};              // SpecialMesh.VertexColor
         bool special = false;              // sized by a SpecialMesh, not by the part
+        std::vector<RobloxMesh::Bone> bones;
+        glm::vec3 meshCenter{0.0f};
+        glm::vec3 meshSize{1.0f};
     };
 
     // MeshPart: the mesh is stretched to fill the part's Size.
@@ -912,16 +922,39 @@ struct Converter {
                 return look;
             }
             look.shape = s.mesh;
+            look.bones = s.bones;
+            look.meshCenter = s.center;
+            look.meshSize = s.size;
             prim = PrimitiveType::Mesh;
             if (type == 5) {
                 pos += rot * ((s.center * scale + offset) * kImportScale);
                 size = glm::max(s.size * scale * kImportScale, glm::vec3(1e-3f));
             }
         } else {
-            if (type == 3) prim = PrimitiveType::Sphere;
-            else if (type == 0 || type == 4) prim = PrimitiveType::Cylinder;   // standing up, like ours
+            // Roblox SpecialMesh.MeshType values: Head=0, Torso=1, Wedge=2,
+            // Sphere=3, Cylinder=4, FileMesh=5, Brick=6. Keep the native primitive
+            // for sphere/cylinder so they use the engine's real primitive geometry.
+            if (type == 0 || type == 3) prim = PrimitiveType::Sphere;
+            else if (type == 4) prim = PrimitiveType::Cylinder;
             else prim = PrimitiveType::Cube;
-            if (type == 2) note("Wedges come in as blocks.");
+
+            if (type == 2) {
+                // A real wedge instead of the old cube placeholder. Its sloped face
+                // runs from the low front edge to the high rear edge in part space.
+                auto wedge = std::make_shared<EditMesh>();
+                wedge->verts = {
+                    {-0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f, -0.5f},
+                    {-0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f,  0.5f},
+                    {-0.5f,  0.5f,  0.5f}, { 0.5f,  0.5f,  0.5f}
+                };
+                wedge->faces = {
+                    {0, 2, 3, 1}, {2, 4, 5, 3}, {0, 1, 5, 4},
+                    {0, 4, 2}, {1, 3, 5}
+                };
+                wedge->smooth = false;
+                look.shape = std::move(wedge);
+                prim = PrimitiveType::Mesh;
+            }
             size *= scale;
             pos += rot * (offset * kImportScale);
         }
@@ -997,6 +1030,10 @@ struct Converter {
             if (const Value* v = in.get("Color3uint8")) node->color = v->v;
             else if (const Value* v2 = in.get("Color")) node->color = v2->v;
             node->transparency = (float)in.num("Transparency", 0.0);
+            if (look.special) {
+                Attribute baseColor; baseColor.name = "RobloxBaseColor"; baseColor.type = Attribute::Color3; baseColor.v = node->color;
+                node->attributes.push_back(baseColor);
+            }
             node->anchored = in.flag("Anchored", false);
             node->canCollide = in.flag("CanCollide", true);
             // Its collision group: by name (newer files) or by number (older ones).
@@ -1014,6 +1051,18 @@ struct Converter {
                 node->frictionWeight   = std::clamp(ph->seq[3], 0.0f, 100.0f);
                 node->elasticityWeight = std::clamp(ph->seq[4], 0.0f, 100.0f);
             }
+            if (c == "MeshPart") {
+                auto attrS = [&](const char* key, const std::string& value) {
+                    Attribute a; a.name = key; a.type = Attribute::String; a.s = value; node->attributes.push_back(a);
+                };
+                auto attrV = [&](const char* key, glm::vec3 value) {
+                    Attribute a; a.name = key; a.type = Attribute::Vector3; a.v = value; node->attributes.push_back(a);
+                };
+                attrS("RobloxClass", "MeshPart");
+                attrS("MeshId", in.str("MeshId"));
+                attrS("TextureID", in.str("TextureID"));
+                attrV("MeshCenter", look.meshCenter);
+            }
             if (c == "SpawnLocation") {   // (renamed ones too: the tag says what it is)
                 if (name != "SpawnLocation") node->tags.push_back("SpawnLocation");
                 node->spawnNeutral = in.flag("Neutral", true);
@@ -1021,6 +1070,45 @@ struct Converter {
                 node->teamColor = brickColor((int)in.num("TeamColor", 194));
             }
             if (look.shape) MeshEdit::attach(*node, look.shape);
+            if (!look.bones.empty() && node->editMesh && !containsBoneInstance(in)) {
+                // The FileMesh embeds its own armature and per-vertex weights.
+                // Create a matching Bone tree so Skin's normal deformation path can
+                // evaluate the imported weights rather than leaving a static mesh.
+                std::vector<SceneNode*> importedBones(look.bones.size(), nullptr);
+                std::vector<glm::mat4> sourceFrames(look.bones.size(), glm::mat4(1.0f));
+                for (size_t bi = 0; bi < look.bones.size(); ++bi) {
+                    const auto& source = look.bones[bi];
+                    glm::vec3 normalized = (source.position - look.meshCenter) /
+                                           glm::max(look.meshSize, glm::vec3(1e-5f));
+                    glm::mat4 worldFrame = glm::translate(glm::mat4(1.0f), normalized * node->transform.scale) *
+                                           glm::mat4(source.rotation);
+                    SceneNode* boneParent = source.parent >= 0 && (size_t)source.parent < bi
+                                           ? importedBones[(size_t)source.parent] : nullptr;
+                    glm::mat4 localFrame = boneParent
+                        ? glm::inverse(sourceFrames[(size_t)source.parent]) * worldFrame
+                        : worldFrame;
+                    auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
+                    bone->bone = true;
+                    bone->robloxEmbeddedMeshBone = true;
+                    bone->transform.position = glm::vec3(localFrame[3]);
+                    float rz, ry, rx;
+                    glm::extractEulerAngleZYX(localFrame, rz, ry, rx);
+                    bone->transform.rotation = glm::degrees(glm::vec3(rx, ry, rz));
+                    sourceFrames[bi] = worldFrame;
+                    if (boneParent) importedBones[bi] = boneParent->addChild(std::move(bone));
+                    else importedBones[bi] = node->addChild(std::move(bone));
+                }
+                node->editMesh->bind.resize(node->editMesh->bones.size(), glm::mat4(1.0f));
+                for (size_t bi = 0; bi < node->editMesh->bones.size(); ++bi) {
+                    for (SceneNode* imported : importedBones) {
+                        if (imported && imported->name == node->editMesh->bones[bi]) {
+                            node->editMesh->bind[bi] = glm::inverse(Skin::frame(imported, node.get()));
+                            break;
+                        }
+                    }
+                }
+                MeshEdit::refresh(*node);
+            }
             if (!look.texture.empty()) {
                 node->texture = look.texture;
                 if (look.special) node->color = look.tint;   // a SpecialMesh's picture replaces the part's colour
@@ -1431,18 +1519,24 @@ struct Converter {
             node->soundFx.priority = (int)in.num("Priority", 0.0);
             node->enabled = in.flag("Enabled", true);
             ++report.sounds;
-        } else if (c == "Attachment") {
+        } else if (c == "Attachment" || c == "Bone") {
             node = std::make_unique<SceneNode>(name, NodeKind::Attachment);
+            node->bone = c == "Bone";
             glm::vec3 pos(0.0f);
             glm::mat3 rot(1.0f);
             if (const Value* v = in.get("CFrame")) { pos = v->v * kImportScale; rot = v->r; }
-            // Attachments are placed relative to their part (in studs).
-            glm::vec3 psize = parent ? parent->transform.scale : glm::vec3(1.0f);
-            node->transform.position = pos / glm::max(psize, glm::vec3(1e-4f));
+            // Bone transforms are in the part's studs space (or their parent Bone's
+            // space); unlike ordinary Attachments, part size must not stretch them.
+            if (node->bone) {
+                node->transform.position = pos;
+            } else {
+                glm::vec3 psize = parent ? parent->transform.scale : glm::vec3(1.0f);
+                node->transform.position = pos / glm::max(psize, glm::vec3(1e-4f));
+            }
             float z, y, x;
             glm::extractEulerAngleZYX(glm::mat4(rot), z, y, x);
             node->transform.rotation = glm::degrees(glm::vec3(x, y, z));
-            ++report.constraints;
+            if (!node->bone) ++report.constraints;
         } else if (c == "RopeConstraint" || c == "RodConstraint" || c == "SpringConstraint" || c == "HingeConstraint" ||
                    c == "WeldConstraint" || c == "Weld" || c == "ManualWeld" || c == "Snap") {
             node = std::make_unique<SceneNode>(name, NodeKind::Constraint);
@@ -2392,6 +2486,28 @@ bool isRobloxFile(const std::string& path) {
 }
 bool isPlace(const std::string& path) { return endsWith(path, ".rbxl") || endsWith(path, ".rbxlx"); }
 
+// Finish binding after all serialized Bone instances have been converted. If a model
+// already contains its own Bone objects, those are the joints animation scripts target;
+// the embedded FileMesh table supplies their bind names/weights, not duplicate joints.
+void bindImportedSkinnedMeshes(SceneNode* node) {
+    if (!node) return;
+    if (node->editMesh && node->editMesh->skinned()) {
+        const std::vector<SceneNode*> bones = Skin::bones(node);
+        if (!bones.empty()) {
+            for (size_t i = 0; i < node->editMesh->bones.size(); ++i) {
+                for (SceneNode* bone : bones) {
+                    if (bone && bone->name == node->editMesh->bones[i]) {
+                        node->editMesh->bind[i] = glm::inverse(Skin::frame(bone, node));
+                        break;
+                    }
+                }
+            }
+            MeshEdit::refresh(*node);
+        }
+    }
+    for (auto& child : node->children) bindImportedSkinnedMeshes(child.get());
+}
+
 bool importPlace(Scene& scene, const std::string& path, Report& report, std::string& error) {
     Document doc;
     if (!readFile(path, doc)) { error = doc.error; return false; }
@@ -2455,6 +2571,7 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
             if (std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), k->className) != std::end(kPostEffectClassNames))
                 conv.convert(*k, scene.lightingFolder(true));
     conv.linkRefs(doc);
+    bindImportedSkinnedMeshes(scene.root());
     scene.info().title = std::filesystem::path(path).stem().string();
     scene.markDirty();
     return true;
@@ -2471,6 +2588,7 @@ std::vector<SceneNode*> importModel(Scene& scene, SceneNode* parent, const std::
     for (const Inst* r : roots)
         if (SceneNode* n = conv.convert(*r, parent)) out.push_back(n);
     conv.linkRefs(doc);
+    bindImportedSkinnedMeshes(scene.root());
     scene.markDirty();
     if (out.empty()) error = "nothing in this file could be imported";
     return out;

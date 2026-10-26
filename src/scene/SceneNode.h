@@ -603,6 +603,7 @@ public:
     // children of a part, its position is in studs from the part's middle, and
     // the part's size doesn't stretch it.
     bool                  bone = false;
+    bool                  robloxEmbeddedMeshBone = false; // generated from FileMesh, not an authored Roblox Bone instance
     glm::vec3             color    = {0.65f, 0.65f, 0.80f};
     bool                  selected = false;
     bool                  visible  = true;

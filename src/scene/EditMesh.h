@@ -17,12 +17,17 @@
 // working with no special cases.
 struct EditMesh {
     std::vector<glm::vec3>             verts;
+    std::vector<glm::vec3>             normals; // optional imported vertex normals; ignored after deformation
     std::vector<std::vector<uint32_t>> faces;
     bool                               smooth = false;   // smooth shading (no hard edges)
     // Optional texture coordinates, one per corner of each face (the character's
     // clothing layout, or laid out in Studio's UV Editor). Empty, or out of step
     // with `faces` after an edit = box mapping.
     std::vector<std::vector<glm::vec2>> uvs;
+    // Optional per-vertex attributes imported from formats such as Roblox FileMesh.
+    // Empty vectors preserve the engine's default white colour and generated tangent.
+    std::vector<glm::vec4> colors;
+    std::vector<glm::vec4> tangents;
     // Skinning (an armature, see Skin.h): how much each bone pulls each vertex.
     // `bones` names the Bones inside the part; `bind` is where each bone was (in
     // the part's studs space, inverted) when the mesh was bound to it; `weights`

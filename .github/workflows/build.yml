@@ -149,6 +149,8 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build
+      - name: Run native CTest regression suite
+        run: ctest --test-dir build --output-on-failure
       - name: Package
         run: |
           mkdir -p GutsAndBolts-Linux

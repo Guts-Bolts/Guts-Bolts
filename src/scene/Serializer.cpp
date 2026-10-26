@@ -753,6 +753,7 @@ json toJson(const SceneNode& n) {
     j["name"] = n.name;
     j["kind"] = kindName(n.kind);
     if (n.isBone()) j["bone"] = true;
+    if (n.robloxEmbeddedMeshBone) j["embeddedMeshBone"] = true;
     // (A part posed in the Animation Editor is saved where it really is.)
     j["pos"]  = vec(n.restPose ? n.restPose->position : n.transform.position);
     j["rot"]  = vec(n.restPose ? n.restPose->rotation : n.transform.rotation);
@@ -767,6 +768,22 @@ json toJson(const SceneNode& n) {
             for (const auto& p : n.editMesh->verts) { v.push_back(p.x); v.push_back(p.y); v.push_back(p.z); }
             for (const auto& face : n.editMesh->faces) f.push_back(face);
             j["mesh"] = {{"v", v}, {"f", f}, {"smooth", n.editMesh->smooth}};
+            // Source vertex attributes must survive a save/reload round-trip.
+            if (n.editMesh->normals.size() == n.editMesh->verts.size()) {
+                json values = json::array();
+                for (const auto& x : n.editMesh->normals) { values.push_back(x.x); values.push_back(x.y); values.push_back(x.z); }
+                j["mesh"]["n"] = std::move(values);
+            }
+            if (n.editMesh->colors.size() == n.editMesh->verts.size()) {
+                json values = json::array();
+                for (const auto& x : n.editMesh->colors) { values.push_back(x.r); values.push_back(x.g); values.push_back(x.b); values.push_back(x.a); }
+                j["mesh"]["c"] = std::move(values);
+            }
+            if (n.editMesh->tangents.size() == n.editMesh->verts.size()) {
+                json values = json::array();
+                for (const auto& x : n.editMesh->tangents) { values.push_back(x.x); values.push_back(x.y); values.push_back(x.z); values.push_back(x.w); }
+                j["mesh"]["t"] = std::move(values);
+            }
             // Texture coordinates (imported models): u,v for each corner of each face.
             if (n.editMesh->uvs.size() == n.editMesh->faces.size()) {
                 json uv = json::array();
@@ -938,6 +955,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         SceneNode::reserveId(n->id);
     }
     n->bone = n->kind == NodeKind::Attachment && get<bool>(j, "bone", false);
+    n->robloxEmbeddedMeshBone = n->bone && get<bool>(j, "embeddedMeshBone", false);
     n->transform.position = vec(j, "pos",  {0, 0, 0});
     n->transform.rotation = vec(j, "rot",  {0, 0, 0});
     n->transform.scale    = vec(j, "size", {1, 1, 1});
@@ -972,6 +990,48 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
                     ++fi;
                 }
                 if (m->uvs.size() != m->faces.size()) m->uvs.clear();
+                auto readVec3 = [&](const char* key, std::vector<glm::vec3>& output) {
+                    auto values = it->find(key);
+                    if (values == it->end() || !values->is_array() || values->size() != m->verts.size() * 3) return;
+                    std::vector<glm::vec3> parsed;
+                    parsed.reserve(m->verts.size());
+                    for (size_t i = 0; i < values->size(); i += 3) {
+                        float x[3];
+                        for (int k = 0; k < 3; ++k) {
+                            if (!(*values)[i + k].is_number()) return;
+                            x[k] = (*values)[i + k].get<float>();
+                            if (!std::isfinite(x[k]) || std::abs(x[k]) > 1.0e6f) return;
+                        }
+                        parsed.emplace_back(x[0], x[1], x[2]);
+                    }
+                    output = std::move(parsed);
+                };
+                auto readVec4 = [&](const char* key, std::vector<glm::vec4>& output) {
+                    auto values = it->find(key);
+                    if (values == it->end() || !values->is_array() || values->size() != m->verts.size() * 4) return;
+                    std::vector<glm::vec4> parsed;
+                    parsed.reserve(m->verts.size());
+                    for (size_t i = 0; i < values->size(); i += 4) {
+                        float x[4];
+                        for (int k = 0; k < 4; ++k) {
+                            if (!(*values)[i + k].is_number()) return;
+                            x[k] = (*values)[i + k].get<float>();
+                            if (!std::isfinite(x[k]) || std::abs(x[k]) > 1.0e6f) return;
+                        }
+                        parsed.emplace_back(x[0], x[1], x[2], x[3]);
+                    }
+                    output = std::move(parsed);
+                };
+                readVec3("n", m->normals);
+                readVec4("c", m->colors);
+                readVec4("t", m->tangents);
+                for (auto& color : m->colors) color = glm::clamp(color, glm::vec4(0.0f), glm::vec4(1.0f));
+                for (auto& tangent : m->tangents) {
+                    glm::vec3 direction(tangent);
+                    if (glm::length(direction) > 1e-6f) direction = glm::normalize(direction);
+                    else direction = glm::vec3(1, 0, 0);
+                    tangent = glm::vec4(direction, tangent.w < 0.0f ? -1.0f : 1.0f);
+                }
                 if (auto sk = it->find("skin"); sk != it->end() && sk->is_object()) {
                     const json& bones = (*sk)["bones"];
                     const json& bind = (*sk)["bind"];

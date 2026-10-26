@@ -9,6 +9,9 @@
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
 #include "../scene/Serializer.h"
+#include "../scene/RobloxMesh.h"
+#include "../scene/EditMesh.h"
+#include "../scene/Skin.h"
 #include "../scene/Guis.h"
 #include "../game/GameGui.h"
 #include "../renderer/MeshLibrary.h"
@@ -59,6 +62,128 @@ bool parseShape(const std::string& s, PrimitiveType& out) {
 }
 
 ScriptEngine* E(lua_State* L) { return LuaApi::engine(L); }
+
+// Apply MeshId / TextureId writes to imported Roblox mesh instances. SpecialMesh
+// properties are represented by a child Model; MeshPart properties live on the Part.
+void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::string& property) {
+    if (!instance || (property != "MeshId" && property != "TextureId" && property != "TextureID")) return;
+    const Attribute* classAttr = instance->findAttribute("RobloxClass");
+    if (!classAttr || classAttr->type != Attribute::String) return;
+    const bool meshPart = classAttr->s == "MeshPart";
+    if (!meshPart && classAttr->s != "SpecialMesh" && classAttr->s != "FileMesh") return;
+    SceneNode* part = meshPart ? instance : instance->parent;
+    if (!part || !part->isPart()) return;
+
+    auto stringAttr = [](const SceneNode* n, const char* name) -> std::string {
+        const Attribute* a = n ? n->findAttribute(name) : nullptr;
+        return a && a->type == Attribute::String ? a->s : std::string{};
+    };
+    auto vectorAttr = [](const SceneNode* n, const char* name, glm::vec3 fallback) -> glm::vec3 {
+        const Attribute* a = n ? n->findAttribute(name) : nullptr;
+        return a && (a->type == Attribute::Vector3 || a->type == Attribute::Color3) ? a->v : fallback;
+    };
+    auto setVectorAttr = [](SceneNode* n, const char* name, glm::vec3 value) {
+        for (Attribute& a : n->attributes) if (a.name == name) { a.type = Attribute::Vector3; a.v = value; return; }
+        Attribute a; a.name = name; a.type = Attribute::Vector3; a.v = value; n->attributes.push_back(a);
+    };
+
+    if (property == "TextureId" || property == "TextureID") {
+        const std::string url = stringAttr(instance, property.c_str());
+        const std::string id = RobloxMesh::assetId(url);
+        if (!url.empty() && id.empty()) return; // don't clear a working texture for an unsupported built-in URI
+        const std::string file = id.empty() ? std::string{} : RobloxMesh::fetch(id, ".png");
+        part->texture = file;
+        if (!meshPart) {
+            part->color = !file.empty() ? vectorAttr(instance, "VertexColor", glm::vec3(1.0f))
+                                        : vectorAttr(part, "RobloxBaseColor", part->color);
+        }
+        E(L)->scene()->markDirty();
+        return;
+    }
+
+    if (!meshPart && classAttr->s == "SpecialMesh") {
+        const Attribute* type = instance->findAttribute("MeshType");
+        if (type && type->type == Attribute::Number && (int)type->n != 5) return;
+    }
+    const std::string url = stringAttr(instance, "MeshId");
+    const std::string id = RobloxMesh::assetId(url);
+    if (id.empty()) return;
+    std::string error;
+    RobloxMesh::Shape shape = RobloxMesh::loadAsset(url, &error);
+    if (!shape.mesh) return;  // Keep the working mesh if a replacement asset cannot be resolved.
+
+    if (!meshPart) {
+        const glm::vec3 scale = glm::abs(vectorAttr(instance, "Scale", glm::vec3(1.0f)));
+        const glm::vec3 oldCenter = vectorAttr(instance, "MeshCenter", glm::vec3(0.0f));
+        glm::mat4 rotation(1.0f);
+        rotation = glm::rotate(rotation, glm::radians(part->transform.rotation.z), {0, 0, 1});
+        rotation = glm::rotate(rotation, glm::radians(part->transform.rotation.y), {0, 1, 0});
+        rotation = glm::rotate(rotation, glm::radians(part->transform.rotation.x), {1, 0, 0});
+        const glm::vec3 offsetDelta = (shape.center - oldCenter) * scale * 0.5f;
+        part->transform.position += glm::vec3(rotation * glm::vec4(offsetDelta, 0.0f));
+        part->transform.scale = glm::max(shape.size * scale * 0.5f, glm::vec3(1e-3f));
+        setVectorAttr(instance, "MeshCenter", shape.center);
+    } else {
+        setVectorAttr(instance, "MeshCenter", shape.center);
+    }
+
+    MeshEdit::attach(*part, shape.mesh);
+    part->primitiveType = PrimitiveType::Mesh;
+
+    auto embeddedBone = [](SceneNode* n) {
+        return n && n->robloxEmbeddedMeshBone;
+    };
+    auto containsAuthoredBone = [&](auto&& self, SceneNode* n) -> bool {
+        if (!n) return false;
+        if (n->isBone() && !embeddedBone(n)) return true;
+        for (auto& child : n->children) if (self(self, child.get())) return true;
+        return false;
+    };
+    bool hasAuthoredBones = false;
+    for (auto& child : part->children)
+        if (containsAuthoredBone(containsAuthoredBone, child.get())) { hasAuthoredBones = true; break; }
+
+    // Remove only joints generated from the previous mesh. Preserve Bone instances
+    // in the imported model because scripts and animations may refer to those nodes.
+    for (auto it = part->children.begin(); it != part->children.end();) {
+        if ((*it)->isBone() && embeddedBone(it->get())) it = part->children.erase(it);
+        else ++it;
+    }
+    if (!shape.bones.empty() && part->editMesh && !hasAuthoredBones) {
+        std::vector<SceneNode*> imported(shape.bones.size(), nullptr);
+        std::vector<glm::mat4> sourceFrames(shape.bones.size(), glm::mat4(1.0f));
+        for (size_t i = 0; i < shape.bones.size(); ++i) {
+            const auto& source = shape.bones[i];
+            glm::vec3 normalized = (source.position - shape.center) /
+                                   glm::max(shape.size, glm::vec3(1e-5f));
+            glm::mat4 worldFrame = glm::translate(glm::mat4(1.0f), normalized * part->transform.scale) *
+                                   glm::mat4(source.rotation);
+            SceneNode* parent = source.parent >= 0 && (size_t)source.parent < i ? imported[(size_t)source.parent] : nullptr;
+            glm::mat4 localFrame = parent ? glm::inverse(sourceFrames[(size_t)source.parent]) * worldFrame : worldFrame;
+            auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
+            bone->bone = true;
+            bone->robloxEmbeddedMeshBone = true;
+            bone->transform.position = glm::vec3(localFrame[3]);
+            float rz, ry, rx;
+            glm::extractEulerAngleZYX(localFrame, rz, ry, rx);
+            bone->transform.rotation = glm::degrees(glm::vec3(rx, ry, rz));
+            sourceFrames[i] = worldFrame;
+            imported[i] = parent ? parent->addChild(std::move(bone)) : part->addChild(std::move(bone));
+        }
+    }
+    if (!shape.bones.empty() && part->editMesh) {
+        const std::vector<SceneNode*> bones = Skin::bones(part);
+        part->editMesh->bind.resize(part->editMesh->bones.size(), glm::mat4(1.0f));
+        for (size_t i = 0; i < part->editMesh->bones.size(); ++i)
+            for (SceneNode* bone : bones)
+                if (bone && bone->name == part->editMesh->bones[i]) {
+                    part->editMesh->bind[i] = glm::inverse(Skin::frame(bone, part));
+                    break;
+                }
+        MeshEdit::refresh(*part);
+    }
+    E(L)->scene()->markDirty();
+}
 
 bool isCharacterRoot(lua_State* L, const SceneNode* n) {
     return E(L)->scene()->isCharacterRoot(n->id);
@@ -457,6 +582,7 @@ int m_SetAttribute(lua_State* L) {
         if (it == n->attributes.end()) return 0;
         n->attributes.erase(it);
         E(L)->fireAttributeChanged(n->id, name);
+        refreshRobloxMeshProperty(L, n, name);
         return 0;
     }
     Attribute v;
@@ -477,6 +603,7 @@ int m_SetAttribute(lua_State* L) {
         n->attributes.push_back(v);
     }
     E(L)->fireAttributeChanged(n->id, name);
+    refreshRobloxMeshProperty(L, n, name);
     return 0;
 }
 

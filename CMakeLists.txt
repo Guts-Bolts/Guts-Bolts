@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(GutsAndBolts VERSION 0.7.4 LANGUAGES C CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -367,6 +369,27 @@ add_custom_target(gb_version ALL
     BYPRODUCTS "${GB_GENERATED}/Version.h"
     COMMENT "Checking version")
 
+# Roblox FileMesh v7 uses Draco for compressed CORE MESH chunks. This is
+# an engine dependency (not editor-only): the Player also needs to decode Roblox
+# meshes from imported models. Keep it before gb_engine so all shared-engine
+# targets can compile and link the same parser.
+set(DRACO_JS_GLUE OFF CACHE BOOL "" FORCE)
+set(DRACO_TESTS OFF CACHE BOOL "" FORCE)
+set(DRACO_INSTALL OFF CACHE BOOL "" FORCE)
+set(DRACO_TRANSCODER_SUPPORTED OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    draco
+    GIT_REPOSITORY https://github.com/google/draco.git
+    GIT_TAG        1.5.7
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(draco)
+
+# Draco's exported target does not propagate its source-tree header root on all
+# supported toolchains (notably Android and MinGW). The public decoder headers
+# live under src/draco, so expose that include root to the shared engine.
+set(GB_DRACO_INCLUDE_DIR "${draco_SOURCE_DIR}/src")
+
 # ---------------------------------------------------------------------------
 # The engine: scene, physics, scripting, rendering, game session.
 # Shared by the editor (GutsAndBolts) and the player app (GutsAndBoltsPlayer).
@@ -488,7 +511,7 @@ endforeach()
 gb_embed("${CMAKE_SOURCE_DIR}/assets/certs/cacert.pem" kCaCerts "${GB_GENERATED}/CaCerts.h")
 target_compile_definitions(gb_engine PRIVATE GB_WEBSOCKETS)
 
-target_include_directories(gb_engine PUBLIC src/ ${miniaudio_SOURCE_DIR} ${GB_GENERATED} ${stb_SOURCE_DIR} ${pfd_SOURCE_DIR})
+target_include_directories(gb_engine PUBLIC src/ ${miniaudio_SOURCE_DIR} ${GB_GENERATED} ${stb_SOURCE_DIR} ${pfd_SOURCE_DIR} ${GB_DRACO_INCLUDE_DIR} ${CMAKE_BINARY_DIR})
 add_dependencies(gb_engine gb_version)
 find_package(Threads REQUIRED)
 target_link_libraries(gb_engine PUBLIC Threads::Threads ${CMAKE_DL_LIBS} opus)
@@ -498,6 +521,7 @@ endif()
 target_link_libraries(gb_engine PUBLIC
     gb_imgui
     ${GB_GLM}
+    draco::draco
     lua_static
     nlohmann_json::nlohmann_json
     monocypher
@@ -599,19 +623,6 @@ FetchContent_Declare(
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(cgltf)
-# Draco and meshoptimizer: unpacking squashed glTF / GLB files (KHR_draco_mesh_compression
-# and EXT_meshopt_compression, which Sketchfab, gltfpack and gltf-transform make).
-set(DRACO_JS_GLUE OFF CACHE BOOL "" FORCE)
-set(DRACO_TESTS OFF CACHE BOOL "" FORCE)
-set(DRACO_INSTALL OFF CACHE BOOL "" FORCE)
-set(DRACO_TRANSCODER_SUPPORTED OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-    draco
-    GIT_REPOSITORY https://github.com/google/draco.git
-    GIT_TAG        1.5.7
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(draco)
 FetchContent_Declare(
     meshoptimizer
     GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
@@ -825,4 +836,14 @@ if(MINGW)
         endforeach()
         endif()
     endforeach()
+endif()
+
+
+# Format-level regression fixtures for Roblox's binary mesh files. These
+# tests build tiny v1-v7 payloads in memory, including a generated Draco stream,
+# so no proprietary user assets are needed.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(RobloxMeshFormatTests tests/RobloxMeshFormatTests.cpp)
+    target_link_libraries(RobloxMeshFormatTests PRIVATE gb_engine)
+    add_test(NAME RobloxMeshFormatTests COMMAND RobloxMeshFormatTests)
 endif()
