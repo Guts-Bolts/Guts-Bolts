@@ -2,9 +2,9 @@
 
 Studio can now import standalone Roblox `.mesh` files directly through the Open/Import dialog or drag-and-drop, including Draco-compressed version 7 geometry. The importer creates an editable custom-mesh Part and preserves triangle topology, normals, and UV coordinates where present. Roblox model imports also map Head/Sphere to sphere geometry, Cylinder to cylinder geometry, and Wedge to an actual wedge mesh instead of a cube placeholder. The shared parser exposes a cached/downloaded asset-loading entry point and validates mesh asset IDs before invoking the downloader.
 
-This is still partial coverage, not a claim that every Roblox mesh feature works. Rigged v4/v5 mesh skin weights and bone transforms, v7 skinning metadata, vertex tangents/colors in the rendering pipeline, live runtime `SpecialMesh.MeshId` / `TextureId` updates, and native build plus real-fixture verification remain outstanding.
+FileMesh v4/v5 now decodes embedded bone tables, name offsets, subset bone maps, and per-vertex four-influence weights, then connects those weights to the engine's existing Skin deformation path. Imported mesh tangents and RGBA vertex colors are retained through EditMesh, GPU vertex buffers, and the lit shader; live script changes to imported MeshPart / SpecialMesh MeshId and texture-ID properties trigger cached asset resolution and visual refresh. Synthetic v4/v5 binary regression fixtures are registered with CTest.
 
-- Roblox model import now recognizes serialized `Bone` instances as rig joints rather than treating them as ordinary Attachments; their transforms are kept in stud space so part scaling does not distort the skeleton. FileMesh v4/v5 skin weights and mesh-embedded bone tables still need to be decoded and bound to those joints.
+This is still partial coverage, not a claim that every Roblox mesh feature works. v7-specific skinning/attribute chunks, facial animation data, broader real-world Roblox fixtures, and successful native Studio/Player build validation remain outstanding.
 
 # The Floor Is Now A Crime Scene (October 25, 2026)
 
