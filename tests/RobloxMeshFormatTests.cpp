@@ -81,7 +81,7 @@ std::string skinPayload() {
     u32(skin, 0); u16(skin, 0xffff); u16(skin, 0xffff); f32(skin, 0);
     for (float v : std::array<float, 9>{1,0,0, 0,1,0, 0,0,1}) f32(skin, v);
     f32(skin, 0); f32(skin, 0); f32(skin, 0);
-    u32(skin, 5); skin += std::string("Root\\0", 5);
+    u32(skin, 5); skin += std::string("Root\0", 5);
     u32(skin, 1);
     u32(skin, 0); u32(skin, 1); u32(skin, 0); u32(skin, 3); u32(skin, 1);
     for (int i = 0; i < 26; ++i) u16(skin, 0);
@@ -128,7 +128,7 @@ std::string dracoCorePayload() {
 }
 
 std::string chunkedV7Fixture() {
-    std::string out = "version 7.00\\n";
+    std::string out = "version 7.00\n";
     const std::string core = dracoCorePayload();
     if (core.empty()) return {};
     chunk(out, "COREMESH", core);
@@ -160,10 +160,10 @@ std::string chunkedV6Fixture() {
 bool runChunkedV7() {
     std::string error;
     const std::string bytes = chunkedV7Fixture();
-    if (bytes.empty()) { std::cerr << "v7 Draco fixture encoding failed\\n"; return false; }
+    if (bytes.empty()) { std::cerr << "v7 Draco fixture encoding failed\n"; return false; }
     RobloxMesh::Shape shape = RobloxMesh::parse(bytes, &error);
     if (!shape.mesh) {
-        std::cerr << "v7 parse failed: " << error << "\\n";
+        std::cerr << "v7 parse failed: " << error << "\n";
         return false;
     }
     const auto& mesh = *shape.mesh;
@@ -171,7 +171,7 @@ bool runChunkedV7() {
         mesh.weights.empty() || mesh.weights[0].empty() || mesh.weights[0][0].w < 0.99f ||
         mesh.colors.empty() || mesh.colors[0].g < 0.49f || mesh.colors[0].g > 0.51f ||
         mesh.tangents.empty() || mesh.tangents[0].x < 0.99f) {
-        std::cerr << "v7 Draco geometry, skinning, or attributes were not retained\\n";
+        std::cerr << "v7 Draco geometry, skinning, or attributes were not retained\n";
         return false;
     }
     return true;
@@ -226,7 +226,7 @@ bool run(int version) {
 } // namespace
 
 int main() {
-    if (!run(4) || !run(5) || !runChunkedV6()) return 1;
-    std::cout << "Roblox FileMesh v4/v5/v6 synthetic format tests passed\n";
+    if (!run(4) || !run(5) || !runChunkedV6() || !runChunkedV7()) return 1;
+    std::cout << "Roblox FileMesh v4/v5/v6/v7 synthetic format tests passed\n";
     return 0;
 }
