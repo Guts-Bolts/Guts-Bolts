@@ -103,9 +103,9 @@ bool runStatic(const std::string& bytes, const char* label) {
     return true;
 }
 
-void chunk(std::string& out, const char* name, const std::string& payload) {
+void chunk(std::string& out, const char* name, const std::string& payload, uint32_t version = 1) {
     out.append(name, 8);
-    u32(out, 1);
+    u32(out, version);
     u32(out, (uint32_t)payload.size());
     out += payload;
 }
@@ -171,7 +171,7 @@ std::string chunkedV7Fixture() {
     std::string out = "version 7.00\n";
     const std::string core = dracoCorePayload();
     if (core.empty()) return {};
-    chunk(out, "COREMESH", core);
+    chunk(out, "COREMESH", core, 2);
     chunk(out, "SKINNING", skinPayload());
     return out;
 }
