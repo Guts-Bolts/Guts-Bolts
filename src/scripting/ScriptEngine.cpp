@@ -32,8 +32,35 @@ namespace {
 // Lua code that builds the friendly Roblox-style globals on top of the C API.
 const char* kPrelude = R"LUA(
 -- Enum.KeyCode.E -> "E", Enum.Material.Neon -> "Neon", Enum.UserInputType.Keyboard -> "Keyboard"
+-- Enum values remain strings for compatibility with the existing property bindings,
+-- but categories also expose GetEnumItems(), which older Roblox scripts use to pick
+-- a random Material / Font / MeshType. Previously Enum.Material.Neon worked while
+-- Enum.Material:GetEnumItems() crashed because the category had no method.
+local enumItems = {
+    Material = {
+        "Plastic", "SmoothPlastic", "Neon", "Wood", "WoodPlanks", "Marble", "Slate",
+        "Concrete", "Granite", "Brick", "Pebble", "Cobblestone", "Rock", "Sandstone",
+        "Basalt", "CrackedLava", "Limestone", "Pavement", "Mud", "Ground", "Grass",
+        "LeafyGrass", "Sand", "Snow", "Ice", "Glacier", "Salt", "Water", "Fabric",
+        "Foil", "Metal", "DiamondPlate", "CorrodedMetal", "Rust", "Glass",
+    },
+    MeshType = { "Head", "Torso", "Wedge", "Sphere", "Cylinder", "Brick", "FileMesh" },
+    Font = { "Legacy", "Arial", "ArialBold", "SourceSans", "SourceSansBold",
+        "SourceSansLight", "SourceSansItalic", "Bodoni", "Garamond", "Cartoon",
+        "Code", "Highway", "SciFi", "Fantasy", "Antique" },
+}
 Enum = setmetatable({}, { __index = function(t, category)
-    local e = setmetatable({}, { __index = function(_, name) return name end })
+    local e = setmetatable({}, { __index = function(_, name)
+        if name == "GetEnumItems" then
+            return function()
+                local names = enumItems[category] or {}
+                local result = {}
+                for i, item in ipairs(names) do result[i] = item end
+                return result
+            end
+        end
+        return name
+    end })
     rawset(t, category, e)
     return e
 end })
@@ -96,6 +123,22 @@ local function uiFolder()
     end
     return f
 end
+-- PlayerScripts.ControlScript is a compatibility placeholder for old LocalScripts.
+-- Guts & Bolts' actual movement controller is native; toggling this empty stub does
+-- not disable native controls, but it lets legacy scripts inspect/toggle the old path.
+local function playerScripts(t)
+    local f = rawget(t, "__PlayerScripts")
+    if f and f.Parent then return f end
+    f = Instance.new("Folder")
+    f.Name = "PlayerScripts"
+    f.Parent = rawget(t, "__node")
+    local controller = Instance.new("LocalScript")
+    controller.Name = "ControlScript"
+    controller.Disabled = false
+    controller.Parent = f
+    rawset(t, "__PlayerScripts", f)
+    return f
+end
 __gb_uiFolder = uiFolder
 local joinData = __gb_joinData
 local function getJoinData(self) return joinData(rawget(self, "Name")) end
@@ -104,9 +147,12 @@ local function getJoinData(self) return joinData(rawget(self, "Name")) end
 -- joined player's to them).
 local camOpt, setCamOpt = __gb_camOpt, __gb_setCamOpt
 local cameraOptions = { CameraMode = true, CameraMinZoomDistance = true, CameraMaxZoomDistance = true }
+local getMouse  -- filled in below, after Ray and the legacy raycast helpers exist
 local playerMeta = {
     __index = function(t, k)
         if k == "PlayerGui" then return uiFolder() end
+        if k == "PlayerScripts" then return playerScripts(t) end
+        if k == "GetMouse" then return function(self) return getMouse(self) end end
         if k == "GetJoinData" then return getJoinData end
         if k == "Team" or k == "TeamColor" or k == "Neutral" then return rawget(t, "__" .. k) end
         if cameraOptions[k] then return camOpt(rawget(t, "Name"), k) end
@@ -761,6 +807,100 @@ end
 addMethod("FindPartOnRay", function(_, ray, ignore) return findOnRay(ray, ignore and { ignore } or {}, false) end)
 addMethod("FindPartOnRayWithIgnoreList", function(_, ray, list) return findOnRay(ray, list, false) end)
 addMethod("FindPartOnRayWithWhitelist", function(_, ray, list) return findOnRay(ray, list, true) end)
+
+-- Legacy Player:GetMouse(): cursor-relative raycasting and the input events used by
+-- older LocalScripts. Coordinates are scaled from the app viewport into the active
+-- camera viewport; embedded editor viewports may need a view-origin offset in future.
+local mousePosition = __gb_mousePosition
+local mouseObjects = setmetatable({}, { __mode = "k" })
+getMouse = function(player)
+    if mouseObjects[player] then return mouseObjects[player] end
+    local mouse = { ClassName = "Mouse", Name = "Mouse", __TargetFilter = nil, Icon = "" }
+    local keyDown, keyUp = Instance.new("BindableEvent"), Instance.new("BindableEvent")
+    local button1Down, button1Up = Instance.new("BindableEvent"), Instance.new("BindableEvent")
+    local button2Down, button2Up = Instance.new("BindableEvent"), Instance.new("BindableEvent")
+    mouse.KeyDown, mouse.KeyUp = keyDown.Event, keyUp.Event
+    mouse.Button1Down, mouse.Button1Up = button1Down.Event, button1Up.Event
+    mouse.Button2Down, mouse.Button2Up = button2Down.Event, button2Up.Event
+    UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType == "Keyboard" then keyDown:Fire(input.KeyCode)
+        elseif input.UserInputType == "MouseButton1" then button1Down:Fire()
+        elseif input.UserInputType == "MouseButton2" then button2Down:Fire() end
+    end)
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == "Keyboard" then keyUp:Fire(input.KeyCode)
+        elseif input.UserInputType == "MouseButton1" then button1Up:Fire()
+        elseif input.UserInputType == "MouseButton2" then button2Up:Fire() end
+    end)
+    local function ray()
+        local p = mousePosition()
+        return workspace.CurrentCamera:ViewportPointToRay(p.X, p.Y)
+    end
+    local function cast()
+        local r = ray()
+        local ignore = {}
+        if player.Character then ignore[#ignore + 1] = player.Character end
+        local filter = mouse.__TargetFilter
+        if filter ~= nil then
+            if type(filter) == "table" then
+                for _, item in ipairs(filter) do ignore[#ignore + 1] = item end
+            else
+                ignore[#ignore + 1] = filter
+            end
+        end
+        local hit, pos, normal, material =
+            workspace:FindPartOnRayWithIgnoreList(Ray.new(r.Origin, r.Direction * 1000), ignore)
+        return r, hit, pos, normal, material
+    end
+    setmetatable(mouse, {
+        __index = function(t, k)
+            if k == "TargetFilter" then return rawget(t, "__TargetFilter") end
+            if k == "X" or k == "Y" then
+                local p = mousePosition()
+                return k == "X" and p.X or p.Y
+            end
+            if k == "ViewSizeX" or k == "ViewSizeY" then
+                local size = workspace.CurrentCamera.ViewportSize
+                return k == "ViewSizeX" and size.X or size.Y
+            end
+            if k == "UnitRay" or k == "Origin" then
+                local r = ray()
+                return k == "UnitRay" and r or r.Origin
+            end
+            if k == "Hit" or k == "Target" then
+                local r, hit, pos = cast()
+                if k == "Target" then return hit end
+                return CFrame.new(pos or (r.Origin + r.Direction * 1000))
+            end
+            return nil
+        end,
+        __newindex = function(t, k, v)
+            if k == "TargetFilter" then rawset(t, "__TargetFilter", v)
+            elseif k == "Icon" then rawset(t, "Icon", tostring(v))
+            else rawset(t, k, v) end
+        end,
+    })
+    mouseObjects[player] = mouse
+    return mouse
+end
+
+-- The removed Roblox RbxUtility library is still used by older scripts as
+-- LoadLibrary("RbxUtility").Create("Part"){ Name = "...", Parent = ... }.
+function LoadLibrary(name)
+    if name ~= "RbxUtility" then error("LoadLibrary only supports the legacy RbxUtility.Create helper", 2) end
+    return { Create = function(className)
+        return function(properties)
+            local object = Instance.new(className)
+            local parent
+            for key, value in pairs(properties or {}) do
+                if key == "Parent" then parent = value else object[key] = value end
+            end
+            if parent ~= nil then object.Parent = parent end
+            return object
+        end
+    end }
+end
+
 -- workspace:GetPartBoundsInRadius(position, radius): parts near a point.
 addMethod("GetPartBoundsInRadius", function(self, pos, radius)
     local out = {}
@@ -1357,6 +1497,8 @@ function game:GetService(name)
     end
     return s
 end
+-- Older Roblox scripts used the lowercase alias game:service(...).
+game.service = game.GetService
 game.FindService = function(_, name) return findService(name) end
 Workspace = workspace
 
@@ -2229,6 +2371,22 @@ int gui_clear(lua_State* L) {
 // __gb_raycast(origin, direction, filterList, includeOnly) -> part, position, normal, distance
 // (and the terrain material, when it hits workspace.Terrain)
 // (workspace:Raycast / FindPartOnRay). `direction`'s length is how far to look.
+int l_mousePosition(lua_State* L) {
+    Scene* scene = LuaApi::engine(L)->scene();
+    const ImVec2 raw = ImGui::GetMousePos();
+    const ImGuiViewport* main = ImGui::GetMainViewport();
+    const ImVec2 origin = main ? main->Pos : ImVec2(0.0f, 0.0f);
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    glm::vec2 pos(raw.x - origin.x, raw.y - origin.y);
+    if (scene && display.x > 0.0f && display.y > 0.0f) {
+        const glm::vec2 view = glm::max(scene->camera().viewport, glm::vec2(1.0f));
+        pos.x *= view.x / display.x;
+        pos.y *= view.y / display.y;
+    }
+    LuaApi::pushVector2(L, pos);
+    return 1;
+}
+
 int l_raycast(lua_State* L) {
     Scene* scene = LuaApi::engine(L)->scene();
     const glm::vec3 from = LuaApi::checkVector3(L, 1), dir = LuaApi::checkVector3(L, 2);
@@ -2742,6 +2900,7 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_soundMix", l_soundMix);
     lua_register(L, "__gb_navPath", l_navPath);
     lua_register(L, "__gb_navQuery", l_navQuery);
+    lua_register(L, "__gb_mousePosition", l_mousePosition);
     lua_register(L, "__gb_raycast", l_raycast);
     lua_register(L, "__gb_cgroups", l_cgroups);
     lua_register(L, "__gb_storage", l_storage);

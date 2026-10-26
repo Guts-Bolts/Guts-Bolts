@@ -22,8 +22,42 @@ task.spawn(function()
         return test()
     end
 
+    -- Legacy enum enumeration: old scripts use this to select a random material.
+    local materials = Enum.Material:GetEnumItems()
+    check(type(materials) == "table" and #materials > 0, "Enum.Material:GetEnumItems returns material names")
+    local hasNeon = false
+    for _, material in ipairs(materials) do if material == "Neon" then hasNeon = true end end
+    check(hasNeon, "material enum list contains Neon")
+    check(type(Enum.Font:GetEnumItems()) == "table" and #Enum.Font:GetEnumItems() > 0,
+          "Enum.Font:GetEnumItems returns font names")
+
+    -- Legacy Player:GetMouse() and the removed RbxUtility.Create helper.
     local Players = game:GetService("Players")
     local me = Players.LocalPlayer
+    local controller = me.PlayerScripts:WaitForChild("ControlScript")
+    check(controller ~= nil and controller.Disabled == false, "legacy PlayerScripts.ControlScript placeholder exists")
+    controller.Disabled = true
+    controller.Disabled = false
+    check(game:service("Workspace") == workspace, "lowercase game:service alias works")
+    local mouse = me:GetMouse()
+    check(type(mouse.X) == "number" and type(mouse.Y) == "number", "Mouse exposes cursor X/Y")
+    check(mouse.UnitRay ~= nil and mouse.UnitRay.Direction.Magnitude > 0.99, "Mouse.UnitRay is a unit camera ray")
+    check(mouse.Hit ~= nil and mouse.KeyDown ~= nil and mouse.Button1Down ~= nil,
+          "Mouse exposes Hit and legacy input signals")
+    local legacyPart = LoadLibrary("RbxUtility").Create("Part")({ Name = "LegacyCreateTest", Anchored = true })
+    check(legacyPart.Name == "LegacyCreateTest" and legacyPart.Anchored, "RbxUtility.Create applies properties")
+    local special = Instance.new("SpecialMesh")
+    special.MeshType = Enum.MeshType.Sphere
+    special.Scale = Vector3.new(1.5, 0.75, 1.25)
+    special.Offset = Vector3.new(0, 0.25, 0)
+    special.Parent = legacyPart
+    check(special.ClassName == "SpecialMesh" and special.MeshType == "Sphere",
+          "legacy SpecialMesh keeps its class and primitive MeshType")
+    check(special.Scale == Vector3.new(1.5, 0.75, 1.25) and special.Offset == Vector3.new(0, 0.25, 0),
+          "legacy SpecialMesh Scale and Offset round-trip")
+    special:Destroy()
+    legacyPart:Destroy()
+
     local character = me.Character
 
     -- 6. Luau extras ------------------------------------------------------------------
