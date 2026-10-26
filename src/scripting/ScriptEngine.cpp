@@ -68,6 +68,12 @@ end })
 task = { wait = __gb_wait, spawn = __gb_spawn, delay = __gb_delay, defer = __gb_spawn }
 wait, spawn, delay = task.wait, task.spawn, task.delay
 
+-- Return the current mouse position in viewport pixels as a Vector2.
+-- Kept separate from Player:GetMouse(), which exposes legacy raycasting and input events.
+function getmouse()
+    return __gb_mousePosition()
+end
+
 -- ColorSequence / NumberSequence: a colour or number that changes along a Trail or
 -- Beam. ColorSequence.new(c), .new(c0, c1) or .new({ ColorSequenceKeypoint.new(t, c), ... })
 local function keypoint(kind)
