@@ -832,24 +832,10 @@ void Editor::renderSceneValidator() {
             }
         }
 
-        // Duplicate sibling names can make name-based lookups such as FindFirstChild ambiguous.
-        for (SceneNode* parent : nodes) {
-            std::unordered_map<std::string, std::vector<SceneNode*>> byName;
-            for (const auto& child : parent->children) {
-                if (child && !child->internal && !child->name.empty())
-                    byName[child->name].push_back(child.get());
-            }
-            for (const auto& entry : byName) {
-                if (entry.second.size() < 2) continue;
-                for (SceneNode* duplicate : entry.second) {
-                    add(duplicate, 1, "Duplicate sibling name",
-                        "'" + duplicate->name + "' appears " + std::to_string(entry.second.size()) +
-                        " times under the same parent; name-based script lookups may be ambiguous.",
-                        "Rename the objects uniquely or update scripts to identify the intended object another way.");
-                }
-            }
-        }
-
+        // Duplicate sibling names are valid (and common in Roblox projects).
+        // FindFirstChild intentionally returns a matching child; scripts that need a
+        // particular duplicate should use class/ancestry checks or iterate GetChildren().
+ 
         std::stable_sort(m_sceneValidationIssues.begin(), m_sceneValidationIssues.end(),
             [](const SceneValidationIssue& a, const SceneValidationIssue& b) {
                 if (a.severity != b.severity) return a.severity > b.severity;
@@ -1326,7 +1312,8 @@ void Editor::duplicateSelected() {
     for (SceneNode* sel : m_scene->selectionRoots()) {
         if (!canEdit(sel)) continue;
         auto copy = Serializer::clone(*sel);
-        copy->name += " Copy";
+        // Keep the original name. Roblox Instances do not acquire "Copy" suffixes
+        // when duplicated, and sibling Instances are allowed to share names.
         if (copy->kind == NodeKind::Part) copy->transform.position.x += 1.0f;   // so it's visible
         copies.push_back(m_scene->insert(std::move(copy), sel->parent));
     }
