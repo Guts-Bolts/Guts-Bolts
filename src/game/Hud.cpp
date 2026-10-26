@@ -160,13 +160,18 @@ void drawNameTags(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const gl
 
 namespace {
 constexpr float kSlot = 58.0f, kGap = 6.0f;
+bool g_backpackOpen = false;
+float g_backpackScroll = 0.0f;
+ImVec2 backpackButtonMin(ImVec2 max) { return ImVec2(max.x - 108.0f, max.y - 76.0f); }
+ImVec2 backpackPanelMin(ImVec2 max) { return ImVec2(max.x - 302.0f, max.y - 374.0f); }
+bool inRect(ImVec2 p, ImVec2 a, ImVec2 b) { return p.x >= a.x && p.x <= b.x && p.y >= a.y && p.y <= b.y; }
 ImVec2 hotbarStart(ImVec2 min, ImVec2 max, int n) {
     float w = n * kSlot + (n - 1) * kGap;
     return ImVec2(std::floor((min.x + max.x - w) * 0.5f), max.y - kSlot - 14.0f);
 }
 int hotbarCount(Scene& scene) {
     Player* p = scene.player();
-    return p && !p->isDead() ? (int)p->tools().size() : 0;
+    return p && !p->isDead() ? std::min((int)p->tools().size(), Player::kHotbarTools) : 0;
 }
 
 // The game creator's hammer: a wooden handle leaning right, with a steel head on top.
@@ -213,6 +218,9 @@ void drawVoiceTags(ImDrawList* dl, ImVec2 min, ImVec2 max, const glm::mat4& view
 }
 
 bool overHotbar(ImVec2 min, ImVec2 max, Scene& scene, ImVec2 p) {
+    const ImVec2 bp = backpackButtonMin(max), panel = backpackPanelMin(max);
+    if (inRect(p, bp, ImVec2(max.x - 12.0f, max.y - 38.0f))) return true;
+    if (g_backpackOpen && inRect(p, panel, ImVec2(max.x - 12.0f, max.y - 84.0f))) return true;
     int n = hotbarCount(scene);
     if (!n) return false;
     ImVec2 a = hotbarStart(min, max, n);
@@ -241,8 +249,9 @@ int drawHotbar(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const ImVec
             ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(h->color.r, h->color.g, h->color.b, 1.0f));
             dl->AddLine(ImVec2(s0.x + kSlot * 0.3f, s1.y - kSlot * 0.3f), ImVec2(s1.x - kSlot * 0.28f, s0.y + kSlot * 0.26f), col, 6.0f);
         }
-        char num[4];
-        std::snprintf(num, sizeof(num), "%d", i + 1);
+        const char* num = i == 9 ? "0" : (i == 8 ? "9" : nullptr);
+        char numBuf[4];
+        if (i < 8) { std::snprintf(numBuf, sizeof(numBuf), "%d", i + 1); num = numBuf; }
         dl->AddText(ImVec2(s0.x + 5, s0.y + 3), on ? IM_COL32(30, 30, 40, 255) : IM_COL32(255, 255, 255, 200), num);
         // The name along the bottom, cut to fit.
         std::string name = t->name;
@@ -261,6 +270,54 @@ int drawHotbar(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const ImVec
         if (tap && tap->x >= s0.x && tap->x < s1.x && tap->y >= s0.y && tap->y < s1.y) clicked = i;
     }
     return clicked;
+}
+
+int drawBackpack(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const ImVec2* tap) {
+    Player* p = scene.player();
+    if (!p || p->isDead()) { g_backpackOpen = false; return -1; }
+    const auto tools = p->tools();
+    const ImVec2 button = backpackButtonMin(max);
+    const ImVec2 buttonMax(max.x - 12.0f, max.y - 38.0f);
+    const ImVec2 mouse = ImGui::GetIO().MousePos;
+    const bool buttonHover = inRect(mouse, button, buttonMax);
+    const bool buttonTap = tap && inRect(*tap, button, buttonMax);
+    dl->AddRectFilled(button, buttonMax, g_backpackOpen ? IM_COL32(45, 112, 190, 235) : IM_COL32(20, 22, 28, buttonHover ? 230 : 185), 7.0f);
+    dl->AddRect(button, buttonMax, IM_COL32(255, 255, 255, 95), 7.0f);
+    const char* label = "Backpack";
+    const ImVec2 labelSize = ImGui::CalcTextSize(label);
+    dl->AddText(ImVec2(button.x + (buttonMax.x - button.x - labelSize.x) * 0.5f,
+                       button.y + (buttonMax.y - button.y - labelSize.y) * 0.5f), IM_COL32(255,255,255,255), label);
+    if ((buttonHover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) || buttonTap) g_backpackOpen = !g_backpackOpen;
+    if (!g_backpackOpen) return -1;
+
+    const ImVec2 panel = backpackPanelMin(max), panelMax(max.x - 12.0f, max.y - 84.0f);
+    dl->AddRectFilled(panel, panelMax, IM_COL32(20, 22, 28, 242), 9.0f);
+    dl->AddRect(panel, panelMax, IM_COL32(255, 255, 255, 95), 9.0f);
+    dl->AddText(ImVec2(panel.x + 12.0f, panel.y + 10.0f), IM_COL32(255,255,255,255), "Backpack");
+    char count[64]; std::snprintf(count, sizeof(count), "%zu tools", tools.size());
+    dl->AddText(ImVec2(panelMax.x - 80.0f, panel.y + 10.0f), IM_COL32(190,195,205,255), count);
+    const float rowH = 31.0f, top = panel.y + 40.0f, bottom = panelMax.y - 10.0f;
+    const float visibleH = bottom - top;
+    const float extraCount = (float)(tools.size() > Player::kHotbarTools ? tools.size() - Player::kHotbarTools : 0);
+    const float maxScroll = std::max(0.0f, extraCount * rowH - visibleH);
+    if (inRect(mouse, ImVec2(panel.x, top), ImVec2(panelMax.x, bottom)) && ImGui::GetIO().MouseWheel != 0.0f)
+        g_backpackScroll = std::clamp(g_backpackScroll - ImGui::GetIO().MouseWheel * rowH * 2.0f, 0.0f, maxScroll);
+    else g_backpackScroll = std::clamp(g_backpackScroll, 0.0f, maxScroll);
+    int selected = -1;
+    for (size_t i = Player::kHotbarTools; i < tools.size(); ++i) {
+        const float y = top + (float)(i - Player::kHotbarTools) * rowH - g_backpackScroll;
+        if (y + rowH < top || y > bottom) continue;
+        ImVec2 a(panel.x + 8.0f, y), b(panelMax.x - 8.0f, y + rowH - 2.0f);
+        const bool hover = inRect(mouse, a, b);
+        if (hover) dl->AddRectFilled(a, b, IM_COL32(70, 90, 120, 180), 4.0f);
+        char index[16]; std::snprintf(index, sizeof(index), "%zu.", i + 1);
+        dl->AddText(ImVec2(a.x + 7.0f, a.y + 6.0f), IM_COL32(180,190,205,255), index);
+        std::string name = tools[i]->name;
+        while (name.size() > 1 && ImGui::CalcTextSize(name.c_str()).x > b.x - a.x - 55.0f) name.pop_back();
+        dl->AddText(ImVec2(a.x + 38.0f, a.y + 6.0f), IM_COL32(255,255,255,255), name.c_str());
+        if ((hover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) || (tap && inRect(*tap, a, b))) selected = (int)i;
+    }
+    return selected;
 }
 
 std::string drawPlayerList(ImDrawList* dl, ImVec2 min, ImVec2 max, const std::vector<PlayerEntry>& players,
