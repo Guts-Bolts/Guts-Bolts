@@ -31,6 +31,8 @@ void setPitch(int handle, float pitch);
 void setPosition(int handle, const glm::vec3& position);
 void setListener(const glm::vec3& position, const glm::vec3& forward);
 void setMasterVolume(float v);                   // 0..1
+void suspend();                                    // temporarily mute while the app is backgrounded
+void resume();                                     // restore the user's previous master volume
 
 // Sound effects and SoundGroups (see SoundMix.h, which keeps these up to date while playing).
 // A sound's own effects run first, then it goes through its group's "bus" (the group's
