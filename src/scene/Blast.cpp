@@ -319,10 +319,11 @@ void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physic
         const float k = 1.0f - d / R;
         const glm::vec3 dir = d > 1e-3f ? (body - b.center) / d : glm::vec3(0, 1, 0);
         const glm::vec3 impulse = (dir + glm::vec3(0, 0.8f, 0)) * 22.0f * P * k;
-        scene.npcs().kill(npcPtr->rootId, std::min(1.0f, 0.4f + k * P), impulse);
-        // Non-lethal hits still need to damage the NPC's Humanoid.
-        if (npcPtr->humanoid.health > 0.0f)
-            npcPtr->humanoid.health = std::max(0.0f, npcPtr->humanoid.health - 160.0f * P * k);
+        npcPtr->humanoid.health = std::max(0.0f, npcPtr->humanoid.health - 160.0f * P * k);
+        if (npcPtr->humanoid.health <= 0.0f)
+            scene.npcs().kill(npcPtr->rootId, std::min(1.0f, 0.4f + k * P), impulse);
+        else
+            npcPtr->pendingImpulse += impulse;
     }
 }
 
