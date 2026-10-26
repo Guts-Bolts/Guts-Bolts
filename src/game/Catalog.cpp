@@ -233,7 +233,9 @@ void applyLook(const Item& it) {
     };
     for (const std::string& w : me.wearing) {
         bool sameType = lowerPrefix(w);
-        for (const Item& other : load()) if (other.id == w && other.type == it.type) sameType = true;
+        for (const Item& other : load()) if (other.id == w && other.type == it.type) {
+            if (it.type != Type::BodyPart || other.bodyPart == it.bodyPart) sameType = true;
+        }
         if (!sameType && w != it.id) keep.push_back(w);
     }
     keep.push_back(it.id);
