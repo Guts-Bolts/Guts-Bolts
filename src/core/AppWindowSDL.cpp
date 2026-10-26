@@ -293,6 +293,8 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
         case SDL_APP_WILLENTERBACKGROUND:
             Voice::setActive(false); // release the microphone before iOS suspends the process
             Audio::suspend();         // mute without overwriting the user's volume
+            m_touches.clear();        // don't leave a virtual joystick/camera drag held across suspension
+            io.AddMouseButtonEvent(0, false);
             break;
         case SDL_APP_DIDENTERFOREGROUND: {
             // Rebind the existing context after an iOS interruption and refresh
