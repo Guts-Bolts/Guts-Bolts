@@ -1761,7 +1761,7 @@ async function decalPicture(img) {
 
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
@@ -1777,7 +1777,7 @@ pages.create = async (tab = 'games') => {
     : html`Uploading costs a few Bolts (decals 5, clothes 10, audio 20, plugins 20; games are free).
       <span class="muted">${me.uploadsLeft} uploads left today.</span>`;
   const clothing = ['shirt', 'pants'].includes(kind), face = kind === 'face', tee = kind === 'tshirt', bundle = kind === 'bundle';
-  const accept = { decal: '.png,.jpg,.jpeg', audio: '.mp3,.wav,.ogg,.flac', plugin: '.lua', game: '.gbscene' }[kind] || '';
+  const accept = { decal: '.png,.jpg,.jpeg', audio: '.mp3,.wav,.ogg,.flac', plugin: '.lua', game: '.gbscene', gear: '.gbmodel,.json' }[kind] || '';
   const form = html`<h2>${kind === 'game' ? 'Publish a game' : 'Upload a new ' + KINDS[kind]}</h2>
     <form class="form" data-form="upload"><input type="hidden" name="kind" value="${kind}">
       <label>Name</label><input type="text" name="name" maxlength="50" required>
@@ -1796,7 +1796,7 @@ pages.create = async (tab = 'games') => {
         <label style="font-weight:normal"><input type="checkbox" name="headless"> Headless: wearing it hides the head and face</label>`
       : html`<label>File</label><input type="file" name="file" accept="${accept}" required>
         <p class="small muted">${{ decal: 'A .png or .jpg picture (up to 4 MB).', audio: 'An .mp3, .wav, .ogg or .flac file (up to 6 MB).',
-          plugin: 'A Lua plugin for Studio.', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).' }[kind]}</p>`}
+          plugin: 'A Lua plugin for Studio.', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).', gear: 'A .gbmodel file exported from Studio containing one Tool with a Handle. Gear is equipped from the catalog and appears in games that allow gear.' }[kind]}</p>`}
       ${['decal', 'audio'].includes(kind) ? html`<p class="small muted">${kind === 'decal' ? 'Decals' : 'Sounds'} are always free: anyone can use them in their games.</p>`
         : (me.verified || face || bundle) && kind !== 'game' ? html`<label>Price (Bolts)</label><input type="number" name="price" min="0" value="0">` : ''}
       ${kind === 'decal' || face || tee ? html`<img class="thumb" id="preview" alt="Preview" hidden style="width:120px;height:120px;margin-top:10px">` : ''}
@@ -1804,7 +1804,9 @@ pages.create = async (tab = 'games') => {
         <span id="uploadMsg"></span></p></form>`;
   // Hats are for Verified creators; shirts and pants are open to everyone.
   const hatLocked = kind === 'hat' && signedIn() && !me.verified;
-  const shownForm = hatLocked ? html`<h2>Upload a new Hat</h2><p class="error">Only Verified creators can make hats.</p>
+  const gearLocked = kind === 'gear' && signedIn() && !me.verified;
+  const shownForm = gearLocked ? html`<h2>Upload new Gear</h2><p class="error">Only Verified creators can upload gear.</p><p class="muted">Make a Tool in Studio, publish/export it as a model, and upload the .gbmodel file here. Your gear will appear in the Catalog's Gear category.</p>`
+    : hatLocked ? html`<h2>Upload a new Hat</h2><p class="error">Only Verified creators can make hats.</p>
     <p class="muted">You can still make <a href="#/create/shirt">shirts</a> and <a href="#/create/pants">pants</a>!</p>`
     : face && !(signedIn() && me.official) ? html`<p class="error">Only Guts can make faces.</p>`
     : bundle && !(signedIn() && me.staff) ? html`<p class="error">Only Guts&Bolts staff can make bundles.</p>`
@@ -1813,7 +1815,7 @@ pages.create = async (tab = 'games') => {
   const row = (a) => html`<div>
       ${a.kind === 'game' ? gameIcon(a, 48) : ''}
       ${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="">` : ''}
-      ${clothing || face || bundle || kind === 'hat' ? html`<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#fff">${itemIcon(a)}</div>` : ''}
+      ${clothing || face || bundle || kind === 'hat' || kind === 'gear' ? html`<div class="thumb" style="display:flex;align-items:center;justify-content:center;background:#fff">${itemIcon(a)}</div>` : ''}
       <div class="grow"><b>${a.kind === 'decal' || a.kind === 'audio' || a.kind === 'plugin' ? html`<a href="#/library/${assetNum(a)}">${a.name}</a>` : a.name}</b><br><span class="small muted">
         ${a.kind === 'game' ? html`${a.plays} plays · ${ACCESS_NAMES[a.access || 'public']}` : html`${a.price > 0 ? bolts(a.price) : 'free'} · ${a.sales} sold`}
         ${a.kind === 'decal' || a.kind === 'audio' ? html` · ID ${assetNum(a)}` : ''}</span></div>
