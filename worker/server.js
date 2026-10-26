@@ -2762,7 +2762,7 @@ export class GbServerObject extends DurableObject {
       // require the original creator. Keep a staff audit entry for every override.
       const staffAccessoryEdit = a.creator !== me.id && this.isStaff(me) && isAccessory(a.kind);
       if (a.creator !== me.id && !staffAccessoryEdit) return fail('You can only update your own things.');
-      if (a.kind === 'bundle') return fail('Bundles can\'t be changed once they\'re made. Make a new one instead.');
+      if (a.kind === 'bundle' || a.kind === 'bodypart') return fail('Bundles and body parts can\'t be changed once they\'re made. Make a new one instead.');
       let data;
       try { data = b64ToBytes(str(args, 'data')); } catch { return fail('The upload got scrambled. Try again.'); }
       if (data.length > maxSize(a.kind)) return fail('That\'s too big.');
