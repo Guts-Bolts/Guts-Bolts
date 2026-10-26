@@ -65,8 +65,8 @@ const weekOf = (t) => Math.floor(t / (7 * 86400));
 const MAX_SIZE = { audio: 6 << 20, game: 24 << 20, plugin: 512 << 10, decal: 4 << 20, shirt: 1 << 20, pants: 1 << 20, model: 4 << 20,
   hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20,
   emote: 256 << 10, animpack: 512 << 10, bundle: 1 << 20 };
-// Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Only staff
-// make gear. You can have up to kMostGear equipped, and you get them in games whose
+// Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Verified
+// creators can upload it. You can have up to kMostGear equipped, and you get them in games whose
 // creator ticked "Allow gear". (src/server has the same rules.)
 const kMostGear = 4;
 // Emotes and animation packs: keyframes for the character, sold in the catalog. Only staff
@@ -2472,7 +2472,7 @@ export class GbServerObject extends DurableObject {
       const verified = this.isVerified(me);
       if (isAccessory(kind) && !verified && !this.isStaff(me)) return fail('Only Verified creators can make hats and accessories. Shirts and pants are open to everyone!');
       if (kind === 'face' && !this.isOfficial(me)) return fail('Only Guts can make faces.');
-      if (kind === 'gear' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make gear.');
+      if (kind === 'gear' && !verified && !this.isStaff(me)) return fail('Only Verified creators can upload gear.');
       if (isEmoteItem(kind) && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make emotes and animation packs.');
       if (kind === 'bundle' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make bundles.');
       let price = clamp(num(args, 'price'), 0, 1000000);
