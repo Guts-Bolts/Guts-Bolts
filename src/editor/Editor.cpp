@@ -225,6 +225,7 @@ void Editor::render(float dt) {
     renderShortcuts();
     renderModelingMenus();
     renderCollisionGroups();
+    renderBulkEdit();
     if (m_showPanel[kPanelTeam]) renderTeamPanel();
     m_assistant->update();
     if (m_showPanel[kPanelAssistant]) m_assistant->render(&m_showPanel[kPanelAssistant]);
@@ -1548,6 +1549,7 @@ void Editor::handleShortcuts() {
         if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_I, false)) unionSelected(1);
         else if (ImGui::IsKeyPressed(ImGuiKey_I, false)) { m_insertParent = m_scene->selected(); m_openInsert = true; }
         if (ImGui::IsKeyPressed(ImGuiKey_L, false)) m_state.gizmoLocal = !m_state.gizmoLocal;
+        if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_E, false)) m_showBulkEdit = !m_showBulkEdit;
         // Roblox's tool keys.
         if (ImGui::IsKeyPressed(ImGuiKey_1, false)) m_state.tool = GizmoTool::Select;
         if (ImGui::IsKeyPressed(ImGuiKey_2, false)) m_state.tool = GizmoTool::Translate;
@@ -2166,6 +2168,7 @@ void Editor::renderShortcuts() {
          {"Ctrl+click / Shift+click", "Add to the selection"},
          {"Ctrl+A", "Select everything in the Workspace"},
          {"Ctrl+Up / Ctrl+Down", "Select parent / children"},
+         {"Ctrl+Shift+E", "Find and Change: change lots of objects at once"},
          {"Esc", "Select nothing"}},
         {{"Ctrl+Right / Ctrl+Left", "Expand / collapse selected (everything inside)"},
          {"Ctrl+Shift+Left", "Collapse the whole Explorer"},
@@ -2479,6 +2482,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Select All", "Ctrl+A")) selectAll();
         if (ImGui::MenuItem("Select Parent", "Ctrl+Up", false, sel != nullptr)) selectParent();
         if (ImGui::MenuItem("Select Children", "Ctrl+Down", false, sel != nullptr)) selectChildren();
+        if (ImGui::MenuItem("Find and Change...", "Ctrl+Shift+E", m_showBulkEdit)) m_showBulkEdit = !m_showBulkEdit;
         ImGui::Separator();
         if (ImGui::MenuItem("Group", "Ctrl+G", false, editable)) groupSelected();
         if (ImGui::MenuItem("Ungroup", "Ctrl+U", false, editable && sel->kind == NodeKind::Model)) ungroupSelected();
