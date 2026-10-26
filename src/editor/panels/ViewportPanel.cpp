@@ -875,6 +875,7 @@ void ViewportPanel::render(float dt) {
             }
             Hud::draw(dl, imgPos, imgMax, *m_scene, m_session->gui());
             if (int slot = Hud::drawHotbar(dl, imgPos, imgMax, *m_scene); slot >= 0 && m_hovered && !emotesOpen) m_session->selectToolSlot(slot);
+            if (int slot = Hud::drawBackpack(dl, imgPos, imgMax, *m_scene); slot >= 0 && m_hovered && !emotesOpen) m_session->selectToolSlot(slot);
             // The leaderboard, once the game gives the player some leaderstats.
             if (auto stats = m_session->scripts().leaderstats(m_session->scripts().playerName()); !stats.empty())
             {

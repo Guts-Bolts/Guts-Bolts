@@ -162,16 +162,35 @@ namespace {
 constexpr float kSlot = 58.0f, kGap = 6.0f;
 bool g_backpackOpen = false;
 float g_backpackScroll = 0.0f;
-ImVec2 backpackButtonMin(ImVec2 max) { return ImVec2(max.x - 108.0f, max.y - 76.0f); }
-ImVec2 backpackPanelMin(ImVec2 max) { return ImVec2(max.x - 302.0f, max.y - 374.0f); }
 bool inRect(ImVec2 p, ImVec2 a, ImVec2 b) { return p.x >= a.x && p.x <= b.x && p.y >= a.y && p.y <= b.y; }
 ImVec2 hotbarStart(ImVec2 min, ImVec2 max, int n) {
     float w = n * kSlot + (n - 1) * kGap;
     return ImVec2(std::floor((min.x + max.x - w) * 0.5f), max.y - kSlot - 14.0f);
 }
+// The Backpack button sits just above the middle of the hotbar (the corners belong to the
+// touch thumbstick and jump button), and its list opens above that.
+constexpr float kPackW = 110.0f, kPackH = 28.0f, kPanelW = 290.0f, kPanelMaxH = 290.0f, kRowH = 31.0f;
+void backpackButton(ImVec2 min, ImVec2 max, ImVec2& a, ImVec2& b) {
+    const float cx = std::floor((min.x + max.x) * 0.5f), bottom = max.y - kSlot - 14.0f - kGap;
+    a = ImVec2(cx - kPackW * 0.5f, bottom - kPackH);
+    b = ImVec2(cx + kPackW * 0.5f, bottom);
+}
+// (Tall enough for the extra tools, up to kPanelMaxH; more than that scrolls.)
+void backpackPanel(ImVec2 min, ImVec2 max, int extra, ImVec2& a, ImVec2& b) {
+    ImVec2 ba, bb;
+    backpackButton(min, max, ba, bb);
+    const float cx = (ba.x + bb.x) * 0.5f, h = std::min(kPanelMaxH, 50.0f + extra * kRowH);
+    a = ImVec2(cx - kPanelW * 0.5f, std::max(min.y + 8.0f, ba.y - kGap - h));
+    b = ImVec2(cx + kPanelW * 0.5f, ba.y - kGap);
+}
 int hotbarCount(Scene& scene) {
     Player* p = scene.player();
     return p && !p->isDead() ? std::min((int)p->tools().size(), Player::kHotbarTools) : 0;
+}
+// More tools than the hotbar holds: only then is there a Backpack to open.
+bool hasBackpack(Scene& scene) {
+    Player* p = scene.player();
+    return p && !p->isDead() && (int)p->tools().size() > Player::kHotbarTools;
 }
 
 // The game creator's hammer: a wooden handle leaning right, with a steel head on top.
@@ -218,9 +237,13 @@ void drawVoiceTags(ImDrawList* dl, ImVec2 min, ImVec2 max, const glm::mat4& view
 }
 
 bool overHotbar(ImVec2 min, ImVec2 max, Scene& scene, ImVec2 p) {
-    const ImVec2 bp = backpackButtonMin(max), panel = backpackPanelMin(max);
-    if (inRect(p, bp, ImVec2(max.x - 12.0f, max.y - 38.0f))) return true;
-    if (g_backpackOpen && inRect(p, panel, ImVec2(max.x - 12.0f, max.y - 84.0f))) return true;
+    if (hasBackpack(scene)) {
+        ImVec2 a, b;
+        backpackButton(min, max, a, b);
+        if (inRect(p, a, b)) return true;
+        backpackPanel(min, max, (int)scene.player()->tools().size() - Player::kHotbarTools, a, b);
+        if (g_backpackOpen && inRect(p, a, b)) return true;
+    }
     int n = hotbarCount(scene);
     if (!n) return false;
     ImVec2 a = hotbarStart(min, max, n);
@@ -274,29 +297,30 @@ int drawHotbar(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const ImVec
 
 int drawBackpack(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const ImVec2* tap) {
     Player* p = scene.player();
-    if (!p || p->isDead()) { g_backpackOpen = false; return -1; }
+    if (!hasBackpack(scene)) { g_backpackOpen = false; return -1; }
     const auto tools = p->tools();
-    const ImVec2 button = backpackButtonMin(max);
-    const ImVec2 buttonMax(max.x - 12.0f, max.y - 38.0f);
+    ImVec2 button, buttonMax;
+    backpackButton(min, max, button, buttonMax);
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const bool buttonHover = inRect(mouse, button, buttonMax);
     const bool buttonTap = tap && inRect(*tap, button, buttonMax);
     dl->AddRectFilled(button, buttonMax, g_backpackOpen ? IM_COL32(45, 112, 190, 235) : IM_COL32(20, 22, 28, buttonHover ? 230 : 185), 7.0f);
     dl->AddRect(button, buttonMax, IM_COL32(255, 255, 255, 95), 7.0f);
-    const char* label = "Backpack";
+    const char* label = I18n::tr("Backpack");
     const ImVec2 labelSize = ImGui::CalcTextSize(label);
     dl->AddText(ImVec2(button.x + (buttonMax.x - button.x - labelSize.x) * 0.5f,
                        button.y + (buttonMax.y - button.y - labelSize.y) * 0.5f), IM_COL32(255,255,255,255), label);
     if ((buttonHover && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) || buttonTap) g_backpackOpen = !g_backpackOpen;
     if (!g_backpackOpen) return -1;
 
-    const ImVec2 panel = backpackPanelMin(max), panelMax(max.x - 12.0f, max.y - 84.0f);
+    ImVec2 panel, panelMax;
+    backpackPanel(min, max, (int)tools.size() - Player::kHotbarTools, panel, panelMax);
     dl->AddRectFilled(panel, panelMax, IM_COL32(20, 22, 28, 242), 9.0f);
     dl->AddRect(panel, panelMax, IM_COL32(255, 255, 255, 95), 9.0f);
-    dl->AddText(ImVec2(panel.x + 12.0f, panel.y + 10.0f), IM_COL32(255,255,255,255), "Backpack");
-    char count[64]; std::snprintf(count, sizeof(count), "%zu tools", tools.size());
-    dl->AddText(ImVec2(panelMax.x - 80.0f, panel.y + 10.0f), IM_COL32(190,195,205,255), count);
-    const float rowH = 31.0f, top = panel.y + 40.0f, bottom = panelMax.y - 10.0f;
+    dl->AddText(ImVec2(panel.x + 12.0f, panel.y + 10.0f), IM_COL32(255,255,255,255), I18n::tr("Backpack"));
+    char count[64]; std::snprintf(count, sizeof(count), I18n::tr("%zu tools"), tools.size());
+    dl->AddText(ImVec2(panelMax.x - 12.0f - ImGui::CalcTextSize(count).x, panel.y + 10.0f), IM_COL32(190,195,205,255), count);
+    const float rowH = kRowH, top = panel.y + 40.0f, bottom = panelMax.y - 10.0f;
     const float visibleH = bottom - top;
     const float extraCount = (float)(tools.size() > Player::kHotbarTools ? tools.size() - Player::kHotbarTools : 0);
     const float maxScroll = std::max(0.0f, extraCount * rowH - visibleH);

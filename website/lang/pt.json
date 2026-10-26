@@ -34,6 +34,7 @@
   "%s keeps their inventory private.": "%s mantém o inventário privado.",
   "%s live on a Guts&Bolts server, so you need to be connected to one.": "%s ficam em um servidor Guts&Bolts, então você precisa estar conectado a um.",
   "%s, last 30 days: %lld": "%s, últimos 30 dias: %lld",
+  "%zu tools": "%zu ferramentas",
   "(%s Bolts)": "(%s Bolts)",
   "(1,000 Bolts)": "(1.000 Bolts)",
   "(Command Bar)": "(Barra de comandos)",

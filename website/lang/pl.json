@@ -34,6 +34,7 @@
   "%s keeps their inventory private.": "%s ukrywa swój ekwipunek.",
   "%s live on a Guts&Bolts server, so you need to be connected to one.": "%s działają na serwerze Guts&Bolts, więc musisz być z nim połączony.",
   "%s, last 30 days: %lld": "%s, ostatnie 30 dni: %lld",
+  "%zu tools": "Narzędzia: %zu",
   "(%s Bolts)": "(%s Bolts)",
   "(1,000 Bolts)": "(1000 Bolts)",
   "(Command Bar)": "(Pasek poleceń)",

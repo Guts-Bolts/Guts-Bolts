@@ -34,6 +34,7 @@
   "%s keeps their inventory private.": "%s скрывает свой инвентарь.",
   "%s live on a Guts&Bolts server, so you need to be connected to one.": "%s хранятся на сервере Guts&Bolts, поэтому нужно к нему подключиться.",
   "%s, last 30 days: %lld": "%s, за 30 дней: %lld",
+  "%zu tools": "Инструментов: %zu",
   "(%s Bolts)": "(%s Bolts)",
   "(1,000 Bolts)": "(1 000 Bolts)",
   "(Command Bar)": "(Командная строка)",
