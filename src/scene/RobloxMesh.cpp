@@ -26,6 +26,7 @@ struct Corner {
     glm::vec2 uv;
     glm::vec4 color{1.0f};
     glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
+    uint32_t sourceIndex = 0;          // source vertex for LOD/skin tables
 };
 
 // Raw triangles (three corners each) -> an EditMesh. Corners at the same spot with
@@ -122,6 +123,7 @@ bool readVerts(Bytes& r, uint32_t count, size_t stride, std::vector<Corner>& out
     out.resize(count);
     for (uint32_t i = 0; i < count; ++i) {
         size_t at = r.pos + (size_t)i * stride;
+        out[i].sourceIndex = i;
         out[i].pos    = {r.f32(at), r.f32(at + 4), r.f32(at + 8)};
         out[i].normal = {r.f32(at + 12), r.f32(at + 16), r.f32(at + 20)};
         out[i].uv     = {r.f32(at + 24), r.f32(at + 28)};
@@ -188,6 +190,9 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
     if (!normals) normals = mesh->GetNamedAttribute(draco::GeometryAttribute::NORMAL);
     const draco::PointAttribute* texcoords = mesh->GetAttributeByUniqueId(2);
     if (!texcoords) texcoords = mesh->GetNamedAttribute(draco::GeometryAttribute::TEX_COORD);
+    const draco::PointAttribute* tangents = mesh->GetAttributeByUniqueId(3);
+    const draco::PointAttribute* colors = mesh->GetAttributeByUniqueId(4);
+    if (!colors) colors = mesh->GetNamedAttribute(draco::GeometryAttribute::COLOR);
     if (!positions) {
         if (err) *err = "the Draco mesh has no position attribute";
         return false;
@@ -197,6 +202,7 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
     for (int32_t pointIndex = 0; pointIndex < mesh->num_points(); ++pointIndex) {
         const draco::PointIndex pi(pointIndex);
         Corner& out = points[(size_t)pointIndex];
+        out.sourceIndex = (uint32_t)pointIndex;
         float pos[3] = {};
         if (!positions->ConvertValue(positions->mapped_index(pi), 3, draco::DT_FLOAT32, pos)) {
             if (err) *err = "the Draco position attribute could not be converted to float3";
@@ -214,6 +220,23 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
             float uv[2] = {};
             if (texcoords->ConvertValue(texcoords->mapped_index(pi), 2, draco::DT_FLOAT32, uv))
                 out.uv = glm::vec2(uv[0], uv[1]);
+        }
+        if (tangents && tangents->num_components() >= 4) {
+            uint8_t raw[4] = {127, 0, 0, 127};
+            if (tangents->ConvertValue(tangents->mapped_index(pi), 4, draco::DT_UINT8, raw)) {
+                const auto* t = reinterpret_cast<const int8_t*>(raw);
+                out.tangent = {
+                    std::clamp(t[0] / 127.0f, -1.0f, 1.0f),
+                    std::clamp(t[1] / 127.0f, -1.0f, 1.0f),
+                    std::clamp(t[2] / 127.0f, -1.0f, 1.0f),
+                    t[3] < 0 ? -1.0f : 1.0f
+                };
+            }
+        }
+        if (colors && colors->num_components() >= 4) {
+            uint8_t raw[4] = {255, 255, 255, 255};
+            if (colors->ConvertValue(colors->mapped_index(pi), 4, draco::DT_UINT8, raw))
+                out.color = glm::vec4(raw[0], raw[1], raw[2], raw[3]) / 255.0f;
         }
     }
 
