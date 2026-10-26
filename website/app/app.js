@@ -791,12 +791,45 @@ function loadForumAvatars(root = view) {
     }
   });
 }
+
+function forumSearchForm(boards, selected = 'all', query = '') {
+  return html`<form class="forum-search form" data-form="forumSearch">
+    <label for="forumSearchQuery">Search discussions</label>
+    <div class="forum-search-row">
+      <input id="forumSearchQuery" type="search" name="q" value="${query}" maxlength="100" placeholder="Thread titles and post text…" required>
+      <select name="board" aria-label="Search board">
+        <option value="all" ${selected === 'all' ? 'selected' : ''}>All boards</option>
+        ${boards.map((b) => html`<option value="${b.id}" ${selected === b.id ? 'selected' : ''}>${b.name}</option>`)}
+      </select><button class="btn blue">Search</button>
+    </div>
+  </form>`;
+}
+pages.forumsearch = async (query, board = 'all', page = '1') => {
+  query = String(query || '').trim().slice(0, 100); board = board || 'all';
+  const p = Math.max(0, (Number(page) || 1) - 1);
+  const [br, r] = await Promise.all([pageCall('forum.boards', {}), pageCall('forum.search', { q: query, board, page: p })]);
+  if (!br.ok || !r.ok) { show(html`<h1>Forum search</h1><p class="error">${!br.ok ? br.error : r.error}</p><p><a href="#/forum">Back to forums</a></p>`); return; }
+  const base = '#/forumsearch/' + encodeURIComponent(query) + '/' + encodeURIComponent(board);
+  show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; Search</p>
+    <div class="forum-retro-masthead"><div><span class="forum-retro-kicker">SEARCH THE ARCHIVES</span><h1>Forum Search</h1><p>Find old arguments, answers, and half-forgotten threads.</p></div></div>
+    ${forumSearchForm(br.boards, board, query)}
+    ${r.total ? html`<p class="small muted">Showing ${r.results.length} of ${r.total} matching discussions · Page ${r.page + 1} of ${r.pages}</p>
+      <div class="forum-search-results">${r.results.map((x) => html`<article class="forum-search-result">
+        <div class="forum-search-result-main"><span class="forum-retro-kicker">${x.boardName} · ${x.match === 'title' ? 'TITLE MATCH' : 'POST MATCH'}</span>
+          <h2><a href="#/forum/t/${x.id}/${x.postPage + 1}">${x.title}</a></h2><p>${x.snippet}</p>
+          <span class="small muted">Started by ${forumWho(x.by)} · ${x.replies} replies · last activity ${ago(x.last)}</span>
+        </div><a class="forum-search-open" href="#/forum/t/${x.id}/${x.postPage + 1}">Open thread &raquo;</a>
+      </article>`)}</div>
+      ${r.pages > 1 ? html`<p class="pager">${r.page > 0 ? html`<a class="btn small" href="${base}/${r.page}">&lt; Back</a>` : ''}<span class="muted small">Page ${r.page + 1} of ${r.pages}</span>${r.page + 1 < r.pages ? html`<a class="btn small" href="${base}/${r.page + 2}">Next &gt;</a>` : ''}</p>` : ''}`
+      : html`<div class="box forum-search-empty"><h2>No matching discussions</h2><p class="muted">Try a shorter phrase or search all boards.</p></div>`}`);
+};
 pages.forum = async (board, a, b) => {
   if (board === 't') { await forumThread(a, Math.max(0, (Number(b) || 1) - 1)); return; }
   if (!board) {
     const r = await pageCall('forum.boards', {});
     if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p>`); return; }
     show(html`<div class="forum-retro-masthead"><div><span class="forum-retro-kicker">GUTS &amp; BOLTS COMMUNITY · EST. 2004</span><h1>Forum</h1><p>Games, questions, arguments, and whatever else is on your mind.</p></div><span class="forum-retro-stamp">STILL<br>POSTING</span></div><p class="muted forum-intro">Old-school boards, real player avatars. Be kind: the forum follows the same <a href="#/terms">rules</a> as chat.</p>
+      ${forumSearchForm(r.boards)}
       <div class="table-wrap"><table class="forum">
         <thead><tr><th>Board</th><th class="num">Threads</th><th class="num">Posts</th><th>Last post</th></tr></thead>
         <tbody>${r.boards.map((x) => html`<tr>
@@ -811,6 +844,7 @@ pages.forum = async (board, a, b) => {
   if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p><p><a href="#/forum">&lt; All boards</a></p>`); return; }
   const base = '#/forum/' + r.board.id;
   show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; ${r.board.name}</p><div class="forum-retro-masthead forum-retro-board-head"><div><span class="forum-retro-kicker">COMMUNITY BOARD</span><h1>${r.board.name}</h1><p>${r.board.about}</p></div><a class="btn small" href="#/forum">All boards</a></div>
+    ${forumSearchForm((await pageCall('forum.boards', {})).boards || [], r.board.id)}
     ${r.threads.length ? html`<div class="table-wrap"><table class="forum">
       <thead><tr><th>Thread</th><th class="num">Replies</th><th class="num">Views</th><th>Last post</th></tr></thead>
       <tbody>${r.threads.map((t) => html`<tr class="${t.pinned ? 'pinned' : ''}">
@@ -3866,6 +3900,11 @@ const actions = {
 };
 
 const forms = {
+  forumSearch(f) {
+    const q = f.q.value.trim();
+    if (!q) return;
+    location.hash = '#/forumsearch/' + encodeURIComponent(q) + '/' + encodeURIComponent(f.board.value || 'all') + '/1';
+  },
   async forumPost(f) {
     const r = await call('forum.post', { board: f.board.value, title: f.title.value, text: f.text.value });
     if (!r.ok) { toast(r.error); return; }
