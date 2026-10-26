@@ -834,8 +834,8 @@ if(MINGW)
 endif()
 
 
-# Format-level regression fixtures for Roblox's legacy binary mesh files. These
-# tests build tiny v4/v5 payloads in memory, so no proprietary user assets are needed.
+# Format-level regression fixtures for Roblox's binary mesh files. These
+# tests build tiny v4/v5/v6 payloads in memory, so no proprietary user assets are needed.
 if(BUILD_TESTING)
     add_executable(RobloxMeshFormatTests tests/RobloxMeshFormatTests.cpp)
     target_link_libraries(RobloxMeshFormatTests PRIVATE gb_engine)
