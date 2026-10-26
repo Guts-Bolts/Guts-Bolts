@@ -543,6 +543,29 @@ A script that loops forever without `wait()` is stopped after 5 seconds with a
 friendly error, so it can't freeze your game. Scripts can't touch files on
 your computer.
 
+### Visual Scripting (blocks)
+
+Don't want to type code? Open **VIEW > Blocks** (or View > Visual Scripting),
+select a part and press **New block script**. Then add blocks from the left and
+drag from a block's dot on the right to the block that comes next:
+
+- **Events** start a chain: When the game starts, When touched, When clicked,
+  When the prompt is used, When a player joins, Every few seconds.
+- **Actions** change things: set colour, see-through, any property, move, destroy,
+  copy, play a sound, print, wait.
+- **Players**: leaderboard stats, give points, hurt or teleport the player.
+- **Control**: If it's a player, If it has a tag, If an attribute is, If the player
+  has points, If lucky, Repeat, and Only every few seconds (so one touch doesn't
+  count 50 times).
+
+A block's object can be "This part" (the script's parent), "The part that
+touched", "The player's character" or a path like `Workspace.Door`.
+
+The blocks turn into normal Lua, shown on the right, so you can see how they work.
+A block script is a normal Script: the blocks are kept in a comment at the top of
+its code. Changing that code by hand is fine, but changing the blocks again writes
+over it (the window warns you, and can turn it into a plain script instead).
+
 ## Decals (pictures on parts)
 
 A **Decal** puts a picture on one side of a part. Insert one inside a part

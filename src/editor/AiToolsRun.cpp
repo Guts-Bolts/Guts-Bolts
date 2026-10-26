@@ -3,6 +3,7 @@
 // engine), ids of what was touched, and for failures an error code, whether
 // it can be fixed and what to try next.
 #include "AiTools.h"
+#include "VisualScript.h"
 #include "Editor.h"
 #include "MultiTest.h"
 #include "panels/ViewportPanel.h"
@@ -967,6 +968,63 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         json d = {{"object_id", idOf(made)}, {"name", made->name}, {"class", classOf(made, root)}, {"parent_id", idOf(parent)},
                   {"path", pathOf(made)}, {"syntax", syntaxOf(made->source, made->name)}, {"resulting_state", state(made)}};
         if (!d["syntax"]["ok"].get<bool>()) d["warnings"] = json::array({"The script has a syntax error and won't run until it's fixed."});
+        return done(d);
+    }
+    if (name == "visual_script") {
+        const std::string action = str("action");
+        if (action == "blocks") {
+            json list = json::array();
+            for (const auto& b : VisualScript::blocks()) {
+                json fields = json::array();
+                const char* kinds[] = {"text", "number", "color (r, g, b)", "target", "choice"};
+                for (const auto& f : b.fields) fields.push_back({{"key", f.key}, {"label", f.label}, {"kind", kinds[f.kind]}, {"default", f.def}});
+                list.push_back({{"type", b.type}, {"category", b.category}, {"title", b.title}, {"tip", b.tip},
+                                {"fields", fields}, {"outs", b.outs}, {"event", b.event}});
+            }
+            return done({{"blocks", list}});
+        }
+        if (action == "read") {
+            SceneNode* n;
+            if (!need("object", n)) return refErr;
+            if (!n->isScript() || !VisualScript::isBlocks(n->source))
+                return fail("NOT_BLOCKS", label(n) + " isn't a script made with blocks.", "Use read_script for normal scripts.");
+            bool edited = false;
+            json g = VisualScript::graphOf(n->source, &edited);
+            std::vector<std::string> problems;
+            const std::string lua = VisualScript::toLua(g, problems);
+            return done({{"object_id", idOf(n)}, {"graph", g}, {"lua", lua}, {"problems", problems}, {"edited", edited}});
+        }
+        if (action != "write") return fail("INVALID_INPUT", "action must be blocks, write or read.", "Start with blocks to see them.");
+        if (!args.contains("graph") || !args["graph"].is_object())
+            return fail("INVALID_INPUT", "Give `graph`: {nodes: [...], links: [...]}.", "visual_script blocks lists the block types.");
+        const json& g = args["graph"];
+        if (!g.contains("nodes") || !g["nodes"].is_array())
+            return fail("INVALID_INPUT", "graph.nodes must be a list.", "Each node: {id, type, x, y, f}.");
+        for (const auto& node : g["nodes"]) {
+            const std::string t = node.is_object() ? node.value("type", std::string()) : std::string();
+            if (!VisualScript::find(t))
+                return fail("UNKNOWN_BLOCK", "There's no block called \"" + t + "\".", "visual_script blocks lists them.");
+            if (!node.contains("id") || !node["id"].is_number_integer())
+                return fail("INVALID_INPUT", "Every node needs a whole-number id.", "Like {\"id\": 1, \"type\": \"start\"}.");
+        }
+        SceneNode* n = nullptr;
+        if (!str("object").empty()) {
+            if (!need("object", n)) return refErr;
+            if (!n->isScript() || !VisualScript::isBlocks(n->source))
+                return fail("NOT_BLOCKS", label(n) + " isn't a script made with blocks.", "Leave out object to make a new block script.");
+        } else {
+            SceneNode* parent;
+            if (!optional("parent", root, parent, true)) return refErr;
+            auto s = std::make_unique<SceneNode>(str("name").empty() ? "BlockScript" : str("name"), NodeKind::Script);
+            n = m_scene->insert(std::move(s), parent);
+        }
+        json keep = {{"nodes", g["nodes"]}, {"links", g.contains("links") && g["links"].is_array() ? g["links"] : json::array()}};
+        std::vector<std::string> problems;
+        n->source = VisualScript::scriptSource(keep, problems);
+        std::vector<std::string> again;
+        json d = {{"object_id", idOf(n)}, {"path", pathOf(n)}, {"lua", VisualScript::toLua(keep, again)}, {"problems", problems},
+                  {"syntax", syntaxOf(n->source, n->name)}};
+        if (m_playing) d["warnings"] = json::array({"A playtest is running: it keeps using the old code until it is stopped and started again."});
         return done(d);
     }
     if (name == "read_script") {

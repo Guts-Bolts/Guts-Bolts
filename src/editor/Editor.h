@@ -84,6 +84,7 @@ private:
     void renderLuaDebugger();
     void renderSceneValidator();
     void renderProjectTimeMachine();
+    void renderBlocks();                       // Visual Scripting (EditorBlocks.cpp)
     void handleShortcuts();
 
     // Creating / removing things
@@ -96,6 +97,8 @@ private:
     void       addSound();
     void       connectParts(int type, SceneNode* a, glm::vec3 pa, SceneNode* b, glm::vec3 pb);
     void       openScript(SceneNode* script);
+    void       openBlocks(SceneNode* script);    // Visual Scripting, showing this block script
+    SceneNode* newBlockScript();                 // a Script made with blocks, in the selected part
     void       duplicateSelected();
     void       deleteSelected();
     void       copySelected();
@@ -289,6 +292,14 @@ private:
     int m_debugLineInput = 1;
     bool m_showSceneValidator = false;
     bool m_showProjectTimeMachine = false;
+    // Visual Scripting: the block script being shown and its blocks (EditorBlocks.cpp)
+    bool m_showBlocks = false, m_blocksEdited = false, m_blocksMoving = false, m_blocksPanned = false;
+    uint64_t m_blocksScript = 0;
+    nlohmann::json m_blocksGraph;
+    std::string m_blocksWritten, m_blocksLua, m_blocksDragPin;
+    std::vector<std::string> m_blocksProblems;
+    int m_blocksSelected = 0, m_blocksDragFrom = 0;
+    ImVec2 m_blocksPan{0, 0}, m_blocksMenuAt{0, 0};
     bool m_timeMachineLoaded = false;
     std::string m_timeMachineProjectKey, m_timeMachineCheckpointName;
     int m_timeMachineSelected = -1;

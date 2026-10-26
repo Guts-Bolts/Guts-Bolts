@@ -1,4 +1,5 @@
 #include "ScriptEditorPanel.h"
+#include "../VisualScript.h"
 #include "../../core/I18n.h"
 #include "../Premades.h"
 #include "../Theme.h"
@@ -358,6 +359,11 @@ void ScriptEditorPanel::render() {
     ImGui::SameLine();
     ImGui::Checkbox("Enabled", &s->enabled);
     ImGui::SameLine();
+    if (VisualScript::isBlocks(s->source) && onOpenBlocks) {
+        if (ImGui::Button("Edit as blocks")) onOpenBlocks(s->id);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("This script was made with blocks: change them in Visual Scripting");
+        ImGui::SameLine();
+    }
     if (ImGui::Button("Insert code..."))
         ImGui::OpenPopup("##snippets");
     if (ImGui::IsItemHovered())
