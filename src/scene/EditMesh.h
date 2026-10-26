@@ -17,6 +17,7 @@
 // working with no special cases.
 struct EditMesh {
     std::vector<glm::vec3>             verts;
+    std::vector<glm::vec3>             normals; // optional imported vertex normals; ignored after deformation
     std::vector<std::vector<uint32_t>> faces;
     bool                               smooth = false;   // smooth shading (no hard edges)
     // Optional texture coordinates, one per corner of each face (the character's
