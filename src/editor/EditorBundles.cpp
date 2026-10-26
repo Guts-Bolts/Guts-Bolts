@@ -202,6 +202,36 @@ void Editor::renderBundleWindow() {
     ImGui::EndDisabled();
     if (!something) { ImGui::SameLine(); ImGui::TextDisabled("Change a body part or add items first."); }
     else if (m_bundleName.empty()) { ImGui::SameLine(); ImGui::TextDisabled("Give it a name."); }
+
+    // Publish one selected rig part as its own catalog item, so players can mix
+    // and match heads, torsos, arms and legs without buying/wearing a whole bundle.
+    const bool selectedRigPart = bodySelected && bodySelected->parent == mannequin && bodySelected->isPart() && bodySelected->editMesh;
+    ImGui::BeginDisabled(m_onlineBusy || !selectedRigPart || m_bundleName.empty());
+    if (ImGui::Button("Upload Selected Part", ImVec2(180, 30))) {
+        MeshEdit::fit(*bodySelected);
+        json body = {{bodySelected->name, Player::bodyPartJson(*bodySelected)}};
+        json tidy;
+        std::string problem = Online::bundleBody(body, tidy);
+        if (!problem.empty()) {
+            m_bundleMsg = problem;
+        } else {
+            const std::string name = m_bundleName + " " + bodySelected->name;
+            json file = {{ "format", "gbbundle" }, { "body", tidy }};
+            json meta = {{ "bodyPart", bodySelected->name }};
+            json args = {{ "kind", "bodypart" }, { "name", name }, { "description", m_bundleDesc },
+                         { "price", m_bundlePrice }, { "meta", meta }, { "data", Online::base64Encode(file.dump()) }};
+            m_onlineBusy = true;
+            m_bundleMsg = "Uploading standalone " + bodySelected->name + "...";
+            Online::request("upload", args, [this, name](const json& r) {
+                m_onlineBusy = false;
+                if (!r.value("ok", false)) { m_bundleMsg = r.value("error", std::string("The upload didn't work.")); return; }
+                m_bundleMsg = "Uploaded standalone body part \"" + name + "\"!";
+                Log::system("Uploaded body part \"" + name + "\" (" + r["asset"].value("id", std::string()) + ")");
+            }, 120);
+        }
+    }
+    ImGui::EndDisabled();
+    if (!selectedRigPart) { ImGui::SameLine(); ImGui::TextDisabled("Select a body part on the mannequin to upload it separately."); }
     if (!m_bundleMsg.empty()) { ImGui::PushTextWrapPos(0); ImGui::TextUnformatted(m_bundleMsg.c_str()); ImGui::PopTextWrapPos(); }
     ImGui::End();
 }
