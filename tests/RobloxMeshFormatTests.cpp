@@ -59,6 +59,65 @@ std::string fixture(int version) {
     return out;
 }
 
+void chunk(std::string& out, const char* name, const std::string& payload) {
+    out.append(name, 8);
+    u32(out, 1);
+    u32(out, (uint32_t)payload.size());
+    out += payload;
+}
+
+std::string chunkedV6Fixture() {
+    std::string out = "version 6.00\n";
+    std::string core;
+    u32(core, 3);
+    const std::array<std::array<float, 8>, 3> vertices{{
+        {{-1, 0, 0, 0, 0, 1, 0, 0}},
+        {{ 1, 0, 0, 0, 0, 1, 1, 0}},
+        {{ 0, 1, 0, 0, 0, 1, 0.5f, 1}}
+    }};
+    for (const auto& v : vertices) {
+        for (int i = 0; i < 8; ++i) f32(core, v[i]);
+        u8(core, 127); u8(core, 0); u8(core, 0); u8(core, 127);
+        u8(core, 255); u8(core, 128); u8(core, 64); u8(core, 255);
+    }
+    u32(core, 1); u32(core, 0); u32(core, 1); u32(core, 2);
+    chunk(out, "COREMESH", core);
+
+    std::string skin;
+    u32(skin, 3);
+    for (int i = 0; i < 3; ++i) {
+        u8(skin, 0); u8(skin, 0); u8(skin, 0); u8(skin, 0);
+        u8(skin, 255); u8(skin, 0); u8(skin, 0); u8(skin, 0);
+    }
+    u32(skin, 1);
+    u32(skin, 0); u16(skin, 0xffff); u16(skin, 0xffff); f32(skin, 0);
+    for (float v : std::array<float, 9>{1,0,0, 0,1,0, 0,0,1}) f32(skin, v);
+    f32(skin, 0); f32(skin, 0); f32(skin, 0);
+    u32(skin, 5); skin += std::string("Root\0", 5);
+    u32(skin, 1);
+    u32(skin, 0); u32(skin, 1); u32(skin, 0); u32(skin, 3); u32(skin, 1);
+    for (int i = 0; i < 26; ++i) u16(skin, 0);
+    chunk(out, "SKINNING", skin);
+    return out;
+}
+
+bool runChunkedV6() {
+    std::string error;
+    RobloxMesh::Shape shape = RobloxMesh::parse(chunkedV6Fixture(), &error);
+    if (!shape.mesh) {
+        std::cerr << "v6 parse failed: " << error << "\n";
+        return false;
+    }
+    const auto& mesh = *shape.mesh;
+    if (mesh.faces.size() != 1 || mesh.verts.size() != 3 || shape.bones.size() != 1 ||
+        shape.bones[0].name != "Root" || !mesh.skinned() || mesh.weights[0].empty() ||
+        mesh.weights[0][0].w < 0.99f || mesh.colors.size() != 3 || mesh.tangents.size() != 3) {
+        std::cerr << "v6 chunked geometry / skinning / attributes were not retained\n";
+        return false;
+    }
+    return true;
+}
+
 bool run(int version) {
     std::string error;
     RobloxMesh::Shape shape = RobloxMesh::parse(fixture(version), &error);
