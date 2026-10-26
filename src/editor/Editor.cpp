@@ -116,6 +116,8 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_player       = std::make_unique<PlayerPanel>(scene);
     m_output       = std::make_unique<OutputPanel>();
     m_scriptEditor = std::make_unique<ScriptEditorPanel>(scene);
+    m_scriptEditor->onOpenBlocks = [this](uint64_t id) { openBlocks(m_scene->findById(id)); };
+    if (std::getenv("GB_TEST_BLOCKS")) m_showBlocks = true;   // (tests: start with it showing)
     m_scriptEditor->setDebugger(&m_session->scripts());   // breakpoints in its line numbers
     m_animEditor   = std::make_unique<AnimationEditor>(scene, &m_state);
     m_assistant    = std::make_unique<AssistantPanel>(*this);
@@ -266,6 +268,7 @@ void Editor::render(float dt) {
     renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
+    renderBlocks();
     renderMaterialEditor();
     renderAiActivity();
     renderScriptHistory();
@@ -2636,6 +2639,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
+        if (ImGui::MenuItem("Visual Scripting", nullptr, &m_showBlocks)) {}
         if (ImGui::MenuItem("Material Editor", nullptr, &m_showMaterialEditor)) {}
         if (ImGui::MenuItem("AI Activity", nullptr, &m_showAiActivity)) {}
         if (ImGui::MenuItem("Script History", nullptr, &m_showScriptHistory)) {}

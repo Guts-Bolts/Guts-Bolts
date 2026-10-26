@@ -283,6 +283,23 @@ const std::vector<Tool>& tools() {
           "\"Make the door open when touched.\" \"Add a score leaderboard.\""},
          schema({{"parent", kParent}, {"name", {{"type", "string"}}}, {"source", {{"type", "string"}}},
                  {"type", {{"type", "string"}, {"enum", {"Script", "LocalScript", "ModuleScript"}}}}}, {"source"})},
+        {"visual_script", "Make a script from blocks (Visual Scripting)", "SCRIPTING", false, false, false, Risk::Medium,
+         {"Visual Scripting: a Script made by connecting blocks (\"When touched\" -> \"If it's a player\" -> \"Give points\"). "
+          "The blocks are saved in the script's code and turn into normal Lua; the person can change them in VIEW > Blocks. "
+          "blocks: the list of blocks with their fields and ways out. write: makes (or changes) a block script from a graph. "
+          "read: a block script's graph, its Lua and any problems.",
+          "When the person asks for blocks or Visual Scripting, or to make a script they can change without code.",
+          "For normal code use create_script / edit_script. Don't edit a block script's code with edit_script: the next change to its blocks writes over it.",
+          "action (blocks, write, read); object (write: the block script to change, or leave out to make one; read: required); "
+          "parent and name (write, new script: where it goes; script.Parent is that object); graph (write: "
+          "{nodes: [{id (number), type, x, y, f: {field: text}}], links: [{from: id, pin: \"next\"/\"then\"/\"else\"/\"do\", to: id}]}). "
+          "A chain starts at an event block and follows its links. Targets: \"this\", \"other\", \"character\" or \"path:Workspace.Door\".",
+          "blocks: {blocks: [...]}. write/read: {object_id, lua, problems: [..], edited (read: its code was changed by hand)}.",
+          "write: the object (if given) is a block script.", "write: the script's code is replaced by the blocks' code.",
+          "visual_script blocks -> visual_script write -> playtest start -> get_output -> visual_script write (fix).",
+          "\"Make a block script that gives a coin when you touch the part.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"blocks", "write", "read"}}}}, {"object", kObject}, {"parent", kParent},
+                 {"name", {{"type", "string"}}}, {"graph", {{"type", "object"}}}}, {"action"})},
         {"read_script", "Read a script's code", "SCRIPTING", true, false, true, Risk::None,
          {"Returns the Lua source of a Script, LocalScript or ModuleScript.",
           "Before editing a script, when asked what a script does, when debugging an error that names a script.",
@@ -666,6 +683,7 @@ json workflowOf(const std::string& name) {
         {"find_and_change", {{"find_objects"}, {"find_and_change", "get_object"}}},
         {"create_script", {{"get_game_tree"}, {"diagnose_object", "playtest"}}},
         {"read_script", {{"find_objects"}, {"edit_script"}}},
+        {"visual_script", {{"get_game_tree"}, {"playtest", "get_output"}}},
         {"edit_script", {{"read_script"}, {"diagnose_object", "playtest"}}},
         {"run_lua", {{"get_game_tree"}, {"get_game_tree", "screenshot"}}},
         {"playtest", {{"validate_scene"}, {"get_errors", "get_output", "get_object", "screenshot"}}},
