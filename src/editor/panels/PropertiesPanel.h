@@ -18,6 +18,8 @@ private:
     void renderProperties(SceneNode* node);
     void renderGui(SceneNode* node);
     void renderAttributes(SceneNode* node);   // Attributes + Tags
+    const char* className(const SceneNode* node) const;
+    void copyToSelection(SceneNode* node, const std::string& before);   // several selected
 
     std::string m_newAttrName, m_newAttrError, m_newTag;
     std::string m_propertyFilter;   // Roblox-style property search, retained while selection changes

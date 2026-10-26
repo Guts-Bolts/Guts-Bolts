@@ -10,14 +10,49 @@
 #include "../../core/Paths.h"
 #include "../../renderer/Textures.h"
 #include "../../scene/EditMesh.h"
+#include "../../scene/Serializer.h"
 
 #include <imgui.h>
 #include <algorithm>
 #include <cctype>
+#include <cstring>
+#include <nlohmann/json.hpp>
 #include <misc/cpp/imgui_stdlib.h>
 
 PropertiesPanel::PropertiesPanel(Scene* scene, std::function<void(SceneNode*)> openScript)
     : m_scene(scene), m_openScript(std::move(openScript)) {}
+
+// The class name scripts see (part.ClassName).
+const char* PropertiesPanel::className(const SceneNode* node) const {
+    return node == m_scene->root()          ? "Workspace"
+           : node->kind == NodeKind::Script   ? (node->isModule ? "ModuleScript" : node->isLocal ? "LocalScript" : "Script")
+           : node->kind == NodeKind::Remote   ? (node->remoteFunction ? "RemoteFunction" : "RemoteEvent")
+           : node->kind == NodeKind::Prompt   ? "ProximityPrompt"
+           : node->kind == NodeKind::Highlight ? "Highlight"
+           : node->kind == NodeKind::PostEffect ? kPostEffectClassNames[(int)node->post.type]
+           : node->kind == NodeKind::Sky      ? "Sky"
+           : node->kind == NodeKind::ClickDetector ? "ClickDetector"
+           : node->kind == NodeKind::Trail    ? "Trail"
+           : node->kind == NodeKind::Beam     ? "Beam"
+           : node->kind == NodeKind::Particles ? node->particleClass()
+           : node->kind == NodeKind::Light    ? (node->lightType == LightType::Spot ? "SpotLight" : "PointLight")
+           : node->kind == NodeKind::Sound    ? "Sound"
+           : node->kind == NodeKind::SoundGroup ? "SoundGroup"
+           : node->kind == NodeKind::SoundEffect ? SoundFx::kClassNames[(int)node->soundFx.type]
+           : node->kind == NodeKind::Attachment ? (node->bone ? "Bone" : "Attachment")
+           : node->kind == NodeKind::Constraint ? "Constraint"
+           : node->kind == NodeKind::ForceField ? "ForceField"
+           : node->kind == NodeKind::Tool       ? "Tool"
+           : node->kind == NodeKind::Value      ? node->valueClass()
+           : node->kind == NodeKind::Decal      ? "Decal"
+           : node->kind == NodeKind::Animation  ? "Animation"
+           : node->kind == NodeKind::FluidSystem  ? "FluidSystem"
+           : node->kind == NodeKind::FluidEmitter ? "FluidEmitter"
+           : node->kind == NodeKind::Mover        ? kMoverClassNames[(int)node->mover.type]
+           : node->kind == NodeKind::Gui        ? kGuiClassNames[(int)node->gui.type]
+           : node->kind == NodeKind::Camera     ? "Camera"
+           : node->kind == NodeKind::Model    ? "Model" : "Part";
+}
 
 void PropertiesPanel::render() {
     ImGui::Begin("Properties");
@@ -32,37 +67,24 @@ void PropertiesPanel::render() {
         ImGui::End();
         return;
     }
+    // Several picked: what you change here is copied to every other one of the same kind.
+    const std::vector<SceneNode*>& sel = m_scene->selection();
+    const char* cls = className(node);
+    std::string before;
+    if (sel.size() > 1) {
+        int same = 0;
+        for (SceneNode* s : sel) same += std::strcmp(className(s), cls) == 0;
+        before = Serializer::nodeShallowToString(*node);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.8f, 1.0f, 1.0f));
+        if (same == (int)sel.size()) ImGui::TextWrapped("%d selected: a change here changes all of them.", same);
+        else ImGui::TextWrapped("%d selected: a change here changes the %d that are the same kind as this one.", (int)sel.size(), same);
+        ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Only the boxes you change are copied; everything else keeps its own value.\n"
+                              "For more (find by tag or value, do maths on numbers) use Edit > Find and Change.");
+    }
     // Properties keep the names scripts use (part.Transparency), in every language.
     I18n::Pause keep;
-
-    const char* cls = node == m_scene->root()          ? "Workspace"
-                    : node->kind == NodeKind::Script   ? (node->isModule ? "ModuleScript" : node->isLocal ? "LocalScript" : "Script")
-                    : node->kind == NodeKind::Remote   ? (node->remoteFunction ? "RemoteFunction" : "RemoteEvent")
-                    : node->kind == NodeKind::Prompt   ? "ProximityPrompt"
-                    : node->kind == NodeKind::Highlight ? "Highlight"
-                    : node->kind == NodeKind::PostEffect ? kPostEffectClassNames[(int)node->post.type]
-                    : node->kind == NodeKind::Sky      ? "Sky"
-                    : node->kind == NodeKind::ClickDetector ? "ClickDetector"
-                    : node->kind == NodeKind::Trail    ? "Trail"
-                    : node->kind == NodeKind::Beam     ? "Beam"
-                    : node->kind == NodeKind::Particles ? node->particleClass()
-                    : node->kind == NodeKind::Light    ? (node->lightType == LightType::Spot ? "SpotLight" : "PointLight")
-                    : node->kind == NodeKind::Sound    ? "Sound"
-                    : node->kind == NodeKind::SoundGroup ? "SoundGroup"
-                    : node->kind == NodeKind::SoundEffect ? SoundFx::kClassNames[(int)node->soundFx.type]
-                    : node->kind == NodeKind::Attachment ? (node->bone ? "Bone" : "Attachment")
-                    : node->kind == NodeKind::Constraint ? "Constraint"
-                    : node->kind == NodeKind::ForceField ? "ForceField"
-                    : node->kind == NodeKind::Tool       ? "Tool"
-                    : node->kind == NodeKind::Value      ? node->valueClass()
-                    : node->kind == NodeKind::Decal      ? "Decal"
-                    : node->kind == NodeKind::Animation  ? "Animation"
-                    : node->kind == NodeKind::FluidSystem  ? "FluidSystem"
-                    : node->kind == NodeKind::FluidEmitter ? "FluidEmitter"
-                    : node->kind == NodeKind::Mover        ? kMoverClassNames[(int)node->mover.type]
-                    : node->kind == NodeKind::Gui        ? kGuiClassNames[(int)node->gui.type]
-                    : node->kind == NodeKind::Camera     ? "Camera"
-                    : node->kind == NodeKind::Model    ? "Model" : "Part";
     ImGui::Separator();
     ImGui::Text("%s", node->name.c_str());
     ImGui::SameLine();
@@ -122,13 +144,42 @@ void PropertiesPanel::render() {
             ImGui::TextDisabled("No quick-search match. Clear the search to browse every property.");
         }
         if (node != m_scene->root()) renderAttributes(node);
+        if (!before.empty() && m_scene->selected() == node) copyToSelection(node, before);
         ImGui::End();
         return;
     }
 
     renderProperties(node);
     if (node != m_scene->root()) renderAttributes(node);
+    if (!before.empty() && m_scene->selected() == node) copyToSelection(node, before);   // (a button may have swapped it)
     ImGui::End();
+}
+
+// What changed on `node` this frame (compared with `before`) goes to the other selected
+// objects of its kind too. Only the changed values are copied, so their own positions,
+// names and so on stay as they are. It's all in one frame, so one Ctrl+Z undoes it.
+void PropertiesPanel::copyToSelection(SceneNode* node, const std::string& before) {
+    const std::string after = Serializer::nodeShallowToString(*node);
+    if (after == before) return;
+    const nlohmann::json a = nlohmann::json::parse(before, nullptr, false), b = nlohmann::json::parse(after, nullptr, false);
+    if (a.is_discarded() || b.is_discarded()) return;
+    nlohmann::json ops = nlohmann::json::array();
+    for (const auto& op : nlohmann::json::diff(a, b)) {
+        const std::string path = op.value("path", "");
+        if (path == "/id" || path.rfind("/id/", 0) == 0) continue;   // every object keeps its own id
+        ops.push_back(op);
+    }
+    if (ops.empty()) return;
+    const char* cls = className(node);
+    for (SceneNode* other : std::vector<SceneNode*>(m_scene->selection())) {
+        if (other == node || other == m_scene->root() || std::strcmp(className(other), cls) != 0) continue;
+        nlohmann::json o = nlohmann::json::parse(Serializer::nodeShallowToString(*other), nullptr, false);
+        if (o.is_discarded()) continue;
+        for (const auto& op : ops) {
+            try { o = o.patch(nlohmann::json::array({op})); } catch (...) {}   // (a value it doesn't have: skip)
+        }
+        Serializer::applyNodeShallow(*other, o.dump());
+    }
 }
 
 // Game UI objects: sizes and places as UDim2 (a fraction of the parent + pixels).
