@@ -90,6 +90,7 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
     if (property == "TextureId" || property == "TextureID") {
         const std::string url = stringAttr(instance, property.c_str());
         const std::string id = RobloxMesh::assetId(url);
+        if (!url.empty() && id.empty()) return; // don't clear a working texture for an unsupported built-in URI
         const std::string file = id.empty() ? std::string{} : RobloxMesh::fetch(id, ".png");
         part->texture = file;
         if (!meshPart) {
