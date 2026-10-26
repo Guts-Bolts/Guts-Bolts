@@ -186,11 +186,11 @@ function pieces(model, av, items) {
     if (!bodyBundle && key && bodyPartKeys.has(key)) continue;
     if (key) out.push({ mesh: part, color: col[key], face: name === 'Head', torso: name === 'Torso', cloth: clothFor[key] || 0 });
   }
-  const appendBodyPieces = (entry, allowedKeys = null) => {
+  const appendBodyPieces = (entry, allowedKeys = null, excludedKeys = null) => {
     if (!entry || !entry.pieces) return;
     for (const p of entry.pieces) {
       const key = PART_OF[p.bodyPart] || bodyPartKey(p.bodyPart);
-      if (!key || (allowedKeys && !allowedKeys.has(key))) continue;
+      if (!key || (allowedKeys && !allowedKeys.has(key)) || (excludedKeys && excludedKeys.has(key))) continue;
       out.push(Object.assign({}, p, {
         color: col[key],
         face: key === 'head',
@@ -199,16 +199,14 @@ function pieces(model, av, items) {
       }));
     }
   };
-  if (bodyBundle) appendBodyPieces(bodyModel);
-  else {
-    // Apply individually equipped parts in order; the last item for a slot wins.
-    const chosenParts = new Map();
-    for (const it of bodyPartItems) {
-      const key = bodyPartKey(it.meta.bodyPart);
-      if (key) chosenParts.set(key, it);
-    }
-    for (const [key, it] of chosenParts) appendBodyPieces(accessories.get(it.id), new Set([key]));
+  // Apply individually equipped parts in order; the last item for a slot wins.
+  const chosenParts = new Map();
+  for (const it of bodyPartItems) {
+    const key = bodyPartKey(it.meta.bodyPart);
+    if (key) chosenParts.set(key, it);
   }
+  if (bodyBundle) appendBodyPieces(bodyModel, null, new Set(chosenParts.keys()));
+  for (const [key, it] of chosenParts) appendBodyPieces(accessories.get(it.id), new Set([key]));
   // The face is a flat picture painted onto the front of the head (see FS / faceTexture).
   const head = model.Head;
   const hc = head ? head.min.map((m, i) => (m + head.max[i]) / 2) : [0, 2.325, 0];
