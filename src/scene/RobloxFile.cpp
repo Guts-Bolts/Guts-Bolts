@@ -918,10 +918,30 @@ struct Converter {
                 size = glm::max(s.size * scale * kImportScale, glm::vec3(1e-3f));
             }
         } else {
-            if (type == 3) prim = PrimitiveType::Sphere;
-            else if (type == 0 || type == 4) prim = PrimitiveType::Cylinder;   // standing up, like ours
+            // Roblox SpecialMesh.MeshType values: Head=0, Torso=1, Wedge=2,
+            // Sphere=3, Cylinder=4, FileMesh=5, Brick=6. Keep the native primitive
+            // for sphere/cylinder so they use the engine's real primitive geometry.
+            if (type == 0 || type == 3) prim = PrimitiveType::Sphere;
+            else if (type == 4) prim = PrimitiveType::Cylinder;
             else prim = PrimitiveType::Cube;
-            if (type == 2) note("Wedges come in as blocks.");
+
+            if (type == 2) {
+                // A real wedge instead of the old cube placeholder. Its sloped face
+                // runs from the low front edge to the high rear edge in part space.
+                auto wedge = std::make_shared<EditMesh>();
+                wedge->verts = {
+                    {-0.5f, -0.5f, -0.5f}, { 0.5f, -0.5f, -0.5f},
+                    {-0.5f, -0.5f,  0.5f}, { 0.5f, -0.5f,  0.5f},
+                    {-0.5f,  0.5f,  0.5f}, { 0.5f,  0.5f,  0.5f}
+                };
+                wedge->faces = {
+                    {0, 2, 3, 1}, {2, 4, 5, 3}, {0, 1, 5, 4},
+                    {0, 4, 2}, {1, 3, 5}
+                };
+                wedge->smooth = false;
+                look.shape = std::move(wedge);
+                prim = PrimitiveType::Mesh;
+            }
             size *= scale;
             pos += rot * (offset * kImportScale);
         }
