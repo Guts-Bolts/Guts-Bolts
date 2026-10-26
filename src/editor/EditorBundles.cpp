@@ -205,16 +205,16 @@ void Editor::renderBundleWindow() {
 
     // Publish one selected rig part as its own catalog item, so players can mix
     // and match heads, torsos, arms and legs without buying/wearing a whole bundle.
-    const bool selectedRigPart = bodySelected && bodySelected->parent == mannequin && bodySelected->isPart() && bodySelected->primitiveType != PrimitiveType::None;
-    ImGui::BeginDisabled(m_onlineBusy || !selectedRigPart || m_bundleName.empty());
+    // (only a part that was changed: an unchanged one would just be the normal body)
+    const bool selectedRigPart = bodySelected && bodySelected->parent == mannequin && bodySelected->isPart() &&
+                                 std::find_if(std::begin(Online::kBodyParts), std::end(Online::kBodyParts),
+                                              [&](const char* k) { return bodySelected->name == k; }) != std::end(Online::kBodyParts);
+    const bool partChanged = selectedRigPart && !standard(*bodySelected);
+    ImGui::BeginDisabled(m_onlineBusy || !partChanged || m_bundleName.empty());
     if (ImGui::Button("Upload Selected Part", ImVec2(180, 30))) {
-        if (!bodySelected->editMesh) {
-            auto mesh = bodySelected->primitiveType == PrimitiveType::Mesh && bodySelected->editMesh
-                            ? std::make_shared<EditMesh>(*bodySelected->editMesh)
-                            : MeshEdit::fromPrimitive(bodySelected->primitiveType);
-            MeshEdit::attach(*bodySelected, mesh);
-        }
-        MeshEdit::fit(*bodySelected);
+        if (!bodySelected->editMesh && bodySelected->primitiveType != PrimitiveType::None)   // a plain block: give it a mesh
+            MeshEdit::attach(*bodySelected, MeshEdit::fromPrimitive(bodySelected->primitiveType));
+        MeshEdit::fit(*bodySelected);   // corners inside -0.5..0.5, like every saved mesh
         json body = {{bodySelected->name, Player::bodyPartJson(*bodySelected)}};
         json tidy;
         std::string problem = Online::bundleBody(body, tidy);
@@ -222,22 +222,25 @@ void Editor::renderBundleWindow() {
             m_bundleMsg = problem;
         } else {
             const std::string name = m_bundleName + " " + bodySelected->name;
-            json file = {{ "format", "gbbundle" }, { "body", tidy }};
-            json meta = {{ "bodyPart", bodySelected->name }};
-            json args = {{ "kind", "bodypart" }, { "name", name }, { "description", m_bundleDesc },
-                         { "price", m_bundlePrice }, { "meta", meta }, { "data", Online::base64Encode(file.dump()) }};
+            json file = {{"format", "gbbundle"}, {"body", tidy}};
+            json meta = {{"bodyPart", bodySelected->name}};
+            json args = {{"kind", "bodypart"}, {"name", name}, {"description", m_bundleDesc},
+                         {"price", m_bundlePrice}, {"meta", meta}, {"data", Online::base64Encode(file.dump())}};
             m_onlineBusy = true;
-            m_bundleMsg = "Uploading standalone " + bodySelected->name + "...";
+            m_bundleMsg = "Uploading...";
             Online::request("upload", args, [this, name](const json& r) {
                 m_onlineBusy = false;
                 if (!r.value("ok", false)) { m_bundleMsg = r.value("error", std::string("The upload didn't work.")); return; }
-                m_bundleMsg = "Uploaded standalone body part \"" + name + "\"!";
-                Log::system("Uploaded body part \"" + name + "\" (" + r["asset"].value("id", std::string()) + ")");
+                m_bundleMsg = "Uploaded \"" + name + "\" to the catalog!";
+                Log::system("Uploaded the body part \"" + name + "\" (" + r["asset"].value("id", std::string()) + ")");
             }, 120);
         }
     }
     ImGui::EndDisabled();
-    if (!selectedRigPart) { ImGui::SameLine(); ImGui::TextDisabled("Select a body part on the mannequin to upload it separately."); }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Sells just this one body part, so players can mix it with other parts.");
+    if (!selectedRigPart) { ImGui::SameLine(); ImGui::TextDisabled("Select a body part to upload it on its own."); }
+    else if (!partChanged) { ImGui::SameLine(); ImGui::TextDisabled("Change this body part first."); }
     if (!m_bundleMsg.empty()) { ImGui::PushTextWrapPos(0); ImGui::TextUnformatted(m_bundleMsg.c_str()); ImGui::PopTextWrapPos(); }
     ImGui::End();
 }

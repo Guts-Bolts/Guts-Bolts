@@ -1550,6 +1550,7 @@ pages.item = async (id) => {
           ${a.kind === 'bundle' ? html`<p class="small"><b>In this bundle:</b> ${inBundle.length
               ? inBundle.map((x, i) => html`${i ? ', ' : ''}<a href="#/item/${x.id}">${x.name}</a>`) : html`<span class="muted">just itself</span>`}.
             ${a.meta && a.meta.headless ? 'Wearing it hides your head and face.' : ''} Buying it gives you everything in it; wear it on the <a href="#/avatar">Avatar</a> page.</p>` : ''}
+          ${a.kind === 'bodypart' && a.meta && a.meta.bodyPart ? html`<p class="small"><b>Body part:</b> <span class="notranslate">${a.meta.bodyPart}</span>. <span>Wear different body parts together, even over a bundle's body.</span></p>` : ''}
           ${a.kind === 'gear' ? html`<p class="small muted">Equipped gear goes in your backpack in games that allow gear. Equip as many owned gear items as you want.</p>`
             : a.kind === 'emote' ? html`<p class="small muted">Put it in one of your 8 emote slots, then press B in any game (or tap the smiley on a phone) and pick it. You can also type /e and its name in the chat.</p>`
             : a.kind === 'animpack' ? html`<p class="small muted">An animation pack changes how your character stands, walks, runs, jumps and falls, in every game.</p>`
