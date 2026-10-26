@@ -753,6 +753,7 @@ json toJson(const SceneNode& n) {
     j["name"] = n.name;
     j["kind"] = kindName(n.kind);
     if (n.isBone()) j["bone"] = true;
+    if (n.robloxEmbeddedMeshBone) j["embeddedMeshBone"] = true;
     // (A part posed in the Animation Editor is saved where it really is.)
     j["pos"]  = vec(n.restPose ? n.restPose->position : n.transform.position);
     j["rot"]  = vec(n.restPose ? n.restPose->rotation : n.transform.rotation);
@@ -954,6 +955,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         SceneNode::reserveId(n->id);
     }
     n->bone = n->kind == NodeKind::Attachment && get<bool>(j, "bone", false);
+    n->robloxEmbeddedMeshBone = n->bone && get<bool>(j, "embeddedMeshBone", false);
     n->transform.position = vec(j, "pos",  {0, 0, 0});
     n->transform.rotation = vec(j, "rot",  {0, 0, 0});
     n->transform.scale    = vec(j, "size", {1, 1, 1});
