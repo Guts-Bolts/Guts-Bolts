@@ -1,8 +1,8 @@
 # Roblox Meshes, Un-squashed (October 25, 2026)
 
-Studio's standalone Roblox `.mesh` importer now decodes Draco-compressed version 7 FileMesh geometry in addition to the existing legacy text and binary mesh formats. Imported geometry becomes an editable custom-mesh Part, with positions, triangle topology, normals, and UV coordinates preserved where present. Draco is linked into the shared engine so Studio and Player can use the same parser.
+Studio can now import standalone Roblox `.mesh` files directly through the Open/Import dialog or drag-and-drop, including Draco-compressed version 7 geometry. The importer creates an editable custom-mesh Part and preserves triangle topology, normals, and UV coordinates where present. Roblox model imports also map Head/Sphere to sphere geometry, Cylinder to cylinder geometry, and Wedge to an actual wedge mesh instead of a cube placeholder. The shared parser exposes a cached/downloaded asset-loading entry point and validates mesh asset IDs before invoking the downloader.
 
-This expands file-format coverage, but does not mean every mesh feature is preserved: skinning/bone weights, tangents/colors, and live `SpecialMesh.MeshId` / `TextureId` asset resolution still need dedicated support. Native build and real Draco-fixture verification remain required before calling the importer production-verified.
+This is still partial coverage, not a claim that every Roblox mesh feature works. Rigged v4/v5 mesh skin weights and bone transforms, v7 skinning metadata, vertex tangents/colors in the rendering pipeline, live runtime `SpecialMesh.MeshId` / `TextureId` updates, and native build plus real-fixture verification remain outstanding.
 
 # The Floor Is Now A Crime Scene (October 25, 2026)
 
