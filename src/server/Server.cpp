@@ -812,6 +812,28 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             staffDid(me, "unbadge", "Took the " + key + " badge from " + to->name, to->id);
             json r = okay(); r["user"] = publicUser(*to); return r;
         }
+        if (name == "admin.resetName") {
+            // A username that isn't allowed (worker/server.js has the same): it becomes "User 5" (their
+            // user number). The old name stays reserved so nobody else can take it, but it isn't kept as
+            // one of their past names (those show on the profile, and they could switch back to it).
+            if (to->userId <= 0) return fail("They haven't signed up, so they have no username.");
+            if (isOfficial(*to)) return fail("The staff account is always Guts.");
+            if (isStaff(*to) && !isOfficial(me)) return fail("Only the official Guts account can reset a staff member's username.");
+            const std::string old = to->username, fresh = "User " + std::to_string(to->userId);
+            if (old == fresh) return fail("Their username is already " + fresh + ".");
+            to->pastNames.erase(std::remove_if(to->pastNames.begin(), to->pastNames.end(),
+                                               [&](const std::string& p) { return lower(p) == lower(old); }),
+                                to->pastNames.end());
+            m_takenNames.insert(lower(old));
+            m_takenNames.insert(lower(fresh));
+            to->username = fresh;
+            to->name = fresh;
+            saveIds();
+            notify(to, "rename", "Staff reset your username to " + fresh + " because your old one wasn't allowed.", "");
+            staffDid(me, "rename", "Reset the username \"" + old + "\" to " + fresh, to->id);
+            saveUsers();
+            json r = okay(); r["user"] = publicUser(*to); return r;
+        }
         if (!isOfficial(me)) return fail("Only the official Guts account can do that.");
         if (name == "admin.giveBolts") {
             long long amount = num("amount");
