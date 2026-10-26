@@ -55,7 +55,7 @@ std::string fixture(int version) {
     u32(out, 0); u32(out, 1); // face begin / length
     u32(out, 0); u32(out, 3); // vertex begin / length
     u32(out, 1);              // number of bone indices
-    for (int i = 0; i < 26; ++i) u16(out, i == 0 ? 0 : 0);
+    for (int i = 0; i < 26; ++i) u16(out, 0);
     return out;
 }
 
