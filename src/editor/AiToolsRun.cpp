@@ -190,7 +190,7 @@ const char* const kLuaProperties[] = {
     "Force", "MaxForce", "MaxTorque", "MaxVelocity", "MaxAngularVelocity", "Torque", "VectorVelocity", "P", "D",
     "Responsiveness", "RigidityEnabled", "ReactionForceEnabled", "ReactionTorqueEnabled", "ApplyAtCenterOfMass",
     "RelativeTo", "Mode", "AlignType", "PrimaryAxisOnly", "ForceLimitMode", "ForceLimitsEnabled",
-    "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart",
+    "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart", "BreakForce", "Broken",
 };
 
 // The names as a Lua table, for __gb_aiProps.

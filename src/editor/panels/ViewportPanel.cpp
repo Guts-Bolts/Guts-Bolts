@@ -27,7 +27,9 @@
 #include <ImGuizmo.h>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include "../../core/I18n.h"
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -444,6 +446,116 @@ bool ViewportPanel::scaleHandles(SceneNode* sel, const glm::mat4& view, const gl
     return true;
 }
 
+// Physics View (MODEL tab > Physics View): what the physics is doing. Loose parts get an
+// outline (orange = moving, grey = asleep) and a yellow arrow for their speed; joints are
+// lines that go from green to red as they get close to their BreakForce; red dots are
+// where things touch; force zones are purple boxes with an arrow for the wind.
+void ViewportPanel::drawPhysicsView(const glm::mat4& view, const glm::mat4& proj,
+                                    const glm::vec2& imgMin, const glm::vec2& imgSize, bool running) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const glm::mat4 vp = proj * view;
+    auto screen = [&](const glm::vec3& p, ImVec2& out) {
+        glm::vec4 q = vp * glm::vec4(p, 1.0f);
+        if (q.w <= 0.05f) return false;
+        out = ImVec2(imgMin.x + (q.x / q.w * 0.5f + 0.5f) * imgSize.x, imgMin.y + (0.5f - q.y / q.w * 0.5f) * imgSize.y);
+        return true;
+    };
+    auto line = [&](const glm::vec3& a, const glm::vec3& b, ImU32 col, float w) {
+        ImVec2 sa, sb;
+        if (screen(a, sa) && screen(b, sb)) dl->AddLine(sa, sb, col, w);
+    };
+    auto box = [&](const OBB& o, ImU32 col, float w) {
+        glm::vec3 c[8];
+        for (int i = 0; i < 8; ++i)
+            c[i] = o.center + o.axis[0] * ((i & 1) ? o.half.x : -o.half.x) + o.axis[1] * ((i & 2) ? o.half.y : -o.half.y) +
+                   o.axis[2] * ((i & 4) ? o.half.z : -o.half.z);
+        static const int edges[12][2] = {{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+        for (const auto& e : edges) line(c[e[0]], c[e[1]], col, w);
+    };
+    auto arrow = [&](const glm::vec3& from, const glm::vec3& to, ImU32 col) {
+        ImVec2 a, b;
+        if (!screen(from, a) || !screen(to, b)) return;
+        dl->AddLine(a, b, col, 2.0f);
+        const float dx = b.x - a.x, dy = b.y - a.y, len = std::sqrt(dx * dx + dy * dy);
+        if (len < 4.0f) return;
+        const float ux = dx / len, uy = dy / len, s = std::min(9.0f, len * 0.4f);
+        dl->AddTriangleFilled(b, ImVec2(b.x - ux * s - uy * s * 0.5f, b.y - uy * s + ux * s * 0.5f),
+                              ImVec2(b.x - ux * s + uy * s * 0.5f, b.y - uy * s - ux * s * 0.5f), col);
+    };
+
+    int drawn = 0;
+    m_scene->forEach([&](SceneNode* n) {
+        if (!n->isPart() || n->internal || !n->visible || drawn > 3000) return;
+        if (n->isForceZone()) {
+            const OBB o = Physics::worldOBB(n);
+            box(o, IM_COL32(190, 90, 255, 230), 2.0f);
+            const glm::vec3 push = Physics::zonePush(n, o, o.center + o.axis[0] * o.half.x * 0.5f);
+            if (glm::length(push) > 1e-3f) {
+                const glm::vec3 wind = Physics::zonePush(n, o, o.center);
+                if (glm::length(wind) > 1e-3f) arrow(o.center, o.center + glm::normalize(wind) * std::max(1.5f, o.half.y), IM_COL32(190, 90, 255, 255));
+                else {   // Push / Pull: arrows out of (or into) the middle
+                    for (int i = 0; i < 3; ++i) {
+                        const glm::vec3 edge = o.center + o.axis[i] * o.half[i];
+                        const glm::vec3 d = Physics::zonePush(n, o, edge);
+                        const bool out = glm::dot(d, edge - o.center) > 0.0f;
+                        arrow(out ? o.center : edge, out ? edge : o.center, IM_COL32(190, 90, 255, 255));
+                    }
+                }
+            }
+            return;
+        }
+        if (n->anchored || m_scene->isCharacterPart(n)) return;
+        ++drawn;
+        const bool asleep = running && n->sleepTime > 0.6f;
+        box(Physics::worldOBB(n), asleep ? IM_COL32(130, 140, 160, 200) : IM_COL32(255, 150, 40, 230), 1.4f);
+        if (running && glm::length(n->velocity) > 0.5f) {
+            const glm::vec3 c = glm::vec3(n->worldMatrix()[3]);
+            arrow(c, c + n->velocity * 0.15f, IM_COL32(255, 230, 60, 255));
+        }
+    });
+
+    // Joints: while running, how hard each one is pulled (green -> red near BreakForce).
+    const Physics::DebugView& dbg = Physics::debugView();
+    if (running && dbg.steps > 0) {
+        for (const auto& j : dbg.joints) {
+            ImU32 col = IM_COL32(80, 220, 255, 255);   // (unbreakable)
+            if (j.breakForce > 0.0f) {
+                const float t = std::clamp(j.force / j.breakForce, 0.0f, 1.0f);
+                col = IM_COL32((int)(60 + 195 * t), (int)(220 - 170 * t), 60, 255);
+            }
+            line(j.a, j.b, col, 3.0f);
+            ImVec2 sa;
+            if (j.force > 1.0f && screen((j.a + j.b) * 0.5f, sa)) {
+                char t[32];
+                std::snprintf(t, sizeof t, "%.0f", j.force);
+                dl->AddText(ImVec2(sa.x + 4, sa.y - 14), col, t);
+            }
+        }
+        for (const auto& c : dbg.contacts) {
+            ImVec2 s;
+            if (!screen(c.p, s)) continue;
+            dl->AddCircleFilled(s, 2.5f, IM_COL32(255, 60, 60, 255));
+            line(c.p, c.p + c.n * 0.6f, IM_COL32(255, 60, 60, 160), 1.0f);
+        }
+    } else {
+        // Not running: where each constraint joins (between its two attachments or parts).
+        m_scene->forEach([&](SceneNode* n) {
+            if (!n->isConstraint()) return;
+            SceneNode *a = n->ref0 ? m_scene->findById(n->ref0) : nullptr, *b = n->ref1 ? m_scene->findById(n->ref1) : nullptr;
+            if (!a || !b) return;
+            line(glm::vec3(a->worldMatrix()[3]), glm::vec3(b->worldMatrix()[3]),
+                 n->breakForce > 0.0f ? IM_COL32(120, 220, 90, 255) : IM_COL32(80, 220, 255, 255), 2.5f);
+        });
+    }
+    // What the colours mean.
+    const ImVec2 at(imgMin.x + 10, imgMin.y + 34);
+    const char* legend = I18n::tr("Physics View: orange = loose part, grey = asleep, yellow = speed, red dots = touching,\n"
+                                  "blue lines = joints (green to red = close to snapping), purple = force zones");
+    const ImVec2 sz = ImGui::CalcTextSize(legend);
+    dl->AddRectFilled(ImVec2(at.x - 6, at.y - 4), ImVec2(at.x + sz.x + 6, at.y + sz.y + 4), IM_COL32(0, 0, 0, 150), 4.0f);
+    dl->AddText(at, IM_COL32(255, 255, 255, 230), legend);
+}
+
 // The light blue box around each selected part, like Roblox Studio's.
 void ViewportPanel::drawSelectionBoxes(const glm::mat4& view, const glm::mat4& proj,
                                        const glm::vec2& imgMin, const glm::vec2& imgSize) {
@@ -686,6 +798,10 @@ void ViewportPanel::render(float dt) {
         glm::vec2 imgSize{avail.x, avail.y};
         ImVec2 imgMax(imgPos.x + avail.x, imgPos.y + avail.y);
         ImDrawList* dl = ImGui::GetWindowDrawList();
+        static bool physicsTestFlag = std::getenv("GB_TEST_PHYSICSVIEW") != nullptr;   // (tests: start with it showing)
+        if (physicsTestFlag) { m_state->showPhysics = true; physicsTestFlag = false; }
+        Physics::debugOn() = m_state->showPhysics;
+        if (m_state->showPhysics) drawPhysicsView(view, proj, imgMin, imgSize, playing);
 
         if (playing && m_session->runOnly()) {
             // Simulate: click things to look at them in Properties, and drag

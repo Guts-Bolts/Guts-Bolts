@@ -1933,6 +1933,8 @@ int inst_index(lua_State* L) {
         if (hingeProps && is(k, "MotorMaxTorque")) { lua_pushnumber(L, n->motorTorque); return 1; }
         if (hingeProps && is(k, "ActuatorType"))   { lua_pushstring(L, n->motorTorque > 0 ? "Motor" : "None"); return 1; }
         if (is(k, "Thickness"))      { lua_pushnumber(L, n->thickness); return 1; }
+        if (is(k, "BreakForce"))     { lua_pushnumber(L, n->breakForce); return 1; }
+        if (is(k, "Broken"))         { lua_pushboolean(L, n->broken && !n->enabled); return 1; }
         if (is(k, "Color"))          { LuaApi::pushColor3(L, n->color); return 1; }
         if (is(k, "Enabled"))        { lua_pushboolean(L, n->enabled); return 1; }
     }
@@ -2273,6 +2275,7 @@ int inst_newindex(lua_State* L) {
             return 0;
         }
         if (is(k, "Thickness"))      { n->thickness = (float)luaL_checknumber(L, 3); return 0; }
+        if (is(k, "BreakForce"))     { n->breakForce = std::max(0.0f, (float)luaL_checknumber(L, 3)); return 0; }
         if (is(k, "Color"))          { n->color = LuaApi::checkColor3(L, 3); return 0; }
         if (is(k, "Enabled"))        { n->enabled = lua_toboolean(L, 3); return 0; }
     }

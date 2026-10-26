@@ -437,6 +437,9 @@ void Editor::renderToolbar() {
             if (bigButton("Collision Groups", Icons::Id::Collide, m_showCollisionGroups, true,
                           "Which groups of parts bump into each other (players walking through each other, team doors...)"))
                 m_showCollisionGroups = !m_showCollisionGroups;
+            if (bigButton("Physics View", Icons::Id::Simulate, m_state.showPhysics, true,
+                          "See the physics: moving and sleeping parts, speeds, where things touch, how hard each joint is pulled, force zones"))
+                m_state.showPhysics = !m_state.showPhysics;
         }
         {
             Group g("Align");

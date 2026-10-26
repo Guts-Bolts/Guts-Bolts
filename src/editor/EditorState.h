@@ -44,6 +44,7 @@ struct EditorState {
     bool      showGrid    = true;
     bool      orthographic = false;   // the viewport camera has no perspective (numpad 5, like Blender)
     bool      showNavMesh = false;    // draw the navigation mesh (where characters can walk)
+    bool      showPhysics = false;    // Physics View: joints, contacts, speeds, sleeping parts, force zones
     int       bakeNavMesh = 0;        // asks the viewport to rebake it now (Bake button)
     std::string navInfo;              // "1234 floor cells, baked in 12 ms" for the ribbon tooltip
 
