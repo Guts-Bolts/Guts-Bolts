@@ -129,12 +129,27 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
     MeshEdit::attach(*part, shape.mesh);
     part->primitiveType = PrimitiveType::Mesh;
 
-    // Replace old embedded joints if this asset carries a rig.
+    auto embeddedBone = [](SceneNode* n) {
+        const Attribute* a = n ? n->findAttribute("RobloxEmbeddedMeshBone") : nullptr;
+        return a && a->type == Attribute::Bool && a->b;
+    };
+    auto containsAuthoredBone = [&](auto&& self, SceneNode* n) -> bool {
+        if (!n) return false;
+        if (n->isBone() && !embeddedBone(n)) return true;
+        for (auto& child : n->children) if (self(self, child.get())) return true;
+        return false;
+    };
+    bool hasAuthoredBones = false;
+    for (auto& child : part->children)
+        if (containsAuthoredBone(containsAuthoredBone, child.get())) { hasAuthoredBones = true; break; }
+
+    // Remove only joints generated from the previous mesh. Preserve Bone instances
+    // in the imported model because scripts and animations may refer to those nodes.
     for (auto it = part->children.begin(); it != part->children.end();) {
-        if ((*it)->isBone()) it = part->children.erase(it);
+        if ((*it)->isBone() && embeddedBone(it->get())) it = part->children.erase(it);
         else ++it;
     }
-    if (!shape.bones.empty() && part->editMesh) {
+    if (!shape.bones.empty() && part->editMesh && !hasAuthoredBones) {
         std::vector<SceneNode*> imported(shape.bones.size(), nullptr);
         std::vector<glm::mat4> sourceFrames(shape.bones.size(), glm::mat4(1.0f));
         for (size_t i = 0; i < shape.bones.size(); ++i) {
@@ -147,6 +162,8 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
             glm::mat4 localFrame = parent ? glm::inverse(sourceFrames[(size_t)source.parent]) * worldFrame : worldFrame;
             auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
             bone->bone = true;
+            Attribute embeddedTag; embeddedTag.name = "RobloxEmbeddedMeshBone"; embeddedTag.type = Attribute::Bool; embeddedTag.b = true;
+            bone->attributes.push_back(embeddedTag);
             bone->transform.position = glm::vec3(localFrame[3]);
             float rz, ry, rx;
             glm::extractEulerAngleZYX(localFrame, rz, ry, rx);
@@ -154,9 +171,12 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
             sourceFrames[i] = worldFrame;
             imported[i] = parent ? parent->addChild(std::move(bone)) : part->addChild(std::move(bone));
         }
+    }
+    if (!shape.bones.empty() && part->editMesh) {
+        const std::vector<SceneNode*> bones = Skin::bones(part);
         part->editMesh->bind.resize(part->editMesh->bones.size(), glm::mat4(1.0f));
         for (size_t i = 0; i < part->editMesh->bones.size(); ++i)
-            for (SceneNode* bone : imported)
+            for (SceneNode* bone : bones)
                 if (bone && bone->name == part->editMesh->bones[i]) {
                     part->editMesh->bind[i] = glm::inverse(Skin::frame(bone, part));
                     break;
