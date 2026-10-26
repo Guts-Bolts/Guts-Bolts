@@ -29,10 +29,11 @@ Mouse coordinates are currently scaled from the application viewport to the acti
 
 This PR is a compatibility increment, not a claim that the entire script now works.
 
-1. **Character controller assumptions** — `ControlScript.Disabled` now suppresses native keyboard/gamepad movement while preserving script-driven movement. Verify expected legacy scripts can disable and restore controls during real play, including stop/restart.
-2. **Legacy asset classes and properties** — built-in `SpecialMesh` primitives now render approximately, but `MeshType.FileMesh` and imported mesh identifiers still need a compatible asset importer. Mesh rendering also needs validation in all render passes (shadows, highlights, water interactions) and the full Star Glitcher fixture.
-3. **Rig mutation and animation conflicts** — the script edits R6 shoulder/hip/neck joints while the built-in character animator is active. Motor6D C0/C1 semantics and script-owned joint pose precedence still need end-to-end implementation and play testing.
-4. **Legacy event details** — verify key and button events fire once with the correct legacy arguments, including focus changes and script shutdown. Input-signal connection cleanup on script stop still needs an explicit lifecycle test.
+1. **Mesh importer verification** — open representative local `.mesh` files from the Open path flow, confirm their dimensions/orientation/UVs, then save and reopen the resulting game. Draco-compressed version 6/7 assets are not supported by the current parser.
+2. **Character controller assumptions** — `ControlScript.Disabled` now suppresses native keyboard/gamepad movement while preserving script-driven movement. Verify expected legacy scripts can disable and restore controls during real play, including stop/restart.
+3. **Legacy asset classes and properties** — built-in `SpecialMesh` primitives now render approximately, but `MeshType.FileMesh` and imported mesh identifiers still need a compatible asset importer. Mesh rendering also needs validation in all render passes (shadows, highlights, water interactions) and the full Star Glitcher fixture.
+4. **Rig mutation and animation conflicts** — the script edits R6 shoulder/hip/neck joints while the built-in character animator is active. Motor6D C0/C1 semantics and script-owned joint pose precedence still need end-to-end implementation and play testing.
+5. **Legacy event details** — verify key and button events fire once with the correct legacy arguments, including focus changes and script shutdown. Input-signal connection cleanup on script stop still needs an explicit lifecycle test.
 5. **Execution lifecycle** — long-lived `BindableEvent` loops, input callbacks, and `Debris` cleanup need to remain safe through character respawn, script stop, and game exit.
 6. **Asset and property gaps** — old BrickColor names, surface values, mesh URLs, animation properties, and sound assets need end-to-end coverage where used by the script.
 
