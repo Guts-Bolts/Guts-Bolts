@@ -988,27 +988,41 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
                     ++fi;
                 }
                 if (m->uvs.size() != m->faces.size()) m->uvs.clear();
-                auto readVecs = [&](const char* key, size_t components, auto& output) {
+                auto readVec3 = [&](const char* key, std::vector<glm::vec3>& output) {
                     auto values = it->find(key);
-                    if (values == it->end() || !values->is_array() || values->size() != m->verts.size() * components) return;
-                    using Vec = typename std::decay_t<decltype(output)>::value_type;
-                    std::vector<Vec> parsed;
+                    if (values == it->end() || !values->is_array() || values->size() != m->verts.size() * 3) return;
+                    std::vector<glm::vec3> parsed;
                     parsed.reserve(m->verts.size());
-                    for (size_t i = 0; i < values->size(); i += components) {
-                        float v[4] = {};
-                        for (size_t k = 0; k < components; ++k) {
+                    for (size_t i = 0; i < values->size(); i += 3) {
+                        float x[3];
+                        for (int k = 0; k < 3; ++k) {
                             if (!(*values)[i + k].is_number()) return;
-                            v[k] = (*values)[i + k].get<float>();
-                            if (!std::isfinite(v[k]) || std::abs(v[k]) > 1.0e6f) return;
+                            x[k] = (*values)[i + k].get<float>();
+                            if (!std::isfinite(x[k]) || std::abs(x[k]) > 1.0e6f) return;
                         }
-                        if (components == 3) parsed.push_back(Vec(v[0], v[1], v[2]));
-                        else parsed.push_back(Vec(v[0], v[1], v[2], v[3]));
+                        parsed.emplace_back(x[0], x[1], x[2]);
                     }
                     output = std::move(parsed);
                 };
-                readVecs("n", 3, m->normals);
-                readVecs("c", 4, m->colors);
-                readVecs("t", 4, m->tangents);
+                auto readVec4 = [&](const char* key, std::vector<glm::vec4>& output) {
+                    auto values = it->find(key);
+                    if (values == it->end() || !values->is_array() || values->size() != m->verts.size() * 4) return;
+                    std::vector<glm::vec4> parsed;
+                    parsed.reserve(m->verts.size());
+                    for (size_t i = 0; i < values->size(); i += 4) {
+                        float x[4];
+                        for (int k = 0; k < 4; ++k) {
+                            if (!(*values)[i + k].is_number()) return;
+                            x[k] = (*values)[i + k].get<float>();
+                            if (!std::isfinite(x[k]) || std::abs(x[k]) > 1.0e6f) return;
+                        }
+                        parsed.emplace_back(x[0], x[1], x[2], x[3]);
+                    }
+                    output = std::move(parsed);
+                };
+                readVec3("n", m->normals);
+                readVec4("c", m->colors);
+                readVec4("t", m->tangents);
                 for (auto& color : m->colors) color = glm::clamp(color, glm::vec4(0.0f), glm::vec4(1.0f));
                 for (auto& tangent : m->tangents) {
                     glm::vec3 direction(tangent);
