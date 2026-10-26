@@ -66,9 +66,8 @@ const MAX_SIZE = { audio: 6 << 20, game: 24 << 20, plugin: 512 << 10, decal: 4 <
   hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20,
   emote: 256 << 10, animpack: 512 << 10, bundle: 1 << 20 };
 // Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Verified
-// creators can upload it. You can have up to kMostGear equipped, and you get them in games whose
+// creators can upload it. You can equip any number of owned gear items, and you get them in games whose
 // creator ticked "Allow gear". (src/server has the same rules.)
-const kMostGear = 4;
 // Emotes and animation packs: keyframes for the character, sold in the catalog. Only staff
 // make them. Owners equip up to kEmoteSlots emotes (the emote menu's slots) and one animation
 // pack on the Avatar page; they play in every game. (src/server has the same rules.)
@@ -1945,7 +1944,6 @@ export class GbServerObject extends DurableObject {
       if (on) {
         if (!a || a.kind !== 'gear') return fail('That gear doesn\'t exist (any more).');
         if (!me.owned.includes(id)) return fail('Get it from the catalog first.');
-        if (me.gear.length >= kMostGear) return fail('You can have ' + kMostGear + ' gear equipped at once. Take one off first.');
         me.gear.push(id);
       }
       this.saveUser(me);
