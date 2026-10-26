@@ -20,6 +20,10 @@ struct Shape {
 // Empty mesh (and `error` filled in) if the file can't be read.
 Shape parse(const std::string& bytes, std::string* error = nullptr);
 
+// Resolve a Roblox mesh asset ID, use the on-disk cache or fetch it, then decode it.
+// This is the common entry point for importers; it never treats a failed download as a valid mesh.
+Shape loadAsset(const std::string& content, std::string* error = nullptr);
+
 // The number in "rbxassetid://123", "http://www.roblox.com/asset/?id=123" and
 // friends; "" for anything else (like built-in "rbxasset://" files).
 std::string assetId(const std::string& content);
