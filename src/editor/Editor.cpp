@@ -254,6 +254,7 @@ void Editor::render(float dt) {
         std::chrono::steady_clock::now() - frameStart).count();
     renderPerformanceWindow();
     renderPerformanceDoctor();
+    renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
 
@@ -363,6 +364,59 @@ void Editor::renderPerformanceWindow() {
 
 // Performance Doctor turns the monitor's recent samples into ranked, explainable advice.
 // Scene thresholds are heuristics; they are not a claim that a particular count caused a hitch.
+void Editor::renderLuaDebugger() {
+    if (!m_showLuaDebugger) return;
+    ImGui::SetNextWindowSize(ImVec2(620, 520), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Lua Debugger", &m_showLuaDebugger)) { ImGui::End(); return; }
+    if (!m_session || !m_session->running()) {
+        ImGui::TextDisabled("Start Play or Simulate to debug scripts. Breakpoints can be configured during the session.");
+        ImGui::End(); return;
+    }
+    ScriptEngine& scripts=m_session->scripts();
+    SceneNode* selected=m_scene->findById(m_scriptEditor->current());
+    if (!selected || !selected->isScript()) selected=m_scene->selected();
+    if (selected && selected->isScript()) {
+        ImGui::Text("Script: %s", selected->fullName().c_str());
+        ImGui::SetNextItemWidth(90);
+        ImGui::InputInt("Line", &m_debugLineInput);
+        if (m_debugLineInput<1) m_debugLineInput=1;
+        ImGui::SameLine();
+        const auto key=std::make_pair(selected->id,m_debugLineInput);
+        const bool exists=scripts.debugBreakpoints().count(key)!=0;
+        if (ImGui::Button(exists?"Remove breakpoint":"Add breakpoint"))
+            scripts.debugSetBreakpoint(selected->id,m_debugLineInput,!exists);
+    } else {
+        ImGui::TextDisabled("Select a Script in the Explorer or open it in the Script Editor to add a breakpoint.");
+    }
+    ImGui::Separator();
+    if (scripts.debugPaused()) {
+        ImGui::TextColored(ImVec4(1.0f,0.72f,0.25f,1.0f),"Paused at %s:%d",
+                           scripts.debugSourceForUi().c_str(),scripts.debugLine());
+        if (ImGui::Button("Continue")) scripts.debugContinue();
+        ImGui::SameLine(); if (ImGui::Button("Step Into")) scripts.debugStepInto();
+        ImGui::SameLine(); if (ImGui::Button("Step Over")) scripts.debugStepOver();
+        ImGui::SameLine(); if (ImGui::Button("Step Out")) scripts.debugStepOut();
+        ImGui::SeparatorText("Call stack");
+        for (const auto& frame:scripts.debugCallStack()) ImGui::BulletText("%s",frame.c_str());
+        ImGui::SeparatorText("Locals");
+        for (const auto& local:scripts.debugLocals()) ImGui::BulletText("%s",local.c_str());
+    } else {
+        ImGui::TextDisabled("Waiting for a breakpoint. Script execution pauses only at Lua line boundaries.");
+    }
+    ImGui::SeparatorText("Breakpoints");
+    if (scripts.debugBreakpoints().empty()) ImGui::TextDisabled("No breakpoints configured.");
+    for (const auto& bp:scripts.debugBreakpoints()) {
+        SceneNode* node=m_scene->findById(bp.first);
+        ImGui::PushID((int)(bp.first & 0x7fffffff)); ImGui::PushID(bp.second);
+        ImGui::BulletText("%s:%d",node?node->fullName().c_str():"[deleted script]",bp.second);
+        ImGui::SameLine(); if (ImGui::SmallButton("Remove")) scripts.debugSetBreakpoint(bp.first,bp.second,false);
+        ImGui::PopID(); ImGui::PopID();
+    }
+    ImGui::TextDisabled("Locals are read without evaluating expressions. Tables are intentionally not expanded.");
+    ImGui::End();
+}
+
+
 void Editor::renderPerformanceDoctor() {
     if (!m_showPerformanceDoctor) return;
     ImGui::SetNextWindowSize(ImVec2(700, 600), ImGuiCond_FirstUseEver);
@@ -2528,6 +2582,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Project Dependency Map")) m_scriptEditor->showDependencyMap();
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
+        if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
         ImGui::Separator();

@@ -40,9 +40,9 @@ const REVIEWED_KINDS = ['decal', 'audio', 'tshirt'];
 const kCreatorSharePercent = 70;
 const kMaxNotes = 50;   // notifications kept per account (the bell)
 const KINDS = ['hat', 'shirt', 'pants', 'audio', 'plugin', 'game', 'decal', 'model', 'hair', 'faceacc', 'neck', 'shoulder', 'waist', 'face', 'tshirt', 'gear', 'animation',
-  'emote', 'animpack', 'bundle'];
+  'emote', 'animpack', 'bundle', 'bodypart'];
 const FEE = { hat: 10, shirt: 10, pants: 10, audio: 20, plugin: 20, game: 0, decal: 5, model: 0,
-  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0, emote: 0, animpack: 0, bundle: 0 };
+  hair: 10, faceacc: 10, neck: 10, shoulder: 10, waist: 10, face: 0, tshirt: 10, gear: 0, animation: 0, emote: 0, animpack: 0, bundle: 0, bodypart: 0 };
 // Accessories: things worn on the body, made (and placed on a mannequin) in Studio's
 // Accessory window. Verified creators only. Faces are pictures, and only Guts makes them.
 const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
@@ -64,7 +64,7 @@ const hasAccess = (k) => k === 'game' || k === 'model' || k === 'animation';
 const weekOf = (t) => Math.floor(t / (7 * 86400));
 const MAX_SIZE = { audio: 6 << 20, game: 24 << 20, plugin: 512 << 10, decal: 4 << 20, shirt: 1 << 20, pants: 1 << 20, model: 4 << 20,
   hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20,
-  emote: 256 << 10, animpack: 512 << 10, bundle: 1 << 20 };
+  emote: 256 << 10, animpack: 512 << 10, bundle: 1 << 20, bodypart: 1 << 20 };
 // Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Verified
 // creators can upload it. You can equip any number of owned gear items, and you get them in games whose
 // creator ticked "Allow gear". (src/server has the same rules.)
@@ -109,14 +109,15 @@ function bundleBody(body) {
   }
   return out;
 }
-const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k) || k === 'bundle';   // sold in the catalog
+const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k) || k === 'bundle' || k === 'bodypart';   // sold in the catalog
 // Inventory on profiles: what someone owns from the catalog, in these groups. (src/server has the same.)
-const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'bundles', 'gear', 'emotes', 'limited'];
+const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'bundles', 'bodyparts', 'gear', 'emotes', 'limited'];
 function inventoryCat(cat, a) {
   if (cat === 'accessories') return isAccessory(a.kind);
   if (cat === 'clothing') return a.kind === 'shirt' || a.kind === 'pants' || a.kind === 'tshirt';
   if (cat === 'faces') return a.kind === 'face';
   if (cat === 'bundles') return a.kind === 'bundle';
+  if (cat === 'bodyparts') return a.kind === 'bodypart';
   if (cat === 'gear') return a.kind === 'gear';
   if (cat === 'emotes') return isEmoteItem(a.kind);
   if (cat === 'limited') return !!a.limited;
@@ -2472,7 +2473,7 @@ export class GbServerObject extends DurableObject {
       if (kind === 'face' && !this.isOfficial(me)) return fail('Only Guts can make faces.');
       if (kind === 'gear' && !verified && !this.isStaff(me)) return fail('Only Verified creators can upload gear.');
       if (isEmoteItem(kind) && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make emotes and animation packs.');
-      if (kind === 'bundle' && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make bundles.');
+      if ((kind === 'bundle' || kind === 'bodypart') && !this.isStaff(me)) return fail('Only Guts&Bolts staff can make bundles and body parts.');
       let price = clamp(num(args, 'price'), 0, 1000000);
       if (kind === 'game' || alwaysFree(kind)) price = 0;
       if (price > 0 && !verified) return fail('Only Verified creators can sell things. Upload it for free, or get Verified!');
@@ -2522,6 +2523,19 @@ export class GbServerObject extends DurableObject {
         try { acc = JSON.parse(new TextDecoder().decode(data)); } catch { acc = null; }
         if (!acc || acc.format !== 'gbaccessory' || !acc.node) return fail('That isn\'t a Guts&Bolts accessory. Make it in Studio\'s Accessory window.');
         meta.model = true;
+      }
+      if (kind === 'bodypart') {
+        const part = String(meta.bodyPart || '');
+        if (!BODY_PARTS.includes(part)) return fail('Choose Head, Torso, Left Arm, Right Arm, Left Leg or Right Leg for this body part.');
+        let file = null;
+        try { file = JSON.parse(new TextDecoder().decode(data)); } catch { file = null; }
+        if (!file || file.format !== 'gbbundle' || !file.body || typeof file.body !== 'object') return fail('Body parts must be made in Studio\'s Bundles window.');
+        if (Object.keys(file.body).length !== 1 || !file.body[part]) return fail('A standalone body-part item must contain only its selected body part.');
+        const body = bundleBody(file.body);
+        if (typeof body === 'string') return fail(body);
+        for (const k of Object.keys(meta)) delete meta[k];
+        meta.bodyPart = part;
+        data = new TextEncoder().encode(JSON.stringify({ format: 'gbbundle', body }));
       }
       if (kind === 'bundle') {
         const items = this.bundleItems(meta.items);
@@ -2748,7 +2762,7 @@ export class GbServerObject extends DurableObject {
       // require the original creator. Keep a staff audit entry for every override.
       const staffAccessoryEdit = a.creator !== me.id && this.isStaff(me) && isAccessory(a.kind);
       if (a.creator !== me.id && !staffAccessoryEdit) return fail('You can only update your own things.');
-      if (a.kind === 'bundle') return fail('Bundles can\'t be changed once they\'re made. Make a new one instead.');
+      if (a.kind === 'bundle' || a.kind === 'bodypart') return fail('Bundles and body parts can\'t be changed once they\'re made. Make a new one instead.');
       let data;
       try { data = b64ToBytes(str(args, 'data')); } catch { return fail('The upload got scrambled. Try again.'); }
       if (data.length > maxSize(a.kind)) return fail('That\'s too big.');

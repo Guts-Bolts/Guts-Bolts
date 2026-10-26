@@ -382,6 +382,7 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/google/draco.git
     GIT_TAG        1.5.7
     GIT_SHALLOW    TRUE
+    GIT_SUBMODULES ""
 )
 FetchContent_MakeAvailable(draco)
 
