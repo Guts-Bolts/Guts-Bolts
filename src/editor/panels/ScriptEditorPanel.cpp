@@ -86,7 +86,7 @@ const char* const kWords[] = {
     "DecayTime", "Density", "Diffusion", "DryLevel", "WetLevel", "Delay", "Feedback", "HighGain", "LowGain", "MidGain",
     "Level", "Octave", "Depth", "Mix", "Rate", "Attack", "GainMakeup", "Ratio", "Release", "Threshold", "Duty", "Frequency",
     // Sky and screen effects (in Lighting, or the Camera)
-    "Sky", "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "SunTextureId", "MoonTextureId",
+    "Sky", "MaterialVariant", "MaterialService", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "StudsPerTile", "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "SunTextureId", "MoonTextureId",
     "StarCount", "CelestialBodiesShown", "SunAngularSize", "MoonAngularSize",
     "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect", "PostEffect",
     "Contrast", "Saturation", "TintColor", "Intensity", "Spread", "Threshold", "FarIntensity", "NearIntensity",

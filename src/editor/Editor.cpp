@@ -72,6 +72,7 @@ print("Hello from " .. game.Players.LocalPlayer.Name)
 Editor::Editor(GLFWwindow* window, Scene* scene)
     : m_window(window), m_scene(scene) {
     m_session  = std::make_unique<GameSession>(scene);
+    m_showMaterialEditor = std::getenv("GB_TEST_MATERIALS") != nullptr;   // (tests: start with it showing)
     m_showAiActivity = std::getenv("GB_TEST_AIACTIVITY") != nullptr;   // (tests: start with it showing)
     m_session->scripts().setHistory(true);   // (Script History records this one's scripts)
     m_showScriptHistory = std::getenv("GB_TEST_SCRIPTHISTORY") != nullptr;   // (tests: start with it showing)
@@ -107,6 +108,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_properties   = std::make_unique<PropertiesPanel>(scene, open);
     m_properties->m_editCollisionGroups = [this] { m_showCollisionGroups = true; };
     m_properties->m_openUVEditor = [this] { m_uv.show = true; };
+    m_properties->m_openMaterials = [this](uint64_t id) { m_showMaterialEditor = true; if (id) m_materialEditing = id; };
     m_properties->m_editMesh = [this](SceneNode* n) {
         m_deferred = [this, n] { m_scene->select(n); setMode(StudioMode::Modeling); };   // not while Properties is drawing
     };
@@ -207,7 +209,8 @@ void Editor::render(float dt) {
     if (m_deferred) { auto f = std::move(m_deferred); m_deferred = nullptr; f(); }
     if (m_showPanel[kPanelProperties]) m_properties->render();
     if (m_showPanel[kPanelLighting])   m_environment->render();
-    if (m_showPanel[kPanelToolbox])    { m_thumbnailer->newFrame(); m_toolbox->render(); }
+    m_thumbnailer->newFrame();
+    if (m_showPanel[kPanelToolbox])    m_toolbox->render();
     if (m_showPanel[kPanelPlayer])     m_player->render();
     if (m_showPanel[kPanelOutput])     m_output->render();
     if (m_showPanel[kPanelScript])     m_scriptEditor->render();
@@ -263,6 +266,7 @@ void Editor::render(float dt) {
     renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
+    renderMaterialEditor();
     renderAiActivity();
     renderScriptHistory();
 
@@ -1887,6 +1891,13 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         }
         put(std::move(n));
     }
+    else if (what == "MaterialVariant") {
+        // It only works in MaterialService, so that's where it goes.
+        SceneNode* service = m_scene->serviceFolder("MaterialService", true);
+        if (parent && parent != service) Log::info("MaterialVariant goes in MaterialService (that's where it works).");
+        parent = service;
+        put(std::make_unique<SceneNode>("MaterialVariant", NodeKind::MaterialVariant));
+    }
     else if (what == "ClickDetector") {
         // It goes on the part (or model) players click.
         if (!parent || parent == m_scene->root() || (!parent->isPart() && parent->kind != NodeKind::Model)) {
@@ -2115,6 +2126,7 @@ const std::vector<InsertItem>& insertItems() {
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
         {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
         {"Sky", Icons::Id::Lighting}, {"ColorCorrectionEffect", Icons::Id::Lighting}, {"SunRaysEffect", Icons::Id::Lighting},
+        {"MaterialVariant", Icons::Id::Lighting},
         {"DepthOfFieldEffect", Icons::Id::Lighting}, {"BloomEffect", Icons::Id::Lighting}, {"BlurEffect", Icons::Id::Lighting},
         {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"ClickDetector", Icons::Id::Click}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
         {"ParticleEmitter", Icons::Id::Particles}, {"Fire", Icons::Id::Particles}, {"Smoke", Icons::Id::Particles}, {"Sparkles", Icons::Id::Particles},
@@ -2624,6 +2636,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
+        if (ImGui::MenuItem("Material Editor", nullptr, &m_showMaterialEditor)) {}
         if (ImGui::MenuItem("AI Activity", nullptr, &m_showAiActivity)) {}
         if (ImGui::MenuItem("Script History", nullptr, &m_showScriptHistory)) {}
         ImGui::Separator();

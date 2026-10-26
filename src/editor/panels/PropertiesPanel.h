@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -13,6 +14,7 @@ public:
     std::function<void()>           m_openUVEditor;   // "UV Editor" button
     std::function<void(SceneNode*)> m_editMesh;   // "Edit Mesh" button: go into Modeling mode
     std::function<void()>           m_editCollisionGroups;   // "Edit..." next to Collision Group
+    std::function<void(uint64_t)>   m_openMaterials;   // the Material Editor (on this MaterialVariant; 0 = any)
 
 private:
     void renderProperties(SceneNode* node);

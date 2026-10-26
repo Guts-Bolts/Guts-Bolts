@@ -743,6 +743,7 @@ Every Output line says which playtest (run) it came from; 0 means outside a play
 - Explosions: the Explosion object / Explode(). DON'T push every nearby part by hand.
 - Emotes: humanoid:PlayEmote("wave") plays a built-in keyframed emote everyone sees (dance, dance2, dance3, wave, point, cheer, laugh; moving or jumping stops it). Players also have the B emote menu; a game turns it off with game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false). DON'T animate a character by moving its arms in a loop.
 - Player input ("press E to ...", a sprint key, a mobile button): ContextActionService:BindAction(name, fn, createTouchButton, Enum.KeyCode.E, ...) in a LocalScript; fn(name, state, input) returns Enum.ContextActionResult.Sink (keep it: the game's own controls ignore it) or Pass. createTouchButton = true adds a phone button (SetTitle / SetImage).
+- Custom materials ("make a brick / rusty metal / glowing lava material"): insert_object MaterialVariant (it goes in MaterialService), set its BaseMaterial, ColorMap / NormalMap / RoughnessMap / MetalnessMap (pictures like a Decal's), StudsPerTile, and Roughness / Metalness / Glow for what has no picture. A part shows it when its Material is the BaseMaterial and its MaterialVariant is the variant's name.
 - Only write scripts for behaviour the built-in objects and properties can't give, or when the person asks for code.
 
 ## Editor vs playtest
@@ -1023,7 +1024,8 @@ json capabilities() {
             {"publishing", "publish_game: like File > Publish, as the signed-in account (refused when not signed in); only when asked"},
             {"services", json::array({"Workspace", "Players", "Lighting", "ReplicatedFirst", "ReplicatedStorage", "ServerScriptService",
                                       "ServerStorage", "StarterGui", "StarterPack", "StarterPlayer", "StarterPlayer.StarterPlayerScripts",
-                                      "StarterPlayer.StarterCharacterScripts", "Teams", "SoundService", "Chat", "TextChatService"})},
+                                      "StarterPlayer.StarterCharacterScripts", "Teams", "SoundService", "Chat", "TextChatService",
+                                      "MaterialService"})},
             {"property_names", "the same as Lua scripts (get_object lists them; set_property accepts them and common misspellings)"},
             {"output_runs", "get_output / get_errors mark each line with its playtest run; run \"latest\" reads only the newest"},
         }},

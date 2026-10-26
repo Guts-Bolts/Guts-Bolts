@@ -91,6 +91,7 @@ private:
     void renderLuaDebugger();
     void renderSceneValidator();
     void renderProjectTimeMachine();
+    void renderMaterialEditor();    // EditorMaterials.cpp
     void renderScriptHistory();     // EditorScriptHistory.cpp
     void handleShortcuts();
 
@@ -314,6 +315,9 @@ private:
     int m_debugSeenPauses = 0;   // the Lua Debugger's pause count we've already jumped to
     bool m_showSceneValidator = false;
     bool m_showProjectTimeMachine = false;
+    bool m_showMaterialEditor = false;
+    uint64_t    m_materialEditing = 0;    // the MaterialVariant shown in the Material Editor
+    std::string m_materialOldName;        // its name before a rename (parts follow it)
     bool m_showScriptHistory = false;
     std::string m_historyFilter;
     int  m_historyKind = 0;           // 0 every entry, 1 property changes, 2 events

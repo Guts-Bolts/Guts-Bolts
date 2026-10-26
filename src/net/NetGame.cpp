@@ -211,6 +211,7 @@ std::string nodeState(const SceneNode* n) {
     }
     if (n->kind == NodeKind::Model && n->primaryPart) extra += "|pp" + std::to_string(n->primaryPart);
     if (n->collisionGroup != CollisionGroups::kDefault) extra += "|cg:" + n->collisionGroup;
+    if (!n->materialVariant.empty()) extra += "|mv:" + n->materialVariant;
     if (!extra.empty()) return std::string(buf) + extra;   // (parts and models: none of the kinds below)
     if (n->isGui()) return std::string(buf) + Serializer::guiToJson(n->gui).dump();   // text, colours, sizes...
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
@@ -220,6 +221,7 @@ std::string nodeState(const SceneNode* n) {
     if (n->isSound() || n->isSoundGroup() || n->isSoundEffect()) return std::string(buf) + Serializer::soundToJson(*n).dump();
     if (n->isPostEffect()) return std::string(buf) + Serializer::postEffectToJson(n->post, n->enabled).dump();
     if (n->isSky()) return std::string(buf) + Serializer::skyToJson(n->sky).dump();
+    if (n->isMaterialVariant()) return std::string(buf) + Serializer::variantToJson(n->variant).dump();
     if (n->isConstraint() && usesJointProps(n->constraintType)) return std::string(buf) + Serializer::jointToJson(n->joint).dump();
     if (n->isParticles()) return std::string(buf) + Serializer::particleToJson(n->particle, n->enabled).dump();
     return buf;
@@ -231,6 +233,7 @@ json nodeUpdate(const SceneNode* n) {
             {"m", (int)n->material}, {"sh", (int)n->primitiveType}, {"b", n->brightness},
             {"rg", n->range}, {"sa", n->spotAngle}};
     if (n->collisionGroup != CollisionGroups::kDefault) u["cg"] = n->collisionGroup;
+    if (!n->materialVariant.empty()) u["mv"] = n->materialVariant;
     if (n->isGui()) u["gui"] = Serializer::guiToJson(n->gui);
     if (n->isPrompt()) u["pr"] = Serializer::promptToJson(n->prompt, n->enabled);
     if (n->isClickDetector()) u["cd"] = Serializer::clickToJson(n->click);
@@ -239,6 +242,7 @@ json nodeUpdate(const SceneNode* n) {
     if (n->isSound() || n->isSoundGroup() || n->isSoundEffect()) u["snd"] = Serializer::soundToJson(*n);
     if (n->isPostEffect()) u["pfx"] = Serializer::postEffectToJson(n->post, n->enabled);
     if (n->isSky()) u["sky"] = Serializer::skyToJson(n->sky);
+    if (n->isMaterialVariant()) u["var"] = Serializer::variantToJson(n->variant);
     if (n->isConstraint() && usesJointProps(n->constraintType)) u["jt"] = Serializer::jointToJson(n->joint);
     u.update(nodeExtras(n));
     if (n->isParticles()) u["px"] = Serializer::particleToJson(n->particle, n->enabled);
@@ -254,6 +258,7 @@ void applyUpdate(SceneNode* n, const json& u) {
     n->collisionGroup = u.value("cg", std::string(CollisionGroups::kDefault)).substr(0, CollisionGroups::kMaxNameLength);
     n->enabled      = u.value("e", true);
     n->material     = (Material)std::clamp(u.value("m", 0), 0, kMaterialCount - 1);
+    n->materialVariant = u.value("mv", std::string()).substr(0, 100);
     auto shape = (PrimitiveType)u.value("sh", (int)n->primitiveType);
     if (shape != n->primitiveType) {
         if (shape == PrimitiveType::Mesh) PlayerModel::apply(*n);   // (only the character's shapes change like this)
@@ -274,6 +279,7 @@ void applyUpdate(SceneNode* n, const json& u) {
     if (u.contains("snd") && u["snd"].is_object()) Serializer::soundFromJson(*n, u["snd"]);
     if (n->isPostEffect() && u.contains("pfx") && u["pfx"].is_object()) Serializer::postEffectFromJson(u["pfx"], n->post, n->enabled);
     if (n->isSky() && u.contains("sky") && u["sky"].is_object()) Serializer::skyFromJson(u["sky"], n->sky);
+    if (n->isMaterialVariant() && u.contains("var") && u["var"].is_object()) Serializer::variantFromJson(u["var"], n->variant);
     if (n->isConstraint() && u.contains("jt") && u["jt"].is_object()) Serializer::jointFromJson(u["jt"], n->joint);
     applyExtras(n, u);
     if (n->isParticles() && u.contains("px") && u["px"].is_object()) Serializer::particleFromJson(u["px"], n->particle, n->enabled, true);
