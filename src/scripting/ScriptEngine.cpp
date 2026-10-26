@@ -3231,7 +3231,7 @@ void ScriptEngine::checkTimeout(lua_State* L) {
 }
 
 void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, std::string* result) {
-    if (m_debugEnabled && co) lua_sethook(co, &ScriptEngine::debugHook, LUA_MASKLINE, 0);
+    if (m_debugEnabled && co) lua_sethook(co, &ScriptEngine::debugHook, LUA_MASKLINE | LUA_MASKCOUNT, 20000);
     if (result) result->clear();
     if (!m_L) return;
     if (m_depth == 0) m_resumeStart = nowSeconds();
@@ -3318,7 +3318,10 @@ void ScriptEngine::debugHook(lua_State* L, lua_Debug* ar) {
     // finishes and destroys its strings before lua_yield unwinds back to lua_resume.
     auto** slot = static_cast<ScriptEngine**>(lua_getextraspace(L));
     ScriptEngine* engine = slot ? *slot : nullptr;
-    if (engine && engine->debugShouldPause(L, ar)) lua_yield(L, 0);
+    if (!engine || !ar) return;
+    // Preserve the existing per-resume instruction budget while adding line events.
+    if (ar->event == LUA_HOOKCOUNT) { engine->checkTimeout(L); return; }
+    if (ar->event == LUA_HOOKLINE && engine->debugShouldPause(L, ar)) lua_yield(L, 0);
 }
 
 void ScriptEngine::debugContinue() {
