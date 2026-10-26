@@ -210,7 +210,7 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
         Corner& out = points[(size_t)pointIndex];
         out.sourceIndex = (uint32_t)pointIndex;
         float pos[3] = {};
-        if (!positions->ConvertValue(positions->mapped_index(pi), 3, draco::DT_FLOAT32, pos)) {
+        if (!positions->ConvertValue(positions->mapped_index(pi), 3, pos)) {
             if (err) *err = "the Draco position attribute could not be converted to float3";
             return false;
         }
@@ -219,17 +219,17 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
         out.uv = {0.0f, 0.0f};
         if (normals) {
             float n[3] = {};
-            if (normals->ConvertValue(normals->mapped_index(pi), 3, draco::DT_FLOAT32, n))
+            if (normals->ConvertValue(normals->mapped_index(pi), 3, n))
                 out.normal = glm::vec3(n[0], n[1], n[2]);
         }
         if (texcoords) {
             float uv[2] = {};
-            if (texcoords->ConvertValue(texcoords->mapped_index(pi), 2, draco::DT_FLOAT32, uv))
+            if (texcoords->ConvertValue(texcoords->mapped_index(pi), 2, uv))
                 out.uv = glm::vec2(uv[0], uv[1]);
         }
         if (tangents && tangents->num_components() >= 4) {
             uint8_t raw[4] = {127, 0, 0, 127};
-            if (tangents->ConvertValue(tangents->mapped_index(pi), 4, draco::DT_UINT8, raw)) {
+            if (tangents->ConvertValue(tangents->mapped_index(pi), 4, raw)) {
                 const auto* t = reinterpret_cast<const int8_t*>(raw);
                 glm::vec3 direction(
                     std::clamp(t[0] / 127.0f, -1.0f, 1.0f),
@@ -242,7 +242,7 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
         }
         if (colors && colors->num_components() >= 4) {
             uint8_t raw[4] = {255, 255, 255, 255};
-            if (colors->ConvertValue(colors->mapped_index(pi), 4, draco::DT_UINT8, raw))
+            if (colors->ConvertValue(colors->mapped_index(pi), 4, raw))
                 out.color = glm::vec4(raw[0], raw[1], raw[2], raw[3]) / 255.0f;
         }
     }
