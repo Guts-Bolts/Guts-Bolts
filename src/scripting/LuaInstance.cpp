@@ -100,6 +100,10 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
         return;
     }
 
+    if (!meshPart && classAttr->s == "SpecialMesh") {
+        const Attribute* type = instance->findAttribute("MeshType");
+        if (type && type->type == Attribute::Number && (int)type->n != 5) return;
+    }
     const std::string url = stringAttr(instance, "MeshId");
     const std::string id = RobloxMesh::assetId(url);
     if (id.empty()) return;
