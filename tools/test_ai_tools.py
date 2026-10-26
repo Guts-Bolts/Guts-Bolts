@@ -229,6 +229,41 @@ def run_tests(m):
     d = m.call("validate_scene")
     check(ok(d), "validate_scene still works", d)
 
+    print("8. Script history records what scripts change")
+    lamp = m.call("insert_object", kind="Part", name="HistLamp")
+    lid = lamp["object_id"]
+    m.call("create_script", name="HistScript", source=(
+        "local p = workspace:WaitForChild('HistLamp')\n"
+        "p.AttributeChanged:Connect(function() p.Name = 'HistLampSeen' end)\n"
+        "p.Transparency = 0.5\n"
+        "p:SetAttribute('Lit', true)\n"))
+    d = m.call("script_history", action="clear")
+    d = m.call("script_history", action="record")
+    check(ok(d) and d.get("recording") is True and d.get("total") == 0, "script_history record", d)
+    m.call("playtest", action="start")
+    time.sleep(1.5)
+    m.call("playtest", action="stop")
+    d = m.call("script_history", object=lid)
+    ents = d.get("entries", [])
+    sets = [e for e in ents if e["kind"] == "set" and e["what"] == "Transparency"]
+    check(ok(d) and sets and float(sets[0]["before"]) == 0 and float(sets[0]["after"]) == 0.5 and sets[0]["line"] == 3
+          and "HistScript" in sets[0]["script"], "Transparency 0 -> 0.5 by HistScript line 3", d)
+    evs = [e for e in ents if e["kind"] == "event" and e["what"] == "AttributeChanged"]
+    check(evs and "HistScript" in evs[0]["script"], "the AttributeChanged event that ran the script", d)
+    names = [e for e in ents if e["what"] == "Name"]
+    check(names and names[0]["after"] == "HistLampSeen" and names[0]["line"] == 2, "the change made inside the event", d)
+    d = m.call("script_history", kind="event", script="HistScript")
+    check(ok(d) and d["entries"] and all(e["kind"] == "event" for e in d["entries"]), "kind and script filters", d)
+    m.call("script_history", action="stop")
+    before = m.call("script_history").get("total")
+    m.call("playtest", action="start")
+    time.sleep(1.0)
+    m.call("playtest", action="stop")
+    d = m.call("script_history")
+    check(ok(d) and d.get("recording") is False and d.get("total") == before, "nothing is added when not recording", d)
+    d = m.call("script_history", action="clear")
+    check(ok(d) and d.get("total") == 0, "clear", d)
+
 
 def main():
     ap = argparse.ArgumentParser()

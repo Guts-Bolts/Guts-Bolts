@@ -449,6 +449,7 @@ add_library(gb_engine STATIC
     src/scene/Csg.cpp
     src/scripting/Luau.cpp
     src/scripting/ScriptEngine.cpp
+    src/scripting/ScriptHistory.cpp
     src/scripting/LuaTypes.cpp
     src/scripting/LuaInstance.cpp
     src/scripting/ScriptRemotes.cpp
@@ -722,6 +723,7 @@ set(EDITOR_SOURCES
     src/editor/EditorSolid.cpp
     src/editor/EditorAutosave.cpp
     src/editor/EditorTimeMachine.cpp
+    src/editor/EditorScriptHistory.cpp
     src/editor/EditorOnline.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp

@@ -3,6 +3,7 @@
 #include "LuaApi.h"
 #include "../online/Protocol.h"
 #include "ScriptEngine.h"
+#include "ScriptHistory.h"
 #include "../scene/Animation.h"
 #include "../scene/Physics.h"
 #include "../scene/Player.h"
@@ -23,6 +24,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -2217,7 +2220,7 @@ int inst_index(lua_State* L) {
     return luaL_error(L, "'%s' is not a valid member of %s \"%s\"", k, className(L, n), n->name.c_str());
 }
 
-int inst_newindex(lua_State* L) {
+int inst_set(lua_State* L) {
     auto* ref = static_cast<InstRef*>(luaL_checkudata(L, 1, kInst));
     const char* k = luaL_checkstring(L, 2);
     SceneNode* n = E(L)->resolve(ref->id);
@@ -3507,6 +3510,55 @@ void makeMeta(lua_State* L, const char* name, const luaL_Reg* fns) {
     lua_pushstring(L, name);
     lua_setfield(L, -2, "__name");
     lua_pop(L, 1);
+}
+
+// A value as a short line of text, for Script History.
+std::string historyText(lua_State* L, int idx) {
+    if (lua_type(L, idx) == LUA_TTABLE) return "table";
+    size_t len = 0;
+    const char* t = luaL_tolstring(L, idx, &len);
+    std::string raw(t, len), out;
+    lua_pop(L, 1);
+    // Numbers short: 0.30000001192093 -> 0.3 (but not the digits inside a name, like Part2).
+    for (size_t i = 0; i < raw.size();) {
+        const char c = raw[i];
+        const bool start = std::isdigit((unsigned char)c) || (c == '-' && i + 1 < raw.size() && std::isdigit((unsigned char)raw[i + 1]));
+        const bool inWord = i > 0 && (std::isalnum((unsigned char)raw[i - 1]) || raw[i - 1] == '_' || raw[i - 1] == '.');
+        if (!start || inWord) { out += c; ++i; continue; }
+        char* end = nullptr;
+        const double v = std::strtod(raw.c_str() + i, &end);
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.5g", v);
+        out += buf;
+        i = (size_t)(end - raw.c_str());
+    }
+    if (out.size() > 80) out = out.substr(0, 77) + "...";
+    return out;
+}
+
+// obj.Property = value. While Script History records, it writes down the change too.
+int inst_newindex(lua_State* L) {
+    if (!E(L)->historyOn()) return inst_set(L);
+    auto* ref = static_cast<InstRef*>(luaL_checkudata(L, 1, kInst));
+    ScriptHistory::Entry e;
+    e.what = luaL_checkstring(L, 2);
+    lua_pushcfunction(L, inst_index);   // the value before (if it can be read)
+    lua_pushvalue(L, 1);
+    lua_pushvalue(L, 2);
+    if (lua_pcall(L, 2, 1, 0) == LUA_OK) e.before = historyText(L, -1);
+    lua_pop(L, 1);
+    int r = inst_set(L);                // (an error here skips the entry: nothing changed)
+    e.kind = ScriptHistory::Entry::Set;
+    e.time = E(L)->time();
+    e.object = ref->id;
+    if (SceneNode* n = E(L)->resolve(ref->id)) e.objectName = n->fullName();
+    e.script = E(L)->currentScript();
+    if (SceneNode* s = e.script ? E(L)->resolve(e.script) : nullptr) e.scriptName = s->fullName();
+    lua_Debug ar;
+    if (lua_getstack(L, 1, &ar) && lua_getinfo(L, "l", &ar)) e.line = ar.currentline;
+    e.after = historyText(L, 3);
+    ScriptHistory::add(std::move(e));
+    return r;
 }
 
 } // namespace

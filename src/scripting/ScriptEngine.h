@@ -224,6 +224,9 @@ public:
     Scene*     scene() { return m_scene; }
     double     time() const { return m_time; }
     uint64_t   currentScript() const { return m_current; }   // the Script running now (0 = the command bar, a plugin)
+    // Script History (ScriptHistory.h): only Studio's playtest engine writes it, not plugins.
+    void       setHistory(bool on) { m_history = on; }
+    bool       historyOn() const;
     SceneNode* resolve(uint64_t id);                 // scene or detached (Parent = nil)
     SceneNode* adopt(std::unique_ptr<SceneNode> n);  // new object with Parent = nil
     bool       setParent(SceneNode* node, SceneNode* newParent, std::string& err);
@@ -349,6 +352,7 @@ private:
     double     m_time = 0.0;
     double     m_resumeStart = 0.0;
     int        m_depth = 0;
+    bool       m_history = false;
     uint64_t   m_current = 0;              // the Script whose code is running right now
     std::unordered_set<uint64_t> m_stopped;
 

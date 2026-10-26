@@ -310,6 +310,22 @@ const std::vector<Tool>& tools() {
           "playtest start -> get_output / get_errors / screenshot / get_object (runtime) -> playtest stop -> fix -> repeat.",
           "\"Play the game and tell me if the door works.\""},
          schema({{"action", {{"type", "string"}, {"enum", {"start", "simulate", "stop", "pause", "resume", "step"}}}}}, {"action"})},
+        {"script_history", "See what scripts changed during a playtest", "DEBUG", false, false, false, Risk::None,
+         {"Studio's Script History: while it records, playtests write down every property a script sets (the object, "
+          "the value before and after, which script and which line did it) and every event that ran a script's function "
+          "(Touched, Clicked, PlayerAdded... not Heartbeat). It keeps the newest 5000 entries, also after the playtest stops.",
+          "\"Why did the door turn red?\", \"what changed my part?\", \"which script keeps moving this?\", \"did Touched fire?\".",
+          "For printed text use get_output; for errors use get_errors.",
+          "action: record (start recording), stop (stop recording), clear, read (default). read filters: object (only "
+          "entries about it), script (name or path contains), kind (set | event), limit (newest first, default 50, max 500).",
+          "{recording, total, entries: [{time, kind, object_id, object, script_id, script, line, what, before, after}]}.",
+          "None.",
+          "record / stop / clear only change the recording, never the game.",
+          "script_history record -> playtest start -> (wait) -> script_history read -> read_script / edit_script.",
+          "\"Something keeps making the lamp invisible: find out which script.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"read", "record", "stop", "clear"}}}}, {"object", kObject},
+                 {"script", {{"type", "string"}}}, {"kind", {{"type", "string"}, {"enum", {"set", "event"}}}},
+                 {"limit", {{"type", "integer"}}}}, {})},
         {"multiplayer_test", "Test with several players", "RUNTIME", false, false, false, Risk::Medium,
          {"Studio's \"Test with N players\": starts the game (as it is now in Studio, saved or not) on a local test "
           "server on this computer and opens N Player windows that join it as Player1, Player2... Server Scripts run "
@@ -597,6 +613,7 @@ json workflowOf(const std::string& name) {
         {"playtest", {{"validate_scene"}, {"get_errors", "get_output", "get_object", "screenshot"}}},
         {"multiplayer_test", {{"create_script", "playtest"}, {"multiplayer_test", "get_errors", "edit_script"}}},
         {"get_output", {{"playtest", "run_lua"}, {}}},
+        {"script_history", {{"playtest"}, {"read_script", "edit_script"}}},
         {"get_errors", {{"playtest"}, {"read_script", "edit_script"}}},
         {"diagnose_object", {{"find_objects"}, {"set_property", "edit_script"}}},
         {"validate_scene", {{}, {"diagnose_object", "playtest"}}},
