@@ -131,12 +131,13 @@ bool readVerts(Bytes& r, uint32_t count, size_t stride, std::vector<Corner>& out
         out[i].uv     = {r.f32(at + 24), r.f32(at + 28)};
         if (stride >= 36) {
             const auto* tangent = reinterpret_cast<const int8_t*>(r.p + at + 32);
-            out[i].tangent = {
+            glm::vec3 direction(
                 std::clamp(tangent[0] / 127.0f, -1.0f, 1.0f),
                 std::clamp(tangent[1] / 127.0f, -1.0f, 1.0f),
-                std::clamp(tangent[2] / 127.0f, -1.0f, 1.0f),
-                tangent[3] < 0 ? -1.0f : 1.0f
-            };
+                std::clamp(tangent[2] / 127.0f, -1.0f, 1.0f));
+            if (glm::length(direction) > 1e-6f) direction = glm::normalize(direction);
+            else direction = glm::vec3(1, 0, 0); // old meshes sometimes contain zeroed tangent bytes
+            out[i].tangent = glm::vec4(direction, tangent[3] < 0 ? -1.0f : 1.0f);
         }
         if (stride >= 40) {
             const uint8_t* color = r.p + at + 36;
@@ -230,12 +231,13 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
             uint8_t raw[4] = {127, 0, 0, 127};
             if (tangents->ConvertValue(tangents->mapped_index(pi), 4, draco::DT_UINT8, raw)) {
                 const auto* t = reinterpret_cast<const int8_t*>(raw);
-                out.tangent = {
+                glm::vec3 direction(
                     std::clamp(t[0] / 127.0f, -1.0f, 1.0f),
                     std::clamp(t[1] / 127.0f, -1.0f, 1.0f),
-                    std::clamp(t[2] / 127.0f, -1.0f, 1.0f),
-                    t[3] < 0 ? -1.0f : 1.0f
-                };
+                    std::clamp(t[2] / 127.0f, -1.0f, 1.0f));
+                if (glm::length(direction) > 1e-6f) direction = glm::normalize(direction);
+                else direction = glm::vec3(1, 0, 0);
+                out.tangent = glm::vec4(direction, t[3] < 0 ? -1.0f : 1.0f);
             }
         }
         if (colors && colors->num_components() >= 4) {
