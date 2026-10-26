@@ -39,6 +39,8 @@ layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
 layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aBlend;   // terrain: how much grass, dirt, sand, rock (snow and mud in aUV)
+layout(location=4) in vec4 aColor;
+layout(location=5) in vec4 aTangent;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -52,10 +54,14 @@ out vec4 vBlend;
 out vec3 vLocalPos;      // in the part's own space (-0.5..0.5): for faces painted on heads
 out vec3 vLocalNormal;
 out vec3 vObjPos;        // in the part's own space, in world units from its corner: material patterns
+out vec4 vColor;
+out vec4 vTangent;
 
 void main() {
     vUV = aUV;
     vBlend = aBlend;
+    vColor = aColor;
+    vTangent = vec4(normalize(mat3(uModel) * aTangent.xyz), aTangent.w);
     vLocalPos = aPos;
     vLocalNormal = aNormal;
     vObjPos = (aPos + 0.5) * vec3(length(uModel[0].xyz), length(uModel[1].xyz), length(uModel[2].xyz));
@@ -74,6 +80,8 @@ in vec4 vBlend;
 in vec3 vLocalPos;
 in vec3 vLocalNormal;
 in vec3 vObjPos;
+in vec4 vColor;
+in vec4 vTangent;
 
 uniform bool      uUseDecal;   // drawing a Decal: its picture colours the surface
 uniform bool      uFace;       // a head: its face picture (uDecal) is painted onto the front of it
@@ -270,8 +278,8 @@ float lineAA(float d, float w, float px) { return 1.0 - smoothstep(w - px * 0.35
 void main() {
     vec3 N = normalize(vNormal);
     vec3 V = normalize(uViewPos - vWorldPos);
-    vec3 albedo = lin(uColor);
-    float decalAlpha = 1.0;
+    vec3 albedo = lin(uColor) * lin(vColor.rgb);
+    float decalAlpha = vColor.a;
     if (uUseDecal) {
         vec4 px = texture(uDecal, vUV);
         if (px.a < 0.01) discard;
