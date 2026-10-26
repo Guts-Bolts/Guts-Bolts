@@ -1071,7 +1071,7 @@ struct Converter {
             }
             if (look.shape) MeshEdit::attach(*node, look.shape);
             if (!look.bones.empty() && node->editMesh && !containsBoneInstance(in)) {
-                // The v4/v5 FileMesh embeds its own armature and per-vertex weights.
+                // The FileMesh embeds its own armature and per-vertex weights.
                 // Create a matching Bone tree so Skin's normal deformation path can
                 // evaluate the imported weights rather than leaving a static mesh.
                 std::vector<SceneNode*> importedBones(look.bones.size(), nullptr);
@@ -1089,6 +1089,8 @@ struct Converter {
                         : worldFrame;
                     auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
                     bone->bone = true;
+                    Attribute embeddedTag; embeddedTag.name = "RobloxEmbeddedMeshBone"; embeddedTag.type = Attribute::Bool; embeddedTag.b = true;
+                    bone->attributes.push_back(embeddedTag);
                     bone->transform.position = glm::vec3(localFrame[3]);
                     float rz, ry, rx;
                     glm::extractEulerAngleZYX(localFrame, rz, ry, rx);
