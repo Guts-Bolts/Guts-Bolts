@@ -328,7 +328,8 @@ finishes in the background: `publish_game {action: "status"}` says how it went.
 
 `tools/test_ai_tools.py` starts Studio with MCP on (under `xvfb-run` when
 there's no screen) and checks all of this over JSON-RPC:
-`python3 tools/test_ai_tools.py`.
+`python3 tools/test_ai_tools.py`. It also runs every file in
+`tools/ai_tool_tests/` (one per feature; see the README there).
 
 Every tool answers with JSON: `success`, the `object_id` (`#42`) of what it
 touched, the state read back from the engine, `warnings`, and for failures an
@@ -3189,7 +3190,9 @@ node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.tes
 ```
 
 GitHub runs them (plus a check of every website script for typing mistakes) on
-every change, as the **Tests** job. To add a test, copy one of the
+every change, as the **Tests** job. (Before they start, the update log is gathered
+from `worker/updates/`, one file per update, by `worker/gather-updates.mjs`.
+Cloudflare does the same before each deploy.) To add a test, copy one of the
 `*.test.mjs` files; `makeServer()` in `helpers.mjs` gives you a fresh server and
 `s.call(player, 'op', {...})` asks it to do something.
 

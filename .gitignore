@@ -44,6 +44,8 @@ build-mobile/
 # The Guts&Bolts server's data (accounts, Bolts, uploads)
 server_data/
 .wrangler/
+# Made from worker/updates/ by worker/gather-updates.mjs
+worker/updates-gathered.js
 # (the website draws avatars with a copy of the character model)
 !website/app/player.obj
 .dev.vars
