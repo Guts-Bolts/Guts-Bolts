@@ -146,7 +146,7 @@ public:
     static void addAnimateScript(Scene& scene, SceneNode* rig);
     // Tool events for scripts (Equipped / Unequipped), and when the world changed.
     std::function<void(uint64_t tool, bool equipped)> onToolEquip;
-    static constexpr int kMaxTools = 9;
+    static constexpr int kHotbarTools = 10; // 1-9 and 0; additional tools remain in the backpack
     // Kill the character. `force` 0..1 = how violent (1 = limbs fly off),
     // `impulse` = which way the body gets thrown.
     void kill(float force = 0.0f, const glm::vec3& impulse = glm::vec3(0.0f));
