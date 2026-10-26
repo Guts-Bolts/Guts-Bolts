@@ -1,6 +1,10 @@
 // The update log on the website (the "Updates" page). Every update gets its own
-// name. Newest first. Add a new one at the top whenever an update ships; staff can
-// also post updates from the website (those are kept in the server's database).
+// name. Staff can also post updates from the website (those are kept in the
+// server's database). The page sorts them by time, newest first.
+//
+// NEW UPDATES DON'T GO IN THIS FILE: each one is its own file in worker/updates/
+// (see worker/updates/README.md), so pull requests don't conflict. This file keeps
+// the older ones.
 //
 //   id     short and unique (letters, numbers, dashes)
 //   name   the update's name: make it fun and about what changed
@@ -8,31 +12,9 @@
 //   tag    what it's mostly about: Engine, Studio, Website, Player, Server, Fix
 //   items  what changed, one short line each, in plain words
 
+import NEW_UPDATES from './updates-gathered.js';
 
-export const BUILT_IN_UPDATES = [
-  {
-    id: 'snap-crackle-push', name: 'Snap, Crackle, Push', time: 1793038607, tag: 'Engine',
-    summary: 'The physics workbench: joints that snap when pulled too hard, force zones that blow things around, and a Physics View that shows what the physics is doing.',
-    items: [
-      'Every joint (Weld, Rope, Rod, Spring, Hinge, BallSocket...) can be Breakable: pull it harder than its BreakForce and it snaps',
-      'Scripts can set BreakForce and read Broken. Turning a broken joint back on joins it again',
-      'Force zones: tag a part ForceZone and loose parts inside get blown (Wind), pushed away (Push) or sucked in (Pull)',
-      'New Physics View (MODEL tab or View menu): moving and sleeping parts, speed arrows, where things touch, and how hard each joint is pulled, going from green to red as it gets close to snapping',
-      'Two new ready-mades to try it: Wind Zone and Breakable Bridge (drop a heavy ball on it)',
-    ],
-  },
-  {
-    id: 'crowd-control', name: 'Crowd Control', time: 1793037789, tag: 'Studio',
-    summary: 'Change a hundred things as fast as one: edit lots of objects together, or find them by kind, tag or value and change them all at once.',
-    items: [
-      'Select lots of objects and change a box in Properties: every selected object of that kind changes too. Only the box you touched is copied',
-      'New Find and Change window (Edit menu, the Find button on the Home tab, or Ctrl+Shift+E)',
-      'Find by kind (Part, PointLight, BasePart...), name, tags, and a rule like Mass < 2 or Material = Neon',
-      'Change what you found: set a property, add to it or multiply it (Density x 1.5), or add and remove tags',
-      'Preview shows every old and new value before anything changes, and one Ctrl+Z puts it all back',
-      'Save a search with a name and use it again any time',
-    ],
-  },
+const OLDER_UPDATES = [
   {
     id: 'clean-slate-usernames', name: 'Clean Slate Usernames', version: '0.7.6', time: 1793037600, tag: 'Website',
     summary: 'Staff can now reset a username that isn\'t allowed. It becomes "User" and the player\'s user number.',
@@ -1695,3 +1677,5 @@ export const BUILT_IN_UPDATES = [
     ],
   },
 ];
+
+export const BUILT_IN_UPDATES = [...NEW_UPDATES, ...OLDER_UPDATES];
