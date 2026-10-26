@@ -21,6 +21,7 @@
 #include <cstring>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <map>
 #include <chrono>
 #include <cmath>
 #include <vector>
@@ -1258,6 +1259,33 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         if (me && me->dripping() > 0.0f && myRoot && myRoot->isAncestorOf(node)) w = std::max(w, me->dripping() * 0.9f);
         return w;
     };
+    // MaterialVariants, by name (the first one wins, like Roblox).
+    std::map<std::string, const SceneNode*> variants;
+    if (SceneNode* ms = scene.serviceFolder("MaterialService", false))
+        for (const auto& c : ms->children)
+            if (c->isMaterialVariant()) variants.emplace(c->name, c.get());
+    // A part's MaterialVariant: its pictures, if the part's Material is the variant's BaseMaterial.
+    auto useVariant = [&](const SceneNode* node) {
+        if (node->materialVariant.empty() || variants.empty()) return false;
+        auto v = variants.find(node->materialVariant);
+        if (v == variants.end() || v->second->variant.base != node->material) return false;
+        const MaterialVariantProps& p = v->second->variant;
+        const std::string* pics[] = {&p.colorMap, &p.normalMap, &p.roughnessMap, &p.metalnessMap};
+        const char* names[] = {"uVColor", "uVNormal", "uVRough", "uVMetal"};
+        glm::vec4 has(0.0f);
+        for (int i = 0; i < 4; ++i) {
+            unsigned tex = pics[i]->empty() ? 0 : Textures::get(*pics[i]);
+            if (!tex) continue;
+            bindTex(9 + i, tex);
+            m_lit->setInt(names[i], 9 + i);
+            has[i] = 1.0f;
+        }
+        m_lit->setVec4("uVHas", has);
+        m_lit->setFloat("uVTile", p.studsPerTile * 0.5f);   // (a Roblox stud is half a unit)
+        m_lit->setVec3("uVParams", glm::vec3(p.roughness, p.metalness, p.glow));
+        m_lit->setBool("uVariant", true);
+        return true;
+    };
     auto draw = [&](const Item& it) {
         SceneNode* node = it.node;
         // Water gets the water look; while playing, its surface is the moving waves.
@@ -1331,7 +1359,9 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 m_lit->setInt("uTShirt", 7);
                 m_lit->setBool("uHasTShirt", true);
             }
+            const bool variant = useVariant(node);
             (renderMesh ? renderMesh : node->mesh)->draw();
+            if (variant) m_lit->setBool("uVariant", false);
             if (cloth) m_lit->setBool(face ? "uFace" : "uClothing", false);
             if (tee) m_lit->setBool("uHasTShirt", false);
         }

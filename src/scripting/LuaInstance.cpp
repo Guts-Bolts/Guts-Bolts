@@ -3,6 +3,7 @@
 #include "LuaApi.h"
 #include "../online/Protocol.h"
 #include "ScriptEngine.h"
+#include "ScriptHistory.h"
 #include "../scene/Animation.h"
 #include "../scene/Physics.h"
 #include "../scene/Player.h"
@@ -23,6 +24,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 
@@ -234,6 +237,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Beam:      return "Beam";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
         case NodeKind::Sky:        return "Sky";
+        case NodeKind::MaterialVariant: return "MaterialVariant";
         case NodeKind::Particles: return n->particleClass();
         case NodeKind::Light:  return n->lightType == LightType::Spot ? "SpotLight" : "PointLight";
         case NodeKind::ForceField: return "ForceField";
@@ -1272,6 +1276,42 @@ bool skyNewIndex(lua_State* L, SceneNode* n, const char* k) {
     return false;
 }
 
+std::string* variantPicture(MaterialVariantProps& v, const char* k) {
+    if (is(k, "ColorMap"))     return &v.colorMap;
+    if (is(k, "NormalMap"))    return &v.normalMap;
+    if (is(k, "RoughnessMap")) return &v.roughnessMap;
+    if (is(k, "MetalnessMap")) return &v.metalnessMap;
+    return nullptr;
+}
+
+// A MaterialVariant: Roblox's properties, plus Roughness / Metalness / Glow (ours).
+bool variantIndex(lua_State* L, SceneNode* n, const char* k) {
+    MaterialVariantProps& v = n->variant;
+    if (std::string* pic = variantPicture(v, k)) { lua_pushstring(L, pic->c_str()); return true; }
+    if (is(k, "BaseMaterial")) { lua_pushstring(L, kMaterialNames[(int)v.base]); return true; }
+    if (is(k, "StudsPerTile")) { lua_pushnumber(L, v.studsPerTile); return true; }
+    if (is(k, "Roughness"))    { lua_pushnumber(L, v.roughness); return true; }
+    if (is(k, "Metalness"))    { lua_pushnumber(L, v.metalness); return true; }
+    if (is(k, "Glow"))         { lua_pushnumber(L, v.glow); return true; }
+    return false;
+}
+
+bool variantNewIndex(lua_State* L, SceneNode* n, const char* k) {
+    MaterialVariantProps& v = n->variant;
+    if (std::string* pic = variantPicture(v, k)) { *pic = luaL_checkstring(L, 3); clampVariant(v); return true; }
+    if (is(k, "BaseMaterial")) {
+        if (!parseMaterial(luaL_checkstring(L, 3), v.base))
+            luaL_error(L, "Unknown material '%s' (the materials are %s)", lua_tostring(L, 3), materialNameList());
+        return true;
+    }
+    if (is(k, "StudsPerTile")) { v.studsPerTile = (float)luaL_checknumber(L, 3); clampVariant(v); return true; }
+    if (is(k, "Roughness"))    { v.roughness = (float)luaL_checknumber(L, 3); clampVariant(v); return true; }
+    if (is(k, "Metalness"))    { v.metalness = (float)luaL_checknumber(L, 3); clampVariant(v); return true; }
+    if (is(k, "Glow"))         { v.glow = (float)luaL_checknumber(L, 3); clampVariant(v); return true; }
+    if (is(k, "MaterialPattern") || is(k, "TexturePack") || is(k, "CustomPhysicalProperties")) return true;   // (accepted)
+    return false;
+}
+
 bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
     const GuiProps& g = n->gui;
     if (is(k, "AbsoluteSize") || is(k, "AbsolutePosition")) GameGui::refresh(*E(L)->scene());
@@ -1964,6 +2004,7 @@ int inst_index(lua_State* L) {
     if (n->isMover() && moverIndex(L, n, k)) return 1;
     if (n->isPostEffect() && postIndex(L, n, k)) return 1;
     if (n->isSky() && skyIndex(L, n, k)) return 1;
+    if (n->isMaterialVariant() && variantIndex(L, n, k)) return 1;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointIndex(L, n, k)) return 1;
     if (n->isParticles() && particleIndex(L, n, k)) return 1;
     if (n->isConstraint()) {
@@ -1978,6 +2019,8 @@ int inst_index(lua_State* L) {
         if (hingeProps && is(k, "MotorMaxTorque")) { lua_pushnumber(L, n->motorTorque); return 1; }
         if (hingeProps && is(k, "ActuatorType"))   { lua_pushstring(L, n->motorTorque > 0 ? "Motor" : "None"); return 1; }
         if (is(k, "Thickness"))      { lua_pushnumber(L, n->thickness); return 1; }
+        if (is(k, "BreakForce"))     { lua_pushnumber(L, n->breakForce); return 1; }
+        if (is(k, "Broken"))         { lua_pushboolean(L, n->broken && !n->enabled); return 1; }
         if (is(k, "Color"))          { LuaApi::pushColor3(L, n->color); return 1; }
         if (is(k, "Enabled"))        { lua_pushboolean(L, n->enabled); return 1; }
     }
@@ -2032,6 +2075,7 @@ int inst_index(lua_State* L) {
         }
         if (is(k, "CastShadow"))   { lua_pushboolean(L, n->castShadow); return 1; }
         if (is(k, "Material"))     { lua_pushstring(L, kMaterialNames[(int)n->material]); return 1; }
+        if (is(k, "MaterialVariant")) { lua_pushstring(L, n->materialVariant.c_str()); return 1; }
         if (is(k, "Shape"))        { lua_pushstring(L, shapeName(n->primitiveType)); return 1; }
         if (is(k, "Velocity") || is(k, "AssemblyLinearVelocity")) { LuaApi::pushVector3(L, n->velocity); return 1; }
         if (is(k, "RotVelocity") || is(k, "AssemblyAngularVelocity")) { LuaApi::pushVector3(L, n->angularVelocity); return 1; }
@@ -2262,7 +2306,7 @@ int inst_index(lua_State* L) {
     return luaL_error(L, "'%s' is not a valid member of %s \"%s\"", k, className(L, n), n->name.c_str());
 }
 
-int inst_newindex(lua_State* L) {
+int inst_set(lua_State* L) {
     auto* ref = static_cast<InstRef*>(luaL_checkudata(L, 1, kInst));
     const char* k = luaL_checkstring(L, 2);
     SceneNode* n = E(L)->resolve(ref->id);
@@ -2295,6 +2339,7 @@ int inst_newindex(lua_State* L) {
     if (n->isMover() && moverNewIndex(L, n, k)) return 0;
     if (n->isPostEffect() && postNewIndex(L, n, k)) return 0;
     if (n->isSky() && skyNewIndex(L, n, k)) return 0;
+    if (n->isMaterialVariant() && variantNewIndex(L, n, k)) return 0;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointNewIndex(L, n, k)) return 0;
     if (n->isParticles() && particleNewIndex(L, n, k)) return 0;
     if (n->isConstraint()) {
@@ -2318,6 +2363,7 @@ int inst_newindex(lua_State* L) {
             return 0;
         }
         if (is(k, "Thickness"))      { n->thickness = (float)luaL_checknumber(L, 3); return 0; }
+        if (is(k, "BreakForce"))     { n->breakForce = std::max(0.0f, (float)luaL_checknumber(L, 3)); return 0; }
         if (is(k, "Color"))          { n->color = LuaApi::checkColor3(L, 3); return 0; }
         if (is(k, "Enabled"))        { n->enabled = lua_toboolean(L, 3); return 0; }
     }
@@ -2406,6 +2452,7 @@ int inst_newindex(lua_State* L) {
                 return luaL_error(L, "Unknown material '%s' (the materials are %s)", lua_tostring(L, 3), materialNameList());
             return 0;
         }
+        if (is(k, "MaterialVariant")) { n->materialVariant = std::string(luaL_checkstring(L, 3)).substr(0, 100); return 0; }
         if (is(k, "Shape")) {
             PrimitiveType t;
             if (!parseShape(luaL_checkstring(L, 3), t))
@@ -2735,6 +2782,8 @@ int inst_new(lua_State* L) {
         for (int i = 0; i < kPostEffectCount; ++i) if (cls == kPostEffectClassNames[i]) n->post = postEffectDefaults((PostEffectType)i);
     } else if (cls == "Sky") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Sky);
+    } else if (cls == "MaterialVariant") {
+        n = std::make_unique<SceneNode>(cls, NodeKind::MaterialVariant);
     } else if (std::find(std::begin(kParticleClassNames), std::end(kParticleClassNames), cls) != std::end(kParticleClassNames)) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Particles);
         for (int i = 0; i < kParticleTypeCount; ++i) if (cls == kParticleClassNames[i]) n->particle = particleDefaults((ParticleType)i);
@@ -3552,6 +3601,55 @@ void makeMeta(lua_State* L, const char* name, const luaL_Reg* fns) {
     lua_pushstring(L, name);
     lua_setfield(L, -2, "__name");
     lua_pop(L, 1);
+}
+
+// A value as a short line of text, for Script History.
+std::string historyText(lua_State* L, int idx) {
+    if (lua_type(L, idx) == LUA_TTABLE) return "table";
+    size_t len = 0;
+    const char* t = luaL_tolstring(L, idx, &len);
+    std::string raw(t, len), out;
+    lua_pop(L, 1);
+    // Numbers short: 0.30000001192093 -> 0.3 (but not the digits inside a name, like Part2).
+    for (size_t i = 0; i < raw.size();) {
+        const char c = raw[i];
+        const bool start = std::isdigit((unsigned char)c) || (c == '-' && i + 1 < raw.size() && std::isdigit((unsigned char)raw[i + 1]));
+        const bool inWord = i > 0 && (std::isalnum((unsigned char)raw[i - 1]) || raw[i - 1] == '_' || raw[i - 1] == '.');
+        if (!start || inWord) { out += c; ++i; continue; }
+        char* end = nullptr;
+        const double v = std::strtod(raw.c_str() + i, &end);
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%.5g", v);
+        out += buf;
+        i = (size_t)(end - raw.c_str());
+    }
+    if (out.size() > 80) out = out.substr(0, 77) + "...";
+    return out;
+}
+
+// obj.Property = value. While Script History records, it writes down the change too.
+int inst_newindex(lua_State* L) {
+    if (!E(L)->historyOn()) return inst_set(L);
+    auto* ref = static_cast<InstRef*>(luaL_checkudata(L, 1, kInst));
+    ScriptHistory::Entry e;
+    e.what = luaL_checkstring(L, 2);
+    lua_pushcfunction(L, inst_index);   // the value before (if it can be read)
+    lua_pushvalue(L, 1);
+    lua_pushvalue(L, 2);
+    if (lua_pcall(L, 2, 1, 0) == LUA_OK) e.before = historyText(L, -1);
+    lua_pop(L, 1);
+    int r = inst_set(L);                // (an error here skips the entry: nothing changed)
+    e.kind = ScriptHistory::Entry::Set;
+    e.time = E(L)->time();
+    e.object = ref->id;
+    if (SceneNode* n = E(L)->resolve(ref->id)) e.objectName = n->fullName();
+    e.script = E(L)->currentScript();
+    if (SceneNode* s = e.script ? E(L)->resolve(e.script) : nullptr) e.scriptName = s->fullName();
+    lua_Debug ar;
+    if (lua_getstack(L, 1, &ar) && lua_getinfo(L, "l", &ar)) e.line = ar.currentline;
+    e.after = historyText(L, 3);
+    ScriptHistory::add(std::move(e));
+    return r;
 }
 
 } // namespace

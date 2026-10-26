@@ -29,9 +29,20 @@ If the embedded Lua/Luau runtime lacks a capability, expose it as unavailable an
 - The debugger preserves the existing instruction-count timeout hook so debugging does not disable infinite-loop protection.
 - Paused coroutine registry references are retained until resume or the session's Lua VM is closed.
 
+## Added in the follow-up (lua-debugger-fixes)
+
+- Clicking a line number in the Script Editor toggles a breakpoint (red dot); the paused line gets a yellow arrow and highlight, and the editor jumps to it when a script pauses.
+- The whole play session waits while a script is paused (Editor::update skips the session, like F6).
+- Breakpoints can be set before pressing Play; they stay set between playtests (not saved with the project).
+- Continue no longer skips the next hit of the same breakpoint. Lua 5.4 doesn't call the line hook again after a hook yield (CIST_HOOKYIELD), so the old "skip once" ate the next loop iteration.
+- Steps follow only the paused coroutine, and end when it finishes.
+- Only coroutines resumed by ScriptEngine::resume pause (a coroutine the script runs with coroutine.resume would hand the yield to the script). Code Lua can't yield from (table.sort comparators, metamethods) keeps running with a one-time warning.
+- A paused script that is stopped or disabled is dropped cleanly.
+- AI tool `lua_debugger` (status, add/remove/clear breakpoints, continue, step over/into/out), checked by tools/test_ai_tools.py.
+
 ## Follow-up workflow and capability gaps
 
-1. Add gutter breakpoint toggles to the script editor with clear enabled/disabled/verified states.
+1. ~~Add gutter breakpoint toggles to the script editor~~ (done; no enabled/disabled/verified states yet).
 2. Add a Debug toolbar with Start Debugging, Continue, Pause (where safe), Step Over, Step Into, Step Out, and Stop.
 3. Show a visible paused-execution banner with the active script, line, coroutine, and reason for pausing.
 4. Highlight the current execution line separately from ordinary selection and diagnostic underlines.
@@ -85,8 +96,8 @@ For multiplayer testing, explicitly distinguish server and each Player process. 
 
 ## Remaining implementation order
 
-1. Add runtime and editor tests for breakpoint hit behavior, stepping, error paths, and Play shutdown.
-2. Add editor gutter markers and current-line navigation/highlighting.
+1. More runtime tests: error paths and scripts destroyed while paused (breakpoints, stepping and Play shutdown are covered by tools/test_ai_tools.py).
+2. ~~Add editor gutter markers and current-line navigation/highlighting.~~ (done)
 3. Persist breakpoint metadata safely across Play sessions and project reloads.
 4. Add multiple-coroutine selection and explicit server/client target selection.
 5. Add watch expressions only with bounded evaluation and clear side-effect safeguards.

@@ -89,6 +89,14 @@ uniform bool      uClothing;   // a shirt / pants picture (uDecal) painted over 
 uniform bool      uHasTShirt;  // a torso with a T-shirt: its picture flat on the front
 uniform sampler2D uTShirt;
 uniform sampler2D uDecal;
+// A MaterialVariant on this part: its pictures, tiled on each face of the part from its
+// corner (uVTile world units per copy), which of them it has (colour, normal, roughness,
+// metalness), and its roughness, metalness and glow for the ones it doesn't.
+uniform bool      uVariant;
+uniform sampler2D uVColor, uVNormal, uVRough, uVMetal;
+uniform vec4      uVHas;      // (1 = has it)
+uniform float     uVTile;
+uniform vec3      uVParams;
 
 uniform vec3  uColor;
 uniform int   uMaterial;      // 0 plastic 1 metal 2 neon 3 wood 4 glass 5 concrete 6 ice (7 water, 8 liquid, 9 terrain)
@@ -269,6 +277,20 @@ vec3 bump(vec3 N, float h) {
     vec3 grad = sign(det) * (dhx * r1 + dhy * r2);
     return normalize(abs(det) * N - grad);
 }
+// A picture tiled on the surface (it doesn't wrap by itself), with the right blur far away.
+vec4 tiled(sampler2D tex, vec2 uv) { return textureGrad(tex, fract(uv), dFdx(uv), dFdy(uv)); }
+// A normal map's bumps (tangent space, the picture's x and y along uv) on the surface N.
+vec3 mapNormal(vec3 N, vec2 uv, vec3 tn) {
+    vec3 dp1 = dFdx(vWorldPos), dp2 = dFdy(vWorldPos);
+    vec2 duv1 = dFdx(uv), duv2 = dFdy(uv);
+    vec3 dp2perp = cross(dp2, N), dp1perp = cross(N, dp1);
+    vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+    float m = max(dot(T, T), dot(B, B));
+    if (m < 1e-20) return N;
+    float k = inversesqrt(m);
+    return normalize(mat3(T * k, B * k, N) * tn);
+}
 // How much of a pattern to show: all of it while it repeats every 5 or so pixels,
 // none once it's down to about 2 (no shimmer). px: fwidth length (~2 pixels).
 float fadeAt(float px, float period) { return clamp((period / px - 1.0) / 1.5, 0.0, 1.0); }
@@ -311,7 +333,18 @@ void main() {
     float detail = clamp(1.5 - length(fwidth(vWorldPos)) * 24.0, 0.0, 1.0);
     float rough = 0.5, metal = 0.0;
     float splatWet = 0.0;     // landed blood: how wet and shiny it still is
-    if (uMaterial == 1) { rough = 0.3; metal = 1.0;
+    if (uVariant) {
+        // A MaterialVariant: its own pictures instead of the built-in look.
+        vec3 an = abs(vLocalNormal);
+        bool top = an.y >= max(an.x, an.z);
+        vec2 uv = (top ? vObjPos.xz : (an.x > an.z ? vObjPos.zy : vObjPos.xy)) / max(uVTile, 0.01);
+        uv.y = -uv.y;   // (pictures are upright on the sides)
+        if (uVHas.x > 0.5) albedo *= lin(tiled(uVColor, uv).rgb);
+        rough = uVHas.z > 0.5 ? tiled(uVRough, uv).r : uVParams.x;
+        metal = uVHas.w > 0.5 ? tiled(uVMetal, uv).r : uVParams.y;
+        if (uVHas.y > 0.5) N = mapNormal(N, uv, tiled(uVNormal, uv).xyz * 2.0 - 1.0);
+    }
+    else if (uMaterial == 1) { rough = 0.3; metal = 1.0;
         albedo *= mix(1.0, 0.92 + 0.08 * vnoise(vec2(dot(vWorldPos.xz, vec2(1.0)) * 60.0, vWorldPos.y * 2.0)), detail * 0.5); }
     else if (uMaterial == 3) {                                    // wood grain
         float rings = sin((vWorldPos.x * 0.7 + vWorldPos.z * 0.3 + fbm(vWorldPos.xy * 1.5) * 1.2) * 14.0);
@@ -594,6 +627,8 @@ void main() {
         if (uMaterial == 4 || uMaterial == 6 || uMaterial == 7)
             alpha = mix(alpha, 1.0, pow(1.0 - NoV, 3.0) * (uMaterial == 7 ? 0.85 : 0.7));
     }
+
+    if (uVariant && uVParams.z > 0.0) color += albedo * uVParams.z * 2.0;   // a glowing variant
 
     if (uSelected) {
         float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);

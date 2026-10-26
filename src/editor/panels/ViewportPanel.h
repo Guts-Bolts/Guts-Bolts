@@ -87,6 +87,8 @@ private:
     ImVec2    m_boxFrom{0, 0};
     Transform m_dragStart;
     glm::vec3 m_dragStartPivot{0.0f};
+    glm::vec3 m_dragLocalPivot{0.0f};   // the model's pivot, held still for the whole drag
+    uint64_t  m_dragNode = 0;
     Physics  m_navPhysics;
     uint32_t m_navDrawn = 0;
     double   m_navGather = 0.0;
@@ -95,6 +97,8 @@ private:
     void handleInput(float dt);
     void drawGizmo(const glm::mat4& view, const glm::mat4& proj,
                    const glm::vec2& imgMin, const glm::vec2& imgSize);
+    void drawPhysicsView(const glm::mat4& view, const glm::mat4& proj,
+                         const glm::vec2& imgMin, const glm::vec2& imgSize, bool running);
     void drawSelectionBoxes(const glm::mat4& view, const glm::mat4& proj,
                             const glm::vec2& imgMin, const glm::vec2& imgSize);
     // Roblox-style handles on each of the 6 sides. Scale: orbs, drag one to move just that side.

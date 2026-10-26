@@ -48,17 +48,23 @@ public:
     void stop();                  // tear everything down
     bool running() const { return m_L != nullptr; }
 
-    // Studio's source-level debugger. Breakpoints are keyed by stable scene node ID and source line.
+    // Studio's Lua Debugger (View > Lua Debugger). Breakpoints are a script's ID and a line;
+    // they stay set between playtests. A breakpoint pauses the coroutine that reached it (the
+    // game waits too, see Editor::update) until Continue or a step resumes that same coroutine.
     void debugSetBreakpoint(uint64_t scriptId, int line, bool enabled);
+    bool debugHasBreakpoint(uint64_t scriptId, int line) const { return m_debugBreakpoints.count({scriptId, line}) != 0; }
+    void debugClearBreakpoints();
     const std::set<std::pair<uint64_t, int>>& debugBreakpoints() const { return m_debugBreakpoints; }
     bool debugPaused() const { return m_debugPaused; }
-    uint64_t debugScript() const { return m_debugScript; }
+    uint64_t debugScript() const { return m_debugScript; }   // 0 = code that isn't a script's (the Command Bar)
     int debugLine() const { return m_debugLine; }
     const std::string& debugSourceForUi() const { return m_debugSource; }
-    void debugContinue();
-    void debugStepInto();
-    void debugStepOver();
-    void debugStepOut();
+    const std::string& debugReason() const { return m_debugReason; }   // "breakpoint" or "step"
+    int debugPauses() const { return m_debugPauses; }                  // how many times it has paused
+    void debugContinue() { debugResume(0); }
+    void debugStepInto() { debugResume(1); }   // the next line, even inside a function it calls
+    void debugStepOver() { debugResume(2); }   // the next line here (calls run without pausing)
+    void debugStepOut()  { debugResume(3); }   // back in whatever called this function
     std::vector<std::string> debugCallStack();
     std::vector<std::string> debugLocals();
 
@@ -239,6 +245,9 @@ public:
     Scene*     scene() { return m_scene; }
     double     time() const { return m_time; }
     uint64_t   currentScript() const { return m_current; }   // the Script running now (0 = the command bar, a plugin)
+    // Script History (ScriptHistory.h): only Studio's playtest engine writes it, not plugins.
+    void       setHistory(bool on) { m_history = on; }
+    bool       historyOn() const;
     SceneNode* resolve(uint64_t id);                 // scene or detached (Parent = nil)
     SceneNode* adopt(std::unique_ptr<SceneNode> n);  // new object with Parent = nil
     bool       setParent(SceneNode* node, SceneNode* newParent, std::string& err);
@@ -356,6 +365,9 @@ private:
     static void debugHook(lua_State* L, lua_Debug* ar);
     bool debugShouldPause(lua_State* L, lua_Debug* ar);
     int debugStackDepth(lua_State* L) const;
+    void debugResume(int mode);   // 0 continue, 1 into, 2 over, 3 out
+    void debugRefresh();
+    void debugForget();
     void openLibraries();
     void runScript(SceneNode* script);
     void fire(SignalKind kind, uint64_t id, const std::function<int(lua_State*)>& pushArgs);
@@ -367,14 +379,17 @@ private:
     double     m_time = 0.0;
     double     m_resumeStart = 0.0;
     int        m_depth = 0;
+    bool       m_history = false;
     uint64_t   m_current = 0;              // the Script whose code is running right now
+    // Lua Debugger
     std::set<std::pair<uint64_t, int>> m_debugBreakpoints;
     bool       m_debugEnabled = false, m_debugPaused = false;
-    lua_State* m_debugThread = nullptr;
-    int        m_debugRef = -2, m_debugLine = 0, m_debugMode = 0, m_debugStepDepth = 0;
-    uint64_t   m_debugScript = 0;
-    std::string m_debugSource;
-    std::pair<uint64_t, int> m_debugSkipOnce{0, 0};
+    lua_State* m_debugThread = nullptr;       // the paused coroutine
+    lua_State* m_debugStepThread = nullptr;   // the coroutine a step follows
+    int        m_debugRef = -2 /* LUA_NOREF */, m_debugLine = 0, m_debugMode = 0, m_debugStepDepth = 0, m_debugPauses = 0;
+    uint64_t   m_debugScript = 0, m_debugOwner = 0;
+    std::string m_debugSource, m_debugReason, m_debugCantPause;
+    std::vector<lua_State*> m_resumeStack;    // coroutines resume() is running, innermost last
     std::unordered_set<uint64_t> m_stopped;
 
     std::vector<Waiting>                    m_waiting;

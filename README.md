@@ -286,7 +286,8 @@ what it needs, what it gives back and how risky it is):
   `bake_navmesh`, `find_path`, `walk_character_to`
 - Docs: `get_engine_info` (overview, capabilities, concepts, coordinates,
   workflows, classes)
-- Debug: `get_output`, `get_errors`, `diagnose_object`, `validate_scene`, `analyze_script_dependencies` (static ModuleScript dependency map, unresolved references and potentially unreferenced modules), `analyze_scene_performance` (static counts for parts, dynamic physics bodies, lights, particle emitters and script sizes; not a live profiler)
+- Debug: `get_output`, `get_errors`, `diagnose_object`, `validate_scene`, `analyze_script_dependencies` (static ModuleScript dependency map, unresolved references and potentially unreferenced modules), `analyze_scene_performance` (static counts for parts, dynamic physics bodies, lights, particle emitters and script sizes; not a live profiler), `script_history` (record what scripts change during a playtest: each property set with before / after and the script line, and each event that ran a script)
+- History: `ai_activity` (everything the AI changed since the person last pressed Keep, a log of every AI tool call, and `undo_all`). With "Ask me first" on (the default), `delete_object` and `checkpoint` restore / delete wait for the person to press Allow in the AI Activity window and fail with `NEEDS_PERSON_OK` until then.
 - View and history: `screenshot`, `undo`, `redo`, `checkpoint` (named save
   points to try things and roll back)
 - Publish: `publish_game` (only when you ask for it)
@@ -1804,6 +1805,35 @@ settings). In an online game, a Script on the host can change a player's
 
 ```
 xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_camera.lua)" --screenshot /tmp/camera.png --frames 900
+```
+
+### Your own materials (Material Editor)
+
+Like Roblox's Material Manager: a **MaterialVariant** in **MaterialService** is a
+material you make from pictures, on top of a built-in one. Open **VIEW > Materials**,
+press **New**, pick its **BaseMaterial** and add pictures:
+
+- **ColorMap**: the colours (the part's Color tints it; white shows it as it is)
+- **NormalMap**: bumps and grooves
+- **RoughnessMap** / **MetalnessMap**: where it's rough or shiny, metal or not
+- **StudsPerTile**: how big one copy of the pictures is
+- **Roughness**, **Metalness**, **Glow** (ours): for what has no picture
+
+A part shows it when its **Material** is the BaseMaterial and its
+**MaterialVariant** is the variant's name ("Use on selected parts" sets both). The
+part still weighs and grips like the BaseMaterial. **Save as preset** keeps a
+material on this computer for your other games. Scripts work the same way:
+
+```lua
+local v = Instance.new("MaterialVariant")
+v.Name = "Lava"
+v.BaseMaterial = Enum.Material.Slate
+v.ColorMap = "images/lava.png"
+v.Glow = 2
+v.Parent = game:GetService("MaterialService")
+
+part.Material = Enum.Material.Slate
+part.MaterialVariant = "Lava"
 ```
 
 ### Sky and screen effects

@@ -69,6 +69,9 @@ bool PlayerApp::dressPlayer(Player& p, BodyColors bc, HatStyle hat, glm::vec3 ha
                 look.headless = look.headless || it.headless;
                 if (!it.body.empty()) look.body = it.body;
                 break;
+            case Catalog::Type::BodyPart:   // one part on its own (over a bundle's body, if there is one)
+                if (!it.bodyPart.empty() && !it.body.empty()) look.bodyParts[it.bodyPart] = it.body;
+                break;
             case Catalog::Type::Hat:
                 if (!it.model.empty()) { look.hat = HatStyle::None; look.accessories["hat"] = it.model; }
                 else { look.hat = it.hat; look.hatColor = it.color; }

@@ -5,6 +5,7 @@
 #include "AiTools.h"
 #include "VisualScript.h"
 #include "Editor.h"
+#include "../scripting/ScriptHistory.h"
 #include "MultiTest.h"
 #include "panels/ViewportPanel.h"
 #include "../scene/Scene.h"
@@ -55,6 +56,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Highlight: return "Highlight";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
         case NodeKind::Sky:       return "Sky";
+        case NodeKind::MaterialVariant: return "MaterialVariant";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
@@ -140,7 +142,7 @@ std::string canon(const std::string& s) {
 const std::vector<std::string>& serviceList() {
     static const std::vector<std::string> list = {"Workspace", "Players", "Lighting", "ReplicatedFirst", "ReplicatedStorage",
         "ServerScriptService", "ServerStorage", "StarterGui", "StarterPack", "StarterPlayer", "Teams", "SoundService",
-        "Chat", "TextChatService"};
+        "Chat", "TextChatService", "MaterialService"};
     return list;
 }
 // Where objects can go (Players fills itself while the game runs; Lighting holds settings).
@@ -191,7 +193,9 @@ const char* const kLuaProperties[] = {
     "Force", "MaxForce", "MaxTorque", "MaxVelocity", "MaxAngularVelocity", "Torque", "VectorVelocity", "P", "D",
     "Responsiveness", "RigidityEnabled", "ReactionForceEnabled", "ReactionTorqueEnabled", "ApplyAtCenterOfMass",
     "RelativeTo", "Mode", "AlignType", "PrimaryAxisOnly", "ForceLimitMode", "ForceLimitsEnabled",
-    "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart",
+    "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart", "BreakForce", "Broken",
+    "MaterialVariant", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "StudsPerTile",
+    "Roughness", "Metalness", "Glow",
 };
 
 // The names as a Lua table, for __gb_aiProps.
@@ -1115,6 +1119,37 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     }
 
     // ---------------------------------------------------------------- RUNTIME
+    if (name == "script_history") {
+        const std::string action = str("action").empty() ? "read" : str("action");
+        if (action == "record") ScriptHistory::setRecording(true);
+        else if (action == "stop") ScriptHistory::setRecording(false);
+        else if (action == "clear") ScriptHistory::clear();
+        else if (action != "read") return fail("INVALID_INPUT", "action must be read, record, stop or clear.", "");
+        uint64_t only = 0;
+        if (!str("object").empty()) {
+            SceneNode* n = nullptr;
+            if (!need("object", n)) return refErr;
+            only = n->id;
+        }
+        std::string script = str("script"), kind = str("kind");
+        const int limit = std::clamp(args.value("limit", 50), 1, 500);
+        const auto& all = ScriptHistory::entries();
+        json list = json::array();
+        for (auto it = all.rbegin(); it != all.rend() && (int)list.size() < limit; ++it) {
+            const ScriptHistory::Entry& e = *it;
+            const bool set = e.kind == ScriptHistory::Entry::Set;
+            if (only && e.object != only) continue;
+            if (!script.empty() && e.scriptName.find(script) == std::string::npos) continue;
+            if ((kind == "set" && !set) || (kind == "event" && set)) continue;
+            json j = {{"time", e.time}, {"kind", set ? "set" : "event"}, {"object", e.objectName}, {"script", e.scriptName},
+                      {"what", e.what}};
+            if (e.object) j["object_id"] = "#" + std::to_string(e.object);
+            if (e.script) j["script_id"] = "#" + std::to_string(e.script);
+            if (set) { j["line"] = e.line; j["before"] = e.before; j["after"] = e.after; }
+            list.push_back(j);
+        }
+        return done({{"recording", ScriptHistory::recording()}, {"total", all.size()}, {"entries", list}});
+    }
     if (name == "playtest") {
         const std::string action = str("action");
         json warn = json::array();
@@ -1423,6 +1458,49 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                      {"unreferenced_modules", unused},
                      {"note", "Static heuristic only: scripts were not executed. Dynamic require expressions, string-built paths and runtime-only references may be missed."}});
     }
+    if (name == "lua_debugger") {
+        ScriptEngine& scripts = m_session->scripts();
+        const std::string action = str("action");
+        if (action == "add_breakpoint" || action == "remove_breakpoint") {
+            SceneNode* n;
+            if (!need("object", n)) return refErr;
+            if (!n->isScript()) return fail("NOT_A_SCRIPT", label(n) + " isn't a script.", "find_objects with class Script to find it.");
+            const int line = args.value("line", 0);
+            if (line < 1) return fail("INVALID_INPUT", "Give the line number (1 or more).", "read_script shows the lines.");
+            scripts.debugSetBreakpoint(n->id, line, action == "add_breakpoint");
+        } else if (action == "clear_breakpoints") {
+            scripts.debugClearBreakpoints();
+        } else if (action == "continue" || action == "step_over" || action == "step_into" || action == "step_out") {
+            if (!m_playing) return fail("NOT_PLAYING", "There's no playtest.", "Add a breakpoint, then playtest start.");
+            if (!scripts.debugPaused()) return fail("NOT_PAUSED", "No script is paused at a breakpoint.", "lua_debugger status shows the breakpoints.");
+            if (action == "continue") scripts.debugContinue();
+            else if (action == "step_over") scripts.debugStepOver();
+            else if (action == "step_into") scripts.debugStepInto();
+            else scripts.debugStepOut();
+        } else if (action != "status") {
+            return fail("INVALID_INPUT", "action must be status, add_breakpoint, remove_breakpoint, clear_breakpoints, continue, "
+                                         "step_over, step_into or step_out.", "");
+        }
+        json d = {{"playing", m_playing}, {"paused", m_playing && scripts.debugPaused()}, {"pauses", scripts.debugPauses()}};
+        if (m_playing && scripts.debugPaused()) {
+            SceneNode* at = m_scene->findById(scripts.debugScript());
+            d["at"] = {{"object_id", at ? idOf(at) : std::string()}, {"source", scripts.debugSourceForUi()},
+                       {"line", scripts.debugLine()}, {"reason", scripts.debugReason()}};
+            d["call_stack"] = scripts.debugCallStack();
+            d["locals"] = scripts.debugLocals();
+        }
+        json bps = json::array();
+        for (const auto& bp : scripts.debugBreakpoints()) {
+            SceneNode* n = m_scene->findById(bp.first);
+            bps.push_back({{"object_id", n ? idOf(n) : std::string()}, {"name", n ? n->fullName() : std::string("[deleted script]")},
+                           {"line", bp.second}});
+        }
+        d["breakpoints"] = bps;
+        if (m_playing && !scripts.debugPaused() && !bps.empty())
+            d["note"] = "Running: a script pauses when it reaches a breakpoint. Call status again to see.";
+        return done(d);
+    }
+
     if (name == "validate_scene") {
         json all = json::array();
         diagnose(root, true, all);
@@ -1664,6 +1742,27 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     }
 
     // ---------------------------------------------------------------- HISTORY
+    if (name == "ai_activity") {
+        const std::string action = str("action").empty() ? "report" : str("action");
+        if (action == "keep") { aiKeepChanges(); return done({{"kept", true}, {"note", "The report starts over from now."}}); }
+        if (action == "undo_all") {
+            if (m_playing) return fail("PLAYTEST_RUNNING", "Can't undo during a playtest.", "playtest stop first.");
+            if (!aiUndoChanges()) return fail("NOTHING_TO_UNDO", "There are no AI changes waiting in the report.", "ai_activity report");
+            return done({{"undone", true}, {"note", "The game is back how it was before the AI's changes. undo brings them back."}});
+        }
+        if (action == "log") {
+            loadAiLog();
+            const int limit = std::clamp(args.value("limit", 30), 1, 300);
+            json list = json::array();
+            for (auto it = m_aiLog.rbegin(); it != m_aiLog.rend() && (int)list.size() < limit; ++it)
+                list.push_back({{"time", it->time}, {"source", it->source}, {"tool", it->tool}, {"args", it->args}, {"result", it->result},
+                                {"added", it->added}, {"removed", it->removed}, {"changed", it->changed}, {"settings", it->settings}});
+            return done({{"entries", list}, {"ask_first", m_aiAskFirst}});
+        }
+        if (action != "report") return fail("INVALID_INPUT", "action must be report, log, keep or undo_all.", "");
+        if (m_playing) return fail("PLAYTEST_RUNNING", "The report is about the saved game, and a playtest is running.", "playtest stop first.");
+        return done(aiChangeReport());
+    }
     if (name == "checkpoint") {
         const std::string action = str("action");
         const std::string cp = str("name").empty() ? "default" : str("name");

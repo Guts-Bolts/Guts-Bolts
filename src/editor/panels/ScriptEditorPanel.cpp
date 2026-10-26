@@ -11,6 +11,7 @@
 #include <imgui_internal.h>
 #include <misc/cpp/imgui_stdlib.h>
 #include <algorithm>
+#include <cmath>
 #include <cctype>
 #include <set>
 
@@ -86,7 +87,7 @@ const char* const kWords[] = {
     "DecayTime", "Density", "Diffusion", "DryLevel", "WetLevel", "Delay", "Feedback", "HighGain", "LowGain", "MidGain",
     "Level", "Octave", "Depth", "Mix", "Rate", "Attack", "GainMakeup", "Ratio", "Release", "Threshold", "Duty", "Frequency",
     // Sky and screen effects (in Lighting, or the Camera)
-    "Sky", "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "SunTextureId", "MoonTextureId",
+    "Sky", "MaterialVariant", "MaterialService", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "StudsPerTile", "SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp", "SunTextureId", "MoonTextureId",
     "StarCount", "CelestialBodiesShown", "SunAngularSize", "MoonAngularSize",
     "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect", "PostEffect",
     "Contrast", "Saturation", "TintColor", "Intensity", "Spread", "Threshold", "FarIntensity", "NearIntensity",
@@ -129,6 +130,29 @@ ScriptEditorPanel::ScriptEditorPanel(Scene* scene) : m_scene(scene) {}
 void ScriptEditorPanel::open(uint64_t scriptId) {
     m_id = scriptId;
     m_focus = true;
+}
+
+void ScriptEditorPanel::goToLine(int line) {
+    SceneNode* s = m_scene->findById(m_id);
+    if (!s || line < 1) return;
+    size_t at = 0;
+    for (int k = 1; k < line && at != std::string::npos; ++k) {
+        at = s->source.find('\n', at);
+        if (at != std::string::npos) ++at;
+    }
+    if (at == std::string::npos) at = s->source.size();
+    m_selectStart = m_selectEnd = (int)at;   // the text box moves its cursor (and scrolls) there
+    m_focusCode = true;
+}
+
+void ScriptEditorPanel::openAtLine(uint64_t scriptId, int line) {
+    SceneNode* n = m_scene->findById(scriptId);
+    if (!n) return;
+    open(scriptId);
+    int pos = 0, at = 1;
+    for (; pos < (int)n->source.size() && at < line; ++pos) if (n->source[pos] == '\n') ++at;
+    m_selectStart = m_selectEnd = pos;
+    m_focusCode = true;
 }
 
 // Called by the text box every frame while it's active (and when Tab completes a word).
@@ -450,7 +474,9 @@ void ScriptEditorPanel::render() {
                                 (suggesting ? ImGuiInputTextFlags_CallbackCompletion : ImGuiInputTextFlags_AllowTabInput);
     // Line numbers down the left, like Roblox Studio.
     const int lines = 1 + (int)std::count(s->source.begin(), s->source.end(), '\n');
-    const float gutter = ImGui::CalcTextSize(std::to_string(std::max(lines, 99)).c_str()).x + 14.0f;
+    // (with room on the left for the Lua Debugger's breakpoint dots: click a number to add one)
+    const float dotRoom = m_debugger ? 14.0f : 0.0f;
+    const float gutter = ImGui::CalcTextSize(std::to_string(std::max(lines, 99)).c_str()).x + 14.0f + dotRoom;
     const ImVec2 gutterPos = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2(gutter, 1));
     ImGui::SameLine(0, 0);
@@ -474,6 +500,7 @@ void ScriptEditorPanel::render() {
         dl->AddRectFilled(ImVec2(gutterPos.x, boxMin.y), ImVec2(gutterPos.x + gutter - 2, boxMax.y), IM_COL32(37, 37, 38, 255));
         dl->PushClipRect(ImVec2(gutterPos.x, boxMin.y), ImVec2(gutterPos.x + gutter, boxMax.y), true);
         const int first = std::max(0, (int)(scroll.y / lineH) - 1), last = std::min(lines, first + (int)((boxMax.y - boxMin.y) / lineH) + 3);
+        const bool pausedHere = m_debugger && m_debugger->debugPaused() && m_debugger->debugScript() == m_id;
         for (int i = first; i < last; ++i) {
             const std::string n = std::to_string(i + 1);
             const float y = origin.y + i * lineH;
@@ -481,12 +508,29 @@ void ScriptEditorPanel::render() {
             const bool here = m_cursorLine == i + 1;
             dl->AddText(ImVec2(gutterPos.x + gutter - 8 - ImGui::CalcTextSize(n.c_str()).x, y),
                         bad ? IM_COL32(255, 90, 80, 255) : here ? IM_COL32(220, 220, 220, 255) : IM_COL32(120, 120, 120, 255), n.c_str());
+            if (m_debugger && m_debugger->debugHasBreakpoint(m_id, i + 1))
+                dl->AddCircleFilled(ImVec2(gutterPos.x + 8, y + lineH * 0.5f), lineH * 0.3f, IM_COL32(230, 60, 55, 255));
+            if (pausedHere && m_debugger->debugLine() == i + 1)   // the line it's paused on: a yellow arrow
+                dl->AddTriangleFilled(ImVec2(gutterPos.x + 3, y + 2), ImVec2(gutterPos.x + 3, y + lineH - 2),
+                                      ImVec2(gutterPos.x + 13, y + lineH * 0.5f), IM_COL32(255, 200, 60, 255));
         }
         dl->PopClipRect();
+        // Clicking a line number adds a breakpoint there (or takes it away).
+        if (m_debugger && ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            const ImVec2 m = ImGui::GetMousePos();
+            if (m.x >= gutterPos.x && m.x < gutterPos.x + gutter && m.y >= boxMin.y && m.y < boxMax.y) {
+                const int line = 1 + (int)std::floor((m.y - origin.y) / lineH);
+                if (line >= 1 && line <= lines) m_debugger->debugSetBreakpoint(m_id, line, !m_debugger->debugHasBreakpoint(m_id, line));
+            }
+        }
         // The code itself, coloured like Roblox Studio's dark theme (drawn over the plain text,
         // into the text box's own window so it lands on top).
         if (box) dl = box->DrawList;
         dl->PushClipRect(ImVec2(boxMin.x + 1, boxMin.y + 1), ImVec2(boxMax.x - 1, boxMax.y - 1), true);
+        if (pausedHere && m_debugger->debugLine() >= 1 && m_debugger->debugLine() <= lines) {   // light up that line
+            const float y = origin.y + (m_debugger->debugLine() - 1) * lineH;
+            dl->AddRectFilled(ImVec2(boxMin.x + 1, y), ImVec2(boxMax.x - 1, y + lineH), IM_COL32(255, 200, 60, 45));
+        }
         drawColoredCode(dl, s->source, origin, lineH, first, last);
         // A red wavy line under the line with the mistake.
         if (!m_error.empty() && m_errorLine >= 1 && m_errorLine <= lines) {

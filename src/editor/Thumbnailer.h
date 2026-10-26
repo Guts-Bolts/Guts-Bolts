@@ -27,6 +27,10 @@ public:
     // make, so only a couple are made each frame; until then this returns 0.
     unsigned texture(const std::string& key, const std::function<void(Scene&)>& build, int size = 128);
 
+    // A picture that changes (a live preview): one texture per slot, made again when
+    // the key changes. 0 until the first one is made.
+    unsigned live(const std::string& slot, const std::string& key, const std::function<void(Scene&)>& build, int size = 160);
+
     void newFrame() { m_madeThisFrame = 0; }
 
 private:
@@ -36,5 +40,7 @@ private:
 
     std::unique_ptr<SceneRenderer> m_renderer;
     std::map<std::string, std::unique_ptr<Framebuffer>> m_textures;
+    struct Live { std::string key; std::unique_ptr<Framebuffer> fb; };
+    std::map<std::string, Live> m_live;
     int m_madeThisFrame = 0;
 };

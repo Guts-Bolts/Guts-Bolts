@@ -521,7 +521,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             r["hidden"] = true; r["cat"] = "all"; r["total"] = 0; r["counts"] = json::object(); r["items"] = json::array();
             return r;
         }
-        static const char* kCats[] = {"all", "accessories", "clothing", "faces", "bundles", "gear", "emotes", "limited"};
+        static const char* kCats[] = {"all", "accessories", "clothing", "faces", "bundles", "bodyparts", "gear", "emotes", "limited"};
         std::string cat = "all";
         json counts = json::object();
         for (const char* c : kCats) {
@@ -874,7 +874,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         const bool verified = isVerified(me);
         if (kind == "gear" && !verified && !isStaff(me)) return fail("Only Verified creators can upload gear.");
         if (Online::isEmoteItem(kind) && !isStaff(me)) return fail("Only Guts&Bolts staff can make emotes and animation packs.");
-        if (kind == "bundle" && !isStaff(me)) return fail("Only Guts&Bolts staff can make bundles.");
+        if ((kind == "bundle" || kind == "bodypart") && !isStaff(me)) return fail("Only Guts&Bolts staff can make bundles and body parts.");
         if (Online::isAccessory(kind) && !verified && !isStaff(me))
             return fail("Only Verified creators can make hats and accessories. Shirts and pants are open to everyone!");
         long long price = std::clamp(num("price"), 0LL, 1000000LL);
@@ -939,6 +939,20 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             json file = {{"format", "gbbundle"}, {"items", items}, {"headless", headless}};
             if (!body.empty()) file["body"] = std::move(body);
             data = file.dump();
+        }
+        if (kind == "bodypart") {   // one part of the body on its own (worker/server.js has the same)
+            const std::string part = meta.value("bodyPart", std::string());
+            if (std::find(std::begin(Online::kBodyParts), std::end(Online::kBodyParts), part) == std::end(Online::kBodyParts))
+                return fail("Choose Head, Torso, Left Arm, Right Arm, Left Leg or Right Leg for this body part.");
+            json file = json::parse(data, nullptr, false);
+            if (!file.is_object() || file.value("format", std::string()) != "gbbundle" || !file.contains("body") || !file["body"].is_object())
+                return fail("Body parts must be made in Studio's Bundles window.");
+            if (file["body"].size() != 1 || !file["body"].contains(part))
+                return fail("A standalone body-part item must contain only its selected body part.");
+            json body;
+            if (std::string problem = Online::bundleBody(file["body"], body); !problem.empty()) return fail(problem);
+            meta = {{"bodyPart", part}};
+            data = json{{"format", "gbbundle"}, {"body", std::move(body)}}.dump();
         }
         if (kind == "face") {
             if (!isOfficial(me)) return fail("Only Guts can make faces.");
@@ -1204,7 +1218,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (it == m_assets.end()) return fail("That doesn't exist (any more).");
         Asset& a = it->second;
         if (a.creator != me.id) return fail("You can only update your own things.");
-        if (a.kind == "bundle") return fail("Bundles can't be changed once they're made. Make a new one instead.");
+        if (a.kind == "bundle" || a.kind == "bodypart") return fail("Bundles and body parts can't be changed once they're made. Make a new one instead.");
         std::string data;
         if (!Online::base64Decode(str("data"), data)) return fail("The upload got scrambled. Try again.");
         if (data.size() > Online::maxSize(a.kind)) return fail("That's too big.");
