@@ -511,7 +511,7 @@ endforeach()
 gb_embed("${CMAKE_SOURCE_DIR}/assets/certs/cacert.pem" kCaCerts "${GB_GENERATED}/CaCerts.h")
 target_compile_definitions(gb_engine PRIVATE GB_WEBSOCKETS)
 
-target_include_directories(gb_engine PUBLIC src/ ${miniaudio_SOURCE_DIR} ${GB_GENERATED} ${stb_SOURCE_DIR} ${pfd_SOURCE_DIR} ${GB_DRACO_INCLUDE_DIR} ${draco_BINARY_DIR})
+target_include_directories(gb_engine PUBLIC src/ ${miniaudio_SOURCE_DIR} ${GB_GENERATED} ${stb_SOURCE_DIR} ${pfd_SOURCE_DIR} ${GB_DRACO_INCLUDE_DIR} ${CMAKE_BINARY_DIR})
 add_dependencies(gb_engine gb_version)
 find_package(Threads REQUIRED)
 target_link_libraries(gb_engine PUBLIC Threads::Threads ${CMAKE_DL_LIBS} opus)
