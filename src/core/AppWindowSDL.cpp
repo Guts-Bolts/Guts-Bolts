@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "I18n.h"
 #include "Audio.h"
+#include "Voice.h"
 #include "Paths.h"
 #include "../player/LaunchLink.h"
 #include "../editor/Theme.h"
@@ -290,7 +291,8 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
             m_quit = true;
             break;
         case SDL_APP_WILLENTERBACKGROUND:
-            Audio::suspend();    // mute while backgrounded without overwriting the user's volume
+            Voice::setActive(false); // release the microphone before iOS suspends the process
+            Audio::suspend();         // mute without overwriting the user's volume
             break;
         case SDL_APP_DIDENTERFOREGROUND:
             Audio::resume();
