@@ -6,6 +6,7 @@
 #include "Serializer.h"
 #include "EditMesh.h"
 #include "RobloxMesh.h"
+#include "Skin.h"
 #include "Physics.h"
 #include "../core/Paths.h"
 #include "../renderer/MeshLibrary.h"
@@ -863,6 +864,9 @@ struct Converter {
         std::string texture;               // its picture ("roblox/<id>.png" in the games folder)
         glm::vec3 tint{1.0f};              // SpecialMesh.VertexColor
         bool special = false;              // sized by a SpecialMesh, not by the part
+        std::vector<RobloxMesh::Bone> bones;
+        glm::vec3 meshCenter{0.0f};
+        glm::vec3 meshSize{1.0f};
     };
 
     // MeshPart: the mesh is stretched to fill the part's Size.
@@ -912,6 +916,9 @@ struct Converter {
                 return look;
             }
             look.shape = s.mesh;
+            look.bones = s.bones;
+            look.meshCenter = s.center;
+            look.meshSize = s.size;
             prim = PrimitiveType::Mesh;
             if (type == 5) {
                 pos += rot * ((s.center * scale + offset) * kImportScale);
@@ -1041,6 +1048,37 @@ struct Converter {
                 node->teamColor = brickColor((int)in.num("TeamColor", 194));
             }
             if (look.shape) MeshEdit::attach(*node, look.shape);
+            if (!look.bones.empty() && node->editMesh) {
+                // The v4/v5 FileMesh embeds its own armature and per-vertex weights.
+                // Create a matching Bone tree so Skin's normal deformation path can
+                // evaluate the imported weights rather than leaving a static mesh.
+                std::vector<SceneNode*> importedBones(look.bones.size(), nullptr);
+                for (size_t bi = 0; bi < look.bones.size(); ++bi) {
+                    const auto& source = look.bones[bi];
+                    auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
+                    bone->bone = true;
+                    glm::vec3 normalized = (source.position - look.meshCenter) /
+                                           glm::max(look.meshSize, glm::vec3(1e-5f));
+                    bone->transform.position = normalized * node->transform.scale;
+                    float rz, ry, rx;
+                    glm::extractEulerAngleZYX(glm::mat4(source.rotation), rz, ry, rx);
+                    bone->transform.rotation = glm::degrees(glm::vec3(rx, ry, rz));
+                    SceneNode* boneParent = source.parent >= 0 && (size_t)source.parent < bi
+                                           ? importedBones[(size_t)source.parent] : nullptr;
+                    if (boneParent) importedBones[bi] = boneParent->addChild(std::move(bone));
+                    else importedBones[bi] = node->addChild(std::move(bone));
+                }
+                node->editMesh->bind.resize(node->editMesh->bones.size(), glm::mat4(1.0f));
+                for (size_t bi = 0; bi < node->editMesh->bones.size(); ++bi) {
+                    for (SceneNode* imported : importedBones) {
+                        if (imported && imported->name == node->editMesh->bones[bi]) {
+                            node->editMesh->bind[bi] = glm::inverse(Skin::frame(imported, node.get()));
+                            break;
+                        }
+                    }
+                }
+                MeshEdit::refresh(*node);
+            }
             if (!look.texture.empty()) {
                 node->texture = look.texture;
                 if (look.special) node->color = look.tint;   // a SpecialMesh's picture replaces the part's colour
