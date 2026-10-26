@@ -165,6 +165,11 @@ function pieces(model, av, items) {
   // through /wear/<id>; the website must do the same instead of always drawing player.obj.
   const bodyBundle = (items || []).find(isBodyBundle);
   const bodyModel = bodyBundle && accessories.get(bodyBundle.id);
+  // Individual body-part catalog items can replace one rig part without requiring a
+  // complete bundle. Their metadata uses bodyPart: Head, Torso, LeftArm, RightArm,
+  // LeftLeg, or RightLeg and their /wear/<id> file uses the normal gbbundle body format.
+  const bodyPartItems = (items || []).filter(isBodyPartItem);
+  const bodyPartKeys = new Set(bodyPartItems.map((it) => bodyPartKey(it.meta.bodyPart)).filter(Boolean));
   // A Headless Head bundle (meta.headless): no head, so no face either (Player::setHeadless).
   const headless = (items || []).some((it) => it && it.kind === 'bundle' && it.meta && it.meta.headless);
   // Clothing pictures (Player::applyClothing): the shirt on the torso and arms, the
@@ -178,18 +183,31 @@ function pieces(model, av, items) {
     // render the default mannequin over them; that is what caused equipped bundles to
     // appear in the inventory but not on the website's 3D profile preview.
     if (bodyBundle && key) continue;
+    if (!bodyBundle && key && bodyPartKeys.has(key)) continue;
     if (key) out.push({ mesh: part, color: col[key], face: name === 'Head', torso: name === 'Torso', cloth: clothFor[key] || 0 });
   }
-  if (bodyBundle && bodyModel && bodyModel.pieces) {
-    for (const p of bodyModel.pieces) {
-      const key = PART_OF[p.bodyPart];
+  const appendBodyPieces = (entry, allowedKeys = null) => {
+    if (!entry || !entry.pieces) return;
+    for (const p of entry.pieces) {
+      const key = PART_OF[p.bodyPart] || bodyPartKey(p.bodyPart);
+      if (!key || (allowedKeys && !allowedKeys.has(key))) continue;
       out.push(Object.assign({}, p, {
-        color: key ? col[key] : p.color,
-        face: p.bodyPart === 'Head',
-        torso: p.bodyPart === 'Torso',
-        cloth: key ? clothFor[key] || 0 : 0,
+        color: col[key],
+        face: key === 'head',
+        torso: key === 'torso',
+        cloth: clothFor[key] || 0,
       }));
     }
+  };
+  if (bodyBundle) appendBodyPieces(bodyModel);
+  else {
+    // Apply individually equipped parts in order; the last item for a slot wins.
+    const chosenParts = new Map();
+    for (const it of bodyPartItems) {
+      const key = bodyPartKey(it.meta.bodyPart);
+      if (key) chosenParts.set(key, it);
+    }
+    for (const [key, it] of chosenParts) appendBodyPieces(accessories.get(it.id), new Set([key]));
   }
   // The face is a flat picture painted onto the front of the head (see FS / faceTexture).
   const head = model.Head;
@@ -235,6 +253,15 @@ const isModelAccessory = (it) => it && ACCESSORY_KINDS.includes(it.kind) && it.m
 // Studio body bundles use the same /wear/<id> asset endpoint as model accessories, but
 // their geometry replaces the avatar body rather than being attached as a hat/accessory.
 const isBodyBundle = (it) => it && it.kind === 'bundle' && it.meta && it.meta.body === true;
+const BODY_PART_KEYS = {
+  head: 'head', torso: 'torso',
+  leftarm: 'leftArm', 'left-arm': 'leftArm', 'left arm': 'leftArm',
+  rightarm: 'rightArm', 'right-arm': 'rightArm', 'right arm': 'rightArm',
+  leftleg: 'leftLeg', 'left-leg': 'leftLeg', 'left leg': 'leftLeg',
+  rightleg: 'rightLeg', 'right-leg': 'rightLeg', 'right leg': 'rightLeg',
+};
+const bodyPartKey = (value) => BODY_PART_KEYS[String(value || '').replace(/_/g, '-').trim().toLowerCase()] || null;
+const isBodyPartItem = (it) => it && it.meta && bodyPartKey(it.meta.bodyPart) && it.meta.bodyPartModel !== false;
 const accessories = new Map();   // item id -> { ready, pieces }
 function trs(pos, rot, size) {
   const r = (d) => (Number(d) || 0) * Math.PI / 180;
@@ -347,7 +374,7 @@ function loadAccessory(id) {
 }
 // Start (and wait for) the accessories some items need, and their pictures.
 async function loadAccessories(items) {
-  const list = (items || []).filter((it) => isModelAccessory(it) || isBodyBundle(it)).map((it) => loadAccessory(it.id));
+  const list = (items || []).filter((it) => isModelAccessory(it) || isBodyBundle(it) || isBodyPartItem(it)).map((it) => loadAccessory(it.id));
   await Promise.all(list.map((e) => e.ready));
   await Promise.all(list.flatMap((e) => (e.pieces || []).filter((p) => p.tex).map((p) => decalTexture(p.tex).ready)));
 }
