@@ -1089,8 +1089,7 @@ struct Converter {
                         : worldFrame;
                     auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
                     bone->bone = true;
-                    Attribute embeddedTag; embeddedTag.name = "RobloxEmbeddedMeshBone"; embeddedTag.type = Attribute::Bool; embeddedTag.b = true;
-                    bone->attributes.push_back(embeddedTag);
+                    bone->robloxEmbeddedMeshBone = true;
                     bone->transform.position = glm::vec3(localFrame[3]);
                     float rz, ry, rx;
                     glm::extractEulerAngleZYX(localFrame, rz, ry, rx);
