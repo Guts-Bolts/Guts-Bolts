@@ -385,6 +385,11 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(draco)
 
+# Draco's exported target does not propagate its source-tree header root on all
+# supported toolchains (notably Android and MinGW). The public decoder headers
+# live under src/draco, so expose that include root to the shared engine.
+set(GB_DRACO_INCLUDE_DIR "${draco_SOURCE_DIR}/src")
+
 # ---------------------------------------------------------------------------
 # The engine: scene, physics, scripting, rendering, game session.
 # Shared by the editor (GutsAndBolts) and the player app (GutsAndBoltsPlayer).
