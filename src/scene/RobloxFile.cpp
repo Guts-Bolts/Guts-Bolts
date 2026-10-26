@@ -1041,6 +1041,18 @@ struct Converter {
                 node->frictionWeight   = std::clamp(ph->seq[3], 0.0f, 100.0f);
                 node->elasticityWeight = std::clamp(ph->seq[4], 0.0f, 100.0f);
             }
+            if (c == "MeshPart") {
+                auto attrS = [&](const char* key, const std::string& value) {
+                    Attribute a; a.name = key; a.type = Attribute::String; a.s = value; node->attributes.push_back(a);
+                };
+                auto attrV = [&](const char* key, glm::vec3 value) {
+                    Attribute a; a.name = key; a.type = Attribute::Vector3; a.v = value; node->attributes.push_back(a);
+                };
+                attrS("RobloxClass", "MeshPart");
+                attrS("MeshId", in.str("MeshId"));
+                attrS("TextureID", in.str("TextureID"));
+                attrV("MeshCenter", look.meshCenter);
+            }
             if (c == "SpawnLocation") {   // (renamed ones too: the tag says what it is)
                 if (name != "SpawnLocation") node->tags.push_back("SpawnLocation");
                 node->spawnNeutral = in.flag("Neutral", true);
