@@ -377,6 +377,7 @@ private:
     nlohmann::json m_tickets = nlohmann::json::array();   // support tickets (ServerSupport.cpp), newest last
     // Promo codes (ServerPromos.cpp): {code, bolts, start, end (0 = never), made, by, uses, stopped}, newest last.
     nlohmann::json m_promos = nlohmann::json::array();
+    nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.
     struct Moved {
