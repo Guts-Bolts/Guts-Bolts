@@ -18,7 +18,7 @@ The uploaded script is a stress test because it combines old client-side APIs, R
 - `Enum.Material:GetEnumItems()`, `Enum.MeshType:GetEnumItems()`, and `Enum.Font:GetEnumItems()`.
 - A legacy `Player:GetMouse()` object exposing cursor coordinates, `UnitRay`, `Hit`, `Target`, `TargetFilter`, and common key/mouse button signals. Rays are generated through the active camera and use the engine's existing raycast path.
 - A limited `LoadLibrary("RbxUtility").Create(className)(properties)` shim for old object-construction helpers.
-- Built-in `SpecialMesh` primitive rendering for `Head` / `Sphere`, `Cylinder`, `Brick` / `Torso`, and `Wedge` currently falls back to cube geometry, including `Scale` and `Offset`. `FileMesh` IDs still fall back to the host part geometry until a compatible asset importer exists.
+- Built-in `SpecialMesh` primitive rendering for `Head` / `Sphere`, `Cylinder`, `Brick` / `Torso`, and `Wedge` currently falls back to cube geometry, including `Scale` and `Offset`. Standalone Roblox `.mesh` files can be imported as editable custom-mesh Parts.
 - The legacy `game:service("Workspace")` lowercase alias.
 - A `PlayerScripts.ControlScript` compatibility object whose `Disabled` / `Enabled` state toggles native keyboard/gamepad movement. Script-driven `Humanoid:Move()` / `Humanoid.Jump` remain available, and control state resets when Play stops or restarts.
 - Regression checks in `tools/test_script_fixes.lua` for enum enumeration, mouse API shape/ray direction, the legacy helper, the lowercase service alias, and the controller placeholder.
@@ -29,9 +29,9 @@ Mouse coordinates are currently scaled from the application viewport to the acti
 
 This PR is a compatibility increment, not a claim that the entire script now works.
 
-1. **Mesh importer verification** — open representative local `.mesh` files from the Open path flow, confirm their dimensions/orientation/UVs, then save and reopen the resulting game. Draco-compressed version 6/7 assets are not supported by the current parser.
+1. **Mesh importer verification** — the standalone `.mesh` parser handles known FileMesh versions 1.00 through 7.00, including Draco-compressed version 7 `COREMESH` chunks. Open representative files from each version family, confirm dimensions/orientation/UVs, and save/reopen the resulting game. Draco decoding is implemented but has not yet been validated in a native build or against a real compressed fixture.
 2. **Character controller assumptions** — `ControlScript.Disabled` now suppresses native keyboard/gamepad movement while preserving script-driven movement. Verify expected legacy scripts can disable and restore controls during real play, including stop/restart.
-3. **Legacy asset classes and properties** — built-in `SpecialMesh` primitives now render approximately, but `MeshType.FileMesh` and imported mesh identifiers still need a compatible asset importer. Mesh rendering also needs validation in all render passes (shadows, highlights, water interactions) and the full Star Glitcher fixture.
+3. **Legacy asset classes and properties** — standalone `.mesh` geometry imports, but `SpecialMesh.MeshId` / `TextureId` are not yet resolved into live in-scene assets. Skinning/bone weights, tangent/color attributes, and mesh-texture asset hookup are not fully preserved by the standalone importer. Mesh rendering also needs validation in all render passes (shadows, highlights, water interactions) and the full Star Glitcher fixture.
 4. **Rig mutation and animation conflicts** — the script edits R6 shoulder/hip/neck joints while the built-in character animator is active. Motor6D C0/C1 semantics and script-owned joint pose precedence still need end-to-end implementation and play testing.
 5. **Legacy event details** — verify key and button events fire once with the correct legacy arguments, including focus changes and script shutdown. Input-signal connection cleanup on script stop still needs an explicit lifecycle test.
 5. **Execution lifecycle** — long-lived `BindableEvent` loops, input callbacks, and `Debris` cleanup need to remain safe through character respawn, script stop, and game exit.
