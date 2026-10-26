@@ -11,6 +11,16 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'clean-slate-usernames', name: 'Clean Slate Usernames', version: '0.7.6', time: 1793037600, tag: 'Website',
+    summary: 'Staff can now reset a username that isn\'t allowed. It becomes "User" and the player\'s user number.',
+    items: [
+      'A new Reset username button on the Staff page, next to each person (staff only).',
+      'The name becomes "User 5" (with their own user number), and they get a notification saying why.',
+      'The old name stays reserved, so nobody else can take it, and it doesn\'t show in their past names.',
+      'Only the official Guts account can reset a staff member\'s username. It shows up in the staff log like everything else.',
+    ],
+  },
+  {
     id: 'roblox-meshes-unsquashed', name: 'Roblox Meshes, Un-squashed', version: '0.7.6', time: 1793030400, tag: 'Studio',
     summary: 'Studio can now import Roblox .mesh files directly, including Draco-compressed geometry, and preserve more of the data that makes complex meshes work.',
     items: [
