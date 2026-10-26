@@ -3279,40 +3279,46 @@ int ScriptEngine::debugStackDepth(lua_State* L) const {
     return depth;
 }
 
-void ScriptEngine::debugHook(lua_State* L, lua_Debug* ar) {
-    auto** slot = static_cast<ScriptEngine**>(lua_getextraspace(L));
-    ScriptEngine* engine = slot ? *slot : nullptr;
-    if (!engine || !engine->m_debugEnabled || engine->m_debugPaused || !ar) return;
-    if (!lua_getinfo(L, "Sl", ar) || ar->currentline < 1) return;
+bool ScriptEngine::debugShouldPause(lua_State* L, lua_Debug* ar) {
+    if (!m_debugEnabled || m_debugPaused || !ar) return false;
+    if (!lua_getinfo(L, "Sl", ar) || ar->currentline < 1) return false;
 
     std::string source = ar->source ? ar->source : "";
     if (!source.empty() && (source.front() == '=' || source.front() == '@')) source.erase(source.begin());
     uint64_t scriptId = 0;
-    if (engine->m_scene) engine->m_scene->forEach([&](SceneNode* node) {
+    if (m_scene) m_scene->forEach([&](SceneNode* node) {
         if (!scriptId && node && node->isScript() && node->fullName() == source) scriptId = node->id;
     });
     const int line = ar->currentline;
     const auto key = std::make_pair(scriptId, line);
-    bool hit = scriptId && engine->m_debugBreakpoints.count(key) != 0;
-    if (engine->m_debugSkipOnce == key) {
-        engine->m_debugSkipOnce = {0, 0};
+    bool hit = scriptId && m_debugBreakpoints.count(key) != 0;
+    if (m_debugSkipOnce == key) {
+        m_debugSkipOnce = {0, 0};
         hit = false;
     }
-    if (!hit && engine->m_debugMode != 0) {
-        const int depth = engine->debugStackDepth(L);
-        hit = engine->m_debugMode == 1 ||
-              (engine->m_debugMode == 2 && depth <= engine->m_debugStepDepth) ||
-              (engine->m_debugMode == 3 && depth < engine->m_debugStepDepth);
+    if (!hit && m_debugMode != 0) {
+        const int depth = debugStackDepth(L);
+        hit = m_debugMode == 1 ||
+              (m_debugMode == 2 && depth <= m_debugStepDepth) ||
+              (m_debugMode == 3 && depth < m_debugStepDepth);
     }
-    if (!hit) return;
+    if (!hit) return false;
 
-    engine->m_debugPaused = true;
-    engine->m_debugThread = L;
-    engine->m_debugLine = line;
-    engine->m_debugScript = scriptId;
-    engine->m_debugSource = source;
-    engine->m_debugMode = 0;
-    lua_yield(L, 0);
+    m_debugPaused = true;
+    m_debugThread = L;
+    m_debugLine = line;
+    m_debugScript = scriptId;
+    m_debugSource = source;
+    m_debugMode = 0;
+    return true;
+}
+
+void ScriptEngine::debugHook(lua_State* L, lua_Debug* ar) {
+    // Keep non-trivial C++ temporaries out of the Lua yield/longjmp frame. The helper
+    // finishes and destroys its strings before lua_yield unwinds back to lua_resume.
+    auto** slot = static_cast<ScriptEngine**>(lua_getextraspace(L));
+    ScriptEngine* engine = slot ? *slot : nullptr;
+    if (engine && engine->debugShouldPause(L, ar)) lua_yield(L, 0);
 }
 
 void ScriptEngine::debugContinue() {
