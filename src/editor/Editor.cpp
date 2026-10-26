@@ -2576,6 +2576,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;
         if (ImGui::MenuItem("Collision Groups", nullptr, m_showCollisionGroups)) m_showCollisionGroups = !m_showCollisionGroups;
+        if (ImGui::MenuItem("Physics View", nullptr, m_state.showPhysics)) m_state.showPhysics = !m_state.showPhysics;
         ImGui::EndMenu();
     }
 
