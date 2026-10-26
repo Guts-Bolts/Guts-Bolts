@@ -2132,6 +2132,7 @@
   "Reset Camera": "Kamera zurücksetzen",
   "Reset part": "Teil zurücksetzen",
   "Reset to High": "Auf Hoch zurücksetzen",
+  "Reset username": "Benutzernamen zurücksetzen",
   "Reshape it in Modeling mode (Tab goes back)": "Im Modellier-Modus umformen (Tab geht zurück)",
   "Reshape the selected part's mesh (corners, edges, faces)": "Das Mesh des ausgewählten Teils umformen (Ecken, Kanten, Flächen)",
   "Rest Pose": "Ruhepose",
@@ -2467,6 +2468,7 @@
   "Staff Tools": "Team-Werkzeuge",
   "Staff action log": "Team-Aktionsprotokoll",
   "Staff can verify people, make them a Partner, and take those badges away.": "Das Team kann Leute verifizieren, zu Partnern machen und diese Abzeichen wieder wegnehmen.",
+  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "Das Team kann Leute verifizieren, sie zu Partnern machen, diese Abzeichen wieder entfernen und unerlaubte Benutzernamen zurücksetzen.",
   "Staff can't watch everything, and we aren't responsible for what other players say, make or do. If something is dangerous, report it, and contact the police if someone is in danger.": "Das Team kann nicht alles sehen, und wir sind nicht verantwortlich für das, was andere Spieler sagen, machen oder tun. Wenn etwas gefährlich ist, melde es, und ruf die Polizei, wenn jemand in Gefahr ist.",
   "Staff may undo a trade or sale that came from a scam, a hacked account or a bug, but don't have to.": "Das Team kann einen Tausch oder Verkauf rückgängig machen, der aus Betrug, einem gehackten Konto oder einem Bug stammt, muss aber nicht.",
   "Staff sent a reset code for": "Das Team hat einen Rücksetzcode gesendet für",
@@ -3304,8 +3306,6 @@
   "🎁 Buy as a gift": "🎁 Als Geschenk kaufen",
   "🎁 Gift box:": "🎁 Geschenkbox:",
   "🔨 Auction:": "🔨 Auktion:",
-  "🤝 Partner": "🤝 Partner",
-  "Reset username": "Benutzernamen zurücksetzen",
-  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "Das Team kann Leute verifizieren, sie zu Partnern machen, diese Abzeichen wieder entfernen und unerlaubte Benutzernamen zurücksetzen."
+  "🤝 Partner": "🤝 Partner"
  }
 }

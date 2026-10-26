@@ -2132,6 +2132,7 @@
   "Reset Camera": "Restablecer cámara",
   "Reset part": "Restablecer parte",
   "Reset to High": "Volver a Alto",
+  "Reset username": "Restablecer nombre de usuario",
   "Reshape it in Modeling mode (Tab goes back)": "Cambia su forma en el modo Modelado (Tab vuelve)",
   "Reshape the selected part's mesh (corners, edges, faces)": "Cambia la malla de la parte seleccionada (esquinas, aristas, caras)",
   "Rest Pose": "Pose de reposo",
@@ -2468,6 +2469,7 @@
   "Staff Tools": "Herramientas del staff",
   "Staff action log": "Registro de acciones del staff",
   "Staff can verify people, make them a Partner, and take those badges away.": "El staff puede verificar a gente, hacerla socia y quitar esas insignias.",
+  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "El staff puede verificar a la gente, hacerla Socio, quitar esas insignias y restablecer nombres de usuario que no están permitidos.",
   "Staff can't watch everything, and we aren't responsible for what other players say, make or do. If something is dangerous, report it, and contact the police if someone is in danger.": "El staff no puede vigilarlo todo, y no somos responsables de lo que otros jugadores digan, hagan o creen. Si algo es peligroso, repórtalo, y contacta con la policía si alguien está en peligro.",
   "Staff may undo a trade or sale that came from a scam, a hacked account or a bug, but don't have to.": "El staff puede deshacer un intercambio o venta que venga de una estafa, una cuenta hackeada o un bug, pero no está obligado.",
   "Staff sent a reset code for": "El staff envió un código de restablecimiento para",
@@ -3306,8 +3308,6 @@
   "🎁 Buy as a gift": "🎁 Comprar como regalo",
   "🎁 Gift box:": "🎁 Caja regalo:",
   "🔨 Auction:": "🔨 Subasta:",
-  "🤝 Partner": "🤝 Socio",
-  "Reset username": "Restablecer nombre de usuario",
-  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "El staff puede verificar a la gente, hacerla Socio, quitar esas insignias y restablecer nombres de usuario que no están permitidos."
+  "🤝 Partner": "🤝 Socio"
  }
 }
