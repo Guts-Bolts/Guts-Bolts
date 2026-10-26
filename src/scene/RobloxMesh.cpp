@@ -381,6 +381,7 @@ Shape parse(const std::string& bytes, std::string* err) {
 
         struct Subset {
             uint32_t vertsBegin = 0, vertsLength = 0;
+            uint32_t boneIndexCount = 0;
             uint16_t boneIndices[26]{};
         };
         std::vector<Subset> subsets;
@@ -391,7 +392,7 @@ Shape parse(const std::string& bytes, std::string* err) {
             Subset s;
             s.vertsBegin = r.u32();
             s.vertsLength = r.u32();
-            r.u32();
+            s.boneIndexCount = std::min<uint32_t>(r.u32(), 26);
             for (int j = 0; j < 26; ++j) s.boneIndices[j] = r.u16();
             subsets.push_back(s);
         }
@@ -404,7 +405,7 @@ Shape parse(const std::string& bytes, std::string* err) {
                     for (int j = 0; j < 4; ++j) {
                         const uint8_t subsetIndex = vertexSubsetIndices[v][j];
                         const float weight = vertexWeights[v][j] / 255.0f;
-                        if (weight <= 0.0f || subsetIndex >= 26) continue;
+                        if (weight <= 0.0f || subsetIndex >= subset.boneIndexCount) continue;
                         const uint16_t boneIndex = subset.boneIndices[subsetIndex];
                         if (boneIndex >= boneCount) continue;
                         auto found = std::find_if(weights.begin(), weights.end(), [&](const EditMesh::Weight& w) { return w.bone == boneIndex; });
