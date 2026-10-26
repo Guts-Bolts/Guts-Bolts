@@ -675,6 +675,9 @@ void Editor::renderToolbar() {
             if (bigButton("Script Analysis", Icons::Id::Script, m_scriptEditor->analysisShown(), true,
                           "Find mistakes in every script without pressing Play"))
                 m_scriptEditor->showAnalysis();
+            if (bigButton("AI Activity", Icons::Id::CommandBar, m_showAiActivity, true,
+                          "Everything the AI assistant did, what it changed (undo it all in one click),\nand its requests to delete things"))
+                m_showAiActivity = !m_showAiActivity;
             if (bigButton("Shortcuts", Icons::Id::Keyboard, m_showShortcuts, true, "Every keyboard shortcut (F1)"))
                 m_showShortcuts = !m_showShortcuts;
             if (bigButton("Settings", Icons::Id::Settings, false, true, "Graphics and frame rate")) m_showSettings = true;

@@ -1561,6 +1561,27 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     }
 
     // ---------------------------------------------------------------- HISTORY
+    if (name == "ai_activity") {
+        const std::string action = str("action").empty() ? "report" : str("action");
+        if (action == "keep") { aiKeepChanges(); return done({{"kept", true}, {"note", "The report starts over from now."}}); }
+        if (action == "undo_all") {
+            if (m_playing) return fail("PLAYTEST_RUNNING", "Can't undo during a playtest.", "playtest stop first.");
+            if (!aiUndoChanges()) return fail("NOTHING_TO_UNDO", "There are no AI changes waiting in the report.", "ai_activity report");
+            return done({{"undone", true}, {"note", "The game is back how it was before the AI's changes. undo brings them back."}});
+        }
+        if (action == "log") {
+            loadAiLog();
+            const int limit = std::clamp(args.value("limit", 30), 1, 300);
+            json list = json::array();
+            for (auto it = m_aiLog.rbegin(); it != m_aiLog.rend() && (int)list.size() < limit; ++it)
+                list.push_back({{"time", it->time}, {"source", it->source}, {"tool", it->tool}, {"args", it->args}, {"result", it->result},
+                                {"added", it->added}, {"removed", it->removed}, {"changed", it->changed}, {"settings", it->settings}});
+            return done({{"entries", list}, {"ask_first", m_aiAskFirst}});
+        }
+        if (action != "report") return fail("INVALID_INPUT", "action must be report, log, keep or undo_all.", "");
+        if (m_playing) return fail("PLAYTEST_RUNNING", "The report is about the saved game, and a playtest is running.", "playtest stop first.");
+        return done(aiChangeReport());
+    }
     if (name == "checkpoint") {
         const std::string action = str("action");
         const std::string cp = str("name").empty() ? "default" : str("name");

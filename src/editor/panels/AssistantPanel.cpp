@@ -117,7 +117,7 @@ void AssistantPanel::handleReply(int status, const std::string& body, const std:
     for (const auto& b : j["content"]) {
         if (b.value("type", "") != "tool_use") continue;
         std::string name = b.value("name", "");
-        AiToolResult r = m_editor.runAiTool(name, b.contains("input") && b["input"].is_object() ? b["input"] : json::object());
+        AiToolResult r = m_editor.runAiToolFrom("Assistant", name, b.contains("input") && b["input"].is_object() ? b["input"] : json::object());
         std::string shown = name;
         if (b.contains("input") && b["input"].contains("object")) shown += " " + b["input"]["object"].get<std::string>();
         m_lines.push_back({r.error ? Line::Error : Line::Tool, shown + (r.error ? ": " + r.text : "")});
@@ -217,6 +217,9 @@ void AssistantPanel::render(bool* open) {
     ImGui::SameLine();
     if (ImGui::Button("New chat") && !busy) { m_messages = json::array(); m_lines.clear(); }
     ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button(m_editor.aiHasChanges() ? "Review its changes" : "AI Activity")) m_editor.showAiActivity();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everything the AI did and changed. Undo all of it in one click.");
     if (m_apiKey.empty()) ImGui::TextDisabled("Add your API key in Chat settings to start.");
     ImGui::End();
 }
