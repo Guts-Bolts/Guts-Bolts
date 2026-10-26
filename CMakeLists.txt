@@ -367,6 +367,22 @@ add_custom_target(gb_version ALL
     BYPRODUCTS "${GB_GENERATED}/Version.h"
     COMMENT "Checking version")
 
+# Roblox FileMesh v7 uses Draco for its compressed CORE MESH chunks. This is
+# an engine dependency (not editor-only): the Player also needs to render assets
+# imported from Roblox models. Keep it before gb_engine so every platform target
+# can compile/link the shared RobloxMesh parser.
+set(DRACO_JS_GLUE OFF CACHE BOOL "" FORCE)
+set(DRACO_TESTS OFF CACHE BOOL "" FORCE)
+set(DRACO_INSTALL OFF CACHE BOOL "" FORCE)
+set(DRACO_TRANSCODER_SUPPORTED OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+    draco
+    GIT_REPOSITORY https://github.com/google/draco.git
+    GIT_TAG        1.5.7
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(draco)
+
 # ---------------------------------------------------------------------------
 # The engine: scene, physics, scripting, rendering, game session.
 # Shared by the editor (GutsAndBolts) and the player app (GutsAndBoltsPlayer).
@@ -498,6 +514,7 @@ endif()
 target_link_libraries(gb_engine PUBLIC
     gb_imgui
     ${GB_GLM}
+    draco::draco
     lua_static
     nlohmann_json::nlohmann_json
     monocypher
@@ -599,19 +616,6 @@ FetchContent_Declare(
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(cgltf)
-# Draco and meshoptimizer: unpacking squashed glTF / GLB files (KHR_draco_mesh_compression
-# and EXT_meshopt_compression, which Sketchfab, gltfpack and gltf-transform make).
-set(DRACO_JS_GLUE OFF CACHE BOOL "" FORCE)
-set(DRACO_TESTS OFF CACHE BOOL "" FORCE)
-set(DRACO_INSTALL OFF CACHE BOOL "" FORCE)
-set(DRACO_TRANSCODER_SUPPORTED OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-    draco
-    GIT_REPOSITORY https://github.com/google/draco.git
-    GIT_TAG        1.5.7
-    GIT_SHALLOW    TRUE
-)
-FetchContent_MakeAvailable(draco)
 FetchContent_Declare(
     meshoptimizer
     GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
