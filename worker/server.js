@@ -359,7 +359,7 @@ const kMsgKept = 500;            // messages kept per game at most
 const kMsgPerPoll = 200;         // handed out per msg.poll
 const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
-const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get']);
+const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
 const kCodeMinutes = 15, kCodeTries = 5, kMailGap = 60, kMailsPerDay = 8;
@@ -4069,6 +4069,32 @@ export class GbServerObject extends DurableObject {
           posts: list.reduce((n, th) => n + th.posts.length, 0),
           last: newest ? { thread: newest.id, title: newest.title, by: who(newest.lastBy), at: newest.last } : null };
       }) });
+    }
+    if (name === 'forum.search') {
+      const q = str(args, 'q').trim().slice(0, 100).toLocaleLowerCase();
+      if (q.length < 2) return fail('Enter at least two characters to search.');
+      const requestedBoard = str(args, 'board');
+      const boardFilter = requestedBoard && requestedBoard !== 'all' ? boardOf(requestedBoard) : null;
+      if (requestedBoard && requestedBoard !== 'all' && !boardFilter) return fail('That board doesn’t exist.');
+      const all = [...this.forum.values()].filter((th) => (!boardFilter || th.board === boardFilter.id) && !hidden(th.by)).sort((x, y) => y.last - x.last);
+      const matches = [];
+      for (const th of all) {
+        const titleMatch = th.title.toLocaleLowerCase().includes(q);
+        let matchedPost = -1;
+        if (!titleMatch) matchedPost = th.posts.findIndex((post) => {
+          const author = this.users.get(post.by);
+          return (!author || !this.blocks(me, author)) && String(post.text || '').toLocaleLowerCase().includes(q);
+        });
+        if (!titleMatch && matchedPost < 0) continue;
+        const b = boardOf(th.board) || { name: '?' }, postIndex = matchedPost < 0 ? 0 : matchedPost;
+        const text = titleMatch ? th.title : String(th.posts[matchedPost].text || ''), at = text.toLocaleLowerCase().indexOf(q);
+        const start = Math.max(0, at - 65);
+        const snippet = (start ? '…' : '') + text.slice(start, Math.min(text.length, at + q.length + 95)) + (start + 160 < text.length ? '…' : '');
+        matches.push({ id: th.id, title: th.title, board: th.board, boardName: b.name, by: who(th.by), last: th.last,
+          replies: th.posts.length - 1, match: titleMatch ? 'title' : 'post', snippet, postPage: Math.floor(postIndex / kForumPage) });
+      }
+      const pageSize = 20, pages = Math.max(1, Math.ceil(matches.length / pageSize)), page = clamp(num(args, 'page'), 0, pages - 1);
+      return okay({ results: matches.slice(page * pageSize, (page + 1) * pageSize), total: matches.length, page, pages });
     }
     if (name === 'forum.list') {
       const b = boardOf(str(args, 'board'));
