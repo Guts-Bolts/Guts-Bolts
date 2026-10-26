@@ -290,10 +290,10 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
             m_quit = true;
             break;
         case SDL_APP_WILLENTERBACKGROUND:
-            Audio::setMasterVolume(0.0f);    // phone went to the home screen: go quiet
+            Audio::suspend();    // mute while backgrounded without overwriting the user's volume
             break;
         case SDL_APP_DIDENTERFOREGROUND:
-            Audio::setMasterVolume(1.0f);
+            Audio::resume();
             break;
         case SDL_WINDOWEVENT:
             if (e.window.event == SDL_WINDOWEVENT_CLOSE && e.window.windowID == SDL_GetWindowID(m_sdl)) m_quit = true;
