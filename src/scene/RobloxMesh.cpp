@@ -1,4 +1,7 @@
 #include "RobloxMesh.h"
+#include <draco/compression/decode.h>
+#include <draco/mesh/mesh.h>
+#include <draco/attributes/geometry_attribute.h>
 #include "../core/Paths.h"
 
 #include <algorithm>
@@ -102,6 +105,100 @@ void firstLod(std::vector<uint32_t>& tris, const std::vector<uint32_t>& lods) {
     if (a < b && b <= tris.size()) tris = std::vector<uint32_t>(tris.begin() + (long)a, tris.begin() + (long)b);
 }
 
+// Roblox FileMesh v7 stores its CORE MESH as a length-prefixed Draco bitstream.
+// Roblox assigns stable unique IDs: 0=position, 1=normal, 2=UV. Draco point
+// indices are not necessarily attribute-value indices, so map them first.
+bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& tris,
+                   std::string* err) {
+    const uint32_t bitstreamSize = c.u32();
+    if (bitstreamSize == 0 || bitstreamSize > 256u * 1024u * 1024u || !c.has(bitstreamSize)) {
+        if (err) *err = "the Draco mesh payload is empty, too large, or truncated";
+        return false;
+    }
+
+    draco::DecoderBuffer buffer;
+    buffer.Init(reinterpret_cast<const char*>(c.p + c.pos), bitstreamSize);
+    draco::Decoder decoder;
+    auto decoded = decoder.DecodeMeshFromBuffer(&buffer);
+    if (!decoded.ok()) {
+        if (err) *err = "Draco couldn't decode the Roblox mesh: " + decoded.status().error_msg_string();
+        return false;
+    }
+    std::unique_ptr<draco::Mesh> mesh = std::move(decoded).value();
+    if (!mesh || mesh->num_points() == 0 || mesh->num_faces() == 0 ||
+        mesh->num_points() > 5'000'000 || mesh->num_faces() > 10'000'000) {
+        if (err) *err = "the Draco mesh has no geometry or exceeds the safe import limits";
+        return false;
+    }
+
+    const draco::PointAttribute* positions = mesh->GetAttributeByUniqueId(0);
+    if (!positions) positions = mesh->GetNamedAttribute(draco::GeometryAttribute::POSITION);
+    const draco::PointAttribute* normals = mesh->GetAttributeByUniqueId(1);
+    if (!normals) normals = mesh->GetNamedAttribute(draco::GeometryAttribute::NORMAL);
+    const draco::PointAttribute* texcoords = mesh->GetAttributeByUniqueId(2);
+    if (!texcoords) texcoords = mesh->GetNamedAttribute(draco::GeometryAttribute::TEX_COORD);
+    if (!positions) {
+        if (err) *err = "the Draco mesh has no position attribute";
+        return false;
+    }
+
+    std::vector<Corner> points((size_t)mesh->num_points());
+    for (draco::PointIndex pi(0); pi < mesh->num_points(); ++pi) {
+        Corner& out = points[(size_t)pi.value()];
+        float pos[3] = {};
+        if (!positions->ConvertValue(positions->mapped_index(pi), 3, draco::DT_FLOAT32, pos)) {
+            if (err) *err = "the Draco position attribute could not be converted to float3";
+            return false;
+        }
+        out.pos = {pos[0], pos[1], pos[2]};
+        out.normal = {0.0f, 0.0f, 0.0f};
+        out.uv = {0.0f, 0.0f};
+        if (normals) {
+            float n[3] = {};
+            if (normals->ConvertValue(normals->mapped_index(pi), 3, draco::DT_FLOAT32, n))
+                out.normal = glm::vec3(n[0], n[1], n[2]);
+        }
+        if (texcoords) {
+            float uv[2] = {};
+            if (texcoords->ConvertValue(texcoords->mapped_index(pi), 2, draco::DT_FLOAT32, uv))
+                out.uv = glm::vec2(uv[0], uv[1]);
+        }
+    }
+
+    verts.clear();
+    tris.clear();
+    verts.reserve((size_t)mesh->num_faces() * 3);
+    tris.reserve((size_t)mesh->num_faces() * 3);
+    for (draco::FaceIndex fi(0); fi < mesh->num_faces(); ++fi) {
+        const auto& face = mesh->face(fi);
+        const uint32_t base = (uint32_t)verts.size();
+        bool valid = true;
+        for (int corner = 0; corner < 3; ++corner) {
+            const uint32_t point = (uint32_t)face[corner].value();
+            if (point >= points.size()) { valid = false; break; }
+            verts.push_back(points[point]);
+            tris.push_back(base + (uint32_t)corner);
+        }
+        if (!valid) {
+            verts.resize(base);
+            tris.resize(base);
+        }
+    }
+
+    // Some legacy streams omit normals. Derive flat normals so lighting remains valid.
+    for (size_t i = 0; i + 2 < tris.size(); i += 3) {
+        Corner& a = verts[tris[i]];
+        Corner& b = verts[tris[i + 1]];
+        Corner& d = verts[tris[i + 2]];
+        glm::vec3 n = glm::cross(b.pos - a.pos, d.pos - a.pos);
+        if (glm::length(n) > 1e-8f) n = glm::normalize(n);
+        if (glm::length(a.normal) < 1e-6f) a.normal = n;
+        if (glm::length(b.normal) < 1e-6f) b.normal = n;
+        if (glm::length(d.normal) < 1e-6f) d.normal = n;
+    }
+    return !tris.empty();
+}
+
 // "version 1.00" / "1.01": text. A face count, then nine [x,y,z] groups per
 // triangle (position, normal, uv for each corner).
 Shape parseText(const std::string& text, size_t start, bool halve, std::string* err) {
@@ -181,12 +278,19 @@ Shape parse(const std::string& bytes, std::string* err) {
             if (!r.has(size)) break;
             Bytes c{r.p, r.pos + size, r.pos};
             if (kind == "COREMESH") {
-                if (chunkVer != 1) { if (err) *err = "this mesh is squashed with Draco compression, which isn't supported yet"; return {}; }
-                uint32_t nv = c.u32();
-                if (!readVerts(c, nv, 40, verts)) break;
-                uint32_t nf = c.u32();
-                if (!readFaces(c, nf, 12, tris)) break;
-                core = true;
+                if (chunkVer == 1) {
+                    uint32_t nv = c.u32();
+                    if (!readVerts(c, nv, 40, verts)) break;
+                    uint32_t nf = c.u32();
+                    if (!readFaces(c, nf, 12, tris)) break;
+                    core = true;
+                } else if (chunkVer == 2) {
+                    if (!readDracoCore(c, verts, tris, err)) return {};
+                    core = true;
+                } else {
+                    if (err) *err = "COREMESH chunk version " + std::to_string(chunkVer) + " isn't supported yet";
+                    return {};
+                }
             } else if (kind.rfind("LODS", 0) == 0) {
                 c.u16(); c.u8();
                 uint32_t n = c.u32();
