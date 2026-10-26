@@ -14,6 +14,7 @@ server that doesn't exist (GB_SERVER) and a throwaway account folder, so nothing
 is published and your own account isn't touched.
 """
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -268,40 +270,23 @@ def run_tests(m):
     d = m.call("find_and_change", change={"property": "Density", "op": "Squish", "value": "1"})
     check(code(d) == "INVALID_INPUT" and "Multiply by" in choices(d), "bad op lists the choices", d)
 
-    print("9. Script history records what scripts change")
-    lamp = m.call("insert_object", kind="Part", name="HistLamp")
-    lid = lamp["object_id"]
-    m.call("create_script", name="HistScript", source=(
-        "local p = workspace:WaitForChild('HistLamp')\n"
-        "p.AttributeChanged:Connect(function() p.Name = 'HistLampSeen' end)\n"
-        "p.Transparency = 0.5\n"
-        "p:SetAttribute('Lit', true)\n"))
-    d = m.call("script_history", action="clear")
-    d = m.call("script_history", action="record")
-    check(ok(d) and d.get("recording") is True and d.get("total") == 0, "script_history record", d)
-    m.call("playtest", action="start")
-    time.sleep(1.5)
-    m.call("playtest", action="stop")
-    d = m.call("script_history", object=lid)
-    ents = d.get("entries", [])
-    sets = [e for e in ents if e["kind"] == "set" and e["what"] == "Transparency"]
-    check(ok(d) and sets and float(sets[0]["before"]) == 0 and float(sets[0]["after"]) == 0.5 and sets[0]["line"] == 3
-          and "HistScript" in sets[0]["script"], "Transparency 0 -> 0.5 by HistScript line 3", d)
-    evs = [e for e in ents if e["kind"] == "event" and e["what"] == "AttributeChanged"]
-    check(evs and "HistScript" in evs[0]["script"], "the AttributeChanged event that ran the script", d)
-    names = [e for e in ents if e["what"] == "Name"]
-    check(names and names[0]["after"] == "HistLampSeen" and names[0]["line"] == 2, "the change made inside the event", d)
-    d = m.call("script_history", kind="event", script="HistScript")
-    check(ok(d) and d["entries"] and all(e["kind"] == "event" for e in d["entries"]), "kind and script filters", d)
-    m.call("script_history", action="stop")
-    before = m.call("script_history").get("total")
-    m.call("playtest", action="start")
-    time.sleep(1.0)
-    m.call("playtest", action="stop")
-    d = m.call("script_history")
-    check(ok(d) and d.get("recording") is False and d.get("total") == before, "nothing is added when not recording", d)
-    d = m.call("script_history", action="clear")
-    check(ok(d) and d.get("total") == 0, "clear", d)
+    run_folder_tests(m)
+
+
+def run_folder_tests(m):
+    """Runs the tests in tools/ai_tool_tests/: one file per feature, so two pull
+    requests adding tests never change the same lines. Each file has a TITLE and a
+    run(m, t) function; t has check, ok, code and choices (the helpers above)."""
+    folder = os.path.join(ROOT, "tools", "ai_tool_tests")
+    t = types.SimpleNamespace(check=check, ok=ok, code=code, choices=choices)
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".py") or name.startswith("_"):
+            continue
+        spec = importlib.util.spec_from_file_location("ai_tool_test_" + name[:-3], os.path.join(folder, name))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        print(f"{name[:-3]}: {getattr(mod, 'TITLE', name)}")
+        mod.run(m, t)
 
 
 def main():
