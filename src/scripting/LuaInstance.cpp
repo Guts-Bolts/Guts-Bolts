@@ -130,8 +130,7 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
     part->primitiveType = PrimitiveType::Mesh;
 
     auto embeddedBone = [](SceneNode* n) {
-        const Attribute* a = n ? n->findAttribute("RobloxEmbeddedMeshBone") : nullptr;
-        return a && a->type == Attribute::Bool && a->b;
+        return n && n->robloxEmbeddedMeshBone;
     };
     auto containsAuthoredBone = [&](auto&& self, SceneNode* n) -> bool {
         if (!n) return false;
@@ -162,8 +161,7 @@ void refreshRobloxMeshProperty(lua_State* L, SceneNode* instance, const std::str
             glm::mat4 localFrame = parent ? glm::inverse(sourceFrames[(size_t)source.parent]) * worldFrame : worldFrame;
             auto bone = std::make_unique<SceneNode>(source.name, NodeKind::Attachment);
             bone->bone = true;
-            Attribute embeddedTag; embeddedTag.name = "RobloxEmbeddedMeshBone"; embeddedTag.type = Attribute::Bool; embeddedTag.b = true;
-            bone->attributes.push_back(embeddedTag);
+            bone->robloxEmbeddedMeshBone = true;
             bone->transform.position = glm::vec3(localFrame[3]);
             float rz, ry, rx;
             glm::extractEulerAngleZYX(localFrame, rz, ry, rx);
