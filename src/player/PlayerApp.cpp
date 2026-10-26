@@ -1883,6 +1883,8 @@ void PlayerApp::drawGame(float dt) {
     Hud::draw(dl, pos, max, *m_scene, m_session->gui(), labelsAt);
     if (int slot = Hud::drawHotbar(dl, pos, max, *m_scene, tapped && onHotbar && !emotesOpen ? &tapAt : nullptr); slot >= 0 && acceptInput && !emotesOpen)
         m_session->selectToolSlot(slot);
+    if (int slot = Hud::drawBackpack(dl, pos, max, *m_scene, tapped && onHotbar && !emotesOpen ? &tapAt : nullptr); slot >= 0 && acceptInput && !emotesOpen)
+        m_session->selectToolSlot(slot);
     Hud::drawNameTags(dl, pos, max, *m_scene, m_camera.projection() * m_camera.view(), m_camera.position());
     Hud::drawBubbles(dl, pos, max, *m_scene, m_camera.projection() * m_camera.view(), chat().bubbles);
     Hud::drawVoiceTags(dl, pos, max, m_camera.projection() * m_camera.view());
@@ -2518,7 +2520,7 @@ void PlayerApp::drawPauseMenu() {
         key("Mouse wheel", "Zoom in and out; all the way in is first person");
         ImGui::SeparatorText("Other");
         key("/ or Enter", "Chat  (/w name message whispers to one player)");
-        key("1 - 9", "Equip a tool from your hotbar");
+        key("1 - 0", "Equip a tool from your hotbar");
         key("Esc", "Open or close this menu");
         ImGui::SeparatorText("Controller");
         key("Left stick", "Walk");
