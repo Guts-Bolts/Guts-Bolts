@@ -681,6 +681,8 @@ void Editor::renderToolbar() {
             if (bigButton("Script Analysis", Icons::Id::Script, m_scriptEditor->analysisShown(), true,
                           "Find mistakes in every script without pressing Play"))
                 m_scriptEditor->showAnalysis();
+            if (bigButton("Blocks", Icons::Id::Script, m_showBlocks, true, "Visual Scripting: make scripts by connecting blocks"))
+                m_showBlocks = !m_showBlocks;
             if (bigButton("Materials", Icons::Id::Lighting, m_showMaterialEditor, true,
                           "Material Editor: make your own materials from pictures (colours, bumps, shine)"))
                 m_showMaterialEditor = !m_showMaterialEditor;

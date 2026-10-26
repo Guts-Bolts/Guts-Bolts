@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -33,6 +34,7 @@ public:
     void showDependencyMap() { m_showDependencyMap = true; m_dependencyAnalysedAt = -100.0; }
     void renderDependencyMap();
     void runDependencyMap();
+    std::function<void(uint64_t)> onOpenBlocks;   // "Edit as blocks", for scripts made with blocks
 
 private:
     static int onEdit(ImGuiInputTextCallbackData* d);
