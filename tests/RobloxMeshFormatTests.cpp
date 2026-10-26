@@ -72,14 +72,14 @@ std::string textFixture(bool oldVersion) {
     return out;
 }
 
-std::string binaryStaticFixture(int version, bool minorOne = false) {
+std::string binaryStaticFixture(int version, bool minorOne = false, uint8_t vertexStride = 36) {
     std::string out = version == 2 ? "version 2.00\n" :
         (minorOne ? "version 3.01\n" : "version 3.00\n");
     if (version == 2) {
-        u16(out, 12); u8(out, 32); u8(out, 12);
+        u16(out, 12); u8(out, vertexStride); u8(out, 12);
         u32(out, 3); u32(out, 1);
     } else {
-        u16(out, 16); u8(out, 32); u8(out, 12);
+        u16(out, 16); u8(out, vertexStride); u8(out, 12);
         u16(out, 4); u16(out, 0);
         u32(out, 3); u32(out, 1);
     }
@@ -88,7 +88,11 @@ std::string binaryStaticFixture(int version, bool minorOne = false) {
         {{ 1, 0, 0, 0, 0, 1, 1, 0}},
         {{ 0, 1, 0, 0, 0, 1, 0.5f, 1}}
     }};
-    for (const auto& v : vertices) for (float x : v) f32(out, x);
+    for (const auto& v : vertices) {
+        for (float x : v) f32(out, x);
+        if (vertexStride >= 36) { u8(out, 127); u8(out, 0); u8(out, 0); u8(out, 127); }
+        if (vertexStride >= 40) { u8(out, 255); u8(out, 128); u8(out, 64); u8(out, 255); }
+    }
     u32(out, 0); u32(out, 1); u32(out, 2);
     return out;
 }
@@ -269,8 +273,8 @@ int main() {
     if (!runStatic(textFixture(true), "v1.00") ||
         !runStatic(textFixture(false), "v1.01") ||
         !runStatic(binaryStaticFixture(2), "v2.00") ||
-        !runStatic(binaryStaticFixture(3), "v3.00") ||
-        !runStatic(binaryStaticFixture(3, true), "v3.01") ||
+        !runStatic(binaryStaticFixture(3, false, 40), "v3.00") ||
+        !runStatic(binaryStaticFixture(3, true, 36), "v3.01") ||
         !run(4) || !run(4, true) || !run(5) || !runChunkedV6() || !runChunkedV7()) return 1;
     std::cout << "Roblox FileMesh v1.00/v1.01/v2/v3.00/v3.01/v4.00/v4.01/v5/v6/v7 synthetic tests passed\n";
     return 0;
