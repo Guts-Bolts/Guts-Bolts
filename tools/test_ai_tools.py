@@ -14,6 +14,7 @@ server that doesn't exist (GB_SERVER) and a throwaway account folder, so nothing
 is published and your own account isn't touched.
 """
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -267,6 +269,24 @@ def run_tests(m):
     check(ok(d) and all("has no Nope" in r.get("error", "") for r in d.get("results", [])), "a missing property is reported per object", d)
     d = m.call("find_and_change", change={"property": "Density", "op": "Squish", "value": "1"})
     check(code(d) == "INVALID_INPUT" and "Multiply by" in choices(d), "bad op lists the choices", d)
+
+    run_folder_tests(m)
+
+
+def run_folder_tests(m):
+    """Runs the tests in tools/ai_tool_tests/: one file per feature, so two pull
+    requests adding tests never change the same lines. Each file has a TITLE and a
+    run(m, t) function; t has check, ok, code and choices (the helpers above)."""
+    folder = os.path.join(ROOT, "tools", "ai_tool_tests")
+    t = types.SimpleNamespace(check=check, ok=ok, code=code, choices=choices)
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".py") or name.startswith("_"):
+            continue
+        spec = importlib.util.spec_from_file_location("ai_tool_test_" + name[:-3], os.path.join(folder, name))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        print(f"{name[:-3]}: {getattr(mod, 'TITLE', name)}")
+        mod.run(m, t)
 
 
 def main():
