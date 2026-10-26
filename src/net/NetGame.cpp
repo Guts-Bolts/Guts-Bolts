@@ -160,7 +160,8 @@ json avatarJson(const Profile& p) {
             {"rightArm", vec3(c.rightArm)}, {"leftLeg", vec3(c.leftLeg)}, {"rightLeg", vec3(c.rightLeg)},
             {"hat", (int)p.hat}, {"hatColor", vec3(p.hatColor)},
             {"shirtImage", p.shirtImage}, {"pantsImage", p.pantsImage}, {"tshirtImage", p.tshirtImage},
-            {"faceImage", p.faceImage}, {"headless", p.headless}, {"body", p.body}, {"accessories", p.accessories}};
+            {"faceImage", p.faceImage}, {"headless", p.headless}, {"body", p.body}, {"bodyParts", p.bodyParts},
+            {"accessories", p.accessories}};
 }
 
 // Part physics, a SpawnLocation's team and a Model's PrimaryPart (nodeUpdate sends these too).
@@ -953,10 +954,15 @@ void NetServer::handle(Client& c, const std::string& text) {
                         acc[k] = v.get<std::string>();
             const std::string face = cloth("faceImage");
             const std::string body = cloth("body");   // a bundle's new body
+            std::map<std::string, std::string> parts;   // single body parts (a slot each), over the bundle's body
+            if (a.contains("bodyParts") && a["bodyParts"].is_object())
+                for (auto& [k, v] : a["bodyParts"].items())
+                    if (v.is_string() && v.get<std::string>().rfind("gb:", 0) == 0 && v.get<std::string>().size() < 64)
+                        parts[k] = v.get<std::string>();
             const uint64_t rigId = rig->id;
-            auto dress = [this, rigId, acc, face, body]() {
+            auto dress = [this, rigId, acc, face, body, parts]() {
                 if (SceneNode* r = m_scene->findById(rigId)) {
-                    Player::applyBody(*m_scene, r, body);
+                    Player::applyBody(*m_scene, r, body, parts);
                     Player::applyAccessories(*m_scene, r, acc);
                     Player::applyFace(*m_scene, r, face);
                 }
@@ -966,6 +972,7 @@ void NetServer::handle(Client& c, const std::string& text) {
             for (auto& [k, v] : acc) ids.push_back(v.substr(3));
             if (!face.empty()) ids.push_back(face.substr(3));
             if (!body.empty()) ids.push_back(body.substr(3));
+            for (auto& [k, v] : parts) ids.push_back(v.substr(3));
             for (const std::string& id : ids)
                 if (Paths::downloaded(id).empty()) Online::download(id, [dress](bool ok, const std::filesystem::path&, const json&) { if (ok) dress(); });
         }
