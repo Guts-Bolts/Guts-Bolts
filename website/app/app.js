@@ -165,7 +165,6 @@ const PRESETS = [
 ];
 const PARTS = ['head', 'torso', 'leftArm', 'rightArm', 'leftLeg', 'rightLeg'];
 const PART_NAMES = { head: 'Head', torso: 'Torso', leftArm: 'Left Arm', rightArm: 'Right Arm', leftLeg: 'Left Leg', rightLeg: 'Right Leg' };
-const HATS = ['None', 'Top Hat', 'Cap', 'Crown', 'Ponytail'];
 const HAT_COLORS = { 1: [30, 30, 36], 2: [204, 46, 41], 3: [240, 190, 40], 4: [219, 51, 158] };   // a hat's normal colours
 
 function defaultAvatar() {
@@ -2509,13 +2508,10 @@ pages.avatar = async () => {
         <div class="row">${PRESETS.map(([name], i) => html`<button class="btn small" data-act="avatarPreset" data-i="${i}">${name}</button>`)}</div>
         <div class="row" style="margin-top:10px">${PARTS.map((p) => html`<label style="margin:0 12px 0 0;font-weight:normal">
           <input type="color" data-avatar-part="${p}" value="${hexOf(a[p])}"> ${PART_NAMES[p]}</label>`)}</div>
-        <h2>Hat</h2>
-        <div class="row">${HATS.map((h, i) => html`<button class="btn small ${a.hat === i ? 'blue' : ''}" data-act="avatarHat" data-i="${i}">${h}</button>`)}</div>
-        ${a.hat ? html`<p class="row"><label style="margin:0;font-weight:normal"><input type="checkbox" data-avatar-hatcolor-on
-          ${a.hatColor[0] >= 0 ? 'checked' : ''}> My own colour</label>
-          <input type="color" data-avatar-hatcolor value="${hexOf(a.hatColor[0] >= 0 ? a.hatColor : HAT_COLORS[a.hat])}"></p>` : ''}
+        ${a.hat ? html`<p class="row small muted" style="margin-top:14px">You still have an old built-in hat on (from before the catalog).
+          <button class="btn small" data-act="avatarHat" data-i="0">Take it off</button></p>` : ''}
         <h2>Hats <span class="small muted">(${wornHatCount}/12 equipped)</span></h2>
-        <p class="small muted">Equip multiple hats at once. Select up to 12 owned hats; equipped hats stay on when you add another. Your built-in avatar hat is controlled separately above.</p>
+        <p class="small muted">Equip multiple hats at once. Select up to 12 owned hats; equipped hats stay on when you add another.</p>
         ${ownedHats.length ? html`<div class="grid">${ownedHats.map((it) => html`<div class="card square">
             <div class="pic" style="${a.wearing.includes(it.id) ? 'outline:3px solid #16a34a' : ''}">${itemIcon(it)}</div>
             <div class="name">${it.name}</div>
