@@ -8,10 +8,18 @@
 // and fetching them (and their pictures) from Roblox's public asset server.
 namespace RobloxMesh {
 
+struct Bone {
+    std::string name;
+    int parent = -1;                 // -1 = root; otherwise index in this array
+    glm::vec3 position{0.0f};        // FileMesh-local position, before centering/scaling
+    glm::mat3 rotation{1.0f};
+};
+
 struct Shape {
     std::shared_ptr<EditMesh> mesh;   // points squeezed into the -0.5..0.5 box, like every part
     glm::vec3 center{0.0f};           // where the shape sat in the file (Roblox studs)...
     glm::vec3 size{1.0f};             // ...and how big it was
+    std::vector<Bone> bones;          // v4/v5 embedded rig metadata, when present
 };
 
 // Read a mesh file: every version, from the old text "version 1.00" ones to the
