@@ -2,6 +2,7 @@
 #include "AiTools.h"
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 #include <map>
@@ -48,6 +49,12 @@ public:
     void runCommand(const std::string& code);   // Command Bar
     // AI helpers (Assistant tab and MCP): run one of Studio's tools (see AiTools.h).
     AiToolResult runAiTool(const std::string& name, const nlohmann::json& args);
+    // The same, for a call from an AI (source: "Assistant" or "AI app"): it goes in the AI
+    // Activity log, its changes in the change report, and risky ones wait for the
+    // person's OK first (EditorAiActivity.cpp).
+    AiToolResult runAiToolFrom(const std::string& source, const std::string& name, const nlohmann::json& args);
+    void showAiActivity() { m_showAiActivity = true; }
+    bool aiHasChanges() const { return !m_aiBaseline.empty(); }
     static std::vector<std::string> insertKinds();   // what insert_object / Insert Object can make
     // Test / command-line helpers.
     void startTeamCreate(bool host, const std::string& address);
@@ -85,6 +92,9 @@ private:
     void renderLuaDebugger();
     void renderSceneValidator();
     void renderProjectTimeMachine();
+    void renderBlocks();                       // Visual Scripting (EditorBlocks.cpp)
+    void renderMaterialEditor();    // EditorMaterials.cpp
+    void renderScriptHistory();     // EditorScriptHistory.cpp
     void renderLevelGenerator();               // (EditorLevelGen.cpp)
     void handleShortcuts();
 
@@ -98,6 +108,8 @@ private:
     void       addSound();
     void       connectParts(int type, SceneNode* a, glm::vec3 pa, SceneNode* b, glm::vec3 pb);
     void       openScript(SceneNode* script);
+    void       openBlocks(SceneNode* script);    // Visual Scripting, showing this block script
+    SceneNode* newBlockScript();                 // a Script made with blocks, in the selected part
     // Procedural levels: tries `tries` seeds from settings.seed and keeps the first that passes
     // the checks (else the last); builds it (at `at`, or next to everything) when buildIt.
     nlohmann::json generateLevel(const LevelGen::Settings& settings, int tries, bool buildIt, const glm::vec3* at,
@@ -309,8 +321,24 @@ private:
     bool m_showPerformanceDoctor = false;
     bool m_showLuaDebugger = false;
     int m_debugLineInput = 1;
+    int m_debugSeenPauses = 0;   // the Lua Debugger's pause count we've already jumped to
     bool m_showSceneValidator = false;
     bool m_showProjectTimeMachine = false;
+    // Visual Scripting: the block script being shown and its blocks (EditorBlocks.cpp)
+    bool m_showBlocks = false, m_blocksEdited = false, m_blocksMoving = false, m_blocksPanned = false;
+    uint64_t m_blocksScript = 0;
+    nlohmann::json m_blocksGraph;
+    std::string m_blocksWritten, m_blocksLua, m_blocksDragPin;
+    std::vector<std::string> m_blocksProblems;
+    int m_blocksSelected = 0, m_blocksDragFrom = 0;
+    ImVec2 m_blocksPan{0, 0}, m_blocksMenuAt{0, 0};
+    bool m_showMaterialEditor = false;
+    uint64_t    m_materialEditing = 0;    // the MaterialVariant shown in the Material Editor
+    std::string m_materialOldName;        // its name before a rename (parts follow it)
+    bool m_showScriptHistory = false;
+    std::string m_historyFilter;
+    int  m_historyKind = 0;           // 0 every entry, 1 property changes, 2 events
+    bool m_historySelected = false;   // only the selected object's
     // Level Generator (EditorLevelGen.cpp)
     bool m_showLevelGen = false, m_levelGenReplace = true, m_levelGenBrowse = false;
     LevelGen::Settings m_levelGen;
@@ -351,6 +379,28 @@ private:
     std::map<std::string, std::string> m_aiCheckpoints;
     std::unique_ptr<Physics>           m_aiNav;
     nlohmann::json                     m_aiPublish;   // the publish_game tool's last publish: {state, name, ...}
+    // AI Activity (EditorAiActivity.cpp): every AI tool call, and what the AI changed since
+    // the person last pressed Keep / Undo all (the game before its first change).
+    struct AiLogEntry {
+        long long   time = 0;
+        std::string source, tool, args, result;   // result: "" = it worked, else the error
+        int added = 0, removed = 0, changed = 0;  // what this call did to the game
+        bool        settings = false;             // ...and to Lighting / game settings
+    };
+    std::vector<AiLogEntry> m_aiLog;
+    bool        m_aiLogLoaded = false;
+    std::string m_aiBaseline, m_aiBaselinePath;   // the game before the AI's changes ("" = none)
+    bool        m_aiAskFirst = true;              // ask before deleting / restoring
+    struct AiAsk { std::string source, tool, summary; nlohmann::json args; };
+    std::vector<AiAsk>    m_aiAsks;               // waiting for Allow / Don't allow
+    std::set<std::string> m_aiAllowed, m_aiRefused;   // tool + args the person answered (used once)
+    bool        m_showAiActivity = false;
+    void        loadAiLog();
+    void        saveAiLog() const;
+    void        aiKeepChanges();
+    bool        aiUndoChanges();                  // false = nothing to undo / playtesting
+    nlohmann::json aiChangeReport();
+    void        renderAiActivity();
     std::vector<std::string> m_undo, m_redo;
     std::string              m_committed;      // last known scene state
     std::vector<std::string> m_clipboard;

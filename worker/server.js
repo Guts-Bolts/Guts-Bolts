@@ -4955,7 +4955,7 @@ export class GbServerObject extends DurableObject {
       this.scheduleSweep();
       return new Response(null, { status: 101, webSocket: pair[0] });
     }
-    // GET /wear/<asset id>: a Studio-made accessory's 3D shape (public: anyone can see it worn),
+    // GET /wear/<asset id>: a Studio-made accessory's 3D shape (or a bundle's / body part's body; public: anyone can see it worn),
     // so the website's 3D avatars draw hats, hair and the rest like the game does.
     // Gear too, but only its shape (no scripts), so item pictures are drawn from the item itself.
     if (url.pathname.startsWith('/wear/')) {
@@ -4970,6 +4970,16 @@ export class GbServerObject extends DurableObject {
           transparency: n.transparency, children: (Array.isArray(n.children) ? n.children : []).map(shape).filter(Boolean),
         } : null);
         return new Response(JSON.stringify({ nodes: m.nodes.map(shape).filter(Boolean) }),
+          { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=3600' } });
+      }
+      // Bundles with a new body, and single body parts: just the body's meshes (the website
+      // draws them in place of the normal body, like the game does).
+      if (a && ((a.kind === 'bundle' && a.meta && a.meta.body) || a.kind === 'bodypart')) {
+        const raw = this.readFile(a.id);
+        let file = null;
+        try { file = raw ? JSON.parse(new TextDecoder().decode(raw)) : null; } catch { file = null; }
+        if (!file || file.format !== 'gbbundle' || !file.body || typeof file.body !== 'object') return new Response('No body.', { status: 404 });
+        return new Response(JSON.stringify({ format: 'gbbundle', body: file.body }),
           { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=3600' } });
       }
       const data = a && isAccessory(a.kind) && a.meta && a.meta.model ? this.readFile(a.id) : null;

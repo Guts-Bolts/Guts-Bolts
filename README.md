@@ -286,7 +286,8 @@ what it needs, what it gives back and how risky it is):
   `bake_navmesh`, `find_path`, `walk_character_to`
 - Docs: `get_engine_info` (overview, capabilities, concepts, coordinates,
   workflows, classes)
-- Debug: `get_output`, `get_errors`, `diagnose_object`, `validate_scene`, `analyze_script_dependencies` (static ModuleScript dependency map, unresolved references and potentially unreferenced modules), `analyze_scene_performance` (static counts for parts, dynamic physics bodies, lights, particle emitters and script sizes; not a live profiler)
+- Debug: `get_output`, `get_errors`, `diagnose_object`, `validate_scene`, `analyze_script_dependencies` (static ModuleScript dependency map, unresolved references and potentially unreferenced modules), `analyze_scene_performance` (static counts for parts, dynamic physics bodies, lights, particle emitters and script sizes; not a live profiler), `script_history` (record what scripts change during a playtest: each property set with before / after and the script line, and each event that ran a script)
+- History: `ai_activity` (everything the AI changed since the person last pressed Keep, a log of every AI tool call, and `undo_all`). With "Ask me first" on (the default), `delete_object` and `checkpoint` restore / delete wait for the person to press Allow in the AI Activity window and fail with `NEEDS_PERSON_OK` until then.
 - View and history: `screenshot`, `undo`, `redo`, `checkpoint` (named save
   points to try things and roll back)
 - Publish: `publish_game` (only when you ask for it)
@@ -328,7 +329,8 @@ finishes in the background: `publish_game {action: "status"}` says how it went.
 
 `tools/test_ai_tools.py` starts Studio with MCP on (under `xvfb-run` when
 there's no screen) and checks all of this over JSON-RPC:
-`python3 tools/test_ai_tools.py`.
+`python3 tools/test_ai_tools.py`. It also runs every file in
+`tools/ai_tool_tests/` (one per feature; see the README there).
 
 Every tool answers with JSON: `success`, the `object_id` (`#42`) of what it
 touched, the state read back from the engine, `warnings`, and for failures an
@@ -542,6 +544,29 @@ events), just like in Roblox.
 A script that loops forever without `wait()` is stopped after 5 seconds with a
 friendly error, so it can't freeze your game. Scripts can't touch files on
 your computer.
+
+### Visual Scripting (blocks)
+
+Don't want to type code? Open **VIEW > Blocks** (or View > Visual Scripting),
+select a part and press **New block script**. Then add blocks from the left and
+drag from a block's dot on the right to the block that comes next:
+
+- **Events** start a chain: When the game starts, When touched, When clicked,
+  When the prompt is used, When a player joins, Every few seconds.
+- **Actions** change things: set colour, see-through, any property, move, destroy,
+  copy, play a sound, print, wait.
+- **Players**: leaderboard stats, give points, hurt or teleport the player.
+- **Control**: If it's a player, If it has a tag, If an attribute is, If the player
+  has points, If lucky, Repeat, and Only every few seconds (so one touch doesn't
+  count 50 times).
+
+A block's object can be "This part" (the script's parent), "The part that
+touched", "The player's character" or a path like `Workspace.Door`.
+
+The blocks turn into normal Lua, shown on the right, so you can see how they work.
+A block script is a normal Script: the blocks are kept in a comment at the top of
+its code. Changing that code by hand is fine, but changing the blocks again writes
+over it (the window warns you, and can turn it into a plain script instead).
 
 ## Decals (pictures on parts)
 
@@ -1780,6 +1805,35 @@ settings). In an online game, a Script on the host can change a player's
 
 ```
 xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_camera.lua)" --screenshot /tmp/camera.png --frames 900
+```
+
+### Your own materials (Material Editor)
+
+Like Roblox's Material Manager: a **MaterialVariant** in **MaterialService** is a
+material you make from pictures, on top of a built-in one. Open **VIEW > Materials**,
+press **New**, pick its **BaseMaterial** and add pictures:
+
+- **ColorMap**: the colours (the part's Color tints it; white shows it as it is)
+- **NormalMap**: bumps and grooves
+- **RoughnessMap** / **MetalnessMap**: where it's rough or shiny, metal or not
+- **StudsPerTile**: how big one copy of the pictures is
+- **Roughness**, **Metalness**, **Glow** (ours): for what has no picture
+
+A part shows it when its **Material** is the BaseMaterial and its
+**MaterialVariant** is the variant's name ("Use on selected parts" sets both). The
+part still weighs and grips like the BaseMaterial. **Save as preset** keeps a
+material on this computer for your other games. Scripts work the same way:
+
+```lua
+local v = Instance.new("MaterialVariant")
+v.Name = "Lava"
+v.BaseMaterial = Enum.Material.Slate
+v.ColorMap = "images/lava.png"
+v.Glow = 2
+v.Parent = game:GetService("MaterialService")
+
+part.Material = Enum.Material.Slate
+part.MaterialVariant = "Lava"
 ```
 
 ### Sky and screen effects
@@ -3189,7 +3243,9 @@ node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.tes
 ```
 
 GitHub runs them (plus a check of every website script for typing mistakes) on
-every change, as the **Tests** job. To add a test, copy one of the
+every change, as the **Tests** job. (Before they start, the update log is gathered
+from `worker/updates/`, one file per update, by `worker/gather-updates.mjs`.
+Cloudflare does the same before each deploy.) To add a test, copy one of the
 `*.test.mjs` files; `makeServer()` in `helpers.mjs` gives you a fresh server and
 `s.call(player, 'op', {...})` asks it to do something.
 

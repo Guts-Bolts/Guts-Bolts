@@ -161,15 +161,20 @@ function pieces(model, av, items) {
   const hasModelHat = (items || []).some((it) => isModelAccessory(it) && (it.kind === 'hat' || it.kind === 'hair'));
   if (builtInHat && !hasModelHat) hatsToDraw.unshift({ style: builtInHat, tint: builtInTint });
   const out = [];
-  // Bundles made in Studio can replace the complete body model. The game loads these
-  // through /wear/<id>; the website must do the same instead of always drawing player.obj.
-  const bodyBundle = (items || []).find(isBodyBundle);
-  const bodyModel = bodyBundle && accessories.get(bodyBundle.id);
-  // Individual body-part catalog items can replace one rig part without requiring a
-  // complete bundle. Their metadata uses bodyPart: Head, Torso, LeftArm, RightArm,
-  // LeftLeg, or RightLeg and their /wear/<id> file uses the normal gbbundle body format.
-  const bodyPartItems = (items || []).filter(isBodyPartItem);
-  const bodyPartKeys = new Set(bodyPartItems.map((it) => bodyPartKey(it.meta.bodyPart)).filter(Boolean));
+  // A new body (a bundle made in Studio's Bundles window) and single body parts replace
+  // only the parts they have, like the game (Player::applyBody): the bundle's parts first,
+  // then each single part over its own slot (the last one worn wins). Until their meshes
+  // have loaded (or if they can't), the normal part shows.
+  const slotPiece = new Map();   // 'torso', 'leftArm'... -> the piece to draw instead
+  const take = (it, only) => {
+    const entry = accessories.get(it.id);
+    for (const p of (entry && entry.pieces) || []) {
+      const key = bodyPartKey(p.bodyPart);
+      if (key && (!only || key === only)) slotPiece.set(key, p);
+    }
+  };
+  for (const it of items || []) if (isBodyBundle(it)) take(it);
+  for (const it of items || []) if (isBodyPartItem(it)) take(it, bodyPartKey(it.meta.bodyPart));
   // A Headless Head bundle (meta.headless): no head, so no face either (Player::setHeadless).
   const headless = (items || []).some((it) => it && it.kind === 'bundle' && it.meta && it.meta.headless);
   // Clothing pictures (Player::applyClothing): the shirt on the torso and arms, the
@@ -178,35 +183,11 @@ function pieces(model, av, items) {
   const clothFor = { torso: shirt ? 1 : pants ? 2 : 0, leftArm: shirt ? 1 : 0, rightArm: shirt ? 1 : 0, leftLeg: pants ? 2 : 0, rightLeg: pants ? 2 : 0 };
   for (const [name, part] of Object.entries(model)) {
     const key = PART_OF[name];
-    if (key === 'head' && headless) continue;
-    // A body bundle supplies its own body meshes (including the custom torso). Do not
-    // render the default mannequin over them; that is what caused equipped bundles to
-    // appear in the inventory but not on the website's 3D profile preview.
-    if (bodyBundle && key) continue;
-    if (!bodyBundle && key && bodyPartKeys.has(key)) continue;
-    if (key) out.push({ mesh: part, color: col[key], face: name === 'Head', torso: name === 'Torso', cloth: clothFor[key] || 0 });
+    if (!key || (key === 'head' && headless)) continue;
+    const look = { color: col[key], face: name === 'Head', torso: name === 'Torso', cloth: clothFor[key] || 0 };
+    const instead = slotPiece.get(key);
+    out.push(instead ? Object.assign({}, instead, look) : Object.assign({ mesh: part }, look));
   }
-  const appendBodyPieces = (entry, allowedKeys = null, excludedKeys = null) => {
-    if (!entry || !entry.pieces) return;
-    for (const p of entry.pieces) {
-      const key = PART_OF[p.bodyPart] || bodyPartKey(p.bodyPart);
-      if (!key || (allowedKeys && !allowedKeys.has(key)) || (excludedKeys && excludedKeys.has(key))) continue;
-      out.push(Object.assign({}, p, {
-        color: col[key],
-        face: key === 'head',
-        torso: key === 'torso',
-        cloth: clothFor[key] || 0,
-      }));
-    }
-  };
-  // Apply individually equipped parts in order; the last item for a slot wins.
-  const chosenParts = new Map();
-  for (const it of bodyPartItems) {
-    const key = bodyPartKey(it.meta.bodyPart);
-    if (key) chosenParts.set(key, it);
-  }
-  if (bodyBundle) appendBodyPieces(bodyModel, null, new Set(chosenParts.keys()));
-  for (const [key, it] of chosenParts) appendBodyPieces(accessories.get(it.id), new Set([key]));
   // The face is a flat picture painted onto the front of the head (see FS / faceTexture).
   const head = model.Head;
   const hc = head ? head.min.map((m, i) => (m + head.max[i]) / 2) : [0, 2.325, 0];
