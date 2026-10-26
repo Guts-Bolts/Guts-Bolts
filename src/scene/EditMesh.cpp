@@ -147,6 +147,7 @@ void refresh(SceneNode& node, const std::vector<glm::vec3>* posed) {
         for (auto& n : smoothN) n = glm::length(n) > 1e-12f ? glm::normalize(n) : glm::vec3(0, 1, 0);
     }
     const bool ownUVs = m.uvs.size() == m.faces.size();
+    const bool ownNormals = m.normals.size() == m.verts.size();
     for (size_t fi = 0; fi < m.faces.size(); ++fi) {
         const auto& f = m.faces[fi];
         if (f.size() < 3) continue;
@@ -154,7 +155,9 @@ void refresh(SceneNode& node, const std::vector<glm::vec3>* posed) {
         if (ownUVs && m.uvs[fi].size() == f.size()) {   // laid out by hand (clothing templates)
             uint32_t base = (uint32_t)verts.size();
             for (size_t c = 0; c < f.size(); ++c)
-                verts.push_back({m.verts[f[c]], m.smooth ? smoothN[f[c]] : n, m.uvs[fi][c],
+                const glm::vec3 normal = ownNormals && glm::length(m.normals[f[c]]) > 1e-6f
+                    ? glm::normalize(m.normals[f[c]]) : (m.smooth ? smoothN[f[c]] : n);
+                verts.push_back({m.verts[f[c]], normal, m.uvs[fi][c],
                                  f[c] < m.colors.size() ? m.colors[f[c]] : glm::vec4(1.0f),
                                  f[c] < m.tangents.size() ? m.tangents[f[c]] : glm::vec4(1, 0, 0, 1)});
             for (uint32_t k = 1; k + 1 < (uint32_t)f.size(); ++k)
@@ -170,7 +173,9 @@ void refresh(SceneNode& node, const std::vector<glm::vec3>* posed) {
         uint32_t base = (uint32_t)verts.size();
         for (uint32_t i : f) {
             const glm::vec3& p = rest.verts[i];
-            verts.push_back({m.verts[i], m.smooth ? smoothN[i] : n, {p[u] + 0.5f, p[v] + 0.5f},
+            const glm::vec3 normal = ownNormals && glm::length(m.normals[i]) > 1e-6f
+                ? glm::normalize(m.normals[i]) : (m.smooth ? smoothN[i] : n);
+            verts.push_back({m.verts[i], normal, {p[u] + 0.5f, p[v] + 0.5f},
                                i < m.colors.size() ? m.colors[i] : glm::vec4(1.0f),
                                i < m.tangents.size() ? m.tangents[i] : glm::vec4(1, 0, 0, 1)});
         }
