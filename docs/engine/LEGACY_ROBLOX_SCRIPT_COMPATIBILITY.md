@@ -47,3 +47,25 @@ Use the script as an opt-in local compatibility fixture. Test the APIs in layers
 5. Character respawn and cleanup without dangling callbacks or crashes.
 
 Do not report the full script as supported until these layers pass in an actual Guts & Bolts play test.
+
+
+## Compatibility initiative: API parity waves
+
+Roblox compatibility is tracked as a growing API surface, not a claim that every Roblox API already works. New APIs must match behavior and return types, not merely exist by name.
+
+### Wave 1: Instance hierarchy lookups
+
+- Added in this wave: `FindFirstChildWhichIsA(className, recursive?)`, `FindFirstAncestor(name)`, `FindFirstAncestorOfClass(className)`, and `FindFirstAncestorWhichIsA(className)`.
+- Regression coverage checks direct and recursive lookup, nearest matching ancestor, and nil results.
+- Existing support includes `FindFirstChild`, `FindFirstChildOfClass`, `GetChildren`, `GetDescendants`, `IsA`, `IsDescendantOf`, `GetFullName`, `Clone`, `Destroy`, attributes, and property-change signals.
+
+### Next audit targets
+
+1. **Instance lifecycle and hierarchy:** Roblox-compatible `WaitForChild` timeout/yield behavior, `FindFirstChildOfClass` edge cases, ancestry events, `Archivable`, and property-change semantics.
+2. **Core services:** audit `Players`, `RunService`, `UserInputService`, `ContextActionService`, `TweenService`, `CollectionService`, `Debris`, `PhysicsService`, and `HttpService` against real scripts.
+3. **Common data types:** enum coverage, `RaycastParams` / `RaycastResult`, `OverlapParams`, `Region3`, `BrickColor`, `NumberRange`, sequences, and serialization behavior.
+4. **Characters and animation:** `Humanoid`, `Animator`, `AnimationTrack`, joints, tools, respawn, and rig differences.
+5. **Networking and server/client separation:** remote event/function argument and return semantics, replication, security boundaries, and script execution contexts.
+6. **Diagnostics and conformance:** maintain a per-API status inventory (supported, partial, missing, intentionally unsupported) and executable tests. Unknown APIs should produce clear, actionable errors.
+
+This list is an audit plan, not a declaration that the listed items are all missing. Each area must be checked against the implementation before adding duplicate or misleading shims.
