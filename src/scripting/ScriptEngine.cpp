@@ -207,6 +207,9 @@ if not __gb_noLocalPlayer then
 end
 Players = { LocalPlayer = LocalPlayer, PlayerAdded = __gb_playerAdded,
             PlayerRemoving = __gb_playerRemoving }
+-- Convenience alias for LocalScripts that use `LocalPlayer:GetMouse()` directly.
+-- Dedicated server script worlds intentionally expose nil when no local player exists.
+rawset(_G, "LocalPlayer", LocalPlayer)
 function Players:GetPlayers()
     local t = {}
     for i, p in ipairs(playerList) do t[i] = p end
