@@ -1,5 +1,5 @@
 export default {
-  id: 'who-touched-my-lamp', name: 'Who Touched My Lamp?', time: 1793039100, tag: 'Studio',
+  id: 'who-touched-my-lamp', name: 'Who Touched My Lamp?', version: '0.7.6', time: 1793039100, tag: 'Studio',
   summary: 'Script History records what your scripts change during a playtest, so you can find out which script did it and why.',
   items: [
     'New Script History window (VIEW tab or View menu). Press Record, then Play.',

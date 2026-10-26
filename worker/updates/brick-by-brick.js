@@ -1,5 +1,5 @@
 export default {
-  id: 'brick-by-brick', name: 'Brick by Brick', time: 1793041200, tag: 'Engine',
+  id: 'brick-by-brick', name: 'Brick by Brick', version: '0.7.6', time: 1793041200, tag: 'Engine',
   summary: 'Make your own materials from pictures with the new Material Editor, and put them on any part.',
   items: [
     'New Material Editor (VIEW tab > Materials). Press New, pick a built-in material to start from, and add pictures.',

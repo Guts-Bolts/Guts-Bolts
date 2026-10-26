@@ -1,3 +1,57 @@
+# Guts&Bolts 0.7.6: We Kept Adding Buttons (October 26, 2026)
+
+Nobody told us to stop, so we didn't. Studio can now snap joints, blow things
+around with force zones, build scripts out of blocks, make materials from
+pictures and tell you exactly which script moved your lamp. The AI assistant
+has to show its work now, and the website finally learned how to hand out
+free Bolts.
+
+## New in Studio
+- Visual Scripting: make scripts by connecting blocks like "When touched" and
+  "Give points", no typing needed.
+- Physics workbench: joints that break when pulled too hard, force zones, and
+  a Physics View that shows what the physics is doing.
+- Material Editor: make your own materials from pictures and put them on any
+  part.
+- Find and Change: edit lots of objects at once, or find them by kind, tag or
+  value and change them all together.
+- Script History: see what your scripts changed during a playtest, and which
+  script did it.
+- AI Activity: see everything the AI changed and undo all of it in one click.
+  It also asks before deleting things now.
+- A real Lua Debugger: click a line number to add a breakpoint, step through
+  your code, and it stops properly inside loops.
+- Scene Validator, Performance Doctor and the Project Dependency Map look for
+  broken links, slow spots and tangled scripts.
+- A readiness check before you publish a game.
+- Project Time Machine: named checkpoints you can compare and go back to.
+- Catalog Repair Shop: load your own 3D accessory, fix it, and update the same
+  item.
+- Import Roblox `.mesh` files, and more old Roblox scripts just work.
+- Multiplayer test sessions can be saved as a bundle (with each player's
+  inputs) to help track down bugs.
+
+## New in the game and on the website
+- Promo codes: type one on the Redeem codes page for free Bolts, and some codes
+  give exclusive items.
+- Custom body bundles and body parts you can wear one at a time, and they now
+  show on the website, in multiplayer and on item pictures.
+- Searchable forum discussions, and forum avatars look like the real player.
+- About 380 menu lines that were stuck in English are now in all six
+  languages.
+- A teaser for Boltworks Club on the Bolts page.
+- Gore got messier: organ bits, better blood sprays and pools.
+
+## Fixes
+- Models no longer drift away while you rotate them.
+- Explosions damage NPCs properly.
+- The phone app stops drawing while it's in the background.
+- Catalog Try On and the 3D preview toggle work again.
+- Guests no longer clutter the staff directory.
+- Staff can reset usernames that aren't allowed.
+- The old built-in Hat picker is gone from the Avatar page. Get hats from the
+  Catalog instead.
+
 # Roblox Meshes, Un-squashed (October 25, 2026)
 
 Studio can now import standalone Roblox `.mesh` files directly through the Open/Import dialog or drag-and-drop, including Draco-compressed version 7 geometry. The importer creates an editable custom-mesh Part and preserves triangle topology, normals, and UV coordinates where present. Roblox model imports also map Head/Sphere to sphere geometry, Cylinder to cylinder geometry, and Wedge to an actual wedge mesh instead of a cube placeholder. The shared parser exposes a cached/downloaded asset-loading entry point and validates mesh asset IDs before invoking the downloader.

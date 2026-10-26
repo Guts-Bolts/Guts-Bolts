@@ -1,5 +1,5 @@
 export default {
-  id: 'snap-crackle-push', name: 'Snap, Crackle, Push', time: 1793038607, tag: 'Engine',
+  id: 'snap-crackle-push', name: 'Snap, Crackle, Push', version: '0.7.6', time: 1793038607, tag: 'Engine',
   summary: 'The physics workbench: joints that snap when pulled too hard, force zones that blow things around, and a Physics View that shows what the physics is doing.',
   items: [
     'Every joint (Weld, Rope, Rod, Spring, Hinge, BallSocket...) can be Breakable: pull it harder than its BreakForce and it snaps',

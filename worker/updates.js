@@ -56,7 +56,7 @@ const OLDER_UPDATES = [
     ],
   },
   {
-    id: 'multiplayer-input-traces', name: 'The Replay Button Is Getting Closer', version: '0.7.5', time: 1792961160, tag: 'Studio',
+    id: 'multiplayer-input-traces', name: 'The Replay Button Is Getting Closer', version: '0.7.6', time: 1792961160, tag: 'Studio',
     summary: 'Multiplayer test bundles now include sampled per-player movement and control traces alongside the existing server and Player output timeline.',
     items: [
       'Capture camera-relative movement, jump, dive, touch controls, equipped tool, and controller availability at roughly 20 samples per second.',
@@ -66,7 +66,7 @@ const OLDER_UPDATES = [
     ]
   },
   {
-    id: 'boltworks-club-teaser', name: 'The Club Is Coming', version: '0.7.5', time: 1792957200, tag: 'Website',
+    id: 'boltworks-club-teaser', name: 'The Club Is Coming', version: '0.7.6', time: 1792957200, tag: 'Website',
     summary: 'The Bolts page gets a new wallet layout and an early-registration teaser for Boltworks Club, a future paid membership with multiple tiers.',
     items: [
       'Preview the upcoming Boltworks Club membership and its planned tier structure.',
@@ -76,7 +76,7 @@ const OLDER_UPDATES = [
     ]
   },
   {
-    id: 'multiplayer-session-recorder', name: 'The Bug Has a Paper Trail', version: '0.7.5', time: 1792953600, tag: 'Studio',
+    id: 'multiplayer-session-recorder', name: 'The Bug Has a Paper Trail', version: '0.7.6', time: 1792953600, tag: 'Studio',
     summary: 'Studio can export a multiplayer test session bundle with the scene snapshot and a timestamped server/player output timeline for debugging and sharing.',
     items: [
       'Capture the scene snapshot and the server and player process output in one portable JSON bundle.',
@@ -88,7 +88,7 @@ const OLDER_UPDATES = [
     ]
   },
   {
-    id: 'publish-readiness', name: 'Your Game Before the Public Sees It', version: '0.7.5', time: 1792950000, tag: 'Studio',
+    id: 'publish-readiness', name: 'Your Game Before the Public Sees It', version: '0.7.6', time: 1792950000, tag: 'Studio',
     summary: 'Studio adds a pre-publish readiness review for scene structure, performance risk, local assets, and script patterns.',
     items: [
       'Review empty names, duplicate sibling names, invalid transforms, and parts without geometry before publishing.',
@@ -100,7 +100,7 @@ const OLDER_UPDATES = [
     ]
   },
   {
-    id: 'catalog-item-workshop', name: 'Catalog Repair Shop', version: '0.7.5', time: 1792940400, tag: 'Studio',
+    id: 'catalog-item-workshop', name: 'Catalog Repair Shop', version: '0.7.6', time: 1792940400, tag: 'Studio',
     summary: 'Creators can load their existing 3D catalog accessories into Studio, fix their mesh or placement, and update the existing listing.',
     items: [
       'Load an existing accessory by catalog ID into the Studio scene.',
@@ -111,7 +111,7 @@ const OLDER_UPDATES = [
   },
 
   {
-    id: 'project-time-machine', name: 'Yesterday, But Make It Recoverable', version: '0.7.5', time: 1792944000, tag: 'Studio',
+    id: 'project-time-machine', name: 'Yesterday, But Make It Recoverable', version: '0.7.6', time: 1792944000, tag: 'Studio',
     summary: 'Project Time Machine saves named local scene checkpoints, compares a checkpoint with the current scene, and restores an earlier version.',
     items: [
       'Create named checkpoints before risky edits or major milestones.',
@@ -121,7 +121,7 @@ const OLDER_UPDATES = [
     ]
   },
   {
-    id: 'scene-validator', name: 'Your Scene Is Under Review', version: '0.7.4', time: 1792965600, tag: 'Studio',
+    id: 'scene-validator', name: 'Your Scene Is Under Review', version: '0.7.6', time: 1792965600, tag: 'Studio',
     summary: 'Scene Validator scans a project for broken references and common setup mistakes before you publish.',
     items: [
       'Checks constraints, Trail and Beam attachments, model PrimaryParts, SoundGroups, fluid systems, and Tool Handle setup.',
@@ -132,7 +132,7 @@ const OLDER_UPDATES = [
     ],
   },
   {
-    id: 'performance-doctor', name: 'Doctor, My Frame Rate Is Dying', version: '0.7.4', time: 1792962000, tag: 'Studio',
+    id: 'performance-doctor', name: 'Doctor, My Frame Rate Is Dying', version: '0.7.6', time: 1792962000, tag: 'Studio',
     summary: 'Performance Doctor turns recent frame timings and scene complexity into ranked, practical troubleshooting advice.',
     items: [
       'Ranks frame-pacing, editor-thread, viewport and simulation timing indicators.',
@@ -144,7 +144,7 @@ const OLDER_UPDATES = [
     ],
   },
   {
-    id: 'project-dependency-map', name: 'Who Depends on What?', version: '0.7.4', time: 1792899780, tag: 'Studio',
+    id: 'project-dependency-map', name: 'Who Depends on What?', version: '0.7.6', time: 1792899780, tag: 'Studio',
     summary: 'A new Project Dependency Map makes script relationships easier to inspect without digging through the whole Explorer by hand.',
     items: [
       'View all scripts in one searchable list, with outgoing and incoming relationship counts.',
@@ -156,7 +156,7 @@ const OLDER_UPDATES = [
     ],
   },
   {
-    id: 'studio-under-the-hood', name: 'Studio Gets Serious', version: '0.7.4', time: 1792875600, tag: 'Studio',
+    id: 'studio-under-the-hood', name: 'Studio Gets Serious', version: '0.7.6', time: 1792875600, tag: 'Studio',
     summary: 'Studio can now spot script and scene problems, measure performance, and make accessories and body bundles much less fiddly to build.',
     items: [
       'Script Analysis finds likely missing references and dependency problems before you press Play.',
@@ -169,7 +169,7 @@ const OLDER_UPDATES = [
     ],
   },
   {
-    id: 'code-red', name: 'Code Red', version: '0.7.4', time: 1792598783, tag: 'Website',
+    id: 'code-red', name: 'Code Red', version: '0.7.6', time: 1792598783, tag: 'Website',
     summary: 'Promo codes are here! Type a code on the new Redeem codes page to get free Bolts.',
     items: [
       'New Redeem codes page (in the menu, and on the Bolts page): type a code like GUTSTOBER2026 to get its Bolts',

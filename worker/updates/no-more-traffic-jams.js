@@ -1,5 +1,5 @@
 export default {
-  id: 'no-more-traffic-jams', name: 'No More Traffic Jams', time: 1793055600, tag: 'Fix',
+  id: 'no-more-traffic-jams', name: 'No More Traffic Jams', version: '0.7.6', time: 1793055600, tag: 'Fix',
   summary: 'Behind the scenes: new updates can be worked on side by side without tripping over each other.',
   items: [
     'Each update on this page now lives in its own file, so finishing one never holds up the others',
