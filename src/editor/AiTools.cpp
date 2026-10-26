@@ -300,6 +300,25 @@ const std::vector<Tool>& tools() {
           "\"Make a block script that gives a coin when you touch the part.\""},
          schema({{"action", {{"type", "string"}, {"enum", {"blocks", "write", "read"}}}}, {"object", kObject}, {"parent", kParent},
                  {"name", {{"type", "string"}}}, {"graph", {{"type", "object"}}}}, {"action"})},
+        {"generate_level", "Make a level from a seed (dungeon or obby)", "OBJECTS", false, false, false, Risk::Medium,
+         {"Procedural levels: makes a Dungeon (rooms joined by corridors, crates, coins) or an Obby (platforms to jump along, "
+          "lava underneath) from rules and a seed; the same seed always makes the same level. Each level is checked: everything "
+          "fitted, nothing inside anything else, and a robot (the navmesh) found a way from the spawn to the goal.",
+          "When the person asks for a level, dungeon, maze of rooms or obby to be made for them.",
+          "For one object use insert_object. Not for terrain hills (use run_lua with Terrain:Generate).",
+          "style (Dungeon or Obby); seed (number, default 1); count (rooms or platforms, default 8); room_min / room_max (studs); "
+          "wall_height; props (crates); coins; tries (try this many seeds from `seed` and keep the first that passes, default 1); "
+          "dry_run (only check, make nothing); at ([x, y, z], default next to everything); replace (an earlier level to take away).",
+          "{ok, seed, tried: [{seed, ok, problems, route: {status, length, jumps}}], object_id, at, spawn, goal, parts}.",
+          "None.", "Unless dry_run, a Model called DungeonLevel / ObbyLevel is in Workspace (one Ctrl+Z takes it away).",
+          "generate_level {tries: 20} -> playtest start -> get_output (the Goal prints who reached it).",
+          "\"Make me a dungeon with 10 rooms.\" \"Make an obby with 30 platforms.\""},
+         schema({{"style", {{"type", "string"}, {"enum", {"Dungeon", "Obby"}}}}, {"seed", {{"type", "integer"}, {"minimum", 0}}},
+                 {"count", {{"type", "integer"}, {"minimum", 2}, {"maximum", 60}}}, {"room_min", {{"type", "integer"}}},
+                 {"room_max", {{"type", "integer"}}}, {"wall_height", {{"type", "number"}}}, {"props", {{"type", "boolean"}}},
+                 {"coins", {{"type", "boolean"}}}, {"tries", {{"type", "integer"}, {"minimum", 1}, {"maximum", 50}}},
+                 {"dry_run", {{"type", "boolean"}}}, {"at", {{"type", "array"}, {"items", {{"type", "number"}}}}},
+                 {"replace", kObject}}, {})},
         {"read_script", "Read a script's code", "SCRIPTING", true, false, true, Risk::None,
          {"Returns the Lua source of a Script, LocalScript or ModuleScript.",
           "Before editing a script, when asked what a script does, when debugging an error that names a script.",
@@ -684,6 +703,7 @@ json workflowOf(const std::string& name) {
         {"create_script", {{"get_game_tree"}, {"diagnose_object", "playtest"}}},
         {"read_script", {{"find_objects"}, {"edit_script"}}},
         {"visual_script", {{"get_game_tree"}, {"playtest", "get_output"}}},
+        {"generate_level", {{"get_game_tree"}, {"playtest", "screenshot"}}},
         {"edit_script", {{"read_script"}, {"diagnose_object", "playtest"}}},
         {"run_lua", {{"get_game_tree"}, {"get_game_tree", "screenshot"}}},
         {"playtest", {{"validate_scene"}, {"get_errors", "get_output", "get_object", "screenshot"}}},

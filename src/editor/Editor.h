@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 #include "EditorState.h"
 #include "Premades.h"
+#include "LevelGen.h"
 #include "../scene/SceneNode.h"
 #include <imgui.h>
 
@@ -94,6 +95,7 @@ private:
     void renderBlocks();                       // Visual Scripting (EditorBlocks.cpp)
     void renderMaterialEditor();    // EditorMaterials.cpp
     void renderScriptHistory();     // EditorScriptHistory.cpp
+    void renderLevelGenerator();               // (EditorLevelGen.cpp)
     void handleShortcuts();
 
     // Creating / removing things
@@ -108,6 +110,10 @@ private:
     void       openScript(SceneNode* script);
     void       openBlocks(SceneNode* script);    // Visual Scripting, showing this block script
     SceneNode* newBlockScript();                 // a Script made with blocks, in the selected part
+    // Procedural levels: tries `tries` seeds from settings.seed and keeps the first that passes
+    // the checks (else the last); builds it (at `at`, or next to everything) when buildIt.
+    nlohmann::json generateLevel(const LevelGen::Settings& settings, int tries, bool buildIt, const glm::vec3* at,
+                                 SceneNode* replace, SceneNode** made);
     void       duplicateSelected();
     void       deleteSelected();
     void       copySelected();
@@ -333,6 +339,11 @@ private:
     std::string m_historyFilter;
     int  m_historyKind = 0;           // 0 every entry, 1 property changes, 2 events
     bool m_historySelected = false;   // only the selected object's
+    // Level Generator (EditorLevelGen.cpp)
+    bool m_showLevelGen = false, m_levelGenReplace = true, m_levelGenBrowse = false;
+    LevelGen::Settings m_levelGen;
+    uint64_t m_levelGenLast = 0;
+    nlohmann::json m_levelGenResult;
     bool m_timeMachineLoaded = false;
     std::string m_timeMachineProjectKey, m_timeMachineCheckpointName;
     int m_timeMachineSelected = -1;
