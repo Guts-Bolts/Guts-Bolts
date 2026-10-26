@@ -205,9 +205,15 @@ void Editor::renderBundleWindow() {
 
     // Publish one selected rig part as its own catalog item, so players can mix
     // and match heads, torsos, arms and legs without buying/wearing a whole bundle.
-    const bool selectedRigPart = bodySelected && bodySelected->parent == mannequin && bodySelected->isPart() && bodySelected->editMesh;
+    const bool selectedRigPart = bodySelected && bodySelected->parent == mannequin && bodySelected->isPart() && bodySelected->primitiveType != PrimitiveType::None;
     ImGui::BeginDisabled(m_onlineBusy || !selectedRigPart || m_bundleName.empty());
     if (ImGui::Button("Upload Selected Part", ImVec2(180, 30))) {
+        if (!bodySelected->editMesh) {
+            auto mesh = bodySelected->primitiveType == PrimitiveType::Mesh && bodySelected->editMesh
+                            ? std::make_shared<EditMesh>(*bodySelected->editMesh)
+                            : MeshEdit::fromPrimitive(bodySelected->primitiveType);
+            MeshEdit::attach(*bodySelected, mesh);
+        }
         MeshEdit::fit(*bodySelected);
         json body = {{bodySelected->name, Player::bodyPartJson(*bodySelected)}};
         json tidy;
