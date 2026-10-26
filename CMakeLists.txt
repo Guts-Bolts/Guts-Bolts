@@ -730,6 +730,8 @@ set(EDITOR_SOURCES
     src/editor/EditorBlocks.cpp
     src/editor/VisualScript.cpp
     src/editor/EditorScriptHistory.cpp
+    src/editor/EditorPhysicsReplay.cpp
+    src/editor/PhysicsReplay.cpp
     src/editor/EditorOnline.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp

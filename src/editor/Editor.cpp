@@ -76,6 +76,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_showAiActivity = std::getenv("GB_TEST_AIACTIVITY") != nullptr;   // (tests: start with it showing)
     m_session->scripts().setHistory(true);   // (Script History records this one's scripts)
     m_showScriptHistory = std::getenv("GB_TEST_SCRIPTHISTORY") != nullptr;   // (tests: start with it showing)
+    m_showReplay = std::getenv("GB_TEST_REPLAY") != nullptr;   // (tests: start with it showing)
     m_viewport = std::make_unique<ViewportPanel>(window, scene, &m_state);
     auto open  = [this](SceneNode* n) { openScript(n); };
     m_outliner = std::make_unique<OutlinerPanel>(scene, open, [this](SceneNode* n) { addScript(n); });
@@ -272,6 +273,7 @@ void Editor::render(float dt) {
     renderMaterialEditor();
     renderAiActivity();
     renderScriptHistory();
+    renderPhysicsReplay();
 
     trackChanges();
     updateTitle();
@@ -2643,6 +2645,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Material Editor", nullptr, &m_showMaterialEditor)) {}
         if (ImGui::MenuItem("AI Activity", nullptr, &m_showAiActivity)) {}
         if (ImGui::MenuItem("Script History", nullptr, &m_showScriptHistory)) {}
+        if (ImGui::MenuItem("Physics Replay", nullptr, &m_showReplay)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;

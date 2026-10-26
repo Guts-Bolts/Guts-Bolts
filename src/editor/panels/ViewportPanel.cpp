@@ -557,6 +557,34 @@ void ViewportPanel::drawPhysicsView(const glm::mat4& view, const glm::mat4& proj
 }
 
 // The light blue box around each selected part, like Roblox Studio's.
+// Physics Replay: a light blue outline where each loose part was at the frame being
+// looked at, and a line along the selected part's path.
+void ViewportPanel::drawReplayGhosts(const glm::mat4& view, const glm::mat4& proj, const glm::vec2& imgMin, const glm::vec2& imgSize) {
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const glm::mat4 vp = proj * view;
+    auto screen = [&](const glm::vec3& p, ImVec2& out) {
+        glm::vec4 q = vp * glm::vec4(p, 1.0f);
+        if (q.w <= 0.05f) return false;
+        out = ImVec2(imgMin.x + (q.x / q.w * 0.5f + 0.5f) * imgSize.x, imgMin.y + (0.5f - q.y / q.w * 0.5f) * imgSize.y);
+        return true;
+    };
+    static const int edges[12][2] = {{0, 1}, {2, 3}, {4, 5}, {6, 7}, {0, 2}, {1, 3}, {4, 6}, {5, 7}, {0, 4}, {1, 5}, {2, 6}, {3, 7}};
+    const ImU32 col = IM_COL32(110, 200, 255, 230);
+    for (const glm::mat4& m : m_state->replayGhosts) {
+        ImVec2 c[8];
+        bool ok[8];
+        for (int i = 0; i < 8; ++i)
+            ok[i] = screen(glm::vec3(m * glm::vec4((i & 1) ? 0.5f : -0.5f, (i & 2) ? 0.5f : -0.5f, (i & 4) ? 0.5f : -0.5f, 1.0f)), c[i]);
+        for (const auto& e : edges)
+            if (ok[e[0]] && ok[e[1]]) dl->AddLine(c[e[0]], c[e[1]], col, 1.5f);
+    }
+    const auto& trail = m_state->replayTrail;
+    for (size_t i = 1; i < trail.size(); ++i) {
+        ImVec2 a, b;
+        if (screen(trail[i - 1], a) && screen(trail[i], b)) dl->AddLine(a, b, IM_COL32(255, 220, 90, 230), 2.0f);
+    }
+}
+
 void ViewportPanel::drawSelectionBoxes(const glm::mat4& view, const glm::mat4& proj,
                                        const glm::vec2& imgMin, const glm::vec2& imgSize) {
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -807,6 +835,7 @@ void ViewportPanel::render(float dt) {
         if (physicsTestFlag) { m_state->showPhysics = true; physicsTestFlag = false; }
         Physics::debugOn() = m_state->showPhysics;
         if (m_state->showPhysics) drawPhysicsView(view, proj, imgMin, imgSize, playing);
+        if (!playing && (!m_state->replayGhosts.empty() || !m_state->replayTrail.empty())) drawReplayGhosts(view, proj, imgMin, imgSize);
 
         if (playing && m_session->runOnly()) {
             // Simulate: click things to look at them in Properties, and drag

@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 #include "EditorState.h"
 #include "Premades.h"
+#include "PhysicsReplay.h"
 #include "../scene/SceneNode.h"
 #include <imgui.h>
 
@@ -94,6 +95,14 @@ private:
     void renderBlocks();                       // Visual Scripting (EditorBlocks.cpp)
     void renderMaterialEditor();    // EditorMaterials.cpp
     void renderScriptHistory();     // EditorScriptHistory.cpp
+    void renderPhysicsReplay();     // EditorPhysicsReplay.cpp
+    // Physics Replay: records `seconds` of physics from the scene as it is now.
+    nlohmann::json recordPhysics(float seconds);
+    void           showReplayFrame(int frame);   // the ghosts in the viewport (-1 = none)
+    // Physics tests: the StringValues in ServerStorage > PhysicsTests.
+    std::vector<SceneNode*> physicsTests();
+    SceneNode*              savePhysicsTest(const std::string& name, float seconds, float tolerance, std::string* error);
+    nlohmann::json          runPhysicsTest(SceneNode* test);
     void handleShortcuts();
 
     // Creating / removing things
@@ -333,6 +342,13 @@ private:
     std::string m_historyFilter;
     int  m_historyKind = 0;           // 0 every entry, 1 property changes, 2 events
     bool m_historySelected = false;   // only the selected object's
+    // Physics Replay (EditorPhysicsReplay.cpp)
+    bool  m_showReplay = false, m_replayPlaying = false, m_replayTrail = true;
+    PhysicsReplay::Recording m_replay;
+    int   m_replayFrame = 0;
+    float m_replaySeconds = 5.0f, m_replaySpeed = 1.0f, m_replayClock = 0.0f, m_replayTolerance = 0.1f;
+    char  m_replayTestName[64] = "Tower falls";
+    std::map<uint64_t, nlohmann::json> m_replayResults;   // test object id -> its last run
     bool m_timeMachineLoaded = false;
     std::string m_timeMachineProjectKey, m_timeMachineCheckpointName;
     int m_timeMachineSelected = -1;
