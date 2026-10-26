@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(GutsAndBolts VERSION 0.7.4 LANGUAGES C CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -829,4 +831,13 @@ if(MINGW)
         endforeach()
         endif()
     endforeach()
+endif()
+
+
+# Format-level regression fixtures for Roblox's legacy binary mesh files. These
+# tests build tiny v4/v5 payloads in memory, so no proprietary user assets are needed.
+if(BUILD_TESTING)
+    add_executable(RobloxMeshFormatTests tests/RobloxMeshFormatTests.cpp)
+    target_link_libraries(RobloxMeshFormatTests PRIVATE gb_engine)
+    add_test(NAME RobloxMeshFormatTests COMMAND RobloxMeshFormatTests)
 endif()
