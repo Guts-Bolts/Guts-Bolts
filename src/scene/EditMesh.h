@@ -23,6 +23,10 @@ struct EditMesh {
     // clothing layout, or laid out in Studio's UV Editor). Empty, or out of step
     // with `faces` after an edit = box mapping.
     std::vector<std::vector<glm::vec2>> uvs;
+    // Optional per-vertex attributes imported from formats such as Roblox FileMesh.
+    // Empty vectors preserve the engine's default white colour and generated tangent.
+    std::vector<glm::vec4> colors;
+    std::vector<glm::vec4> tangents;
     // Skinning (an armature, see Skin.h): how much each bone pulls each vertex.
     // `bones` names the Bones inside the part; `bind` is where each bone was (in
     // the part's studs space, inverted) when the mesh was bound to it; `weights`
