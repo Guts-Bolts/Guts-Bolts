@@ -192,6 +192,7 @@ void wear(const Item& it) {
 void applyLook(const Item& it) {
     if (isEquipped(it.type)) return;   // gear, emotes and packs aren't worn (they're equipped on the server)
     Profile& me = Profile::get();
+    const std::string previousBodyPart = it.type == Type::BodyPart && me.bodyParts.contains(it.bodyPart) ? me.bodyParts[it.bodyPart] : std::string();
     switch (it.type) {
         case Type::Hat:
             if (!it.model.empty()) { me.hat = HatStyle::None; me.accessories["hat"] = it.model; }
@@ -236,6 +237,7 @@ void applyLook(const Item& it) {
         for (const Item& other : load()) if (other.id == w && other.type == it.type) {
             if (it.type != Type::BodyPart || other.bodyPart == it.bodyPart) sameType = true;
         }
+        if (it.type == Type::BodyPart && !previousBodyPart.empty() && previousBodyPart == "gb:" + w) sameType = true;
         if (!sameType && w != it.id) keep.push_back(w);
     }
     keep.push_back(it.id);
