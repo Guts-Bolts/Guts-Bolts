@@ -69,3 +69,10 @@ Roblox compatibility is tracked as a growing API surface, not a claim that every
 6. **Diagnostics and conformance:** maintain a per-API status inventory (supported, partial, missing, intentionally unsupported) and executable tests. Unknown APIs should produce clear, actionable errors.
 
 This list is an audit plan, not a declaration that the listed items are all missing. Each area must be checked against the implementation before adding duplicate or misleading shims.
+
+
+### Duplicate naming behavior
+
+- Editor duplication preserves the original Instance name: duplicating `Part` repeatedly creates siblings named `Part`, not `Part Copy`, `Part Copy Copy`, and so on.
+- Duplicate sibling names are valid and are no longer reported as scene-validation warnings. This matches common Roblox hierarchy usage.
+- Name-based lookups such as `FindFirstChild("Part")` can be ambiguous when multiple children share a name; scripts that need a specific instance should use additional context, class checks, or iterate children.
