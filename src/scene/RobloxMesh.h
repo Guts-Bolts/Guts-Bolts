@@ -20,7 +20,7 @@ struct Shape {
     std::shared_ptr<EditMesh> mesh;   // points squeezed into the -0.5..0.5 box, like every part
     glm::vec3 center{0.0f};           // where the shape sat in the file (Roblox studs)...
     glm::vec3 size{1.0f};             // ...and how big it was
-    std::vector<Bone> bones;          // v4/v5 embedded rig metadata, when present
+    std::vector<Bone> bones;          // embedded v4/v5 or chunked v6/v7 rig metadata, when present
 };
 
 // Read a mesh file: every version, from the old text "version 1.00" ones to the
