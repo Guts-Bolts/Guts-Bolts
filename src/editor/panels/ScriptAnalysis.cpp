@@ -9,10 +9,13 @@
 #include "../../scene/SceneNode.h"
 #include "../../scripting/ScriptEngine.h"
 #include "../../scripting/Luau.h"
+#include "../../core/Paths.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
+#include <functional>
 #include <set>
 #include <regex>
 #include <unordered_map>
@@ -227,12 +230,34 @@ std::string trimDependencyExpression(std::string s) {
     return s.substr(first, last - first + 1);
 }
 
+// Match the engine's local texture lookup rules without downloading anything or
+// making network requests. Remote IDs that cannot be verified offline stay unknown.
+std::string resourceAvailability(const std::string& value) {
+    if (value.rfind("builtin:", 0) == 0) return "BUILT-IN";
+    if (value.rfind("gb:", 0) == 0) {
+        return Paths::downloaded(value.substr(3)).empty()
+            ? "NOT CACHED" : "CACHED";
+    }
+    if (value.find("://") != std::string::npos) return "REMOTE / UNVERIFIED";
+    const bool numericId = !value.empty() && std::all_of(value.begin(), value.end(),
+        [](unsigned char c) { return std::isdigit(c); });
+    if (numericId) return "REMOTE ID / UNVERIFIED";
+
+    std::error_code ec;
+    const std::filesystem::path relative = Paths::gamesFolder() / value;
+    if (std::filesystem::exists(relative, ec)) return "LOCAL FILE";
+    ec.clear();
+    if (std::filesystem::exists(std::filesystem::path(value), ec)) return "LOCAL FILE";
+    return "MISSING LOCAL FILE";
+}
+
 } // namespace
 
 void ScriptEditorPanel::runDependencyMap() {
     m_dependencyNodes.clear();
     m_dependencyEdges.clear();
     m_unresolvedDependencies.clear();
+    m_assetReferences.clear();
 
     std::vector<SceneNode*> scripts;
     m_scene->forEach([&](SceneNode* node) {
@@ -240,6 +265,48 @@ void ScriptEditorPanel::runDependencyMap() {
         scripts.push_back(node);
         m_dependencyNodes.push_back({node->id, node->name, node->fullName(),
                                      (int)node->source.size(), 0, 0});
+    });
+
+    // Inventory resource-bearing properties and object links from the actual scene tree.
+    // External asset IDs/paths are listed for inspection; only scene-object links can be
+    // classified as broken with certainty without the asset resolver or filesystem context.
+    std::unordered_map<uint64_t, SceneNode*> sceneNodesById;
+    m_scene->forEach([&](SceneNode* node) { sceneNodesById[node->id] = node; });
+    auto addAsset = [&](SceneNode* owner, const std::string& property, const std::string& value) {
+        if (value.empty()) return;
+        m_assetReferences.push_back({owner->id, 0, owner->fullName(), property, value, resourceAvailability(value), false, false});
+    };
+    auto addNodeLink = [&](SceneNode* owner, const std::string& property, uint64_t targetId) {
+        if (!targetId) return;
+        const auto target = sceneNodesById.find(targetId);
+        const bool unresolved = target == sceneNodesById.end();
+        m_assetReferences.push_back({owner->id, targetId, owner->fullName(), property,
+            unresolved ? ("missing object #" + std::to_string(targetId)) : target->second->fullName(), "", true, unresolved});
+    };
+    m_scene->forEach([&](SceneNode* node) {
+        if (!node->texture.empty()) addAsset(node, "Texture", node->texture);
+        if (!node->tshirt.empty()) addAsset(node, "TShirt", node->tshirt);
+        if (node->kind == NodeKind::Sound && !node->soundId.empty()) addAsset(node, "SoundId", node->soundId);
+        if (!node->particle.texture.empty()) addAsset(node, "Particle.Texture", node->particle.texture);
+        if (!node->effect.texture.empty()) addAsset(node, "Effect.Texture", node->effect.texture);
+        if (!node->gui.image.empty()) addAsset(node, "Image", node->gui.image);
+        if (!node->sky.bk.empty()) addAsset(node, "SkyboxBk", node->sky.bk);
+        if (!node->sky.dn.empty()) addAsset(node, "SkyboxDn", node->sky.dn);
+        if (!node->sky.ft.empty()) addAsset(node, "SkyboxFt", node->sky.ft);
+        if (!node->sky.lf.empty()) addAsset(node, "SkyboxLf", node->sky.lf);
+        if (!node->sky.rt.empty()) addAsset(node, "SkyboxRt", node->sky.rt);
+        if (!node->sky.up.empty()) addAsset(node, "SkyboxUp", node->sky.up);
+        if (!node->sky.sun.empty()) addAsset(node, "SunTextureId", node->sky.sun);
+        if (!node->sky.moon.empty()) addAsset(node, "MoonTextureId", node->sky.moon);
+        addNodeLink(node, "PrimaryPart", node->primaryPart);
+        addNodeLink(node, "Adornee", node->highlight.adornee);
+        addNodeLink(node, "Attachment0", node->effect.a0);
+        addNodeLink(node, "Attachment1", node->effect.a1);
+        addNodeLink(node, "Constraint.Ref0", node->ref0);
+        addNodeLink(node, "Constraint.Ref1", node->ref1);
+        addNodeLink(node, "SoundGroup", node->soundGroup);
+        addNodeLink(node, "FluidSystem", node->fluidSystem);
+        addNodeLink(node, "ViewportFrame.CurrentCamera", node->gui.camera);
     });
 
     // Only claim relationships when a require() expression or a named child lookup
@@ -286,6 +353,29 @@ void ScriptEditorPanel::runDependencyMap() {
         if (auto it = byId.find(edge.from); it != byId.end()) ++it->second->outgoing;
         if (auto it = byId.find(edge.to); it != byId.end()) ++it->second->incoming;
     }
+    // Mark scripts participating in a directed dependency cycle. A cycle can cause
+    // recursive module loading or make the order of initialization difficult to reason about.
+    std::unordered_map<uint64_t, int> visitState;
+    std::vector<uint64_t> visitStack;
+    std::function<void(uint64_t)> visit = [&](uint64_t current) {
+        visitState[current] = 1;
+        visitStack.push_back(current);
+        for (const auto& edge : m_dependencyEdges) {
+            if (edge.from != current) continue;
+            if (visitState[edge.to] == 0) {
+                visit(edge.to);
+            } else if (visitState[edge.to] == 1) {
+                auto cycleStart = std::find(visitStack.begin(), visitStack.end(), edge.to);
+                for (auto it = cycleStart; it != visitStack.end(); ++it)
+                    if (auto found = byId.find(*it); found != byId.end()) found->second->cyclic = true;
+            }
+        }
+        visitStack.pop_back();
+        visitState[current] = 2;
+    };
+    for (const auto& node : m_dependencyNodes)
+        if (visitState[node.id] == 0) visit(node.id);
+
     if (!m_dependencySelected || !byId.count(m_dependencySelected))
         m_dependencySelected = m_dependencyNodes.empty() ? 0 : m_dependencyNodes.front().id;
 }
@@ -299,13 +389,38 @@ void ScriptEditorPanel::renderDependencyMap() {
         m_dependencyAnalysedAt = ImGui::GetTime();
     }
 
+    const int isolatedCount = (int)std::count_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+        [](const DependencyNode& node) { return node.outgoing == 0 && node.incoming == 0; });
+    std::unordered_map<std::string, int> scriptNameCounts;
+    for (const auto& node : m_dependencyNodes) ++scriptNameCounts[node.name];
+    const int duplicateNameCount = (int)std::count_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+        [&](const DependencyNode& node) { return scriptNameCounts[node.name] > 1; });
     ImGui::Text("%d scripts", (int)m_dependencyNodes.size());
     ImGui::SameLine();
     ImGui::TextDisabled("%d relationships", (int)m_dependencyEdges.size());
     ImGui::SameLine();
+    const int cyclicCount = (int)std::count_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+        [](const DependencyNode& node) { return node.cyclic; });
+    ImGui::TextColored(cyclicCount ? ImVec4(0.95f, 0.45f, 0.35f, 1.0f) : ImVec4(0.45f, 0.8f, 0.5f, 1.0f),
+                       "%d in cycles", cyclicCount);
+    ImGui::SameLine();
+    ImGui::TextColored(isolatedCount ? ImVec4(0.95f, 0.7f, 0.25f, 1.0f) : ImVec4(0.45f, 0.8f, 0.5f, 1.0f),
+                       "%d isolated", isolatedCount);
+    ImGui::SameLine();
+    ImGui::TextColored(duplicateNameCount ? ImVec4(0.95f, 0.7f, 0.25f, 1.0f) : ImVec4(0.45f, 0.8f, 0.5f, 1.0f),
+                       "%d duplicate-name entries", duplicateNameCount);
+    ImGui::SameLine();
     ImGui::TextColored(m_unresolvedDependencies.empty() ? ImVec4(0.45f, 0.8f, 0.5f, 1.0f)
                                                          : ImVec4(0.95f, 0.7f, 0.25f, 1.0f),
                        "%d unresolved require() expressions", (int)m_unresolvedDependencies.size());
+    const int assetReferenceCount = (int)m_assetReferences.size();
+    const int brokenObjectReferenceCount = (int)std::count_if(m_assetReferences.begin(), m_assetReferences.end(),
+        [](const AssetReference& reference) { return reference.nodeLink && reference.unresolvedNode; });
+    ImGui::SameLine();
+    ImGui::TextDisabled("%d resource refs", assetReferenceCount);
+    ImGui::SameLine();
+    ImGui::TextColored(brokenObjectReferenceCount ? ImVec4(0.95f, 0.35f, 0.3f, 1.0f) : ImVec4(0.45f, 0.8f, 0.5f, 1.0f),
+                       "%d broken object refs", brokenObjectReferenceCount);
     ImGui::SameLine();
     if (ImGui::SmallButton("Refresh")) {
         runDependencyMap();
@@ -322,7 +437,84 @@ void ScriptEditorPanel::renderDependencyMap() {
     }
     ImGui::SameLine();
     ImGui::Checkbox("Only scripts with unresolved require()", &m_dependencyOnlyUnresolved);
+    ImGui::SameLine();
+    ImGui::Checkbox("Only isolated scripts", &m_dependencyOnlyIsolated);
+    ImGui::TextDisabled("Isolated means no static links were detected; dynamic relationships may still exist. Duplicate names can make name-based matches ambiguous.");
     ImGui::TextDisabled("Relationships are inferred from require() and named child lookups. They are not runtime call traces.");
+
+    // Project-wide inventory: this remains separate from script dependency edges because
+    // a resource reference is not proof that one script depends on another.
+    if (ImGui::TreeNode("Project-wide resource inventory")) {
+        std::unordered_map<std::string, int> resourceUseCounts;
+        for (const auto& reference : m_assetReferences)
+            if (!reference.nodeLink) ++resourceUseCounts[reference.value];
+        const int uniqueResourceValues = (int)resourceUseCounts.size();
+        const int repeatedResourceValues = (int)std::count_if(resourceUseCounts.begin(), resourceUseCounts.end(),
+            [](const auto& item) { return item.second > 1; });
+        ImGui::Text("%d references across %d distinct resource values; %d values are reused.",
+                    (int)std::count_if(m_assetReferences.begin(), m_assetReferences.end(),
+                        [](const AssetReference& reference) { return !reference.nodeLink; }),
+                    uniqueResourceValues, repeatedResourceValues);
+        ImGui::SetNextItemWidth(300.0f);
+        char assetSearchBuffer[512] = {};
+        std::copy(m_assetSearch.begin(),
+                  m_assetSearch.begin() + std::min(m_assetSearch.size(), sizeof(assetSearchBuffer) - 1),
+                  assetSearchBuffer);
+        if (ImGui::InputTextWithHint("##assetInventorySearch", "Filter by object, property, or asset value...",
+                                     assetSearchBuffer, sizeof(assetSearchBuffer))) {
+            m_assetSearch = assetSearchBuffer;
+        }
+        ImGui::SameLine();
+        ImGui::Checkbox("Only broken object links", &m_assetOnlyBrokenLinks);
+        ImGui::SameLine();
+        ImGui::Checkbox("Only missing local files", &m_assetOnlyMissingFiles);
+        ImGui::BeginChild("##assetInventoryRows", ImVec2(0, 210.0f), true);
+        int visibleReferences = 0;
+        for (size_t i = 0; i < m_assetReferences.size(); ++i) {
+            const auto& reference = m_assetReferences[i];
+            if (m_assetOnlyBrokenLinks && !(reference.nodeLink && reference.unresolvedNode)) continue;
+            if (m_assetOnlyMissingFiles && (reference.nodeLink || reference.availability != "MISSING LOCAL FILE")) continue;
+            const std::string haystack = reference.ownerPath + " " + reference.property + " " + reference.value;
+            if (!m_assetSearch.empty() && haystack.find(m_assetSearch) == std::string::npos) continue;
+            ++visibleReferences;
+            ImGui::PushID((int)i);
+            if (reference.nodeLink && reference.unresolvedNode) {
+                ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.3f, 1.0f), "BROKEN  %s", reference.property.c_str());
+            } else {
+                ImGui::Text("%s", reference.property.c_str());
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", reference.ownerPath.c_str());
+            ImGui::SameLine();
+            ImGui::TextWrapped("%s", reference.value.c_str());
+            if (!reference.nodeLink) {
+                ImGui::SameLine();
+                const bool missing = reference.availability == "MISSING LOCAL FILE";
+                const ImVec4 statusColor = missing ? ImVec4(0.95f, 0.35f, 0.3f, 1.0f)
+                    : reference.availability == "CACHED" || reference.availability == "LOCAL FILE" || reference.availability == "BUILT-IN"
+                        ? ImVec4(0.45f, 0.8f, 0.5f, 1.0f) : ImVec4(0.75f, 0.72f, 0.5f, 1.0f);
+                ImGui::TextColored(statusColor, "%s", reference.availability.c_str());
+            }
+            if (!reference.nodeLink) {
+                const auto uses = resourceUseCounts.find(reference.value);
+                if (uses != resourceUseCounts.end() && uses->second > 1) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(reused %d times)", uses->second);
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Select owner")) {
+                if (SceneNode* owner = m_scene->findById(reference.owner)) m_scene->select(owner);
+            }
+            ImGui::PopID();
+            ImGui::Separator();
+        }
+        if (!visibleReferences)
+            ImGui::TextDisabled(m_assetOnlyBrokenLinks ? "No broken scene-object links match this filter."
+                                                       : "No resource or object references match this filter.");
+        ImGui::EndChild();
+        ImGui::TreePop();
+    }
     ImGui::Separator();
 
     if (ImGui::BeginTable("##dependencyLayout", 2,
@@ -344,6 +536,7 @@ void ScriptEditorPanel::renderDependencyMap() {
                 const bool unresolved = std::any_of(m_unresolvedDependencies.begin(), m_unresolvedDependencies.end(),
                     [&](const UnresolvedDependency& d) { return d.script == node.id; });
                 if (m_dependencyOnlyUnresolved && !unresolved) continue;
+                if (m_dependencyOnlyIsolated && (node.outgoing != 0 || node.incoming != 0)) continue;
                 if (!m_dependencySearch.empty() &&
                     node.path.find(m_dependencySearch) == std::string::npos &&
                     node.name.find(m_dependencySearch) == std::string::npos) continue;
@@ -449,7 +642,16 @@ void ScriptEditorPanel::renderDependencyMap() {
                 ImGui::SetCursorScreenPos(p);
                 ImGui::PushID((int)(neighbors[i].id & 0x7fffffff));
                 ImGui::InvisibleButton("##dependencyGraphNode", ImVec2(neighborW, neighborH));
-                if (ImGui::IsItemClicked()) m_dependencySelected = neighbors[i].id;
+                if (ImGui::IsItemClicked()) {
+                    m_dependencySelected = neighbors[i].id;
+                    if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                        if (SceneNode* node = m_scene->findById(neighbors[i].id)) {
+                            m_scene->select(node);
+                            open(neighbors[i].id);
+                            m_focusCode = true;
+                        }
+                    }
+                }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s\n%s", neighbors[i].path.c_str(),
                                                                neighbors[i].outgoing ? "Used by selected script" : "Uses selected script");
                 ImGui::PopID();
@@ -496,6 +698,83 @@ void ScriptEditorPanel::renderDependencyMap() {
                 ImGui::PopID();
             }
             if (!anyIncoming) ImGui::TextDisabled("No statically detected callers or lookups.");
+            // Transitive traversal is static and intentionally cycle-safe. A script may
+            // be affected indirectly even when it does not directly reference the selection.
+            auto renderDependencyReach = [&](bool affected) {
+                std::vector<std::pair<uint64_t, int>> reached;
+                std::unordered_map<uint64_t, int> depth;
+                std::vector<uint64_t> queue{selected.id};
+                depth[selected.id] = 0;
+                for (size_t q = 0; q < queue.size(); ++q) {
+                    const uint64_t current = queue[q];
+                    for (const auto& edge : m_dependencyEdges) {
+                        uint64_t next = 0;
+                        if (!affected && edge.from == current) next = edge.to;
+                        if (affected && edge.to == current) next = edge.from;
+                        if (!next || depth.count(next)) continue;
+                        depth[next] = depth[current] + 1;
+                        queue.push_back(next);
+                        reached.emplace_back(next, depth[next]);
+                    }
+                }
+                for (const auto& item : reached) {
+                    auto target = std::find_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+                        [&](const DependencyNode& n) { return n.id == item.first; });
+                    if (target == m_dependencyNodes.end()) continue;
+                    ImGui::PushID((int)(target->id & 0x7fffffff));
+                    if (ImGui::Selectable((target->path + "##transitive").c_str())) m_dependencySelected = target->id;
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%d hop(s)", item.second);
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", affected ? "May depend on the selected script indirectly" : "Indirect dependency of the selected script");
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Open")) {
+                        if (SceneNode* node = m_scene->findById(target->id)) {
+                            m_scene->select(node);
+                            open(target->id);
+                            m_focusCode = true;
+                        }
+                    }
+                    ImGui::PopID();
+                }
+                return reached.size();
+            };
+            ImGui::SeparatorText("Transitive dependency impact");
+            ImGui::TextDisabled("Reachability is inferred from static references; it is not runtime execution tracing.");
+            if (ImGui::TreeNode("All dependencies (direct and indirect)")) {
+                if (renderDependencyReach(false) == 0) ImGui::TextDisabled("No downstream dependencies detected.");
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNode("Potentially affected by changes")) {
+                if (renderDependencyReach(true) == 0) ImGui::TextDisabled("No dependent scripts detected.");
+                ImGui::TreePop();
+            }
+            const int sameNameCount = (int)std::count_if(m_dependencyNodes.begin(), m_dependencyNodes.end(),
+                [&](const DependencyNode& n) { return n.name == selected.name; });
+            if (sameNameCount > 1)
+                ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.25f, 1.0f),
+                                   "Warning: %d scripts share this name; name-based matches may be ambiguous.", sameNameCount);
+            if (selected.cyclic)
+                ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.35f, 1.0f),
+                                   "Warning: this script participates in a detected dependency cycle.");
+            
+            ImGui::SeparatorText("Asset and object references");
+            int selectedReferenceCount = 0;
+            for (const auto& reference : m_assetReferences) {
+                if (reference.owner != selected.id) continue;
+                ++selectedReferenceCount;
+                ImGui::PushID((int)(reference.owner ^ (uint64_t)selectedReferenceCount));
+                if (reference.nodeLink && reference.unresolvedNode) {
+                    ImGui::TextColored(ImVec4(0.95f, 0.35f, 0.3f, 1.0f), "%s: %s", reference.property.c_str(), reference.value.c_str());
+                } else {
+                    ImGui::Text("%s:", reference.property.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextWrapped("%s", reference.value.c_str());
+                }
+                ImGui::PopID();
+            }
+            if (!selectedReferenceCount) ImGui::TextDisabled("No resource or object references detected on this object.");
+            ImGui::TextDisabled("Resource IDs and file paths are inventoried, not verified against disk or a remote asset service. Broken object refs are scene IDs that no longer resolve.");
+
             ImGui::SeparatorText("Unresolved require() expressions");
             bool anyUnresolved = false;
             for (const auto& dep : m_unresolvedDependencies) if (dep.script == selected.id) {

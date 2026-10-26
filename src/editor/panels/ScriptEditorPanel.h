@@ -75,6 +75,7 @@ private:
         uint64_t id = 0;
         std::string name, path;
         int sourceBytes = 0, outgoing = 0, incoming = 0;
+        bool cyclic = false;
     };
     struct DependencyEdge {
         uint64_t from = 0, to = 0;
@@ -84,11 +85,21 @@ private:
         uint64_t script = 0;
         std::string path, expression;
     };
+    struct AssetReference {
+        uint64_t owner = 0, targetNode = 0;
+        std::string ownerPath, property, value, availability;
+        bool nodeLink = false, unresolvedNode = false;
+    };
     bool m_showDependencyMap = false, m_dependencyOnlyUnresolved = false;
+    bool m_dependencyOnlyIsolated = false;
     double m_dependencyAnalysedAt = -100.0;
     uint64_t m_dependencySelected = 0;
     std::string m_dependencySearch;
+    std::string m_assetSearch;
+    bool m_assetOnlyBrokenLinks = false;
+    bool m_assetOnlyMissingFiles = false;
     std::vector<DependencyNode> m_dependencyNodes;
     std::vector<DependencyEdge> m_dependencyEdges;
     std::vector<UnresolvedDependency> m_unresolvedDependencies;
+    std::vector<AssetReference> m_assetReferences;
 };

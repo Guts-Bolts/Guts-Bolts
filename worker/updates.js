@@ -11,6 +11,23 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'dependency-map-health-checks', name: 'Your Scripts Have Questions', version: '0.7.6', time: 1792962000, tag: 'Studio',
+    summary: 'The Project Dependency Map now traces script relationships, inventories resource references, and flags broken scene-object links.',
+    items: [
+      'Adds isolated-script counts and a filter for scripts with no statically detected incoming or outgoing links.',
+      'Highlights duplicate script names that can make name-based dependency matching ambiguous.',
+      'Adds transitive dependency traversal to show direct and indirect dependencies of the selected script.',
+      'Adds a potential change-impact view for scripts that may depend on the selected script through multiple links.',
+      'Double-click a graph neighbor to open it in the script editor, and use Open actions from impact results to jump directly to a script.',
+      'Inventories texture, decal, T-shirt, sound, particle, effect, GUI image, and skybox resource values on scene objects.',
+      'Adds a project-wide searchable resource inventory, with filters for broken object links and quick selection of the owning object.',
+      'Shows how often resource values are reused, making shared assets easier to identify without treating reuse as an error.',
+      'Checks object links such as constraints, attachments, sound groups, fluid systems, primary parts, and adornee targets for scene IDs that no longer resolve.',
+      'Classifies local file references as present or missing, identifies cached gb: assets, and labels remote IDs/URIs as unverified without downloading or making network requests.',
+      'Remote IDs and uncached gb: assets are not called broken because they may still resolve online; isolated scripts are not automatically unused.',
+    ],
+  },
+  {
     id: 'multiplayer-input-traces', name: 'The Replay Button Is Getting Closer', version: '0.7.5', time: 1792961160, tag: 'Studio',
     summary: 'Multiplayer test bundles now include sampled per-player movement and control traces alongside the existing server and Player output timeline.',
     items: [
