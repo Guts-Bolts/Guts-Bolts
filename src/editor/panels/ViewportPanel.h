@@ -87,6 +87,8 @@ private:
     ImVec2    m_boxFrom{0, 0};
     Transform m_dragStart;
     glm::vec3 m_dragStartPivot{0.0f};
+    glm::vec3 m_dragLocalPivot{0.0f};   // the model's pivot, held still for the whole drag
+    uint64_t  m_dragNode = 0;
     Physics  m_navPhysics;
     uint32_t m_navDrawn = 0;
     double   m_navGather = 0.0;
