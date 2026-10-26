@@ -3386,7 +3386,7 @@ std::vector<std::string> ScriptEngine::debugLocals() {
             case LUA_TNIL: value="nil"; break;
             case LUA_TBOOLEAN: value=lua_toboolean(L,-1)?"true":"false"; break;
             case LUA_TNUMBER: value=lua_tostring(L,-1); break;
-            case LUA_TSTRING: { size_t n=0; const char* s=lua_tolstring(L,-1,&n); value="\\\"" + std::string(s?s:"",std::min<size_t>(n,160)) + (n>160?"…\\\"":"\\\""); break; }
+            case LUA_TSTRING: { size_t n=0; const char* s=lua_tolstring(L,-1,&n); value="\"" + std::string(s?s:"",std::min<size_t>(n,160)) + (n>160?"…\"":"\""); break; }
             case LUA_TTABLE: value="table (raw, not expanded)"; break;
             case LUA_TFUNCTION: value="function"; break;
             case LUA_TUSERDATA: value="userdata"; break;
