@@ -4,7 +4,7 @@
 
 Add an interactive debugger for scripts running in Studio Play/Simulate sessions. Creators should be able to pause at a breakpoint, inspect the call stack and locals, step through code, and resume execution without relying on print statements alone.
 
-This is a design and implementation checklist. It does not claim that the current runtime exposes all required debug hooks.
+This document is the implementation contract and follow-up checklist. The current PR adds local Play/Simulate breakpoints, pause/resume, step into/over/out, a call stack, bounded read-only local-variable inspection, and an editor debugger window. It deliberately does not claim support for gutter breakpoints, conditional expressions, watch evaluation, remote multiplayer debugging, or persisted breakpoint metadata.
 
 ## Required runtime capability audit
 
@@ -20,7 +20,16 @@ Before building the UI, confirm the scripting runtime can support each operation
 
 If the embedded Lua/Luau runtime lacks a capability, expose it as unavailable and track the runtime work separately. Do not simulate stepping by rerunning scripts.
 
-## First release workflow
+## Implemented in this PR
+
+- A Studio View > Lua Debugger window can add and remove line breakpoints for a selected/open script during Play or Simulate.
+- Lua line hooks pause the actual suspended coroutine at a matching source line; execution is resumed from that coroutine rather than rerunning the script.
+- Continue and step into/over/out controls are exposed while paused.
+- The window shows the call stack and local variables for the top frame. Values are read without evaluating expressions; tables are not expanded.
+- The debugger preserves the existing instruction-count timeout hook so debugging does not disable infinite-loop protection.
+- Paused coroutine registry references are retained until resume or the session's Lua VM is closed.
+
+## Follow-up workflow and capability gaps
 
 1. Add gutter breakpoint toggles to the script editor with clear enabled/disabled/verified states.
 2. Add a Debug toolbar with Start Debugging, Continue, Pause (where safe), Step Over, Step Into, Step Out, and Stop.
@@ -74,15 +83,14 @@ For multiplayer testing, explicitly distinguish server and each Player process. 
 - UI remains responsive while the runtime is paused.
 - Tests cover scripts with no debug symbols/source mapping and clearly display unavailable information.
 
-## Implementation order
+## Remaining implementation order
 
-1. Audit the embedded Lua/Luau VM for debug hooks, source metadata, stack inspection, and safe pause/resume.
-2. Add a minimal runtime debug-session API with lifecycle tests before adding editor UI.
-3. Implement unconditional breakpoints and Continue/Stop.
-4. Add current-line highlighting and call stack.
-5. Add safe locals inspection.
-6. Add Step Over/Into/Out and multiple coroutine handling.
-7. Add watches, conditional breakpoints, hit counts, and remote multiplayer debugging only after core semantics are reliable.
+1. Add runtime and editor tests for breakpoint hit behavior, stepping, error paths, and Play shutdown.
+2. Add editor gutter markers and current-line navigation/highlighting.
+3. Persist breakpoint metadata safely across Play sessions and project reloads.
+4. Add multiple-coroutine selection and explicit server/client target selection.
+5. Add watch expressions only with bounded evaluation and clear side-effect safeguards.
+6. Consider conditional breakpoints and hit counts after expression evaluation is safely specified.
 
 ## Non-goals for the first version
 
