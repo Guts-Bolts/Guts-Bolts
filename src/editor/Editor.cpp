@@ -13,6 +13,7 @@
 #include "Theme.h"
 #include "Icons.h"
 #include "../scene/RobloxFile.h"
+#include "../scene/RobloxMesh.h"
 #include "panels/ViewportPanel.h"
 #include "panels/OutlinerPanel.h"
 #include "panels/PropertiesPanel.h"
@@ -50,6 +51,8 @@
 #include <chrono>
 #include <sstream>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <vector>
 
 namespace {
@@ -1390,6 +1393,35 @@ void Editor::newScene() {
 void Editor::openFile(const std::string& path) {
     if (m_playing) togglePlay();
     m_animEditor->close();
+    // Roblox's standalone .mesh files are binary assets, not .rbxm models or
+    // native .gbscene projects. Import them as editable custom-mesh Parts.
+    if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".mesh") == 0) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) { Log::error("Couldn't open mesh file " + path); return; }
+        std::string bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::string err;
+        RobloxMesh::Shape shape = RobloxMesh::parse(bytes, &err);
+        if (!shape.mesh) {
+            Log::error("Couldn't import mesh " + path + ": " + (err.empty() ? "invalid or unsupported Roblox mesh" : err));
+            return;
+        }
+        std::filesystem::path source(path);
+        std::string name = source.stem().string();
+        if (name.empty()) name = "ImportedMesh";
+        auto node = std::make_unique<SceneNode>(name, NodeKind::Part);
+        node->transform.position = shape.center * 0.5f;
+        node->transform.scale = glm::max(shape.size * 0.5f, glm::vec3(0.001f));
+        MeshEdit::attach(*node, std::move(shape.mesh));
+        SceneNode* imported = m_scene->insert(std::move(node));
+        if (!imported) { Log::error("Couldn't insert mesh " + path); return; }
+        m_scene->deselect();
+        m_scene->addToSelection(imported);
+        m_dirty = true;
+        resetHistory();
+        Log::system("Imported Roblox mesh " + path + " (" + std::to_string(imported->editMesh->verts.size()) +
+                    " vertices, " + std::to_string(imported->editMesh->faces.size()) + " triangles). Save the game to keep it.");
+        return;
+    }
     if (RobloxFile::isRobloxFile(path)) {
         RobloxFile::Report report;
         std::string err;
