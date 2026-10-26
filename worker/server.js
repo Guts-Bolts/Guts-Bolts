@@ -1788,7 +1788,7 @@ export class GbServerObject extends DurableObject {
       if (!u || u.userId === 0) return fail('There\'s no account with that ID on this server.');
       // Redact permanent terminations from public profiles. Timed bans remain visible.
       if ((u.banned && !u.bannedUntil) || u.name === kDeletedName) {
-        return { bad: { error: 'USER_DELETED: [ Content Deleted ] — This user has been deleted.', code: 'USER_DELETED' } };
+        return Object.assign(fail('USER_DELETED: [ Content Deleted ] — This user has been deleted.'), { code: 'USER_DELETED' });
       }
       const user = Object.assign(this.publicUser(u), { badges: this.badgesOf(u), avatar: u.avatar || null });
       const creations = [...this.assets.values()].filter((a) => a.creator === u.id && this.canPlay(a, me)).map((a) => this.publicAsset(a));

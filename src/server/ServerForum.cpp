@@ -112,6 +112,55 @@ json GbServer::forumOp(const std::string& name, User& me, const json& args) {
         r["boards"] = boards;
         return r;
     }
+    if (name == "forum.search") {   // threads whose title or a post has the words, newest first
+        std::string q = str("q");
+        q.erase(0, q.find_first_not_of(" \t\r\n"));
+        q.erase(q.find_last_not_of(" \t\r\n") + 1);
+        q = lower(q.substr(0, 100));
+        if (q.size() < 2) return fail("Enter at least two characters to search.");
+        const std::string wantBoard = str("board");
+        const Board* filter = !wantBoard.empty() && wantBoard != "all" ? boardOf(wantBoard) : nullptr;
+        if (!wantBoard.empty() && wantBoard != "all" && !filter) return fail("That board doesn\xE2\x80\x99t exist.");
+        std::vector<json*> all;
+        for (auto& [id, th] : m_forum.items())
+            if ((!filter || sv(th, "board") == filter->id) && !hidden(sv(th, "by"))) all.push_back(&th);
+        std::stable_sort(all.begin(), all.end(), [](const json* x, const json* y) { return lv(*x, "last") > lv(*y, "last"); });
+        // Don't cut a letter in half at the ends of a snippet.
+        auto atLetter = [](const std::string& s, size_t i) {
+            while (i > 0 && i < s.size() && ((unsigned char)s[i] & 0xC0) == 0x80) --i;
+            return i;
+        };
+        json matches = json::array();
+        for (json* thp : all) {
+            const json& th = *thp;
+            const json& posts = th["posts"];
+            const bool titleMatch = lower(sv(th, "title")).find(q) != std::string::npos;
+            long long matchedPost = -1;
+            if (!titleMatch)
+                for (size_t i = 0; i < posts.size(); ++i) {
+                    const User* author = findUser(sv(posts[i], "by"));
+                    if ((!author || !blocks(me, *author)) && lower(sv(posts[i], "text")).find(q) != std::string::npos) { matchedPost = (long long)i; break; }
+                }
+            if (!titleMatch && matchedPost < 0) continue;
+            const Board* b = boardOf(sv(th, "board"));
+            const std::string text = titleMatch ? sv(th, "title") : sv(posts[(size_t)matchedPost], "text");
+            const size_t at = lower(text).find(q);
+            const size_t start = atLetter(text, at > 65 ? at - 65 : 0);
+            const size_t end = atLetter(text, std::min(text.size(), at + q.size() + 95));
+            const std::string snippet = (start ? "\xE2\x80\xA6" : "") + text.substr(start, end - start) + (end < text.size() ? "\xE2\x80\xA6" : "");
+            matches.push_back({{"id", sv(th, "id")}, {"title", sv(th, "title")}, {"board", sv(th, "board")}, {"boardName", b ? b->name : "?"},
+                               {"by", who(sv(th, "by"))}, {"last", lv(th, "last")}, {"replies", (long long)posts.size() - 1},
+                               {"match", titleMatch ? "title" : "post"}, {"snippet", snippet},
+                               {"postPage", (matchedPost < 0 ? 0 : matchedPost) / (long long)kForumPage}});
+        }
+        const long long pageSize = 20, total = (long long)matches.size();
+        const long long pages = std::max<long long>(1, (total + pageSize - 1) / pageSize), page = std::clamp(num("page"), 0LL, pages - 1);
+        json results = json::array();
+        for (long long i = page * pageSize; i < total && i < (page + 1) * pageSize; ++i) results.push_back(matches[(size_t)i]);
+        json r = okay();
+        r["results"] = results; r["total"] = total; r["page"] = page; r["pages"] = pages;
+        return r;
+    }
     if (name == "forum.list") {
         const Board* b = boardOf(str("board"));
         if (!b) return fail("That board doesn't exist.");

@@ -149,7 +149,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Everything else needs a signed-up account (hello just says who we are),
     // except looking around: visitors to the website can browse before signing up.
     // Guests can also play: download games, find and join servers (they can't chat in games).
-    static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
+    static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate"};   // (guests can host games too, and read chat)
@@ -430,6 +430,12 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         User* u = !want.empty() && want.size() < 12 && std::all_of(want.begin(), want.end(), ::isdigit)
                       ? findUserId(std::atoll(want.c_str())) : findPerson(want);   // user number, account key or name
         if (!u || u->userId == 0) return fail("There's no account with that ID on this server.");
+        // Accounts banned for good (and deleted ones) show "[ Content Deleted ]". Timed bans stay visible.
+        if ((u->banned && !u->bannedUntil) || u->name == "Deleted user") {
+            json r = fail("USER_DELETED: [ Content Deleted ] \xE2\x80\x94 This user has been deleted.");
+            r["code"] = "USER_DELETED";
+            return r;
+        }
         json r = okay();
         r["user"] = publicUser(*u);
         r["user"]["badges"] = badgesOf(*u);
@@ -660,6 +666,25 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
 
     // --- Bolts --------------------------------------------------------------
+    // The Boltworks Club early list (boltworks.json): signing up now gets a discount when memberships start.
+    if (name == "boltworks.status") {
+        bool registered = false;
+        for (const json& x : m_boltworks) if (x.value("id", std::string()) == me.id) registered = true;
+        json r = okay();
+        r["registered"] = registered;
+        r["total"] = m_boltworks.size();
+        return r;
+    }
+    if (name == "boltworks.register") {
+        json r = okay();
+        r["registered"] = true;
+        for (const json& x : m_boltworks)
+            if (x.value("id", std::string()) == me.id) { r["already"] = true; return r; }
+        m_boltworks.push_back({{"id", me.id}, {"username", me.name}, {"at", Online::unixNow()}});
+        writeFile(m_opts.data / "boltworks.json", m_boltworks.dump(1));
+        r["already"] = false;
+        return r;
+    }
     if (name == "bolts.history") {
         json h = json::array();
         size_t from = me.ledger.size() > 100 ? me.ledger.size() - 100 : 0;
@@ -723,6 +748,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             std::string q = lower(Online::cleanText(str("query"), 64));
             json list = json::array();
             for (const auto& [id, u] : m_users) {
+                if (u.userId <= 0) continue;   // guests have no user number and shouldn't fill the list
                 if (list.size() >= 40) break;
                 const std::string digits = !q.empty() && q[0] == '#' ? q.substr(1) : q;
                 const bool isNum = !digits.empty() && digits.size() <= 11 && std::all_of(digits.begin(), digits.end(), ::isdigit);
@@ -1961,6 +1987,10 @@ void GbServer::load() {
     loadConnect();
     loadStaffLog();
     loadPromos();
+    if (std::string text; readFile(m_opts.data / "boltworks.json", text)) {
+        json all = json::parse(text, nullptr, false);
+        if (all.is_array()) m_boltworks = all;
+    }
     loadForum();
     loadTrades();
     loadPastTrades();
