@@ -294,9 +294,23 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
             Voice::setActive(false); // release the microphone before iOS suspends the process
             Audio::suspend();         // mute without overwriting the user's volume
             break;
-        case SDL_APP_DIDENTERFOREGROUND:
+        case SDL_APP_DIDENTERFOREGROUND: {
+            // Rebind the existing context after an iOS interruption and refresh
+            // drawable dimensions before rendering the next frame. iOS normally
+            // preserves the context, but making it current explicitly avoids
+            // relying on whichever context SDL left current after resume.
+            if (m_gl && SDL_GL_MakeCurrent(m_sdl, (SDL_GLContext)m_gl) == 0) {
+                int drawableW = 0, drawableH = 0;
+                SDL_GL_GetDrawableSize(m_sdl, &drawableW, &drawableH);
+                glViewport(0, 0, drawableW, drawableH);
+                glEnable(GL_DEPTH_TEST);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                m_uiScale = pickUiScale(m_sdl);
+            }
             Audio::resume();
             break;
+        }
         case SDL_WINDOWEVENT:
             if (e.window.windowID == SDL_GetWindowID(m_sdl)) {
                 if (e.window.event == SDL_WINDOWEVENT_CLOSE) {
