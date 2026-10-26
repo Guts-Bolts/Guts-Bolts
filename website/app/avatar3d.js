@@ -161,6 +161,10 @@ function pieces(model, av, items) {
   const hasModelHat = (items || []).some((it) => isModelAccessory(it) && (it.kind === 'hat' || it.kind === 'hair'));
   if (builtInHat && !hasModelHat) hatsToDraw.unshift({ style: builtInHat, tint: builtInTint });
   const out = [];
+  // Bundles made in Studio can replace the complete body model. The game loads these
+  // through /wear/<id>; the website must do the same instead of always drawing player.obj.
+  const bodyBundle = (items || []).find(isBodyBundle);
+  const bodyModel = bodyBundle && accessories.get(bodyBundle.id);
   // A Headless Head bundle (meta.headless): no head, so no face either (Player::setHeadless).
   const headless = (items || []).some((it) => it && it.kind === 'bundle' && it.meta && it.meta.headless);
   // Clothing pictures (Player::applyClothing): the shirt on the torso and arms, the
@@ -170,8 +174,13 @@ function pieces(model, av, items) {
   for (const [name, part] of Object.entries(model)) {
     const key = PART_OF[name];
     if (key === 'head' && headless) continue;
+    // A body bundle supplies its own body meshes (including the custom torso). Do not
+    // render the default mannequin over them; that is what caused equipped bundles to
+    // appear in the inventory but not on the website's 3D profile preview.
+    if (bodyBundle && key) continue;
     if (key) out.push({ mesh: part, color: col[key], face: name === 'Head', torso: name === 'Torso', cloth: clothFor[key] || 0 });
   }
+  if (bodyBundle && bodyModel && bodyModel.pieces) out.push(...bodyModel.pieces);
   // The face is a flat picture painted onto the front of the head (see FS / faceTexture).
   const head = model.Head;
   const hc = head ? head.min.map((m, i) => (m + head.max[i]) / 2) : [0, 2.325, 0];
@@ -213,6 +222,9 @@ function pieces(model, av, items) {
 // then size), so a hat sits on the website's avatar exactly where it sits in a game.
 const ACCESSORY_KINDS = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
 const isModelAccessory = (it) => it && ACCESSORY_KINDS.includes(it.kind) && it.meta && it.meta.model;
+// Studio body bundles use the same /wear/<id> asset endpoint as model accessories, but
+// their geometry replaces the avatar body rather than being attached as a hat/accessory.
+const isBodyBundle = (it) => it && it.kind === 'bundle' && it.meta && it.meta.body === true;
 const accessories = new Map();   // item id -> { ready, pieces }
 function trs(pos, rot, size) {
   const r = (d) => (Number(d) || 0) * Math.PI / 180;
@@ -308,7 +320,7 @@ function loadAccessory(id) {
 }
 // Start (and wait for) the accessories some items need, and their pictures.
 async function loadAccessories(items) {
-  const list = (items || []).filter(isModelAccessory).map((it) => loadAccessory(it.id));
+  const list = (items || []).filter((it) => isModelAccessory(it) || isBodyBundle(it)).map((it) => loadAccessory(it.id));
   await Promise.all(list.map((e) => e.ready));
   await Promise.all(list.flatMap((e) => (e.pieces || []).filter((p) => p.tex).map((p) => decalTexture(p.tex).ready)));
 }
