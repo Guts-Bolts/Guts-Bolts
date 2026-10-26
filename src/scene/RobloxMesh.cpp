@@ -129,7 +129,7 @@ bool readVerts(Bytes& r, uint32_t count, size_t stride, std::vector<Corner>& out
         out[i].pos    = {r.f32(at), r.f32(at + 4), r.f32(at + 8)};
         out[i].normal = {r.f32(at + 12), r.f32(at + 16), r.f32(at + 20)};
         out[i].uv     = {r.f32(at + 24), r.f32(at + 28)};
-        if (stride >= 40) {
+        if (stride >= 36) {
             const auto* tangent = reinterpret_cast<const int8_t*>(r.p + at + 32);
             out[i].tangent = {
                 std::clamp(tangent[0] / 127.0f, -1.0f, 1.0f),
@@ -137,6 +137,8 @@ bool readVerts(Bytes& r, uint32_t count, size_t stride, std::vector<Corner>& out
                 std::clamp(tangent[2] / 127.0f, -1.0f, 1.0f),
                 tangent[3] < 0 ? -1.0f : 1.0f
             };
+        }
+        if (stride >= 40) {
             const uint8_t* color = r.p + at + 36;
             out[i].color = glm::vec4(color[0], color[1], color[2], color[3]) / 255.0f;
         }
