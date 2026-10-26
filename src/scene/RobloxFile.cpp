@@ -125,6 +125,12 @@ struct Document {
     std::string error;
 };
 
+bool containsBoneInstance(const Inst& in) {
+    for (const Inst* child : in.children)
+        if (child && (child->className == "Bone" || containsBoneInstance(*child))) return true;
+    return false;
+}
+
 // ===========================================================================
 // Binary format (.rbxl / .rbxm)
 // ===========================================================================
@@ -1064,7 +1070,7 @@ struct Converter {
                 node->teamColor = brickColor((int)in.num("TeamColor", 194));
             }
             if (look.shape) MeshEdit::attach(*node, look.shape);
-            if (!look.bones.empty() && node->editMesh) {
+            if (!look.bones.empty() && node->editMesh && !containsBoneInstance(in)) {
                 // The v4/v5 FileMesh embeds its own armature and per-vertex weights.
                 // Create a matching Bone tree so Skin's normal deformation path can
                 // evaluate the imported weights rather than leaving a static mesh.
@@ -2479,6 +2485,28 @@ bool isRobloxFile(const std::string& path) {
 }
 bool isPlace(const std::string& path) { return endsWith(path, ".rbxl") || endsWith(path, ".rbxlx"); }
 
+// Finish binding after all serialized Bone instances have been converted. If a model
+// already contains its own Bone objects, those are the joints animation scripts target;
+// the embedded FileMesh table supplies their bind names/weights, not duplicate joints.
+void bindImportedSkinnedMeshes(SceneNode* node) {
+    if (!node) return;
+    if (node->editMesh && node->editMesh->skinned()) {
+        const std::vector<SceneNode*> bones = Skin::bones(node);
+        if (!bones.empty()) {
+            for (size_t i = 0; i < node->editMesh->bones.size(); ++i) {
+                for (SceneNode* bone : bones) {
+                    if (bone && bone->name == node->editMesh->bones[i]) {
+                        node->editMesh->bind[i] = glm::inverse(Skin::frame(bone, node));
+                        break;
+                    }
+                }
+            }
+            MeshEdit::refresh(*node);
+        }
+    }
+    for (auto& child : node->children) bindImportedSkinnedMeshes(child.get());
+}
+
 bool importPlace(Scene& scene, const std::string& path, Report& report, std::string& error) {
     Document doc;
     if (!readFile(path, doc)) { error = doc.error; return false; }
@@ -2542,6 +2570,7 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
             if (std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), k->className) != std::end(kPostEffectClassNames))
                 conv.convert(*k, scene.lightingFolder(true));
     conv.linkRefs(doc);
+    bindImportedSkinnedMeshes(scene.root());
     scene.info().title = std::filesystem::path(path).stem().string();
     scene.markDirty();
     return true;
@@ -2558,6 +2587,7 @@ std::vector<SceneNode*> importModel(Scene& scene, SceneNode* parent, const std::
     for (const Inst* r : roots)
         if (SceneNode* n = conv.convert(*r, parent)) out.push_back(n);
     conv.linkRefs(doc);
+    bindImportedSkinnedMeshes(scene.root());
     scene.markDirty();
     if (out.empty()) error = "nothing in this file could be imported";
     return out;
