@@ -73,7 +73,7 @@ void Player::build() {
     addAnimateScript(*m_scene, r);
     setHat(m_hat, m_hatTint);
     applyClothing(r, m_shirt, m_pants, m_tshirt);
-    applyBody(*m_scene, r, m_body);
+    applyBody(*m_scene, r, m_body, m_bodyParts);
     applyAccessories(*m_scene, r, m_accessories);
     applyFace(*m_scene, r, m_face);
     applyHeadless(r, m_headless);
@@ -167,7 +167,12 @@ void Player::applyHeadless(SceneNode* r, bool on) {
 
 void Player::setBody(const std::string& body) {
     m_body = body;
-    if (SceneNode* r = root()) applyBody(*m_scene, r, body);
+    if (SceneNode* r = root()) applyBody(*m_scene, r, m_body, m_bodyParts);
+}
+
+void Player::setBodyParts(const std::map<std::string, std::string>& parts) {
+    m_bodyParts = parts;
+    if (SceneNode* r = root()) applyBody(*m_scene, r, m_body, m_bodyParts);
 }
 
 nlohmann::json Player::bodyPartJson(const SceneNode& part) {
@@ -219,13 +224,22 @@ void Player::resetBodyPart(SceneNode& part) {
     part.transform.scale = size;
 }
 
-void Player::applyBody(Scene& scene, SceneNode* r, const std::string& body) {
+void Player::applyBody(Scene& scene, SceneNode* r, const std::string& body, const std::map<std::string, std::string>& bodyParts) {
     // Checked like the server checks it (a file someone handed us could say anything).
     nlohmann::json j = body.empty() ? nlohmann::json() : nlohmann::json::parse(readSource(body), nullptr, false);
     nlohmann::json parts;
     if (!j.is_object() || j.value("format", std::string()) != "gbbundle" || !j.contains("body") ||
         !Online::bundleBody(j["body"], parts).empty())
         parts = nlohmann::json::object();   // none, or not downloaded yet: the normal body
+    // Standalone parts override only their own slot, layered over the selected full-body bundle.
+    for (const auto& [name, src] : bodyParts) {
+        if (src.empty() || std::find(std::begin(Online::kBodyParts), std::end(Online::kBodyParts), name) == std::end(Online::kBodyParts)) continue;
+        nlohmann::json item = nlohmann::json::parse(readSource(src), nullptr, false);
+        if (item.is_object() && item.value("format", std::string()) == "gbbundle" && item.contains("body") && item["body"].is_object()) {
+            nlohmann::json one;
+            if (Online::bundleBody(item["body"], one).empty() && one.contains(name)) parts[name] = one[name];
+        }
+    }
     for (const char* name : Online::kBodyParts) {
         SceneNode* part = r->findChild(name);
         if (!part) continue;

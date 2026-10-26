@@ -353,6 +353,48 @@ int m_FindFirstChildOfClass(lua_State* L) {
     return 1;
 }
 
+int m_FindFirstChildWhichIsA(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    const std::string cls = luaL_checkstring(L, 2);
+    const bool recursive = lua_toboolean(L, 3);
+    auto search = [&](auto&& self, SceneNode* parent) -> SceneNode* {
+        for (auto& child : parent->children) {
+            if (child->internal) continue;
+            if (isA(L, child.get(), cls)) return child.get();
+            if (recursive) if (SceneNode* found = self(self, child.get())) return found;
+        }
+        return nullptr;
+    };
+    if (cls == "Humanoid" && hasHumanoid(L, n)) { LuaApi::pushHumanoid(L, n->id); return 1; }
+    SceneNode* found = search(search, n);
+    LuaApi::pushInstance(L, found ? found->id : 0);
+    return 1;
+}
+
+int m_FindFirstAncestor(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    const std::string name = luaL_checkstring(L, 2);
+    for (SceneNode* p = n->parent; p; p = p->parent) {
+        if (p->name == name) { LuaApi::pushInstance(L, p->id); return 1; }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_FindFirstAncestorOfClass(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    const std::string cls = luaL_checkstring(L, 2);
+    for (SceneNode* p = n->parent; p; p = p->parent) {
+        if (isA(L, p, cls)) { LuaApi::pushInstance(L, p->id); return 1; }
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+int m_FindFirstAncestorWhichIsA(lua_State* L) {
+    return m_FindFirstAncestorOfClass(L);
+}
+
 int m_WaitForChild(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
     std::string name = luaL_checkstring(L, 2);
@@ -786,6 +828,9 @@ const luaL_Reg kTerrainMethods[] = {
 
 const luaL_Reg kMethods[] = {
     {"FindFirstChild", m_FindFirstChild}, {"FindFirstChildOfClass", m_FindFirstChildOfClass},
+    {"FindFirstChildWhichIsA", m_FindFirstChildWhichIsA},
+    {"FindFirstAncestor", m_FindFirstAncestor}, {"FindFirstAncestorOfClass", m_FindFirstAncestorOfClass},
+    {"FindFirstAncestorWhichIsA", m_FindFirstAncestorWhichIsA},
     {"WaitForChild", m_WaitForChild}, {"GetChildren", m_GetChildren},
     {"GetDescendants", m_GetDescendants}, {"Destroy", m_Destroy}, {"Remove", m_Destroy}, {"ParentTo", m_ParentTo},
     {"ClearAllChildren", m_ClearAllChildren}, {"Clone", m_Clone}, {"IsA", m_IsA},

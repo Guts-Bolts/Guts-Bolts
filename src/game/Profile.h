@@ -22,6 +22,7 @@ struct Profile {
     std::string faceImage;                // a face from the catalog ("gb:<id>"), "" = the smiley
     bool        headless = false;         // wearing a Headless Head bundle: no head (or face) shows
     std::string body;                     // wearing a bundle with a new body: "gb:<id>" of it, "" = the normal body
+    std::map<std::string, std::string> bodyParts; // independently equipped body-part slot -> "gb:<id>"
     std::map<std::string, std::string> accessories;   // kind -> "gb:<id>" (made in Studio)
     long long   avatarUpdated = 0;        // when the avatar was last saved on the server (to keep the website in step)
     std::string server;                   // Guts&Bolts server to use ("" = offline); new players get the official one
@@ -43,6 +44,7 @@ struct Profile {
         player.setAccessories(accessories);
         player.setFace(faceImage);
         player.setBody(body);
+        player.setBodyParts(bodyParts);
         player.setHeadless(headless);
     }
 

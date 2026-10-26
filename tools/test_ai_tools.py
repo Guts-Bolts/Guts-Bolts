@@ -14,6 +14,7 @@ server that doesn't exist (GB_SERVER) and a throwaway account folder, so nothing
 is published and your own account isn't touched.
 """
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -21,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -229,34 +231,62 @@ def run_tests(m):
     d = m.call("validate_scene")
     check(ok(d), "validate_scene still works", d)
 
-    print("8. Your own materials (MaterialVariant)")
-    v = m.call("insert_object", kind="MaterialVariant", name="TestBrick")
-    check(ok(v) and v.get("path") == "MaterialService.TestBrick" and v.get("class") == "MaterialVariant",
-          "a MaterialVariant goes in MaterialService", v)
-    vid = v["object_id"]
-    for prop, val in [("BaseMaterial", "Concrete"), ("ColorMap", "images/brick.png"), ("StudsPerTile", 6), ("Roughness", 0.2),
-                      ("Glow", 1.5)]:
-        d = m.call("set_property", object=vid, property=prop, value=val)
-        check(ok(d), f"set {prop}", d)
-    d = m.call("get_object", object=vid)
-    props = d.get("properties", {})
-    check(ok(d) and props.get("BaseMaterial") == "Concrete" and props.get("ColorMap") == "images/brick.png"
-          and props.get("StudsPerTile") == 6 and abs(props.get("Roughness", 0) - 0.2) < 1e-6 and props.get("Glow") == 1.5,
-          "get_object reads them back", props)
-    d = m.call("set_property", object=vid, property="BaseMaterial", value="Cheese")
-    check(not ok(d), "an unknown BaseMaterial is refused", d)
-    part = m.call("insert_object", kind="Part", name="BrickWall")
-    m.call("set_property", object=part["object_id"], property="Material", value="Concrete")
-    d = m.call("set_property", object=part["object_id"], property="MaterialVariant", value="TestBrick")
-    check(ok(d), "a part's MaterialVariant", d)
-    d = m.call("run_lua", code=f"local p = __gb_byId({part['object_id'][1:]}) local ms = game:GetService('MaterialService') "
-                               "local v = Instance.new('MaterialVariant') v.Name = 'FromLua' v.BaseMaterial = 'Metal' v.Metalness = 0.8 "
-                               "v.Parent = ms print(p.MaterialVariant, ms.TestBrick.BaseMaterial, ms.FromLua.Metalness, ms.FromLua.ClassName)")
-    out = d.get("output", [""])[-1].split()
-    check(ok(d) and len(out) == 4 and out[:2] == ["TestBrick", "Concrete"] and abs(float(out[2]) - 0.8) < 1e-4
-          and out[3] == "MaterialVariant", "Lua sees them", d)
-    d = m.call("validate_scene")
-    check(ok(d), "validate_scene with MaterialVariants", d)
+    print("8. Find and Change (many objects at once)")
+    ids = []
+    for i, mass_tag in enumerate([None, "Lightweight", None]):
+        d = m.call("insert_object", kind="Part", name=f"BulkCrate{i}")
+        ids.append(d["object_id"])
+        m.call("set_property", object=d["object_id"], property="Anchored", value=False)
+        if mass_tag:
+            m.call("run_lua", code=f"__gb_byId({d['object_id'][1:]}):AddTag('{mass_tag}')")
+    d = m.call("find_and_change", kind="BasePart", name_contains="bulkcrate")
+    check(ok(d) and d.get("count") == 3, "finds by kind and name (any case)", d)
+    d = m.call("find_and_change", name_contains="BulkCrate", not_tag="Lightweight",
+               change={"property": "Density", "op": "Multiply by", "value": "1.5"})
+    rows = d.get("results", [])
+    check(ok(d) and d.get("count") == 2 and all(r.get("becomes") and not r.get("error") for r in rows) and not d.get("applied"),
+          "preview skips the tagged one and shows new values", d)
+    before = m.call("get_object", object=ids[0])["properties"]["Density"]
+    check(abs(before - float(rows[0]["now"])) < 1e-3 if rows else False, "preview changed nothing", before)
+    d = m.call("find_and_change", name_contains="BulkCrate", not_tag="Lightweight",
+               change={"property": "Density", "op": "Multiply by", "value": "1.5"}, apply=True)
+    check(ok(d) and d.get("changed") == 2, "apply changes both", d)
+    after = m.call("get_object", object=ids[0])["properties"]["Density"]
+    tagged = m.call("get_object", object=ids[1])["properties"]["Density"]
+    check(abs(after - before * 1.5) < 1e-3 and abs(tagged - before) < 1e-3, "Density x1.5, the tagged one untouched", [before, after, tagged])
+    d = m.call("find_and_change", name_contains="BulkCrate", where={"property": "Density", "op": ">", "value": str(before + 0.01)})
+    check(ok(d) and d.get("count") == 2, "where Density > old value finds the two changed ones", d)
+    d = m.call("undo")
+    back = m.call("get_object", object=ids[2])["properties"]["Density"]
+    check(ok(d) and abs(back - before) < 1e-3, "one undo puts every change back", [back, before])
+    d = m.call("find_and_change", name_contains="BulkCrate", change={"property": "Color", "op": "Set to", "value": "255, 0, 0"}, apply=True)
+    col = m.call("get_object", object=ids[2])["properties"]["Color"]
+    check(ok(d) and d.get("changed") == 3 and abs(col[0] - 1) < 1e-3 and col[1] < 1e-3, "set a colour on all of them", [d, col])
+    d = m.call("find_and_change", name_contains="BulkCrate", change={"op": "Add tag", "value": "Crate"}, apply=True)
+    d2 = m.call("find_and_change", has_tag="Crate")
+    check(ok(d) and d2.get("count") == 3, "add a tag to all of them", d2)
+    d = m.call("find_and_change", name_contains="BulkCrate", change={"property": "Nope", "op": "Set to", "value": "1"})
+    check(ok(d) and all("has no Nope" in r.get("error", "") for r in d.get("results", [])), "a missing property is reported per object", d)
+    d = m.call("find_and_change", change={"property": "Density", "op": "Squish", "value": "1"})
+    check(code(d) == "INVALID_INPUT" and "Multiply by" in choices(d), "bad op lists the choices", d)
+
+    run_folder_tests(m)
+
+
+def run_folder_tests(m):
+    """Runs the tests in tools/ai_tool_tests/: one file per feature, so two pull
+    requests adding tests never change the same lines. Each file has a TITLE and a
+    run(m, t) function; t has check, ok, code and choices (the helpers above)."""
+    folder = os.path.join(ROOT, "tools", "ai_tool_tests")
+    t = types.SimpleNamespace(check=check, ok=ok, code=code, choices=choices)
+    for name in sorted(os.listdir(folder)):
+        if not name.endswith(".py") or name.startswith("_"):
+            continue
+        spec = importlib.util.spec_from_file_location("ai_tool_test_" + name[:-3], os.path.join(folder, name))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        print(f"{name[:-3]}: {getattr(mod, 'TITLE', name)}")
+        mod.run(m, t)
 
 
 def main():

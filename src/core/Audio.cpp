@@ -210,6 +210,8 @@ Samples decode(const unsigned char* data, size_t size) {
     return out;
 }
 int                                     g_next = 1;
+float                                   g_masterVolume = 1.0f;
+bool                                    g_suspended = false;
 
 void destroy(Instance& in) {
     ma_sound_uninit(&in.sound);
@@ -458,7 +460,18 @@ void setListener(const glm::vec3& p, const glm::vec3& f) {
 void* engineHandle() { return g_ready ? &g_engine : nullptr; }
 
 void setMasterVolume(float v) {
-    if (g_ready) ma_engine_set_volume(&g_engine, std::clamp(v, 0.0f, 1.0f));
+    g_masterVolume = std::clamp(v, 0.0f, 1.0f);
+    if (g_ready) ma_engine_set_volume(&g_engine, g_suspended ? 0.0f : g_masterVolume);
+}
+
+void suspend() {
+    g_suspended = true;
+    if (g_ready) ma_engine_set_volume(&g_engine, 0.0f);
+}
+
+void resume() {
+    g_suspended = false;
+    if (g_ready) ma_engine_set_volume(&g_engine, g_masterVolume);
 }
 
 } // namespace Audio

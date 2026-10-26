@@ -216,7 +216,8 @@ public:
     // A bundle's new body (made in Studio's Bundles window): "gb:<id>" of the bundle or a
     // file holding it; "" = the normal body. Parts it doesn't change keep the normal shape.
     void        setBody(const std::string& body);
-    static void applyBody(Scene& scene, SceneNode* root, const std::string& body);
+    void        setBodyParts(const std::map<std::string, std::string>& parts);
+    static void applyBody(Scene& scene, SceneNode* root, const std::string& body, const std::map<std::string, std::string>& parts = {});
     // One rig part's shape as a bundle stores it (Online::bundleBody), and back.
     static nlohmann::json bodyPartJson(const SceneNode& part);
     static bool           setBodyPart(SceneNode& part, const nlohmann::json& j);
@@ -303,6 +304,7 @@ private:
     std::string m_shirt, m_pants, m_tshirt, m_face;
     bool        m_headless = false;
     std::string m_body;
+    std::map<std::string, std::string> m_bodyParts;
     Accessories m_accessories;
 
     glm::vec3 m_spawn{0.0f};
