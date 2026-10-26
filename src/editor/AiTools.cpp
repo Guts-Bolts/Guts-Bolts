@@ -283,6 +283,42 @@ const std::vector<Tool>& tools() {
           "\"Make the door open when touched.\" \"Add a score leaderboard.\""},
          schema({{"parent", kParent}, {"name", {{"type", "string"}}}, {"source", {{"type", "string"}}},
                  {"type", {{"type", "string"}, {"enum", {"Script", "LocalScript", "ModuleScript"}}}}}, {"source"})},
+        {"visual_script", "Make a script from blocks (Visual Scripting)", "SCRIPTING", false, false, false, Risk::Medium,
+         {"Visual Scripting: a Script made by connecting blocks (\"When touched\" -> \"If it's a player\" -> \"Give points\"). "
+          "The blocks are saved in the script's code and turn into normal Lua; the person can change them in VIEW > Blocks. "
+          "blocks: the list of blocks with their fields and ways out. write: makes (or changes) a block script from a graph. "
+          "read: a block script's graph, its Lua and any problems.",
+          "When the person asks for blocks or Visual Scripting, or to make a script they can change without code.",
+          "For normal code use create_script / edit_script. Don't edit a block script's code with edit_script: the next change to its blocks writes over it.",
+          "action (blocks, write, read); object (write: the block script to change, or leave out to make one; read: required); "
+          "parent and name (write, new script: where it goes; script.Parent is that object); graph (write: "
+          "{nodes: [{id (number), type, x, y, f: {field: text}}], links: [{from: id, pin: \"next\"/\"then\"/\"else\"/\"do\", to: id}]}). "
+          "A chain starts at an event block and follows its links. Targets: \"this\", \"other\", \"character\" or \"path:Workspace.Door\".",
+          "blocks: {blocks: [...]}. write/read: {object_id, lua, problems: [..], edited (read: its code was changed by hand)}.",
+          "write: the object (if given) is a block script.", "write: the script's code is replaced by the blocks' code.",
+          "visual_script blocks -> visual_script write -> playtest start -> get_output -> visual_script write (fix).",
+          "\"Make a block script that gives a coin when you touch the part.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"blocks", "write", "read"}}}}, {"object", kObject}, {"parent", kParent},
+                 {"name", {{"type", "string"}}}, {"graph", {{"type", "object"}}}}, {"action"})},
+        {"generate_level", "Make a level from a seed (dungeon or obby)", "OBJECTS", false, false, false, Risk::Medium,
+         {"Procedural levels: makes a Dungeon (rooms joined by corridors, crates, coins) or an Obby (platforms to jump along, "
+          "lava underneath) from rules and a seed; the same seed always makes the same level. Each level is checked: everything "
+          "fitted, nothing inside anything else, and a robot (the navmesh) found a way from the spawn to the goal.",
+          "When the person asks for a level, dungeon, maze of rooms or obby to be made for them.",
+          "For one object use insert_object. Not for terrain hills (use run_lua with Terrain:Generate).",
+          "style (Dungeon or Obby); seed (number, default 1); count (rooms or platforms, default 8); room_min / room_max (studs); "
+          "wall_height; props (crates); coins; tries (try this many seeds from `seed` and keep the first that passes, default 1); "
+          "dry_run (only check, make nothing); at ([x, y, z], default next to everything); replace (an earlier level to take away).",
+          "{ok, seed, tried: [{seed, ok, problems, route: {status, length, jumps}}], object_id, at, spawn, goal, parts}.",
+          "None.", "Unless dry_run, a Model called DungeonLevel / ObbyLevel is in Workspace (one Ctrl+Z takes it away).",
+          "generate_level {tries: 20} -> playtest start -> get_output (the Goal prints who reached it).",
+          "\"Make me a dungeon with 10 rooms.\" \"Make an obby with 30 platforms.\""},
+         schema({{"style", {{"type", "string"}, {"enum", {"Dungeon", "Obby"}}}}, {"seed", {{"type", "integer"}, {"minimum", 0}}},
+                 {"count", {{"type", "integer"}, {"minimum", 2}, {"maximum", 60}}}, {"room_min", {{"type", "integer"}}},
+                 {"room_max", {{"type", "integer"}}}, {"wall_height", {{"type", "number"}}}, {"props", {{"type", "boolean"}}},
+                 {"coins", {{"type", "boolean"}}}, {"tries", {{"type", "integer"}, {"minimum", 1}, {"maximum", 50}}},
+                 {"dry_run", {{"type", "boolean"}}}, {"at", {{"type", "array"}, {"items", {{"type", "number"}}}}},
+                 {"replace", kObject}}, {})},
         {"read_script", "Read a script's code", "SCRIPTING", true, false, true, Risk::None,
          {"Returns the Lua source of a Script, LocalScript or ModuleScript.",
           "Before editing a script, when asked what a script does, when debugging an error that names a script.",
@@ -438,6 +474,22 @@ const std::vector<Tool>& tools() {
           "analyze_script_dependencies -> inspect findings -> edit_script -> analyze_script_dependencies again.",
           "\"Show me the ModuleScript dependency graph.\""},
          schema(json::object(), {})},
+        {"lua_debugger", "Pause scripts at breakpoints and step", "DEBUG", false, false, false, Risk::Low,
+         {"Studio's Lua Debugger. Breakpoints (a script and a line) pause a script during a playtest when it reaches "
+          "that line; the whole game waits while it is paused. Then read where it stopped, the call stack and the "
+          "local variables, and continue or step one line at a time. Breakpoints stay set between playtests.",
+          "\"Why is this variable wrong?\", \"does this line ever run?\", following a script line by line.",
+          "For what scripts printed use get_output; for errors use get_errors.",
+          "action (required): status, add_breakpoint, remove_breakpoint, clear_breakpoints, continue, step_over, "
+          "step_into, step_out. object and line for add_breakpoint / remove_breakpoint.",
+          "{paused, at: {object_id, source, line, reason}, call_stack, locals, breakpoints: [{object_id, name, line}], pauses}.",
+          "continue and the steps need a playtest that is paused at a breakpoint.",
+          "Stepping runs the script's code (it can change the game, like playing does).",
+          "lua_debugger add_breakpoint -> playtest start -> lua_debugger status -> step_over -> status -> continue.",
+          "\"Stop my Door script at line 12 and tell me what `open` is.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"status", "add_breakpoint", "remove_breakpoint", "clear_breakpoints",
+                                                         "continue", "step_over", "step_into", "step_out"}}}},
+                 {"object", kObject}, {"line", {{"type", "integer"}, {"minimum", 1}}}}, {"action"})},
         {"validate_scene", "Check the whole game for problems", "DEBUG", true, false, true, Risk::None,
          {"Runs diagnose_object over the whole game and adds up the results: script syntax errors, broken constraints, "
           "misplaced objects, invisible or falling-through parts, plus recent errors in the Output.",
@@ -650,6 +702,8 @@ json workflowOf(const std::string& name) {
         {"find_and_change", {{"find_objects"}, {"find_and_change", "get_object"}}},
         {"create_script", {{"get_game_tree"}, {"diagnose_object", "playtest"}}},
         {"read_script", {{"find_objects"}, {"edit_script"}}},
+        {"visual_script", {{"get_game_tree"}, {"playtest", "get_output"}}},
+        {"generate_level", {{"get_game_tree"}, {"playtest", "screenshot"}}},
         {"edit_script", {{"read_script"}, {"diagnose_object", "playtest"}}},
         {"run_lua", {{"get_game_tree"}, {"get_game_tree", "screenshot"}}},
         {"playtest", {{"validate_scene"}, {"get_errors", "get_output", "get_object", "screenshot"}}},
@@ -727,6 +781,7 @@ Every Output line says which playtest (run) it came from; 0 means outside a play
 - Explosions: the Explosion object / Explode(). DON'T push every nearby part by hand.
 - Emotes: humanoid:PlayEmote("wave") plays a built-in keyframed emote everyone sees (dance, dance2, dance3, wave, point, cheer, laugh; moving or jumping stops it). Players also have the B emote menu; a game turns it off with game:GetService("StarterGui"):SetCoreGuiEnabled(Enum.CoreGuiType.EmotesMenu, false). DON'T animate a character by moving its arms in a loop.
 - Player input ("press E to ...", a sprint key, a mobile button): ContextActionService:BindAction(name, fn, createTouchButton, Enum.KeyCode.E, ...) in a LocalScript; fn(name, state, input) returns Enum.ContextActionResult.Sink (keep it: the game's own controls ignore it) or Pass. createTouchButton = true adds a phone button (SetTitle / SetImage).
+- Custom materials ("make a brick / rusty metal / glowing lava material"): insert_object MaterialVariant (it goes in MaterialService), set its BaseMaterial, ColorMap / NormalMap / RoughnessMap / MetalnessMap (pictures like a Decal's), StudsPerTile, and Roughness / Metalness / Glow for what has no picture. A part shows it when its Material is the BaseMaterial and its MaterialVariant is the variant's name.
 - Only write scripts for behaviour the built-in objects and properties can't give, or when the person asks for code.
 
 ## Editor vs playtest
@@ -1007,7 +1062,8 @@ json capabilities() {
             {"publishing", "publish_game: like File > Publish, as the signed-in account (refused when not signed in); only when asked"},
             {"services", json::array({"Workspace", "Players", "Lighting", "ReplicatedFirst", "ReplicatedStorage", "ServerScriptService",
                                       "ServerStorage", "StarterGui", "StarterPack", "StarterPlayer", "StarterPlayer.StarterPlayerScripts",
-                                      "StarterPlayer.StarterCharacterScripts", "Teams", "SoundService", "Chat", "TextChatService"})},
+                                      "StarterPlayer.StarterCharacterScripts", "Teams", "SoundService", "Chat", "TextChatService",
+                                      "MaterialService"})},
             {"property_names", "the same as Lua scripts (get_object lists them; set_property accepts them and common misspellings)"},
             {"output_runs", "get_output / get_errors mark each line with its playtest run; run \"latest\" reads only the newest"},
         }},

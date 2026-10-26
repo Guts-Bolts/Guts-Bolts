@@ -103,6 +103,27 @@ test('standalone body parts can be catalogued and equipped separately', () => {
   assert.ok(profile.wearing.some((x) => x.id === arm.asset.id && x.meta.bodyPart === 'Left Arm'));
 });
 
+test('the website can load the body of a body part and of a body bundle (/wear/)', async () => {
+  const s = makeServer();
+  const arm = bodyPart(s, s.staff, 'Steel Left Arm', 'Left Arm');
+  const robot = bodyBundle(s, s.staff, { Torso: cube() });
+  assert.ok(arm.ok && robot.ok, arm.error || robot.error);
+  for (const [r, part] of [[arm, 'Left Arm'], [robot, 'Torso']]) {
+    const res = await s.fetch(new Request('https://gutsandbolts.net/wear/' + r.asset.id));
+    assert.equal(res.status, 200);
+    const j = await res.json();
+    assert.equal(j.format, 'gbbundle');
+    assert.deepEqual(Object.keys(j.body), [part]);
+    assert.ok(Array.isArray(j.body[part].v) && Array.isArray(j.body[part].f));
+  }
+  // A bundle that's only items has no body to send.
+  const hat = s.call(s.staff, 'upload', { kind: 'hat', name: 'Cap', price: 0,
+    data: Buffer.from(JSON.stringify({ format: 'gbaccessory', node: { kind: 'Part' } })).toString('base64') });
+  const pack = s.call(s.staff, 'upload', { kind: 'bundle', name: 'Pack', price: 0, data: '', meta: { items: [hat.asset.id] } });
+  assert.ok(pack.ok, pack.error);
+  assert.equal((await s.fetch(new Request('https://gutsandbolts.net/wear/' + pack.asset.id))).status, 404);
+});
+
 test('standalone body parts must contain exactly their declared slot and only staff can upload them', () => {
   const s = makeServer(), maker = s.signUp('maker');
   let r = bodyPart(s, maker, 'Unauthorized Torso', 'Torso');

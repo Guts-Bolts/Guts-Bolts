@@ -3,6 +3,7 @@
 // engine), ids of what was touched, and for failures an error code, whether
 // it can be fixed and what to try next.
 #include "AiTools.h"
+#include "VisualScript.h"
 #include "Editor.h"
 #include "../scripting/ScriptHistory.h"
 #include "MultiTest.h"
@@ -55,6 +56,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Highlight: return "Highlight";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
         case NodeKind::Sky:       return "Sky";
+        case NodeKind::MaterialVariant: return "MaterialVariant";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
@@ -140,7 +142,7 @@ std::string canon(const std::string& s) {
 const std::vector<std::string>& serviceList() {
     static const std::vector<std::string> list = {"Workspace", "Players", "Lighting", "ReplicatedFirst", "ReplicatedStorage",
         "ServerScriptService", "ServerStorage", "StarterGui", "StarterPack", "StarterPlayer", "Teams", "SoundService",
-        "Chat", "TextChatService"};
+        "Chat", "TextChatService", "MaterialService"};
     return list;
 }
 // Where objects can go (Players fills itself while the game runs; Lighting holds settings).
@@ -192,6 +194,8 @@ const char* const kLuaProperties[] = {
     "Responsiveness", "RigidityEnabled", "ReactionForceEnabled", "ReactionTorqueEnabled", "ApplyAtCenterOfMass",
     "RelativeTo", "Mode", "AlignType", "PrimaryAxisOnly", "ForceLimitMode", "ForceLimitsEnabled",
     "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart", "BreakForce", "Broken",
+    "MaterialVariant", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "StudsPerTile",
+    "Roughness", "Metalness", "Glow",
 };
 
 // The names as a Lua table, for __gb_aiProps.
@@ -1015,6 +1019,63 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         if (!d["syntax"]["ok"].get<bool>()) d["warnings"] = json::array({"The script has a syntax error and won't run until it's fixed."});
         return done(d);
     }
+    if (name == "visual_script") {
+        const std::string action = str("action");
+        if (action == "blocks") {
+            json list = json::array();
+            for (const auto& b : VisualScript::blocks()) {
+                json fields = json::array();
+                const char* kinds[] = {"text", "number", "color (r, g, b)", "target", "choice"};
+                for (const auto& f : b.fields) fields.push_back({{"key", f.key}, {"label", f.label}, {"kind", kinds[f.kind]}, {"default", f.def}});
+                list.push_back({{"type", b.type}, {"category", b.category}, {"title", b.title}, {"tip", b.tip},
+                                {"fields", fields}, {"outs", b.outs}, {"event", b.event}});
+            }
+            return done({{"blocks", list}});
+        }
+        if (action == "read") {
+            SceneNode* n;
+            if (!need("object", n)) return refErr;
+            if (!n->isScript() || !VisualScript::isBlocks(n->source))
+                return fail("NOT_BLOCKS", label(n) + " isn't a script made with blocks.", "Use read_script for normal scripts.");
+            bool edited = false;
+            json g = VisualScript::graphOf(n->source, &edited);
+            std::vector<std::string> problems;
+            const std::string lua = VisualScript::toLua(g, problems);
+            return done({{"object_id", idOf(n)}, {"graph", g}, {"lua", lua}, {"problems", problems}, {"edited", edited}});
+        }
+        if (action != "write") return fail("INVALID_INPUT", "action must be blocks, write or read.", "Start with blocks to see them.");
+        if (!args.contains("graph") || !args["graph"].is_object())
+            return fail("INVALID_INPUT", "Give `graph`: {nodes: [...], links: [...]}.", "visual_script blocks lists the block types.");
+        const json& g = args["graph"];
+        if (!g.contains("nodes") || !g["nodes"].is_array())
+            return fail("INVALID_INPUT", "graph.nodes must be a list.", "Each node: {id, type, x, y, f}.");
+        for (const auto& node : g["nodes"]) {
+            const std::string t = node.is_object() ? node.value("type", std::string()) : std::string();
+            if (!VisualScript::find(t))
+                return fail("UNKNOWN_BLOCK", "There's no block called \"" + t + "\".", "visual_script blocks lists them.");
+            if (!node.contains("id") || !node["id"].is_number_integer())
+                return fail("INVALID_INPUT", "Every node needs a whole-number id.", "Like {\"id\": 1, \"type\": \"start\"}.");
+        }
+        SceneNode* n = nullptr;
+        if (!str("object").empty()) {
+            if (!need("object", n)) return refErr;
+            if (!n->isScript() || !VisualScript::isBlocks(n->source))
+                return fail("NOT_BLOCKS", label(n) + " isn't a script made with blocks.", "Leave out object to make a new block script.");
+        } else {
+            SceneNode* parent;
+            if (!optional("parent", root, parent, true)) return refErr;
+            auto s = std::make_unique<SceneNode>(str("name").empty() ? "BlockScript" : str("name"), NodeKind::Script);
+            n = m_scene->insert(std::move(s), parent);
+        }
+        json keep = {{"nodes", g["nodes"]}, {"links", g.contains("links") && g["links"].is_array() ? g["links"] : json::array()}};
+        std::vector<std::string> problems;
+        n->source = VisualScript::scriptSource(keep, problems);
+        std::vector<std::string> again;
+        json d = {{"object_id", idOf(n)}, {"path", pathOf(n)}, {"lua", VisualScript::toLua(keep, again)}, {"problems", problems},
+                  {"syntax", syntaxOf(n->source, n->name)}};
+        if (m_playing) d["warnings"] = json::array({"A playtest is running: it keeps using the old code until it is stopped and started again."});
+        return done(d);
+    }
     if (name == "read_script") {
         SceneNode* n;
         if (!need("object", n)) return refErr;
@@ -1397,6 +1458,49 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                      {"unreferenced_modules", unused},
                      {"note", "Static heuristic only: scripts were not executed. Dynamic require expressions, string-built paths and runtime-only references may be missed."}});
     }
+    if (name == "lua_debugger") {
+        ScriptEngine& scripts = m_session->scripts();
+        const std::string action = str("action");
+        if (action == "add_breakpoint" || action == "remove_breakpoint") {
+            SceneNode* n;
+            if (!need("object", n)) return refErr;
+            if (!n->isScript()) return fail("NOT_A_SCRIPT", label(n) + " isn't a script.", "find_objects with class Script to find it.");
+            const int line = args.value("line", 0);
+            if (line < 1) return fail("INVALID_INPUT", "Give the line number (1 or more).", "read_script shows the lines.");
+            scripts.debugSetBreakpoint(n->id, line, action == "add_breakpoint");
+        } else if (action == "clear_breakpoints") {
+            scripts.debugClearBreakpoints();
+        } else if (action == "continue" || action == "step_over" || action == "step_into" || action == "step_out") {
+            if (!m_playing) return fail("NOT_PLAYING", "There's no playtest.", "Add a breakpoint, then playtest start.");
+            if (!scripts.debugPaused()) return fail("NOT_PAUSED", "No script is paused at a breakpoint.", "lua_debugger status shows the breakpoints.");
+            if (action == "continue") scripts.debugContinue();
+            else if (action == "step_over") scripts.debugStepOver();
+            else if (action == "step_into") scripts.debugStepInto();
+            else scripts.debugStepOut();
+        } else if (action != "status") {
+            return fail("INVALID_INPUT", "action must be status, add_breakpoint, remove_breakpoint, clear_breakpoints, continue, "
+                                         "step_over, step_into or step_out.", "");
+        }
+        json d = {{"playing", m_playing}, {"paused", m_playing && scripts.debugPaused()}, {"pauses", scripts.debugPauses()}};
+        if (m_playing && scripts.debugPaused()) {
+            SceneNode* at = m_scene->findById(scripts.debugScript());
+            d["at"] = {{"object_id", at ? idOf(at) : std::string()}, {"source", scripts.debugSourceForUi()},
+                       {"line", scripts.debugLine()}, {"reason", scripts.debugReason()}};
+            d["call_stack"] = scripts.debugCallStack();
+            d["locals"] = scripts.debugLocals();
+        }
+        json bps = json::array();
+        for (const auto& bp : scripts.debugBreakpoints()) {
+            SceneNode* n = m_scene->findById(bp.first);
+            bps.push_back({{"object_id", n ? idOf(n) : std::string()}, {"name", n ? n->fullName() : std::string("[deleted script]")},
+                           {"line", bp.second}});
+        }
+        d["breakpoints"] = bps;
+        if (m_playing && !scripts.debugPaused() && !bps.empty())
+            d["note"] = "Running: a script pauses when it reaches a breakpoint. Call status again to see.";
+        return done(d);
+    }
+
     if (name == "validate_scene") {
         json all = json::array();
         diagnose(root, true, all);
@@ -1529,6 +1633,32 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     }
 
     // ------------------------------------------------------------- NAVIGATION
+    if (name == "generate_level") {
+        LevelGen::Settings ls;
+        const std::string style = str("style");
+        if (!style.empty() && style != "Dungeon" && style != "Obby")
+            return failWith("INVALID_ENUM_VALUE", "style must be Dungeon or Obby.", "Leave it out for a Dungeon.", json::array({"Dungeon", "Obby"}));
+        ls.style = style == "Obby" ? LevelGen::Style::Obby : LevelGen::Style::Dungeon;
+        ls.seed = (uint32_t)std::max(0, args.value("seed", 1));
+        ls.count = args.value("count", 8);
+        ls.roomMin = args.value("room_min", ls.roomMin);
+        ls.roomMax = args.value("room_max", std::max(ls.roomMax, ls.roomMin));
+        ls.wallHeight = args.value("wall_height", ls.wallHeight);
+        ls.props = args.value("props", true);
+        ls.coins = args.value("coins", true);
+        SceneNode* old = nullptr;
+        if (!str("replace").empty() && !need("replace", old)) return refErr;
+        glm::vec3 at;
+        const bool hasAt = vecArg("at", at);
+        const bool dry = args.value("dry_run", false);
+        if (!dry && m_playing) return fail("PLAYING", "Stop the playtest first: levels are made in the editor.", "playtest stop.");
+        SceneNode* made = nullptr;
+        json d = generateLevel(ls, args.value("tries", 1), !dry, hasAt ? &at : nullptr, old, &made);
+        if (made) { d["object_id"] = idOf(made); d["path"] = pathOf(made); }
+        if (!d.value("ok", false))
+            d["warnings"] = json::array({"No seed passed every check: see tried[].problems. Try more seeds (tries) or fewer rooms."});
+        return done(d);
+    }
     if (name == "bake_navmesh") {
         if (!m_aiNav) m_aiNav = std::make_unique<Physics>();
         m_aiNav->gather(*m_scene);

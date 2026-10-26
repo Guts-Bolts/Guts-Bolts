@@ -149,7 +149,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Everything else needs a signed-up account (hello just says who we are),
     // except looking around: visitors to the website can browse before signing up.
     // Guests can also play: download games, find and join servers (they can't chat in games).
-    static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
+    static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate"};   // (guests can host games too, and read chat)
@@ -430,6 +430,12 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         User* u = !want.empty() && want.size() < 12 && std::all_of(want.begin(), want.end(), ::isdigit)
                       ? findUserId(std::atoll(want.c_str())) : findPerson(want);   // user number, account key or name
         if (!u || u->userId == 0) return fail("There's no account with that ID on this server.");
+        // Accounts banned for good (and deleted ones) show "[ Content Deleted ]". Timed bans stay visible.
+        if ((u->banned && !u->bannedUntil) || u->name == "Deleted user") {
+            json r = fail("USER_DELETED: [ Content Deleted ] \xE2\x80\x94 This user has been deleted.");
+            r["code"] = "USER_DELETED";
+            return r;
+        }
         json r = okay();
         r["user"] = publicUser(*u);
         r["user"]["badges"] = badgesOf(*u);
@@ -521,7 +527,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             r["hidden"] = true; r["cat"] = "all"; r["total"] = 0; r["counts"] = json::object(); r["items"] = json::array();
             return r;
         }
-        static const char* kCats[] = {"all", "accessories", "clothing", "faces", "bundles", "gear", "emotes", "limited"};
+        static const char* kCats[] = {"all", "accessories", "clothing", "faces", "bundles", "bodyparts", "gear", "emotes", "limited"};
         std::string cat = "all";
         json counts = json::object();
         for (const char* c : kCats) {
@@ -660,6 +666,25 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
 
     // --- Bolts --------------------------------------------------------------
+    // The Boltworks Club early list (boltworks.json): signing up now gets a discount when memberships start.
+    if (name == "boltworks.status") {
+        bool registered = false;
+        for (const json& x : m_boltworks) if (x.value("id", std::string()) == me.id) registered = true;
+        json r = okay();
+        r["registered"] = registered;
+        r["total"] = m_boltworks.size();
+        return r;
+    }
+    if (name == "boltworks.register") {
+        json r = okay();
+        r["registered"] = true;
+        for (const json& x : m_boltworks)
+            if (x.value("id", std::string()) == me.id) { r["already"] = true; return r; }
+        m_boltworks.push_back({{"id", me.id}, {"username", me.name}, {"at", Online::unixNow()}});
+        writeFile(m_opts.data / "boltworks.json", m_boltworks.dump(1));
+        r["already"] = false;
+        return r;
+    }
     if (name == "bolts.history") {
         json h = json::array();
         size_t from = me.ledger.size() > 100 ? me.ledger.size() - 100 : 0;
@@ -723,6 +748,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             std::string q = lower(Online::cleanText(str("query"), 64));
             json list = json::array();
             for (const auto& [id, u] : m_users) {
+                if (u.userId <= 0) continue;   // guests have no user number and shouldn't fill the list
                 if (list.size() >= 40) break;
                 const std::string digits = !q.empty() && q[0] == '#' ? q.substr(1) : q;
                 const bool isNum = !digits.empty() && digits.size() <= 11 && std::all_of(digits.begin(), digits.end(), ::isdigit);
@@ -874,7 +900,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         const bool verified = isVerified(me);
         if (kind == "gear" && !verified && !isStaff(me)) return fail("Only Verified creators can upload gear.");
         if (Online::isEmoteItem(kind) && !isStaff(me)) return fail("Only Guts&Bolts staff can make emotes and animation packs.");
-        if (kind == "bundle" && !isStaff(me)) return fail("Only Guts&Bolts staff can make bundles.");
+        if ((kind == "bundle" || kind == "bodypart") && !isStaff(me)) return fail("Only Guts&Bolts staff can make bundles and body parts.");
         if (Online::isAccessory(kind) && !verified && !isStaff(me))
             return fail("Only Verified creators can make hats and accessories. Shirts and pants are open to everyone!");
         long long price = std::clamp(num("price"), 0LL, 1000000LL);
@@ -939,6 +965,20 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             json file = {{"format", "gbbundle"}, {"items", items}, {"headless", headless}};
             if (!body.empty()) file["body"] = std::move(body);
             data = file.dump();
+        }
+        if (kind == "bodypart") {   // one part of the body on its own (worker/server.js has the same)
+            const std::string part = meta.value("bodyPart", std::string());
+            if (std::find(std::begin(Online::kBodyParts), std::end(Online::kBodyParts), part) == std::end(Online::kBodyParts))
+                return fail("Choose Head, Torso, Left Arm, Right Arm, Left Leg or Right Leg for this body part.");
+            json file = json::parse(data, nullptr, false);
+            if (!file.is_object() || file.value("format", std::string()) != "gbbundle" || !file.contains("body") || !file["body"].is_object())
+                return fail("Body parts must be made in Studio's Bundles window.");
+            if (file["body"].size() != 1 || !file["body"].contains(part))
+                return fail("A standalone body-part item must contain only its selected body part.");
+            json body;
+            if (std::string problem = Online::bundleBody(file["body"], body); !problem.empty()) return fail(problem);
+            meta = {{"bodyPart", part}};
+            data = json{{"format", "gbbundle"}, {"body", std::move(body)}}.dump();
         }
         if (kind == "face") {
             if (!isOfficial(me)) return fail("Only Guts can make faces.");
@@ -1204,7 +1244,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (it == m_assets.end()) return fail("That doesn't exist (any more).");
         Asset& a = it->second;
         if (a.creator != me.id) return fail("You can only update your own things.");
-        if (a.kind == "bundle") return fail("Bundles can't be changed once they're made. Make a new one instead.");
+        if (a.kind == "bundle" || a.kind == "bodypart") return fail("Bundles and body parts can't be changed once they're made. Make a new one instead.");
         std::string data;
         if (!Online::base64Decode(str("data"), data)) return fail("The upload got scrambled. Try again.");
         if (data.size() > Online::maxSize(a.kind)) return fail("That's too big.");
@@ -1961,6 +2001,10 @@ void GbServer::load() {
     loadConnect();
     loadStaffLog();
     loadPromos();
+    if (std::string text; readFile(m_opts.data / "boltworks.json", text)) {
+        json all = json::parse(text, nullptr, false);
+        if (all.is_array()) m_boltworks = all;
+    }
     loadForum();
     loadTrades();
     loadPastTrades();

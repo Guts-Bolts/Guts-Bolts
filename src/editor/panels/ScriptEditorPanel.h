@@ -1,10 +1,12 @@
 #pragma once
+#include <functional>
 #include <cstdint>
 #include <string>
 #include <vector>
 #include <imgui.h>
 
 class Scene;
+class ScriptEngine;
 struct ImGuiInputTextCallbackData;
 
 // A simple code editor for Script objects, with live error checking, a menu
@@ -18,6 +20,9 @@ public:
     void render();
     void renderFindAll();           // the "Find in All Scripts" window
     uint64_t current() const { return m_id; }
+    void goToLine(int line);        // put the text cursor at the start of this line
+    // The play session's scripts, for the Lua Debugger's breakpoints in the line numbers.
+    void setDebugger(ScriptEngine* scripts) { m_debugger = scripts; }
     void showFindAll() { m_showFindAll = true; m_focusFindAll = true; }
     void renderAnalysis();          // the "Script Analysis" window (ScriptAnalysis.cpp)
     void showAnalysis() { m_showAnalysis = true; m_analysedAt = -100.0; }
@@ -29,6 +34,7 @@ public:
     void showDependencyMap() { m_showDependencyMap = true; m_dependencyAnalysedAt = -100.0; }
     void renderDependencyMap();
     void runDependencyMap();
+    std::function<void(uint64_t)> onOpenBlocks;   // "Edit as blocks", for scripts made with blocks
 
 private:
     static int onEdit(ImGuiInputTextCallbackData* d);
@@ -38,6 +44,7 @@ private:
     void runFindAll();
 
     Scene*      m_scene;
+    ScriptEngine* m_debugger = nullptr;
     uint64_t    m_id = 0;
     bool        m_focus = false;
     std::string m_checked;          // source text the error below belongs to

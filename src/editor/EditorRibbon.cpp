@@ -404,6 +404,11 @@ void Editor::renderToolbar() {
             }
         }
         {
+            Group g("Levels");
+            if (bigButton("Generate", Icons::Id::Terrain, m_showLevelGen, true, "Level Generator: make a dungeon or an obby from a seed"))
+                m_showLevelGen = !m_showLevelGen;
+        }
+        {
             Group g("Constraints");
             const char* names[] = {"Rope", "Rod", "Spring", "Weld", "Hinge", "Motor", "Ball Socket", "Prismatic", "Cylindrical"};
             for (int col = 0; col < 3; ++col) {
@@ -681,6 +686,11 @@ void Editor::renderToolbar() {
             if (bigButton("Script Analysis", Icons::Id::Script, m_scriptEditor->analysisShown(), true,
                           "Find mistakes in every script without pressing Play"))
                 m_scriptEditor->showAnalysis();
+            if (bigButton("Blocks", Icons::Id::Script, m_showBlocks, true, "Visual Scripting: make scripts by connecting blocks"))
+                m_showBlocks = !m_showBlocks;
+            if (bigButton("Materials", Icons::Id::Lighting, m_showMaterialEditor, true,
+                          "Material Editor: make your own materials from pictures (colours, bumps, shine)"))
+                m_showMaterialEditor = !m_showMaterialEditor;
             if (bigButton("AI Activity", Icons::Id::CommandBar, m_showAiActivity, true,
                           "Everything the AI assistant did, what it changed (undo it all in one click),\nand its requests to delete things"))
                 m_showAiActivity = !m_showAiActivity;

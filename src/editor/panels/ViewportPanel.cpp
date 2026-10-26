@@ -642,6 +642,9 @@ void ViewportPanel::drawGizmo(const glm::mat4& view, const glm::mat4& proj,
     if (m_state->animRig && sel->isPart())
         if (SceneNode* rig = m_scene->findById(m_state->animRig); rig && rig->isAncestorOf(sel))
             localPivot = Anim::jointPivot(sel);
+    // Mid-drag: keep turning around the same spot. The middle of a model's box moves
+    // as the model turns, so measuring it again every frame made the model creep away.
+    if (m_gizmoDragging && m_dragNode == sel->id) localPivot = m_dragLocalPivot;
     glm::mat4 world = base * glm::translate(glm::mat4(1.0f), localPivot);
     const glm::vec3 pivotBefore(world[3]);
     const Transform before0 = sel->transform;
@@ -654,6 +657,8 @@ void ViewportPanel::drawGizmo(const glm::mat4& view, const glm::mat4& proj,
         m_gizmoDragging = true;
         m_dragStart = before0;
         m_dragStartPivot = pivotBefore;
+        m_dragLocalPivot = localPivot;
+        m_dragNode = sel->id;
     }
     if (!ImGuizmo::IsUsing()) m_gizmoDragging = false;
     if (changed) {

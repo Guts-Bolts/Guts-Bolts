@@ -724,8 +724,13 @@ set(EDITOR_SOURCES
     src/editor/EditorSolid.cpp
     src/editor/EditorAutosave.cpp
     src/editor/EditorTimeMachine.cpp
+    src/editor/EditorMaterials.cpp
     src/editor/EditorAiActivity.cpp
+    src/editor/EditorLevelGen.cpp
+    src/editor/LevelGen.cpp
     src/editor/EditorBulkEdit.cpp
+    src/editor/EditorBlocks.cpp
+    src/editor/VisualScript.cpp
     src/editor/EditorScriptHistory.cpp
     src/editor/EditorOnline.cpp
     src/editor/Thumbnailer.cpp

@@ -228,6 +228,29 @@ between four modes:
 **Stop** (`Shift+F5` or `Esc`) goes back to Build mode, and everything goes
 back exactly how it was before you pressed Simulate or Play.
 
+### Level Generator (dungeons and obbies)
+
+Press **MODEL > Generate** (or View > Level Generator) to make a whole level from a
+few rules:
+
+- **Dungeon**: rooms joined by corridors, with doors, crates and coins.
+- **Obby**: a course of platforms to jump along, with checkpoints, coins and lava
+  underneath.
+
+Every level has a **seed** (a number). The same seed always makes the same level,
+so you can share a good one by telling someone its number. **Random** picks one.
+
+Before you see it, each level is checked: everything fitted, nothing is inside
+anything else, and a robot (the same navmesh NPCs use) walks and jumps from the
+spawn to the goal. **Find one that works** tries up to 20 seeds and keeps the first
+that passes, and **Test 10 seeds** lists 10 seeds with how long each route is so
+you can pick one. The level goes into a Model next to your game; press Play and
+walk to the green goal. **Replace the last one** swaps it for the new one, and one
+Ctrl+Z takes it away.
+
+The Assistant can make levels too ("make me an obby with 30 platforms"), with the
+`generate_level` tool.
+
 ### Testing with more than one player
 
 Play is just you. To see how your game works with other people, use
@@ -544,6 +567,29 @@ events), just like in Roblox.
 A script that loops forever without `wait()` is stopped after 5 seconds with a
 friendly error, so it can't freeze your game. Scripts can't touch files on
 your computer.
+
+### Visual Scripting (blocks)
+
+Don't want to type code? Open **VIEW > Blocks** (or View > Visual Scripting),
+select a part and press **New block script**. Then add blocks from the left and
+drag from a block's dot on the right to the block that comes next:
+
+- **Events** start a chain: When the game starts, When touched, When clicked,
+  When the prompt is used, When a player joins, Every few seconds.
+- **Actions** change things: set colour, see-through, any property, move, destroy,
+  copy, play a sound, print, wait.
+- **Players**: leaderboard stats, give points, hurt or teleport the player.
+- **Control**: If it's a player, If it has a tag, If an attribute is, If the player
+  has points, If lucky, Repeat, and Only every few seconds (so one touch doesn't
+  count 50 times).
+
+A block's object can be "This part" (the script's parent), "The part that
+touched", "The player's character" or a path like `Workspace.Door`.
+
+The blocks turn into normal Lua, shown on the right, so you can see how they work.
+A block script is a normal Script: the blocks are kept in a comment at the top of
+its code. Changing that code by hand is fine, but changing the blocks again writes
+over it (the window warns you, and can turn it into a plain script instead).
 
 ## Decals (pictures on parts)
 
@@ -1782,6 +1828,35 @@ settings). In an online game, a Script on the host can change a player's
 
 ```
 xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_camera.lua)" --screenshot /tmp/camera.png --frames 900
+```
+
+### Your own materials (Material Editor)
+
+Like Roblox's Material Manager: a **MaterialVariant** in **MaterialService** is a
+material you make from pictures, on top of a built-in one. Open **VIEW > Materials**,
+press **New**, pick its **BaseMaterial** and add pictures:
+
+- **ColorMap**: the colours (the part's Color tints it; white shows it as it is)
+- **NormalMap**: bumps and grooves
+- **RoughnessMap** / **MetalnessMap**: where it's rough or shiny, metal or not
+- **StudsPerTile**: how big one copy of the pictures is
+- **Roughness**, **Metalness**, **Glow** (ours): for what has no picture
+
+A part shows it when its **Material** is the BaseMaterial and its
+**MaterialVariant** is the variant's name ("Use on selected parts" sets both). The
+part still weighs and grips like the BaseMaterial. **Save as preset** keeps a
+material on this computer for your other games. Scripts work the same way:
+
+```lua
+local v = Instance.new("MaterialVariant")
+v.Name = "Lava"
+v.BaseMaterial = Enum.Material.Slate
+v.ColorMap = "images/lava.png"
+v.Glow = 2
+v.Parent = game:GetService("MaterialService")
+
+part.Material = Enum.Material.Slate
+part.MaterialVariant = "Lava"
 ```
 
 ### Sky and screen effects
