@@ -11,6 +11,14 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'pocket-pause', name: 'Pocket Pause', version: '0.7.6', time: 1793045400, tag: 'Player',
+    summary: 'The phone app takes a proper break when you leave it.',
+    items: [
+      'When you switch away from the Guts&Bolts app on a phone, it stops drawing until you come back. iPhones close apps that keep drawing in the background.',
+      'Your volume setting and microphone come back the way they were when you return.',
+    ],
+  },
+  {
     id: 'clean-slate-usernames', name: 'Clean Slate Usernames', version: '0.7.6', time: 1793037600, tag: 'Website',
     summary: 'Staff can now reset a username that isn\'t allowed. It becomes "User" and the player\'s user number.',
     items: [

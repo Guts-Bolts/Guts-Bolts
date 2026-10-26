@@ -284,19 +284,23 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
     int winW, winH;
     SDL_GetWindowSize(m_sdl, &winW, &winH);
     SDL_Event e;
-    while (SDL_PollEvent(&e)) {
+    // In the background the app must not draw (iOS closes apps that use the GPU there), so
+    // it sleeps here, waiting for events, until it's back on screen.
+    while (!m_quit && (m_background ? SDL_WaitEvent(&e) : SDL_PollEvent(&e))) {
         switch (e.type) {
         case SDL_QUIT:
         case SDL_APP_TERMINATING:
             m_quit = true;
             break;
         case SDL_APP_WILLENTERBACKGROUND:
+            m_background = true;
             Voice::setActive(false); // release the microphone before iOS suspends the process
             Audio::suspend();         // mute without overwriting the user's volume
             m_touches.clear();        // don't leave a virtual joystick/camera drag held across suspension
             io.AddMouseButtonEvent(0, false);
             break;
         case SDL_APP_DIDENTERFOREGROUND: {
+            m_background = false;
             // Rebind the existing context after an iOS interruption and refresh
             // drawable dimensions before rendering the next frame. iOS normally
             // preserves the context, but making it current explicitly avoids
