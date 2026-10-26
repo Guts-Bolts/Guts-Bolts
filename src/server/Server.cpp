@@ -850,7 +850,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (title.empty()) return fail("Give it a name.");
         std::string desc = say(str("description"), 1000, true);
         const bool verified = isVerified(me);
-        if (kind == "gear" && !isStaff(me)) return fail("Only Guts&Bolts staff can make gear.");
+        if (kind == "gear" && !verified && !isStaff(me)) return fail("Only Verified creators can upload gear.");
         if (Online::isEmoteItem(kind) && !isStaff(me)) return fail("Only Guts&Bolts staff can make emotes and animation packs.");
         if (kind == "bundle" && !isStaff(me)) return fail("Only Guts&Bolts staff can make bundles.");
         if (Online::isAccessory(kind) && !verified && !isStaff(me))
