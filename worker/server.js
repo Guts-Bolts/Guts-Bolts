@@ -2435,6 +2435,26 @@ export class GbServerObject extends DurableObject {
         this.saveUser(to);
         return okay({ user: this.publicUser(to) });
       }
+      if (name === 'admin.resetName') {
+        // A username that isn't allowed: it becomes "User 5" (their user number). The old name
+        // stays reserved so nobody else can take it, but it isn't kept as one of their past
+        // names (those show on the profile, and they could switch back to it).
+        if (!to.userId || to.userId <= 0) return fail('They haven\'t signed up, so they have no username.');
+        if (this.isOfficial(to)) return fail('The staff account is always Guts.');
+        if (this.isStaff(to) && !this.isOfficial(me)) return fail('Only the official Guts account can reset a staff member\'s username.');
+        const old = to.username, fresh = 'User ' + to.userId;
+        if (old === fresh) return fail('Their username is already ' + fresh + '.');
+        to.pastNames = (to.pastNames || []).filter((p) => lower(p) !== lower(old));
+        this.takenNames.add(lower(old));
+        this.takenNames.add(lower(fresh));
+        to.username = fresh;
+        to.name = fresh;
+        this.dirty.ids = true;
+        this.notify(to, 'rename', 'Staff reset your username to ' + fresh + ' because your old one wasn\'t allowed.', '');
+        this.staffDid(me, 'rename', 'Reset the username "' + old + '" to ' + fresh, to.id);
+        this.saveUser(to);
+        return okay({ user: this.publicUser(to) });
+      }
       if (!this.isOfficial(me)) return fail('Only the official Guts account can do that.');
       if (name === 'admin.giveBolts') {
         const amount = num(args, 'amount');
