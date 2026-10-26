@@ -842,6 +842,7 @@ json toJson(const SceneNode& n) {
         j["length"] = n.length; j["stiffness"] = n.stiffness; j["damping"] = n.damping;
         j["motorSpeed"] = n.motorSpeed; j["motorTorque"] = n.motorTorque;
         j["thickness"] = n.thickness; j["color"] = vec(n.color); j["enabled"] = n.enabled;
+        if (n.breakForce > 0.0f) j["breakForce"] = n.breakForce;
         if (usesJointProps(n.constraintType)) j["joint"] = Serializer::jointToJson(n.joint);
     }
     if (n.kind == NodeKind::Mover) {
@@ -1115,6 +1116,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->motorSpeed = get<float>(j, "motorSpeed", 0.0f);
         n->motorTorque = get<float>(j, "motorTorque", 0.0f);
         n->thickness = get<float>(j, "thickness", 0.1f);
+        n->breakForce = get<float>(j, "breakForce", 0.0f);
         n->color = vec(j, "color", {0.45f, 0.32f, 0.2f});
     }
     if (n->kind == NodeKind::Mover) {
@@ -1493,6 +1495,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.spawnNeutral = src->spawnNeutral; dst.teamColor = src->teamColor; dst.allowTeamChange = src->allowTeamChange;
     dst.constraintType = src->constraintType; dst.ref0 = src->ref0; dst.ref1 = src->ref1;
     dst.length = src->length;       dst.stiffness = src->stiffness; dst.damping = src->damping;
+    dst.breakForce = src->breakForce;
     dst.motorSpeed = src->motorSpeed; dst.motorTorque = src->motorTorque; dst.thickness = src->thickness;
     dst.joint = src->joint;
     dst.viscosity = src->viscosity; dst.surfaceTension = src->surfaceTension;

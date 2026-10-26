@@ -440,6 +440,9 @@ void Editor::renderToolbar() {
             if (bigButton("Collision Groups", Icons::Id::Collide, m_showCollisionGroups, true,
                           "Which groups of parts bump into each other (players walking through each other, team doors...)"))
                 m_showCollisionGroups = !m_showCollisionGroups;
+            if (bigButton("Physics View", Icons::Id::Simulate, m_state.showPhysics, true,
+                          "See the physics: moving and sleeping parts, speeds, where things touch, how hard each joint is pulled, force zones"))
+                m_state.showPhysics = !m_state.showPhysics;
         }
         {
             Group g("Align");
@@ -681,6 +684,9 @@ void Editor::renderToolbar() {
             if (bigButton("AI Activity", Icons::Id::CommandBar, m_showAiActivity, true,
                           "Everything the AI assistant did, what it changed (undo it all in one click),\nand its requests to delete things"))
                 m_showAiActivity = !m_showAiActivity;
+            if (bigButton("Script History", Icons::Id::Output, m_showScriptHistory, true,
+                          "Record what your scripts change while you playtest, and see why something changed"))
+                m_showScriptHistory = !m_showScriptHistory;
             if (bigButton("Shortcuts", Icons::Id::Keyboard, m_showShortcuts, true, "Every keyboard shortcut (F1)"))
                 m_showShortcuts = !m_showShortcuts;
             if (bigButton("Settings", Icons::Id::Settings, false, true, "Graphics and frame rate")) m_showSettings = true;

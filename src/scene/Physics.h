@@ -108,6 +108,19 @@ public:
     // constraints (ropes, rods, springs, welds, hinges). Ids of parts that fell
     // out of the world are appended to `fallen`. See RigidBodies.cpp.
     void stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen);
+    // Studio's Physics View: while debugOn() is set, stepParts keeps what it worked out
+    // last step (where things touch, how hard each joint is pulled) for drawing.
+    struct DebugView {
+        struct Contact { glm::vec3 p, n; };
+        struct JointLine { glm::vec3 a, b; float force = 0.0f, breakForce = 0.0f; };
+        std::vector<Contact>   contacts;
+        std::vector<JointLine> joints;
+        uint64_t               steps = 0;   // goes up by one every step
+    };
+    static bool&      debugOn();
+    static DebugView& debugView();
+    // A force zone's push on something at `p` (studs/s^2): parts tagged "ForceZone".
+    static glm::vec3  zonePush(const SceneNode* zone, const OBB& box, const glm::vec3& p);
     static void wake(SceneNode* n);   // make a sleeping part move again
     // How heavy a part is for its size: its Density, or its material's. Water is
     // kWaterDensity: anything lighter floats, anything heavier sinks.
