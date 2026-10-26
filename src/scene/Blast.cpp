@@ -2,6 +2,7 @@
 #include "Scene.h"
 #include "SceneNode.h"
 #include "Player.h"
+#include "Npc.h"
 #include "Physics.h"
 #include "Water.h"
 #include "../core/Audio.h"
@@ -302,6 +303,27 @@ void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physic
         rc.humanoidDirty = true;
         if (rc.humanoid.health <= 0.0f) rc.kills.push_back({std::min(1.0f, 0.4f + k * P), impulse});
         else                            rc.kills.push_back({-1.0f, impulse});
+    }
+
+    // NPC rigs are excluded from the loose-part pass above, so handle their
+    // Humanoids explicitly when the shockwave reaches them.
+    for (const auto& npcPtr : scene.npcs().all()) {
+        if (!npcPtr || npcPtr->dead || b.done.count(npcPtr->rootId)) continue;
+        SceneNode* root = scene.findById(npcPtr->rootId);
+        if (!root || !root->visible) continue;
+        const glm::vec3 body = root->transform.position + glm::vec3(0, 1.3f, 0);
+        const float d = glm::length(body - b.center);
+        if (d > to) continue;
+        b.done.insert(npcPtr->rootId);
+        if (d >= R || root->hasForceField()) continue;
+        const float k = 1.0f - d / R;
+        const glm::vec3 dir = d > 1e-3f ? (body - b.center) / d : glm::vec3(0, 1, 0);
+        const glm::vec3 impulse = (dir + glm::vec3(0, 0.8f, 0)) * 22.0f * P * k;
+        npcPtr->humanoid.health = std::max(0.0f, npcPtr->humanoid.health - 160.0f * P * k);
+        if (npcPtr->humanoid.health <= 0.0f)
+            scene.npcs().kill(npcPtr->rootId, std::min(1.0f, 0.4f + k * P), impulse);
+        else
+            npcPtr->pendingImpulse += impulse;
     }
 }
 
