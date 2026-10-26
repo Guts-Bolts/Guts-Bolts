@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "I18n.h"
 #include "Audio.h"
+#include "Voice.h"
 #include "Paths.h"
 #include "../player/LaunchLink.h"
 #include "../editor/Theme.h"
@@ -290,13 +291,43 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
             m_quit = true;
             break;
         case SDL_APP_WILLENTERBACKGROUND:
-            Audio::setMasterVolume(0.0f);    // phone went to the home screen: go quiet
+            Voice::setActive(false); // release the microphone before iOS suspends the process
+            Audio::suspend();         // mute without overwriting the user's volume
+            m_touches.clear();        // don't leave a virtual joystick/camera drag held across suspension
+            io.AddMouseButtonEvent(0, false);
             break;
-        case SDL_APP_DIDENTERFOREGROUND:
-            Audio::setMasterVolume(1.0f);
+        case SDL_APP_DIDENTERFOREGROUND: {
+            // Rebind the existing context after an iOS interruption and refresh
+            // drawable dimensions before rendering the next frame. iOS normally
+            // preserves the context, but making it current explicitly avoids
+            // relying on whichever context SDL left current after resume.
+            if (m_gl && SDL_GL_MakeCurrent(m_sdl, (SDL_GLContext)m_gl) == 0) {
+                int drawableW = 0, drawableH = 0;
+                SDL_GL_GetDrawableSize(m_sdl, &drawableW, &drawableH);
+                glViewport(0, 0, drawableW, drawableH);
+                glEnable(GL_DEPTH_TEST);
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+                m_uiScale = pickUiScale(m_sdl);
+            }
+            Audio::resume();
             break;
+        }
         case SDL_WINDOWEVENT:
-            if (e.window.event == SDL_WINDOWEVENT_CLOSE && e.window.windowID == SDL_GetWindowID(m_sdl)) m_quit = true;
+            if (e.window.windowID == SDL_GetWindowID(m_sdl)) {
+                if (e.window.event == SDL_WINDOWEVENT_CLOSE) {
+                    m_quit = true;
+                } else if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+                           e.window.event == SDL_WINDOWEVENT_RESIZED) {
+                    // iOS can rotate between portrait (site) and landscape (games).
+                    // Recompute the UI scale so controls remain usable after rotation,
+                    // and reset the viewport to the drawable's current pixel dimensions.
+                    m_uiScale = pickUiScale(m_sdl);
+                    int drawableW = 0, drawableH = 0;
+                    SDL_GL_GetDrawableSize(m_sdl, &drawableW, &drawableH);
+                    glViewport(0, 0, drawableW, drawableH);
+                }
+            }
             break;
 #ifdef GB_IOS
         case SDL_DROPFILE:
