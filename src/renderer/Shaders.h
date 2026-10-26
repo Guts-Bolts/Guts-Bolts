@@ -284,7 +284,7 @@ void main() {
         vec4 px = texture(uDecal, vUV);
         if (px.a < 0.01) discard;
         albedo *= lin(px.rgb);
-        decalAlpha = px.a;
+        decalAlpha *= px.a;
     }
     if (uClothing) {   // see-through bits of the clothing show the body colour
         vec4 px = texture(uDecal, vUV);
