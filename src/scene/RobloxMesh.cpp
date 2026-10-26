@@ -28,8 +28,19 @@ struct Corner {
 // Raw triangles (three corners each) -> an EditMesh. Corners at the same spot with
 // the same normal become one point, so smooth shading works but hard edges (where
 // Roblox split the point on purpose) stay hard.
-Shape build(const std::vector<Corner>& verts, const std::vector<uint32_t>& tris, bool flipV) {
+Shape build(const std::vector<Corner>& verts, const std::vector<uint32_t>& tris, bool flipV, std::string* err = nullptr) {
     Shape s;
+    // Reject corrupt/non-finite coordinates before they reach bounding boxes, UVs,
+    // the editor mesh, or GPU buffers. The same validation applies to every format.
+    for (const Corner& c : verts) {
+        const float values[] = {c.pos.x, c.pos.y, c.pos.z, c.normal.x, c.normal.y, c.normal.z, c.uv.x, c.uv.y};
+        for (float v : values) {
+            if (!std::isfinite(v) || std::abs(v) > 1.0e8f) {
+                if (err) *err = "the mesh contains a non-finite or out-of-range vertex attribute";
+                return s;
+            }
+        }
+    }
     auto mesh = std::make_shared<EditMesh>();
     mesh->smooth = true;
     std::map<std::tuple<long, long, long, int, int, int>, uint32_t> weld;
@@ -229,7 +240,7 @@ Shape parseText(const std::string& text, size_t start, bool halve, std::string* 
         tris[c] = (uint32_t)c;
     }
     tris.resize(corners / 3 * 3);
-    Shape s = build(verts, tris, false);
+    Shape s = build(verts, tris, false, err);
     if (!s.mesh && err) *err = "the mesh has no triangles";
     return s;
 }
@@ -305,7 +316,7 @@ Shape parse(const std::string& bytes, std::string* err) {
         return {};
     }
     firstLod(tris, lods);
-    Shape s = build(verts, tris, true);
+    Shape s = build(verts, tris, true, err);
     if (!s.mesh && err) *err = "the mesh has no triangles";
     return s;
 }
