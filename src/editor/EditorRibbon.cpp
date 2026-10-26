@@ -684,6 +684,9 @@ void Editor::renderToolbar() {
             if (bigButton("Materials", Icons::Id::Lighting, m_showMaterialEditor, true,
                           "Material Editor: make your own materials from pictures (colours, bumps, shine)"))
                 m_showMaterialEditor = !m_showMaterialEditor;
+            if (bigButton("AI Activity", Icons::Id::CommandBar, m_showAiActivity, true,
+                          "Everything the AI assistant did, what it changed (undo it all in one click),\nand its requests to delete things"))
+                m_showAiActivity = !m_showAiActivity;
             if (bigButton("Script History", Icons::Id::Output, m_showScriptHistory, true,
                           "Record what your scripts change while you playtest, and see why something changed"))
                 m_showScriptHistory = !m_showScriptHistory;

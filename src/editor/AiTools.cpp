@@ -553,6 +553,23 @@ const std::vector<Tool>& tools() {
          schema({{"moving_limit", {{"type", "integer"}, {"minimum", 0}, {"maximum", 200}}}}, {})},
 
         // -------------------------------------------------------------- HISTORY
+        {"ai_activity", "See everything you changed", "HISTORY", false, false, false, Risk::Medium,
+         {"Studio's AI Activity report: every object added, removed or changed (and which properties, and how many lines "
+          "of code) since the person last pressed Keep or Undo all, plus a log of every tool call made by an AI. The "
+          "person sees the same report in Studio and can undo all of it in one click.",
+          "Before you say you're done: read the report and make sure it's only what the person asked for. "
+          "undo_all if you made a mess and want to start again from before your changes.",
+          "For one step back use undo. For a save point you choose use checkpoint.",
+          "action: report (default), log (the last calls, newest first; limit default 30), keep (the person is happy: "
+          "start a new report), undo_all (put the game back how it was before your first change; undo brings it back).",
+          "report: {pending, added: [{object_id, name, class, path}], removed: [...], changed: [{..., properties, "
+          "lines_added?, lines_removed?}], settings}. log: {entries: [{time, source, tool, args, result, added, removed, changed}]}.",
+          "undo_all: not playtesting.",
+          "report / log: nothing changes. keep: only the report starts over. undo_all: the game goes back to before the AI's changes.",
+          "(build) -> validate_scene -> ai_activity -> tell the person what changed.",
+          "\"What did you change?\" \"Undo everything you did.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"report", "log", "keep", "undo_all"}}}},
+                 {"limit", {{"type", "integer"}}}}, {})},
         {"checkpoint", "Save or restore a save point", "HISTORY", false, true, false, Risk::Medium,
          {"Named save points of the whole game, for trying things safely (like a transaction): save one, experiment, "
           "then keep the result or restore the save point. Restoring is itself undoable.",
@@ -638,6 +655,7 @@ json workflowOf(const std::string& name) {
         {"playtest", {{"validate_scene"}, {"get_errors", "get_output", "get_object", "screenshot"}}},
         {"multiplayer_test", {{"create_script", "playtest"}, {"multiplayer_test", "get_errors", "edit_script"}}},
         {"get_output", {{"playtest", "run_lua"}, {}}},
+        {"ai_activity", {{"validate_scene"}, {"undo"}}},
         {"script_history", {{"playtest"}, {"read_script", "edit_script"}}},
         {"get_errors", {{"playtest"}, {"read_script", "edit_script"}}},
         {"diagnose_object", {{"find_objects"}, {"set_property", "edit_script"}}},
@@ -723,6 +741,11 @@ When a tool fails, read error.code / message / suggested_action, fix the cause (
 - Each tool says its RISK. delete_object is HIGH: only delete what the person clearly asked to delete. Never delete things because they look unused or oddly named.
 - If a destructive request is ambiguous ("remove the trees" when there are 40 trees and some are in a model), ask or list what you'd remove first.
 - Everything can be undone with undo (outside playtests). Publishing can't: publish_game only when the person asks, with confirm: true.
+- Studio can be set to ask the person before delete_object or checkpoint restore / delete. Then the call fails with NEEDS_PERSON_OK: tell the person to press Allow in Studio's AI Activity window, wait until they say they did, then make exactly the same call again. NOT_ALLOWED means they said no: don't find another way to do it.
+- Studio shows the person a report of everything you changed (AI Activity), and they can undo all of it in one click.
+
+## Before you say "done"
+Check your work: validate_scene, a playtest if scripts or physics are involved (then get_errors run "latest"), and ai_activity to see the full list of what you changed. Make sure it's only what the person asked for, then tell them what changed.
 
 ## Don't invent capabilities
 A request mentioning something doesn't mean Guts and Bolts has it. Only use the tools you were given and the engine API that exists. Don't make up tools, classes, properties, paths or features. If no tool can do something, say the current tools can't do it.

@@ -287,6 +287,7 @@ what it needs, what it gives back and how risky it is):
 - Docs: `get_engine_info` (overview, capabilities, concepts, coordinates,
   workflows, classes)
 - Debug: `get_output`, `get_errors`, `diagnose_object`, `validate_scene`, `analyze_script_dependencies` (static ModuleScript dependency map, unresolved references and potentially unreferenced modules), `analyze_scene_performance` (static counts for parts, dynamic physics bodies, lights, particle emitters and script sizes; not a live profiler), `script_history` (record what scripts change during a playtest: each property set with before / after and the script line, and each event that ran a script)
+- History: `ai_activity` (everything the AI changed since the person last pressed Keep, a log of every AI tool call, and `undo_all`). With "Ask me first" on (the default), `delete_object` and `checkpoint` restore / delete wait for the person to press Allow in the AI Activity window and fail with `NEEDS_PERSON_OK` until then.
 - View and history: `screenshot`, `undo`, `redo`, `checkpoint` (named save
   points to try things and roll back)
 - Publish: `publish_game` (only when you ask for it)

@@ -72,6 +72,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     : m_window(window), m_scene(scene) {
     m_session  = std::make_unique<GameSession>(scene);
     m_showMaterialEditor = std::getenv("GB_TEST_MATERIALS") != nullptr;   // (tests: start with it showing)
+    m_showAiActivity = std::getenv("GB_TEST_AIACTIVITY") != nullptr;   // (tests: start with it showing)
     m_session->scripts().setHistory(true);   // (Script History records this one's scripts)
     m_showScriptHistory = std::getenv("GB_TEST_SCRIPTHISTORY") != nullptr;   // (tests: start with it showing)
     m_viewport = std::make_unique<ViewportPanel>(window, scene, &m_state);
@@ -263,6 +264,7 @@ void Editor::render(float dt) {
     renderSceneValidator();
     renderProjectTimeMachine();
     renderMaterialEditor();
+    renderAiActivity();
     renderScriptHistory();
 
     trackChanges();
@@ -2588,6 +2590,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
         if (ImGui::MenuItem("Material Editor", nullptr, &m_showMaterialEditor)) {}
+        if (ImGui::MenuItem("AI Activity", nullptr, &m_showAiActivity)) {}
         if (ImGui::MenuItem("Script History", nullptr, &m_showScriptHistory)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;

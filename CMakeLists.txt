@@ -725,6 +725,7 @@ set(EDITOR_SOURCES
     src/editor/EditorAutosave.cpp
     src/editor/EditorTimeMachine.cpp
     src/editor/EditorMaterials.cpp
+    src/editor/EditorAiActivity.cpp
     src/editor/EditorBulkEdit.cpp
     src/editor/EditorScriptHistory.cpp
     src/editor/EditorOnline.cpp
