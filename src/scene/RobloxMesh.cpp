@@ -64,6 +64,7 @@ Shape build(const std::vector<Corner>& verts, const std::vector<uint32_t>& tris,
             // would corrupt their per-vertex attributes.
             remap[i] = (uint32_t)mesh->verts.size();
             mesh->verts.push_back(c.pos);
+            mesh->normals.push_back(c.normal);
             mesh->colors.push_back(c.color);
             mesh->tangents.push_back(c.tangent);
             continue;
@@ -73,6 +74,7 @@ Shape build(const std::vector<Corner>& verts, const std::vector<uint32_t>& tris,
         auto [it, fresh] = weld.try_emplace(key, (uint32_t)mesh->verts.size());
         if (fresh) {
             mesh->verts.push_back(c.pos);
+            mesh->normals.push_back(c.normal);
             mesh->colors.push_back(c.color);
             mesh->tangents.push_back(c.tangent);
         }
