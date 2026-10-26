@@ -162,7 +162,7 @@ void firstLod(std::vector<uint32_t>& tris, const std::vector<uint32_t>& lods) {
 // Roblox assigns stable unique IDs: 0=position, 1=normal, 2=UV. Draco point
 // indices are not necessarily attribute-value indices, so map them first.
 bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& tris,
-                   std::string* err) {
+                   std::string* err, uint32_t* sourceVertexCount = nullptr) {
     const uint32_t bitstreamSize = c.u32();
     if (bitstreamSize == 0 || bitstreamSize > 256u * 1024u * 1024u || !c.has(bitstreamSize)) {
         if (err) *err = "the Draco mesh payload is empty, too large, or truncated";
@@ -198,6 +198,7 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
         return false;
     }
 
+    if (sourceVertexCount) *sourceVertexCount = (uint32_t)mesh->num_points();
     std::vector<Corner> points((size_t)mesh->num_points());
     for (int32_t pointIndex = 0; pointIndex < mesh->num_points(); ++pointIndex) {
         const draco::PointIndex pi(pointIndex);
@@ -456,23 +457,33 @@ Shape parse(const std::string& bytes, std::string* err) {
             return s;
         }
     } else if (major == 6 || major == 7) {
-        // Labelled chunks: "COREMESH" holds the points and triangles, "LODS" the detail levels.
-        bool core = false;
+        // Chunked formats share the same core geometry and can carry a separate
+        // SKINNING chunk (v6 and v7) with weights, bone transforms, names and subsets.
+        bool core = false, haveSkinning = false;
+        uint32_t coreVertexCount = 0, skinVertexCount = 0;
+        std::vector<std::vector<EditMesh::Weight>> sourceWeights;
+        std::vector<Bone> chunkBones;
         while (r.has(16)) {
             std::string kind((const char*)r.p + r.pos, 8);
             r.pos += 8;
             uint32_t chunkVer = r.u32(), size = r.u32();
-            if (!r.has(size)) break;
+            if (!r.has(size)) { if (err) *err = "a mesh chunk is truncated"; return {}; }
             Bytes c{r.p, r.pos + size, r.pos};
             if (kind == "COREMESH") {
                 if (chunkVer == 1) {
-                    uint32_t nv = c.u32();
-                    if (!readVerts(c, nv, 40, verts)) break;
+                    coreVertexCount = c.u32();
+                    if (!readVerts(c, coreVertexCount, 40, verts)) {
+                        if (err) *err = "the COREMESH vertex array is truncated";
+                        return {};
+                    }
                     uint32_t nf = c.u32();
-                    if (!readFaces(c, nf, 12, tris)) break;
+                    if (!readFaces(c, nf, 12, tris)) {
+                        if (err) *err = "the COREMESH face array is truncated";
+                        return {};
+                    }
                     core = true;
                 } else if (chunkVer == 2) {
-                    if (!readDracoCore(c, verts, tris, err)) return {};
+                    if (!readDracoCore(c, verts, tris, err, &coreVertexCount)) return {};
                     core = true;
                 } else {
                     if (err) *err = "COREMESH chunk version " + std::to_string(chunkVer) + " isn't supported yet";
@@ -481,11 +492,117 @@ Shape parse(const std::string& bytes, std::string* err) {
             } else if (kind.rfind("LODS", 0) == 0) {
                 c.u16(); c.u8();
                 uint32_t n = c.u32();
-                for (uint32_t i = 0; i < n && c.has(4); ++i) lods.push_back(c.u32());
+                if (n > 1'000'000) { if (err) *err = "the mesh LOD table is too large"; return {}; }
+                for (uint32_t i = 0; i < n; ++i) {
+                    if (!c.has(4)) { if (err) *err = "the mesh LOD table is truncated"; return {}; }
+                    lods.push_back(c.u32());
+                }
+            } else if (kind == "SKINNING" && chunkVer == 1) {
+                skinVertexCount = c.u32();
+                if (skinVertexCount > 5'000'000 || !c.has((size_t)skinVertexCount * 8)) {
+                    if (err) *err = "the SKINNING vertex table is invalid or truncated";
+                    return {};
+                }
+                std::vector<std::array<uint8_t, 4>> subsetIndices(skinVertexCount), weights(skinVertexCount);
+                for (uint32_t i = 0; i < skinVertexCount; ++i) {
+                    for (int j = 0; j < 4; ++j) subsetIndices[i][j] = c.u8();
+                    for (int j = 0; j < 4; ++j) weights[i][j] = c.u8();
+                }
+                uint32_t boneCount = c.u32();
+                if (boneCount > 4096) { if (err) *err = "the SKINNING bone count exceeds the safe limit"; return {}; }
+                std::vector<uint32_t> nameOffsets;
+                chunkBones.clear();
+                nameOffsets.reserve(boneCount);
+                chunkBones.reserve(boneCount);
+                for (uint32_t i = 0; i < boneCount; ++i) {
+                    if (!c.has(60)) { if (err) *err = "the SKINNING bone table is truncated"; return {}; }
+                    nameOffsets.push_back(c.u32());
+                    uint16_t parentIndex = c.u16();
+                    c.u16();
+                    c.f32(c.pos); c.pos += 4;
+                    Bone b;
+                    b.parent = parentIndex == 0xffffu ? -1 : (parentIndex < boneCount ? (int)parentIndex : -1);
+                    for (int row = 0; row < 3; ++row)
+                        for (int col = 0; col < 3; ++col) b.rotation[col][row] = c.f32(c.pos + (size_t)(row * 3 + col) * 4);
+                    c.pos += 36;
+                    b.position = {c.f32(c.pos), c.f32(c.pos + 4), c.f32(c.pos + 8)};
+                    c.pos += 12;
+                    chunkBones.push_back(b);
+                }
+                uint32_t nameTableSize = c.u32();
+                if (nameTableSize > 16u * 1024u * 1024u || !c.has(nameTableSize)) {
+                    if (err) *err = "the SKINNING bone-name table is invalid or truncated";
+                    return {};
+                }
+                std::string nameTable((const char*)c.p + c.pos, nameTableSize);
+                c.pos += nameTableSize;
+                for (size_t i = 0; i < chunkBones.size(); ++i) {
+                    size_t off = nameOffsets[i];
+                    size_t end = off < nameTable.size() ? nameTable.find('\0', off) : std::string::npos;
+                    chunkBones[i].name = off < nameTable.size()
+                        ? nameTable.substr(off, end == std::string::npos ? nameTable.size() - off : end - off)
+                        : "Bone" + std::to_string(i);
+                    if (chunkBones[i].name.empty()) chunkBones[i].name = "Bone" + std::to_string(i);
+                }
+                uint32_t subsetCount = c.u32();
+                if (subsetCount > 65535) { if (err) *err = "the SKINNING subset count exceeds the safe limit"; return {}; }
+                struct Subset {
+                    uint32_t vertsBegin = 0, vertsLength = 0, boneIndexCount = 0;
+                    uint16_t boneIndices[26]{};
+                };
+                std::vector<Subset> subsets;
+                subsets.reserve(subsetCount);
+                for (uint32_t i = 0; i < subsetCount; ++i) {
+                    if (!c.has(72)) { if (err) *err = "the SKINNING subset table is truncated"; return {}; }
+                    c.u32(); c.u32();
+                    Subset s;
+                    s.vertsBegin = c.u32();
+                    s.vertsLength = c.u32();
+                    s.boneIndexCount = std::min<uint32_t>(c.u32(), 26);
+                    for (int j = 0; j < 26; ++j) s.boneIndices[j] = c.u16();
+                    subsets.push_back(s);
+                }
+                sourceWeights.assign(skinVertexCount, {});
+                for (const Subset& subset : subsets) {
+                    const size_t end = std::min<size_t>((size_t)subset.vertsBegin + subset.vertsLength, skinVertexCount);
+                    for (size_t v = subset.vertsBegin; v < end; ++v) {
+                        for (int j = 0; j < 4; ++j) {
+                            const uint8_t slot = subsetIndices[v][j];
+                            const float weight = weights[v][j] / 255.0f;
+                            if (weight <= 0.0f || slot >= subset.boneIndexCount) continue;
+                            const uint16_t boneIndex = subset.boneIndices[slot];
+                            if (boneIndex >= chunkBones.size()) continue;
+                            auto& w = sourceWeights[v];
+                            auto found = std::find_if(w.begin(), w.end(), [&](const EditMesh::Weight& x) { return x.bone == boneIndex; });
+                            if (found == w.end()) w.push_back({boneIndex, weight});
+                            else found->w += weight;
+                        }
+                    }
+                }
+                for (auto& w : sourceWeights) {
+                    float sum = 0.0f;
+                    for (const auto& x : w) sum += x.w;
+                    if (sum > 1e-6f) for (auto& x : w) x.w /= sum;
+                }
+                haveSkinning = !chunkBones.empty() &&
+                    std::any_of(sourceWeights.begin(), sourceWeights.end(), [](const auto& w) { return !w.empty(); });
             }
             r.pos += size;
         }
         if (!core) { if (err) *err = "the mesh file has no shape in it"; return {}; }
+        if (haveSkinning && skinVertexCount == coreVertexCount && !sourceWeights.empty()) {
+            std::vector<std::vector<EditMesh::Weight>> expanded(verts.size());
+            for (size_t i = 0; i < verts.size(); ++i)
+                if (verts[i].sourceIndex < sourceWeights.size()) expanded[i] = sourceWeights[verts[i].sourceIndex];
+            if (std::any_of(expanded.begin(), expanded.end(), [](const auto& w) { return !w.empty(); })) {
+                firstLod(tris, lods);
+                Shape s = build(verts, tris, true, err, &expanded, &chunkBones);
+                if (!s.mesh && err) *err = "the mesh has no triangles";
+                return s;
+            }
+        } else if (haveSkinning && skinVertexCount != coreVertexCount) {
+            if (err) *err = "the SKINNING vertex count does not match COREMESH; imported as static geometry";
+        }
     } else {
         if (err) *err = "mesh version " + ver + " isn't supported yet";
         return {};
