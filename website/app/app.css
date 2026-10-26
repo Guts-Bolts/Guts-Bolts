@@ -846,3 +846,24 @@ table.forum a { color: var(--link); }
 .bolts-history>div{align-items:center}
 @media(max-width:620px){.bolts-hero{grid-template-columns:1fr;padding:20px;gap:14px}.bolts-hero h2{font-size:23px}.bolts-earn-grid{grid-template-columns:1fr}.boltworks-content{grid-template-columns:1fr;padding:22px 18px}.boltworks-emblem{width:86px;height:98px;margin:0 auto}.boltworks-emblem b{font-size:52px}.boltworks-tier-preview{grid-template-columns:1fr}.boltworks-topline,.boltworks-footer{align-items:flex-start;flex-direction:column;gap:6px}.boltworks-cta{flex-direction:column}.boltworks-note{max-width:none}}
 @media(prefers-color-scheme:dark){.bolts-hero{background:linear-gradient(125deg,#1c2b3e,#1d2735 60%,#25354a);border-color:#3b4c62}.bolts-hero h2{color:#eaf2ff}.bolts-hero-copy p{color:#bdc9d9}.bolts-balance{background:#1b2431;border-color:#3b4c62}.bolts-balance>span:first-child{color:#9fb1c9}.bolts-earn-card{background:var(--panel);border-color:var(--line)}}
+
+/* Forum archive search: compact, old-school thread results with usable mobile layout. */
+.forum-search { margin: 12px 0; padding: 12px; border: 1px solid var(--line); background: var(--panel2); }
+.forum-search > label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; }
+.forum-search-row { display: flex; gap: 7px; align-items: center; }
+.forum-search-row input { flex: 1 1 280px; min-width: 0; }
+.forum-search-row select { flex: 0 1 180px; min-width: 0; }
+.forum-search-results { display: flex; flex-direction: column; gap: 7px; }
+.forum-search-result { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px; border: 1px solid var(--line); background: var(--panel); }
+.forum-search-result h2 { margin: 3px 0 6px; font-size: 16px; }
+.forum-search-result p { margin: 0 0 7px; overflow-wrap: anywhere; font-size: 13px; line-height: 1.5; }
+.forum-search-result-main { min-width: 0; }
+.forum-search-open { flex: 0 0 auto; font-size: 12px; font-weight: 700; }
+.forum-search-empty { margin-top: 12px; }
+.forum-search-empty h2 { margin-top: 0; }
+@media (max-width: 560px) {
+  .forum-search-row { flex-wrap: wrap; }
+  .forum-search-row input { flex-basis: 100%; }
+  .forum-search-row select { flex: 1 1 130px; }
+  .forum-search-result { align-items: flex-start; flex-direction: column; }
+}
