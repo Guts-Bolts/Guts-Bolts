@@ -13,6 +13,7 @@ struct HighlightProps;
 struct EffectProps;
 struct PostEffectProps;
 struct SkyProps;
+struct MaterialVariantProps;
 struct JointProps;
 struct CollisionGroups;
 struct ParticleProps;
@@ -54,6 +55,8 @@ nlohmann::json             postEffectToJson(const PostEffectProps& p, bool enabl
 void                       postEffectFromJson(const nlohmann::json& j, PostEffectProps& p, bool& enabled);
 nlohmann::json             skyToJson(const SkyProps& s);
 void                       skyFromJson(const nlohmann::json& j, SkyProps& s);
+nlohmann::json             variantToJson(const MaterialVariantProps& v);
+void                       variantFromJson(const nlohmann::json& j, MaterialVariantProps& v);
 // A ball-socket / prismatic / cylindrical joint's settings, the same way.
 nlohmann::json             jointToJson(const JointProps& p);
 void                       jointFromJson(const nlohmann::json& j, JointProps& p);

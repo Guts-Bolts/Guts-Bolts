@@ -1459,7 +1459,8 @@ local services = { Workspace = workspace, PathfindingService = PathfindingServic
                    ContextActionService = ContextActionService, VRService = VRService }
 -- The container services are folders at the top of the game (Studio shows them in the Explorer).
 local storageNames = { ReplicatedStorage = true, ServerStorage = true, ReplicatedFirst = true, ServerScriptService = true,
-                       StarterPack = true, StarterPlayer = true, SoundService = true, Chat = true, TextChatService = true }
+                       StarterPack = true, StarterPlayer = true, SoundService = true, Chat = true, TextChatService = true,
+                       MaterialService = true }
 local storage = __gb_storage
 -- Services Guts and Bolts doesn't do much with yet: they exist (so scripts written for
 -- Roblox start), their harmless calls do nothing, and anything else says so clearly.
@@ -1467,7 +1468,7 @@ local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, Scri
     Stats = {}, GuiService = {}, HapticService = {}, LocalizationService = {},
     AnalyticsService = { LogCustomEvent = true, LogEconomyEvent = true, LogProgressionEvent = true },
     PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {}, TextService = {},
-    MaterialService = {}, VoiceChatService = {},
+    VoiceChatService = {},
     MemoryStoreService = {}, InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
     GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
@@ -3122,6 +3123,7 @@ void ScriptEngine::stopScripts(SceneNode* root) {
         for (auto& c : n->children) stack.push_back(c.get());
     }
     if (ids.empty()) return;
+    if (m_debugPaused && (ids.count(m_debugScript) || ids.count(m_debugOwner))) debugForget();
     m_stopped.insert(ids.begin(), ids.end());
     forgetActions(ids);
     for (size_t i = 0; i < m_conns.size(); ++i)
@@ -3195,8 +3197,8 @@ void ScriptEngine::stop() {
     // A paused coroutine must never outlive its Lua VM. Release its registry reference
     // before closing the state and reset transient stepping state; configured breakpoints
     // remain available for the next local session.
-    m_debugPaused=false; m_debugThread=nullptr; m_debugRef=-2; m_debugLine=0; m_debugScript=0;
-    m_debugMode=0; m_debugSkipOnce={0,0}; m_debugEnabled=!m_debugBreakpoints.empty();
+    debugForget();
+    m_resumeStack.clear();
     if (m_L) lua_close(m_L);
     m_L = nullptr;
     m_waiting.clear();
@@ -3241,14 +3243,24 @@ void ScriptEngine::checkTimeout(lua_State* L) {
 }
 
 void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, std::string* result) {
-    if (m_debugEnabled && co) lua_sethook(co, &ScriptEngine::debugHook, LUA_MASKLINE | LUA_MASKCOUNT, 20000);
     if (result) result->clear();
     if (!m_L) return;
+    // The debugger watches every line only while there are breakpoints or a step is on;
+    // otherwise the coroutine keeps just the runaway-loop check.
+    if (m_debugEnabled) lua_sethook(co, &ScriptEngine::debugHook, LUA_MASKLINE | LUA_MASKCOUNT, 20000);
+    else if (lua_gethook(co) == &ScriptEngine::debugHook) lua_sethook(co, timeoutHook, LUA_MASKCOUNT, 20000);
     if (m_depth == 0) m_resumeStart = nowSeconds();
     ++m_depth;
     int nres = 0;
+    m_resumeStack.push_back(co);
     int status = lua_resume(co, from ? from : m_L, nargs, &nres);
+    m_resumeStack.pop_back();
     --m_depth;
+    if (status != LUA_YIELD && co == m_debugStepThread) {   // finished while stepping: nothing left to step
+        m_debugMode = 0;
+        m_debugStepThread = nullptr;
+        debugRefresh();
+    }
 
     if (status == LUA_YIELD) {
         // A line-hook yield belongs to the debugger, not wait()/delay(). Keep the registry
@@ -3279,7 +3291,25 @@ void ScriptEngine::debugSetBreakpoint(uint64_t scriptId, int line, bool enabled)
     if (!scriptId || line < 1) return;
     const auto key = std::make_pair(scriptId, line);
     if (enabled) m_debugBreakpoints.insert(key); else m_debugBreakpoints.erase(key);
-    m_debugEnabled = !m_debugBreakpoints.empty() || m_debugMode != 0 || m_debugPaused;
+    debugRefresh();
+}
+
+void ScriptEngine::debugClearBreakpoints() {
+    m_debugBreakpoints.clear();
+    debugRefresh();
+}
+
+void ScriptEngine::debugRefresh() {
+    m_debugEnabled = !m_debugBreakpoints.empty() || m_debugMode != 0;
+}
+
+void ScriptEngine::debugForget() {
+    // Drops the paused coroutine (its script was stopped, or the VM is closing).
+    if (m_debugPaused && m_L && m_debugRef != LUA_NOREF) luaL_unref(m_L, LUA_REGISTRYINDEX, m_debugRef);
+    m_debugPaused = false; m_debugThread = nullptr; m_debugRef = LUA_NOREF;
+    m_debugLine = 0; m_debugScript = 0; m_debugOwner = 0; m_debugSource.clear();
+    m_debugMode = 0; m_debugStepThread = nullptr; m_debugStepDepth = 0;
+    debugRefresh();
 }
 
 int ScriptEngine::debugStackDepth(lua_State* L) const {
@@ -3290,36 +3320,67 @@ int ScriptEngine::debugStackDepth(lua_State* L) const {
 }
 
 bool ScriptEngine::debugShouldPause(lua_State* L, lua_Debug* ar) {
-    if (!m_debugEnabled || m_debugPaused || !ar) return false;
+    // Only pause a coroutine the engine itself resumed: its yield comes straight back to
+    // resume(), which keeps it. (A coroutine the script resumes with coroutine.resume would
+    // hand the yield to the script instead.)
+    if (!m_debugEnabled || m_debugPaused || !ar || m_resumeStack.empty() || m_resumeStack.back() != L) return false;
     if (!lua_getinfo(L, "Sl", ar) || ar->currentline < 1) return false;
+    const int line = ar->currentline;
+
+    bool stepHit = false;
+    if (m_debugMode != 0 && L == m_debugStepThread) {
+        const int depth = debugStackDepth(L);
+        stepHit = m_debugMode == 1 ||                                // into: the very next line
+                  (m_debugMode == 2 && depth <= m_debugStepDepth) || // over: not inside a call it makes
+                  (m_debugMode == 3 && depth < m_debugStepDepth);    // out: back in the caller
+    }
+    // Most lines have no breakpoint: check the line number before looking at names.
+    bool lineHasBreakpoint = false;
+    for (const auto& bp : m_debugBreakpoints) if (bp.second == line) { lineHasBreakpoint = true; break; }
+    if (!lineHasBreakpoint && !stepHit) return false;
 
     std::string source = ar->source ? ar->source : "";
     if (!source.empty() && (source.front() == '=' || source.front() == '@')) source.erase(source.begin());
     uint64_t scriptId = 0;
-    if (m_scene) m_scene->forEach([&](SceneNode* node) {
-        if (!scriptId && node && node->isScript() && node->fullName() == source) scriptId = node->id;
-    });
-    const int line = ar->currentline;
-    const auto key = std::make_pair(scriptId, line);
-    bool hit = scriptId && m_debugBreakpoints.count(key) != 0;
-    if (m_debugSkipOnce == key) {
-        m_debugSkipOnce = {0, 0};
-        hit = false;
+    if (m_scene) {
+        // Breakpoints belong to a script; its code runs under the script's full name. Two
+        // scripts with the same name: the one running right now wins.
+        for (const auto& bp : m_debugBreakpoints) {
+            if (bp.second != line) continue;
+            SceneNode* n = m_scene->findById(bp.first);
+            if (!n || !n->isScript() || n->fullName() != source) continue;
+            if (!scriptId || bp.first == m_current) scriptId = bp.first;
+        }
+        if (!scriptId && stepHit)
+            m_scene->forEach([&](SceneNode* n) {
+                if (!scriptId && n && n->isScript() && n->fullName() == source) scriptId = n->id;
+            });
     }
-    if (!hit && m_debugMode != 0) {
-        const int depth = debugStackDepth(L);
-        hit = m_debugMode == 1 ||
-              (m_debugMode == 2 && depth <= m_debugStepDepth) ||
-              (m_debugMode == 3 && depth < m_debugStepDepth);
+    const bool breakpointHit = lineHasBreakpoint && scriptId && m_debugBreakpoints.count({scriptId, line});
+    if (!breakpointHit && !stepHit) return false;
+    if (!lua_isyieldable(L)) {
+        // Called from inside the engine (a table.sort comparison, a metamethod...): Lua
+        // can't pause there, so say so once and keep going.
+        const std::string where = source + ":" + std::to_string(line);
+        if (where != m_debugCantPause) {
+            m_debugCantPause = where;
+            Log::warn("Lua Debugger: can't pause at " + where + " (that code was called from inside the engine, "
+                      "like a table.sort comparison). It keeps running.");
+        }
+        return false;
     }
-    if (!hit) return false;
 
     m_debugPaused = true;
     m_debugThread = L;
     m_debugLine = line;
     m_debugScript = scriptId;
+    m_debugOwner = m_current;
     m_debugSource = source;
+    m_debugReason = breakpointHit ? "breakpoint" : "step";
     m_debugMode = 0;
+    m_debugStepThread = nullptr;
+    ++m_debugPauses;
+    debugRefresh();
     return true;
 }
 
@@ -3334,52 +3395,36 @@ void ScriptEngine::debugHook(lua_State* L, lua_Debug* ar) {
     if (ar->event == LUA_HOOKLINE && engine->debugShouldPause(L, ar)) lua_yield(L, 0);
 }
 
-void ScriptEngine::debugContinue() {
-    if (!m_debugPaused || !m_debugThread || m_debugRef == -2 || !m_L) return;
+void ScriptEngine::debugResume(int mode) {
+    if (!m_debugPaused || !m_debugThread || m_debugRef == LUA_NOREF || !m_L) return;
     lua_State* co = m_debugThread;
     const int ref = m_debugRef;
-    m_debugSkipOnce = {m_debugScript, m_debugLine};
-    m_debugPaused = false; m_debugThread = nullptr; m_debugRef = -2; m_debugMode = 0;
-    const uint64_t was = m_current; m_current = m_debugScript;
+    const uint64_t owner = m_debugOwner;
+    m_debugPaused = false; m_debugThread = nullptr; m_debugRef = LUA_NOREF;
+    m_debugMode = mode;
+    m_debugStepThread = mode ? co : nullptr;
+    m_debugStepDepth = mode ? debugStackDepth(co) : 0;
+    debugRefresh();
+    // (Lua doesn't call the line hook again for the line it paused on, so Continue
+    // simply carries on; the next time that line runs it pauses again.)
+    const uint64_t was = m_current;
+    m_current = owner;
     resume(co, ref, 0, m_L);
     m_current = was;
-    m_debugEnabled = !m_debugBreakpoints.empty() || m_debugPaused || m_debugMode != 0;
-}
-
-static void gb_debugStep(ScriptEngine* engine, int mode) {
-    if (!engine || !engine->debugPaused()) return;
-    engine->debugContinue();
-}
-
-void ScriptEngine::debugStepInto() {
-    if (!m_debugPaused || !m_debugThread || m_debugRef == -2 || !m_L) return;
-    lua_State* co=m_debugThread; const int ref=m_debugRef;
-    m_debugStepDepth=debugStackDepth(co); m_debugMode=1; m_debugPaused=false; m_debugThread=nullptr; m_debugRef=-2; m_debugEnabled=true;
-    const uint64_t was=m_current; m_current=m_debugScript; resume(co,ref,0,m_L); m_current=was;
-}
-void ScriptEngine::debugStepOver() {
-    if (!m_debugPaused || !m_debugThread || m_debugRef == -2 || !m_L) return;
-    lua_State* co=m_debugThread; const int ref=m_debugRef;
-    m_debugStepDepth=debugStackDepth(co); m_debugMode=2; m_debugPaused=false; m_debugThread=nullptr; m_debugRef=-2; m_debugEnabled=true;
-    const uint64_t was=m_current; m_current=m_debugScript; resume(co,ref,0,m_L); m_current=was;
-}
-void ScriptEngine::debugStepOut() {
-    if (!m_debugPaused || !m_debugThread || m_debugRef == -2 || !m_L) return;
-    lua_State* co=m_debugThread; const int ref=m_debugRef;
-    m_debugStepDepth=debugStackDepth(co); m_debugMode=3; m_debugPaused=false; m_debugThread=nullptr; m_debugRef=-2; m_debugEnabled=true;
-    const uint64_t was=m_current; m_current=m_debugScript; resume(co,ref,0,m_L); m_current=was;
 }
 
 std::vector<std::string> ScriptEngine::debugCallStack() {
     std::vector<std::string> out;
     if (!m_debugPaused || !m_debugThread) return out;
-    for (int level=0; level<64; ++level) {
-        lua_Debug ar{}; if (!lua_getstack(m_debugThread, level, &ar)) break;
+    for (int level = 0; level < 64; ++level) {
+        lua_Debug ar{};
+        if (!lua_getstack(m_debugThread, level, &ar)) break;
         lua_getinfo(m_debugThread, "nSl", &ar);
         std::string source = ar.source ? ar.source : "[unknown source]";
-        if (!source.empty() && (source.front()=='=' || source.front()=='@')) source.erase(source.begin());
-        std::string name = ar.name ? ar.name : "<chunk>";
-        out.push_back(name + "  —  " + source + ":" + std::to_string(ar.currentline));
+        if (!source.empty() && (source.front() == '=' || source.front() == '@')) source.erase(source.begin());
+        if (ar.what && std::string(ar.what) == "C") { out.push_back("[engine function]"); continue; }
+        std::string name = ar.name ? ar.name : level == debugStackDepth(m_debugThread) - 1 ? "(script body)" : "(function)";
+        out.push_back(name + "  -  " + source + ":" + std::to_string(ar.currentline));
     }
     return out;
 }
@@ -3387,27 +3432,43 @@ std::vector<std::string> ScriptEngine::debugCallStack() {
 std::vector<std::string> ScriptEngine::debugLocals() {
     std::vector<std::string> out;
     if (!m_debugPaused || !m_debugThread) return out;
-    lua_State* L=m_debugThread; const int top=lua_gettop(L); lua_Debug ar{};
+    lua_State* L = m_debugThread;
+    const int top = lua_gettop(L);
+    lua_Debug ar{};
     if (!lua_getstack(L, 0, &ar)) return out;
-    for (int i=1; i<=128; ++i) {
-        const char* name=lua_getlocal(L, &ar, i); if (!name) break;
+    for (int i = 1; i <= 200 && out.size() < 128; ++i) {
+        const char* name = lua_getlocal(L, &ar, i);
+        if (!name) break;
+        if (name[0] == '(') { lua_pop(L, 1); continue; }   // Lua's own helpers, like "(for state)"
         std::string value;
         switch (lua_type(L, -1)) {
-            case LUA_TNIL: value="nil"; break;
-            case LUA_TBOOLEAN: value=lua_toboolean(L,-1)?"true":"false"; break;
-            case LUA_TNUMBER: value=lua_tostring(L,-1); break;
-            case LUA_TSTRING: { size_t n=0; const char* s=lua_tolstring(L,-1,&n); value="\"" + std::string(s?s:"",std::min<size_t>(n,160)) + (n>160?"…\"":"\""); break; }
-            case LUA_TTABLE: value="table (raw, not expanded)"; break;
-            case LUA_TFUNCTION: value="function"; break;
-            case LUA_TUSERDATA: value="userdata"; break;
-            case LUA_TTHREAD: value="thread"; break;
-            case LUA_TLIGHTUSERDATA: value="light userdata"; break;
-            default: value="unknown"; break;
+            case LUA_TNIL: value = "nil"; break;
+            case LUA_TBOOLEAN: value = lua_toboolean(L, -1) ? "true" : "false"; break;
+            case LUA_TNUMBER: {
+                // lua_tostring would turn the number on the stack into a string; copy it first.
+                lua_pushvalue(L, -1);
+                value = lua_tostring(L, -1);
+                lua_pop(L, 1);
+                break;
+            }
+            case LUA_TSTRING: {
+                size_t n = 0;
+                const char* s = lua_tolstring(L, -1, &n);
+                value = "\"" + std::string(s ? s : "", std::min<size_t>(n, 160)) + (n > 160 ? "...\"" : "\"");
+                break;
+            }
+            case LUA_TTABLE: value = "table"; break;
+            case LUA_TFUNCTION: value = "function"; break;
+            case LUA_TUSERDATA: value = "userdata"; break;
+            case LUA_TTHREAD: value = "thread"; break;
+            case LUA_TLIGHTUSERDATA: value = "light userdata"; break;
+            default: value = "unknown"; break;
         }
-        out.push_back(std::string(name) + " = " + value); lua_pop(L,1);
-        if (out.size() >= 128) break;
+        out.push_back(std::string(name) + " = " + value);
+        lua_pop(L, 1);
     }
-    lua_settop(L,top); return out;
+    lua_settop(L, top);
+    return out;
 }
 
 void ScriptEngine::schedule(lua_State* co, int ref, double delay, int startArgs) {

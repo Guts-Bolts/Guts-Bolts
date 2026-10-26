@@ -123,3 +123,17 @@ unsigned Thumbnailer::texture(const std::string& key, const std::function<void(S
     m_textures[key] = std::move(fb);
     return tex;
 }
+
+unsigned Thumbnailer::live(const std::string& slot, const std::string& key, const std::function<void(Scene&)>& build, int size) {
+    Live& l = m_live[slot];
+    if (l.fb && l.key == key) return l.fb->colorTexture();
+    if (m_madeThisFrame >= 2) return l.fb ? l.fb->colorTexture() : 0;   // (the old one until next frame)
+    ++m_madeThisFrame;
+    Scene scene;
+    makeStudio(scene);
+    if (build) build(scene);
+    if (!l.fb) l.fb = std::make_unique<Framebuffer>();
+    shoot(scene, *l.fb, size);
+    l.key = key;
+    return l.fb->colorTexture();
+}

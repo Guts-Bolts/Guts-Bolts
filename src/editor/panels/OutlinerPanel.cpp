@@ -217,6 +217,7 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
         {"Sound", {"SoundGroup", "ReverbSoundEffect", "EchoSoundEffect", "EqualizerSoundEffect", "DistortionSoundEffect",
                    "PitchShiftSoundEffect", "ChorusSoundEffect", "CompressorSoundEffect", "FlangeSoundEffect", "TremoloSoundEffect"}},
         {"Sky & Screen Effects", {"Sky", "ColorCorrectionEffect", "SunRaysEffect", "DepthOfFieldEffect", "BloomEffect", "BlurEffect"}},
+        {"Materials", {"MaterialVariant"}},
         {"Particles", {"ParticleEmitter", "Fire", "Smoke", "Sparkles"}},
         {"Water", {"Water", "WaterSource", "FluidVolume", "FluidSystem", "FluidEmitter"}},
         {"Constraints", {"Attachment", "Bone", "HingeConstraint", "BallSocketConstraint", "PrismaticConstraint", "CylindricalConstraint",
@@ -369,6 +370,7 @@ void OutlinerPanel::render() {
         folderService("SoundService", (int)Id::Sound, "Sounds for the whole game (music, sound effects scripts play).");
         folderService("Chat", (int)Id::Output, "Chat settings and scripts.");
         folderService("TextChatService", (int)Id::Output, "Text chat settings and scripts.");
+        folderService("MaterialService", (int)Id::Lighting, "Your own materials (MaterialVariant). Make them in the Material Editor.");
         if (m_showAllServices) {
             // The services scripts reach with game:GetService(...). Nothing to put in them here.
             static const char* hidden[] = {"RunService", "UserInputService", "ContextActionService", "TweenService", "Debris",
@@ -376,7 +378,7 @@ void OutlinerPanel::render() {
                 "BadgeService", "GamePassService", "PathfindingService", "PhysicsService", "TeleportService", "SocialService",
                 "GroupService", "InsertService", "ContentProvider", "PolicyService", "LocalizationService", "TextService",
                 "GuiService", "HapticService", "ProximityPromptService", "AssetService", "AnalyticsService", "LogService",
-                "ScriptContext", "Stats", "TestService", "MaterialService", "VoiceChatService", "ChangeHistoryService", "Selection"};
+                "ScriptContext", "Stats", "TestService", "VoiceChatService", "ChangeHistoryService", "Selection"};
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
             for (const char* n : hidden) {
                 if (serviceRow(n, (int)Id::Settings, false, false)) ImGui::TreePop();
@@ -437,6 +439,7 @@ std::string className(const SceneNode& n) {
         case NodeKind::Highlight:  return "Highlight";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n.post.type];
         case NodeKind::Sky:        return "Sky";
+        case NodeKind::MaterialVariant: return "MaterialVariant";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:      return "Trail";
         case NodeKind::Beam:       return "Beam";

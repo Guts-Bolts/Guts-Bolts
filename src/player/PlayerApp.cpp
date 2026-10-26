@@ -1548,19 +1548,16 @@ void PlayerApp::drawAvatar(float dt) {
     changed |= ImGui::ColorEdit3("Left Leg", &me.colors.leftLeg.x, cf); ImGui::SameLine(160);
     changed |= ImGui::ColorEdit3("Right Leg", &me.colors.rightLeg.x, cf);
 
-    ImGui::SeparatorText("Hat");
-    for (int h = 0; h < kHatStyleCount; ++h) {
-        bool on = (int)me.hat == h;
-        float rowW = ImGui::GetWindowContentRegionMax().x - ImGui::GetWindowContentRegionMin().x;
-        float hw = std::min(95.0f, (rowW - ImGui::GetStyle().ItemSpacing.x * 3) / 4.0f);
-        bool pressed = on ? Classic::button(Player::hatName((HatStyle)h), Classic::kBlue, ImVec2(hw, 30))
-                          : ImGui::Button(Player::hatName((HatStyle)h), ImVec2(hw, 30));
-        if (pressed) {
-            me.hat = (HatStyle)h;
-            me.hatColor = glm::vec3(-1.0f);   // back to its normal colours
+    // The old built-in hats (Top Hat, Cap, Crown, Ponytail) are gone from here: the catalog has hats now.
+    // Someone still wearing one can take it off.
+    if (me.hat != HatStyle::None) {
+        ImGui::SeparatorText("Hat");
+        ImGui::TextDisabled("You still have an old built-in hat on (from before the catalog).");
+        if (ImGui::Button("Take it off", ImVec2(130, 30))) {
+            me.hat = HatStyle::None;
+            me.hatColor = glm::vec3(-1.0f);
             changed = true;
         }
-        if (h % 4 != 3 && h + 1 < kHatStyleCount) ImGui::SameLine();   // four to a row
     }
     }   // Body & Colours
 

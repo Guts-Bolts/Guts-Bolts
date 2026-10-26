@@ -1784,6 +1784,35 @@ settings). In an online game, a Script on the host can change a player's
 xvfb-run -a build/GutsAndBolts --play --test-command "$(cat tools/test_camera.lua)" --screenshot /tmp/camera.png --frames 900
 ```
 
+### Your own materials (Material Editor)
+
+Like Roblox's Material Manager: a **MaterialVariant** in **MaterialService** is a
+material you make from pictures, on top of a built-in one. Open **VIEW > Materials**,
+press **New**, pick its **BaseMaterial** and add pictures:
+
+- **ColorMap**: the colours (the part's Color tints it; white shows it as it is)
+- **NormalMap**: bumps and grooves
+- **RoughnessMap** / **MetalnessMap**: where it's rough or shiny, metal or not
+- **StudsPerTile**: how big one copy of the pictures is
+- **Roughness**, **Metalness**, **Glow** (ours): for what has no picture
+
+A part shows it when its **Material** is the BaseMaterial and its
+**MaterialVariant** is the variant's name ("Use on selected parts" sets both). The
+part still weighs and grips like the BaseMaterial. **Save as preset** keeps a
+material on this computer for your other games. Scripts work the same way:
+
+```lua
+local v = Instance.new("MaterialVariant")
+v.Name = "Lava"
+v.BaseMaterial = Enum.Material.Slate
+v.ColorMap = "images/lava.png"
+v.Glow = 2
+v.Parent = game:GetService("MaterialService")
+
+part.Material = Enum.Material.Slate
+part.MaterialVariant = "Lava"
+```
+
 ### Sky and screen effects
 
 Like Roblox, you change the sky and the look of the whole screen with objects

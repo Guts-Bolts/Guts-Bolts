@@ -59,6 +59,7 @@ const char* kindName(NodeKind k) {
         case NodeKind::SoundEffect:  return "SoundEffect";
         case NodeKind::PostEffect:   return "PostEffect";
         case NodeKind::Sky:          return "Sky";
+        case NodeKind::MaterialVariant: return "MaterialVariant";
         case NodeKind::Camera:       return "Camera";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Particles:    return "Particles";
@@ -90,6 +91,7 @@ NodeKind kindFrom(const std::string& s) {
     if (s == "SoundEffect")  return NodeKind::SoundEffect;
     if (s == "PostEffect")   return NodeKind::PostEffect;
     if (s == "Sky")          return NodeKind::Sky;
+    if (s == "MaterialVariant") return NodeKind::MaterialVariant;
     if (s == "Camera")       return NodeKind::Camera;
     if (s == "ClickDetector") return NodeKind::ClickDetector;
     if (s == "Particles")    return NodeKind::Particles;
@@ -244,6 +246,30 @@ void skyFromJson(const nlohmann::json& j, SkyProps& s) {
     s.lf = get<std::string>(j, "lf", ""); s.rt = get<std::string>(j, "rt", ""); s.up = get<std::string>(j, "up", "");
     s.sun = get<std::string>(j, "sun", ""); s.moon = get<std::string>(j, "moon", "");
     clampSky(s);
+}
+
+nlohmann::json variantToJson(const MaterialVariantProps& v) {
+    json j = {{"base", kMaterialNames[(int)v.base]}, {"studsPerTile", v.studsPerTile}, {"roughness", v.roughness},
+              {"metalness", v.metalness}};
+    if (v.glow > 0.0f) j["glow"] = v.glow;
+    const std::pair<const char*, const std::string*> pics[] = {{"colorMap", &v.colorMap}, {"normalMap", &v.normalMap},
+                                                               {"roughnessMap", &v.roughnessMap}, {"metalnessMap", &v.metalnessMap}};
+    for (auto& [k, p] : pics) if (!p->empty()) j[k] = *p;
+    return j;
+}
+
+void variantFromJson(const nlohmann::json& j, MaterialVariantProps& v) {
+    const MaterialVariantProps d;
+    materialFromName(get<std::string>(j, "base", "Plastic"), v.base);
+    v.studsPerTile = get<float>(j, "studsPerTile", d.studsPerTile);
+    v.roughness    = get<float>(j, "roughness", d.roughness);
+    v.metalness    = get<float>(j, "metalness", d.metalness);
+    v.glow         = get<float>(j, "glow", 0.0f);
+    v.colorMap     = get<std::string>(j, "colorMap", "");
+    v.normalMap    = get<std::string>(j, "normalMap", "");
+    v.roughnessMap = get<std::string>(j, "roughnessMap", "");
+    v.metalnessMap = get<std::string>(j, "metalnessMap", "");
+    clampVariant(v);
 }
 
 nlohmann::json effectToJson(const EffectProps& e, bool enabled, bool beam) {
@@ -820,6 +846,7 @@ json toJson(const SceneNode& n) {
         j["color"]        = vec(n.color);
         j["transparency"] = n.transparency;
         j["material"]     = kMaterialNames[(int)n.material];
+        if (!n.materialVariant.empty()) j["materialVariant"] = n.materialVariant;
         j["anchored"]     = n.anchored;
         j["canCollide"]   = n.canCollide;
         if (n.collisionGroup != CollisionGroups::kDefault) j["collisionGroup"] = n.collisionGroup;
@@ -924,6 +951,7 @@ json toJson(const SceneNode& n) {
     if (n.isEffect()) j["effect"] = Serializer::effectToJson(n.effect, n.enabled, n.kind == NodeKind::Beam);
     if (n.isPostEffect()) j["post"] = Serializer::postEffectToJson(n.post, n.enabled);
     if (n.isSky()) j["sky"] = Serializer::skyToJson(n.sky);
+    if (n.isMaterialVariant()) j["variant"] = Serializer::variantToJson(n.variant);
     if (n.isParticles()) j["particles"] = Serializer::particleToJson(n.particle, n.enabled);
     if (n.locked)   j["locked"]   = true;
     if (!n.tags.empty()) j["tags"] = n.tags;
@@ -1080,6 +1108,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->color         = vec(j, "color", n->color);
         n->transparency  = get<float>(j, "transparency", 0.0f);
         n->material      = materialFrom(get<std::string>(j, "material", "Plastic"));
+        n->materialVariant = get<std::string>(j, "materialVariant", "");
         n->anchored      = get<bool>(j, "anchored", true);
         n->canCollide    = get<bool>(j, "canCollide", true);
         n->collisionGroup = get<std::string>(j, "collisionGroup", CollisionGroups::kDefault).substr(0, CollisionGroups::kMaxNameLength);
@@ -1211,6 +1240,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     if (auto f = j.find("soundFx"); f != j.end() && f->is_object() && n->isSoundEffect()) Serializer::soundFromJson(*n, *f);
     if (auto e = j.find("post"); n->isPostEffect() && e != j.end() && e->is_object()) Serializer::postEffectFromJson(*e, n->post, n->enabled);
     if (auto e = j.find("sky"); n->isSky() && e != j.end() && e->is_object()) Serializer::skyFromJson(*e, n->sky);
+    if (auto e = j.find("variant"); n->isMaterialVariant() && e != j.end() && e->is_object()) Serializer::variantFromJson(*e, n->variant);
     if (auto e = j.find("particles"); e != j.end() && e->is_object() && n->isParticles()) Serializer::particleFromJson(*e, n->particle, n->enabled);
     n->locked        = get<bool>(j, "locked", false);
     if (auto t = j.find("tags"); t != j.end() && t->is_array())
@@ -1479,6 +1509,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.click = src->click;
     dst.effect = src->effect;       dst.particle = src->particle;
     dst.post = src->post;           dst.sky = src->sky;
+    dst.variant = src->variant;     dst.materialVariant = src->materialVariant;
     dst.tags = src->tags;           dst.attributes = src->attributes;
     dst.lightType = src->lightType; dst.brightness = src->brightness;
     dst.range = src->range;         dst.spotAngle = src->spotAngle;
