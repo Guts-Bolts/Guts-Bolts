@@ -296,7 +296,20 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
             Audio::resume();
             break;
         case SDL_WINDOWEVENT:
-            if (e.window.event == SDL_WINDOWEVENT_CLOSE && e.window.windowID == SDL_GetWindowID(m_sdl)) m_quit = true;
+            if (e.window.windowID == SDL_GetWindowID(m_sdl)) {
+                if (e.window.event == SDL_WINDOWEVENT_CLOSE) {
+                    m_quit = true;
+                } else if (e.window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+                           e.window.event == SDL_WINDOWEVENT_RESIZED) {
+                    // iOS can rotate between portrait (site) and landscape (games).
+                    // Recompute the UI scale so controls remain usable after rotation,
+                    // and reset the viewport to the drawable's current pixel dimensions.
+                    m_uiScale = pickUiScale(m_sdl);
+                    int drawableW = 0, drawableH = 0;
+                    SDL_GL_GetDrawableSize(m_sdl, &drawableW, &drawableH);
+                    glViewport(0, 0, drawableW, drawableH);
+                }
+            }
             break;
 #ifdef GB_IOS
         case SDL_DROPFILE:
