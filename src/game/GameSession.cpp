@@ -227,7 +227,6 @@ std::vector<SceneNode*> GameSession::joinerTools(uint64_t rig) {
 bool GameSession::giveTo(uint64_t rig, SceneNode* tool) {
     SceneNode* r = m_scene->findById(rig);
     if (!r || !tool || !tool->isTool()) return false;
-    if ((int)joinerTools(rig).size() >= Player::kMaxTools) return false;
     SceneNode* bag = Player::backpackOf(*m_scene, r);
     if (!bag || tool->parent == bag) return false;
     auto owned = m_scene->detach(tool);
@@ -377,10 +376,11 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
                 dive = dive || (Pad::leftTrigger() > 0.5f && !m_scripts.inputSunk(ImGuiKey_GamepadL2));
             }
         }
-        // Tools: 1-9 picks a slot (again puts it away), Backspace drops the held one.
+        // Tools: 1-9 and 0 pick the ten hotbar slots; extras live in the backpack. Backspace drops the held one.
         if (acceptInput && !ImGui::GetIO().WantTextInput) {
-            for (int i = 0; i < Player::kMaxTools; ++i)
+            for (int i = 0; i < 9; ++i)
                 if (pressed((ImGuiKey)(ImGuiKey_1 + i))) selectToolSlot(i);
+            if (pressed(ImGuiKey_0)) selectToolSlot(9);
             if (pressed(ImGuiKey_Backspace)) dropTool();
             // A controller: RB / LB pick the next / last tool, B puts it away, RT uses it.
             if (Pad::connected() && !p->isDead()) {
