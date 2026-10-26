@@ -404,6 +404,11 @@ void Editor::renderToolbar() {
             }
         }
         {
+            Group g("Levels");
+            if (bigButton("Generate", Icons::Id::Terrain, m_showLevelGen, true, "Level Generator: make a dungeon or an obby from a seed"))
+                m_showLevelGen = !m_showLevelGen;
+        }
+        {
             Group g("Constraints");
             const char* names[] = {"Rope", "Rod", "Spring", "Weld", "Hinge", "Motor", "Ball Socket", "Prismatic", "Cylindrical"};
             for (int col = 0; col < 3; ++col) {

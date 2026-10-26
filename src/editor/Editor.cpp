@@ -120,6 +120,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_scriptEditor->onOpenBlocks = [this](uint64_t id) { openBlocks(m_scene->findById(id)); };
     if (std::getenv("GB_TEST_BLOCKS")) m_showBlocks = true;   // (tests: start with it showing)
     m_scriptEditor->setDebugger(&m_session->scripts());   // breakpoints in its line numbers
+    if (std::getenv("GB_TEST_LEVELGEN")) m_showLevelGen = true;   // (tests: start with it showing)
     m_animEditor   = std::make_unique<AnimationEditor>(scene, &m_state);
     m_assistant    = std::make_unique<AssistantPanel>(*this);
     m_team         = std::make_unique<TeamCreate>(scene);
@@ -273,6 +274,7 @@ void Editor::render(float dt) {
     renderMaterialEditor();
     renderAiActivity();
     renderScriptHistory();
+    renderLevelGenerator();
     renderPhysicsReplay();
 
     trackChanges();
@@ -2645,6 +2647,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Material Editor", nullptr, &m_showMaterialEditor)) {}
         if (ImGui::MenuItem("AI Activity", nullptr, &m_showAiActivity)) {}
         if (ImGui::MenuItem("Script History", nullptr, &m_showScriptHistory)) {}
+        if (ImGui::MenuItem("Level Generator", nullptr, &m_showLevelGen)) {}
         if (ImGui::MenuItem("Physics Replay", nullptr, &m_showReplay)) {}
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;

@@ -228,6 +228,29 @@ between four modes:
 **Stop** (`Shift+F5` or `Esc`) goes back to Build mode, and everything goes
 back exactly how it was before you pressed Simulate or Play.
 
+### Level Generator (dungeons and obbies)
+
+Press **MODEL > Generate** (or View > Level Generator) to make a whole level from a
+few rules:
+
+- **Dungeon**: rooms joined by corridors, with doors, crates and coins.
+- **Obby**: a course of platforms to jump along, with checkpoints, coins and lava
+  underneath.
+
+Every level has a **seed** (a number). The same seed always makes the same level,
+so you can share a good one by telling someone its number. **Random** picks one.
+
+Before you see it, each level is checked: everything fitted, nothing is inside
+anything else, and a robot (the same navmesh NPCs use) walks and jumps from the
+spawn to the goal. **Find one that works** tries up to 20 seeds and keeps the first
+that passes, and **Test 10 seeds** lists 10 seeds with how long each route is so
+you can pick one. The level goes into a Model next to your game; press Play and
+walk to the green goal. **Replace the last one** swaps it for the new one, and one
+Ctrl+Z takes it away.
+
+The Assistant can make levels too ("make me an obby with 30 platforms"), with the
+`generate_level` tool.
+
 ### Testing with more than one player
 
 Play is just you. To see how your game works with other people, use

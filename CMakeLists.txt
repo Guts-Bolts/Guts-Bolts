@@ -726,6 +726,8 @@ set(EDITOR_SOURCES
     src/editor/EditorTimeMachine.cpp
     src/editor/EditorMaterials.cpp
     src/editor/EditorAiActivity.cpp
+    src/editor/EditorLevelGen.cpp
+    src/editor/LevelGen.cpp
     src/editor/EditorBulkEdit.cpp
     src/editor/EditorBlocks.cpp
     src/editor/VisualScript.cpp
