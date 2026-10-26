@@ -681,6 +681,9 @@ void Editor::renderToolbar() {
             if (bigButton("Script Analysis", Icons::Id::Script, m_scriptEditor->analysisShown(), true,
                           "Find mistakes in every script without pressing Play"))
                 m_scriptEditor->showAnalysis();
+            if (bigButton("AI Activity", Icons::Id::CommandBar, m_showAiActivity, true,
+                          "Everything the AI assistant did, what it changed (undo it all in one click),\nand its requests to delete things"))
+                m_showAiActivity = !m_showAiActivity;
             if (bigButton("Script History", Icons::Id::Output, m_showScriptHistory, true,
                           "Record what your scripts change while you playtest, and see why something changed"))
                 m_showScriptHistory = !m_showScriptHistory;
