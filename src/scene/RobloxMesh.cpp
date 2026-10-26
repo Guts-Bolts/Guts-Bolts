@@ -24,6 +24,8 @@ namespace {
 struct Corner {
     glm::vec3 pos, normal;
     glm::vec2 uv;
+    glm::vec4 color{1.0f};
+    glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
 };
 
 // Raw triangles (three corners each) -> an EditMesh. Corners at the same spot with
@@ -50,18 +52,29 @@ Shape build(const std::vector<Corner>& verts, const std::vector<uint32_t>& tris,
     auto q = [](float f, float k) { return (long)std::lround(f * k); };
     std::vector<uint32_t> remap(verts.size());
     const bool preserveSkinVertices = skinWeights && skinWeights->size() == verts.size() && bones && !bones->empty();
+    const bool preserveVertexAttributes = std::any_of(verts.begin(), verts.end(), [](const Corner& c) {
+        return glm::length(c.color - glm::vec4(1.0f)) > 1e-5f ||
+               glm::length(c.tangent - glm::vec4(1, 0, 0, 1)) > 1e-5f;
+    });
     for (size_t i = 0; i < verts.size(); ++i) {
         const Corner& c = verts[i];
-        if (preserveSkinVertices) {
-            // Welding vertices with different bone weights corrupts the rig.
+        if (preserveSkinVertices || preserveVertexAttributes) {
+            // Welding vertices with different bone weights, colours, or tangents
+            // would corrupt their per-vertex attributes.
             remap[i] = (uint32_t)mesh->verts.size();
             mesh->verts.push_back(c.pos);
+            mesh->colors.push_back(c.color);
+            mesh->tangents.push_back(c.tangent);
             continue;
         }
         auto key = std::make_tuple(q(c.pos.x, 1e4f), q(c.pos.y, 1e4f), q(c.pos.z, 1e4f),
                                    (int)q(c.normal.x, 20.0f), (int)q(c.normal.y, 20.0f), (int)q(c.normal.z, 20.0f));
         auto [it, fresh] = weld.try_emplace(key, (uint32_t)mesh->verts.size());
-        if (fresh) mesh->verts.push_back(c.pos);
+        if (fresh) {
+            mesh->verts.push_back(c.pos);
+            mesh->colors.push_back(c.color);
+            mesh->tangents.push_back(c.tangent);
+        }
         remap[i] = it->second;
     }
     for (size_t t = 0; t + 2 < tris.size(); t += 3) {
@@ -112,6 +125,17 @@ bool readVerts(Bytes& r, uint32_t count, size_t stride, std::vector<Corner>& out
         out[i].pos    = {r.f32(at), r.f32(at + 4), r.f32(at + 8)};
         out[i].normal = {r.f32(at + 12), r.f32(at + 16), r.f32(at + 20)};
         out[i].uv     = {r.f32(at + 24), r.f32(at + 28)};
+        if (stride >= 40) {
+            const auto* tangent = reinterpret_cast<const int8_t*>(r.p + at + 32);
+            out[i].tangent = {
+                std::clamp(tangent[0] / 127.0f, -1.0f, 1.0f),
+                std::clamp(tangent[1] / 127.0f, -1.0f, 1.0f),
+                std::clamp(tangent[2] / 127.0f, -1.0f, 1.0f),
+                tangent[3] < 0 ? -1.0f : 1.0f
+            };
+            const uint8_t* color = r.p + at + 36;
+            out[i].color = glm::vec4(color[0], color[1], color[2], color[3]) / 255.0f;
+        }
     }
     r.pos += (size_t)count * stride;
     return true;
