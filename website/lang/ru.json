@@ -2124,6 +2124,7 @@
   "Reset Camera": "Сбросить камеру",
   "Reset part": "Сбросить деталь",
   "Reset to High": "Сбросить на Высокое",
+  "Reset username": "Сбросить имя пользователя",
   "Reshape it in Modeling mode (Tab goes back)": "Измени форму в режиме моделирования (Tab — назад)",
   "Reshape the selected part's mesh (corners, edges, faces)": "Измени сетку выбранной детали (вершины, рёбра, грани)",
   "Rest Pose": "Поза покоя",
@@ -2457,6 +2458,7 @@
   "Staff Tools": "Инструменты персонала",
   "Staff action log": "Журнал действий персонала",
   "Staff can verify people, make them a Partner, and take those badges away.": "Персонал может проверять людей, делать их партнёрами и забирать эти значки.",
+  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "Персонал может подтверждать людей, делать их партнёрами, снимать эти значки и сбрасывать недопустимые имена пользователей.",
   "Staff can't watch everything, and we aren't responsible for what other players say, make or do. If something is dangerous, report it, and contact the police if someone is in danger.": "Персонал не может следить за всем, и мы не отвечаем за то, что говорят, делают или создают другие игроки. Если что-то опасно, пожалуйся, а если кто-то в опасности — обратись в полицию.",
   "Staff may undo a trade or sale that came from a scam, a hacked account or a bug, but don't have to.": "Персонал может отменить обмен или продажу, если они случились из-за мошенничества, взлома или бага, но не обязан.",
   "Staff sent a reset code for": "Персонал отправил код сброса для",
@@ -3293,8 +3295,6 @@
   "🎁 Buy as a gift": "🎁 Купить в подарок",
   "🎁 Gift box:": "🎁 Подарочная коробка:",
   "🔨 Auction:": "🔨 Аукцион:",
-  "🤝 Partner": "🤝 Партнёр",
-  "Reset username": "Сбросить имя пользователя",
-  "Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren't allowed.": "Персонал может подтверждать людей, делать их партнёрами, снимать эти значки и сбрасывать недопустимые имена пользователей."
+  "🤝 Partner": "🤝 Партнёр"
  }
 }
