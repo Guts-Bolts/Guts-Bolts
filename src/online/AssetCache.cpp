@@ -6,6 +6,7 @@
 #include "../scene/SceneNode.h"
 
 #include <fstream>
+#include <algorithm>
 #include <set>
 #include <cctype>
 #include <cstdio>
