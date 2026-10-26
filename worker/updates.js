@@ -11,6 +11,19 @@
 
 export const BUILT_IN_UPDATES = [
   {
+    id: 'roblox-meshes-unsquashed', name: 'Roblox Meshes, Un-squashed', version: '0.7.6', time: 1793030400, tag: 'Studio',
+    summary: 'Studio can now import Roblox .mesh files directly, including Draco-compressed geometry, and preserve more of the data that makes complex meshes work.',
+    items: [
+      'Import standalone Roblox .mesh files through the Open/Import dialog or drag-and-drop as editable custom-mesh Parts.',
+      'Decode legacy text and binary mesh formats, plus chunked v6/v7 meshes with Draco-compressed v7 geometry.',
+      'Import embedded bones and four-influence skin weights into the existing Skin deformation system.',
+      'Preserve mesh normals, UVs, tangent vectors, and RGBA vertex colors through rendering and scene save/load.',
+      'Refresh imported MeshPart and SpecialMesh mesh or texture assets when their asset properties change in scripts.',
+      'Use sphere, cylinder, and wedge geometry for the corresponding Roblox primitive types instead of cube placeholders.',
+      'Facial-animation (FACS) payloads and broader validation against real-world Roblox assets are still outstanding.'
+    ],
+  },
+  {
     id: 'dependency-map-health-checks', name: 'Your Scripts Have Questions', version: '0.7.6', time: 1792962000, tag: 'Studio',
     summary: 'The Project Dependency Map now traces script relationships, inventories resource references, and flags broken scene-object links.',
     items: [
