@@ -31,9 +31,10 @@ void drawNameTags(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const gl
 // Returns the name of a player whose row was clicked ("" if none), and where.
 std::string drawPlayerList(ImDrawList* dl, ImVec2 min, ImVec2 max, const std::vector<PlayerEntry>& players,
                            bool& open, ImVec2* clickedAt = nullptr, const ImVec2* tap = nullptr);
-// The tool hotbar along the bottom (slots 1-9, the held one lit up). Returns the
-// slot that was clicked or tapped (`tap`: a finger's tap, if any), or -1.
+// The tool hotbar along the bottom (slots 1-9 and 0). Returns the selected slot or -1.
+// Extra tools can be selected from the Roblox-style Backpack panel; returned indices are absolute tool slots.
 int  drawHotbar(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const ImVec2* tap = nullptr);
+int  drawBackpack(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const ImVec2* tap = nullptr);
 // Voice chat's speaker icon: sound waves when `talking`, a red line through it when `muted`.
 void drawSpeaker(ImDrawList* dl, ImVec2 center, float size, bool talking, bool muted = false);
 // A speaker over the head of everyone talking right now (voice chat).
