@@ -354,6 +354,7 @@ private:
     };
 
     static void debugHook(lua_State* L, lua_Debug* ar);
+    bool debugShouldPause(lua_State* L, lua_Debug* ar);
     int debugStackDepth(lua_State* L) const;
     void openLibraries();
     void runScript(SceneNode* script);
