@@ -1395,7 +1395,11 @@ void Editor::openFile(const std::string& path) {
     m_animEditor->close();
     // Roblox's standalone .mesh files are binary assets, not .rbxm models or
     // native .gbscene projects. Import them as editable custom-mesh Parts.
-    if (path.size() >= 5 && path.compare(path.size() - 5, 5, ".mesh") == 0) {
+    std::filesystem::path sourcePath(path);
+    std::string extension = sourcePath.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char c) { return (char)std::tolower(c); });
+    if (extension == ".mesh") {
         std::ifstream file(path, std::ios::binary);
         if (!file) { Log::error("Couldn't open mesh file " + path); return; }
         std::string bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -1405,8 +1409,7 @@ void Editor::openFile(const std::string& path) {
             Log::error("Couldn't import mesh " + path + ": " + (err.empty() ? "invalid or unsupported Roblox mesh" : err));
             return;
         }
-        std::filesystem::path source(path);
-        std::string name = source.stem().string();
+        std::string name = sourcePath.stem().string();
         if (name.empty()) name = "ImportedMesh";
         auto node = std::make_unique<SceneNode>(name, NodeKind::Part);
         node->transform.position = shape.center * 0.5f;
@@ -2693,13 +2696,14 @@ void Editor::renderDialogs() {
         // Roblox models sitting in the games folder can be inserted too.
         std::error_code ec;
         for (auto& e : std::filesystem::directory_iterator(Paths::gamesFolder(), ec))
-            if (e.path().extension() == ".rbxm" || e.path().extension() == ".rbxmx") games.push_back(e.path());
+            if (e.path().extension() == ".rbxm" || e.path().extension() == ".rbxmx" || e.path().extension() == ".mesh") games.push_back(e.path());
         if (games.empty()) ImGui::TextDisabled("No saved games yet.");
         for (auto& g : games) {
             std::string ext = g.extension().string();
             std::string label = g.stem().string();
             if (ext == ".rbxl" || ext == ".rbxlx") label += "   (Roblox place)";
             if (ext == ".rbxm" || ext == ".rbxmx") label += "   (Roblox model - inserts into this game)";
+            if (ext == ".mesh") label += "   (Roblox mesh - inserts as a custom Part)";
             if (ImGui::Selectable(label.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick) &&
                 ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                 openFile(g.string());
@@ -2708,7 +2712,7 @@ void Editor::renderDialogs() {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Double-click to open");
         }
         ImGui::EndChild();
-        ImGui::Text("...or type a file path (.gbscene, or Roblox .rbxl / .rbxlx / .rbxm / .rbxmx):");
+        ImGui::Text("...or type a file path (.gbscene, Roblox .rbxl / .rbxlx / .rbxm / .rbxmx, or standalone .mesh):");
         ImGui::SetNextItemWidth(-1);
         ImGui::InputText("##path", &m_openPathInput);
         ImGui::BeginDisabled(m_openPathInput.empty());
