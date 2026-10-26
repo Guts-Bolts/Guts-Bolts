@@ -8,6 +8,7 @@
 #include <bit>
 #include <cstdint>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 namespace {
@@ -18,8 +19,8 @@ void u32(std::string& out, uint32_t v) {
 }
 void f32(std::string& out, float v) { u32(out, std::bit_cast<uint32_t>(v)); }
 
-std::string fixture(int version) {
-    std::string out = version == 4 ? "version 4.00\n" : "version 5.00\n";
+std::string fixture(int version, bool minorOne = false) {
+    std::string out = version == 4 ? (minorOne ? "version 4.01\n" : "version 4.00\n") : "version 5.00\n";
     const uint16_t headerSize = version == 4 ? 24 : 32;
     u16(out, headerSize);             // header size
     u16(out, 0);                      // LOD type
@@ -61,6 +62,45 @@ std::string fixture(int version) {
     u32(out, 1);              // number of bone indices
     for (int i = 0; i < 26; ++i) u16(out, 0);
     return out;
+}
+
+std::string textFixture(bool oldVersion) {
+    std::string out = oldVersion ? "version 1.00\n1\n" : "version 1.01\n1\n";
+    out += "[-1,0,0][0,0,1][0,0,0]";
+    out += "[1,0,0][0,0,1][1,0,0]";
+    out += "[0,1,0][0,0,1][0.5,1,0]";
+    return out;
+}
+
+std::string binaryStaticFixture(int version, bool minorOne = false) {
+    std::string out = version == 2 ? "version 2.00\n" :
+        (minorOne ? "version 3.01\n" : "version 3.00\n");
+    if (version == 2) {
+        u16(out, 12); u8(out, 32); u8(out, 12);
+        u32(out, 3); u32(out, 1);
+    } else {
+        u16(out, 16); u8(out, 32); u8(out, 12);
+        u16(out, 4); u16(out, 0);
+        u32(out, 3); u32(out, 1);
+    }
+    const std::array<std::array<float, 8>, 3> vertices{{
+        {{-1, 0, 0, 0, 0, 1, 0, 0}},
+        {{ 1, 0, 0, 0, 0, 1, 1, 0}},
+        {{ 0, 1, 0, 0, 0, 1, 0.5f, 1}}
+    }};
+    for (const auto& v : vertices) for (float x : v) f32(out, x);
+    u32(out, 0); u32(out, 1); u32(out, 2);
+    return out;
+}
+
+bool runStatic(const std::string& bytes, const char* label) {
+    std::string error;
+    RobloxMesh::Shape shape = RobloxMesh::parse(bytes, &error);
+    if (!shape.mesh || shape.mesh->faces.size() != 1 || shape.mesh->verts.size() != 3) {
+        std::cerr << label << " geometry parse failed: " << error << "\n";
+        return false;
+    }
+    return true;
 }
 
 void chunk(std::string& out, const char* name, const std::string& payload) {
@@ -194,9 +234,9 @@ bool runChunkedV6() {
     return true;
 }
 
-bool run(int version) {
+bool run(int version, bool minorOne = false) {
     std::string error;
-    RobloxMesh::Shape shape = RobloxMesh::parse(fixture(version), &error);
+    RobloxMesh::Shape shape = RobloxMesh::parse(fixture(version, minorOne), &error);
     if (!shape.mesh) {
         std::cerr << "v" << version << " parse failed: " << error << "\n";
         return false;
@@ -226,7 +266,12 @@ bool run(int version) {
 } // namespace
 
 int main() {
-    if (!run(4) || !run(5) || !runChunkedV6() || !runChunkedV7()) return 1;
-    std::cout << "Roblox FileMesh v4/v5/v6/v7 synthetic format tests passed\n";
+    if (!runStatic(textFixture(true), "v1.00") ||
+        !runStatic(textFixture(false), "v1.01") ||
+        !runStatic(binaryStaticFixture(2), "v2.00") ||
+        !runStatic(binaryStaticFixture(3), "v3.00") ||
+        !runStatic(binaryStaticFixture(3, true), "v3.01") ||
+        !run(4) || !run(4, true) || !run(5) || !runChunkedV6() || !runChunkedV7()) return 1;
+    std::cout << "Roblox FileMesh v1.00/v1.01/v2/v3.00/v3.01/v4.00/v4.01/v5/v6/v7 synthetic tests passed\n";
     return 0;
 }
