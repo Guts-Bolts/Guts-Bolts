@@ -150,7 +150,7 @@ bool run(int version) {
 } // namespace
 
 int main() {
-    if (!run(4) || !run(5)) return 1;
-    std::cout << "Roblox FileMesh v4/v5 synthetic format tests passed\n";
+    if (!run(4) || !run(5) || !runChunkedV6()) return 1;
+    std::cout << "Roblox FileMesh v4/v5/v6 synthetic format tests passed\n";
     return 0;
 }
