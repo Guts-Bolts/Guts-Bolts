@@ -2476,6 +2476,8 @@ pages.avatar = async () => {
   if (!avatarDraft) avatarDraft = Object.assign(defaultAvatar(), JSON.parse(JSON.stringify(me.avatar || {})));
   const a = avatarDraft;
   const wornItems = owned.filter((it) => a.wearing.includes(it.id));
+  const ownedHats = owned.filter((it) => it.kind === 'hat');
+  const wornHatCount = ownedHats.filter((it) => a.wearing.includes(it.id)).length;
   const outfits = outfitsR.ok ? outfitsR.outfits : [];
   const outfitBox = html`<h2>My outfits</h2>
     ${signedIn() ? html`<form class="row" data-form="outfitSave"><input type="text" name="name" maxlength="40" placeholder="Name this outfit" style="max-width:200px">
@@ -2509,13 +2511,21 @@ pages.avatar = async () => {
         ${a.hat ? html`<p class="row"><label style="margin:0;font-weight:normal"><input type="checkbox" data-avatar-hatcolor-on
           ${a.hatColor[0] >= 0 ? 'checked' : ''}> My own colour</label>
           <input type="color" data-avatar-hatcolor value="${hexOf(a.hatColor[0] >= 0 ? a.hatColor : HAT_COLORS[a.hat])}"></p>` : ''}
-        <h2>My clothes</h2>
-        ${owned.length ? html`<div class="grid">${owned.map((it) => html`<div class="card square">
+        <h2>Hats <span class="small muted">(${wornHatCount}/12 equipped)</span></h2>
+        <p class="small muted">Equip multiple hats at once. Select up to 12 owned hats; equipped hats stay on when you add another. Your built-in avatar hat is controlled separately above.</p>
+        ${ownedHats.length ? html`<div class="grid">${ownedHats.map((it) => html`<div class="card square">
+            <div class="pic" style="${a.wearing.includes(it.id) ? 'outline:3px solid #16a34a' : ''}">${itemIcon(it)}</div>
+            <div class="name">${it.name}</div>
+            <button class="btn small ${a.wearing.includes(it.id) ? 'green' : ''}" data-act="avatarWear" data-id="${it.id}" data-kind="hat">
+              ${a.wearing.includes(it.id) ? 'Wearing' : 'Wear hat'}</button></div>`)}</div>`
+          : html`<p class="muted">You don't own any hats yet. Find some in the <a href="#/catalog?cat=hat">Catalog</a>.</p>`}
+        <h2>My clothes and accessories</h2>
+        ${owned.filter((it) => it.kind !== 'hat').length ? html`<div class="grid">${owned.filter((it) => it.kind !== 'hat').map((it) => html`<div class="card square">
             <div class="pic" style="${a.wearing.includes(it.id) ? 'outline:3px solid #16a34a' : ''}">${itemIcon(it)}</div>
             <div class="name">${it.name}</div>
             <button class="btn small ${a.wearing.includes(it.id) ? 'green' : ''}" data-act="avatarWear" data-id="${it.id}" data-kind="${it.kind}">
               ${a.wearing.includes(it.id) ? 'Wearing' : 'Wear'}</button></div>`)}</div>`
-          : html`<p class="muted">You don't have any clothes yet. Get some in the <a href="#/catalog">Catalog</a>!</p>`}
+          : html`<p class="muted">You don't have any clothes or accessories yet. Get some in the <a href="#/catalog">Catalog</a>!</p>`}
         ${emoteBox}
         ${outfitBox}
       </div></div>`);
@@ -3790,13 +3800,19 @@ const actions = {
     const item = (id) => avatarOwned.find((x) => x.id === id);
     const kindOf = (id) => (item(id) ? item(id).kind : id.slice(0, id.lastIndexOf('-')));   // (old item ids are "<kind>-<hex>")
     const putOn = (id) => {
-      // One of each kind: a new T-shirt replaces the old one.
-      for (let i = w.length - 1; i >= 0; --i) if (kindOf(w[i]) === kindOf(id)) w.splice(i, 1);
-      if (w.length < 12) w.push(id);
+      const kind = kindOf(id);
+      // Hats are stackable: keep every selected hat, up to the 12-item avatar limit.
+      // Other wearable categories retain their existing one-of-each-kind behavior.
+      if (kind !== 'hat') {
+        for (let i = w.length - 1; i >= 0; --i) if (kindOf(w[i]) === kind) w.splice(i, 1);
+      }
+      if (w.length >= 12) { toast('You can wear up to 12 items at once. Remove an item first.'); return false; }
+      if (!w.includes(id)) w.push(id);
+      return true;
     };
     if (w.includes(d.id)) w.splice(w.indexOf(d.id), 1);
     else {
-      putOn(d.id);
+      if (!putOn(d.id)) { render(); return; }
       // A bundle puts on everything in it too (the things in it can be taken off one by one).
       const b = item(d.id);
       if (b && b.kind === 'bundle') for (const id of (b.meta && b.meta.items) || []) if (item(id) && !w.includes(id)) putOn(id);
