@@ -143,8 +143,9 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
     }
 
     std::vector<Corner> points((size_t)mesh->num_points());
-    for (draco::PointIndex pi(0); pi < mesh->num_points(); ++pi) {
-        Corner& out = points[(size_t)pi.value()];
+    for (int32_t pointIndex = 0; pointIndex < mesh->num_points(); ++pointIndex) {
+        const draco::PointIndex pi(pointIndex);
+        Corner& out = points[(size_t)pointIndex];
         float pos[3] = {};
         if (!positions->ConvertValue(positions->mapped_index(pi), 3, draco::DT_FLOAT32, pos)) {
             if (err) *err = "the Draco position attribute could not be converted to float3";
@@ -169,8 +170,8 @@ bool readDracoCore(Bytes& c, std::vector<Corner>& verts, std::vector<uint32_t>& 
     tris.clear();
     verts.reserve((size_t)mesh->num_faces() * 3);
     tris.reserve((size_t)mesh->num_faces() * 3);
-    for (draco::FaceIndex fi(0); fi < mesh->num_faces(); ++fi) {
-        const auto& face = mesh->face(fi);
+    for (int32_t faceIndex = 0; faceIndex < mesh->num_faces(); ++faceIndex) {
+        const auto& face = mesh->face(draco::FaceIndex(faceIndex));
         const uint32_t base = (uint32_t)verts.size();
         bool valid = true;
         for (int corner = 0; corner < 3; ++corner) {
