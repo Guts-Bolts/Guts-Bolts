@@ -35,6 +35,7 @@
 #include "../core/Settings.h"
 #include "../renderer/MeshLibrary.h"
 #include "../core/Log.h"
+#include "../core/I18n.h"
 #include "../core/Paths.h"
 #include "../core/AppWindow.h"
 
@@ -113,6 +114,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_player       = std::make_unique<PlayerPanel>(scene);
     m_output       = std::make_unique<OutputPanel>();
     m_scriptEditor = std::make_unique<ScriptEditorPanel>(scene);
+    m_scriptEditor->setDebugger(&m_session->scripts());   // breakpoints in its line numbers
     m_animEditor   = std::make_unique<AnimationEditor>(scene, &m_state);
     m_assistant    = std::make_unique<AssistantPanel>(*this);
     m_team         = std::make_unique<TeamCreate>(scene);
@@ -174,7 +176,8 @@ void Editor::render(float dt) {
     m_team->setSelection(m_scene->selected() ? m_scene->selected()->id : 0);
     handleShortcuts();
     checkModeling();
-    if (m_playing && (!m_state.simPaused || m_state.simStep)) {
+    // (A script paused at a Lua Debugger breakpoint pauses the whole game, like F6.)
+    if (m_playing && (!m_state.simPaused || m_state.simStep) && !m_session->scripts().debugPaused()) {
         // F6 pauses the world; F7 moves it on by one frame.
         const auto simulationStart = std::chrono::steady_clock::now();
         m_session->update(m_state.simStep ? 1.0f / 60.0f : dt, m_viewport->cameraYaw(), true, m_viewport->swimLook());
@@ -367,61 +370,105 @@ void Editor::renderPerformanceWindow() {
     ImGui::End();
 }
 
-// Performance Doctor turns the monitor's recent samples into ranked, explainable advice.
-// Scene thresholds are heuristics; they are not a claim that a particular count caused a hitch.
+// The Lua Debugger: breakpoints (also set by clicking a line number in the Script
+// Editor), and while a script is paused there, where it is, its locals and the steps.
 void Editor::renderLuaDebugger() {
+    ScriptEngine& scripts = m_session->scripts();
+    // Just paused: show the line in the Script Editor (and this window) right away.
+    if (scripts.debugPauses() != m_debugSeenPauses) {
+        m_debugSeenPauses = scripts.debugPauses();
+        if (scripts.debugPaused()) {
+            m_showLuaDebugger = true;
+            if (scripts.debugScript()) {
+                m_scriptEditor->open(scripts.debugScript());
+                m_scriptEditor->goToLine(scripts.debugLine());
+                m_showPanel[kPanelScript] = true;
+            }
+        }
+    }
     if (!m_showLuaDebugger) return;
-    ImGui::SetNextWindowSize(ImVec2(620, 520), ImGuiCond_FirstUseEver);
+    {   // first time: over the right side, so the Script Editor stays in view
+        const ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 540, vp->WorkPos.y + 140), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(520, 440), ImGuiCond_FirstUseEver);
+    }
     if (!ImGui::Begin("Lua Debugger", &m_showLuaDebugger)) { ImGui::End(); return; }
-    if (!m_session || !m_session->running()) {
-        ImGui::TextDisabled("Start Play or Simulate to debug scripts. Breakpoints can be configured during the session.");
-        ImGui::End(); return;
-    }
-    ScriptEngine& scripts=m_session->scripts();
-    SceneNode* selected=m_scene->findById(m_scriptEditor->current());
-    if (!selected || !selected->isScript()) selected=m_scene->selected();
-    if (selected && selected->isScript()) {
-        ImGui::Text("Script: %s", selected->fullName().c_str());
-        ImGui::SetNextItemWidth(90);
-        ImGui::InputInt("Line", &m_debugLineInput);
-        if (m_debugLineInput<1) m_debugLineInput=1;
-        ImGui::SameLine();
-        const auto key=std::make_pair(selected->id,m_debugLineInput);
-        const bool exists=scripts.debugBreakpoints().count(key)!=0;
-        if (ImGui::Button(exists?"Remove breakpoint":"Add breakpoint"))
-            scripts.debugSetBreakpoint(selected->id,m_debugLineInput,!exists);
-    } else {
-        ImGui::TextDisabled("Select a Script in the Explorer or open it in the Script Editor to add a breakpoint.");
-    }
-    ImGui::Separator();
-    if (scripts.debugPaused()) {
-        ImGui::TextColored(ImVec4(1.0f,0.72f,0.25f,1.0f),"Paused at %s:%d",
-                           scripts.debugSourceForUi().c_str(),scripts.debugLine());
+    const bool playing = m_playing && m_session->running();
+
+    if (playing && scripts.debugPaused()) {
+        ImGui::TextColored(ImVec4(1.0f, 0.72f, 0.25f, 1.0f), "Paused at %s line %d", scripts.debugSourceForUi().c_str(), scripts.debugLine());
+        ImGui::TextDisabled(scripts.debugReason() == "step" ? "(after a step)" : "(a breakpoint)");
+        ImGui::TextDisabled("The game waits while a script is paused.");
         if (ImGui::Button("Continue")) scripts.debugContinue();
-        ImGui::SameLine(); if (ImGui::Button("Step Into")) scripts.debugStepInto();
         ImGui::SameLine(); if (ImGui::Button("Step Over")) scripts.debugStepOver();
+        ImGui::SameLine(); if (ImGui::Button("Step Into")) scripts.debugStepInto();
         ImGui::SameLine(); if (ImGui::Button("Step Out")) scripts.debugStepOut();
         ImGui::SeparatorText("Call stack");
-        for (const auto& frame:scripts.debugCallStack()) ImGui::BulletText("%s",frame.c_str());
+        {
+            I18n::Pause keep;   // script names and code, not Studio's words
+            for (const auto& frame : scripts.debugCallStack()) ImGui::BulletText("%s", frame.c_str());
+        }
         ImGui::SeparatorText("Locals");
-        for (const auto& local:scripts.debugLocals()) ImGui::BulletText("%s",local.c_str());
+        const auto locals = scripts.debugLocals();
+        if (locals.empty()) ImGui::TextDisabled("No local variables here.");
+        {
+            I18n::Pause keep;
+            for (const auto& local : locals) ImGui::BulletText("%s", local.c_str());
+        }
+        ImGui::TextDisabled("Values are shown as they are. Tables aren't opened up.");
+    } else if (playing) {
+        ImGui::TextDisabled(scripts.debugBreakpoints().empty() ? "Add a breakpoint and the script pauses when it reaches that line."
+                                                               : "Running. A script pauses when it reaches a breakpoint.");
     } else {
-        ImGui::TextDisabled("Waiting for a breakpoint. Script execution pauses only at Lua line boundaries.");
+        ImGui::TextDisabled("Breakpoints pause a script when you Play or Simulate.");
     }
+
+    // Add one by number (or click a line number in the Script Editor).
     ImGui::SeparatorText("Breakpoints");
-    if (scripts.debugBreakpoints().empty()) ImGui::TextDisabled("No breakpoints configured.");
-    for (const auto& bp:scripts.debugBreakpoints()) {
-        SceneNode* node=m_scene->findById(bp.first);
+    SceneNode* selected = m_scene->findById(m_scriptEditor->current());
+    if (!selected || !selected->isScript()) selected = m_scene->selected();
+    if (selected && selected->isScript()) {
+        {
+            I18n::Pause keep;
+            ImGui::Text("%s", selected->name.c_str());
+        }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90);
+        ImGui::InputInt("Line", &m_debugLineInput);
+        if (m_debugLineInput < 1) m_debugLineInput = 1;
+        ImGui::SameLine();
+        const bool exists = scripts.debugHasBreakpoint(selected->id, m_debugLineInput);
+        if (ImGui::Button(exists ? "Remove breakpoint" : "Add breakpoint"))
+            scripts.debugSetBreakpoint(selected->id, m_debugLineInput, !exists);
+    } else {
+        ImGui::TextDisabled("Open a script (or select one) to add a breakpoint.");
+    }
+    ImGui::TextDisabled("Tip: click a line number in the Script Editor to add or remove one.");
+    if (scripts.debugBreakpoints().empty()) ImGui::TextDisabled("No breakpoints yet.");
+    std::pair<uint64_t, int> remove{0, 0};
+    for (const auto& bp : scripts.debugBreakpoints()) {
+        SceneNode* node = m_scene->findById(bp.first);
         ImGui::PushID((int)(bp.first & 0x7fffffff)); ImGui::PushID(bp.second);
-        ImGui::BulletText("%s:%d",node?node->fullName().c_str():"[deleted script]",bp.second);
-        ImGui::SameLine(); if (ImGui::SmallButton("Remove")) scripts.debugSetBreakpoint(bp.first,bp.second,false);
+        if (ImGui::SmallButton("x")) remove = bp;
+        ImGui::SameLine();
+        {
+            I18n::Pause keep;
+            const std::string text = (node ? node->fullName() : std::string("[deleted script]")) + " line " + std::to_string(bp.second);
+            if (ImGui::Selectable(text.c_str()) && node) {
+                m_scriptEditor->open(node->id);
+                m_scriptEditor->goToLine(bp.second);
+                m_showPanel[kPanelScript] = true;
+            }
+        }
         ImGui::PopID(); ImGui::PopID();
     }
-    ImGui::TextDisabled("Locals are read without evaluating expressions. Tables are intentionally not expanded.");
+    if (remove.first) scripts.debugSetBreakpoint(remove.first, remove.second, false);   // (not while looping over them)
+    if (!scripts.debugBreakpoints().empty() && ImGui::Button("Remove all")) scripts.debugClearBreakpoints();
     ImGui::End();
 }
 
-
+// Performance Doctor turns the monitor's recent samples into ranked, explainable advice.
+// Scene thresholds are heuristics; they are not a claim that a particular count caused a hitch.
 void Editor::renderPerformanceDoctor() {
     if (!m_showPerformanceDoctor) return;
     ImGui::SetNextWindowSize(ImVec2(700, 600), ImGuiCond_FirstUseEver);

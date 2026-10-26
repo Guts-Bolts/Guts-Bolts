@@ -311,6 +311,7 @@ private:
     bool m_showPerformanceDoctor = false;
     bool m_showLuaDebugger = false;
     int m_debugLineInput = 1;
+    int m_debugSeenPauses = 0;   // the Lua Debugger's pause count we've already jumped to
     bool m_showSceneValidator = false;
     bool m_showProjectTimeMachine = false;
     bool m_showScriptHistory = false;
