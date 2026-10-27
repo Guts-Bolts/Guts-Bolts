@@ -26,6 +26,8 @@ jobs:
           node-version: '24'
       - name: Check every website and server script for mistakes
         run: for f in worker/*.js website/app/*.js; do node --check "$f" || exit 1; done
+      - name: Gather the update log
+        run: node worker/gather-updates.mjs
       - name: Run the tests
         run: node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.test.mjs'
 
