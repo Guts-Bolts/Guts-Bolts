@@ -179,6 +179,7 @@ void Editor::render(float dt) {
         m_undo.clear();          // undo can't safely rewind other people's work
         m_redo.clear();
         m_dirty = true;
+        m_links.remember(*m_scene);   // (their side already updated the linked copies)
     }
     m_team->setSelection(m_scene->selected() ? m_scene->selected()->id : 0);
     handleShortcuts();
@@ -1022,6 +1023,7 @@ void Editor::togglePlay() {
         Serializer::loadScene(*m_scene, m_playSnapshot);
         m_scene->select(m_scene->findById(sel));
         m_committed = m_playSnapshot;
+        m_links.remember(*m_scene);
         m_state.mode = StudioMode::Build;
         m_state.simPaused = false;
         Log::system("Game stopped - everything is back to how it was.");
@@ -1038,6 +1040,7 @@ void Editor::resetHistory() {
     m_redo.clear();
     m_committed = Serializer::saveScene(*m_scene);
     m_dirty = false;
+    m_links.remember(*m_scene);
 }
 
 void Editor::trackChanges() {
@@ -1045,6 +1048,13 @@ void Editor::trackChanges() {
     if (m_playing || ImGui::IsAnyItemActive() || m_viewport->gizmoInUse() || m_uv.modal) return;
     std::string now = Serializer::saveScene(*m_scene);
     if (now == m_committed) return;
+    // Changed what's inside one copy of a linked model: every other copy changes to match
+    // (in the same undo step).
+    std::string linked;
+    if (const int copies = m_links.sync(*m_scene, &linked)) {
+        now = Serializer::saveScene(*m_scene);
+        Log::info("Updated " + std::to_string(copies) + (copies == 1 ? " linked copy" : " linked copies") + " of " + linked);
+    }
     m_undo.push_back(std::move(m_committed));
     if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
     m_redo.clear();
@@ -1059,6 +1069,7 @@ void Editor::restore(const std::string& snapshot) {
     Serializer::loadScene(*m_scene, snapshot);
     for (uint64_t id : sel) m_scene->addToSelection(m_scene->findById(id));
     m_committed = snapshot;
+    m_links.remember(*m_scene);   // (undo puts every copy back as it was: nothing to copy)
     m_dirty = true;
     m_team->localChanged();
 }
@@ -1732,6 +1743,33 @@ void Editor::centerModelPivot() {
     glm::vec3 d = center - glm::vec3(m->worldMatrix()[3]);
     if (m->parent) d = glm::vec3(glm::inverse(m->parentFrame()) * glm::vec4(d, 0.0f));
     m->transform.position += d;
+}
+
+// Linked models: the selected models become copies of one linked model (several picked:
+// they all join the first one's link, and from then on match whichever is edited next).
+void Editor::linkSelected() {
+    std::string id;
+    for (SceneNode* n : m_scene->selection())
+        if (id.empty()) id = LinkedModels::linkOf(n);
+    if (id.empty()) id = LinkedModels::newLink();
+    int made = 0;
+    for (SceneNode* n : m_scene->selection())
+        if (n->kind == NodeKind::Model && canEdit(n)) { LinkedModels::link(n, id); ++made; }
+    if (made) Log::info("Linked model made: copies of it (Duplicate, Copy and Paste) now change together");
+}
+
+void Editor::unlinkSelected() {
+    for (SceneNode* n : m_scene->selection())
+        if (canEdit(n)) LinkedModels::unlink(n);
+}
+
+void Editor::selectLinkedCopies() {
+    const std::string id = LinkedModels::linkOf(m_scene->selected());
+    if (id.empty()) return;
+    std::vector<SceneNode*> copies;
+    m_scene->forEach([&](SceneNode* n) { if (LinkedModels::linkOf(n) == id) copies.push_back(n); });
+    m_scene->deselect();
+    for (SceneNode* n : copies) m_scene->addToSelection(n);
 }
 
 // Play (0), Play Here (1: start where the camera is looking) or Run (2: no player).
@@ -2970,6 +3008,16 @@ void Editor::selectionMenuItems(bool inViewport) {
     if (ImGui::MenuItem("Group", "Ctrl+G", false, any)) later([this] { groupSelected(); });
     if (sel && sel->kind == NodeKind::Model && ImGui::MenuItem("Ungroup", "Ctrl+U")) later([this] { ungroupSelected(); });
     if (sel && sel->kind == NodeKind::Model && ImGui::MenuItem("Center the Model's Pivot")) later([this] { centerModelPivot(); });
+    if (sel && sel->kind == NodeKind::Model) {
+        if (LinkedModels::linkOf(sel).empty()) {
+            if (ImGui::MenuItem("Make Linked Model")) later([this] { linkSelected(); });
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", "Copies of it stay linked: change what's inside one and every copy changes to match.");
+        } else {
+            if (ImGui::MenuItem("Select Linked Copies")) later([this] { selectLinkedCopies(); });
+            if (ImGui::MenuItem("Unlink This Copy")) later([this] { unlinkSelected(); });
+        }
+    }
     bool parts = false;
     for (SceneNode* n : m_scene->selection()) parts = parts || n->isPart();
     if (parts && ImGui::BeginMenu("Solid Modeling")) {

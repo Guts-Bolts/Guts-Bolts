@@ -954,7 +954,7 @@ ASSET
 Pictures, sounds and meshes a game uses: files in the game's folder, built-in sounds, or uploaded items ("gb:<id>"). The Library (everyone's shared models, decals and audio) is not reachable through these tools.
 
 PREFAB
-There are no linked prefabs. insert_object can make ready-made things ("Kill Brick", "Exploding Barrel", "Zombie"...) but each is an independent copy: changing one doesn't change others. To change many copies, find_objects them and change each (run_lua with a loop is quickest).
+Linked models (like Roblox packages): a Model with a String attribute LinkId is linked to every other Model with the same LinkId. When what's inside exactly one copy changes, Studio copies it into all the others after the edit (each keeps its own position, rotation and name). To make one, give a Model the attribute (run_lua: model:SetAttribute("LinkId", "anything")), then copy it (model:Clone()); removing the attribute unlinks a copy. insert_object's ready-made things ("Kill Brick", "Exploding Barrel", "Zombie"...) are independent copies; to change many unlinked copies, find_objects them and change each (run_lua with a loop is quickest).
 
 PHYSICS
 Only runs during a playtest (or a published game). Parts are ANCHORED by default: they stay put. Anchored = false makes a part fall, collide and react to forces and explosions. A visible part with CanCollide off is walked through and lets unanchored parts fall through it. Gravity is workspace.Gravity (22 units/s^2 by default). Parts below FallenPartsHeight (-50) are destroyed.
@@ -1097,7 +1097,7 @@ json capabilities() {
             {"memory_stores", "MemoryStoreService sorted maps, hash maps and queues shared by a game's running servers"},
             {"ui", true},
             {"assets", false},                        // the Library isn't reachable from these tools
-            {"prefabs", false},                       // ready-made things are copies, not linked
+            {"prefabs", "linked models: Models sharing a LinkId attribute change together in Studio"},
             {"undo", true}, {"redo", true},
             {"transactions", "checkpoints: save, experiment, restore (Studio session only)"},
             {"compound_tools", json::array({"create_physical_object", "spawn_explosion", "walk_character_to"})},
@@ -1112,7 +1112,7 @@ json capabilities() {
             {"property_names", "the same as Lua scripts (get_object lists them; set_property accepts them and common misspellings)"},
             {"output_runs", "get_output / get_errors mark each line with its playtest run; run \"latest\" reads only the newest"},
         }},
-        {"not_supported", json::array({"editing Library assets", "linked prefabs", "camera objects",
+        {"not_supported", json::array({"editing Library assets", "camera objects",
                                        "shaders", "moving or inspecting the players inside a multiplayer test", "signing in from the tools",
                                        "objects inside Lighting (it holds settings)"})},
         {"notes", "If a capability is false or missing, the tools can't do it: say so instead of pretending."},

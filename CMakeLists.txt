@@ -437,6 +437,7 @@ add_library(gb_engine STATIC
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
     src/scene/Weather.cpp
+    src/scene/LinkedModels.cpp
     src/scene/Animation.cpp
     src/scene/Ragdoll.cpp
     src/scene/Effects.cpp
@@ -900,6 +901,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(CharacterTests PRIVATE gb_engine)
     add_test(NAME CharacterTests COMMAND CharacterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Linked models: one copy changes, the others follow.
+    add_executable(LinkedModelsTests tests/LinkedModelsTests.cpp)
+    target_link_libraries(LinkedModelsTests PRIVATE gb_engine)
+    add_test(NAME LinkedModelsTests COMMAND LinkedModelsTests)
 
     # MemoryStoreService: the store's rules and the script side, played offline.
     add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)

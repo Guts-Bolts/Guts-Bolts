@@ -13,6 +13,7 @@
 #include "PhysicsReplay.h"
 #include "SceneDiff.h"
 #include "../scene/SceneNode.h"
+#include "../scene/LinkedModels.h"
 #include <imgui.h>
 
 struct GLFWwindow;
@@ -429,6 +430,10 @@ private:
     void        renderAiActivity();
     std::vector<std::string> m_undo, m_redo;
     std::string              m_committed;      // last known scene state
+    LinkedModels::Tracker    m_links;          // linked models: what each copy held at the last edit
+    void linkSelected();                       // Make Linked Model (or link several copies together)
+    void unlinkSelected();
+    void selectLinkedCopies();
     std::vector<std::string> m_clipboard;
     bool                     m_showShortcuts = false;
     bool                     m_showCollisionGroups = false;
