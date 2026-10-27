@@ -1150,6 +1150,84 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         }
         return done({{"recording", ScriptHistory::recording()}, {"total", all.size()}, {"entries", list}});
     }
+    if (name == "physics_replay") {
+        const std::string action = str("action");
+        auto frameArg = [&]() {
+            if (args.contains("frame")) return args.value("frame", 0);
+            return (int)std::lround(args.value("time", m_replay.seconds()) / m_replay.step);
+        };
+        auto testList = [&](std::vector<SceneNode*> tests) {
+            json list = json::array();
+            for (SceneNode* t : tests) {
+                PhysicsReplay::Test pt;
+                const bool ok = PhysicsReplay::testFromJson(json::parse(t->value.s, nullptr, false), pt);
+                list.push_back({{"name", t->name}, {"object_id", idOf(t)}, {"seconds", ok ? pt.seconds : 0.0f},
+                                {"tolerance", ok ? pt.tolerance : 0.0f}, {"parts", ok ? (int)pt.expected.ids.size() : 0}});
+            }
+            return list;
+        };
+        if (action == "record") {
+            json d = recordPhysics(std::clamp(args.value("seconds", 5.0f), 0.1f, 30.0f));
+            if (d.value("parts", 0) == 0)
+                d["warnings"] = json::array({"No loose parts: everything is anchored, so nothing moves."});
+            return done(d);
+        }
+        if (action == "frame" || action == "keep") {
+            if (m_replay.empty()) return fail("NO_RECORDING", "There's no recording yet.", "physics_replay record first.");
+            const int f = frameArg();
+            if (f < 0 || f >= (int)m_replay.frames.size())
+                return fail("INVALID_INPUT", "That frame isn't in the recording (0 to " + std::to_string(m_replay.frames.size() - 1) + ").", "");
+            const PhysicsReplay::Frame& fr = m_replay.frames[f];
+            if (action == "keep") {
+                if (m_playing) return fail("PLAYING", "Stop the playtest first.", "playtest stop.");
+                PhysicsReplay::apply(*m_scene, fr);
+                return done({{"frame", f}, {"time", fr.time}, {"moved", (int)fr.parts.size()}});
+            }
+            m_replayFrame = f;
+            m_replayPlaying = false;
+            m_showReplay = true;
+            json parts = json::array();
+            for (const auto& p : fr.parts) {
+                if (parts.size() >= 100) break;
+                parts.push_back({{"object_id", "#" + std::to_string(p.id)}, {"name", m_replay.nameOf(p.id)}, {"position", vec(p.position)},
+                                 {"rotation", vec(p.rotation)}, {"velocity", vec(p.velocity)}, {"asleep", p.sleepTime >= 0.6f}});
+            }
+            return done({{"frame", f}, {"time", fr.time}, {"parts", parts}, {"fell_out", (int)(m_replay.ids.size() - fr.parts.size())}});
+        }
+        if (action == "save_test") {
+            if (m_playing) return fail("PLAYING", "Stop the playtest first: tests are made from the scene in the editor.", "playtest stop.");
+            std::string error;
+            SceneNode* t = savePhysicsTest(str("name"), args.value("seconds", 5.0f), args.value("tolerance", 0.1f), &error);
+            if (!t) return fail("NOTHING_TO_TEST", error, "Make some parts unanchored first.");
+            return done({{"object_id", idOf(t)}, {"path", pathOf(t)}, {"tests", testList(physicsTests())}});
+        }
+        if (action == "list_tests") return done({{"tests", testList(physicsTests())}});
+        if (action == "run_tests") {
+            std::vector<SceneNode*> tests = physicsTests();
+            const std::string which = str("test");
+            if (!which.empty()) {
+                std::vector<SceneNode*> one;
+                for (SceneNode* t : tests) if (t->name == which || idOf(t) == which) one.push_back(t);
+                if (one.empty()) {
+                    json names = json::array();
+                    for (SceneNode* t : tests) names.push_back(t->name);
+                    return failWith("NOT_FOUND", "There's no physics test called \"" + which + "\".", "list_tests shows them.", names);
+                }
+                tests = one;
+            }
+            json results = json::array();
+            int passed = 0;
+            for (SceneNode* t : tests) {
+                json r = runPhysicsTest(t);
+                r["object_id"] = idOf(t);
+                if (r.value("passed", false)) ++passed;
+                results.push_back(r);
+            }
+            m_showReplay = true;
+            return done({{"passed", passed}, {"failed", (int)tests.size() - passed}, {"results", results}});
+        }
+        return fail("INVALID_INPUT", "action must be record, frame, keep, save_test, run_tests or list_tests.", "");
+    }
     if (name == "playtest") {
         const std::string action = str("action");
         json warn = json::array();

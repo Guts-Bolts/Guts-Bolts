@@ -45,6 +45,10 @@ struct EditorState {
     bool      orthographic = false;   // the viewport camera has no perspective (numpad 5, like Blender)
     bool      showNavMesh = false;    // draw the navigation mesh (where characters can walk)
     bool      showPhysics = false;    // Physics View: joints, contacts, speeds, sleeping parts, force zones
+    // Physics Replay: outlines of where the loose parts were at the frame being looked at
+    // (box matrices, a unit cube each), and the selected part's path.
+    std::vector<glm::mat4> replayGhosts;
+    std::vector<glm::vec3> replayTrail;
     int       bakeNavMesh = 0;        // asks the viewport to rebake it now (Bake button)
     std::string navInfo;              // "1234 floor cells, baked in 12 ms" for the ribbon tooltip
 

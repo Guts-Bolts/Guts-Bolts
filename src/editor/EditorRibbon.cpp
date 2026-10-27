@@ -448,6 +448,9 @@ void Editor::renderToolbar() {
             if (bigButton("Physics View", Icons::Id::Simulate, m_state.showPhysics, true,
                           "See the physics: moving and sleeping parts, speeds, where things touch, how hard each joint is pulled, force zones"))
                 m_state.showPhysics = !m_state.showPhysics;
+            if (bigButton("Replay", Icons::Id::Play, m_showReplay, true,
+                          "Record the physics, watch it again frame by frame, and save it as a test"))
+                m_showReplay = !m_showReplay;
         }
         {
             Group g("Align");

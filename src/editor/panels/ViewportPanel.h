@@ -101,6 +101,8 @@ private:
                          const glm::vec2& imgMin, const glm::vec2& imgSize, bool running);
     void drawSelectionBoxes(const glm::mat4& view, const glm::mat4& proj,
                             const glm::vec2& imgMin, const glm::vec2& imgSize);
+    void drawReplayGhosts(const glm::mat4& view, const glm::mat4& proj,
+                          const glm::vec2& imgMin, const glm::vec2& imgSize);   // Physics Replay
     // Roblox-style handles on each of the 6 sides. Scale: orbs, drag one to move just that side.
     // Move: arrows, drag one to slide everything selected along that way.
     bool scaleHandles(SceneNode* sel, const glm::mat4& view, const glm::mat4& proj,

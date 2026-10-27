@@ -386,6 +386,27 @@ const std::vector<Tool>& tools() {
          schema({{"action", {{"type", "string"}, {"enum", {"read", "record", "stop", "clear"}}}}, {"object", kObject},
                  {"script", {{"type", "string"}}}, {"kind", {{"type", "string"}, {"enum", {"set", "event"}}}},
                  {"limit", {{"type", "integer"}}}}, {})},
+        {"physics_replay", "Record the physics, look at any moment, save physics tests", "DEBUG", false, false, false, Risk::Low,
+         {"Studio's Physics Replay: runs only the physics (no scripts, no players) on a copy of the scene as it is now, "
+          "60 steps a second, and remembers where every loose (unanchored) part was each step. Studio shows any frame of "
+          "it as outlines. A physics test (a StringValue in ServerStorage > PhysicsTests) remembers where the parts were "
+          "every quarter second; running it records again and fails when a part is further off than its tolerance (or "
+          "turned more than 10 degrees, or falls out of the world differently).",
+          "\"Does my tower fall over?\", \"where does the ball end up?\", letting a pile settle, or checking that a "
+          "physics change didn't change how a scene acts.",
+          "To watch scripts and players too, use playtest + screenshot. To see joints and contacts live, Physics View.",
+          "action: record (seconds, default 5, max 30), frame (time in seconds or frame: where every part was; Studio "
+          "shows it too), keep (time or frame: move the scene's parts there), save_test (name, seconds, tolerance in "
+          "studs, default 0.1; the same name replaces it), run_tests (test: one test's name or object, or all), list_tests.",
+          "record: {frames, seconds, parts, fell_out, asleep_at_end}. frame: {frame, time, parts: [{object_id, name, "
+          "position, rotation, velocity, asleep}]}. run_tests: {passed, failed, results: [{name, passed, message, worst, part, at}]}.",
+          "frame / keep: a recording (record first). keep, save_test: not during a playtest.",
+          "keep moves parts (one Ctrl+Z puts them back); save_test adds or replaces a StringValue in ServerStorage > PhysicsTests.",
+          "physics_replay record -> physics_replay frame {time: 2} -> physics_replay save_test -> (change things) -> physics_replay run_tests.",
+          "\"Make a test that the bridge still holds the crates after 5 seconds.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"record", "frame", "keep", "save_test", "run_tests", "list_tests"}}}},
+                 {"seconds", {{"type", "number"}}}, {"time", {{"type", "number"}}}, {"frame", {{"type", "integer"}}},
+                 {"name", {{"type", "string"}}}, {"tolerance", {{"type", "number"}}}, {"test", {{"type", "string"}}}}, {"action"})},
         {"multiplayer_test", "Test with several players", "RUNTIME", false, false, false, Risk::Medium,
          {"Studio's \"Test with N players\": starts the game (as it is now in Studio, saved or not) on a local test "
           "server on this computer and opens N Player windows that join it as Player1, Player2... Server Scripts run "
@@ -711,6 +732,7 @@ json workflowOf(const std::string& name) {
         {"get_output", {{"playtest", "run_lua"}, {}}},
         {"ai_activity", {{"validate_scene"}, {"undo"}}},
         {"script_history", {{"playtest"}, {"read_script", "edit_script"}}},
+        {"physics_replay", {{"get_game_tree"}, {"screenshot", "playtest"}}},
         {"get_errors", {{"playtest"}, {"read_script", "edit_script"}}},
         {"diagnose_object", {{"find_objects"}, {"set_property", "edit_script"}}},
         {"validate_scene", {{}, {"diagnose_object", "playtest"}}},

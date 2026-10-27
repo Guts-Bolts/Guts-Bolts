@@ -1663,6 +1663,22 @@ Constraints join parts together through **Attachments** (little points on a part
 | Prismatic | A slider: the second part slides along a line and can't turn |
 | Cylindrical | Slides along a line and spins around it, like a piston or a drill |
 
+### Physics Replay (record, watch again, test)
+
+Press **MODEL > Replay** (or View > Physics Replay) and **Record**: Studio runs only
+the physics (no scripts, no players) on a copy of your scene for a few seconds.
+Your scene doesn't change. Then scrub the slider, step frame by frame or play it in
+slow motion: light blue outlines show where every loose part was, and a yellow line
+shows the selected part's path. **Keep this frame** moves your parts to that moment
+(handy for letting a pile settle), and one Ctrl+Z puts them back.
+
+**Save as test** keeps the recording in ServerStorage > PhysicsTests (it saves with
+your game). **Run** records again from the same starting places and fails if any part
+ends up further off than it's allowed (0.1 studs unless you change it), is turned
+differently, or falls out of the world differently, and says which part and when.
+If the new way is right, **Save again**. The Assistant can do all of this with the
+`physics_replay` tool.
+
 ### Ball sockets, sliders and slide-and-spin joints
 
 `BallSocketConstraint`, `PrismaticConstraint` and `CylindricalConstraint`
