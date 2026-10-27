@@ -902,6 +902,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME CharacterTests COMMAND CharacterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # MaterialVariants to Roblox files and back.
+    add_executable(MaterialVariantRobloxTests tests/MaterialVariantRobloxTests.cpp)
+    target_link_libraries(MaterialVariantRobloxTests PRIVATE gb_engine)
+    add_test(NAME MaterialVariantRobloxTests COMMAND MaterialVariantRobloxTests)
+
     # Linked models: one copy changes, the others follow.
     add_executable(LinkedModelsTests tests/LinkedModelsTests.cpp)
     target_link_libraries(LinkedModelsTests PRIVATE gb_engine)

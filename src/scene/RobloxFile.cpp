@@ -1044,6 +1044,8 @@ struct Converter {
             node->castShadow = in.flag("CastShadow", true);
             node->locked = in.flag("Locked", false);
             node->material = materialFromRoblox((int)in.num("Material", 256));
+            // Its MaterialVariant (by name, from MaterialService).
+            node->materialVariant = in.str("MaterialVariantSerialized", in.str("MaterialVariant")).substr(0, 100);
             if (const Value* ph = in.get("CustomPhysicalProperties"); ph && ph->kind == Value::Physics && ph->seq.size() == 5) {
                 node->density          = std::clamp(ph->seq[0], 0.01f, 100.0f);
                 node->friction         = std::clamp(ph->seq[1], 0.0f, 2.0f);
@@ -1275,6 +1277,25 @@ struct Converter {
             Attribute a; a.name = "RobloxClass"; a.type = Attribute::String; a.s = c;
             node->attributes.push_back(a);
             ++report.models;
+        } else if (c == "MaterialVariant") {
+            // Your own material made from pictures. (rbxassetid:// pictures won't load here,
+            // but are kept, so it goes back to Roblox the same.)
+            node = std::make_unique<SceneNode>(name, NodeKind::MaterialVariant);
+            MaterialVariantProps& v = node->variant;
+            v.base = materialFromRoblox((int)in.num("BaseMaterial", 256));
+            v.colorMap = in.str("ColorMap");
+            v.normalMap = in.str("NormalMap");
+            v.roughnessMap = in.str("RoughnessMap");
+            v.metalnessMap = in.str("MetalnessMap");
+            v.studsPerTile = (float)in.num("StudsPerTile", 10.0);
+            if (const Value* a = in.get("AttributesSerialize"); a && a->kind == Value::Str) {   // made by Guts and Bolts: its own numbers
+                SceneNode tmp(name, NodeKind::Model);
+                readAttributes(a->s, tmp);
+                if (const Attribute* x = tmp.findAttribute("GutsAndBoltsMaterial"); x && x->type == Attribute::String)
+                    Serializer::variantFromJson(nlohmann::json::parse(x->s, nullptr, false), v);
+            }
+            clampVariant(v);
+            ++report.other;
         } else if (c == "Decal" || c == "Texture") {
             node = std::make_unique<SceneNode>(name, NodeKind::Decal);
             node->texture = in.str("Texture");   // rbxassetid:// links won't load here, but are kept
@@ -1746,6 +1767,10 @@ struct Converter {
             if (!cur.empty()) node->tags.push_back(cur);
         }
         if (const Value* a = in.get("AttributesSerialize"); a && a->kind == Value::Str) readAttributes(a->s, *node);
+        if (node->isMaterialVariant())   // (read above, not one of the game's own attributes)
+            node->attributes.erase(std::remove_if(node->attributes.begin(), node->attributes.end(),
+                                                  [](const Attribute& x) { return x.name == "GutsAndBoltsMaterial"; }),
+                                   node->attributes.end());
 
         SceneNode* raw = parent ? parent->addChild(std::move(node)) : scene.insert(std::move(node));
         made[&in] = raw;
@@ -1908,7 +1933,18 @@ struct XmlWriter {
 
     void common(const SceneNode& n) {
         str("Name", n.name);
-        if (!n.attributes.empty()) binary("AttributesSerialize", attributesBlob(n));
+        if (n.isMaterialVariant()) {
+            // Our own numbers (roughness, metal, glow when there's no picture) ride along as an
+            // attribute, so a material that goes to Roblox and back stays the same.
+            SceneNode holder(n.name, NodeKind::Model);
+            holder.attributes = n.attributes;
+            Attribute a;
+            a.name = "GutsAndBoltsMaterial";
+            a.type = Attribute::String;
+            a.s = Serializer::variantToJson(n.variant).dump();
+            holder.attributes.push_back(a);
+            binary("AttributesSerialize", attributesBlob(holder));
+        } else if (!n.attributes.empty()) binary("AttributesSerialize", attributesBlob(n));
         if (!n.tags.empty()) {
             std::string t;
             for (size_t i = 0; i < n.tags.size(); ++i) { if (i) t += '\0'; t += n.tags[i]; }
@@ -1945,6 +1981,7 @@ struct XmlWriter {
             case NodeKind::ForceField: cls = "ForceField"; break;
             case NodeKind::Tool:       cls = "Tool"; break;
             case NodeKind::Decal:      cls = "Decal"; break;
+            case NodeKind::MaterialVariant: cls = "MaterialVariant"; break;
             case NodeKind::Animation:  cls = nullptr; break;   // (Roblox keeps animations online)
             case NodeKind::FluidSystem: case NodeKind::FluidEmitter: cls = nullptr; break;   // (Guts&Bolts only)
             case NodeKind::Mover:      cls = kMoverClassNames[(int)n.mover.type]; break;
@@ -2022,6 +2059,20 @@ struct XmlWriter {
                 case PostEffectType::Blur:  flt("Size", p.size); break;
             }
             boolean("Enabled", n.enabled);
+            break;
+        }
+        case NodeKind::MaterialVariant: {
+            const MaterialVariantProps& v = n.variant;
+            token("BaseMaterial", materialToRoblox(v.base));
+            auto pic = [&](const char* prop, const std::string& url) {
+                if (url.empty()) o << "<Content name=\"" << prop << "\"><null></null></Content>\n";
+                else o << "<Content name=\"" << prop << "\"><url>" << esc(url) << "</url></Content>\n";
+            };
+            pic("ColorMap", v.colorMap);
+            pic("NormalMap", v.normalMap);
+            pic("RoughnessMap", v.roughnessMap);
+            pic("MetalnessMap", v.metalnessMap);
+            flt("StudsPerTile", v.studsPerTile);
             break;
         }
         case NodeKind::Sky: {
@@ -2285,6 +2336,7 @@ struct XmlWriter {
             boolean("CastShadow", n.castShadow);
             boolean("Locked", n.locked);
             token("Material", materialToRoblox(n.material));
+            if (!n.materialVariant.empty()) str("MaterialVariantSerialized", n.materialVariant);
             if (n.hasCustomPhysics())
                 o << "<PhysicalProperties name=\"CustomPhysicalProperties\"><CustomPhysics>true</CustomPhysics><Density>"
                   << Physics::densityOf(&n) << "</Density><Friction>" << Physics::frictionOf(&n) << "</Friction><Elasticity>"
@@ -2537,6 +2589,13 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
         for (const Inst* k : s->children) conv.convert(*k, f);
     }
 
+    // MaterialService: the game's own materials (MaterialVariants).
+    if (const Inst* ms = findChild(doc.roots, "MaterialService"); ms && !ms->children.empty()) {
+        SceneNode* f = scene.serviceFolder("MaterialService", true);
+        conv.made[ms] = f;
+        for (const Inst* k : ms->children) conv.convert(*k, f);
+    }
+
     // Workspace + Lighting settings.
     double g = ws->num("Gravity", kRobloxGravity);
     scene.world().gravity = (float)(22.0 * g / kRobloxGravity);
@@ -2607,8 +2666,17 @@ bool exportPlace(Scene& scene, const std::string& path, std::string& error) {
     const SceneNode* sounds = scene.root()->findChild("SoundService");   // (SoundGroups, music...)
     if (sounds && sounds->kind != NodeKind::Model) sounds = nullptr;
     const SceneNode* lighting = scene.lightingFolder(false);   // (its things go in Roblox's Lighting below)
-    for (auto& c : scene.root()->children) if (c.get() != ui && c.get() != sounds && c.get() != lighting) w.item(*c);
+    const SceneNode* materials = scene.serviceFolder("MaterialService", false);   // (MaterialVariants)
+    for (auto& c : scene.root()->children)
+        if (c.get() != ui && c.get() != sounds && c.get() != lighting && c.get() != materials) w.item(*c);
     w.o << "</Item>\n";
+    if (materials) {   // our MaterialService folder is Roblox's MaterialService
+        w.o << "<Item class=\"MaterialService\" referent=\"RBXMATERIALSERVICE\">\n<Properties>\n";
+        w.str("Name", "MaterialService");
+        w.o << "</Properties>\n";
+        for (auto& c : materials->children) w.item(*c);
+        w.o << "</Item>\n";
+    }
     if (sounds) {   // our SoundService folder is Roblox's SoundService
         w.o << "<Item class=\"SoundService\" referent=\"RBXSOUNDSERVICE\">\n<Properties>\n";
         w.str("Name", "SoundService");
