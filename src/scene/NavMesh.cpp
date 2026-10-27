@@ -510,7 +510,7 @@ NavMesh::Status NavMesh::findPath(const glm::vec3& start, const glm::vec3& goal,
         float hi = h(i);
         if (hi < closestH) { closestH = hi; closest = i; }
         const float gi = r.g;
-        auto relax = [&](int j, float len, bool jump) {
+        auto relax = [&, i = i](int j, float len, bool jump) {
             const Span& t = m_spans[j];
             if (!fits(t, agent)) return;
             float cost = areaCost(t, agent);
