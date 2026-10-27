@@ -734,6 +734,8 @@ set(EDITOR_SOURCES
     src/editor/EditorScriptHistory.cpp
     src/editor/EditorPhysicsReplay.cpp
     src/editor/PhysicsReplay.cpp
+    src/editor/EditorCompare.cpp
+    src/editor/SceneDiff.cpp
     src/editor/EditorOnline.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp

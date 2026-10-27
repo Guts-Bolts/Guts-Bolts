@@ -251,6 +251,22 @@ Ctrl+Z takes it away.
 The Assistant can make levels too ("make me an obby with 30 platforms"), with the
 `generate_level` tool.
 
+### Compare and Merge (two versions of a game)
+
+Press **TEST > Compare** (or View > Compare and Merge) and pick another saved copy of
+your game. Studio lists every difference, object by object: **Added** (only in the other
+version), **Removed** (not in the other version), **Moved** and **Changed** (open a row
+to see each property before and after), plus the game settings. Objects keep their id
+when a game is saved, so a renamed or moved object is still matched with itself. Click a
+row to select that object, tick the ones you want and press **Bring in the ticked ones**:
+only those become like the other version (one Ctrl+Z puts them back). That's handy for
+getting one thing back from an old backup without losing everything else.
+
+To merge two people's work, tick **I have the version we both started from** and pick
+that one too. Then only the other person's changes are listed, and an object you both
+changed is marked as a **Conflict** (not ticked, so you decide). The Assistant can do all
+this with the `compare_scenes` tool.
+
 ### Testing with more than one player
 
 Play is just you. To see how your game works with other people, use

@@ -17,6 +17,7 @@
 #include "../scene/Player.h"
 #include "../game/GameSession.h"
 #include "../core/Log.h"
+#include "../core/Paths.h"
 #include "../online/OnlineClient.h"
 #include "../scripting/Luau.h"
 
@@ -1149,6 +1150,51 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             list.push_back(j);
         }
         return done({{"recording", ScriptHistory::recording()}, {"total", all.size()}, {"entries", list}});
+    }
+    if (name == "compare_scenes") {
+        const std::string action = str("action");
+        // A saved game's name (in the games folder) or a path.
+        auto gamePath = [&](const std::string& s) {
+            if (s.find('/') != std::string::npos || s.find('\\') != std::string::npos || s.find('.') != std::string::npos) return s;
+            return (Paths::gamesFolder() / (s + Paths::kExtension)).string();
+        };
+        if (action == "save_copy") {
+            std::string n = str("name");
+            n.erase(std::remove_if(n.begin(), n.end(), [](char c) { return c == '/' || c == '\\' || c == ':' || c == '.'; }), n.end());
+            if (n.empty()) return fail("INVALID_INPUT", "Give the copy a name.", "name: \"Before the bridge\"");
+            const std::string path = gamePath(n);
+            if (!Serializer::writeFile(path, Serializer::saveScene(*m_scene, true)))
+                return fail("WRITE_FAILED", "Couldn't write " + path + ".", "");
+            return done({{"path", path}});
+        }
+        if (action == "compare") {
+            if (str("other").empty()) return fail("INVALID_INPUT", "other is needed: a saved game's name or a file path.", "");
+            const std::string base = str("base").empty() ? std::string() : gamePath(str("base"));
+            json d = compareWith(gamePath(str("other")), base.empty() ? nullptr : &base);
+            if (d.contains("error")) return fail("CANT_COMPARE", d["error"].get<std::string>(), "Check the name or path.");
+            m_showCompare = true;
+            m_compareOther = gamePath(str("other"));
+            m_compareUseBase = !base.empty();
+            m_compareBase = base;
+            return done(d);
+        }
+        if (action == "merge") {
+            if (m_playing) return fail("PLAYING", "Stop the playtest first.", "playtest stop.");
+            if (m_compare.changes.empty()) return fail("NOTHING_TO_MERGE", "There are no differences to bring in.", "compare_scenes compare first.");
+            std::vector<int> chosen;
+            if (args.contains("changes") && args["changes"].is_array()) {
+                for (const auto& i : args["changes"])
+                    if (i.is_number_integer()) {
+                        if (i.get<int>() < 0 || i.get<int>() >= (int)m_compare.changes.size())
+                            return fail("INVALID_INPUT", "There's no change " + i.dump() + ".", "Use the indexes compare gave.");
+                        chosen.push_back(i.get<int>());
+                    }
+            } else {
+                for (size_t i = 0; i < m_compare.changes.size(); ++i) if (!m_compare.changes[i].conflict) chosen.push_back((int)i);
+            }
+            return done(mergeChosen(chosen));
+        }
+        return fail("INVALID_INPUT", "action must be save_copy, compare or merge.", "");
     }
     if (name == "physics_replay") {
         const std::string action = str("action");

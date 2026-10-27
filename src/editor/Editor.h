@@ -11,6 +11,7 @@
 #include "Premades.h"
 #include "LevelGen.h"
 #include "PhysicsReplay.h"
+#include "SceneDiff.h"
 #include "../scene/SceneNode.h"
 #include <imgui.h>
 
@@ -98,6 +99,10 @@ private:
     void renderScriptHistory();     // EditorScriptHistory.cpp
     void renderLevelGenerator();               // (EditorLevelGen.cpp)
     void renderPhysicsReplay();     // EditorPhysicsReplay.cpp
+    void renderCompare();           // Compare and Merge (EditorCompare.cpp)
+    // Compares the open game with a saved one (and the version both started from, if given).
+    nlohmann::json compareWith(const std::string& otherPath, const std::string* basePath);
+    nlohmann::json mergeChosen(const std::vector<int>& chosen);   // indexes into m_compare.changes
     // Physics Replay: records `seconds` of physics from the scene as it is now.
     nlohmann::json recordPhysics(float seconds);
     void           showReplayFrame(int frame);   // the ghosts in the viewport (-1 = none)
@@ -354,6 +359,11 @@ private:
     uint64_t m_levelGenLast = 0;
     nlohmann::json m_levelGenResult;
     // Physics Replay (EditorPhysicsReplay.cpp)
+    // Compare and Merge (EditorCompare.cpp)
+    bool m_showCompare = false, m_compareUseBase = false;
+    std::string m_compareOther, m_compareBase, m_compareMessage;
+    SceneDiff::Comparison m_compare;
+    std::vector<char> m_compareTicked;
     bool  m_showReplay = false, m_replayPlaying = false, m_replayTrail = true;
     PhysicsReplay::Recording m_replay;
     int   m_replayFrame = 0;
