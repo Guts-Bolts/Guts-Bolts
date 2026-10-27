@@ -1,0 +1,4 @@
+export default {
+  id: 'vehicles', title: 'Vehicles', status: 'working', version: '', pr: 0, time: 1793144800,
+  text: 'Cars and boats with a seat you can drive: get in, steer with the keys or the touch stick, and get out.',
+};

@@ -3,6 +3,12 @@
 // vote on. Staff answer an idea by putting it on the roadmap or saying no (with a note).
 // Saved in the meta table as 'roadmap'. src/server/ServerRoadmap.cpp has the same rules.
 //
+// Built-in items: every file in worker/roadmap/ is one roadmap item that comes with the code
+// (see worker/roadmap/README.md), so each pull request can put its own work on the roadmap
+// and move it to Done, without staff typing it in. They show next to the ones staff add here,
+// but staff can't change them on the website (a pull request changes the file). Only the main
+// server has them, like the built-in updates.
+//
 //   roadmap.get       {}                                   -> {items, ideas, mine}   (anyone, even visitors)
 //   roadmap.suggest   {title, text}                        (signed up; 3 open ideas each)
 //   roadmap.vote      {id, on}                             (signed up; open ideas only)
@@ -15,11 +21,21 @@ export const kRoadTitle = 80, kRoadText = 600, kRoadVersion = 20, kRoadNote = 30
 export const kMostRoadItems = 200, kMostIdeas = 1000, kOpenIdeasEach = 3;
 export const kShownOpenIdeas = 100, kShownAnswered = 30;
 export const ROAD_STATUS = ['planned', 'working', 'done'];
+const kBuiltInNote = 'That one comes with the code (worker/roadmap/), so a pull request changes it, not the website.';
 
 const fail = (error) => ({ ok: false, error });
 
+// worker/roadmap/<id>.js files -> newest first, as {id: 'b-<id>', title, text, status, version, pr, builtIn: true}
+export function builtInItems(files) {
+  return files.filter((x) => x && typeof x.id === 'string' && typeof x.title === 'string' && ROAD_STATUS.includes(x.status))
+    .map((x) => ({ id: 'b-' + x.id, title: x.title.slice(0, kRoadTitle), text: String(x.text || '').slice(0, kRoadText), status: x.status,
+      version: String(x.version || '').slice(0, kRoadVersion), at: Number(x.time) || 0, pr: Number.isInteger(x.pr) ? x.pr : 0, builtIn: true }))
+    .sort((a, b) => b.at - a.at);   // newest first
+}
+
 export class Roadmap {
-  constructor(saved) {
+  constructor(saved, builtIn = []) {
+    this.builtIn = builtIn;   // from builtInItems(): not saved, they come with the code
     this.items = Array.isArray(saved?.items) ? saved.items : [];   // {id, title, text, status, version, at, idea?}
     this.ideas = Array.isArray(saved?.ideas) ? saved.ideas : [];   // {id, title, text, by, at, votes: [account ids], status, note, answeredAt?}
   }
@@ -33,7 +49,8 @@ export class Roadmap {
       .sort((a, b) => b.votes.length - a.votes.length || b.at - a.at).slice(0, kShownOpenIdeas);
     const answered = this.ideas.filter((x) => x.status !== 'open')
       .sort((a, b) => (b.answeredAt || 0) - (a.answeredAt || 0)).slice(0, kShownAnswered);
-    return { ok: true, items: this.items.map((x) => ({ id: x.id, title: x.title, text: x.text, status: x.status, version: x.version || '', at: x.at })),
+    const items = this.items.map((x) => ({ id: x.id, title: x.title, text: x.text, status: x.status, version: x.version || '', at: x.at }));
+    return { ok: true, items: [...items, ...this.builtIn],
       ideas: open.map(idea), answered: answered.map(idea),
       openIdeas: this.ideas.filter((x) => x.status === 'open').length };
   }
@@ -72,6 +89,7 @@ export class Roadmap {
   // Staff: add or change a roadmap item. Returns the item (or a failure).
   save(args, newId, t) {
     const { id, title, text, status, version } = args;
+    if (id && id.startsWith('b-')) return fail(kBuiltInNote);
     if (!title) return fail('Give it a title.');
     if (!ROAD_STATUS.includes(status)) return fail('Pick Planned, Working on it or Done.');
     if (id) {
@@ -87,6 +105,7 @@ export class Roadmap {
   }
 
   remove(id) {
+    if (id.startsWith('b-')) return fail(kBuiltInNote);
     const i = this.items.findIndex((x) => x.id === id);
     if (i < 0) return fail('That roadmap item isn\'t there any more.');
     this.items.splice(i, 1);

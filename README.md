@@ -3299,7 +3299,8 @@ node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.tes
 
 GitHub runs them (plus a check of every website script for typing mistakes) on
 every change, as the **Tests** job. (Before they start, the update log is gathered
-from `worker/updates/`, one file per update, by `worker/gather-updates.mjs`.
+from `worker/updates/`, one file per update, and the built-in roadmap from
+`worker/roadmap/`, one file per item, by `worker/gather-updates.mjs`.
 Cloudflare does the same before each deploy.) To add a test, copy one of the
 `*.test.mjs` files; `makeServer()` in `helpers.mjs` gives you a fresh server and
 `s.call(player, 'op', {...})` asks it to do something.
