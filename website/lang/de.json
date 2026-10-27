@@ -63,6 +63,7 @@
   "%s mode | %d samples | average %.1f FPS | p95 %.2f ms | peak %.2f ms": "Modus %s | %d Messungen | Schnitt %.1f FPS | p95 %.2f ms | Spitze %.2f ms",
   "%s, last 30 days: %lld": "%s, letzte 30 Tage: %lld",
   "%zu bytes": "%zu Bytes",
+  "%zu tools": "%zu Werkzeuge",
   "(%s Bolts)": "(%s Bolts)",
   "(1,000 Bolts)": "(1.000 Bolts)",
   "(Command Bar)": "(Befehlsleiste)",

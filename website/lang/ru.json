@@ -63,6 +63,7 @@
   "%s mode | %d samples | average %.1f FPS | p95 %.2f ms | peak %.2f ms": "Режим %s | %d замеров | в среднем %.1f кадр/с | p95 %.2f мс | пик %.2f мс",
   "%s, last 30 days: %lld": "%s, за 30 дней: %lld",
   "%zu bytes": "%zu байт",
+  "%zu tools": "Инструментов: %zu",
   "(%s Bolts)": "(%s Bolts)",
   "(1,000 Bolts)": "(1 000 Bolts)",
   "(Command Bar)": "(Командная строка)",
