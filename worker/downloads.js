@@ -14,7 +14,7 @@ function json(obj, status = 200) {
 // Who may upload: the release workflow of this repository, building main or a version tag.
 // GitHub hands each workflow run a short-lived token it signs (OpenID Connect); we check
 // GitHub's signature and what the token says, so no password has to be stored anywhere.
-const REPO = 'useofscript/Project-Guts-And-Bolts';
+const REPO = 'Guts-Bolts/Guts-Bolts';
 const ISSUER = 'https://token.actions.githubusercontent.com';
 const AUDIENCE = 'gutsandbolts.net';
 let jwksCache = null, jwksAt = 0;
