@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "../scene/MaterialGraph.h"
 #include <sstream>
 #include <cmath>
 #include <unordered_map>
@@ -171,6 +172,18 @@ void Editor::render(float dt) {
     ImGuizmo::BeginFrame();
     // Docked tabs appear over a few frames; make sure the 3D view ends up on top.
     if (++m_frame <= 3) m_viewport->focus();
+    // (Tests: GB_TEST_MATERIAL_GRAPH=Bricks starts with that ready-made material open in the Material Graph.)
+    if (m_frame == 3)
+        if (const char* g = std::getenv("GB_TEST_MATERIAL_GRAPH")) {
+            SceneNode* svc = m_scene->serviceFolder("MaterialService", true);
+            auto v = std::make_unique<SceneNode>(g, NodeKind::MaterialVariant);
+            v->variant.graph = MaterialGraph::toJson(MaterialGraph::example(g)).dump();
+            SceneNode* made = m_scene->insert(std::move(v), svc);
+            if (std::getenv("GB_TEST_MATERIAL_APPLY")) {   // (and baked onto the parts, instead of open)
+                applyMaterialGraph(made, MaterialGraph::example(g), 512);
+                m_scene->forEach([&](SceneNode* n) { if (n->isPart()) { n->material = made->variant.base; n->materialVariant = made->name; n->color = glm::vec3(1.0f); } });
+            } else openMaterialGraph(made->id);
+        }
 
     // Team Create: bring in other people's edits (they wait while playtesting).
     m_team->update(!m_playing);
@@ -274,6 +287,7 @@ void Editor::render(float dt) {
     renderProjectTimeMachine();
     renderBlocks();
     renderMaterialEditor();
+    renderMaterialGraph();
     renderAiActivity();
     renderScriptHistory();
     renderLevelGenerator();

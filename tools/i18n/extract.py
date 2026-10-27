@@ -12,6 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 # C++ folders with UI. (scene/scripting/renderer/net mostly print logs, not UI.)
 CPP_DIRS = ['src/player', 'src/editor', 'src/game', 'src/core', 'src/online']
+CPP_FILES = ['src/scene/MaterialGraph.cpp']   # (its box names and help show in Studio)
 CPP_SKIP = re.compile(r'(Log::|LOG_|printf|fprintf|std::cerr|std::cout|logLine|logf\(|"\s*\]|\[\s*"|\.value\(\s*"|\.contains\(\s*"|call\(\s*"|getenv|#include|\.find\(\s*"|== *"|!= *"|starts_with|ends_with|fopen|PushID|BeginChild\(\s*"|"Content-Type"|R"\()')
 JS_FILES = ['website/app/app.js', 'website/app/index.html', 'website/index.html', 'website/lang/i18n.js']
 
@@ -74,22 +75,27 @@ def add(s, where):
     if looks_like_text(s):
         found.setdefault(s, where)
 
-for d in CPP_DIRS:
-    for dirpath, _, files in os.walk(os.path.join(ROOT, d)):
-        for f in sorted(files):
-            if not f.endswith('.cpp') and not f.endswith('.h'):
-                continue
-            path = os.path.join(dirpath, f)
-            rel = os.path.relpath(path, ROOT)
-            if 'StudioMcp' in f or 'AiTools' in f or f.startswith('I18n') or f.startswith('Lua') or f.startswith('PropertiesPanel'):   # (Properties keep script names)
-                continue
-            for n, line in enumerate(open(path, encoding='utf-8', errors='replace'), 1):
-                st = line.strip()
-                if st.startswith('//') or CPP_SKIP.search(line):
-                    continue
-                code = line.split('//')[0] if '"' not in line.split('//')[0][-1:] else line
-                for m in CPP_STR.finditer(code):
-                    add(unescape_c(m.group(1)), f'{rel}:{n}')
+def cpp_files():
+    for d in CPP_DIRS:
+        for dirpath, _, files in os.walk(os.path.join(ROOT, d)):
+            for f in sorted(files):
+                if f.endswith('.cpp') or f.endswith('.h'):
+                    yield dirpath, f
+    for p in CPP_FILES:
+        yield os.path.dirname(os.path.join(ROOT, p)), os.path.basename(p)
+
+for dirpath, f in cpp_files():
+    path = os.path.join(dirpath, f)
+    rel = os.path.relpath(path, ROOT)
+    if 'StudioMcp' in f or 'AiTools' in f or f.startswith('I18n') or f.startswith('Lua') or f.startswith('PropertiesPanel'):   # (Properties keep script names)
+        continue
+    for n, line in enumerate(open(path, encoding='utf-8', errors='replace'), 1):
+        st = line.strip()
+        if st.startswith('//') or CPP_SKIP.search(line):
+            continue
+        code = line.split('//')[0] if '"' not in line.split('//')[0][-1:] else line
+        for m in CPP_STR.finditer(code):
+            add(unescape_c(m.group(1)), f'{rel}:{n}')
 
 for f in JS_FILES:
     path = os.path.join(ROOT, f)

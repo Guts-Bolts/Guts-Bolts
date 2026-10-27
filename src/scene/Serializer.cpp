@@ -255,6 +255,10 @@ nlohmann::json variantToJson(const MaterialVariantProps& v) {
     const std::pair<const char*, const std::string*> pics[] = {{"colorMap", &v.colorMap}, {"normalMap", &v.normalMap},
                                                                {"roughnessMap", &v.roughnessMap}, {"metalnessMap", &v.metalnessMap}};
     for (auto& [k, p] : pics) if (!p->empty()) j[k] = *p;
+    if (!v.graph.empty()) {
+        json g = json::parse(v.graph, nullptr, false);
+        if (g.is_object()) j["graph"] = g;
+    }
     return j;
 }
 
@@ -269,6 +273,8 @@ void variantFromJson(const nlohmann::json& j, MaterialVariantProps& v) {
     v.normalMap    = get<std::string>(j, "normalMap", "");
     v.roughnessMap = get<std::string>(j, "roughnessMap", "");
     v.metalnessMap = get<std::string>(j, "metalnessMap", "");
+    v.graph.clear();
+    if (auto g = j.find("graph"); g != j.end() && g->is_object()) v.graph = g->dump();
     clampVariant(v);
 }
 

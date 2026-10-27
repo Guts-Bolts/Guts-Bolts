@@ -16,6 +16,9 @@ inline constexpr const char* kClassicFace = "builtin:face";
 bool     size(const std::string& id, int& width, int& height);
 // Forget one image (e.g. a file that was just replaced) or all of them.
 void     forget(const std::string& id);
+// A picture made in the program (rows top first, RGBA): `id` shows it from now on (made
+// again over the old one each call). For previews, like the Material Graph's.
+unsigned put(const std::string& id, const unsigned char* rgba, int width, int height);
 void     clear();   // before the GL context goes away
 
 } // namespace Textures

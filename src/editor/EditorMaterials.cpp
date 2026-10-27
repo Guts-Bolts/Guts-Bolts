@@ -231,6 +231,9 @@ void Editor::renderMaterialEditor() {
         Log::info("Saved \"" + cur->name + "\" as a preset: the Material Editor can add it to any game.");
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keep it on this computer, for your other games.");
+    if (ImGui::Button(cur->variant.graph.empty() ? "Make with nodes..." : "Edit nodes...")) openMaterialGraph(cur->id);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Make its pictures from boxes wired together (noise, bricks, cells, stripes...)\ninstead of photos.");
     ImGui::EndGroup();
     ImGui::Separator();
     ImGui::PushItemWidth(-110);

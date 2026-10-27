@@ -17,6 +17,7 @@
 #include <cmath>
 #include <filesystem>
 #include <map>
+#include <cstring>
 #include <vector>
 
 namespace Textures {
@@ -142,6 +143,27 @@ void forget(const std::string& id) {
     if (it == cache().end()) return;
     if (it->second.tex) glDeleteTextures(1, &it->second.tex);
     cache().erase(it);
+}
+
+unsigned put(const std::string& id, const unsigned char* rgba, int w, int h) {
+    Entry& e = cache()[id];
+    if (!e.tex) glGenTextures(1, &e.tex);
+    // GL wants the bottom row first.
+    std::vector<unsigned char> flipped((size_t)w * h * 4);
+    for (int r = 0; r < h; ++r)
+        std::memcpy(&flipped[(size_t)r * w * 4], rgba + (size_t)(h - 1 - r) * w * 4, (size_t)w * 4);
+    glBindTexture(GL_TEXTURE_2D, e.tex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, flipped.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    e.w = w;
+    e.h = h;
+    e.broken = false;
+    return e.tex;
 }
 
 void clear() {

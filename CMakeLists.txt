@@ -438,6 +438,7 @@ add_library(gb_engine STATIC
     src/scene/Particles.cpp
     src/scene/Weather.cpp
     src/scene/LinkedModels.cpp
+    src/scene/MaterialGraph.cpp
     src/scene/Animation.cpp
     src/scene/Ragdoll.cpp
     src/scene/Effects.cpp
@@ -748,6 +749,7 @@ set(EDITOR_SOURCES
     src/editor/EditorAutosave.cpp
     src/editor/EditorTimeMachine.cpp
     src/editor/EditorMaterials.cpp
+    src/editor/EditorMaterialGraph.cpp
     src/editor/EditorAiActivity.cpp
     src/editor/EditorLevelGen.cpp
     src/editor/LevelGen.cpp
@@ -901,6 +903,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(CharacterTests PRIVATE gb_engine)
     add_test(NAME CharacterTests COMMAND CharacterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The Material Graph: patterns tile, wires can't loop, saving and baking.
+    add_executable(MaterialGraphTests tests/MaterialGraphTests.cpp)
+    target_link_libraries(MaterialGraphTests PRIVATE gb_engine)
+    add_test(NAME MaterialGraphTests COMMAND MaterialGraphTests)
 
     # MaterialVariants to Roblox files and back.
     add_executable(MaterialVariantRobloxTests tests/MaterialVariantRobloxTests.cpp)
