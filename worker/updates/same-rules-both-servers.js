@@ -1,5 +1,5 @@
 export default {
-  id: 'same-rules-both-servers', name: 'Twin Servers', time: 1793057249, tag: 'Fix',
+  id: 'same-rules-both-servers', name: 'Twin Servers', version: '0.7.6', time: 1793057249, tag: 'Fix',
   summary: 'Banned-for-good profiles show their "Content Deleted" page again, and self-hosted servers caught up on new features.',
   items: [
     'Opening the profile of someone banned for good showed an empty "Not found" page instead of "[ Content Deleted ]"',

@@ -30,6 +30,10 @@ free Bolts.
 - Import Roblox `.mesh` files, and more old Roblox scripts just work.
 - Multiplayer test sessions can be saved as a bundle (with each player's
   inputs) to help track down bugs.
+- Level Generator: pick a number and get a whole dungeon or obby, checked to
+  make sure you can actually finish it.
+- Physics Replay: record the physics, scrub through it in slow motion, and
+  save it as a test.
 
 ## New in the game and on the website
 - Promo codes: type one on the Redeem codes page for free Bolts, and some codes
@@ -46,6 +50,9 @@ free Bolts.
 - Models no longer drift away while you rotate them.
 - Explosions damage NPCs properly.
 - The phone app stops drawing while it's in the background.
+- The Backpack button no longer sits on top of the jump button on phones.
+- Banned-for-good profiles show their "Content Deleted" page again, and
+  self-hosted servers caught up on new features.
 - Catalog Try On and the 3D preview toggle work again.
 - Guests no longer clutter the staff directory.
 - Staff can reset usernames that aren't allowed.

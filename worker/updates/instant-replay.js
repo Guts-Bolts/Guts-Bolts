@@ -1,5 +1,5 @@
 export default {
-  id: 'instant-replay', name: 'Instant Replay', time: 1793134800, tag: 'Studio',
+  id: 'instant-replay', name: 'Instant Replay', version: '0.7.6', time: 1793134800, tag: 'Studio',
   summary: 'Record the physics, watch it again frame by frame in slow motion, and save it as a test that tells you when the physics starts acting differently.',
   items: [
     'New Physics Replay window (MODEL > Replay): records a few seconds of physics from your scene without changing it.',

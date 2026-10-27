@@ -1,5 +1,5 @@
 export default {
-  id: 'roll-the-dice', name: 'Roll the Dice', time: 1793131200, tag: 'Studio',
+  id: 'roll-the-dice', name: 'Roll the Dice', version: '0.7.6', time: 1793131200, tag: 'Studio',
   summary: 'Pick a number and get a whole level: the new Level Generator makes dungeons and obbies, and checks that you can actually finish them.',
   items: [
     'New Level Generator window (MODEL > Generate): makes a Dungeon (rooms, corridors, crates and coins) or an Obby (platforms, checkpoints and lava).',
