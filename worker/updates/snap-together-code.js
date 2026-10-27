@@ -1,5 +1,5 @@
 export default {
-  id: 'snap-together-code', name: 'Snap-Together Code', time: 1793042100, tag: 'Studio',
+  id: 'snap-together-code', name: 'Snap-Together Code', version: '0.7.6', time: 1793042100, tag: 'Studio',
   summary: 'Make scripts without typing: connect blocks like "When touched", "If it\'s a player" and "Give points" in the new Visual Scripting window.',
   items: [
     'New Visual Scripting window (VIEW > Blocks): drag blocks onto a board and connect them with lines.',

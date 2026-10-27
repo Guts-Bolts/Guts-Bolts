@@ -1,5 +1,5 @@
 export default {
-  id: 'crowd-control', name: 'Crowd Control', time: 1793037789, tag: 'Studio',
+  id: 'crowd-control', name: 'Crowd Control', version: '0.7.6', time: 1793037789, tag: 'Studio',
   summary: 'Change a hundred things as fast as one: edit lots of objects together, or find them by kind, tag or value and change them all at once.',
   items: [
     'Select lots of objects and change a box in Properties: every selected object of that kind changes too. Only the box you touched is copied',

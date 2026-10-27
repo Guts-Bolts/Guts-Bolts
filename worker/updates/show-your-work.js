@@ -1,5 +1,5 @@
 export default {
-  id: 'show-your-work', name: 'Show Your Work', time: 1793039900, tag: 'Studio',
+  id: 'show-your-work', name: 'Show Your Work', version: '0.7.6', time: 1793039900, tag: 'Studio',
   summary: 'The AI assistant now shows you everything it changed, lets you undo all of it in one click, and asks before it deletes things.',
   items: [
     'New AI Activity window (VIEW tab, View menu, or the button under the Assistant chat).',

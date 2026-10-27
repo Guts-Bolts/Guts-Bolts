@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(GutsAndBolts VERSION 0.7.4 LANGUAGES C CXX)
+project(GutsAndBolts VERSION 0.7.6 LANGUAGES C CXX)
 
 include(CTest)
 
