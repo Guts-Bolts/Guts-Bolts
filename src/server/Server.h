@@ -246,6 +246,12 @@ private:
     nlohmann::json promoJson(const nlohmann::json& p, long long now) const;
     void savePromos();
     void loadPromos();
+    // ServerRoadmap.cpp: the public roadmap and developers' ideas (roadmap.json).
+    nlohmann::json roadmapView(const User& me) const;
+    nlohmann::json roadmapOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json roadmapAdmin(const std::string& name, const User& me, const nlohmann::json& args);
+    void saveRoadmap();
+    void loadRoadmap();
     // The staff action log (stafflog.json): what staff did, newest last. about: who it was done to.
     void staffDid(const User& staff, const std::string& action, const std::string& text, const std::string& about = "");
     nlohmann::json staffLogJson(const std::string& who) const;
@@ -382,6 +388,8 @@ private:
     nlohmann::json m_tickets = nlohmann::json::array();   // support tickets (ServerSupport.cpp), newest last
     // Promo codes (ServerPromos.cpp): {code, bolts, start, end (0 = never), made, by, uses, stopped}, newest last.
     nlohmann::json m_promos = nlohmann::json::array();
+    // The public roadmap (ServerRoadmap.cpp): {items: [{id, title, text, status, version, at}], ideas: [{id, title, text, by, at, votes, status, note}]}.
+    nlohmann::json m_roadmap = {{"items", nlohmann::json::array()}, {"ideas", nlohmann::json::array()}};
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.

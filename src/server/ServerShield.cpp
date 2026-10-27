@@ -49,6 +49,8 @@ constexpr Rule kCostly[] = {
     {"chat.translate", 400, 1200, 600},
     {"groups.create", 5, 15, 3600},
     {"bolts.redeem", 20, 60, 600},   // (so nobody can guess promo codes over and over)
+    {"roadmap.suggest", 5, 15, 3600},
+    {"roadmap.vote", 120, 360, 600},
 };
 // One connection can send this many requests every 10 seconds (games use it to send
 // messages and save data too, so it's roomy).

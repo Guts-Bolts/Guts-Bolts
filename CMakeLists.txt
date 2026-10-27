@@ -22,6 +22,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerGroups.cpp
     src/server/ServerSupport.cpp
     src/server/ServerPromos.cpp
+    src/server/ServerRoadmap.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -832,6 +833,17 @@ add_dependencies(GutsAndBoltsServer gb_version)
 target_link_libraries(GutsAndBoltsServer PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
 if(WIN32)
     target_link_libraries(GutsAndBoltsServer PRIVATE ws2_32 bcrypt)
+endif()
+
+# The server's public roadmap, with signed requests like the apps send.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
+    set(GB_SERVER_TEST_SOURCES ${GB_SERVER_SOURCES})
+    list(FILTER GB_SERVER_TEST_SOURCES EXCLUDE REGEX "ServerMain\\.cpp$")
+    add_executable(ServerRoadmapTests tests/ServerRoadmapTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerRoadmapTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerRoadmapTests gb_version)
+    target_link_libraries(ServerRoadmapTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerRoadmapTests COMMAND ServerRoadmapTests)
 endif()
 
 # Studio's sample plugins.

@@ -867,3 +867,38 @@ table.forum a { color: var(--link); }
   .forum-search-row select { flex: 1 1 130px; }
   .forum-search-result { align-items: flex-start; flex-direction: column; }
 }
+
+/* Create > Roadmap: three columns of what's coming, and ideas people vote on. */
+.roadmap { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 10px 0 18px; }
+.road-col { background: var(--panel2); border: 1px solid var(--line); border-top: 4px solid var(--line); border-radius: 3px; padding: 8px 10px; }
+.road-col h2 { margin: 0 0 8px; font-size: 17px; }
+.road-working { border-top-color: var(--gold); }
+.road-planned { border-top-color: var(--blue); }
+.road-done { border-top-color: var(--green); }
+.road-item { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 7px 9px; margin: 0 0 7px; overflow-wrap: anywhere; }
+.road-item p { margin: 4px 0 0; white-space: pre-line; }
+.road-item details { margin-top: 6px; }
+.road-form .row > div { flex: 1 1 140px; }
+.ideas { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 14px; }
+.idea { display: flex; gap: 10px; align-items: flex-start; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px; overflow-wrap: anywhere; }
+.idea p { margin: 3px 0 0; }
+.idea p.small:not(.muted) { white-space: pre-line; }
+.idea-note { border-left: 3px solid var(--blue); padding-left: 6px; }
+.vote { flex: none; display: flex; flex-direction: column; align-items: center; min-width: 46px; padding: 4px 6px; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--panel2); color: var(--text); cursor: pointer; font: inherit; line-height: 1.2; }
+.vote:hover:not(:disabled) { border-color: var(--blue); }
+.vote.on { background: var(--blue); border-color: var(--blue-dark); color: #fff; }
+.vote:disabled { cursor: default; opacity: .7; }
+.badge-pill.ok { border-color: var(--green); }
+@media (max-width: 720px) { .roadmap { grid-template-columns: 1fr; } }
+
+/* The Staff page's sections: tabs with counts, and the Overview's cards. */
+.staff-tabs .count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 3px; border-radius: 9px; background: var(--red); color: #fff;
+  font-size: 12px; line-height: 18px; text-align: center; }
+.staff-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; margin: 8px 0 14px; }
+.staff-card { display: flex; flex-direction: column; gap: 2px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 10px 12px;
+  color: var(--text); text-decoration: none; }
+.staff-card:hover { border-color: var(--blue); }
+.staff-card b { font-size: 26px; line-height: 1.1; color: var(--muted); }
+.staff-card.busy { border-left: 4px solid var(--red); }
+.staff-card.busy b { color: var(--red); }

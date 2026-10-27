@@ -150,7 +150,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // except looking around: visitors to the website can browse before signing up.
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
-                                                    "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get",
+                                                    "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove"};   // (guests can host games too, and read chat)
@@ -581,6 +581,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("data.", 0) == 0) return dataOp(name, me, args);
     if (name.rfind("msg.", 0) == 0) return msgOp(name, me, args);
     if (name.rfind("mem.", 0) == 0) return memOp(name, me, args);
+    if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);
     if (name.rfind("appeal.", 0) == 0) return appealOp(name, me, args);
     if (name.rfind("outfit.", 0) == 0 || name.rfind("message.", 0) == 0 || name.rfind("notes.", 0) == 0 || name == "game.favorite" || name == "games.mine" || name.rfind("comments.", 0) == 0 ||
@@ -822,6 +823,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         }
         if (name == "admin.promos" || name == "admin.promoMake" || name == "admin.promoStop")
             return isOfficial(me) ? promoAdmin(name, me, args) : fail("Only the official Guts account can do that.");
+        if (name == "admin.roadmapSave" || name == "admin.roadmapRemove" || name == "admin.ideaAnswer" || name == "admin.ideaRemove")
+            return roadmapAdmin(name, me, args);
         if (!to) return fail("There's no account with that ID on this server.");
         if (name == "admin.grant") {
             // The signed badge comes from the app (made with the staff member's own key).
@@ -2003,6 +2006,7 @@ void GbServer::load() {
     loadConnect();
     loadStaffLog();
     loadPromos();
+    loadRoadmap();
     if (std::string text; readFile(m_opts.data / "boltworks.json", text)) {
         json all = json::parse(text, nullptr, false);
         if (all.is_array()) m_boltworks = all;
