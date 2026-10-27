@@ -487,6 +487,9 @@ if(GB_MOBILE)
     target_compile_definitions(gb_engine PUBLIC GB_MOBILE GB_GLES)
     if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         target_compile_definitions(gb_engine PUBLIC GB_IOS GB_APP_VERSION="${PROJECT_VERSION}")
+        # Notch / home bar insets and turning to landscape for games (UIKit).
+        target_sources(gb_engine PRIVATE src/core/IosPlatform.mm)
+        set_source_files_properties(src/core/IosPlatform.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     endif()
 else()
     target_sources(gb_engine PRIVATE src/core/AppWindow.cpp)
@@ -578,12 +581,18 @@ if(GB_MOBILE)
         add_library(main SHARED ${PLAYER_SOURCES})
         target_link_libraries(main PRIVATE gb_engine)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        add_executable(GutsAndBoltsPlayer MACOSX_BUNDLE ${PLAYER_SOURCES})
+        # The home-screen icon (ios/Assets.xcassets, compiled by Xcode).
+        set(GB_IOS_ASSETS "${CMAKE_SOURCE_DIR}/ios/Assets.xcassets")
+        add_executable(GutsAndBoltsPlayer MACOSX_BUNDLE ${PLAYER_SOURCES} ${GB_IOS_ASSETS})
+        set_source_files_properties(${GB_IOS_ASSETS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
         target_compile_definitions(GutsAndBoltsPlayer PRIVATE GB_IOS GB_APP_VERSION=\"${PROJECT_VERSION}\")
         set_target_properties(GutsAndBoltsPlayer PROPERTIES
             MACOSX_BUNDLE_GUI_IDENTIFIER "net.gutsandbolts.player"
             MACOSX_BUNDLE_BUNDLE_NAME "Guts & Bolts"
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/ios/Info.plist"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+            XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
             XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
             XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
             XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "NO")

@@ -16,6 +16,9 @@
 #ifdef __ANDROID__
 #include <jni.h>
 #endif
+#ifdef GB_IOS
+#include "IosPlatform.h"
+#endif
 #include <imgui.h>
 #include <backends/imgui_impl_sdl2.h>
 #include <backends/imgui_impl_opengl3.h>
@@ -91,6 +94,19 @@ float pickUiScale(SDL_Window* win) {
 #endif
 }
 
+#ifdef GB_IOS
+// ImGui asks this every frame: keep pages, menus and the touch buttons out from
+// under the notch, the rounded corners and the home bar.
+SDL_Window* g_iosWindow = nullptr;
+const float* g_iosUiScale = nullptr;   // AppWindow::m_uiScale (it changes when the phone turns)
+ImVec4 iosWorkAreaInsets(ImGuiViewport*) {
+    const IosPlatform::SafeArea a = IosPlatform::safeArea(g_iosWindow);
+    const float s = g_iosUiScale && *g_iosUiScale > 0.0f ? *g_iosUiScale : 1.0f;   // points -> UI pixels
+    return ImVec4(std::max(a.left, 0.0f) / s, std::max(a.top, 0.0f) / s,
+                  std::max(a.right, 0.0f) / s, std::max(a.bottom, 0.0f) / s);
+}
+#endif
+
 } // namespace
 
 AppWindow::AppWindow(const char* title, int width, int height, const char* layoutFile) {
@@ -116,6 +132,9 @@ AppWindow::AppWindow(const char* title, int width, int height, const char* layou
 #ifdef __ANDROID__
     flags |= SDL_WINDOW_FULLSCREEN;
     width = height = 0;
+#elif defined(GB_IOS)
+    // The whole screen, with the status bar (clock, battery) hidden.
+    flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
 #else
     if (const char* e = std::getenv("GB_WINDOW_SIZE")) std::sscanf(e, "%dx%d", &width, &height);
 #endif
@@ -176,12 +195,22 @@ AppWindow::AppWindow(const char* title, int width, int height, const char* layou
 
     ImGui_ImplSDL2_InitForOpenGL(m_sdl, m_gl);
     ImGui_ImplOpenGL3_Init("#version 300 es");
+#ifdef GB_IOS
+    g_iosWindow = m_sdl;
+    g_iosUiScale = &m_uiScale;
+    ImGui::GetPlatformIO().Platform_GetWindowWorkAreaInsets = iosWorkAreaInsets;
+#endif
 
     m_lastTime = m_nextFrame = now();
     Audio::init();
 }
 
 AppWindow::~AppWindow() {
+#ifdef GB_IOS
+    ImGui::GetPlatformIO().Platform_GetWindowWorkAreaInsets = nullptr;
+    g_iosWindow = nullptr;
+    g_iosUiScale = nullptr;
+#endif
     Audio::shutdown();
     MeshLibrary::clear();
     ImGui_ImplOpenGL3_Shutdown();
@@ -213,6 +242,8 @@ void AppWindow::lockLandscape(bool on) {
     if (env->ExceptionCheck()) env->ExceptionClear();
     env->DeleteLocalRef(cls);
     env->DeleteLocalRef(activity);
+#elif defined(GB_IOS)
+    IosPlatform::setLandscape(m_sdl, on);
 #endif
 }
 
