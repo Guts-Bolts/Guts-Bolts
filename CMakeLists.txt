@@ -879,4 +879,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(RobloxMeshFormatTests tests/RobloxMeshFormatTests.cpp)
     target_link_libraries(RobloxMeshFormatTests PRIVATE gb_engine)
     add_test(NAME RobloxMeshFormatTests COMMAND RobloxMeshFormatTests)
+
+    # Every sample game in games/ loads and runs for a few seconds with no script errors.
+    add_executable(SampleGamesTests tests/SampleGamesTests.cpp)
+    target_link_libraries(SampleGamesTests PRIVATE gb_engine)
+    add_test(NAME SampleGamesTests COMMAND SampleGamesTests "${CMAKE_SOURCE_DIR}/games" 5
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()

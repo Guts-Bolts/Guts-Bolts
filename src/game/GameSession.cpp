@@ -592,8 +592,7 @@ void GameSession::click(uint64_t partId) {
     if (!m_running) return;
     // MouseButton1: bound actions (ContextActionService), then UserInputService.InputBegan.
     // An action that sinks it keeps the held tool from being used.
-    const ImVec2 at = ImGui::GetMousePos();
-    const bool sunk = m_scripts.pointerDown(true, glm::vec2(at.x, at.y));
+    const bool sunk = m_scripts.pointerDown(true, LuaApi::mouseOnGame());
     clickDetector(partId);
     if (m_role == Role::Client) {
         if (onClick && partId) onClick(partId);

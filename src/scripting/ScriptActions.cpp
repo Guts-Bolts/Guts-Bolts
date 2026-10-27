@@ -374,7 +374,6 @@ void ScriptEngine::updateActions() {
     }
     // The mouse button let go.
     if (m_pointerHeld && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        const ImVec2 m = ImGui::GetMousePos();
-        pointerDown(false, glm::vec2(m.x, m.y));
+        pointerDown(false, LuaApi::mouseOnGame());
     }
 }
