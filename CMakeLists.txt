@@ -435,6 +435,7 @@ add_library(gb_engine STATIC
     src/scene/Flood.cpp
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
+    src/scene/Weather.cpp
     src/scene/Animation.cpp
     src/scene/Ragdoll.cpp
     src/scene/Effects.cpp
@@ -884,5 +885,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(SampleGamesTests tests/SampleGamesTests.cpp)
     target_link_libraries(SampleGamesTests PRIVATE gb_engine)
     add_test(NAME SampleGamesTests COMMAND SampleGamesTests "${CMAKE_SOURCE_DIR}/games" 5
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Lighting.Weather: scripts, saving, and rain stopping on roofs.
+    add_executable(WeatherTests tests/WeatherTests.cpp)
+    target_link_libraries(WeatherTests PRIVATE gb_engine)
+    add_test(NAME WeatherTests COMMAND WeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()

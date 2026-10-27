@@ -3573,6 +3573,8 @@ int light_index(lua_State* L) {
     if (is(k, "FogColor"))      { LuaApi::pushColor3(L, e.fogColor);    return 1; }
     if (is(k, "Ambient"))       { LuaApi::pushColor3(L, e.ambientColor); return 1; }
     if (is(k, "SunColor"))      { LuaApi::pushColor3(L, e.sunColor);    return 1; }
+    if (is(k, "Weather"))       { lua_pushstring(L, kWeatherNames[std::clamp(e.weather, 0, kWeatherCount - 1)]); return 1; }
+    if (is(k, "WeatherIntensity")) { lua_pushnumber(L, e.weatherAmount); return 1; }
     if (is(k, "Name") || is(k, "ClassName")) { lua_pushstring(L, "Lighting"); return 1; }
     if (is(k, "Parent")) { lua_pushnil(L); return 1; }
     if (is(k, "IsA")) { lua_pushcfunction(L, light_isA); return 1; }
@@ -3592,6 +3594,22 @@ int light_newindex(lua_State* L) {
     if (is(k, "FogColor"))      { e.fogColor = LuaApi::checkColor3(L, 3);     return 0; }
     if (is(k, "Ambient"))       { e.ambientColor = LuaApi::checkColor3(L, 3); return 0; }
     if (is(k, "SunColor"))      { e.sunColor = LuaApi::checkColor3(L, 3);     return 0; }
+    if (is(k, "Weather")) {   // "Rain", Enum-style tables print as their name too
+        const char* w = luaL_tolstring(L, 3, nullptr);
+        std::string name = w ? w : "";
+        lua_pop(L, 1);
+        if (const size_t dot = name.rfind('.'); dot != std::string::npos) name = name.substr(dot + 1);   // Enum.Weather.Rain
+        for (int i = 0; i < kWeatherCount; ++i) {
+            const std::string want = kWeatherNames[i];
+            if (name.size() == want.size() &&
+                std::equal(name.begin(), name.end(), want.begin(), [](char a, char b) { return std::tolower((unsigned char)a) == std::tolower((unsigned char)b); })) {
+                e.weather = i;
+                return 0;
+            }
+        }
+        return luaL_error(L, "'%s' isn't a kind of weather (use \"Clear\", \"Rain\" or \"Snow\")", name.c_str());
+    }
+    if (is(k, "WeatherIntensity")) { e.weatherAmount = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     return luaL_error(L, "'%s' can't be set on Lighting", k);
 }
 

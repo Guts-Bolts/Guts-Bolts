@@ -213,7 +213,7 @@ const std::vector<Tool>& tools() {
           "\"Brick\", \"Cobblestone\", \"Slate\", \"Granite\", \"Marble\", \"Sand\", \"Grass\", \"Fabric\"; Enum.Material.Neon "
           "works too), Name, Parent (an object or a service like \"StarterPack\"), Enabled, Brightness, Range, Text, "
           "Visible... object \"Lighting\" changes the Lighting service (ClockTime, Brightness, FogEnabled, FogDensity, "
-          "FogColor, Ambient, SunColor, GlobalShadows). Setting a script's Source is passed on to edit_script.",
+          "FogColor, Ambient, SunColor, GlobalShadows, Weather \"Clear\"/\"Rain\"/\"Snow\", WeatherIntensity 0-1). Setting a script's Source is passed on to edit_script.",
           "\"Move/resize/recolour/rename X\", \"make it red/glow/see-through\", \"make it fall\" (Anchored false), "
           "\"make it solid / walk-through\" (CanCollide), \"put X inside Y\" (Parent).",
           "To create something new use insert_object. To change a script's code use edit_script. To change many objects "

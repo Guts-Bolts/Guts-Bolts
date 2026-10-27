@@ -126,6 +126,8 @@ uniform int   uWetCount;
 uniform vec4  uWetSpots[16];
 uniform float uWetAmt[16];
 uniform float uWetPart;
+uniform float uRainWet;       // rain (Lighting.Weather): how wet everything facing up is, 0..1
+uniform float uSnow;          // snow: how much has settled on tops, 0..1
 uniform vec3  uGibSkin;       // a gib (uMaterial 31) cut from a body part: that part's colour on its outer side
 uniform bool  uGibSkinOn;
 uniform float uGibSeed;       // 0..1: every chunk looks a bit different
@@ -566,7 +568,7 @@ void main() {
     // Wet things: darker (water soaks into wood, concrete and the like) and shinier,
     // with little puddles on flat tops. Patchy as they dry.
     if (uMaterial != 2 && uMaterial != 7 && uMaterial != 8 && uMaterial != 30 && uMaterial != 31) {
-        float wet = uWetPart;
+        float wet = max(uWetPart, uRainWet * smoothstep(-0.4, 0.3, N.y));
         for (int i = 0; i < uWetCount; ++i) {
             float d = length(vWorldPos - uWetSpots[i].xyz);
             wet = max(wet, uWetAmt[i] * (1.0 - smoothstep(uWetSpots[i].w * 0.5, uWetSpots[i].w, d)));
@@ -578,6 +580,14 @@ void main() {
             albedo *= mix(1.0, porous, wet);
             float puddle = wet * smoothstep(0.75, 0.95, N.y);
             rough = mix(rough, 0.05, max(wet * 0.75, puddle));
+        }
+        // Snow settling on whatever faces up: patchy at first, then a white layer.
+        if (uSnow > 0.0) {
+            float cover = uSnow * smoothstep(0.35, 0.85, N.y);
+            cover *= smoothstep(0.25, 0.6, vnoise(vWorldPos.xz * 0.9) * 0.5 + uSnow * 0.7);
+            albedo = mix(albedo, vec3(0.86, 0.89, 0.94), cover);
+            rough = mix(rough, 0.85, cover);
+            metal = mix(metal, 0.0, cover);
         }
     }
 

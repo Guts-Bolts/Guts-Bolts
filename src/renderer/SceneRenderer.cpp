@@ -485,6 +485,19 @@ void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, 
 
 void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& target, bool showGrid) {
     GraphicsSettings& gs = GraphicsSettings::get();
+    // Weather: drops fall on, and while drawing the sky, sun and fog look stormy
+    // (put back as the game set them when this frame is done).
+    {
+        const double t = now();
+        const float dt = m_weatherClock > 0.0 ? (float)(t - m_weatherClock) : 0.0f;
+        m_weatherClock = t;
+        m_weather.update(scene, camera.position(), dt);
+    }
+    struct KeepLighting {
+        Scene& scene; Environment saved;
+        ~KeepLighting() { scene.environment() = saved; }
+    } keep{scene, scene.environment()};
+    scene.environment() = withWeather(keep.saved);
     const Environment& env = scene.environment();
     glm::vec3 sunDir = env.sunDirection();
     gatherScreenFx(scene);
@@ -647,6 +660,8 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         m_lit->setInt("uWetCount", n);
         if (n) { m_lit->setVec4Array("uWetSpots", spots, n); m_lit->setFloatArray("uWetAmt", amt, n); }
         m_lit->setFloat("uWetPart", 0.0f);
+        m_lit->setFloat("uRainWet", m_weather.wetness());
+        m_lit->setFloat("uSnow", m_weather.snowCover());
     }
     m_lit->setFloat("uTime", time);
     m_lit->setVec3("uSunDir", sunDir);
@@ -1548,6 +1563,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
 
     drawRibbons(scene, camera);
     drawSprites(scene, camera);
+    drawWeather(scene, camera);
     m_lit->bind();
     glDepthMask(GL_TRUE);
 }
@@ -1627,6 +1643,71 @@ void SceneRenderer::drawSprites(Scene& scene, const Camera& camera) {
 
 namespace {
 struct RibbonVertex { glm::vec3 pos; glm::vec2 uv; glm::vec4 color; };
+} // namespace
+
+// Rain streaks and snowflakes: thin strips facing the camera, drawn with the
+// Trails and Beams shader (lit by the sky, so they're dim at night).
+void SceneRenderer::drawWeather(Scene& scene, const Camera& camera) {
+    const std::vector<WeatherSim::Streak>& streaks = m_weather.streaks();
+    if (streaks.empty()) return;
+    if (!m_ribbonVao) {
+        glGenVertexArrays(1, &m_ribbonVao);
+        glGenBuffers(1, &m_ribbonVbo);
+        glBindVertexArray(m_ribbonVao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_ribbonVbo);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(RibbonVertex), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(RibbonVertex), (void*)offsetof(RibbonVertex, uv));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(RibbonVertex), (void*)offsetof(RibbonVertex, color));
+    }
+    const bool snow = m_weather.kind() == (int)Weather::Snow;
+    const glm::vec3 eye = camera.position();
+    const glm::vec3 tint = snow ? glm::vec3(1.0f) : glm::vec3(0.78f, 0.84f, 0.92f);
+    std::vector<RibbonVertex> verts;
+    verts.reserve(streaks.size() * 6);
+    for (const WeatherSim::Streak& s : streaks) {
+        const glm::vec3 mid = (s.top + s.bottom) * 0.5f;
+        if (tooFar(mid, 1.0f)) continue;
+        glm::vec3 along = s.bottom - s.top;
+        glm::vec3 side = glm::cross(glm::length(along) > 1e-5f ? along : glm::vec3(0, -1, 0), eye - mid);
+        const float len = glm::length(side);
+        if (len < 1e-6f) continue;
+        side *= s.width * 0.5f / len;
+        // Fade out the ones right in front of the lens and the far ones (so the box edge can't be seen).
+        const float d = glm::length(mid - eye);
+        const float a = s.alpha * glm::clamp((d - 0.6f) / 1.5f, 0.0f, 1.0f) *
+                        glm::clamp((WeatherSim::kHalfBox - d) / 6.0f, 0.0f, 1.0f);
+        if (a <= 0.003f) continue;
+        const glm::vec4 top(tint, snow ? a : a * 0.3f), bottom(tint, a);   // rain: fainter at the tail
+        const RibbonVertex v0{s.top - side, {0, 0}, top}, v1{s.top + side, {1, 0}, top},
+                           v2{s.bottom + side, {1, 1}, bottom}, v3{s.bottom - side, {0, 1}, bottom};
+        verts.insert(verts.end(), {v0, v1, v2, v0, v2, v3});
+    }
+    if (verts.empty()) return;
+    m_ribbon->bind();
+    m_ribbon->setMat4("uViewProj", camera.projection() * camera.view());
+    // Lit by the sky and sun, like the clouds.
+    const Environment& env = scene.environment();
+    m_ribbon->setVec3("uLight", glm::clamp(env.ambientColor * env.ambientIntensity * 1.4f +
+                                           env.sunColor * std::max(0.0f, env.sunIntensity) * std::max(env.sunDirection().y, 0.0f) * 0.6f,
+                                           glm::vec3(0.04f), glm::vec3(1.1f)));
+    m_ribbon->setBool("uHasTex", false);
+    m_ribbon->setFloat("uGlow", 0.0f);
+    glBindVertexArray(m_ribbonVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_ribbonVbo);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(RibbonVertex)), verts.data(), GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
+}
+
+namespace {
 // A strip of quads from pairs of edge points (a[i], b[i]).
 void addStrip(std::vector<RibbonVertex>& out, const std::vector<RibbonVertex>& a, const std::vector<RibbonVertex>& b) {
     for (size_t i = 1; i < a.size() && i < b.size(); ++i) {

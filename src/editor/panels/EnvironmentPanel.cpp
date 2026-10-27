@@ -3,6 +3,7 @@
 #include "../../scene/Environment.h"
 
 #include <imgui.h>
+#include <algorithm>
 
 namespace {
 void help(const char* text) {
@@ -18,6 +19,8 @@ void EnvironmentPanel::render() {
     Environment& e = m_scene->environment();
 
     ImGui::TextDisabled("Presets");
+    const int weather = e.weather;            // (a preset changes the look, not the weather)
+    const float weatherAmount = e.weatherAmount;
     if (ImGui::Button("Day"))      e = EnvironmentPresets::day();
     ImGui::SameLine();
     if (ImGui::Button("Sunset"))   e = EnvironmentPresets::sunset();
@@ -27,6 +30,8 @@ void EnvironmentPanel::render() {
     if (ImGui::Button("Overcast")) e = EnvironmentPresets::overcast();
     ImGui::SameLine();
     if (ImGui::Button("Horror"))   e = EnvironmentPresets::horror();
+    e.weather = weather;
+    e.weatherAmount = weatherAmount;
 
     ImGui::Spacing();
     if (ImGui::SliderFloat("Time of Day", &e.clockTime, 0.0f, 24.0f, "%.1f h"))
@@ -85,6 +90,15 @@ void EnvironmentPanel::render() {
         ImGui::SliderFloat("Density",   &e.fogDensity, 0.0f, 0.1f, "%.4f");
         ImGui::SliderFloat("Sun Glow",  &e.fogSunGlow, 0.0f, 3.0f);
         help("Fog lights up when you look towards the sun");
+    }
+
+    if (ImGui::CollapsingHeader("Weather", open)) {
+        int w = std::clamp(e.weather, 0, kWeatherCount - 1);
+        const char* shown[kWeatherCount] = {"Clear sky", "Rain", "Snow"};   // (Lighting.Weather: Clear, Rain, Snow)
+        if (ImGui::Combo("Weather##kind", &w, shown, kWeatherCount)) e.weather = w;
+        help("Rain makes everything wet with puddles, and snow settles on tops. Scripts can change it with Lighting.Weather");
+        ImGui::SliderFloat("Intensity##weather", &e.weatherAmount, 0.0f, 1.0f);
+        help("From a few drops (0) to a storm (1)");
     }
 
     if (ImGui::CollapsingHeader("Camera & Effects", open)) {

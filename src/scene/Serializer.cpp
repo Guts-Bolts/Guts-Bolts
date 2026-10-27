@@ -1279,13 +1279,15 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     X(clouds) X(cloudCover) X(cloudSpeed) X(cloudColor) X(stars)                    \
     X(fogEnabled) X(fogColor) X(fogDensity) X(fogSunGlow)                           \
     X(exposure) X(bloomIntensity) X(bloomThreshold) X(aoIntensity) X(contrast)      \
-    X(saturation) X(vignette) X(tint)
+    X(saturation) X(vignette) X(tint) X(weather) X(weatherAmount)
 
 json toJsonValue(float v) { return v; }
 json toJsonValue(bool v) { return v; }
+json toJsonValue(int v) { return v; }
 json toJsonValue(const glm::vec3& v) { return vec(v); }
 void fromJsonValue(const json& j, const char* k, float& v) { v = get<float>(j, k, v); }
 void fromJsonValue(const json& j, const char* k, bool& v)  { v = get<bool>(j, k, v); }
+void fromJsonValue(const json& j, const char* k, int& v)   { v = get<int>(j, k, v); }
 void fromJsonValue(const json& j, const char* k, glm::vec3& v) { v = vec(j, k, v); }
 
 json envToJson(const Environment& e) {

@@ -45,6 +45,13 @@ struct Environment {
     float     fogDensity   = 0.010f;
     float     fogSunGlow   = 0.6f;      // fog glows when looking toward the sun
 
+    // Weather (Lighting.Weather / WeatherIntensity) -----------------------------
+    // Rain and snow fall around the camera (each computer draws its own), with
+    // grey skies and thicker fog; rain makes things wet with puddles, snow settles
+    // on tops. See withWeather() and Weather.h.
+    int       weather       = 0;        // kWeatherNames: 0 Clear, 1 Rain, 2 Snow
+    float     weatherAmount = 0.6f;     // 0 a few drops .. 1 a storm
+
     // Camera / post-processing -------------------------------------------------
     float     exposure       = 1.0f;
     float     bloomIntensity = 0.5f;
@@ -65,6 +72,36 @@ struct Environment {
             std::cos(el) * std::sin(az)));
     }
 };
+
+enum class Weather { Clear = 0, Rain = 1, Snow = 2 };
+inline constexpr int kWeatherCount = 3;
+inline const char* const kWeatherNames[kWeatherCount] = {"Clear", "Rain", "Snow"};
+
+// How the sky, sun and fog look with the weather on top (grey clouds, less sun,
+// thicker fog). The saved Lighting stays as the game maker set it.
+inline Environment withWeather(const Environment& e) {
+    if (e.weather <= 0 || e.weather >= kWeatherCount) return e;
+    Environment w = e;
+    const float a = glm::clamp(e.weatherAmount, 0.0f, 1.0f);
+    const bool snow = e.weather == (int)Weather::Snow;
+    const glm::vec3 grey = snow ? glm::vec3(0.78f, 0.80f, 0.84f) : glm::vec3(0.50f, 0.53f, 0.58f);
+    const float k = 0.25f + 0.5f * a;   // how much of the sky turns grey
+    // Keep night dark: grey only as bright as the sky already was.
+    const float bright = glm::clamp(glm::length(e.skyHorizon) / glm::length(grey), 0.0f, 1.0f);
+    w.skyZenith  = glm::mix(e.skyZenith,  grey * 0.85f * bright, k);
+    w.skyHorizon = glm::mix(e.skyHorizon, grey * bright, k);
+    w.clouds     = true;
+    w.cloudCover = glm::max(e.cloudCover, 0.6f + 0.4f * a);
+    w.cloudColor = glm::mix(e.cloudColor, grey * bright, 0.4f + 0.4f * a);
+    w.sunIntensity = e.sunIntensity * (1.0f - (snow ? 0.35f : 0.55f) * a);
+    w.shadowStrength = e.shadowStrength * (1.0f - 0.5f * a);
+    w.fogEnabled = true;
+    w.fogDensity = (e.fogEnabled ? e.fogDensity : 0.0f) + (snow ? 0.022f : 0.012f) * a;
+    w.fogColor   = glm::mix(e.fogColor, grey * bright, 0.5f * a + 0.2f);
+    w.fogSunGlow = e.fogSunGlow * (1.0f - 0.7f * a);
+    w.saturation = e.saturation * (1.0f - (snow ? 0.1f : 0.2f) * a);
+    return w;
+}
 
 // Ready-made atmospheres, like Roblox's lighting presets.
 namespace EnvironmentPresets {

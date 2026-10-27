@@ -29,6 +29,7 @@ void makeStudio(Scene& scene) {
     e.sunIntensity = 1.5f;
     e.shadows = false;
     e.fogEnabled = false;
+    e.weather = 0;   // (no rain in item pictures)
     e.ambientColor = {0.75f, 0.78f, 0.85f};
     e.groundAmbient = {0.45f, 0.43f, 0.40f};
     e.ambientIntensity = 0.55f;

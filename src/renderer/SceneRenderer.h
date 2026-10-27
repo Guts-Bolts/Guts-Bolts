@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 #include "ShadowMap.h"
+#include "../scene/Weather.h"
 
 class Scene;
 class SceneNode;
@@ -92,6 +93,10 @@ private:
     std::unique_ptr<Shader> m_sprite;         // ParticleEmitter / Fire / Smoke / Sparkles particles
     unsigned int m_spriteVao = 0, m_spriteVbo = 0;
     void drawSprites(Scene& scene, const Camera& camera);
+    // Rain and snow (Lighting.Weather): the falling drops, and how wet / snowy things are.
+    WeatherSim m_weather;
+    double     m_weatherClock = 0.0;
+    void drawWeather(Scene& scene, const Camera& camera);
     // Each Trail's pieces: where its two attachments were, and when.
     struct TrailPoint { glm::vec3 a, b; double time; };
     struct TrailState { std::vector<TrailPoint> points; double seen = 0.0; int clears = 0; };

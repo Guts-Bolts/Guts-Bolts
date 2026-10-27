@@ -180,7 +180,7 @@ const char* const kLuaProperties[] = {
     "FlowVelocity", "Clarity", "Drag", "WaveScale", "Gravity", "DeathStyle", "Gore", "FallDamage", "SafeFallSpeed",
     "FallDamageScale", "PlayerCollisions", "VoiceChatEnabled", "Orthographic", "OrthographicSize", "BloodColor",
     "BloodAmount", "MaxFluidParticles", "ClockTime", "GlobalShadows", "FogEnabled", "FogDensity", "FogColor",
-    "Ambient", "SunColor", "Text", "TextColor3", "TextSize", "TextScaled", "TextWrapped", "TextTransparency",
+    "Ambient", "SunColor", "Weather", "WeatherIntensity", "Text", "TextColor3", "TextSize", "TextScaled", "TextWrapped", "TextTransparency",
     "TextStrokeColor3", "TextStrokeTransparency", "TextXAlignment", "TextYAlignment", "TextEditable", "Font", "FontSize",
     "PlaceholderText", "PlaceholderColor3", "ClearTextOnFocus", "MultiLine", "ContentText", "BackgroundColor3",
     "BackgroundTransparency", "BorderColor3", "BorderSizePixel", "AnchorPoint", "ZIndex", "LayoutOrder", "Active",
