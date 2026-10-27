@@ -136,7 +136,12 @@ public:
     // Knocked off your feet for `seconds` (tripped, flung): no control, the body
     // falls over and gets back up afterwards. 0 = get up now.
     void       trip(float seconds, const glm::vec3& spin = glm::vec3(0.0f));
-    bool       tripped() const { return m_tripTime > 0.0f || m_humanoid.platformStand; }
+    bool       tripped() const { return m_tripTime > 0.0f || heldDown(); }
+    // Held down by a script: PlatformStand, or humanoid:ChangeState(Enum.HumanoidStateType.Ragdoll
+    // / Physics) until GettingUp / Running. The body goes limp as a real ragdoll (pushed around,
+    // tumbling down slopes) and stays down until it's let go, like Roblox.
+    bool       heldDown() const { return m_humanoid.platformStand || !m_heldState.empty(); }
+    void       setHeldState(const std::string& state) { m_heldState = state; }
     // Roblox's HumanoidStateType names: Running, Jumping, Freefall, Climbing,
     // Swimming, Seated, FallingDown, GettingUp, PlatformStanding, Dead.
     const char* stateName() const;
@@ -331,6 +336,12 @@ private:
     // Climbing trusses / ladders, and swimming in water.
     bool  m_climbing = false, m_swimming = false, m_underwater = false;
     float m_swimLook = 0.0f, m_bobPhase = 0.0f;
+    // Swimming: how the body lies in the water (degrees: pitch 0 upright .. 90 flat .. 180 head
+    // down; roll leaning into turns), turned about the middle of the body (kSwimPivot up from
+    // the feet). m_poseShift = how far that moved the root this frame (taken back next frame).
+    float m_swimPitch = 0.0f, m_swimRoll = 0.0f, m_lastYaw = 0.0f;
+    glm::vec3 m_poseShift{0.0f};
+    static constexpr float kSwimPivot = 1.1f;
     float m_drip = 0.0f, m_dripTimer = 0.0f;   // dripping wet after swimming (leaves wet footprints)
     bool  m_swimDown = false;
     float m_climbBlend = 0.0f, m_swimBlend = 0.0f;
@@ -364,8 +375,8 @@ private:
     bool applyCustomAnimation(const char* state, float dt);
     SceneNode* customAnimation(const char* state) const;   // the Animate script's Animation for it
     bool hasCustomAnimation(const char* state) const;      // ... and it has keyframes
-    void  sitStep(float dt, bool jump);   // while sitting: stay on the seat
-    void  sitHereStep(float dt, bool jump);   // while sitting on the floor
+    void  sitStep(float dt, bool jump, Physics& physics);       // while sitting: stay on the seat
+    void  sitHereStep(float dt, bool jump, Physics& physics);   // while sitting on the floor
     bool      m_sitHere = false;     // sitting on the floor (not a seat)
     bool      m_sitPending = false;  // asked to sit in the air: sit on landing
     glm::vec3 m_sitSpot{0.0f};       // where our feet were when we sat down
@@ -391,6 +402,9 @@ private:
     BloodyFeet m_feet;      // stepped in blood: leaves footprints
     // Knocked over as a ragdoll (alive): how long we've been down, and the tool to hold again after.
     float     m_knockTime = 0.0f;
+    std::string m_heldState;   // "Ragdoll" / "Physics" from ChangeState ("" = not held down)
+    bool      canHoldDown() const;
+    bool      knockedOffSeat(Physics& physics);   // while sitting: a big shove or the seat tipping over
     uint64_t  m_knockTool = 0;
     bool      canKnockdown() const;
     void      startKnockdown();

@@ -29,7 +29,7 @@ public:
     // Put parts inside accessory models back where they were in them (call before the
     // character is put back together: respawning, getting up). Then stop().
     void release(Scene& scene);
-    void stop() { m_active = false; m_points.clear(); m_sticks.clear(); m_bones.clear(); m_stumps.clear(); }
+    void stop() { m_active = false; m_held = false; m_points.clear(); m_sticks.clear(); m_bones.clear(); m_stumps.clear(); }
     bool active() const { return m_active; }
     glm::vec3 center() const;
     glm::mat3 bodyFrame() const { return torsoFrame(); }   // right, up (shoulders), front
@@ -37,6 +37,10 @@ public:
     bool      settled() const;
     bool      lying() const { return m_onGround >= 3; }        // down on the floor (maybe still sliding)
     bool      alive() const { return m_alive; }
+    // Held down by a script (PlatformStand, the Ragdoll state): the body goes floppy and
+    // doesn't try to get up; it stays down until the script lets go.
+    void      setHeld(bool on) { m_held = on; }
+    bool      held() const { return m_held; }
     glm::vec3 velocity() const;                             // of the body as a whole (studs / second)
 
     // Cut a limb loose: 0 L arm, 1 R arm, 2 L leg, 3 R leg, 4 head.
@@ -96,6 +100,7 @@ private:
     bool      m_gore = false;
     // Muscles
     bool      m_alive = false;
+    bool      m_held = false;
     float     m_time = 0.0f;                // since it went down
     float     m_throes = 3.0f;              // dying: how long it fights before going limp
     float     m_protect = 0.0f;             // covering the head from the hit (seconds left)

@@ -3192,16 +3192,18 @@ int hum_getState(lua_State* L) {
     return 1;
 }
 
-// humanoid:ChangeState(Enum.HumanoidStateType.FallingDown): "FallingDown" / "Ragdoll" knock
-// the character over for a couple of seconds, "GettingUp" stands it back up, "Dead" kills it.
+// humanoid:ChangeState(Enum.HumanoidStateType.FallingDown): "FallingDown" knocks the character
+// over for a couple of seconds; "Ragdoll" / "Physics" make it a limp ragdoll until "GettingUp"
+// (or "Running") stands it back up, like PlatformStand; "Dead" kills it.
 int hum_changeState(lua_State* L) {
     const char* st = luaL_checkstring(L, 2);
     Player* p = E(L)->scene()->player();
     const bool mine = p && p->rootId() == humRoot(L);
     if (is(st, "Dead")) { hum(L).health = 0.0f; return 0; }
     if (!mine) return 0;
-    if (is(st, "FallingDown") || is(st, "Ragdoll") || is(st, "Physics")) p->trip(2.0f);
-    else if (is(st, "GettingUp") || is(st, "Running")) { p->trip(0.0f); hum(L).platformStand = false; }
+    if (is(st, "FallingDown")) p->trip(2.0f);
+    else if (is(st, "Ragdoll") || is(st, "Physics")) p->setHeldState(is(st, "Ragdoll") ? "Ragdoll" : "Physics");
+    else if (is(st, "GettingUp") || is(st, "Running")) { p->trip(0.0f); p->setHeldState(""); hum(L).platformStand = false; }
     else if (is(st, "PlatformStanding")) hum(L).platformStand = true;
     return 0;
 }

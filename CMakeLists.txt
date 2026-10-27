@@ -895,6 +895,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME WeatherTests COMMAND WeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # The character: held-down ragdolls, knocked off seats, swimming.
+    add_executable(CharacterTests tests/CharacterTests.cpp)
+    target_link_libraries(CharacterTests PRIVATE gb_engine)
+    add_test(NAME CharacterTests COMMAND CharacterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # MemoryStoreService: the store's rules and the script side, played offline.
     add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)
     target_link_libraries(MemoryStoreTests PRIVATE gb_engine)
