@@ -500,6 +500,12 @@ void Editor::renderToolbar() {
             }
         }
         {
+            Group g("Versions");
+            if (bigButton("Compare", Icons::Id::Merge, m_showCompare, true,
+                          "Compare and Merge: see what's different from another saved version of this game, and bring changes in"))
+                m_showCompare = !m_showCompare;
+        }
+        {
             Group g("Settings");
             if (bigButton("Player", Icons::Id::Player, false, true, "Walk speed, jump, death and gore")) m_showPanel[kPanelPlayer] = true;
             if (bigButton("Lighting", Icons::Id::Lighting, false, true)) m_showPanel[kPanelLighting] = true;

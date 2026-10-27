@@ -386,6 +386,27 @@ const std::vector<Tool>& tools() {
          schema({{"action", {{"type", "string"}, {"enum", {"read", "record", "stop", "clear"}}}}, {"object", kObject},
                  {"script", {{"type", "string"}}}, {"kind", {{"type", "string"}, {"enum", {"set", "event"}}}},
                  {"limit", {{"type", "integer"}}}}, {})},
+        {"compare_scenes", "Compare this game with another saved version, and merge", "HISTORY", false, false, false, Risk::Medium,
+         {"Studio's Compare and Merge: lists what's different between the open game and another saved version of it, object "
+          "by object (objects keep their id when saved, so renamed or moved ones are still matched): Added (only in the other), "
+          "Removed (not in the other), Moved (position / rotation / parent) and Changed (with each property before and after), "
+          "plus the game settings. With base (the version both started from) only the other version's changes are listed and "
+          "objects both sides changed are conflicts. merge brings chosen differences into the open game.",
+          "\"What changed since my backup?\", \"merge my friend's copy of the game into mine\", \"put back just the lamp from "
+          "yesterday's save\".",
+          "For undo use undo; for named save points in this session use checkpoint.",
+          "action: save_copy (name: keeps the open game as <name> in the games folder, the open game stays as it is), "
+          "compare (other: a saved game's name or a file path; base: optional, the same), merge (changes: indexes from "
+          "compare; left out = every one that isn't a conflict).",
+          "save_copy: {path}. compare: {added, removed, moved, changed, conflicts, changes: [{index, kind, object_id, name, "
+          "path, class, fields: [{name, before, after}], conflict, why, inside}]}. merge: {done, problems}.",
+          "merge: compare first; not during a playtest.",
+          "merge changes the open game (one Ctrl+Z puts it back). save_copy writes a file in the games folder.",
+          "compare_scenes save_copy -> (changes) -> compare_scenes compare {other} -> compare_scenes merge {changes: [0, 2]}.",
+          "\"Bring the bridge back from my backup, but keep everything else.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"save_copy", "compare", "merge"}}}}, {"name", {{"type", "string"}}},
+                 {"other", {{"type", "string"}}}, {"base", {{"type", "string"}}},
+                 {"changes", {{"type", "array"}, {"items", {{"type", "integer"}}}}}}, {"action"})},
         {"physics_replay", "Record the physics, look at any moment, save physics tests", "DEBUG", false, false, false, Risk::Low,
          {"Studio's Physics Replay: runs only the physics (no scripts, no players) on a copy of the scene as it is now, "
           "60 steps a second, and remembers where every loose (unanchored) part was each step. Studio shows any frame of "
@@ -733,6 +754,7 @@ json workflowOf(const std::string& name) {
         {"ai_activity", {{"validate_scene"}, {"undo"}}},
         {"script_history", {{"playtest"}, {"read_script", "edit_script"}}},
         {"physics_replay", {{"get_game_tree"}, {"screenshot", "playtest"}}},
+        {"compare_scenes", {{"checkpoint"}, {"get_game_tree", "undo"}}},
         {"get_errors", {{"playtest"}, {"read_script", "edit_script"}}},
         {"diagnose_object", {{"find_objects"}, {"set_property", "edit_script"}}},
         {"validate_scene", {{}, {"diagnose_object", "playtest"}}},
