@@ -33,6 +33,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerForum.cpp
     src/server/ServerItems.cpp
     src/online/Protocol.cpp
+    src/online/MemoryStore.cpp
     src/core/Account.cpp
     src/core/TextFilter.cpp
     src/core/Paths.cpp
@@ -469,6 +470,7 @@ add_library(gb_engine STATIC
     src/game/Badges.cpp
     src/game/Bolts.cpp
     src/online/Protocol.cpp
+    src/online/MemoryStore.cpp
     src/online/OnlineClient.cpp
     src/online/AssetCache.cpp
     src/game/Catalog.cpp
@@ -891,5 +893,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(WeatherTests tests/WeatherTests.cpp)
     target_link_libraries(WeatherTests PRIVATE gb_engine)
     add_test(NAME WeatherTests COMMAND WeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # MemoryStoreService: the store's rules and the script side, played offline.
+    add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)
+    target_link_libraries(MemoryStoreTests PRIVATE gb_engine)
+    add_test(NAME MemoryStoreTests COMMAND MemoryStoreTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()

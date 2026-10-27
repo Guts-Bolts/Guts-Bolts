@@ -4,6 +4,7 @@
 #include "../core/Account.h"
 #include "../online/OnlineClient.h"
 #include "../online/AssetCache.h"
+#include "../online/MemoryStore.h"
 #include "../scene/Serializer.h"
 #include <cctype>
 #include <sstream>
@@ -570,6 +571,108 @@ do
         return conn
     end
     setmetatable(MessagingService, { __tostring = function() return "MessagingService" end })
+end
+
+-- MemoryStoreService: quick, short-lived data every running server of this game shares (a
+-- global leaderboard, a matchmaking queue). Everything needs an expiration (seconds, 45 days
+-- at most) and goes away by itself. Through the Guts&Bolts server for a published game's
+-- online servers, else kept in this program. Like Roblox:
+--   local map = MemoryStoreService:GetSortedMap("Scores")
+--   map:SetAsync(player.Name, 50, 600, 50)          -- key, value, expiration, sort key
+--   for _, e in ipairs(map:GetRangeAsync(Enum.SortDirection.Descending, 10)) do print(e.key, e.value) end
+--   local q = MemoryStoreService:GetQueue("Match")
+--   q:AddAsync(player.UserId, 60)  local items, id = q:ReadAsync(2, true, 0)  q:RemoveAsync(id)
+-- A game has 64 KB + 1 KB per player; one value is at most 32 KB.
+do
+    local memStart, memDone = __gb_memStart, __gb_memDone
+    MemoryStoreService = { Name = "MemoryStoreService", ClassName = "MemoryStoreService" }
+    local function ask(call, op, args)
+        local ticket = memStart(op, args, #playerList)
+        while true do
+            local done, r = memDone(ticket)
+            if done then
+                if not r.ok then error(call .. ": " .. tostring(r.error), 3) end
+                return r
+            end
+            task.wait()
+        end
+    end
+    local function text(call, what, v)
+        if type(v) ~= "string" and type(v) ~= "number" then error(call .. ": the " .. what .. " must be a string", 3) end
+        return tostring(v)
+    end
+    local function maps(sorted, className)
+        return function(_, name)
+            name = text("MemoryStoreService:Get" .. className:sub(12), "name", name)
+            local m = setmetatable({ Name = name, ClassName = className }, { __tostring = function() return name end })
+            local function c(fn) return className .. ":" .. fn end
+            local function get(fn, key)
+                local r = ask(c(fn), "mem.get", { map = name, sorted = sorted, key = text(c(fn), "key", key) })
+                if not r.found then return nil end
+                return r.value, r.sortKey
+            end
+            local function set(fn, key, value, expiration, sortKey)
+                return ask(c(fn), "mem.set", { map = name, sorted = sorted, key = text(c(fn), "key", key), value = value,
+                                                expiration = tonumber(expiration), sortKey = sorted and sortKey or nil }).created
+            end
+            function m:GetAsync(key) return get("GetAsync", key) end
+            function m:SetAsync(key, value, expiration, sortKey) return set("SetAsync", key, value, expiration, sortKey) end
+            -- The function gets the value now there (nil if none; sorted maps: and its sort key)
+            -- and returns the new one (nil = leave it alone).
+            function m:UpdateAsync(key, transform, expiration)
+                if type(transform) ~= "function" then error(c("UpdateAsync") .. ": the second argument must be a function", 2) end
+                local value, sortKey = get("UpdateAsync", key)
+                local newValue, newSortKey = transform(value, sortKey)
+                if newValue == nil then return nil end
+                set("UpdateAsync", key, newValue, expiration, newSortKey)
+                if sorted then return newValue, newSortKey end
+                return newValue
+            end
+            function m:RemoveAsync(key)
+                ask(c("RemoveAsync"), "mem.remove", { map = name, sorted = sorted, key = text(c("RemoveAsync"), "key", key) })
+            end
+            if sorted then
+                -- Bounds leave their item out: { key = ..., sortKey = ... } (either or both).
+                function m:GetRangeAsync(direction, count, lower, upper)
+                    local items = ask(c("GetRangeAsync"), "mem.range", { map = name, sorted = true,
+                        direction = tostring(direction):match("Descending") and "Descending" or "Ascending",
+                        count = tonumber(count), lower = lower, upper = upper }).items
+                    return items or {}
+                end
+            end
+            return m
+        end
+    end
+    MemoryStoreService.GetSortedMap = maps(true, "MemoryStoreSortedMap")
+    MemoryStoreService.GetHashMap = maps(false, "MemoryStoreHashMap")
+    -- Read items stay hidden from everyone for invisibilityTimeout seconds (30 if not given);
+    -- RemoveAsync(id) takes them out for good, otherwise they come back.
+    function MemoryStoreService:GetQueue(name, invisibilityTimeout)
+        name = text("MemoryStoreService:GetQueue", "name", name)
+        local hidden = tonumber(invisibilityTimeout) or 30
+        local q = setmetatable({ Name = name, ClassName = "MemoryStoreQueue" }, { __tostring = function() return name end })
+        function q:AddAsync(value, expiration, priority)
+            ask("MemoryStoreQueue:AddAsync", "mem.qadd", { queue = name, value = value, expiration = tonumber(expiration),
+                                                          priority = tonumber(priority) or 0 })
+        end
+        -- Waits up to waitTimeout seconds for items (-1, the default: until there are some).
+        function q:ReadAsync(count, allOrNothing, waitTimeout)
+            local waitFor, waited = tonumber(waitTimeout) or -1, 0
+            while true do
+                local r = ask("MemoryStoreQueue:ReadAsync", "mem.qread", { queue = name, count = tonumber(count) or 1,
+                                                                         all = allOrNothing == true, invisible = hidden })
+                if #r.items > 0 or (waitFor >= 0 and waited >= waitFor) then return r.items, r.id end
+                local step = waitFor >= 0 and math.min(0.5, waitFor - waited) or 0.5
+                task.wait(step)
+                waited = waited + step
+            end
+        end
+        function q:RemoveAsync(id)
+            ask("MemoryStoreQueue:RemoveAsync", "mem.qremove", { queue = name, id = id })
+        end
+        return q
+    end
+    setmetatable(MemoryStoreService, { __tostring = function() return "MemoryStoreService" end })
 end
 
 -- PathfindingService: walking routes on the navigation mesh (every floor a character
@@ -1454,7 +1557,7 @@ local services = { Workspace = workspace, PathfindingService = PathfindingServic
                    MarketplaceService = MarketplaceService, GamePassService = GamePassService,
                    RunService = RunService, UserInputService = UserInputService, Gui = Gui,
                    CollectionService = CollectionService, DataStoreService = DataStoreService,
-                   MessagingService = MessagingService,
+                   MessagingService = MessagingService, MemoryStoreService = MemoryStoreService,
                    TweenService = TweenService, HttpService = HttpService,
                    ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService,
                    ContextActionService = ContextActionService, VRService = VRService }
@@ -1470,7 +1573,7 @@ local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, Scri
     AnalyticsService = { LogCustomEvent = true, LogEconomyEvent = true, LogProgressionEvent = true },
     PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {}, TextService = {},
     VoiceChatService = {},
-    MemoryStoreService = {}, InsertService = {},
+    InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
     GamepadService = {}, KeyframeSequenceProvider = {}, NotificationService = {} }
 local made = {}
@@ -1715,6 +1818,7 @@ __gb_raycast, __gb_storage, __gb_addMethod, __gb_cgroups = nil, nil, nil, nil
 __gb_passLookup, __gb_passReady, __gb_passOwns, __gb_passPrompt, __gb_passResults = nil, nil, nil, nil, nil
 __gb_receiptCheck, __gb_receipts, __gb_receiptDone = nil, nil, nil
 __gb_msgPublish, __gb_msgDone, __gb_msgSubscribe, __gb_msgTake = nil, nil, nil, nil
+__gb_memStart, __gb_memDone = nil, nil
 __gb_casBind, __gb_casUnbind, __gb_casUnbindAll, __gb_casInfo, __gb_casAll, __gb_casButton, __gb_casButtonGet = nil, nil, nil, nil, nil, nil, nil
 )LUA";
 
@@ -2044,6 +2148,29 @@ int l_dsSet(lua_State* L) {
     if (v.dump().size() > 256 * 1024) return luaL_error(L, "That's too much to save in one key (256 KB at most)");
     LuaApi::engine(L)->dataSet(store, key, v);
     return 0;
+}
+
+// --- MemoryStoreService (the Lua side is in the prelude) ---------------------
+
+// __gb_memStart(op, args, players) -> ticket
+int l_memStart(lua_State* L) {
+    if (LuaApi::engine(L)->runMode() == ScriptEngine::RunMode::Client)
+        return luaL_error(L, "MemoryStoreService only works in Scripts on the server (this is a LocalScript)");
+    const std::string op = luaL_checkstring(L, 1);
+    if (op.rfind("mem.", 0) != 0) return luaL_error(L, "MemoryStoreService: unknown request");
+    luaL_checktype(L, 2, LUA_TTABLE);
+    nlohmann::json args = toJson(L, 2, 0, "MemoryStores can only hold numbers, text, true/false and tables of those");
+    lua_pushinteger(L, LuaApi::engine(L)->memStart(op, std::move(args), (int)luaL_optinteger(L, 3, 0)));
+    return 1;
+}
+
+// __gb_memDone(ticket) -> done, reply ({ok, error, ...})
+int l_memDone(lua_State* L) {
+    nlohmann::json reply;
+    if (!LuaApi::engine(L)->memDone((int)luaL_checkinteger(L, 1), reply)) { lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, 1);
+    pushJson(L, reply);
+    return 2;
 }
 
 // --- MessagingService (the Lua side is in the prelude) -----------------------
@@ -2912,6 +3039,8 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_dsStart", l_dsStart);
     lua_register(L, "__gb_dsDone", l_dsDone);
     lua_register(L, "__gb_dsSet", l_dsSet);
+    lua_register(L, "__gb_memStart", l_memStart);
+    lua_register(L, "__gb_memDone", l_memDone);
     lua_register(L, "__gb_msgPublish", l_msgPublish);
     lua_register(L, "__gb_msgDone", l_msgDone);
     lua_register(L, "__gb_msgSubscribe", l_msgSubscribe);
@@ -3222,6 +3351,8 @@ void ScriptEngine::stop() {
     m_dataDone.clear();
     m_dataCache.clear();
     m_msgMode = MsgMode::Unknown;              // (MessagingService starts again too)
+    m_memMode = MemMode::Unknown;              // (and MemoryStoreService)
+    m_memDone.clear();
     m_msgTopics.clear(); m_msgIn.clear(); m_msgQueue.clear(); m_msgDone.clear(); m_msgSentAt.clear();
     m_msgSeen.clear();
     m_msgAfter = -1;
@@ -3838,6 +3969,58 @@ void ScriptEngine::dataSet(const std::string& store, const std::string& key, con
     DataJob j;
     j.kind = "set"; j.store = store; j.key = key; j.value = value;
     dataRun(j);
+}
+
+// --- MemoryStoreService ----------------------------------------------------
+//
+// Online: the Guts&Bolts server keeps each published game's MemoryStores for all its running
+// servers (mem.*). Otherwise one MemoryStore per game in this program.
+
+nlohmann::json ScriptEngine::memLocal(const std::string& op, const nlohmann::json& args, int players) {
+    static std::map<std::string, MemoryStore> stores;   // game -> its data, shared by every engine here
+    const std::string game = saveFile().stem().string();
+    MemoryStore& store = stores[game];
+    store.setPlayers(players);
+    using namespace std::chrono;
+    nlohmann::json r = store.run(op, args, duration<double>(steady_clock::now().time_since_epoch()).count());
+    if (store.empty()) stores.erase(game);
+    return r;
+}
+
+int ScriptEngine::memStart(const std::string& op, nlohmann::json args, int players) {
+    const int ticket = m_memNext++;
+    const std::string game = m_dataGame.empty() ? m_scene->info().publishedId : m_dataGame;
+    if (m_memMode == MemMode::Unknown &&
+        (!m_onlineData || game.empty() || game.rfind("local:", 0) == 0 || !Online::online()))
+        m_memMode = MemMode::Local;
+    if (m_memMode == MemMode::Local) {
+        m_memDone[ticket] = memLocal(op, args, players);
+        return ticket;
+    }
+    args["game"] = game;
+    std::weak_ptr<bool> alive = m_alive;
+    const int gen = m_dataGen;
+    Online::request(op, args, [this, alive, gen, ticket, op, args, players](const nlohmann::json& r) {
+        if (alive.expired() || gen != m_dataGen) return;
+        if (!r.value("ok", false) && r.value("local", false)) {
+            // Not one of the game's online servers (playing it alone...): this program, then.
+            if (m_memMode != MemMode::Local) Log::info("MemoryStoreService: not a server of the online game, so its data stays on this computer");
+            m_memMode = MemMode::Local;
+            m_memDone[ticket] = memLocal(op, args, players);
+            return;
+        }
+        if (r.value("ok", false)) m_memMode = MemMode::Online;
+        m_memDone[ticket] = r.is_object() ? r : nlohmann::json{{"ok", false}, {"error", "no answer"}};
+    });
+    return ticket;
+}
+
+bool ScriptEngine::memDone(int ticket, nlohmann::json& reply) {
+    auto it = m_memDone.find(ticket);
+    if (it == m_memDone.end()) return false;
+    reply = std::move(it->second);
+    m_memDone.erase(it);
+    return true;
 }
 
 // --- MessagingService ------------------------------------------------------

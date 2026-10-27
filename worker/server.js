@@ -14,6 +14,7 @@ import { DurableObject } from 'cloudflare:workers';
 import wasmModule from '../website/app/gbcrypto.wasm';
 import { BUILT_IN_UPDATES } from './updates.js';
 import { filterText, nameHasHateWord } from './textfilter.js';
+import { MemoryStore } from './memorystore.js';
 // The example games that come with Guts&Bolts: always on the server (as Guts's
 // games), so the website and the apps have something to play from day one.
 import demolitionYard from '../games/Demolition Yard.gbscene';
@@ -400,7 +401,8 @@ const kAuctionMostCopies = 100, kAuctionMostHours = 720, kAuctionMostBid = 10000
 const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this much is left
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'servers.private', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
-  'msg.publish', 'msg.poll', 'chat.translate']);   // (product.* and msg.*: guests can host games too; guests can't chat, but can read it)
+  'msg.publish', 'msg.poll', 'chat.translate',
+  'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 
 // In-game chat translation: each player's app asks for the lines that were said in another
 // language, and Cloudflare's translator (Workers AI, the "AI" binding) turns them into theirs.
@@ -755,6 +757,8 @@ export class GbServerObject extends DurableObject {
     // when ("account\ngame" -> [times]) for the rate limit. In memory, like the relay.
     this.msgs = new Map();
     this.msgSent = new Map();
+    // MemoryStoreService: game id -> MemoryStore (memorystore.js). In memory too.
+    this.memory = new Map();
   }
 
   getMeta(key, fallback) {
@@ -1866,6 +1870,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
+    if (name.startsWith('mem.')) return this.memOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
     if (name.startsWith('appeal.')) return this.appealOp(name, me, args);
@@ -4689,6 +4694,27 @@ export class GbServerObject extends DurableObject {
       return okay({ n: box.seq, sent: t });
     }
     return fail('Unknown request.');
+  }
+
+  // MemoryStoreService: quick data shared by the running servers of one game (src/online/MemoryStore.h
+  // lists the requests). Like MessagingService, only the host of a live server of the game can use it;
+  // anyone else gets { ok: false, local: true } and the game keeps its MemoryStores to itself.
+  memOp(name, me, args) {
+    const game = this.assets.resolve(cleanText(typeof args.game === 'string' ? args.game : '', 80));
+    const asset = this.assets.get(game);
+    if (!asset || asset.kind !== 'game') return fail('That game isn\'t there.');
+    let mine = false, players = 0;
+    for (const s of this.sessions.values()) {
+      if (this.assets.resolve(s.game) !== game) continue;
+      players += this.headcount(s);
+      if (s.host === me.id) mine = true;
+    }
+    if (!mine) return Object.assign(fail('MemoryStoreService: only a running server of this game can use its MemoryStores.'), { local: true });
+    const store = this.memory.get(game) || new MemoryStore();
+    store.players = players;
+    const r = store.run(name, args || {}, now());
+    if (store.empty) this.memory.delete(game); else this.memory.set(game, store);
+    return r;
   }
 
   // Ask a game server machine with room to start `asset` (true if one is, or already was asked).

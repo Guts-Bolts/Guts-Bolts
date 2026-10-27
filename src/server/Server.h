@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include "../online/MemoryStore.h"
 
 namespace Net { class Connection; class Listener; }
 
@@ -265,6 +266,10 @@ private:
     struct MsgBox { long long seq = 0; std::deque<nlohmann::json> list; };   // {n, topic, message, sent}
     std::map<std::string, MsgBox> m_msgs;                       // game id ->
     std::map<std::string, std::deque<long long>> m_msgSent;     // "account\ngame" -> when they sent (the rate limit)
+    // And MemoryStoreService: quick data every server of a game shares, gone after its
+    // expiration (worker/server.js memOp has the same). In memory too.
+    nlohmann::json memOp(const std::string& name, User& me, const nlohmann::json& args);
+    std::map<std::string, MemoryStore> m_memory;                // game id ->
     // ServerConnect.cpp: connected apps, "Log in with Guts&Bolts" for partner apps like Lyreto
     // (worker/server.js has the same). connect.json: {secrets, codes, tokens, pictures}.
     nlohmann::json connectOp(const std::string& name, User& me, const nlohmann::json& args);
