@@ -53,6 +53,23 @@ int freePort() {
     }
     return 0;
 }
+
+// Each test writes one input-*.jsonl file per player to the temp folder, and
+// nothing ever removed them. Throw away the ones older than a week (saved
+// session bundles stay, since people export those on purpose).
+void removeOldInputTraces() {
+    std::error_code ec;
+    const auto directory = std::filesystem::temp_directory_path(ec) / "GutsAndBoltsTestSessions";
+    if (ec || !std::filesystem::is_directory(directory, ec)) return;
+    const auto weekAgo = std::filesystem::file_time_type::clock::now() - std::chrono::hours(24 * 7);
+    for (std::filesystem::directory_iterator it(directory, ec), end; !ec && it != end; it.increment(ec)) {
+        const auto name = it->path().filename().string();
+        if (name.rfind("input-", 0) != 0 || it->path().extension() != ".jsonl") continue;
+        std::error_code e;
+        const auto changed = std::filesystem::last_write_time(it->path(), e);
+        if (!e && changed < weekAgo) std::filesystem::remove(it->path(), e);
+    }
+}
 } // namespace
 
 // A program we started, with its stdout and stderr coming back through a pipe.
@@ -227,6 +244,7 @@ bool MultiTest::start(const std::string& place, int players, std::string& error)
     m_sessionEndedEpoch = 0;
     m_lastDuration = 0.0;
     m_playerWindowsOpened = 0;
+    removeOldInputTraces();
     const auto serverProgram = Paths::sibling("GutsAndBoltsGameServer");
     const auto playerProgram = Paths::sibling("GutsAndBoltsPlayer");
     std::error_code ec;

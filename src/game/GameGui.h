@@ -63,6 +63,10 @@ SceneNode* pick(Scene& scene, ImVec2 min, ImVec2 max, ImVec2 p, bool buttonsOnly
 // drawn to (scripts ask right after making things, before the next frame).
 void refresh(Scene& scene);
 
+// Where the game was last drawn on the window (Studio's 3D view sits inside a
+// bigger window), so a mouse position can be turned into a spot on the game screen.
+void lastScreen(ImVec2& min, ImVec2& max);
+
 // UIBlur: does anything on screen blur the world behind it? If so, whoever shows the
 // game makes SceneRenderer::makeBackdrop() after drawing the world and hands the
 // blurred pictures (a little blurry first, very blurry last) to setBackdrop() before

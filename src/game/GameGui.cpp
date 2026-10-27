@@ -728,6 +728,7 @@ void drawText(ImDrawList* dl, const Item& it, const GuiProps& gIn, float radius,
 } // namespace
 
 void refresh(Scene& scene) { items(scene, g_lastMin, g_lastMax); }
+void lastScreen(ImVec2& min, ImVec2& max) { min = g_lastMin; max = g_lastMax; }
 
 Scene* g_drawScene = nullptr;   // (ViewportFrames draw the parts in it)
 

@@ -1,6 +1,7 @@
 // iOS only: talks to UIKit (Apple's app toolkit) for the things SDL2 can't ask
 // about by itself. Built with ARC, so no retain / release here.
 #import <UIKit/UIKit.h>
+#import <CoreText/CoreText.h>
 #include "IosPlatform.h"
 
 #include <SDL.h>
@@ -52,6 +53,21 @@ void setLandscape(SDL_Window* window, bool on) {
         // iOS 15: turns once the phone is held sideways.
         [UIViewController attemptRotationToDeviceOrientation];
     }
+}
+
+std::string fontPath(const char* name) {
+    CTFontRef font = (name && *name)
+        ? CTFontCreateWithName((__bridge CFStringRef)[NSString stringWithUTF8String:name], 17.0, nullptr)
+        : CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, 17.0, nullptr);
+    if (!font) return {};
+    std::string out;
+    // Asking for a font that isn't there gives back a stand-in, so check the name too.
+    NSString* got = (__bridge_transfer NSString*)CTFontCopyPostScriptName(font);
+    NSURL* url = (__bridge_transfer NSURL*)CTFontCopyAttribute(font, kCTFontURLAttribute);
+    const bool same = !(name && *name) || [got isEqualToString:[NSString stringWithUTF8String:name]];
+    if (same && url.isFileURL && url.path) out = url.path.UTF8String;
+    CFRelease(font);
+    return out;
 }
 
 } // namespace IosPlatform

@@ -104,4 +104,8 @@ void       pushValue   (lua_State* L, const SceneNode& valueObject);   // a Valu
 const char* keyCodeName(int imguiKey, const char** inputType = nullptr);
 int         keyFromName(const std::string& name, const char** inputType = nullptr);
 
+// The mouse on the game screen: 0,0 is the game's top-left corner, also in Studio,
+// where the game is drawn inside the 3D view and not at the window's corner (ScriptEngine.cpp).
+glm::vec2   mouseOnGame();
+
 } // namespace LuaApi

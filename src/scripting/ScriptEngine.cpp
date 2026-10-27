@@ -18,6 +18,7 @@
 #include "../scene/Physics.h"
 #include "../core/Audio.h"
 #include "../scene/SoundMix.h"
+#include "../game/GameGui.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -819,8 +820,8 @@ addMethod("FindPartOnRayWithIgnoreList", function(_, ray, list) return findOnRay
 addMethod("FindPartOnRayWithWhitelist", function(_, ray, list) return findOnRay(ray, list, true) end)
 
 -- Legacy Player:GetMouse(): cursor-relative raycasting and the input events used by
--- older LocalScripts. Coordinates are scaled from the app viewport into the active
--- camera viewport; embedded editor viewports may need a view-origin offset in future.
+-- older LocalScripts. Coordinates start at the game screen's corner (also inside
+-- Studio's 3D view) and are scaled into the active camera viewport.
 local mousePosition = __gb_mousePosition
 local mouseObjects = setmetatable({}, { __mode = "k" })
 getMouse = function(player)
@@ -1773,6 +1774,14 @@ const char* LuaApi::keyCodeName(int imguiKey, const char** inputType) {
         if ((int)k.key == imguiKey) { if (inputType) *inputType = k.type; return k.name; }
     return nullptr;
 }
+
+glm::vec2 LuaApi::mouseOnGame() {
+    const ImVec2 raw = ImGui::GetMousePos();
+    ImVec2 min, max;
+    GameGui::lastScreen(min, max);
+    return glm::vec2(raw.x - min.x, raw.y - min.y);
+}
+
 int LuaApi::keyFromName(const std::string& name, const char** inputType) {
     for (const auto& k : keyTable())
         if (name == k.name) { if (inputType) *inputType = k.type; return (int)k.key; }
@@ -2384,15 +2393,14 @@ int gui_clear(lua_State* L) {
 // (workspace:Raycast / FindPartOnRay). `direction`'s length is how far to look.
 int l_mousePosition(lua_State* L) {
     Scene* scene = LuaApi::engine(L)->scene();
-    const ImVec2 raw = ImGui::GetMousePos();
-    const ImGuiViewport* main = ImGui::GetMainViewport();
-    const ImVec2 origin = main ? main->Pos : ImVec2(0.0f, 0.0f);
-    const ImVec2 display = ImGui::GetIO().DisplaySize;
-    glm::vec2 pos(raw.x - origin.x, raw.y - origin.y);
-    if (scene && display.x > 0.0f && display.y > 0.0f) {
+    glm::vec2 pos = LuaApi::mouseOnGame();
+    ImVec2 min, max;
+    GameGui::lastScreen(min, max);
+    const glm::vec2 shown(max.x - min.x, max.y - min.y);
+    if (scene && shown.x > 0.0f && shown.y > 0.0f) {
+        // (the camera's picture can have more pixels than the screen space it's shown in)
         const glm::vec2 view = glm::max(scene->camera().viewport, glm::vec2(1.0f));
-        pos.x *= view.x / display.x;
-        pos.y *= view.y / display.y;
+        pos *= view / shown;
     }
     LuaApi::pushVector2(L, pos);
     return 1;
