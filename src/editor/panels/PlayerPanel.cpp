@@ -31,7 +31,9 @@ void PlayerPanel::render() {
     if (ImGui::CollapsingHeader("Health", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::SliderFloat("Max Health", &h.maxHealth, 1.0f, 500.0f);
         if (h.health > h.maxHealth) h.health = h.maxHealth;
-        ImGui::SliderFloat("Health", &h.health, 0.0f, h.maxHealth);
+        // "##value": the header above is also called Health, and two things with
+        // the same name in one window make Dear ImGui show a "conflicting ID" error.
+        ImGui::SliderFloat("Health##value", &h.health, 0.0f, h.maxHealth);
 
         float frac = (h.maxHealth > 0.0f) ? h.health / h.maxHealth : 0.0f;
         ImVec4 bar = frac > 0.5f ? ImVec4(0.30f, 0.80f, 0.30f, 1.0f)
