@@ -9,12 +9,14 @@
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>GutsAndBoltsPlayer</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.7.4</string>
-    <key>CFBundleVersion</key><string>0.7.4</string>
+    <key>CFBundleShortVersionString</key><string>${MACOSX_BUNDLE_SHORT_VERSION_STRING}</string>
+    <key>CFBundleVersion</key><string>${MACOSX_BUNDLE_BUNDLE_VERSION}</string>
     <key>LSRequiresIPhoneOS</key><true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Guts &amp; Bolts uses your microphone for in-game voice chat when you choose to talk.</string>
     <key>UILaunchScreen</key><dict/>
+    <key>UIRequiresFullScreen</key><true/>
+    <key>UIStatusBarHidden</key><true/>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>

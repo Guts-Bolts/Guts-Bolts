@@ -10,6 +10,9 @@ The iOS target reuses the shared C++/SDL2 mobile Player. The target is an iPhone
 - Runtime URL events received as SDL drop-file events are queued into the Player's existing launch-link parser. Link IDs and query values still pass through `LaunchLink::parse` validation.
 - The SDL mobile window handles background/foreground events and mutes audio while backgrounded. Shared touch controls already provide a virtual stick, camera gestures, and gameplay buttons.
 - The iOS target uses the existing OpenGL ES 3.0 renderer and CPU liquid-solver fallback.
+- The app fills the whole screen with the status bar hidden. `src/core/IosPlatform.mm` reads UIKit's safe-area insets and hands them to ImGui as the main viewport's work-area insets, so the site, menus and touch controls stay clear of the notch, rounded corners and home bar.
+- Games lock the app to landscape (`AppWindow::lockLandscape` sets SDL's orientation hint and asks UIKit to turn now on iOS 16+; iOS 15 turns when the phone is tipped). The site allows portrait and landscape again. `UIRequiresFullScreen` is set so iPad honours the lock.
+- The home-screen icon comes from `ios/Assets.xcassets` (one 1024x1024 icon, made from `Icon.png` on a dark background, since iOS icons can't be see-through). The bundle version comes from the CMake project version.
 
 This is still a porting build, not a claim of release readiness. CI compilation cannot verify real UIKit URL delivery, device-specific rendering, microphone permissions, voice chat, or multiplayer reliability.
 
@@ -41,9 +44,9 @@ Use Xcode to select a development team and provisioning profile before installin
 
 ## Device acceptance checklist
 
-1. Launch to the home screen and verify built-in games, catalog content, shaders, textures, and other bundled assets load.
+1. Check the home-screen icon, then launch to the home screen and verify built-in games, catalog content, shaders, textures, and other bundled assets load.
 2. Background the app during gameplay, wait, then resume; confirm audio and rendering recover and the simulation does not crash.
-3. Rotate between supported orientations and test safe-area layout on an iPhone and iPad.
+3. Rotate between supported orientations and test safe-area layout on an iPhone and iPad: nothing under the notch or home bar, and starting a game turns the screen to landscape (leaving it lets the site turn back).
 4. Open a valid `gutsandbolts://play/<game-id>` link both when the app is closed and when it is already running. Confirm invalid IDs/queries are rejected by the normal parser.
 5. Test the virtual stick, camera drag, jump/action buttons, chat, and menus with simultaneous touches.
 6. Test login, joining a public/private game, disconnect/reconnect, and voice-chat permission behavior on actual devices.
