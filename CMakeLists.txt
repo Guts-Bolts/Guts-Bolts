@@ -282,7 +282,7 @@ if(GB_MOBILE)
     if(ANDROID)
         set(GB_GL_LIBS GLESv3 EGL android log)
     elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        set(GB_GL_LIBS "-framework OpenGLES" "-framework UIKit" "-framework Foundation")
+        set(GB_GL_LIBS "-framework OpenGLES" "-framework UIKit" "-framework Foundation" "-framework CoreText")
     else()
         set(GB_GL_LIBS GLESv2 EGL)
     endif()
@@ -586,8 +586,13 @@ if(GB_MOBILE)
         add_executable(GutsAndBoltsPlayer MACOSX_BUNDLE ${PLAYER_SOURCES} ${GB_IOS_ASSETS})
         set_source_files_properties(${GB_IOS_ASSETS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
         target_compile_definitions(GutsAndBoltsPlayer PRIVATE GB_IOS GB_APP_VERSION=\"${PROJECT_VERSION}\")
+        # Installing with a free Apple ID needs an app id nobody else has taken, and
+        # your own Team ID (see ios/README.md): -DGB_IOS_BUNDLE_ID=... -DGB_IOS_TEAM=...
+        set(GB_IOS_BUNDLE_ID "net.gutsandbolts.player" CACHE STRING "iOS app id (bundle identifier)")
+        set(GB_IOS_TEAM "" CACHE STRING "Apple Team ID to sign with (empty = pick it in Xcode)")
         set_target_properties(GutsAndBoltsPlayer PROPERTIES
-            MACOSX_BUNDLE_GUI_IDENTIFIER "net.gutsandbolts.player"
+            MACOSX_BUNDLE_GUI_IDENTIFIER "${GB_IOS_BUNDLE_ID}"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${GB_IOS_BUNDLE_ID}"
             MACOSX_BUNDLE_BUNDLE_NAME "Guts & Bolts"
             MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/ios/Info.plist"
             MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
@@ -596,6 +601,11 @@ if(GB_MOBILE)
             XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "15.0"
             XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
             XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "NO")
+        if(GB_IOS_TEAM)
+            set_target_properties(GutsAndBoltsPlayer PROPERTIES
+                XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${GB_IOS_TEAM}"
+                XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic")
+        endif()
         target_link_libraries(GutsAndBoltsPlayer PRIVATE gb_engine)
         add_custom_command(TARGET GutsAndBoltsPlayer POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources"

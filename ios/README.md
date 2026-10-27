@@ -42,6 +42,32 @@ cmake --build build-ios-device --config Release --target GutsAndBoltsPlayer
 
 Use Xcode to select a development team and provisioning profile before installing on a physical device. Never commit signing credentials.
 
+## Put it on your own iPhone for free
+
+You don't need the paid Apple Developer Program ($99 a year) to play on your own phone. A normal, free Apple ID works. You do need a Mac.
+
+The catches with a free Apple ID: the app stops opening after **7 days** (plug the phone in and press Run again to fix it), you can have at most 3 apps like this on one phone, and you can't send the app to friends. Each person installs it from their own Mac.
+
+1. On the Mac, install **Xcode** from the App Store (free), then open it once so it finishes setting up. Install CMake too (`brew install cmake`, or the download from cmake.org).
+2. In Xcode, open **Xcode > Settings > Accounts**, press **+** and sign in with your Apple ID.
+3. Download the code (`git clone https://github.com/Guts-Bolts/Guts-Bolts.git`) and, in that folder, make the Xcode project. Swap `yourname` for anything that's yours, because the app id has to be one nobody else has used:
+
+   ```sh
+   cmake -S . -B build-ios-device -G Xcode \
+     -DCMAKE_SYSTEM_NAME=iOS \
+     -DCMAKE_OSX_SYSROOT=iphoneos \
+     -DCMAKE_OSX_ARCHITECTURES=arm64 \
+     -DGB_IOS_BUNDLE_ID=com.yourname.gutsandbolts
+   open build-ios-device/GutsAndBolts.xcodeproj
+   ```
+
+4. In Xcode, click **GutsAndBoltsPlayer** in the list on the left, then the **Signing & Capabilities** tab. Tick **Automatically manage signing** and pick **Your Name (Personal Team)** as the Team. (If you know your Team ID you can pass `-DGB_IOS_TEAM=ABCDE12345` in step 3 instead.)
+5. Plug the iPhone into the Mac with a cable and tap **Trust** on the phone. On iOS 16 or newer, turn on **Settings > Privacy & Security > Developer Mode** (the phone restarts).
+6. At the top of Xcode, pick **GutsAndBoltsPlayer** and your iPhone, then press the **Run** button (the triangle). The first build takes a while.
+7. The first time, the phone says the developer isn't trusted. Go to **Settings > General > VPN & Device Management**, tap your Apple ID and tap **Trust**. Then open Guts & Bolts from the home screen.
+
+Then go through the checklist below and write down anything that looks wrong.
+
 ## Device acceptance checklist
 
 1. Check the home-screen icon, then launch to the home screen and verify built-in games, catalog content, shaders, textures, and other bundled assets load.
@@ -52,4 +78,4 @@ Use Xcode to select a development team and provisioning profile before installin
 6. Test login, joining a public/private game, disconnect/reconnect, and voice-chat permission behavior on actual devices.
 7. Check memory use, frame pacing, thermal throttling, and repeated suspend/resume on a lower-end supported device.
 
-The CI workflow compiles both simulator and device targets without signing. Physical-device testing and App Store/TestFlight distribution still require Apple signing and provisioning.
+The CI workflow compiles both simulator and device targets without signing. Testing on your own device works with a free Apple ID (above); App Store and TestFlight need the paid Apple Developer Program, which the project isn't using.

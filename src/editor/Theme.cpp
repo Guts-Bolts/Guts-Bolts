@@ -4,6 +4,9 @@
 #include <cstdio>
 #include <iterator>
 #include <vector>
+#ifdef GB_IOS
+#include "core/IosPlatform.h"
+#endif
 
 namespace EditorTheme {
 
@@ -40,6 +43,16 @@ void loadFonts(float scale) {
     cfg.OversampleV = 1;
     cfg.PixelSnapH  = true;
 
+#ifdef GB_IOS
+    // iPhone / iPad: the font files move between iOS versions, so ask the phone
+    // where they are. (Helvetica and Arial are plain fonts every iPhone has.)
+    const std::string iosMain = IosPlatform::fontPath("Helvetica");
+    const std::string iosMore = IosPlatform::fontPath("ArialMT");
+    const std::string iosChinese = IosPlatform::fontPath("PingFangSC-Regular");
+    const std::string iosJapanese = IosPlatform::fontPath("HiraginoSans-W3");
+    const std::string iosKorean = IosPlatform::fontPath("AppleSDGothicNeo-Regular");
+#endif
+
     // Prefer a clean system UI font; fall back to ImGui's built-in bitmap font.
     const char* candidates[] = {
         "C:/Windows/Fonts/segoeui.ttf",
@@ -48,6 +61,9 @@ void loadFonts(float scale) {
         // Phones: Android's own font, or a common Linux one for the desktop test build.
         "/system/fonts/Roboto-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+#endif
+#ifdef GB_IOS
+        iosMain.c_str(),
 #endif
     };
     ImFont* loaded = nullptr;
@@ -77,6 +93,9 @@ void loadFonts(float scale) {
         "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf",
         "/system/fonts/Roboto-Regular.ttf",
+#ifdef GB_IOS
+        iosMore.c_str(),
+#endif
     };
     for (const char* path : moreLetters) {
         if (FILE* f = std::fopen(path, "rb")) {
@@ -94,9 +113,15 @@ void loadFonts(float scale) {
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
         "/system/fonts/NotoSansCJK-Regular.ttc",
+#ifdef GB_IOS
+        iosChinese.c_str(), iosJapanese.c_str(),
+#endif
     };
     const char* korean[] = {
         "C:/Windows/Fonts/malgun.ttf", "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+#ifdef GB_IOS
+        iosKorean.c_str(),
+#endif
     };
     for (const auto& list : {std::vector<const char*>(std::begin(cjk), std::end(cjk)),
                              std::vector<const char*>(std::begin(korean), std::end(korean))}) {

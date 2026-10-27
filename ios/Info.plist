@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key><string>en</string>
     <key>CFBundleDisplayName</key><string>Guts &amp; Bolts</string>
     <key>CFBundleExecutable</key><string>GutsAndBoltsPlayer</string>
-    <key>CFBundleIdentifier</key><string>net.gutsandbolts.player</string>
+    <key>CFBundleIdentifier</key><string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleName</key><string>GutsAndBoltsPlayer</string>
     <key>CFBundlePackageType</key><string>APPL</string>
