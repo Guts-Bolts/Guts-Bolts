@@ -14,6 +14,8 @@ import { DurableObject } from 'cloudflare:workers';
 import wasmModule from '../website/app/gbcrypto.wasm';
 import { BUILT_IN_UPDATES } from './updates.js';
 import { filterText, nameHasHateWord } from './textfilter.js';
+import { MemoryStore } from './memorystore.js';
+import { Roadmap, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
 // The example games that come with Guts&Bolts: always on the server (as Guts's
 // games), so the website and the apps have something to play from day one.
 import demolitionYard from '../games/Demolition Yard.gbscene';
@@ -331,6 +333,8 @@ const COSTLY = {
   'chat.translate':      [400, 1200, 600],  // (a busy game's chat, read in another language)
   'groups.create':       [5, 15, 3600],
   'bolts.redeem':        [20, 60, 600],    // (so nobody can guess promo codes over and over)
+  'roadmap.suggest':     [5, 15, 3600],
+  'roadmap.vote':        [120, 360, 600],
 };
 const GUESSES = new Set(['account.salt', 'account.login', 'account.reset', 'account.emailVerify', 'bolts.redeem']);
 // The apps' connection (/ws) can send this many requests every 10 seconds (games sending
@@ -359,7 +363,7 @@ const kMsgKept = 500;            // messages kept per game at most
 const kMsgPerPoll = 200;         // handed out per msg.poll
 const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
-const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get']);
+const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
 const kCodeMinutes = 15, kCodeTries = 5, kMailGap = 60, kMailsPerDay = 8;
@@ -400,7 +404,8 @@ const kAuctionMostCopies = 100, kAuctionMostHours = 720, kAuctionMostBid = 10000
 const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this much is left
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'servers.private', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
-  'msg.publish', 'msg.poll', 'chat.translate']);   // (product.* and msg.*: guests can host games too; guests can't chat, but can read it)
+  'msg.publish', 'msg.poll', 'chat.translate',
+  'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 
 // In-game chat translation: each player's app asks for the lines that were said in another
 // language, and Cloudflare's translator (Workers AI, the "AI" binding) turns them into theirs.
@@ -686,7 +691,7 @@ export class GbServerObject extends DurableObject {
     this.name = env.SERVER_NAME || 'Guts&Bolts';
     this.users = new Map(); this.assets = new AssetMap(); this.groups = new Map(); this.forum = new Map();
     // What changed and needs writing (set up first: loading can already change things).
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false, roadmap: false };
     for (const r of this.sql.exec('SELECT id, data FROM users')) this.users.set(r.id, JSON.parse(r.data));
     for (const r of this.sql.exec('SELECT id, data FROM assets')) {
       const a = JSON.parse(r.data);
@@ -706,6 +711,7 @@ export class GbServerObject extends DurableObject {
     // Promo codes: { code, bolts, start, end (0 = never), made, by, uses, stopped }, newest last.
     // Who used one is kept on their account (u.promos), so each person can use it once.
     this.promos = this.getMeta('promos', []);
+    this.roadmap = new Roadmap(this.getMeta('roadmap', {}));   // the public roadmap and ideas (roadmap.js)
     // Connected apps: { secrets: {app: {hash, at}}, codes: [{hash, account, app, redirect, at}],
     // tokens: [{hash, account, app, at, expires}], pictures: {account: when its avatar picture was saved} }
     this.connect = Object.assign({ secrets: {}, codes: [], tokens: [], pictures: {} }, this.getMeta('connect', {}));
@@ -755,6 +761,8 @@ export class GbServerObject extends DurableObject {
     // when ("account\ngame" -> [times]) for the rate limit. In memory, like the relay.
     this.msgs = new Map();
     this.msgSent = new Map();
+    // MemoryStoreService: game id -> MemoryStore (memorystore.js). In memory too.
+    this.memory = new Map();
   }
 
   getMeta(key, fallback) {
@@ -813,13 +821,15 @@ export class GbServerObject extends DurableObject {
     }
     if (this.dirty.promos)
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'promos', JSON.stringify(this.promos));
+    if (this.dirty.roadmap)
+      this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'roadmap', JSON.stringify(this.roadmap));
     if (this.dirty.connect)
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'connect', JSON.stringify(this.connect));
     if (this.dirty.staffLog) {
       if (this.staffLog.length > kMaxStaffLog) this.staffLog.splice(0, this.staffLog.length - kMaxStaffLog);
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'stafflog', JSON.stringify(this.staffLog));
     }
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false, roadmap: false };
   }
   // --- Limited items: numbered copies (a.copies = [{ serial, owner, price }]) ---
   copiesOf(u) {   // every limited copy this account holds
@@ -1130,6 +1140,53 @@ export class GbServerObject extends DurableObject {
     const rewardText = rewardType === 'item' ? 'item ' + itemId : bolts + ' Bolts';
     this.staffDid(me, 'bolts', 'Made the promo code ' + code + ' (' + rewardText + (end ? ', ends ' + new Date(end * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC' : '') + ')');
     return list();
+  }
+  // --- The public roadmap and ideas (roadmap.js has the rules) ---
+  roadmapView(me) {
+    const nameOf = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name } : null; };
+    return this.roadmap.view(me.userId !== 0 ? me.id : '', nameOf);
+  }
+  roadmapOp(name, me, args) {
+    if (name === 'roadmap.get') return this.roadmapView(me);
+    if (me.userId === 0) return fail('Sign up to suggest ideas and vote.');
+    let r = null;
+    if (name === 'roadmap.suggest')
+      r = this.roadmap.suggest(me.id, say(str(args, 'title'), kRoadTitle), say(str(args, 'text'), kRoadText, true), 'i' + randomHex(6), now());
+    else if (name === 'roadmap.vote') r = this.roadmap.vote(me.id, str(args, 'id'), args.on !== false);
+    else return fail('Unknown request: ' + name);
+    if (r) return r;
+    this.dirty.roadmap = true;
+    return this.roadmapView(me);
+  }
+  roadmapAdmin(name, me, args) {
+    const t = now();
+    let r;
+    if (name === 'admin.roadmapSave') {
+      const fields = { id: str(args, 'id'), title: cleanText(str(args, 'title'), kRoadTitle), text: cleanText(str(args, 'text'), kRoadText, true),
+        status: str(args, 'status'), version: cleanText(str(args, 'version'), kRoadVersion) };
+      r = this.roadmap.save(fields, 'r' + randomHex(6), t);
+      if (r.ok !== false) this.staffDid(me, 'roadmap', (fields.id ? 'Changed' : 'Added') + ' the roadmap item "' + r.title + '"');
+    } else if (name === 'admin.roadmapRemove') {
+      const x = this.roadmap.items.find((i) => i.id === str(args, 'id'));
+      r = this.roadmap.remove(str(args, 'id'));
+      if (!r && x) this.staffDid(me, 'roadmap', 'Removed the roadmap item "' + x.title + '"');
+    } else if (name === 'admin.ideaAnswer') {
+      const answer = str(args, 'answer');
+      r = this.roadmap.answer(str(args, 'id'), answer, cleanText(str(args, 'note'), kRoadNote, true), 'r' + randomHex(6), t);
+      if (r.ok !== false) {
+        const words = { planned: 'Put the idea "' + r.title + '" on the roadmap', declined: 'Said no to the idea "' + r.title + '"', open: 'Reopened the idea "' + r.title + '"' };
+        this.staffDid(me, 'roadmap', words[answer], r.by);
+        if (answer !== 'open')
+          this.notify(this.users.get(r.by), 'roadmap', answer === 'planned' ? 'Staff put your idea "' + r.title + '" on the roadmap!'
+            : 'Staff answered your idea "' + r.title + '"' + (r.note ? ': ' + r.note : '.'), r.id);
+      }
+    } else {
+      r = this.roadmap.removeIdea(str(args, 'id'));
+      if (r.ok !== false) this.staffDid(me, 'roadmap', 'Deleted the idea "' + r.title + '"', r.by);
+    }
+    if (r && r.ok === false) return r;
+    this.dirty.roadmap = true;
+    return this.roadmapView(me);
   }
   // Ban (on) or unban someone, and write it in the staff log ('' = done, else why not).
   // admin.ban and accepting a ban appeal both come here.
@@ -1866,6 +1923,8 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
+    if (name.startsWith('mem.')) return this.memOp(name, me, args);
+    if (name.startsWith('roadmap.')) return this.roadmapOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
     if (name.startsWith('appeal.')) return this.appealOp(name, me, args);
@@ -2418,6 +2477,8 @@ export class GbServerObject extends DurableObject {
       }
       if (name === 'admin.promos' || name === 'admin.promoMake' || name === 'admin.promoStop')
         return this.isOfficial(me) ? this.promoAdmin(name, me, args) : fail('Only the official Guts account can do that.');
+      if (name === 'admin.roadmapSave' || name === 'admin.roadmapRemove' || name === 'admin.ideaAnswer' || name === 'admin.ideaRemove')
+        return this.roadmapAdmin(name, me, args);
       if (!to) return fail('There\'s no account with that ID on this server.');
       if (name === 'admin.grant') {
         const key = str(args, 'key'), sig = str(args, 'sig');
@@ -4689,6 +4750,27 @@ export class GbServerObject extends DurableObject {
       return okay({ n: box.seq, sent: t });
     }
     return fail('Unknown request.');
+  }
+
+  // MemoryStoreService: quick data shared by the running servers of one game (src/online/MemoryStore.h
+  // lists the requests). Like MessagingService, only the host of a live server of the game can use it;
+  // anyone else gets { ok: false, local: true } and the game keeps its MemoryStores to itself.
+  memOp(name, me, args) {
+    const game = this.assets.resolve(cleanText(typeof args.game === 'string' ? args.game : '', 80));
+    const asset = this.assets.get(game);
+    if (!asset || asset.kind !== 'game') return fail('That game isn\'t there.');
+    let mine = false, players = 0;
+    for (const s of this.sessions.values()) {
+      if (this.assets.resolve(s.game) !== game) continue;
+      players += this.headcount(s);
+      if (s.host === me.id) mine = true;
+    }
+    if (!mine) return Object.assign(fail('MemoryStoreService: only a running server of this game can use its MemoryStores.'), { local: true });
+    const store = this.memory.get(game) || new MemoryStore();
+    store.players = players;
+    const r = store.run(name, args || {}, now());
+    if (store.empty) this.memory.delete(game); else this.memory.set(game, store);
+    return r;
   }
 
   // Ask a game server machine with room to start `asset` (true if one is, or already was asked).

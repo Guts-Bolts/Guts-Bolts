@@ -111,6 +111,13 @@ public:
     void msgSubscribe(const std::string& topic, bool on);
     struct MsgIn { std::string topic; nlohmann::json data; double sent = 0.0; };
     std::vector<MsgIn> takeMessages() { std::vector<MsgIn> out; out.swap(m_msgIn); return out; }
+    // MemoryStoreService: quick, short-lived data every server of this game shares (see
+    // src/online/MemoryStore.h for the requests). Online through the Guts&Bolts server when
+    // setOnlineData is on and we're running a server of the published game; otherwise kept
+    // in this program (Studio's play test and anything else running here).
+    // A request (op "mem.get" ... with its args): ticket; memDone gives the reply when it's back.
+    int  memStart(const std::string& op, nlohmann::json args, int players);
+    bool memDone(int ticket, nlohmann::json& reply);
     // require(ID): a model from the Library, fetched once per game. 0 = still getting it,
     // 1 = ready (module = its MainModule), 2 = couldn't (error says why).
     int  libraryModule(const std::string& assetId, uint64_t& module, std::string& error);
@@ -323,6 +330,12 @@ private:
     struct LibraryModule { int state = 0; uint64_t module = 0; std::string error; };
     std::map<std::string, LibraryModule> m_libraryModules;   // require(ID): asset ID -> what we got
     std::map<std::string, DataCached> m_dataCache; // "store\nkey" -> what we last saw or wrote
+    // MemoryStoreService (see memStart).
+    enum class MemMode { Unknown, Local, Online };
+    nlohmann::json memLocal(const std::string& op, const nlohmann::json& args, int players);
+    MemMode m_memMode = MemMode::Unknown;
+    int     m_memNext = 1;
+    std::map<int, nlohmann::json> m_memDone;         // ticket -> reply
     // MessagingService (see msgPublish).
     enum class MsgMode { Unknown, Asking, Local, Online };
     struct MsgOut { int ticket = 0; std::string topic; nlohmann::json data; };

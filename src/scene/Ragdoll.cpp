@@ -487,6 +487,7 @@ void Ragdoll::muscles(float dt, const Physics& physics) {
 
     // A knocked-over character keeps its strength; a dying one weakens, then goes limp.
     float strength = m_alive ? 1.0f : std::clamp(1.0f - m_time / std::max(m_throes, 1e-3f), 0.0f, 1.0f);
+    if (m_held) strength = 0.2f;   // held down: floppy, just enough to keep the limbs from folding up
     if (strength <= 0.01f) return;
     if (!m_alive) strength = strength * strength * (3.0f - 2.0f * strength);   // (fades out smoothly)
 
@@ -517,6 +518,8 @@ void Ragdoll::muscles(float dt, const Physics& physics) {
         float swing = std::sin(t * 9.0f + m_phase) * 0.6f;
         want[2] = {-0.15f, -1.0f, swing};
         want[3] = {0.15f, -1.0f, -swing};
+    } else if (m_held) {
+        // Held down: just lying there, limbs relaxed (no pushing up off the floor).
     } else if (!airborne && m_alive) {
         // Down on the floor and about to get up: hands push against it, knees come in.
         glm::vec3 down = toLocal * glm::vec3(0, -1, 0);

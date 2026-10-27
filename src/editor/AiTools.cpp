@@ -213,7 +213,7 @@ const std::vector<Tool>& tools() {
           "\"Brick\", \"Cobblestone\", \"Slate\", \"Granite\", \"Marble\", \"Sand\", \"Grass\", \"Fabric\"; Enum.Material.Neon "
           "works too), Name, Parent (an object or a service like \"StarterPack\"), Enabled, Brightness, Range, Text, "
           "Visible... object \"Lighting\" changes the Lighting service (ClockTime, Brightness, FogEnabled, FogDensity, "
-          "FogColor, Ambient, SunColor, GlobalShadows). Setting a script's Source is passed on to edit_script.",
+          "FogColor, Ambient, SunColor, GlobalShadows, Weather \"Clear\"/\"Rain\"/\"Snow\", WeatherIntensity 0-1). Setting a script's Source is passed on to edit_script.",
           "\"Move/resize/recolour/rename X\", \"make it red/glow/see-through\", \"make it fall\" (Anchored false), "
           "\"make it solid / walk-through\" (CanCollide), \"put X inside Y\" (Parent).",
           "To create something new use insert_object. To change a script's code use edit_script. To change many objects "
@@ -954,7 +954,7 @@ ASSET
 Pictures, sounds and meshes a game uses: files in the game's folder, built-in sounds, or uploaded items ("gb:<id>"). The Library (everyone's shared models, decals and audio) is not reachable through these tools.
 
 PREFAB
-There are no linked prefabs. insert_object can make ready-made things ("Kill Brick", "Exploding Barrel", "Zombie"...) but each is an independent copy: changing one doesn't change others. To change many copies, find_objects them and change each (run_lua with a loop is quickest).
+Linked models (like Roblox packages): a Model with a String attribute LinkId is linked to every other Model with the same LinkId. When what's inside exactly one copy changes, Studio copies it into all the others after the edit (each keeps its own position, rotation and name). To make one, give a Model the attribute (run_lua: model:SetAttribute("LinkId", "anything")), then copy it (model:Clone()); removing the attribute unlinks a copy. insert_object's ready-made things ("Kill Brick", "Exploding Barrel", "Zombie"...) are independent copies; to change many unlinked copies, find_objects them and change each (run_lua with a loop is quickest).
 
 PHYSICS
 Only runs during a playtest (or a published game). Parts are ANCHORED by default: they stay put. Anchored = false makes a part fall, collide and react to forces and explosions. A visible part with CanCollide off is walked through and lets unanchored parts fall through it. Gravity is workspace.Gravity (22 units/s^2 by default). Parts below FallenPartsHeight (-50) are destroyed.
@@ -979,7 +979,7 @@ RUNTIME vs EDITOR
 Editor state is the saved game. Runtime state is the game while it runs (playtest): scripts run, physics moves things, characters spawn. Changes during a playtest are thrown away when it stops. get_object says which one you're looking at ("state_source") and adds velocity while playing.
 
 SCRIPT
-Lua 5.4 with Roblox's API names (Instance.new, game:GetService, workspace, task.wait, RunService.Heartbeat, Players, TweenService, DataStoreService, MessagingService, RemoteEvents). MessagingService:PublishAsync(topic, message) / :SubscribeAsync(topic, function(msg) ... msg.Data, msg.Sent end) send messages to every running server of the same game (this one too); topics 1-80 letters, messages at most 1 KB as JSON, 150 + 60 per player sends a minute per server. In Studio playtests they go between the servers running on this computer. Luau syntax (+=, continue, type annotations) works too. Player.CharacterAdded/CharacterRemoving, Teams with team SpawnLocations, Model.PrimaryPart/PivotTo and PhysicalProperties are there. Prefer the engine's systems (properties, constraints, movers, pathfinding, explosions); write scripts for game rules and when asked.)DOC";
+Lua 5.4 with Roblox's API names (Instance.new, game:GetService, workspace, task.wait, RunService.Heartbeat, Players, TweenService, DataStoreService, MessagingService, RemoteEvents). MessagingService:PublishAsync(topic, message) / :SubscribeAsync(topic, function(msg) ... msg.Data, msg.Sent end) send messages to every running server of the same game (this one too); topics 1-80 letters, messages at most 1 KB as JSON, 150 + 60 per player sends a minute per server. In Studio playtests they go between the servers running on this computer. MemoryStoreService:GetSortedMap(name) / :GetHashMap(name) (GetAsync, SetAsync(key, value, expirationSeconds[, sortKey]), UpdateAsync(key, fn, expiration), RemoveAsync, sorted maps also GetRangeAsync(Enum.SortDirection.Descending, count)) and :GetQueue(name[, invisibilitySeconds]) (AddAsync(value, expiration[, priority]), ReadAsync(count, allOrNothing, waitSeconds) -> items, id, RemoveAsync(id)) hold quick data shared by every running server of the game; an expiration (1 s to 45 days) is required, 64 KB + 1 KB per player in total. Luau syntax (+=, continue, type annotations) works too. Player.CharacterAdded/CharacterRemoving, Teams with team SpawnLocations, Model.PrimaryPart/PivotTo and PhysicalProperties are there. Prefer the engine's systems (properties, constraints, movers, pathfinding, explosions); write scripts for game rules and when asked.)DOC";
 
 const char* kCoordinates = R"DOC(# Coordinates and units
 
@@ -1094,9 +1094,10 @@ json capabilities() {
             {"rendering", "partial: part colour, material, transparency, lights, decals, particles (ParticleEmitter, Fire, Smoke, Sparkles); no shader or post-processing tools"},
             {"audio", "Sound objects and Sounds.Play; SoundGroups (volume) and sound effects (reverb, echo, equalizer, distortion, pitch shift, chorus, compressor, flange, tremolo)"},
             {"cross_server_messaging", "MessagingService (PublishAsync / SubscribeAsync) between a game's running servers"},
+            {"memory_stores", "MemoryStoreService sorted maps, hash maps and queues shared by a game's running servers"},
             {"ui", true},
             {"assets", false},                        // the Library isn't reachable from these tools
-            {"prefabs", false},                       // ready-made things are copies, not linked
+            {"prefabs", "linked models: Models sharing a LinkId attribute change together in Studio"},
             {"undo", true}, {"redo", true},
             {"transactions", "checkpoints: save, experiment, restore (Studio session only)"},
             {"compound_tools", json::array({"create_physical_object", "spawn_explosion", "walk_character_to"})},
@@ -1111,7 +1112,7 @@ json capabilities() {
             {"property_names", "the same as Lua scripts (get_object lists them; set_property accepts them and common misspellings)"},
             {"output_runs", "get_output / get_errors mark each line with its playtest run; run \"latest\" reads only the newest"},
         }},
-        {"not_supported", json::array({"editing Library assets", "linked prefabs", "camera objects",
+        {"not_supported", json::array({"editing Library assets", "camera objects",
                                        "shaders", "moving or inspecting the players inside a multiplayer test", "signing in from the tools",
                                        "objects inside Lighting (it holds settings)"})},
         {"notes", "If a capability is false or missing, the tools can't do it: say so instead of pretending."},

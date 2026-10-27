@@ -22,6 +22,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerGroups.cpp
     src/server/ServerSupport.cpp
     src/server/ServerPromos.cpp
+    src/server/ServerRoadmap.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -33,6 +34,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerForum.cpp
     src/server/ServerItems.cpp
     src/online/Protocol.cpp
+    src/online/MemoryStore.cpp
     src/core/Account.cpp
     src/core/TextFilter.cpp
     src/core/Paths.cpp
@@ -435,6 +437,9 @@ add_library(gb_engine STATIC
     src/scene/Flood.cpp
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
+    src/scene/Weather.cpp
+    src/scene/LinkedModels.cpp
+    src/scene/MaterialGraph.cpp
     src/scene/Animation.cpp
     src/scene/Ragdoll.cpp
     src/scene/Effects.cpp
@@ -468,6 +473,7 @@ add_library(gb_engine STATIC
     src/game/Badges.cpp
     src/game/Bolts.cpp
     src/online/Protocol.cpp
+    src/online/MemoryStore.cpp
     src/online/OnlineClient.cpp
     src/online/AssetCache.cpp
     src/game/Catalog.cpp
@@ -744,6 +750,7 @@ set(EDITOR_SOURCES
     src/editor/EditorAutosave.cpp
     src/editor/EditorTimeMachine.cpp
     src/editor/EditorMaterials.cpp
+    src/editor/EditorMaterialGraph.cpp
     src/editor/EditorAiActivity.cpp
     src/editor/EditorLevelGen.cpp
     src/editor/LevelGen.cpp
@@ -828,6 +835,17 @@ if(WIN32)
     target_link_libraries(GutsAndBoltsServer PRIVATE ws2_32 bcrypt)
 endif()
 
+# The server's public roadmap, with signed requests like the apps send.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
+    set(GB_SERVER_TEST_SOURCES ${GB_SERVER_SOURCES})
+    list(FILTER GB_SERVER_TEST_SOURCES EXCLUDE REGEX "ServerMain\\.cpp$")
+    add_executable(ServerRoadmapTests tests/ServerRoadmapTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerRoadmapTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerRoadmapTests gb_version)
+    target_link_libraries(ServerRoadmapTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerRoadmapTests COMMAND ServerRoadmapTests)
+endif()
+
 # Studio's sample plugins.
 add_custom_command(TARGET GutsAndBolts POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GutsAndBolts>/plugins"
@@ -884,5 +902,38 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(SampleGamesTests tests/SampleGamesTests.cpp)
     target_link_libraries(SampleGamesTests PRIVATE gb_engine)
     add_test(NAME SampleGamesTests COMMAND SampleGamesTests "${CMAKE_SOURCE_DIR}/games" 5
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Lighting.Weather: scripts, saving, and rain stopping on roofs.
+    add_executable(WeatherTests tests/WeatherTests.cpp)
+    target_link_libraries(WeatherTests PRIVATE gb_engine)
+    add_test(NAME WeatherTests COMMAND WeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The character: held-down ragdolls, knocked off seats, swimming.
+    add_executable(CharacterTests tests/CharacterTests.cpp)
+    target_link_libraries(CharacterTests PRIVATE gb_engine)
+    add_test(NAME CharacterTests COMMAND CharacterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The Material Graph: patterns tile, wires can't loop, saving and baking.
+    add_executable(MaterialGraphTests tests/MaterialGraphTests.cpp)
+    target_link_libraries(MaterialGraphTests PRIVATE gb_engine)
+    add_test(NAME MaterialGraphTests COMMAND MaterialGraphTests)
+
+    # MaterialVariants to Roblox files and back.
+    add_executable(MaterialVariantRobloxTests tests/MaterialVariantRobloxTests.cpp)
+    target_link_libraries(MaterialVariantRobloxTests PRIVATE gb_engine)
+    add_test(NAME MaterialVariantRobloxTests COMMAND MaterialVariantRobloxTests)
+
+    # Linked models: one copy changes, the others follow.
+    add_executable(LinkedModelsTests tests/LinkedModelsTests.cpp)
+    target_link_libraries(LinkedModelsTests PRIVATE gb_engine)
+    add_test(NAME LinkedModelsTests COMMAND LinkedModelsTests)
+
+    # MemoryStoreService: the store's rules and the script side, played offline.
+    add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)
+    target_link_libraries(MemoryStoreTests PRIVATE gb_engine)
+    add_test(NAME MemoryStoreTests COMMAND MemoryStoreTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()

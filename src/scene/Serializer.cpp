@@ -255,6 +255,10 @@ nlohmann::json variantToJson(const MaterialVariantProps& v) {
     const std::pair<const char*, const std::string*> pics[] = {{"colorMap", &v.colorMap}, {"normalMap", &v.normalMap},
                                                                {"roughnessMap", &v.roughnessMap}, {"metalnessMap", &v.metalnessMap}};
     for (auto& [k, p] : pics) if (!p->empty()) j[k] = *p;
+    if (!v.graph.empty()) {
+        json g = json::parse(v.graph, nullptr, false);
+        if (g.is_object()) j["graph"] = g;
+    }
     return j;
 }
 
@@ -269,6 +273,8 @@ void variantFromJson(const nlohmann::json& j, MaterialVariantProps& v) {
     v.normalMap    = get<std::string>(j, "normalMap", "");
     v.roughnessMap = get<std::string>(j, "roughnessMap", "");
     v.metalnessMap = get<std::string>(j, "metalnessMap", "");
+    v.graph.clear();
+    if (auto g = j.find("graph"); g != j.end() && g->is_object()) v.graph = g->dump();
     clampVariant(v);
 }
 
@@ -1279,13 +1285,15 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     X(clouds) X(cloudCover) X(cloudSpeed) X(cloudColor) X(stars)                    \
     X(fogEnabled) X(fogColor) X(fogDensity) X(fogSunGlow)                           \
     X(exposure) X(bloomIntensity) X(bloomThreshold) X(aoIntensity) X(contrast)      \
-    X(saturation) X(vignette) X(tint)
+    X(saturation) X(vignette) X(tint) X(weather) X(weatherAmount)
 
 json toJsonValue(float v) { return v; }
 json toJsonValue(bool v) { return v; }
+json toJsonValue(int v) { return v; }
 json toJsonValue(const glm::vec3& v) { return vec(v); }
 void fromJsonValue(const json& j, const char* k, float& v) { v = get<float>(j, k, v); }
 void fromJsonValue(const json& j, const char* k, bool& v)  { v = get<bool>(j, k, v); }
+void fromJsonValue(const json& j, const char* k, int& v)   { v = get<int>(j, k, v); }
 void fromJsonValue(const json& j, const char* k, glm::vec3& v) { v = vec(j, k, v); }
 
 json envToJson(const Environment& e) {

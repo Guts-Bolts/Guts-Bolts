@@ -573,6 +573,9 @@ struct MaterialVariantProps {
     // Ours, for when there's no picture for it: 0 smooth .. 1 rough, 0 not metal .. 1 metal,
     // and how much it glows (0 = not at all; the part's colour times its ColorMap).
     float       roughness = 0.5f, metalness = 0.0f, glow = 0.0f;
+    // Made with the Material Graph (nodes): the graph, as JSON ("" = made from pictures).
+    // The pictures above are what it last baked into.
+    std::string graph;
 };
 inline void clampVariant(MaterialVariantProps& v) {
     auto c = [](float& f, float lo, float hi) { f = (f == f) ? (f < lo ? lo : f > hi ? hi : f) : lo; };
@@ -582,6 +585,7 @@ inline void clampVariant(MaterialVariantProps& v) {
     c(v.glow, 0.0f, 10.0f);
     for (std::string* t : {&v.colorMap, &v.normalMap, &v.roughnessMap, &v.metalnessMap})
         if (t->size() > 500) t->resize(500);
+    if (v.graph.size() > 200000) v.graph.clear();
 }
 
 // A custom value on an object, like Roblox Attributes (Properties panel >

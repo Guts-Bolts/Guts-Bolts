@@ -1759,12 +1759,71 @@ async function decalPicture(img) {
   if (url) img.src = url;
 }
 
+// The public roadmap (Create > Roadmap): what's being worked on, what's planned and what's done,
+// and ideas from developers that everyone votes on. Staff edit it right here and answer ideas
+// (here or on the Staff page). worker/roadmap.js has the rules.
+const ROAD_COLUMNS = [['working', 'Working on it'], ['planned', 'Planned'], ['done', 'Done']];
+function roadItemForm(x) {
+  return html`<form class="form road-form" data-form="roadSave"><input type="hidden" name="id" value="${x ? x.id : ''}">
+      <label>Title</label><input type="text" name="title" maxlength="80" required value="${x ? x.title : ''}">
+      <label>What it is <span class="muted small">(optional)</span></label><textarea name="text" maxlength="600">${x ? x.text : ''}</textarea>
+      <div class="row"><div><label>Where</label><select name="status">${ROAD_COLUMNS.map(([k, l]) => html`<option value="${k}" ${x && x.status === k ? 'selected' : ''}>${l}</option>`)}</select></div>
+        <div><label>Version <span class="muted small">(optional)</span></label><input type="text" name="version" maxlength="20" placeholder="0.7.9" value="${x ? x.version : ''}"></div></div>
+      <p><button class="btn green">${x ? 'Save' : 'Add to the roadmap'}</button></p></form>`;
+}
+// One idea, with its vote button (and staff's answer buttons).
+function ideaRow(x, staff) {
+  const who = x.by ? html`<a href="#/user/${x.by.userId || x.by.id}">${x.by.name}</a>` : 'someone';
+  const answered = x.status !== 'open';
+  return html`<div class="idea">
+      <button class="vote ${x.voted ? 'on' : ''}" data-act="ideaVote" data-id="${x.id}" data-on="${x.voted ? '' : '1'}" ${answered ? 'disabled' : ''}
+        title="${x.voted ? 'Take your vote back' : 'Vote for this'}"><span aria-hidden="true">&#9650;</span><b>${x.votes}</b></button>
+      <div class="grow"><b class="notranslate">${x.title}</b>
+        ${answered ? html` <span class="badge-pill ${x.status === 'planned' ? 'ok' : ''}">${x.status === 'planned' ? 'On the roadmap' : 'Not now'}</span>` : ''}
+        ${x.text ? html`<p class="small notranslate">${x.text}</p>` : ''}
+        <p class="small muted">Suggested by ${who} · ${ago(x.at)}</p>
+        ${x.note ? html`<p class="small idea-note"><b>Staff:</b> <span class="notranslate">${x.note}</span></p>` : ''}
+        ${staff ? html`<p>${answered ? html`<button class="btn small" data-act="ideaAnswer" data-id="${x.id}" data-answer="open">Reopen</button>`
+          : html`<button class="btn small green" data-act="ideaAnswer" data-id="${x.id}" data-answer="planned">Put on the roadmap</button>
+            <button class="btn small" data-act="ideaAnswer" data-id="${x.id}" data-answer="declined">Say no</button>`}
+          <button class="btn small red" data-act="ideaRemove" data-id="${x.id}">Delete</button></p>` : ''}</div></div>`;
+}
+async function roadmapPage(head) {
+  const r = await pageCall('roadmap.get', {});
+  if (!r.ok) { show(html`${head}<p class="error">${r.error}</p>`); return; }
+  const staff = signedIn() && me.staff;
+  const item = (x) => html`<div class="road-item"><b class="notranslate">${x.title}</b>${x.version ? html` <span class="badge-pill notranslate">${x.version}</span>` : ''}
+      ${x.text ? html`<p class="small notranslate">${x.text}</p>` : ''}
+      ${staff ? html`<details class="small"><summary>Edit</summary>${roadItemForm(x)}
+        <p><button class="btn small red" data-act="roadRemove" data-id="${x.id}">Remove</button></p></details>` : ''}</div>`;
+  show(html`${head}
+    <p class="muted">What we're making next for Guts&amp;Bolts. Have an idea? Suggest it below, and vote for the ones you want most.</p>
+    ${staff ? html`<details class="box"><summary><b>Add to the roadmap</b> (staff)</summary>${roadItemForm(null)}</details>` : ''}
+    <div class="roadmap">${ROAD_COLUMNS.map(([k, l]) => {
+      const list = r.items.filter((x) => x.status === k);
+      return html`<section class="road-col road-${k}"><h2>${l} <span class="muted small">(${list.length})</span></h2>
+        ${list.length ? list.map(item) : html`<p class="muted small">Nothing here yet.</p>`}</section>`;
+    })}</div>
+    <h2>Ideas from developers</h2>
+    ${signedIn() ? html`<details class="box"><summary><b>Suggest an update</b></summary>
+        <form class="form" data-form="ideaSuggest">
+          <label>Your idea, in a few words</label><input type="text" name="title" maxlength="80" required placeholder="like: Horses you can ride">
+          <label>More about it <span class="muted small">(optional)</span></label><textarea name="text" maxlength="600"></textarea>
+          <p class="small muted">You can have 3 ideas waiting at a time. Staff read them all and answer the ones that get the most votes first.</p>
+          <p><button class="btn green">Suggest it</button></p></form></details>`
+      : html`<p class="box"><a href="#/signup">Sign up</a> or <a href="#/login">log in</a> to suggest ideas and vote.</p>`}
+    ${r.ideas.length ? html`<div class="ideas">${r.ideas.map((x) => ideaRow(x, staff))}</div>`
+      : html`<p class="muted">No ideas waiting. Be the first!</p>`}
+    ${r.answered.length ? html`<h2>Answered lately</h2><div class="ideas">${r.answered.map((x) => ideaRow(x, staff))}</div>` : ''}`);
+}
+
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['roadmap', 'Roadmap']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
+  if (tab === 'roadmap') { await roadmapPage(head); return; }
   if (tab === 'model') { await myModelsPage(head); return; }
   if (tab === 'accessory') { await myAccessoriesPage(head); return; }
   const r = signedIn() ? await pageCall('list', { creator: me.id, limit: 100 }) : { ok: true, assets: [] };
@@ -2612,7 +2671,7 @@ pages.avatar = async () => {
 // Staff tools (like the Player's Staff page): verify people, give Bolts, ban.
 // The reports players sent (newest problems first in line): what was reported, why, and buttons to close them.
 function reportsBox(rep, closed) {
-  const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?reports=closed">Closed</a>`;
+  const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff?tab=reports">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?reports=closed">Closed</a>`;
   if (!rep.ok) return html`<div class="box"><h2 class="boxhead">Reports</h2><p class="error">${rep.error}</p></div>`;
   const reasonName = (k) => (REPORT_REASONS.find((x) => x[0] === k) || ['', k])[1];
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>${verified(u.verified)}` : html`?`);
@@ -2645,7 +2704,7 @@ function reportsBox(rep, closed) {
 
 // Ban appeals: banned people asking to be unbanned, with the ban (why, the note, when and who) and what they wrote.
 function appealsBox(ap, closed) {
-  const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?appeals=closed">Answered</a>`;
+  const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff?tab=appeals">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?appeals=closed">Answered</a>`;
   if (!ap.ok) return html`<div class="box"><h2 class="boxhead">Ban appeals</h2><p class="error">${ap.error}</p></div>`;
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>${verified(u.verified)}` : html`?`);
   const row = (x) => html`<div class="report">
@@ -2668,7 +2727,7 @@ function appealsBox(ap, closed) {
 // Support tickets: people asking staff for help (like a forgotten password). Answer them,
 // send a password reset code, or close them.
 function ticketsBox(tk, closed) {
-  const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?tickets=closed">Closed</a>`;
+  const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff?tab=tickets">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?tickets=closed">Closed</a>`;
   if (!tk.ok) return html`<div class="box"><h2 class="boxhead">Support tickets</h2><p class="error">${tk.error}</p></div>`;
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>${verified(u.verified)}` : html`?`);
   const topicName = (k) => (TICKET_TOPICS.find((x) => x[0] === k) || ['', k])[1];
@@ -2767,27 +2826,40 @@ function loadReviewPreviews() {
   }
 }
 
+// The Staff page, in sections so each kind of work has its own place. The tabs show how many
+// things are waiting in each; Overview has them all at a glance.
+const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
+  ['ideas', 'Ideas'], ['people', 'People'], ['log', 'Staff log'], ['tools', 'Tools']];
 pages.staff = async () => {
   if (!signedIn() || !me.staff) { show(html`<h1>Staff</h1><p class="muted">Only Guts&amp;Bolts staff can see this page.</p>`); return; }
-  const query = new URLSearchParams(location.hash.split('?')[1] || '').get('q') || '';
-  const closed = new URLSearchParams(location.hash.split('?')[1] || '').get('reports') === 'closed';
-  const logFor = new URLSearchParams(location.hash.split('?')[1] || '').get('log') || '';
-  const ticketsClosed = new URLSearchParams(location.hash.split('?')[1] || '').get('tickets') === 'closed';
-  const appealsClosed = new URLSearchParams(location.hash.split('?')[1] || '').get('appeals') === 'closed';
-  const [r, rep, up, lg, tk, ml, ap, ca] = await Promise.all([pageCall('admin.find', { query }), pageCall('admin.reports', { status: closed ? 'closed' : 'open' }),
-    pageCall('admin.uploads', {}), pageCall('admin.log', logFor ? { user: logFor } : {}),
-    pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.mailStatus', {}),
-    pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }), me.official ? pageCall('admin.connectApps', {}) : null]);
-  const pr = me.official ? await pageCall('admin.promos', {}) : null;
-  show(html`<h1>Staff</h1>
-    ${ticketsBox(tk, ticketsClosed)}
-    ${uploadsBox(up)}
-    ${reportsBox(rep, closed)}
-    ${appealsBox(ap, appealsClosed)}
-    ${promoBox(pr)}
-    ${mailBox(ml)}
-    ${connectBox(ca)}
-    <h2>People</h2>
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const query = params.get('q') || '';
+  const closed = params.get('reports') === 'closed';
+  const logFor = params.get('log') || '';
+  const ticketsClosed = params.get('tickets') === 'closed';
+  const appealsClosed = params.get('appeals') === 'closed';
+  // (older links name what they show, not the tab)
+  const tab = params.get('tab') || (params.has('q') ? 'people' : params.has('log') ? 'log' : params.has('reports') ? 'reports'
+    : params.has('tickets') ? 'tickets' : params.has('appeals') ? 'appeals' : 'home');
+  // What's waiting, for the counts on the tabs (and the lists themselves).
+  const [tk, up, rep, ap, rm] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
+    pageCall('admin.reports', { status: closed ? 'closed' : 'open' }), pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }),
+    pageCall('roadmap.get', {})]);
+  const waiting = {
+    tickets: tk.ok && !ticketsClosed ? tk.tickets.length : null, uploads: up.ok ? up.uploads.length : null,
+    reports: rep.ok && !closed ? rep.reports.length : null, appeals: ap.ok && !appealsClosed ? ap.appeals.length : null,
+    ideas: rm.ok ? rm.openIdeas : null };
+  const tabs = html`<div class="tabs staff-tabs">${STAFF_TABS.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/staff?tab=${k}">${l}${
+    waiting[k] ? html` <span class="count">${waiting[k]}</span>` : ''}</a>`)}</div>`;
+  let body;
+  if (tab === 'tickets') body = ticketsBox(tk, ticketsClosed);
+  else if (tab === 'uploads') body = uploadsBox(up);
+  else if (tab === 'reports') body = reportsBox(rep, closed);
+  else if (tab === 'appeals') body = appealsBox(ap, appealsClosed);
+  else if (tab === 'ideas') body = staffIdeasBox(rm);
+  else if (tab === 'people') {
+    const r = await pageCall('admin.find', { query });
+    body = html`<div class="box"><h2 class="boxhead">People</h2>
     <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make partners, make staff, give Bolts and ban.'
       : 'Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren\'t allowed.'}</p>
     <form class="row" data-form="staffSearch"><input type="search" name="q" placeholder="Search by name or user number (#5)" value="${query}" style="max-width:320px">
@@ -2809,12 +2881,45 @@ pages.staff = async () => {
           <button class="btn small red" data-act="staff" data-op="ban" data-on="${u.banned ? '' : '1'}" data-id="${u.id}">${u.banned ? 'Unban' : 'Ban'}</button>` : ''}`}
         <a class="btn small" href="#/staff?log=${u.userId || u.id}" title="What staff did to or by them">Log</a>
       </div>`) : html`<p class="error">${r.error}</p>`}</div>
-    ${staffLogBox(lg, logFor)}`);
-  loadReviewPreviews();
+    </div>`;
+  } else if (tab === 'log') body = staffLogBox(await pageCall('admin.log', logFor ? { user: logFor } : {}), logFor);
+  else if (tab === 'tools') {
+    const [ml, ca, pr] = await Promise.all([pageCall('admin.mailStatus', {}), me.official ? pageCall('admin.connectApps', {}) : null,
+      me.official ? pageCall('admin.promos', {}) : null]);
+    body = html`<div class="box"><h2 class="boxhead">Roadmap</h2><p class="small">Add, move and remove things on the public roadmap on
+        <a href="#/create/roadmap">Create &gt; Roadmap</a> (staff see Edit buttons there).</p></div>
+      ${promoBox(pr)}${mailBox(ml)}${connectBox(ca)}`;
+  } else {
+    const lg = await pageCall('admin.log', {});
+    const card = (k, label, help) => html`<a class="staff-card ${waiting[k] ? 'busy' : ''}" href="#/staff?tab=${k}">
+        <b>${waiting[k] === null ? '?' : waiting[k]}</b><span>${label}</span><span class="small muted">${help}</span></a>`;
+    body = html`<h2>Waiting for you</h2>
+      <div class="staff-cards">
+        ${card('tickets', 'Support tickets', 'People asking for help')}
+        ${card('uploads', 'Uploads to check', 'Decals, sounds and T-shirts')}
+        ${card('reports', 'Reports', 'Things players reported')}
+        ${card('appeals', 'Ban appeals', 'Banned people asking again')}
+        ${card('ideas', 'Ideas', 'Roadmap suggestions to answer')}</div>
+      <form class="row" data-form="staffSearch"><input type="search" name="q" placeholder="Find a person by name or user number (#5)" style="max-width:320px">
+        <button class="btn blue">Search</button></form>
+      ${lg.ok ? staffLogBox({ ok: true, log: lg.log.slice(0, 8) }, '') : ''}`;
+  }
+  show(html`<h1>Staff</h1>${tabs}${body}`);
+  if (tab === 'uploads') loadReviewPreviews();
 };
 
+// The ideas people suggested for the roadmap (most votes first), for staff to answer.
+function staffIdeasBox(rm) {
+  if (!rm.ok) return html`<div class="box"><h2 class="boxhead">Ideas</h2><p class="error">${rm.error}</p></div>`;
+  return html`<div class="box"><h2 class="boxhead">Ideas (${rm.openIdeas})</h2>
+    <p class="small muted">What developers want added, most votes first. Put one on the roadmap or say no (with a note): the person who
+      suggested it gets told either way. Everyone can see these on <a href="#/create/roadmap">Create &gt; Roadmap</a>.</p>
+    ${rm.ideas.length ? html`<div class="ideas">${rm.ideas.map((x) => ideaRow(x, true))}</div>` : html`<p class="muted small">No ideas waiting.</p>`}
+    ${rm.answered.length ? html`<h3>Answered lately</h3><div class="ideas">${rm.answered.map((x) => ideaRow(x, true))}</div>` : ''}</div>`;
+}
+
 // The staff action log: who banned, warned, verified, checked or deleted what (newest first).
-const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤', connect: '🔑', rename: '✏️' };
+const STAFF_ACTION = { ban: '🔨', unban: '🕊️', warn: '⚠️', bolts: '💰', badge: '🏅', unbadge: '🏅', review: '🖼️', report: '🚩', ticket: '🛟', delete: '🗑️', comment: '💬', feature: '⭐', appeal: '📨', account: '👤', connect: '🔑', rename: '✏️', roadmap: '🗺️' };
 function staffLogBox(lg, logFor) {
   const person = (u) => (u ? html`<a href="#/user/${u.userId || u.id}">${u.name}</a>` : '');
   const body = !lg.ok ? html`<p class="error">${lg.error}</p>`
@@ -2823,7 +2928,7 @@ function staffLogBox(lg, logFor) {
         <span class="grow"><b>${person(x.by)}</b>: ${x.text}</span><span class="small muted">${ago(x.at)}</span></div>`)}</div>`
     : html`<p class="muted">Nothing yet.</p>`;
   return html`<div class="box"><h2 class="boxhead">Staff action log</h2>
-    <p class="small muted">${logFor ? html`Just what was done by or to this person. <a href="#/staff">Show everything</a>`
+    <p class="small muted">${logFor ? html`Just what was done by or to this person. <a href="#/staff?tab=log">Show everything</a>`
       : 'Everything staff did lately: bans, warnings, ban appeals, badges, Bolts, upload checks, closed reports and deletes (and deleted accounts).'}</p>${body}</div>`;
 }
 
@@ -2839,7 +2944,8 @@ function noteLink(n) {
   if (n.kind === 'sale' || n.kind === 'upload') return '#/library/' + n.about;
   if (n.kind === 'gift' || n.kind === 'auction') return '#/item/' + n.about;
   if (n.kind === 'support') return '#/support';
-  if (n.kind === 'ticket') return '#/staff';
+  if (n.kind === 'ticket') return '#/staff?tab=tickets';
+  if (n.kind === 'roadmap') return '#/create/roadmap';
   if (n.kind === 'rename') return '#/settings';
   return '';
 }
@@ -2847,7 +2953,7 @@ pages.notifications = async () => {
   if (!signedIn()) { show(html`<h1>Notifications</h1>${needSignIn('see your notifications')}`); return; }
   const r = await pageCall('notes.list', {});
   if (!r.ok) { show(html`<h1>Notifications</h1><p class="error">${r.error}</p>`); return; }
-  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁' };
+  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁', roadmap: '🗺️' };
   show(html`<h1>Notifications</h1>
     <div class="list notes">${r.notes.length ? r.notes.map((n) => {
       const link = noteLink(n);
@@ -3616,6 +3722,36 @@ const actions = {
       <p class="popup-buttons"><button class="btn blue" data-act="copySecret" data-text="${r.secret}">Copy</button>
         <a href="#" class="btn" data-act="closeModal">Done</a></p>`);
   },
+  async ideaVote(d) {
+    if (!signedIn()) { toast('Sign up or log in to vote.'); return; }
+    const r = await call('roadmap.vote', { id: d.id, on: !!d.on });
+    if (!r.ok) { toast(r.error); return; }
+    render();
+  },
+  async ideaAnswer(d) {
+    let note = '';
+    if (d.answer !== 'open') {
+      note = prompt(d.answer === 'planned' ? 'A note for everyone (optional), like when it might come:'
+        : 'Why not? (Everyone sees this, and the person who suggested it gets told.)', '');
+      if (note === null) return;
+    }
+    const r = await call('admin.ideaAnswer', { id: d.id, answer: d.answer, note });
+    if (!r.ok) { toast(r.error); return; }
+    toast(d.answer === 'planned' ? 'Added to the roadmap.' : d.answer === 'declined' ? 'Answered.' : 'Reopened.');
+    render();
+  },
+  async ideaRemove(d) {
+    if (!confirm('Delete this idea? (For spam and the like: to say no, use Say no.)')) return;
+    const r = await call('admin.ideaRemove', { id: d.id });
+    if (!r.ok) { toast(r.error); return; }
+    render();
+  },
+  async roadRemove(d) {
+    if (!confirm('Take this off the roadmap?')) return;
+    const r = await call('admin.roadmapRemove', { id: d.id });
+    if (!r.ok) { toast(r.error); return; }
+    render();
+  },
   async promoStop(d) {
     if (!confirm('Stop this code? Nobody will be able to use it after this.')) return;
     const r = await call('admin.promoStop', { code: d.code });
@@ -4204,6 +4340,18 @@ const forms = {
     if (msg) { msg.className = r.ok ? 'ok' : 'error'; msg.textContent = r.ok ? rewardMessage : r.error; }
     toast(r.ok ? rewardMessage : r.error);
     if (r.ok) { if (r.me) setMe(r.me); f.code.value = ''; if (!msg) render(); }
+  },
+  async roadSave(f) {
+    const r = await call('admin.roadmapSave', { id: f.id.value, title: f.title.value, text: f.text.value, status: f.status.value, version: f.version.value });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Saved.');
+    render();
+  },
+  async ideaSuggest(f) {
+    const r = await call('roadmap.suggest', { title: f.title.value, text: f.text.value });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Thanks! Your idea is up for votes.');
+    render();
   },
   async promoMake(f) {
     const when = (box) => (box.value ? Math.floor(new Date(box.value).getTime() / 1000) : 0);

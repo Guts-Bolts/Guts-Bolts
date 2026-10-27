@@ -13,6 +13,8 @@
 #include "PhysicsReplay.h"
 #include "SceneDiff.h"
 #include "../scene/SceneNode.h"
+#include "../scene/LinkedModels.h"
+#include "../scene/MaterialGraph.h"
 #include <imgui.h>
 
 struct GLFWwindow;
@@ -96,6 +98,7 @@ private:
     void renderProjectTimeMachine();
     void renderBlocks();                       // Visual Scripting (EditorBlocks.cpp)
     void renderMaterialEditor();    // EditorMaterials.cpp
+    void renderMaterialGraph();     // EditorMaterialGraph.cpp
     void renderScriptHistory();     // EditorScriptHistory.cpp
     void renderLevelGenerator();               // (EditorLevelGen.cpp)
     void renderPhysicsReplay();     // EditorPhysicsReplay.cpp
@@ -349,6 +352,11 @@ private:
     bool m_showMaterialEditor = false;
     uint64_t    m_materialEditing = 0;    // the MaterialVariant shown in the Material Editor
     std::string m_materialOldName;        // its name before a rename (parts follow it)
+    // The Material Graph window (nodes that make a material's pictures; EditorMaterialGraph.cpp).
+    struct GraphUi;
+    std::shared_ptr<GraphUi> m_graphUi;   // (shared_ptr: GraphUi is only known in its own file)
+    void openMaterialGraph(uint64_t variant);
+    bool applyMaterialGraph(SceneNode* variant, const MaterialGraph::Graph& graph, int size);
     bool m_showScriptHistory = false;
     std::string m_historyFilter;
     int  m_historyKind = 0;           // 0 every entry, 1 property changes, 2 events
@@ -429,6 +437,10 @@ private:
     void        renderAiActivity();
     std::vector<std::string> m_undo, m_redo;
     std::string              m_committed;      // last known scene state
+    LinkedModels::Tracker    m_links;          // linked models: what each copy held at the last edit
+    void linkSelected();                       // Make Linked Model (or link several copies together)
+    void unlinkSelected();
+    void selectLinkedCopies();
     std::vector<std::string> m_clipboard;
     bool                     m_showShortcuts = false;
     bool                     m_showCollisionGroups = false;

@@ -632,6 +632,7 @@ void Player::respawn(bool firstSpawn) {
     m_ragdoll.unhide(*m_scene);   // (blown to pieces last time)
     m_ragdoll.release(*m_scene);
     m_knockTool = 0;
+    m_heldState.clear();
     m_knockTime = 0.0f;
     m_pendingForce = 0.0f;
     m_pendingImpulse = glm::vec3(0.0f);
@@ -662,12 +663,14 @@ void Player::kill(float force, const glm::vec3& impulse) {
 void Player::hurt(float damage, float force, const glm::vec3& impulse) {
     if (m_dead || damage <= 0.0f) return;
     if (hasForceField()) {   // shielded: just a shove (a big one still knocks you over)
+        if (sitting() && glm::length(impulse) > 8.0f) standUp(false);
         launch(m_velocity + impulse * 0.5f);
         if (glm::length(impulse) > 16.0f) trip(1.0f, glm::vec3(glm::length(impulse) * 15.0f, 0, 0));
         return;
     }
     m_humanoid.health = std::max(0.0f, m_humanoid.health - damage);
     if (m_humanoid.health <= 0.0f) { kill(force, impulse); return; }
+    if (sitting() && glm::length(impulse) > 4.0f) standUp(false);   // blown off the seat
     launch(m_velocity + impulse);
     // A big blast knocks you off your feet and spins you (2011 style).
     if (glm::length(impulse) > 8.0f) trip(1.4f, glm::vec3(glm::length(impulse) * 30.0f * (impulse.x + impulse.z >= 0.0f ? 1.0f : -1.0f), 0, 0));
@@ -992,10 +995,40 @@ void Player::standUp(bool jumpOff) {
     if (jumpOff) m_velocity.y = m_humanoid.launchSpeed(m_scene->world().gravity);
 }
 
-void Player::sitStep(float dt, bool jump) {
+// Sitting isn't glued on: a big enough shove (something crashing into you, a car hitting
+// the bench) knocks you off, and a seat tipping right over throws you out.
+bool Player::knockedOffSeat(Physics& physics) {
+    SceneNode* r = root();
+    if (!r) return false;
+    if (SceneNode* seat = m_seatId ? m_scene->findById(m_seatId) : nullptr)
+        if (glm::normalize(glm::vec3(seat->worldMatrix()[1])).y < 0.3f) {   // tipped over (more than ~70 degrees)
+            standUp(false);
+            trip(1.2f, glm::vec3(150.0f, 0.0f, 0.0f));
+            return true;
+        }
+    const glm::vec3 at = m_seatId || m_sitHere ? r->transform.position + glm::vec3(0.0f, 0.75f, 0.0f) : r->transform.position;
+    for (const Physics::Shove& s : physics.shoves(at, r->transform.rotation.y, kBodyMass, physics.groupOf(r))) {
+        glm::vec3 dir(s.dir.x, 0.0f, s.dir.z);
+        const float l = glm::length(dir);
+        if (l < 1e-3f || s.speed < 6.0f) continue;
+        dir /= l;
+        standUp(false);
+        m_velocity = dir * s.speed + glm::vec3(0.0f, s.speed * 0.35f, 0.0f);
+        m_grounded = false;
+        m_groundId = 0;
+        const float fwd = glm::dot(dir, glm::vec3(std::sin(glm::radians(r->transform.rotation.y)), 0.0f,
+                                                  std::cos(glm::radians(r->transform.rotation.y))));
+        trip(1.0f + s.speed * 0.04f, glm::vec3((fwd >= 0.0f ? 1.0f : -1.0f) * std::max(120.0f, s.speed * 22.0f), 0, 0));
+        return true;
+    }
+    return false;
+}
+
+void Player::sitStep(float dt, bool jump, Physics& physics) {
     SceneNode* r = root();
     SceneNode* seat = m_scene->findById(m_seatId);
     if (!r || !seat || jump || seatDisabled(seat)) { standUp(jump); return; }
+    if (knockedOffSeat(physics)) return;
     glm::vec3 top; float yaw;
     seatFrame(seat, top, yaw);
     // The hips on the seat (the root is at the feet; standing, the hips are 1 up),
@@ -1010,9 +1043,10 @@ void Player::sitStep(float dt, bool jump) {
     updateGrip();
 }
 
-void Player::sitHereStep(float dt, bool jump) {
+void Player::sitHereStep(float dt, bool jump, Physics& physics) {
     SceneNode* r = root();
     if (!r || jump) { standUp(jump); return; }
+    if (knockedOffSeat(physics)) return;
     // Sitting on something that moves (a boat, a train): ride along with it.
     if (m_groundId)
         if (SceneNode* g = m_scene->findById(m_groundId)) {
@@ -1193,27 +1227,36 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
 
     // Knocked over as a ragdoll: the body's muscles try to catch the fall; once it
     // has come to rest (and the trip time is up) we get back up.
+    // Held down by a script (PlatformStand, the Ragdoll state) the same way, floppy, until it lets go.
+    if (heldDown() && !m_ragdoll.active() && canHoldDown()) {
+        if (sitting()) standUp(false);
+        startKnockdown();
+    }
     if (m_ragdoll.active()) {
+        const bool held = heldDown() && canHoldDown();
+        if (m_ragdoll.held() && !held) { getUp(); return; }   // let go: straight back up, like Roblox
+        m_ragdoll.setHeld(held);
         m_ragdoll.update(dt, *m_scene, physics);
         m_knockTime += dt;
         if (m_ragdoll.lying()) m_tripTime = std::max(0.0f, m_tripTime - dt);   // (the clock runs once we're down)
         if (m_ragdoll.center().y < m_scene->world().fallenPartsHeight) m_humanoid.health = 0.0f;
-        else if ((m_tripTime <= 0.0f && m_ragdoll.settled() && !m_humanoid.platformStand) || m_knockTime > 8.0f) getUp();
+        else if (!held && ((m_tripTime <= 0.0f && m_ragdoll.settled()) || m_knockTime > 8.0f)) getUp();
         return;
     }
 
     // Sitting: stay on the seat until you jump.
     m_seatCooldown = std::max(0.0f, m_seatCooldown - dt);
-    if (m_seatId) { sitStep(dt, jump); if (m_seatId) return; }
-    if (m_sitHere) { sitHereStep(dt, jump); if (m_sitHere) return; }
+    if (m_seatId) { sitStep(dt, jump, physics); if (m_seatId) return; }
+    if (m_sitHere) { sitHereStep(dt, jump, physics); if (m_sitHere) return; }
 
     glm::vec3 pos = r->transform.position;
     // Where the physics really has us: take away the step smoothing we showed last
     // frame (unless something else moved us since: a teleport, a seat, respawning).
-    if (m_stepShown != 0.0f) {
-        if (glm::length(pos - m_shownAt) < 1e-4f) pos.y -= m_stepShown;
+    if (m_stepShown != 0.0f || m_poseShift != glm::vec3(0.0f)) {
+        if (glm::length(pos - m_shownAt) < 1e-4f) pos -= glm::vec3(0.0f, m_stepShown, 0.0f) + m_poseShift;
         else m_stepOffset = 0.0f;
         m_stepShown = 0.0f;
+        m_poseShift = glm::vec3(0.0f);
     }
 
     // Ride moving platforms: whatever we stood on last frame carries us, sliding
@@ -1268,8 +1311,9 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         for (float h : {0.4f, 1.3f, 2.2f})
             if (insideBox(b, pos + glm::vec3(0.0f, h, 0.0f) + ahead * 0.75f, 0.05f)) { truss = true; break; }
     });
-    // Water parts, waves and floods: is our chest in it?
-    water = waterAt(*m_scene, pos + glm::vec3(0.0f, 1.2f, 0.0f), &waterTop, &current);
+    // Water parts, waves and floods: is our chest in it? (Already swimming: the belly, so
+    // coming up fast to the surface doesn't pop us out of the water for a moment.)
+    water = waterAt(*m_scene, pos + glm::vec3(0.0f, m_swimming ? 0.8f : 1.2f, 0.0f), &waterTop, &current);
     // Real liquid (FluidSource): a stream carries you along; deep enough, you swim in it.
     bool stream = false;
     glm::vec3 streamVel(0.0f);
@@ -1315,7 +1359,10 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         float want = 0.0f;
         if (jump) want = 1.0f;
         else if (m_swimDown) want = -1.0f;
-        else if (moving && std::abs(m_swimLook) > 0.2f) want = std::clamp(m_swimLook * 1.8f, -1.0f, 1.0f);
+        else if (moving && std::abs(m_swimLook) > 0.2f) {
+            want = std::clamp(m_swimLook * 1.8f, -1.0f, 1.0f);
+            horiz *= std::max(0.35f, std::sqrt(1.0f - want * want));   // diving steeply: more down, less along
+        }
         // How far under the surface the shoulders are (negative = above it).
         const float depth = waterTop - (pos.y + kFloatHeight);
         if (want != 0.0f) {
@@ -1517,8 +1564,40 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         m_tiltVel = 0.0f;
         if (m_tilt == 0.0f) m_getUp = 0.0f;
     }
-    r->transform.rotation.x = m_tilt;
-    r->transform.rotation.z = 0.0f;
+    // Swimming, like Roblox: the body lies along the way it's going (flat swimming along,
+    // head first diving down, upright going straight up or treading water) and leans into
+    // turns. It turns about its middle, so only what you see moves (not the physics).
+    {
+        const float turn = dt > 0.0f ? std::remainder(r->transform.rotation.y - m_lastYaw, 360.0f) / dt : 0.0f;
+        m_lastYaw = r->transform.rotation.y;
+        float pitch = 0.0f, roll = 0.0f;
+        if (m_swimming && !knocked && !m_gyro && dt > 0.0f) {
+            const glm::vec3 v = (res.position - pos) / dt - current;   // (not what the water carries)
+            const float along = glm::length(glm::vec2(v.x, v.z));
+            const float swim = std::clamp((glm::length(v) - 1.0f) / 3.0f, 0.0f, 1.0f);   // still: treading water
+            pitch = swim * std::min(165.0f, glm::degrees(std::atan2(along, v.y)));      // 0 up, 90 flat, 180 head down
+            roll = swim * std::clamp(-turn * 0.12f, -35.0f, 35.0f);
+        }
+        const float k = std::min(1.0f, dt * 6.0f);
+        m_swimPitch += (pitch - m_swimPitch) * k;
+        m_swimRoll += (roll - m_swimRoll) * k;
+        if (std::abs(m_swimPitch) < 0.05f) m_swimPitch = 0.0f;
+        if (std::abs(m_swimRoll) < 0.05f) m_swimRoll = 0.0f;
+    }
+    r->transform.rotation.x = m_tilt + m_swimPitch;
+    r->transform.rotation.z = m_swimRoll;
+    if (m_swimPitch != 0.0f || m_swimRoll != 0.0f) {
+        // Keep the middle of the body where it was: move the feet (the root) round it.
+        Transform upright;
+        upright.rotation = glm::vec3(m_tilt, r->transform.rotation.y, 0.0f);
+        upright.scale = r->transform.scale;
+        Transform turned = upright;
+        turned.rotation = r->transform.rotation;
+        const glm::vec4 middle(0.0f, kSwimPivot, 0.0f, 0.0f);
+        m_poseShift = glm::vec3(upright.matrix() * middle) - glm::vec3(turned.matrix() * middle);
+        r->transform.position += m_poseShift;
+        m_shownAt = r->transform.position;
+    }
     m_wasTripped = knocked;
 
     animate(dt, m_groundSpeed, m_grounded);
@@ -1630,6 +1709,21 @@ bool Player::canKnockdown() const {
            !m_gyro && !m_swimming && !m_climbing && root() && part("Torso") && part("Head");
 }
 
+// Held down by a script: a real (floppy) ragdoll, whatever the game's death style. Not
+// while BodyGyros / BodyVelocities in the character fly it (PlatformStand is how Roblox
+// flying and boards work), climbing or swimming: then the body just tips over stiffly.
+bool Player::canHoldDown() const {
+    if (m_dead || m_climbing || m_swimming || !root() || !part("Torso") || !part("Head")) return false;
+    std::vector<const SceneNode*> stack{root()};
+    while (!stack.empty()) {
+        const SceneNode* n = stack.back();
+        stack.pop_back();
+        if (n->isMover() && n->enabled) return false;
+        for (const auto& c : n->children) stack.push_back(c.get());
+    }
+    return true;
+}
+
 // Thrown off our feet: the body becomes an (active) ragdoll until it comes to rest.
 void Player::startKnockdown() {
     SceneNode* r = root();
@@ -1684,6 +1778,7 @@ void Player::getUp() {
 
 const char* Player::stateName() const {
     if (m_dead) return "Dead";
+    if (!m_heldState.empty()) return m_heldState.c_str();
     if (m_humanoid.platformStand) return "PlatformStanding";
     if (m_tripTime > 0.0f) return "FallingDown";
     if (m_getUp > 0.0f) return "GettingUp";

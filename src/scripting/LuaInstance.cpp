@@ -3192,16 +3192,18 @@ int hum_getState(lua_State* L) {
     return 1;
 }
 
-// humanoid:ChangeState(Enum.HumanoidStateType.FallingDown): "FallingDown" / "Ragdoll" knock
-// the character over for a couple of seconds, "GettingUp" stands it back up, "Dead" kills it.
+// humanoid:ChangeState(Enum.HumanoidStateType.FallingDown): "FallingDown" knocks the character
+// over for a couple of seconds; "Ragdoll" / "Physics" make it a limp ragdoll until "GettingUp"
+// (or "Running") stands it back up, like PlatformStand; "Dead" kills it.
 int hum_changeState(lua_State* L) {
     const char* st = luaL_checkstring(L, 2);
     Player* p = E(L)->scene()->player();
     const bool mine = p && p->rootId() == humRoot(L);
     if (is(st, "Dead")) { hum(L).health = 0.0f; return 0; }
     if (!mine) return 0;
-    if (is(st, "FallingDown") || is(st, "Ragdoll") || is(st, "Physics")) p->trip(2.0f);
-    else if (is(st, "GettingUp") || is(st, "Running")) { p->trip(0.0f); hum(L).platformStand = false; }
+    if (is(st, "FallingDown")) p->trip(2.0f);
+    else if (is(st, "Ragdoll") || is(st, "Physics")) p->setHeldState(is(st, "Ragdoll") ? "Ragdoll" : "Physics");
+    else if (is(st, "GettingUp") || is(st, "Running")) { p->trip(0.0f); p->setHeldState(""); hum(L).platformStand = false; }
     else if (is(st, "PlatformStanding")) hum(L).platformStand = true;
     return 0;
 }
@@ -3573,6 +3575,8 @@ int light_index(lua_State* L) {
     if (is(k, "FogColor"))      { LuaApi::pushColor3(L, e.fogColor);    return 1; }
     if (is(k, "Ambient"))       { LuaApi::pushColor3(L, e.ambientColor); return 1; }
     if (is(k, "SunColor"))      { LuaApi::pushColor3(L, e.sunColor);    return 1; }
+    if (is(k, "Weather"))       { lua_pushstring(L, kWeatherNames[std::clamp(e.weather, 0, kWeatherCount - 1)]); return 1; }
+    if (is(k, "WeatherIntensity")) { lua_pushnumber(L, e.weatherAmount); return 1; }
     if (is(k, "Name") || is(k, "ClassName")) { lua_pushstring(L, "Lighting"); return 1; }
     if (is(k, "Parent")) { lua_pushnil(L); return 1; }
     if (is(k, "IsA")) { lua_pushcfunction(L, light_isA); return 1; }
@@ -3592,6 +3596,22 @@ int light_newindex(lua_State* L) {
     if (is(k, "FogColor"))      { e.fogColor = LuaApi::checkColor3(L, 3);     return 0; }
     if (is(k, "Ambient"))       { e.ambientColor = LuaApi::checkColor3(L, 3); return 0; }
     if (is(k, "SunColor"))      { e.sunColor = LuaApi::checkColor3(L, 3);     return 0; }
+    if (is(k, "Weather")) {   // "Rain", Enum-style tables print as their name too
+        const char* w = luaL_tolstring(L, 3, nullptr);
+        std::string name = w ? w : "";
+        lua_pop(L, 1);
+        if (const size_t dot = name.rfind('.'); dot != std::string::npos) name = name.substr(dot + 1);   // Enum.Weather.Rain
+        for (int i = 0; i < kWeatherCount; ++i) {
+            const std::string want = kWeatherNames[i];
+            if (name.size() == want.size() &&
+                std::equal(name.begin(), name.end(), want.begin(), [](char a, char b) { return std::tolower((unsigned char)a) == std::tolower((unsigned char)b); })) {
+                e.weather = i;
+                return 0;
+            }
+        }
+        return luaL_error(L, "'%s' isn't a kind of weather (use \"Clear\", \"Rain\" or \"Snow\")", name.c_str());
+    }
+    if (is(k, "WeatherIntensity")) { e.weatherAmount = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     return luaL_error(L, "'%s' can't be set on Lighting", k);
 }
 

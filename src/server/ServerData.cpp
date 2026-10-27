@@ -13,6 +13,8 @@
 // MessagingService (msgOp, below): messages between the running servers of one game.
 //   msg.publish {game, topic, message}  -> {n, sent}
 //   msg.poll    {game, after, topics[]} -> {server, messages: [{n, topic, message, sent}], last}
+//
+// MemoryStoreService (memOp, at the end): mem.* requests, see src/online/MemoryStore.h.
 #include "Server.h"
 #include "ServerUtil.h"
 #include "../online/Protocol.h"
@@ -174,4 +176,31 @@ json GbServer::msgOp(const std::string& name, User& me, const json& args) {
         json r = okay(); r["n"] = box.seq; r["sent"] = now; return r;
     }
     return fail("Unknown request.");
+}
+
+// MemoryStoreService: quick data shared by the running servers of one game. Like
+// MessagingService, only the host of a live server of the game can use it; anyone else
+// gets {ok: false, local: true} and the game keeps its MemoryStores to itself.
+json GbServer::memOp(const std::string& name, User& me, const json& args) {
+    auto a = findAsset(Online::cleanText(args.value("game", std::string()), 80));
+    if (a == m_assets.end() || a->second.kind != "game") return fail("That game isn't there.");
+    const std::string game = a->first;
+    bool mine = false;
+    int players = 0;
+    for (const auto& [sid, s] : m_sessions) {
+        auto g = findAsset(s.game);
+        if (g == m_assets.end() || g->first != game) continue;
+        players += headcount(s);
+        if (s.host == me.id) mine = true;
+    }
+    if (!mine) {
+        json r = fail("MemoryStoreService: only a running server of this game can use its MemoryStores.");
+        r["local"] = true;
+        return r;
+    }
+    MemoryStore& store = m_memory[game];
+    store.setPlayers(players);
+    json r = store.run(name, args, (double)Online::unixNow());
+    if (store.empty()) m_memory.erase(game);
+    return r;
 }

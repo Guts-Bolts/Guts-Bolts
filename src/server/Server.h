@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include "../online/MemoryStore.h"
 
 namespace Net { class Connection; class Listener; }
 
@@ -245,6 +246,12 @@ private:
     nlohmann::json promoJson(const nlohmann::json& p, long long now) const;
     void savePromos();
     void loadPromos();
+    // ServerRoadmap.cpp: the public roadmap and developers' ideas (roadmap.json).
+    nlohmann::json roadmapView(const User& me) const;
+    nlohmann::json roadmapOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json roadmapAdmin(const std::string& name, const User& me, const nlohmann::json& args);
+    void saveRoadmap();
+    void loadRoadmap();
     // The staff action log (stafflog.json): what staff did, newest last. about: who it was done to.
     void staffDid(const User& staff, const std::string& action, const std::string& text, const std::string& about = "");
     nlohmann::json staffLogJson(const std::string& who) const;
@@ -265,6 +272,10 @@ private:
     struct MsgBox { long long seq = 0; std::deque<nlohmann::json> list; };   // {n, topic, message, sent}
     std::map<std::string, MsgBox> m_msgs;                       // game id ->
     std::map<std::string, std::deque<long long>> m_msgSent;     // "account\ngame" -> when they sent (the rate limit)
+    // And MemoryStoreService: quick data every server of a game shares, gone after its
+    // expiration (worker/server.js memOp has the same). In memory too.
+    nlohmann::json memOp(const std::string& name, User& me, const nlohmann::json& args);
+    std::map<std::string, MemoryStore> m_memory;                // game id ->
     // ServerConnect.cpp: connected apps, "Log in with Guts&Bolts" for partner apps like Lyreto
     // (worker/server.js has the same). connect.json: {secrets, codes, tokens, pictures}.
     nlohmann::json connectOp(const std::string& name, User& me, const nlohmann::json& args);
@@ -377,6 +388,8 @@ private:
     nlohmann::json m_tickets = nlohmann::json::array();   // support tickets (ServerSupport.cpp), newest last
     // Promo codes (ServerPromos.cpp): {code, bolts, start, end (0 = never), made, by, uses, stopped}, newest last.
     nlohmann::json m_promos = nlohmann::json::array();
+    // The public roadmap (ServerRoadmap.cpp): {items: [{id, title, text, status, version, at}], ideas: [{id, title, text, by, at, votes, status, note}]}.
+    nlohmann::json m_roadmap = {{"items", nlohmann::json::array()}, {"ideas", nlohmann::json::array()}};
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.
