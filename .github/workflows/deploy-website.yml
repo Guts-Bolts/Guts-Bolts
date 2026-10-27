@@ -1,0 +1,56 @@
+# Puts the website and the Cloudflare server (worker/) live every time work lands
+# on main. This replaces Cloudflare's own "connect a Git repository" setting,
+# which stopped working when the repo moved to the Guts-Bolts organization.
+#
+# Setup (once):
+#   1. Cloudflare dashboard > My Profile > API Tokens > Create Token > use the
+#      "Edit Cloudflare Workers" template > Continue to summary > Create Token.
+#   2. On GitHub: the repo's Settings > Secrets and variables > Actions >
+#      New repository secret, named CLOUDFLARE_API_TOKEN, with that token.
+# Without the secret this does nothing. You can also run it by hand from the
+# Actions tab ("Deploy website" > Run workflow).
+#
+# Variables and Secrets set in the Cloudflare dashboard are kept (keep_vars in
+# wrangler.jsonc), so email and the bot check keep working.
+name: Deploy website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time; a newer push replaces a deploy that hasn't started yet.
+concurrency:
+  group: deploy-website
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Cloudflare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for the Cloudflare key
+        id: key
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "No CLOUDFLARE_API_TOKEN secret: skipping."; echo "have=no" >> "$GITHUB_OUTPUT"
+          else echo "have=yes" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.have == 'yes'
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.have == 'yes'
+        with:
+          node-version: 22
+      - name: Deploy
+        if: steps.key.outputs.have == 'yes'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # Only needed if the key can see more than one Cloudflare account.
+          if [ -n "$ACCOUNT" ]; then export CLOUDFLARE_ACCOUNT_ID="$ACCOUNT"; fi
+          npx --yes wrangler@4 deploy
