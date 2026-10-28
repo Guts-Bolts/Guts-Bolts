@@ -33,6 +33,12 @@ Serve `web/out` from any web server (opening the file directly doesn't work).
 - The games, catalog and pictures that come with the Player are packed into
   `GutsAndBoltsPlayer.data`.
 
+## When it crashes
+
+If something goes wrong, the loading screen shows the error's text (`showWebError`
+in `PlayerApp.cpp`). The build uses `-fwasm-exceptions` so C++ errors can be
+caught in the browser; without it you only get "Uncaught" and a number.
+
 ## Not done yet
 
 - Typing: the iPhone keyboard doesn't pop up for text boxes yet.

@@ -157,6 +157,7 @@
   .dl .coming-soon .platform-icon { background: linear-gradient(#a4aab3,#727b87); border-color: #606975; }
   .dl .soon-label { display: block; padding: 7px 2px; border: 1px solid #a7afb9; border-radius: 3px; background: linear-gradient(#e7eaee,#cbd1d9); color: #454d58; font-size: 11px; font-weight: bold; text-shadow: 0 1px #fff; }
   .dl .coming-soon small { margin-top: 8px; }
+  .dl .btn.play.ios-web { margin-top: 7px; font-size: 11px; line-height: 1.3; white-space: normal; }
   @media (max-width: 850px) { .dl { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 460px) { .dl { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 8px; } }
   .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 4px 12px 12px; counter-reset: s; }
@@ -473,7 +474,7 @@ prompt.Triggered:<span class="f">Connect</span>(<span class="k">function</span>(
       <div data-os="linux"><div class="platform-icon">LIN</div><div class="os">Linux</div><a class="btn play" href="/download/GutsAndBolts-Linux.tar.gz" download>Download</a><small>TAR.GZ package<br>Player + Studio</small></div>
       <div data-os="android"><div class="platform-icon">APK</div><div class="os">Android</div><a class="btn play" href="/download/GutsAndBoltsPlayer-Android.apk" download>Download</a><small>APK package<br>Player + touch controls</small></div>
       <div data-os="quest"><div class="platform-icon">VR</div><div class="os">Meta Quest</div><a class="btn play" href="/download/GutsAndBoltsPlayer-Quest.apk" download>Download</a><small>VR Player<br>No PC needed</small></div>
-      <div data-os="ios" class="coming-soon"><div class="platform-icon">iOS</div><div class="os">iPhone &amp; iPad</div><span class="soon-label">Coming Soon</span><small>Not on the App Store yet<br><a href="https://github.com/Guts-Bolts/Guts-Bolts/blob/main/ios/README.md#put-it-on-your-own-iphone-for-free" rel="noopener">Have a Mac? Build it yourself for free</a></small></div>
+      <div data-os="ios" class="coming-soon"><div class="platform-icon">iOS</div><div class="os">iPhone &amp; iPad</div><span class="soon-label">Coming Soon</span><a class="btn play ios-web" href="/play/">On iOS? Try playing in browser! Click here.</a><small>Not on the App Store yet<br><a href="https://github.com/Guts-Bolts/Guts-Bolts/blob/main/ios/README.md#put-it-on-your-own-iphone-for-free" rel="noopener">Have a Mac? Build it yourself for free</a></small></div>
     </div>
     <div class="steps">
       <div><b>Download and unzip</b>Pick your computer above and unzip what you get.</div>

@@ -263,10 +263,24 @@ PlayerApp::~PlayerApp() {
     m_window.reset();
 }
 
+#ifdef __EMSCRIPTEN__
+void showWebError(const char* what) {
+    std::fprintf(stderr, "Fatal: %s\n", what);
+    EM_ASM({ if (Module.gbError) Module.gbError(UTF8ToString($0)); }, what);
+}
+#endif
+
 void PlayerApp::run() {
 #ifdef __EMSCRIPTEN__
     // In a browser the page owns the loop: it calls us once per screen refresh.
-    emscripten_set_main_loop_arg([](void* app) { static_cast<PlayerApp*>(app)->frame(); }, this, 0, true);
+    emscripten_set_main_loop_arg([](void* app) {
+        try {
+            static_cast<PlayerApp*>(app)->frame();
+        } catch (const std::exception& e) {
+            emscripten_cancel_main_loop();
+            showWebError(e.what());
+        }
+    }, this, 0, true);
 #else
     while (!m_window->shouldClose()) frame();
 #endif

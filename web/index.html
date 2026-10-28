@@ -42,8 +42,14 @@
       if (t) msg.textContent = t.replace(/\(.*\)/, '').trim() || 'Loading…';
     },
     onRuntimeInitialized: () => document.getElementById('status').classList.add('gone'),
+    gbError: (t) => showError(t),   // a C++ error, with its text (showWebError in PlayerApp.cpp)
+    onAbort: (t) => showError(t),
   };
-  window.onerror = (e) => { document.getElementById('status').classList.remove('gone'); msg.textContent = 'Something went wrong: ' + e; };
+  function showError(t) {
+    document.getElementById('status').classList.remove('gone');
+    msg.textContent = 'Something went wrong: ' + t;
+  }
+  window.onerror = (e) => { if (!String(e).includes('unwind')) showError(e); };
 </script>
 <script async src="GutsAndBoltsPlayer.js"></script>
 </body>

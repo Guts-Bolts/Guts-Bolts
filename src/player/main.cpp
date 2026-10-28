@@ -75,7 +75,11 @@ int main(int argc, char** argv) {
         app.run();
 #endif
     } catch (const std::exception& e) {
+#ifdef __EMSCRIPTEN__
+        showWebError(e.what());
+#else
         std::cerr << "Fatal: " << e.what() << "\n";
+#endif
         return 1;
     }
     return 0;
