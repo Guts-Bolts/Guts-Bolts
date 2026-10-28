@@ -194,6 +194,34 @@ void ViewportPanel::modelingView(const glm::mat4& view, const glm::mat4& proj,
 
     if (modal || m_modalOn) return;   // (a modal tool has the mouse)
 
+    // --- The weight brush (Armature window): drag over the corners to paint ---
+    if (m_state->weightPaint >= 0 && !m_state->weightBone.empty()) {
+        const ImVec2 mouse = io.MousePos;
+        const float r = std::max(4.0f, m_state->weightRadius);
+        if (m_hovered || m_weightPainting) {
+            static const ImU32 brushCol[] = {IM_COL32(255, 90, 70, 230), IM_COL32(80, 140, 255, 230), IM_COL32(240, 240, 240, 230)};
+            dl->AddCircle(mouse, r, brushCol[std::clamp(m_state->weightPaint, 0, 2)], 0, 2.0f);
+            dl->AddCircle(mouse, r * 0.5f, IM_COL32(255, 255, 255, 60), 0, 1.0f);
+        }
+        if (m_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) m_weightPainting = true;
+        if (m_weightPainting && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_weightPainting = false;
+        if (m_weightPainting) {
+            // Ctrl takes away instead of adding (like Blender); Shift smooths.
+            int mode = io.KeyShift ? 2 : io.KeyCtrl ? (m_state->weightPaint == 1 ? 0 : 1) : m_state->weightPaint;
+            std::vector<float> amount(nv, 0.0f);
+            const float rate = std::clamp(m_state->weightStrength, 0.05f, 1.0f) * std::min(io.DeltaTime, 0.1f) * 6.0f;
+            for (size_t i = 0; i < nv; ++i) {
+                if (!visibleVert((uint32_t)i)) continue;
+                float dx = screen[i].x - mouse.x, dy = screen[i].y - mouse.y;
+                float d = std::sqrt(dx * dx + dy * dy) / r;
+                if (d < 1.0f) amount[i] = rate * (1.0f - d * d);   // softer at the edge
+            }
+            if (Skin::paint(*node, amount, m_state->weightBone, mode)) MeshEdit::refresh(*node);
+        }
+        return;   // (the brush has the mouse: no picking or gizmo)
+    }
+    m_weightPainting = false;
+
     // --- Gizmo on the picked points ---
     int picked = MeshEdit::countSelected(ms.sel);
     bool gizmoBusy = false;
