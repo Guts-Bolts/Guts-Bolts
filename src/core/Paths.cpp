@@ -63,7 +63,17 @@ std::filesystem::path appFolder() {
     return cached;
 }
 
-std::filesystem::path file(const char* name) { return appFolder() / name; }
+std::filesystem::path file(const char* name) {
+#ifdef __EMSCRIPTEN__
+    // In a browser: settings and your avatar go in /save, which web/index.html keeps in
+    // the browser's storage (IndexedDB), so they're still there next time.
+    std::error_code ec;
+    std::filesystem::create_directories("/save", ec);
+    return std::filesystem::path("/save") / name;
+#else
+    return appFolder() / name;
+#endif
+}
 
 std::filesystem::path downloadsFolder() {
     std::error_code ec;

@@ -17,10 +17,15 @@
   #status.gone { display: none; }
   #bar { width: 220px; height: 6px; background: #2a3140; border-radius: 3px; overflow: hidden; }
   #bar i { display: block; height: 100%; width: 0; background: #f0a030; }
+  /* The hidden text box that opens the phone's keyboard (16px so Safari doesn't zoom in). */
+  #kb { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; border: 0; padding: 0;
+        font-size: 16px; pointer-events: none; }
 </style>
 </head>
 <body>
 <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<input id="kb" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+       enterkeyhint="done" aria-hidden="true" tabindex="-1">
 <div id="status"><b>Guts&amp;Bolts</b><span id="msg">Loading…</span><div id="bar"><i></i></div></div>
 <script>
   // The web Player (web/README.md). ?game=Obby%20of%20Doom jumps straight into a game that
@@ -42,6 +47,7 @@
       if (t) msg.textContent = t.replace(/\(.*\)/, '').trim() || 'Loading…';
     },
     onRuntimeInitialized: () => document.getElementById('status').classList.add('gone'),
+    preRun: [keepSaves],
     gbError: (t) => showError(t),   // a C++ error, with its text (showWebError in PlayerApp.cpp)
     onAbort: (t) => showError(t),
   };
@@ -49,6 +55,60 @@
     document.getElementById('status').classList.remove('gone');
     msg.textContent = 'Something went wrong: ' + t;
   }
+
+  // Saving: /save (your login, settings and avatar) lives in the browser's IndexedDB, so
+  // it's still there after closing the tab. Loaded before the game starts, written back
+  // every few seconds and when the page is hidden. (Private windows may not allow it: then
+  // it just works like before, in memory.)
+  function keepSaves() {
+    try {
+      FS.mkdir('/save');
+      FS.mount(IDBFS, {}, '/save');
+    } catch (e) { console.warn('No saving in this browser:', e); return; }
+    addRunDependency('saves');
+    FS.syncfs(true, (err) => {
+      if (err) console.warn('Couldn\'t load saved things:', err);
+      removeRunDependency('saves');
+      let busy = false;
+      const save = () => {
+        if (busy) return;
+        busy = true;
+        FS.syncfs(false, (e) => { busy = false; if (e) console.warn('Couldn\'t save:', e); });
+      };
+      setInterval(save, 5000);
+      document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+      window.addEventListener('pagehide', save);
+    });
+  }
+
+  // Typing on phones: a browser only opens the keyboard for a real text box, and Safari
+  // only when you tap. The Player says when one of its text boxes wants typing
+  // (Module.gbWantsText, src/player/WebKeyboard.cpp); the tap that picked it focuses our
+  // hidden box, and what's typed there is sent to the game.
+  const kb = document.getElementById('kb');
+  const FILL = '_';   // (something to delete, so Backspace always reaches us)
+  const tapped = () => {
+    if (Module.gbWantsText && document.activeElement !== kb) { kb.value = FILL; kb.focus(); }
+  };
+  Module.canvas.addEventListener('touchend', tapped);
+  Module.canvas.addEventListener('pointerup', (e) => { if (e.pointerType !== 'mouse') tapped(); });
+  const key = (k) => Module._gb_webKey && Module._gb_webKey(k);   // 1 Backspace, 2 Enter
+  for (const type of ['keydown', 'keyup', 'keypress']) {
+    kb.addEventListener(type, (e) => {
+      e.stopPropagation();   // (not to the game as well: it would get every key twice)
+      if (type !== 'keydown') return;
+      if (e.key === 'Enter') { e.preventDefault(); key(2); kb.blur(); }
+      else if (e.key === 'Backspace') { e.preventDefault(); key(1); }
+    });
+  }
+  kb.addEventListener('input', (e) => {
+    if (e.inputType && e.inputType.startsWith('delete')) key(1);
+    else {
+      const typed = e.data != null ? e.data : kb.value.replace(FILL, '');
+      for (const ch of typed) if (Module._gb_webChar) Module._gb_webChar(ch.codePointAt(0));
+    }
+    kb.value = FILL;
+  });
   window.onerror = (e) => { if (!String(e).includes('unwind')) showError(e); };
 </script>
 <script async src="GutsAndBoltsPlayer.js"></script>

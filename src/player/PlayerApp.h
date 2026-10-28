@@ -422,6 +422,21 @@ private:
     bool           m_teleporting = false;           // looking the game up
     void teleportMe(const std::string& place, const nlohmann::json& data, const std::string& from);
     void drawDevConsole();
+    // Photo mode (PlayerPhoto.cpp): F2 or the menu's button hides the HUD and lets the
+    // camera fly on its own; Enter saves the 3D view as a picture.
+    bool        m_photo = false;
+    Camera      m_photoCam;
+    glm::vec3   m_photoMove{0.0f};      // the phone's arrow buttons held down (forward, right, up)
+    bool        m_photoOnButton = false;   // the pointer is on a button (so a drag doesn't turn the camera)
+    bool        m_photoHideBar = false;    // H: not even the bar
+    float       m_photoFlash = 0.0f;
+    std::string m_photoMsg;
+    double      m_photoMsgUntil = 0.0;
+    bool canTakePhotos() const;
+    void startPhoto();
+    void photoCamera(float dt, bool hovered);
+    void takePhoto();
+    void drawPhotoMode(ImDrawList* dl, ImVec2 pos, ImVec2 max);
     // Game passes: the Buy window a game's script asked for (PlayerPasses.cpp).
     std::string    m_passPrompt, m_passMsg;   // the pass being offered ("" = none)
     nlohmann::json m_passInfo;

@@ -474,6 +474,7 @@ add_library(gb_engine STATIC
     src/scripting/LuaTypes.cpp
     src/scripting/LuaInstance.cpp
     src/scripting/ScriptRemotes.cpp
+    src/scripting/SpatialQueries.cpp
     src/scripting/ScriptActions.cpp
     src/game/GameSession.cpp
     src/game/Hud.cpp
@@ -597,7 +598,7 @@ endif()
 if(GB_MOBILE)
     # Phones and tablets get the Player only. On Android it's a library that
     # SDL's Java activity loads (it must be called "main").
-    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/PlayerVr.cpp src/player/LaunchLink.cpp)
+    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerPhoto.cpp src/player/WebKeyboard.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/PlayerVr.cpp src/player/LaunchLink.cpp)
     if(ANDROID)
         add_library(main SHARED ${PLAYER_SOURCES})
         target_link_libraries(main PRIVATE gb_engine)
@@ -643,7 +644,7 @@ if(GB_MOBILE)
         target_link_options(GutsAndBoltsPlayer PRIVATE
             -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1
             -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sTOTAL_STACK=4194304
-            -sFETCH=1 -sFORCE_FILESYSTEM=1 -sEXIT_RUNTIME=0 -lwebsocket.js
+            -sFETCH=1 -sFORCE_FILESYSTEM=1 -sEXIT_RUNTIME=0 -lwebsocket.js -lidbfs.js
             "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/games@/gb/games"
             "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/catalog@/gb/catalog"
             "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets@/gb/assets")
@@ -839,6 +840,8 @@ set(PLAYER_SOURCES
     src/player/PlayerLibrary.cpp
     src/player/PlayerDevConsole.cpp
     src/player/PlayerPasses.cpp
+    src/player/PlayerPhoto.cpp
+    src/player/WebKeyboard.cpp
     src/player/PlayerFriends.cpp
     src/player/PlayerLogin.cpp
     src/player/PlayerSafety.cpp
@@ -957,6 +960,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(WeatherTests tests/WeatherTests.cpp)
     target_link_libraries(WeatherTests PRIVATE gb_engine)
     add_test(NAME WeatherTests COMMAND WeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # workspace:GetPartsInPart / GetPartBoundsInBox / GetPartBoundsInRadius and OverlapParams.
+    add_executable(SpatialQueriesTests tests/SpatialQueriesTests.cpp)
+    target_link_libraries(SpatialQueriesTests PRIVATE gb_engine)
+    add_test(NAME SpatialQueriesTests COMMAND SpatialQueriesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # The character: held-down ragdolls, knocked off seats, swimming.
