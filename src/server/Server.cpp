@@ -1840,13 +1840,24 @@ void GbServer::addExampleGames() {
         changed = true;
     }
     addStarterEmotes();
-    // Gutstober (worker/server.js timeGutstoberItems): pumpkin items are timed items that
-    // go off sale when Gutstober (October) ends, midnight UTC on November 1st. Once per item.
+    // Gutstober (worker/server.js timeGutstoberItems): the Gutstober items, picked by asset
+    // ID (never by name: anyone can call their upload "Pumpkin"), are timed items that go
+    // off sale when Gutstober (October) ends, midnight UTC on November 1st. Once per item.
+    static const std::set<std::string> kGutstoberItems = {
+        "hat-95db253c1f",   // the Pumpkin hat (asset ID 24)
+    };
     for (auto& [id, a] : m_assets) {
-        if (!Online::isCatalogItem(a.kind) || !a.meta.is_object() || a.meta.contains("timedFor") || a.meta.value("exclusive", false)) continue;
-        std::string lower = a.name;
-        for (char& c : lower) c = (char)std::tolower((unsigned char)c);
-        if (lower.find("pumpkin") == std::string::npos) continue;
+        if (!a.meta.is_object()) continue;
+        if (!kGutstoberItems.count(a.id)) {
+            // Timed by mistake (this used to go by name): back on sale for good.
+            if (a.meta.value("timedFor", std::string()) == "gutstober" && a.creator != Account::officialId()) {
+                a.meta.erase("timedFor");
+                a.meta["offsaleAt"] = 0;
+                changed = true;
+            }
+            continue;
+        }
+        if (!Online::isCatalogItem(a.kind) || a.meta.contains("timedFor") || a.meta.value("exclusive", false)) continue;
         // The year it was made in, then midnight UTC on November 1st of that year
         // (days from 1970 worked out by hand: timegm isn't on every system).
         const long long made = a.created ? a.created : Online::unixNow();
