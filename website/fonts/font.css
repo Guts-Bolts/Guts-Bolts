@@ -1,0 +1,17 @@
+/* The Guts&Bolts font: Helvetica Black, like Roblox in 2012.
+   Helvetica is a paid font, so we can't ship it. If your computer has it, the
+   site uses it; if not, it uses Inter Black (free, OFL.txt in this folder),
+   which looks very close. Every weight points at the same heavy font. */
+@font-face {
+  font-family: "GB Black";
+  src: local("Helvetica Black"), local("Helvetica-Black"),
+       local("Helvetica Neue Black"), local("HelveticaNeue-Black"),
+       local("Helvetica Neue LT Std 95 Black"), local("HelveticaNeueLTStd-Blk"),
+       local("Neue Haas Grotesk Display Pro 95 Black"),
+       url("Inter-Black.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+:root { --gb-font: "GB Black", "Helvetica Neue", Helvetica, "Arial Black", Arial, sans-serif; }
+button, input, select, textarea { font-family: inherit; }

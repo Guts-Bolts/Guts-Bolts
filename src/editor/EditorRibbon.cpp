@@ -297,13 +297,18 @@ void Editor::renderToolbar() {
             // moves / sizes / turns in steps; unticked = free (Blender style). While you
             // drag, how far shows next to the mouse.
             Group g("Increments");
+            // Line the boxes up after the longer word (measured from the group's left
+            // edge), sized to fit: the heavy font is wide.
+            const float labelEnd = ImGui::GetFrameHeight() + 2 +
+                std::max(ImGui::CalcTextSize("Rotate").x, ImGui::CalcTextSize("Move").x) + 6;
+            const float boxWidth = ImGui::CalcTextSize("00.00 st").x + ImGui::GetStyle().FramePadding.x * 2;
             ImGui::BeginGroup();
             ImGui::Checkbox("##rotinc", &m_state.rotSnapEnabled);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Rotate in steps (unticked: turn freely)");
             ImGui::SameLine(0, 2);
             ImGui::TextUnformatted("Rotate");
-            ImGui::SameLine(62);
-            ImGui::SetNextItemWidth(58);
+            ImGui::SameLine(labelEnd);
+            ImGui::SetNextItemWidth(boxWidth);
             ImGui::BeginDisabled(!m_state.rotSnapEnabled);
             ImGui::DragFloat("##rotdeg", &m_state.snapRotate, 1.0f, 1.0f, 180.0f, "%.0f\xC2\xB0");
             ImGui::EndDisabled();
@@ -311,8 +316,8 @@ void Editor::renderToolbar() {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Move and resize in steps of studs (unticked: free)");
             ImGui::SameLine(0, 2);
             ImGui::TextUnformatted("Move");
-            ImGui::SameLine(62);
-            ImGui::SetNextItemWidth(58);
+            ImGui::SameLine(labelEnd);
+            ImGui::SetNextItemWidth(boxWidth);
             ImGui::BeginDisabled(!m_state.snapEnabled);
             ImGui::DragFloat("##movestuds", &m_state.snapTranslate, 0.05f, 0.05f, 64.0f, "%.2f st");
             ImGui::EndDisabled();
