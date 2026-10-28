@@ -12,6 +12,11 @@ play in the browser.
 - Linked models: change one copy of a model and every copy follows.
 - Material Graph: make materials from boxes and wires.
 - Roblox material variants now come along when you import or export.
+- File > Export As: save your game, or just what you picked, as .obj, .fbx,
+  .glb, .gltf, Roblox .mesh, .stl, .ply or .dae.
+- Auto UV map, so shirts and pants fit bundle body parts of any shape.
+- Apps you log into with Guts&Bolts, like Lyreto, can use Studio's AI
+  tools online, but only if you allow it.
 
 ## New in games
 - Weather: rain and snow, with puddles and snow piling up on things.
@@ -32,6 +37,9 @@ play in the browser.
 ## Fixes
 - The mouse points at the right spot when you play in Studio.
 - No more red "conflicting ID" error box in Studio.
+- Text that was hard to read on some themes is readable again, in the app
+  and on the website.
+- Game scripts can no longer load precompiled Lua (a security fix).
 
 # Guts&Bolts 0.7.6: We Kept Adding Buttons (October 26, 2026)
 

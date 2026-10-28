@@ -1,5 +1,5 @@
 export default {
-  id: 'ink-that-shows-up', name: 'Ink That Shows Up', time: 1793158586, tag: 'Fix',
+  id: 'ink-that-shows-up', name: 'Ink That Shows Up', version: '0.7.7', time: 1793158586, tag: 'Fix',
   summary: 'Text you could barely see on some themes is readable again, in the app and on the website.',
   items: [
     'The app\'s Terms of Service window had dark words on a dark box; it\'s a light box now, like the rest of the site',
