@@ -470,7 +470,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             if (who.avatar.is_object() && who.avatar.contains("wearing") && who.avatar["wearing"].is_array())
                 for (const auto& id : who.avatar["wearing"])
                     if (id.is_string())
-                        if (auto it = findAsset(id.get<std::string>()); it != m_assets.end()) out.push_back(publicAsset(it->second));
+                        if (json w = wearableJson(id.get<std::string>()); !w.is_null()) out.push_back(w);
             return out;
         };
         r["wearing"] = wornItems(*u);
@@ -637,7 +637,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         json wearing = json::array();
         if (a.contains("wearing") && a["wearing"].is_array())
             for (const auto& w : a["wearing"])
-                if (w.is_string() && me.owned.count(w.get<std::string>()) && wearing.size() < 12) wearing.push_back(w);
+                if (w.is_string() && canWear(me, w.get<std::string>()) && wearing.size() < 12) wearing.push_back(w);
         av["wearing"] = wearing;
         av["updated"] = now;
         me.avatar = av;

@@ -87,6 +87,11 @@ const kBundleMost = 12;   // items in one bundle
 // (src/online/Protocol.cpp bundleBody has the same rules.)
 const BODY_PARTS = ['Head', 'Torso', 'Left Arm', 'Right Arm', 'Left Leg', 'Right Leg'];
 const kBodyMostCorners = 20000;
+// Bundle pieces: one part of a body bundle, worn on its own like a single body part (the
+// Avatar page's Body parts section). Its id is "<bundle id>-<part>", like "137-leftarm", and
+// anyone who owns the bundle can wear it. (src/server and the apps know these ids too.)
+const PIECE_PARTS = { head: 'Head', torso: 'Torso', leftarm: 'Left Arm', rightarm: 'Right Arm', leftleg: 'Left Leg', rightleg: 'Right Leg' };
+const pieceIdOf = (bundleId, part) => bundleId + '-' + part.replace(' ', '').toLowerCase();
 function bundleBody(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length) return 'That bundle\'s body looks wrong.';
   const numbers = (a, n, lo, hi) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === 'number' && x >= lo && x <= hi);
@@ -904,7 +909,7 @@ export class GbServerObject extends DurableObject {
     if (has && !u.owned.includes(a.id)) u.owned.push(a.id);
     if (!has && a.creator !== u.id) {
       u.owned = u.owned.filter((x) => x !== a.id);
-      if (u.avatar && Array.isArray(u.avatar.wearing)) u.avatar.wearing = u.avatar.wearing.filter((x) => x !== a.id);
+      if (u.avatar && Array.isArray(u.avatar.wearing)) u.avatar.wearing = u.avatar.wearing.filter((x) => x !== a.id && !x.startsWith(a.id + '-'));
     }
     this.saveUser(u);
   }
@@ -1643,7 +1648,32 @@ export class GbServerObject extends DurableObject {
   // What someone is wearing (their avatar's items), as the catalog shows them.
   wornItems(u) {
     const ids = u && u.avatar && Array.isArray(u.avatar.wearing) ? u.avatar.wearing : [];
-    return ids.map((id) => this.assets.get(id)).filter(Boolean).map((a) => this.publicAsset(a));
+    return this.wearableList(ids);
+  }
+  wearableList(ids) { return ids.map((id) => this.wearableJson(id)).filter(Boolean); }
+  // A bundle piece's id ("137-leftarm"): the body bundle and the part's rig name, or null.
+  bundlePiece(id) {
+    const s = String(id || ''), cut = s.lastIndexOf('-');
+    const part = cut > 0 ? PIECE_PARTS[s.slice(cut + 1)] : null;
+    const a = part ? this.assets.get(s.slice(0, cut)) : null;
+    return a && a.kind === 'bundle' && a.meta && a.meta.body ? { bundle: a, part } : null;
+  }
+  // Can `u` wear this? Things they own, and the pieces of body bundles they own.
+  canWear(u, id) {
+    if (u.owned.includes(id)) return true;
+    const p = this.bundlePiece(id);
+    return !!p && u.owned.includes(p.bundle.id);
+  }
+  // Something worn, as the catalog shows it. A bundle piece looks like a single body part
+  // (kind 'bodypart') whose body comes from its bundle (meta.bundle), so everything that
+  // draws body parts draws it too.
+  wearableJson(id) {
+    const a = this.assets.get(id);
+    if (a) return this.publicAsset(a);
+    const p = this.bundlePiece(id);
+    if (!p) return null;
+    return Object.assign(this.publicAsset(p.bundle), { id: pieceIdOf(p.bundle.id, p.part), kind: 'bodypart', name: p.bundle.name + ': ' + p.part,
+      price: 0, sales: 0, limited: undefined, auction: undefined, meta: { bodyPart: p.part, bundle: p.bundle.id } });
   }
 
   publicAsset(a, me = null) {
@@ -2004,7 +2034,7 @@ export class GbServerObject extends DurableObject {
       }
       const hat = Number.isInteger(a.hat) ? clamp(a.hat, 0, 4) : 0;
       const hatColor = rgb(a.hatColor, true) || [-1, -1, -1];
-      const wearing = Array.isArray(a.wearing) ? a.wearing.filter((w) => typeof w === 'string' && me.owned.includes(w)).slice(0, 12) : [];
+      const wearing = Array.isArray(a.wearing) ? a.wearing.filter((w) => typeof w === 'string' && this.canWear(me, w)).slice(0, 12) : [];
       me.avatar = Object.assign(colors, { hat, hatColor, wearing, updated: t });
       this.saveUser(me);
       return okay({ me: this.meJson(me) });
@@ -2202,7 +2232,7 @@ export class GbServerObject extends DurableObject {
       const outfits = me.outfits || (me.outfits = []);
       const find = () => outfits.find((o) => o.id === str(args, 'id'));
       const list = () => okay({ outfits: me.outfits.map((o) => ({ id: o.id, name: o.name, avatar: o.avatar, created: o.created,
-        wearing: (o.avatar.wearing || []).map((id) => this.assets.get(id)).filter(Boolean).map((a) => this.publicAsset(a)) })), me: this.meJson(me) });
+        wearing: this.wearableList(o.avatar.wearing || []) })), me: this.meJson(me) });
       if (name === 'outfit.list') return list();
       if (name === 'outfit.save') {
         if (!me.avatar) return fail('Change your look first, then save it as an outfit.');
@@ -2221,7 +2251,7 @@ export class GbServerObject extends DurableObject {
       if (name === 'outfit.wear') {
         // Things you've sold or traded away since are left off.
         me.avatar = Object.assign(JSON.parse(JSON.stringify(o.avatar)), { updated: t });
-        me.avatar.wearing = (me.avatar.wearing || []).filter((id) => me.owned.includes(id));
+        me.avatar.wearing = (me.avatar.wearing || []).filter((id) => this.canWear(me, id));
         this.saveUser(me);
         return list();
       }
@@ -5132,7 +5162,19 @@ export class GbServerObject extends DurableObject {
     // so the website's 3D avatars draw hats, hair and the rest like the game does.
     // Gear too, but only its shape (no scripts), so item pictures are drawn from the item itself.
     if (url.pathname.startsWith('/wear/')) {
-      const a = this.assets.get(decodeURIComponent(url.pathname.slice(6)));
+      const wantId = decodeURIComponent(url.pathname.slice(6));
+      const a = this.assets.get(wantId);
+      // A bundle piece: just that one part of its bundle's body.
+      const piece = a ? null : this.bundlePiece(wantId);
+      if (piece) {
+        const raw = this.readFile(piece.bundle.id);
+        let file = null;
+        try { file = raw ? JSON.parse(new TextDecoder().decode(raw)) : null; } catch { file = null; }
+        const part = file && file.format === 'gbbundle' && file.body && typeof file.body === 'object' ? file.body[piece.part] : null;
+        if (!part) return new Response('No body.', { status: 404 });
+        return new Response(JSON.stringify({ format: 'gbbundle', body: { [piece.part]: part } }),
+          { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=3600' } });
+      }
       if (a && a.kind === 'gear') {
         const raw = this.readFile(a.id);
         let m = null;
