@@ -33,16 +33,18 @@ constexpr BoxLayout kRightLimb = {{217, 355, 64, 128}, {85, 355, 64, 128}, {151,
 constexpr BoxLayout kLeftLimb = {{308, 355, 64, 128}, {440, 355, 64, 128}, {506, 355, 64, 128},
                                  {374, 355, 64, 128}, {308, 289, 64, 64}, {308, 485, 64, 64}};
 
-// Lay a body part (its points are -0.5..0.5) out on the template: each face goes on
-// the side of the box it faces, seen from outside, the same way up as the character.
-// (In the model the character faces +Z, so its right side is -X.)
-void layOut(EditMesh& m, const BoxLayout& L) {
+// Lay a body part out on the template: each face goes on the side of the box it
+// faces, seen from outside, the same way up as the character. `lo`..`hi` is the box
+// (-0.5..0.5 for the built-in parts). (In the model the character faces +Z, so its
+// right side is -X.)
+void layOut(EditMesh& m, const BoxLayout& L, glm::vec3 lo = glm::vec3(-0.5f), glm::vec3 hi = glm::vec3(0.5f)) {
+    const glm::vec3 span = glm::max(hi - lo, glm::vec3(1e-6f));
     m.uvs.clear();
     for (const auto& f : m.faces) {
         glm::vec3 n = MeshEdit::faceNormal(m, f), a = glm::abs(n);
         std::vector<glm::vec2> uv;
         for (uint32_t i : f) {
-            glm::vec3 p = glm::clamp(m.verts[i], glm::vec3(-0.5f), glm::vec3(0.5f));
+            glm::vec3 p = glm::clamp((m.verts[i] - lo) / span, glm::vec3(0.0f), glm::vec3(1.0f)) - 0.5f;
             Rect r; float s, t;   // s: 0 = left of the picture, t: 0 = top
             if (a.y >= a.x && a.y >= a.z) {
                 if (n.y > 0) { r = L.up;   s = p.x + 0.5f; t = p.z + 0.5f; }
@@ -81,7 +83,25 @@ std::map<std::string, Part>& parts() {
     return p;
 }
 
+const BoxLayout* boxesFor(const std::string& rigPart) {
+    if (rigPart == "Torso") return &kTorso;
+    if (rigPart == "Right Arm" || rigPart == "Right Leg") return &kRightLimb;
+    if (rigPart == "Left Arm" || rigPart == "Left Leg") return &kLeftLimb;
+    return nullptr;
+}
+
 } // namespace
+
+bool clothingUVs(EditMesh& m, const std::string& rigPart) {
+    const BoxLayout* boxes = boxesFor(rigPart);
+    if (!boxes || m.verts.empty() || m.faces.empty()) return false;
+    // Stretch the mesh's own bounding box over the template boxes, so a part of any
+    // shape or size gets the whole shirt / pants picture.
+    glm::vec3 lo(1e30f), hi(-1e30f);
+    for (const glm::vec3& p : m.verts) { lo = glm::min(lo, p); hi = glm::max(hi, p); }
+    layOut(m, *boxes, lo, hi);
+    return true;
+}
 
 std::shared_ptr<EditMesh> mesh(const std::string& rigPart) {
     auto it = parts().find(rigPart);

@@ -5,6 +5,7 @@
 #include "panels/ViewportPanel.h"
 #include "../scene/Scene.h"
 #include "../scene/EditMesh.h"
+#include "../scene/PlayerModel.h"
 #include "../renderer/Textures.h"
 #include "../core/FileDialog.h"
 #include "../core/Paths.h"
@@ -76,8 +77,30 @@ void Editor::markSeams(bool on) {
     MeshEdit::own(*n) = std::move(work);
 }
 
+// Clothing Template: lay the mesh out like a body part of the default character, so a
+// shirt or pants picture fits it (for body parts made for bundles).
+void Editor::clothingUnwrap(const std::string& rigPart) {
+    SceneNode* n = uvNode();
+    if (!n) { Log::warn("UV: pick a MeshPart first (or go into Modeling mode with Tab)."); return; }
+    EditMesh work = *n->editMesh;
+    if (!PlayerModel::clothingUVs(work, rigPart)) {
+        Log::warn("Clothing Template: shirts and pants cover the Torso, arms and legs (not the Head).");
+        return;
+    }
+    MeshEdit::own(*n) = std::move(work);
+    MeshEdit::refresh(*n);
+    m_scene->markDirty();
+    // Show the template behind it: legs wear pants, the rest a shirt.
+    m_uv.clothing = rigPart.find("Leg") != std::string::npos ? 2 : 1;
+    m_uv.show = true;
+    Log::info("Clothing Template: laid " + n->name + " out as the " + rigPart + " of the shirt / pants template.");
+}
+
+static const char* const kClothedParts[] = {"Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"};
+
 // The U menu (U in Modeling mode, or the ribbon's Unwrap button).
-static void unwrapMenuItems(Editor& ed, bool modeling, void (Editor::*unwrap)(int), void (Editor::*seams)(bool)) {
+static void unwrapMenuItems(Editor& ed, bool modeling, void (Editor::*unwrap)(int), void (Editor::*seams)(bool),
+                            void (Editor::*clothing)(const std::string&), const std::string& partName) {
     for (int i = 0; i < MeshEdit::kUnwrapCount; ++i) {
         if (i == (int)MeshEdit::Unwrap::Reset) ImGui::Separator();
         if (ImGui::MenuItem(MeshEdit::kUnwrapNames[i])) (ed.*unwrap)(i);
@@ -93,6 +116,18 @@ static void unwrapMenuItems(Editor& ed, bool modeling, void (Editor::*unwrap)(in
             ImGui::SetTooltip("%s", tips[i]);
         }
     }
+    ImGui::Separator();
+    // A part named like a body part ("Left Arm") gets its own spot straight away.
+    const char* const* named = std::find(std::begin(kClothedParts), std::end(kClothedParts), partName);
+    if (named != std::end(kClothedParts)) {
+        if (ImGui::MenuItem("Clothing Template")) (ed.*clothing)(partName);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Lay it out like the %s of the shirt / pants template, so clothing fits it", partName.c_str());
+    } else if (ImGui::BeginMenu("Clothing Template")) {
+        for (const char* part : kClothedParts)
+            if (ImGui::MenuItem(part)) (ed.*clothing)(part);
+        ImGui::EndMenu();
+    }
     if (modeling) {
         ImGui::Separator();
         if (ImGui::MenuItem("Mark Seam")) (ed.*seams)(true);
@@ -105,7 +140,9 @@ void Editor::renderUVEditor() {
     if (ImGui::BeginPopup("##uvunwrap")) {
         ImGui::TextDisabled("UV Unwrap");
         ImGui::Separator();
-        unwrapMenuItems(*this, m_state.mode == StudioMode::Modeling, &Editor::unwrapMesh, &Editor::markSeams);
+        SceneNode* un = uvNode();
+        unwrapMenuItems(*this, m_state.mode == StudioMode::Modeling, &Editor::unwrapMesh, &Editor::markSeams,
+                        &Editor::clothingUnwrap, un ? un->name : std::string());
         ImGui::EndPopup();
     }
     m_uv.hovered = false;
@@ -178,6 +215,9 @@ void Editor::renderUVEditor() {
     if (ImGui::BeginMenuBar()) {
         if (ImGui::BeginMenu("View")) {
             ImGui::MenuItem("Checker Picture", nullptr, &m_uv.checker);
+            if (ImGui::MenuItem("Shirt Template", nullptr, m_uv.clothing == 1)) m_uv.clothing = m_uv.clothing == 1 ? 0 : 1;
+            if (ImGui::MenuItem("Pants Template", nullptr, m_uv.clothing == 2)) m_uv.clothing = m_uv.clothing == 2 ? 0 : 2;
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show a clothing template behind the layout when the part has no Texture");
             if (ImGui::MenuItem("Frame All", "Home")) { m_uv.zoom = 0.9f; m_uv.pan = {0.5f, 0.5f}; }
             ImGui::EndMenu();
         }
@@ -192,7 +232,8 @@ void Editor::renderUVEditor() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("UV")) {
-            unwrapMenuItems(*this, m_state.mode == StudioMode::Modeling, &Editor::unwrapMesh, &Editor::markSeams);
+            unwrapMenuItems(*this, m_state.mode == StudioMode::Modeling, &Editor::unwrapMesh, &Editor::markSeams,
+                            &Editor::clothingUnwrap, n->name);
             ImGui::Separator();
             if (ImGui::MenuItem("Pack Islands")) {
                 EditMesh& m = editable();
@@ -267,7 +308,9 @@ void Editor::renderUVEditor() {
 
     // Behind: the picture (pictures load bottom row first, so v = 1 is its top), or a checker.
     ImVec2 p0 = toScreen({0, 1}), p1 = toScreen({1, 0});
-    unsigned tex = n->texture.empty() ? 0 : Textures::get(n->texture);
+    unsigned tex = !n->texture.empty() ? Textures::get(n->texture)
+                 : m_uv.clothing ? Textures::get(m_uv.clothing == 2 ? Textures::kPantsTemplatePicture : Textures::kShirtTemplatePicture)
+                 : 0;
     if (tex) {
         dl->AddImage((ImTextureID)(intptr_t)tex, p0, p1, ImVec2(0, 1), ImVec2(1, 0));
     } else if (m_uv.checker) {

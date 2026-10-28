@@ -2,6 +2,8 @@
 #include "GL.h"
 #include "../core/Log.h"
 #include "../core/Paths.h"
+#include "ShirtTemplate.h"   // generated: assets/templates/shirt_template.png
+#include "PantsTemplate.h"   // generated: assets/templates/pants_template.png
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>   // (Studio saves game pictures as PNG with it)
@@ -96,11 +98,18 @@ void makeClassicFace(Entry& e) {
 
 void load(const std::string& id, Entry& e) {
     if (id == kClassicFace) { makeClassicFace(e); return; }
-    std::filesystem::path p = locate(id);
-    if (p.empty()) { e.retryAt = now() + 1.0; return; }   // maybe it's still downloading
     stbi_set_flip_vertically_on_load(1);                   // GL wants the bottom row first
     int w = 0, h = 0, n = 0;
-    unsigned char* px = stbi_load(p.string().c_str(), &w, &h, &n, 4);
+    unsigned char* px = nullptr;
+    if (id == kShirtTemplatePicture || id == kPantsTemplatePicture) {   // baked into the program
+        const bool shirt = id == kShirtTemplatePicture;
+        px = stbi_load_from_memory(shirt ? kShirtTemplate : kPantsTemplate,
+                                   (int)(shirt ? kShirtTemplateSize : kPantsTemplateSize), &w, &h, &n, 4);
+    } else {
+        std::filesystem::path p = locate(id);
+        if (p.empty()) { e.retryAt = now() + 1.0; return; }   // maybe it's still downloading
+        px = stbi_load(p.string().c_str(), &w, &h, &n, 4);
+    }
     if (!px) {
         e.broken = true;
         Log::warn("\"" + id + "\" isn't a picture Guts and Bolts can read (use PNG or JPG).");

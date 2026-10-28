@@ -13,6 +13,9 @@ namespace Textures {
 unsigned get(const std::string& id);
 // The built-in classic smiley face picture (see Player::addFace).
 inline constexpr const char* kClassicFace = "builtin:face";
+// The blank shirt / pants clothing templates (assets/templates), to try a body on with.
+inline constexpr const char* kShirtTemplatePicture = "builtin:shirt-template";
+inline constexpr const char* kPantsTemplatePicture = "builtin:pants-template";
 bool     size(const std::string& id, int& width, int& height);
 // Forget one image (e.g. a file that was just replaced) or all of them.
 void     forget(const std::string& id);

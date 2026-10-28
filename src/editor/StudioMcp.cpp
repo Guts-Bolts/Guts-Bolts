@@ -17,6 +17,18 @@ const char* kProtocolVersions[] = {"2025-06-18", "2025-03-26", "2024-11-05"};
 json rpcError(const json& id, int code, const std::string& message) {
     return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", code}, {"message", message}}}};
 }
+
+// The tools apps connected through gutsandbolts.net may use (the server has the same lists:
+// worker/mcp-policy.js). Read ones need studio.read; the rest studio.write. Anything else, like
+// publish_game or compare_scenes (it opens files by path), is refused here even if the server let it by.
+const char* kAppReadTools[] = {"get_engine_info", "get_game_tree", "find_objects", "get_object", "read_script", "get_output", "get_errors", "diagnose_object", "analyze_scene_performance", "analyze_script_dependencies", "validate_scene", "find_path", "get_runtime_state", "screenshot"};
+const char* kAppWriteTools[] = {"insert_object", "delete_object", "set_property", "find_and_change", "select", "create_script", "edit_script", "visual_script", "generate_level", "run_lua", "playtest", "multiplayer_test", "physics_replay", "lua_debugger", "create_physical_object", "spawn_explosion", "bake_navmesh", "walk_character_to", "script_history", "ai_activity", "checkpoint", "undo", "redo"};
+
+bool appMay(const std::string& tool, bool canChange) {
+    for (const char* t : kAppReadTools) if (tool == t) return true;
+    if (canChange) for (const char* t : kAppWriteTools) if (tool == t) return true;
+    return false;
+}
 } // namespace
 
 bool StudioMcp::start(int port, std::string& error) {
@@ -57,7 +69,8 @@ void StudioMcp::update(Editor& editor) {
     m_http.poll();   // start sending the answers now
 }
 
-std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& anyReply) {
+std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& anyReply, const std::string& app, bool canChange) {
+    const bool fromApp = !app.empty();
     json in = json::parse(body, nullptr, false);
     if (in.is_discarded()) { anyReply = true; return rpcError(nullptr, -32700, "That wasn't valid JSON.").dump(); }
     auto one = [&](const json& m) -> json {
@@ -79,7 +92,13 @@ std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& any
         }
         if (method == "ping") return {{"jsonrpc", "2.0"}, {"id", id}, {"result", json::object()}};
         if (method == "tools/list") {
-            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"tools", AiTools::mcpTools()}}}};
+            json tools = AiTools::mcpTools();
+            if (fromApp) {
+                json kept = json::array();
+                for (const auto& t : tools) if (appMay(t.value("name", std::string()), canChange)) kept.push_back(t);
+                tools = kept;
+            }
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {{"tools", tools}}}};
         }
         // Resources: the engine reference (gutsbolts://concepts ...) and live views of the game.
         if (method == "resources/list")
@@ -110,7 +129,10 @@ std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& any
         if (method == "tools/call") {
             std::string name = params.value("name", "");
             json args = params.value("arguments", json::object());
-            AiToolResult r = editor.runAiToolFrom("AI app", name, args.is_object() ? args : json::object());
+            if (fromApp && !appMay(name, canChange))
+                return rpcError(id, -32003, "\"" + name + "\" can't be used by " + app + ". Publishing and files stay in Studio, done by you.");
+            AiToolResult r = editor.runAiToolFrom(fromApp ? "Connected app (" + app + ")" : std::string("AI app"), name,
+                                                  args.is_object() ? args : json::object());
             ++m_calls;
             m_lastTool = name;
             json content = json::array({{{"type", "text"}, {"text", r.text}}});
@@ -122,13 +144,18 @@ std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& any
         }
         return rpcError(id, -32601, "Studio doesn't know \"" + method + "\".");
     };
+    // (A message with the wrong types, like a number for a tool's name, gets an error, not a crash.)
+    auto safe = [&](const json& m) -> json {
+        try { return one(m); }
+        catch (const std::exception&) { return rpcError(m.is_object() && m.contains("id") ? m["id"] : json(), -32602, "Bad parameters."); }
+    };
     if (in.is_array()) {
         json out = json::array();
-        for (const auto& m : in) { json r = one(m); if (!r.is_null()) out.push_back(r); }
+        for (const auto& m : in) { json r = safe(m); if (!r.is_null()) out.push_back(r); }
         anyReply = !out.empty();
         return out.dump();
     }
-    json r = one(in);
+    json r = safe(in);
     anyReply = !r.is_null();
     return r.dump();
 }

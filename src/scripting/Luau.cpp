@@ -411,6 +411,7 @@ std::string toLua(const std::string& source, std::vector<std::string>* notes) {
 }
 
 int load(lua_State* L, const std::string& source, const char* chunkName, const char* mode) {
+    if (!mode) mode = "t";   // source text only: precompiled bytecode can break out of the sandbox
     int r = luaL_loadbufferx(L, source.data(), source.size(), chunkName, mode);
     if (r != LUA_ERRSYNTAX) return r;
     const std::string lua = toLua(source);

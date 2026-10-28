@@ -27,8 +27,14 @@ public:
     // `GutsAndBolts --mcp`: pass stdin <-> the running Studio until stdin closes.
     static int runStdioBridge(int port);
 
+    // An app connected through gutsandbolts.net (StudioRelay): the same answers, but only the tools
+    // it may use (the read ones, plus the changing ones if canChange), never publishing.
+    std::string handleApp(Editor& editor, const std::string& body, bool& anyReply, const std::string& app, bool canChange) {
+        return handle(editor, body, anyReply, app.empty() ? std::string("App") : app, canChange);
+    }
+
 private:
-    std::string handle(Editor& editor, const std::string& body, bool& anyReply);
+    std::string handle(Editor& editor, const std::string& body, bool& anyReply, const std::string& app = "", bool canChange = false);
     Net::HttpServer m_http;
     int         m_port = kDefaultPort;
     int         m_calls = 0;

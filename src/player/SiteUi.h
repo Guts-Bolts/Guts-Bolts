@@ -63,6 +63,9 @@ inline const ImVec4 kPlay      = {0.02f, 0.66f, 0.30f, 1.0f};
 inline ImVec4 kBlue      = {0.10f, 0.45f, 0.82f, 1.0f};
 inline ImVec4 kTitle     = {0.06f, 0.38f, 0.73f, 1.0f};
 inline ImVec4 kTitleOn   = {0.10f, 0.45f, 0.82f, 1.0f};
+// Window title bars: light, so the window's dark text stays readable on them.
+inline ImVec4 kTitleBar   = {0.84f, 0.89f, 0.96f, 1.0f};
+inline ImVec4 kTitleBarOn = {0.74f, 0.84f, 0.96f, 1.0f};
 inline bool   gutstober  = false;   // dressed up for Halloween right now
 
 // Gutstober (October, like the website): orange and purple, unless turned off in Settings.
@@ -77,6 +80,7 @@ inline void seasonal(bool on) {
         kLogo = IM_COL32(255, 138, 28, 255);
         kLink = {0.42f, 0.18f, 0.70f, 1.0f};    kBlue = {0.48f, 0.25f, 0.77f, 1.0f};
         kTitle = {0.29f, 0.11f, 0.41f, 1.0f};   kTitleOn = {0.42f, 0.18f, 0.58f, 1.0f};
+        kTitleBar = {1.0f, 0.78f, 0.50f, 1.0f}; kTitleBarOn = {1.0f, 0.68f, 0.30f, 1.0f};
     } else {
         kSkyTop = IM_COL32(22, 70, 148, 255);   kSkyBottom = IM_COL32(110, 170, 232, 255);
         kNavTop = IM_COL32(64, 146, 232, 255);  kNavBottom = IM_COL32(16, 96, 186, 255);
@@ -85,6 +89,7 @@ inline void seasonal(bool on) {
         kLogo = IM_COL32(222, 34, 28, 255);
         kLink = {0.02f, 0.33f, 0.74f, 1.0f};    kBlue = {0.10f, 0.45f, 0.82f, 1.0f};
         kTitle = {0.06f, 0.38f, 0.73f, 1.0f};   kTitleOn = {0.10f, 0.45f, 0.82f, 1.0f};
+        kTitleBar = {0.84f, 0.89f, 0.96f, 1.0f}; kTitleBarOn = {0.74f, 0.84f, 0.96f, 1.0f};
     }
 }
 // Is it Gutstober (October, your own clock)?
@@ -133,6 +138,11 @@ inline void pushLight() {
     ImGui::PushStyleColor(ImGuiCol_Separator, ImVec4(0.78f, 0.8f, 0.84f, 1));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
     ImGui::PushStyleColor(ImGuiCol_CheckMark, kBlue);
+#if IMGUI_VERSION_NUM >= 19301
+    ImGui::PushStyleColor(ImGuiCol_CheckboxSelectedBg, ImVec4(0.93f, 0.95f, 1, 1));   // ticked boxes stay light too
+#else
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(1, 1, 1, 1));   // (keeps the count the same on older ImGui)
+#endif
     ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, ImVec4(0.9f, 0.91f, 0.93f, 1));
     ImGui::PushStyleColor(ImGuiCol_ScrollbarGrab, ImVec4(0.7f, 0.72f, 0.76f, 1));
     // Popups, dropdowns and tooltips opened on the light pages are light too (the
@@ -141,16 +151,20 @@ inline void pushLight() {
     ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.86f, 0.91f, 0.98f, 1));
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.80f, 0.88f, 0.98f, 1));
     ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.72f, 0.83f, 0.97f, 1));
-    ImGui::PushStyleColor(ImGuiCol_TitleBg, kTitle);
-    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, kTitleOn);
+    ImGui::PushStyleColor(ImGuiCol_TitleBg, kTitleBar);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgActive, kTitleBarOn);
+    ImGui::PushStyleColor(ImGuiCol_TitleBgCollapsed, kTitleBar);
     ImGui::PushStyleColor(ImGuiCol_SliderGrab, kBlue);
     ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0, 0, 0, 0.45f));
+    // Windows opened from the light pages (the Terms window, the leaderboard menu)
+    // get a white box too: dark text on the dark default window was unreadable.
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.97f, 0.97f, 0.98f, 1));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
 }
 inline void popLight() {
     ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor(22);
+    ImGui::PopStyleColor(25);
 }
 
 inline bool button(const char* label, ImVec4 col, ImVec2 size = ImVec2(0, 0)) {

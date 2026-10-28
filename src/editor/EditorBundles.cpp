@@ -9,6 +9,7 @@
 #include "../scene/EditMesh.h"
 #include "../scene/Player.h"
 #include "../scene/PlayerModel.h"
+#include "../renderer/Textures.h"
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
@@ -32,6 +33,19 @@ void putBack(SceneNode& part) {   // the normal shape, size and spot
     if (!PlayerModel::placement(part.name, pos, size) || !PlayerModel::apply(part)) return;
     part.transform.position = pos;
     part.transform.scale = size;
+}
+
+// The auto UV map: lay a new body part out on the clothing template, so shirts and
+// pants fit it like they fit the normal body. False for the Head (clothing skips it).
+bool clothingUVs(SceneNode& part) {
+    if (!part.editMesh && part.primitiveType != PrimitiveType::None)   // a plain block: give it a mesh
+        MeshEdit::attach(part, MeshEdit::fromPrimitive(part.primitiveType));
+    if (!part.editMesh) return false;
+    EditMesh work = *part.editMesh;
+    if (!PlayerModel::clothingUVs(work, part.name)) return false;
+    MeshEdit::own(part) = std::move(work);
+    MeshEdit::refresh(part);
+    return true;
 }
 
 // "123, 456 789" -> {"123", "456", "789"}
@@ -118,8 +132,10 @@ void Editor::renderBundleWindow() {
                 part->primitiveType = PrimitiveType::Mesh;
                 MeshEdit::attach(*part, m);
                 part->transform.scale = picked->transform.scale;
+                const bool mapped = m_bundleAutoUV && clothingUVs(*part);
                 m_scene->markDirty();
-                m_bundleMsg = std::string(name) + " now has " + picked->name + "'s shape.";
+                m_bundleMsg = std::string(name) + " now has " + picked->name + "'s shape." +
+                              (mapped ? " Clothing will fit it (auto UV map)." : "");
             }
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -153,6 +169,35 @@ void Editor::renderBundleWindow() {
         ImGui::TextDisabled("Select a body part to edit its position, rotation and size here.");
     }
 
+    // Clothing: the auto UV map lays new parts out on the shirt / pants template.
+    ImGui::SeparatorText("Clothing");
+    ImGui::Checkbox("Auto UV map for clothing", &m_bundleAutoUV);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("New body parts (and every changed part when you upload) get laid out on the shirt / pants\n"
+                          "template, so players' clothing shows on them. Turn it off to keep a UV map you made yourself.");
+    ImGui::SameLine();
+    ImGui::BeginDisabled(changed == 0);
+    if (ImGui::Button("Map now")) {
+        int mapped = 0;
+        for (const char* name : Online::kBodyParts)
+            if (SceneNode* part = mannequin->findChild(name); part && !standard(*part) && clothingUVs(*part)) ++mapped;
+        m_scene->markDirty();
+        m_bundleMsg = "Laid " + std::to_string(mapped) + (mapped == 1 ? " body part" : " body parts") +
+                      " out on the clothing template." + (mapped ? "" : " (The Head doesn't wear clothing.)");
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Lay every changed body part (not the Head) out on the clothing template now");
+    ImGui::SetNextItemWidth(170);
+    const char* tryOn[] = {"Nothing", "Shirt template", "Pants template"};
+    if (ImGui::Combo("Try on", &m_bundleTryOn, tryOn, 3)) {
+        // Only for looking: uploads keep the shapes and UVs, never these pictures.
+        Player::applyClothing(mannequin, m_bundleTryOn == 1 ? Textures::kShirtTemplatePicture : "",
+                              m_bundleTryOn == 2 ? Textures::kPantsTemplatePicture : "", "");
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Put the blank clothing template on the mannequin to check each side lands in the right spot");
+
     // 3. What else comes with it.
     ImGui::SeparatorText("In the bundle");
     ImGui::Checkbox("Headless (hides the head and face)", &m_bundleHeadless);
@@ -174,6 +219,7 @@ void Editor::renderBundleWindow() {
         json body = json::object();
         for (const char* name : Online::kBodyParts)
             if (SceneNode* part = mannequin->findChild(name); part && !standard(*part)) {
+                if (m_bundleAutoUV) clothingUVs(*part);
                 MeshEdit::fit(*part);   // corners inside -0.5..0.5, like every saved mesh
                 body[name] = Player::bodyPartJson(*part);
             }
@@ -214,6 +260,7 @@ void Editor::renderBundleWindow() {
     if (ImGui::Button("Upload Selected Part", ImVec2(180, 30))) {
         if (!bodySelected->editMesh && bodySelected->primitiveType != PrimitiveType::None)   // a plain block: give it a mesh
             MeshEdit::attach(*bodySelected, MeshEdit::fromPrimitive(bodySelected->primitiveType));
+        if (m_bundleAutoUV) clothingUVs(*bodySelected);
         MeshEdit::fit(*bodySelected);   // corners inside -0.5..0.5, like every saved mesh
         json body = {{bodySelected->name, Player::bodyPartJson(*bodySelected)}};
         json tidy;

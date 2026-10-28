@@ -3019,6 +3019,17 @@ bool ScriptEngine::testHooks = false;
 ScriptEngine::ScriptEngine(Scene* scene) : m_scene(scene) {}
 ScriptEngine::~ScriptEngine() { stop(); }
 
+// load(chunk [, name [, mode [, env]]]) with mode always "t" (the real load is the upvalue).
+static int textOnlyLoad(lua_State* L) {
+    if (lua_gettop(L) < 3) lua_settop(L, 3);   // (env stays "not given" when it wasn't)
+    lua_pushliteral(L, "t");
+    lua_replace(L, 3);
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_insert(L, 1);
+    lua_call(L, lua_gettop(L) - 1, LUA_MULTRET);
+    return lua_gettop(L);
+}
+
 void ScriptEngine::openLibraries() {
     lua_State* L = m_L;
     static const luaL_Reg libs[] = {
@@ -3035,6 +3046,10 @@ void ScriptEngine::openLibraries() {
         lua_pushnil(L);
         lua_setglobal(L, name);
     }
+    // load() takes source text only: precompiled bytecode isn't checked by Lua and can break out.
+    lua_getglobal(L, "load");
+    lua_pushcclosure(L, textOnlyLoad, 1);
+    lua_setglobal(L, "load");
     lua_getglobal(L, "os");
     for (const char* name : {"execute", "exit", "remove", "rename", "tmpname", "getenv", "setlocale"}) {
         lua_pushnil(L);
@@ -3212,7 +3227,7 @@ bool ScriptEngine::runCommand(const std::string& code, std::string& error) {
     lua_State* L = m_L;
     // "= 5 + 5" style: try it as an expression first, so results get printed.
     std::string asExpr = "return " + code;
-    bool expr = luaL_loadbuffer(L, asExpr.data(), asExpr.size(), "=CommandBar") == LUA_OK;
+    bool expr = luaL_loadbufferx(L, asExpr.data(), asExpr.size(), "=CommandBar", "t") == LUA_OK;
     if (!expr) {
         lua_pop(L, 1);
         if (Luau::load(L, code, "=CommandBar") != LUA_OK) {
@@ -3240,7 +3255,7 @@ bool ScriptEngine::runChunk(const std::string& code, const std::string& chunkNam
     if (!m_L) { error = "not running"; return false; }
     lua_State* L = m_L;
     int top = lua_gettop(L);
-    if (luaL_loadbuffer(L, code.data(), code.size(), ("=" + chunkName).c_str()) != LUA_OK) {
+    if (luaL_loadbufferx(L, code.data(), code.size(), ("=" + chunkName).c_str(), "t") != LUA_OK) {
         error = lua_tostring(L, -1);
         lua_settop(L, top);
         return false;

@@ -4,6 +4,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "../StudioMcp.h"
+#include "../StudioRelay.h"
 
 class Editor;
 
@@ -12,7 +13,8 @@ class Editor;
 //    your game with Studio's AI tools (AiTools.h): build, script, playtest,
 //    take screenshots. Everything it does can be undone.
 //  * Switch on MCP so AI apps on this computer (Claude Desktop, Claude Code,
-//    other MCP tools) can use the same tools.
+//    other MCP tools) can use the same tools, and/or let apps you connected
+//    to your account (like Lyreto) use them online (StudioRelay).
 class AssistantPanel {
 public:
     explicit AssistantPanel(Editor& editor);
@@ -33,6 +35,8 @@ private:
     bool        m_mcpWanted = false;
     int         m_mcpPort = StudioMcp::kDefaultPort;
     std::string m_mcpError;
+    StudioRelay m_relay;             // "Allow connected apps to use AI tools" (gutsandbolts.net/mcp)
+    bool        m_appsWanted = false;   // saved as "connectedApps" in assistant.json
 
     std::string m_apiKey, m_model = "claude-opus-5-5", m_input;
     nlohmann::json m_messages = nlohmann::json::array();   // the conversation, as Claude sees it

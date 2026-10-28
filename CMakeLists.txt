@@ -682,12 +682,21 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(meshoptimizer)
 
 # Assimp: every other 3D format worth having (.dae, .3ds, .x, .3mf, .lwo, .ac,
-# .off, .dxf, ...). Only its readers are built, not its writers or tools.
+# .off, .dxf, ...). Its readers, plus the few writers File > Export As uses
+# (.obj .fbx .gltf/.glb .stl .ply .dae). Not its tools.
 set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
 set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
-set(ASSIMP_NO_EXPORT ON CACHE BOOL "" FORCE)
+set(ASSIMP_NO_EXPORT OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_ALL_EXPORTERS_BY_DEFAULT OFF CACHE BOOL "" FORCE)
+foreach(fmt OBJ FBX GLTF STL PLY COLLADA)
+    set(ASSIMP_BUILD_${fmt}_EXPORTER ON CACHE BOOL "" FORCE)
+endforeach()
+# (The glTF and FBX writers need their readers' code to build; Studio still
+# opens .gltf / .glb with cgltf and .fbx with ufbx, see ModelImport.cpp.)
+set(ASSIMP_BUILD_GLTF_IMPORTER ON CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_FBX_IMPORTER ON CACHE BOOL "" FORCE)
 set(ASSIMP_WARNINGS_AS_ERRORS OFF CACHE BOOL "" FORCE)
 # Assimp's own copy of zlib is too old for the newest macOS SDK, and every Mac
 # has zlib built in, so Macs use that one.
@@ -752,11 +761,14 @@ set(EDITOR_SOURCES
     src/Application.cpp
     src/editor/Editor.cpp
     src/editor/ModelImport.cpp
+    src/editor/ModelExport.cpp
+    src/editor/EditorExport.cpp
     src/editor/EditorImport.cpp
     src/editor/PictureImport.cpp
     src/editor/AiTools.cpp
     src/editor/AiToolsRun.cpp
     src/editor/StudioMcp.cpp
+    src/editor/StudioRelay.cpp
     src/editor/panels/AssistantPanel.cpp
     src/editor/EditorRibbon.cpp
     src/editor/Icons.cpp
@@ -953,11 +965,22 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(LinkedModelsTests PRIVATE gb_engine)
     add_test(NAME LinkedModelsTests COMMAND LinkedModelsTests)
 
+    # File > Export As: each 3D model type is written, read back, and still matches.
+    add_executable(ModelExportTests tests/ModelExportTests.cpp src/editor/ModelExport.cpp src/editor/ModelImport.cpp)
+    target_include_directories(ModelExportTests PRIVATE src/)
+    target_link_libraries(ModelExportTests PRIVATE gb_engine gb_models)
+    add_test(NAME ModelExportTests COMMAND ModelExportTests)
+
     # Vehicles: a VehicleSeat drives a car's motor wheels and pushes a boat.
     add_executable(VehiclesTests tests/VehiclesTests.cpp)
     target_link_libraries(VehiclesTests PRIVATE gb_engine)
     add_test(NAME VehiclesTests COMMAND VehiclesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The auto UV map for bundle body parts: clothing templates fit any shape.
+    add_executable(ClothingUVTests tests/ClothingUVTests.cpp)
+    target_link_libraries(ClothingUVTests PRIVATE gb_engine)
+    add_test(NAME ClothingUVTests COMMAND ClothingUVTests)
 
     # Jiggle, LookAt and IK bones, saving them, scripts, and the weight brush.
     add_executable(BoneRigTests tests/BoneRigTests.cpp)

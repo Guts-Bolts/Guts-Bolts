@@ -209,6 +209,7 @@ bool loadUfbx(const std::string& path, std::vector<Builder>& out, std::string& e
     opts.target_axes = ufbx_axes_right_handed_y_up;
     opts.target_unit_meters = 1.0f;
     opts.generate_missing_normals = true;
+    opts.load_external_files = true;              // an .obj's colours are in its .mtl
     opts.ignore_missing_external_files = true;
     opts.ignore_animation = true;
     ufbx_error error;
