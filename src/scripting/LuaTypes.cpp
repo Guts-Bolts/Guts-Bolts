@@ -178,6 +178,14 @@ int c3_tostring(lua_State* L) {
 
 glm::vec3 cfPos(const glm::mat4& m) { return glm::vec3(m[3]); }
 
+// A CFrame at `pos` facing `at`. Straight up or down there's no "up" to keep, so it
+// borrows -Z (glm::lookAt with a parallel up gives NaNs, e.g. a mouse.Hit from a top-down camera).
+glm::mat4 lookAtFrame(const glm::vec3& pos, const glm::vec3& at) {
+    const glm::vec3 f = at - pos;
+    if (glm::length(f) <= 1e-6f) return glm::translate(glm::mat4(1.0f), pos);
+    const glm::vec3 up = std::abs(glm::normalize(f).y) > 0.9999f ? glm::vec3(0, 0, -1) : glm::vec3(0, 1, 0);
+    return glm::inverse(glm::lookAt(pos, at, up));
+}
 int cf_new(lua_State* L) {
     glm::mat4 m(1.0f);
     int n = lua_gettop(L);
@@ -186,10 +194,7 @@ int cf_new(lua_State* L) {
     } else if (n >= 1) {
         glm::vec3 pos = LuaApi::checkVector3(L, 1);
         if (n >= 2) {
-            glm::vec3 at = LuaApi::checkVector3(L, 2);
-            glm::vec3 f = at - pos;
-            if (glm::length(f) > 1e-6f) m = glm::inverse(glm::lookAt(pos, at, glm::vec3(0, 1, 0)));
-            else m = glm::translate(m, pos);
+            m = lookAtFrame(pos, LuaApi::checkVector3(L, 2));
         } else {
             m = glm::translate(m, pos);
         }
@@ -208,10 +213,7 @@ int cf_angles(lua_State* L) {
 }
 int cf_lookAt(lua_State* L) {
     glm::vec3 pos = LuaApi::checkVector3(L, 1), at = LuaApi::checkVector3(L, 2);
-    glm::mat4 m = glm::length(at - pos) > 1e-6f
-        ? glm::inverse(glm::lookAt(pos, at, glm::vec3(0, 1, 0)))
-        : glm::translate(glm::mat4(1.0f), pos);
-    LuaApi::pushCFrame(L, m);
+    LuaApi::pushCFrame(L, lookAtFrame(pos, at));
     return 1;
 }
 int cf_inverse(lua_State* L) { LuaApi::pushCFrame(L, glm::inverse(LuaApi::checkCFrame(L, 1))); return 1; }
