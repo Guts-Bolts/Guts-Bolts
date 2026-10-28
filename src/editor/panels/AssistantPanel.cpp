@@ -25,6 +25,7 @@ std::string exePath() { return Paths::sibling("GutsAndBolts").string(); }
 AssistantPanel::AssistantPanel(Editor& editor) : m_editor(editor) {
     load();
     if (m_mcpWanted && !m_mcp.start(m_mcpPort, m_mcpError)) m_mcpWanted = false;
+    m_relay.setEnabled(m_appsWanted);
 }
 
 AssistantPanel::~AssistantPanel() {
@@ -40,15 +41,18 @@ void AssistantPanel::load() {
     m_model = j.value("model", m_model);
     m_mcpWanted = j.value("mcp", false);
     m_mcpPort = j.value("mcpPort", (int)StudioMcp::kDefaultPort);
+    m_appsWanted = j.value("connectedApps", false);
 }
 
 void AssistantPanel::save() const {
     std::ofstream f(Paths::file("assistant.json"));
-    f << json{{"apiKey", m_apiKey}, {"model", m_model}, {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}}.dump(2);
+    f << json{{"apiKey", m_apiKey}, {"model", m_model}, {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort},
+              {"connectedApps", m_appsWanted}}.dump(2);
 }
 
 void AssistantPanel::update() {
     m_mcp.update(m_editor);
+    m_relay.update(m_editor, m_mcp);
     if (!m_pending.valid()) return;
     if (m_pending.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
     Reply r = m_pending.get();
@@ -167,6 +171,28 @@ void AssistantPanel::render(bool* open) {
             ImGui::TextWrapped("Add this to the app's MCP settings (claude_desktop_config.json):");
             ImGui::InputTextMultiline("##desk", const_cast<char*>(desk.c_str()), desk.size() + 1, ImVec2(-1, 110), ImGuiInputTextFlags_ReadOnly);
             if (ImGui::SmallButton("Copy##cd")) ImGui::SetClipboardText(desk.c_str());
+        }
+    }
+
+    // --- Connected apps (through gutsandbolts.net: no port opened here) ---
+    if (ImGui::CollapsingHeader("Connected apps (online)")) {
+        ImGui::TextWrapped("Let apps you connected to your Guts&Bolts account (like Lyreto) use Studio's AI tools while Studio is "
+                           "open. They can only do what you allowed when you connected them, and they can never publish. "
+                           "Disconnect them on gutsandbolts.net in Settings > Connected apps.");
+        if (ImGui::Checkbox("Allow connected apps to use AI tools", &m_appsWanted)) {
+            m_relay.setEnabled(m_appsWanted);
+            save();
+        }
+        if (m_appsWanted) {
+            const StudioRelay::State st = m_relay.state();
+            const ImVec4 color = st == StudioRelay::State::Online ? ImVec4(0.45f, 0.9f, 0.5f, 1)
+                               : st == StudioRelay::State::Failed ? ImVec4(1, 0.45f, 0.4f, 1) : ImVec4(0.9f, 0.8f, 0.4f, 1);
+            ImGui::PushStyleColor(ImGuiCol_Text, color);
+            ImGui::TextWrapped("%s", m_relay.statusText().c_str());
+            ImGui::PopStyleColor();
+            if (m_relay.callsServed())
+                ImGui::TextDisabled("%d tool call(s) from apps (last: %s, by %s)", m_relay.callsServed(), m_relay.lastTool().c_str(),
+                                    m_relay.lastApp().c_str());
         }
     }
 

@@ -4,6 +4,7 @@
 //   /ws    a WebSocket for the multiplayer relay (the apps)
 //   /download/...  the apps themselves (downloads.js)
 //   /api/oauth/... "Log in with Guts&Bolts" for partner apps like Lyreto (see oauth below)
+//   /mcp   Studio's AI tools for those apps, online (mcp.js)
 //   /avatar/...    the avatar pictures those apps show
 //   /api/turnstile the "are you a person?" check (shield.js)
 //   else   the website's files (website/)
@@ -17,6 +18,7 @@
 import { connect } from 'cloudflare:sockets';
 import { GbServerObject } from './server.js';
 import { handleDownload } from './downloads.js';
+import { handleMcp } from './mcp.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
 export { GbServerObject };
 
@@ -82,6 +84,8 @@ async function ask(address, text) {
 //        -> { access_token, token_type: "Bearer", expires_in, scope }
 //   GET  /api/oauth/userinfo  (Authorization: Bearer <access_token>)
 //        -> { id, username, avatar }   (id is their user number, as text; avatar a picture's URL or null)
+//   POST /api/oauth/revoke  (token, + client_id/client_secret or Basic auth) -> 200 (RFC 7009)
+// authorize takes scope=... (space-separated, see CONNECT_SCOPES in server.js); none means "identify".
 // The server answers them as connect.* requests (unsigned: the secret or the token is the proof).
 
 // Ask the server one thing, wherever it runs (here, or on a computer with GB_SERVER).
@@ -115,7 +119,7 @@ async function handleOauth(request, env, url) {
     go.hash = '#/connect?' + url.searchParams.toString();
     return Response.redirect(go.toString(), 302);
   }
-  if (path === 'token') {
+  if (path === 'token' || path === 'revoke') {
     if (request.method !== 'POST') return oauthError({ oauth: 'invalid_request', error: 'Use POST.' });
     const text = (await request.text()).slice(0, 8192);
     let body = {};
@@ -125,7 +129,7 @@ async function handleOauth(request, env, url) {
       body = Object.fromEntries(new URLSearchParams(text));
     }
     const args = {};
-    for (const k of ['grant_type', 'code', 'redirect_uri', 'client_id', 'client_secret'])
+    for (const k of ['grant_type', 'code', 'redirect_uri', 'client_id', 'client_secret', 'token'])
       if (typeof body[k] === 'string') args[k] = body[k];
     const basic = /^Basic\s+(.+)$/i.exec(request.headers.get('authorization') || '');
     if (basic) {
@@ -134,8 +138,9 @@ async function handleOauth(request, env, url) {
         args.client_id = decodeURIComponent(id || ''); args.client_secret = decodeURIComponent(secret || '');
       } catch { return oauthError({ oauth: 'invalid_client', error: 'Bad Basic auth.' }); }
     }
-    const r = await serverAsk(env, { op: 'connect.token', args });
+    const r = await serverAsk(env, { op: path === 'token' ? 'connect.token' : 'connect.revoke', args });
     if (!r.ok) return oauthError(r);
+    if (path === 'revoke') return new Response(null, { status: 200, headers: { 'cache-control': 'no-store' } });
     return reply({ access_token: r.access_token, token_type: r.token_type, expires_in: r.expires_in, scope: r.scope });
   }
   if (path === 'userinfo') {
@@ -145,7 +150,7 @@ async function handleOauth(request, env, url) {
     if (!r.ok) return oauthError(r);
     return reply(r.user);
   }
-  return oauthError({ oauth: 'invalid_request', error: 'Unknown address. Use /api/oauth/authorize, /token or /userinfo.' });
+  return oauthError({ oauth: 'invalid_request', error: 'Unknown address. Use /api/oauth/authorize, /token, /revoke or /userinfo.' });
 }
 
 export default {
@@ -158,7 +163,8 @@ export default {
     if (url.pathname.startsWith('/download/')) return handleDownload(request, env, url);
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
     const picture = /^\/(thumb|icon|shot|wear|decal|avatar)\//.test(url.pathname);
-    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') ? 'api' : '';
+    const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
+    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') ? 'api' : mcp ? 'mcp' : '';
     let info = null;
     if (kind) {
       info = await check(request, env, url, kind);
@@ -166,6 +172,7 @@ export default {
     }
     if (picture) return cachedPicture(request, ctx, () => pictureFor(request, env, url));
     if (url.pathname.startsWith('/api/oauth/')) return handleOauth(request, env, url);
+    if (mcp) return handleMcp(request, env, url, serverAsk);
     if (url.pathname === '/api/info') {
       return reply({ ok: true, server: env.GB_SERVER || 'cloudflare', time: Math.floor(Date.now() / 1000) });
     }

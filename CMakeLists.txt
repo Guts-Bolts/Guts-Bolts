@@ -768,6 +768,7 @@ set(EDITOR_SOURCES
     src/editor/AiTools.cpp
     src/editor/AiToolsRun.cpp
     src/editor/StudioMcp.cpp
+    src/editor/StudioRelay.cpp
     src/editor/panels/AssistantPanel.cpp
     src/editor/EditorRibbon.cpp
     src/editor/Icons.cpp
