@@ -196,7 +196,7 @@ const char* const kLuaProperties[] = {
     "RelativeTo", "Mode", "AlignType", "PrimaryAxisOnly", "ForceLimitMode", "ForceLimitsEnabled",
     "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart", "BreakForce", "Broken",
     "MaterialVariant", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "StudsPerTile",
-    "Roughness", "Metalness", "Glow",
+    "Roughness", "Metalness", "Glow", "BoneType", "Target", "ChainLength", "Influence",
 };
 
 // The names as a Lua table, for __gb_aiProps.
@@ -220,11 +220,13 @@ const std::vector<std::string>* enumChoices(const std::string& property) {
     static const std::vector<std::string> faces(std::begin(kFaceNames), std::end(kFaceNames));
     static const std::vector<std::string> depth = {"AlwaysOnTop", "Occluded"};
     static const std::vector<std::string> priority = {"Core", "Idle", "Movement", "Action"};
+    static const std::vector<std::string> boneTypes = {"Normal", "Jiggle", "LookAt", "IK"};
     if (property == "Material") return &materials;
     if (property == "Shape") return &shapes;
     if (property == "Face") return &faces;
     if (property == "DepthMode") return &depth;
     if (property == "Priority") return &priority;
+    if (property == "BoneType") return &boneTypes;
     return nullptr;
 }
 
@@ -890,7 +892,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         std::string v = luaValue(value, prop);
         // Objects as values: Parent, Adornee, Part0, Attachment0... take an object ("#42" or a path).
         static const char* refProps[] = {"Parent", "Adornee", "Part0", "Part1", "Attachment0", "Attachment1", "FluidSystem",
-                                         "PrimaryPart", "PlayerToHideFrom"};
+                                         "PrimaryPart", "PlayerToHideFrom", "Target"};
         const bool refProp = std::find_if(std::begin(refProps), std::end(refProps), [&](const char* r) { return prop == r; }) != std::end(refProps);
         if (value.is_string() && (refProp || (have.contains(prop) && have[prop].is_string() &&
                                               have[prop].get<std::string>().rfind('#', 0) == 0))) {

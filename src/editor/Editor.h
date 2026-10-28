@@ -180,6 +180,8 @@ private:
     void       renderArmature();
     SceneNode* armaturePart();                          // the part the Armature window shows
     SceneNode* addBone(SceneNode* where, int chain);    // in a part or bone; `chain` bones in a row
+    // A ready-made rig in a part: 0 jiggle chain, 1 IK arm, 2 look-at, 3 humanoid skeleton.
+    SceneNode* addRig(SceneNode* part, int kind, int chain);
     // UV mapping: the UV Editor window and the U menu (EditorUV.cpp)
     void       renderUVEditor();
     void       unwrapMesh(int how);          // a MeshEdit::Unwrap
@@ -301,6 +303,7 @@ private:
     bool        m_showAccessory = false;
     bool        m_showArmature = false;
     uint64_t    m_armBone = 0;   // the bone picked in the Armature window
+    bool        m_armPreview = false;   // Jiggle / LookAt / IK bones move in Studio too (not just playing)
     struct UVEditorState {
         bool      show = false;
         bool      hovered = false;      // the mouse was over it last frame: keys go to it

@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include "../renderer/Mesh.h"
 #include "../core/SoundFx.h"
 
@@ -615,6 +616,32 @@ struct Transform {
     glm::mat4 matrix() const;
 };
 
+// What a Bone does by itself, on top of where it's posed (see Skin.h). A Normal bone
+// just stays where it's put; the others move on their own every frame, in Studio,
+// in the Player and online (each screen works it out, so nothing extra is sent).
+enum class BoneType { Normal, Jiggle, LookAt, IK };
+struct BoneRig {
+    BoneType type      = BoneType::Normal;
+    // Jiggle: the tip is a weight on a spring that chases where it should be.
+    float    stiffness = 0.35f;     // 0..1: how hard it springs back (1 = stiff)
+    float    damping   = 0.25f;     // 0..1: how quickly the wobble dies down
+    float    gravity   = 0.0f;      // studs/s² pulling the tip down (droopy ears, hair)
+    // LookAt and IK: the object it points at / reaches for (a part, attachment or bone).
+    uint64_t target    = 0;
+    int      chain     = 2;         // IK: how many bones bend to reach it (this one and the ones it's in)
+    float    influence = 1.0f;      // 0..1: how much of the move it does
+    float    length    = 0.0f;      // studs from joint to tip when no bone is inside it (0 = guess)
+    // Worked out every frame, never saved or sent: the extra turn on top of the
+    // bone's own, and the jiggle tip's place and speed (world space).
+    glm::quat live{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 tipPos{0.0f}, tipVel{0.0f};
+    bool      tipStarted = false;
+    bool operator==(const BoneRig& o) const {
+        return type == o.type && stiffness == o.stiffness && damping == o.damping && gravity == o.gravity &&
+               target == o.target && chain == o.chain && influence == o.influence && length == o.length;
+    }
+};
+
 class SceneNode {
 public:
     explicit SceneNode(std::string name, NodeKind kind = NodeKind::Part);
@@ -632,6 +659,7 @@ public:
     // the part's size doesn't stretch it.
     bool                  bone = false;
     bool                  robloxEmbeddedMeshBone = false; // generated from FileMesh, not an authored Roblox Bone instance
+    BoneRig               rig;                     // a bone's type: Jiggle, LookAt, IK (Normal for the rest)
     glm::vec3             color    = {0.65f, 0.65f, 0.80f};
     bool                  selected = false;
     bool                  visible  = true;

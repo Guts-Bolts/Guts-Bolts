@@ -73,6 +73,10 @@ struct EditorState {
     // Animation Editor: the rig being animated (clicks pick its parts, not the whole model).
     unsigned long long animRig = 0;
     std::string weightBone;   // Modeling mode: colour the corners by how much this bone pulls them (Armature window)
+    // The Armature window's weight brush: drag over the mesh to paint weightBone's weights.
+    int   weightPaint = -1;        // -1 off, 0 add, 1 take away, 2 smooth
+    float weightRadius = 40.0f;    // the brush circle, in pixels
+    float weightStrength = 0.5f;   // 0.05 .. 1: how fast it paints
 
     float snapTranslate = 0.5f;     // world units
     float snapRotate    = 15.0f;    // degrees

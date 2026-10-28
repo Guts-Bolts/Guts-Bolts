@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include "Serializer.h"
+#include "Skin.h"
 #include "EditMesh.h"
 #include "RobloxFile.h"
 #include "Scene.h"
@@ -351,6 +352,29 @@ void effectFromJson(const nlohmann::json& j, EffectProps& e, bool& enabled) {
     e.textureSpeed = num("texSpeed", 1.0f, -1000.0f, 1000.0f);
     e.textureWrap = j.value("texWrap", false);
     enabled = j.value("on", true);
+}
+
+nlohmann::json boneRigToJson(const BoneRig& r) {
+    return {{"type", Skin::typeName((int)r.type)}, {"stiffness", r.stiffness}, {"damping", r.damping},
+            {"gravity", r.gravity}, {"target", r.target}, {"chain", r.chain}, {"influence", r.influence}, {"length", r.length}};
+}
+
+void boneRigFromJson(const nlohmann::json& j, BoneRig& r) {
+    if (!j.is_object()) return;
+    auto num = [&](const char* key, float fallback, float lo, float hi) {
+        auto it = j.find(key);
+        return it != j.end() && it->is_number() && std::isfinite(it->get<float>()) ? std::clamp(it->get<float>(), lo, hi) : fallback;
+    };
+    const BoneRig d;
+    int t = Skin::typeFrom(j.value("type", std::string("Normal")));
+    r.type = t < 0 ? BoneType::Normal : (BoneType)t;
+    r.stiffness = num("stiffness", d.stiffness, 0.0f, 1.0f);
+    r.damping = num("damping", d.damping, 0.0f, 1.0f);
+    r.gravity = num("gravity", d.gravity, -1000.0f, 1000.0f);
+    r.target = j.contains("target") && j["target"].is_number_unsigned() ? j["target"].get<uint64_t>() : 0;
+    r.chain = (int)num("chain", (float)d.chain, 1.0f, 16.0f);
+    r.influence = num("influence", d.influence, 0.0f, 1.0f);
+    r.length = num("length", d.length, 0.0f, 10000.0f);
 }
 
 nlohmann::json jointToJson(const JointProps& p) {
@@ -785,6 +809,7 @@ json toJson(const SceneNode& n) {
     j["name"] = n.name;
     j["kind"] = kindName(n.kind);
     if (n.isBone()) j["bone"] = true;
+    if (n.isBone() && !(n.rig == BoneRig{})) j["boneRig"] = Serializer::boneRigToJson(n.rig);
     if (n.robloxEmbeddedMeshBone) j["embeddedMeshBone"] = true;
     // (A part posed in the Animation Editor is saved where it really is.)
     j["pos"]  = vec(n.restPose ? n.restPose->position : n.transform.position);
@@ -991,6 +1016,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     }
     n->bone = n->kind == NodeKind::Attachment && get<bool>(j, "bone", false);
     n->robloxEmbeddedMeshBone = n->bone && get<bool>(j, "embeddedMeshBone", false);
+    if (n->bone && j.contains("boneRig")) Serializer::boneRigFromJson(j["boneRig"], n->rig);
     n->transform.position = vec(j, "pos",  {0, 0, 0});
     n->transform.rotation = vec(j, "rot",  {0, 0, 0});
     n->transform.scale    = vec(j, "size", {1, 1, 1});
@@ -1585,6 +1611,8 @@ void remapRefs(SceneNode& n, const std::unordered_map<uint64_t, uint64_t>& map) 
     }
     if (n.isSound() && n.soundGroup)   // (a copied sound plays through the copied group, if it came along)
         if (auto it = map.find(n.soundGroup); it != map.end()) n.soundGroup = it->second;
+    if (n.isBone() && n.rig.target)   // (a copied rig's IK / LookAt bones reach for the copied targets)
+        if (auto it = map.find(n.rig.target); it != map.end()) n.rig.target = it->second;
     if (n.kind == NodeKind::Model && n.primaryPart)   // (a copied model's PrimaryPart is its own copy)
         if (auto it = map.find(n.primaryPart); it != map.end()) n.primaryPart = it->second;
     if (n.kind == NodeKind::FluidEmitter)   // (a copied emitter uses the copied liquid, if it came along)

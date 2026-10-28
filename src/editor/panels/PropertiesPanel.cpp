@@ -1,5 +1,6 @@
 #include "PropertiesPanel.h"
 #include "../MaterialUi.h"
+#include "../BoneUi.h"
 #include "../../core/I18n.h"
 #include "../../online/Protocol.h"
 #include "../../scene/Scene.h"
@@ -1029,6 +1030,13 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         return;
     }
 
+    if (node->isBone()) {   // a joint of an armature (see the Armature window)
+        ImGui::DragFloat3("Position", &node->transform.position.x, 0.01f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Studs from the part's middle (or from the bone it's in)");
+        ImGui::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
+        BoneUi::edit(*m_scene, *node);
+        return;
+    }
     if (node->isAttachment()) {
         ImGui::DragFloat3("Offset", &node->transform.position.x, 0.01f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Where on the part (in the part's own space)");
