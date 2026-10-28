@@ -1,5 +1,5 @@
 export default {
-  id: 'read-the-fine-print', name: 'Read the Fine Print', time: 1793222400, tag: 'Studio',
+  id: 'read-the-fine-print', name: 'Read the Fine Print', version: '0.7.8', time: 1793222400, tag: 'Studio',
   summary: 'The script editor now tells you how to use a function while you type it, and right / middle mouse buttons can be bound.',
   items: [
     'Autocomplete shows how to use the picked function: what to put in the ( ), what it gives back, and one line on what it does (like getmouse3d(distance?, ignore?) -> Vector3, BasePart?, Vector3)',

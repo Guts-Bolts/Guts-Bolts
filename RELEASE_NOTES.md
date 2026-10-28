@@ -1,3 +1,38 @@
+# Guts&Bolts 0.7.8: Bed Bugs (October 28, 2026)
+
+We went bug hunting under the mattress. The updater can't trap you in a
+restart loop any more, your "Pumpkin" pants stopped pretending to be a
+Gutstober hat, and the 3D button on item pages finally does something.
+We also found a camera, a font and a heart while we were down there.
+
+## New in games
+- Photo mode: press F2 to hide everything, fly the camera around and save
+  a picture.
+- Scripts can find every part inside a zone (GetPartsInPart,
+  GetPartBoundsInBox, GetPartBoundsInRadius and OverlapParams).
+- The browser Player can type on phones now, and remembers your login.
+
+## New in Studio
+- The script editor shows how to use a function while you type it, and
+  fixes wrong upper / lower case.
+- ContextActionService can bind the right and middle mouse buttons.
+
+## New on the website
+- Heart catalog items to save them to My Favorites, plus a Most Favorited
+  list.
+- The Avatar page has tabs, and you can wear one body part from a bundle
+  on its own.
+- One big, bold font everywhere: the 2012 Helvetica Black look.
+
+## Bugs we squashed
+- The updater could close and reopen Studio or the Player forever. Now it
+  tells you what went wrong and lets you download the update yourself.
+- Your own items named "Pumpkin" were turned into Gutstober timed items.
+- The 3D/2D button on item pages didn't work.
+- The Insert Object list showed some things twice, causing a "conflicting
+  ID" error.
+- When the web Player crashed it showed a mystery number; now it says why.
+
 # Guts&Bolts 0.7.7: Get Jiggy With It! (October 28, 2026)
 
 Bones can wiggle now. Tails bounce, eyes follow you, arms reach for things,

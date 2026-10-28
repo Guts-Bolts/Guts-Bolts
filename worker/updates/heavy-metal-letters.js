@@ -1,5 +1,5 @@
 export default {
-  id: 'heavy-metal-letters', name: 'Heavy Metal Letters', time: 1793203700, tag: 'Website',
+  id: 'heavy-metal-letters', name: 'Heavy Metal Letters', version: '0.7.8', time: 1793203700, tag: 'Website',
   summary: 'One big, bold font everywhere: the 2012 Helvetica Black look.',
   items: [
     'The website, Studio and the Player (on computers, phones and in the browser) now all use the same heavy font',
