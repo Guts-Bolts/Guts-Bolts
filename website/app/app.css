@@ -466,8 +466,13 @@ html.gutstober .status { color: #2a0f3a; }   /* light text was unreadable on the
 .item-limited { background: linear-gradient(#26a540, #137a28); padding: 3px 4px 3px 10px; border: 1px solid #0d5a1c; }
 .item-limited b { background: #f5d000; color: #222; margin: -3px -4px -3px 8px; padding: 3px 14px 3px 10px;
   clip-path: polygon(14% 0, 100% 0, 86% 100%, 0 100%); }
-.item-3d { position: absolute; right: 8px; bottom: 8px; font-size: 10px; border: 1px solid #999; background: #f4f4f4; color: #333;
-  padding: 1px 5px; border-radius: 2px; pointer-events: none; }
+/* the 3D/2D switch: it must take clicks and taps (it used to have pointer-events: none, so it did nothing) */
+.item-3d { position: absolute; right: 8px; bottom: 8px; z-index: 2; font-size: 12px; min-width: 32px; min-height: 26px; border: 1px solid #999;
+  background: #f4f4f4; color: #333; padding: 2px 7px; border-radius: 3px; cursor: pointer; touch-action: manipulation; }
+.item-3d:hover { background: #fff; border-color: #666; }
+.item-3d:disabled { cursor: wait; opacity: .7; }
+/* on a phone the picture box is narrower than the 3D preview, so shrink it to fit instead of cutting it off */
+.item-pic .pic canvas { max-width: 100%; height: auto !important; touch-action: none; }
 .item-creator { display: flex; gap: 10px; align-items: center; }
 .item-creator-pic { width: 48px; height: 60px; flex: none; display: flex; align-items: center; justify-content: center; background: var(--panel2); border-radius: 3px; }
 .item-creator-pic img { max-width: 100%; max-height: 100%; }
