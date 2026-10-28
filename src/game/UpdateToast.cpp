@@ -105,7 +105,7 @@ bool draw(const char* appName, bool canForce) {
         // The last try at this version didn't work: say why and let the person choose,
         // instead of closing and reopening over and over.
         if (g_forced == 1 && !info.lastTryFailed.empty())
-            g_error = "The update didn't work last time: " + info.lastTryFailed + ".";
+            g_error = "The update didn't work last time: " + info.lastTryFailed;
     }
     if (g_forced == 1) {
         if (canForce) return drawForced(appName, info);
@@ -120,8 +120,9 @@ bool draw(const char* appName, bool canForce) {
     float e = 1.0f - (1.0f - g_slide) * (1.0f - g_slide);
     ImGuiViewport* vp = ImGui::GetMainViewport();
     const float w = 360.0f;
-    ImVec2 pos(vp->WorkPos.x + vp->WorkSize.x - (w + 20.0f) * e, vp->WorkPos.y + vp->WorkSize.y - 170.0f);
-    ImGui::SetNextWindowPos(pos);
+    // (Pinned by its bottom edge, so a longer message grows it upwards instead of off the screen.)
+    ImVec2 pos(vp->WorkPos.x + vp->WorkSize.x - (w + 20.0f) * e, vp->WorkPos.y + vp->WorkSize.y - 40.0f);
+    ImGui::SetNextWindowPos(pos, ImGuiCond_Always, ImVec2(0.0f, 1.0f));
     ImGui::SetNextWindowSize(ImVec2(w, 0));
     ImGui::SetNextWindowBgAlpha(0.97f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 12.0f);
