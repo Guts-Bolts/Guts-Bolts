@@ -410,7 +410,9 @@ void GbServer::deleteAccount(User& u) {
         v.friends.erase(u.id); v.friendIn.erase(u.id); v.friendOut.erase(u.id);
         v.following.erase(u.id); v.followers.erase(u.id);
     }
-    for (const std::string& gameId : u.favorites) {
+    std::vector<std::string> faved = u.favorites;
+    faved.insert(faved.end(), u.itemFavorites.begin(), u.itemFavorites.end());
+    for (const std::string& gameId : faved) {
         auto it = findAsset(gameId);
         if (it == m_assets.end() || !it->second.meta.is_object()) continue;
         const long long count = it->second.meta.value("favorites", 0LL);

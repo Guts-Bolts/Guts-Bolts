@@ -405,7 +405,7 @@ const NEEDS_ACCOUNT = {
   buy: 'get items from the catalog', gift: 'send gifts', modelVote: 'rate models', buyPass: 'buy game passes', buyPrivate: 'buy private servers', daily: 'claim your daily Bolts', saveAvatar: 'save your avatar',
   friend: 'add friends', follow: 'follow people', group: 'join groups', redeem: 'redeem codes', upload: 'upload things and publish games',
   groupCreate: 'make a group', groupPost: 'post on group walls', groupShout: 'shout to a group',
-  favorite: 'favourite games', outfitSave: 'save outfits', sendMessage: 'send messages', statusSet: 'post a status', blurbSet: 'edit your profile',
+  favorite: 'favourite games', itemFavorite: 'favourite items', outfitSave: 'save outfits', sendMessage: 'send messages', statusSet: 'post a status', blurbSet: 'edit your profile',
   report: 'report things to staff', block: 'block people', forumPost: 'post on the forum', forumReply: 'post on the forum',
 };
 
@@ -997,6 +997,7 @@ function browseSort(list, sort) {
     rated: (x, y) => wilsonScore(y.likes || 0, y.dislikes || 0) - wilsonScore(x.likes || 0, x.dislikes || 0)
       || voteCount(y) - voteCount(x) || (y.sales || 0) - (x.sales || 0),
     popular: (x, y) => (y.sales + y.plays) - (x.sales + x.plays),
+    favorited: (x, y) => (y.favorites || 0) - (x.favorites || 0) || (y.sales + y.plays) - (x.sales + x.plays),
     new: (x, y) => (y.updated || y.created) - (x.updated || x.created),
     low: (x, y) => (x.price || 0) - (y.price || 0),
     high: (x, y) => (y.price || 0) - (x.price || 0),
@@ -1022,6 +1023,7 @@ function browseCard(a, href, price) {
     ${a.kind === 'model' ? html`<div class="brating">${ratingLine(a)}</div>` : ''}
     <div class="btip"><div>Creator: <a href="#/user/${a.creator}">${a.creatorName}</a>${verified(a.creatorVerified)}</div>
       <div>Updated: ${ago(a.updated || a.created)}</div><div>${a.kind === 'model' || a.kind === 'animation' ? 'Taken' : 'Sales'}: ${(a.sales || 0).toLocaleString()}</div>
+      ${isCatalogItem(a.kind) ? html`<div>Favorited: ${(a.favorites || 0).toLocaleString()}</div>` : ''}
       ${isCatalogItem(a.kind) ? '' : html`<div>ID: ${assetNum(a)} <button class="btn small" data-act="copyId" data-id="${assetNum(a)}">Copy</button></div>`}</div></div>`;
 }
 // cats: [key, label, [kids]]; the page itself fetches, filters and passes the tiles in.
@@ -1436,13 +1438,15 @@ function commentsBlock(g, cr) {
 }
 
 // The Catalog, laid out like the old one (see browsePage).
-const CATALOG_CATS = [['featured', 'Featured'], ['collectibles', 'Collectibles'], ['auctions', 'Auctions'], '-', ['all', 'All Categories'],
+const CATALOG_CATS = [['featured', 'Featured'], ['collectibles', 'Collectibles'], ['auctions', 'Auctions'], ['favorited', 'Most Favorited'],
+  ['myfavorites', 'My Favorites'], '-', ['all', 'All Categories'],
   ['clothes', 'Clothing', [['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants']]],
   ['body', 'Body Parts', [['face', 'Faces'], ['bundle', 'Bundles'], ['bodypart', 'Individual Parts']]], ['gear', 'Gear'],
   ['emotes', 'Emotes', [['emote', 'Emotes'], ['animpack', 'Animation Packs']]],
   ['accessories', 'Accessories', [['hat', 'Hats'], ['hair', 'Hair'], ['faceacc', 'Face'], ['neck', 'Neck'], ['shoulder', 'Shoulder'], ['waist', 'Waist']]]];
 const CATALOG_PICK = {
   featured: (a) => a.creatorStaff, collectibles: (a) => !!a.limited, auctions: () => true, all: () => true,
+  favorited: (a) => (a.favorites || 0) > 0, myfavorites: () => true,
   clothes: (a) => ['shirt', 'tshirt', 'pants'].includes(a.kind), body: (a) => a.kind === 'face' || a.kind === 'bundle' || a.kind === 'bodypart', accessories: (a) => ACCESSORIES.includes(a.kind),
   emotes: (a) => isEmoteItem(a.kind),
 };
@@ -1452,18 +1456,22 @@ pages.catalog = async () => {
   const flat = CATALOG_CATS.flatMap((c) => c === '-' ? [] : [c, ...(c[2] || [])]);
   let cat = q.get('cat') || q.get('kind') || 'all';
   if (!flat.some((c) => c[0] === cat)) cat = 'all';
-  // (Auctions are asked for by name: they're Exclusive items, which the normal list leaves out.)
-  const r = await listAll({ kind: 'clothing', query: q.get('q') || '', ...(cat === 'auctions' ? { auctions: true } : {}) });
+  if (cat === 'myfavorites' && !signedIn()) { show(html`<h1>My Favorites</h1>${needSignIn('see your favourite items')}`); return; }
+  // (Auctions are asked for by name: they're Exclusive items, which the normal list leaves out.
+  // My Favorites is your wishlist: the items you hearted on their pages.)
+  const r = await listAll({ kind: 'clothing', query: q.get('q') || '', ...(cat === 'auctions' ? { auctions: true } : {}),
+    ...(cat === 'myfavorites' ? { favorites: true } : {}) });
   if (!r.ok) { show(html`<h1>Catalog</h1><p class="error">${r.error}</p>`); return; }
   const pick = CATALOG_PICK[cat] || ((a) => a.kind === cat);
   const price = PRICES[q.get('price')];
   const list = browseSort(r.assets.filter((a) => pick(a) && creatorMatch(a, q.get('creator')) &&
-    (!price || ((a.price || 0) >= price[0] && (a.price || 0) <= price[1]))), q.get('sort'));
+    (!price || ((a.price || 0) >= price[0] && (a.price || 0) <= price[1]))), q.get('sort') || (cat === 'favorited' ? 'favorited' : ''));
   const priceOf = (a) => auctionOpen(a) ? html`bid ${bolts(a.auction.need)}`
     : a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
     : a.offsale ? raw('<span class="muted">Off sale</span>') : a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>');
   show(browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
     shown: browseSlice(list).map((a) => browseCard(a, '#/item/' + a.id, priceOf(a))), total: list.length,
+    sorts: [...BROWSE_SORTS.slice(0, 2), ['favorited', 'Most Favorited'], ...BROWSE_SORTS.slice(2)],
     filters: [{ title: 'Price', key: 'price', options: [['', 'Any Price'], ['free', 'Free'], ['1-100', '1 - 100'], ['101-1000', '101 - 1,000'], ['over', 'Over 1,000']] },
       creatorFilter()] }));
 };
@@ -1565,6 +1573,8 @@ pages.item = async (id) => {
             ${buyButton}
             ${giftButton}
             <div class="item-sold">( ${a.sales || 0} Sold )</div>
+            <button class="btn small item-fav ${a.myFavorite ? 'on' : ''}" data-act="itemFavorite" data-id="${a.id}" data-on="${a.myFavorite ? '' : '1'}"
+              title="${a.myFavorite ? 'Take it out of your favourites' : 'Add it to your favourites (Catalog > My Favorites)'}">${a.myFavorite ? '\u2665' : '\u2661'} <span>${a.myFavorite ? 'Favorited' : 'Favorite'}</span> (${(a.favorites || 0).toLocaleString()})</button>
             ${L && L.resellers ? html`<div class="small">${L.resellers} for resale from ${bolts(L.lowest)}</div>` : ''}
           </div>
           ${canEdit ? html`<p><button class="btn" data-act="toggle" data-target="#itemEdit">Edit item</button></p>` : ''}
@@ -3528,6 +3538,13 @@ const actions = {
   },
   async favorite(d) {
     const r = await call('game.favorite', { id: d.id, on: !!d.on });
+    if (!r.ok) { toast(r.error); return; }
+    toast(d.on ? 'Added to your favourites.' : 'Taken out of your favourites.');
+    render();
+  },
+  // The heart on an item's page: your wishlist (Catalog > My Favorites) and its Most Favorited count.
+  async itemFavorite(d) {
+    const r = await call('item.favorite', { id: d.id, on: !!d.on });
     if (!r.ok) { toast(r.error); return; }
     toast(d.on ? 'Added to your favourites.' : 'Taken out of your favourites.');
     render();
