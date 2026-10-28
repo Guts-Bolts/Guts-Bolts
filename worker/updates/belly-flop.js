@@ -1,5 +1,5 @@
 export default {
-  id: 'belly-flop', name: 'Belly Flop', time: 1793194000, tag: 'Engine',
+  id: 'belly-flop', name: 'Belly Flop', version: '0.7.7', time: 1793194000, tag: 'Engine',
   summary: 'Characters move more like Roblox: real ragdolls with PlatformStand, getting knocked off seats, and proper swimming.',
   items: [
     'PlatformStand (and the Ragdoll / Physics humanoid states) now turns the character into a floppy ragdoll that stays down until the script turns it off',

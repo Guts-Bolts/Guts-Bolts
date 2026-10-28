@@ -1,5 +1,5 @@
 export default {
-  id: 'road-trip', name: 'Road Trip', time: 1793148000, tag: 'Engine',
+  id: 'road-trip', name: 'Road Trip', version: '0.7.7', time: 1793148000, tag: 'Engine',
   summary: 'Vehicles! Sit in a VehicleSeat and drive the car or boat it\'s built into.',
   items: [
     'A VehicleSeat drives whatever it\'s part of: W/S to go and stop, A/D to steer (the touch stick and controllers work too)',

@@ -1,5 +1,5 @@
 export default {
-  id: 'mix-it-up', name: 'Mix It Up', time: 1793290000, tag: 'Studio',
+  id: 'mix-it-up', name: 'Mix It Up', version: '0.7.7', time: 1793290000, tag: 'Studio',
   summary: 'Make your own materials from boxes and wires in Studio, and Roblox material variants now come along when you import or export.',
   items: [
     'In the Material Editor, press Make with nodes... to build a material from boxes like Noise, Bricks, Cells and Stripes, wired together',

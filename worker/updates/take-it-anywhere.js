@@ -1,5 +1,5 @@
 export default {
-  id: 'take-it-anywhere', name: 'Take It Anywhere', time: 1793159400, tag: 'Studio',
+  id: 'take-it-anywhere', name: 'Take It Anywhere', version: '0.7.7', time: 1793159400, tag: 'Studio',
   summary: 'File > Export As saves your game, or just what you picked, as almost any 3D file: .obj, .fbx, .glb, Roblox .mesh, .stl and more.',
   items: [
     'New Export As window (File > Export As..., the Export button on the HOME tab, or right-click > Export As...). Pick the whole game or only what you selected, then a file type.',

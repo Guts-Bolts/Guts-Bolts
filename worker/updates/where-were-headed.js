@@ -1,5 +1,5 @@
 export default {
-  id: 'where-were-headed', name: 'Where We\'re Headed', time: 1793295000, tag: 'Website',
+  id: 'where-were-headed', name: 'Where We\'re Headed', version: '0.7.7', time: 1793295000, tag: 'Website',
   summary: 'A public roadmap on the Create page where you can see what\'s coming, suggest updates and vote for the ones you want.',
   items: [
     'Create > Roadmap shows what\'s being worked on, what\'s planned and what\'s done',

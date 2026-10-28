@@ -1,5 +1,5 @@
 export default {
-  id: 'short-term-memory', name: 'Short-Term Memory', time: 1793191000, tag: 'Engine',
+  id: 'short-term-memory', name: 'Short-Term Memory', version: '0.7.7', time: 1793191000, tag: 'Engine',
   summary: 'MemoryStoreService works now: quick data that every server of a game shares, like global leaderboards and matchmaking queues.',
   items: [
     'Scripts can use MemoryStoreService sorted maps, hash maps and queues, the same way as in Roblox',

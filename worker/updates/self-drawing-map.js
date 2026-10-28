@@ -1,5 +1,5 @@
 export default {
-  id: 'self-drawing-map', name: 'Self-Drawing Map', time: 1793144800, tag: 'Website',
+  id: 'self-drawing-map', name: 'Self-Drawing Map', version: '0.7.7', time: 1793144800, tag: 'Website',
   summary: 'The roadmap now fills itself in: whatever is being worked on shows up on it, and moves to Done when it ships.',
   items: [
     'Every piece of work on Guts&Bolts now puts itself on Create > Roadmap while it\'s being made',

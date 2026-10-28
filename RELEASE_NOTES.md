@@ -1,3 +1,46 @@
+# Guts&Bolts 0.7.7: Get Jiggy With It! (October 28, 2026)
+
+Bones can wiggle now. Tails bounce, eyes follow you, arms reach for things,
+and you can rig and skin your own meshes right in Studio. While we were at it,
+it started raining, people learned to swim, cars showed up, and iPhones can
+play in the browser.
+
+## New in Studio
+- Jiggle, LookAt and IK bones, ready-made rigs (even a whole humanoid
+  skeleton) and a brush to paint weights, so you can make your own skinned
+  meshes.
+- Linked models: change one copy of a model and every copy follows.
+- Material Graph: make materials from boxes and wires.
+- Roblox material variants now come along when you import or export.
+- File > Export As: save your game, or just what you picked, as .obj, .fbx,
+  .glb, .gltf, Roblox .mesh, .stl, .ply or .dae.
+- Auto UV map, so shirts and pants fit bundle body parts of any shape.
+- Apps you log into with Guts&Bolts, like Lyreto, can use Studio's AI
+  tools online, but only if you allow it.
+
+## New in games
+- Weather: rain and snow, with puddles and snow piling up on things.
+- Real swimming, PlatformStand ragdolls, and getting knocked off seats.
+- Vehicles: sit in a VehicleSeat and drive the car or boat.
+- MemoryStoreService: quick data every server of a game shares.
+- Scripts can ask where the mouse points in the 3D world (getmouse3d,
+  mouse.Hit, mouse.Target).
+
+## New on the website and phones
+- Play in the browser at gutsandbolts.net/play/, so iPhones can play
+  without the App Store.
+- A free guide to put the iPhone Player on your own phone.
+- A public roadmap on the Create page: see what's coming, suggest ideas
+  and vote. It fills itself in as work happens.
+- Bundles and body parts can be up to 8 MB now, instead of 1 MB.
+
+## Fixes
+- The mouse points at the right spot when you play in Studio.
+- No more red "conflicting ID" error box in Studio.
+- Text that was hard to read on some themes is readable again, in the app
+  and on the website.
+- Game scripts can no longer load precompiled Lua (a security fix).
+
 # Guts&Bolts 0.7.6: We Kept Adding Buttons (October 26, 2026)
 
 Nobody told us to stop, so we didn't. Studio can now snap joints, blow things

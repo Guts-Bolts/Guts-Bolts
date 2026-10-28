@@ -1,5 +1,5 @@
 export default {
-  id: 'spot-the-difference', name: 'Spot the Difference', time: 1793160000, tag: 'Studio',
+  id: 'spot-the-difference', name: 'Spot the Difference', version: '0.7.6', time: 1793160000, tag: 'Studio',
   summary: 'Compare your game with another saved copy of it, see every object that was added, removed, moved or changed, and bring in just the changes you want.',
   items: [
     'New Compare and Merge window (TEST > Compare): pick another saved copy of your game and see every difference, object by object.',
