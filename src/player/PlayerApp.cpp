@@ -214,6 +214,7 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
     if (m_opts.page == "messages") m_page = Page::Messages;
     if (m_opts.page == "outfits") { m_page = Page::Avatar; m_avatarTab = 2; }
     if (m_opts.page == "login") { m_page = Page::Login; m_loginTab = 1; }
+    if (m_opts.page == "terms") { m_page = Page::Login; m_loginTab = 0; m_showTerms = true; }   // test: the Terms window
     if (m_opts.page.rfind("servers:", 0) == 0 && !m_games.empty()) {   // tests: a game's Servers window
         m_selected = std::clamp(std::atoi(m_opts.page.c_str() + 8), 0, (int)m_games.size() - 1);
         m_page = Page::GameInfo;
@@ -882,12 +883,12 @@ void PlayerApp::frame(float dt) {
     ImGui::End();
     drawConnectScreen();
     if (m_page != Page::Game) touchScroll();
-    if (m_showSettings) {   // dressed like the rest of the site: white box, blue title bar
+    if (m_showSettings) {   // dressed like the rest of the site: white box, light title bar
         Classic::pushLight();
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.97f, 0.97f, 0.98f, 1));
         ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(1, 1, 1, 1));
-        ImGui::PushStyleColor(ImGuiCol_TitleBg, Classic::kTitle);
-        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.10f, 0.45f, 0.82f, 1));
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, Classic::kTitleBar);
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, Classic::kTitleBarOn);
         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.86f, 0.91f, 0.98f, 1));
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.80f, 0.88f, 0.98f, 1));
         ImGui::PushStyleColor(ImGuiCol_SliderGrab, Classic::kBlue);
