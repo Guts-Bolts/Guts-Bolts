@@ -78,6 +78,7 @@ private:
         // ServerSocial.cpp: saved outfits, favourite and recently played games, private messages.
         nlohmann::json outfits = nlohmann::json::array();   // {id, name, avatar, created}, newest first
         std::vector<std::string> favorites, recent;          // game ids, newest first
+        std::vector<std::string> itemFavorites;              // catalog items favourited (a wishlist), newest first
         nlohmann::json inbox = nlohmann::json::array();     // {id, from, subject, body, at, read}, newest first
         nlohmann::json notes = nlohmann::json::array();     // the bell: {id, kind, text, about, at, read}, newest first
         nlohmann::json receipts = nlohmann::json::array();  // developer products bought: {id, product, game, price, at, granted}

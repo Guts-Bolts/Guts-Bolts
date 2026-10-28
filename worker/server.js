@@ -208,6 +208,7 @@ const kMaxFollowing = 2000;
 // Saved outfits, favourite games, "continue playing" and private messages (ServerSocial in
 // src/server/Server.cpp has the same limits).
 const kMaxOutfits = 30, kMaxFavorites = 200, kMaxRecent = 30;
+const kMaxItemFavorites = 500;   // catalog items on your wishlist (hearted on the item's page)
 const kMaxInbox = 100, kMaxSent = 50, kMessagesPerDay = 40;
 // Classic profiles: an "About me" blurb, a "Right now I'm..." status (the last few
 // make up your friends' My Feed), and player badges earned by doing things.
@@ -1643,10 +1644,11 @@ export class GbServerObject extends DurableObject {
       likes: hasVotes(a.kind) ? (a.likes || 0) : undefined, dislikes: hasVotes(a.kind) ? (a.dislikes || 0) : undefined,
       updated: a.updated || a.created, playing: a.kind === 'game' ? this.playingIn(a.id) : undefined,
       myVote: me && a.votes ? (a.votes[me.id] || 0) : undefined, limited: this.limitedJson(a),
-      favorites: a.kind === 'game' ? (a.favorites || 0) : undefined,
+      favorites: a.kind === 'game' || isCatalogItem(a.kind) ? (a.favorites || 0) : undefined,
       featured: a.kind === 'game' && a.featured > 0 ? true : undefined,
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
-      myFavorite: a.kind === 'game' && me ? (me.favorites || []).includes(a.id) : undefined,
+      myFavorite: !me ? undefined : a.kind === 'game' ? (me.favorites || []).includes(a.id)
+        : isCatalogItem(a.kind) ? (me.itemFavorites || []).includes(a.id) : undefined,
       offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), review: a.review || undefined, reviewNote: a.reviewNote || undefined,
       exclusive: a.exclusive ? true : undefined, gift: a.giftItem ? true : undefined, auction: this.auctionJson(a, me),
       giftItem: a.giftItem && me && this.isStaff(me) ? this.giftJson(a) : undefined,   // (staff only: it's a surprise)
@@ -2236,6 +2238,23 @@ export class GbServerObject extends DurableObject {
         favs.unshift(a.id); a.favorites = (a.favorites || 0) + 1;
       } else if (!want && had) {
         me.favorites = favs.filter((x) => x !== a.id); a.favorites = Math.max(0, (a.favorites || 0) - 1);
+      }
+      this.saveUser(me); this.saveAsset(a);
+      return okay({ asset: this.publicAsset(a, me) });
+    }
+    // Favourite catalog items (a wishlist): hats, clothes, gear, anything in the catalog. The
+    // catalog's "Most Favorited" counts them. (src/server/ServerItems.cpp has the same.)
+    if (name === 'item.favorite') {
+      if (me.userId === 0) return fail('Sign up first.');
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || !isCatalogItem(a.kind) || !this.canPlay(a, me)) return fail('That item doesn\'t exist (any more).');
+      const favs = me.itemFavorites || (me.itemFavorites = []);
+      const had = favs.includes(a.id), want = args.on !== false;
+      if (want && !had) {
+        if (favs.length >= kMaxItemFavorites) return fail('You have ' + kMaxItemFavorites + ' favourite items. Take one off first.');
+        favs.unshift(a.id); a.favorites = (a.favorites || 0) + 1;
+      } else if (!want && had) {
+        me.itemFavorites = favs.filter((x) => x !== a.id); a.favorites = Math.max(0, (a.favorites || 0) - 1);
       }
       this.saveUser(me); this.saveAsset(a);
       return okay({ asset: this.publicAsset(a, me) });
@@ -2933,12 +2952,14 @@ export class GbServerObject extends DurableObject {
       const sort = str(args, 'sort'), genre = str(args, 'genre');
       const ownedOnly = args.owned === true;   // your inventory (the Avatar page)
       const auctions = args.auctions === true;   // items up for auction right now (Exclusive ones too)
+      const favsOnly = args.favorites === true;   // catalog items you favourited (your wishlist)
       const found = [...this.assets.values()].filter((a) =>
         (!auctions || this.auctionOpen(a, t)) &&
         (sort !== 'featured' || a.featured > 0) &&
         (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
         (!ownedOnly || me.owned.includes(a.id)) &&
-        (!a.exclusive || ownedOnly || auctions || this.isStaff(me)) &&
+        (!favsOnly || (isCatalogItem(a.kind) && (me.itemFavorites || []).includes(a.id))) &&
+        (!a.exclusive || ownedOnly || auctions || favsOnly || this.isStaff(me)) &&
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
         (!creator || a.creator === creator) && this.canPlay(a, me) &&
         (!genre || (a.genres || []).includes(genre)) &&
@@ -2952,6 +2973,7 @@ export class GbServerObject extends DurableObject {
           ? ((y.likes || 0) + (y.dislikes || 0)) - ((x.likes || 0) + (x.dislikes || 0)) || y.sales - x.sales : y.plays - x.plays),
         updated: (x, y) => (y.updated || y.created) - (x.updated || x.created),
         featured: (x, y) => y.featured - x.featured,   // picked by staff, newest pick first
+        favorited: (x, y) => (y.favorites || 0) - (x.favorites || 0) || (y.plays + y.sales) - (x.plays + x.sales),
       }[sort] || ((x, y) => y.created - x.created);
       found.sort(by);
       const offset = Math.max(0, num(args, 'offset'));
@@ -3640,7 +3662,7 @@ export class GbServerObject extends DurableObject {
         if (Array.isArray(v[k]) && v[k].includes(u.id)) { v[k] = v[k].filter((x) => x !== u.id); changed = true; }
       if (changed) this.saveUser(v);
     }
-    for (const id of u.favorites || []) {
+    for (const id of [...(u.favorites || []), ...(u.itemFavorites || [])]) {
       const a = this.assets.get(id);
       if (a && a.favorites > 0) { a.favorites--; this.saveAsset(a); }
     }

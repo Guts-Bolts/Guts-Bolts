@@ -880,6 +880,15 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_test(NAME ServerRoadmapTests COMMAND ServerRoadmapTests)
 endif()
 
+# The server's favourite catalog items (item.favorite), with signed requests like the apps send.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
+    add_executable(ServerItemFavoritesTests tests/ServerItemFavoritesTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerItemFavoritesTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerItemFavoritesTests gb_version)
+    target_link_libraries(ServerItemFavoritesTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerItemFavoritesTests COMMAND ServerItemFavoritesTests)
+endif()
+
 # Studio's sample plugins.
 add_custom_command(TARGET GutsAndBolts POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GutsAndBolts>/plugins"
