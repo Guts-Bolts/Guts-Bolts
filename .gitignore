@@ -50,3 +50,8 @@ worker/roadmap-gathered.js
 # (the website draws avatars with a copy of the character model)
 !website/app/player.obj
 .dev.vars
+
+# The web Player (web/build.sh)
+build-web/
+web/out/
+website/play/

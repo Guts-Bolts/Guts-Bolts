@@ -80,6 +80,7 @@ public:
     explicit PlayerApp(PlayerOptions opts);
     ~PlayerApp();
     void run();
+    void frame();
 
 private:
     enum class Page { Home, Games, Avatar, GameInfo, Game, Catalog, Staff, Bolts, Create, People, Profile, Groups, Group, Friends, Login, Messages, Forum };
