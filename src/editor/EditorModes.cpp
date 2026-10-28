@@ -386,6 +386,8 @@ void Editor::testMesh(const std::string& steps) {
         else if (s == "xray") m_state.modeling.xray = !m_state.modeling.xray;
         else if (s.rfind("chain:", 0) == 0) { if (SceneNode* p = armaturePart()) addBone(p, std::atoi(s.c_str() + 6)); m_showArmature = true; }
         else if (s == "bind") { if (SceneNode* p = armaturePart()) { Skin::bindAutomatic(*p); MeshEdit::refresh(*p); } }
+        else if (s.rfind("rig:", 0) == 0) { if (SceneNode* p = armaturePart()) addRig(p, std::atoi(s.c_str() + 4), 4); m_showArmature = true; }
+        else if (s == "preview") { m_armPreview = !m_armPreview; m_showArmature = true; }
         else if (s.rfind("turn:", 0) == 0) {
             // turn:Bone2:x:y:z  turns a bone (degrees), like the Rotate tool.
             char name[64] = {0};
