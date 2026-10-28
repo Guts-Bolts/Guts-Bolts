@@ -68,13 +68,17 @@ bool drawForced(const char* appName, const UpdateChecker::Info& info) {
                            left > 0 ? ("Starting the updater in " + std::to_string((int)left + 1) + "...").c_str() : "Starting...");
         if (left <= 0) {
             if (UpdateChecker::launchUpdater(g_appName.c_str())) quit = true;
-            else g_error = "Couldn't start the updater. Download the newest version from gutsandbolts.net.";
+            else g_error = "Couldn't start the updater.";
         }
     } else {
         ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", g_error.c_str());
-        if (ImGui::Button("Try again", ImVec2(120, 30))) { g_error.clear(); g_forcedAt = ImGui::GetTime(); }
+        ImGui::TextDisabled("You can download the new version yourself and unzip it over this folder.");
+        ImGui::Spacing();
+        if (ImGui::Button("Download it myself", ImVec2(160, 30))) openUrl(UpdateChecker::downloadPage());
         ImGui::SameLine();
-        if (ImGui::Button("Use this version for now", ImVec2(200, 30))) { g_forced = 0; g_dismissed = true; }
+        if (ImGui::Button("Try again", ImVec2(100, 30))) { g_error.clear(); g_forcedAt = ImGui::GetTime(); }
+        ImGui::SameLine();
+        if (ImGui::Button("Use this version for now", ImVec2(190, 30))) { g_forced = 0; g_dismissed = true; }
     }
     ImGui::PopTextWrapPos();
     ImGui::EndGroup();
@@ -98,6 +102,10 @@ bool draw(const char* appName, bool canForce) {
         const bool onLaunch = ImGui::GetTime() - g_launch < kLaunchWindow;
         g_forced = info.state == UpdateChecker::State::Available && info.plainlyBehind && onLaunch && UpdateChecker::canUpdate() ? 1 : 0;
         g_forcedAt = ImGui::GetTime();
+        // The last try at this version didn't work: say why and let the person choose,
+        // instead of closing and reopening over and over.
+        if (g_forced == 1 && !info.lastTryFailed.empty())
+            g_error = "The update didn't work last time: " + info.lastTryFailed + ".";
     }
     if (g_forced == 1) {
         if (canForce) return drawForced(appName, info);
@@ -137,7 +145,12 @@ bool draw(const char* appName, bool canForce) {
         ImGui::TextDisabled("Latest: %s", info.latestMessage.c_str());
         ImGui::PopTextWrapPos();
     }
-    if (!g_error.empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", g_error.c_str());
+    if (!g_error.empty()) {
+        ImGui::PushTextWrapPos(w - 16);
+        ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", g_error.c_str());
+        ImGui::PopTextWrapPos();
+        if (ImGui::SmallButton("Download it myself")) openUrl(UpdateChecker::downloadPage());
+    }
     ImGui::Spacing();
 
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.95f, 0.5f, 0.15f, 1));
@@ -146,7 +159,7 @@ bool draw(const char* appName, bool canForce) {
     ImGui::BeginDisabled(!UpdateChecker::canUpdate());
     if (ImGui::Button("Update now", ImVec2(120, 30))) {
         if (UpdateChecker::launchUpdater(appName)) quit = true;
-        else g_error = "Couldn't start the updater. Download the newest version from gutsandbolts.net.";
+        else g_error = "Couldn't start the updater.";
     }
     ImGui::EndDisabled();
     ImGui::PopStyleColor(3);

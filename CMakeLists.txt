@@ -946,6 +946,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(RobloxMeshFormatTests PRIVATE gb_engine)
     add_test(NAME RobloxMeshFormatTests COMMAND RobloxMeshFormatTests)
 
+    # The updater: a failed update doesn't loop, and its script really replaces the files.
+    add_executable(UpdaterTests tests/UpdaterTests.cpp)
+    target_link_libraries(UpdaterTests PRIVATE gb_engine)
+    add_test(NAME UpdaterTests COMMAND UpdaterTests)
+
     # Every sample game in games/ loads and runs for a few seconds with no script errors.
     add_executable(SampleGamesTests tests/SampleGamesTests.cpp)
     target_link_libraries(SampleGamesTests PRIVATE gb_engine)
