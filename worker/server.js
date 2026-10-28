@@ -645,6 +645,11 @@ const HEADLESS_HEAD_ID = 'item-headless-head';
 // Gutstober: Guts&Bolts' Halloween month (all of October). Things made for it, like
 // the Pumpkin hat, are timed items: they go off sale when it ends (midnight UTC,
 // November 1st).
+// Which items those are goes by asset ID, never by name: anyone can call their own
+// upload "Pumpkin". (src/server/Server.cpp has the same list.)
+export const GUTSTOBER_ITEMS = new Set([
+  'hat-95db253c1f',   // the Pumpkin hat (asset ID 24)
+]);
 function gutstoberEnd(t) {
   const d = new Date(t * 1000);
   return Date.UTC(d.getUTCFullYear(), 10, 1) / 1000;
@@ -1474,15 +1479,23 @@ export class GbServerObject extends DurableObject {
     }
   }
 
-  // Pumpkin items in the catalog are Gutstober items: they go off sale when it ends.
+  // The Gutstober items (GUTSTOBER_ITEMS, by asset ID) go off sale when it ends.
   // Done once per item (staff can change the date afterwards on the item's page).
   timeGutstoberItems() {
     const t = now();
     for (const a of this.assets.values()) {
-      if (!isCatalogItem(a.kind) || a.timedFor || a.exclusive || !/pumpkin/i.test(a.name || '')) continue;
-      a.timedFor = 'gutstober';
-      a.offsaleAt = gutstoberEnd(a.created || t);
-      this.saveAsset(a);
+      if (GUTSTOBER_ITEMS.has(a.id)) {
+        if (!isCatalogItem(a.kind) || a.timedFor || a.exclusive) continue;
+        a.timedFor = 'gutstober';
+        a.offsaleAt = gutstoberEnd(a.created || t);
+        this.saveAsset(a);
+      } else if (a.timedFor === 'gutstober' && a.creator !== this.official) {
+        // Timed by mistake: this used to go by name, so players' own "Pumpkin" uploads
+        // (like item 140) were timed too. Put them back on sale for good.
+        delete a.timedFor;
+        a.offsaleAt = 0;
+        this.saveAsset(a);
+      }
     }
   }
   isOffsale(a, t = now()) { return !!a.offsaleAt && t >= a.offsaleAt; }
