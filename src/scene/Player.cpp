@@ -934,7 +934,7 @@ bool Player::isClimbable(const SceneNode* n) {
     return n->isPart() && n->canCollide && (nameHas(n, "Truss") || nameHas(n, "Ladder") || flagged(n, "Climbable"));
 }
 bool Player::isSeat(const SceneNode* n) {
-    return n->isPart() && (n->name == "Seat" || n->name == "VehicleSeat" || flagged(n, "Seat"));
+    return n->isPart() && (n->name == "Seat" || flagged(n, "Seat") || Vehicles::isVehicleSeat(n));
 }
 bool Player::seatDisabled(const SceneNode* n) {
     const Attribute* a = n->findAttribute("Disabled");

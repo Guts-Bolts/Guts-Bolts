@@ -289,7 +289,8 @@ public:
     static bool isWater(const SceneNode* n);
     // Seats, like Roblox's: touch one and you sit on it (facing its Front), riding
     // along if it moves; jump to get up. A part is a seat when it's called Seat /
-    // VehicleSeat or tagged "Seat"; an attribute Disabled = true switches it off.
+    // VehicleSeat or tagged "Seat" (or "VehicleSeat", see Vehicles.h); an attribute
+    // Disabled = true switches it off.
     static bool isSeat(const SceneNode* n);
     static bool seatDisabled(const SceneNode* n);
     bool        sitting() const { return m_seatId != 0 || m_sitHere; }

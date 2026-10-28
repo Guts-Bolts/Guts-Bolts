@@ -4,7 +4,7 @@ export default {
   items: [
     'Every piece of work on Guts&Bolts now puts itself on Create > Roadmap while it\'s being made',
     'Items that came from the work show a "See the work" link so you can follow along',
-    'Added what\'s being made right now: playing in the browser (for iPhones too) and vehicles you can drive',
+    'Added what\'s being made right now, like playing in the browser (for iPhones too)',
     'Staff can still add their own items on the website like before',
   ],
 };

@@ -438,6 +438,7 @@ add_library(gb_engine STATIC
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
     src/scene/Weather.cpp
+    src/scene/Vehicles.cpp
     src/scene/LinkedModels.cpp
     src/scene/MaterialGraph.cpp
     src/scene/Animation.cpp
@@ -930,6 +931,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(LinkedModelsTests tests/LinkedModelsTests.cpp)
     target_link_libraries(LinkedModelsTests PRIVATE gb_engine)
     add_test(NAME LinkedModelsTests COMMAND LinkedModelsTests)
+
+    # Vehicles: a VehicleSeat drives a car's motor wheels and pushes a boat.
+    add_executable(VehiclesTests tests/VehiclesTests.cpp)
+    target_link_libraries(VehiclesTests PRIVATE gb_engine)
+    add_test(NAME VehiclesTests COMMAND VehiclesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # MemoryStoreService: the store's rules and the script side, played offline.
     add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)

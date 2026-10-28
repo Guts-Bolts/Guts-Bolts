@@ -9,6 +9,7 @@
 #include "Blast.h"
 #include "Animation.h"
 #include "CollisionGroups.h"
+#include "Vehicles.h"
 #include <functional>
 #include <map>
 #include <memory>
@@ -222,6 +223,8 @@ public:
     NpcSystem&       npcs() { return m_npcs; }
     // Moving water (waves, floating, splashes) while the game runs.
     WaterSystem&     water() { return m_water; }
+    // VehicleSeats: who's driving what, and the host spinning the wheels (Vehicles.h).
+    Vehicles&        vehicles() { return m_vehicles; }
     // Hills and valleys sculpted in Studio (empty in most places). See Terrain.h.
     Terrain&         terrain() { return m_terrain; }
     const Terrain&   terrain() const { return m_terrain; }
@@ -269,6 +272,7 @@ private:
     std::vector<RemoteCharacter> m_remotes;
     NpcSystem                  m_npcs;
     WaterSystem                m_water;
+    Vehicles                   m_vehicles;
     Terrain                    m_terrain;
     std::unique_ptr<SceneNode> m_terrainNode;
     std::unique_ptr<SceneNode> m_cameraNode;
