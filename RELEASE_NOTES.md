@@ -1,3 +1,37 @@
+# Guts&Bolts 0.7.7: Get Jiggy With It! (October 28, 2026)
+
+Bones can wiggle now. Tails bounce, eyes follow you, arms reach for things,
+and you can rig and skin your own meshes right in Studio. While we were at it,
+it started raining, people learned to swim, cars showed up, and iPhones can
+play in the browser.
+
+## New in Studio
+- Jiggle, LookAt and IK bones, ready-made rigs (even a whole humanoid
+  skeleton) and a brush to paint weights, so you can make your own skinned
+  meshes.
+- Linked models: change one copy of a model and every copy follows.
+- Material Graph: make materials from boxes and wires.
+- Roblox material variants now come along when you import or export.
+
+## New in games
+- Weather: rain and snow, with puddles and snow piling up on things.
+- Real swimming, PlatformStand ragdolls, and getting knocked off seats.
+- Vehicles: sit in a VehicleSeat and drive the car or boat.
+- MemoryStoreService: quick data every server of a game shares.
+- Scripts can ask where the mouse points in the 3D world (getmouse3d,
+  mouse.Hit, mouse.Target).
+
+## New on the website and phones
+- Play in the browser at gutsandbolts.net/play/, so iPhones can play
+  without the App Store.
+- A free guide to put the iPhone Player on your own phone.
+- A public roadmap on the Create page: see what's coming, suggest ideas
+  and vote. It fills itself in as work happens.
+
+## Fixes
+- The mouse points at the right spot when you play in Studio.
+- No more red "conflicting ID" error box in Studio.
+
 # Guts&Bolts 0.7.6: We Kept Adding Buttons (October 26, 2026)
 
 Nobody told us to stop, so we didn't. Studio can now snap joints, blow things

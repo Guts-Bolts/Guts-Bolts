@@ -1,5 +1,5 @@
 export default {
-  id: 'copy-that', name: 'Copy That', time: 1793197000, tag: 'Studio',
+  id: 'copy-that', name: 'Copy That', version: '0.7.7', time: 1793197000, tag: 'Studio',
   summary: 'Linked models in Studio: put copies of one model all over your game, change one, and every copy changes with it.',
   items: [
     'Right-click a model and pick Make Linked Model, then copy it around with Duplicate or Copy and Paste',

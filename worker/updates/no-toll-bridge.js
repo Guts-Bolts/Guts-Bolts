@@ -1,5 +1,5 @@
 export default {
-  id: 'no-toll-bridge', name: 'No Toll Bridge', time: 1793104241, tag: 'Player',
+  id: 'no-toll-bridge', name: 'No Toll Bridge', version: '0.7.7', time: 1793104241, tag: 'Player',
   summary: 'Put the iPhone Player on your own phone for free, no paid Apple account needed.',
   items: [
     'New step-by-step guide for installing the iPhone and iPad Player from a Mac with a free Apple ID',
