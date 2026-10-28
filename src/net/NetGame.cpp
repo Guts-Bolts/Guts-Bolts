@@ -212,6 +212,7 @@ std::string nodeState(const SceneNode* n) {
     if (n->kind == NodeKind::Model && n->primaryPart) extra += "|pp" + std::to_string(n->primaryPart);
     if (n->collisionGroup != CollisionGroups::kDefault) extra += "|cg:" + n->collisionGroup;
     if (!n->materialVariant.empty()) extra += "|mv:" + n->materialVariant;
+    if (n->isBone() && !(n->rig == BoneRig{})) extra += "|bn:" + Serializer::boneRigToJson(n->rig).dump();   // Jiggle / IK...
     if (!extra.empty()) return std::string(buf) + extra;   // (parts and models: none of the kinds below)
     if (n->isGui()) return std::string(buf) + Serializer::guiToJson(n->gui).dump();   // text, colours, sizes...
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
@@ -244,6 +245,7 @@ json nodeUpdate(const SceneNode* n) {
     if (n->isSky()) u["sky"] = Serializer::skyToJson(n->sky);
     if (n->isMaterialVariant()) u["var"] = Serializer::variantToJson(n->variant);
     if (n->isConstraint() && usesJointProps(n->constraintType)) u["jt"] = Serializer::jointToJson(n->joint);
+    if (n->isBone()) u["bn"] = Serializer::boneRigToJson(n->rig);
     u.update(nodeExtras(n));
     if (n->isParticles()) u["px"] = Serializer::particleToJson(n->particle, n->enabled);
     return u;
@@ -281,6 +283,7 @@ void applyUpdate(SceneNode* n, const json& u) {
     if (n->isSky() && u.contains("sky") && u["sky"].is_object()) Serializer::skyFromJson(u["sky"], n->sky);
     if (n->isMaterialVariant() && u.contains("var") && u["var"].is_object()) Serializer::variantFromJson(u["var"], n->variant);
     if (n->isConstraint() && u.contains("jt") && u["jt"].is_object()) Serializer::jointFromJson(u["jt"], n->joint);
+    if (n->isBone() && u.contains("bn") && u["bn"].is_object()) Serializer::boneRigFromJson(u["bn"], n->rig);   // (the wobble itself isn't sent)
     applyExtras(n, u);
     if (n->isParticles() && u.contains("px") && u["px"].is_object()) Serializer::particleFromJson(u["px"], n->particle, n->enabled, true);
 }

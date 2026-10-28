@@ -177,6 +177,7 @@ private:
     glm::mat4 m_meshGizmo{1.0f};
     bool      m_meshDragging = false;
     bool      m_boxing = false;
+    bool      m_weightPainting = false;   // dragging the weight brush (one undo step)
     ImVec2    m_boxStart{0, 0};
     ImVec2    m_viewMin{0, 0}, m_viewMax{0, 0};   // where the 3D view was drawn last frame
 };

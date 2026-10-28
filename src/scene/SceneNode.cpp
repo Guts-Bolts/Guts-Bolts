@@ -94,8 +94,10 @@ bool SceneNode::isAncestorOf(const SceneNode* other) const {
 }
 
 glm::mat4 SceneNode::worldMatrix() const {
-    if (parent) return parentFrame() * transform.matrix();
-    return transform.matrix();
+    glm::mat4 m = parent ? parentFrame() * transform.matrix() : transform.matrix();
+    // A Jiggle / LookAt / IK bone's extra turn this frame (things attached to it follow).
+    if (bone && rig.live != glm::quat(1.0f, 0.0f, 0.0f, 0.0f)) m = m * glm::mat4_cast(rig.live);
+    return m;
 }
 
 glm::mat4 SceneNode::parentFrame() const {

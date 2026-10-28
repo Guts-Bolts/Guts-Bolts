@@ -931,6 +931,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(LinkedModelsTests PRIVATE gb_engine)
     add_test(NAME LinkedModelsTests COMMAND LinkedModelsTests)
 
+    # Jiggle, LookAt and IK bones, saving them, scripts, and the weight brush.
+    add_executable(BoneRigTests tests/BoneRigTests.cpp)
+    target_link_libraries(BoneRigTests PRIVATE gb_engine)
+    add_test(NAME BoneRigTests COMMAND BoneRigTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # MemoryStoreService: the store's rules and the script side, played offline.
     add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)
     target_link_libraries(MemoryStoreTests PRIVATE gb_engine)

@@ -1990,6 +1990,17 @@ int inst_index(lua_State* L) {
         if (is(k, "Position"))      { LuaApi::pushVector3(L, n->transform.position); return 1; }
         if (is(k, "WorldPosition")) { LuaApi::pushVector3(L, worldPosition(n)); return 1; }
     }
+    if (n->isBone()) {   // what the bone does by itself (Guts&Bolts' own; see Skin.h)
+        const BoneRig& r = n->rig;
+        if (is(k, "BoneType"))    { lua_pushstring(L, Skin::typeName((int)r.type)); return 1; }
+        if (is(k, "Stiffness"))   { lua_pushnumber(L, r.stiffness); return 1; }
+        if (is(k, "Damping"))     { lua_pushnumber(L, r.damping); return 1; }
+        if (is(k, "Gravity"))     { lua_pushnumber(L, r.gravity); return 1; }
+        if (is(k, "ChainLength")) { lua_pushinteger(L, r.chain); return 1; }
+        if (is(k, "Influence"))   { lua_pushnumber(L, r.influence); return 1; }
+        if (is(k, "Length"))      { lua_pushnumber(L, glm::length(Skin::localTip(n))); return 1; }
+        if (is(k, "Target"))      { if (r.target && E(L)->scene()->findById(r.target)) LuaApi::pushInstance(L, r.target); else lua_pushnil(L); return 1; }
+    }
     if (n->isGui() && guiIndex(L, n, k)) return 1;
     if (n->isCamera()) {   // a Camera object (a ViewportFrame's CurrentCamera)
         if (is(k, "FieldOfView")) { lua_pushnumber(L, n->fieldOfView); return 1; }
@@ -2329,6 +2340,23 @@ int inst_set(lua_State* L) {
     if (n->isAttachment()) {
         if (is(k, "Position"))      { n->transform.position = LuaApi::checkVector3(L, 3); return 0; }
         if (is(k, "WorldPosition")) { setWorldPosition(L, n, LuaApi::checkVector3(L, 3)); return 0; }
+    }
+    if (n->isBone()) {
+        BoneRig& r = n->rig;
+        auto unit = [&] { return std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); };
+        if (is(k, "BoneType")) {
+            int t = Skin::typeFrom(luaL_checkstring(L, 3));
+            if (t < 0) return luaL_error(L, "BoneType must be Normal, Jiggle, LookAt or IK");
+            r.type = (BoneType)t;
+            return 0;
+        }
+        if (is(k, "Stiffness"))   { r.stiffness = unit(); return 0; }
+        if (is(k, "Damping"))     { r.damping = unit(); return 0; }
+        if (is(k, "Influence"))   { r.influence = unit(); return 0; }
+        if (is(k, "Gravity"))     { r.gravity = std::clamp((float)luaL_checknumber(L, 3), -1000.0f, 1000.0f); return 0; }
+        if (is(k, "ChainLength")) { r.chain = std::clamp((int)luaL_checkinteger(L, 3), 1, 16); return 0; }
+        if (is(k, "Length"))      { r.length = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 10000.0f); return 0; }
+        if (is(k, "Target"))      { SceneNode* t = lua_isnoneornil(L, 3) ? nullptr : LuaApi::checkNode(L, 3); r.target = t ? t->id : 0; return 0; }
     }
     if (n->isGui() && guiNewIndex(L, n, k)) return 0;
     if (n->isCamera()) {

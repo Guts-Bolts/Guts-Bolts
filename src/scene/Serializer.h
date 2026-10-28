@@ -13,6 +13,7 @@ struct HighlightProps;
 struct EffectProps;
 struct PostEffectProps;
 struct SkyProps;
+struct BoneRig;
 struct MaterialVariantProps;
 struct JointProps;
 struct CollisionGroups;
@@ -57,6 +58,9 @@ nlohmann::json             skyToJson(const SkyProps& s);
 void                       skyFromJson(const nlohmann::json& j, SkyProps& s);
 nlohmann::json             variantToJson(const MaterialVariantProps& v);
 void                       variantFromJson(const nlohmann::json& j, MaterialVariantProps& v);
+// A Bone's type and its settings (Jiggle / LookAt / IK), the same way.
+nlohmann::json             boneRigToJson(const BoneRig& r);
+void                       boneRigFromJson(const nlohmann::json& j, BoneRig& r);
 // A ball-socket / prismatic / cylindrical joint's settings, the same way.
 nlohmann::json             jointToJson(const JointProps& p);
 void                       jointFromJson(const nlohmann::json& j, JointProps& p);
