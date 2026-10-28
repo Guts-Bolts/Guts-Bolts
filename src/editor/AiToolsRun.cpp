@@ -7,6 +7,7 @@
 #include "Editor.h"
 #include "../scripting/ScriptHistory.h"
 #include "MultiTest.h"
+#include "ModelExport.h"
 #include "panels/ViewportPanel.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
@@ -30,6 +31,8 @@ extern "C" {
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <sstream>
@@ -1150,6 +1153,36 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             list.push_back(j);
         }
         return done({{"recording", ScriptHistory::recording()}, {"total", all.size()}, {"entries", list}});
+    }
+    if (name == "export_model") {
+        if (m_playing) return fail("PLAYING", "Stop the playtest first.", "playtest stop.");
+        const std::string fmt = str("format");
+        const ModelExport::Format* f = ModelExport::formatFor("x." + fmt);
+        if (!f) {
+            json choices = json::array();
+            for (const auto& k : ModelExport::formats()) choices.push_back(std::string(k.ext).substr(1));
+            return failWith("INVALID_INPUT", "format must be one of valid_choices.", "format: \"fbx\"", choices);
+        }
+        std::vector<SceneNode*> picked;
+        if (args.contains("objects") && args["objects"].is_array())
+            for (const auto& o : args["objects"]) {
+                SceneNode* n = nullptr;
+                if (!o.is_string() || !resolve(o.get<std::string>(), "objects", n)) return o.is_string() ? refErr : fail("INVALID_INPUT", "objects are object ids or paths.", "objects: [\"#42\"]");
+                picked.push_back(n);
+            }
+        std::string file = str("name");
+        if (file.empty()) file = picked.size() == 1 ? picked[0]->name : (m_scene->info().title.empty() ? "My Game" : m_scene->info().title);
+        file.erase(std::remove_if(file.begin(), file.end(), [](char c) { return std::strchr("/\\:*?\"<>|", c) != nullptr; }), file.end());
+        if (file.empty()) file = "Export";
+        const std::string folder = str("folder").empty() ? Paths::gamesFolder().string() : str("folder");
+        const std::string path = (std::filesystem::path(folder) / (file + f->ext)).string();
+        std::string message;
+        int parts = 0, tris = 0;
+        if (!exportTo(path, picked, message, &parts, &tris)) return fail("EXPORT_FAILED", message, "Pick objects that have parts in them.");
+        std::error_code ec;
+        const auto bytes = std::filesystem::file_size(path, ec);
+        Log::system(message);
+        return done({{"path", path}, {"format", fmt}, {"parts", parts}, {"triangles", tris}, {"bytes", ec ? 0 : (long long)bytes}});
     }
     if (name == "compare_scenes") {
         const std::string action = str("action");

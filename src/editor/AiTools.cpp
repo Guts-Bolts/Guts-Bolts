@@ -407,6 +407,25 @@ const std::vector<Tool>& tools() {
          schema({{"action", {{"type", "string"}, {"enum", {"save_copy", "compare", "merge"}}}}, {"name", {{"type", "string"}}},
                  {"other", {{"type", "string"}}}, {"base", {{"type", "string"}}},
                  {"changes", {{"type", "array"}, {"items", {{"type", "integer"}}}}}}, {"action"})},
+        {"export_model", "Export the game or objects as a 3D model or Roblox file", "SCENE", false, false, true, Risk::Low,
+         {"Studio's File > Export As: writes the whole game, or the objects you name (and everything inside them), as another "
+          "type of file. 3D model files keep the shapes and colours (1 unit = 1 stud, Y up): obj (with a .mtl), fbx, glb, "
+          "gltf (with a .bin), mesh (Roblox's own FileMesh, every part joined into one shape, colours baked onto the corners), "
+          "stl (3D printing), ply, dae. Roblox files keep everything: rbxmx (a model), rbxlx (the whole game as a place).",
+          "\"Export my castle as an FBX for Blender\", \"make an STL of this so I can 3D print it\", \"turn these parts into a "
+          "Roblox .mesh\", \"save the game for Roblox Studio\".",
+          "To add objects, use insert_object. To save the game itself, File > Save.",
+          "format: obj | fbx | glb | gltf | mesh | stl | ply | dae | rbxmx | rbxlx. objects: object ids or paths (left out = the "
+          "whole game). name: the file's name without the type (default: the object's or game's name). folder: where to "
+          "write it (default: the games folder).",
+          "{path, format, parts, triangles, bytes}.",
+          "Something with a shape (parts, or Models with parts in them); not during a playtest.",
+          "Writes (or replaces) the file; the game doesn't change.",
+          "get_game_tree -> export_model {format: \"fbx\", objects: [\"#42\"]}.",
+          "\"Export the car as a .glb.\""},
+         schema({{"format", {{"type", "string"}, {"enum", {"obj", "fbx", "glb", "gltf", "mesh", "stl", "ply", "dae", "rbxmx", "rbxlx"}}}},
+                 {"objects", {{"type", "array"}, {"items", kObject}}}, {"name", {{"type", "string"}}},
+                 {"folder", {{"type", "string"}}}}, {"format"})},
         {"physics_replay", "Record the physics, look at any moment, save physics tests", "DEBUG", false, false, false, Risk::Low,
          {"Studio's Physics Replay: runs only the physics (no scripts, no players) on a copy of the scene as it is now, "
           "60 steps a second, and remembers where every loose (unanchored) part was each step. Studio shows any frame of "
@@ -755,6 +774,7 @@ json workflowOf(const std::string& name) {
         {"script_history", {{"playtest"}, {"read_script", "edit_script"}}},
         {"physics_replay", {{"get_game_tree"}, {"screenshot", "playtest"}}},
         {"compare_scenes", {{"checkpoint"}, {"get_game_tree", "undo"}}},
+        {"export_model", {{"get_game_tree"}, {}}},
         {"get_errors", {{"playtest"}, {"read_script", "edit_script"}}},
         {"diagnose_object", {{"find_objects"}, {"set_property", "edit_script"}}},
         {"validate_scene", {{}, {"diagnose_object", "playtest"}}},

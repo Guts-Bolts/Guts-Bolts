@@ -437,7 +437,7 @@ void Editor::renderToolbar() {
                 if (smallButton("Pivot to middle", Icons::Id::Transform, false, editable && sel->kind == NodeKind::Model,
                                 "Move this Model's origin to the middle of its parts"))
                     centerModelPivot();
-                if (smallButton("Export", Icons::Id::Export, false, !m_playing, "Export to Roblox (.rbxlx)")) exportRoblox(false);
+                if (smallButton("Export", Icons::Id::Export, false, !m_playing, "Export As: Roblox, .obj, .fbx, .glb, .mesh, .stl...")) openExportAs(m_scene->selected() != nullptr);
             }
         }
         {

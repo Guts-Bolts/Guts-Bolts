@@ -1552,23 +1552,6 @@ void Editor::openFile(const std::string& path) {
     resetHistory();
 }
 
-void Editor::exportRoblox(bool selectionOnly) {
-    std::string name = m_scene->info().title.empty() ? "My Game" : m_scene->info().title;
-    std::string err;
-    if (selectionOnly) {
-        auto sel = m_scene->selectionRoots();
-        if (sel.empty()) { Log::warn("Select something to export first."); return; }
-        std::string path = (Paths::gamesFolder() / (sel.back()->name + ".rbxmx")).string();
-        if (RobloxFile::exportModel(*m_scene, sel, path, err)) Log::system("Exported a Roblox model to " + path);
-        else Log::error("Export failed: " + err);
-    } else {
-        std::string path = (Paths::gamesFolder() / (name + ".rbxlx")).string();
-        if (RobloxFile::exportPlace(*m_scene, path, err))
-            Log::system("Exported a Roblox place to " + path + " (open it in Roblox Studio)");
-        else Log::error("Export failed: " + err);
-    }
-}
-
 void Editor::saveFile(const std::string& path, bool sync) {
     if (m_playing) togglePlay();
     // A new game is signed by whoever made it (it shows on the site's Create page).
@@ -2613,9 +2596,10 @@ void Editor::renderMenuBar() {
             ImGui::SetTooltip("3D models (.fbx .obj .gltf .glb .stl .ply), pictures, sounds and scripts.\n"
                               "You can also just drag files from your computer onto Studio.");
         if (ImGui::MenuItem("Import Roblox File (.rbxl / .rbxm)...")) { m_pending = Pending::Open; m_openOpen = true; }
-        if (ImGui::MenuItem("Export to Roblox Place (.rbxlx)")) exportRoblox(false);
-        if (ImGui::MenuItem("Export Selection to Roblox Model (.rbxmx)", nullptr, false, m_scene->selected() != nullptr))
-            exportRoblox(true);
+        if (ImGui::MenuItem("Export As...", nullptr, false, !m_playing)) openExportAs(m_scene->selected() != nullptr);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Save the game or what you picked as another file type:\n"
+                              "Roblox (.rbxmx .rbxlx), .obj, .fbx, .glb, .gltf, Roblox .mesh, .stl, .ply or .dae.");
         ImGui::Separator();
         if (ImGui::MenuItem(m_team->active() ? "Team Create (on)..." : "Team Create...")) m_openTeam = true;
         ImGui::Separator();
@@ -2762,6 +2746,7 @@ void Editor::renderDialogs() {
     if (m_openOpen)    { ImGui::OpenPopup("Open Game");       m_openOpen = false; m_openPathInput.clear(); }
     if (m_openInfo)    { ImGui::OpenPopup("Game Settings");   m_openInfo = false; }
     if (m_openTeam)    { ImGui::OpenPopup("Team Create");     m_openTeam = false; m_teamError.clear(); }
+    renderExportDialog();
 
     // --- Team Create: host or join ---
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -3063,6 +3048,6 @@ void Editor::selectionMenuItems(bool inViewport) {
         if (ImGui::MenuItem(sel && sel->locked ? "Unlock" : "Lock", "Alt+L")) later([this] { toggleLocked(); });
     }
     if (inViewport && any && ImGui::MenuItem(sel->visible ? "Hide" : "Show", "H")) later([this] { toggleHidden(); });
-    if (ImGui::MenuItem("Export to Roblox Model (.rbxmx)", nullptr, false, any)) later([this] { exportRoblox(true); });
+    if (ImGui::MenuItem("Export As...", nullptr, false, any && !m_playing)) later([this] { openExportAs(true); });
     publishMenuItem();
 }
