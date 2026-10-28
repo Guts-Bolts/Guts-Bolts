@@ -353,6 +353,11 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
     const long long off = a.meta.is_object() ? a.meta.value("offsaleAt", 0LL) : 0LL;
     j["offsaleAt"] = off;
     j["offsale"] = off > 0 && Online::unixNow() >= off;
+    // Catalog items can be favourited too (item.favorite in ServerItems.cpp), for "Most Favorited".
+    if (Online::isCatalogItem(a.kind)) {
+        j["favorites"] = a.meta.is_object() ? a.meta.value("favorites", 0LL) : 0LL;
+        if (me) j["myFavorite"] = std::find(me->itemFavorites.begin(), me->itemFavorites.end(), a.id) != me->itemFavorites.end();
+    }
     // Exclusive items aren't in the catalog; a gift box hands out another item (ServerItems.cpp).
     if (a.meta.is_object() && a.meta.value("exclusive", false)) j["exclusive"] = true;
     if (json au = auctionJson(a, me); !au.is_null()) j["auction"] = au;
@@ -1324,14 +1329,16 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::string sort = str("sort");
         const bool ownedOnly = args.value("owned", false);   // your inventory (the Avatar page)
         const bool auctions = args.value("auctions", false);  // items up for auction right now (Exclusive ones too)
+        const bool favsOnly = args.value("favorites", false); // catalog items you favourited (your wishlist)
         const long long listNow = Online::unixNow();
         std::vector<const Asset*> found;
         for (const auto& [id, a] : m_assets) {
             if (auctions && !auctionOpen(a, listNow)) continue;
             if (!kind.empty() && a.kind != kind && !(kind == "clothing" && Online::isCatalogItem(a.kind))) continue;
             if (ownedOnly && !me.owned.count(a.id)) continue;
+            if (favsOnly && (!Online::isCatalogItem(a.kind) || std::find(me.itemFavorites.begin(), me.itemFavorites.end(), a.id) == me.itemFavorites.end())) continue;
             if (a.meta.is_object() && a.meta.value("promoOnly", false) && (!ownedOnly || !me.owned.count(a.id))) continue; // Promo-only items never appear in the catalog
-            if (!ownedOnly && !auctions && !isStaff(me) && a.meta.is_object() && a.meta.value("exclusive", false)) continue;
+            if (!ownedOnly && !auctions && !favsOnly && !isStaff(me) && a.meta.is_object() && a.meta.value("exclusive", false)) continue;
             if (sort == "featured" && a.meta.value("featured", 0LL) <= 0) continue;   // picked by staff
             if (!creator.empty() && a.creator != creator) continue;
             if (!q.empty() && lower(a.name).find(q) == std::string::npos) continue;
@@ -1341,6 +1348,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::sort(found.begin(), found.end(), [&](const Asset* x, const Asset* y) {
             if (sort == "popular") return x->plays + x->sales > y->plays + y->sales;
             if (sort == "featured") return x->meta.value("featured", 0LL) > y->meta.value("featured", 0LL);   // newest pick first
+            if (sort == "favorited") {   // the catalog's "Most Favorited"
+                const long long fx = x->meta.is_object() ? x->meta.value("favorites", 0LL) : 0LL, fy = y->meta.is_object() ? y->meta.value("favorites", 0LL) : 0LL;
+                if (fx != fy) return fx > fy;
+                return x->plays + x->sales > y->plays + y->sales;
+            }
             if (sort == "rated") {   // models: the Wilson score, then the most votes; games: likes pulled towards 50%
                 const bool models = x->kind == "model" && y->kind == "model";
                 const double rx = x->kind == "model" ? wilsonScore(x->likes, x->dislikes) : gameRating(x->likes, x->dislikes);
@@ -1693,6 +1705,7 @@ void GbServer::saveUsers() {
         if (!u.animPack.empty()) all[id]["animPack"] = u.animPack;
         all[id]["outfits"] = u.outfits;
         all[id]["favorites"] = u.favorites;
+        if (!u.itemFavorites.empty()) all[id]["itemFavorites"] = u.itemFavorites;
         all[id]["recent"] = u.recent;
         all[id]["inbox"] = u.inbox;
         all[id]["notes"] = u.notes;
@@ -1911,9 +1924,10 @@ void GbServer::load() {
                 if (j.contains("receipts") && j["receipts"].is_array()) u.receipts = j["receipts"];
                 if (j.contains("privateServers") && j["privateServers"].is_object()) u.privateServers = j["privateServers"];
                 if (j.contains("sent") && j["sent"].is_array()) u.sent = j["sent"];
-                for (const char* k : {"favorites", "recent"})
+                for (const char* k : {"favorites", "recent", "itemFavorites"})
                     if (j.contains(k) && j[k].is_array())
-                        for (const auto& g : j[k]) if (g.is_string()) (std::string(k) == "favorites" ? u.favorites : u.recent).push_back(g.get<std::string>());
+                        for (const auto& g : j[k]) if (g.is_string())
+                            (std::string(k) == "favorites" ? u.favorites : std::string(k) == "recent" ? u.recent : u.itemFavorites).push_back(g.get<std::string>());
                 u.messageDay = j.value("messageDay", std::string());
                 u.messagesToday = j.value("messagesToday", 0);
                 u.blurb = j.value("blurb", std::string());

@@ -31,6 +31,7 @@ constexpr long long kPastTradesPage      = 20;
 constexpr size_t    kMaxShots            = 5;
 constexpr size_t    kShotSize            = 2u << 20;
 constexpr size_t    kMaxUpdates          = 300;
+constexpr size_t    kMaxItemFavorites    = 500;   // catalog items on someone's wishlist
 constexpr int       kTemplateW = 585, kTemplateH = 559;   // shirts and pants
 constexpr unsigned  kTShirtMaxSide = 1024;
 const char* const   kUpdateTags[] = {"Engine", "Studio", "Website", "Player", "Server", "Fix"};
@@ -426,6 +427,31 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         staffDid(me, "auction", "Cancelled the auction for \"" + a.name + "\"", a.creator);
         saveAssets(); saveUsers();
         json r = assetReply(a); r["me"] = meJson(me); return r;
+    }
+
+    // --- Favourite catalog items (a wishlist), counted for the catalog's "Most Favorited" ---
+    if (name == "item.favorite") {
+        if (me.userId == 0) return fail("Sign up first.");
+        auto it = findAsset(str("id"));
+        if (it == m_assets.end() || !Online::isCatalogItem(it->second.kind) || !canSee(it->second, me)) return fail("That item doesn't exist (any more).");
+        Asset& a = it->second;
+        auto& favs = me.itemFavorites;
+        const bool had = std::find(favs.begin(), favs.end(), a.id) != favs.end();
+        const bool want = !(args.contains("on") && args["on"].is_boolean() && !args["on"].get<bool>());
+        if (!a.meta.is_object()) a.meta = json::object();
+        long long count = a.meta.value("favorites", 0LL);
+        if (want && !had) {
+            if (favs.size() >= kMaxItemFavorites) return fail("You have " + std::to_string(kMaxItemFavorites) + " favourite items. Take one off first.");
+            favs.insert(favs.begin(), a.id);
+            ++count;
+        } else if (!want && had) {
+            favs.erase(std::remove(favs.begin(), favs.end(), a.id), favs.end());
+            count = std::max(0LL, count - 1);
+        }
+        a.meta["favorites"] = count;
+        saveUsers();
+        saveAssets();
+        return assetReply(a);
     }
 
     // --- Editing items (their creator or staff) ---

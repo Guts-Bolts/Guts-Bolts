@@ -493,6 +493,8 @@ html.gutstober .status { color: #2a0f3a; }   /* light text was unreadable on the
 .item-price .price { color: #0a7d2c; font-weight: bold; }
 .item-buybox .btn.buy { width: 100%; font-size: 18px; padding: 8px 6px; }
 .item-sold { color: #555; font-size: 12px; margin-top: 6px; }
+.item-fav { width: 100%; margin-top: 8px; }
+.item-fav.on { color: #c62828; border-color: #c62828; }
 @media (max-width: 820px) {
   .item-cols { grid-template-columns: 1fr; }
   .item-pic { width: 100%; max-width: 330px; margin: 0 auto; }
