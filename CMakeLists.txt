@@ -959,6 +959,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME VehiclesTests COMMAND VehiclesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # The auto UV map for bundle body parts: clothing templates fit any shape.
+    add_executable(ClothingUVTests tests/ClothingUVTests.cpp)
+    target_link_libraries(ClothingUVTests PRIVATE gb_engine)
+    add_test(NAME ClothingUVTests COMMAND ClothingUVTests)
+
     # Jiggle, LookAt and IK bones, saving them, scripts, and the weight brush.
     add_executable(BoneRigTests tests/BoneRigTests.cpp)
     target_link_libraries(BoneRigTests PRIVATE gb_engine)
