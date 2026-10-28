@@ -136,7 +136,7 @@ void ViewportPanel::followPlayer(Player& p, float dt) {
     PlayCamera::fade(*m_scene, p, m_camera);
 }
 
-bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsing() || m_scaleDrag >= 0 || m_sculpting || m_modalOn || m_state->modeling.modal != MeshModal::None; }
+bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsing() || m_scaleDrag >= 0 || m_sculpting || m_weightPainting || m_modalOn || m_state->modeling.modal != MeshModal::None; }
 
 bool ViewportPanel::focusSelected() {
     // The box around every part in the selection (and inside selected models / tools).

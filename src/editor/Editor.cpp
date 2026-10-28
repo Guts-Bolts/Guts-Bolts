@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "../scene/Skin.h"
 #include "../scene/MaterialGraph.h"
 #include <sstream>
 #include <cmath>
@@ -218,6 +219,7 @@ void Editor::render(float dt) {
     buildDockspace();
     if (!m_playing) m_animEditor->update(dt, m_viewport->gizmoInUse());   // show the rig posed
     if (!m_playing) m_scene->particles().runEmitters(*m_scene, dt);       // particle effects show while you edit too
+    Skin::setLive(m_playing || m_armPreview);   // Jiggle / LookAt / IK bones: in the game, or the Armature window's Preview
     const auto viewportStart = std::chrono::steady_clock::now();
     m_viewport->render(dt);
     m_perfViewportMs = std::chrono::duration<float, std::milli>(
@@ -885,6 +887,10 @@ void Editor::renderSceneValidator() {
             if (node->isHighlight() && node->highlight.adornee != 0) {
                 reference(node, node->highlight.adornee, "Adornee", "any",
                           "Choose an existing object to highlight or clear Adornee to use its parent.");
+            }
+            if (node->isBone() && (node->rig.type == BoneType::IK || node->rig.type == BoneType::LookAt)) {
+                reference(node, node->rig.target, "Target", "any",
+                          "Pick what this bone reaches for or looks at (Properties > Target), or press Make Target.");
             }
             if (node->isSound() && node->soundGroup != 0) {
                 reference(node, node->soundGroup, "SoundGroup", "SoundGroup",

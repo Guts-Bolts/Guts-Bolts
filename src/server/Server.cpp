@@ -920,7 +920,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::string data;
         if (!Online::base64Decode(str("data"), data)) return fail("The upload got scrambled. Try again.");
         if (data.size() > Online::maxSize(kind))
-            return fail("That's too big (the most is " + std::to_string(Online::maxSize(kind) / 1024) + " KB).");
+            return fail("That's too big (the most is " + (Online::maxSize(kind) >= (1u << 20) ? std::to_string(Online::maxSize(kind) >> 20) + " MB"
+                                                                                           : std::to_string(Online::maxSize(kind) >> 10) + " KB") + ").");
         json meta = args.contains("meta") && args["meta"].is_object() ? args["meta"] : json::object();
         if (meta.dump().size() > 4096) return fail("Too much extra information.");
         meta.erase("image");
