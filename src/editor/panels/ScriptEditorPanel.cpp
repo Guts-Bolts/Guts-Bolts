@@ -6,6 +6,7 @@
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
 #include "../../scripting/ScriptEngine.h"
+#include "../../scripting/ScriptHelp.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -121,6 +122,33 @@ size_t findText(const std::string& hay, const std::string& needle, size_t from, 
 size_t findTextBack(const std::string& hay, const std::string& needle, size_t before, bool matchCase) {
     if (needle.empty() || before == 0) return std::string::npos;
     return matchCase ? hay.rfind(needle, before - 1) : lower(hay).rfind(lower(needle), before - 1);
+}
+
+// "task.delay(seconds, function, ...)" with argument `arg` in a brighter colour.
+void drawUsage(const std::string& usage, int arg) {
+    const ImVec4 plain(0.8f, 0.8f, 0.8f, 1), lit(0.99f, 0.98f, 0.67f, 1);
+    const size_t open = usage.find('(');
+    if (open == std::string::npos) { ImGui::TextColored(plain, "%s", usage.c_str()); return; }
+    // Pieces: "name(", each argument with its comma, then ") -> ...".
+    size_t i = open + 1, from = i;
+    int depth = 0, at = 0;
+    auto piece = [&](size_t a, size_t b, bool on) {
+        if (b <= a) return;
+        ImGui::TextColored(on ? lit : plain, "%.*s", (int)(b - a), usage.data() + a);
+        ImGui::SameLine(0, 0);
+    };
+    piece(0, i, false);
+    for (; i < usage.size(); ++i) {
+        const char c = usage[i];
+        if (c == '(' || c == '{') ++depth;
+        else if ((c == ')' || c == '}') && depth > 0) --depth;
+        else if (c == ',' && depth == 0) { piece(from, i + 1, at == arg); from = i + 1; ++at; }
+        else if (c == ')') break;
+    }
+    // The last argument "lights up" for any comma after it too (for "...").
+    const bool lastOn = at == arg || (at < arg && usage.substr(from, i - from).find("...") != std::string::npos);
+    piece(from, i, lastOn);
+    ImGui::TextColored(plain, "%s", usage.c_str() + std::min(i, usage.size()));
 }
 
 } // namespace
@@ -281,6 +309,28 @@ int ScriptEditorPanel::onEdit(ImGuiInputTextCallbackData* d) {
     int start = d->CursorPos;
     while (start > 0 && (wordChar(d->Buf[start - 1]) || d->Buf[start - 1] == '.')) --start;
     self->m_prefix.assign(d->Buf + start, d->Buf + d->CursorPos);   // e.g. "math.fl" or "part.Pos"
+    // Which call's ( ) the cursor is in: walk back to an open bracket nobody closed yet,
+    // counting the commas on the way ("task.delay(2, |" -> task.delay, argument 1).
+    self->m_callName.clear();
+    self->m_callArg = 0;
+    int depth = 0, commas = 0;
+    for (int i = d->CursorPos - 1; i >= 0 && i >= d->CursorPos - 400; --i) {
+        const char c = d->Buf[i];
+        if (c == ')' || c == '}' || c == ']') ++depth;
+        else if ((c == '{' || c == '[') && depth > 0) --depth;
+        else if (c == '{' || c == '[') break;   // inside a table, not a call
+        else if (c == ',' && depth == 0) ++commas;
+        else if (c == '(' && depth > 0) --depth;
+        else if (c == '(') {
+            int e = i;
+            while (e > 0 && d->Buf[e - 1] == ' ') --e;
+            int b = e;
+            while (b > 0 && (wordChar(d->Buf[b - 1]) || d->Buf[b - 1] == '.' || d->Buf[b - 1] == ':')) --b;
+            self->m_callName.assign(d->Buf + b, d->Buf + e);
+            self->m_callArg = commas;
+            break;
+        }
+    }
     return 0;
 }
 
@@ -292,25 +342,29 @@ void ScriptEditorPanel::updateSuggestions(const std::string& source) {
     if (auto dot = p.find_last_of('.'); dot != std::string::npos) member = p.substr(dot + 1);
     if (member.size() < 2 && p.size() < 3) return;
     std::set<std::string> seen;
-    auto offer = [&](const std::string& word) {
+    // fixCase: a known name typed with the wrong upper / lower case ("getMouse3D") is
+    // offered too, so Tab writes it the right way.
+    auto offer = [&](const std::string& word, bool fixCase) {
         if (m_suggest.size() >= 8 || seen.count(word)) return;
         std::string lw = lower(word);
         // A dotted word ("math.floor") matches the whole prefix; a plain word matches the part after the dot.
-        bool ok = word.find('.') != std::string::npos ? lw.rfind(lower(p), 0) == 0 && lw != lower(p)
-                                                      : lw.rfind(lower(member), 0) == 0 && lw != lower(member);
+        const bool dotted = word.find('.') != std::string::npos;
+        const std::string& typed = dotted ? p : member;
+        bool ok = lw.rfind(lower(typed), 0) == 0 && (fixCase ? word != typed : lw != lower(typed));
         if (!ok) return;
         seen.insert(word);
         // Complete the part after the dot for members.
         m_suggest.push_back(word.find('.') == std::string::npos && p.find('.') != std::string::npos
                                 ? p.substr(0, p.find_last_of('.') + 1) + word : word);
     };
-    for (const char* w : kWords) offer(w);
+    for (const ScriptHelp::Entry& e : ScriptHelp::all()) offer(e.name, true);
+    for (const char* w : kWords) offer(w, true);
     // Names used in this script (locals, functions...).
     std::string word;
     for (size_t i = 0; i <= source.size() && m_suggest.size() < 8; ++i) {
         char c = i < source.size() ? source[i] : ' ';
         if (wordChar(c)) { word += c; continue; }
-        if (word.size() >= 3 && !std::isdigit((unsigned char)word[0])) offer(word);
+        if (word.size() >= 3 && !std::isdigit((unsigned char)word[0])) offer(word, false);
         word.clear();
     }
     m_pick = std::clamp(m_pick, 0, std::max(0, (int)m_suggest.size() - 1));
@@ -557,13 +611,37 @@ void ScriptEditorPanel::render() {
         ImGui::SetNextWindowPos(ImVec2(m_caret.x, m_caret.y + lineH + 2));
         ImGui::BeginTooltip();
         ImGui::PushFont(EditorTheme::codeFont());
+        const std::string fixed = ScriptHelp::rightCase(m_prefix);
+        if (!fixed.empty())
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1), "Did you mean %s? (upper / lower case matters)", fixed.c_str());
         for (int i = 0; i < (int)m_suggest.size(); ++i) {
             if (i == m_pick) ImGui::TextColored(ImVec4(0.45f, 0.75f, 1.0f, 1), "> %s", m_suggest[i].c_str());
             else ImGui::Text("  %s", m_suggest[i].c_str());
         }
+        // How to use the picked one.
+        if (const ScriptHelp::Entry* h = ScriptHelp::find(m_suggest[std::clamp(m_pick, 0, (int)m_suggest.size() - 1)])) {
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.99f, 0.98f, 0.67f, 1), "%s", h->usage);
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 460.0f);
+            ImGui::TextDisabled("%s", h->about);
+            ImGui::PopTextWrapPos();
+        }
         ImGui::PopFont();
         ImGui::TextDisabled("Tab: use it   Ctrl+Up/Down: pick");
         ImGui::EndTooltip();
+    } else if (m_codeActive && !m_callName.empty()) {
+        // Inside a call's ( ): how to use it, with the argument being typed lit up.
+        if (const ScriptHelp::Entry* h = ScriptHelp::find(m_callName)) {
+            ImGui::SetNextWindowPos(ImVec2(m_caret.x, m_caret.y - 4), 0, ImVec2(0.0f, 1.0f));
+            ImGui::BeginTooltip();
+            ImGui::PushFont(EditorTheme::codeFont());
+            drawUsage(h->usage, m_callArg);
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + 460.0f);
+            ImGui::TextDisabled("%s", h->about);
+            ImGui::PopTextWrapPos();
+            ImGui::PopFont();
+            ImGui::EndTooltip();
+        }
     }
 
     // --- Live syntax check (only re-run when the text changes) ---

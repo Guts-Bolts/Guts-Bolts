@@ -58,6 +58,7 @@ public:
     // gets its CursorIcon ("" = the hand).
     bool hoverPart(uint64_t partId, std::string* cursor = nullptr);
     void rightClick(uint64_t partId);            // RightMouseClick
+    void mouseDown(int button);                  // the right (2) or middle (3) button went down on the game view
     bool clickDetector(uint64_t partId);         // just MouseClick (a controller's RT); false if there's none in reach
     void useTool();                              // the held tool's Activated (a click, a controller's RT)
     // Game UI: pointer events from GameGui (clicks go to the host in multiplayer).

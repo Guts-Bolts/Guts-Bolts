@@ -66,6 +66,8 @@ private:
     ImVec2      m_caret{0, 0};      // where the text cursor is on screen
     bool        m_codeActive = false;
     int         m_pick = 0;
+    std::string m_callName;         // the cursor is inside this function's ( ): its help shows above
+    int         m_callArg = 0;      // ...on this argument (0 = the first)
 
     // Find in all scripts
     struct Hit { uint64_t script; std::string name; int line; int pos; std::string text; };

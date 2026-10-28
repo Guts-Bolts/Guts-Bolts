@@ -590,6 +590,11 @@ bool GameSession::hoverPart(uint64_t partId, std::string* cursor) {
     return d != nullptr;
 }
 
+void GameSession::mouseDown(int button) {
+    // ContextActionService / UserInputService hear MouseButton2 / 3 (MouseButton1 comes with click()).
+    if (m_running) m_scripts.mouseButton(button, true, LuaApi::mouseOnGame());
+}
+
 void GameSession::rightClick(uint64_t partId) {
     if (!m_running) return;
     if (SceneNode* d = reachableDetector(partId)) fireDetector(SignalKind::ClickRightClick, "r", d->id);
