@@ -1876,8 +1876,8 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
     const std::vector<glm::vec4>& drops = liquid.drawList();
     // With the physics on the graphics card the drops never leave it: they're
     // drawn straight from its buffer, as many as it says (an indirect draw).
-#if defined(GB_IOS)
-    // OpenGL ES on iOS lacks the indirect draw entry points used by the desktop GPU path.
+#if defined(GB_IOS) || defined(__EMSCRIPTEN__)
+    // OpenGL ES on iOS and WebGL 2 lack the indirect draw entry points used by the desktop GPU path.
     const bool onGpu = false;
 #else
     const bool onGpu = liquid.onGpu() && liquid.gpuDrawBuffer();
@@ -1896,7 +1896,7 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
     glBindVertexArray(m_fluidVao);
     if (onGpu) {
         glBindBuffer(GL_ARRAY_BUFFER, liquid.gpuDrawBuffer());
-#if !defined(GB_IOS)
+#if !defined(GB_IOS) && !defined(__EMSCRIPTEN__)
         glBindBuffer(GL_DRAW_INDIRECT_BUFFER, liquid.gpuCommandBuffer());
 #endif
     } else {
@@ -1907,14 +1907,14 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 2 * sizeof(glm::vec4), nullptr);
     glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 2 * sizeof(glm::vec4), (const void*)sizeof(glm::vec4));
     auto drawDrops = [&]() {
-#if !defined(GB_IOS)
+#if !defined(GB_IOS) && !defined(__EMSCRIPTEN__)
         if (onGpu) glDrawArraysIndirect(GL_POINTS, (const void*)(uintptr_t)Liquid::gpuDrawCommandOffset());
         else
 #endif
             glDrawArrays(GL_POINTS, 0, (GLsizei)(drops.size() / 2));
     };
     auto done = [&]() {
-#if !defined(GB_IOS)
+#if !defined(GB_IOS) && !defined(__EMSCRIPTEN__)
         if (onGpu) glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 #endif
         glBindVertexArray(0);
@@ -2014,7 +2014,7 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
     glDisable(GL_BLEND);
 
     // 3. Smooth the surface (twice across, twice down).
-#if !defined(GB_IOS)
+#if !defined(GB_IOS) && !defined(__EMSCRIPTEN__)
     if (onGpu) glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0);
 #endif
     glBindVertexArray(m_emptyVao);

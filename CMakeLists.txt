@@ -85,7 +85,7 @@ endif()
 # touch controls). It's on automatically for Android; turning it on for Linux
 # lets you try the phone version on a computer.
 option(GB_MOBILE "Build the phone/tablet Player (SDL2 + OpenGL ES 3)" OFF)
-if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS" OR EMSCRIPTEN)
     set(GB_MOBILE ON)
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
@@ -183,6 +183,10 @@ set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
 set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
 set(OPUS_INSTALL_CMAKE_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+if(EMSCRIPTEN)
+    set(OPUS_DISABLE_INTRINSICS ON CACHE BOOL "" FORCE)   # (no x86 or ARM tricks in a browser)
+    set(OPUS_STACK_PROTECTOR OFF CACHE BOOL "" FORCE)     # (the browser has no stack guard to check)
+endif()
 FetchContent_Declare(
     opus
     GIT_REPOSITORY https://github.com/xiph/opus.git
@@ -379,6 +383,10 @@ set(DRACO_JS_GLUE OFF CACHE BOOL "" FORCE)
 set(DRACO_TESTS OFF CACHE BOOL "" FORCE)
 set(DRACO_INSTALL OFF CACHE BOOL "" FORCE)
 set(DRACO_TRANSCODER_SUPPORTED OFF CACHE BOOL "" FORCE)
+if(EMSCRIPTEN)   # (Draco checks these before building for the web)
+    set(PYTHONINTERP_FOUND TRUE)
+    set(ENV{EMSCRIPTEN} "${EMSCRIPTEN_ROOT_PATH}")
+endif()
 FetchContent_Declare(
     draco
     GIT_REPOSITORY https://github.com/google/draco.git
@@ -483,7 +491,7 @@ add_library(gb_engine STATIC
     src/net/ChatTranslate.cpp
     src/editor/Theme.cpp
 )
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS" OR EMSCRIPTEN)
     target_sources(gb_engine PRIVATE src/scene/LiquidGpuIOS.cpp)
 else()
     target_sources(gb_engine PRIVATE src/scene/LiquidGpu.cpp)
@@ -619,6 +627,19 @@ if(GB_MOBILE)
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/catalog" "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources/catalog"
             COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_BUNDLE_DIR:GutsAndBoltsPlayer>/Resources/assets"
             VERBATIM)
+    elseif(EMSCRIPTEN)
+        # The web Player (web/README.md): WebAssembly + WebGL 2, for browsers like Safari on iPhone.
+        # The games, catalog and pictures that come with it are packed into GutsAndBoltsPlayer.data.
+        add_executable(GutsAndBoltsPlayer ${PLAYER_SOURCES})
+        target_link_libraries(GutsAndBoltsPlayer PRIVATE gb_engine)
+        set_target_properties(GutsAndBoltsPlayer PROPERTIES SUFFIX ".js")
+        target_link_options(GutsAndBoltsPlayer PRIVATE
+            -sMIN_WEBGL_VERSION=2 -sMAX_WEBGL_VERSION=2 -sFULL_ES3=1
+            -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sTOTAL_STACK=4194304
+            -sFETCH=1 -sFORCE_FILESYSTEM=1 -sEXIT_RUNTIME=0 -lwebsocket.js
+            "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/games@/gb/games"
+            "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/catalog@/gb/catalog"
+            "SHELL:--preload-file ${CMAKE_SOURCE_DIR}/assets@/gb/assets")
     else()
         add_executable(GutsAndBoltsPlayer ${PLAYER_SOURCES})
         target_link_libraries(GutsAndBoltsPlayer PRIVATE gb_engine)

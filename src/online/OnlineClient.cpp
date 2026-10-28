@@ -16,6 +16,10 @@
 #include <deque>
 #include <mutex>
 #include <thread>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/fetch.h>
+#include <cstring>
+#endif
 
 using json = nlohmann::json;
 
@@ -260,6 +264,38 @@ void request(const std::string& op, const json& args, Reply done, int timeoutSec
     // Sign here, on the main thread (the key lives here); the network part runs in the background.
     std::string text = signedRequest(op, args).dump();
     S().running++;
+#ifdef __EMSCRIPTEN__
+    // In a browser (the web Player): the page came from the Guts&Bolts website, so ask its
+    // /api with the browser's own fetch (a web page has no sockets or threads of its own).
+    struct Job { Reply done; std::string body; };
+    Job* job = new Job{std::move(done), std::move(text)};
+    emscripten_fetch_attr_t attr;
+    emscripten_fetch_attr_init(&attr);
+    std::strcpy(attr.requestMethod, "POST");
+    attr.attributes = EMSCRIPTEN_FETCH_LOAD_TO_MEMORY;
+    static const char* kHeaders[] = {"Content-Type", "application/json", nullptr};
+    attr.requestHeaders = kHeaders;
+    attr.requestData = job->body.data();
+    attr.requestDataSize = job->body.size();
+    attr.timeoutMSecs = (unsigned)timeoutSeconds * 1000u;
+    attr.userData = job;
+    auto answered = [](emscripten_fetch_t* f) {
+        Job* j = static_cast<Job*>(f->userData);
+        json reply = f->numBytes ? json::parse(std::string(f->data, (size_t)f->numBytes), nullptr, false) : json();
+        if (!reply.is_object())
+            reply = {{"ok", false}, {"error", f->status ? "The server sent back something odd." : "Couldn't reach the server. Check your internet."}};
+        if (!reply.contains("ok")) reply["ok"] = false;
+        finish(std::move(j->done), std::move(reply));
+        delete j;
+        emscripten_fetch_close(f);
+        S().running--;
+    };
+    attr.onsuccess = answered;
+    attr.onerror = answered;   // (a 4xx answer still has the server's JSON in it)
+    emscripten_fetch(&attr, "/api");
+    (void)address;
+    return;
+#endif
     std::thread([address, text, done, timeoutSeconds]() {
         json reply;
         std::string host, err;
