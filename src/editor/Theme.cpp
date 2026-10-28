@@ -1,4 +1,5 @@
 #include "Theme.h"
+#include "UiFont.h"
 
 #include <imgui.h>
 #include <cstdio>
@@ -53,7 +54,15 @@ void loadFonts(float scale) {
     const std::string iosKorean = IosPlatform::fontPath("AppleSDGothicNeo-Regular");
 #endif
 
-    // Prefer a clean system UI font; fall back to ImGui's built-in bitmap font.
+    // The Guts&Bolts look: Helvetica Black, like Roblox in 2012. Helvetica is a
+    // paid font we can't ship, so the program carries Inter Black (free, looks
+    // very close; assets/fonts/OFL.txt) and uses it on every computer and phone.
+    ImFontConfig black = cfg;
+    black.FontDataOwnedByAtlas = false;   // it lives in the program, not on the heap
+    ImFont* loaded = io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(kUiFontData),
+                                                     static_cast<int>(kUiFontDataSize),
+                                                     17.0f * scale, &black);
+    // If that ever fails, a clean system font, then ImGui's built-in one.
     const char* candidates[] = {
         "C:/Windows/Fonts/segoeui.ttf",
         "C:/Windows/Fonts/SegoeUI.ttf",
@@ -66,12 +75,11 @@ void loadFonts(float scale) {
         iosMain.c_str(),
 #endif
     };
-    ImFont* loaded = nullptr;
     for (const char* path : candidates) {
+        if (loaded) break;
         if (FILE* f = std::fopen(path, "rb")) {
             std::fclose(f);
             loaded = io.Fonts->AddFontFromFileTTF(path, 17.0f * scale, &cfg);
-            if (loaded) break;
         }
     }
     if (!loaded) {

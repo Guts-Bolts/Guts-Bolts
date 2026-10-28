@@ -9,6 +9,7 @@
 <meta property="og:title" content="Guts&amp;Bolts">
 <meta property="og:description" content="Build games, play with friends, fall apart spectacularly. Free for Windows, Mac, Linux, Android and Meta Quest VR, with iOS in development.">
 <meta property="og:image" content="img/engine-boom.jpg">
+<link rel="stylesheet" href="fonts/font.css">
 <style>
   /* Dressed like a website from around 2011 (same look as the site in app/). */
   :root {
@@ -23,7 +24,7 @@
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
-  body { margin: 0; font-family: Verdana, Tahoma, Arial, sans-serif; font-size: 13px; color: var(--text); background: var(--bg); line-height: 1.5; }
+  body { margin: 0; font-family: var(--gb-font); font-size: 13px; color: var(--text); background: var(--bg); line-height: 1.5; }
   a { color: var(--link); text-decoration: none; }
   a:hover { text-decoration: underline; }
   img { max-width: 100%; }
@@ -32,7 +33,7 @@
   .topbar .wrap { min-height: 52px; }
   .logo { display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
   .logo img { width: 36px; height: 36px; border-radius: 7px; border: 1px solid #06214a; }
-  .logo b { font-family: Impact, "Arial Black", sans-serif; font-size: 30px; letter-spacing: 1px; font-weight: normal; color: #e23b3b;
+  .logo b { font-family: var(--gb-font); font-size: 30px; letter-spacing: 1px; font-weight: normal; color: #e23b3b;
     text-shadow: -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 2px 2px 0 #fff, 3px 4px 0 rgba(0,0,0,.45); }
   .acct { margin-left: auto; color: #fff; }
   .acct a { color: #fff; font-weight: bold; }
@@ -55,7 +56,7 @@
     background: linear-gradient(90deg, rgba(6,14,30,.88) 0%, rgba(6,14,30,.6) 42%, rgba(6,14,30,0) 70%); }
   .hero-text { position: absolute; z-index: 2; left: 0; top: 0; bottom: 0; width: 56%; padding: 26px 24px; color: #fff;
     display: flex; flex-direction: column; justify-content: center; }
-  .hero h1 { margin: 0 0 8px; font-family: Impact, "Arial Black", sans-serif; font-weight: normal; font-size: 40px; line-height: 1.05; letter-spacing: .5px;
+  .hero h1 { margin: 0 0 8px; font-family: var(--gb-font); font-weight: normal; font-size: 40px; line-height: 1.05; letter-spacing: .5px;
     text-shadow: 0 2px 0 #000, 0 0 18px rgba(0,0,0,.6); }
   .hero h1 em { font-style: normal; color: #ff5a4a; }
   .hero .tag { font-size: 14px; margin: 0 0 16px; color: #dbe7f7; max-width: 440px; text-shadow: 0 1px 2px #000; }
@@ -82,7 +83,7 @@
   .facts { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); border-top: 0; background: linear-gradient(var(--head1), var(--head2)); }
   .facts div { text-align: center; padding: 8px 4px; border-right: 1px solid var(--line); }
   .facts div:last-child { border-right: 0; }
-  .facts b { display: block; font-family: Impact, "Arial Black", sans-serif; font-weight: normal; font-size: 22px; color: #e23b3b; line-height: 1.1; }
+  .facts b { display: block; font-family: var(--gb-font); font-weight: normal; font-size: 22px; color: #e23b3b; line-height: 1.1; }
   .facts span { font-size: 11px; color: var(--muted); }
 
   section { border: 1px solid var(--line); margin: 14px 0; }
@@ -90,7 +91,7 @@
   h2 { margin: 0 0 12px; padding: 5px 10px; font-size: 13px; color: var(--headText); background: linear-gradient(var(--head1), var(--head2));
     border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
   h2 a { margin-left: auto; font-weight: normal; font-size: 12px; }
-  h3 { margin: 0 0 6px; font-size: 16px; font-family: Arial, Verdana, sans-serif; color: var(--headText); }
+  h3 { margin: 0 0 6px; font-size: 16px; font-family: var(--gb-font); color: var(--headText); }
   .lead { font-size: 13px; color: var(--muted); margin-top: 0; }
 
   /* What's new */
@@ -149,7 +150,7 @@
   .dl > div:not(.coming-soon):hover { transform: translateY(-2px); border-color: #5c91cf; box-shadow: inset 0 1px 0 #fff, 0 4px 8px rgba(20,70,130,.16); }
   .dl > div.mine { border: 2px solid #1ea447; padding: 11px 6px 12px; box-shadow: 0 0 0 2px rgba(30,164,71,.12), inset 0 1px 0 #fff; }
   .dl > div.mine::before { content: "YOUR DEVICE"; position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: linear-gradient(#42c96b,#16863a); border: 1px solid #0d6a2e; color: #fff; font-size: 9px; font-weight: bold; padding: 2px 6px; border-radius: 2px; white-space: nowrap; text-shadow: 0 1px rgba(0,0,0,.25); }
-  .dl .platform-icon { display: flex; align-items: center; justify-content: center; width: 42px; height: 34px; margin: 0 auto 7px; border: 1px solid #879bb4; border-radius: 3px; color: #fff; font: bold 12px Arial,sans-serif; letter-spacing: -.3px; background: linear-gradient(#6fa9e7 0%, #3978c4 48%, #225da7 49%, #3974b8 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(0,0,0,.18); text-shadow: 0 1px 1px rgba(0,0,0,.4); }
+  .dl .platform-icon { display: flex; align-items: center; justify-content: center; width: 42px; height: 34px; margin: 0 auto 7px; border: 1px solid #879bb4; border-radius: 3px; color: #fff; font: bold 12px var(--gb-font); letter-spacing: -.3px; background: linear-gradient(#6fa9e7 0%, #3978c4 48%, #225da7 49%, #3974b8 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.55), 0 1px 2px rgba(0,0,0,.18); text-shadow: 0 1px 1px rgba(0,0,0,.4); }
   .dl .os { font-weight: bold; font-size: 14px; margin-bottom: 9px; color: var(--headText); white-space: nowrap; }
   .dl small { display: block; color: var(--muted); margin-top: 7px; font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
   .dl .btn.play { display: block; font-size: 13px; padding: 7px 5px; }
