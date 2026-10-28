@@ -58,6 +58,7 @@ public:
     // person's OK first (EditorAiActivity.cpp).
     AiToolResult runAiToolFrom(const std::string& source, const std::string& name, const nlohmann::json& args);
     void showAiActivity() { m_showAiActivity = true; }
+    const std::string& filePath() const { return m_path; }   // the open game's file ("" = never saved)
     bool aiHasChanges() const { return !m_aiBaseline.empty(); }
     static std::vector<std::string> insertKinds();   // what insert_object / Insert Object can make
     // Test / command-line helpers.

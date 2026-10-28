@@ -15,6 +15,7 @@ import wasmModule from '../website/app/gbcrypto.wasm';
 import { BUILT_IN_UPDATES } from './updates.js';
 import { filterText, nameHasHateWord } from './textfilter.js';
 import { MemoryStore } from './memorystore.js';
+import { installMcpRelay } from './mcp-relay.js';   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Roadmap, builtInItems, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
 import BUILT_IN_ROADMAP from './roadmap-gathered.js';   // worker/roadmap/, one file per item (worker/gather-updates.mjs)
 // The example games that come with Guts&Bolts: always on the server (as Guts's
@@ -249,17 +250,40 @@ const pictureType = (d) => (pngSize(d) ? 'png' : jpgFile(d) ? 'jpg' : webpFile(d
 //   3. The app swaps the code (with its client secret) for an access token: POST /api/oauth/token.
 //   4. With the token it asks who you are: GET /api/oauth/userinfo gives your user number,
 //      username and avatar picture (/avatar/<user number>.png). Nothing else.
+//   5. If the app asked for the Studio permissions (scope=studio.read / studio.write) and you
+//      approved them, it can also use your Studio's AI tools at /mcp (worker/mcp.js), while your
+//      Studio is open and you've ticked "Allow connected apps to use AI tools". Never publishing.
 // worker/index.js turns those web addresses into the connect.* requests below. Each app's
 // secret is made on the Staff page (the official account only); the server keeps only its hash.
 // (src/server/ServerConnect.cpp has the same apps and rules.)
 export const CONNECT_APPS = {
-  lyreto: { name: 'Lyreto', site: 'https://lyreto.com', redirects: ['https://lyreto.com/api/connections/gutsandbolts/callback'] },
+  lyreto: { name: 'Lyreto', site: 'https://lyreto.com', redirects: ['https://lyreto.com/api/connections/gutsandbolts/callback'],
+    scopes: ['identify', 'studio.read', 'studio.write'] },   // what this app may ask for
 };
+// What an app can ask for (the "scope" on /api/oauth/authorize, space-separated). Every token has
+// "identify". The words are what the Connect page shows. (Which Studio tools each one opens: worker/mcp-policy.js.)
+export const CONNECT_SCOPES = {
+  identify: 'See your username, user number and a picture of your avatar',
+  'studio.read': 'Look at the game open in your Studio: its objects, scripts, output, errors and screenshots',
+  'studio.write': 'Change the game open in your Studio: add, change and delete things, write scripts, run playtests, undo',
+};
+// The scopes asked for, checked: { scopes } (always with 'identify', in CONNECT_SCOPES order) or { bad }.
+export function connectScopes(app, text) {
+  const asked = String(text || '').split(/[\s,+]+/).filter(Boolean);
+  if (asked.length > 10) return { bad: 'That app asked for too many permissions.' };
+  for (const s of asked) {
+    if (!Object.hasOwn(CONNECT_SCOPES, s)) return { bad: 'There\'s no permission called "' + s.slice(0, 40) + '".' };
+    if (!(app.scopes || ['identify']).includes(s)) return { bad: app.name + ' isn\'t allowed to ask for "' + s + '".' };
+  }
+  return { scopes: Object.keys(CONNECT_SCOPES).filter((s) => s === 'identify' || asked.includes(s)) };
+}
+// A token's scopes (tokens from before scopes existed are "identify" only).
+export const tokenScopes = (tok) => (tok && Array.isArray(tok.scopes) && tok.scopes.length ? tok.scopes : ['identify']);
 const kConnectCodeLife = 300;              // the one-time code: 5 minutes to swap it
 const kConnectTokenLife = 365 * 86400;     // an access token: a year, or until you disconnect the app
 const kMaxAvatarPicture = 256 << 10, kAvatarPictureSide = 512;
 // The requests that come from an app's server, not a signed-in person, so they aren't signed.
-export const CONNECT_OPEN = new Set(['connect.token', 'connect.userinfo', 'connect.avatarPicture']);
+export const CONNECT_OPEN = new Set(['connect.token', 'connect.userinfo', 'connect.avatarPicture', 'connect.revoke', 'connect.tokenInfo']);
 // The forum (ServerForum.cpp has the same boards and limits). Boards are fixed; anyone can
 // read, signed-up players post, staff pin, lock and delete. Each thread keeps its posts, oldest first.
 const FORUM_BOARDS = [
@@ -3888,6 +3912,11 @@ export class GbServerObject extends DurableObject {
       return { bad: fail(app.name + ' asked to send you back to an address Guts&Bolts doesn\'t know, so it won\'t.') };
     return { id, app };
   }
+  liveToken(token) {   // the live token record for an access token, or null
+    if (!token) return null;
+    const hash = hashHex(token), t = now();
+    return this.connect.tokens.find((x) => x.hash === hash && x.expires > t && Object.hasOwn(CONNECT_APPS, x.app)) || null;
+  }
   liveTokens(account) {
     const t = now();
     return this.connect.tokens.filter((x) => x.account === account && x.expires > t);
@@ -3913,7 +3942,7 @@ export class GbServerObject extends DurableObject {
   }
   connectsJson(u) {
     return this.liveTokens(u.id).filter((x) => CONNECT_APPS[x.app])
-      .map((x) => ({ id: x.app, name: CONNECT_APPS[x.app].name, site: CONNECT_APPS[x.app].site, at: x.at }));
+      .map((x) => ({ id: x.app, name: CONNECT_APPS[x.app].name, site: CONNECT_APPS[x.app].site, at: x.at, scopes: tokenScopes(x) }));
   }
   // Signed requests from the website: the Connect page, and Settings > Connected apps.
   connectOp(name, me, args) {
@@ -3922,15 +3951,18 @@ export class GbServerObject extends DurableObject {
       const c = this.connectApp(args);
       if (c.bad) return c.bad;
       if (!this.connect.secrets[c.id]) return fail(c.app.name + ' isn\'t set up on Guts&Bolts yet. Staff need to make its secret first.');
+      const sc = connectScopes(c.app, str(args, 'scope'));
+      if (sc.bad) return fail(sc.bad);
       if (name === 'connect.app')
-        return okay({ app: { id: c.id, name: c.app.name, site: c.app.site }, connected: this.liveTokens(me.id).some((x) => x.app === c.id) });
+        return okay({ app: { id: c.id, name: c.app.name, site: c.app.site }, connected: this.liveTokens(me.id).some((x) => x.app === c.id),
+          scopes: sc.scopes.map((id) => ({ id, text: CONNECT_SCOPES[id] })) });
       if (str(args, 'picture')) {
         const bad = this.saveAvatarPicture(me, str(args, 'picture'));
         if (bad) return fail(bad);
       }
       const code = randomHex(24);
       this.connect.codes = this.connect.codes.filter((x) => t - x.at < kConnectCodeLife && x.account !== me.id);
-      this.connect.codes.push({ hash: hashHex(code), account: me.id, app: c.id, redirect: str(args, 'redirect_uri'), at: t });
+      this.connect.codes.push({ hash: hashHex(code), account: me.id, app: c.id, redirect: str(args, 'redirect_uri'), at: t, scopes: sc.scopes });
       this.dirty.connect = true;
       return okay({ code });
     }
@@ -3966,8 +3998,26 @@ export class GbServerObject extends DurableObject {
       if (!u || u.deleted || u.userId === 0) return oauthFail('invalid_grant', 'That account is gone.');
       const token = 'gbt_' + randomHex(32);
       this.connect.tokens = this.connect.tokens.filter((x) => x.expires > t && !(x.account === u.id && x.app === id));
-      this.connect.tokens.push({ hash: hashHex(token), account: u.id, app: id, at: t, expires: t + kConnectTokenLife });
-      return okay({ access_token: token, token_type: 'Bearer', expires_in: kConnectTokenLife, scope: 'identify' });
+      const scopes = tokenScopes(code);
+      this.connect.tokens.push({ hash: hashHex(token), account: u.id, app: id, at: t, expires: t + kConnectTokenLife, scopes });
+      return okay({ access_token: token, token_type: 'Bearer', expires_in: kConnectTokenLife, scope: scopes.join(' ') });
+    }
+    // An app hands back a token it doesn't want any more (RFC 7009: the answer is the same whether it was live or not).
+    if (name === 'connect.revoke') {
+      const id = str(args, 'client_id'), secret = this.connect.secrets[id];
+      if (!Object.hasOwn(CONNECT_APPS, id) || !secret || hashHex(str(args, 'client_secret')) !== secret.hash)
+        return oauthFail('invalid_client', 'Wrong client_id or client_secret.');
+      const hash = hashHex(str(args, 'token')), before = this.connect.tokens.length;
+      this.connect.tokens = this.connect.tokens.filter((x) => !(x.hash === hash && x.app === id));
+      if (this.connect.tokens.length !== before) this.dirty.connect = true;
+      return okay({});
+    }
+    // Whose a token is and what it may do (worker/mcp.js asks before anything else): never the account's key.
+    if (name === 'connect.tokenInfo') {
+      const tok = this.liveToken(str(args, 'token'));
+      const u = tok ? this.users.get(tok.account) : null;
+      if (!u || u.deleted || u.banned) return oauthFail('invalid_token', 'That access token is wrong, too old, or the person disconnected the app.');
+      return okay({ user: { id: String(u.userId), username: u.username }, app: tok.app, scopes: tokenScopes(tok) });
     }
     if (name === 'connect.userinfo') {
       const hash = hashHex(str(args, 'token'));
@@ -4962,6 +5012,7 @@ export class GbServerObject extends DurableObject {
       const c = this.conns.get(d);
       if (!c) continue;
       this.conns.delete(d);
+      if (c.mode === 'mcp') this.mcpGone(c);
       try { c.ws.close(1000, 'bye'); } catch { /* already closed */ }
     }
   }
@@ -4984,7 +5035,7 @@ export class GbServerObject extends DurableObject {
         continue;
       }
       const quiet = t - c.lastActive;
-      if (((c.mode === 'host' || c.mode === 'pool') && quiet > kHostSilence) || (c.mode === 'pipe' && quiet > kPipeSilence) ||
+      if (((c.mode === 'host' || c.mode === 'pool' || c.mode === 'mcp') && quiet > kHostSilence) || (c.mode === 'pipe' && quiet > kPipeSilence) ||
           (c.mode === 'request' && quiet > 120)) this.drop(c.id);
     }
     this.scheduleSweep();
@@ -5002,6 +5053,7 @@ export class GbServerObject extends DurableObject {
     let req;
     try { req = JSON.parse(text); } catch { req = null; }
     if (!req || typeof req !== 'object' || Array.isArray(req)) { this.sendTo(c, fail('That wasn\'t a proper request.')); return; }
+    if (c.mode === 'mcp' || req.op === 'mcp.serve') { this.mcpMessage(c, req); return; }   // a Studio serving connected apps (mcp-relay.js)
     if (req.t === 'accept') { this.relayAccept(c, req.ticket); return; }
     if (typeof req.op === 'string' && req.op.startsWith('relay.')) { this.relayRequest(c, req); return; }
     const t = Date.now();
@@ -5014,6 +5066,8 @@ export class GbServerObject extends DurableObject {
 
   async fetch(request) {
     const url = new URL(request.url);
+    // worker/mcp.js asking a Studio something (an internal address: requests from the internet never get here).
+    if (url.hostname === 'gb.internal' && url.pathname === '/mcp-call' && request.method === 'POST') return this.mcpFetch(request);
     if (url.pathname === '/ws') {
       if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected a WebSocket.', { status: 426 });
       const pair = new WebSocketPair();
@@ -5128,3 +5182,5 @@ function isJson(bytes) {
 export function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 }
+
+installMcpRelay(GbServerObject);

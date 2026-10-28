@@ -3142,7 +3142,7 @@ pages.settings = async () => {
         <div class="list" id="blockedList"><p class="muted small">Loading...</p></div></div>
       <div class="box"><h2 class="boxhead">Connected apps</h2>
         <p class="small muted">Apps you linked your account to with "Log in with Guts&amp;Bolts" (like Lyreto). They can see your
-          username, user number and a picture of your avatar, and nothing else.</p>
+          username, user number and a picture of your avatar. If you allowed it, they can also use Studio's AI tools while Studio is open.</p>
         <div class="list" id="appsList"><p class="muted small">Loading...</p></div></div>
       <div class="box"><h2 class="boxhead">Authenticator app</h2>
         ${me.authApp ? html`<p><b class="ok">On.</b> Logging in on a new device needs your password <i>and</i> the 6-digit code
@@ -3190,7 +3190,8 @@ pages.settings = async () => {
   const appBox = $('#appsList');
   if (appBox) appBox.innerHTML = (!apps.ok ? html`<p class="error">${apps.error}</p>`
     : apps.apps.length ? html`${apps.apps.map((a) => html`<div><span class="grow"><a href="${a.site}" target="_blank" rel="noopener"><b>${a.name}</b></a>
-        <span class="small muted">connected ${ago(a.at)}</span></span>
+        <span class="small muted">connected ${ago(a.at)}${(a.scopes || []).includes('studio.write') ? ' · can change your Studio game'
+          : (a.scopes || []).includes('studio.read') ? ' · can look at your Studio game' : ''}</span></span>
         <button class="btn small" data-act="connectRemove" data-id="${a.id}" data-name="${a.name}">Disconnect</button></div>`)}`
       : html`<p class="muted small">You haven't connected any apps.</p>`).s;
 };
@@ -3199,6 +3200,12 @@ pages.settings = async () => {
 // A partner app (like Lyreto) sent you here to link your account (worker/index.js
 // /api/oauth/authorize). Approve sends you back to the app with a one-time code, which it
 // swaps for your user number, username and avatar picture. Nothing else.
+// What each permission an app asks for lets it do (the server's CONNECT_SCOPES says the same).
+const SCOPE_TEXT = {
+  identify: 'See your username, user number and a picture of your avatar',
+  'studio.read': 'Look at the game open in your Studio: its objects, scripts, output, errors and screenshots',
+  'studio.write': 'Change the game open in your Studio: add, change and delete things, write scripts, run playtests, undo',
+};
 pages.connect = async () => {
   const q = hashParams();
   if (!signedIn()) {
@@ -3208,21 +3215,26 @@ pages.connect = async () => {
       <p class="popup-buttons"><a class="btn blue big" href="#/login">Log In</a> <a class="btn green big" href="#/signup">Sign Up</a></p></div>`);
     return;
   }
-  const r = await pageCall('connect.app', { client_id: q.get('client_id') || '', redirect_uri: q.get('redirect_uri') || '' });
+  const r = await pageCall('connect.app', { client_id: q.get('client_id') || '', redirect_uri: q.get('redirect_uri') || '', scope: q.get('scope') || '' });
   if (!r.ok) {
     show(html`<div class="form" style="margin:0 auto"><h1>Can't connect</h1><p class="error">${r.error}</p>
       <p><a class="btn" href="#/">Home</a></p></div>`);
     return;
   }
   const host = r.app.site.replace(/^https?:\/\//, '');
+  const studio = (r.scopes || []).some((s) => s.id.startsWith('studio.'));
+  const note = studio ? html`<p class="small">Studio only lets it in while Studio is open and you have ticked "Allow connected apps to use AI tools"
+      in the Assistant tab. It can never publish your games.</p>
+    <p class="small muted">It can't see your password, email, Bolts or messages. You can disconnect it any time in Settings.</p>`
+    : html`<p class="small muted">It can't see your password, email, Bolts or messages, and it can't do anything as you.
+      You can disconnect it any time in Settings.</p>`;
   show(html`<div class="form" style="margin:0 auto">
     <h1>Connect to ${r.app.name}?</h1>
     <p><b>${r.app.name}</b> (<a href="${r.app.site}" target="_blank" rel="noopener">${host}</a>) wants to link your
       Guts&amp;Bolts account, <b>${me.username}</b>.${r.connected ? ' (It\'s already linked: approving again just refreshes it.)' : ''}</p>
-    <p>It will be able to see:</p>
-    <ul><li>Your username and user number (#${me.userId})</li><li>A picture of your avatar</li></ul>
-    <p class="small muted">It can't see your password, email, Bolts or messages, and it can't do anything as you.
-      You can disconnect it any time in Settings.</p>
+    <p>It will be able to:</p>
+    <ul>${(r.scopes || []).map((s) => html`<li>${SCOPE_TEXT[s.id] || s.text}</li>`)}</ul>
+    ${note}
     <p class="popup-buttons"><button class="btn green big" data-act="connectApprove">Approve</button>
       <a class="btn big" href="${connectReturn({ error: 'access_denied' })}">Cancel</a></p>
     <p class="small" id="connectMsg"></p></div>`);
@@ -3702,7 +3714,8 @@ const actions = {
     const msg = $('#connectMsg');
     msg.className = 'muted'; msg.textContent = 'Connecting...';
     const q = hashParams();
-    const r = await call('connect.approve', { client_id: q.get('client_id') || '', redirect_uri: q.get('redirect_uri') || '', picture: await connectPicture() });
+    const r = await call('connect.approve', { client_id: q.get('client_id') || '', redirect_uri: q.get('redirect_uri') || '', scope: q.get('scope') || '',
+      picture: await connectPicture() });
     if (!r.ok) { msg.className = 'error'; msg.textContent = r.error; return; }
     msg.textContent = 'Taking you back...';
     location.href = connectReturn({ code: r.code });

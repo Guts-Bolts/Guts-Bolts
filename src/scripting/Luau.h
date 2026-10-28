@@ -17,5 +17,6 @@ std::string toLua(const std::string& source, std::vector<std::string>* notes = n
 // Compiles a script (like luaL_loadbufferx, same results): plain Lua exactly as written;
 // if that doesn't compile, its Luau rewrite (so += and continue work in any script,
 // not just imported ones). On an error the message is on the stack, as usual.
+// Text only unless `mode` says otherwise (never "b" for code from games or apps: bytecode isn't checked).
 int load(lua_State* L, const std::string& source, const char* chunkName, const char* mode = nullptr);
 }

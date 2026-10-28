@@ -115,12 +115,15 @@ const slowDown = () => json({ ok: false, slowDown: true, error: 'Whoa, that\'s a
 
 // Look at one request. Returns { stop: Response } to answer it here, or what the server should
 // know about it: { ip, web (a browser), human (passed a check lately), sitekey (Turnstile is on) }.
-//   kind: 'api' (/api), 'ws' (/ws, the apps' connection) or 'picture' (/thumb, /icon...)
+//   kind: 'api' (/api), 'ws' (/ws, the apps' connection), 'mcp' (/mcp) or 'picture' (/thumb, /icon...)
 export async function check(request, env, url, kind) {
   const ip = clientIp(request);
   if (kind === 'picture') return (await over(env, 'RATE_PICTURES', ip)) ? { stop: slowDown() } : { ip };
   if (await over(env, 'RATE_FLOOD', ip)) return { stop: slowDown() };
   if (kind === 'ws' && await over(env, 'RATE_WS', ip)) return { stop: slowDown() };
+  // /mcp: a connected app's server, with a person's access token (worker/mcp.js). It looks like a bot
+  // because it is one, so only the flood limit counts; the token and the relay's own limits do the rest.
+  if (kind === 'mcp') return { ip };
 
   const s = score(request, url);
   if (await over(env, 'RATE_BUSY', ip)) { s.points += SHIELD.points.busy; s.why.push('busy'); }
