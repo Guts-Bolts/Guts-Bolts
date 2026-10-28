@@ -41,6 +41,10 @@ std::filesystem::path appFolder() {
             std::filesystem::create_directories(out, ec);
             return out;
         }
+#elif defined(__EMSCRIPTEN__)
+        // In a browser: the games and pictures that come with it are put in /gb when the page loads.
+        std::filesystem::create_directories("/gb", ec);
+        return std::filesystem::path("/gb");
 #elif defined(_WIN32)
         wchar_t buf[MAX_PATH];
         DWORD n = GetModuleFileNameW(nullptr, buf, MAX_PATH);

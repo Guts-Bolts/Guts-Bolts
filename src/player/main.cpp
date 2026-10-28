@@ -66,8 +66,14 @@ int main(int argc, char** argv) {
     }
 
     try {
+#ifdef __EMSCRIPTEN__
+        // In a browser run() hands the frames to the page and main() ends early, so the
+        // app can't live on main()'s stack: it stays alive until the tab closes.
+        (new PlayerApp(opts))->run();
+#else
         PlayerApp app(opts);
         app.run();
+#endif
     } catch (const std::exception& e) {
         std::cerr << "Fatal: " << e.what() << "\n";
         return 1;

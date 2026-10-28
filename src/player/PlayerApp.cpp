@@ -38,6 +38,9 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <misc/cpp/imgui_stdlib.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include <glm/glm.hpp>
 #include <algorithm>
 #include <ctime>
@@ -260,7 +263,17 @@ PlayerApp::~PlayerApp() {
 }
 
 void PlayerApp::run() {
-    while (!m_window->shouldClose()) {
+#ifdef __EMSCRIPTEN__
+    // In a browser the page owns the loop: it calls us once per screen refresh.
+    emscripten_set_main_loop_arg([](void* app) { static_cast<PlayerApp*>(app)->frame(); }, this, 0, true);
+#else
+    while (!m_window->shouldClose()) frame();
+#endif
+}
+
+// One frame: input, the page or the game, drawing.
+void PlayerApp::frame() {
+    {
         ++m_frame;
         // Test helper: rename your first game from the Create page.
         if (!m_opts.testRename.empty() && m_page == Page::Create && m_frame == 30) {

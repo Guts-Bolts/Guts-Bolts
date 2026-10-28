@@ -52,7 +52,12 @@ public:
 private:
     Workers() {
         const unsigned cores = std::thread::hardware_concurrency();
+#ifdef __EMSCRIPTEN__
+        const unsigned helpers = 0;   // (a web page has no threads: it all runs on this one)
+        (void)cores;
+#else
         const unsigned helpers = cores > 1 ? std::min(cores - 1, 7u) : 0u;
+#endif
         for (unsigned i = 0; i < helpers; ++i) m_threads.emplace_back([this] { loop(); });
     }
     ~Workers() {

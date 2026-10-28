@@ -75,7 +75,7 @@ std::string bundleBody(const nlohmann::json& body, nlohmann::json& out) {
         return true;
     };
     for (const auto& [name, p] : body.items()) {
-        if (std::find_if(std::begin(kBodyParts), std::end(kBodyParts), [&](const char* k) { return name == k; }) == std::end(kBodyParts))
+        if (std::find_if(std::begin(kBodyParts), std::end(kBodyParts), [&name = name](const char* k) { return name == k; }) == std::end(kBodyParts))
             return "A bundle's body can only change the Head, Torso, arms and legs.";
         const std::string bad = name + "'s mesh looks wrong.";
         if (!p.is_object() || !p.contains("v") || !p.contains("f") || !p["v"].is_array() || !p["f"].is_array()) return bad;

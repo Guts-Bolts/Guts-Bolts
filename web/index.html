@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Guts&amp;Bolts">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Guts&amp;Bolts Player</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #101318; color: #e8ecf2; overflow: hidden;
+               font: 15px system-ui, -apple-system, sans-serif; touch-action: none; }
+  #canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; display: block; }
+  #status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+            flex-direction: column; gap: 10px; text-align: center; padding: 16px; }
+  #status.gone { display: none; }
+  #bar { width: 220px; height: 6px; background: #2a3140; border-radius: 3px; overflow: hidden; }
+  #bar i { display: block; height: 100%; width: 0; background: #f0a030; }
+</style>
+</head>
+<body>
+<canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+<div id="status"><b>Guts&amp;Bolts</b><span id="msg">Loading…</span><div id="bar"><i></i></div></div>
+<script>
+  // The web Player (web/README.md). ?game=Obby%20of%20Doom jumps straight into a game that
+  // comes with the Player; ?page=... opens a page. Anything else opens the home screen.
+  const q = new URLSearchParams(location.search);
+  const args = [];
+  if (q.get('game')) args.push('/gb/games/' + q.get('game').replace(/[\/\\]/g, '') + '.gbscene');
+  if (q.get('page')) args.push('--page', q.get('page'));
+  if (q.has('guest')) args.push('--guest');
+  const msg = document.getElementById('msg'), bar = document.querySelector('#bar i');
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    arguments: args,
+    print: (t) => console.log(t),
+    printErr: (t) => console.warn(t),
+    setStatus: (t) => {
+      const m = t.match(/\((\d+(\.\d+)?)\/(\d+)\)/);
+      if (m) bar.style.width = (100 * m[1] / m[3]) + '%';
+      if (t) msg.textContent = t.replace(/\(.*\)/, '').trim() || 'Loading…';
+    },
+    onRuntimeInitialized: () => document.getElementById('status').classList.add('gone'),
+  };
+  window.onerror = (e) => { document.getElementById('status').classList.remove('gone'); msg.textContent = 'Something went wrong: ' + e; };
+</script>
+<script async src="GutsAndBoltsPlayer.js"></script>
+</body>
+</html>

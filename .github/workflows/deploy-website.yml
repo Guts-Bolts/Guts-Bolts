@@ -45,6 +45,18 @@ jobs:
         if: steps.key.outputs.have == 'yes'
         with:
           node-version: 22
+      # The web Player (web/README.md) goes to gutsandbolts.net/play/. If it doesn't
+      # build, the rest of the website still goes live.
+      - name: Build the web Player
+        if: steps.key.outputs.have == 'yes'
+        continue-on-error: true
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install 3.1.74
+          "$HOME/emsdk/emsdk" activate 3.1.74
+          source "$HOME/emsdk/emsdk_env.sh"
+          web/build.sh
+          mkdir -p website/play && cp web/out/* website/play/
       - name: Deploy
         if: steps.key.outputs.have == 'yes'
         env:

@@ -1,4 +1,4 @@
-// iOS fallback: OpenGL ES 3.0 does not provide the compute shaders / SSBOs
+// iOS and web fallback: OpenGL ES 3.0 / WebGL 2 do not provide the compute shaders / SSBOs
 // required by the accelerated liquid solver. Liquid.cpp uses its CPU solver
 // when supported() is false, so the rest of the engine remains available.
 #include "LiquidGpu.h"

@@ -22,6 +22,11 @@
 #include "CaCerts.h"
 #endif
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/websocket.h>
+#endif
+
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -178,6 +183,13 @@ struct Connection::Web {
     std::string in;        // bytes received, not yet whole WebSocket frames
     std::string partial;   // a message arriving in several frames
     std::mt19937 rng{std::random_device{}()};
+#ifdef __EMSCRIPTEN__
+    // In a browser there are no sockets: the page's own WebSocket carries the messages.
+    EMSCRIPTEN_WEBSOCKET_T   ws = 0;
+    bool                     open = false, closed = false;
+    std::vector<std::string> outbox;   // whole messages, waiting until it's open
+    std::string              arrived;  // length-prefixed messages, like m_in
+#endif
 #ifdef GB_WEBSOCKETS
     mbedtls_ssl_context      ssl;
     mbedtls_ssl_config       conf;
@@ -186,6 +198,9 @@ struct Connection::Web {
     bool                     sslReady = false;
 #endif
     ~Web() {
+#ifdef __EMSCRIPTEN__
+        if (ws) { emscripten_websocket_close(ws, 1000, ""); emscripten_websocket_delete(ws); }
+#endif
 #ifdef GB_WEBSOCKETS
         if (sslReady) {
             std::lock_guard<std::mutex> lock(tlsMutex());
@@ -423,7 +438,7 @@ std::string wsFrame(int opcode, const std::string& payload, std::mt19937& rng) {
 
 Connection::Connection(intptr_t sock, std::string address)
     : m_sock(sock), m_address(std::move(address)) {
-    setNonBlocking(m_sock);
+    if (m_sock >= 0) setNonBlocking(m_sock);
 }
 
 Connection::~Connection() {
@@ -441,6 +456,50 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
     // A server on the web: a WebSocket to its /ws (through TLS for wss://).
     bool tls = false;
     std::string name = webHostName(host, tls);
+#ifdef __EMSCRIPTEN__
+    // The browser's WebSocket. It opens in the background; send() waits for it.
+    // The main server is the website the Player was loaded from (so a test copy talks to itself).
+    (void)timeoutMs;
+    std::string url = (tls ? "wss://" : "ws://") + name + ((tls && port == 443) || (!tls && port == 80) ? "" : ":" + std::to_string(port)) + "/ws";
+    if (name == "gutsandbolts.net")
+        url = emscripten_run_script_string("(location.protocol == 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'");
+    if (!emscripten_websocket_is_supported()) { error = "This browser can't make WebSocket connections."; return nullptr; }
+    EmscriptenWebSocketCreateAttributes attr;
+    emscripten_websocket_init_create_attributes(&attr);
+    attr.url = url.c_str();
+    EMSCRIPTEN_WEBSOCKET_T ws = emscripten_websocket_new(&attr);
+    if (ws <= 0) { error = "Couldn't connect to " + url + "."; return nullptr; }
+    auto c = std::make_unique<Connection>(-1, host + ":" + std::to_string(port));
+    c->m_web = std::make_unique<Web>();
+    Web* w = c->m_web.get();
+    w->ws = ws;
+    // (named first: these set_..._callback calls are macros, so no commas inside them)
+    em_websocket_open_callback_func opened = [](int, const EmscriptenWebSocketOpenEvent*, void* u) -> EM_BOOL {
+        static_cast<Web*>(u)->open = true;
+        return EM_TRUE;
+    };
+    em_websocket_message_callback_func got = [](int, const EmscriptenWebSocketMessageEvent* e, void* u) -> EM_BOOL {
+        Web& web = *static_cast<Web*>(u);
+        uint32_t n = e->numBytes - (e->isText && e->numBytes ? 1 : 0);   // (text arrives with an ending 0)
+        unsigned char hdr[4] = {(unsigned char)(n >> 24), (unsigned char)(n >> 16), (unsigned char)(n >> 8), (unsigned char)n};
+        web.arrived.append((const char*)hdr, 4);
+        web.arrived.append((const char*)e->data, n);
+        return EM_TRUE;
+    };
+    em_websocket_error_callback_func broke = [](int, const EmscriptenWebSocketErrorEvent*, void* u) -> EM_BOOL {
+        static_cast<Web*>(u)->closed = true;
+        return EM_TRUE;
+    };
+    em_websocket_close_callback_func ended = [](int, const EmscriptenWebSocketCloseEvent*, void* u) -> EM_BOOL {
+        static_cast<Web*>(u)->closed = true;
+        return EM_TRUE;
+    };
+    emscripten_websocket_set_onopen_callback(ws, w, opened);
+    emscripten_websocket_set_onmessage_callback(ws, w, got);
+    emscripten_websocket_set_onerror_callback(ws, w, broke);
+    emscripten_websocket_set_onclose_callback(ws, w, ended);
+    return c;
+#else
     auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 8000));
     intptr_t s = tcpConnect(name, port, error, timeoutMs);
     if (s < 0) return nullptr;
@@ -465,6 +524,7 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
         return nullptr;
     }
     return c;
+#endif
 }
 
 
@@ -544,6 +604,9 @@ bool httpPost(const std::string& host, int port, const std::string& path, const 
 
 void Connection::send(const std::string& message) {
     if (!m_alive) return;
+#ifdef __EMSCRIPTEN__
+    if (m_web) { m_web->outbox.push_back(message); return; }
+#endif
     if (m_web) { m_out += wsFrame(0x2, message, m_web->rng); return; }   // one binary WebSocket message
     uint32_t n = (uint32_t)message.size();
     unsigned char hdr[4] = {(unsigned char)(n >> 24), (unsigned char)(n >> 16),
@@ -582,6 +645,17 @@ bool Connection::poll() {
 // turn whole WebSocket messages into the same length-prefixed messages as TCP.
 bool Connection::webPoll() {
     Web& w = *m_web;
+#ifdef __EMSCRIPTEN__
+    if (w.open) {
+        for (std::string& m : w.outbox)
+            if (emscripten_websocket_send_binary(w.ws, m.data(), (uint32_t)m.size()) != EMSCRIPTEN_RESULT_SUCCESS) w.closed = true;
+        w.outbox.clear();
+    }
+    m_in += w.arrived;
+    w.arrived.clear();
+    if (w.closed) { m_alive = false; return false; }
+    return true;
+#endif
     while (!m_out.empty()) {
         int n = w.write(m_out.data(), m_out.size());
         if (n < 0) { m_alive = false; return false; }
