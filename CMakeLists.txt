@@ -478,6 +478,7 @@ add_library(gb_engine STATIC
     src/scripting/ScriptRemotes.cpp
     src/scripting/SpatialQueries.cpp
     src/scripting/ScriptActions.cpp
+    src/scripting/ScriptHelp.cpp
     src/game/GameSession.cpp
     src/game/Hud.cpp
     src/game/EmoteMenu.cpp
@@ -1012,6 +1013,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(BoneRigTests tests/BoneRigTests.cpp)
     target_link_libraries(BoneRigTests PRIVATE gb_engine)
     add_test(NAME BoneRigTests COMMAND BoneRigTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Script help (the autocomplete's "how to use it"), wrong-case names, mouse button binds.
+    add_executable(ScriptingHelpTests tests/ScriptingHelpTests.cpp)
+    target_link_libraries(ScriptingHelpTests PRIVATE gb_engine)
+    add_test(NAME ScriptingHelpTests COMMAND ScriptingHelpTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # MemoryStoreService: the store's rules and the script side, played offline.

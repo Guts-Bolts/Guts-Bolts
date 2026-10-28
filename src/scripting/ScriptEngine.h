@@ -227,6 +227,9 @@ public:
     bool touchInput(int finger, const char* state, glm::vec2 position);   // UserInputType Touch
     bool inputSunk(int imguiKey) const;                  // a key the game's controls should ignore now
     bool pointerDown(bool down, glm::vec2 position);     // MouseButton1 in the game view (true = sunk)
+    // A mouse button pressed in the game view: 1 = left, 2 = right, 3 = the wheel (middle).
+    // Letting go is noticed by updateActions. True = an action sank it.
+    bool mouseButton(int button, bool down, glm::vec2 position);
     std::vector<ActionButton> actionButtons() const;     // the touch buttons to show, oldest first
     void actionButtonInput(const std::string& name, bool down, glm::vec2 position);   // one was pressed / let go
     // Tests (--test-command only): __gb_testInput pretends keys, clicks and touch buttons.
@@ -442,7 +445,7 @@ private:
     struct Held { std::string keyCode, inputType; std::vector<uint64_t> actions; };
     std::map<std::string, Held>                m_holders;    // input -> the actions that got its Begin
     std::set<std::string>                      m_sunk;       // inputs an action sank (until let go)
-    bool                                       m_pointerHeld = false;
+    bool                                       m_mouseHeld[3] = {false, false, false};   // MouseButton1 / 2 / 3
     struct TestInput { std::string kind, name; bool down; };
     std::vector<TestInput>                     m_testInputs;
     bool                                       m_testClick = false;

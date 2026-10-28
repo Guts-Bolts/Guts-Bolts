@@ -1900,6 +1900,8 @@ void PlayerApp::drawGame(float dt) {
         SceneNode* hit = partAt(pointer);
         m_session->click(hit ? hit->id : 0);
     }
+    if (toWorld && !touch && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) m_session->mouseDown(2);    // MouseButton2
+    if (toWorld && !touch && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) m_session->mouseDown(3);   // MouseButton3
     // A right-click (not a right-drag turning the camera): RightMouseClick.
     if (toWorld && !touch && hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
         io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] < 6.0f * 6.0f) {

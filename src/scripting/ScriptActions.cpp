@@ -27,7 +27,8 @@ namespace {
 constexpr int kDefaultPriority = 2000;   // Enum.ContextActionPriority.Default (= Medium)
 
 bool knownInputType(const std::string& s) {
-    return s == "Keyboard" || s == "Gamepad1" || s == "MouseButton1" || s == "Touch";
+    return s == "Keyboard" || s == "Gamepad1" || s == "MouseButton1" || s == "MouseButton2" || s == "MouseButton3" ||
+           s == "Touch";
 }
 } // namespace
 
@@ -61,8 +62,16 @@ struct ActionLua {
                 return luaL_error(L, "BindAction: input %d isn't an Enum.KeyCode or Enum.UserInputType", (int)i);
             std::string in = lua_tostring(L, -1);
             lua_pop(L, 1);
+            // MouseButton1Click is a button's event, not an input: it means the mouse button.
+            if (in == "MouseButton1Click" || in == "MouseButton2Click") {
+                Log::info("ContextActionService: \"" + name + "\" binds " + in.substr(0, 12) + " (" + in +
+                          " is a GUI button's event; the mouse button is Enum.UserInputType." + in.substr(0, 12) + ")");
+                in = in.substr(0, 12);
+            }
             if (!LuaApi::keyFromName(in) && !knownInputType(in))
-                Log::warn("ContextActionService: " + in + " can't be bound in Guts&Bolts yet (\"" + name + "\" won't hear it)");
+                Log::warn("ContextActionService: " + in + " can't be bound in Guts&Bolts yet (\"" + name +
+                          "\" won't hear it). Bind an Enum.KeyCode, or Enum.UserInputType MouseButton1 / MouseButton2 / "
+                          "MouseButton3 / Keyboard / Gamepad1 / Touch");
             a.inputs.push_back(in);
         }
         e->unbindAction(name, false);   // binding a name again replaces it
@@ -318,10 +327,15 @@ bool ScriptEngine::touchInput(int finger, const char* state, glm::vec2 position)
     return input("Touch#" + std::to_string(finger), "Unknown", "Touch", state, position);
 }
 
-bool ScriptEngine::pointerDown(bool down, glm::vec2 position) {
-    if (down == m_pointerHeld) return down && m_sunk.count("MouseButton1");
-    m_pointerHeld = down;
-    return input("MouseButton1", "Unknown", "MouseButton1", down ? "Begin" : "End", position);
+bool ScriptEngine::pointerDown(bool down, glm::vec2 position) { return mouseButton(1, down, position); }
+
+bool ScriptEngine::mouseButton(int button, bool down, glm::vec2 position) {
+    if (button < 1 || button > 3) return false;
+    const std::string type = "MouseButton" + std::to_string(button);
+    bool& held = m_mouseHeld[button - 1];
+    if (down == held) return down && m_sunk.count(type);
+    held = down;
+    return input(type, "Unknown", type, down ? "Begin" : "End", position);
 }
 
 bool ScriptEngine::inputSunk(int imguiKey) const {
@@ -372,8 +386,8 @@ void ScriptEngine::updateActions() {
         LuaApi::keyFromName(key, &type);
         input(key, key, type, "End", glm::vec2(0.0f));
     }
-    // The mouse button let go.
-    if (m_pointerHeld && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        pointerDown(false, LuaApi::mouseOnGame());
-    }
+    // Mouse buttons let go (ImGui counts left, right, middle; we count MouseButton1, 2, 3).
+    const ImGuiMouseButton imguiButton[3] = {ImGuiMouseButton_Left, ImGuiMouseButton_Right, ImGuiMouseButton_Middle};
+    for (int b = 0; b < 3; ++b)
+        if (m_mouseHeld[b] && !ImGui::IsMouseDown(imguiButton[b])) mouseButton(b + 1, false, LuaApi::mouseOnGame());
 }

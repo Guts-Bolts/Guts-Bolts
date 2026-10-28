@@ -4,6 +4,7 @@
 #include <sstream>
 #include <cmath>
 #include <unordered_map>
+#include <unordered_set>
 #include "../scene/Guis.h"
 #include "../game/Profile.h"
 #include "../scene/EditMesh.h"
@@ -2186,7 +2187,6 @@ const std::vector<InsertItem>& insertItems() {
         {"Part", Icons::Id::Part}, {"Sphere", Icons::Id::Sphere}, {"Cylinder", Icons::Id::Cylinder},
         {"MeshPart", Icons::Id::Mesh}, {"SpawnLocation", Icons::Id::Part}, {"TrussPart", Icons::Id::Part}, {"Seat", Icons::Id::Part}, {"VehicleSeat", Icons::Id::Part}, {"Water", Icons::Id::Part}, {"FluidVolume", Icons::Id::Part}, {"WaterSource", Icons::Id::Part}, {"FluidSystem", Icons::Id::Value}, {"FluidEmitter", Icons::Id::Sound}, {"Model", Icons::Id::Model}, {"Folder", Icons::Id::Folder},
         {"Script", Icons::Id::Script}, {"LocalScript", Icons::Id::LocalScript}, {"ModuleScript", Icons::Id::ModuleScript},
-        {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
         {"Sky", Icons::Id::Lighting}, {"ColorCorrectionEffect", Icons::Id::Lighting}, {"SunRaysEffect", Icons::Id::Lighting},
         {"MaterialVariant", Icons::Id::Lighting},
         {"DepthOfFieldEffect", Icons::Id::Lighting}, {"BloomEffect", Icons::Id::Lighting}, {"BlurEffect", Icons::Id::Lighting},
@@ -2218,12 +2218,21 @@ const std::vector<InsertItem>& insertItems() {
         {"IntValue", Icons::Id::Value}, {"NumberValue", Icons::Id::Value}, {"StringValue", Icons::Id::Value}, {"BoolValue", Icons::Id::Value}};
     return list;
 }
+
+// The full list, each name only once (a name listed twice showed up twice in
+// the window and made Dear ImGui complain about "conflicting ID").
+std::vector<InsertItem> insertList() {
+    std::vector<InsertItem> list;
+    std::unordered_set<std::string> seen;
+    for (const InsertItem& o : insertItems()) if (seen.insert(o.name).second) list.push_back(o);
+    for (const PremadeInfo& p : premadeList()) if (seen.insert(p.name).second) list.push_back({p.name, Icons::Id::Model});
+    return list;
+}
 } // namespace
 
 std::vector<std::string> Editor::insertKinds() {
     std::vector<std::string> out;
-    for (const InsertItem& o : insertItems()) out.push_back(o.name);
-    for (const PremadeInfo& p : premadeList()) out.push_back(p.name);
+    for (const InsertItem& o : insertList()) out.push_back(o.name);
     return out;
 }
 
@@ -2237,22 +2246,24 @@ void Editor::renderInsertObject() {
     if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
     ImGui::SetNextItemWidth(-1);
     bool enter = ImGui::InputTextWithHint("##find", "Search objects", &m_insertFilter, ImGuiInputTextFlags_EnterReturnsTrue);
-    std::vector<InsertItem> list = insertItems();
-    for (const PremadeInfo& p : premadeList()) list.push_back({p.name, Icons::Id::Model});
+    std::vector<InsertItem> list = insertList();
     std::string f = m_insertFilter;
     for (char& c : f) c = (char)std::tolower((unsigned char)c);
     ImGui::BeginChild("##list");
     bool first = true;
-    for (const InsertItem& o : list) {
+    for (size_t i = 0; i < list.size(); i++) {
+        const InsertItem& o = list[i];
         std::string n = o.name;
         for (char& c : n) c = (char)std::tolower((unsigned char)c);
         if (!f.empty() && n.find(f) == std::string::npos) continue;
+        ImGui::PushID((int)i);
         Icons::inlineIcon(o.icon);
         ImGui::SameLine();
         if (ImGui::Selectable(o.name) || (enter && first)) {
             insertObject(o.name, parent);
             ImGui::CloseCurrentPopup();
         }
+        ImGui::PopID();
         first = false;
     }
     ImGui::EndChild();

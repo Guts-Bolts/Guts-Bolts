@@ -3418,14 +3418,38 @@ void ScriptEngine::stop() {
     m_actions.clear();
     m_holders.clear();
     m_sunk.clear();
-    m_pointerHeld = false;
+    m_mouseHeld[0] = m_mouseHeld[1] = m_mouseHeld[2] = false;
     m_testInputs.clear();
     m_testClick = false;
 }
 
 void ScriptEngine::reportError(lua_State* co) {
     const char* msg = lua_tostring(co, -1);
-    Log::error(msg ? msg : "(script error with no message)");
+    std::string text = msg ? msg : "(script error with no message)";
+    // "attempt to call a nil value (global 'getMouse3D')": names care about upper / lower
+    // case, so say which one was meant when only that is off.
+    const size_t at = text.find("(global '");
+    const size_t end = at == std::string::npos ? std::string::npos : text.find("')", at);
+    if (end != std::string::npos) {
+        const std::string name = text.substr(at + 9, end - at - 9);
+        std::string want = name;
+        for (char& c : want) c = (char)std::tolower((unsigned char)c);
+        std::string found;
+        lua_pushglobaltable(co);
+        lua_pushnil(co);
+        while (lua_next(co, -2)) {
+            lua_pop(co, 1);   // (the value)
+            if (found.empty() && lua_type(co, -1) == LUA_TSTRING) {
+                std::string k = lua_tostring(co, -1);
+                std::string lk = k;
+                for (char& c : lk) c = (char)std::tolower((unsigned char)c);
+                if (lk == want && k != name && k.rfind("__gb_", 0) != 0) found = k;
+            }
+        }
+        lua_pop(co, 1);
+        if (!found.empty()) text += " (did you mean " + found + "? Upper / lower case matters)";
+    }
+    Log::error(text);
     lua_pop(co, 1);
 }
 

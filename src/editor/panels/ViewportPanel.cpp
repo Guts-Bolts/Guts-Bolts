@@ -895,6 +895,8 @@ void ViewportPanel::render(float dt) {
             std::string cursorIcon;
             if (m_session->hoverPart(under ? under->id : 0, &cursorIcon)) ClickDetectors::showPointer(ImGui::GetMousePos(), cursorIcon);
             if (toWorld && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) m_session->click(under ? under->id : 0);
+            if (toWorld && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) m_session->mouseDown(2);    // MouseButton2
+            if (toWorld && ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) m_session->mouseDown(3);   // MouseButton3
             // A right-click (not a right-drag turning the camera): RightMouseClick.
             if (toWorld && ImGui::IsMouseReleased(ImGuiMouseButton_Right) &&
                 ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] < 6.0f * 6.0f)
