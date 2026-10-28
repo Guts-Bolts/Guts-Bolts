@@ -866,6 +866,7 @@
 "Couldn't open that picture. Check the path."
 "Couldn't reach Claude"
 "Couldn't reach the app's Java side."
+"Couldn't reach the server. Check your internet."
 "Couldn't save the game file (is it read-only?)."
 "Couldn't save the item."
 "Couldn't save the template."
