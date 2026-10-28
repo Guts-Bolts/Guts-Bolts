@@ -106,7 +106,8 @@ void GbServer::syncOwned(User& u, const Asset& a) {
         u.owned.erase(a.id);
         if (u.avatar.is_object() && u.avatar.contains("wearing") && u.avatar["wearing"].is_array()) {
             json keep = json::array();
-            for (const json& w : u.avatar["wearing"]) if (w != a.id) keep.push_back(w);
+            for (const json& w : u.avatar["wearing"])   // (and the pieces of it, if it's a body bundle)
+                if (w != a.id && !(w.is_string() && w.get<std::string>().rfind(a.id + "-", 0) == 0)) keep.push_back(w);
             u.avatar["wearing"] = keep;
         }
     }
@@ -991,6 +992,44 @@ std::string GbServer::bundleItems(const nlohmann::json& list, std::vector<std::s
 }
 
 // Someone just got a bundle: they get everything in it too (things they already have are skipped).
+const GbServer::Asset* GbServer::bundlePiece(const std::string& id, std::string& part) const {
+    static const std::map<std::string, std::string> kParts = {{"head", "Head"}, {"torso", "Torso"}, {"leftarm", "Left Arm"},
+        {"rightarm", "Right Arm"}, {"leftleg", "Left Leg"}, {"rightleg", "Right Leg"}};
+    const size_t cut = id.rfind('-');
+    if (cut == std::string::npos || cut == 0) return nullptr;
+    auto p = kParts.find(id.substr(cut + 1));
+    if (p == kParts.end()) return nullptr;
+    auto it = findAsset(id.substr(0, cut));
+    if (it == m_assets.end() || it->second.kind != "bundle" || !it->second.meta.is_object() || it->second.meta.value("body", false) != true) return nullptr;
+    part = p->second;
+    return &it->second;
+}
+
+bool GbServer::canWear(const User& u, const std::string& id) const {
+    if (u.owned.count(id)) return true;
+    std::string part;
+    const Asset* b = bundlePiece(id, part);
+    return b && u.owned.count(b->id);
+}
+
+json GbServer::wearableJson(const std::string& id) const {
+    if (auto it = findAsset(id); it != m_assets.end()) return publicAsset(it->second);
+    std::string part;
+    const Asset* b = bundlePiece(id, part);
+    if (!b) return nullptr;
+    // Looks like a single body part whose body comes from its bundle (meta.bundle).
+    json j = publicAsset(*b);
+    std::string slug;
+    for (char c : part) if (c != ' ') slug += (char)std::tolower((unsigned char)c);
+    j["id"] = b->id + "-" + slug;
+    j["kind"] = "bodypart";
+    j["name"] = b->name + ": " + part;
+    j["price"] = 0; j["sales"] = 0;
+    j.erase("limited"); j.erase("auction");
+    j["meta"] = {{"bodyPart", part}, {"bundle", b->id}};
+    return j;
+}
+
 void GbServer::giveBundle(User& u, const Asset& a) {
     if (a.kind != "bundle" || !a.meta.is_object() || !a.meta.contains("items") || !a.meta["items"].is_array()) return;
     for (const auto& id : a.meta["items"]) {

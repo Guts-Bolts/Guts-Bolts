@@ -342,6 +342,11 @@ private:
     // what's wrong), and handing out what's in one to someone who just got it.
     std::string bundleItems(const nlohmann::json& list, std::vector<std::string>& out) const;
     void giveBundle(User& u, const Asset& a);
+    // Bundle pieces (worker/server.js bundlePiece / canWear / wearableJson): one part of a body
+    // bundle worn on its own, like a single body part. Its id is "<bundle id>-<part>" ("137-leftarm").
+    const Asset* bundlePiece(const std::string& id, std::string& part) const;   // the bundle, and the part's rig name
+    bool canWear(const User& u, const std::string& id) const;                  // owned, or a piece of an owned bundle
+    nlohmann::json wearableJson(const std::string& id) const;                  // as the catalog shows it (null: nothing)
     void addStarterEmotes();  // the starter emotes and animation packs (assets/emotes), as the staff account's
     void addExampleGames();   // the games folder's example games, as the staff account's
     void saveUsers();

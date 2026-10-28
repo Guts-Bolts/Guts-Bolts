@@ -121,8 +121,8 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
                 json wearing = json::array();
                 if (o.contains("avatar") && o["avatar"].contains("wearing"))
                     for (const json& id : o["avatar"]["wearing"])
-                        if (id.is_string()) if (auto it = findAsset(id.get<std::string>()); it != m_assets.end())
-                            wearing.push_back(publicAsset(it->second));
+                        if (id.is_string()) if (json w = wearableJson(id.get<std::string>()); !w.is_null())
+                            wearing.push_back(w);
                 out.push_back({{"id", o.value("id", std::string())}, {"name", o.value("name", std::string())},
                                {"avatar", o.value("avatar", json::object())}, {"created", o.value("created", 0LL)}, {"wearing", wearing}});
             }
@@ -151,7 +151,7 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             json av = (*o)["avatar"];
             json wearing = json::array();   // things sold or traded away since are left off
             if (av.contains("wearing") && av["wearing"].is_array())
-                for (const json& w : av["wearing"]) if (w.is_string() && me.owned.count(w.get<std::string>())) wearing.push_back(w);
+                for (const json& w : av["wearing"]) if (w.is_string() && canWear(me, w.get<std::string>())) wearing.push_back(w);
             av["wearing"] = wearing;
             av["updated"] = now;
             me.avatar = av;

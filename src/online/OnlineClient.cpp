@@ -209,7 +209,7 @@ void takeMe(const json& reply) {
                     for (const json& a : r["wearing"]) if (a.is_object()) {
                         Catalog::Item item = Catalog::fromServer(a);
                         if (item.type == Catalog::Type::BodyPart || (item.type == Catalog::Type::Bundle && !item.body.empty()))
-                            Online::download(item.id);  // warm the mesh cache for the next avatar apply
+                            Online::download(item.body.rfind("gb:", 0) == 0 ? item.body.substr(3) : item.id);  // warm the mesh cache for the next avatar apply
                         Catalog::applyLook(item);
                     }
                     me.wearing = wearing;   // (applyLook tidies the list; the server's is right)
@@ -219,10 +219,16 @@ void takeMe(const json& reply) {
     }
 }
 
-// "hat-1a2b3c4d5e", "123" or "item-headless-head": clothes from the server's catalog (the built-in
-// catalog's ids look different).
+// "hat-1a2b3c4d5e", "123", "123-leftarm" (one part of a body bundle) or "item-headless-head": clothes
+// from the server's catalog (the built-in catalog's ids look different).
 static bool isServerItem(const std::string& id) {
     if (!id.empty() && id.size() < 12 && std::all_of(id.begin(), id.end(), [](char c) { return std::isdigit((unsigned char)c); })) return true;
+    if (const size_t cut = id.find('-'); cut > 0 && cut < 12 && cut != std::string::npos) {
+        const std::string part = id.substr(cut + 1);
+        if (std::all_of(id.begin(), id.begin() + (long)cut, [](char c) { return std::isdigit((unsigned char)c); }) &&
+            (part == "head" || part == "torso" || part == "leftarm" || part == "rightarm" || part == "leftleg" || part == "rightleg"))
+            return true;
+    }
     if (id.rfind("item-", 0) == 0) return true;
     for (const char* k : {"hat-", "shirt-", "pants-", "tshirt-", "hair-", "faceacc-", "neck-", "shoulder-", "waist-", "face-"}) {
         size_t n = std::strlen(k);
