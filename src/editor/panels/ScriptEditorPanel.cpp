@@ -32,7 +32,7 @@ const char* const kWords[] = {
     "workspace", "game", "script", "Instance.new", "Vector3.new", "Color3.new", "Color3.fromRGB", "Color3.fromHSV",
     "CFrame.new", "CFrame.Angles", "CFrame.lookAt", "task.wait", "task.spawn", "task.delay", "wait", "spawn", "delay",
     "time", "tick", "Explode", "Effects", "Sounds", "Gui", "Lighting", "Enum",
-    "Players", "RunService", "UserInputService", "VRService", "GetUserCFrame", "VREnabled", "CollectionService", "PathfindingService", "TweenService", "TweenInfo", "HttpService", "JSONEncode", "JSONDecode", "Raycast", "RaycastParams", "FindPartOnRay", "GetPartBoundsInRadius", "Terrain", "FillBlock", "FillBall", "GetHeight", "Sculpt", "BindableEvent", "BindableFunction", "ReplicatedStorage", "ServerStorage", "NextInteger", "NextNumber",
+    "Players", "RunService", "UserInputService", "VRService", "GetUserCFrame", "VREnabled", "CollectionService", "PathfindingService", "TweenService", "TweenInfo", "HttpService", "JSONEncode", "JSONDecode", "Raycast", "RaycastParams", "FindPartOnRay", "GetPartBoundsInRadius", "GetPartBoundsInBox", "GetPartsInPart", "OverlapParams", "Terrain", "FillBlock", "FillBall", "GetHeight", "Sculpt", "BindableEvent", "BindableFunction", "ReplicatedStorage", "ServerStorage", "NextInteger", "NextNumber",
     "PromptProductPurchase", "ProcessReceipt", "PromptProductPurchaseFinished", "ProductPurchaseDecision", "PurchaseGranted",
     "NotProcessedYet", "UserOwnsGamePassAsync", "PromptGamePassPurchase",
     "TeleportService", "TeleportOptions", "Teleport", "TeleportAsync", "TeleportPartyAsync", "SetTeleportData", "GetJoinData",

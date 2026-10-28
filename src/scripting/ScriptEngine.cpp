@@ -1,5 +1,6 @@
 #include "ScriptEngine.h"
 #include "ScriptHistory.h"
+#include "SpatialQueries.h"
 #include "../core/Pad.h"
 #include "../core/Account.h"
 #include "../online/OnlineClient.h"
@@ -1054,18 +1055,7 @@ function LoadLibrary(name)
     end }
 end
 
--- workspace:GetPartBoundsInRadius(position, radius): parts near a point.
-addMethod("GetPartBoundsInRadius", function(self, pos, radius)
-    local out = {}
-    for _, d in ipairs(workspace:GetDescendants()) do
-        if d:IsA("BasePart") then
-            local s = d.Size
-            local reach = radius + math.max(s.X, s.Y, s.Z) * 0.5
-            if (d.Position - pos).Magnitude <= reach then out[#out + 1] = d end
-        end
-    end
-    return out
-end)
+-- (workspace:GetPartBoundsInRadius and the other spatial queries: SpatialQueries.cpp)
 
 -- TweenService: smoothly change properties over time.
 --   local info = TweenInfo.new(2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
@@ -3183,6 +3173,7 @@ void ScriptEngine::start(bool runScripts) {
         lua_pop(L, 1);
     }
     --m_depth;
+    SpatialQueries::install(L);   // workspace:GetPartsInPart, OverlapParams...
     // For Studio's AI tools: an object by its id number (they refer to objects that way).
     lua_register(L, "__gb_byId", [](lua_State* L) -> int {
         uint64_t id = (uint64_t)luaL_checkinteger(L, 1);
