@@ -88,6 +88,12 @@ option(GB_MOBILE "Build the phone/tablet Player (SDL2 + OpenGL ES 3)" OFF)
 if(ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "iOS" OR EMSCRIPTEN)
     set(GB_MOBILE ON)
 endif()
+if(EMSCRIPTEN)
+    # Let C++ errors (try / catch) work in the browser too. Without this a thrown error
+    # just stops the page with "Uncaught <number>" and nobody can tell what went wrong.
+    add_compile_options(-fwasm-exceptions)
+    add_link_options(-fwasm-exceptions)
+endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum iOS deployment target" FORCE)
 

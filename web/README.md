@@ -32,7 +32,6 @@ Serve `web/out` from any web server (opening the file directly doesn't work).
 - Water is simulated on the CPU (WebGL 2 has no compute shaders), like on iPhone.
 - The games, catalog and pictures that come with the Player are packed into
   `GutsAndBoltsPlayer.data`.
-
 - Typing on phones: a browser only opens the keyboard for a real text box on the
   page, so `index.html` keeps a hidden one. When one of the Player's text boxes wants
   typing (`src/player/WebKeyboard.cpp`), the tap that picked it focuses the hidden
@@ -40,6 +39,12 @@ Serve `web/out` from any web server (opening the file directly doesn't work).
 - Saving: your login (`/save/account`), settings and avatar live in `/save`, which
   `index.html` keeps in the browser's IndexedDB (loaded before the game starts,
   written back every few seconds and when you leave the page).
+
+## When it crashes
+
+If something goes wrong, the loading screen shows the error's text (`showWebError`
+in `PlayerApp.cpp`). The build uses `-fwasm-exceptions` so C++ errors can be
+caught in the browser; without it you only get "Uncaught" and a number.
 
 ## Not done yet
 

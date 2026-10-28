@@ -75,6 +75,12 @@ struct PlayerOptions {
 
 // Guts&BoltsPlayer: the platform app. Browse the games on this computer,
 // dress up your avatar, and play — no editor in sight.
+#ifdef __EMSCRIPTEN__
+// Web Player: shows a C++ error's text on the loading screen (web/index.html), so a
+// crash on someone's phone says what went wrong instead of "Uncaught 8705416".
+void showWebError(const char* what);
+#endif
+
 class PlayerApp {
 public:
     explicit PlayerApp(PlayerOptions opts);

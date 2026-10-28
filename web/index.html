@@ -48,7 +48,13 @@
     },
     onRuntimeInitialized: () => document.getElementById('status').classList.add('gone'),
     preRun: [keepSaves],
+    gbError: (t) => showError(t),   // a C++ error, with its text (showWebError in PlayerApp.cpp)
+    onAbort: (t) => showError(t),
   };
+  function showError(t) {
+    document.getElementById('status').classList.remove('gone');
+    msg.textContent = 'Something went wrong: ' + t;
+  }
 
   // Saving: /save (your login, settings and avatar) lives in the browser's IndexedDB, so
   // it's still there after closing the tab. Loaded before the game starts, written back
@@ -103,7 +109,7 @@
     }
     kb.value = FILL;
   });
-  window.onerror = (e) => { document.getElementById('status').classList.remove('gone'); msg.textContent = 'Something went wrong: ' + e; };
+  window.onerror = (e) => { if (!String(e).includes('unwind')) showError(e); };
 </script>
 <script async src="GutsAndBoltsPlayer.js"></script>
 </body>
