@@ -19,7 +19,7 @@ test('staff add, change and remove roadmap items, and everyone can see them', ()
   assert.match(s.call(s.staff, 'admin.roadmapSave', { title: 'X', status: 'someday' }).error, /Planned/);
   assert.match(s.call(s.staff, 'admin.roadmapSave', { status: 'planned' }).error, /title/);
   assert.ok(s.call(s.staff, 'admin.roadmapRemove', { id }).ok);
-  assert.equal(s.call(visitor, 'roadmap.get').items.length, 0);
+  assert.equal(s.call(visitor, 'roadmap.get').items.filter((x) => !x.builtIn).length, 0);
   assert.equal(s.staffLog.at(-1).action, 'roadmap');
 });
 

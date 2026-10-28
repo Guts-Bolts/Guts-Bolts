@@ -55,6 +55,8 @@ int keyCode(const std::string& name) {
     return 101;   // E
 }
 constexpr float kRobloxGravity = 196.2f;
+// A VehicleSeat's MaxSpeed, compared with walking (Roblox's WalkSpeed 16, ours 6).
+constexpr float kSeatSpeedScale = 6.0f / 16.0f;
 // Movers (BodyVelocity, AlignPosition...) in Roblox numbers -> ours. Our world is half
 // the size with gentler gravity (22 vs 196.2), so speeds, spins and forces all shrink.
 // Plastic is 0.7 heavy in Roblox and 1 here.
@@ -1007,6 +1009,17 @@ struct Converter {
                     node->attributes.push_back(a);
                 }
             }
+            if (c == "VehicleSeat") {   // and drive it (Vehicles.h); only what isn't Roblox's default is kept
+                node->tags.push_back("VehicleSeat");
+                auto keep = [&](const char* name, float value, float ours) {
+                    if (std::abs(value - ours) < 1e-3f) return;
+                    Attribute a; a.name = name; a.type = Attribute::Number; a.n = value;
+                    node->attributes.push_back(a);
+                };
+                keep("MaxSpeed", (float)in.num("MaxSpeed", 25.0) * kSeatSpeedScale, Vehicles::kMaxSpeed);
+                keep("Torque", (float)in.num("Torque", 10.0), Vehicles::kTorque);
+                keep("TurnSpeed", (float)in.num("TurnSpeed", 1.0), Vehicles::kTurnSpeed);
+            }
             if (c.find("Operation") != std::string::npos)
                 note("Unions come in as blocks of the same size.");
             glm::vec3 size(4, 1, 2);
@@ -1956,7 +1969,9 @@ struct XmlWriter {
         if (n.internal || scene.isCharacterPart(&n) || scene.isProtected(&n)) return;
         const char* cls = nullptr;
         switch (n.kind) {
-            case NodeKind::Part:       cls = n.isSpawnLocation() ? "SpawnLocation" : "Part"; break;
+            case NodeKind::Part:
+                cls = n.isSpawnLocation() ? "SpawnLocation" : Vehicles::isVehicleSeat(&n) ? "VehicleSeat" : Player::isSeat(&n) ? "Seat" : "Part";
+                break;
             case NodeKind::Model: {
                 const Attribute* rc = n.findAttribute("RobloxClass");
                 cls = rc && rc->type == Attribute::String && rc->s == "WorldModel" ? "WorldModel" : "Model";
@@ -2347,7 +2362,12 @@ struct XmlWriter {
                 boolean("AllowTeamChangeOnTouch", n.allowTeamChange);
                 o << "<BrickColor name=\"TeamColor\">" << brickNumber(n.teamColor) << "</BrickColor>\n";
             }
-            token("shape", shape);
+            if (Player::isSeat(&n)) boolean("Disabled", Player::seatDisabled(&n));
+            if (Vehicles::isVehicleSeat(&n)) {   // (their speeds are compared with walking: ours is 6, Roblox's 16)
+                flt("MaxSpeed", Vehicles::maxSpeed(&n) / kSeatSpeedScale);
+                flt("Torque", Vehicles::torque(&n));
+                flt("TurnSpeed", Vehicles::turnSpeed(&n));
+            } else token("shape", shape);
             token("TopSurface", 0);
             token("BottomSurface", 0);
             break;

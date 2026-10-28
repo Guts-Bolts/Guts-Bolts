@@ -2598,6 +2598,29 @@ attribute set to true to switch it off. Scripts can use `Humanoid.Sit`
 (`false` gets up), `Humanoid.SeatPart`, `seat.Occupant`, `seat.Disabled` and
 `seat:Sit(humanoid)`.
 
+### Vehicles
+
+A **VehicleSeat** (Insert Object > VehicleSeat, or a part called VehicleSeat or
+tagged "VehicleSeat") is a seat that drives whatever it's built into: the Model
+it's in. Sit in it and **W/S** (or the touch stick, or a controller's left
+stick) speed up and slow down, **A/D** steer. The Toolbox has a ready-made
+**Car** and **Boat** to try straight away.
+
+- **With wheels:** every HingeConstraint with a motor in the vehicle turns its
+  wheel so the vehicle rolls forward, and the left and right wheels go at
+  different speeds to turn (like a tank). Balls or cylinders on hinges make
+  good wheels.
+- **Without wheels** (a boat, a hovercraft): the seat pushes the whole thing
+  along and turns it. Make the hull out of Wood so it floats.
+
+Its settings are attributes: **MaxSpeed** (top speed, studs a second, 12),
+**Torque** (how quickly it speeds up, 10) and **TurnSpeed** (1). Scripts can
+read `seat.Throttle` and `seat.Steer` (-1, 0 or 1), `seat.ThrottleFloat` and
+`seat.SteerFloat`, and `seat.Occupant`, and can set Throttle and Steer on an
+empty seat to drive it themselves. In multiplayer the host runs the physics,
+so each driver's keys are sent to it. Roblox files keep VehicleSeats (their
+MaxSpeed is scaled like walking speed, 16 there and 6 here).
+
 ### Getting dressed (the Avatar page)
 
 In the app, the Avatar page's **Wardrobe** tab shows everything you own,
@@ -3299,7 +3322,8 @@ node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.tes
 
 GitHub runs them (plus a check of every website script for typing mistakes) on
 every change, as the **Tests** job. (Before they start, the update log is gathered
-from `worker/updates/`, one file per update, by `worker/gather-updates.mjs`.
+from `worker/updates/`, one file per update, and the built-in roadmap from
+`worker/roadmap/`, one file per item, by `worker/gather-updates.mjs`.
 Cloudflare does the same before each deploy.) To add a test, copy one of the
 `*.test.mjs` files; `makeServer()` in `helpers.mjs` gives you a fresh server and
 `s.call(player, 'op', {...})` asks it to do something.

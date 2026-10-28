@@ -8,6 +8,8 @@
 //   admin.roadmapRemove {id}
 //   admin.ideaAnswer    {id, answer: planned|declined|open, note}   (planned also adds it to the roadmap)
 //   admin.ideaRemove    {id}
+// The built-in items (worker/roadmap/, one file each, ids starting "b-") come with the main
+// server's code only, like the built-in updates, so this one lists just what staff added here.
 #include "Server.h"
 #include "ServerUtil.h"
 #include "../core/Account.h"

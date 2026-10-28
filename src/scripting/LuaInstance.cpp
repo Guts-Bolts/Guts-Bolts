@@ -259,6 +259,8 @@ const char* className(lua_State* L, const SceneNode* n) {
         default:
             if (isFluidVolume(n)) return "FluidVolume";
             if (n->isSpawnLocation()) return "SpawnLocation";
+            if (Vehicles::isVehicleSeat(n)) return "VehicleSeat";
+            if (Player::isSeat(n)) return "Seat";
             return n->primitiveType == PrimitiveType::Mesh ? "MeshPart" : "Part";
     }
 }
@@ -2068,11 +2070,26 @@ int inst_index(lua_State* L) {
     if (part && Player::isSeat(n)) {   // Seat / VehicleSeat
         if (is(k, "Occupant")) {   // the Humanoid sitting on it, or nil
             Player* p = E(L)->scene()->player();
-            if (p && p->seatId() == n->id) LuaApi::pushHumanoid(L, p->rootId()); else lua_pushnil(L);
+            const uint64_t driver = E(L)->scene()->vehicles().driver(n->id);   // (someone else driving it, in multiplayer)
+            if (p && p->seatId() == n->id) LuaApi::pushHumanoid(L, p->rootId());
+            else if (driver) LuaApi::pushHumanoid(L, driver);
+            else lua_pushnil(L);
             return 1;
         }
         if (is(k, "Disabled")) { lua_pushboolean(L, Player::seatDisabled(n)); return 1; }
         if (is(k, "Sit")) { lua_pushcfunction(L, seat_sit); return 1; }
+        if (Vehicles::isVehicleSeat(n)) {   // what the driver is pressing, and how it drives (Vehicles.h)
+            const Vehicles& v = E(L)->scene()->vehicles();
+            const float th = v.throttle(n->id), st = v.steer(n->id);
+            if (is(k, "Throttle"))      { lua_pushinteger(L, th > 0.5f ? 1 : th < -0.5f ? -1 : 0); return 1; }
+            if (is(k, "Steer"))         { lua_pushinteger(L, st > 0.5f ? 1 : st < -0.5f ? -1 : 0); return 1; }
+            if (is(k, "ThrottleFloat")) { lua_pushnumber(L, th); return 1; }
+            if (is(k, "SteerFloat"))    { lua_pushnumber(L, st); return 1; }
+            if (is(k, "MaxSpeed"))      { lua_pushnumber(L, Vehicles::maxSpeed(n)); return 1; }
+            if (is(k, "Torque"))        { lua_pushnumber(L, Vehicles::torque(n)); return 1; }
+            if (is(k, "TurnSpeed"))     { lua_pushnumber(L, Vehicles::turnSpeed(n)); return 1; }
+            if (is(k, "HeadsUpDisplay")) { lua_pushboolean(L, false); return 1; }
+        }
     }
     if (part) {
         if (is(k, "Color"))        { LuaApi::pushColor3(L, n->color); return 1; }
@@ -2448,6 +2465,14 @@ int inst_set(lua_State* L) {
                                                    [](const Attribute& a) { return a.name == "Waves"; }), n->attributes.end());
                 return 0;
             }
+        }
+        if (Vehicles::isVehicleSeat(n)) {
+            if (is(k, "Throttle") || is(k, "ThrottleFloat")) { E(L)->scene()->vehicles().scriptSet(n->id, true, (float)luaL_checknumber(L, 3)); return 0; }
+            if (is(k, "Steer") || is(k, "SteerFloat"))       { E(L)->scene()->vehicles().scriptSet(n->id, false, (float)luaL_checknumber(L, 3)); return 0; }
+            if (is(k, "MaxSpeed"))  { setAttr(n, "MaxSpeed", Attribute::Number, std::max(0.0, luaL_checknumber(L, 3))); return 0; }
+            if (is(k, "Torque"))    { setAttr(n, "Torque", Attribute::Number, std::max(0.0, luaL_checknumber(L, 3))); return 0; }
+            if (is(k, "TurnSpeed")) { setAttr(n, "TurnSpeed", Attribute::Number, std::max(0.0, luaL_checknumber(L, 3))); return 0; }
+            if (is(k, "HeadsUpDisplay")) return 0;
         }
         if (is(k, "Disabled") && Player::isSeat(n)) {   // switch a seat off (whoever's on it gets up)
             Attribute* a = nullptr;
@@ -2884,8 +2909,9 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Light);
         n->lightType = cls == "SpotLight" ? LightType::Spot : LightType::Point;
         n->color = {1.0f, 1.0f, 1.0f};
-    } else if (parseShape(cls, shape) || cls == "SpawnLocation" || cls == "WedgePart" || cls == "TrussPart") {
-        if (cls == "SpawnLocation" || cls == "WedgePart" || cls == "TrussPart") shape = PrimitiveType::Cube;
+    } else if (parseShape(cls, shape) || cls == "SpawnLocation" || cls == "WedgePart" || cls == "TrussPart" ||
+               cls == "Seat" || cls == "VehicleSeat") {
+        if (cls == "SpawnLocation" || cls == "WedgePart" || cls == "TrussPart" || cls == "Seat" || cls == "VehicleSeat") shape = PrimitiveType::Cube;
         n = std::make_unique<SceneNode>(cls == "Block" || cls == "Cube" ? "Part" : cls);
         n->primitiveType = shape;
         n->mesh     = MeshLibrary::get(shape);
@@ -2893,6 +2919,7 @@ int inst_new(lua_State* L) {
         n->color    = {0.64f, 0.64f, 0.66f};
         n->transform.position = {0.0f, 0.5f, 0.0f};
         if (cls == "SpawnLocation") n->tags.push_back("SpawnLocation");   // (still one when renamed)
+        if (cls == "Seat" || cls == "VehicleSeat") { n->tags.push_back(cls); n->transform.scale = {2.0f, 0.5f, 2.0f}; }
     } else {
         return luaL_error(L, "Instance.new: unknown class '%s' (try \"Part\", \"Ball\", "
                              "\"Cylinder\", \"Model\", \"Folder\" or \"PointLight\")", cls.c_str());
