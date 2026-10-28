@@ -137,7 +137,7 @@ static void drawTermsWindow(bool& open) {
     Classic::pushLight();
     if (ImGui::Begin("Guts&Bolts Terms of Service", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings)) {
         ImGui::PushTextWrapPos(0);
-        auto head = [](const char* t) { ImGui::Spacing(); ImGui::TextColored(ImVec4(0.1f, 0.25f, 0.55f, 1), "%s", t); };
+        auto head = [](const char* t) { ImGui::Spacing(); ImGui::TextColored(Classic::kTitle, "%s", t); };
         head("What Guts&Bolts is");
         ImGui::TextUnformatted("A free, independent game engine and platform made for fun. Nobody profits from it: there are no "
                                "paid subscriptions, and Bolts can't be bought with or turned into real money. It is NOT "

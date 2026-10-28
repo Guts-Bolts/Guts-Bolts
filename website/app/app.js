@@ -673,7 +673,7 @@ pages.home = async () => {
 
 // --- Updates: the update log, newest first. It checks for new ones by itself while
 // you're looking, and the Updates link lights up when there's one you haven't seen.
-const UPDATE_TAG_COLORS = { Engine: '#2a7de1', Studio: '#8a4fd1', Website: '#1f9d55', Player: '#e08a00', Server: '#4a5a70', Fix: '#d33c3c' };
+const UPDATE_TAG_COLORS = { Engine: '#2a7de1', Studio: '#8a4fd1', Website: '#1f9d55', Player: '#b86e00', Server: '#4a5a70', Fix: '#d33c3c' };
 // Gutstober: Guts&Bolts' Halloween month (October). The site dresses up for it (orange
 // and purple, pumpkins and bats) unless you turn it off in Settings. Your choice is
 // kept in this browser only.

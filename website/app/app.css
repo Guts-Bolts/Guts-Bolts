@@ -112,6 +112,7 @@ textarea { min-height: 70px; resize: vertical; }
 label { display: block; margin: 10px 0 4px; font-weight: bold; font-size: 12px; }
 .form { max-width: 440px; }
 .error { color: var(--red); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .error { color: #ff7d7d; } }   /* dark red was unreadable on dark boxes */
 .ok { color: var(--green); }
 
 /* Cards */
@@ -175,6 +176,10 @@ svg.check { display: inline-block; width: 1em; height: 1em; vertical-align: -2px
 .boxhead { margin: -10px -12px 10px; padding: 5px 10px; border: 0; border-bottom: 1px solid var(--line); border-radius: 3px 3px 0 0;
   font-size: 13px; background: linear-gradient(var(--head1), var(--head2)); color: var(--headText); }
 .boxhead a { font-weight: normal; font-size: 11px; }
+/* Links and grey notes in a title bar take the bar's own text colour, so they stay readable on every theme's bar. */
+.boxhead a, .boxhead .muted, h2 > .muted { color: var(--headText); }
+.boxhead a { text-decoration: underline; }
+.boxhead .muted, h2 > .muted { opacity: .8; }
 .avatar-box { text-align: center; background: linear-gradient(#f4f8fd, #dfe8f3); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .avatar-box { background: linear-gradient(#2a3342, #1e2530); } }
 .avatar-box canvas, .avatar-box svg { display: block; margin: 0 auto; }
@@ -357,7 +362,7 @@ label.check input { width: auto; margin-top: 2px; }
 .friend:hover .link { color: var(--link-hover, #0033aa); }
 .people-grid { gap: 10px; }
 .item-render { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
-.item-render.no-picture { color: var(--muted, #888); font-size: 12px; background: linear-gradient(135deg, #f2f3f6, #e3e6ec); border-radius: 6px; }
+.item-render.no-picture { color: #5f6773; font-size: 12px; background: linear-gradient(135deg, #f2f3f6, #e3e6ec); border-radius: 6px; }
 .item-render img.item3d, .item-render img.item-thumb { max-width: 100%; max-height: 100%; }
 
 /* High-impact classic auction banners on the homepage. */
@@ -401,6 +406,7 @@ html.gutstober .subnav a + a { border-left-color: #6a4785; }
 html.gutstober .subnav a.on { color: #ffb054; }
 html.gutstober .btn.blue { background: linear-gradient(#9a5ee0, #6a2fb0); border-color: #4b1d86; }
 html.gutstober .foot, html.gutstober .foot a { color: #cbb5dc; }
+html.gutstober .status { color: #2a0f3a; }   /* light text was unreadable on the orange tab row */
 
 .gutstober-banner { background: linear-gradient(90deg, #2a0f3a, #4a1c5e 50%, #2a0f3a); color: #ffe2bd; font-size: 12px;
   border-bottom: 2px solid #f07f13; overflow: hidden; }
@@ -785,7 +791,7 @@ select.lang-pick { width: auto; max-width: 100%; }
 .forum-retro-masthead h1 { margin: 3px 0 6px; color: var(--text); font-size: 25px; letter-spacing: -.35px; }
 .forum-retro-masthead p { margin: 0; color: var(--muted); }
 .forum-retro-kicker { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: 1px; }
-.forum-retro-stamp { flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--line); color: var(--blue); background: var(--panel2); font-size: 10px; font-weight: 700; line-height: 1.5; text-align: center; }
+.forum-retro-stamp { flex: 0 0 auto; padding: 7px 10px; border: 1px solid var(--line); color: var(--link); background: var(--panel2); font-size: 10px; font-weight: 700; line-height: 1.5; text-align: center; }
 .forum-intro { margin: 0 0 12px; padding: 9px 12px; border: 1px solid var(--line); border-top: 0; background: var(--panel2); color: var(--muted); font-size: 12px; }
 .forum-retro-breadcrumb { margin: 0; padding: 8px 11px; border: 1px solid var(--line); background: var(--panel2); color: var(--muted); font-size: 11px; }
 .forum-retro-board-head, .forum-retro-thread-head { border-top-width: 2px; }
@@ -845,7 +851,7 @@ table.forum a { color: var(--link); }
 .boltworks-cta{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}.btn.gold{background:linear-gradient(#f9d778,#c38a25);border:1px solid #8c5d13;color:#211808;text-shadow:0 1px #fff5;font-weight:bold;box-shadow:0 2px 0 #5c3b0c}.boltworks-note{display:block;max-width:260px;color:#aeb7c4;font-size:10px;line-height:1.5}.boltworks-registered{display:inline-flex;align-items:center;gap:8px;padding:10px 13px;border:1px solid #4c8d65;border-radius:4px;background:#193d2c;color:#c4f4d3;font-weight:bold}.boltworks-registered b{font-size:16px}.boltworks-footer{border-top:1px solid #ffffff14;border-bottom:0;background:#0002;color:#aeb5c0;font-size:8px}
 .bolts-history>div{align-items:center}
 @media(max-width:620px){.bolts-hero{grid-template-columns:1fr;padding:20px;gap:14px}.bolts-hero h2{font-size:23px}.bolts-earn-grid{grid-template-columns:1fr}.boltworks-content{grid-template-columns:1fr;padding:22px 18px}.boltworks-emblem{width:86px;height:98px;margin:0 auto}.boltworks-emblem b{font-size:52px}.boltworks-tier-preview{grid-template-columns:1fr}.boltworks-topline,.boltworks-footer{align-items:flex-start;flex-direction:column;gap:6px}.boltworks-cta{flex-direction:column}.boltworks-note{max-width:none}}
-@media(prefers-color-scheme:dark){.bolts-hero{background:linear-gradient(125deg,#1c2b3e,#1d2735 60%,#25354a);border-color:#3b4c62}.bolts-hero h2{color:#eaf2ff}.bolts-hero-copy p{color:#bdc9d9}.bolts-balance{background:#1b2431;border-color:#3b4c62}.bolts-balance>span:first-child{color:#9fb1c9}.bolts-earn-card{background:var(--panel);border-color:var(--line)}}
+@media(prefers-color-scheme:dark){.bolts-eyebrow{color:#9db8dc}.bolts-hero{background:linear-gradient(125deg,#1c2b3e,#1d2735 60%,#25354a);border-color:#3b4c62}.bolts-hero h2{color:#eaf2ff}.bolts-hero-copy p{color:#bdc9d9}.bolts-balance{background:#1b2431;border-color:#3b4c62}.bolts-balance>span:first-child{color:#9fb1c9}.bolts-earn-card{background:var(--panel);border-color:var(--line)}}
 
 /* Forum archive search: compact, old-school thread results with usable mobile layout. */
 .forum-search { margin: 12px 0; padding: 12px; border: 1px solid var(--line); background: var(--panel2); }
