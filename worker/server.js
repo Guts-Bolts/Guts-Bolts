@@ -67,7 +67,7 @@ const hasAccess = (k) => k === 'game' || k === 'model' || k === 'animation';
 const weekOf = (t) => Math.floor(t / (7 * 86400));
 const MAX_SIZE = { audio: 6 << 20, game: 24 << 20, plugin: 512 << 10, decal: 4 << 20, shirt: 1 << 20, pants: 1 << 20, model: 4 << 20,
   hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20,
-  emote: 256 << 10, animpack: 512 << 10, bundle: 1 << 20, bodypart: 1 << 20 };
+  emote: 256 << 10, animpack: 512 << 10, bundle: 8 << 20, bodypart: 8 << 20 };   // (a detailed body is a lot of numbers)
 // Gear: a Tool (made in Studio) sold in the catalog, like Roblox's old gear. Verified
 // creators can upload it. You can equip any number of owned gear items, and you get them in games whose
 // creator ticked "Allow gear". (src/server has the same rules.)
@@ -167,6 +167,7 @@ const kTemplateW = 585, kTemplateH = 559;
 const pngSize = (d) => (d.length > 24 && [0x89, 0x50, 0x4e, 0x47].every((v, i) => d[i] === v)
   ? [(d[16] << 24 | d[17] << 16 | d[18] << 8 | d[19]) >>> 0, (d[20] << 24 | d[21] << 16 | d[22] << 8 | d[23]) >>> 0] : null);
 const maxSize = (k) => MAX_SIZE[k] || 64 * 1024;
+const sizeText = (n) => n >= 1 << 20 ? (n >> 20) + ' MB' : (n >> 10) + ' KB';   // "8 MB", "512 KB"
 const sameBytes = (x, y) => x.length === y.length && x.every((b, i) => b === y[i]);
 const isClothing = (k) => k === 'shirt' || k === 'pants' || k === 'tshirt' || k === 'face' || isAccessory(k);   // anything you wear
 // T-shirts: any picture, worn flat on the front of the torso (over a shirt, if there is one).
@@ -2566,7 +2567,7 @@ export class GbServerObject extends DurableObject {
       }
       let data;
       try { data = b64ToBytes(str(args, 'data')); } catch { return fail('The upload got scrambled. Try again.'); }
-      if (data.length > maxSize(kind)) return fail('That\'s too big (the most is ' + Math.floor(maxSize(kind) / 1024) + ' KB).');
+      if (data.length > maxSize(kind)) return fail('That\'s too big (the most is ' + sizeText(maxSize(kind)) + ').');
       const meta = args.meta && typeof args.meta === 'object' && !Array.isArray(args.meta) ? args.meta : {};
       if (JSON.stringify(meta).length > 4096) return fail('Too much extra information.');
       if (kind === 'audio') {

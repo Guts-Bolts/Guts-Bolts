@@ -137,7 +137,8 @@ size_t maxSize(const std::string& k) {
     if (k == "emote") return 256u * 1024u;                         // keyframes for the character
     if (k == "animpack") return 512u * 1024u;                      // five of them
     if (k == "shirt" || k == "pants" || k == "tshirt") return 1024u * 1024u;   // a template picture / a T-shirt picture
-    if (k == "face" || isAccessory(k) || k == "bundle" || k == "bodypart") return 1024u * 1024u;   // a face picture / an accessory or new body from Studio  // a face picture / an accessory from Studio
+    if (k == "bundle" || k == "bodypart") return 8u * 1024u * 1024u;   // a new body from Studio (a detailed body is a lot of numbers)
+    if (k == "face" || isAccessory(k)) return 1024u * 1024u;   // a face picture / an accessory from Studio
     return 64u * 1024u;   // clothing is just a little description of the look
 }
 
