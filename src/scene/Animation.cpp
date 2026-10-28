@@ -651,7 +651,7 @@ void Animator::update(float dt, Scene& scene) {
         float before = t.time;
         t.time += dt * t.speed;
         // Named keyframes passed this frame.
-        auto passed = [&](float from, float to) {
+        auto passed = [&, id = id, &t = t](float from, float to) {
             for (const Keyframe& k : t.clip.keys)
                 if (!k.name.empty() && k.time > from && k.time <= to) events.push_back({Event::Keyframe, id, k.name});
         };

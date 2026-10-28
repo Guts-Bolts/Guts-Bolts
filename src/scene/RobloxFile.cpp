@@ -1784,7 +1784,7 @@ struct Converter {
         for (auto& [inst, node] : made) byRef[inst->referent] = node;
         for (auto& [inst, node] : made) {
             if (node->isEffect()) {   // (a Trail's / Beam's Attachments)
-                auto att = [&](const char* key) -> uint64_t {
+                auto att = [&, inst = inst](const char* key) -> uint64_t {
                     const Value* v = inst->get(key);
                     if (!v || v->kind != Value::Ref) return 0;
                     auto it = byRef.find(v->ref);
@@ -1819,7 +1819,7 @@ struct Converter {
                 continue;
             }
             if (!node->isConstraint() && !node->isMover()) continue;
-            auto ref = [&](const char* a, const char* b) -> uint64_t {
+            auto ref = [&, inst = inst](const char* a, const char* b) -> uint64_t {
                 const Value* v = inst->get(a);
                 if (!v) v = inst->get(b);
                 if (!v || v->kind != Value::Ref) return 0;

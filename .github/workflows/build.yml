@@ -139,6 +139,26 @@ jobs:
         run: |
           cmake --build build-ios-device --config Release --target GutsAndBoltsPlayer -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY=""
 
+  web:
+    name: Web Player (Safari and other browsers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Emscripten
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install 3.1.74
+          "$HOME/emsdk/emsdk" activate 3.1.74
+      - name: Build
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh"
+          web/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: web/out
+          if-no-files-found: error
+
   linux:
     if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
     name: Linux

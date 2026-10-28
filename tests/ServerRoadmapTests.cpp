@@ -8,7 +8,9 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <unistd.h>
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
@@ -38,11 +40,21 @@ int main() {
     GbServer::Options opts;
     opts.data = dir / "data";
     opts.official = Account::id();   // this account is staff ("Guts", #1)
-    opts.port = 40000 + (int)(Online::unixNow() % 20000);
     std::string err;
+    // A free port: try a few random ones (another test or program may have the first).
+    auto startServer = [&]() -> std::unique_ptr<GbServer> {
+        for (int tries = 0; tries < 20; ++tries) {
+            opts.port = 20000 + std::rand() % 40000;
+            auto s = std::make_unique<GbServer>(opts);
+            if (s->start(err)) return s;
+        }
+        return nullptr;
+    };
+    std::srand((unsigned)Online::unixNow() ^ (unsigned)getpid());
     {
-        GbServer s(opts);
-        if (!s.start(err)) { std::cout << "FAIL  couldn't start: " << err << "\n"; return 1; }
+        auto server = startServer();
+        if (!server) { std::cout << "FAIL  couldn't start: " << err << "\n"; return 1; }
+        GbServer& s = *server;
         json r = ask(s, "admin.roadmapSave", {{"title", "Weather"}, {"text", "Rain and snow"}, {"status", "working"}, {"version", "0.7.8"}});
         check(r.value("ok", false) && r["items"].size() == 1 && r["items"][0]["status"] == "working", "staff add a roadmap item");
         const std::string item = r["items"][0].value("id", std::string());
@@ -76,8 +88,9 @@ int main() {
         check(r.value("ok", false) && r["items"].size() == 1, "staff remove an item");
     }
     {
-        GbServer again(opts);
-        if (!again.start(err)) { std::cout << "FAIL  couldn't start again: " << err << "\n"; return 1; }
+        auto server = startServer();
+        if (!server) { std::cout << "FAIL  couldn't start again: " << err << "\n"; return 1; }
+        GbServer& again = *server;
         json r = ask(again, "roadmap.get");
         check(r.value("ok", false) && r["items"].size() == 1 && r["items"][0]["title"] == "Mounts" && r["ideas"].size() == 1,
               "it's all still there after a restart");
