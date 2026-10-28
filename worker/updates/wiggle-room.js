@@ -1,5 +1,5 @@
 export default {
-  id: 'wiggle-room', name: 'Wiggle Room', time: 1793146100, tag: 'Studio',
+  id: 'wiggle-room', name: 'Wiggle Room', version: '0.7.7', time: 1793146100, tag: 'Studio',
   summary: 'Bones that move by themselves (Jiggle, LookAt and IK), ready-made rigs, and a brush to paint weights, so you can rig your own skinned meshes.',
   items: [
     'Bones now have a Bone Type: Normal, Jiggle, LookAt or IK',
