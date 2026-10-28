@@ -27,6 +27,7 @@ play in the browser.
 - A free guide to put the iPhone Player on your own phone.
 - A public roadmap on the Create page: see what's coming, suggest ideas
   and vote. It fills itself in as work happens.
+- Bundles and body parts can be up to 8 MB now, instead of 1 MB.
 
 ## Fixes
 - The mouse points at the right spot when you play in Studio.
