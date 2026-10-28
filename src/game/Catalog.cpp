@@ -159,7 +159,13 @@ Item fromServer(const json& a) {
         if (m.value("model", false)) it.model = "gb:" + it.id;
         it.headless = it.type == Type::Bundle && m.value("headless", false) == true;
         if (it.type == Type::Bundle && m.value("body", false) == true) it.body = "gb:" + it.id;
-        if (it.type == Type::BodyPart) { it.body = "gb:" + it.id; it.bodyPart = m.value("bodyPart", std::string()); }
+        if (it.type == Type::BodyPart) {
+            // A bundle piece ("137-leftarm", one part of a body bundle worn on its own) takes
+            // its body from the bundle: Player::applyBody picks out just this part.
+            const std::string from = m.value("bundle", std::string());
+            it.body = "gb:" + (from.empty() ? it.id : from);
+            it.bodyPart = m.value("bodyPart", std::string());
+        }
         if (m.contains("color") && m["color"].is_array() && m["color"].size() == 3)
             it.color = {m["color"][0].get<int>() / 255.0f, m["color"][1].get<int>() / 255.0f, m["color"][2].get<int>() / 255.0f};
     }

@@ -2467,6 +2467,25 @@ pages.group = async (id) => {
 
 let avatarDraft = null;   // the avatar being edited (saved with the Save button)
 let avatarOwned = [];     // the clothes we own (on the Avatar page), so Wear knows each one's kind
+let avatarTab = 'body';   // which section of the Avatar page is open
+// The Avatar page's sections: [key, name]. Each shows some of what you own.
+const AVATAR_TABS = [['body', 'Body'], ['clothing', 'Clothing'], ['hats', 'Hats'], ['hair', 'Hair'], ['accessories', 'Accessories'],
+  ['gear', 'Gear'], ['emotes', 'Emotes'], ['outfits', 'Outfits']];
+// Bundle pieces: each part of a body bundle can be worn on its own, like a single body part.
+// Its id is "<bundle id>-<part>" ("137-leftarm"); the server (worker/server.js wearableJson)
+// makes the same item, and /wear/<that id> sends just that part's mesh.
+const BODY_PART_ORDER = ['Head', 'Torso', 'Left Arm', 'Right Arm', 'Left Leg', 'Right Leg'];
+const bundlePartNames = new Map();   // body bundle id -> Promise of the parts it has (from /wear/)
+function bundlePieces(b) {
+  if (!(b && b.kind === 'bundle' && b.meta && b.meta.body)) return Promise.resolve([]);
+  if (!bundlePartNames.has(b.id)) {
+    bundlePartNames.set(b.id, fetch('/wear/' + encodeURIComponent(b.id)).then((r) => (r.ok ? r.json() : null))
+      .then((j) => BODY_PART_ORDER.filter((p) => j && j.body && j.body[p])).catch(() => []));
+  }
+  return bundlePartNames.get(b.id).then((parts) => parts.map((part) => Object.assign({}, b, {
+    id: b.id + '-' + part.replace(' ', '').toLowerCase(), kind: 'bodypart', name: b.name + ': ' + part, price: 0,
+    limited: undefined, auction: undefined, meta: { bodyPart: part, bundle: b.id } })));
+}
 
 // Private messages, like the old Roblox inbox: Inbox, Sent, and writing a new one.
 pages.messages = async (box = 'inbox') => {
@@ -2524,7 +2543,8 @@ pages.avatar = async () => {
   const [r, outfitsR] = signedIn() ? await Promise.all([pageCall('list', { kind: 'clothing', owned: true, limit: 100 }), pageCall('outfit.list', {})])
     : [{ ok: true, assets: [] }, { ok: true, outfits: [] }];
   const ownedAll = (r.ok ? r.assets : []).filter((a) => (me.owned || []).includes(a.id));
-  const owned = ownedAll.filter((a) => !isEmoteItem(a.kind));
+  const pieces = (await Promise.all(ownedAll.map(bundlePieces))).flat();
+  const owned = ownedAll.filter((a) => !isEmoteItem(a.kind)).concat(pieces);
   avatarOwned = owned;
   const myEmotes = ownedAll.filter((a) => a.kind === 'emote'), myPacks = ownedAll.filter((a) => a.kind === 'animpack');
   const slots = signedIn() ? (me.emotes || []) : [];
@@ -2561,6 +2581,53 @@ pages.avatar = async () => {
           <button class="btn small" data-act="outfit" data-op="outfit.rename" data-id="${o.id}" data-name="${o.name}">Rename</button>
           <button class="btn small red" data-act="outfit" data-op="outfit.delete" data-id="${o.id}" data-name="${o.name}">Delete</button></div></div>`)}</div>`
       : signedIn() ? html`<p class="muted small">No outfits yet. Dress up, then save the look here so you can wear it again in one click.</p>` : ''}`;
+  // One item you own, with its Wear button.
+  const card = (it, label = 'Wear') => html`<div class="card square">
+      <div class="pic" style="${a.wearing.includes(it.id) ? 'outline:3px solid #16a34a' : ''}">${itemIcon(it)}</div>
+      <div class="name">${it.name}</div>
+      <button class="btn small ${a.wearing.includes(it.id) ? 'green' : ''}" data-act="avatarWear" data-id="${it.id}" data-kind="${it.kind}">
+        ${a.wearing.includes(it.id) ? 'Wearing' : label}</button></div>`;
+  const grid = (list) => html`<div class="grid">${list.map((it) => card(it))}</div>`;
+  const none = (cat) => html`<p class="muted">Nothing here yet. Find some in the <a href="#/catalog${cat ? '?cat=' + cat : ''}">Catalog</a>.</p>`;
+  // A group inside a section: its own small heading, or nothing if you own none of them.
+  const group = (title, list) => (list.length ? html`<h3>${title}</h3>${grid(list)}` : '');
+  const ofKind = (...kinds) => owned.filter((it) => kinds.includes(it.kind));
+  const bodyParts = ofKind('bodypart');
+  const clothing = ofKind('shirt', 'tshirt', 'pants'), hair = ofKind('hair'), accessories = ofKind('faceacc', 'neck', 'shoulder', 'waist');
+  const gear = ofKind('gear'), myGear = signedIn() ? (me.gear || []) : [];
+  const sections = {
+    body: html`<h2 style="margin-top:0">Colours</h2>
+      <div class="row">${PRESETS.map(([name], i) => html`<button class="btn small" data-act="avatarPreset" data-i="${i}">${name}</button>`)}</div>
+      <div class="row" style="margin-top:10px">${PARTS.map((p) => html`<label style="margin:0 12px 0 0;font-weight:normal">
+        <input type="color" data-avatar-part="${p}" value="${hexOf(a[p])}"> ${PART_NAMES[p]}</label>`)}</div>
+      ${a.hat ? html`<p class="row small muted" style="margin-top:14px">You still have an old built-in hat on (from before the catalog).
+        <button class="btn small" data-act="avatarHat" data-i="0">Take it off</button></p>` : ''}
+      <h2>Bundles</h2>
+      ${ofKind('bundle').length ? grid(ofKind('bundle')) : none('bundle')}
+      <h2>Body parts</h2>
+      <p class="small muted">Wear one head, torso, arm or leg at a time. Each part of a bundle's body is here on its own too, so you can mix parts from different bundles.</p>
+      ${bodyParts.length ? BODY_PART_ORDER.map((part) => group(part, bodyParts.filter((it) => it.meta && it.meta.bodyPart === part)))
+        : none('bodypart')}
+      <h2>Faces</h2>
+      ${ofKind('face').length ? grid(ofKind('face')) : none('face')}`,
+    clothing: clothing.length ? html`${group('Shirts', ofKind('shirt'))}${group('T-Shirts', ofKind('tshirt'))}${group('Pants', ofKind('pants'))}`
+      : none('clothes'),
+    hats: html`<p class="small muted">Equip multiple hats at once. Select up to 12 owned hats; equipped hats stay on when you add another.
+        <b>(${wornHatCount}/12 equipped)</b></p>
+      ${ownedHats.length ? html`<div class="grid">${ownedHats.map((it) => card(it, 'Wear hat'))}</div>` : none('hat')}`,
+    hair: hair.length ? grid(hair) : none('hair'),
+    accessories: accessories.length ? html`${group('Face', ofKind('faceacc'))}${group('Neck', ofKind('neck'))}${group('Shoulder', ofKind('shoulder'))}${group('Waist', ofKind('waist'))}`
+      : none('accessories'),
+    gear: html`<p class="small muted">Equipped gear goes in your backpack in games whose creator allows gear.</p>
+      ${gear.length ? html`<div class="grid">${gear.map((it) => { const on = myGear.includes(it.id); return html`<div class="card square">
+          <div class="pic" style="${on ? 'outline:3px solid #16a34a' : ''}">${itemIcon(it)}</div>
+          <div class="name">${it.name}</div>
+          <button class="btn small ${on ? 'green' : ''}" data-act="gearEquip" data-id="${it.id}" data-on="${on ? '' : '1'}">${on ? 'Equipped' : 'Equip'}</button></div>`; })}</div>`
+        : none('gear')}`,
+    emotes: emoteBox,
+    outfits: outfitBox,
+  };
+  if (!sections[avatarTab]) avatarTab = 'body';
   show(html`<h1>Avatar</h1>
     <div class="row top avatar-edit">
       <div class="box" style="text-align:center;margin-right:16px"><div id="avatarPreview">${avatarSvg(a, 180, wornItems)}</div>
@@ -2574,30 +2641,20 @@ pages.avatar = async () => {
         <p class="small muted" style="max-width:200px">${signedIn() ? 'Your avatar is the same in the app and on the website.'
           : 'Try things on! Log in to save your avatar.'}</p></div>
       <div class="grow">
-        <h2 style="margin-top:0">Colours</h2>
-        <div class="row">${PRESETS.map(([name], i) => html`<button class="btn small" data-act="avatarPreset" data-i="${i}">${name}</button>`)}</div>
-        <div class="row" style="margin-top:10px">${PARTS.map((p) => html`<label style="margin:0 12px 0 0;font-weight:normal">
-          <input type="color" data-avatar-part="${p}" value="${hexOf(a[p])}"> ${PART_NAMES[p]}</label>`)}</div>
-        ${a.hat ? html`<p class="row small muted" style="margin-top:14px">You still have an old built-in hat on (from before the catalog).
-          <button class="btn small" data-act="avatarHat" data-i="0">Take it off</button></p>` : ''}
-        <h2>Hats <span class="small muted">(${wornHatCount}/12 equipped)</span></h2>
-        <p class="small muted">Equip multiple hats at once. Select up to 12 owned hats; equipped hats stay on when you add another.</p>
-        ${ownedHats.length ? html`<div class="grid">${ownedHats.map((it) => html`<div class="card square">
-            <div class="pic" style="${a.wearing.includes(it.id) ? 'outline:3px solid #16a34a' : ''}">${itemIcon(it)}</div>
-            <div class="name">${it.name}</div>
-            <button class="btn small ${a.wearing.includes(it.id) ? 'green' : ''}" data-act="avatarWear" data-id="${it.id}" data-kind="hat">
-              ${a.wearing.includes(it.id) ? 'Wearing' : 'Wear hat'}</button></div>`)}</div>`
-          : html`<p class="muted">You don't own any hats yet. Find some in the <a href="#/catalog?cat=hat">Catalog</a>.</p>`}
-        <h2>My clothes and accessories</h2>
-        ${owned.filter((it) => it.kind !== 'hat').length ? html`<div class="grid">${owned.filter((it) => it.kind !== 'hat').map((it) => html`<div class="card square">
-            <div class="pic" style="${a.wearing.includes(it.id) ? 'outline:3px solid #16a34a' : ''}">${itemIcon(it)}</div>
-            <div class="name">${it.name}</div>
-            <button class="btn small ${a.wearing.includes(it.id) ? 'green' : ''}" data-act="avatarWear" data-id="${it.id}" data-kind="${it.kind}">
-              ${a.wearing.includes(it.id) ? 'Wearing' : 'Wear'}</button></div>`)}</div>`
-          : html`<p class="muted">You don't have any clothes or accessories yet. Get some in the <a href="#/catalog">Catalog</a>!</p>`}
-        ${emoteBox}
-        ${outfitBox}
+        <div class="tabs" role="tablist" aria-label="Avatar sections">${AVATAR_TABS.map(([key, name]) => html`<button type="button"
+          class="btn small ${key === avatarTab ? 'blue' : ''}" role="tab" aria-selected="${key === avatarTab ? 'true' : 'false'}" data-avatar-tab="${key}">${name}</button>`)}</div>
+        ${AVATAR_TABS.map(([key]) => html`<section class="avatar-section" data-avatar-section="${key}" ${key === avatarTab ? '' : raw('hidden')}>${sections[key]}</section>`)}
       </div></div>`);
+  // Switching sections just shows another one (nothing is loaded again).
+  view.querySelectorAll('[data-avatar-tab]').forEach((button) => button.addEventListener('click', () => {
+    avatarTab = button.dataset.avatarTab;
+    view.querySelectorAll('[data-avatar-tab]').forEach((b) => {
+      const on = b.dataset.avatarTab === avatarTab;
+      b.classList.toggle('blue', on);
+      b.setAttribute('aria-selected', String(on));
+    });
+    view.querySelectorAll('[data-avatar-section]').forEach((el) => { el.hidden = el.dataset.avatarSection !== avatarTab; });
+  }));
   view.querySelectorAll('[data-emote-slot]').forEach((sel) => sel.addEventListener('change', () =>
     actions.emoteEquip({ slot: sel.dataset.emoteSlot, id: sel.value })));
   // Each outfit's picture: the character wearing it.
