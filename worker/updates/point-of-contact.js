@@ -1,5 +1,5 @@
 export default {
-  id: 'point-of-contact', name: 'Point of Contact', time: 1793296000, tag: 'Engine',
+  id: 'point-of-contact', name: 'Point of Contact', version: '0.7.7', time: 1793296000, tag: 'Engine',
   summary: 'Scripts can now ask where the mouse is pointing in the 3D world, not just on the screen.',
   items: [
     'New getmouse3d() gives the spot in the world under the mouse, the part it\'s on and which way that surface faces (getmouse() is still the 2D one)',
