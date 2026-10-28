@@ -261,7 +261,15 @@ private:
     long long   m_autoSavedAt = 0, m_recoverTime = 0;
     bool        m_openRecover = false, m_recoverPending = false;   // (pending: keep the old backup until they choose)
     std::string m_recoverFrom;
-    void exportRoblox(bool selectionOnly);
+    // File > Export As (EditorExport.cpp): Roblox files, or 3D model files (.obj .fbx .glb ...).
+    void openExportAs(bool selectionOnly);
+    void renderExportDialog();
+    // `picked` empty = the whole game. `message` says what happened (or what went wrong).
+    bool exportTo(const std::string& path, std::vector<SceneNode*> picked, std::string& message,
+                  int* parts = nullptr, int* triangles = nullptr);
+    bool        m_openExportAs = false, m_exportSelection = false;
+    int         m_exportFormat = 0;               // in ModelExport::formats()
+    std::string m_exportName, m_exportFolder;
 
     // Undo / redo (whole-scene snapshots)
     void trackChanges();
