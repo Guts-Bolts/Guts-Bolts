@@ -325,6 +325,8 @@ RunService = { Heartbeat = __gb_heartbeat, RenderStepped = __gb_heartbeat,
 UserInputService = { InputBegan = __gb_inputBegan, InputEnded = __gb_inputEnded }
 local isKeyDown = __gb_isKeyDown
 function UserInputService:IsKeyDown(key) return isKeyDown(key) end
+-- Where the mouse is on the game screen, in pixels (camera:ViewportPointToRay takes it as is).
+function UserInputService:GetMouseLocation() return __gb_mousePosition() end
 -- Controllers: one at most (Gamepad1). GamepadEnabled is kept up to date by the engine.
 local padState = __gb_padState
 UserInputService.GamepadEnabled = false
@@ -926,6 +928,15 @@ addMethod("FindPartOnRayWithWhitelist", function(_, ray, list) return findOnRay(
 -- older LocalScripts. Coordinates start at the game screen's corner (also inside
 -- Studio's 3D view) and are scaled into the active camera viewport.
 local mousePosition = __gb_mousePosition
+-- Which face of a part a normal points out of (mouse.TargetSurface): "Top", "Front"...
+local function surfaceOf(part, n)
+    local cf = part.CFrame
+    local x, y, z = n:Dot(cf.RightVector), n:Dot(cf.UpVector), n:Dot(cf.LookVector)
+    local ax, ay, az = math.abs(x), math.abs(y), math.abs(z)
+    if ay >= ax and ay >= az then return y > 0 and "Top" or "Bottom" end
+    if ax >= az then return x > 0 and "Right" or "Left" end
+    return z > 0 and "Front" or "Back"
+end
 local mouseObjects = setmetatable({}, { __mode = "k" })
 getMouse = function(player)
     if mouseObjects[player] then return mouseObjects[player] end
@@ -984,7 +995,12 @@ getMouse = function(player)
             if k == "Hit" or k == "Target" then
                 local r, hit, pos = cast()
                 if k == "Target" then return hit end
-                return CFrame.new(pos or (r.Origin + r.Direction * 1000))
+                pos = pos or (r.Origin + r.Direction * 1000)
+                return CFrame.new(pos, pos + r.Direction)   -- (faces along the ray, like Roblox)
+            end
+            if k == "TargetSurface" then
+                local _, hit, _, normal = cast()
+                return hit and surfaceOf(hit, normal) or nil
             end
             return nil
         end,
@@ -996,6 +1012,29 @@ getMouse = function(player)
     })
     mouseObjects[player] = mouse
     return mouse
+end
+
+-- getmouse3d([distance [, ignore]]) -> the spot in the world under the mouse (a Vector3),
+-- the part there (nil when the mouse points at the sky) and that surface's normal.
+-- The 3D partner of getmouse(). Your own character never blocks it; `ignore` can be one
+-- object or a list of them to look through too. Only LocalScripts have a mouse.
+--   local pos, part = getmouse3d()
+--   if part then print("pointing at " .. part.Name .. " at " .. tostring(pos)) end
+function getmouse3d(distance, ignore)
+    if LocalPlayer == nil then return nil end   -- (a game server machine has no mouse)
+    local p = mousePosition()
+    local r = workspace.CurrentCamera:ViewportPointToRay(p.X, p.Y)
+    local list = {}
+    if LocalPlayer.Character then list[1] = LocalPlayer.Character end
+    if type(ignore) == "table" and getmetatable(ignore) == nil then
+        for _, item in ipairs(ignore) do list[#list + 1] = item end
+    elseif ignore ~= nil then
+        list[#list + 1] = ignore
+    end
+    local far = tonumber(distance) or 1000
+    local hit = castWith(r.Origin, r.Direction * far, list, false)
+    if not hit then return r.Origin + r.Direction * far, nil, -r.Direction end
+    return hit.Position, hit.Instance, hit.Normal
 end
 
 -- The removed Roblox RbxUtility library is still used by older scripts as
@@ -2348,9 +2387,17 @@ int l_receipts(lua_State* L) {
     }
     return 1;
 }
+// Tests only: __gb_testInput("mouse", x, y) puts the mouse there (camera pixels), nil lets go.
+bool s_testMouseOn = false;
+glm::vec2 s_testMouse(0.0f);
 int l_testInput(lua_State* L) {
     ScriptEngine* e = LuaApi::engine(L);
     const std::string what = luaL_checkstring(L, 1);
+    if (what == "mouse") {   // ("mouse", x, y): where scripts think the mouse is; ("mouse") lets go
+        s_testMouseOn = !lua_isnoneornil(L, 2);
+        if (s_testMouseOn) s_testMouse = glm::vec2((float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
+        return 0;
+    }
     // Pretend keys, touch buttons, fingers and clicks on the game view (ContextActionService, ScriptActions.cpp).
     if (what == "key" || what == "button" || what == "touch" || (what == "click" && lua_gettop(L) < 2))
         return actionTestInput(L);
@@ -2519,6 +2566,7 @@ int gui_clear(lua_State* L) {
 // (and the terrain material, when it hits workspace.Terrain)
 // (workspace:Raycast / FindPartOnRay). `direction`'s length is how far to look.
 int l_mousePosition(lua_State* L) {
+    if (s_testMouseOn) { LuaApi::pushVector2(L, s_testMouse); return 1; }
     Scene* scene = LuaApi::engine(L)->scene();
     glm::vec2 pos = LuaApi::mouseOnGame();
     ImVec2 min, max;

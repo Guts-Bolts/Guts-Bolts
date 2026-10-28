@@ -1794,7 +1794,8 @@ async function roadmapPage(head) {
   const staff = signedIn() && me.staff;
   const item = (x) => html`<div class="road-item"><b class="notranslate">${x.title}</b>${x.version ? html` <span class="badge-pill notranslate">${x.version}</span>` : ''}
       ${x.text ? html`<p class="small notranslate">${x.text}</p>` : ''}
-      ${staff ? html`<details class="small"><summary>Edit</summary>${roadItemForm(x)}
+      ${x.pr ? html`<p class="small"><a href="https://github.com/Guts-Bolts/Guts-Bolts/pull/${x.pr}" target="_blank" rel="noopener">See the work</a> <span class="muted notranslate">#${x.pr}</span></p>` : ''}
+      ${staff && !x.builtIn ? html`<details class="small"><summary>Edit</summary>${roadItemForm(x)}
         <p><button class="btn small red" data-act="roadRemove" data-id="${x.id}">Remove</button></p></details>` : ''}</div>`;
   show(html`${head}
     <p class="muted">What we're making next for Guts&amp;Bolts. Have an idea? Suggest it below, and vote for the ones you want most.</p>

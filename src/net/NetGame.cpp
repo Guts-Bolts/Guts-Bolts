@@ -1052,6 +1052,15 @@ void NetServer::handle(Client& c, const std::string& text) {
             rc->humanoid.health = rc->humanoid.maxHealth;
             m_session->joinerRespawned(c.rootId);
         }
+        // Their keys for the VehicleSeat they're in (it must be near them).
+        const json& d = m.contains("drive") ? m["drive"] : json();
+        if (rc->alive && d.is_array() && d.size() == 3 && d[0].is_number_unsigned() && d[1].is_number() && d[2].is_number()) {
+            SceneNode* seat = m_scene->findById(d[0].get<uint64_t>());
+            SceneNode* rig = m_scene->findById(c.rootId);
+            if (seat && rig && Vehicles::isVehicleSeat(seat) &&
+                glm::length(glm::vec3(seat->worldMatrix()[3]) - rig->transform.position) < 12.0f)
+                m_scene->vehicles().drive(seat->id, c.rootId, d[1].get<float>(), d[2].get<float>());
+        }
     } else if (t == "touch") {
         uint64_t part = m.value("part", (uint64_t)0);
         SceneNode* rig = m_scene->findById(c.rootId);
@@ -1504,9 +1513,15 @@ void NetClient::update(float dt) {
         if (m_tick >= kTickRate) {
             m_tick = std::min(m_tick - kTickRate, kTickRate);
             if (Player* p = m_scene->player())
-                if (SceneNode* r = p->root())
-                    m_conn->send(json{{"t", "state"}, {"ts", clockNow()}, {"pose", poseJson(Player::capturePose(r))},
-                                      {"health", p->humanoid().health}, {"dead", p->isDead()}}.dump());
+                if (SceneNode* r = p->root()) {
+                    json st{{"t", "state"}, {"ts", clockNow()}, {"pose", poseJson(Player::capturePose(r))},
+                            {"health", p->humanoid().health}, {"dead", p->isDead()}};
+                    // Driving a VehicleSeat: the host runs the physics, so it needs our keys.
+                    const Vehicles& v = m_scene->vehicles();
+                    if (uint64_t seat = p->seatId(); seat && v.driver(seat) == p->rootId())
+                        st["drive"] = {seat, v.throttle(seat), v.steer(seat)};
+                    m_conn->send(st.dump());
+                }
         }
     }
     showSmoothly(*m_scene, m_poses);
