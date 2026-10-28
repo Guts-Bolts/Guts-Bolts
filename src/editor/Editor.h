@@ -184,6 +184,7 @@ private:
     void       renderUVEditor();
     void       unwrapMesh(int how);          // a MeshEdit::Unwrap
     void       markSeams(bool on);
+    void       clothingUnwrap(const std::string& rigPart);   // lay it out on the shirt / pants template
     SceneNode* uvNode();                     // the MeshPart the UV Editor shows
     // Online: the Guts&Bolts server, publishing and the Library (EditorOnline.cpp)
     void       renderServerDialog();
@@ -306,6 +307,7 @@ private:
         bool      hovered = false;      // the mouse was over it last frame: keys go to it
         bool      openUnwrap = false;   // U: open the Unwrap menu
         bool      checker = true;       // a checker picture behind the layout when the part has no texture
+        int       clothing = 0;         // or behind it: 1 the shirt template, 2 the pants template
         float     zoom = 0.9f;
         glm::vec2 pan{0.5f, 0.5f};      // the UV point in the middle of the view
         uint64_t  node = 0;
@@ -320,6 +322,8 @@ private:
     int         m_accessoryKind = 0, m_accessoryPrice = 0;
     std::string m_accessoryName, m_accessoryDesc, m_accessoryMsg, m_accessoryEditId;
     bool        m_showBundles = false, m_bundleHeadless = false;
+    bool        m_bundleAutoUV = true;    // new body parts get clothing UVs (the template layout)
+    int         m_bundleTryOn = 0;        // the mannequin wears: 0 nothing, 1 shirt template, 2 pants template
     int         m_bundlePrice = 0;
     std::string m_bundleName, m_bundleDesc, m_bundleItems, m_bundleMsg;
     nlohmann::json m_library = nlohmann::json::array();
