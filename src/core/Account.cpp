@@ -114,6 +114,8 @@ fs::path folder() {
     if (const char* o = std::getenv("GB_ACCOUNT_DIR"); o && *o) return o;   // tests: several accounts on one PC
 #if defined(__ANDROID__)
     return Paths::appFolder() / "account";   // the app's private storage
+#elif defined(__EMSCRIPTEN__)
+    return "/save/account";   // a browser: kept in its storage by web/index.html (so you stay logged in)
 #elif defined(_WIN32)
     if (const char* a = std::getenv("APPDATA")) return fs::path(a) / "GutsAndBolts";
 #elif defined(__APPLE__)

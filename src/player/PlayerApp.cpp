@@ -4,6 +4,7 @@
 #include <map>
 #include "SiteUi.h"
 #include "LaunchLink.h"
+#include "WebKeyboard.h"
 #include "../game/GameGui.h"
 #include "../game/EmoteMenu.h"
 #include "../scene/Emotes.h"
@@ -388,6 +389,7 @@ void PlayerApp::frame() {
             }
         }
         frame(dt);
+        WebKeyboard::update();   // (the browser Player: the phone's keyboard)
         if (std::getenv("GB_TRACE_POS") && m_scene)   // test: the character's height every frame
             if (Player* p = m_scene->player()) std::printf("TRACE %d %.3f %.3f\n", m_frame, p->position().z, p->position().y);
         if (!m_opts.say.empty() && m_frame == 90 && m_page == Page::Game) sendChat(m_opts.say);
@@ -1604,7 +1606,14 @@ void PlayerApp::drawAvatar(float dt) {
 
 void PlayerApp::drawGame(float dt) {
     ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantTextInput && !m_chatOpen && (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+    // Photo mode: F2 goes in and out; Esc (or B) also comes back out of it.
+    if (m_photo && (!canTakePhotos() || (!io.WantTextInput &&
+                    (ImGui::IsKeyPressed(ImGuiKey_Escape, false) || ImGui::IsKeyPressed(ImGuiKey_F2, false) ||
+                     ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)))))
+        m_photo = false;
+    else if (!m_photo && !io.WantTextInput && !m_chatOpen && ImGui::IsKeyPressed(ImGuiKey_F2, false))
+        startPhoto();
+    else if (!m_photo && !io.WantTextInput && !m_chatOpen && (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
                                              ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false) ||
                                              (m_paused && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)))) {
         if (m_menuConfirm) m_menuConfirm = 0;   // Esc (or B) backs out of "Are you sure?"
@@ -1617,6 +1626,7 @@ void PlayerApp::drawGame(float dt) {
         m_menuTab = m_opts.page == "menu-settings" ? 1 : m_opts.page == "menu-help" ? 2 : 0;
         m_menuConfirm = m_opts.page == "menu-leave" ? 2 : 0;
     }
+    if (m_frame == 60 && m_opts.page == "photo") startPhoto();   // (test helper: "--page photo")
 
     ImVec2 pos  = ImGui::GetCursorScreenPos();
     ImVec2 size = ImGui::GetContentRegionAvail();
@@ -1690,12 +1700,12 @@ void PlayerApp::drawGame(float dt) {
 
     // Chat: "/" or Enter starts typing (not for guests: they sign up to chat).
     const bool guestChat = Online::online() && Online::isGuest();
-    if (!m_chatOpen && !guestChat && !io.WantTextInput && !m_paused &&
+    if (!m_chatOpen && !guestChat && !io.WantTextInput && !m_paused && !m_photo &&
         (ImGui::IsKeyPressed(ImGuiKey_Slash, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)))
         m_chatOpen = true;
 
     // Simulate (the world keeps running while the menu is open, like Roblox).
-    bool acceptInput = !m_paused && !m_showSettings && !m_chatOpen;
+    bool acceptInput = !m_paused && !m_showSettings && !m_chatOpen && !m_photo;   // (photo mode: you stand still)
     ImVec2 max(pos.x + size.x, pos.y + size.y);
     const bool touch = GraphicsSettings::get().touchEnabled();
     // VR: wait for the headset's next picture, read its controllers (they walk you
@@ -1789,9 +1799,16 @@ void PlayerApp::drawGame(float dt) {
     if (Player* p = m_scene->player()) {
         if (vr) vrFollow(*p);
         else PlayCamera::follow(m_camera, *p, dt, m_shiftLock);
-        PlayCamera::fade(*m_scene, *p, m_camera);
+        if (m_photo) {   // (fade by how near the flying eye really is, not the playing camera's zoom)
+            Camera eye;
+            eye.useCFrame = true;
+            eye.cframe[3] = glm::vec4(m_photoCam.position(), 1.0f);
+            PlayCamera::fade(*m_scene, *p, eye);
+        } else PlayCamera::fade(*m_scene, *p, m_camera);
         if (vr) vrShowBody(*p);
     }
+    if (m_photo) photoCamera(dt, hovered);
+    Camera& shownCam = m_photo ? m_photoCam : m_camera;
 
 #ifdef GB_MOBILE
     // Phones: render with the real pixels, not the (bigger) UI pixels.
@@ -1800,11 +1817,12 @@ void PlayerApp::drawGame(float dt) {
     ImVec2 px = size;
 #endif
     m_camera.resize((int)px.x, (int)px.y);
+    m_photoCam.resize((int)px.x, (int)px.y);
     if (vr) {   // each eye for the headset (the screen shows the left one)
         if (vrDraw) vrRender(vrEyes);   // (vrAfterUi finishes the headset's picture, once the menus are drawn)
     } else {
         m_view.resize((int)px.x, (int)px.y);
-        m_renderer->render(*m_scene, m_camera, m_view, false);
+        m_renderer->render(*m_scene, shownCam, m_view, false);
     }
     if (GameGui::needsBackdrop(*m_scene) && !vr) {   // UIBlur: the world behind the UI, blurred
         m_renderer->makeBackdrop(m_view);
@@ -1817,6 +1835,10 @@ void PlayerApp::drawGame(float dt) {
     Audio::setListener(m_camera.position(), m_camera.forward());
     if (vr) vrMirror(size);
     else ImGui::Image((ImTextureID)(intptr_t)m_view.colorTexture(), size, ImVec2(0, 1), ImVec2(1, 0));
+    if (m_photo) {   // nothing else on the screen: no HUD, chat, name tags or game UI
+        drawPhotoMode(ImGui::GetWindowDrawList(), pos, max);
+        return;
+    }
 
     // Clicking parts (for part.Clicked in scripts). With touch controls, a tap does it.
     ImVec2 tapAt;
@@ -2384,6 +2406,11 @@ void PlayerApp::drawPauseMenu() {
             ImGui::Dummy(ImVec2(0, 44));
             ImGui::PopID();
         }
+        // Photo mode: hide everything and fly the camera around for a nice picture.
+        if (canTakePhotos()) {
+            ImGui::Spacing();
+            if (bigButton("[F2]  Photo Mode", ImVec4(0.2f, 0.21f, 0.24f, 1), ImVec2(-1, 38))) startPhoto();
+        }
     } else if (m_menuTab == 1) {
         // VR: show the game in a headset (SteamVR, Quest Link...) instead.
         ImGui::AlignTextToFramePadding();
@@ -2533,6 +2560,7 @@ void PlayerApp::drawPauseMenu() {
         key("/ or Enter", "Chat  (/w name message whispers to one player)");
         key("1 - 0", "Equip a tool from your hotbar");
         key("Esc", "Open or close this menu");
+        key("F2", "Photo mode: hide everything, fly the camera (WASD, Q/E) and press Enter for a picture");
         ImGui::SeparatorText("Controller");
         key("Left stick", "Walk");
         key("Right stick", "Look around (click it for Shift Lock)");
