@@ -330,6 +330,7 @@ function accessoryPieces(acc) {
     for (const [name, part] of Object.entries(acc.body)) {
       if (!part || !Array.isArray(part.v) || !Array.isArray(part.f)) continue;
       const shape = meshShape(part), pos = [], nrm = [];
+      if (!shape.uv) clothingUV(shape, part.v, name);
       const at = part.pos || [0, 0, 0], size = part.size || [1, 1, 1];
       for (let i = 0; i < shape.pos.length; i += 3) {
         pos.push(at[0] + shape.pos[i] * size[0], at[1] + shape.pos[i + 1] * size[1], at[2] + shape.pos[i + 2] * size[2]);
@@ -341,6 +342,20 @@ function accessoryPieces(acc) {
     }
   }
   return out;
+}
+// A bundle body part with no UV map of its own (like ones made before Studio's automatic
+// clothing map) gets one now, the way PlayerModel::clothingUVs does it in the game: its
+// own box stretched over the template, so shirts and pants still fit it.
+function clothingUV(shape, v, name) {
+  const L = name === 'Torso' ? TORSO_UV : name === 'Right Arm' || name === 'Right Leg' ? RIGHT_LIMB_UV
+    : name === 'Left Arm' || name === 'Left Leg' ? LEFT_LIMB_UV : null;
+  if (!L || !v.length) return;
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i + 2 < v.length; i += 3)
+    for (let j = 0; j < 3; ++j) { min[j] = Math.min(min[j], v[i + j]); max[j] = Math.max(max[j], v[i + j]); }
+  const box = { pos: shape.pos, min, max };
+  layOut(box, L);
+  shape.uv = box.uv;
 }
 function loadAccessory(id) {
   if (!accessories.has(id)) {
