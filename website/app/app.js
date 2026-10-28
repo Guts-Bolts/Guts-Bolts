@@ -1537,7 +1537,7 @@ pages.item = async (id) => {
           ${isNew ? html`<span class="item-ribbon">NEW</span>` : ''}
           ${timed ? html`<span class="item-clock" title="${offsaleText(a)}"><i></i></span>` : ''}
           ${L ? html`<span class="item-limited">LIMITED<b>U</b></span>` : ''}
-          ${drawable3d(a) ? html`<button class="item-3d" id="item3dToggle" type="button" title="Switch to an interactive 3D avatar preview">3D</button>` : ''}
+          ${drawable3d(a) ? html`<button class="item-3d" id="item3dToggle" type="button" title="Switch to the 3D preview" aria-pressed="false">3D</button>` : ''}
         </div>
         <div class="item-info">
           <div class="item-creator">
@@ -1626,10 +1626,52 @@ pages.item = async (id) => {
           <input type="number" name="price" min="0" value="${c.price || ''}" placeholder="Price in Bolts" style="max-width:150px">
           <button class="btn small ${c.price ? '' : 'blue'}">${c.price ? 'Change price' : 'Sell'}</button>
           ${c.price ? html`<span class="muted small">On sale for ${c.price}. Set 0 to take it off sale.</span>` : html`<span class="muted small">You get ${70}% when it sells.</span>`}</form>`)}` : ''}` : ''}`);
-  // Catalog pages show the item preview rotating gently on its own. The user's avatar
-  // is only rendered after they explicitly choose Try On.
-  if (drawable3d(a) && (['gear', 'hat', 'hair'].includes(a.kind) || (a.meta && a.meta.model && ['faceacc', 'neck', 'shoulder', 'waist'].includes(a.kind))))
-     mountAvatar($('#item3d'), {}, [a], { width: 328, height: 328, cam: itemCamera(a.kind), autoSpin: true, itemOnly: true }).catch(() => {});
+  // Catalog pages show the item preview rotating gently on its own (hats, hair, gear and
+  // model accessories); other wearables start as their 2D picture. The 3D/2D button in the
+  // corner flips between the two. The user's avatar is only used when they ask for 3D.
+  const spinsByItself = drawable3d(a) && (['gear', 'hat', 'hair'].includes(a.kind) || (a.meta && a.meta.model && ['faceacc', 'neck', 'shoulder', 'waist'].includes(a.kind)));
+  const item3dToggle = $('#item3dToggle');
+  let itemShowing3d = false, itemViewTurn = 0;   // itemViewTurn: a newer press wins over a slow, older load
+  const setItemToggle = () => {
+    if (!item3dToggle) return;
+    item3dToggle.textContent = itemShowing3d ? '2D' : '3D';
+    item3dToggle.title = itemShowing3d ? 'Switch to the 2D picture' : 'Switch to the 3D preview';
+    item3dToggle.setAttribute('aria-pressed', itemShowing3d ? 'true' : 'false');
+  };
+  const showItem2d = () => {
+    const el = $('#item3d');
+    itemViewTurn++;
+    itemShowing3d = false;
+    if (el) { el.innerHTML = itemIcon(a).s; upgradeItemPictures(); }
+    setItemToggle();
+  };
+  const showItem3d = async () => {
+    const el = $('#item3d');
+    if (!el) return;
+    const turn = ++itemViewTurn;
+    let viewer = null;
+    if (spinsByItself) {
+      viewer = await mountAvatar(el, {}, [a], { width: 328, height: 328, cam: itemCamera(a.kind), autoSpin: true, itemOnly: true }).catch(() => null);
+    } else {
+      // Clothes, faces and bundles: show them on your own avatar (or the default one).
+      let avatar = defaultAvatar(), wearing = [];
+      if (signedIn()) {
+        const profile = await call('profile', { id: me.userId }).catch(() => null);
+        if (profile && profile.ok && profile.user) {
+          avatar = profile.user.avatar || defaultAvatar();
+          wearing = Array.isArray(profile.wearing) ? profile.wearing : [];
+        }
+      }
+      if (turn !== itemViewTurn) return;
+      const previewItems = [...wearing.filter((item) => String(item.id) !== String(a.id)), a];
+      viewer = await mountAvatar(el, avatar, previewItems, { width: 328, height: 328, cam: itemCamera(a.kind) }).catch(() => null);
+    }
+    if (turn !== itemViewTurn) return;
+    if (!viewer) { showItem2d(); throw new Error('3D preview is unavailable in this browser. Try enabling WebGL.'); }
+    itemShowing3d = true;
+    setItemToggle();
+  };
+  if (spinsByItself) showItem3d().catch(() => showItem2d());
   const tryOnButton = $('#itemTryOn');
   if (tryOnButton) tryOnButton.addEventListener('click', async () => {
     if (!me) { loginPopup('try on catalog items'); return; }
@@ -1659,45 +1701,17 @@ pages.item = async (id) => {
       if (tryOnButton.isConnected) { tryOnButton.disabled = false; tryOnButton.textContent = 'Try On'; }
     }
   });
-  const item3dToggle = $('#item3dToggle');
-  let itemShowing3d = false;
   if (item3dToggle) item3dToggle.addEventListener('click', async () => {
-    const el = $('#item3d');
-    if (!el) return;
-    if (itemShowing3d) {
-      itemShowing3d = false;
-      el.innerHTML = itemIcon(a).s;
-      item3dToggle.textContent = '3D';
-      item3dToggle.title = 'Switch to an interactive 3D avatar preview';
-      upgradeItemPictures();
-      return;
-    }
+    if (itemShowing3d) { showItem2d(); return; }
     item3dToggle.disabled = true;
     item3dToggle.textContent = '…';
     try {
-      let avatar = defaultAvatar(), wearing = [];
-      if (me) {
-        const profile = await call('profile', { id: me.userId });
-        if (!profile.ok || !profile.user) throw new Error(profile.error || 'Could not load your avatar.');
-        avatar = profile.user.avatar || defaultAvatar();
-        wearing = Array.isArray(profile.wearing) ? profile.wearing : [];
-      }
-      const previewItems = [...wearing.filter((item) => String(item.id) !== String(a.id)), a];
-      el.innerHTML = '';
-      const viewer = await mountAvatar(el, avatar, previewItems, { width: 328, height: 328, cam: itemCamera(a.kind) });
-      if (!viewer) {
-        el.innerHTML = itemIcon(a).s;
-        upgradeItemPictures();
-        throw new Error('3D preview is unavailable in this browser. Try enabling WebGL.');
-      }
-      itemShowing3d = true;
-      item3dToggle.textContent = '2D';
-      item3dToggle.title = 'Switch back to the item picture';
+      await showItem3d();
     } catch (error) {
-      item3dToggle.textContent = '3D';
       alert(error.message || 'Could not load the 3D preview.');
     } finally {
       item3dToggle.disabled = false;
+      setItemToggle();
     }
   });
   tickCountdowns();
