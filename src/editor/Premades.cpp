@@ -566,6 +566,14 @@ SceneNode* addPart(Scene& scene, const char* name, PrimitiveType shape, glm::vec
     return n;
 }
 
+// A VehicleSeat's MaxSpeed, Torque and TurnSpeed, as attributes you can change (Vehicles.h).
+void vehicleSeatSettings(SceneNode* seat, float maxSpeed, float torque, float turnSpeed) {
+    for (auto [name, value] : {std::pair<const char*, float>{"MaxSpeed", maxSpeed}, {"Torque", torque}, {"TurnSpeed", turnSpeed}}) {
+        Attribute a; a.name = name; a.type = Attribute::Number; a.n = value;
+        seat->attributes.push_back(a);
+    }
+}
+
 void addScript(Scene& scene, SceneNode* parent, const char* source) {
     auto s = std::make_unique<SceneNode>("Script", NodeKind::Script);
     s->source = source;
@@ -654,6 +662,8 @@ const std::vector<PremadeInfo>& premadeList() {
         {Premade::Windmill,             "Windmill",        "Spinning blades driven by a motor"},
         {Premade::Seesaw,               "Seesaw",          "A plank on a hinge - jump on one end"},
         {Premade::MotorCart,            "Motor Cart",      "Hop on and drive with the arrow keys"},
+        {Premade::Car,                  "Car",             "Sit in the driver's seat and drive with W/A/S/D (a VehicleSeat, no script)"},
+        {Premade::Boat,                 "Boat",            "A boat in a pond: sit in it and steer with W/A/S/D"},
         {Premade::DominoRun,            "Domino Run",      "Knock the first one over..."},
         {Premade::CratePyramid,         "Crate Pyramid",   "A stack of loose crates to knock down"},
         {Premade::WindZone,             "Wind Zone",       "Blows loose parts upwards (change Mode, Strength and Direction in its Attributes)"},
@@ -821,6 +831,60 @@ SceneNode* buildPremade(Scene& scene, Premade kind, const glm::vec3& at) {
                 motor->visible = false;
             }
             addScript(scene, n, kCart);
+            break;
+        }
+        case Premade::Car: {
+            // A VehicleSeat on a chassis with four ball wheels on motor hinges: sit in it and
+            // W/S/A/D drive (Vehicles.h spins the wheels). No script needed.
+            n = scene.insert(std::make_unique<SceneNode>("Car", NodeKind::Model));
+            SceneNode* body = addPart(scene, "Chassis", Cube, at + glm::vec3(0, 1.3f, 0), {3.4f, 0.6f, 6.0f}, {0.15f, 0.45f, 0.9f}, Material::Metal);
+            body->anchored = false;
+            scene.reparent(body, n);
+            SceneNode* hood = addPart(scene, "Hood", Cube, at + glm::vec3(0, 1.95f, -1.9f), {3.2f, 0.7f, 2.0f}, {0.15f, 0.45f, 0.9f}, Material::Metal);
+            scene.reparent(hood, body);   // (inside the chassis: it rides along)
+            SceneNode* back = addPart(scene, "SeatBack", Cube, at + glm::vec3(0, 2.35f, 1.55f), {1.6f, 1.5f, 0.3f}, {0.2f, 0.2f, 0.22f});
+            scene.reparent(back, body);
+            SceneNode* seat = addPart(scene, "VehicleSeat", Cube, at + glm::vec3(0, 1.7f, 0.8f), {1.6f, 0.2f, 1.4f}, {0.2f, 0.2f, 0.22f});
+            seat->tags = {"Seat", "VehicleSeat"};
+            vehicleSeatSettings(seat, 14.0f, 10.0f, 1.0f);
+            scene.reparent(seat, body);
+            for (int i = 0; i < 4; ++i) {
+                glm::vec3 wp = at + glm::vec3(i % 2 ? 2.2f : -2.2f, 0.8f, i / 2 ? 2.1f : -2.1f);
+                SceneNode* wheel = addPart(scene, "Wheel", PrimitiveType::Sphere, wp, {1.6f, 1.6f, 1.6f}, {0.08f, 0.08f, 0.09f});
+                wheel->anchored = false;
+                wheel->friction = 1.2f;
+                scene.reparent(wheel, n);   // beside the chassis, not inside it, so it can spin
+                SceneNode* motor = makeConstraint(scene, ConstraintType::Hinge, body, wp, wheel, wp, {1, 0, 0}, true);
+                motor->motorSpeed = 0.0f;
+                motor->visible = false;
+            }
+            break;
+        }
+        case Premade::Boat: {
+            // A wooden boat (wood floats) in a pond, with a VehicleSeat: no wheels, so the seat
+            // pushes the whole boat along and turns it.
+            n = scene.insert(std::make_unique<SceneNode>("BoatAndPond", NodeKind::Model));
+            SceneNode* bed = addPart(scene, "PondBed", Cube, at + glm::vec3(0, 0.25f, 0), {30, 0.5f, 30}, {0.45f, 0.38f, 0.28f}, Material::Concrete);
+            SceneNode* pond = addPart(scene, "Water", Cube, at + glm::vec3(0, 2.0f, 0), {30, 3.0f, 30}, {0.13f, 0.45f, 0.62f}, Material::Glass);
+            pond->transparency = 0.45f;
+            pond->canCollide = false;
+            pond->castShadow = false;
+            pond->tags = {"Water"};
+            for (SceneNode* p : {bed, pond}) scene.reparent(p, n);
+            auto boat = std::make_unique<SceneNode>("Boat", NodeKind::Model);
+            SceneNode* boatModel = scene.insert(std::move(boat), n);
+            SceneNode* hull = addPart(scene, "Hull", Cube, at + glm::vec3(0, 3.4f, 0), {3.0f, 0.8f, 6.5f}, {0.55f, 0.36f, 0.2f}, Material::Wood);
+            hull->anchored = false;
+            scene.reparent(hull, boatModel);
+            const glm::vec3 wood(0.45f, 0.3f, 0.17f);
+            SceneNode* left = addPart(scene, "Side", Cube, at + glm::vec3(-1.35f, 4.1f, 0), {0.3f, 0.6f, 6.5f}, wood, Material::Wood);
+            SceneNode* right = addPart(scene, "Side", Cube, at + glm::vec3(1.35f, 4.1f, 0), {0.3f, 0.6f, 6.5f}, wood, Material::Wood);
+            SceneNode* bow = addPart(scene, "Bow", Cube, at + glm::vec3(0, 4.1f, -3.1f), {2.4f, 0.6f, 0.3f}, wood, Material::Wood);
+            for (SceneNode* p : {left, right, bow}) scene.reparent(p, hull);
+            SceneNode* seat = addPart(scene, "VehicleSeat", Cube, at + glm::vec3(0, 3.9f, 1.6f), {1.4f, 0.2f, 1.2f}, wood, Material::Wood);
+            seat->tags = {"Seat", "VehicleSeat"};
+            vehicleSeatSettings(seat, 10.0f, 6.0f, 1.0f);
+            scene.reparent(seat, hull);
             break;
         }
         case Premade::DominoRun: {

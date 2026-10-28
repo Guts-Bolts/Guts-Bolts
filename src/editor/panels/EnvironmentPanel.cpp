@@ -78,14 +78,14 @@ void EnvironmentPanel::render() {
     }
 
     if (ImGui::CollapsingHeader("Clouds", open)) {
-        ImGui::Checkbox   ("Clouds",  &e.clouds);
+        ImGui::Checkbox   ("Clouds##on", &e.clouds);   // "##on": not the same ID as the header
         ImGui::SliderFloat("Cover",   &e.cloudCover, 0.0f, 1.0f);
         ImGui::SliderFloat("Speed",   &e.cloudSpeed, 0.0f, 10.0f);
         ImGui::ColorEdit3 ("Cloud Color", &e.cloudColor.x);
     }
 
     if (ImGui::CollapsingHeader("Fog", open)) {
-        ImGui::Checkbox   ("Fog",       &e.fogEnabled);
+        ImGui::Checkbox   ("Fog##on",   &e.fogEnabled);  // "##on": not the same ID as the header
         ImGui::ColorEdit3 ("Fog Color", &e.fogColor.x);
         ImGui::SliderFloat("Density",   &e.fogDensity, 0.0f, 0.1f, "%.4f");
         ImGui::SliderFloat("Sun Glow",  &e.fogSunGlow, 0.0f, 3.0f);

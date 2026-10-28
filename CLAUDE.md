@@ -7,6 +7,10 @@
   plain-words lines of what changed. Never add new entries to `worker/updates.js`:
   that file only keeps the older ones. Name the file after the id, and pick an id
   nobody has used.
+- **Every piece of work goes on the roadmap.** Add a file `worker/roadmap/<id>.js`
+  (see `worker/roadmap/README.md`) with `status: 'working'` when you start, and set
+  it to `'done'` (with the version) in the pull request that finishes it. Ideas for
+  later are `'planned'`. Never type them into the website instead.
 - **Keep pull requests from conflicting.** Many PRs are open at once, so avoid
   editing the same lines as everyone else:
   - Update log: one file per update (above), never the top of `worker/updates.js`.

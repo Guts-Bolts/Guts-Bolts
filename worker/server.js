@@ -15,7 +15,8 @@ import wasmModule from '../website/app/gbcrypto.wasm';
 import { BUILT_IN_UPDATES } from './updates.js';
 import { filterText, nameHasHateWord } from './textfilter.js';
 import { MemoryStore } from './memorystore.js';
-import { Roadmap, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
+import { Roadmap, builtInItems, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
+import BUILT_IN_ROADMAP from './roadmap-gathered.js';   // worker/roadmap/, one file per item (worker/gather-updates.mjs)
 // The example games that come with Guts&Bolts: always on the server (as Guts's
 // games), so the website and the apps have something to play from day one.
 import demolitionYard from '../games/Demolition Yard.gbscene';
@@ -711,7 +712,7 @@ export class GbServerObject extends DurableObject {
     // Promo codes: { code, bolts, start, end (0 = never), made, by, uses, stopped }, newest last.
     // Who used one is kept on their account (u.promos), so each person can use it once.
     this.promos = this.getMeta('promos', []);
-    this.roadmap = new Roadmap(this.getMeta('roadmap', {}));   // the public roadmap and ideas (roadmap.js)
+    this.roadmap = new Roadmap(this.getMeta('roadmap', {}), builtInItems(BUILT_IN_ROADMAP));   // the public roadmap and ideas (roadmap.js)
     // Connected apps: { secrets: {app: {hash, at}}, codes: [{hash, account, app, redirect, at}],
     // tokens: [{hash, account, app, at, expires}], pictures: {account: when its avatar picture was saved} }
     this.connect = Object.assign({ secrets: {}, codes: [], tokens: [], pictures: {} }, this.getMeta('connect', {}));

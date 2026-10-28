@@ -209,7 +209,7 @@ void OutlinerPanel::drawNode(SceneNode* node) {
 void OutlinerPanel::insertMenu(SceneNode* parent) {
     struct Group { const char* title; std::vector<const char*> items; };
     static const Group groups[] = {
-        {"Parts", {"Part", "Sphere", "Cylinder", "MeshPart", "TrussPart", "SpawnLocation", "Seat"}},
+        {"Parts", {"Part", "Sphere", "Cylinder", "MeshPart", "TrussPart", "SpawnLocation", "Seat", "VehicleSeat"}},
         {"Scripts", {"Script", "LocalScript", "ModuleScript", "RemoteEvent", "RemoteFunction"}},
         {"Characters & Tools", {"Tool", "Rig", "Animation", "Team", "ProximityPrompt", "ClickDetector"}},
         {"Containers", {"Model", "Folder"}},
