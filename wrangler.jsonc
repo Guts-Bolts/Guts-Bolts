@@ -29,8 +29,9 @@
   "compatibility_date": "2026-09-01",
   "keep_vars": true,
   // Before every deploy (and `wrangler dev`): gather the update log's files in
-  // worker/updates/ into worker/updates-gathered.js (see worker/gather-updates.mjs).
-  "build": { "command": "node worker/gather-updates.mjs", "watch_dir": "worker/updates" },
+  // worker/updates/ and the built-in roadmap's in worker/roadmap/ into
+  // worker/updates-gathered.js and worker/roadmap-gathered.js (see worker/gather-updates.mjs).
+  "build": { "command": "node worker/gather-updates.mjs", "watch_dir": ["worker/updates", "worker/roadmap"] },
   // The example games (games/*.gbscene) are bundled into the server as text, so
   // they're always on it (see addExampleGames in worker/server.js).
   // The emotes and animation packs (assets/emotes/*.gbemotes) are bundled the same way.

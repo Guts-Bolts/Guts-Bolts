@@ -18,6 +18,7 @@ enum class Premade {
     // Ready-made Tools, like Roblox's classic gear (staff can sell them in the catalog: File > Make Gear)
     GearSword, GearRocketLauncher, GearSpeedCoil, GearGravityCoil, GearBomb,
     WindZone, BreakableBridge,     // the physics workbench: force zones and joints that snap
+    Car, Boat,                     // vehicles: a VehicleSeat drives them (scene/Vehicles.h)
 };
 inline bool isGearPremade(Premade p) { return p >= Premade::GearSword && p <= Premade::GearBomb; }
 

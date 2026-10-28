@@ -49,6 +49,7 @@ void GameSession::start() {
     m_physics.reset();
     m_scene->particles().clear();
     m_scene->blasts().clear();
+    m_scene->vehicles().clear();
     m_scene->camera() = ScriptCamera{};   // workspace.CurrentCamera starts fresh: Custom, following you
     m_scene->coreGui() = CoreGuiState{};  // the emote menu and the rest are back on
     if (Player* p = m_scene->player()) {
@@ -338,7 +339,9 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     m_scripts.update(dt);   // (a joined player's LocalScripts)
     if (m_scripts.takeTestClick()) click(0);   // (tests: a pretend click in the game view)
 
-    // 2. Physics for loose (unanchored) parts (the host does this for everyone).
+    // 2. Physics for loose (unanchored) parts (the host does this for everyone),
+    // after the VehicleSeats have spun their wheels.
+    m_scene->vehicles().update(*m_scene, dt, !client);
     m_physics.gather(*m_scene);
     if (!client) {
         std::vector<uint64_t> fallen;
@@ -375,6 +378,17 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
                 jump = jump || down(ImGuiKey_GamepadFaceDown);
                 dive = dive || (Pad::leftTrigger() > 0.5f && !m_scripts.inputSunk(ImGuiKey_GamepadL2));
             }
+        }
+        // Sitting in a VehicleSeat: the same keys drive it (W/S = Throttle, A/D = Steer).
+        // (Not listening to keys, e.g. typing in chat: the keys lapse and it slows down.)
+        SceneNode* seat = p->seatId() ? m_scene->findById(p->seatId()) : nullptr;
+        if (seat && Vehicles::isVehicleSeat(seat) && acceptInput && !ImGui::GetIO().WantTextInput) {
+            float throttle = (down(ImGuiKey_W) || down(ImGuiKey_UpArrow) ? 1.0f : 0.0f) - (down(ImGuiKey_S) || down(ImGuiKey_DownArrow) ? 1.0f : 0.0f);
+            float steer = (down(ImGuiKey_D) || down(ImGuiKey_RightArrow) ? 1.0f : 0.0f) - (down(ImGuiKey_A) || down(ImGuiKey_LeftArrow) ? 1.0f : 0.0f);
+            throttle += m_touchMove.y;
+            steer += m_touchMove.x;
+            if (Pad::connected()) { throttle += Pad::leftStick().y; steer += Pad::leftStick().x; }
+            m_scene->vehicles().drive(seat->id, p->rootId(), throttle, steer);
         }
         // Tools: 1-9 and 0 pick the ten hotbar slots; extras live in the backpack. Backspace drops the held one.
         if (acceptInput && !ImGui::GetIO().WantTextInput) {
