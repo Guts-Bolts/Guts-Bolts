@@ -23,12 +23,14 @@ We also found a camera, a font and a heart while we were down there.
 - The Avatar page has tabs, and you can wear one body part from a bundle
   on its own.
 - One big, bold font everywhere: the 2012 Helvetica Black look.
+- Staff can give badges by user ID again, on the website and in the Player.
 
 ## Bugs we squashed
 - The updater could close and reopen Studio or the Player forever. Now it
   tells you what went wrong and lets you download the update yourself.
 - Your own items named "Pumpkin" were turned into Gutstober timed items.
 - The 3D/2D button on item pages didn't work.
+- Shirts and pants didn't fit older body bundles, like the girl torso.
 - The Insert Object list showed some things twice, causing a "conflicting
   ID" error.
 - When the web Player crashed it showed a mystery number; now it says why.
