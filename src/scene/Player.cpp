@@ -195,7 +195,7 @@ nlohmann::json Player::bodyPartJson(const SceneNode& part) {
     return j;
 }
 
-bool Player::setBodyPart(SceneNode& part, const nlohmann::json& j) {
+std::shared_ptr<EditMesh> Player::bodyPartMesh(const nlohmann::json& j, const std::string& rigPart) {
     auto m = std::make_shared<EditMesh>();
     const auto& v = j["v"];
     for (size_t i = 0; i + 2 < v.size(); i += 3) m->verts.push_back({v[i].get<float>(), v[i + 1].get<float>(), v[i + 2].get<float>()});
@@ -207,7 +207,16 @@ bool Player::setBodyPart(SceneNode& part, const nlohmann::json& j) {
             m->uvs.push_back(std::move(c));
         }
     m->smooth = j.value("smooth", false);
-    if (m->faces.empty()) return false;
+    if (m->faces.empty()) return nullptr;
+    // No UV map of its own (like bundles made before Studio's automatic clothing map):
+    // lay it out on the clothing template now, so shirts and pants still fit it.
+    if (m->uvs.size() != m->faces.size()) PlayerModel::clothingUVs(*m, rigPart);
+    return m;
+}
+
+bool Player::setBodyPart(SceneNode& part, const nlohmann::json& j) {
+    auto m = bodyPartMesh(j, part.name);
+    if (!m) return false;
     part.primitiveType = PrimitiveType::Mesh;
     MeshEdit::attach(part, m);
     part.transform.scale = {j["size"][0].get<float>(), j["size"][1].get<float>(), j["size"][2].get<float>()};

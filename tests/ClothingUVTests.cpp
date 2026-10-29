@@ -1,6 +1,7 @@
 // The auto UV map for bundle body parts: any shape gets laid out on the shirt / pants
 // template the same way the default body is, so clothing fits it.
 #include "scene/EditMesh.h"
+#include "scene/Player.h"
 #include "scene/PlayerModel.h"
 #include "scene/SceneNode.h"
 
@@ -76,6 +77,16 @@ int main() {
     auto head = MeshEdit::fromPrimitive(PrimitiveType::Sphere);
     check(!PlayerModel::clothingUVs(*head, "Head"), "the Head isn't mapped");
     check(!PlayerModel::clothingUVs(*head, "Wing"), "neither is a part clothing doesn't know");
+
+    // A bundle body part saved with no UV map (made before the auto map, like the girl
+    // torso bundle) gets one when it's worn, so a shirt still covers it.
+    {
+        nlohmann::json j = {{"v", {-0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0, 0, -0.5}},
+                            {"f", {{0, 1, 2, 3}, {0, 4, 1}}}, {"size", {1, 1, 0.5}}, {"pos", {0, 1.5, 0}}};
+        auto m = Player::bodyPartMesh(j, "Torso");
+        check(m && m->uvs.size() == m->faces.size(), "a bundle torso with no UVs gets clothing UVs");
+        check(m && facesIn(*m, {0, 0, 1}, 231, 74, 128, 128), "its front shows the shirt's front");
+    }
 
     std::cout << (failures ? "FAILED: " + std::to_string(failures) : std::string("all passed")) << "\n";
     return failures ? 1 : 0;
