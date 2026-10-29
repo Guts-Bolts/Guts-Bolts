@@ -31,6 +31,7 @@ We also found a camera, a font and a heart while we were down there.
 - Your own items named "Pumpkin" were turned into Gutstober timed items.
 - The 3D/2D button on item pages didn't work.
 - Shirts and pants didn't fit older body bundles, like the girl torso.
+- Clothing on curvy bundle bodies had bald spots; now it covers them fully.
 - The Insert Object list showed some things twice, causing a "conflicting
   ID" error.
 - When the web Player crashed it showed a mystery number; now it says why.
