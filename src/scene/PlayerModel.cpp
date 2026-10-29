@@ -4,6 +4,7 @@
 #include "SceneNode.h"
 #include "PlayerObj.h"   // generated: the bytes of assets/models/player.obj
 
+#include <algorithm>
 #include <map>
 
 namespace PlayerModel {
@@ -37,16 +38,32 @@ constexpr BoxLayout kLeftLimb = {{308, 355, 64, 128}, {440, 355, 64, 128}, {506,
 // faces, seen from outside, the same way up as the character. `lo`..`hi` is the box
 // (-0.5..0.5 for the built-in parts). (In the model the character faces +Z, so its
 // right side is -X.)
+//
+// Only faces at the very top or bottom of the part use the top / bottom boxes. On a
+// curvy part (a bum, a chest, hips) a face in the middle, or a slope at the end, can
+// point up or down too, and the top / bottom boxes are usually left empty on a shirt,
+// so those faces would show as bare patches: they use the side they lean towards instead.
+constexpr float kCapBand = 0.1f;    // how near the top / bottom (of the part's height) counts as "the end"
+constexpr float kCapFlat = 0.95f;   // how flat a face there has to be (about 18 degrees from level)
+
 void layOut(EditMesh& m, const BoxLayout& L, glm::vec3 lo = glm::vec3(-0.5f), glm::vec3 hi = glm::vec3(0.5f)) {
     const glm::vec3 span = glm::max(hi - lo, glm::vec3(1e-6f));
     m.uvs.clear();
     for (const auto& f : m.faces) {
         glm::vec3 n = MeshEdit::faceNormal(m, f), a = glm::abs(n);
+        glm::vec3 mid(0.0f);   // the face's middle, -0.5..0.5 across the box
+        for (uint32_t i : f) mid += (m.verts[i] - lo) / span - 0.5f;
+        mid /= (float)std::max<size_t>(f.size(), 1);
+        const bool cap = a.y >= kCapFlat && (n.y > 0 ? mid.y > 0.5f - kCapBand : mid.y < kCapBand - 0.5f);
+        if (!cap && a.x < 1e-4f && a.z < 1e-4f) {   // flat, in the middle: go by where it sits
+            a = glm::abs(glm::vec3(mid.x, 0.0f, mid.z));
+            n = glm::vec3(mid.x, 0.0f, mid.z);
+        }
         std::vector<glm::vec2> uv;
         for (uint32_t i : f) {
             glm::vec3 p = glm::clamp((m.verts[i] - lo) / span, glm::vec3(0.0f), glm::vec3(1.0f)) - 0.5f;
             Rect r; float s, t;   // s: 0 = left of the picture, t: 0 = top
-            if (a.y >= a.x && a.y >= a.z) {
+            if (cap) {
                 if (n.y > 0) { r = L.up;   s = p.x + 0.5f; t = p.z + 0.5f; }
                 else         { r = L.down; s = p.x + 0.5f; t = 0.5f - p.z; }
             } else if (a.x >= a.z) {

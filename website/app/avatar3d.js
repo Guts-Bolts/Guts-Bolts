@@ -47,18 +47,27 @@ const LEFT_LIMB_UV = { front: [308, 355, 64, 128], back: [440, 355, 64, 128], ri
 // Give each corner a place on the template: each triangle goes on the side of the
 // part's box it faces, seen from outside, the same way up as the character.
 // (The character faces +Z, so its right side is -X.)
+const CAP_BAND = 0.1, CAP_FLAT = 0.95;   // how near the top / bottom counts as its end; how flat a face there must be
 function layOut(part, L) {
   const c = part.min.map((m, i) => (m + part.max[i]) / 2), sz = part.min.map((m, i) => Math.max(part.max[i] - m, 1e-6));
   const P = part.pos, uv = [];
   for (let t = 0; t < P.length; t += 9) {
     const e1 = [P[t + 3] - P[t], P[t + 4] - P[t + 1], P[t + 5] - P[t + 2]];
     const e2 = [P[t + 6] - P[t], P[t + 7] - P[t + 1], P[t + 8] - P[t + 2]];
-    const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
-    const a = n.map(Math.abs);
+    let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+    let a = n.map(Math.abs);
+    // Only faces at the very top / bottom use the top / bottom boxes (like the game's
+    // PlayerModel layOut): a curvy part's up- or down-facing faces in the middle, or
+    // sloped ones at the ends, use the side they lean towards, so they don't show the
+    // shirt's empty top / bottom boxes.
+    const mid = [0, 1, 2].map((i) => (P[t + i] + P[t + 3 + i] + P[t + 6 + i]) / 3 - c[i]).map((m, i) => m / sz[i]);
+    const len = Math.hypot(...n) || 1;
+    const cap = a[1] >= CAP_FLAT * len && (n[1] > 0 ? mid[1] > 0.5 - CAP_BAND : mid[1] < CAP_BAND - 0.5);
+    if (!cap && a[0] < 1e-4 * len && a[2] < 1e-4 * len) { n = [mid[0], 0, mid[2]]; a = n.map(Math.abs); }   // flat, in the middle
     for (let k = 0; k < 3; ++k) {
       const p = [0, 1, 2].map((i) => Math.max(-0.5, Math.min(0.5, (P[t + k * 3 + i] - c[i]) / sz[i])));
       let r, s0, t0;   // s0: 0 = left of the picture, t0: 0 = top
-      if (a[1] >= a[0] && a[1] >= a[2]) {
+      if (cap) {
         if (n[1] > 0) { r = L.up; s0 = p[0] + 0.5; t0 = p[2] + 0.5; } else { r = L.down; s0 = p[0] + 0.5; t0 = 0.5 - p[2]; }
       } else if (a[0] >= a[2]) {
         if (n[0] < 0) { r = L.right; s0 = p[2] + 0.5; t0 = 0.5 - p[1]; } else { r = L.left; s0 = 0.5 - p[2]; t0 = 0.5 - p[1]; }
