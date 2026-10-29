@@ -73,6 +73,35 @@ int main() {
     check(facesIn(*leg, {0, 0, 1}, 308, 355, 64, 128), "left leg front: its box");
     check(facesIn(*leg, {0, -1, 0}, 308, 485, 64, 64), "left leg bottom: its box");
 
+    // A curvy torso (like a bum or a chest sticking out): faces in the middle that point
+    // up or down use the side they lean towards, not the top / bottom boxes, which
+    // shirts usually leave empty (those showed up as bare patches).
+    {
+        EditMesh curvy = *MeshEdit::fromPrimitive(PrimitiveType::Cube);
+        const uint32_t b = (uint32_t)curvy.verts.size();
+        // The underside of a bum: low on the back, pointing mostly down and a bit back.
+        curvy.verts.push_back({-0.3f, -0.3f, -0.45f});
+        curvy.verts.push_back({0.3f, -0.3f, -0.45f});
+        curvy.verts.push_back({0.0f, -0.38f, -0.35f});
+        curvy.faces.push_back({b, b + 1, b + 2});
+        // The top of a hip: halfway up, pointing straight up, on the right side (-X).
+        curvy.verts.push_back({-0.45f, 0.0f, -0.1f});
+        curvy.verts.push_back({-0.45f, 0.0f, 0.1f});
+        curvy.verts.push_back({-0.35f, 0.0f, 0.0f});
+        curvy.faces.push_back({b + 3, b + 4, b + 5});
+        check(PlayerModel::clothingUVs(curvy, "Torso"), "a curvy torso can be mapped");
+        auto inBox = [&](size_t f, float x, float y, float w, float h) {
+            for (glm::vec2 uv : curvy.uvs[f]) {
+                glm::vec2 p = pixel(uv);
+                if (p.x < x || p.x > x + w || p.y < y || p.y > y + h) return false;
+            }
+            return true;
+        };
+        const size_t bum = curvy.faces.size() - 2, hip = curvy.faces.size() - 1;
+        check(inBox(bum, 427, 74, 128, 128), "the underside of a bum uses the back box, not the bottom one");
+        check(inBox(hip, 165, 74, 64, 128), "the top of a hip uses the side box, not the top one");
+    }
+
     // Clothing doesn't cover the head.
     auto head = MeshEdit::fromPrimitive(PrimitiveType::Sphere);
     check(!PlayerModel::clothingUVs(*head, "Head"), "the Head isn't mapped");
