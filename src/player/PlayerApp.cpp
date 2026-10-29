@@ -2819,9 +2819,9 @@ void PlayerApp::drawStaff() {
 
     ImGui::SeparatorText(official ? "Give someone a badge" : "Verify someone");
     ImGui::PushTextWrapPos(0);
-    ImGui::TextDisabled("Ask them for their account ID (Avatar page > Copy full ID), make a code here and send "
-                        "it to them. The code only works for their account. (When everyone uses a Guts&Bolts "
-                        "server, you can verify people straight from the server section below instead.)");
+    ImGui::TextDisabled("Type their user ID (the number on their profile, like 5) and they get the badge right "
+                        "away. Not online? Use their full 64-letter account ID instead (Avatar page > Copy full ID) "
+                        "to make a code you send them. The code only works for their account.");
     ImGui::PopTextWrapPos();
     std::vector<const char*> names;
     std::vector<int> ids;
@@ -2837,12 +2837,39 @@ void PlayerApp::drawStaff() {
     if (ImGui::Combo("Badge", &cur, names.data(), (int)names.size())) m_grantBadge = ids[cur];
     m_grantBadge = ids[cur];
     ImGui::SetNextItemWidth(520);
-    ImGui::InputTextWithHint("Their account ID", "64 letters and numbers", &m_grantTo);
-    if (Classic::button("Make badge code", Classic::kPlay, ImVec2(180, 30))) {
+    ImGui::InputTextWithHint("Their user ID", "like 5 (or a 64-letter account ID)", &m_grantTo);
+    std::string grantWho;
+    for (char c : m_grantTo) if (!std::isspace((unsigned char)c) && c != '#') grantWho += c;
+    const bool fullId = grantWho.size() == 64;
+    if (Classic::button(fullId ? "Make badge code" : "Give badge", Classic::kPlay, ImVec2(180, 30))) {
         m_grantError.clear();
-        m_grantCode = Badges::makeCode((Badges::Id)m_grantBadge, m_grantTo, m_grantError);
+        m_grantDone.clear();
+        m_grantCode.clear();
+        if (fullId) m_grantCode = Badges::makeCode((Badges::Id)m_grantBadge, grantWho, m_grantError);
+        else if (grantWho.empty()) m_grantError = "Type their user ID first.";
+        else if (!Online::online()) m_grantError = "Giving a badge by user ID needs the server. Use their 64-letter account ID to make a code instead.";
+        else {
+            // Find whose user ID it is, then sign the badge for that account and hand it over.
+            const Badges::Id badge = (Badges::Id)m_grantBadge;
+            Online::request("admin.find", {{"query", grantWho}}, [this, grantWho, badge](const nlohmann::json& r) {
+                if (!r.value("ok", false)) { m_grantError = r.value("error", std::string()); return; }
+                nlohmann::json who;
+                for (const nlohmann::json& u : r.value("users", nlohmann::json::array()))
+                    if (std::to_string(u.value("userId", 0LL)) == grantWho) who = u;
+                if (who.is_null()) { m_grantError = "Nobody has the user ID " + grantWho + "."; return; }
+                std::string err;
+                Badges::Grant g = Badges::makeGrant(badge, who.value("id", std::string()), err);
+                if (g.first.empty()) { m_grantError = err; return; }
+                const std::string name = who.value("name", std::string());
+                Online::request("admin.grant", {{"to", grantWho}, {"key", g.first}, {"sig", g.second}}, [this, name, badge](const nlohmann::json& r2) {
+                    if (r2.value("ok", false)) m_grantDone = "Gave " + name + " the " + Badges::info(badge).name + " badge.";
+                    else m_grantError = r2.value("error", std::string());
+                });
+            });
+        }
     }
     if (!m_grantError.empty()) ImGui::TextColored(ImVec4(0.8f, 0.1f, 0.1f, 1), "%s", m_grantError.c_str());
+    if (!m_grantDone.empty()) ImGui::TextColored(ImVec4(0.1f, 0.55f, 0.1f, 1), "%s", m_grantDone.c_str());
     if (!m_grantCode.empty()) {
         ImGui::InputTextMultiline("##code", &m_grantCode, ImVec2(520, 60), ImGuiInputTextFlags_ReadOnly);
         if (ImGui::Button("Copy code")) ImGui::SetClipboardText(m_grantCode.c_str());

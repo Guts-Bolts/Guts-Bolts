@@ -762,7 +762,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
                 const bool isNum = !digits.empty() && digits.size() <= 11 && std::all_of(digits.begin(), digits.end(), ::isdigit);
                 if (q.empty() || (isNum && u.userId == std::atoll(digits.c_str())) ||
                     lower(u.name).find(q) != std::string::npos || id.rfind(q, 0) == 0)
-                    list.push_back(publicUser(u));
+                {
+                    json j = publicUser(u);
+                    j["badges"] = badgesOf(u);   // (so the Staff page can show and take away badges)
+                    list.push_back(j);
+                }
             }
             json r = okay(); r["users"] = list; return r;
         }
