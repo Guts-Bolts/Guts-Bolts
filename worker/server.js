@@ -2499,7 +2499,8 @@ export class GbServerObject extends DurableObject {
           if (!u.userId || u.userId <= 0) continue;
           if (list.length >= 40) break;
           const num = /^#?[0-9]+$/.test(q) ? Number(q.replace('#', '')) : -1;
-          if (!q || u.userId === num || lower(u.name).includes(q) || u.id.startsWith(q)) list.push(this.publicUser(u));
+          if (!q || u.userId === num || lower(u.name).includes(q) || u.id.startsWith(q))
+            list.push(Object.assign(this.publicUser(u), { badges: this.badgesOf(u) }));   // (so the Staff page can show and take away badges)
         }
         return okay({ users: list });
       }
