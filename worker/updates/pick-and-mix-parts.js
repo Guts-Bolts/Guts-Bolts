@@ -1,5 +1,5 @@
 export default {
-  id: 'pick-and-mix-parts', name: 'Pick and Mix Parts', time: 1793194000, tag: 'Website',
+  id: 'pick-and-mix-parts', name: 'Pick and Mix Parts', version: '0.7.8', time: 1793194000, tag: 'Website',
   summary: 'The Avatar page has tabs now, and you can wear one part of a bundle\'s body on its own.',
   items: [
     'The Avatar page is split into tabs: Body, Clothing, Hats, Hair, Accessories, Gear, Emotes and Outfits.',
