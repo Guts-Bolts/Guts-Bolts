@@ -2910,6 +2910,10 @@ function loadReviewPreviews() {
 
 // The Staff page, in sections so each kind of work has its own place. The tabs show how many
 // things are waiting in each; Overview has them all at a glance.
+// The badges the official account can hand out (Verified, Partner and Staff also have their own buttons).
+const GIVE_BADGES = [['tester', 'Tester'], ['bughunter', 'Bug Hunter'], ['featured', 'Featured Creator'], ['verified', 'Verified'],
+  ['partner', 'Partner'], ['staff', 'Staff']];
+const OTHER_BADGES = { tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
 const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
   ['ideas', 'Ideas'], ['people', 'People'], ['log', 'Staff log'], ['tools', 'Tools']];
 pages.staff = async () => {
@@ -2941,7 +2945,14 @@ pages.staff = async () => {
   else if (tab === 'ideas') body = staffIdeasBox(rm);
   else if (tab === 'people') {
     const r = await pageCall('admin.find', { query });
-    body = html`<div class="box"><h2 class="boxhead">People</h2>
+    // Give a badge by the user ID on their profile (#5). Staff can only give Verified and Partner.
+    const giveable = GIVE_BADGES.filter(([k]) => me.official || k === 'verified' || k === 'partner');
+    body = html`<div class="box"><h2 class="boxhead">Give a badge</h2>
+    <p class="muted">Type their user ID (the number on their profile, like 5) and pick a badge.</p>
+    <form class="row" data-form="giveBadge"><input name="who" placeholder="User ID" style="max-width:160px" required>
+      <select name="key">${giveable.map(([k, t]) => html`<option value="${k}">${t}</option>`)}</select>
+      <button class="btn green">Give badge</button></form></div>
+    <div class="box"><h2 class="boxhead">People</h2>
     <p class="muted">${me.official ? 'You\'re the official Guts account: you can verify people, make partners, make staff, give Bolts and ban.'
       : 'Staff can verify people, make them a Partner, take those badges away, and reset usernames that aren\'t allowed.'}</p>
     <form class="row" data-form="staffSearch"><input type="search" name="q" placeholder="Search by name or user number (#5)" value="${query}" style="max-width:320px">
@@ -2949,6 +2960,8 @@ pages.staff = async () => {
     <div class="list">${r.ok ? r.users.map((u) => html`<div>
       <a class="grow" href="#/user/${u.id}"><b>${u.username || u.name}</b></a>${verified(u.verified)}${partner(u)}
       <span class="small muted">${u.userId ? '#' + u.userId : 'not signed up'}${u.staff ? ' · staff' : ''}${u.banned ? ' · banned' : ''}</span>
+      ${(u.badges || []).filter((b) => OTHER_BADGES[b]).map((b) => html`<span class="badge-pill">${OTHER_BADGES[b]}${me.official
+        ? html` <button class="btn small" data-act="staff" data-op="revoke" data-key="${b}" data-id="${u.id}" title="Take the ${OTHER_BADGES[b]} badge away">x</button>` : ''}</span>`)}
       ${u.official ? '' : html`
         ${u.verified ? html`<button class="btn small" data-act="staff" data-op="revoke" data-key="verified" data-id="${u.id}">Unverify</button>`
           : html`<button class="btn small green" data-act="staff" data-op="grant" data-key="verified" data-id="${u.id}">Verify</button>`}
@@ -4417,6 +4430,19 @@ const forms = {
   gameSearch(f) { location.hash = '#/games?' + new URLSearchParams({ q: f.q.value, sort: f.sort.value, genre: f.genre.value }); },
   peopleSearch(f) { location.hash = '#/people?' + new URLSearchParams({ q: f.q.value }); },
   staffSearch(f) { location.hash = '#/staff?' + new URLSearchParams({ q: f.q.value }); },
+  // Give a badge by user ID: find the account it belongs to, then sign the badge for that account.
+  async giveBadge(f) {
+    const want = f.who.value.trim().replace(/^#/, '');
+    if (!want) return;
+    const r = await call('admin.find', { query: want });
+    if (!r.ok) { toast(r.error); return; }
+    const low = want.toLowerCase();
+    const u = r.users.find((x) => String(x.userId) === want) || r.users.find((x) => x.id === low)
+      || r.users.find((x) => (x.username || x.name || '').toLowerCase() === low);
+    if (!u) { toast(/^[0-9]+$/.test(want) ? 'Nobody has the user ID ' + want + '.' : 'There\'s nobody called "' + want + '".'); return; }
+    if ((u.badges || []).includes(f.key.value)) { toast((u.username || u.name) + ' already has that badge.'); return; }
+    await actions.staff({ op: 'grant', key: f.key.value, id: u.id });
+  },
   groupSearch(f) { location.hash = '#/groups?' + new URLSearchParams({ q: f.q.value }); },
   // Buy as a gift, step 2: check who it's for and what it costs before anything is paid.
   gift(f) {

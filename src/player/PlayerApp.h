@@ -472,7 +472,7 @@ private:
     std::string m_nameEdit, m_nameError;
     std::string m_redeemCode, m_redeemMsg;
     int         m_grantBadge = 1;
-    std::string m_grantTo, m_grantCode, m_grantError;
+    std::string m_grantTo, m_grantCode, m_grantError, m_grantDone;
 
     // Bolts
     std::string m_boltsCode, m_boltsMsg;           // redeem box on the Bolts page

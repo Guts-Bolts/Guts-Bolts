@@ -226,6 +226,7 @@ public:
     // One rig part's shape as a bundle stores it (Online::bundleBody), and back.
     static nlohmann::json bodyPartJson(const SceneNode& part);
     static bool           setBodyPart(SceneNode& part, const nlohmann::json& j);
+    static std::shared_ptr<EditMesh> bodyPartMesh(const nlohmann::json& j, const std::string& rigPart);   // (no GPU copy yet)
     static void           resetBodyPart(SceneNode& part);   // the normal shape, size and spot
     // An accessory file's contents -> its objects (placed relative to the character's feet).
     static std::unique_ptr<SceneNode> accessoryFrom(const std::string& json);
