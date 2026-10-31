@@ -16,7 +16,7 @@
 // Object), so it's online even when your computer is off. If GB_SERVER is set
 // (host:port), /api is passed on to that server instead, over TCP.
 import { connect } from 'cloudflare:sockets';
-import { GbServerObject } from './server.js';
+import { GbServerObject, readLimitedText } from './server.js';
 import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
@@ -188,8 +188,8 @@ export default {
       }
       const len = Number(request.headers.get('content-length') || 0);
       if (len > MAX_REQUEST) return reply({ ok: false, error: 'That\'s too big to send.' }, 413);
-      const text = await request.text();
-      if (text.length > MAX_REQUEST) return reply({ ok: false, error: 'That\'s too big to send.' }, 413);
+      const text = await readLimitedText(request, MAX_REQUEST);
+      if (text === null) return reply({ ok: false, error: 'That\'s too big to send.' }, 413);
       let req;
       try {
         req = JSON.parse(text);   // only pass on proper requests
