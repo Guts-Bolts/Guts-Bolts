@@ -2361,6 +2361,8 @@ export class GbServerObject extends DurableObject {
         if (args.accept !== true) { removeInvite(me, invite.id); return okay({ declined: true, me: this.meJson(me) }); }
         const owner = this.users.get(invite.owner), chat = owner && findChat(owner, invite.id);
         if (!chat || !chat.members.some((x) => x.id === invite.owner)) { removeInvite(me, invite.id); return fail('That party has ended.'); }
+        if (owner.banned || me.banned || !(owner.friends || []).includes(me.id) || this.blocks(me, owner) || this.blocks(owner, me) ||
+            !this.allows(this.privacyOf(owner).messages, me, owner)) { removeInvite(me, invite.id); return fail('You can no longer join that party.'); }
         if (chat.members.length >= 20) { removeInvite(me, invite.id); return fail('That party is full.'); }
         if (chat.members.some((x) => x.id === me.id)) { removeInvite(me, invite.id); return okay({ chat, me: this.meJson(me) }); }
         chat.members.push(person(me)); chat.readAt = chat.readAt || {}; chat.readAt[me.id] = now(); chat.updated = now();
