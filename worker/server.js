@@ -359,6 +359,7 @@ const COSTLY = {
   'trade.send':          [30, 90, 600],
   'report.send':         [20, 60, 600],
   'message.send':        [60, 180, 600],
+  'party.send':          [60, 180, 600],
   'comments.post':       [30, 90, 600],
   'forum.post':          [10, 30, 600],
   'forum.reply':         [30, 90, 600],
@@ -1018,7 +1019,7 @@ export class GbServerObject extends DurableObject {
     if (u) return u;
     u = { id, name: 'Player', created: now(), lastSeen: 0, ledger: [], grants: {}, owned: [], uploadDay: '', uploadsToday: 0,
       playDay: '', playEarned: 0, lastPlay: 0, banned: false, friends: [], friendIn: [], friendOut: [], following: [], followers: [],
-      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '' };
+      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', chats: [], partyInvites: [] };
     this.users.set(id, u);
     this.claimOfficial(u);
     this.saveUser(u);
@@ -2306,6 +2307,119 @@ export class GbServerObject extends DurableObject {
       const ids = str(args, 'which') === 'favorites' ? (me.favorites || []) : (me.recent || []);
       const games = ids.map((id) => this.assets.get(id)).filter((a) => a && a.kind === 'game' && this.canPlay(a, me));
       return okay({ assets: games.slice(0, clamp(num(args, 'limit') || 30, 1, 200)).map((a) => this.publicAsset(a, me)) });
+    }
+    // --- Chat conversations and parties (kept separate from the old inbox). ---
+    if (name.startsWith('party.')) {
+      if (me.userId === 0) return fail('Sign up first.');
+      me.chats = Array.isArray(me.chats) ? me.chats : [];
+      me.partyInvites = Array.isArray(me.partyInvites) ? me.partyInvites : [];
+      const person = (u) => ({ id: u.id, userId: u.userId, name: u.username || u.name, verified: this.isVerified(u) });
+      const findChat = (u, id) => (u.chats || []).find((x) => x.id === id) || null;
+      const syncChat = (chat) => {
+        for (const member of chat.members || []) {
+          const u = this.users.get(member.id);
+          if (!u || u.userId === 0) continue;
+          u.chats = Array.isArray(u.chats) ? u.chats : [];
+          const i = u.chats.findIndex((x) => x.id === chat.id);
+          if (i < 0) u.chats.unshift(structuredClone(chat)); else u.chats[i] = structuredClone(chat);
+          u.chats = u.chats.slice(0, 100);
+          this.saveUser(u);
+        }
+      };
+      const removeInvite = (u, id) => {
+        u.partyInvites = (u.partyInvites || []).filter((x) => x.id !== id);
+        this.saveUser(u);
+      };
+      if (name === 'party.list') return okay({ chats: me.chats, invites: me.partyInvites, me: this.meJson(me) });
+      if (name === 'party.create') {
+        const ids = Array.isArray(args.members) ? [...new Set(args.members.map((x) => String(x).slice(0, 80)))].filter((x) => x && x !== me.id) : [];
+        if (!ids.length) return fail('Choose at least one friend to invite.');
+        if (ids.length > 19) return fail('A party can have up to 20 people, including you.');
+        const invitees = [];
+        for (const id of ids) {
+          const u = this.users.get(id);
+          if (!u || u.userId === 0 || !me.friends.includes(u.id)) return fail('Parties can only be created with your friends.');
+          if (u.banned || this.blocks(me, u) || this.blocks(u, me)) return fail('You cannot invite someone you have blocked or who has blocked you.');
+          if (!this.allows(this.privacyOf(u).messages, me, u)) return fail(u.name + ' does not accept messages from you.');
+          invitees.push(u);
+        }
+        const id = 'p-' + randomHex(8), title = say(str(args, 'title'), 60) || invitees.map((u) => u.username || u.name).join(', ');
+        const chat = { id, title, owner: me.id, members: [person(me)], messages: [], readAt: { [me.id]: now() }, created: now(), updated: now() };
+        me.chats.unshift(chat); this.saveUser(me);
+        for (const u of invitees) {
+          u.partyInvites = [{ id, owner: me.id, ownerName: me.username || me.name, title, at: now() }, ...(u.partyInvites || []).filter((x) => x.id !== id)].slice(0, 50);
+          this.saveUser(u);
+          this.notify(u, 'party', (me.username || me.name) + ' invited you to a party: ' + title, id);
+        }
+        return okay({ chat, me: this.meJson(me) });
+      }
+      if (name === 'party.respond') {
+        const invite = me.partyInvites.find((x) => x.id === str(args, 'id'));
+        if (!invite) return fail('That party invitation is no longer available.');
+        if (args.accept !== true) { removeInvite(me, invite.id); return okay({ declined: true, me: this.meJson(me) }); }
+        const owner = this.users.get(invite.owner), chat = owner && findChat(owner, invite.id);
+        if (!chat || !chat.members.some((x) => x.id === invite.owner)) { removeInvite(me, invite.id); return fail('That party has ended.'); }
+        if (chat.members.length >= 20) { removeInvite(me, invite.id); return fail('That party is full.'); }
+        if (chat.members.some((x) => x.id === me.id)) { removeInvite(me, invite.id); return okay({ chat, me: this.meJson(me) }); }
+        chat.members.push(person(me)); chat.readAt = chat.readAt || {}; chat.readAt[me.id] = now(); chat.updated = now();
+        removeInvite(me, invite.id); syncChat(chat);
+        return okay({ chat, me: this.meJson(me) });
+      }
+      const chatId = str(args, 'id');
+      const chat = findChat(me, chatId);
+      if (!chat || !chat.members.some((x) => x.id === me.id)) return fail('That conversation is no longer available.');
+      if (name === 'party.read') {
+        chat.readAt = chat.readAt || {}; chat.readAt[me.id] = now(); syncChat(chat);
+        return okay({ chat, me: this.meJson(me) });
+      }
+      if (name === 'party.send' || name === 'party.game') {
+        let message;
+        if (name === 'party.game') {
+          const game = this.assets.get(str(args, 'game'));
+          if (!game || game.kind !== 'game' || !this.canPlay(game, me)) return fail('That game is not available to play.');
+          message = { id: randomHex(8), from: me.id, name: me.username || me.name, body: 'Invited everyone to play ' + game.name + '.', game: game.id, at: now() };
+        } else {
+          const body = say(str(args, 'body'), 1000, true);
+          if (!body) return fail('Write a message first.');
+          if (me.messageDay !== today) { me.messageDay = today; me.messagesToday = 0; }
+          if (me.messagesToday >= kMessagesPerDay) return fail('That is ' + kMessagesPerDay + ' messages today. Try again tomorrow.');
+          me.messagesToday++;
+          message = { id: randomHex(8), from: me.id, name: me.username || me.name, body, at: now() };
+        }
+        chat.messages = [...(chat.messages || []), message].slice(-200);
+        chat.updated = now(); syncChat(chat);
+        return okay({ chat, me: this.meJson(me) });
+      }
+      if (name === 'party.invite') {
+        if (chat.owner !== me.id) return fail('Only the party owner can invite people.');
+        const u = this.users.get(str(args, 'user'));
+        if (!u || u.userId === 0 || !me.friends.includes(u.id)) return fail('You can only invite friends.');
+        if (chat.members.some((x) => x.id === u.id)) return fail('That player is already in the party.');
+        if (chat.members.length >= 20) return fail('That party is full.');
+        if (u.banned || this.blocks(me, u) || this.blocks(u, me) || !this.allows(this.privacyOf(u).messages, me, u)) return fail('You cannot invite that player.');
+        u.partyInvites = [{ id: chat.id, owner: me.id, ownerName: me.username || me.name, title: chat.title, at: now() }, ...(u.partyInvites || []).filter((x) => x.id !== chat.id)].slice(0, 50);
+        this.saveUser(u); this.notify(u, 'party', (me.username || me.name) + ' invited you to a party: ' + chat.title, chat.id);
+        return okay({ chat });
+      }
+      if (name === 'party.rename') {
+        if (chat.owner !== me.id) return fail('Only the party owner can rename this party.');
+        const title = say(str(args, 'title'), 60);
+        if (!title) return fail('Give the party a name.');
+        chat.title = title; chat.updated = now(); syncChat(chat); return okay({ chat });
+      }
+      if (name === 'party.kick' || name === 'party.leave') {
+        const target = name === 'party.leave' ? me.id : str(args, 'user');
+        if (name === 'party.kick' && chat.owner !== me.id) return fail('Only the party owner can remove people.');
+        if (name === 'party.kick' && target === me.id) return fail('Use Leave party to leave.');
+        if (!chat.members.some((x) => x.id === target)) return fail('That player is not in this party.');
+        if (name === 'party.leave' && target === chat.owner && chat.members.length > 1) chat.owner = chat.members.find((x) => x.id !== target).id;
+        chat.members = chat.members.filter((x) => x.id !== target);
+        const leaving = this.users.get(target);
+        if (leaving) { leaving.chats = (leaving.chats || []).filter((x) => x.id !== chat.id); this.saveUser(leaving); }
+        if (!chat.members.length) return okay({ left: true });
+        chat.updated = now(); syncChat(chat); return okay({ chat, left: target === me.id });
+      }
+      return fail('Unknown party request.');
     }
     // --- Private messages (an inbox, like old Roblox). Guests can't send or get them. ---
     if (name === 'message.send') {
@@ -3730,7 +3844,7 @@ export class GbServerObject extends DurableObject {
     for (const k of Object.keys(u)) delete u[k];
     Object.assign(u, { id, name: kDeletedName, created, lastSeen: 0, ledger: [], grants: {}, owned: limited, uploadDay: '', uploadsToday: 0,
       playDay: '', playEarned: 0, lastPlay: 0, banned: false, friends: [], friendIn: [], friendOut: [], following: [], followers: [],
-      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', deleted: t });
+      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', chats: [], partyInvites: [], deleted: t });
     this.saveUser(u);
     this.staffDid({ id: 'system' }, 'account', 'Account #' + number + ' was deleted by its owner');
   }
