@@ -49,7 +49,8 @@ const memory = new Map();   // key -> { start, n }
 async function over(env, name, key) {
   const limiter = env[name];
   if (limiter && typeof limiter.limit === 'function') {
-    try { return !(await limiter.limit({ key })).success; } catch { return false; }   // (never lock people out over a hiccup)
+    try { return !(await limiter.limit({ key })).success; }
+    catch { /* Cloudflare's counter may be unavailable; continue with this isolate's best-effort counter below. */ }
   }
   const t = Date.now(), k = name + '|' + key;
   let c = memory.get(k);

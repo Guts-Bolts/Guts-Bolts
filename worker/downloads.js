@@ -17,6 +17,18 @@ function json(obj, status = 200) {
 const REPO = 'Guts-Bolts/Guts-Bolts';
 const ISSUER = 'https://token.actions.githubusercontent.com';
 const AUDIENCE = 'gutsandbolts.net';
+const REPOSITORY_ID = '1266919304';
+const RELEASE_WORKFLOW = REPO + '/.github/workflows/build.yml';
+
+// Only the repository's designated release workflow may publish downloads. A valid
+// GitHub OIDC signature alone is not enough: other workflows can also request tokens.
+export function isTrustedReleaseClaims(claims) {
+  if (!claims || claims.repository !== REPO || claims.repository_id !== REPOSITORY_ID || claims.event_name !== 'push') return false;
+  const ref = claims.ref || '';
+  const versionTag = ref.startsWith('refs/tags/v') && /^[0-9]/.test(ref.slice('refs/tags/v'.length));
+  if (!(ref === 'refs/heads/main' || versionTag)) return false;
+  return claims.workflow_ref === RELEASE_WORKFLOW + '@' + ref;
+}
 let jwksCache = null, jwksAt = 0;
 
 const b64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
@@ -49,8 +61,7 @@ async function verifyGithubToken(token) {
   const now = Math.floor(Date.now() / 1000);
   const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   if (claims.iss !== ISSUER || !aud.includes(AUDIENCE) || !(claims.exp > now) || (claims.nbf && claims.nbf > now + 60)) return null;
-  if (claims.repository !== REPO) return null;
-  if (!(claims.ref === 'refs/heads/main' || /^refs\/tags\/v[0-9]/.test(claims.ref || ''))) return null;
+  if (!isTrustedReleaseClaims(claims)) return null;
   return claims;
 }
 

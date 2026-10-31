@@ -36,6 +36,35 @@ const EXAMPLE_GAMES = [
 ];
 
 // --- rules (src/online/Protocol.h) ---------------------------------------------
+const MAX_API_BODY = 40 * 1024 * 1024;
+
+// Read the API body with a hard byte ceiling. Content-Length is only a hint: callers
+// can omit it, so enforce the limit while consuming the stream as well.
+export async function readLimitedText(request, maxBytes = MAX_API_BODY) {
+  if (!request.body) return '';
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return new TextDecoder().decode(bytes);
+}
+
 const kMaxClockSkew = 600;
 const kDailyUploadsUnverified = 5;
 // Pictures and sounds from creators who aren't Verified wait for a staff check before anyone
@@ -5240,9 +5269,13 @@ export class GbServerObject extends DurableObject {
       const jpg = data[0] === 0xff && data[1] === 0xd8;
       return new Response(data, { headers: { 'content-type': jpg ? 'image/jpeg' : 'image/png', 'cache-control': 'public, max-age=86400' } });
     }
-    // POST /api: one request, one answer.
+    // POST /api: one request, one answer. Enforce the byte limit here too: the
+    // Worker may forward requests directly to this Durable Object without reading them.
+    let text;
+    try { text = await readLimitedText(request); } catch { return json(fail('That wasn\'t a proper request.'), 400); }
+    if (text === null) return json(fail('That\'s too big to send.'), 413);
     let req;
-    try { req = JSON.parse(await request.text()); } catch { req = null; }
+    try { req = JSON.parse(text); } catch { req = null; }
     if (!req || typeof req !== 'object' || Array.isArray(req)) return json(fail('That wasn\'t a proper request.'), 400);
     if (typeof req.op === 'string' && req.op.startsWith('relay.')) return json(fail('Multiplayer needs the Guts&Bolts app.'));
     const h = request.headers;   // (set by worker/shield.js, which replaces anything a visitor sent in them)
