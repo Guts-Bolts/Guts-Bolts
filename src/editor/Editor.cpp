@@ -169,6 +169,11 @@ Editor::~Editor() {
 
 
 void Editor::renderStudioLogin() {
+    // If the account handshake fails after credentials were accepted, let the user retry.
+    if (m_studioLoginFinishing && Online::status() == Online::Status::Failed) {
+        m_studioLoginFinishing = false;
+        m_studioLoginMessage = Online::statusText();
+    }
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     const ImVec2 size(std::min(500.0f, viewport->WorkSize.x - 24.0f),
                       std::min(520.0f, viewport->WorkSize.y - 24.0f));
@@ -206,6 +211,10 @@ void Editor::renderStudioLogin() {
             : Online::statusText().c_str());
         ImGui::Spacing();
         if (ImGui::Button("Try connection again", ImVec2(fieldWidth, 34))) Online::connect();
+        if (!m_studioLoginMessage.empty()) {
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", m_studioLoginMessage.c_str());
+        }
     } else {
         ImGui::TextUnformatted("Username");
         ImGui::SetNextItemWidth(fieldWidth);
