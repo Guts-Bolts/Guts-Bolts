@@ -27,6 +27,17 @@ test('Step 1: browsers and the apps go straight through, tools and floods don\'t
   assert.equal(last.stop.status, 429);
 });
 
+test('Step 1: a Cloudflare rate-limit error falls back to the local counter', async () => {
+  const ip = '10.6.6.6';
+  const broken = { RATE_FLOOD: { limit: async () => { throw new Error('simulated Cloudflare outage'); } } };
+  for (let i = 0; i < SHIELD.limits.RATE_FLOOD; i++) {
+    const r = await check(req(BROWSER, ip), broken, site, 'api');
+    assert.equal(r.stop, undefined);
+  }
+  const blocked = await check(req(BROWSER, ip), broken, site, 'api');
+  assert.equal(blocked.stop.status, 429);
+});
+
 test('Step 2: a doubtful browser is asked for the person check once Turnstile is on', async () => {
   const env = { TURNSTILE_SITEKEY: 'site-key', TURNSTILE_SECRET: 'shh' };
   const r = await check(req({ 'user-agent': 'Mozilla/5.0', origin: 'https://elsewhere.example' }), env, site, 'api');
