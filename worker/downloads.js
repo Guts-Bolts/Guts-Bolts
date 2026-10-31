@@ -25,7 +25,8 @@ const RELEASE_WORKFLOW = REPO + '/.github/workflows/build.yml';
 export function isTrustedReleaseClaims(claims) {
   if (!claims || claims.repository !== REPO || claims.repository_id !== REPOSITORY_ID || claims.event_name !== 'push') return false;
   const ref = claims.ref || '';
-  if (!(ref === 'refs/heads/main' || /^refs\\/tags\\/v[0-9]/.test(ref))) return false;
+  const versionTag = ref.startsWith('refs/tags/v') && /^[0-9]/.test(ref.slice('refs/tags/v'.length));
+  if (!(ref === 'refs/heads/main' || versionTag)) return false;
   return claims.workflow_ref === RELEASE_WORKFLOW + '@' + ref;
 }
 let jwksCache = null, jwksAt = 0;
