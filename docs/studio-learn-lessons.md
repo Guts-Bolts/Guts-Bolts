@@ -135,3 +135,103 @@ The first release should prioritize **Your First Build**, **Make It Move**, and 
 - [ ] Signed-in progress can sync across devices without storing project contents.
 - [ ] Tests cover lesson definitions, highlight target resolution, hint behavior, progress persistence, and the first lesson flows.
 - [ ] The website's Create page remains usable on desktop and mobile; the lessons themselves clearly require desktop Studio.
+
+## Lesson quality standards
+
+Every lesson should teach one transferable skill, not just walk through a sequence of clicks. A learner should leave knowing what they changed, why it mattered, and how to repeat it in a different project.
+
+### A consistent lesson shape
+
+Use this structure for each lesson:
+
+1. **Outcome:** State the thing the learner will make or the skill they will gain in one sentence.
+2. **Why it matters:** Give one short, practical reason to use the skill.
+3. **Guided demonstration:** Break the task into small actions. Each action has one instruction, one UI target, and one observable result.
+4. **Try it yourself:** Give the learner a similar but not identical task. Do not simply ask them to repeat the exact clicks with the answer still visible.
+5. **Check your work:** Explain what success looks like and validate the actual result when the editor can observe it.
+6. **Take it further:** Offer one optional variation that encourages experimentation without being required for completion.
+
+Keep each instruction focused on one action. Prefer "Select the Part, then change its Size" over a paragraph containing several unrelated directions. Define unfamiliar terms the first time they appear, in plain language, without hiding the real Studio terminology.
+
+### First-release lesson blueprints
+
+These blueprints define the teaching experience and expected outcomes. Before implementation, verify every target name and property against the current Studio UI. Do not invent menu names or rely on fixed screen coordinates.
+
+#### Your First Build
+
+**Outcome:** Make and save a small platform using a Part.
+
+| Order | Guided demonstration | Independent practice | Success check |
+|---|---|---|---|
+| 1 | Find the control for inserting a basic Part and insert one. Explain that a Part is a basic 3D building block. | Insert a second Part. | The scene contains a newly created Part. |
+| 2 | Select the Part and use the move controls to place it above the ground. | Move the second Part to a different position. | Its position differs from its starting position. |
+| 3 | Change the Part's size using the relevant transform control or Properties field. | Make the second Part noticeably wider than it is tall. | Its dimensions reflect the requested shape. |
+| 4 | Find the Anchored property and turn it on. Explain that anchoring prevents gravity and physics from moving the Part. | Anchor the second Part too. | The selected Part has Anchored enabled. |
+| 5 | Save the project using the current save workflow. | Save the scene under a name the learner chooses. | The save operation reports success. |
+
+**Hint ladder:** (1) where to create objects, (2) how to select and transform an object, (3) where object properties live, (4) which physics property keeps a Part in place, (5) where saving is located.
+
+**Optional variation:** Build a two-step staircase using Parts of different heights.
+
+#### Make It Move
+
+**Outcome:** Understand the difference between a fixed object and an object that physics can move.
+
+| Order | Guided demonstration | Independent practice | Success check |
+|---|---|---|---|
+| 1 | Insert a Part and position it above a surface. | Create a second object above the surface. | The practice object exists above the ground. |
+| 2 | Show the relevant physics property and explain how Anchored changes whether physics can move the object. | Configure the practice object so physics can move it. | The object's anchored state is correct for the challenge. |
+| 3 | Start Play mode and observe gravity acting on the unanchored object. | Run the scene and observe the second object. | The object moves under simulation; do not require an exact landing position. |
+| 4 | Stop Play mode and explain that test changes may differ from the editable scene. | Return to editing and make one deliberate change before testing again. | The learner can return to editing and repeat the test. |
+
+**Hint ladder:** locate the object, locate its physics properties, identify the anchored setting, then locate the Play control.
+
+**Optional variation:** Compare two objects side by side, one anchored and one unanchored.
+
+#### Your First Script
+
+**Outcome:** Create a Script, make it run, and see its output.
+
+| Order | Guided demonstration | Independent practice | Success check |
+|---|---|---|---|
+| 1 | Show where scripts are created and explain that a Script contains instructions the game can run. | Create a second Script in an appropriate location. | A Script exists in the intended location. |
+| 2 | Open the script editor and identify the editable code area. | Open the practice Script. | The correct Script is open for editing. |
+| 3 | Enter a tiny, safe example that prints a short message. Explain what the print call does. | Change the message to something of the learner's choice. | The script contains the learner's changed message. |
+| 4 | Run the game and show where script output appears. | Run the game and find the practice message in the output. | The expected message appears in the output. |
+
+**Hint ladder:** where scripts are added, how to open one, where code is edited, and where output is displayed.
+
+**Optional variation:** Print a second message or combine two pieces of text. Keep the first lesson focused on running a script, not on teaching the entire language.
+
+### Practice and hint behavior
+
+- Practice tasks should change at least one detail from the demonstration (different object, position, size, name, or message) so the learner must apply the concept.
+- Hints should be layered: first identify the relevant area, then narrow to the control, then explain the property or action. The learner chooses when to reveal each level.
+- Hints must never reveal a destructive action without a clear warning. A hint must not trigger a click, edit a property, insert an object, execute code, or save a project.
+- A learner can retry indefinitely. Do not grade speed, penalize undo, or require hint-free completion.
+- If the expected state is not detected, show a useful recovery message (for example, "Select the Part first") rather than a generic failure.
+- If the learner makes a different but valid choice, accept it when it satisfies the learning objective. Avoid brittle checks for exact coordinates, names, or cosmetic values unless the task explicitly requires them.
+- Keep the optional "Take it further" activity separate from required completion. It must never block progress.
+
+### Progress, resuming, and learner confidence
+
+Represent each step with separate demonstration and practice states: not started, in progress, and complete. Save after meaningful transitions, not only when the whole lesson ends. Reopening a lesson should return to the current phase and step.
+
+Show progress in human terms (for example, "Step 2 of 4 · Practice") rather than a percentage alone. On completion, summarize the skills demonstrated and offer a clear next action: repeat the lesson, return to Learn, or try the next recommended lesson.
+
+Do not show a failing red state for an unfinished task. Use neutral guidance while the learner is working, clear success feedback when the condition is met, and actionable recovery guidance when it is not.
+
+### Content and interaction QA
+
+Before a lesson ships, test it with a clean project and with a project that already contains objects. Verify:
+
+- Every instruction matches a control or label that exists in the current build.
+- The highlight points to the correct visible control at common window sizes and after panels are rearranged.
+- A closed menu or hidden panel is handled as a navigation step, not by drawing a highlight at an invisible location.
+- The learner can complete the task using keyboard navigation where the control supports it.
+- Undo, redo, accidental selection changes, and repeated clicks do not corrupt lesson state.
+- A learner can pause, close the panel, restart Studio, and resume at the right step.
+- An offline session can complete and retain progress.
+- A failed or unavailable validation falls back to an explicit "I did this" confirmation with a clear explanation.
+- The lesson never silently discards unsaved work or runs code without the learner choosing to start Play mode.
+
