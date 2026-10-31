@@ -322,8 +322,12 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             json chat = {{"id", id}, {"title", title}, {"owner", me.id}, {"members", json::array({person(me)})},
                          {"messages", json::array()}, {"readAt", json{{me.id, now}}}, {"created", now}, {"updated", now}};
             me.chats.insert(me.chats.begin(), chat);
+            while (me.chats.size() > 100) me.chats.erase(me.chats.end() - 1);
             for (User* u : invitees) {
                 if (!u->partyInvites.is_array()) u->partyInvites = json::array();
+                for (size_t i = 0; i < u->partyInvites.size();) {
+                    if (u->partyInvites[i].value("id", std::string()) == id) u->partyInvites.erase(u->partyInvites.begin() + (long)i); else ++i;
+                }
                 u->partyInvites.insert(u->partyInvites.begin(), json{{"id", id}, {"owner", me.id},
                     {"ownerName", me.username.empty() ? me.name : me.username}, {"title", title}, {"at", now}});
                 while (u->partyInvites.size() > 50) u->partyInvites.erase(u->partyInvites.end() - 1);
@@ -396,6 +400,9 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             if (u.banned || blocks(me, u) || blocks(u, me) || u.privacyMessages == "nobody" || (u.privacyMessages == "friends" && !u.friends.count(me.id)))
                 return fail("You cannot invite that player.");
             if (!u.partyInvites.is_array()) u.partyInvites = json::array();
+            for (size_t i = 0; i < u.partyInvites.size();) {
+                if (u.partyInvites[i].value("id", std::string()) == id) u.partyInvites.erase(u.partyInvites.begin() + (long)i); else ++i;
+            }
             u.partyInvites.insert(u.partyInvites.begin(), json{{"id", id}, {"owner", me.id},
                 {"ownerName", me.username.empty() ? me.name : me.username}, {"title", chat->value("title", std::string("Party"))}, {"at", now}});
             while (u.partyInvites.size() > 50) u.partyInvites.erase(u.partyInvites.end() - 1);
