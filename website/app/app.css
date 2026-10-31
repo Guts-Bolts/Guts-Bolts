@@ -917,6 +917,30 @@ table.forum a { color: var(--link); }
 .staff-card.busy b { color: var(--red); }
 
 
+/* Keep signing out visible in the account bar, not hidden behind a profile page. */
+#me .logout-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  margin: 0 0 0 4px;
+  padding: 3px 9px;
+  border: 1px solid #a71919;
+  border-radius: 3px;
+  background: #c62828;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+}
+#me .logout-button:hover, #me .logout-button:focus-visible {
+  background: #a71919;
+  color: #fff;
+}
+
 /* Direct messages and party chats */
 .party-layout { display:grid; grid-template-columns:minmax(0,1fr) 230px; gap:12px; align-items:start; }
 .party-room { min-width:0; }
