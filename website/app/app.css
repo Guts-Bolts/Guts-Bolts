@@ -915,3 +915,37 @@ table.forum a { color: var(--link); }
 .staff-card b { font-size: 26px; line-height: 1.1; color: var(--muted); }
 .staff-card.busy { border-left: 4px solid var(--red); }
 .staff-card.busy b { color: var(--red); }
+
+
+/* Direct messages and party chats */
+.party-layout { display:grid; grid-template-columns:minmax(0,1fr) 230px; gap:12px; align-items:start; }
+.party-room { min-width:0; }
+.party-room-head { display:flex; justify-content:space-between; gap:10px; padding:9px 11px; border-bottom:1px solid var(--line); background:var(--panel2); }
+.party-messages { min-height:260px; max-height:520px; overflow:auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
+.party-message { max-width:82%; align-self:flex-start; }
+.party-message.mine { align-self:flex-end; }
+.party-message-meta { display:flex; gap:9px; align-items:center; font-size:11px; color:var(--muted); margin:0 4px 3px; }
+.party-message-body { background:var(--panel2); border:1px solid var(--line); border-radius:9px 9px 9px 2px; padding:8px 10px; overflow-wrap:anywhere; white-space:pre-wrap; }
+.party-message.mine .party-message-body { background:color-mix(in srgb,var(--blue) 12%,var(--panel)); border-color:color-mix(in srgb,var(--blue) 35%,var(--line)); border-radius:9px 9px 2px 9px; }
+.party-compose { display:flex; gap:8px; align-items:end; padding:10px; border-top:1px solid var(--line); }
+.party-compose textarea { flex:1; min-width:0; resize:vertical; }
+.party-members { padding-bottom:10px; }
+.party-member,.party-invite-row { display:flex; align-items:center; gap:8px; justify-content:space-between; padding:8px 10px; border-bottom:1px solid var(--line); }
+.party-invite-form { padding:10px; }
+.party-chat-list { display:flex; flex-direction:column; }
+.party-chat-row { display:flex; align-items:center; gap:11px; padding:10px; border-bottom:1px solid var(--line); color:var(--text); }
+.party-chat-row:hover { background:var(--panel2); text-decoration:none; }
+.party-chat-icon { flex:0 0 38px; width:38px; height:38px; display:grid; place-items:center; border-radius:50%; background:var(--blue); color:#fff; font-size:17px; }
+.party-chat-copy { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.party-chat-copy span { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.party-chat-copy small,.party-invite-row small { color:var(--muted); }
+.party-chat-arrow { font-size:24px; color:var(--muted); }
+.party-friend-picker { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 12px; max-height:220px; overflow:auto; padding:8px; border:1px solid var(--line); border-radius:4px; }
+.party-friend-picker label { display:flex; align-items:center; gap:6px; }
+@media(max-width:650px) {
+  .party-layout { grid-template-columns:1fr; }
+  .party-members { order:-1; }
+  .party-compose { align-items:stretch; flex-direction:column; }
+  .party-message { max-width:94%; }
+  .party-friend-picker { grid-template-columns:1fr; }
+}
