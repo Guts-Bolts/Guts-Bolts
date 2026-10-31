@@ -21,8 +21,8 @@ test('party creation invites friends without adding them before they accept', ()
   assert.ok(made.ok, made.error);
   assert.equal(made.chat.members.length, 1);
   assert.equal(made.chat.members[0].id, alice.id);
-  assert.equal(s.call(bob, 'party.list').invites.length, 1);
-  assert.equal(s.call(carol, 'party.list').invites.length, 1);
+  assert.equal(s.call(bob, 'party.list', {}).invites.length, 1);
+  assert.equal(s.call(carol, 'party.list', {}).invites.length, 1);
 });
 
 test('accepted party members receive the same persistent chat history', () => {
@@ -33,11 +33,11 @@ test('accepted party members receive the same persistent chat history', () => {
   assert.ok(joined.ok, joined.error);
   const sent = s.call(alice, 'party.send', { id: made.chat.id, body: 'Anyone online?' });
   assert.ok(sent.ok, sent.error);
-  const bobChat = s.call(bob, 'party.list').chats.find((x) => x.id === made.chat.id);
+  const bobChat = s.call(bob, 'party.list', {}).chats.find((x) => x.id === made.chat.id);
   assert.equal(bobChat.members.length, 2);
   assert.equal(bobChat.messages.at(-1).body, 'Anyone online?');
-  assert.equal(s.call(carol, 'party.list').chats.length, 0);
-  assert.equal(s.call(carol, 'party.list').invites.length, 1);
+  assert.equal(s.call(carol, 'party.list', {}).chats.length, 0);
+  assert.equal(s.call(carol, 'party.list', {}).invites.length, 1);
 });
 
 test('party owner can invite and remove members; members can leave', () => {
@@ -46,20 +46,20 @@ test('party owner can invite and remove members; members can leave', () => {
   assert.ok(made.ok, made.error);
   assert.ok(s.call(bob, 'party.respond', { id: made.chat.id, accept: true }).ok);
   assert.ok(s.call(alice, 'party.invite', { id: made.chat.id, user: carol.id }).ok);
-  assert.equal(s.call(carol, 'party.list').invites.length, 1);
+  assert.equal(s.call(carol, 'party.list', {}).invites.length, 1);
   assert.ok(s.call(carol, 'party.respond', { id: made.chat.id, accept: true }).ok);
   assert.ok(s.call(alice, 'party.kick', { id: made.chat.id, user: bob.id }).ok);
-  assert.equal(s.call(bob, 'party.list').chats.length, 0);
+  assert.equal(s.call(bob, 'party.list', {}).chats.length, 0);
   assert.ok(s.call(carol, 'party.leave', { id: made.chat.id }).ok);
-  assert.equal(s.call(carol, 'party.list').chats.length, 0);
+  assert.equal(s.call(carol, 'party.list', {}).chats.length, 0);
 });
 
-test('party creation rejects non-friends and parties cannot exceed 20 members', () => {
+test('party creation rejects non-friends and unknown accounts', () => {
   const { s, alice, bob } = setup();
   const stranger = s.signUp('Stranger');
   const rejected = s.call(alice, 'party.create', { members: [stranger.id] });
   assert.equal(rejected.ok, false);
   const tooMany = s.call(alice, 'party.create', { members: Array.from({ length: 20 }, (_, i) => 'missing-' + i) });
   assert.equal(tooMany.ok, false);
-  assert.equal(s.call(bob, 'party.list').chats.length, 0);
+  assert.equal(s.call(bob, 'party.list', {}).chats.length, 0);
 });
