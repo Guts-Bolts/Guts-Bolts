@@ -2378,6 +2378,11 @@ export class GbServerObject extends DurableObject {
         return okay({ chat, me: this.meJson(me) });
       }
       if (name === 'party.send' || name === 'party.game') {
+        for (const member of chat.members) {
+          if (member.id === me.id) continue;
+          const other = this.users.get(member.id);
+          if (other && (this.blocks(me, other) || this.blocks(other, me))) return fail('You cannot message this party because of a block.');
+        }
         let message;
         if (name === 'party.game') {
           const game = this.assets.get(str(args, 'game'));
