@@ -321,7 +321,6 @@ void Editor::render(float dt) {
     const auto frameStart = std::chrono::steady_clock::now();
     m_perfSimulationMs = 0.0f;
     Online::update();   // replies from the Guts&Bolts server
-    if (m_openStudioLogin) renderStudioLogin();
     m_multiTest->update();   // the multiplayer test's output -> Output
     ImGuizmo::BeginFrame();
     // Docked tabs appear over a few frames; make sure the 3D view ends up on top.
@@ -448,6 +447,8 @@ void Editor::render(float dt) {
     renderLevelGenerator();
     renderPhysicsReplay();
     renderCompare();
+    // Draw sign-in last so the optional account window stays above Studio's panels.
+    if (m_openStudioLogin) renderStudioLogin();
 
     trackChanges();
     updateTitle();
