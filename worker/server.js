@@ -359,6 +359,8 @@ const COSTLY = {
   'trade.send':          [30, 90, 600],
   'report.send':         [20, 60, 600],
   'message.send':        [60, 180, 600],
+  'party.create':        [10, 30, 600],
+  'party.invite':        [30, 90, 600],
   'party.send':          [60, 180, 600],
   'comments.post':       [30, 90, 600],
   'forum.post':          [10, 30, 600],
