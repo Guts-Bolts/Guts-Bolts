@@ -1716,6 +1716,8 @@ void GbServer::saveUsers() {
         all[id]["receipts"] = u.receipts;
         if (!u.privateServers.empty()) all[id]["privateServers"] = u.privateServers;
         all[id]["sent"] = u.sent;
+        all[id]["chats"] = u.chats;
+        all[id]["partyInvites"] = u.partyInvites;
         all[id]["messageDay"] = u.messageDay;
         all[id]["messagesToday"] = u.messagesToday;
         all[id]["blurb"] = u.blurb;
@@ -1928,6 +1930,8 @@ void GbServer::load() {
                 if (j.contains("receipts") && j["receipts"].is_array()) u.receipts = j["receipts"];
                 if (j.contains("privateServers") && j["privateServers"].is_object()) u.privateServers = j["privateServers"];
                 if (j.contains("sent") && j["sent"].is_array()) u.sent = j["sent"];
+                if (j.contains("chats") && j["chats"].is_array()) u.chats = j["chats"];
+                if (j.contains("partyInvites") && j["partyInvites"].is_array()) u.partyInvites = j["partyInvites"];
                 for (const char* k : {"favorites", "recent", "itemFavorites"})
                     if (j.contains(k) && j[k].is_array())
                         for (const auto& g : j[k]) if (g.is_string())
