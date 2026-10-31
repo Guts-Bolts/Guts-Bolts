@@ -2571,6 +2571,8 @@ pages.parties = async (chatId = '') => {
     if (!chat) { show(raw('<h1>Party not found</h1>' + shell + '<p class="muted">You may have left this conversation.</p>')); return; }
     await pageCall('party.read', { id: chat.id });
     const members = chat.members || [], others = friends.filter((u) => !members.some((m) => m.id === u.id));
+    const gamesR = await pageCall('list', { kind: 'game', sort: 'popular', limit: 20 });
+    const gameOptions = gamesR.ok ? (gamesR.assets || []).map((g) => '<option value="' + esc(g.id) + '">' + esc(g.name) + '</option>').join('') : '';
     const memberHtml = members.map((m) => '<div class="party-member"><a href="#/user/' + esc(m.userId || m.id) + '">' +
       esc(m.name || 'Player') + '</a>' + (m.id === chat.owner ? '<span class="badge-pill">Owner</span>' : '') +
       (chat.owner === me.id && m.id !== me.id ? '<button class="btn small red" data-kick="' + esc(m.id) + '">Remove</button>' : '') + '</div>').join('');
@@ -2580,6 +2582,7 @@ pages.parties = async (chatId = '') => {
       '</span></div><div class="party-messages" id="partyMessages">' + messagesHtml(chat.messages) + '</div>' +
       '<form id="partySend" class="party-compose"><textarea name="body" maxlength="1000" rows="2" placeholder="Write a message..." required></textarea><button class="btn blue">Send</button></form>' +
       '</section><aside class="box party-members"><h2 class="boxhead">Party members</h2>' + memberHtml +
+      (gameOptions ? '<form id="partyGame" class="form party-invite-form"><label>Invite everyone to a game</label><select name="game" required>' + gameOptions + '</select><button class="btn small blue">Send game invite</button></form>' : '') +
       (chat.owner === me.id && others.length ? '<form id="partyInvite" class="form party-invite-form"><label>Invite a friend</label><select name="user" required>' +
         inviteOptions + '</select><button class="btn small green">Invite</button></form>' : '') +
       '<button class="btn small red" id="partyLeave">Leave party</button></aside></div>'));
@@ -2589,6 +2592,10 @@ pages.parties = async (chatId = '') => {
       const sent = await call('party.send', { id: chat.id, body });
       if (!sent.ok) { toast(sent.error); return; }
       form.body.value = ''; render();
+    });
+    $('#partyGame')?.addEventListener('submit', async (e) => {
+      e.preventDefault(); const sent = await call('party.game', { id: chat.id, game: e.currentTarget.game.value });
+      if (!sent.ok) toast(sent.error); else render();
     });
     $('#partyInvite')?.addEventListener('submit', async (e) => {
       e.preventDefault(); const sent = await call('party.invite', { id: chat.id, user: e.currentTarget.user.value });
