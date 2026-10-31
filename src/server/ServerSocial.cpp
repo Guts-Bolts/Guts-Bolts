@@ -373,6 +373,9 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             if (name == "party.game") {
                 auto game = findAsset(str("game"));
                 if (game == m_assets.end() || game->second.kind != "game") return fail("That game is not available to play.");
+                if (me.messageDay != today) { me.messageDay = today; me.messagesToday = 0; }
+                if (me.messagesToday >= kMessagesPerDay) return fail("That is " + std::to_string(kMessagesPerDay) + " messages today. Try again tomorrow.");
+                ++me.messagesToday;
                 message = {{"id", Account::randomHex(8)}, {"from", me.id}, {"name", me.username.empty() ? me.name : me.username},
                            {"body", "Invited everyone to play " + game->second.name + "."}, {"game", game->second.id}, {"at", now}};
             } else {
