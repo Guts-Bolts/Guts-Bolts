@@ -915,3 +915,156 @@ table.forum a { color: var(--link); }
 .staff-card b { font-size: 26px; line-height: 1.1; color: var(--muted); }
 .staff-card.busy { border-left: 4px solid var(--red); }
 .staff-card.busy b { color: var(--red); }
+
+
+/* ---------------------------------------------------------------------------
+   Classic Treatment: shared visual rules for the whole Player website.
+   Keep the 2008-2012 Roblox-era language: compact, square, blue, and readable.
+   Page-specific layouts can still add their own structure without inventing a
+   separate visual system.
+--------------------------------------------------------------------------- */
+:root {
+  --gb-page-width: 970px;
+  --gb-space-1: 4px;
+  --gb-space-2: 8px;
+  --gb-space-3: 12px;
+  --gb-space-4: 16px;
+  --gb-radius: 2px;
+  --gb-focus: #f0b323;
+  --gb-panel-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
+
+/* The old site used a plain, highly legible system font for body copy.
+   Reserve the heavy G&B display face for the wordmark and major headings. */
+body {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+button, input, select, textarea {
+  font-family: Arial, Helvetica, sans-serif;
+}
+.logo, h1, .popup-title {
+  font-family: var(--gb-font);
+}
+h1 {
+  font-size: 21px;
+  line-height: 1.2;
+  letter-spacing: -.25px;
+}
+h2 {
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  line-height: 1.35;
+  border-radius: var(--gb-radius) var(--gb-radius) 0 0;
+}
+
+/* A consistent page frame and compact content rhythm. */
+.wrap, .page, .foot {
+  max-width: var(--gb-page-width);
+}
+.page { margin-top: 12px; }
+.content {
+  padding: 15px 16px 22px;
+  border-radius: 0;
+  box-shadow: var(--gb-panel-shadow);
+}
+.content > :first-child { margin-top: 0; }
+.content > :last-child { margin-bottom: 0; }
+.box {
+  border-radius: var(--gb-radius);
+  box-shadow: none;
+}
+.boxhead {
+  border-radius: var(--gb-radius) var(--gb-radius) 0 0;
+}
+.box.info, .box.gold { border-radius: var(--gb-radius); }
+
+/* Keep buttons tactile and unmistakably web-era rather than app-like. */
+.btn {
+  border-radius: var(--gb-radius);
+  transition: filter .12s ease, border-color .12s ease;
+}
+.btn:hover { filter: brightness(1.045); }
+.btn:active { filter: brightness(.94); }
+.btn:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible, button:focus-visible {
+  outline: 2px solid var(--gb-focus);
+  outline-offset: 2px;
+}
+input[type=text], input[type=email], input[type=password], input[type=number],
+input[type=search], textarea, select {
+  border-radius: var(--gb-radius);
+  min-height: 30px;
+}
+textarea { min-height: 76px; }
+
+/* Consistent catalog, game, player, and staff cards. */
+.grid { gap: 12px; }
+.card .pic { border-radius: 0; }
+.card .name { font-size: 13px; line-height: 1.3; }
+.card .by { font-size: 11px; }
+.card:hover .pic { outline-offset: 1px; }
+.thumb { border-radius: 0; }
+.staff-card, .server-card, .past-trade, .shot-edit,
+.forum-search-result, .forum-post, .road-item, .idea {
+  border-radius: var(--gb-radius);
+  box-shadow: none;
+}
+.server-card { padding: 9px; }
+.staff-card { padding: 9px 10px; }
+.staff-card b { font-size: 23px; }
+
+/* Tables should read like catalog and forum tables, not floating app widgets. */
+table {
+  border-collapse: collapse;
+  max-width: 100%;
+}
+th {
+  text-align: left;
+  font-weight: bold;
+}
+td, th { vertical-align: middle; }
+table:not(.stats):not(.versions) th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+table:not(.stats):not(.versions) td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+table:not(.stats):not(.versions) tbody tr:nth-child(even) {
+  background: var(--stripe);
+}
+
+/* Tabs, labels, and small metadata stay compact and consistent. */
+.tabs { gap: 4px; }
+.tabs .btn { padding: 4px 10px; }
+.badge-pill, .chip, .outcome {
+  border-radius: var(--gb-radius);
+}
+.badge { border-radius: 2px; }
+.muted, .small { line-height: 1.4; }
+.list > div { padding: 7px 0; }
+
+/* Retain the classic centered page on narrow screens without horizontal drift. */
+@media (max-width: 640px) {
+  .page { margin-top: 0; }
+  .content { padding: 12px 12px 20px; }
+  .wrap { gap: 8px; }
+  .nav .wrap, .subnav .wrap { gap: 0; }
+  .nav a { padding: 7px 9px; }
+  .subnav a { padding: 5px 8px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 10px; }
+}
+
+/* Respect reduced-motion preferences; the classic interface relies on feedback,
+   not movement, to communicate hover and focus states. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
