@@ -937,12 +937,11 @@ table.forum a { color: var(--link); }
 /* The old site used a plain, highly legible system font for body copy.
    Reserve the heavy G&B display face for the wordmark and major headings. */
 body {
-  font-family: Arial, Helvetica, sans-serif;
   font-size: 13px;
   line-height: 1.45;
 }
 button, input, select, textarea {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: inherit;
 }
 .logo, h1, .popup-title {
   font-family: var(--gb-font);
@@ -953,7 +952,7 @@ h1 {
   letter-spacing: -.25px;
 }
 h2 {
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: inherit;
   font-size: 13px;
   line-height: 1.35;
   border-radius: var(--gb-radius) var(--gb-radius) 0 0;
