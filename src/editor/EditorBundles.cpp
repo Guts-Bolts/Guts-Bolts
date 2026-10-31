@@ -69,6 +69,7 @@ void Editor::renderBundleWindow() {
     ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - 590, vp->WorkPos.y + 100), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(560, 700), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Bundles", &m_showBundles)) { ImGui::End(); return; }
+    const bool canPublishBundle = !Account::id().empty() && Online::online() && Online::me().value("userId", 0LL) > 0;
     ImGui::PushTextWrapPos(0);
     if (!Online::online() || !Online::staff()) {
         ImGui::TextDisabled("Bundles are made by Guts&Bolts staff. Sign in with a staff account to make one.");
@@ -216,7 +217,6 @@ void Editor::renderBundleWindow() {
     if (ImGui::InputInt("Price (Bolts)", &m_bundlePrice, 5, 50)) m_bundlePrice = std::clamp(m_bundlePrice, 0, 1000000);
     const std::vector<std::string> items = itemIds(m_bundleItems);
     const bool something = changed > 0 || m_bundleHeadless || !items.empty();
-    const bool canPublishBundle = !Account::id().empty() && Online::online() && Online::me().value("userId", 0LL) > 0;
     ImGui::BeginDisabled(m_onlineBusy || !something || m_bundleName.empty() || !canPublishBundle);
     if (ImGui::Button("Upload", ImVec2(140, 30))) {
         json body = json::object();
