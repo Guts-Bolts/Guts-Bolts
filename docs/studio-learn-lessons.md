@@ -83,20 +83,208 @@ A step must not be marked complete just because the learner pressed Next. Prefer
 - Highlighting is an overlay only; it must never intercept clicks or change editor state.
 - Respect reduced-motion settings where available.
 
-## First lesson set
+## First lesson set: 20-lesson curriculum
 
-Ship a small, polished set first; add lessons incrementally using the same runner.
+The initial Learn catalogue should contain **20 lessons**, arranged as a progressive path. Lessons 1–6 establish the basics; later lessons build toward complete, playable projects. Each lesson uses the same guided-demonstration and independent-practice format, and each should be individually launchable.
 
-| Lesson | Level | Outcome |
-|---|---|---|
-| Your First Build | Beginner | Insert a Part, move it, resize it, anchor it, and save a simple scene |
-| Make It Move | Beginner | Add a physics object, change its physical properties, and test it in Play mode |
-| Build a Tiny Obby | Beginner | Create a short sequence of platforms and test the route |
-| Your First Script | Beginner | Create a Script, add a simple Lua behavior, and run the game to see it work |
-| Light Up the Scene | Beginner | Add a light and adjust its properties |
-| Publish Your First Game | Beginner | Set a title and description, save, and publish a game |
+| # | Lesson | Level | Topic | Outcome |
+|---:|---|---|---|---|
+| 1 | Your First Build | Beginner | Building | Insert, move, resize, anchor, and save a Part |
+| 2 | Make It Move | Beginner | Physics | Use Anchored and gravity to understand basic physics |
+| 3 | Build a Tiny Obby | Beginner | Building | Create and test a short obstacle course |
+| 4 | Your First Script | Beginner | Scripting | Create a Script, print a message, and run it |
+| 5 | Light Up the Scene | Beginner | Lighting | Add a light and adjust its properties |
+| 6 | Publish Your First Game | Beginner | Publishing | Name, describe, save, and publish a game |
+| 7 | Meet the Explorer | Beginner | Studio basics | Find, select, rename, and organize objects in Explorer |
+| 8 | The Properties Panel | Beginner | Studio basics | Inspect and edit common object properties |
+| 9 | Copy, Group, Organize | Beginner | Building | Duplicate objects and group related parts into a model |
+| 10 | Color and Materials | Beginner | Building | Change part colors and materials to establish a visual style |
+| 11 | Shape the World | Beginner | Terrain | Create and edit a small terrain area |
+| 12 | Spawn Into the Action | Beginner | Gameplay | Add and configure a player spawn point |
+| 13 | Collision Course | Intermediate | Physics | Configure collision behavior and test object interactions |
+| 14 | Connect the Parts | Intermediate | Physics | Use a basic constraint to connect two physics objects |
+| 15 | Sound Check | Beginner | Audio | Add a sound and configure when it plays |
+| 16 | Your First GUI | Beginner | UI | Create a simple on-screen interface element |
+| 17 | Make Things Happen | Intermediate | Scripting | Use an event connection to respond to a game event |
+| 18 | Remembering Values | Intermediate | Scripting | Create variables and use them to control simple behavior |
+| 19 | Find and Fix Bugs | Intermediate | Scripting | Read an error/output message and correct a simple script mistake |
+| 20 | Build, Test, Improve | Intermediate | Publishing | Run a structured playtest, fix one issue, and publish an update |
 
-The first release should prioritize **Your First Build**, **Make It Move**, and **Your First Script**. Each should include at least one demonstration followed by an independent practice challenge. Keep lesson content accurate to the current Studio UI and use the same labels as the menus and panels.
+The first six are the recommended onboarding path. Lessons 7–12 deepen Studio and world-building familiarity; lessons 13–20 introduce more complex systems. Prerequisites should guide beginners without hard-locking the catalogue: learners may open any lesson, but show a recommendation when a prerequisite has not been completed.
+
+### Remaining lesson blueprints
+
+The first three detailed blueprints above establish the format. The following blueprints bring the curriculum to 20. They are intentionally written around learning outcomes rather than assumed implementation details. Before wiring a step to a UI target, verify the actual control, property, object type, and runtime behavior in the current Studio build.
+
+#### 4. Build a Tiny Obby
+
+**Outcome:** Build a short obstacle course with a start, a few jumps, and a finish.
+
+- **Demonstrate:** Insert a platform, use move/scale to position and size it, duplicate it to make a sequence, add a final platform, and test the route in Play mode.
+- **Practice:** Create a different route with at least three jumps and a clearly reachable finish.
+- **Success check:** The scene contains a start area, three or more traversable platforms, and a finish; the learner can test it in Play mode.
+- **Hint ladder:** insert a Part → transform it → duplicate it → start Play mode.
+- **Take it further:** Add a checkpoint or make one jump wider/narrower.
+
+#### 5. Light Up the Scene
+
+**Outcome:** Make an area brighter or more atmospheric using a light source.
+
+- **Demonstrate:** Insert a supported light object, place it near a Part, then adjust its brightness, color, and range using the real Properties controls.
+- **Practice:** Light a different area using a different color and brightness.
+- **Success check:** A light object exists and produces a visible lighting change in Play or the editor preview, as supported.
+- **Hint ladder:** find the insertable light object → locate its parent/placement → find Brightness → find Color and Range.
+- **Take it further:** Create a contrasting second light.
+
+#### 6. Publish Your First Game
+
+**Outcome:** Prepare a project with a title and description and publish it through the existing publishing flow.
+
+- **Demonstrate:** Save the project, open the current publish workflow, identify the title and description fields, review the confirmation, and publish only after the learner confirms.
+- **Practice:** Update the description or title of a practice project and publish/save the update.
+- **Success check:** The existing publish operation reports success and the project has the chosen metadata.
+- **Hint ladder:** save first → find publish → locate metadata fields → review the confirmation.
+- **Take it further:** Add a clear thumbnail or improve the description. Never bypass moderation, ownership, or publish permissions.
+
+#### 7. Meet the Explorer
+
+**Outcome:** Understand how the Explorer hierarchy helps find and organize scene objects.
+
+- **Demonstrate:** Open Explorer, select a known object in the scene, identify its corresponding entry, and rename it using the supported workflow.
+- **Practice:** Create two objects, locate each in Explorer, and give them meaningful names.
+- **Success check:** Both objects can be selected from Explorer and have the learner's names.
+- **Hint ladder:** locate Explorer → select the scene object → locate its hierarchy entry → rename.
+- **Take it further:** Place related objects under a suitable parent if the current object model supports it.
+
+#### 8. The Properties Panel
+
+**Outcome:** Inspect and edit object settings without relying only on transform handles.
+
+- **Demonstrate:** Select a Part, find the Properties panel, locate a basic property such as Name or Anchored, change it, and observe the result.
+- **Practice:** Select another Part and change two different properties that are safe to edit.
+- **Success check:** The selected object's properties reflect the learner's changes.
+- **Hint ladder:** select an object → open Properties → find the property search/list → edit the value.
+- **Take it further:** Compare the properties of two different object types.
+
+#### 9. Copy, Group, Organize
+
+**Outcome:** Reuse objects and keep related pieces together.
+
+- **Demonstrate:** Select a Part, duplicate it, move the copy, then select related Parts and group them using the supported Studio command.
+- **Practice:** Make a small two- or three-Part structure, duplicate one element, and group the structure.
+- **Success check:** A duplicate exists and the related objects appear under one group/model in the hierarchy.
+- **Hint ladder:** select → duplicate → reposition → multi-select → group.
+- **Take it further:** Rename the group and its children clearly.
+
+#### 10. Color and Materials
+
+**Outcome:** Give a build a consistent visual appearance.
+
+- **Demonstrate:** Select a Part, locate the color control, choose a new color, then change its material and explain the visible difference.
+- **Practice:** Style a small three-Part build using a limited color palette and at least two materials.
+- **Success check:** The chosen colors and materials are applied to the intended objects.
+- **Hint ladder:** select the Part → find color → find material → apply to the other pieces.
+- **Take it further:** Create a second palette and compare the two styles.
+
+#### 11. Shape the World
+
+**Outcome:** Use terrain tools to create a small natural feature.
+
+- **Demonstrate:** Open the terrain editing tools, identify the available creation/editing mode, make a small hill or mound, and explain how to undo a terrain edit.
+- **Practice:** Create a different terrain feature, such as a shallow dip or raised ridge.
+- **Success check:** The terrain visibly changes and the learner can undo and redo the edit.
+- **Hint ladder:** open terrain tools → choose the appropriate tool/mode → adjust its brush → apply a small edit.
+- **Take it further:** Combine two terrain shapes. Keep edits small and avoid destructive whole-map operations.
+
+#### 12. Spawn Into the Action
+
+**Outcome:** Set a clear player starting point.
+
+- **Demonstrate:** Insert a supported spawn object, place it above a safe surface, and test the starting location in Play mode.
+- **Practice:** Add or reposition a spawn point in a different area and test again.
+- **Success check:** The player starts at the intended spawn location during a test.
+- **Hint ladder:** find the spawn object → insert it → position it → test in Play mode.
+- **Take it further:** Create a second spawn point if the game mode supports it.
+
+#### 13. Collision Course
+
+**Outcome:** Understand and configure whether objects physically collide.
+
+- **Demonstrate:** Compare two Parts with collision enabled and disabled using the actual collision property, then test the interaction in Play mode.
+- **Practice:** Configure a different pair of objects to produce a chosen collision result.
+- **Success check:** The observed interaction matches the configured collision behavior.
+- **Hint ladder:** select the object → locate collision settings → change one setting → run a physics test.
+- **Take it further:** Explore how collision behavior affects an obby or decorative object.
+
+#### 14. Connect the Parts
+
+**Outcome:** Connect two physics objects using a supported constraint.
+
+- **Demonstrate:** Create two simple Parts, locate the supported constraint workflow, attach the constraint to the intended objects/attachments, and test the result.
+- **Practice:** Connect a second pair of objects and observe how the connection changes their movement.
+- **Success check:** The constraint references the intended objects and the connection behaves as expected in Play mode.
+- **Hint ladder:** prepare two objects → find the constraint type → assign its endpoints/attachments → test.
+- **Take it further:** Compare two appropriate constraint types only if both are supported by the current engine.
+
+#### 15. Sound Check
+
+**Outcome:** Add an audio object and control a basic playback behavior.
+
+- **Demonstrate:** Insert the supported sound object, assign an approved/available audio asset using the existing asset workflow, and identify the playback controls/properties.
+- **Practice:** Add a different available sound to another object or supported location and trigger it using the documented workflow.
+- **Success check:** The selected sound is configured and can be heard during the intended test, subject to audio availability and permissions.
+- **Hint ladder:** insert sound → choose an available asset → configure playback → test.
+- **Take it further:** Adjust volume or looping where supported. Do not require external uploads or paid assets.
+
+#### 16. Your First GUI
+
+**Outcome:** Create a simple interface element that appears to the player.
+
+- **Demonstrate:** Create the supported UI container and a basic text or button element, then adjust its text and placement using the actual UI editor/properties.
+- **Practice:** Create a second interface element with different text and position.
+- **Success check:** Both elements appear in the intended player-facing UI during a test.
+- **Hint ladder:** find the UI container → add a child element → edit text → adjust layout → test.
+- **Take it further:** Add a simple visual hierarchy using size, alignment, or color.
+
+#### 17. Make Things Happen
+
+**Outcome:** Connect a script to an event so code runs in response to something happening.
+
+- **Demonstrate:** Open a starter Script, explain an event connection using a short safe example, and show where the event's output appears when triggered.
+- **Practice:** Connect a different supported event or change the response to a simple learner-selected message.
+- **Success check:** Triggering the event produces the expected observable result.
+- **Hint ladder:** locate the script → find the event/API reference in the editor's available help → connect the callback → trigger and inspect output.
+- **Take it further:** Add a second response. Keep this lesson focused on event flow, not complex game systems.
+
+#### 18. Remembering Values
+
+**Outcome:** Use a variable to store and reuse a value in a script.
+
+- **Demonstrate:** Introduce a clearly named variable, assign it a simple value, and use it in a print/output statement or other safe visible behavior.
+- **Practice:** Change the variable's name/value and use it in a second expression.
+- **Success check:** The output or behavior reflects the learner's changed value.
+- **Hint ladder:** find the code editor → identify the assignment → find where the value is used → run and inspect.
+- **Take it further:** Change the value while keeping the rest of the script the same.
+
+#### 19. Find and Fix Bugs
+
+**Outcome:** Use error/output feedback to locate and correct a simple script mistake.
+
+- **Demonstrate:** Present a deliberately small, reversible example with a syntax or naming mistake, run it, locate the resulting diagnostic, and correct the mistake.
+- **Practice:** Give the learner a different simple broken example and ask them to identify and fix the issue.
+- **Success check:** The diagnostic is resolved and the corrected script produces the expected result.
+- **Hint ladder:** run the example → open/read the diagnostic → identify the referenced line/token → edit → run again.
+- **Take it further:** Explain the error in the learner's own words. Never execute unknown or remote code as part of the lesson.
+
+#### 20. Build, Test, Improve
+
+**Outcome:** Use a short playtest cycle to identify and fix one issue before publishing an update.
+
+- **Demonstrate:** Start Play mode, follow a short test checklist, stop the test, make one improvement in edit mode, and run the test again.
+- **Practice:** Test a learner-created scene, identify one concrete issue (for example, an unreachable platform or misplaced spawn), fix it, and retest.
+- **Success check:** The learner identifies an issue, changes the scene, and verifies the improvement in a second test.
+- **Hint ladder:** enter Play mode → follow the test checklist → stop → locate the relevant edit control → retest.
+- **Take it further:** Ask another player to test and report one issue before publishing an update.
 
 ## Progress and data
 
@@ -127,13 +315,14 @@ The first release should prioritize **Your First Build**, **Make It Move**, and 
 - [ ] Practice mode removes the always-on highlight and provides an optional lightbulb hint button.
 - [ ] Clicking the lightbulb highlights the relevant UI target and explains what to look for, without clicking it or completing the task.
 - [ ] Hints are contextual, dismissible, non-blocking, and can reveal multi-action solutions progressively.
-- [ ] At least three beginner lessons are complete and tested end-to-end.
+- [ ] The catalogue contains 20 individually addressable lesson definitions with accurate levels, topics, outcomes, and prerequisite recommendations.
+- [ ] The first six beginner lessons are complete and tested end-to-end before the remaining curriculum is marked complete.
 - [ ] At least one lesson detects a real editor action rather than relying only on Next.
 - [ ] Repeat, back, pause, resume, and exit behave consistently.
 - [ ] Existing unsaved work is protected when a lesson starts.
 - [ ] Progress survives app restarts and works offline.
 - [ ] Signed-in progress can sync across devices without storing project contents.
-- [ ] Tests cover lesson definitions, highlight target resolution, hint behavior, progress persistence, and the first lesson flows.
+- [ ] Tests cover all 20 lesson definitions, prerequisite references, highlight target resolution, hint behavior, progress persistence, and representative end-to-end lesson flows.
 - [ ] The website's Create page remains usable on desktop and mobile; the lessons themselves clearly require desktop Studio.
 
 ## Lesson quality standards
