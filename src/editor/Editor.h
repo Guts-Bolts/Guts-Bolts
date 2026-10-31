@@ -40,7 +40,7 @@ class Physics;
 
 class Editor {
 public:
-    Editor(GLFWwindow* window, Scene* scene, bool requireLogin = true);
+    Editor(GLFWwindow* window, Scene* scene);
     ~Editor();
     void render(float dt);
     void openFile(const std::string& path);
@@ -192,6 +192,7 @@ private:
     SceneNode* uvNode();                     // the MeshPart the UV Editor shows
     // Online: the Guts&Bolts server, publishing and the Library (EditorOnline.cpp)
     void       renderServerDialog();
+    bool       requireStudioLogin(const char* action);
     void       renderPublishDialog();
     void       renderPluginLibrary();
     void       renderPublishModelDialog();   // File > Publish Selection to Library
@@ -483,9 +484,9 @@ private:
     bool        m_dirty = false;
     std::string m_shownTitle;
 
-    // Studio account gate. Login uses the same password-derived auth and encrypted
-    // account-key backup as the Player; credentials are never sent to the server.
-    bool        m_requireLogin = true;
+    // Optional account sign-in. Studio remains fully usable offline; this is opened
+    // only when the user chooses a publishing action or asks to sign in.
+    bool        m_openStudioLogin = false;
     bool        m_studioLoginBusy = false;
     bool        m_studioLoginNeedCode = false;
     bool        m_studioLoginAppCode = false;

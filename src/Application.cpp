@@ -59,7 +59,7 @@ Application::Application(LaunchOptions opts) : m_opts(std::move(opts)) {
     m_window = std::make_unique<AppWindow>("Guts and Bolts", 1280, 720, "editor_layout.ini");
     m_window->setFixedTimestep(!m_opts.screenshot.empty());
     m_scene  = std::make_unique<Scene>();
-    m_editor = std::make_unique<Editor>(m_window->handle(), m_scene.get(), !m_opts.testMode());
+    m_editor = std::make_unique<Editor>(m_window->handle(), m_scene.get());
     if (!m_opts.openFile.empty()) m_editor->openFile(m_opts.openFile);
 }
 

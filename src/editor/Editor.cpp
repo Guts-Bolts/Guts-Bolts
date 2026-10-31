@@ -73,8 +73,8 @@ print("Hello from " .. game.Players.LocalPlayer.Name)
 )";
 } // namespace
 
-Editor::Editor(GLFWwindow* window, Scene* scene, bool requireLogin)
-    : m_window(window), m_scene(scene), m_requireLogin(requireLogin) {
+Editor::Editor(GLFWwindow* window, Scene* scene)
+    : m_window(window), m_scene(scene) {
     m_session  = std::make_unique<GameSession>(scene);
     m_showMaterialEditor = std::getenv("GB_TEST_MATERIALS") != nullptr;   // (tests: start with it showing)
     m_showAiActivity = std::getenv("GB_TEST_AIACTIVITY") != nullptr;   // (tests: start with it showing)
@@ -169,6 +169,13 @@ Editor::~Editor() {
 
 
 void Editor::renderStudioLogin() {
+    // Close the optional sign-in window once the account session is ready.
+    if (Online::me().value("userId", 0LL) > 0 && !Account::id().empty()) {
+        m_openStudioLogin = false;
+        m_studioLoginFinishing = false;
+        m_studioLoginMessage.clear();
+        return;
+    }
     // If the account handshake fails after credentials were accepted, let the user retry.
     if (m_studioLoginFinishing && Online::status() == Online::Status::Failed) {
         m_studioLoginFinishing = false;
@@ -193,7 +200,7 @@ void Editor::renderStudioLogin() {
     const float headingWidth = ImGui::CalcTextSize(heading).x;
     ImGui::SetCursorPosX(std::max(16.0f, (ImGui::GetWindowWidth() - headingWidth) * 0.5f));
     ImGui::TextUnformatted(heading);
-    const char* subtitle = "Sign in with your Guts & Bolts account to continue.";
+    const char* subtitle = "Sign in to publish to Guts & Bolts. You can keep building and testing offline.";
     const float subtitleWidth = ImGui::CalcTextSize(subtitle).x;
     ImGui::SetCursorPosX(std::max(16.0f, (ImGui::GetWindowWidth() - subtitleWidth) * 0.5f));
     ImGui::TextDisabled("%s", subtitle);
@@ -301,6 +308,12 @@ void Editor::renderStudioLogin() {
         ImGui::Dummy(ImVec2(0, 8));
         ImGui::TextDisabled("Your password stays on this device. Studio uses the same encrypted account-key login as the Player.");
     }
+    ImGui::Separator();
+    if (ImGui::Button("Back to Studio (work offline)", ImVec2(fieldWidth, 32))) {
+        m_openStudioLogin = false;
+        m_studioLoginFinishing = false;
+        m_studioLoginMessage.clear();
+    }
     ImGui::End();
 }
 
@@ -308,11 +321,7 @@ void Editor::render(float dt) {
     const auto frameStart = std::chrono::steady_clock::now();
     m_perfSimulationMs = 0.0f;
     Online::update();   // replies from the Guts&Bolts server
-    if (m_requireLogin && Online::me().value("userId", 0LL) <= 0) {
-        renderStudioLogin();
-        return;   // don't expose projects or Studio tools until an account is signed in
-    }
-    m_studioLoginFinishing = false;
+    if (m_openStudioLogin) renderStudioLogin();
     m_multiTest->update();   // the multiplayer test's output -> Output
     ImGuizmo::BeginFrame();
     // Docked tabs appear over a few frames; make sure the 3D view ends up on top.
@@ -1716,7 +1725,7 @@ void Editor::saveFile(const std::string& path, bool sync) {
         if (published.empty()) {
             Log::system("Saved to " + path + ". It's only on this computer: use File > Publish to put it online "
                         "for everyone (and on the website).");
-        } else if (sync && Online::online()) {
+        } else if (sync && Online::online() && !Account::id().empty() && Online::me().value("userId", 0LL) > 0) {
             // Published: send the new version to the server, so the website and everyone playing it get it.
             Log::system("Saved to " + path + ". Updating the published game...");
             nlohmann::json args = {{"id", published}, {"name", info.title}, {"description", info.description},
@@ -1727,8 +1736,8 @@ void Editor::saveFile(const std::string& path, bool sync) {
                                " (File > Publish to try again.)");
             }, 120);
         } else {
-            Log::system("Saved to " + path + ". You're offline, so the published game wasn't updated: "
-                        "save again (or File > Publish) when you're back online.");
+            Log::system("Saved to " + path + ". The published game wasn't updated because you're offline or signed out. "
+                        "Sign in and save again (or use File > Publish) to update the site.");
         }
     } else {
         Log::error("Couldn't save to " + path);
