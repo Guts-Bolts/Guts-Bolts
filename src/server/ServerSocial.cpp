@@ -415,13 +415,15 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
                 for (const json& m : (*chat)["members"]) if (m.value("id", std::string()) != target) { (*chat)["owner"] = m.value("id", std::string()); break; }
             }
             (*chat)["members"].erase((*chat)["members"].begin() + (long)index);
+            (*chat)["updated"] = now;
+            const json copy = *chat;
             auto leaving = m_users.find(target);
             if (leaving != m_users.end() && leaving->second.chats.is_array()) {
                 json& list = leaving->second.chats;
                 for (size_t i = 0; i < list.size(); ++i) if (list[i].value("id", std::string()) == id) { list.erase(list.begin() + (long)i); break; }
             }
-            if ((*chat)["members"].empty()) { saveUsers(); json r = okay(); r["left"] = true; return r; }
-            (*chat)["updated"] = now; const json copy = *chat; syncChat(copy);
+            if (copy["members"].empty()) { saveUsers(); json r = okay(); r["left"] = true; return r; }
+            syncChat(copy);
             json r = okay(); r["chat"] = copy; r["left"] = target == me.id; return r;
         }
         return fail("Unknown party request.");
