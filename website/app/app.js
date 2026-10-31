@@ -2553,6 +2553,95 @@ pages.messages = async (box = 'inbox') => {
   }));
 };
 
+let partyChatPoll = null;
+pages.parties = async (chatId = '') => {
+  if (partyChatPoll) { clearInterval(partyChatPoll); partyChatPoll = null; }
+  if (!signedIn()) { show(raw('<h1>Parties</h1>' + needSignIn('chat with friends and create parties').s)); return; }
+  const [r, fr] = await Promise.all([pageCall('party.list', {}), pageCall('friends.list', {})]);
+  if (!r.ok) { show(raw('<h1>Parties</h1><p class="error">' + esc(r.error) + '</p>')); return; }
+  const chats = r.chats || [], invites = r.invites || [], friends = fr.ok ? (fr.friends || []) : [];
+  const chat = chatId ? chats.find((x) => x.id === chatId) : null;
+  const messagesHtml = (items) => (items || []).map((m) =>
+    '<div class="party-message ' + (m.from === me.id ? 'mine' : '') + '"><div class="party-message-meta"><a href="#/user/' +
+    esc(m.from) + '">' + esc(m.name || 'Player') + '</a><span>' + esc(ago(m.at)) + '</span></div><div class="party-message-body">' +
+    esc(m.body || '') + (m.game ? ' <a class="btn small blue" href="#/game/' + encodeURIComponent(m.game) + '">View game</a>' : '') + '</div></div>'
+  ).join('');
+  const shell = '<div class="tabs"><a class="btn blue" href="#/parties">Chats &amp; Parties</a><a class="btn" href="#/messages">Classic inbox</a></div>';
+  if (chatId) {
+    if (!chat) { show(raw('<h1>Party not found</h1>' + shell + '<p class="muted">You may have left this conversation.</p>')); return; }
+    await pageCall('party.read', { id: chat.id });
+    const members = chat.members || [], others = friends.filter((u) => !members.some((m) => m.id === u.id));
+    const memberHtml = members.map((m) => '<div class="party-member"><a href="#/user/' + esc(m.userId || m.id) + '">' +
+      esc(m.name || 'Player') + '</a>' + (m.id === chat.owner ? '<span class="badge-pill">Owner</span>' : '') +
+      (chat.owner === me.id && m.id !== me.id ? '<button class="btn small red" data-kick="' + esc(m.id) + '">Remove</button>' : '') + '</div>').join('');
+    const inviteOptions = others.map((u) => '<option value="' + esc(u.id) + '">' + esc(u.username || u.name) + '</option>').join('');
+    show(raw('<h1>' + esc(chat.title || 'Party') + '</h1>' + shell + '<div class="party-layout"><section class="box party-room">' +
+      '<div class="party-room-head"><b>' + members.length + ' members</b><span class="muted small">' + (chat.owner === me.id ? 'You own this party' : 'Party conversation') +
+      '</span></div><div class="party-messages" id="partyMessages">' + messagesHtml(chat.messages) + '</div>' +
+      '<form id="partySend" class="party-compose"><textarea name="body" maxlength="1000" rows="2" placeholder="Write a message..." required></textarea><button class="btn blue">Send</button></form>' +
+      '</section><aside class="box party-members"><h2 class="boxhead">Party members</h2>' + memberHtml +
+      (chat.owner === me.id && others.length ? '<form id="partyInvite" class="form party-invite-form"><label>Invite a friend</label><select name="user" required>' +
+        inviteOptions + '</select><button class="btn small green">Invite</button></form>' : '') +
+      '<button class="btn small red" id="partyLeave">Leave party</button></aside></div>'));
+    const box = $('#partyMessages'); if (box) box.scrollTop = box.scrollHeight;
+    $('#partySend').addEventListener('submit', async (e) => {
+      e.preventDefault(); const form = e.currentTarget, body = form.body.value;
+      const sent = await call('party.send', { id: chat.id, body });
+      if (!sent.ok) { toast(sent.error); return; }
+      form.body.value = ''; render();
+    });
+    $('#partyInvite')?.addEventListener('submit', async (e) => {
+      e.preventDefault(); const sent = await call('party.invite', { id: chat.id, user: e.currentTarget.user.value });
+      toast(sent.ok ? 'Party invitation sent.' : sent.error); if (sent.ok) render();
+    });
+    $('#partyLeave').addEventListener('click', async () => {
+      if (!confirm('Leave this party?')) return;
+      const left = await call('party.leave', { id: chat.id }); if (!left.ok) toast(left.error); else location.hash = '#/parties';
+    });
+    view.querySelectorAll('[data-kick]').forEach((el) => el.addEventListener('click', async () => {
+      if (!confirm('Remove this person from the party?')) return;
+      const kicked = await call('party.kick', { id: chat.id, user: el.dataset.kick });
+      toast(kicked.ok ? 'Player removed.' : kicked.error); if (kicked.ok) render();
+    }));
+    partyChatPoll = setInterval(async () => {
+      if (location.hash.split('?')[0] !== '#/parties/' + chat.id || document.visibilityState !== 'visible') return;
+      const fresh = await call('party.list', {}), latest = fresh.ok && (fresh.chats || []).find((x) => x.id === chat.id), target = $('#partyMessages');
+      if (!latest || !target) return;
+      const bottom = target.scrollHeight - target.scrollTop - target.clientHeight < 80;
+      target.innerHTML = messagesHtml(latest.messages); if (bottom) target.scrollTop = target.scrollHeight;
+    }, 4000);
+    return;
+  }
+  const rows = chats.sort((a, b) => (b.updated || b.created) - (a.updated || a.created)).map((c) => {
+    const last = (c.messages || []).slice(-1)[0], preview = last ? (last.name || 'Player') + ': ' + last.body : 'Party created. Start talking.';
+    return '<a class="party-chat-row" href="#/parties/' + encodeURIComponent(c.id) + '"><span class="party-chat-icon">' +
+      esc((c.title || 'P').slice(0, 1).toUpperCase()) + '</span><span class="party-chat-copy"><b>' + esc(c.title || 'Party') +
+      '</b><span>' + esc(preview) + '</span><small>' + (c.members || []).length + ' members · ' + esc(ago(c.updated || c.created)) +
+      '</small></span><span class="party-chat-arrow">›</span></a>';
+  }).join('');
+  const inviteRows = invites.map((x) => '<div class="party-invite-row"><span><b>' + esc(x.title) + '</b><small>Invited by ' +
+    esc(x.ownerName) + ' · ' + esc(ago(x.at)) + '</small></span><button class="btn small green" data-accept="' + esc(x.id) +
+    '">Join</button><button class="btn small" data-decline="' + esc(x.id) + '">Decline</button></div>').join('');
+  const friendRows = friends.map((u) => '<label><input type="checkbox" name="members" value="' + esc(u.id) + '"> ' + esc(u.username || u.name) + '</label>').join('');
+  show(raw('<h1>Parties</h1>' + shell + (invites.length ? '<div class="box"><h2 class="boxhead">Party invitations <span class="count">' +
+    invites.length + '</span></h2>' + inviteRows + '</div>' : '') + '<div class="box"><h2 class="boxhead">Your conversations</h2>' +
+    (rows || '<p class="muted">No parties yet. Start one with your friends below.</p>') + '</div><div class="box"><h2 class="boxhead">Start a conversation</h2>' +
+    (friends.length ? '<form id="partyCreate" class="form"><label>Party name <span class="muted small">(optional)</span></label><input name="title" maxlength="60" placeholder="Give your party a name">' +
+      '<label>Invite friends</label><div class="party-friend-picker">' + friendRows + '</div><p class="small muted">Choose one friend for a private chat or several for a group party. Up to 19 friends.</p>' +
+      '<button class="btn green">Create chat</button></form>' : '<p class="muted">Add some friends first, then you can start a conversation.</p>') + '</div>'));
+  $('#partyCreate')?.addEventListener('submit', async (e) => {
+    e.preventDefault(); const form = e.currentTarget, members = [...form.querySelectorAll('input[name=members]:checked')].map((x) => x.value);
+    if (!members.length) { toast('Choose at least one friend.'); return; }
+    const made = await call('party.create', { title: form.title.value, members });
+    if (!made.ok) toast(made.error); else location.hash = '#/parties/' + encodeURIComponent(made.chat.id);
+  });
+  view.querySelectorAll('[data-accept],[data-decline]').forEach((el) => el.addEventListener('click', async () => {
+    const id = el.dataset.accept || el.dataset.decline, accepted = !!el.dataset.accept;
+    const result = await call('party.respond', { id, accept: accepted });
+    if (!result.ok) toast(result.error); else if (result.chat) location.hash = '#/parties/' + encodeURIComponent(result.chat.id); else render();
+  }));
+};
+
 pages.avatar = async () => {
   const [r, outfitsR] = signedIn() ? await Promise.all([pageCall('list', { kind: 'clothing', owned: true, limit: 100 }), pageCall('outfit.list', {})])
     : [{ ok: true, assets: [] }, { ok: true, outfits: [] }];
