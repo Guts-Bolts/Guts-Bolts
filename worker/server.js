@@ -362,6 +362,7 @@ const COSTLY = {
   'party.create':        [10, 30, 600],
   'party.invite':        [30, 90, 600],
   'party.send':          [60, 180, 600],
+  'party.game':          [20, 60, 600],
   'comments.post':       [30, 90, 600],
   'forum.post':          [10, 30, 600],
   'forum.reply':         [30, 90, 600],
@@ -2381,6 +2382,9 @@ export class GbServerObject extends DurableObject {
         if (name === 'party.game') {
           const game = this.assets.get(str(args, 'game'));
           if (!game || game.kind !== 'game' || !this.canPlay(game, me)) return fail('That game is not available to play.');
+          if (me.messageDay !== today) { me.messageDay = today; me.messagesToday = 0; }
+          if (me.messagesToday >= kMessagesPerDay) return fail('That is ' + kMessagesPerDay + ' messages today. Try again tomorrow.');
+          me.messagesToday++;
           message = { id: randomHex(8), from: me.id, name: me.username || me.name, body: 'Invited everyone to play ' + game.name + '.', game: game.id, at: now() };
         } else {
           const body = say(str(args, 'body'), 1000, true);
