@@ -2347,7 +2347,7 @@ export class GbServerObject extends DurableObject {
         }
         const id = 'p-' + randomHex(8), title = say(str(args, 'title'), 60) || invitees.map((u) => u.username || u.name).join(', ');
         const chat = { id, title, owner: me.id, members: [person(me)], messages: [], readAt: { [me.id]: now() }, created: now(), updated: now() };
-        me.chats.unshift(chat); this.saveUser(me);
+        me.chats.unshift(chat); me.chats = me.chats.slice(0, 100); this.saveUser(me);
         for (const u of invitees) {
           u.partyInvites = [{ id, owner: me.id, ownerName: me.username || me.name, title, at: now() }, ...(u.partyInvites || []).filter((x) => x.id !== id)].slice(0, 50);
           this.saveUser(u);
