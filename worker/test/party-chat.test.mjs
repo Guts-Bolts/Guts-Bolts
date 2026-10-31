@@ -63,3 +63,25 @@ test('party creation rejects non-friends and unknown accounts', () => {
   assert.equal(tooMany.ok, false);
   assert.equal(s.call(bob, 'party.list', {}).chats.length, 0);
 });
+
+
+test('blocking a party member prevents messages from being sent to that party', () => {
+  const { s, alice, bob } = setup();
+  const made = s.call(alice, 'party.create', { members: [bob.id] });
+  assert.ok(made.ok, made.error);
+  assert.ok(s.call(bob, 'party.respond', { id: made.chat.id, accept: true }).ok);
+  alice.blocked = [bob.id];
+  s.saveUser(alice);
+  const sent = s.call(alice, 'party.send', { id: made.chat.id, body: 'This should not send.' });
+  assert.equal(sent.ok, false);
+});
+
+test('party ownership passes to another member when the owner leaves', () => {
+  const { s, alice, bob } = setup();
+  const made = s.call(alice, 'party.create', { members: [bob.id] });
+  assert.ok(made.ok, made.error);
+  assert.ok(s.call(bob, 'party.respond', { id: made.chat.id, accept: true }).ok);
+  assert.ok(s.call(alice, 'party.leave', { id: made.chat.id }).ok);
+  const bobChat = s.call(bob, 'party.list', {}).chats.find((x) => x.id === made.chat.id);
+  assert.equal(bobChat.owner, bob.id);
+});
