@@ -395,14 +395,14 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             u.partyInvites.insert(u.partyInvites.begin(), json{{"id", id}, {"owner", me.id},
                 {"ownerName", me.username.empty() ? me.name : me.username}, {"title", chat->value("title", std::string("Party"))}, {"at", now}});
             while (u.partyInvites.size() > 50) u.partyInvites.erase(u.partyInvites.end() - 1);
-            saveUsers(); return okay({{"chat", *chat}});
+            saveUsers(); json r = okay(); r["chat"] = *chat; return r;
         }
         if (name == "party.rename") {
             if (chat->value("owner", std::string()) != me.id) return fail("Only the party owner can rename this party.");
             const std::string title = say(str("title"), 60);
             if (title.empty()) return fail("Give the party a name.");
             (*chat)["title"] = title; (*chat)["updated"] = now;
-            const json copy = *chat; syncChat(copy); return okay({{"chat", copy}});
+            const json copy = *chat; syncChat(copy); json r = okay(); r["chat"] = copy; return r;
         }
         if (name == "party.kick" || name == "party.leave") {
             const std::string target = name == "party.leave" ? me.id : str("user");
