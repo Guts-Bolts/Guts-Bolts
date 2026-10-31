@@ -450,7 +450,7 @@ function setMe(m) {
     const notes = me.unreadNotes || 0;
     box.innerHTML = html`<a class="bell" href="#/notifications" title="Notifications" aria-label="Notifications">${raw(BELL_SVG)}${notes ? html`<span class="unread">${notes > 99 ? '99+' : notes}</span>` : ''}</a>
       Hi, <a href="#/user/${me.userId}">${me.username}</a>${verified(me.verified)}
-      | <a href="#/bolts">${bolts(me.bolts)}</a> | <a href="#/settings">Settings</a> | <a href="#" data-act="logout">Logout</a>`.s;
+      | <a href="#/bolts">${bolts(me.bolts)}</a> | <a href="#/settings">Settings</a> | <button class="btn small logout-button" type="button" data-act="logout">Log out</button>`.s;
   } else {
     box.innerHTML = html`<a href="#/signup">Sign Up</a> | <a href="#/login">Login</a>`.s;
   }

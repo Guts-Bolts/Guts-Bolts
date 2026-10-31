@@ -37,6 +37,17 @@ struct LaunchOptions {
     // --emote-pictures <dir>: render a picture of each starter emote and animation pack (the
     // character mid-move) into <dir>/<id>.png, then quit. tools/make_emotes.py --pictures packs them.
     std::string emotePictures;
+
+    // Automated command-line runs must remain usable without an interactive sign-in.
+    bool testMode() const {
+        return !screenshot.empty() || play || teamHost || !teamJoin.empty() ||
+               !testAddPart.empty() || !testKeys.empty() || !testSelect.empty() ||
+               !exportRoblox.empty() || !testSnapshot.empty() || !testDrop.empty() ||
+               !testMesh.empty() || testAnim || testCollide || !testMouse.empty() ||
+               !testCommand.empty() || !testInsert.empty() || !testPremades.empty() ||
+               testFixPictures || testAnalysis || !testTools.empty() ||
+               !testMultiplayer.empty() || !emotePictures.empty();
+    }
 };
 
 // The editor application ("Guts and Bolts Studio").

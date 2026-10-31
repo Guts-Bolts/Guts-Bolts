@@ -40,7 +40,7 @@ class Physics;
 
 class Editor {
 public:
-    Editor(GLFWwindow* window, Scene* scene);
+    Editor(GLFWwindow* window, Scene* scene, bool requireLogin = true);
     ~Editor();
     void render(float dt);
     void openFile(const std::string& path);
@@ -87,6 +87,7 @@ public:
 
 private:
     void buildDockspace();
+    void renderStudioLogin();
     void renderMenuBar();
     void renderToolbar();
     void renderStatusBar();
@@ -481,6 +482,15 @@ private:
     std::string m_path;                         // current file ("" = never saved)
     bool        m_dirty = false;
     std::string m_shownTitle;
+
+    // Studio account gate. Login uses the same password-derived auth and encrypted
+    // account-key backup as the Player; credentials are never sent to the server.
+    bool        m_requireLogin = true;
+    bool        m_studioLoginBusy = false;
+    bool        m_studioLoginNeedCode = false;
+    bool        m_studioLoginAppCode = false;
+    bool        m_studioLoginFinishing = false;
+    std::string m_studioLoginUser, m_studioLoginPass, m_studioLoginCode, m_studioLoginMessage;
 
     // Dialogs
     enum class Pending { None, New, Open, OpenDropped };
