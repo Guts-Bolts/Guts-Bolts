@@ -342,7 +342,8 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             if (index == me.partyInvites.size()) return fail("That party invitation is no longer available.");
             const json invite = me.partyInvites[index];
             me.partyInvites.erase(me.partyInvites.begin() + (long)index);
-            if (!args.value("accept", false)) { saveUsers(); json r = okay(); r["declined"] = true; r["me"] = meJson(me); return r; }
+            const bool accept = args.contains("accept") && args["accept"].is_boolean() && args["accept"].get<bool>();
+            if (!accept) { saveUsers(); json r = okay(); r["declined"] = true; r["me"] = meJson(me); return r; }
             auto owner = m_users.find(invite.value("owner", std::string()));
             json* chat = owner == m_users.end() ? nullptr : findChat(owner->second, id);
             if (!chat || !chat->contains("members") || !(*chat)["members"].is_array()) { saveUsers(); return fail("That party has ended."); }
@@ -369,6 +370,13 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             json r = okay(); r["chat"] = copy; r["me"] = meJson(me); return r;
         }
         if (name == "party.send" || name == "party.game") {
+            for (const json& member : (*chat)["members"]) {
+                const std::string memberId = member.value("id", std::string());
+                if (memberId == me.id) continue;
+                auto other = m_users.find(memberId);
+                if (other != m_users.end() && (blocks(me, other->second) || blocks(other->second, me)))
+                    return fail("You cannot message this party because of a block.");
+            }
             json message;
             if (name == "party.game") {
                 auto game = findAsset(str("game"));
