@@ -342,6 +342,10 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             auto owner = m_users.find(invite.value("owner", std::string()));
             json* chat = owner == m_users.end() ? nullptr : findChat(owner->second, id);
             if (!chat || !chat->contains("members") || !(*chat)["members"].is_array()) { saveUsers(); return fail("That party has ended."); }
+            if (owner->second.banned || me.banned || !owner->second.friends.count(me.id) || blocks(me, owner->second) || blocks(owner->second, me) ||
+                owner->second.privacyMessages == "nobody" || (owner->second.privacyMessages == "friends" && !owner->second.friends.count(me.id))) {
+                saveUsers(); return fail("You can no longer join that party.");
+            }
             if ((*chat)["members"].size() >= 20) { saveUsers(); return fail("That party is full."); }
             bool already = false;
             for (const json& member : (*chat)["members"]) if (member.value("id", std::string()) == me.id) already = true;
