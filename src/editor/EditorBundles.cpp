@@ -3,6 +3,7 @@
 // catalog items to go with it, and upload: anyone who wears the bundle gets that body.
 #include "Editor.h"
 #include "../core/Log.h"
+#include "../core/Account.h"
 #include "../online/OnlineClient.h"
 #include "../online/Protocol.h"
 #include "../scene/Scene.h"
@@ -186,6 +187,7 @@ void Editor::renderBundleWindow() {
                       " out on the clothing template." + (mapped ? "" : " (The Head doesn't wear clothing.)");
     }
     ImGui::EndDisabled();
+    if (!canPublishBundle && ImGui::Button("Sign in to upload body parts")) requireStudioLogin("upload this body part");
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Lay every changed body part (not the Head) out on the clothing template now");
     ImGui::SetNextItemWidth(170);
@@ -214,7 +216,8 @@ void Editor::renderBundleWindow() {
     if (ImGui::InputInt("Price (Bolts)", &m_bundlePrice, 5, 50)) m_bundlePrice = std::clamp(m_bundlePrice, 0, 1000000);
     const std::vector<std::string> items = itemIds(m_bundleItems);
     const bool something = changed > 0 || m_bundleHeadless || !items.empty();
-    ImGui::BeginDisabled(m_onlineBusy || !something || m_bundleName.empty());
+    const bool canPublishBundle = !Account::id().empty() && Online::online() && Online::me().value("userId", 0LL) > 0;
+    ImGui::BeginDisabled(m_onlineBusy || !something || m_bundleName.empty() || !canPublishBundle);
     if (ImGui::Button("Upload", ImVec2(140, 30))) {
         json body = json::object();
         for (const char* name : Online::kBodyParts)
@@ -246,6 +249,7 @@ void Editor::renderBundleWindow() {
         }
     }
     ImGui::EndDisabled();
+    if (!canPublishBundle && ImGui::Button("Sign in to upload bundle")) requireStudioLogin("upload this bundle");
     if (!something) { ImGui::SameLine(); ImGui::TextDisabled("Change a body part or add items first."); }
     else if (m_bundleName.empty()) { ImGui::SameLine(); ImGui::TextDisabled("Give it a name."); }
 
@@ -256,7 +260,7 @@ void Editor::renderBundleWindow() {
                                  std::find_if(std::begin(Online::kBodyParts), std::end(Online::kBodyParts),
                                               [&](const char* k) { return bodySelected->name == k; }) != std::end(Online::kBodyParts);
     const bool partChanged = selectedRigPart && !standard(*bodySelected);
-    ImGui::BeginDisabled(m_onlineBusy || !partChanged || m_bundleName.empty());
+    ImGui::BeginDisabled(m_onlineBusy || !partChanged || m_bundleName.empty() || !canPublishBundle);
     if (ImGui::Button("Upload Selected Part", ImVec2(180, 30))) {
         if (!bodySelected->editMesh && bodySelected->primitiveType != PrimitiveType::None)   // a plain block: give it a mesh
             MeshEdit::attach(*bodySelected, MeshEdit::fromPrimitive(bodySelected->primitiveType));
