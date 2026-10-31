@@ -4796,6 +4796,7 @@ async function render() {
 actions.retry = async () => { await hello(); render(); };
 
 window.addEventListener('hashchange', () => {
+  if (partyChatPoll) { clearInterval(partyChatPoll); partyChatPoll = null; }
   document.querySelectorAll('.modal').forEach((m) => m.remove());
   window.scrollTo(0, 0);
   render();
