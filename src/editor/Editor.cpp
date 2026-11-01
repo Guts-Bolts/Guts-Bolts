@@ -595,14 +595,16 @@ void Editor::renderLearn() {
                 ? std::max(0LL, remote["updatedAt"].get<long long>()) : 0LL;
             if (remoteUpdatedAt > m_learnProgressUpdatedAt) {
                 const std::string remoteCurrent = remote.value("current", std::string());
-                if (!m_learnExplicitLaunch && !remoteCurrent.empty()) {
+                if (!remoteCurrent.empty()) {
                     for (int i = 0; i < kStudioLearnCount; ++i) if (remoteCurrent == kStudioLearnIds[i]) {
-                        m_learnLesson = i;
-                        m_learnHasSavedCurrent = true;
-                        if (remote.contains("step") && remote["step"].is_number_integer())
-                            m_learnDemoStep = std::clamp(remote["step"].get<int>(), 0, 2);
-                        if (remote.contains("practice") && remote["practice"].is_boolean())
-                            m_learnPractice = remote["practice"].get<bool>();
+                        if (!m_learnExplicitLaunch || i == m_learnLesson) {
+                            m_learnLesson = i;
+                            m_learnHasSavedCurrent = true;
+                            if (remote.contains("step") && remote["step"].is_number_integer())
+                                m_learnDemoStep = std::clamp(remote["step"].get<int>(), 0, 2);
+                            if (remote.contains("practice") && remote["practice"].is_boolean())
+                                m_learnPractice = remote["practice"].get<bool>();
+                        }
                         break;
                     }
                 }
