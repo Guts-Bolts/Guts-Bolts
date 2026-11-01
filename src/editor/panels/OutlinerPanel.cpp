@@ -1,4 +1,5 @@
 #include "OutlinerPanel.h"
+#include "../LearnHighlight.h"
 #include "../../core/I18n.h"
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
@@ -92,6 +93,8 @@ void OutlinerPanel::drawNode(SceneNode* node) {
         I18n::Pause keep;   // object names stay as they are
         open = ImGui::TreeNodeEx("##node", flags, "%*s%s", (int)(iconW / ImGui::CalcTextSize(" ").x) + 1, "",
                                  renaming ? "" : node->name.c_str());
+        StudioLearnHighlight::mark("explorer.tree");
+        if (node->selected) StudioLearnHighlight::mark("explorer.selected");
     }
     {
         // Icon drawn over the gap left before the name.
@@ -230,11 +233,14 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
     };
     for (const Group& g : groups) {
         ImGui::TextDisabled("%s", g.title);
-        for (const char* what : g.items)
-            if (ImGui::MenuItem(what)) {
+        for (const char* what : g.items) {
+            const bool chosen = ImGui::MenuItem(what);
+            StudioLearnHighlight::mark(std::string("explorer.insert.") + what);
+            if (chosen) {
                 const std::string w = what;
                 onInsertNamed(w, parent);
             }
+        }
     }
     ImGui::Separator();
     if (onInsert && ImGui::MenuItem("More (search)...")) onInsert(parent);
@@ -302,6 +308,7 @@ void OutlinerPanel::render() {
     // (also > < >= <= ~=), and "or" between searches.
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - (m_filter.empty() ? 0 : 26));
     ImGui::InputTextWithHint("##filter", "Filter workspace (Ctrl+Shift+X)", &m_filter);
+    StudioLearnHighlight::mark("explorer.filter");
     if (ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift && ImGui::IsKeyPressed(ImGuiKey_X, false))
         ImGui::SetKeyboardFocusHere(-1);
     if (ImGui::IsItemHovered() && m_filter.empty())
