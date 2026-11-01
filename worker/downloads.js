@@ -41,7 +41,12 @@ export function limitUploadStream(stream, maxBytes) {
     async pull(controller) {
       try {
         const { value, done } = await reader.read();
-        if (done) { reader.releaseLock(); controller.close(); return; }
+        if (done) {
+          reader.releaseLock();
+          if (!total) { const error = new Error('Release upload is empty.'); error.code = 'EMPTY_UPLOAD'; controller.error(error); return; }
+          controller.close();
+          return;
+        }
         total += value.byteLength;
         if (total > maxBytes) {
           await reader.cancel('Release upload exceeds the configured limit.');
@@ -144,6 +149,7 @@ export async function handleDownload(request, env, url) {
       await env.DOWNLOADS.put(versionKey, limitUploadStream(request.body, MAX_RELEASE_FILE), meta);
     } catch (error) {
       if (error instanceof RangeError) return json({ ok: false, error: 'Release file is too large.' }, 413);
+      if (error && error.code === 'EMPTY_UPLOAD') return json({ ok: false, error: 'Empty file.' }, 400);
       throw error;
     }
     const stored = await env.DOWNLOADS.get(versionKey);
