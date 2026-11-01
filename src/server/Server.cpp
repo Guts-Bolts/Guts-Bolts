@@ -589,7 +589,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);
     if (name.rfind("appeal.", 0) == 0) return appealOp(name, me, args);
-    if (name.rfind("outfit.", 0) == 0 || name.rfind("message.", 0) == 0 || name.rfind("notes.", 0) == 0 || name == "game.favorite" || name == "games.mine" || name.rfind("comments.", 0) == 0 ||
+    if (name.rfind("outfit.", 0) == 0 || name.rfind("message.", 0) == 0 || name.rfind("party.", 0) == 0 || name.rfind("notes.", 0) == 0 || name == "game.favorite" || name == "games.mine" || name.rfind("comments.", 0) == 0 ||
         name == "profile.set" || name == "feed.list")
         return socialOp(name, me, args);
     if (name.rfind("item.", 0) == 0 || name.rfind("resale.", 0) == 0 || name.rfind("trade.", 0) == 0 || name.rfind("auction.", 0) == 0 ||
@@ -1716,6 +1716,8 @@ void GbServer::saveUsers() {
         all[id]["receipts"] = u.receipts;
         if (!u.privateServers.empty()) all[id]["privateServers"] = u.privateServers;
         all[id]["sent"] = u.sent;
+        all[id]["chats"] = u.chats;
+        all[id]["partyInvites"] = u.partyInvites;
         all[id]["messageDay"] = u.messageDay;
         all[id]["messagesToday"] = u.messagesToday;
         all[id]["blurb"] = u.blurb;
@@ -1928,6 +1930,8 @@ void GbServer::load() {
                 if (j.contains("receipts") && j["receipts"].is_array()) u.receipts = j["receipts"];
                 if (j.contains("privateServers") && j["privateServers"].is_object()) u.privateServers = j["privateServers"];
                 if (j.contains("sent") && j["sent"].is_array()) u.sent = j["sent"];
+                if (j.contains("chats") && j["chats"].is_array()) u.chats = j["chats"];
+                if (j.contains("partyInvites") && j["partyInvites"].is_array()) u.partyInvites = j["partyInvites"];
                 for (const char* k : {"favorites", "recent", "itemFavorites"})
                     if (j.contains(k) && j[k].is_array())
                         for (const auto& g : j[k]) if (g.is_string())
