@@ -2998,7 +2998,7 @@ pages.staff = async () => {
       </div>
       <div class="box"><h2 class="boxhead">Automated backups</h2>
         <p>Daily gzip exports are scheduled for 03:00 UTC and stored in a private Cloudflare R2 bucket. The system retains 35 daily snapshots.</p>
-        <p class="small muted">The backup job refuses exports above its 128 MiB safety limit. Check Cloudflare Worker logs and the private R2 bucket for the latest manifest. A production restore-from-export is not enabled; use the documented PITR runbook for incident recovery.</p>
+        <p class="small muted">The backup job refuses exports above its 16 MiB safety limit. Check Cloudflare Worker logs and the private R2 bucket for the latest manifest. A production restore-from-export is not enabled; use the documented PITR runbook for incident recovery.</p>
       </div>`;
     }
   }
