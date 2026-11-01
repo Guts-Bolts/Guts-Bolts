@@ -540,7 +540,7 @@ void Editor::startLearnLesson(const std::string& id) {
         m_learnExplicitLaunch = true;
         if (!resume) m_learnDemoStep = 0;
         m_learnHint = 0;
-        m_learnPaused = false;
+        m_learnPaused = false; m_learnDemoActionDone = false;
         m_learnPractice = false; m_learnSawPlay = false; m_learnSawPublish = false;
         m_learnPlayStarts = 0; m_learnWasPlaying = m_playing; m_learnStatus.clear();
         m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
@@ -925,35 +925,55 @@ void Editor::renderLearn() {
         if (ImGui::Button("Repeat demonstration")) {
             m_learnHasSavedCurrent = true;
             m_learnDemoStep = 0;
+            m_learnDemoActionDone = false;
             m_learnHint = 0;
             m_learnPractice = false;
             m_learnStatus.clear();
             saveLearnProgress();
         }
         if (m_learnDemoStep > 0) {
-            if (ImGui::Button("Back")) { m_learnHasSavedCurrent = true; --m_learnDemoStep; m_learnStatus.clear(); saveLearnProgress(); }
+            if (ImGui::Button("Back")) { m_learnHasSavedCurrent = true; --m_learnDemoStep; m_learnDemoActionDone = false; m_learnStatus.clear(); saveLearnProgress(); }
             ImGui::SameLine();
         }
         if (m_learnDemoStep < 2) {
-            if (ImGui::Button("Next guided step")) { m_learnHasSavedCurrent = true; ++m_learnDemoStep; m_learnStatus.clear(); saveLearnProgress(); }
-        } else if (ImGui::Button("Start practice challenge")) {
-            m_learnBaselineNodes.clear();
-            m_scene->forEach([this](SceneNode* n) {
-                if (n && !n->internal) m_learnBaselineNodes[n->id] = Serializer::nodeShallowToString(*n);
-            });
-            m_learnBaselineTerrainVersion = m_scene->terrain().version();
-            m_learnFirstPlayNodes.clear();
-            m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
-            m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
-            m_learnSawPlay = false;
-            m_learnSawPublish = false;
-            m_learnPlayStarts = 0;
-            m_learnWasPlaying = m_playing;
-            m_learnHint = 0;
-            m_learnPractice = true;
-            m_learnHasSavedCurrent = true;
-            m_learnStatus.clear();
-            saveLearnProgress();
+            ImGui::BeginDisabled(!m_learnDemoActionDone);
+            const bool nextStep = ImGui::Button("Next guided step");
+            ImGui::EndDisabled();
+            if (!m_learnDemoActionDone)
+                ImGui::TextDisabled("Use the highlighted control to complete this step before continuing.");
+            if (nextStep) {
+                m_learnHasSavedCurrent = true;
+                ++m_learnDemoStep;
+                m_learnDemoActionDone = false;
+                m_learnStatus.clear();
+                saveLearnProgress();
+            }
+        } else {
+            ImGui::BeginDisabled(!m_learnDemoActionDone);
+            const bool startPractice = ImGui::Button("Start practice challenge");
+            ImGui::EndDisabled();
+            if (!m_learnDemoActionDone)
+                ImGui::TextDisabled("Complete the highlighted action before starting the challenge.");
+            if (startPractice) {
+                m_learnBaselineNodes.clear();
+                m_scene->forEach([this](SceneNode* n) {
+                    if (n && !n->internal) m_learnBaselineNodes[n->id] = Serializer::nodeShallowToString(*n);
+                });
+                m_learnBaselineTerrainVersion = m_scene->terrain().version();
+                m_learnFirstPlayNodes.clear();
+                m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
+                m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
+                m_learnSawPlay = false;
+                m_learnSawPublish = false;
+                m_learnPlayStarts = 0;
+                m_learnWasPlaying = m_playing;
+                m_learnHint = 0;
+                m_learnPractice = true;
+                m_learnHasSavedCurrent = true;
+                m_learnDemoActionDone = false;
+                m_learnStatus.clear();
+                saveLearnProgress();
+            }
         }
     } else {
         ImGui::SeparatorText("Try it yourself");
@@ -1221,6 +1241,7 @@ void Editor::renderLearn() {
             m_learnHasSavedCurrent = true;
             m_learnPractice = false;
             m_learnDemoStep = 0;
+            m_learnDemoActionDone = false;
             m_learnHint = 0;
             m_learnStatus.clear();
             saveLearnProgress();
@@ -1363,6 +1384,8 @@ void Editor::renderLearn() {
             }
         }
 
+        if (!m_learnPractice && targetControl && StudioLearnHighlight::interacted(targetControl))
+            m_learnDemoActionDone = true;
         const float pulse = 0.5f + 0.5f * std::sin((float)ImGui::GetTime() * 4.0f);
         const ImU32 outline = ImGui::GetColorU32(ImVec4(0.20f, 0.68f, 1.0f, 0.55f + pulse * 0.35f));
         if (targetControl) {
