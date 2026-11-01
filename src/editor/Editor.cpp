@@ -483,6 +483,8 @@ void Editor::loadLearnProgress() {
             m_learnLesson = i; m_learnHasSavedCurrent = true; break;
         }
     }
+    if (saved.contains("step") && saved["step"].is_number_integer())
+        m_learnDemoStep = std::clamp(saved["step"].get<int>(), 0, 2);
 }
 
 void Editor::saveLearnProgress() {
@@ -490,7 +492,8 @@ void Editor::saveLearnProgress() {
     nlohmann::json completed = nlohmann::json::array();
     for (int i : m_learnCompleted) if (i >= 0 && i < kStudioLearnCount) completed.push_back(kStudioLearnIds[i]);
     nlohmann::json progress = {{ "completed", completed },
-        { "current", kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] }};
+        { "current", kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] },
+        { "step", std::clamp(m_learnDemoStep, 0, 2) }};
     const long long userId = Online::me().value("userId", 0LL);
     const std::string accountKey = userId > 0 ? std::to_string(userId) : "guest";
     const auto path = Paths::file("studio_learn_progress_" + accountKey + ".json");
@@ -509,7 +512,10 @@ void Editor::saveLearnProgress() {
 void Editor::startLearnLesson(const std::string& id) {
     loadLearnProgress();
     for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
-        m_learnLesson = i; m_learnDemoStep = 0; m_learnHint = 0;
+        const bool resume = m_learnHasSavedCurrent && m_learnLesson == i && !m_learnCompleted.count(i);
+        m_learnLesson = i;
+        if (!resume) m_learnDemoStep = 0;
+        m_learnHint = 0;
         m_learnPractice = false; m_learnSawPlay = false; m_learnStatus.clear();
         m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
         m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_showLearn = true;
@@ -526,6 +532,7 @@ void Editor::renderLearn() {
         m_learnSyncUserId = signedInUserId;
         m_learnLoaded = false;
         m_learnCompleted.clear();
+        m_learnLesson = 0; m_learnDemoStep = 0; m_learnHint = 0; m_learnPractice = false;
         m_learnHasSavedCurrent = false;
         m_learnSyncReady = false;
         m_learnSyncRetryAt = 0.0;
@@ -547,6 +554,8 @@ void Editor::renderLearn() {
             if (!m_learnHasSavedCurrent && remote.contains("current") && remote["current"].is_string()) {
                 const std::string id = remote["current"].get<std::string>();
                 for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) { m_learnLesson = i; break; }
+                if (remote.contains("step") && remote["step"].is_number_integer())
+                    m_learnDemoStep = std::clamp(remote["step"].get<int>(), 0, 2);
             }
             saveLearnProgress();
         });
@@ -826,11 +835,11 @@ void Editor::renderLearn() {
         ImGui::Spacing();
         ImGui::TextDisabled("Follow the instruction in the real editor. This panel does not click controls or change your project for you.");
         if (m_learnDemoStep > 0) {
-            if (ImGui::Button("Back")) { --m_learnDemoStep; m_learnStatus.clear(); }
+            if (ImGui::Button("Back")) { --m_learnDemoStep; m_learnStatus.clear(); saveLearnProgress(); }
             ImGui::SameLine();
         }
         if (m_learnDemoStep < 2) {
-            if (ImGui::Button("Next guided step")) { ++m_learnDemoStep; m_learnStatus.clear(); }
+            if (ImGui::Button("Next guided step")) { ++m_learnDemoStep; m_learnStatus.clear(); saveLearnProgress(); }
         } else if (ImGui::Button("Start practice challenge")) {
             m_learnBaselineNodes.clear();
             m_scene->forEach([this](SceneNode* n) {
@@ -846,6 +855,7 @@ void Editor::renderLearn() {
             m_learnHint = 0;
             m_learnPractice = true;
             m_learnStatus.clear();
+            saveLearnProgress();
         }
     } else {
         ImGui::SeparatorText("Try it yourself");
@@ -1027,6 +1037,7 @@ void Editor::renderLearn() {
             m_learnDemoStep = 0;
             m_learnHint = 0;
             m_learnStatus.clear();
+            saveLearnProgress();
         }
     }
     ImGui::Separator();

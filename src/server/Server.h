@@ -75,7 +75,7 @@ private:
         long long   totpLast = -1;              // the newest 30-second step used (no reusing a code)     // pwHash = hash of the login token (we never see the password)
         nlohmann::json avatar;                   // colours (0-255), hat, hatColor, wearing, updated; null = never set
         nlohmann::json gameBadges = nlohmann::json::array();   // [badge id, game id, when] earned in games
-        nlohmann::json learnProgress = {{"completed", nlohmann::json::array()}, {"current", ""}}; // synced Studio Learn progress
+        nlohmann::json learnProgress = {{"completed", nlohmann::json::array()}, {"current", ""}, {"step", 0}}; // synced Studio Learn progress
         // ServerSocial.cpp: saved outfits, favourite and recently played games, private messages.
         nlohmann::json outfits = nlohmann::json::array();   // {id, name, avatar, created}, newest first
         std::vector<std::string> favorites, recent;          // game ids, newest first

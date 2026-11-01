@@ -1191,7 +1191,8 @@ export class GbServerObject extends DurableObject {
     if (name === 'learn.progress.get') {
       const completed = Array.isArray(saved.completed) ? [...new Set(saved.completed.filter((x) => typeof x === 'string' && lessonIds.has(x)))] : [];
       const current = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
-      return okay({ progress: { completed, current } });
+      const step = Number.isInteger(saved.step) && saved.step >= 0 && saved.step <= 2 ? saved.step : 0;
+      return okay({ progress: { completed, current, step } });
     }
     if (name !== 'learn.progress.save') return fail('Unknown request: ' + name);
     if (!Array.isArray(args.completed) || args.completed.length > 20 ||
@@ -1202,7 +1203,10 @@ export class GbServerObject extends DurableObject {
     if (args.current !== undefined && typeof args.current !== 'string') return fail('Studio Learn current lesson must be a lesson ID.');
     const current = args.current || '';
     if (current && !lessonIds.has(current)) return fail('Studio Learn progress contains an unknown current lesson.');
-    me.learnProgress = { completed, current };
+    if (args.step !== undefined && (!Number.isInteger(args.step) || args.step < 0 || args.step > 2))
+      return fail('Studio Learn step must be between 0 and 2.');
+    const step = args.step === undefined ? 0 : args.step;
+    me.learnProgress = { completed, current, step };
     this.saveUser(me);
     return okay({ progress: me.learnProgress });
   }

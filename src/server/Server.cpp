@@ -603,7 +603,9 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
                 const std::string id = me.learnProgress["current"].get<std::string>();
                 if (lessonIds.count(id)) current = id;
             }
-            json r = okay(); r["progress"] = {{ "completed", completed }, { "current", current }}; return r;
+            int step = me.learnProgress.is_object() && me.learnProgress.contains("step") && me.learnProgress["step"].is_number_integer()
+                ? std::clamp(me.learnProgress["step"].get<int>(), 0, 2) : 0;
+            json r = okay(); r["progress"] = {{ "completed", completed }, { "current", current }, { "step", step }}; return r;
         }
         if (!args.contains("completed") || !args["completed"].is_array() || args["completed"].size() > 20)
             return fail("Studio Learn progress must contain a list of up to 20 completed lessons.");
@@ -622,10 +624,13 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         }
         if (args.contains("current") && !args["current"].is_string())
             return fail("Studio Learn current lesson must be a lesson ID.");
+        if (args.contains("step") && (!args["step"].is_number_integer() || args["step"].get<int>() < 0 || args["step"].get<int>() > 2))
+            return fail("Studio Learn step must be between 0 and 2.");
         const std::string current = args.value("current", std::string());
+        const int step = args.value("step", 0);
         if (!current.empty() && !lessonIds.count(current))
             return fail("Studio Learn progress contains an unknown current lesson.");
-        me.learnProgress = {{ "completed", completed }, { "current", current }};
+        me.learnProgress = {{ "completed", completed }, { "current", current }, { "step", step }};
         saveUsers();
         json r = okay(); r["progress"] = me.learnProgress; return r;
     }
