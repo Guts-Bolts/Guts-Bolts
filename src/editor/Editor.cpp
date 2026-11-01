@@ -1246,12 +1246,12 @@ void Editor::renderLearn() {
                 case 5: targetName = m_learnHint == 3 ? "Publish to Guts&Bolts" : "File"; targetControl = m_learnHint == 1 ? "file.gameSettings" : m_learnHint == 2 ? "file.save" : "publish.confirm"; break;
                 case 6: targetName = "Explorer"; targetControl = m_learnHint == 3 ? "explorer.rename" : "explorer.selected"; break;
                 case 7: targetName = "Properties"; targetControl = "properties.Position"; break;
-                case 8: targetName = "Home"; targetControl = m_learnHint == 1 ? "ribbon.Duplicate" : m_learnHint == 2 ? "explorer.selected" : "ribbon.Group"; break;
+                case 8: targetName = m_learnHint == 2 ? "Explorer" : "Home"; targetControl = m_learnHint == 1 ? "ribbon.Duplicate" : m_learnHint == 2 ? "explorer.selected" : "ribbon.Group"; break;
                 case 9: targetName = "Properties"; targetControl = "properties.Color"; break;
                 case 10: targetName = "Viewport"; targetControl = m_learnHint == 1 ? "ribbon.tab.TERRAIN" : m_learnHint == 2 ? "ribbon.Raise" : "ribbon.Smooth"; break;
                 case 11: targetName = m_learnHint == 3 ? "Viewport" : "Explorer"; targetControl = m_learnHint == 3 ? "ribbon.Play" : "explorer.insert.SpawnLocation"; break;
                 case 12: targetName = m_learnHint == 3 ? "Viewport" : "Properties"; targetControl = m_learnHint == 3 ? "ribbon.Play" : "properties.Can Collide"; break;
-                case 13: targetName = "Viewport"; targetControl = m_learnHint == 1 ? "ribbon.Part" : m_learnHint == 2 ? "ribbon.Weld" : "ribbon.Play"; break;
+                case 13: targetName = m_learnHint == 1 ? "Home" : "Viewport"; targetControl = m_learnHint == 1 ? "ribbon.Part" : m_learnHint == 2 ? "ribbon.Weld" : "ribbon.Play"; break;
                 case 14: targetName = m_learnHint == 3 ? "Viewport" : "Properties"; targetControl = m_learnHint == 3 ? "ribbon.Play" : m_learnHint == 2 ? "properties.Volume" : "properties.Sound"; break;
                 case 15: targetName = m_learnHint == 3 ? "Viewport" : "Explorer"; targetControl = m_learnHint == 3 ? "ribbon.Play" : "explorer.insert.ScreenGui"; break;
                 case 16: case 17:
@@ -1270,12 +1270,12 @@ void Editor::renderLearn() {
                                     m_learnDemoStep == 1 ? "ribbon.Scale" : "properties.Anchored";
                     break;
                 case 1:
-                    targetName = "Properties";
+                    targetName = m_learnDemoStep == 2 ? "Viewport" : m_learnDemoStep == 0 ? "Home" : "Properties";
                     targetControl = m_learnDemoStep == 0 ? "ribbon.Part" :
                                     m_learnDemoStep == 1 ? "properties.Anchored" : "ribbon.Play";
                     break;
                 case 2:
-                    targetName = m_learnDemoStep == 2 ? "Viewport" : (m_learnDemoStep == 0 ? "Explorer" : "Properties");
+                    targetName = m_learnDemoStep == 2 ? "Viewport" : "Home";
                     targetControl = m_learnDemoStep == 0 ? "ribbon.Part" :
                                     m_learnDemoStep == 1 ? "ribbon.Duplicate" : "ribbon.Play";
                     break;
@@ -1301,7 +1301,7 @@ void Editor::renderLearn() {
                                     m_learnDemoStep == 1 ? "properties.Position" : "properties.Size";
                     break;
                 case 8:
-                    targetName = "Home";
+                    targetName = m_learnDemoStep == 1 ? "Explorer" : "Home";
                     targetControl = m_learnDemoStep == 0 ? "ribbon.Duplicate" :
                                     m_learnDemoStep == 1 ? "explorer.selected" : "ribbon.Group";
                     break;
