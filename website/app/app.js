@@ -3703,8 +3703,14 @@ const actions = {
     if (!lesson) { toast('That lesson could not be found.'); return; }
     const key = 'gb.studioLearn.' + (signedIn() ? me.id : 'guest');
     let progress = { completed: [], current: '', step: 0, updatedAt: 0 };
-    try { progress = JSON.parse(localStorage.getItem(key) || '{"completed":[]}'); } catch { /* ignore */ }
+    try {
+      const local = JSON.parse(localStorage.getItem(key) || 'null');
+      if (local && typeof local === 'object' && !Array.isArray(local)) progress = Object.assign(progress, local);
+    } catch { /* ignore */ }
     progress.completed = Array.isArray(progress.completed) ? progress.completed.filter((x) => STUDIO_LESSONS.some((l) => l[0] === x)) : [];
+    progress.current = typeof progress.current === 'string' ? progress.current : '';
+    progress.step = Number.isInteger(progress.step) && progress.step >= 0 && progress.step <= 2 ? progress.step : 0;
+    progress.updatedAt = Number.isInteger(progress.updatedAt) && progress.updatedAt >= 0 ? progress.updatedAt : 0;
     const resume = progress.current === lesson[0] && !progress.completed.includes(lesson[0]);
     progress.current = lesson[0];
     if (!resume) progress.step = 0;
