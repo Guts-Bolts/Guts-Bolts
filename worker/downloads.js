@@ -8,7 +8,7 @@
 import { readLimitedText } from './http.js';
 
 const FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
-const MAX_RELEASE_FILE = 100 * 1024 * 1024;
+const MAX_RELEASE_FILE = 90 * 1024 * 1024;
 const MAX_MANIFEST = 64 * 1024;
 
 function json(obj, status = 200) {
