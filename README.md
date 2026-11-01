@@ -1323,18 +1323,26 @@ everything).
 
 ### Gutstober and timed items
 
-October is **Gutstober**, Guts&Bolts' Halloween month. The website wears a
-Halloween theme (orange and purple, a pumpkin and some bats) all month; anyone
-can turn it off or back on in *Settings > Site theme* (it's remembered in that
-browser).
+October is **Gutstober**, Guts&Bolts' Halloween month. During October,
+the website uses its orange-and-purple theme, pumpkin and bat decorations, and
+the Player app can use its matching seasonal look. The website theme can be
+turned off or back on in *Settings > Site theme* (the preference is remembered
+in that browser), and the Player has its own setting.
+
+When October ends, Gutstober is automatically packed away: the website and
+Player return to their usual look, and the off-season settings page explains
+that the event is being kept for next October. The theme styles, decorations,
+and event assets remain in the repository; they are not deleted during the
+off-season.
 
 **Timed items** go off sale at a set time. The item's creator or staff set
 *Goes off sale* on the item's page (leave it empty to sell it for good). Before
 then the item says *Off sale in N days*; after, it says *Off sale* and can't be
 bought any more (people who have it keep it, and limiteds can still be resold).
-Catalog items with "Pumpkin" in their name are Gutstober items: when the server
-starts it gives each one an off-sale time of midnight UTC on November 1st (once;
-staff can change it afterwards).
+Gutstober's own timed items are selected by asset ID, not by name, so a
+player-uploaded item called "Pumpkin" is never treated as part of the event.
+The event items remain in the catalog and can be put back on sale when
+Gutstober returns.
 
 ### Explosions
 

@@ -3171,12 +3171,14 @@ const langBox = () => html`<div class="box"><h2 class="boxhead">Language</h2>
     <p>The language for the website's menus and buttons. Things people wrote stay as they are.</p>
     <p><span class="lang-slot"></span> <span class="small muted">(only for this browser)</span></p></div>`;
 function themeBox() {
-  const on = gutstoberWanted();
+  const inSeason = isGutstober();
+  const on = inSeason && gutstoberWanted();
   return html`<div class="box"><h2 class="boxhead">Site theme</h2>
     <p><b>Gutstober</b>: the Halloween theme (orange and purple, pumpkins and bats) for all of October.
-      ${isGutstober() ? html`It's <b class="${on ? 'ok' : 'muted'}">${on ? 'on' : 'off'}</b> right now.` : html`<span class="muted">It comes back next October.</span>`}</p>
-    <p><button class="btn ${on ? '' : 'blue'}" data-act="gutstober" data-on="${on ? '' : '1'}">${on ? 'Turn Gutstober off' : 'Turn Gutstober on'}</button>
-      <span class="small muted">(only for this browser)</span></p></div>`;
+      ${inSeason ? html`It's <b class="${on ? 'ok' : 'muted'}">${on ? 'on' : 'off'}</b> right now.` : html`<span class="muted">Gutstober is packed away until next October. The theme and event assets are kept in storage for its return.</span>`}</p>
+    ${inSeason ? html`<p><button class="btn ${on ? '' : 'blue'}" data-act="gutstober" data-on="${on ? '' : '1'}">${on ? 'Turn Gutstober off' : 'Turn Gutstober on'}</button>
+      <span class="small muted">(only for this browser)</span></p>` : ''}
+    </div>`;
 }
 pages.settings = async () => {
   if (!signedIn()) { show(html`<h1>Account Settings</h1>${langBox()}${themeBox()}${needSignIn('change your account settings')}`); return; }
