@@ -18,6 +18,7 @@ import { MemoryStore } from './memorystore.js';
 import { installMcpRelay } from './mcp-relay.js';   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Roadmap, builtInItems, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
 import BUILT_IN_ROADMAP from './roadmap-gathered.js';   // worker/roadmap/, one file per item (worker/gather-updates.mjs)
+import { insertSupabaseRows, listSupabaseNotifications, markSupabaseNotificationsRead } from './supabase.js';
 // The example games that come with Guts&Bolts: always on the server (as Guts's
 // games), so the website and the apps have something to play from day one.
 import demolitionYard from '../games/Demolition Yard.gbscene';
@@ -738,6 +739,7 @@ const CHUNK = 1 << 20;   // files are stored in 1 MB pieces (SQLite rows are at 
 export class GbServerObject extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
+    this.ctx = ctx;
     this.env = env;
     this.sql = ctx.storage.sql;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, data TEXT NOT NULL);
@@ -752,7 +754,9 @@ export class GbServerObject extends DurableObject {
       CREATE TABLE IF NOT EXISTS pasttrades (id TEXT PRIMARY KEY, a TEXT NOT NULL, b TEXT NOT NULL, at INTEGER NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS pasttrades_a ON pasttrades (a, at);
       CREATE INDEX IF NOT EXISTS pasttrades_b ON pasttrades (b, at);
-      CREATE INDEX IF NOT EXISTS pasttrades_at ON pasttrades (at);`);
+      CREATE INDEX IF NOT EXISTS pasttrades_at ON pasttrades (at);
+      CREATE TABLE IF NOT EXISTS supabase_outbox (id TEXT PRIMARY KEY, table_name TEXT NOT NULL, payload TEXT NOT NULL, created INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS supabase_outbox_created ON supabase_outbox (created);`);
     this.official = lower(env.OFFICIAL || '');
     this.name = env.SERVER_NAME || 'Guts&Bolts';
     this.users = new Map(); this.assets = new AssetMap(); this.groups = new Map(); this.forum = new Map();
@@ -953,9 +957,85 @@ export class GbServerObject extends DurableObject {
   // kind says what (the apps pick an icon and a page from it), id is what it's about.
   notify(u, kind, text, id = '') {
     if (!u || u.userId === 0) return;
-    u.notes = [{ id: randomHex(5), kind, text, about: id, at: now(), read: false }, ...(u.notes || [])].slice(0, kMaxNotes);
+    const at = now();
+    const note = { id: randomHex(5), kind, text, about: id, at, read: false };
+    u.notes = [note, ...(u.notes || [])].slice(0, kMaxNotes);
     this.saveUser(u);
+    this.queueSupabaseEvent('gb_notifications', {
+      id: note.id, account_id: u.id, kind: note.kind, message: String(note.text).slice(0, 500),
+      about: note.about || '', created_at: new Date(at * 1000).toISOString(), read_at: null,
+    });
   }
+  queueSupabaseEvent(table, row) {
+    if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return;
+    if (!['gb_notifications', 'gb_auction_events', 'gb_forum_activity'].includes(table)) return;
+    this.sql.exec('INSERT OR IGNORE INTO supabase_outbox (id, table_name, payload, created) VALUES (?, ?, ?, ?)',
+      row.id, table, JSON.stringify(row), now());
+    try {
+      const alarm = this.ctx.storage.setAlarm(Date.now() + 1000);
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(alarm);
+      else alarm.catch(() => {});
+    } catch { /* The durable outbox is retried on the next request. */ }
+  }
+  recordAuctionEvent(asset, eventType, actorName, amount = null) {
+    const auction = asset && asset.auction;
+    if (!auction) return;
+    this.queueSupabaseEvent('gb_auction_events', {
+      id: randomHex(12), auction_id: asset.id, asset_id: asset.id,
+      asset_name: String(asset.name || 'Unknown item').slice(0, 120), event_type: eventType,
+      actor_name: String(actorName || '').slice(0, 40),
+      amount: Number.isFinite(amount) ? amount : null,
+      current_high_bid: Math.max(0, ...(auction.bids || []).map((bid) => Number(bid.amount) || 0)),
+      ends_at: Number.isFinite(auction.endsAt) ? new Date(auction.endsAt * 1000).toISOString() : null,
+      created_at: new Date(now() * 1000).toISOString(),
+    });
+  }
+  recordForumActivity(thread, boardName, eventType, actorName, excerpt = '') {
+    if (!thread) return;
+    this.queueSupabaseEvent('gb_forum_activity', {
+      id: randomHex(12), thread_id: thread.id, board_id: thread.board,
+      board_name: String(boardName || thread.board || '').slice(0, 80),
+      thread_title: String(thread.title || '').slice(0, 100), event_type: eventType,
+      actor_name: String(actorName || '').slice(0, 40),
+      post_excerpt: String(excerpt || '').replace(/\s+/g, ' ').slice(0, 180),
+      created_at: new Date(now() * 1000).toISOString(),
+    });
+  }
+  hasSupabaseOutbox() {
+    for (const row of this.sql.exec('SELECT id FROM supabase_outbox LIMIT 1')) return true;
+    return false;
+  }
+  async flushSupabaseOutbox() {
+    if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return;
+    const rows = [...this.sql.exec('SELECT id, table_name, payload FROM supabase_outbox ORDER BY created LIMIT 60')];
+    if (!rows.length) return;
+    const groups = new Map();
+    for (const row of rows) {
+      if (!groups.has(row.table_name)) groups.set(row.table_name, []);
+      groups.get(row.table_name).push(row);
+    }
+    for (const [table, batch] of groups) {
+      try {
+        await insertSupabaseRows(this.env, table, batch.map((row) => JSON.parse(row.payload)));
+        for (const row of batch) this.sql.exec('DELETE FROM supabase_outbox WHERE id = ?', row.id);
+      } catch {
+        try {
+          const alarm = this.ctx.storage.setAlarm(Date.now() + 60000);
+          if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(alarm);
+          else alarm.catch(() => {});
+        } catch { /* The outbox remains durable and retries on the next request. */ }
+        return;
+      }
+    }
+    if (this.hasSupabaseOutbox()) {
+      try {
+        const alarm = this.ctx.storage.setAlarm(Date.now() + 1000);
+        if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(alarm);
+        else alarm.catch(() => {});
+      } catch { /* The remaining batch is durable. */ }
+    }
+  }
+  async alarm() { await this.flushSupabaseOutbox(); }
   saveAsset(a) { this.dirty.assets.add(a.id); }
   // Creator stats: count something on a day (plays, sales, bolts earned), kept for 60 days.
   // Passes and products also count on their game, so a game's page adds them up.
