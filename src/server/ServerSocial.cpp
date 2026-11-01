@@ -267,6 +267,190 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
         json r = okay(); r["assets"] = out; return r;
     }
 
+    // --- Chat conversations and parties (separate from the classic inbox). ---
+    if (name.rfind("party.", 0) == 0) {
+        if (me.userId == 0) return fail("Sign up first.");
+        if (!me.chats.is_array()) me.chats = json::array();
+        if (!me.partyInvites.is_array()) me.partyInvites = json::array();
+        auto person = [&](const User& u) {
+            return json{{"id", u.id}, {"userId", u.userId}, {"name", u.username.empty() ? u.name : u.username}, {"verified", isVerified(u)}};
+        };
+        auto findChat = [&](User& u, const std::string& id) -> json* {
+            if (!u.chats.is_array()) return nullptr;
+            for (json& x : u.chats) if (x.value("id", std::string()) == id) return &x;
+            return nullptr;
+        };
+        auto syncChat = [&](const json& chat) {
+            if (!chat.contains("members") || !chat["members"].is_array()) return;
+            for (const json& member : chat["members"]) {
+                const std::string id = member.value("id", std::string());
+                auto it = m_users.find(id);
+                if (it == m_users.end() || it->second.userId == 0) continue;
+                User& u = it->second;
+                if (!u.chats.is_array()) u.chats = json::array();
+                bool found = false;
+                for (json& x : u.chats) if (x.value("id", std::string()) == chat.value("id", std::string())) { x = chat; found = true; break; }
+                if (!found) u.chats.insert(u.chats.begin(), chat);
+                while (u.chats.size() > 100) u.chats.erase(u.chats.end() - 1);
+            }
+            saveUsers();
+        };
+        if (name == "party.list") {
+            json r = okay(); r["chats"] = me.chats; r["invites"] = me.partyInvites; r["me"] = meJson(me); return r;
+        }
+        if (name == "party.create") {
+            if (!args.contains("members") || !args["members"].is_array()) return fail("Choose at least one friend to invite.");
+            std::set<std::string> ids;
+            for (const json& v : args["members"]) if (v.is_string() && !v.get<std::string>().empty() && v.get<std::string>() != me.id) ids.insert(v.get<std::string>());
+            if (ids.empty()) return fail("Choose at least one friend to invite.");
+            if (ids.size() > 19) return fail("A party can have up to 20 people, including you.");
+            std::vector<User*> invitees;
+            for (const std::string& id : ids) {
+                auto it = m_users.find(id);
+                if (it == m_users.end() || it->second.userId == 0 || !me.friends.count(id)) return fail("Parties can only be created with your friends.");
+                User& u = it->second;
+                if (u.banned || blocks(me, u) || blocks(u, me)) return fail("You cannot invite someone you have blocked or who has blocked you.");
+                if (u.privacyMessages == "nobody" || (u.privacyMessages == "friends" && !u.friends.count(me.id)))
+                    return fail(u.name + " does not accept messages from you.");
+                invitees.push_back(&u);
+            }
+            std::string title = say(str("title"), 60);
+            if (title.empty()) {
+                for (size_t i = 0; i < invitees.size(); ++i) { if (i) title += ", "; title += invitees[i]->username.empty() ? invitees[i]->name : invitees[i]->username; }
+            }
+            const std::string id = "p-" + Account::randomHex(8);
+            json chat = {{"id", id}, {"title", title}, {"owner", me.id}, {"members", json::array({person(me)})},
+                         {"messages", json::array()}, {"readAt", json{{me.id, now}}}, {"created", now}, {"updated", now}};
+            me.chats.insert(me.chats.begin(), chat);
+            while (me.chats.size() > 100) me.chats.erase(me.chats.end() - 1);
+            for (User* u : invitees) {
+                if (!u->partyInvites.is_array()) u->partyInvites = json::array();
+                for (size_t i = 0; i < u->partyInvites.size();) {
+                    if (u->partyInvites[i].value("id", std::string()) == id) u->partyInvites.erase(u->partyInvites.begin() + (long)i); else ++i;
+                }
+                u->partyInvites.insert(u->partyInvites.begin(), json{{"id", id}, {"owner", me.id},
+                    {"ownerName", me.username.empty() ? me.name : me.username}, {"title", title}, {"at", now}});
+                while (u->partyInvites.size() > 50) u->partyInvites.erase(u->partyInvites.end() - 1);
+            }
+            saveUsers();
+            json r = okay(); r["chat"] = chat; r["me"] = meJson(me); return r;
+        }
+        if (name == "party.respond") {
+            const std::string id = str("id");
+            size_t index = me.partyInvites.size();
+            for (size_t i = 0; i < me.partyInvites.size(); ++i) if (me.partyInvites[i].value("id", std::string()) == id) { index = i; break; }
+            if (index == me.partyInvites.size()) return fail("That party invitation is no longer available.");
+            const json invite = me.partyInvites[index];
+            me.partyInvites.erase(me.partyInvites.begin() + (long)index);
+            const bool accept = args.contains("accept") && args["accept"].is_boolean() && args["accept"].get<bool>();
+            if (!accept) { saveUsers(); json r = okay(); r["declined"] = true; r["me"] = meJson(me); return r; }
+            auto owner = m_users.find(invite.value("owner", std::string()));
+            json* chat = owner == m_users.end() ? nullptr : findChat(owner->second, id);
+            if (!chat || !chat->contains("members") || !(*chat)["members"].is_array()) { saveUsers(); return fail("That party has ended."); }
+            if (owner->second.banned || me.banned || !owner->second.friends.count(me.id) || blocks(me, owner->second) || blocks(owner->second, me) ||
+                owner->second.privacyMessages == "nobody" || (owner->second.privacyMessages == "friends" && !owner->second.friends.count(me.id))) {
+                saveUsers(); return fail("You can no longer join that party.");
+            }
+            if ((*chat)["members"].size() >= 20) { saveUsers(); return fail("That party is full."); }
+            bool already = false;
+            for (const json& member : (*chat)["members"]) if (member.value("id", std::string()) == me.id) already = true;
+            if (!already) (*chat)["members"].push_back(person(me));
+            (*chat)["readAt"][me.id] = now; (*chat)["updated"] = now;
+            const json copy = *chat; syncChat(copy);
+            json r = okay(); r["chat"] = copy; r["me"] = meJson(me); return r;
+        }
+        const std::string id = str("id");
+        json* chat = findChat(me, id);
+        if (!chat || !chat->contains("members") || !(*chat)["members"].is_array()) return fail("That conversation is no longer available.");
+        bool member = false;
+        for (const json& m : (*chat)["members"]) if (m.value("id", std::string()) == me.id) member = true;
+        if (!member) return fail("That conversation is no longer available.");
+        if (name == "party.read") {
+            (*chat)["readAt"][me.id] = now; const json copy = *chat; syncChat(copy);
+            json r = okay(); r["chat"] = copy; r["me"] = meJson(me); return r;
+        }
+        if (name == "party.send" || name == "party.game") {
+            for (const json& member : (*chat)["members"]) {
+                const std::string memberId = member.value("id", std::string());
+                if (memberId == me.id) continue;
+                auto other = m_users.find(memberId);
+                if (other != m_users.end() && (blocks(me, other->second) || blocks(other->second, me)))
+                    return fail("You cannot message this party because of a block.");
+            }
+            json message;
+            if (name == "party.game") {
+                auto game = findAsset(str("game"));
+                if (game == m_assets.end() || game->second.kind != "game") return fail("That game is not available to play.");
+                if (me.messageDay != today) { me.messageDay = today; me.messagesToday = 0; }
+                if (me.messagesToday >= kMessagesPerDay) return fail("That is " + std::to_string(kMessagesPerDay) + " messages today. Try again tomorrow.");
+                ++me.messagesToday;
+                message = {{"id", Account::randomHex(8)}, {"from", me.id}, {"name", me.username.empty() ? me.name : me.username},
+                           {"body", "Invited everyone to play " + game->second.name + "."}, {"game", game->second.id}, {"at", now}};
+            } else {
+                const std::string body = say(str("body"), 1000, true);
+                if (body.empty()) return fail("Write a message first.");
+                if (me.messageDay != today) { me.messageDay = today; me.messagesToday = 0; }
+                if (me.messagesToday >= kMessagesPerDay) return fail("That is " + std::to_string(kMessagesPerDay) + " messages today. Try again tomorrow.");
+                ++me.messagesToday;
+                message = {{"id", Account::randomHex(8)}, {"from", me.id}, {"name", me.username.empty() ? me.name : me.username}, {"body", body}, {"at", now}};
+            }
+            if (!(*chat)["messages"].is_array()) (*chat)["messages"] = json::array();
+            (*chat)["messages"].push_back(message);
+            while ((*chat)["messages"].size() > 200) (*chat)["messages"].erase((*chat)["messages"].begin());
+            (*chat)["updated"] = now;
+            const json copy = *chat; syncChat(copy);
+            json r = okay(); r["chat"] = copy; r["me"] = meJson(me); return r;
+        }
+        if (name == "party.invite") {
+            if (chat->value("owner", std::string()) != me.id) return fail("Only the party owner can invite people.");
+            auto it = m_users.find(str("user"));
+            if (it == m_users.end() || it->second.userId == 0 || !me.friends.count(it->first)) return fail("You can only invite friends.");
+            User& u = it->second;
+            for (const json& m : (*chat)["members"]) if (m.value("id", std::string()) == u.id) return fail("That player is already in the party.");
+            if ((*chat)["members"].size() >= 20) return fail("That party is full.");
+            if (u.banned || blocks(me, u) || blocks(u, me) || u.privacyMessages == "nobody" || (u.privacyMessages == "friends" && !u.friends.count(me.id)))
+                return fail("You cannot invite that player.");
+            if (!u.partyInvites.is_array()) u.partyInvites = json::array();
+            for (size_t i = 0; i < u.partyInvites.size();) {
+                if (u.partyInvites[i].value("id", std::string()) == id) u.partyInvites.erase(u.partyInvites.begin() + (long)i); else ++i;
+            }
+            u.partyInvites.insert(u.partyInvites.begin(), json{{"id", id}, {"owner", me.id},
+                {"ownerName", me.username.empty() ? me.name : me.username}, {"title", chat->value("title", std::string("Party"))}, {"at", now}});
+            while (u.partyInvites.size() > 50) u.partyInvites.erase(u.partyInvites.end() - 1);
+            saveUsers(); json r = okay(); r["chat"] = *chat; return r;
+        }
+        if (name == "party.rename") {
+            if (chat->value("owner", std::string()) != me.id) return fail("Only the party owner can rename this party.");
+            const std::string title = say(str("title"), 60);
+            if (title.empty()) return fail("Give the party a name.");
+            (*chat)["title"] = title; (*chat)["updated"] = now;
+            const json copy = *chat; syncChat(copy); json r = okay(); r["chat"] = copy; return r;
+        }
+        if (name == "party.kick" || name == "party.leave") {
+            const std::string target = name == "party.leave" ? me.id : str("user");
+            if (name == "party.kick" && chat->value("owner", std::string()) != me.id) return fail("Only the party owner can remove people.");
+            if (name == "party.kick" && target == me.id) return fail("Use Leave party to leave.");
+            size_t index = (*chat)["members"].size();
+            for (size_t i = 0; i < (*chat)["members"].size(); ++i) if ((*chat)["members"][i].value("id", std::string()) == target) { index = i; break; }
+            if (index == (*chat)["members"].size()) return fail("That player is not in this party.");
+            if (name == "party.leave" && target == chat->value("owner", std::string()) && (*chat)["members"].size() > 1) {
+                for (const json& m : (*chat)["members"]) if (m.value("id", std::string()) != target) { (*chat)["owner"] = m.value("id", std::string()); break; }
+            }
+            (*chat)["members"].erase((*chat)["members"].begin() + (long)index);
+            (*chat)["updated"] = now;
+            const json copy = *chat;
+            auto leaving = m_users.find(target);
+            if (leaving != m_users.end() && leaving->second.chats.is_array()) {
+                json& list = leaving->second.chats;
+                for (size_t i = 0; i < list.size(); ++i) if (list[i].value("id", std::string()) == id) { list.erase(list.begin() + (long)i); break; }
+            }
+            if (copy["members"].empty()) { saveUsers(); json r = okay(); r["left"] = true; return r; }
+            syncChat(copy);
+            json r = okay(); r["chat"] = copy; r["left"] = target == me.id; return r;
+        }
+        return fail("Unknown party request.");
+    }
+
     // --- Private messages. Guests can't send or get them. ---
     if (name == "message.send") {
         if (me.userId == 0) return fail("Sign up first.");
