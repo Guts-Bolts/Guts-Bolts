@@ -424,3 +424,60 @@ Before a lesson ships, test it with a clean project and with a project that alre
 - A failed or unavailable validation falls back to an explicit "I did this" confirmation with a clear explanation.
 - The lesson never silently discards unsaved work or runs code without the learner choosing to start Play mode.
 
+
+
+## Interactive Studio implementation in this PR
+
+The native editor now has a first working version of the lesson runner. Open it from **View > Studio Learn...**. The runner is part of the editor and uses the live scene; it is not a mock-up or a separate tutorial video.
+
+### Learner flow
+
+1. Choose one of the 20 lessons from the lesson selector.
+2. Read the outcome and the short explanation of why the skill matters.
+3. Work through three guided demonstration steps. The learner performs each action in the real editor; the lesson panel never edits the scene on their behalf.
+4. Start the independent practice challenge. The runner records a baseline of the current scene so the check can distinguish practice work from objects that were already present.
+5. Use the lightbulb button to reveal up to three hints, one at a time. Where a relevant editor panel exists, the hint also outlines that live panel. The outline is a foreground visual only and does not intercept mouse or keyboard input.
+6. Choose **Check my work**. The runner inspects the current scene and reports a specific next action if the requirement has not been met.
+7. A completed lesson can be repeated or followed by the next lesson.
+
+### Live validation
+
+The current native runner validates the practice task against the scene rather than treating navigation as completion:
+
+| Lesson | What the check looks for |
+|---|---|
+| 1. Your First Build | A newly created Part that is anchored and wider on X than Y |
+| 2. Make It Move | A newly created unanchored Part and a Play test during the challenge |
+| 3. Build a Tiny Obby | At least three newly created Parts and a Play test |
+| 4. Your First Script | A new Script containing a print call and a Play test |
+| 5. Light Up the Scene | A new enabled light with a changed brightness, range or colour |
+| 6. Publish Your First Game | A published game ID is present |
+| 7. Meet the Explorer | A new Part has been renamed to something other than its default primitive name |
+| 8. The Properties Panel | A pre-existing Part has been changed during practice |
+| 9. Copy, Group, Organize | A new Model contains child objects |
+| 10. Color and Materials | At least three new Parts use more than one material or visibly different colours |
+| 11. Shape the World | The Terrain version counter advances during practice, proving an edit occurred |
+| 12. Spawn Into the Action | A new Part is named or tagged SpawnLocation |
+| 13. Collision Course | A new Part has CanCollide disabled |
+| 14. Connect the Parts | A new enabled Constraint has both endpoints assigned |
+| 15. Sound Check | A new Sound object exists |
+| 16. Your First GUI | A new ScreenGui and a new TextLabel or TextButton exist |
+| 17. Make Things Happen | A new Script contains an event connection and a Play test occurred |
+| 18. Remembering Values | A new Script declares a local variable, uses print, and is run |
+| 19. Find and Fix Bugs | A new Script contains the corrected print call, not the example typo, and is run |
+| 20. Build, Test, Improve | A Play test occurred and a Part was added or changed during the practice task |
+
+These checks are deliberately based on meaningful outcomes rather than exact coordinates or exact object names, except where the lesson itself teaches a specific named object such as SpawnLocation. A check can confirm the presence of a relevant editor change, but it cannot yet prove every quality aspect of a build (for example, that an obby is fun or that a spawn point is safe). The lesson text therefore still asks the learner to inspect and playtest their work.
+
+### Current scope and remaining work
+
+This PR now contains an interactive native lesson panel and live scene checks for all 20 lessons. It is not yet the complete website-to-Studio learning product. The following work remains:
+
+- Add the Create > Learn website catalogue and launch a selected lesson through the existing desktop launch flow.
+- Persist completed lesson IDs and the current phase across Studio restarts. The current completion count is session-only.
+- Replace broad panel outlines with precise, dynamically resolved control highlights where the relevant ImGui item can be safely targeted.
+- Add automated tests for each lesson validator, including negative cases, and end-to-end tests for starting, completing, repeating and switching lessons.
+- Verify every lesson on a clean project and on a project with existing objects. In particular, the publish lesson must be tested with signed-out, signed-in, already-published and permission-denied states.
+- Refine checks that currently validate the presence of an object or code pattern but cannot inspect the full quality of the learner's result.
+
+Do not describe the website catalogue, cross-device sync, persistent progress, or precise control-level spotlight as implemented until those parts exist and have tests.
