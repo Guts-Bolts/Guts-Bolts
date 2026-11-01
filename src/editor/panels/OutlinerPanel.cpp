@@ -118,6 +118,8 @@ void OutlinerPanel::drawNode(SceneNode* node) {
     if ((rowHovered || node->selected) && onInsert && !m_scene->isCharacterPart(node) && !node->isScript()) {
         float h = rowMax.y - rowMin.y;
         ImVec2 c(rowMax.x - h * 0.5f - 2, (rowMin.y + rowMax.y) * 0.5f);
+        StudioLearnHighlight::markRect("explorer.insert.open",
+            ImVec2(c.x - h * 0.45f, rowMin.y + 1), ImVec2(c.x + h * 0.45f, rowMax.y - 1));
         ImVec2 mouse = ImGui::GetMousePos();
         bool over = mouse.x > c.x - h * 0.5f && mouse.x < c.x + h * 0.5f && mouse.y > rowMin.y && mouse.y < rowMax.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
