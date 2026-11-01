@@ -3089,7 +3089,7 @@ pages.notifications = async () => {
   const r = await pageCall('notes.list', {});
   if (!r.ok) { show(html`<h1>Notifications</h1><p class="error">${r.error}</p>`); return; }
   const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁', roadmap: '🗺️' };
-  show(html`<h1>Notifications</h1>
+  show(html`<h1>Notifications</h1><p class="small muted">Your recent notifications are kept here, with older history archived securely.</p>
     <div class="list notes">${r.notes.length ? r.notes.map((n) => {
       const link = noteLink(n);
       const body = html`<span class="note-icon" aria-hidden="true">${icon[n.kind] || '🔔'}</span><span class="grow">${n.text}</span>
@@ -4747,9 +4747,6 @@ async function refreshLiveAuctions() {
       const section = $('#liveAuctions');
       if (!r.ok || !section || (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home') !== 'home') return;
       section.innerHTML = renderAuctionHomeSection(r.assets).s;
-      const activity = await fetchPublicActivity('/api/activity/auctions?limit=6');
-      const activityBox = $('#auctionBroadcasts');
-      if (activityBox && activity.ok) activityBox.innerHTML = renderAuctionActivity(activity.events).s;
       tickCountdowns();
       upgradeItemPictures();
       return;
