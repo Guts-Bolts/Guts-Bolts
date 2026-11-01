@@ -25,6 +25,7 @@ test('Studio Learn progress rejects unknown IDs and malformed records', () => {
   const s = makeServer(), a = s.signUp('LearnerA');
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['not-a-lesson'], current: '' }).ok, false);
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: '../outside' }).ok, false);
+  assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: 42 }).ok, false);
   assert.equal(s.call(a, 'learn.progress.save', { completed: Array(21).fill('first-build'), current: '' }).ok, false);
 });
 

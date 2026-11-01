@@ -359,6 +359,7 @@ private:
     bool m_showPerformance = false;
     bool m_showLearn = false, m_learnLoaded = false, m_learnHasSavedCurrent = false, m_learnSyncReady = false;
     double m_learnSyncRetryAt = 0.0;
+    long long m_learnSyncUserId = 0;
     int m_learnLesson = 0, m_learnDemoStep = 0, m_learnHint = 0;
     bool m_learnPractice = false, m_learnSawPlay = false, m_learnSawPublish = false, m_learnWasPlaying = false;
     int m_learnPlayStarts = 0;

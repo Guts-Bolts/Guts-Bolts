@@ -590,10 +590,20 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (me.userId <= 0) return fail("Sign in to sync Studio Learn progress.");
         static const std::set<std::string> lessonIds = {"first-build", "make-it-move", "tiny-obby", "first-script", "light-up-scene", "publish-first-game", "meet-explorer", "properties-panel", "copy-group-organize", "color-materials", "shape-world", "spawn-into-action", "collision-course", "connect-parts", "sound-check", "first-gui", "make-things-happen", "remember-values", "find-fix-bugs", "build-test-improve"};
         if (name == "learn.progress.get") {
-            json progress = me.learnProgress.is_object() ? me.learnProgress : json::object();
-            if (!progress.contains("completed") || !progress["completed"].is_array()) progress["completed"] = json::array();
-            if (!progress.contains("current") || !progress["current"].is_string()) progress["current"] = "";
-            json r = okay(); r["progress"] = progress; return r;
+            json completed = json::array();
+            std::set<std::string> unique;
+            if (me.learnProgress.is_object() && me.learnProgress.contains("completed") && me.learnProgress["completed"].is_array()) {
+                for (const auto& value : me.learnProgress["completed"]) if (value.is_string()) {
+                    const std::string id = value.get<std::string>();
+                    if (lessonIds.count(id) && unique.insert(id).second) completed.push_back(id);
+                }
+            }
+            std::string current;
+            if (me.learnProgress.is_object() && me.learnProgress.contains("current") && me.learnProgress["current"].is_string()) {
+                const std::string id = me.learnProgress["current"].get<std::string>();
+                if (lessonIds.count(id)) current = id;
+            }
+            json r = okay(); r["progress"] = {{ "completed", completed }, { "current", current }}; return r;
         }
         if (!args.contains("completed") || !args["completed"].is_array() || args["completed"].size() > 20)
             return fail("Studio Learn progress must contain a list of up to 20 completed lessons.");
@@ -604,6 +614,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
                 return fail("Studio Learn progress contains an unknown lesson.");
             if (unique.insert(value.get<std::string>()).second) completed.push_back(value);
         }
+        if (args.contains("current") && !args["current"].is_string())
+            return fail("Studio Learn current lesson must be a lesson ID.");
         const std::string current = args.value("current", std::string());
         if (!current.empty() && !lessonIds.count(current))
             return fail("Studio Learn progress contains an unknown current lesson.");

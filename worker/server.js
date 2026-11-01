@@ -1189,7 +1189,7 @@ export class GbServerObject extends DurableObject {
     const saved = me.learnProgress && typeof me.learnProgress === 'object'
       ? me.learnProgress : (me.learnProgress = { completed: [], current: '' });
     if (name === 'learn.progress.get') {
-      const completed = Array.isArray(saved.completed) ? [...new Set(saved.completed.filter((x) => lessonIds.has(x)))] : [];
+      const completed = Array.isArray(saved.completed) ? [...new Set(saved.completed.filter((x) => typeof x === 'string' && lessonIds.has(x)))] : [];
       const current = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
       return okay({ progress: { completed, current } });
     }
@@ -1198,7 +1198,8 @@ export class GbServerObject extends DurableObject {
         args.completed.some((x) => typeof x !== 'string' || !lessonIds.has(x)))
       return fail('Studio Learn progress must contain up to 20 known completed lessons.');
     const completed = [...new Set(args.completed)];
-    const current = typeof args.current === 'string' ? args.current : '';
+    if (args.current !== undefined && typeof args.current !== 'string') return fail('Studio Learn current lesson must be a lesson ID.');
+    const current = args.current || '';
     if (current && !lessonIds.has(current)) return fail('Studio Learn progress contains an unknown current lesson.');
     me.learnProgress = { completed, current };
     this.saveUser(me);

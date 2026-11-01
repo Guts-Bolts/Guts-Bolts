@@ -464,7 +464,9 @@ constexpr int kStudioLearnCount = (int)(sizeof(kStudioLearnIds) / sizeof(kStudio
 void Editor::loadLearnProgress() {
     if (m_learnLoaded) return;
     m_learnLoaded = true;
-    std::ifstream in(Paths::file("studio_learn_progress.json"), std::ios::binary);
+    const long long userId = Online::me().value("userId", 0LL);
+    const std::string accountKey = userId > 0 ? std::to_string(userId) : "guest";
+    std::ifstream in(Paths::file("studio_learn_progress_" + accountKey + ".json"), std::ios::binary);
     if (!in) return;
     std::stringstream data; data << in.rdbuf();
     const nlohmann::json saved = nlohmann::json::parse(data.str(), nullptr, false);
@@ -489,7 +491,9 @@ void Editor::saveLearnProgress() {
     for (int i : m_learnCompleted) if (i >= 0 && i < kStudioLearnCount) completed.push_back(kStudioLearnIds[i]);
     nlohmann::json progress = {{ "completed", completed },
         { "current", kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] }};
-    const auto path = Paths::file("studio_learn_progress.json");
+    const long long userId = Online::me().value("userId", 0LL);
+    const std::string accountKey = userId > 0 ? std::to_string(userId) : "guest";
+    const auto path = Paths::file("studio_learn_progress_" + accountKey + ".json");
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -517,8 +521,17 @@ void Editor::startLearnLesson(const std::string& id) {
 // Studio Learn: short, task-based lessons that validate real scene changes.
 void Editor::renderLearn() {
     if (!m_showLearn) return;
+    const long long signedInUserId = Online::me().value("userId", 0LL);
+    if (signedInUserId != m_learnSyncUserId) {
+        m_learnSyncUserId = signedInUserId;
+        m_learnLoaded = false;
+        m_learnCompleted.clear();
+        m_learnHasSavedCurrent = false;
+        m_learnSyncReady = false;
+        m_learnSyncRetryAt = 0.0;
+    }
     loadLearnProgress();
-    if (!m_learnSyncReady && ImGui::GetTime() >= m_learnSyncRetryAt && Online::online() && Online::me().value("userId", 0LL) > 0) {
+    if (!m_learnSyncReady && ImGui::GetTime() >= m_learnSyncRetryAt && Online::online() && signedInUserId > 0) {
         m_learnSyncRetryAt = ImGui::GetTime() + 15.0;
         Online::request("learn.progress.get", {}, [this](const nlohmann::json& r) {
             if (!r.value("ok", false) || !r.contains("progress") || !r["progress"].is_object()) return;
