@@ -94,6 +94,7 @@ private:
     void renderDialogs();
     void renderTeamPanel();
     void renderPerformanceWindow();
+    void renderLearn();
     void renderPerformanceDoctor();
     void renderLuaDebugger();
     void renderSceneValidator();
@@ -353,6 +354,14 @@ private:
     bool m_firstLayout = true;
     bool m_showSettings = false;
     bool m_showPerformance = false;
+    bool m_showLearn = false;
+    int m_learnLesson = 0, m_learnDemoStep = 0, m_learnHint = 0;
+    bool m_learnPractice = false, m_learnSawPlay = false;
+    std::string m_learnStatus;
+    std::map<uint64_t, std::string> m_learnBaselineNodes;
+    uint64_t m_learnBaselineTerrainVersion = 0;
+    std::string m_learnBaselinePublishedId;
+    std::set<int> m_learnCompleted;
     bool m_showPerformanceDoctor = false;
     bool m_showLuaDebugger = false;
     int m_debugLineInput = 1;
