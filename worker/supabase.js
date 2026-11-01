@@ -38,9 +38,12 @@ export async function supabaseRest(env, path, options = {}) {
   }
 
   const target = new URL(path.slice(1), config.origin + '/');
-  if (target.origin !== config.origin) throw new TypeError('Invalid Supabase API path.');
+  if (target.origin !== config.origin || !target.pathname.startsWith('/rest/v1/')) {
+    throw new TypeError('Invalid Supabase API path.');
+  }
 
   const headers = new Headers(options.headers || {});
+  headers.delete('authorization');
   headers.set('apikey', config.secretKey);
   if (!headers.has('accept')) headers.set('accept', 'application/json');
 
