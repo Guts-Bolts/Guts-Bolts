@@ -17,6 +17,7 @@
 // publish_game is refused here, again in the relay, and again in Studio itself.
 
 import { canCall, canUseMethod, filterTools, hasStudio } from './mcp-policy.js';
+import { readLimitedText } from './http.js';
 
 const kMaxBody = 1 << 20, kMaxBatch = 10;
 const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
@@ -67,8 +68,8 @@ export async function handleMcp(request, env, url, serverAsk) {
 
   // --- the JSON-RPC message(s) ---
   if (Number(request.headers.get('content-length') || 0) > kMaxBody) return json(rpcError(null, -32600, 'That request is too big.'), 413);
-  const text = await request.text();
-  if (text.length > kMaxBody) return json(rpcError(null, -32600, 'That request is too big.'), 413);
+  const text = await readLimitedText(request, kMaxBody);
+  if (text === null) return json(rpcError(null, -32600, 'That request is too big.'), 413);
   let body;
   try { body = JSON.parse(text); } catch { return json(rpcError(null, -32700, 'That wasn\'t valid JSON.'), 400); }
   const batch = Array.isArray(body), messages = batch ? body : [body];

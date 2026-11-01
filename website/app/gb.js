@@ -94,35 +94,131 @@ async function unlockKey(lock, blobHex) {
 // look around); signing up or logging in ties it to a username.
 
 const KEY = 'gb.key';
+const VAULT_DB = 'gb.keyvault';
+const VAULT_STORE = 'keys';
+const VAULT_ID = 'browser-signing-key';
+const VAULT_AAD = enc.encode('gutsandbolts:gb.key:v1');
 let secret = null;
 
-function store(get, value) {
+// The signing key is encrypted in localStorage with a non-extractable AES-GCM
+// CryptoKey kept in IndexedDB. This protects a copied localStorage value from
+// being used on its own. It does not protect against active same-origin XSS:
+// malicious page code can still ask this page to sign requests.
+function openVault() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in globalThis) || !crypto.subtle) return reject(new Error('Secure browser storage is unavailable.'));
+    const req = indexedDB.open(VAULT_DB, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(VAULT_STORE)) req.result.createObjectStore(VAULT_STORE);
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error || new Error('Could not open secure browser storage.'));
+    req.onblocked = () => reject(new Error('Secure browser storage is blocked.'));
+  });
+}
+
+async function vaultGet() {
+  const db = await openVault();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(VAULT_STORE, 'readonly');
+    const req = tx.objectStore(VAULT_STORE).get(VAULT_ID);
+    let value;
+    req.onsuccess = () => { value = req.result || null; };
+    req.onerror = () => reject(req.error || new Error('Could not read secure browser storage.'));
+    tx.oncomplete = () => { db.close(); resolve(value); };
+    tx.onerror = () => { db.close(); reject(tx.error || new Error('Could not read secure browser storage.')); };
+    tx.onabort = () => { db.close(); reject(tx.error || new Error('Secure browser storage was interrupted.')); };
+  });
+}
+
+async function vaultPut(value) {
+  const db = await openVault();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(VAULT_STORE, 'readwrite');
+    tx.objectStore(VAULT_STORE).put(value, VAULT_ID);
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onerror = () => { db.close(); reject(tx.error || new Error('Could not save secure browser storage.')); };
+    tx.onabort = () => { db.close(); reject(tx.error || new Error('Secure browser storage was interrupted.')); };
+  });
+}
+
+async function getVaultKey(create) {
+  const saved = await vaultGet();
+  if (saved) return saved;
+  if (!create) return null;
+  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  await vaultPut(key);
+  return key;
+}
+
+function storedKey() {
+  try { return localStorage.getItem(KEY) || ''; } catch { return ''; }
+}
+function clearStoredKey() {
+  try { localStorage.removeItem(KEY); } catch { /* key remains in memory for this visit */ }
+}
+
+async function saveKey(newSecret) {
   try {
-    if (get) return localStorage.getItem(KEY);
-    if (value === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, value);
-  } catch { /* private mode: the key only lasts this visit */ }
+    const key = await getVaultKey(true);
+    const iv = random(12);
+    const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: VAULT_AAD }, key, newSecret);
+    localStorage.setItem(KEY, 'v1.' + hex(iv) + '.' + hex(new Uint8Array(cipher)));
+  } catch {
+    // Never fall back to writing a plaintext signing key. The account remains
+    // usable for this page visit and can be unlocked again with its password.
+    clearStoredKey();
+  }
+}
+
+async function restoreStoredKey(value) {
+  if (value.startsWith('v1.')) {
+    const parts = value.split('.');
+    const iv = parts.length === 3 ? unhex(parts[1]) : null;
+    const cipher = parts.length === 3 ? unhex(parts[2]) : null;
+    if (!iv || iv.length !== 12 || !cipher || cipher.length !== 80) return null;
+    try {
+      const key = await getVaultKey(false);
+      if (!key) return null;
+      return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv, additionalData: VAULT_AAD }, key, cipher));
+    } catch { return null; }
+  }
+  // One-time migration for existing installations whose browser key was stored
+  // as plaintext hex. Preserve the same account key, then replace the old value.
+  const legacy = unhex(value);
+  if (legacy && legacy.length === 64) {
+    await saveKey(legacy);
+    return legacy;
+  }
   return null;
 }
 
+let loadingKey = null;
 async function loadKey() {
   if (secret) return secret;
-  const saved = unhex(store(true) || '');
-  if (saved && saved.length === 64) { secret = saved; return secret; }
-  secret = (await keyPair(random(32))).secret;
-  store(false, hex(secret));
-  return secret;
+  if (loadingKey) return loadingKey;
+  loadingKey = (async () => {
+    secret = await restoreStoredKey(storedKey());
+    if (!secret || secret.length !== 64) {
+      secret = (await keyPair(random(32))).secret;
+      await saveKey(secret);
+    }
+    return secret;
+  })();
+  try { return await loadingKey; }
+  finally { loadingKey = null; }
 }
 
 export async function accountId() { return hex((await loadKey()).slice(32, 64)); }
 
 async function setKey(newSecret) {
   secret = newSecret;
-  store(false, hex(secret));
+  await saveKey(secret);
 }
 
 export async function forgetKey() {   // log out: this browser becomes a new visitor
   secret = (await keyPair(random(32))).secret;
-  store(false, hex(secret));
+  await saveKey(secret);
 }
 
 // --- requests ------------------------------------------------------------------

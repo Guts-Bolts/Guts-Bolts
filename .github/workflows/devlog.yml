@@ -7,6 +7,8 @@
 # DISCORD_WEBHOOK, with that URL. Without the secret this does nothing.
 name: Dev log
 
+permissions: {}
+
 on:
   push:
     branches: [main]
