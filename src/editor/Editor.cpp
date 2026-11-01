@@ -458,6 +458,8 @@ void Editor::render(float dt) {
 // Studio Learn: short, task-based lessons that validate real scene changes.
 void Editor::renderLearn() {
     if (!m_showLearn) return;
+    if (m_playing && !m_learnWasPlaying) ++m_learnPlayStarts;
+    m_learnWasPlaying = m_playing;
     if (m_playing) m_learnSawPlay = true;
 
     struct Lesson {
@@ -726,6 +728,9 @@ void Editor::renderLearn() {
             });
             m_learnBaselineTerrainVersion = m_scene->terrain().version();
             m_learnSawPlay = false;
+            m_learnSawPublish = false;
+            m_learnPlayStarts = 0;
+            m_learnWasPlaying = m_playing;
             m_learnHint = 0;
             m_learnPractice = true;
             m_learnStatus.clear();
@@ -795,7 +800,7 @@ void Editor::renderLearn() {
                     feedback = "Add a new enabled PointLight or SpotLight and change its Brightness, Range or Color.";
                     break;
                 case 5:
-                    passed = !m_scene->info().publishedId.empty();
+                    passed = m_learnSawPublish && !m_scene->info().publishedId.empty();
                     feedback = "Use File > Publish to Guts&Bolts and complete the publish confirmation.";
                     break;
                 case 6:
@@ -870,8 +875,8 @@ void Editor::renderLearn() {
                     feedback = "Create a practice Script, reproduce a typo, correct it to print(...), and run it with F5.";
                     break;
                 case 19:
-                    passed = m_learnSawPlay && (!newParts.empty() || std::any_of(changed.begin(), changed.end(), [](SceneNode* n) { return n->isPart(); }));
-                    feedback = "Run a Play test, stop it, make a deliberate Part change in edit mode, then run the test again.";
+                    passed = m_learnPlayStarts >= 2 && (!newParts.empty() || std::any_of(changed.begin(), changed.end(), [](SceneNode* n) { return n->isPart(); }));
+                    feedback = "Run a Play test, stop it, change a Part in edit mode, then run a second Play test to verify the fix.";
                     break;
             }
             if (passed) {
