@@ -966,6 +966,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("A built-in name, or a .wav / .mp3 / .ogg / .flac file in the games folder\n(e.g. music/theme.mp3)");
         ImGui::SliderFloat("Volume", &node->volume, 0.0f, 2.0f);
+        StudioLearnHighlight::mark("properties.Volume");
         ImGui::SliderFloat("Pitch", &node->pitch, 0.25f, 3.0f);
         ImGui::Checkbox("Looped", &node->looped);
         ImGui::SameLine();
