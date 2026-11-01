@@ -586,6 +586,31 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("data.", 0) == 0) return dataOp(name, me, args);
     if (name.rfind("msg.", 0) == 0) return msgOp(name, me, args);
     if (name.rfind("mem.", 0) == 0) return memOp(name, me, args);
+    if (name == "learn.progress.get" || name == "learn.progress.save") {
+        if (me.userId <= 0) return fail("Sign in to sync Studio Learn progress.");
+        static const std::set<std::string> lessonIds = {"first-build", "make-it-move", "tiny-obby", "first-script", "light-up-scene", "publish-first-game", "meet-explorer", "properties-panel", "copy-group-organize", "color-materials", "shape-world", "spawn-into-action", "collision-course", "connect-parts", "sound-check", "first-gui", "make-things-happen", "remember-values", "find-fix-bugs", "build-test-improve"};
+        if (name == "learn.progress.get") {
+            json progress = me.learnProgress.is_object() ? me.learnProgress : json::object();
+            if (!progress.contains("completed") || !progress["completed"].is_array()) progress["completed"] = json::array();
+            if (!progress.contains("current") || !progress["current"].is_string()) progress["current"] = "";
+            json r = okay(); r["progress"] = progress; return r;
+        }
+        if (!args.contains("completed") || !args["completed"].is_array() || args["completed"].size() > 20)
+            return fail("Studio Learn progress must contain a list of up to 20 completed lessons.");
+        json completed = json::array();
+        std::set<std::string> unique;
+        for (const auto& value : args["completed"]) {
+            if (!value.is_string() || !lessonIds.count(value.get<std::string>()))
+                return fail("Studio Learn progress contains an unknown lesson.");
+            if (unique.insert(value.get<std::string>()).second) completed.push_back(value);
+        }
+        const std::string current = args.value("current", std::string());
+        if (!current.empty() && !lessonIds.count(current))
+            return fail("Studio Learn progress contains an unknown current lesson.");
+        me.learnProgress = {{ "completed", completed }, { "current", current }};
+        saveUsers();
+        json r = okay(); r["progress"] = me.learnProgress; return r;
+    }
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);
     if (name.rfind("appeal.", 0) == 0) return appealOp(name, me, args);
@@ -1698,7 +1723,7 @@ void GbServer::saveUsers() {
                    {"friends", u.friends}, {"friendIn", u.friendIn}, {"friendOut", u.friendOut},
                    {"following", u.following}, {"followers", u.followers},
                    {"username", u.username}, {"userId", u.userId}, {"pwSalt", u.pwSalt}, {"pwHash", u.pwHash},
-                   {"keyBlob", u.keyBlob}, {"avatar", u.avatar}, {"gameBadges", u.gameBadges}};
+                   {"keyBlob", u.keyBlob}, {"avatar", u.avatar}, {"gameBadges", u.gameBadges}, {"learnProgress", u.learnProgress}};
         if (!u.appeal.is_null()) all[id]["appeal"] = u.appeal;
         if (u.deleted) all[id]["deleted"] = u.deleted;
         if (!u.totpSecret.empty()) { all[id]["totpSecret"] = u.totpSecret; all[id]["totpLast"] = u.totpLast; }
@@ -1978,6 +2003,7 @@ void GbServer::load() {
                 u.keyBlob = j.value("keyBlob", std::string());
                 if (j.contains("avatar") && j["avatar"].is_object()) u.avatar = j["avatar"];
                 if (j.contains("gameBadges") && j["gameBadges"].is_array()) u.gameBadges = j["gameBadges"];
+                if (j.contains("learnProgress") && j["learnProgress"].is_object()) u.learnProgress = j["learnProgress"];
                 for (const char* k : {"friends", "friendIn", "friendOut", "following", "followers"}) {
                     const std::string key = k;
                     std::set<std::string>& set = key == "friends" ? u.friends : key == "friendIn" ? u.friendIn

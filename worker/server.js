@@ -1018,7 +1018,7 @@ export class GbServerObject extends DurableObject {
     if (u) return u;
     u = { id, name: 'Player', created: now(), lastSeen: 0, ledger: [], grants: {}, owned: [], uploadDay: '', uploadsToday: 0,
       playDay: '', playEarned: 0, lastPlay: 0, banned: false, friends: [], friendIn: [], friendOut: [], following: [], followers: [],
-      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '' };
+      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', learnProgress: { completed: [], current: '' } };
     this.users.set(id, u);
     this.claimOfficial(u);
     this.saveUser(u);
@@ -1182,6 +1182,27 @@ export class GbServerObject extends DurableObject {
   roadmapView(me) {
     const nameOf = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name } : null; };
     return this.roadmap.view(me.userId !== 0 ? me.id : '', nameOf);
+  }
+  learnOp(name, me, args) {
+    if (me.userId <= 0) return fail('Sign in to sync Studio Learn progress.');
+    const lessonIds = new Set(["first-build","make-it-move","tiny-obby","first-script","light-up-scene","publish-first-game","meet-explorer","properties-panel","copy-group-organize","color-materials","shape-world","spawn-into-action","collision-course","connect-parts","sound-check","first-gui","make-things-happen","remember-values","find-fix-bugs","build-test-improve"]);
+    const saved = me.learnProgress && typeof me.learnProgress === 'object'
+      ? me.learnProgress : (me.learnProgress = { completed: [], current: '' });
+    if (name === 'learn.progress.get') {
+      const completed = Array.isArray(saved.completed) ? [...new Set(saved.completed.filter((x) => lessonIds.has(x)))] : [];
+      const current = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
+      return okay({ progress: { completed, current } });
+    }
+    if (name !== 'learn.progress.save') return fail('Unknown request: ' + name);
+    if (!Array.isArray(args.completed) || args.completed.length > 20 ||
+        args.completed.some((x) => typeof x !== 'string' || !lessonIds.has(x)))
+      return fail('Studio Learn progress must contain up to 20 known completed lessons.');
+    const completed = [...new Set(args.completed)];
+    const current = typeof args.current === 'string' ? args.current : '';
+    if (current && !lessonIds.has(current)) return fail('Studio Learn progress contains an unknown current lesson.');
+    me.learnProgress = { completed, current };
+    this.saveUser(me);
+    return okay({ progress: me.learnProgress });
   }
   roadmapOp(name, me, args) {
     if (name === 'roadmap.get') return this.roadmapView(me);
@@ -1995,6 +2016,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
     if (name.startsWith('mem.')) return this.memOp(name, me, args);
+    if (name.startsWith('learn.')) return this.learnOp(name, me, args);
     if (name.startsWith('roadmap.')) return this.roadmapOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
