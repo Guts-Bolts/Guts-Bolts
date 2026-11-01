@@ -1241,7 +1241,7 @@ void Editor::renderLearn() {
                 case 0: targetName = "Properties"; targetControl = "properties.Anchored"; break;
                 case 1: targetName = "Properties"; targetControl = "properties.Anchored"; break;
                 case 2: targetName = "Explorer"; targetControl = "explorer.insert.Part"; break;
-                case 3: targetName = "Script Editor"; targetControl = "script.editor"; break;
+                case 3: targetName = m_learnHint == 1 ? "Script Editor" : "Output"; targetControl = m_learnHint == 1 ? "script.editor" : "output.messages"; break;
                 case 4: targetName = "Properties"; targetControl = "properties.Brightness"; break;
                 case 5: targetName = "Publish to Guts&Bolts"; targetControl = "publish.menu"; break;
                 case 6: targetName = "Explorer"; targetControl = "explorer.selected"; break;
@@ -1305,7 +1305,7 @@ void Editor::renderLearn() {
                     targetControl = m_learnDemoStep == 0 ? "properties.Color" :
                                     m_learnDemoStep == 1 ? "properties.Material" : "properties.Transparency";
                     break;
-                case 10: targetName = "Explorer"; break;
+                case 10: targetName = "Viewport"; break;
                 case 11:
                     targetName = m_learnDemoStep == 2 ? "Viewport" : (m_learnDemoStep == 0 ? "Explorer" : "Properties");
                     targetControl = m_learnDemoStep == 0 ? "explorer.insert.SpawnLocation" :
@@ -1317,7 +1317,7 @@ void Editor::renderLearn() {
                                     m_learnDemoStep == 1 ? "properties.Anchored" : nullptr;
                     break;
                 case 13:
-                    targetName = "Properties";
+                    targetName = m_learnDemoStep == 0 ? "Explorer" : "Properties";
                     targetControl = m_learnDemoStep == 0 ? "explorer.insert.WeldConstraint" :
                                     m_learnDemoStep == 1 ? "properties.Attachment0" : "properties.Attachment1";
                     break;
