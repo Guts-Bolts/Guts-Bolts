@@ -4723,18 +4723,20 @@ document.addEventListener('submit', async (e) => {
 // Keep auction information current without re-rendering the whole page or disturbing
 // a bid form the visitor is using. The server remains authoritative for every bid.
 let auctionRefreshBusy = false;
+let activityRefreshBusy = false;
 async function refreshActivityFeeds() {
-  if (document.visibilityState !== 'visible') return;
-  const auctionBox = $('#auctionBroadcasts');
-  if (auctionBox) {
-    const data = await fetchPublicActivity('/api/activity/auctions?limit=6');
-    if (data.ok && $('#auctionBroadcasts')) $('#auctionBroadcasts').innerHTML = renderAuctionActivity(data.events).s;
-  }
-  const forumBox = $('#forumActivity');
-  if (forumBox) {
-    const data = await fetchPublicActivity('/api/activity/forum?limit=10');
-    if (data.ok && $('#forumActivity')) $('#forumActivity').innerHTML = renderForumActivity(data.events).s;
-  }
+  if (activityRefreshBusy || document.visibilityState !== 'visible') return;
+  const wantAuctions = !!$('#auctionBroadcasts'), wantForum = !!$('#forumActivity');
+  if (!wantAuctions && !wantForum) return;
+  activityRefreshBusy = true;
+  try {
+    const [auctions, forum] = await Promise.all([
+      wantAuctions ? fetchPublicActivity('/api/activity/auctions?limit=6') : Promise.resolve(null),
+      wantForum ? fetchPublicActivity('/api/activity/forum?limit=10') : Promise.resolve(null),
+    ]);
+    if (auctions?.ok && $('#auctionBroadcasts')) $('#auctionBroadcasts').innerHTML = renderAuctionActivity(auctions.events).s;
+    if (forum?.ok && $('#forumActivity')) $('#forumActivity').innerHTML = renderForumActivity(forum.events).s;
+  } finally { activityRefreshBusy = false; }
 }
 async function refreshLiveAuctions() {
   if (auctionRefreshBusy || document.visibilityState !== 'visible') return;
