@@ -3713,8 +3713,17 @@ const actions = {
       if (remote.ok && remote.progress) {
         if (Array.isArray(remote.progress.completed))
           progress.completed = [...new Set([...progress.completed, ...remote.progress.completed])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
-        if (Number.isInteger(remote.progress.updatedAt))
-          progress.updatedAt = Math.max(Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0, remote.progress.updatedAt);
+        if (Number.isInteger(remote.progress.updatedAt)) {
+          const localUpdatedAt = Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0;
+          if (remote.progress.updatedAt >= localUpdatedAt) {
+            const remoteCurrent = remote.progress.current;
+            if (remoteCurrent === lesson[0] && !progress.completed.includes(lesson[0]))
+              progress.step = Number.isInteger(remote.progress.step) && remote.progress.step >= 0 && remote.progress.step <= 2 ? remote.progress.step : 0;
+            else
+              progress.step = 0;
+          }
+          progress.updatedAt = Math.max(localUpdatedAt, remote.progress.updatedAt);
+        }
       }
     }
     progress.updatedAt = Math.max(Math.floor(Date.now() / 1000), (Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0) + 1);
