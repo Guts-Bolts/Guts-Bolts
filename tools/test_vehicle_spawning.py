@@ -126,8 +126,9 @@ def main():
     opts = parser.parse_args()
     if opts.players < 2 or opts.players > 4:
         sys.exit("--players must be between 2 and 4")
-    studio = Path(opts.build) / "GutsAndBolts"
-    if not studio.exists():
+    build_dir = Path(opts.build).resolve()
+    studio = build_dir / "GutsAndBolts"
+    if not studio.is_file():
         sys.exit(f"No Studio at {studio}; build the project first")
     work = Path(tempfile.mkdtemp(prefix="gb-vehicle-spawn-"))
     place = work / "Vehicle Spawn Test.gbscene"
@@ -138,7 +139,7 @@ def main():
     print("running:", " ".join(cmd))
     try:
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                              text=True, cwd=opts.build, timeout=opts.seconds + 90)
+                              text=True, cwd=build_dir, timeout=opts.seconds + 90)
     except subprocess.TimeoutExpired as exc:
         print(exc.stdout or "")
         sys.exit("FAIL: multiplayer vehicle test timed out")
