@@ -65,3 +65,52 @@ test('Supabase REST helper removes caller-supplied Authorization and keeps the s
     await response.body.cancel();
   });
 });
+
+test('Supabase event writes use the server key and idempotent conflict handling', async () => {
+  const { insertSupabaseRows } = await import('../supabase.js');
+  await withFetch(async (input, init) => {
+    assert.equal(new URL(input).pathname, '/rest/v1/gb_auction_events');
+    assert.equal(new URL(input).searchParams.get('on_conflict'), 'id');
+    assert.equal(init.headers.get('apikey'), env.SUPABASE_SECRET_KEY);
+    assert.match(init.headers.get('prefer'), /resolution=ignore-duplicates/);
+    assert.equal(init.headers.get('authorization'), null);
+    assert.equal(init.method, 'POST');
+    return new Response(null, { status: 204 });
+  }, async () => {
+    await insertSupabaseRows(env, 'gb_auction_events', [{ id: 'event-1', event_type: 'bid_placed' }]);
+  });
+});
+
+test('notification archive reads and read-state updates are scoped to one account', async () => {
+  const { listSupabaseNotifications, markSupabaseNotificationsRead } = await import('../supabase.js');
+  const account = 'a'.repeat(64);
+  const calls = [];
+  await withFetch(async (input, init) => {
+    calls.push({ url: new URL(input), init });
+    if (init.method === 'PATCH') return new Response(null, { status: 204 });
+    return Response.json([{ id: 'note-1', kind: 'friend', message: 'Hello', about: '',
+      created_at: '2026-11-01T00:00:00Z', read_at: null }]);
+  }, async () => {
+    const notes = await listSupabaseNotifications(env, account, 200);
+    assert.equal(notes.length, 1);
+    assert.equal(calls[0].url.searchParams.get('account_id'), 'eq.' + account);
+    await markSupabaseNotificationsRead(env, account);
+    assert.equal(calls[1].init.method, 'PATCH');
+    assert.equal(calls[1].url.searchParams.get('account_id'), 'eq.' + account);
+    assert.equal(calls[1].url.searchParams.get('read_at'), 'is.null');
+  });
+});
+
+test('public activity reads are bounded and reject private notification tables', async () => {
+  const { listSupabaseActivity } = await import('../supabase.js');
+  await withFetch(async (input) => {
+    const url = new URL(input);
+    assert.equal(url.pathname, '/rest/v1/gb_forum_activity');
+    assert.equal(url.searchParams.get('limit'), '20');
+    return Response.json([]);
+  }, async () => {
+    assert.deepEqual(await listSupabaseActivity(env, 'gb_forum_activity', 999), []);
+    await assert.rejects(() => listSupabaseActivity(env, 'gb_notifications', 10), /Unsupported activity feed/);
+  });
+});
+
