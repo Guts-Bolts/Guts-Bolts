@@ -2915,7 +2915,7 @@ const GIVE_BADGES = [['tester', 'Tester'], ['bughunter', 'Bug Hunter'], ['featur
   ['partner', 'Partner'], ['staff', 'Staff']];
 const OTHER_BADGES = { tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
 const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
-  ['ideas', 'Ideas'], ['people', 'People'], ['log', 'Staff log'], ['tools', 'Tools']];
+  ['ideas', 'Ideas'], ['people', 'People'], ['log', 'Staff log'], ['tools', 'Tools'], ['database', 'Database']];
 pages.staff = async () => {
   if (!signedIn() || !me.staff) { show(html`<h1>Staff</h1><p class="muted">Only Guts&amp;Bolts staff can see this page.</p>`); return; }
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
@@ -2978,6 +2978,30 @@ pages.staff = async () => {
       </div>`) : html`<p class="error">${r.error}</p>`}</div>
     </div>`;
   } else if (tab === 'log') body = staffLogBox(await pageCall('admin.log', logFor ? { user: logFor } : {}), logFor);
+  else if (tab === 'database') {
+    const r = await pageCall('staff.database.stats', {});
+    if (!r.ok) body = html`<div class="box"><h2 class="boxhead">Database diagnostics</h2><p class="error">${r.error}</p></div>`;
+    else {
+      const d = r.database, mb = (d.databaseSizeBytes / 1048576).toFixed(2);
+      const rows = Object.entries(d.tableRows || {}).sort((a, b) => b[1] - a[1]);
+      body = html`<div class="box"><h2 class="boxhead">Production SQLite database</h2>
+        <p class="small muted">Live aggregate diagnostics from the production server. Player records and file contents are never shown here.</p>
+        <div class="staff-cards">
+          <div class="staff-card"><b>${mb} MB</b><span>Database size</span><span class="small muted">${Number(d.databaseSizeBytes).toLocaleString()} bytes</span></div>
+          <div class="staff-card"><b>${Number(d.totalRows).toLocaleString()}</b><span>Application rows</span><span class="small muted">Across nine tables</span></div>
+          <div class="staff-card"><b>${Number(d.pageCount).toLocaleString()}</b><span>SQLite pages</span><span class="small muted">${Number(d.pageSizeBytes).toLocaleString()} bytes per page</span></div>
+          <div class="staff-card"><b>${Number(d.freePages).toLocaleString()}</b><span>Free pages</span><span class="small muted">Available for reuse</span></div>
+        </div>
+        <p class="small muted">Last checked: ${new Date(d.checkedAt * 1000).toLocaleString()}</p>
+        <h3>Table row counts</h3><div class="table-wrap"><table><thead><tr><th>Table</th><th class="num">Rows</th></tr></thead>
+          <tbody>${rows.map(([name, count]) => html`<tr><td><code>${name}</code></td><td class="num">${Number(count).toLocaleString()}</td></tr>`)}</tbody></table></div>
+      </div>
+      <div class="box"><h2 class="boxhead">Automated backups</h2>
+        <p>Daily gzip exports are scheduled for 03:00 UTC and stored in a private Cloudflare R2 bucket. The system retains 35 daily snapshots.</p>
+        <p class="small muted">The backup job refuses exports above its 16 MiB safety limit. Check Cloudflare Worker logs and the private R2 bucket for the latest manifest. A production restore-from-export is not enabled; use the documented PITR runbook for incident recovery.</p>
+      </div>`;
+    }
+  }
   else if (tab === 'tools') {
     const [ml, ca, pr] = await Promise.all([pageCall('admin.mailStatus', {}), me.official ? pageCall('admin.connectApps', {}) : null,
       me.official ? pageCall('admin.promos', {}) : null]);
