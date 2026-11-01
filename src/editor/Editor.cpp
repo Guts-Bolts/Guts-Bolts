@@ -842,11 +842,11 @@ void Editor::renderLearn() {
         ImGui::Spacing();
         ImGui::TextDisabled("Follow the instruction in the real editor. This panel does not click controls or change your project for you.");
         if (m_learnDemoStep > 0) {
-            if (ImGui::Button("Back")) { --m_learnDemoStep; m_learnStatus.clear(); saveLearnProgress(); }
+            if (ImGui::Button("Back")) { m_learnHasSavedCurrent = true; --m_learnDemoStep; m_learnStatus.clear(); saveLearnProgress(); }
             ImGui::SameLine();
         }
         if (m_learnDemoStep < 2) {
-            if (ImGui::Button("Next guided step")) { ++m_learnDemoStep; m_learnStatus.clear(); saveLearnProgress(); }
+            if (ImGui::Button("Next guided step")) { m_learnHasSavedCurrent = true; ++m_learnDemoStep; m_learnStatus.clear(); saveLearnProgress(); }
         } else if (ImGui::Button("Start practice challenge")) {
             m_learnBaselineNodes.clear();
             m_scene->forEach([this](SceneNode* n) {
@@ -861,6 +861,7 @@ void Editor::renderLearn() {
             m_learnWasPlaying = m_playing;
             m_learnHint = 0;
             m_learnPractice = true;
+            m_learnHasSavedCurrent = true;
             m_learnStatus.clear();
             saveLearnProgress();
         }
@@ -869,6 +870,7 @@ void Editor::renderLearn() {
         ImGui::TextWrapped("%s", current.practice);
         ImGui::Spacing();
         if (ImGui::Button("Lightbulb: reveal next hint")) {
+            m_learnHasSavedCurrent = true;
             if (m_learnHint < 3) ++m_learnHint;
         }
         for (int i = 0; i < m_learnHint; ++i) {
@@ -876,6 +878,7 @@ void Editor::renderLearn() {
         }
         ImGui::Spacing();
         if (ImGui::Button("Check my work")) {
+            m_learnHasSavedCurrent = true;
             std::vector<SceneNode*> changed, newParts, newScripts;
             std::vector<SceneNode*> newLights, newModels, newConstraints, newSounds, newGui;
             m_scene->forEach([&](SceneNode* n) {
@@ -1042,6 +1045,7 @@ void Editor::renderLearn() {
             }
         }
         if (ImGui::Button("Back to demonstration")) {
+            m_learnHasSavedCurrent = true;
             m_learnPractice = false;
             m_learnDemoStep = 0;
             m_learnHint = 0;
