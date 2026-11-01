@@ -208,8 +208,7 @@ FetchContent_MakeAvailable(json)
 FetchContent_Declare(
     monocypher
     GIT_REPOSITORY https://github.com/LoupVaillant/Monocypher.git
-    GIT_TAG        4.0.3
-    GIT_SHALLOW    TRUE
+    GIT_TAG        ab2b16dd619ad5f6979a4fbe69cfa324a6fcc35f
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(monocypher)
