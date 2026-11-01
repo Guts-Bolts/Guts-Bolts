@@ -63,6 +63,23 @@ test('Studio Learn preserves guest progress when the learner signs in and expose
   assert.ok(editor.includes('Exit lesson'));
 });
 
+test('Studio Learn outlines the exact visible control for the instrumented editor targets', () => {
+  const highlight = read('src/editor/LearnHighlight.h');
+  const editor = read('src/editor/Editor.cpp');
+  const properties = read('src/editor/panels/PropertiesPanel.cpp');
+  const explorer = read('src/editor/panels/OutlinerPanel.cpp');
+  const scripts = read('src/editor/panels/ScriptEditorPanel.cpp');
+  const output = read('src/editor/panels/OutputPanel.cpp');
+  assert.ok(highlight.includes('ImGui::GetItemRectMin()') && highlight.includes('ImGui::GetFrameCount()'));
+  assert.ok(editor.includes('StudioLearnHighlight::find(targetControl'));
+  assert.ok(properties.includes('StudioLearnHighlight::mark("properties.Anchored")'));
+  assert.ok(properties.includes('StudioLearnHighlight::mark("properties.Can Collide")'));
+  assert.ok(properties.includes('StudioLearnHighlight::mark("properties.Size")'));
+  assert.ok(explorer.includes('StudioLearnHighlight::mark(std::string("explorer.insert.") + what)'));
+  assert.ok(scripts.includes('StudioLearnHighlight::mark("script.editor")'));
+  assert.ok(output.includes('StudioLearnHighlight::mark("output.messages")'));
+});
+
 test('desktop lesson links are strictly validated and routed to the Studio command line', () => {
   const link = read('src/player/LaunchLink.cpp');
   const player = read('src/player/PlayerLogin.cpp');
