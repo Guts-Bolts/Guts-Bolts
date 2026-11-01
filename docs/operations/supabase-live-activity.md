@@ -25,7 +25,7 @@ The website refreshes these feeds periodically through the Worker. This delibera
 - All three tables have RLS enabled.
 - anon and authenticated have no table privileges. Only service_role has the specific privileges required by the Worker.
 - Auction and forum feed routes return selected public columns only. Notification reads filter by the authenticated Guts&Bolts account ID obtained from the existing signed request.
-- No Supabase Auth identities are created, and no password, email, wallet, balance, bid reservation, or private message content is copied into these tables.
+- No Supabase Auth identities are created, and no password, email, wallet, balance, bid reservation, or forum post body is copied into these tables. Support-ticket, appeal, custom gift-note, comment, and roadmap notification text is replaced with generic summaries before archiving.
 
 ## Schema
 
