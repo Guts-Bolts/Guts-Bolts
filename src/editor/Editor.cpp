@@ -911,6 +911,31 @@ void Editor::renderLearn() {
     ImGui::TextDisabled("%zu of %d lessons completed in this Studio session. Progress is currently session-only.",
                         m_learnCompleted.size(), lessonCount);
     ImGui::End();
+
+    // A hint never intercepts input. It outlines the relevant live panel while the
+    // learner reads the hint; hidden panels are not outlined at stale screen positions.
+    if (m_learnPractice && m_learnHint > 0) {
+        const char* targetName = nullptr;
+        switch (m_learnLesson) {
+            case 0: case 1: case 4: case 7: case 9: case 12: case 13: case 14:
+                targetName = "Properties"; break;
+            case 3: case 16: case 17: case 18:
+                targetName = m_learnHint == 1 ? "Script Editor" : "Output"; break;
+            case 6: case 8: case 11:
+                targetName = "Explorer"; break;
+            default: break;
+        }
+        if (targetName) {
+            ImGuiWindow* target = ImGui::FindWindowByName(targetName);
+            if (target && target->WasActive && !target->Hidden) {
+                const float pulse = 0.5f + 0.5f * std::sin((float)ImGui::GetTime() * 4.0f);
+                const ImU32 outline = ImGui::GetColorU32(ImVec4(0.20f, 0.68f, 1.0f, 0.55f + pulse * 0.35f));
+                ImGui::GetForegroundDrawList()->AddRect(target->Pos,
+                    ImVec2(target->Pos.x + target->Size.x, target->Pos.y + target->Size.y),
+                    outline, 6.0f, 0, 3.0f);
+            }
+        }
+    }
 }
 
 // Live frame-pacing and scene-complexity monitor. Timings are sampled on the editor
