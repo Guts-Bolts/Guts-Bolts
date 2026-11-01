@@ -634,8 +634,9 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         const long long previousUpdatedAt = me.learnProgress.is_object() && me.learnProgress.contains("updatedAt") &&
             me.learnProgress["updatedAt"].is_number_integer()
             ? std::max(0LL, me.learnProgress["updatedAt"].get<long long>()) : 0LL;
+        const long long serverNow = Online::unixNow();
         const long long incomingUpdatedAt = args.contains("updatedAt")
-            ? args["updatedAt"].get<long long>() : previousUpdatedAt;
+            ? std::min(args["updatedAt"].get<long long>(), serverNow + 300) : previousUpdatedAt;
         const bool acceptResume = !args.contains("updatedAt") || incomingUpdatedAt >= previousUpdatedAt;
         const std::string requestedCurrent = args.value("current", std::string());
         const int requestedStep = args.value("step", 0);
@@ -648,7 +649,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             me.learnProgress["step"].is_number_integer() ? std::clamp(me.learnProgress["step"].get<int>(), 0, 2) : 0;
         const std::string current = acceptResume ? requestedCurrent : storedCurrent;
         const int step = acceptResume ? requestedStep : storedStep;
-        const long long updatedAt = std::max(Online::unixNow(), std::max(previousUpdatedAt, incomingUpdatedAt));
+        const long long updatedAt = std::max(serverNow, std::max(previousUpdatedAt, incomingUpdatedAt));
         me.learnProgress = {{ "completed", completed }, { "current", current }, { "step", step }, { "updatedAt", updatedAt }};
         saveUsers();
         json r = okay(); r["progress"] = me.learnProgress; return r;
