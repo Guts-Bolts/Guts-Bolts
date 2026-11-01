@@ -467,10 +467,10 @@ void Editor::loadLearnProgress() {
     const long long userId = Online::me().value("userId", 0LL);
     auto mergeFile = [this](const std::string& accountKey, bool allowCurrent) {
         std::ifstream in(Paths::file("studio_learn_progress_" + accountKey + ".json"), std::ios::binary);
-        if (!in) return false;
+        if (!in) return;
         std::stringstream data; data << in.rdbuf();
         const nlohmann::json saved = nlohmann::json::parse(data.str(), nullptr, false);
-        if (!saved.is_object()) return false;
+        if (!saved.is_object()) return;
         if (saved.contains("completed") && saved["completed"].is_array()) {
             for (const auto& value : saved["completed"]) if (value.is_string()) {
                 const std::string id = value.get<std::string>();
@@ -478,29 +478,29 @@ void Editor::loadLearnProgress() {
                     if (id == kStudioLearnIds[i]) m_learnCompleted.insert(i);
             }
         }
-        bool loadedCurrent = false;
-        if (allowCurrent && saved.contains("current") && saved["current"].is_string()) {
-            const std::string id = saved["current"].get<std::string>();
-            for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
-                m_learnLesson = i;
-                m_learnHasSavedCurrent = true;
-                loadedCurrent = true;
-                break;
+        const long long savedUpdatedAt = saved.contains("updatedAt") && saved["updatedAt"].is_number_integer()
+            ? std::max(0LL, saved["updatedAt"].get<long long>()) : 0LL;
+        const bool newest = savedUpdatedAt > m_learnProgressUpdatedAt ||
+                            (savedUpdatedAt == m_learnProgressUpdatedAt && !m_learnHasSavedCurrent);
+        if (newest) {
+            m_learnProgressUpdatedAt = savedUpdatedAt;
+            if (allowCurrent && saved.contains("current") && saved["current"].is_string()) {
+                const std::string id = saved["current"].get<std::string>();
+                for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
+                    m_learnLesson = i;
+                    m_learnHasSavedCurrent = true;
+                    if (saved.contains("step") && saved["step"].is_number_integer())
+                        m_learnDemoStep = std::clamp(saved["step"].get<int>(), 0, 2);
+                    break;
+                }
             }
         }
-        if (loadedCurrent && saved.contains("step") && saved["step"].is_number_integer())
-            m_learnDemoStep = std::clamp(saved["step"].get<int>(), 0, 2);
-        return loadedCurrent;
     };
 
     if (userId > 0) {
         mergeFile(std::to_string(userId), true);
-        // Guest progress is imported on first sign-in instead of disappearing when
-        // Studio switches from the guest file to the account-specific file.
-        if (!m_learnHasSavedCurrent)
-            m_learnLoadedGuestProgress = mergeFile("guest", true);
-        else
-            mergeFile("guest", false); // keep completed lessons without replacing account resume state
+        // Import guest completions, and use the more recently updated resume point.
+        mergeFile("guest", true);
     } else {
         mergeFile("guest", true);
     }
@@ -510,9 +510,13 @@ void Editor::saveLearnProgress() {
     loadLearnProgress();
     nlohmann::json completed = nlohmann::json::array();
     for (int i : m_learnCompleted) if (i >= 0 && i < kStudioLearnCount) completed.push_back(kStudioLearnIds[i]);
+    const long long localNow = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    m_learnProgressUpdatedAt = std::max(m_learnProgressUpdatedAt, localNow);
     nlohmann::json progress = {{ "completed", completed },
         { "current", kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] },
-        { "step", std::clamp(m_learnDemoStep, 0, 2) }};
+        { "step", std::clamp(m_learnDemoStep, 0, 2) },
+        { "updatedAt", m_learnProgressUpdatedAt }};
     const long long userId = Online::me().value("userId", 0LL);
     const std::string accountKey = userId > 0 ? std::to_string(userId) : "guest";
     const auto path = Paths::file("studio_learn_progress_" + accountKey + ".json");
@@ -557,7 +561,7 @@ void Editor::renderLearn() {
         m_learnCompleted.clear();
         m_learnLesson = 0; m_learnDemoStep = 0; m_learnHint = 0; m_learnPractice = false;
         m_learnHasSavedCurrent = false;
-        m_learnLoadedGuestProgress = false;
+        m_learnProgressUpdatedAt = 0;
         m_learnPaused = false;
         m_learnExplicitLaunch = false;
         m_learnSawPlay = false; m_learnSawPublish = false; m_learnWasPlaying = m_playing;
@@ -583,20 +587,20 @@ void Editor::renderLearn() {
                     for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) m_learnCompleted.insert(i);
                 }
             }
-            if ((!m_learnHasSavedCurrent || m_learnLoadedGuestProgress) &&
-                remote.contains("current") && remote["current"].is_string()) {
-                const std::string remoteCurrent = remote["current"].get<std::string>();
-                if (!m_learnExplicitLaunch) {
+            const long long remoteUpdatedAt = remote.contains("updatedAt") && remote["updatedAt"].is_number_integer()
+                ? std::max(0LL, remote["updatedAt"].get<long long>()) : 0LL;
+            if (remoteUpdatedAt > m_learnProgressUpdatedAt) {
+                const std::string remoteCurrent = remote.value("current", std::string());
+                if (!m_learnExplicitLaunch && !remoteCurrent.empty()) {
                     for (int i = 0; i < kStudioLearnCount; ++i) if (remoteCurrent == kStudioLearnIds[i]) {
                         m_learnLesson = i;
                         m_learnHasSavedCurrent = true;
-                        m_learnLoadedGuestProgress = false;
+                        if (remote.contains("step") && remote["step"].is_number_integer())
+                            m_learnDemoStep = std::clamp(remote["step"].get<int>(), 0, 2);
                         break;
                     }
                 }
-                if (remoteCurrent == kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] &&
-                    remote.contains("step") && remote["step"].is_number_integer())
-                    m_learnDemoStep = std::clamp(remote["step"].get<int>(), 0, 2);
+                m_learnProgressUpdatedAt = remoteUpdatedAt;
             }
             m_learnHasSavedCurrent = true;
             saveLearnProgress();
