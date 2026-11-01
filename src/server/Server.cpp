@@ -605,7 +605,10 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             }
             int step = me.learnProgress.is_object() && me.learnProgress.contains("step") && me.learnProgress["step"].is_number_integer()
                 ? std::clamp(me.learnProgress["step"].get<int>(), 0, 2) : 0;
-            json r = okay(); r["progress"] = {{ "completed", completed }, { "current", current }, { "step", step }}; return r;
+            long long updatedAt = me.learnProgress.is_object() && me.learnProgress.contains("updatedAt") &&
+                me.learnProgress["updatedAt"].is_number_integer()
+                ? std::max(0LL, me.learnProgress["updatedAt"].get<long long>()) : 0LL;
+            json r = okay(); r["progress"] = {{ "completed", completed }, { "current", current }, { "step", step }, { "updatedAt", updatedAt }}; return r;
         }
         if (!args.contains("completed") || !args["completed"].is_array() || args["completed"].size() > 20)
             return fail("Studio Learn progress must contain a list of up to 20 completed lessons.");
@@ -630,7 +633,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         const int step = args.value("step", 0);
         if (!current.empty() && !lessonIds.count(current))
             return fail("Studio Learn progress contains an unknown current lesson.");
-        me.learnProgress = {{ "completed", completed }, { "current", current }, { "step", step }};
+        me.learnProgress = {{ "completed", completed }, { "current", current }, { "step", step }, { "updatedAt", Online::unixNow() }};
         saveUsers();
         json r = okay(); r["progress"] = me.learnProgress; return r;
     }
