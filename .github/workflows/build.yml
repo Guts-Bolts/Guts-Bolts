@@ -79,7 +79,7 @@ jobs:
         run: |
           cp android/app/build/outputs/apk/phone/release/app-phone-release.apk GutsAndBoltsPlayer-Android.apk
           cp android/app/build/outputs/apk/quest/release/app-quest-release.apk GutsAndBoltsPlayer-Quest.apk
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: android
           path: |
@@ -129,7 +129,7 @@ jobs:
             echo "Verified resource directory: $resource"
           done
           ditto -c -k --sequesterRsrc --keepParent "$app" GutsAndBoltsPlayer-iOS-Simulator.zip
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ios-simulator-app
           path: GutsAndBoltsPlayer-iOS-Simulator.zip
@@ -161,7 +161,7 @@ jobs:
         run: |
           source "$HOME/emsdk/emsdk_env.sh"
           web/build.sh
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: web
           path: web/out
@@ -189,7 +189,7 @@ jobs:
           cp build/GutsAndBolts build/GutsAndBoltsPlayer build/GutsAndBoltsGameServer GutsAndBolts-Linux/
           cp -r games catalog GutsAndBolts-Linux/
           tar czf GutsAndBolts-Linux.tar.gz GutsAndBolts-Linux
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: linux
           path: GutsAndBolts-Linux.tar.gz
@@ -220,7 +220,7 @@ jobs:
           mkdir -p GutsAndBolts-Windows
           cp build/*.exe build/*.dll GutsAndBolts-Windows/ 2>/dev/null || cp build/*.exe GutsAndBolts-Windows/
           cp -r games catalog GutsAndBolts-Windows/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: windows
           path: GutsAndBolts-Windows
@@ -247,7 +247,7 @@ jobs:
           cp build/GutsAndBolts build/GutsAndBoltsPlayer build/GutsAndBoltsGameServer GutsAndBolts-macOS/
           cp -r games catalog GutsAndBolts-macOS/
           zip -r GutsAndBolts-macOS.zip GutsAndBolts-macOS
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: macos
           path: GutsAndBolts-macOS.zip
