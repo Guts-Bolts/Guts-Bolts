@@ -5,7 +5,11 @@
 //   GET  /download/<file>              the newest copy of that file
 //   PUT  /download/upload/<file>?version=X   (the release workflow, with its GitHub token)
 //   POST /download/publish             (the release workflow) {version, name, notes, files}
+import { readLimitedBytes, readLimitedText } from './http.js';
+
 const FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
+const MAX_RELEASE_FILE = 100 * 1024 * 1024;
+const MAX_MANIFEST = 64 * 1024;
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
@@ -77,8 +81,10 @@ export async function handleDownload(request, env, url) {
   if (rest.startsWith('upload/') || rest === 'publish') {
     if (!(await allowed(request))) return json({ ok: false, error: 'Not allowed.' }, 403);
     if (rest === 'publish' && request.method === 'POST') {
+      const text = await readLimitedText(request, MAX_MANIFEST);
+      if (text === null) return json({ ok: false, error: 'Manifest is too large.' }, 413);
       let m;
-      try { m = await request.json(); } catch { return json({ ok: false, error: 'Bad manifest.' }, 400); }
+      try { m = JSON.parse(text); } catch { return json({ ok: false, error: 'Bad manifest.' }, 400); }
       if (!m || typeof m.version !== 'string' || !m.files || typeof m.files !== 'object') return json({ ok: false, error: 'Bad manifest.' }, 400);
       const manifest = { version: m.version.replace(/^v/, ''), name: String(m.name || ''), notes: String(m.notes || '').slice(0, 20000),
         date: Math.floor(Date.now() / 1000), files: m.files };
@@ -87,7 +93,10 @@ export async function handleDownload(request, env, url) {
     }
     const name = rest.slice('upload/'.length), version = (url.searchParams.get('version') || '').replace(/^v/, '');
     if (request.method !== 'PUT' || !FILE.test(name) || !/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version)) return json({ ok: false, error: 'Bad upload.' }, 400);
-    const body = await request.arrayBuffer();
+    const length = Number(request.headers.get('content-length') || 0);
+    if (length > MAX_RELEASE_FILE) return json({ ok: false, error: 'Release file is too large.' }, 413);
+    const body = await readLimitedBytes(request, MAX_RELEASE_FILE);
+    if (body === null) return json({ ok: false, error: 'Release file is too large.' }, 413);
     if (!body.byteLength) return json({ ok: false, error: 'Empty file.' }, 400);
     const meta = { httpMetadata: { contentType: 'application/octet-stream', contentDisposition: 'attachment; filename="' + name + '"' } };
     await env.DOWNLOADS.put(version + '/' + name, body, meta);
