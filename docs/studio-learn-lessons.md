@@ -451,7 +451,7 @@ The current native runner validates the practice task against the scene rather t
 | 3. Build a Tiny Obby | At least three newly created Parts and a Play test |
 | 4. Your First Script | A new Script containing a print call and a Play test |
 | 5. Light Up the Scene | A new enabled light with a changed brightness, range or colour |
-| 6. Publish Your First Game | A published game ID is present |
+| 6. Publish Your First Game | A successful publish response was received during this practice challenge and a published game ID is present |
 | 7. Meet the Explorer | A new Part has been renamed to something other than its default primitive name |
 | 8. The Properties Panel | A pre-existing Part has been changed during practice |
 | 9. Copy, Group, Organize | A new Model contains child objects |
@@ -461,13 +461,13 @@ The current native runner validates the practice task against the scene rather t
 | 13. Collision Course | A new Part has CanCollide disabled |
 | 14. Connect the Parts | A new enabled Constraint has both endpoints assigned |
 | 15. Sound Check | A new Sound object exists |
-| 16. Your First GUI | A new ScreenGui and a new TextLabel or TextButton exist |
+| 16. Your First GUI | A new TextLabel or TextButton is parented to a new ScreenGui |
 | 17. Make Things Happen | A new Script contains an event connection and a Play test occurred |
 | 18. Remembering Values | A new Script declares a local variable, uses print, and is run |
 | 19. Find and Fix Bugs | A new Script contains the corrected print call, not the example typo, and is run |
-| 20. Build, Test, Improve | A Play test occurred and a Part was added or changed during the practice task |
+| 20. Build, Test, Improve | Two Play-test starts occurred with a Part added or changed between the tests |
 
-These checks are deliberately based on meaningful outcomes rather than exact coordinates or exact object names, except where the lesson itself teaches a specific named object such as SpawnLocation. A check can confirm the presence of a relevant editor change, but it cannot yet prove every quality aspect of a build (for example, that an obby is fun or that a spawn point is safe). The lesson text therefore still asks the learner to inspect and playtest their work.
+These checks are deliberately based on meaningful outcomes rather than exact coordinates or exact object names, except where the lesson itself teaches a specific named object such as SpawnLocation. A check can confirm the presence of a relevant editor change, but it cannot yet prove every quality aspect of a build (for example, that an obby is fun or that a spawn point is safe). The lesson text therefore still asks the learner to inspect and playtest their work. Publishing only counts after the publish operation returns success; merely opening the publish dialog does not complete that lesson.
 
 ### Current scope and remaining work
 
