@@ -54,7 +54,9 @@ test('Studio Learn preserves guest progress when the learner signs in and expose
   const header = read('src/editor/Editor.h');
   assert.ok(editor.includes('mergeFile("guest", true)'), 'guest progress is imported when no account resume state exists');
   assert.ok(editor.includes('mergeFile("guest", false)'), 'guest completions merge without replacing an account resume state');
-  assert.ok(editor.includes('m_learnLoadedGuestProgress'), 'remote account resume state can take precedence over imported guest current state');
+  assert.ok(editor.includes('savedUpdatedAt > m_learnProgressUpdatedAt'), 'the newest local account or guest resume point is selected');
+  assert.ok(editor.includes('remoteUpdatedAt > m_learnProgressUpdatedAt'), 'a newer account resume point wins over stale local state');
+  assert.ok(header.includes('m_learnProgressUpdatedAt'));
   assert.ok(header.includes('m_learnPaused'));
   assert.ok(editor.includes('Pause'));
   assert.ok(editor.includes('Resume lesson'));
@@ -79,5 +81,7 @@ test('website Learn tab and its launch action exist', () => {
   assert.ok(site.includes("data-act=\"startLearn\""));
   assert.ok(site.includes("gutsandbolts://learn/"));
   assert.ok(site.includes("learn.progress.get"));
+  assert.ok(site.includes("remoteUpdatedAt >= progress.updatedAt"), 'website chooses the latest timestamped resume point');
+  assert.ok(site.includes("Date.now() / 1000"), 'website stamps local lesson starts');
   assert.doesNotThrow(() => new Script(site, { filename: 'website/app/app.js' }), 'website app JavaScript parses');
 });
