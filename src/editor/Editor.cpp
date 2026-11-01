@@ -1291,7 +1291,8 @@ void Editor::renderLearn() {
                     break;
                 case 5:
                     targetName = m_learnDemoStep == 2 ? "Publish to Guts&Bolts" : "Properties";
-                    targetControl = m_learnDemoStep == 0 ? "file.saveAs" : "publish.menu";
+                    targetControl = m_learnDemoStep == 0 ? "file.gameSettings" :
+                                    m_learnDemoStep == 1 ? "file.save" : "publish.menu";
                     break;
                 case 6: targetName = "Explorer"; targetControl = m_learnDemoStep == 0 ? "explorer.filter" : "explorer.selected"; break;
                 case 7:
@@ -3703,7 +3704,9 @@ void Editor::renderMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem(m_team->active() ? "Team Create (on)..." : "Team Create...")) m_openTeam = true;
         ImGui::Separator();
-        if (ImGui::MenuItem("Game Settings...")) m_openInfo = true;
+        const bool gameSettingsMenu = ImGui::MenuItem("Game Settings...");
+        StudioLearnHighlight::mark("file.gameSettings");
+        if (gameSettingsMenu) m_openInfo = true;
         ImGui::Separator();
         const bool publishMenu = ImGui::MenuItem("Publish to Guts&Bolts...");
         StudioLearnHighlight::mark("publish.menu");
