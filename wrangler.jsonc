@@ -23,6 +23,8 @@
 //                the Cloudflare dashboard: Turnstile > Add widget (README: "DDoS and bot protection").
 //   TURNSTILE_HOSTNAMES  optional: the sites the check may come from, split by commas
 //                (default gutsandbolts.net).
+//   SUPABASE_URL  the Supabase project URL (public configuration, not a credential).
+//   SUPABASE_SECRET_KEY  a Secret from Supabase Settings > API Keys; server-only, never commit it.
 {
   "name": "project-guts-and-bolts",
   "main": "worker/index.js",
