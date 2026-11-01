@@ -961,8 +961,16 @@ export class GbServerObject extends DurableObject {
     const note = { id: randomHex(12), kind, text, about: id, at, read: false };
     u.notes = [note, ...(u.notes || [])].slice(0, kMaxNotes);
     this.saveUser(u);
+    const archiveMessage = ({
+      ticket: 'A new support ticket was submitted.',
+      support: 'There is an update to your support ticket.',
+      appeal: 'There is an update to an account appeal.',
+      gift: 'You received a gift notification.',
+      comment: 'Someone commented on an item you own.',
+      roadmap: 'Staff reviewed your roadmap idea.',
+    })[kind] || String(note.text);
     this.queueSupabaseEvent('gb_notifications', {
-      id: note.id, account_id: u.id, kind: note.kind, message: String(note.text).slice(0, 500),
+      id: note.id, account_id: u.id, kind: note.kind, message: archiveMessage.slice(0, 500),
       about: note.about || '', created_at: new Date(at * 1000).toISOString(), read_at: null,
     });
   }
