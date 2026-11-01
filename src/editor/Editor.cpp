@@ -1367,8 +1367,23 @@ void Editor::renderLearn() {
         const ImU32 outline = ImGui::GetColorU32(ImVec4(0.20f, 0.68f, 1.0f, 0.55f + pulse * 0.35f));
         if (targetControl) {
             ImVec2 min, max;
-            if (StudioLearnHighlight::find(targetControl, min, max))
-                ImGui::GetForegroundDrawList()->AddRect(min, max, outline, 4.0f, 0, 3.5f);
+            bool found = StudioLearnHighlight::find(targetControl, min, max);
+            const std::string requested = targetControl;
+            if (!found && requested.rfind("explorer.insert.", 0) == 0)
+                found = StudioLearnHighlight::find("explorer.insert.open", min, max);
+            if (!found && requested.rfind("file.", 0) == 0)
+                found = StudioLearnHighlight::find("file.menu", min, max);
+            if (!found && requested == "publish.confirm")
+                found = StudioLearnHighlight::find("publish.menu", min, max);
+            if (!found && requested.rfind("ribbon.", 0) == 0) {
+                const char* tab = requested.find("terrain") != std::string::npos ||
+                                  requested == "ribbon.Raise" || requested == "ribbon.Lower" ||
+                                  requested == "ribbon.Smooth" || requested == "ribbon.Paint" ||
+                                  requested == "ribbon.tab.TERRAIN" ? "ribbon.tab.TERRAIN" :
+                                  requested == "ribbon.Weld" ? "ribbon.tab.MODEL" : "ribbon.tab.HOME";
+                found = StudioLearnHighlight::find(tab, min, max);
+            }
+            if (found) ImGui::GetForegroundDrawList()->AddRect(min, max, outline, 4.0f, 0, 3.5f);
         }
         if (targetName) {
             ImGuiWindow* target = ImGui::FindWindowByName(targetName);
@@ -3672,7 +3687,9 @@ void Editor::buildDockspace() {
 void Editor::renderMenuBar() {
     if (!ImGui::BeginMenuBar()) return;
 
-    if (ImGui::BeginMenu("File")) {
+    const bool fileMenuOpen = ImGui::BeginMenu("File");
+    StudioLearnHighlight::mark("file.menu");
+    if (fileMenuOpen) {
         if (ImGui::MenuItem("New Game", "Ctrl+N")) {
             m_pending = Pending::New;
             if (m_dirty) m_openDiscard = true; else { newScene(); m_pending = Pending::None; }
