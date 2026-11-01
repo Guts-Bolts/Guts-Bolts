@@ -1902,6 +1902,100 @@ export class GbServerObject extends DurableObject {
     return { count: () => { for (const c of counters) c.n++; } };
   }
 
+  // Lightweight operator diagnostics. Never expose player records or raw SQL contents.
+  databaseDiagnostics() {
+    const tables = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades'];
+    const counts = {};
+    for (const table of tables) {
+      const rows = this.sql.exec('SELECT COUNT(*) AS count FROM "' + table + '"').toArray?.()
+        || Array.from(this.sql.exec('SELECT COUNT(*) AS count FROM "' + table + '"'));
+      counts[table] = Number(rows[0]?.count || 0);
+    }
+    const pragma = (name) => {
+      const rows = this.sql.exec('PRAGMA ' + name).toArray?.() || Array.from(this.sql.exec('PRAGMA ' + name));
+      return Number(rows[0]?.[name] || 0);
+    };
+    return {
+      databaseSizeBytes: Number(this.sql.databaseSize || 0),
+      pageCount: pragma('page_count'),
+      pageSizeBytes: pragma('page_size'),
+      freePages: pragma('freelist_count'),
+      tableRows: counts,
+      totalRows: Object.values(counts).reduce((sum, n) => sum + n, 0),
+      checkedAt: now(),
+    };
+  }
+
+  // Create one transactionally consistent, compressed logical export. The hard size
+  // ceiling prevents an unexpectedly large database from exhausting the DO's memory.
+  async backupToR2() {
+    const bucket = this.env.DB_BACKUPS;
+    if (!bucket) throw new Error('DB_BACKUPS R2 binding is not configured.');
+    const stats = this.databaseDiagnostics();
+    const maxBytes = Number(this.env.DB_BACKUP_MAX_BYTES || 134217728);
+    if (stats.databaseSizeBytes > maxBytes)
+      throw new Error('Database is larger than the configured safe backup limit; increase it only after reviewing memory headroom.');
+
+    const tableNames = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades'];
+    const snapshot = this.ctx.storage.transactionSync(() => tableNames.map((table) => {
+      const schemaRows = this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table).toArray?.()
+        || Array.from(this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table));
+      const rows = this.sql.exec('SELECT * FROM "' + table + '"').toArray?.()
+        || Array.from(this.sql.exec('SELECT * FROM "' + table + '"'));
+      return { name: table, schema: schemaRows[0]?.sql || null, rows: rows.map((row) => Object.fromEntries(
+        Object.entries(row).map(([key, value]) => {
+          if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+            const bytes = value instanceof ArrayBuffer ? new Uint8Array(value) : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+            return [key, { $gbBinary: btoa(binary) }];
+          }
+          return [key, value];
+        })
+      )) };
+    }));
+    const payload = JSON.stringify({
+      format: 'guts-and-bolts-sqlite-json-v1',
+      createdAt: new Date().toISOString(),
+      worker: 'project-guts-and-bolts',
+      database: stats,
+      tables: snapshot,
+    });
+    const bytes = new TextEncoder().encode(payload);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const sha256 = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+    const day = new Date().toISOString().slice(0, 10);
+    const key = 'daily/' + day + '/database.json.gz';
+    const compressed = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+    const object = await bucket.put(key, compressed, {
+      httpMetadata: { contentType: 'application/gzip' },
+      customMetadata: { sha256, format: 'guts-and-bolts-sqlite-json-v1', createdAt: new Date().toISOString() },
+    });
+    const manifest = {
+      format: 'guts-and-bolts-backup-manifest-v1',
+      key,
+      createdAt: new Date().toISOString(),
+      sha256,
+      uncompressedBytes: bytes.byteLength,
+      etag: object.etag,
+      database: stats,
+      tableRows: Object.fromEntries(snapshot.map((table) => [table.name, table.rows.length])),
+    };
+    await bucket.put('daily/' + day + '/manifest.json', JSON.stringify(manifest), {
+      httpMetadata: { contentType: 'application/json' },
+    });
+
+    // Retain 35 daily snapshots. Only delete keys in our own daily/ namespace.
+    const listing = await bucket.list({ prefix: 'daily/', limit: 1000 });
+    const cutoff = Date.now() - 35 * 86400000;
+    const expired = (listing.objects || []).filter((item) => {
+      const date = /^daily\/(\d{4}-\d{2}-\d{2})\//.exec(item.key);
+      return date && Date.parse(date[1] + 'T00:00:00Z') < cutoff;
+    }).map((item) => item.key);
+    if (expired.length) await bucket.delete(expired);
+    return { ok: true, key, sha256, bytes: bytes.byteLength, rows: stats.totalRows, retainedDays: 35 };
+  }
+
   handle(req, from = {}) {
     try {
       if (CONNECT_OPEN.has(req.op)) return this.connectOpen(req.op, req.args && typeof req.args === 'object' && !Array.isArray(req.args) ? req.args : {});
@@ -1924,6 +2018,11 @@ export class GbServerObject extends DurableObject {
   // --- the requests (GbServer::op) ---
   op(name, me, args) {
     const t = now(), today = utcDay(t);
+    if (name === 'staff.database.stats') {
+      if (!this.isStaff(me)) return fail('Only staff can view database diagnostics.');
+      return okay({ database: this.databaseDiagnostics() });
+    }
+
 
     if (name === 'hello') {
       let n = cleanText(str(args, 'name'), 20);
