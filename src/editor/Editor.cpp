@@ -495,7 +495,7 @@ void Editor::saveLearnProgress() {
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (out) out << progress.dump(2);
     m_learnHasSavedCurrent = true;
-    if (Online::online() && Online::me().value("userId", 0LL) > 0) {
+    if (m_learnSyncReady && Online::online() && Online::me().value("userId", 0LL) > 0) {
         Online::request("learn.progress.save", progress, [](const nlohmann::json& r) {
             if (!r.value("ok", false)) Log::warn("Studio Learn progress wasn't synced: " + r.value("error", std::string("server error")));
         });
@@ -521,6 +521,7 @@ void Editor::renderLearn() {
         m_learnSyncRequested = true;
         Online::request("learn.progress.get", {}, [this](const nlohmann::json& r) {
             if (!r.value("ok", false) || !r.contains("progress") || !r["progress"].is_object()) return;
+            m_learnSyncReady = true;
             const auto& remote = r["progress"];
             if (remote.contains("completed") && remote["completed"].is_array()) {
                 for (const auto& value : remote["completed"]) if (value.is_string()) {

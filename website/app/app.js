@@ -1868,13 +1868,16 @@ const STUDIO_LESSONS = [
 async function learnPage(head) {
   const key = 'gb.studioLearn.' + (signedIn() ? me.id : 'guest');
   let progress = { completed: [], current: '' };
-  try {
-    const local = JSON.parse(localStorage.getItem(key) || 'null');
-    if (local && Array.isArray(local.completed)) progress = {
-      completed: local.completed.filter((x) => STUDIO_LESSONS.some((l) => l[0] === x)),
-      current: STUDIO_LESSONS.some((l) => l[0] === local.current) ? local.current : ''
-    };
-  } catch { /* local progress is optional in private browsing */ }
+  const localKeys = signedIn() ? [key, 'gb.studioLearn.guest'] : [key];
+  for (const localKey of localKeys) {
+    try {
+      const local = JSON.parse(localStorage.getItem(localKey) || 'null');
+      if (local && Array.isArray(local.completed)) {
+        progress.completed = [...new Set([...progress.completed, ...local.completed])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
+        if (!progress.current && STUDIO_LESSONS.some((l) => l[0] === local.current)) progress.current = local.current;
+      }
+    } catch { /* local progress is optional in private browsing */ }
+  }
   if (signedIn()) {
     const remote = await pageCall('learn.progress.get', {});
     if (remote.ok && remote.progress) {

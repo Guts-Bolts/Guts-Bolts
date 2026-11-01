@@ -357,7 +357,7 @@ private:
     bool m_firstLayout = true;
     bool m_showSettings = false;
     bool m_showPerformance = false;
-    bool m_showLearn = false, m_learnLoaded = false, m_learnHasSavedCurrent = false, m_learnSyncRequested = false;
+    bool m_showLearn = false, m_learnLoaded = false, m_learnHasSavedCurrent = false, m_learnSyncRequested = false, m_learnSyncReady = false;
     int m_learnLesson = 0, m_learnDemoStep = 0, m_learnHint = 0;
     bool m_learnPractice = false, m_learnSawPlay = false, m_learnSawPublish = false, m_learnWasPlaying = false;
     int m_learnPlayStarts = 0;
