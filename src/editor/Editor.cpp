@@ -765,7 +765,7 @@ void Editor::renderLearn() {
                 }
             });
             auto hasText = [](const std::vector<SceneNode*>& nodes, const std::string& a,
-                              const std::string& b = std::string()) {
+                              const std::string& b) {
                 for (SceneNode* n : nodes)
                     if (n->source.find(a) != std::string::npos &&
                         (b.empty() || n->source.find(b) != std::string::npos)) return true;
@@ -789,7 +789,7 @@ void Editor::renderLearn() {
                     feedback = "Create at least three new Parts for the route, then test it with F5.";
                     break;
                 case 3:
-                    passed = m_learnSawPlay && hasText(newScripts, "print(");
+                    passed = m_learnSawPlay && hasText(newScripts, "print(", "");
                     feedback = "Create a new Script containing print(...), then run it with F5.";
                     break;
                 case 4:
@@ -864,7 +864,7 @@ void Editor::renderLearn() {
                     break;
                 }
                 case 16:
-                    passed = m_learnSawPlay && (hasText(newScripts, ".Connect") || hasText(newScripts, "Connect("));
+                    passed = m_learnSawPlay && (hasText(newScripts, ".Connect", "") || hasText(newScripts, "Connect(", ""));
                     feedback = "Create a new Script with an event connection using :Connect(...), then test it with F5.";
                     break;
                 case 17:
@@ -872,7 +872,7 @@ void Editor::renderLearn() {
                     feedback = "Create a new Script that declares a local variable and uses it in print(...), then run it.";
                     break;
                 case 18:
-                    passed = m_learnSawPlay && hasText(newScripts, "print(") && !hasText(newScripts, "pritn(");
+                    passed = m_learnSawPlay && hasText(newScripts, "print(") && !hasText(newScripts, "pritn(", "");
                     feedback = "Create a practice Script, reproduce a typo, correct it to print(...), and run it with F5.";
                     break;
                 case 19:
