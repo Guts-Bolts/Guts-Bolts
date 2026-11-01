@@ -60,6 +60,15 @@ void onlineLine() {
 
 } // namespace
 
+bool Editor::requireStudioLogin(const char* action) {
+    if (!Account::id().empty() && Online::online() && Online::me().value("userId", 0LL) > 0)
+        return true;
+    m_studioLoginMessage = std::string("Sign in to ") + action + ". Your work stays available offline.";
+    m_openStudioLogin = true;
+    if (!Online::online()) Online::connect();
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // File > Guts&Bolts Server...
 // ---------------------------------------------------------------------------
@@ -76,12 +85,15 @@ void Editor::renderServerDialog() {
     if (ImGui::Button("Close", ImVec2(100, 0))) ImGui::CloseCurrentPopup();
     ImGui::Spacing();
     onlineLine();
-    if (Online::online()) {
+    if (Online::online() && Online::me().value("userId", 0LL) > 0) {
         const json& me = Online::me();
         ImGui::Text("Signed in as %s", me.value("name", std::string()).c_str());
         if (me.value("verified", false)) { ImGui::SameLine(0, 4); Badges::check(); }
         ImGui::SameLine();
         ImGui::TextDisabled("(%s Bolts)", Bolts::format(Online::bolts()).c_str());
+    } else {
+        ImGui::TextWrapped("You can build and test games offline. Sign in only when you're ready to publish to the site.");
+        if (ImGui::Button("Sign in to publish", ImVec2(180, 30))) requireStudioLogin("publish to Guts & Bolts");
     }
     ImGui::EndPopup();
 }
@@ -92,6 +104,7 @@ void Editor::renderServerDialog() {
 
 void Editor::publishGame(const std::string& name, const std::string& description, bool update,
                          std::function<void(const json&)> done) {
+    if (!requireStudioLogin("publish this game")) { if (done) done(json{{"ok", false}, {"error", "Sign in is required to publish."}}); return; }
     std::string data = Serializer::saveScene(*m_scene);
     std::string picture = m_viewport->snapshotPng(480, 270);   // for the game's card on the site
     json args = {{"name", name}, {"description", description}, {"data", Online::base64Encode(data)}};
@@ -126,6 +139,14 @@ void Editor::renderPublishDialog() {
     }
     ImGui::SetNextWindowSize(ImVec2(520, 0));
     if (!ImGui::BeginPopupModal("Publish to Guts&Bolts", nullptr, ImGuiWindowFlags_NoResize)) return;
+    if (Account::id().empty() || !Online::online() || Online::me().value("userId", 0LL) <= 0) {
+        ImGui::TextWrapped("Studio works offline. To publish this game to the website, connect and sign in first.");
+        if (ImGui::Button("Sign in to publish", ImVec2(180, 30))) requireStudioLogin("publish this game");
+        ImGui::SameLine();
+        if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
     if (!Online::online()) {
         ImGui::TextWrapped("Publishing puts your game on a Guts&Bolts server, where everyone can find and play it "
                            "from the site's home page.");
@@ -405,7 +426,8 @@ void Editor::renderPluginLibrary() {
                 }
                 ImGui::TextDisabled(verified ? "You're Verified: publishing is free, and you can sell it."
                                              : "Publishing a plugin costs 20 Bolts (free for Verified creators).");
-                ImGui::BeginDisabled(m_onlineBusy);
+                const bool canPublish = !Account::id().empty() && Online::online() && Online::me().value("userId", 0LL) > 0;
+                ImGui::BeginDisabled(m_onlineBusy || !canPublish);
                 if (ImGui::Button("Publish plugin")) {
                     auto& p = *list[m_publishPluginIndex];
                     m_onlineBusy = true;
@@ -420,6 +442,7 @@ void Editor::renderPluginLibrary() {
                     });
                 }
                 ImGui::EndDisabled();
+                if (!canPublish && ImGui::Button("Sign in to publish plugin")) requireStudioLogin("publish this plugin");
             }
             ImGui::EndTabItem();
         }
@@ -460,6 +483,14 @@ void Editor::renderPublishModelDialog() {
     }
     ImGui::SetNextWindowSize(ImVec2(520, 0));
     if (!ImGui::BeginPopupModal("Publish to Library", nullptr, ImGuiWindowFlags_NoResize)) return;
+    if (Account::id().empty() || !Online::online() || Online::me().value("userId", 0LL) <= 0) {
+        ImGui::TextWrapped("Studio works offline. Sign in when you're ready to publish this selection to the Library.");
+        if (ImGui::Button("Sign in to publish", ImVec2(180, 30))) requireStudioLogin("publish to the Library");
+        ImGui::SameLine();
+        if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
     std::vector<SceneNode*> items;
     for (SceneNode* n : m_scene->selectionRoots())
         if (n != m_scene->root() && !m_scene->isCharacterPart(n)) items.push_back(n);
@@ -1051,7 +1082,8 @@ void Editor::renderAccessoryWindow() {
     ImGui::InputTextMultiline("Description", &m_accessoryDesc, ImVec2(-90, 50));
     ImGui::SetNextItemWidth(140);
     if (ImGui::InputInt("Price (Bolts)", &m_accessoryPrice, 5, 50)) m_accessoryPrice = std::clamp(m_accessoryPrice, 0, 1000000);
-    ImGui::BeginDisabled(!saved || m_onlineBusy);
+    const bool canPublishAccessory = !Account::id().empty() && Online::online() && Online::me().value("userId", 0LL) > 0;
+    ImGui::BeginDisabled(!saved || m_onlineBusy || !canPublishAccessory);
     if (ImGui::Button("Upload", ImVec2(140, 30))) {
         json place = json::parse(saved->s, nullptr, false);
         json node = json::parse(Serializer::nodeToString(*model), nullptr, false);
@@ -1081,9 +1113,10 @@ void Editor::renderAccessoryWindow() {
         }
     }
     ImGui::EndDisabled();
+    if (!canPublishAccessory && ImGui::Button("Sign in to upload accessories")) requireStudioLogin("upload accessories");
     const Attribute* catalogId = model->findAttribute("CatalogItemId");
     const std::string existingId = catalogId && catalogId->type == Attribute::String ? catalogId->s : std::string();
-    ImGui::BeginDisabled(existingId.empty() || !saved || m_onlineBusy);
+    ImGui::BeginDisabled(existingId.empty() || !saved || m_onlineBusy || !canPublishAccessory);
     if (ImGui::Button("Update existing item", ImVec2(190, 30))) {
         json place = json::parse(saved->s, nullptr, false);
         json node = json::parse(Serializer::nodeToString(*model), nullptr, false);

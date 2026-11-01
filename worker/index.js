@@ -16,10 +16,11 @@
 // Object), so it's online even when your computer is off. If GB_SERVER is set
 // (host:port), /api is passed on to that server instead, over TCP.
 import { connect } from 'cloudflare:sockets';
-import { GbServerObject } from './server.js';
+import { GbServerObject, readLimitedText } from './server.js';
 import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
+import { checkSupabaseHealth } from './supabase.js';
 export { GbServerObject };
 
 const MAX_REQUEST = 40 * 1024 * 1024;   // a whole game, base64
@@ -164,7 +165,8 @@ export default {
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
     const picture = /^\/(thumb|icon|shot|wear|decal|avatar)\//.test(url.pathname);
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
-    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') ? 'api' : mcp ? 'mcp' : '';
+    const supabaseHealthPath = url.pathname === '/api/supabase/health';
+    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath ? 'api' : mcp ? 'mcp' : '';
     let info = null;
     if (kind) {
       info = await check(request, env, url, kind);
@@ -175,6 +177,11 @@ export default {
     if (mcp) return handleMcp(request, env, url, serverAsk);
     if (url.pathname === '/api/info') {
       return reply({ ok: true, server: env.GB_SERVER || 'cloudflare', time: Math.floor(Date.now() / 1000) });
+    }
+    if (supabaseHealthPath) {
+      if (request.method !== 'GET') return reply({ ok: false, error: 'Use GET.' }, 405);
+      const health = await checkSupabaseHealth(env);
+      return reply({ ok: health.connected, supabase: health }, health.connected ? 200 : 503);
     }
     // The server on Cloudflare: one Durable Object holds everything.
     const builtIn = () => env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main'));
@@ -188,8 +195,8 @@ export default {
       }
       const len = Number(request.headers.get('content-length') || 0);
       if (len > MAX_REQUEST) return reply({ ok: false, error: 'That\'s too big to send.' }, 413);
-      const text = await request.text();
-      if (text.length > MAX_REQUEST) return reply({ ok: false, error: 'That\'s too big to send.' }, 413);
+      const text = await readLimitedText(request, MAX_REQUEST);
+      if (text === null) return reply({ ok: false, error: 'That\'s too big to send.' }, 413);
       let req;
       try {
         req = JSON.parse(text);   // only pass on proper requests

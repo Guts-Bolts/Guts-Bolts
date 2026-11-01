@@ -87,6 +87,7 @@ public:
 
 private:
     void buildDockspace();
+    void renderStudioLogin();
     void renderMenuBar();
     void renderToolbar();
     void renderStatusBar();
@@ -191,6 +192,7 @@ private:
     SceneNode* uvNode();                     // the MeshPart the UV Editor shows
     // Online: the Guts&Bolts server, publishing and the Library (EditorOnline.cpp)
     void       renderServerDialog();
+    bool       requireStudioLogin(const char* action);
     void       renderPublishDialog();
     void       renderPluginLibrary();
     void       renderPublishModelDialog();   // File > Publish Selection to Library
@@ -481,6 +483,15 @@ private:
     std::string m_path;                         // current file ("" = never saved)
     bool        m_dirty = false;
     std::string m_shownTitle;
+
+    // Optional account sign-in. Studio remains fully usable offline; this is opened
+    // only when the user chooses a publishing action or asks to sign in.
+    bool        m_openStudioLogin = false;
+    bool        m_studioLoginBusy = false;
+    bool        m_studioLoginNeedCode = false;
+    bool        m_studioLoginAppCode = false;
+    bool        m_studioLoginFinishing = false;
+    std::string m_studioLoginUser, m_studioLoginPass, m_studioLoginCode, m_studioLoginMessage;
 
     // Dialogs
     enum class Pending { None, New, Open, OpenDropped };

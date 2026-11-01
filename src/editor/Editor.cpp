@@ -36,6 +36,7 @@
 #include "../game/SettingsWindow.h"
 #include "../game/UpdateToast.h"
 #include "../core/Settings.h"
+#include "../core/Account.h"
 #include "../renderer/MeshLibrary.h"
 #include "../core/Log.h"
 #include "../core/I18n.h"
@@ -164,6 +165,156 @@ Editor::~Editor() {
     m_team.reset();
     if (m_session) m_session->stop();
     dropAutoSave();   // a normal close: nothing to recover next time
+}
+
+
+void Editor::renderStudioLogin() {
+    // Close the optional sign-in window once the account session is ready.
+    if (Online::me().value("userId", 0LL) > 0 && !Account::id().empty()) {
+        m_openStudioLogin = false;
+        m_studioLoginFinishing = false;
+        m_studioLoginMessage.clear();
+        return;
+    }
+    // If the account handshake fails after credentials were accepted, let the user retry.
+    if (m_studioLoginFinishing && Online::status() == Online::Status::Failed) {
+        m_studioLoginFinishing = false;
+        m_studioLoginMessage = Online::statusText();
+    }
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const ImVec2 size(std::min(500.0f, viewport->WorkSize.x - 24.0f),
+                      std::min(520.0f, viewport->WorkSize.y - 24.0f));
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + (viewport->WorkSize.x - size.x) * 0.5f,
+                                   viewport->WorkPos.y + (viewport->WorkSize.y - size.y) * 0.5f), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(size, ImGuiCond_Always);
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking |
+                             ImGuiWindowFlags_NoSavedSettings;
+    if (!ImGui::Begin("Guts & Bolts Studio - Sign in", nullptr, flags)) {
+        ImGui::End();
+        return;
+    }
+
+    ImGui::Dummy(ImVec2(0, 18));
+    const char* heading = "Welcome to Studio";
+    const float headingWidth = ImGui::CalcTextSize(heading).x;
+    ImGui::SetCursorPosX(std::max(16.0f, (ImGui::GetWindowWidth() - headingWidth) * 0.5f));
+    ImGui::TextUnformatted(heading);
+    const char* subtitle = "Sign in to publish to Guts & Bolts. You can keep building and testing offline.";
+    const float subtitleWidth = ImGui::CalcTextSize(subtitle).x;
+    ImGui::SetCursorPosX(std::max(16.0f, (ImGui::GetWindowWidth() - subtitleWidth) * 0.5f));
+    ImGui::TextDisabled("%s", subtitle);
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Dummy(ImVec2(0, 10));
+
+    const float fieldWidth = std::max(180.0f, std::min(360.0f, ImGui::GetContentRegionAvail().x));
+    if (m_studioLoginFinishing) {
+        ImGui::Spacing();
+        ImGui::TextWrapped("Your credentials were accepted. Connecting Studio to your account...");
+    } else if (!Online::online()) {
+        ImGui::TextWrapped("%s", Online::statusText().empty()
+            ? "Connecting to the Guts & Bolts account service..."
+            : Online::statusText().c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("Try connection again", ImVec2(fieldWidth, 34))) Online::connect();
+        if (!m_studioLoginMessage.empty()) {
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", m_studioLoginMessage.c_str());
+        }
+    } else {
+        ImGui::TextUnformatted("Username");
+        ImGui::SetNextItemWidth(fieldWidth);
+        ImGui::InputTextWithHint("##studio-login-user", "Your Guts & Bolts username",
+                                 &m_studioLoginUser, ImGuiInputTextFlags_CharsNoBlank);
+        ImGui::Spacing();
+        ImGui::TextUnformatted("Password");
+        ImGui::SetNextItemWidth(fieldWidth);
+        bool enter = ImGui::InputTextWithHint("##studio-login-password", "Your password",
+            &m_studioLoginPass, ImGuiInputTextFlags_Password | ImGuiInputTextFlags_EnterReturnsTrue);
+        if (m_studioLoginNeedCode) {
+            ImGui::Spacing();
+            ImGui::TextUnformatted(m_studioLoginAppCode ? "Authenticator code" : "Email verification code");
+            ImGui::SetNextItemWidth(fieldWidth);
+            enter = ImGui::InputTextWithHint("##studio-login-code", "6-digit code",
+                &m_studioLoginCode, ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_EnterReturnsTrue) || enter;
+        }
+        ImGui::Spacing();
+        ImGui::BeginDisabled(m_studioLoginBusy);
+        if (ImGui::Button(m_studioLoginBusy ? "Signing in..." : "Sign in", ImVec2(fieldWidth, 38)) || (enter && !m_studioLoginBusy)) {
+            if (m_studioLoginUser.empty() || m_studioLoginPass.empty()) {
+                m_studioLoginMessage = "Enter your username and password.";
+            } else if (m_studioLoginNeedCode && m_studioLoginCode.size() != 6) {
+                m_studioLoginMessage = "Enter the 6-digit verification code.";
+            } else {
+                const std::string username = m_studioLoginUser;
+                const std::string password = m_studioLoginPass;
+                const std::string code = m_studioLoginCode;
+                m_studioLoginBusy = true;
+                m_studioLoginMessage = "Checking your account...";
+                Online::request("account.salt", {{"username", username}},
+                    [this, username, password, code](const nlohmann::json& saltReply) {
+                        if (!saltReply.value("ok", false)) {
+                            m_studioLoginBusy = false;
+                            m_studioLoginMessage = saltReply.value("error", std::string("Couldn't start sign-in."));
+                            return;
+                        }
+                        std::string lock, auth;
+                        if (!Account::passwordKeys(password, saltReply.value("salt", std::string()), lock, auth)) {
+                            m_studioLoginBusy = false;
+                            m_studioLoginMessage = "Couldn't prepare your sign-in. Please try again.";
+                            return;
+                        }
+                        nlohmann::json args = {{"username", username}, {"auth", auth}};
+                        if (!code.empty()) args["code"] = code;
+                        Online::request("account.login", args, [this, lock](const nlohmann::json& reply) {
+                            if (!reply.value("ok", false)) {
+                                m_studioLoginBusy = false;
+                                if (reply.value("needCode", false)) {
+                                    m_studioLoginNeedCode = true;
+                                    m_studioLoginAppCode = reply.value("app", false);
+                                }
+                                m_studioLoginMessage = reply.value("error", std::string("Couldn't sign in."));
+                                return;
+                            }
+                            const std::string keyAccount = reply.value("keyAccount",
+                                reply.value("account", std::string()));
+                            if (!Account::restoreKey(lock, reply.value("key", std::string())) ||
+                                Account::id() != keyAccount) {
+                                m_studioLoginBusy = false;
+                                m_studioLoginMessage = "Couldn't unlock your account on this device.";
+                                return;
+                            }
+                            Profile& profile = Profile::get();
+                            profile.name = reply.value("username", std::string("Player"));
+                            profile.grants.clear();
+                            profile.save();
+                            m_studioLoginPass.clear();
+                            m_studioLoginCode.clear();
+                            m_studioLoginNeedCode = false;
+                            m_studioLoginBusy = false;
+                            m_studioLoginFinishing = true;
+                            m_studioLoginMessage = "Signed in. Finishing connection...";
+                            Online::setServerAddress(Online::serverAddress());
+                        });
+                    });
+            }
+        }
+        ImGui::EndDisabled();
+        if (!m_studioLoginMessage.empty()) {
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", m_studioLoginMessage.c_str());
+        }
+        ImGui::Dummy(ImVec2(0, 8));
+        ImGui::TextDisabled("Your password stays on this device. Studio uses the same encrypted account-key login as the Player.");
+    }
+    ImGui::Separator();
+    if (ImGui::Button("Back to Studio (work offline)", ImVec2(fieldWidth, 32))) {
+        m_openStudioLogin = false;
+        m_studioLoginFinishing = false;
+        m_studioLoginMessage.clear();
+    }
+    ImGui::End();
 }
 
 void Editor::render(float dt) {
@@ -296,6 +447,8 @@ void Editor::render(float dt) {
     renderLevelGenerator();
     renderPhysicsReplay();
     renderCompare();
+    // Draw sign-in last so the optional account window stays above Studio's panels.
+    if (m_openStudioLogin) renderStudioLogin();
 
     trackChanges();
     updateTitle();
@@ -1573,7 +1726,7 @@ void Editor::saveFile(const std::string& path, bool sync) {
         if (published.empty()) {
             Log::system("Saved to " + path + ". It's only on this computer: use File > Publish to put it online "
                         "for everyone (and on the website).");
-        } else if (sync && Online::online()) {
+        } else if (sync && Online::online() && !Account::id().empty() && Online::me().value("userId", 0LL) > 0) {
             // Published: send the new version to the server, so the website and everyone playing it get it.
             Log::system("Saved to " + path + ". Updating the published game...");
             nlohmann::json args = {{"id", published}, {"name", info.title}, {"description", info.description},
@@ -1584,8 +1737,8 @@ void Editor::saveFile(const std::string& path, bool sync) {
                                " (File > Publish to try again.)");
             }, 120);
         } else {
-            Log::system("Saved to " + path + ". You're offline, so the published game wasn't updated: "
-                        "save again (or File > Publish) when you're back online.");
+            Log::system("Saved to " + path + ". The published game wasn't updated because you're offline or signed out. "
+                        "Sign in and save again (or use File > Publish) to update the site.");
         }
     } else {
         Log::error("Couldn't save to " + path);
