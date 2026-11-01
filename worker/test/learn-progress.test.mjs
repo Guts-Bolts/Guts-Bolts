@@ -12,11 +12,14 @@ test('Studio Learn progress is saved to the signed-in account', () => {
   assert.equal(saved.progress.step, 2);
   assert.ok(Number.isInteger(saved.progress.updatedAt) && saved.progress.updatedAt > 0, 'server timestamps the saved resume state');
   assert.deepEqual(s.call(a, 'learn.progress.get').progress, saved.progress);
-  const second = s.call(a, 'learn.progress.save', { completed: ['first-script'], current: 'tiny-obby', step: 1 });
+  const second = s.call(a, 'learn.progress.save', { completed: ['first-script'], current: 'tiny-obby', step: 1, updatedAt: saved.progress.updatedAt + 1 });
   assert.deepEqual(second.progress.completed, ['first-build', 'tiny-obby', 'first-script']);
   assert.equal(second.progress.current, 'tiny-obby');
   assert.equal(second.progress.step, 1);
-  assert.ok(second.progress.updatedAt >= saved.progress.updatedAt, 'newer saves advance the resume timestamp');
+  assert.ok(second.progress.updatedAt >= saved.progress.updatedAt + 1, 'newer saves advance the resume timestamp');
+  const stale = s.call(a, 'learn.progress.save', { completed: ['first-script'], current: 'first-build', step: 0, updatedAt: saved.progress.updatedAt });
+  assert.equal(stale.progress.current, 'tiny-obby', 'a stale device cannot replace the latest resume point');
+  assert.equal(stale.progress.step, 1);
   const row = s.sql.exec('SELECT data FROM users WHERE id = ?', a.id)[0];
   assert.ok(row, 'account row was written to persistent storage');
   assert.deepEqual(JSON.parse(row.data).learnProgress, second.progress);
@@ -34,6 +37,7 @@ test('Studio Learn progress rejects unknown IDs and malformed records', () => {
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: '../outside' }).ok, false);
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: 42 }).ok, false);
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: 'first-build', step: 3 }).ok, false);
+  assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: 'first-build', updatedAt: -1 }).ok, false);
   assert.equal(s.call(a, 'learn.progress.save', { completed: Array(21).fill('first-build'), current: '' }).ok, false);
 });
 
