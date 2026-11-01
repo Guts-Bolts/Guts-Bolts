@@ -1932,7 +1932,7 @@ export class GbServerObject extends DurableObject {
     const bucket = this.env.DB_BACKUPS;
     if (!bucket) throw new Error('DB_BACKUPS R2 binding is not configured.');
     const stats = this.databaseDiagnostics();
-    const maxBytes = Number(this.env.DB_BACKUP_MAX_BYTES || 134217728);
+    const maxBytes = Number(this.env.DB_BACKUP_MAX_BYTES || 16777216);
     if (stats.databaseSizeBytes > maxBytes)
       throw new Error('Database is larger than the configured safe backup limit; increase it only after reviewing memory headroom.');
 
