@@ -69,7 +69,7 @@ test('Supabase REST helper removes caller-supplied Authorization and keeps the s
 test('Supabase event writes use the server key and idempotent conflict handling', async () => {
   const { insertSupabaseRows } = await import('../supabase.js');
   await withFetch(async (input, init) => {
-    assert.match(new URL(input).pathname, /\\/rest\\/v1\\/gb_auction_events$/);
+    assert.equal(new URL(input).pathname, '/rest/v1/gb_auction_events');
     assert.equal(new URL(input).searchParams.get('on_conflict'), 'id');
     assert.equal(init.headers.get('apikey'), env.SUPABASE_SECRET_KEY);
     assert.match(init.headers.get('prefer'), /resolution=ignore-duplicates/);
