@@ -925,9 +925,12 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     }
 
     const float g = scene.world().gravity;
-    // Small steps (about 240 a second) with fewer solver passes each hold a tall
-    // stack still far better than a couple of big steps with lots of passes.
-    const int   substeps = std::clamp((int)std::ceil(dt * 240.0f - 0.01f), 2, 8);
+    // Keep rigid-body integration close to 240 Hz even when a frame is slow.
+    // The former eight-step ceiling dropped the simulation rate below 240 Hz
+    // whenever a frame took longer than 1/30 s, making fast impacts and stacked
+    // bodies noticeably less stable. The bounded twelve-step ceiling covers
+    // frames down to roughly 20 FPS without allowing an unbounded catch-up spiral.
+    const int   substeps = std::clamp((int)std::ceil(dt * 240.0f - 0.01f), 2, 12);
     const float h = dt / substeps;
 
     for (int step = 0; step < substeps; ++step) {

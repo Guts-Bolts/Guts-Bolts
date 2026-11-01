@@ -11,7 +11,7 @@
 //                page > "Copy official ID"). That account becomes user #1,
 //                "Guts", with the Staff and Verified badges. It's a public ID,
 //                safe to keep here.
-//   SERVER_NAME  the name the apps show for this server (default "Guts&Bolts").
+//   SERVER_NAME  the name the apps show for this server (default "Guts&Bolts")
 //   GB_SERVER    only to use a server on a computer instead (host:port).
 //   BREVO_API_KEY  (a Secret, not a variable) turns email on: password reset
 //                codes, two-step login codes, support ticket answers. Get one free
@@ -23,12 +23,29 @@
 //                the Cloudflare dashboard: Turnstile > Add widget (README: "DDoS and bot protection").
 //   TURNSTILE_HOSTNAMES  optional: the sites the check may come from, split by commas
 //                (default gutsandbolts.net).
+//   SUPABASE_URL  the Supabase project URL (public configuration, not a credential).
+//   SUPABASE_SECRET_KEY  a Secret from Supabase Settings > API Keys; server-only, never commit it.
 {
   "name": "project-guts-and-bolts",
   "main": "worker/index.js",
   "compatibility_date": "2026-09-01",
   "keep_vars": true,
   "triggers": { "crons": ["0 3 * * *"] },
+  // Persist sampled request logs and detect recurring production failures.
+  // Query strings are redacted so tokens and other URL parameters are not stored.
+  // Traces remain disabled until their volume and cost can be evaluated.
+  "observability": {
+    "enabled": true,
+    "redact_query_string": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "head_sampling_rate": 0.25,
+      "persist": true,
+      "destinations": ["cloudflare"]
+    },
+    "issues": { "enabled": true }
+  },
   // Before every deploy (and `wrangler dev`): gather the update log's files in
   // worker/updates/ and the built-in roadmap's in worker/roadmap/ into
   // worker/updates-gathered.js and worker/roadmap-gathered.js (see worker/gather-updates.mjs).
@@ -37,7 +54,10 @@
   // they're always on it (see addExampleGames in worker/server.js).
   // The emotes and animation packs (assets/emotes/*.gbemotes) are bundled the same way.
   "rules": [{ "type": "Text", "globs": ["**/*.gbscene", "**/*.gbemotes"], "fallthrough": true }],
-  "vars": { "OFFICIAL": "78587146c5027463ff988ef3dd4da3830482f59d6ac0e16fd29548c4a2c84c45" },
+  "vars": {
+    "OFFICIAL": "78587146c5027463ff988ef3dd4da3830482f59d6ac0e16fd29548c4a2c84c45",
+    "SUPABASE_URL": "https://pfpzmmsosyetkcoymoct.supabase.co"
+  },
   "assets": {
     "directory": "./website",
     "binding": "ASSETS",
@@ -51,7 +71,7 @@
   // Cloudflare's translator for in-game chat (chat.translate in worker/server.js). Free up to a
   // daily amount; after that, lines just show as they were said until the next day.
   "ai": { "binding": "AI" },
-  // The Player / Studio / Android downloads (worker/downloads.js).
+  // The Player / Studio downloads (worker/downloads.js).
   "r2_buckets": [
     { "binding": "DOWNLOADS", "bucket_name": "gutsandbolts-downloads" },
     { "binding": "DB_BACKUPS", "bucket_name": "guts-and-bolts-db-backups" }

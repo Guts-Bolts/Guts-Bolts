@@ -90,7 +90,7 @@ void draw(bool* open) {
     int q = s.quality;
     if (ImGui::Combo("Quality", &q, presets, IM_ARRAYSIZE(presets)) && q != GraphicsSettings::Custom)
         s.applyPreset(q);
-    help("Low = fastest, Ultra = best looking");
+    help("Low = maximum performance: reduced render scale, fewer lights, shorter view distance and a strict water budget. Medium balances performance and image quality. High and Ultra enable progressively more expensive effects.");
 
     bool custom = false;
     const char* resNames[] = {"1024 (fast)", "2048", "4096 (sharpest)"};
@@ -119,9 +119,7 @@ void draw(bool* open) {
     }
     const char* wq[] = {"Low", "Medium", "High", "Ultra"};
     custom |= ImGui::Combo("Water Quality", &s.waterQuality, wq, 4);
-    help("Real liquid (FluidSource / FluidEmitter). Low draws it at half resolution with up to 25,000 drops; "
-         "Medium 3/4 resolution, 60,000; High full resolution, 100,000; Ultra full resolution, extra smooth, "
-         "as many drops as the game allows.");
+    help("Real liquid (FluidSource / FluidEmitter). Low: half resolution, 1 smoothing pass, 8,000 drops. Medium: 3/4 resolution, 2 passes, 20,000 drops. High: full resolution, 3 passes, 60,000 drops. Ultra: full resolution, 4 passes, 150,000 drops. Lower water quality reduces simulation and rendering work.");
     if (custom) s.quality = GraphicsSettings::Custom;
 
     ImGui::SeparatorText("Graphics API");
