@@ -1005,9 +1005,11 @@ export class GbServerObject extends DurableObject {
   }
   recordForumActivity(thread, boardName, eventType, actorName) {
     if (!thread) return;
+    const board = FORUM_BOARDS.find((item) => item.id === thread.board);
+    if (!board || board.staffOnly) return;
     this.queueSupabaseEvent('gb_forum_activity', {
       id: randomHex(12), thread_id: thread.id, board_id: thread.board,
-      board_name: String(boardName || thread.board || '').slice(0, 80),
+      board_name: String(boardName || board.name).slice(0, 80),
       thread_title: String(thread.title || '').slice(0, 100), event_type: eventType,
       actor_name: String(actorName || '').slice(0, 40),
       post_excerpt: '', // Metadata-only: don't retain text after a post is deleted.
