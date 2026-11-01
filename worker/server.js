@@ -997,7 +997,7 @@ export class GbServerObject extends DurableObject {
       board_name: String(boardName || thread.board || '').slice(0, 80),
       thread_title: String(thread.title || '').slice(0, 100), event_type: eventType,
       actor_name: String(actorName || '').slice(0, 40),
-      post_excerpt: String(excerpt || '').replace(/\s+/g, ' ').slice(0, 180),
+      post_excerpt: '', // Metadata-only: don't retain text after a post is deleted.
       created_at: new Date(now() * 1000).toISOString(),
     });
   }
