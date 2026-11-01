@@ -33,4 +33,5 @@ jobs:
           tar -xzf "${archive}" gitleaks
           chmod +x gitleaks
       - name: Scan all reachable commits and working tree
-        run: ./gitleaks git --source . --redact --no-banner --exit-code 1
+        # Gitleaks 8.30.1 accepts the repository as a positional argument; --source is not supported here.
+        run: ./gitleaks git --redact --no-banner --exit-code 1 .
