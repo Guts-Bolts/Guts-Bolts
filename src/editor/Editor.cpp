@@ -492,6 +492,7 @@ void Editor::loadLearnProgress() {
                     m_learnHasSavedCurrent = true;
                     if (saved.contains("step") && saved["step"].is_number_integer())
                         m_learnDemoStep = std::clamp(saved["step"].get<int>(), 0, 2);
+                    m_learnPractice = saved.value("practice", false);
                     break;
                 }
             }
@@ -517,6 +518,7 @@ void Editor::saveLearnProgress() {
     nlohmann::json progress = {{ "completed", completed },
         { "current", kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] },
         { "step", std::clamp(m_learnDemoStep, 0, 2) },
+        { "practice", m_learnPractice },
         { "updatedAt", m_learnProgressUpdatedAt }};
     const long long userId = Online::me().value("userId", 0LL);
     const std::string accountKey = userId > 0 ? std::to_string(userId) : "guest";
@@ -536,12 +538,13 @@ void Editor::startLearnLesson(const std::string& id) {
     loadLearnProgress();
     for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
         const bool resume = m_learnHasSavedCurrent && m_learnLesson == i && !m_learnCompleted.count(i);
+        const bool resumePractice = resume && m_learnPractice;
         m_learnLesson = i;
         m_learnExplicitLaunch = true;
         if (!resume) m_learnDemoStep = 0;
         m_learnHint = 0;
         m_learnPaused = false; m_learnDemoActionDone = false;
-        m_learnPractice = false; m_learnSawPlay = false; m_learnSawPublish = false;
+        m_learnPractice = resumePractice; m_learnSawPlay = false; m_learnSawPublish = false;
         m_learnPlayStarts = 0; m_learnWasPlaying = m_playing; m_learnStatus.clear();
         m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
         m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
@@ -598,6 +601,8 @@ void Editor::renderLearn() {
                         m_learnHasSavedCurrent = true;
                         if (remote.contains("step") && remote["step"].is_number_integer())
                             m_learnDemoStep = std::clamp(remote["step"].get<int>(), 0, 2);
+                        if (remote.contains("practice") && remote["practice"].is_boolean())
+                            m_learnPractice = remote["practice"].get<bool>();
                         break;
                     }
                 }
