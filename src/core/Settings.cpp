@@ -25,11 +25,11 @@ void GraphicsSettings::applyPreset(int q) {
     switch (q) {
         case Low:
             shadowRes = 1024; shadowQuality = 0; ssao = false; bloom = false;
-            fxaa = false; postFx = true; renderScale = 0.75f; maxLights = 8; waterQuality = 0; renderDistance = 4;
+            fxaa = false; postFx = false; renderScale = 0.70f; maxLights = 6; waterQuality = 0; renderDistance = 3;
             break;
         case Medium:
-            shadowRes = 2048; shadowQuality = 1; ssao = false; bloom = true;
-            fxaa = true; postFx = true; renderScale = 1.0f; maxLights = 16; waterQuality = 1; renderDistance = 6;
+            shadowRes = 1024; shadowQuality = 0; ssao = false; bloom = true;
+            fxaa = true; postFx = true; renderScale = 0.85f; maxLights = 12; waterQuality = 1; renderDistance = 5;
             break;
         case High:
             shadowRes = 2048; shadowQuality = 2; ssao = true; bloom = true;
@@ -37,7 +37,7 @@ void GraphicsSettings::applyPreset(int q) {
             break;
         case Ultra:
             shadowRes = 4096; shadowQuality = 2; ssao = true; bloom = true;
-            fxaa = true; postFx = true; renderScale = 1.0f; maxLights = 32; waterQuality = 3; renderDistance = kMaxRenderDistance;   // Ultra: everything
+            fxaa = true; postFx = true; renderScale = 1.0f; maxLights = 32; waterQuality = 3; renderDistance = kMaxRenderDistance;
             break;
         default: break;
     }
@@ -47,9 +47,9 @@ void GraphicsSettings::load() {
     std::ifstream f(settingsFile());
 #ifdef GB_MOBILE
     if (!f) {
-        // First run on a phone: lighter settings so it stays smooth and cool.
-        applyPreset(Medium);
-        renderScale = 0.8f;
+        // First run on a phone: start with the performance preset to avoid
+        // overwhelming mobile GPUs and memory with high-resolution effects.
+        applyPreset(Low);
         showFps = false;
         checkUpdates = false;
         return;
@@ -74,6 +74,9 @@ void GraphicsSettings::load() {
     rd("translateChat", translateChat);
     rd("waterQuality", waterQuality); rd("graphicsApi", graphicsApi); rd("renderDistance", renderDistance);
     renderDistance = std::clamp(renderDistance, 1, kMaxRenderDistance);
+    waterQuality = std::clamp(waterQuality, 0, 3);
+    renderScale = std::clamp(renderScale, 0.5f, 2.0f);
+    maxLights = std::clamp(maxLights, 0, 32);
 }
 
 const char* const* GraphicsSettings::apiNames() {
