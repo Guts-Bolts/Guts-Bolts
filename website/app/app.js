@@ -450,7 +450,7 @@ function setMe(m) {
     const notes = me.unreadNotes || 0;
     box.innerHTML = html`<a class="bell" href="#/notifications" title="Notifications" aria-label="Notifications">${raw(BELL_SVG)}${notes ? html`<span class="unread">${notes > 99 ? '99+' : notes}</span>` : ''}</a>
       Hi, <a href="#/user/${me.userId}">${me.username}</a>${verified(me.verified)}
-      | <a href="#/bolts">${bolts(me.bolts)}</a> | <a href="#/settings">Settings</a> | <a href="#" data-act="logout">Logout</a>`.s;
+      | <a href="#/bolts">${bolts(me.bolts)}</a> | <a href="#/settings">Settings</a> | <button class="btn small logout-button" type="button" data-act="logout">Log out</button>`.s;
   } else {
     box.innerHTML = html`<a href="#/signup">Sign Up</a> | <a href="#/login">Login</a>`.s;
   }
@@ -577,6 +577,11 @@ function auctionBanner(a) {
     <div class="auction-home-clock"><span>TIME REMAINING</span><strong data-countdown="${au.endsAt}">${countdown(au.endsAt)}</strong><b class="auction-home-cta">BID NOW <span aria-hidden="true">&rarr;</span></b></div>
   </a>`;
 }
+function renderAuctionHomeSection(assets) {
+  const active = (assets || []).filter(auctionOpen).sort((a, b) => a.auction.endsAt - b.auction.endsAt);
+  if (!active.length) return '';
+  return html`<section class="auction-home-section"><div class="auction-home-section-head"><h2>LIVE AUCTIONS</h2><a href="#/catalog?cat=auctions">VIEW ALL AUCTIONS &raquo;</a></div>${auctionBanner(active[0])}${active.length > 1 ? html`<div class="auction-home-more"><span>MORE LIVE AUCTIONS</span>${active.slice(1, 4).map((a) => html`<a href="#/item/${a.id}"><span class="auction-mini-tag">AUCTION</span><b>${a.name}</b><span data-countdown="${a.auction.endsAt}">${countdown(a.auction.endsAt)}</span></a>`)}</div>` : ''}</section>`;
+}
 pages.home = async () => {
   // Everything the page needs is asked for at once, so it waits for one round trip, not four.
   const [games, items, fr, recent, favs, featured, , feedR, upd, mine, auctions] = await Promise.all([
@@ -617,8 +622,7 @@ pages.home = async () => {
     ${items.ok && items.assets.length ? html`<div class="grid">${items.assets.map(itemCard)}</div>`
       : html`<p class="muted small">Nothing here yet.</p>`}</div>`;
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
-  const activeAuctions = auctions.ok ? auctions.assets.filter(auctionOpen).sort((a, b) => a.auction.endsAt - b.auction.endsAt) : [];
-  const auctionBox = activeAuctions.length ? html`<section class="auction-home-section"><div class="auction-home-section-head"><h2>LIVE AUCTIONS</h2><a href="#/catalog?cat=auctions">VIEW ALL AUCTIONS &raquo;</a></div>${auctionBanner(activeAuctions[0])}${activeAuctions.length > 1 ? html`<div class="auction-home-more"><span>MORE LIVE AUCTIONS</span>${activeAuctions.slice(1, 4).map((a) => html`<a href="#/item/${a.id}"><span class="auction-mini-tag">AUCTION</span><b>${a.name}</b><span data-countdown="${a.auction.endsAt}">${countdown(a.auction.endsAt)}</span></a>`)}</div>` : ''}</section>` : '';
+  const auctionBox = html`<div id="liveAuctions">${renderAuctionHomeSection(auctions.ok ? auctions.assets : [])}</div>`;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
     <p><b>${latest.name}</b>${latest.version ? html` <span class="small muted">v${latest.version}</span>` : ''}
@@ -1517,7 +1521,7 @@ pages.item = async (id) => {
       <button class="btn ${packOn ? '' : 'green'} big buy" data-act="animpackEquip" data-id="${packOn ? '' : a.id}">${packOn ? 'Take off' : 'Use this pack'}</button>`
     : owned ? html`<p class="ok"><b>You own this${mineCopies.length ? ' (#' + mineCopies.map((c) => c.serial).join(', #') + ')' : ''}.</b></p>`
     : soldOut ? html`<button class="btn big buy" disabled>Sold out</button>`
-    : auOpen ? auctionBidBox(a)
+    : auOpen ? html`<div id="auctionLiveBid">${auctionBidBox(a)}</div>`
     : a.exclusive ? html`<button class="btn big buy" disabled>Exclusive</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
     : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
@@ -1566,7 +1570,7 @@ pages.item = async (id) => {
         <div class="item-side">
           <div class="item-buybox">
             ${L ? (soldOut ? html`<div class="item-left">Sold out</div>` : html`<div class="item-left">${L.left} Remaining</div>`) : ''}
-            ${auOpen ? html`<div class="item-offsale">Auction ends in <span data-countdown="${au.endsAt}">${countdown(au.endsAt)}</span></div>` : ''}
+            ${auOpen ? html`<div class="item-offsale">Auction ends in <span id="auctionEndsAt" data-countdown="${au.endsAt}">${countdown(au.endsAt)}</span></div>` : ''}
             ${timed ? html`<div class="item-offsale">Offsale in <span data-countdown="${a.offsaleAt}">${countdown(a.offsaleAt)}</span></div>`
               : offsale ? html`<div class="item-left">Off sale</div>` : ''}
             ${auOpen ? '' : html`<div class="item-price">Price: ${a.price > 0 ? bolts(a.price) : html`<b class="ok">Free</b>`}</div>`}
@@ -1616,7 +1620,7 @@ pages.item = async (id) => {
         <input type="number" name="stock" min="1" value="${L ? L.stock : 100}" style="max-width:140px">
         <p class="small muted">A Limited has a fixed number of numbered copies. When they're sold out, people buy and sell them from each other, and trade them.</p>
         <p><button class="btn gold">${L ? 'Save stock' : 'Make Limited'}</button></p></form>` : ''}</div>` : ''}
-    ${au && !au.cancelled ? auctionBidders(au, auOpen) : ''}
+    ${au && !au.cancelled ? html`<div id="auctionLiveBidders">${auctionBidders(au, auOpen)}</div>` : ''}
     ${L ? html`<h2>Resellers</h2>${forSale.length ? html`<table class="stats resellers"><tr><th>Seller</th><th>Copy</th><th>Price</th><th></th></tr>
         ${forSale.map((c) => html`<tr><td><a href="#/user/${c.owner}">${c.ownerName}</a></td><td>#${c.serial}</td><td>${bolts(c.price)}</td>
           <td><button class="btn green small" data-act="resaleBuy" data-id="${a.id}" data-serial="${c.serial}" data-price="${c.price}">Buy</button></td></tr>`)}</table>`
@@ -3268,12 +3272,14 @@ const langBox = () => html`<div class="box"><h2 class="boxhead">Language</h2>
     <p>The language for the website's menus and buttons. Things people wrote stay as they are.</p>
     <p><span class="lang-slot"></span> <span class="small muted">(only for this browser)</span></p></div>`;
 function themeBox() {
-  const on = gutstoberWanted();
+  const inSeason = isGutstober();
+  const on = inSeason && gutstoberWanted();
   return html`<div class="box"><h2 class="boxhead">Site theme</h2>
     <p><b>Gutstober</b>: the Halloween theme (orange and purple, pumpkins and bats) for all of October.
-      ${isGutstober() ? html`It's <b class="${on ? 'ok' : 'muted'}">${on ? 'on' : 'off'}</b> right now.` : html`<span class="muted">It comes back next October.</span>`}</p>
-    <p><button class="btn ${on ? '' : 'blue'}" data-act="gutstober" data-on="${on ? '' : '1'}">${on ? 'Turn Gutstober off' : 'Turn Gutstober on'}</button>
-      <span class="small muted">(only for this browser)</span></p></div>`;
+      ${inSeason ? html`It's <b class="${on ? 'ok' : 'muted'}">${on ? 'on' : 'off'}</b> right now.` : html`<span class="muted">Gutstober is packed away until next October. The theme and event assets are kept in storage for its return.</span>`}</p>
+    ${inSeason ? html`<p><button class="btn ${on ? '' : 'blue'}" data-act="gutstober" data-on="${on ? '' : '1'}">${on ? 'Turn Gutstober off' : 'Turn Gutstober on'}</button>
+      <span class="small muted">(only for this browser)</span></p>` : ''}
+    </div>`;
 }
 pages.settings = async () => {
   if (!signedIn()) { show(html`<h1>Account Settings</h1>${langBox()}${themeBox()}${needSignIn('change your account settings')}`); return; }
@@ -4774,6 +4780,63 @@ document.addEventListener('submit', async (e) => {
   try { await forms[f.dataset.form](f); } finally { if (btn) btn.disabled = false; }
 });
 
+
+// Keep auction information current without re-rendering the whole page or disturbing
+// a bid form the visitor is using. The server remains authoritative for every bid.
+let auctionRefreshBusy = false;
+async function refreshLiveAuctions() {
+  if (auctionRefreshBusy || document.visibilityState !== 'visible') return;
+  const path = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/');
+  if (path[0] !== 'home' && path[0] !== 'item') return;
+  auctionRefreshBusy = true;
+  try {
+    if (path[0] === 'home') {
+      const r = await pageCall('list', { kind: 'clothing', auctions: true, limit: 12 });
+      const section = $('#liveAuctions');
+      if (!r.ok || !section || (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home') !== 'home') return;
+      section.innerHTML = renderAuctionHomeSection(r.assets).s;
+      tickCountdowns();
+      upgradeItemPictures();
+      return;
+    }
+    const id = path[1];
+    if (!id) return;
+    const r = await pageCall('asset.info', { id });
+    if (!r.ok || !r.asset || !r.asset.auction) return;
+    if (location.hash.replace(/^#\/?/, '').split('?')[0] !== 'item/' + id) return;
+    const a = r.asset, au = a.auction, open = auctionOpen(a);
+    if (open && !$('#auctionLiveBid')) { render(); return; }
+    const bid = $('#auctionLiveBid');
+    if (bid) {
+      const currentInput = bid.querySelector('input[name="amount"]');
+      const keepFocus = currentInput && document.activeElement === currentInput;
+      const typedAmount = currentInput && currentInput.value;
+      bid.innerHTML = open ? auctionBidBox(a).s : html`<p class="muted">This auction has ended.</p>`.s;
+      const refreshedInput = bid.querySelector('input[name="amount"]');
+      if (keepFocus && refreshedInput) {
+        refreshedInput.value = typedAmount;
+        refreshedInput.focus({ preventScroll: true });
+      }
+    }
+    const bidders = $('#auctionLiveBidders');
+    if (bidders) bidders.innerHTML = au.cancelled ? '' : auctionBidders(au, open).s;
+    const ends = $('#auctionEndsAt');
+    if (ends) {
+      if (open) {
+        ends.dataset.countdown = String(au.endsAt);
+        ends.innerHTML = countdown(au.endsAt).s;
+      } else {
+        ends.parentElement.textContent = au.cancelled ? 'Auction cancelled' : 'Auction ended';
+      }
+    }
+    tickCountdowns();
+  } catch {
+    // A temporary polling failure must not disrupt the page; the next interval retries.
+  } finally {
+    auctionRefreshBusy = false;
+  }
+}
+
 // --- the page picker ------------------------------------------------------------------
 
 async function render() {
@@ -4818,4 +4881,6 @@ document.querySelector('.foot').append(languagePicker());
   checkRequests();
   checkUpdates();
   setInterval(() => { if (document.visibilityState === 'visible') { checkRequests(); checkUpdates(); keepFresh(); } }, 60000);
+  refreshLiveAuctions();
+  setInterval(refreshLiveAuctions, 12000);
 })();

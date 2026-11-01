@@ -2710,9 +2710,9 @@ void PlayerApp::drawAccount() {
         ImGui::TextDisabled("(user #%lld)", om.value("userId", 0LL));
         if (om.value("hasPassword", false)) {
             ImGui::SameLine();
-            if (ImGui::SmallButton("Log out")) ImGui::OpenPopup("##logout");
+            if (Classic::button("Log out", ImVec4(0.78f, 0.16f, 0.16f, 1.0f), ImVec2(112, 30))) ImGui::OpenPopup("##logout");
             if (ImGui::BeginPopup("##logout")) {
-                ImGui::TextUnformatted("Log out of this device? You can log back in with your username and password.");
+                ImGui::TextUnformatted("Log out of Guts&Bolts on this device? Your account stays safe, and you can sign back in with your username and password.");
                 if (ImGui::Button("Yes, log out")) { ImGui::CloseCurrentPopup(); logOut(); }
                 ImGui::EndPopup();
             }
