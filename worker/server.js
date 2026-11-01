@@ -11,6 +11,8 @@
 //
 // If you change a rule here, change it in src/server too (and the other way round).
 import { DurableObject } from 'cloudflare:workers';
+import { readLimitedText } from './http.js';
+export { readLimitedText } from './http.js';
 import wasmModule from '../website/app/gbcrypto.wasm';
 import { BUILT_IN_UPDATES } from './updates.js';
 import { filterText, nameHasHateWord } from './textfilter.js';
@@ -37,34 +39,6 @@ const EXAMPLE_GAMES = [
 
 // --- rules (src/online/Protocol.h) ---------------------------------------------
 const MAX_API_BODY = 40 * 1024 * 1024;
-
-// Read the API body with a hard byte ceiling. Content-Length is only a hint: callers
-// can omit it, so enforce the limit while consuming the stream as well.
-export async function readLimitedText(request, maxBytes = MAX_API_BODY) {
-  if (!request.body) return '';
-  const reader = request.body.getReader();
-  const chunks = [];
-  let total = 0;
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        await reader.cancel();
-        return null;
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  return new TextDecoder().decode(bytes);
-}
-
 const kMaxClockSkew = 600;
 const kDailyUploadsUnverified = 5;
 // Pictures and sounds from creators who aren't Verified wait for a staff check before anyone
