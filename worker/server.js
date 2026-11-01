@@ -5246,7 +5246,7 @@ export class GbServerObject extends DurableObject {
     // POST /api: one request, one answer. Enforce the byte limit here too: the
     // Worker may forward requests directly to this Durable Object without reading them.
     let text;
-    try { text = await readLimitedText(request); } catch { return json(fail('That wasn\'t a proper request.'), 400); }
+    try { text = await readLimitedText(request, MAX_API_BODY); } catch { return json(fail('That wasn\'t a proper request.'), 400); }
     if (text === null) return json(fail('That\'s too big to send.'), 413);
     let req;
     try { req = JSON.parse(text); } catch { req = null; }
