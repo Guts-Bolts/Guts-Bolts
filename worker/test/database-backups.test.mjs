@@ -20,6 +20,7 @@ test('database diagnostics are available only to staff and contain aggregate met
 test('database backup writes a compressed snapshot and manifest to private R2 binding', async () => {
   const s = makeServer();
   const stored = new Map();
+  s.sql.exec('INSERT INTO files (id, part, data) VALUES (?, ?, ?)', 'blob-test', 0, new Uint8Array([1, 2, 3]));
   s.env.DB_BACKUPS = {
     async put(key, value, options) {
       const bytes = await new Response(value).arrayBuffer();
@@ -41,5 +42,13 @@ test('database backup writes a compressed snapshot and manifest to private R2 bi
   const snapshot = JSON.parse(decompressed);
   assert.equal(snapshot.format, 'guts-and-bolts-sqlite-json-v1');
   assert.equal(snapshot.tables.find((table) => table.name === 'users').rows.length, 1);
-  assert.equal(snapshot.tables.find((table) => table.name === 'assets').schema !== null, true);\n  const blob = snapshot.tables.find((table) => table.name === 'files').rows[0];\n  assert.equal(blob.data.$gbBinary, 'AQID');\n  const manifest = JSON.parse(new TextDecoder().decode(stored.get(result.key.replace('database.json.gz', 'manifest.json')).bytes));\n  assert.equal(manifest.sha256, result.sha256);\n  assert.equal(manifest.tableRows.files, 1);\n  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(decompressed));\n  const verified = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');\n  assert.equal(verified, result.sha256);
+  assert.equal(snapshot.tables.find((table) => table.name === 'assets').schema !== null, true);
+  const blob = snapshot.tables.find((table) => table.name === 'files').rows[0];
+  assert.equal(blob.data.$gbBinary, 'AQID');
+  const manifest = JSON.parse(new TextDecoder().decode(stored.get(result.key.replace('database.json.gz', 'manifest.json')).bytes));
+  assert.equal(manifest.sha256, result.sha256);
+  assert.equal(manifest.tableRows.files, 1);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(decompressed));
+  const verified = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+  assert.equal(verified, result.sha256);
 });
