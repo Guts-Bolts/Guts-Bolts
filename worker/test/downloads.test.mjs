@@ -61,3 +61,8 @@ test('release upload stream rejects a body above its byte limit', async () => {
   const stream = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array([1, 2, 3])); controller.close(); } });
   await assert.rejects(() => new Response(limitUploadStream(stream, 2)).arrayBuffer(), /Release upload is too large/);
 });
+
+test('release upload stream rejects an empty body', async () => {
+  const stream = new ReadableStream({ start(controller) { controller.close(); } });
+  await assert.rejects(() => new Response(limitUploadStream(stream, 2)).arrayBuffer(), /Release upload is empty/);
+});
