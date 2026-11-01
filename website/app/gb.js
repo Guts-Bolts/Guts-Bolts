@@ -193,14 +193,20 @@ async function restoreStoredKey(value) {
   return null;
 }
 
+let loadingKey = null;
 async function loadKey() {
   if (secret) return secret;
-  secret = await restoreStoredKey(storedKey());
-  if (!secret || secret.length !== 64) {
-    secret = (await keyPair(random(32))).secret;
-    await saveKey(secret);
-  }
-  return secret;
+  if (loadingKey) return loadingKey;
+  loadingKey = (async () => {
+    secret = await restoreStoredKey(storedKey());
+    if (!secret || secret.length !== 64) {
+      secret = (await keyPair(random(32))).secret;
+      await saveKey(secret);
+    }
+    return secret;
+  })();
+  try { return await loadingKey; }
+  finally { loadingKey = null; }
 }
 
 export async function accountId() { return hex((await loadKey()).slice(32, 64)); }
