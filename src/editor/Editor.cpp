@@ -853,12 +853,13 @@ void Editor::renderLearn() {
                     feedback = "Add a new Sound object from Add > Sound or Explorer > Insert Object.";
                     break;
                 case 15: {
-                    bool layer = false, text = false;
+                    bool nestedText = false;
                     for (SceneNode* n : newGui) {
-                        layer |= n->gui.type == GuiType::ScreenGui;
-                        text |= n->gui.type == GuiType::TextLabel || n->gui.type == GuiType::TextButton;
+                        const bool isText = n->gui.type == GuiType::TextLabel || n->gui.type == GuiType::TextButton;
+                        nestedText |= isText && n->parent && n->parent->kind == NodeKind::Gui &&
+                                      n->parent->gui.type == GuiType::ScreenGui;
                     }
-                    passed = layer && text;
+                    passed = nestedText;
                     feedback = "Create a new ScreenGui and place a TextLabel or TextButton inside it.";
                     break;
                 }
