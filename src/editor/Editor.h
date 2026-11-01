@@ -358,7 +358,7 @@ private:
     bool m_showSettings = false;
     bool m_showPerformance = false;
     bool m_showLearn = false, m_learnLoaded = false, m_learnHasSavedCurrent = false, m_learnSyncReady = false, m_learnExplicitLaunch = false;
-    bool m_learnPaused = false;
+    bool m_learnPaused = false, m_learnDemoActionDone = false;
     long long m_learnProgressUpdatedAt = 0;
     double m_learnSyncRetryAt = 0.0;
     long long m_learnSyncUserId = 0;
