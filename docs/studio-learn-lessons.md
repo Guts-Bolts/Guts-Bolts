@@ -450,18 +450,18 @@ The current native runner validates the practice task against the scene rather t
 | 2. Make It Move | A newly created unanchored Part and a Play test during the challenge |
 | 3. Build a Tiny Obby | At least three newly created Parts and a Play test |
 | 4. Your First Script | A new Script containing a print call and a Play test |
-| 5. Light Up the Scene | A new enabled light with a changed brightness, range or colour |
+| 5. Light Up the Scene | A new enabled light with a changed brightness, range or colour, plus a Play test |
 | 6. Publish Your First Game | A successful publish response was received during this practice challenge and a published game ID is present |
 | 7. Meet the Explorer | A new Part has been renamed to something other than its default primitive name |
 | 8. The Properties Panel | A pre-existing Part has been changed during practice |
 | 9. Copy, Group, Organize | A new Model contains child objects |
 | 10. Color and Materials | At least three new Parts use more than one material or visibly different colours |
 | 11. Shape the World | The Terrain version counter advances during practice, proving an edit occurred |
-| 12. Spawn Into the Action | A new Part is named or tagged SpawnLocation |
-| 13. Collision Course | A new Part has CanCollide disabled |
-| 14. Connect the Parts | A new enabled Constraint has both endpoints assigned |
-| 15. Sound Check | A new Sound object exists |
-| 16. Your First GUI | A new TextLabel or TextButton is parented to a new ScreenGui |
+| 12. Spawn Into the Action | A new Part is named or tagged SpawnLocation and a Play test occurs |
+| 13. Collision Course | A new Part has CanCollide disabled and a Play test occurs |
+| 14. Connect the Parts | A new enabled Constraint has both endpoints assigned and a Play test occurs |
+| 15. Sound Check | A new Sound object exists and a Play test occurs |
+| 16. Your First GUI | A new TextLabel or TextButton is parented to a new ScreenGui and a Play test occurs |
 | 17. Make Things Happen | A new Script contains an event connection and a Play test occurred |
 | 18. Remembering Values | A new Script declares a local variable, uses print, and is run |
 | 19. Find and Fix Bugs | A new Script contains the corrected print call, not the example typo, and is run |
