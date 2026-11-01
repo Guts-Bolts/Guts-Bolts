@@ -1373,8 +1373,10 @@ void Editor::renderLearn() {
                 found = StudioLearnHighlight::find("explorer.insert.open", min, max);
             if (!found && requested.rfind("file.", 0) == 0)
                 found = StudioLearnHighlight::find("file.menu", min, max);
-            if (!found && requested == "publish.confirm")
+            if (!found && (requested == "publish.confirm" || requested == "publish.menu")) {
                 found = StudioLearnHighlight::find("publish.menu", min, max);
+                if (!found) found = StudioLearnHighlight::find("file.menu", min, max);
+            }
             if (!found && requested.rfind("ribbon.", 0) == 0) {
                 const char* tab = requested.find("terrain") != std::string::npos ||
                                   requested == "ribbon.Raise" || requested == "ribbon.Lower" ||
