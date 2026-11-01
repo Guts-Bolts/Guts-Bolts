@@ -82,3 +82,20 @@ test('outbox flush delivers idempotent batches and clears only after successful 
   }
 });
 
+test('failed Supabase delivery leaves events in the durable outbox for retry', async () => {
+  const s = makeServer(SUPABASE_ENV);
+  const player = signUp(s, 'RetryPlayer');
+  s.notify(player, 'friend', 'Retry this notification.', 'friend-retry');
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('unavailable', { status: 503 });
+  try {
+    await s.flushSupabaseOutbox();
+    const rows = [...s.sql.exec('SELECT table_name, payload FROM supabase_outbox')];
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].table_name, 'gb_notifications');
+    assert.equal(JSON.parse(rows[0].payload).message, 'Retry this notification.');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
