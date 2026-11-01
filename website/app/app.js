@@ -1893,6 +1893,7 @@ async function learnPage(head) {
         progress.step = Number.isInteger(remote.progress.step) && remote.progress.step >= 0 && remote.progress.step <= 2 ? remote.progress.step : 0;
         progress.updatedAt = remoteUpdatedAt;
       }
+      progress.updatedAt = Math.max(Math.floor(Date.now() / 1000), progress.updatedAt + 1);
       const saved = await pageCall('learn.progress.save', progress);
       if (saved.ok && saved.progress && Number.isInteger(saved.progress.updatedAt))
         progress.updatedAt = saved.progress.updatedAt;
@@ -3701,7 +3702,7 @@ const actions = {
     const resume = progress.current === lesson[0] && !progress.completed.includes(lesson[0]);
     progress.current = lesson[0];
     if (!resume) progress.step = 0;
-    progress.updatedAt = Math.floor(Date.now() / 1000);
+    progress.updatedAt = Math.max(Math.floor(Date.now() / 1000), (Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0) + 1);
     try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
     if (signedIn()) {
       const saved = await call('learn.progress.save', progress);
