@@ -46,6 +46,19 @@ test('every Studio lesson exposes a guided demonstration, practice challenge, hi
   assert.ok(editor.includes('Log::currentRun()') && editor.includes('entry.text == expectedOutput'), 'debugging lesson verifies the exact corrected print output');
 });
 
+test('Studio Learn preserves guest progress when the learner signs in and exposes pause, resume, repeat and exit controls', () => {
+  const editor = read('src/editor/Editor.cpp');
+  const header = read('src/editor/Editor.h');
+  assert.ok(editor.includes('mergeFile("guest", true)'), 'guest progress is imported when no account resume state exists');
+  assert.ok(editor.includes('mergeFile("guest", false)'), 'guest completions merge without replacing an account resume state');
+  assert.ok(editor.includes('m_learnLoadedGuestProgress'), 'remote account resume state can take precedence over imported guest current state');
+  assert.ok(header.includes('m_learnPaused'));
+  assert.ok(editor.includes('Pause'));
+  assert.ok(editor.includes('Resume lesson'));
+  assert.ok(editor.includes('Repeat demonstration'));
+  assert.ok(editor.includes('Exit lesson'));
+});
+
 test('desktop lesson links are strictly validated and routed to the Studio command line', () => {
   const link = read('src/player/LaunchLink.cpp');
   const player = read('src/player/PlayerLogin.cpp');
