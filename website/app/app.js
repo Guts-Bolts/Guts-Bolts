@@ -1875,7 +1875,8 @@ async function learnPage(head) {
       if (local && Array.isArray(local.completed)) {
         progress.completed = [...new Set([...progress.completed, ...local.completed])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
         const localUpdatedAt = Number.isInteger(local.updatedAt) && local.updatedAt >= 0 ? local.updatedAt : 0;
-        if (localUpdatedAt >= progress.updatedAt && STUDIO_LESSONS.some((l) => l[0] === local.current)) {
+        if ((localUpdatedAt > progress.updatedAt || (!progress.current && localUpdatedAt === progress.updatedAt)) &&
+            STUDIO_LESSONS.some((l) => l[0] === local.current)) {
           progress.current = local.current;
           progress.step = Number.isInteger(local.step) && local.step >= 0 && local.step <= 2 ? local.step : 0;
           progress.updatedAt = localUpdatedAt;
