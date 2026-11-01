@@ -853,13 +853,22 @@ pages.forumsearch = async (query, board = 'all', page = '1') => {
       ${r.pages > 1 ? html`<p class="pager">${r.page > 0 ? html`<a class="btn small" href="${base}/${r.page}">&lt; Back</a>` : ''}<span class="muted small">Page ${r.page + 1} of ${r.pages}</span>${r.page + 1 < r.pages ? html`<a class="btn small" href="${base}/${r.page + 2}">Next &gt;</a>` : ''}</p>` : ''}`
       : html`<div class="box forum-search-empty"><h2>No matching discussions</h2><p class="muted">Try a shorter phrase or search all boards.</p></div>`}`);
 };
+function renderForumActivity(events = []) {
+  return html`<section class="box forum-activity-box"><h2 class="boxhead">Recent Forum Activity</h2>
+    ${events.length ? html`<div class="list">${events.map((event) => html`<div class="small">
+      <a href="#/forum/t/${encodeURIComponent(event.thread_id)}/9999"><b>${event.thread_title}</b></a>
+      <span class="muted"> · ${event.event_type === 'thread_created' ? 'started' : 'replied in'} ${event.board_name} · by ${event.actor_name} · ${ago(Math.floor(Date.parse(event.created_at) / 1000))}</span>
+      ${event.post_excerpt ? html`<div class="muted">${event.post_excerpt}</div>` : ''}
+    </div>`)}</div>` : html`<p class="small muted">New threads and replies will appear here.</p>`}</section>`;
+}
 pages.forum = async (board, a, b) => {
   if (board === 't') { await forumThread(a, Math.max(0, (Number(b) || 1) - 1)); return; }
   if (!board) {
-    const r = await pageCall('forum.boards', {});
+    const [r, activity] = await Promise.all([pageCall('forum.boards', {}), fetchPublicActivity('/api/activity/forum?limit=10')]);
     if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p>`); return; }
     show(html`<div class="forum-retro-masthead"><div><span class="forum-retro-kicker">GUTS &amp; BOLTS COMMUNITY · EST. 2004</span><h1>Forum</h1><p>Games, questions, arguments, and whatever else is on your mind.</p></div><span class="forum-retro-stamp">STILL<br>POSTING</span></div><p class="muted forum-intro">Old-school boards, real player avatars. Be kind: the forum follows the same <a href="#/terms">rules</a> as chat.</p>
       ${forumSearchForm(r.boards)}
+      <div id="forumActivity">${renderForumActivity(activity.ok ? activity.events : []).s}</div>
       <div class="table-wrap"><table class="forum">
         <thead><tr><th>Board</th><th class="num">Threads</th><th class="num">Posts</th><th>Last post</th></tr></thead>
         <tbody>${r.boards.map((x) => html`<tr>
@@ -4714,6 +4723,19 @@ document.addEventListener('submit', async (e) => {
 // Keep auction information current without re-rendering the whole page or disturbing
 // a bid form the visitor is using. The server remains authoritative for every bid.
 let auctionRefreshBusy = false;
+async function refreshActivityFeeds() {
+  if (document.visibilityState !== 'visible') return;
+  const auctionBox = $('#auctionBroadcasts');
+  if (auctionBox) {
+    const data = await fetchPublicActivity('/api/activity/auctions?limit=6');
+    if (data.ok && $('#auctionBroadcasts')) $('#auctionBroadcasts').innerHTML = renderAuctionActivity(data.events).s;
+  }
+  const forumBox = $('#forumActivity');
+  if (forumBox) {
+    const data = await fetchPublicActivity('/api/activity/forum?limit=10');
+    if (data.ok && $('#forumActivity')) $('#forumActivity').innerHTML = renderForumActivity(data.events).s;
+  }
+}
 async function refreshLiveAuctions() {
   if (auctionRefreshBusy || document.visibilityState !== 'visible') return;
   const path = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/');
@@ -4813,6 +4835,8 @@ document.querySelector('.foot').append(languagePicker());
   checkRequests();
   checkUpdates();
   setInterval(() => { if (document.visibilityState === 'visible') { checkRequests(); checkUpdates(); keepFresh(); } }, 60000);
+  refreshActivityFeeds();
+  setInterval(refreshActivityFeeds, 15000);
   refreshLiveAuctions();
   setInterval(refreshLiveAuctions, 12000);
 })();
