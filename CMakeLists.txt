@@ -52,8 +52,7 @@ if(GB_SERVER_ONLY)
     FetchContent_MakeAvailable(json)
     FetchContent_Declare(monocypher
         GIT_REPOSITORY https://github.com/LoupVaillant/Monocypher.git
-        GIT_TAG        4.0.3
-        GIT_SHALLOW    TRUE
+        GIT_TAG        ab2b16dd619ad5f6979a4fbe69cfa324a6fcc35f
         SOURCE_SUBDIR  cmake-build-disabled)
     FetchContent_MakeAvailable(monocypher)
     add_library(monocypher STATIC ${monocypher_SOURCE_DIR}/src/monocypher.c)
@@ -128,8 +127,7 @@ FetchContent_MakeAvailable(imguizmo)
 FetchContent_Declare(
     lua
     GIT_REPOSITORY https://github.com/lua/lua.git
-    GIT_TAG        v5.4.7
-    GIT_SHALLOW    TRUE
+    GIT_TAG        1ab3208a1fceb12fca8f24ba57d6e13c5bff15e3
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(lua)
@@ -176,8 +174,7 @@ endif()
 FetchContent_Declare(
     miniaudio
     GIT_REPOSITORY https://github.com/mackron/miniaudio.git
-    GIT_TAG        0.11.25
-    GIT_SHALLOW    TRUE
+    GIT_TAG        9634bedb5b5a2ca38c1ee7108a9358a4e233f14d
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(miniaudio)
@@ -194,8 +191,7 @@ endif()
 FetchContent_Declare(
     opus
     GIT_REPOSITORY https://github.com/xiph/opus.git
-    GIT_TAG        v1.5.2
-    GIT_SHALLOW    TRUE
+    GIT_TAG        ddbe48383984d56acd9e1ab6a090c54ca6b735a6
 )
 FetchContent_MakeAvailable(opus)
 
@@ -278,8 +274,7 @@ if(GB_MOBILE)
     FetchContent_Declare(
         glm
         GIT_REPOSITORY https://github.com/g-truc/glm.git
-        GIT_TAG        1.0.1
-        GIT_SHALLOW    TRUE
+        GIT_TAG        0af55ccecd98d4e5a8d1fad7de25ba429d60e863
         SOURCE_SUBDIR  cmake-build-disabled
     )
     FetchContent_MakeAvailable(glm)
@@ -394,8 +389,7 @@ endif()
 FetchContent_Declare(
     draco
     GIT_REPOSITORY https://github.com/google/draco.git
-    GIT_TAG        1.5.7
-    GIT_SHALLOW    TRUE
+    GIT_TAG        8786740086a9f4d83f44aa83badfbea4dce7a1b5
     GIT_SUBMODULES ""
 )
 FetchContent_MakeAvailable(draco)
@@ -573,8 +567,7 @@ if((GB_VR AND NOT GB_MOBILE AND NOT APPLE) OR (GB_QUEST AND ANDROID))
     FetchContent_Declare(
         openxr
         GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK.git
-        GIT_TAG        release-1.1.54
-        GIT_SHALLOW    TRUE
+        GIT_TAG        c15d38cb4bb10a5b7e075f74493ff13896e2597a
     )
     FetchContent_MakeAvailable(openxr)
     target_link_libraries(gb_engine PUBLIC openxr_loader)
@@ -665,24 +658,21 @@ endif()
 FetchContent_Declare(
     ufbx
     GIT_REPOSITORY https://github.com/ufbx/ufbx.git
-    GIT_TAG        v0.23.1
-    GIT_SHALLOW    TRUE
+    GIT_TAG        26a482ae66871d7de36eb722aa060bce95bce274
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(ufbx)
 FetchContent_Declare(
     cgltf
     GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
-    GIT_TAG        v1.15
-    GIT_SHALLOW    TRUE
+    GIT_TAG        360db1a95480fe102ae9c69b27c5d101167ff5ba
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(cgltf)
 FetchContent_Declare(
     meshoptimizer
     GIT_REPOSITORY https://github.com/zeux/meshoptimizer.git
-    GIT_TAG        v0.22
-    GIT_SHALLOW    TRUE
+    GIT_TAG        4affad044571506a5724c9a6f15424f43e86f731
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(meshoptimizer)
@@ -721,8 +711,7 @@ set(BUILD_SHARED_LIBS OFF)
 FetchContent_Declare(
     assimp
     GIT_REPOSITORY https://github.com/assimp/assimp.git
-    GIT_TAG        v5.4.3
-    GIT_SHALLOW    TRUE
+    GIT_TAG        c35200e38ea8f058812b83de2ef32c6093b0ece2
 )
 FetchContent_MakeAvailable(assimp)
 set(BUILD_SHARED_LIBS ${_gb_shared})
@@ -742,8 +731,7 @@ set(WEBP_BUILD_LIBWEBPMUX OFF CACHE BOOL "" FORCE)
 FetchContent_Declare(
     libwebp
     GIT_REPOSITORY https://github.com/webmproject/libwebp.git
-    GIT_TAG        v1.4.0
-    GIT_SHALLOW    TRUE
+    GIT_TAG        845d5476a866141ba35ac133f856fa62f0b7445f
 )
 FetchContent_MakeAvailable(libwebp)
 FetchContent_Declare(
