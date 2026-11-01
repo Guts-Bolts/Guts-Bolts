@@ -22,8 +22,8 @@ The website refreshes these feeds periodically through the Worker. This delibera
 
 - SUPABASE_URL is public project configuration in wrangler.jsonc.
 - SUPABASE_SECRET_KEY is a Cloudflare Worker secret. Never put it in website assets, desktop/mobile clients, source control, or public logs.
-- All three tables have RLS enabled.
-- anon and authenticated have no table privileges. Only service_role has the specific privileges required by the Worker.
+- All three tables have RLS enabled with no client policies; this is intentional default-deny access.
+- anon and authenticated have no table privileges. service_role bypasses RLS and has only the specific table privileges required by the Worker.
 - Auction and forum feed routes return selected public columns only. Notification reads filter by the authenticated Guts&Bolts account ID obtained from the existing signed request.
 - No Supabase Auth identities are created, and no password, email, wallet, balance, bid reservation, or forum post body is copied into these tables. Support-ticket, appeal, custom gift-note, comment, and roadmap notification text is replaced with generic summaries before archiving.
 
