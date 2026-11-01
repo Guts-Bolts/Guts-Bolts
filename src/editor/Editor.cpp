@@ -501,7 +501,6 @@ void Editor::saveLearnProgress() {
     std::filesystem::create_directories(path.parent_path(), ec);
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (out) out << progress.dump(2);
-    m_learnHasSavedCurrent = true;
     if (m_learnSyncReady && Online::online() && Online::me().value("userId", 0LL) > 0) {
         Online::request("learn.progress.save", progress, [](const nlohmann::json& r) {
             if (!r.value("ok", false)) Log::warn("Studio Learn progress wasn't synced: " + r.value("error", std::string("server error")));
@@ -514,6 +513,7 @@ void Editor::startLearnLesson(const std::string& id) {
     for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
         const bool resume = m_learnHasSavedCurrent && m_learnLesson == i && !m_learnCompleted.count(i);
         m_learnLesson = i;
+        m_learnExplicitLaunch = true;
         if (!resume) m_learnDemoStep = 0;
         m_learnHint = 0;
         m_learnPractice = false; m_learnSawPlay = false; m_learnStatus.clear();
@@ -534,6 +534,7 @@ void Editor::renderLearn() {
         m_learnCompleted.clear();
         m_learnLesson = 0; m_learnDemoStep = 0; m_learnHint = 0; m_learnPractice = false;
         m_learnHasSavedCurrent = false;
+        m_learnExplicitLaunch = false;
         m_learnSyncReady = false;
         m_learnSyncRetryAt = 0.0;
     }
@@ -552,11 +553,15 @@ void Editor::renderLearn() {
                 }
             }
             if (!m_learnHasSavedCurrent && remote.contains("current") && remote["current"].is_string()) {
-                const std::string id = remote["current"].get<std::string>();
-                for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) { m_learnLesson = i; break; }
-                if (remote.contains("step") && remote["step"].is_number_integer())
+                const std::string remoteCurrent = remote["current"].get<std::string>();
+                if (!m_learnExplicitLaunch) {
+                    for (int i = 0; i < kStudioLearnCount; ++i) if (remoteCurrent == kStudioLearnIds[i]) { m_learnLesson = i; break; }
+                }
+                if (remoteCurrent == kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] &&
+                    remote.contains("step") && remote["step"].is_number_integer())
                     m_learnDemoStep = std::clamp(remote["step"].get<int>(), 0, 2);
             }
+            m_learnHasSavedCurrent = true;
             saveLearnProgress();
         });
     }
@@ -809,6 +814,8 @@ void Editor::renderLearn() {
     if (!ImGui::Begin("Studio Learn", &m_showLearn)) { ImGui::End(); return; }
 
     if (ImGui::Combo("Lesson", &m_learnLesson, titles, lessonCount)) {
+        m_learnHasSavedCurrent = true;
+        m_learnExplicitLaunch = false;
         m_learnDemoStep = 0;
         m_learnHint = 0;
         m_learnPractice = false;
@@ -1020,6 +1027,8 @@ void Editor::renderLearn() {
             if (m_learnLesson + 1 < lessonCount) {
                 if (ImGui::Button("Try next lesson")) {
                     ++m_learnLesson;
+                    m_learnHasSavedCurrent = true;
+                    m_learnExplicitLaunch = false;
                     m_learnDemoStep = 0;
                     m_learnHint = 0;
                     m_learnPractice = false;
