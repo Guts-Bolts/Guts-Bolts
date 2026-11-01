@@ -4710,13 +4710,27 @@ async function refreshLiveAuctions() {
     const a = r.asset, au = a.auction, open = auctionOpen(a);
     if (open && !$('#auctionLiveBid')) { render(); return; }
     const bid = $('#auctionLiveBid');
-    if (bid) bid.innerHTML = open ? auctionBidBox(a).s : html`<p class="muted">This auction has ended.</p>`.s;
+    if (bid) {
+      const currentInput = bid.querySelector('input[name="amount"]');
+      const keepFocus = currentInput && document.activeElement === currentInput;
+      const typedAmount = currentInput && currentInput.value;
+      bid.innerHTML = open ? auctionBidBox(a).s : html`<p class="muted">This auction has ended.</p>`.s;
+      const refreshedInput = bid.querySelector('input[name="amount"]');
+      if (keepFocus && refreshedInput) {
+        refreshedInput.value = typedAmount;
+        refreshedInput.focus({ preventScroll: true });
+      }
+    }
     const bidders = $('#auctionLiveBidders');
     if (bidders) bidders.innerHTML = au.cancelled ? '' : auctionBidders(au, open).s;
     const ends = $('#auctionEndsAt');
     if (ends) {
-      ends.dataset.countdown = String(au.endsAt);
-      ends.innerHTML = countdown(au.endsAt).s;
+      if (open) {
+        ends.dataset.countdown = String(au.endsAt);
+        ends.innerHTML = countdown(au.endsAt).s;
+      } else {
+        ends.parentElement.textContent = au.cancelled ? 'Auction cancelled' : 'Auction ended';
+      }
     }
     tickCountdowns();
   } catch {
