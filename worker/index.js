@@ -16,7 +16,9 @@
 // Object), so it's online even when your computer is off. If GB_SERVER is set
 // (host:port), /api is passed on to that server instead, over TCP.
 import { connect } from 'cloudflare:sockets';
-import { GbServerObject, readLimitedText } from './server.js';
+import { GbServerObject } from './server.js';
+import { readLimitedText } from './http.js';
+import { withSecurityHeaders } from './security.js';
 import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
@@ -121,7 +123,8 @@ async function handleOauth(request, env, url) {
   }
   if (path === 'token' || path === 'revoke') {
     if (request.method !== 'POST') return oauthError({ oauth: 'invalid_request', error: 'Use POST.' });
-    const text = (await request.text()).slice(0, 8192);
+    const text = await readLimitedText(request, 8192);
+    if (text === null) return oauthError({ oauth: 'invalid_request', error: 'Request body is too large.' });
     let body = {};
     if ((request.headers.get('content-type') || '').includes('json')) {
       try { body = JSON.parse(text) || {}; } catch { body = {}; }
@@ -155,6 +158,12 @@ async function handleOauth(request, env, url) {
 
 export default {
   async fetch(request, env, ctx) {
+    const response = await route(request, env, ctx);
+    return withSecurityHeaders(response, request);
+  },
+};
+
+async function route(request, env, ctx) {
     const url = new URL(request.url);
     // The site lives at gutsandbolts.net. The old workers.dev address only keeps answering
     // older apps (the server and its pictures); people opening it in a browser get moved.
@@ -207,8 +216,7 @@ export default {
       }
     }
     return env.ASSETS.fetch(request);
-  },
-};
+}
 
 // A picture: /thumb, /icon, /shot, /wear and /decal from the server on Cloudflare, /avatar from either.
 async function pictureFor(request, env, url) {
