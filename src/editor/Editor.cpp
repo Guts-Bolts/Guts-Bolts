@@ -923,6 +923,12 @@ void Editor::renderLearn() {
                         (b.empty() || n->source.find(b) != std::string::npos)) return true;
                 return false;
             };
+            auto hasOutput = [](int run) {
+                if (run <= 0) return false;
+                for (const Log::Entry& entry : Log::entries())
+                    if (entry.run == run && entry.level == Log::Level::Info) return true;
+                return false;
+            };
             bool passed = false;
             std::string feedback;
             switch (current.check) {
@@ -941,7 +947,7 @@ void Editor::renderLearn() {
                     feedback = "Create at least three new Parts for the route, then test it with F5.";
                     break;
                 case 3:
-                    passed = m_learnSawPlay && hasText(newScripts, "print(", "");
+                    passed = m_learnPlayStarts >= 1 && hasText(newScripts, "print(", "") && hasOutput(Log::lastRun());
                     feedback = "Create a new Script containing print(...), then run it with F5.";
                     break;
                 case 4:
@@ -1016,11 +1022,11 @@ void Editor::renderLearn() {
                     break;
                 }
                 case 16:
-                    passed = m_learnSawPlay && (hasText(newScripts, ".Connect", "") || hasText(newScripts, "Connect(", ""));
+                    passed = m_learnPlayStarts >= 1 && (hasText(newScripts, ".Connect", "") || hasText(newScripts, "Connect(", "")) && hasOutput(Log::lastRun());
                     feedback = "Create a new Script with an event connection using :Connect(...), then test it with F5.";
                     break;
                 case 17:
-                    passed = m_learnSawPlay && hasText(newScripts, "local ", "print(");
+                    passed = m_learnPlayStarts >= 1 && hasText(newScripts, "local ", "print(") && hasOutput(Log::lastRun());
                     feedback = "Create a new Script that declares a local variable and uses it in print(...), then run it.";
                     break;
                 case 18: {
