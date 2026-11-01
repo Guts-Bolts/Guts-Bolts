@@ -582,9 +582,34 @@ function renderAuctionHomeSection(assets) {
   if (!active.length) return '';
   return html`<section class="auction-home-section"><div class="auction-home-section-head"><h2>LIVE AUCTIONS</h2><a href="#/catalog?cat=auctions">VIEW ALL AUCTIONS &raquo;</a></div>${auctionBanner(active[0])}${active.length > 1 ? html`<div class="auction-home-more"><span>MORE LIVE AUCTIONS</span>${active.slice(1, 4).map((a) => html`<a href="#/item/${a.id}"><span class="auction-mini-tag">AUCTION</span><b>${a.name}</b><span data-countdown="${a.auction.endsAt}">${countdown(a.auction.endsAt)}</span></a>`)}</div>` : ''}</section>`;
 }
+function renderAuctionActivity(events = []) {
+  const label = (event) => ({
+    auction_started: 'Auction opened', bid_placed: 'New bid',
+    auction_cancelled: 'Auction cancelled', auction_completed: 'Auction ended',
+  }[event.event_type] || 'Auction update');
+  const detail = (event) => {
+    if (event.event_type === 'auction_started') return 'Starting at ' + Number(event.amount || 0).toLocaleString() + ' Bolts';
+    if (event.event_type === 'bid_placed') return (event.actor_name || 'A player') + ' bid ' + Number(event.amount || 0).toLocaleString() + ' Bolts';
+    if (event.event_type === 'auction_cancelled') return 'The auction was cancelled';
+    if (event.event_type === 'auction_completed') return 'The auction has finished';
+    return 'Auction activity';
+  };
+  return html`<div class="box auction-broadcast-box"><h2 class="boxhead">Auction Broadcasts</h2>
+    ${events.length ? html`<div class="list">${events.map((event) => html`<div class="small">
+      <b>${label(event)}:</b> <a href="#/item/${encodeURIComponent(event.asset_id)}">${event.asset_name}</a>
+      <span class="muted"> · ${detail(event)} · ${ago(Math.floor(Date.parse(event.created_at) / 1000))}</span>
+    </div>`)}</div>` : html`<p class="small muted">Auction activity will appear here when players start bidding.</p>`}</div>`;
+}
+async function fetchPublicActivity(path) {
+  try {
+    const response = await fetch(path, { headers: { accept: 'application/json' } });
+    if (!response.ok) return { ok: false, events: [] };
+    return await response.json();
+  } catch { return { ok: false, events: [] }; }
+}
 pages.home = async () => {
   // Everything the page needs is asked for at once, so it waits for one round trip, not four.
-  const [games, items, fr, recent, favs, featured, , feedR, upd, mine, auctions] = await Promise.all([
+  const [games, items, fr, recent, favs, featured, , feedR, upd, mine, auctions, auctionEvents] = await Promise.all([
     pageCall('list', { kind: 'game', sort: 'popular', limit: 8 }),
     pageCall('list', { kind: 'clothing', limit: 6 }),
     signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
@@ -596,6 +621,7 @@ pages.home = async () => {
     pageCall('updates.list', { limit: 1 }),
     signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
     pageCall('list', { kind: 'clothing', auctions: true, limit: 12 }),
+    fetchPublicActivity('/api/activity/auctions?limit=6'),
   ]);
   // "Continue playing" and your favourites (only when there's something in them).
   const mineBox = (title, r, more) => r.ok && r.assets.length ? html`<div class="box"><h2 class="boxhead">${title}
@@ -623,6 +649,7 @@ pages.home = async () => {
       : html`<p class="muted small">Nothing here yet.</p>`}</div>`;
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const auctionBox = html`<div id="liveAuctions">${renderAuctionHomeSection(auctions.ok ? auctions.assets : [])}</div>`;
+  const auctionBroadcastBox = html`<div id="auctionBroadcasts">${renderAuctionActivity(auctionEvents.ok ? auctionEvents.events : []).s}</div>`;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
     <p><b>${latest.name}</b>${latest.version ? html` <span class="small muted">v${latest.version}</span>` : ''}
@@ -636,7 +663,7 @@ pages.home = async () => {
           <p><a class="btn green big" href="#/signup">Sign Up and Play</a>
             <a class="btn" href="#/login">Login</a></p></div>
         <div class="welcome-guy" id="homeAvatar">${avatarSvg(defaultAvatar(), 150)}</div></div>
-      ${updateBox}${auctionBox}${featuredBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
+      ${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
     tickCountdowns();
     mountAvatar($('#homeAvatar'), defaultAvatar(), [], { width: 170 }).catch(() => {});
     return;
@@ -658,7 +685,7 @@ pages.home = async () => {
               <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
-      <div class="home-right">${updateBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
+      <div class="home-right">${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
     </div>`);
   tickCountdowns();
   // Dressed in what you're wearing (the server says which items those are).
@@ -4698,6 +4725,9 @@ async function refreshLiveAuctions() {
       const section = $('#liveAuctions');
       if (!r.ok || !section || (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home') !== 'home') return;
       section.innerHTML = renderAuctionHomeSection(r.assets).s;
+      const activity = await fetchPublicActivity('/api/activity/auctions?limit=6');
+      const activityBox = $('#auctionBroadcasts');
+      if (activityBox && activity.ok) activityBox.innerHTML = renderAuctionActivity(activity.events).s;
       tickCountdowns();
       upgradeItemPictures();
       return;
