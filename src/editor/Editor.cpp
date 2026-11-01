@@ -535,6 +535,7 @@ void Editor::startLearnLesson(const std::string& id) {
         m_learnExplicitLaunch = true;
         if (!resume) m_learnDemoStep = 0;
         m_learnHint = 0;
+        m_learnPaused = false;
         m_learnPractice = false; m_learnSawPlay = false; m_learnStatus.clear();
         m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
         m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false;
