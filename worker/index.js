@@ -166,7 +166,7 @@ export default {
     const picture = /^\/(thumb|icon|shot|wear|decal|avatar)\//.test(url.pathname);
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
     const supabaseHealthPath = url.pathname === '/api/supabase/health';
-    const supabaseActivityPath = /^\\/api\\/activity\\/(auctions|forum)$/.test(url.pathname);
+    const supabaseActivityPath = /^\/api\/activity\/(auctions|forum)$/.test(url.pathname);
     const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath ? 'api' : mcp ? 'mcp' : '';
     let info = null;
     if (kind) {
