@@ -507,7 +507,8 @@ void Editor::startLearnLesson(const std::string& id) {
     for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
         m_learnLesson = i; m_learnDemoStep = 0; m_learnHint = 0;
         m_learnPractice = false; m_learnSawPlay = false; m_learnStatus.clear();
-        m_learnBaselineNodes.clear(); m_showLearn = true;
+        m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
+        m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_showLearn = true;
         saveLearnProgress();
         return;
     }
@@ -534,6 +535,21 @@ void Editor::renderLearn() {
                 for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) { m_learnLesson = i; break; }
             }
             saveLearnProgress();
+        });
+    }
+    if (m_learnPractice && m_learnLesson == 19 && m_learnWasPlaying && !m_playing && m_learnPlayStarts == 1) {
+        m_learnFirstPlayNodes.clear();
+        m_scene->forEach([this](SceneNode* n) {
+            if (n && !n->internal) m_learnFirstPlayNodes[n->id] = Serializer::nodeShallowToString(*n);
+        });
+        m_learnFirstPlayEnded = true;
+    }
+    if (m_learnPractice && m_learnLesson == 19 && m_learnFirstPlayEnded && !m_playing && !m_learnEditedAfterFirstPlay) {
+        m_scene->forEach([this](SceneNode* n) {
+            if (!n || n->internal || !n->isPart()) return;
+            const auto old = m_learnFirstPlayNodes.find(n->id);
+            if (old == m_learnFirstPlayNodes.end() || Serializer::nodeShallowToString(*n) != old->second)
+                m_learnEditedAfterFirstPlay = true;
         });
     }
     if (m_playing && !m_learnWasPlaying) ++m_learnPlayStarts;
@@ -775,7 +791,8 @@ void Editor::renderLearn() {
         m_learnPractice = false;
         m_learnSawPlay = false;
         m_learnStatus.clear();
-        m_learnBaselineNodes.clear();
+        m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
+        m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false;
         saveLearnProgress();
     }
     const Lesson& current = lessons[m_learnLesson];
@@ -806,6 +823,8 @@ void Editor::renderLearn() {
                 if (n && !n->internal) m_learnBaselineNodes[n->id] = Serializer::nodeShallowToString(*n);
             });
             m_learnBaselineTerrainVersion = m_scene->terrain().version();
+            m_learnFirstPlayNodes.clear();
+            m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false;
             m_learnSawPlay = false;
             m_learnSawPublish = false;
             m_learnPlayStarts = 0;
@@ -955,7 +974,7 @@ void Editor::renderLearn() {
                     feedback = "Create a practice Script, reproduce a typo, correct it to print(...), and run it with F5.";
                     break;
                 case 19:
-                    passed = m_learnPlayStarts >= 2 && (!newParts.empty() || std::any_of(changed.begin(), changed.end(), [](SceneNode* n) { return n->isPart(); }));
+                    passed = m_learnPlayStarts >= 2 && m_learnEditedAfterFirstPlay;
                     feedback = "Run a Play test, stop it, change a Part in edit mode, then run a second Play test to verify the fix.";
                     break;
             }
@@ -983,6 +1002,8 @@ void Editor::renderLearn() {
                     m_learnSawPlay = false;
                     m_learnStatus.clear();
                     m_learnBaselineNodes.clear();
+                    m_learnFirstPlayNodes.clear();
+                    m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false;
                     saveLearnProgress();
                 }
             }
@@ -1001,16 +1022,29 @@ void Editor::renderLearn() {
 
     // A hint never intercepts input. It outlines the relevant live panel while the
     // learner reads the hint; hidden panels are not outlined at stale screen positions.
-    if (m_learnPractice && m_learnHint > 0) {
+    if (!m_learnPractice || m_learnHint > 0) {
         const char* targetName = nullptr;
-        switch (m_learnLesson) {
-            case 0: case 1: case 4: case 7: case 9: case 12: case 13: case 14:
-                targetName = "Properties"; break;
-            case 3: case 16: case 17: case 18:
-                targetName = m_learnHint == 1 ? "Script Editor" : "Output"; break;
-            case 6: case 8: case 11:
-                targetName = "Explorer"; break;
-            default: break;
+        if (m_learnPractice) {
+            switch (m_learnLesson) {
+                case 0: case 1: case 4: case 7: case 9: case 12: case 13: case 14:
+                    targetName = "Properties"; break;
+                case 3: case 16: case 17: case 18:
+                    targetName = m_learnHint == 1 ? "Script Editor" : "Output"; break;
+                case 6: case 8: case 11: case 15:
+                    targetName = "Explorer"; break;
+                default: break;
+            }
+        } else {
+            switch (m_learnLesson) {
+                case 0: targetName = m_learnDemoStep == 0 ? "Explorer" : "Properties"; break;
+                case 1: case 4: case 7: case 9: case 12: targetName = "Properties"; break;
+                case 2: case 6: case 8: case 11: case 13: case 14: case 15: targetName = "Explorer"; break;
+                case 3: case 16: case 17: targetName = "Script Editor"; break;
+                case 5: targetName = m_learnDemoStep == 2 ? "Publish to Guts&Bolts" : "Properties"; break;
+                case 18: targetName = m_learnDemoStep == 2 ? "Output" : "Script Editor"; break;
+                case 19: targetName = m_learnDemoStep == 2 ? "Output" : "Explorer"; break;
+                default: break;
+            }
         }
         if (targetName) {
             ImGuiWindow* target = ImGui::FindWindowByName(targetName);

@@ -18,7 +18,9 @@ test('website, Studio, worker and standalone server share the same 20 stable les
   const worker = read('worker/server.js');
   const server = read('src/server/Server.cpp');
   const ids = extract(editor, /kStudioLearnIds\[\]\s*=\s*\{([^}]+)\}/, 'Studio lesson ID list');
-  const siteIds = extract(site, /const STUDIO_LESSONS\s*=\s*\[([\s\S]*?)\n\];/, 'website lesson catalogue');
+  const siteBlock = site.match(/const STUDIO_LESSONS\s*=\s*\[([\s\S]*?)\n\];/);
+  assert.ok(siteBlock, 'website lesson catalogue is present');
+  const siteIds = [...siteBlock[1].matchAll(/^\s*\['([a-z0-9-]+)'/gm)].map((x) => x[1]);
   const workerIds = extract(worker, /const lessonIds\s*=\s*new Set\(\[([^\]]+)\]\)/, 'worker allowlist');
   const serverIds = extract(server, /lessonIds\s*=\s*\{([^}]+)\}/, 'standalone server allowlist');
   assert.equal(ids.length, 20);

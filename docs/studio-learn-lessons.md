@@ -469,18 +469,13 @@ The current native runner validates the practice task against the scene rather t
 
 These checks are deliberately based on meaningful outcomes rather than exact coordinates or exact object names, except where the lesson itself teaches a specific named object such as SpawnLocation. A check can confirm the presence of a relevant editor change, but it cannot yet prove every quality aspect of a build (for example, that an obby is fun or that a spawn point is safe). The lesson text therefore still asks the learner to inspect and playtest their work. Publishing only counts after the publish operation returns success; merely opening the publish dialog does not complete that lesson.
 
-### Current scope and remaining work
+### Implemented scope and verification boundaries
 
-This PR now contains an interactive native lesson panel and live scene checks for all 20 lessons. It is not yet the complete website-to-Studio learning product. The following work remains:
+This PR now includes the native 20-lesson runner, a website **Create > Learn** catalogue, validated desktop launch links, local progress persistence, and signed-in account progress synchronization. The Cloudflare worker and standalone C++ server expose the same authenticated, allowlisted progress operations. The lesson panel highlights relevant live Studio panels during demonstrations and optional practice hints; it does not yet resolve and outline every individual ImGui button or property control.
 
-- Add the Create > Learn website catalogue and launch a selected lesson through the existing desktop launch flow.
-- Persist completed lesson IDs and the current phase across Studio restarts. The current completion count is session-only.
-- Replace broad panel outlines with precise, dynamically resolved control highlights where the relevant ImGui item can be safely targeted.
-- Add automated tests for each lesson validator, including negative cases, and end-to-end tests for starting, completing, repeating and switching lessons.
-- Verify every lesson on a clean project and on a project with existing objects. In particular, the publish lesson must be tested with signed-out, signed-in, already-published and permission-denied states.
-- Refine checks that currently validate the presence of an object or code pattern but cannot inspect the full quality of the learner's result.
+Automated coverage includes account isolation, authentication, input validation, account persistence, and a cross-surface catalogue audit comparing all 20 stable lesson IDs across the website, Studio, Cloudflare worker and standalone server. Native platform builds and the worker test suite are the final acceptance gates.
 
-Do not describe the website catalogue, cross-device sync, persistent progress, or precise control-level spotlight as implemented until those parts exist and have tests.
+The validators confirm observable editor changes, not subjective quality. For example, they cannot determine whether an obstacle course is enjoyable or a spawn point is well designed. The publish lesson requires a successful publish response. The final lesson requires a Part edit after the first Play test has ended and a second Play test after that edit.
 
 
 ## PR #213 integration
