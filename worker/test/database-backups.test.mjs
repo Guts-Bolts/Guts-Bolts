@@ -43,7 +43,7 @@ test('database backup writes a compressed snapshot and manifest to private R2 bi
   assert.equal(snapshot.format, 'guts-and-bolts-sqlite-json-v1');
   assert.equal(snapshot.tables.find((table) => table.name === 'users').rows.length, 1);
   assert.equal(snapshot.tables.find((table) => table.name === 'assets').schema !== null, true);
-  const blob = snapshot.tables.find((table) => table.name === 'files').rows[0];
+  const blob = snapshot.tables.find((table) => table.name === 'files').rows.find((row) => row.id === 'blob-test' && row.part === 0);
   assert.equal(blob.data.$gbBinary, 'AQID');
   const manifest = JSON.parse(new TextDecoder().decode(stored.get(result.key.replace('database.json.gz', 'manifest.json')).bytes));
   assert.equal(manifest.sha256, result.sha256);
