@@ -406,7 +406,7 @@ These blueprints define the teaching experience and expected outcomes. Before im
 
 Represent each step with separate demonstration and practice states: not started, in progress, and complete. Save after meaningful transitions, not only when the whole lesson ends. Reopening a lesson should return to the current phase and step.
 
-A learner can pause without losing progress, resume from the paused panel, restart the guided demonstration, or exit the lesson while keeping the last saved checkpoint. When a guest signs in, Studio imports locally completed lessons into the account progress file. An existing account resume point takes precedence over the guest's current lesson; otherwise the guest's current lesson and guided step are imported.
+A learner can pause without losing progress, resume from the paused panel, restart the guided demonstration, or exit the lesson while keeping the last saved checkpoint. When a guest signs in, Studio imports locally completed lessons into the account progress file. The most recently updated account or guest resume point wins. Both server implementations return and persist revision timestamps, merge completed lessons monotonically, reject stale resume writes, and cap client timestamps to a small future window.
 
 Show progress in human terms (for example, "Step 2 of 4 · Practice") rather than a percentage alone. On completion, summarize the skills demonstrated and offer a clear next action: repeat the lesson, return to Learn, or try the next recommended lesson.
 
