@@ -3,6 +3,9 @@
 # OfficialKey.h. It is not the corresponding signing secret.
 [[allowlists]]
 description = "Official Guts account public identity key (not a credential)"
+paths = [
+  '''src/core/OfficialKey\.h$''',
+]
 fingerprints = [
   "dc0ef9e83a9d4f99f3f98e19a8656ff6a9fa117a:src/core/OfficialKey.h:generic-api-key:10"
 ]
