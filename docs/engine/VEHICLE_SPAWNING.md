@@ -124,7 +124,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local spawnRequest = ReplicatedStorage:WaitForChild("SpawnCar")
 local button = script.Parent
 
-button.Activated:Connect(function()
+button.MouseButton1Click:Connect(function()
     button.Text = "Spawning..."
     spawnRequest:FireServer()
 end)
