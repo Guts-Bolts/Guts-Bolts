@@ -356,7 +356,8 @@ private:
     bool m_showPerformance = false;
     bool m_showLearn = false;
     int m_learnLesson = 0, m_learnDemoStep = 0, m_learnHint = 0;
-    bool m_learnPractice = false, m_learnSawPlay = false;
+    bool m_learnPractice = false, m_learnSawPlay = false, m_learnSawPublish = false, m_learnWasPlaying = false;
+    int m_learnPlayStarts = 0;
     std::string m_learnStatus;
     std::map<uint64_t, std::string> m_learnBaselineNodes;
     uint64_t m_learnBaselineTerrainVersion = 0;
