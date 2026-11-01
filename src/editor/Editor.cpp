@@ -685,7 +685,6 @@ void Editor::renderLearn() {
     };
     constexpr int lessonCount = (int)(sizeof(lessons) / sizeof(lessons[0]));
     m_learnLesson = std::clamp(m_learnLesson, 0, lessonCount - 1);
-    const Lesson& lesson = lessons[m_learnLesson];
 
     ImGui::SetNextWindowSize(ImVec2(520, 560), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Studio Learn", &m_showLearn)) { ImGui::End(); return; }
@@ -726,7 +725,6 @@ void Editor::renderLearn() {
                 if (n && !n->internal) m_learnBaselineNodes[n->id] = Serializer::nodeShallowToString(*n);
             });
             m_learnBaselineTerrainVersion = m_scene->terrain().version();
-            m_learnBaselinePublishedId = m_scene->info().publishedId;
             m_learnSawPlay = false;
             m_learnHint = 0;
             m_learnPractice = true;
@@ -744,13 +742,12 @@ void Editor::renderLearn() {
         }
         ImGui::Spacing();
         if (ImGui::Button("Check my work")) {
-            std::vector<SceneNode*> created, changed, newParts, newScripts;
+            std::vector<SceneNode*> changed, newParts, newScripts;
             std::vector<SceneNode*> newLights, newModels, newConstraints, newSounds, newGui;
             m_scene->forEach([&](SceneNode* n) {
                 if (!n || n->internal) return;
                 auto old = m_learnBaselineNodes.find(n->id);
                 if (old == m_learnBaselineNodes.end()) {
-                    created.push_back(n);
                     if (n->isPart()) newParts.push_back(n);
                     if (n->isScript()) newScripts.push_back(n);
                     if (n->isLight()) newLights.push_back(n);
