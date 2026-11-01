@@ -5,7 +5,7 @@
 //   GET  /download/<file>              the newest copy of that file
 //   PUT  /download/upload/<file>?version=X   (the release workflow, with its GitHub token)
 //   POST /download/publish             (the release workflow) {version, name, notes, files}
-import { readLimitedBytes, readLimitedText } from './http.js';
+import { readLimitedText } from './http.js';
 
 const FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
 const MAX_RELEASE_FILE = 100 * 1024 * 1024;
@@ -33,6 +33,47 @@ export function isTrustedReleaseClaims(claims) {
   if (!(ref === 'refs/heads/main' || versionTag)) return false;
   return claims.workflow_ref === RELEASE_WORKFLOW + '@' + ref;
 }
+export function limitUploadStream(stream, maxBytes) {
+  if (!stream) throw new TypeError('A release upload body is required.');
+  const reader = stream.getReader();
+  let total = 0;
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { value, done } = await reader.read();
+        if (done) { reader.releaseLock(); controller.close(); return; }
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel('Release upload exceeds the configured limit.');
+          controller.error(new RangeError('Release upload is too large.'));
+          return;
+        }
+        controller.enqueue(value);
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+    async cancel(reason) { await reader.cancel(reason); },
+  });
+}
+
+export function normalizeReleaseManifest(m) {
+  if (!m || typeof m !== 'object' || Array.isArray(m) ||
+      typeof m.version !== 'string' || typeof m.files !== 'object' || !m.files || Array.isArray(m.files)) return null;
+  const version = m.version.replace(/^v/, '');
+  if (!/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version)) return null;
+  const allowed = new Set(['android', 'quest', 'windows', 'mac', 'linux']);
+  const files = {};
+  for (const [kind, name] of Object.entries(m.files)) {
+    if (!allowed.has(kind) || typeof name !== 'string' || !FILE.test(name)) return null;
+    files[kind] = name;
+  }
+  if (!Object.keys(files).length || Object.keys(files).length > allowed.size) return null;
+  if (m.name !== undefined && (typeof m.name !== 'string' || m.name.length > 160)) return null;
+  if (m.notes !== undefined && (typeof m.notes !== 'string' || m.notes.length > 20000)) return null;
+  return { version, name: m.name || '', notes: m.notes || '', files };
+}
+
 let jwksCache = null, jwksAt = 0;
 
 const b64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
@@ -85,23 +126,30 @@ export async function handleDownload(request, env, url) {
       if (text === null) return json({ ok: false, error: 'Manifest is too large.' }, 413);
       let m;
       try { m = JSON.parse(text); } catch { return json({ ok: false, error: 'Bad manifest.' }, 400); }
-      if (!m || typeof m.version !== 'string' || !m.files || typeof m.files !== 'object') return json({ ok: false, error: 'Bad manifest.' }, 400);
-      const manifest = { version: m.version.replace(/^v/, ''), name: String(m.name || ''), notes: String(m.notes || '').slice(0, 20000),
-        date: Math.floor(Date.now() / 1000), files: m.files };
+      const safe = normalizeReleaseManifest(m);
+      if (!safe) return json({ ok: false, error: 'Bad manifest.' }, 400);
+      const manifest = { ...safe, date: Math.floor(Date.now() / 1000) };
       await env.DOWNLOADS.put('latest.json', JSON.stringify(manifest), { httpMetadata: { contentType: 'application/json' } });
       return json({ ok: true, manifest });
     }
     const name = rest.slice('upload/'.length), version = (url.searchParams.get('version') || '').replace(/^v/, '');
     if (request.method !== 'PUT' || !FILE.test(name) || !/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version)) return json({ ok: false, error: 'Bad upload.' }, 400);
-    const length = Number(request.headers.get('content-length') || 0);
-    if (length > MAX_RELEASE_FILE) return json({ ok: false, error: 'Release file is too large.' }, 413);
-    const body = await readLimitedBytes(request, MAX_RELEASE_FILE);
-    if (body === null) return json({ ok: false, error: 'Release file is too large.' }, 413);
-    if (!body.byteLength) return json({ ok: false, error: 'Empty file.' }, 400);
+    const lengthHeader = request.headers.get('content-length');
+    const length = lengthHeader === null ? null : Number(lengthHeader);
+    if (length !== null && (!Number.isSafeInteger(length) || length > MAX_RELEASE_FILE)) return json({ ok: false, error: 'Release file is too large.' }, 413);
+    if (!request.body) return json({ ok: false, error: 'Empty file.' }, 400);
     const meta = { httpMetadata: { contentType: 'application/octet-stream', contentDisposition: 'attachment; filename="' + name + '"' } };
-    await env.DOWNLOADS.put(version + '/' + name, body, meta);
-    await env.DOWNLOADS.put('latest/' + name, body, meta);
-    return json({ ok: true, size: body.byteLength });
+    const versionKey = version + '/' + name;
+    try {
+      await env.DOWNLOADS.put(versionKey, limitUploadStream(request.body, MAX_RELEASE_FILE), meta);
+    } catch (error) {
+      if (error instanceof RangeError) return json({ ok: false, error: 'Release file is too large.' }, 413);
+      throw error;
+    }
+    const stored = await env.DOWNLOADS.get(versionKey);
+    if (!stored) return json({ ok: false, error: 'The release upload could not be verified.' }, 500);
+    await env.DOWNLOADS.put('latest/' + name, stored.body, meta);
+    return json({ ok: true, size: stored.size });
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') return json({ ok: false, error: 'Use GET.' }, 405);
   if (rest === 'latest.json') {
