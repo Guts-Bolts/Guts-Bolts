@@ -12,6 +12,8 @@ test('notifications and public activity are queued durably for Supabase', () => 
   const player = signUp(s, 'ArchivePlayer');
 
   s.notify(player, 'friend', 'A player sent you a friend request.', 'friend-1');
+  s.notify(player, 'ticket', 'New support ticket: "private account details".', 'ticket-1');
+  s.notify(player, 'gift', 'A player sent you a gift: Test Hat! "private gift note".', 'gift-1');
   s.recordAuctionEvent({
     id: 'asset-1', name: 'Test Hat',
     auction: { bids: [{ by: player.id, amount: 75 }], endsAt: 1900000000 },
@@ -21,12 +23,19 @@ test('notifications and public activity are queued durably for Supabase', () => 
   }, 'Off Topic', 'thread_created', player.name, 'A short opening post.');
 
   const rows = [...s.sql.exec('SELECT table_name, payload FROM supabase_outbox')];
-  assert.equal(rows.length, 3);
-  const byTable = Object.fromEntries(rows.map((row) => [row.table_name, JSON.parse(row.payload)]));
+  assert.equal(rows.length, 5);
+  const notificationRows = rows.filter((row) => row.table_name === 'gb_notifications').map((row) => JSON.parse(row.payload));
+  const notifications = Object.fromEntries(notificationRows.map((row) => [row.kind, row]));
+  const byTable = Object.fromEntries(rows.filter((row) => row.table_name !== 'gb_notifications')
+    .map((row) => [row.table_name, JSON.parse(row.payload)]));
 
-  assert.equal(byTable.gb_notifications.account_id, player.id);
-  assert.equal(byTable.gb_notifications.message, 'A player sent you a friend request.');
-  assert.equal(byTable.gb_notifications.read_at, null);
+  assert.equal(notifications.friend.account_id, player.id);
+  assert.equal(notifications.friend.message, 'A player sent you a friend request.');
+  assert.equal(notifications.friend.read_at, null);
+  assert.equal(notifications.ticket.message, 'A new support ticket was submitted.');
+  assert.equal(notifications.gift.message, 'You received a gift notification.');
+  assert(!notifications.ticket.message.includes('private account details'));
+  assert(!notifications.gift.message.includes('private gift note'));
 
   assert.equal(byTable.gb_auction_events.event_type, 'bid_placed');
   assert.equal(byTable.gb_auction_events.asset_id, 'asset-1');
