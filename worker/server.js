@@ -1206,9 +1206,17 @@ export class GbServerObject extends DurableObject {
     if (current && !lessonIds.has(current)) return fail('Studio Learn progress contains an unknown current lesson.');
     if (args.step !== undefined && (!Number.isInteger(args.step) || args.step < 0 || args.step > 2))
       return fail('Studio Learn step must be between 0 and 2.');
-    const step = args.step === undefined ? 0 : args.step;
-    const updatedAt = now();
-    me.learnProgress = { completed, current, step, updatedAt };
+    if (args.updatedAt !== undefined && (!Number.isInteger(args.updatedAt) || args.updatedAt < 0))
+      return fail('Studio Learn update timestamp must be a non-negative integer.');
+    const previousUpdatedAt = Number.isInteger(saved.updatedAt) && saved.updatedAt >= 0 ? saved.updatedAt : 0;
+    const incomingUpdatedAt = args.updatedAt === undefined ? previousUpdatedAt : args.updatedAt;
+    const acceptResume = args.updatedAt === undefined || incomingUpdatedAt >= previousUpdatedAt;
+    const storedCurrent = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
+    const storedStep = Number.isInteger(saved.step) && saved.step >= 0 && saved.step <= 2 ? saved.step : 0;
+    const nextCurrent = acceptResume ? current : storedCurrent;
+    const nextStep = acceptResume ? step : storedStep;
+    const updatedAt = Math.max(now(), previousUpdatedAt, incomingUpdatedAt);
+    me.learnProgress = { completed, current: nextCurrent, step: nextStep, updatedAt };
     this.saveUser(me);
     return okay({ progress: me.learnProgress });
   }
