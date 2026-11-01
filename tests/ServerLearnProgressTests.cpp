@@ -51,11 +51,11 @@ int main() {
         if (!server) { std::cout << "FAIL  couldn't start: " << err << "\n"; return 1; }
         json r = ask(*server, "learn.progress.save", {
             {"completed", json::array({"first-build", "tiny-obby", "first-build"})},
-            {"current", "first-script"}, {"step", 2}
+            {"current", "first-script"}, {"step", 2}, {"practice", true}
         });
         check(r.value("ok", false) && r["progress"]["completed"].size() == 2 &&
               r["progress"]["current"] == "first-script" && r["progress"]["step"] == 2 &&
-              r["progress"]["updatedAt"].get<long long>() > 0,
+              r["progress"]["practice"] == true && r["progress"]["updatedAt"].get<long long>() > 0,
               "save valid progress, step, timestamp and de-duplicate lesson IDs");
         const long long firstUpdatedAt = r["progress"]["updatedAt"].get<long long>();
         r = ask(*server, "learn.progress.save", {{"completed", json::array({"first-script"})}, {"current", "tiny-obby"}, {"step", 1}, {"updatedAt", firstUpdatedAt + 1}});
@@ -65,7 +65,8 @@ int main() {
         const long long latestUpdatedAt = r["progress"]["updatedAt"].get<long long>();
         json stale = ask(*server, "learn.progress.save", {{"completed", json::array({"first-script"})}, {"current", "first-build"}, {"step", 0}, {"updatedAt", firstUpdatedAt}});
         check(stale.value("ok", false) && stale["progress"]["current"] == "tiny-obby" &&
-              stale["progress"]["step"] == 1 && stale["progress"]["updatedAt"].get<long long>() >= latestUpdatedAt,
+              stale["progress"]["step"] == 1 && stale["progress"]["practice"] == true &&
+              stale["progress"]["updatedAt"].get<long long>() >= latestUpdatedAt,
               "stale device writes cannot replace a newer resume point");
         r = ask(*server, "learn.progress.get");
         check(r.value("ok", false) && r["progress"]["completed"].size() == 3, "read the merged progress");
@@ -86,7 +87,7 @@ int main() {
         json r = ask(*server, "learn.progress.get");
         check(r.value("ok", false) && r["progress"]["completed"].size() == 3 &&
               r["progress"]["current"] == "tiny-obby" && r["progress"]["step"] == 1 &&
-              r["progress"]["updatedAt"].get<long long>() > 0,
+              r["progress"]["practice"] == true && r["progress"]["updatedAt"].get<long long>() > 0,
               "merged progress, lesson step and timestamp survive a server restart");
         Account::newKey();
         r = ask(*server, "learn.progress.get");
