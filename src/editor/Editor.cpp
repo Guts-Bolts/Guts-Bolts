@@ -1059,7 +1059,7 @@ void Editor::renderLearn() {
                 case 3:
                     passed = m_learnPlayStarts >= 1 && hasText(newScripts, "print(", "") &&
                              hasLiteralPrintOutput(newScripts, Log::lastRun());
-                    feedback = "Create a new Script with a print(\\"message\\") call, run it with F5, and verify that exact message appears in Output.";
+                    feedback = "Create a new Script with a print(\"message\") call, run it with F5, and verify that exact message appears in Output.";
                     break;
                 case 4:
                     passed = m_learnSawPlay && std::any_of(newLights.begin(), newLights.end(), [](SceneNode* n) {
@@ -1136,7 +1136,7 @@ void Editor::renderLearn() {
                     passed = m_learnPlayStarts >= 1 &&
                              (hasText(newScripts, ".Connect", "") || hasText(newScripts, "Connect(", "")) &&
                              hasLiteralPrintOutput(newScripts, Log::lastRun());
-                    feedback = "Create a new Script with an event connection and a print(\\"message\\") call, then verify that exact message in Output during Play.";
+                    feedback = "Create a new Script with an event connection and a print(\"message\") call, then verify that exact message in Output during Play.";
                     break;
                 case 17:
                     passed = m_learnPlayStarts >= 1 && hasLocalVariablePrintOutput(newScripts, Log::lastRun());
