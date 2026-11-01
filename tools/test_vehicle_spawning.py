@@ -154,7 +154,7 @@ def main():
     problems = []
     if not results.get("start", {}).get("success"):
         problems.append("multiplayer test did not start")
-    names = [f"Player{i}" for i in range(1, opts.players + 1)]
+    names = [f"Player{i}" for i in range(1, opts.players + 2)]
     texts = [(line["from"], line["text"]) for line in lines]
     for name in names:
         spawned = [text for source, text in texts
@@ -173,10 +173,13 @@ def main():
             problems.append(f"{name} did not receive the server acknowledgement")
     if any(line["level"] == "error" for line in lines):
         problems.append("one or more scripts logged an error")
+    stop = results.get("stop", {})
+    if not stop.get("success") or stop.get("running"):
+        problems.append("multiplayer_test stop did not stop the test: " + json.dumps(stop))
     if problems:
         print("\n".join("FAIL: " + problem for problem in problems))
         sys.exit(1)
-    print(f"PASS: server spawned and positioned cars for {opts.players} players; each client received its acknowledgement")
+    print(f"PASS: server spawned and positioned cars for {len(names)} players; each client received its acknowledgement")
 
 if __name__ == "__main__":
     main()
