@@ -988,8 +988,9 @@ void Editor::renderLearn() {
                     if (!n) continue;
                     const size_t call = n->source.find("print(");
                     if (call == std::string::npos) continue;
-                    const size_t quote = n->source.find_first_of("\"'", call + 6);
-                    if (quote == std::string::npos) continue;
+                    size_t quote = call + 6;
+                    while (quote < n->source.size() && (n->source[quote] == ' ' || n->source[quote] == '\t')) ++quote;
+                    if (quote >= n->source.size() || (n->source[quote] != '"' && n->source[quote] != '\'')) continue;
                     const size_t end = n->source.find(n->source[quote], quote + 1);
                     if (end == std::string::npos || end == quote + 1) continue;
                     const std::string expected = n->source.substr(quote + 1, end - quote - 1);
