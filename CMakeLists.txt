@@ -108,8 +108,7 @@ endif()
 FetchContent_Declare(
     imgui
     GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG        docking
-    GIT_SHALLOW    TRUE
+    GIT_TAG        d682dc41f58b98c9343ffbaa7d94f07e9024b3ca
 )
 FetchContent_MakeAvailable(imgui)
 
@@ -119,8 +118,7 @@ FetchContent_MakeAvailable(imgui)
 FetchContent_Declare(
     imguizmo
     GIT_REPOSITORY https://github.com/CedricGuillemet/ImGuizmo.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
+    GIT_TAG        105e4fde45e4e74aae8973d98750820ef7aca7e2
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(imguizmo)
@@ -226,8 +224,7 @@ target_include_directories(monocypher PUBLIC ${monocypher_SOURCE_DIR}/src)
 FetchContent_Declare(
     stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
+    GIT_TAG        003501f6d7a8668ce8b6d875e34dd97ad0d5d5b5
 )
 FetchContent_MakeAvailable(stb)
 
@@ -235,8 +232,7 @@ FetchContent_MakeAvailable(stb)
 FetchContent_Declare(
     pfd
     GIT_REPOSITORY https://github.com/samhocevar/portable-file-dialogs.git
-    GIT_TAG        main
-    GIT_SHALLOW    TRUE
+    GIT_TAG        c12ea8c9a727f5320a2b4570aee863bbede2a204
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(pfd)
@@ -753,8 +749,7 @@ FetchContent_MakeAvailable(libwebp)
 FetchContent_Declare(
     nanosvg
     GIT_REPOSITORY https://github.com/memononen/nanosvg.git
-    GIT_TAG        master
-    GIT_SHALLOW    TRUE
+    GIT_TAG        239e102ec2c691f2902e20ace2ed36ee4a35cfe6
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(nanosvg)
