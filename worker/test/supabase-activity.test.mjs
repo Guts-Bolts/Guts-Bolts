@@ -20,7 +20,10 @@ test('notifications and public activity are queued durably for Supabase', () => 
   }, 'bid_placed', player.name, 75);
   s.recordForumActivity({
     id: 'thread-1', board: 'offtopic', title: 'Test discussion',
-  }, 'Off Topic', 'thread_created', player.name, 'A short opening post.');
+  }, 'Off Topic', 'thread_created', player.name);
+  s.recordForumActivity({
+    id: 'staff-thread', board: 'news', title: 'Internal staff discussion',
+  }, 'News & Announcements', 'thread_created', player.name);
 
   const rows = [...s.sql.exec('SELECT table_name, payload FROM supabase_outbox')];
   assert.equal(rows.length, 5);
