@@ -240,8 +240,10 @@ jobs:
 
   release:
     name: Publish release
-    if: always() && needs.android.result == 'success' && github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release v'))
-    needs: [android, linux, windows, macos]
+    # Never publish a partial release. The test suite and every required desktop/mobile
+    # release build must finish successfully before artifacts can be uploaded.
+    if: always() && needs.tests.result == 'success' && needs.android.result == 'success' && needs.linux.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' && github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release v'))
+    needs: [tests, android, linux, windows, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -283,11 +285,18 @@ jobs:
       - name: Gather files
         run: |
           mkdir -p out
-          cp dist/android/*.apk out/ || true
-          cp dist/linux/*.tar.gz out/ 2>/dev/null || true
-          cp dist/macos/*.zip out/ 2>/dev/null || true
-          if [ -d dist/windows ]; then (cd dist && zip -qr ../out/GutsAndBolts-Windows.zip windows); fi
-          ls -la out
+          set -euo pipefail
+          # Each required artifact must exist; a missing build output is a release failure.
+          test -n "$(find dist/android -maxdepth 1 -type f -name '*.apk' -print -quit)"
+          test -n "$(find dist/linux -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$(find dist/macos -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -d dist/windows
+          cp dist/android/*.apk out/
+          cp dist/linux/*.tar.gz out/
+          cp dist/macos/*.zip out/
+          (cd dist && zip -qr ../out/GutsAndBolts-Windows.zip windows)
+          test -n "$(find out -maxdepth 1 -type f -print -quit)"
+          ls -lah out
       # The downloads live on gutsandbolts.net (Cloudflare), the only place people get the apps.
       # GitHub signs a short-lived token for this run; the site checks it before taking the files.
       - name: Upload to gutsandbolts.net
