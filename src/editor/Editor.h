@@ -360,7 +360,6 @@ private:
     std::string m_learnStatus;
     std::map<uint64_t, std::string> m_learnBaselineNodes;
     uint64_t m_learnBaselineTerrainVersion = 0;
-    std::string m_learnBaselinePublishedId;
     std::set<int> m_learnCompleted;
     bool m_showPerformanceDoctor = false;
     bool m_showLuaDebugger = false;
