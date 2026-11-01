@@ -29,7 +29,7 @@ The website refreshes these feeds periodically through the Worker. This delibera
 
 ## Schema
 
-The applied schema is documented in supabase/migrations/20261101162338_guts_bolts_live_activity.sql.
+The applied schema and least-privilege grants are tracked in supabase/migrations/20261101162338_guts_bolts_live_activity.sql and supabase/migrations/20261101163522_guts_bolts_live_activity_least_privilege.sql.
 
 ## Operational notes
 
