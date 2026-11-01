@@ -34,6 +34,7 @@ __pycache__/
 settings.json
 profile.json
 player_layout.ini
+account.key
 
 # Update checker bookkeeping
 .gb_commit
