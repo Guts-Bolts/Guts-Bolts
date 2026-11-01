@@ -1,4 +1,5 @@
 #include "Editor.h"
+#include "LearnHighlight.h"
 #include "../scene/Skin.h"
 #include "../scene/MaterialGraph.h"
 #include <sstream>
@@ -3590,7 +3591,9 @@ void Editor::renderMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Game Settings...")) m_openInfo = true;
         ImGui::Separator();
-        if (ImGui::MenuItem("Publish to Guts&Bolts...")) m_openPublish = true;
+        const bool publishMenu = ImGui::MenuItem("Publish to Guts&Bolts...");
+        StudioLearnHighlight::mark("publish.menu");
+        if (publishMenu) m_openPublish = true;
         if (ImGui::MenuItem("Publish Selection to Library...", nullptr, false, m_scene->selected() != nullptr)) m_openPublishModel = true;
         if (Online::staff() && ImGui::MenuItem("Make Gear...")) m_openMakeGear = true;   // staff: Tools sold in the catalog
         if (ImGui::MenuItem("Upload Missing Item Pictures", nullptr, false, Online::online())) fixItemPictures();
