@@ -43,6 +43,9 @@ test('every Studio lesson exposes a guided demonstration, practice challenge, hi
   assert.ok(editor.includes('const char* hints[3]'));
   assert.ok(editor.includes('const char* practice'));
   assert.ok(editor.includes('m_learnSawScriptError') && editor.includes('m_learnSecondPlayRun'), 'debugging lesson checks a real typo error and corrected output');
+  assert.ok(editor.includes('hasLiteralPrintOutput(newScripts, Log::lastRun())'), 'script lessons verify the exact print output from a new script');
+  assert.ok(editor.includes('hasLocalVariablePrintOutput(newScripts, Log::lastRun())'), 'variable lesson verifies the printed value of its declared local variable');
+  assert.ok(editor.includes('m_learnSecondPlayAfterEdit'), 'final lesson requires a second playtest after the edit');
   assert.ok(editor.includes('Log::currentRun()') && editor.includes('entry.text == expectedOutput'), 'debugging lesson verifies the exact corrected print output');
 });
 
