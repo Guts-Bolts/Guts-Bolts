@@ -2,6 +2,7 @@
 #include "../scene/Skin.h"
 #include "../scene/MaterialGraph.h"
 #include <sstream>
+#include <fstream>
 #include <cmath>
 #include <unordered_map>
 #include <unordered_set>
@@ -455,9 +456,85 @@ void Editor::render(float dt) {
     updateTitle();
 }
 
+namespace {
+const char* kStudioLearnIds[] = {"first-build", "make-it-move", "tiny-obby", "first-script", "light-up-scene", "publish-first-game", "meet-explorer", "properties-panel", "copy-group-organize", "color-materials", "shape-world", "spawn-into-action", "collision-course", "connect-parts", "sound-check", "first-gui", "make-things-happen", "remember-values", "find-fix-bugs", "build-test-improve"};
+constexpr int kStudioLearnCount = (int)(sizeof(kStudioLearnIds) / sizeof(kStudioLearnIds[0]));
+}
+
+void Editor::loadLearnProgress() {
+    if (m_learnLoaded) return;
+    m_learnLoaded = true;
+    std::ifstream in(Paths::file("studio_learn_progress.json"), std::ios::binary);
+    if (!in) return;
+    std::stringstream data; data << in.rdbuf();
+    const nlohmann::json saved = nlohmann::json::parse(data.str(), nullptr, false);
+    if (!saved.is_object()) return;
+    if (saved.contains("completed") && saved["completed"].is_array()) {
+        for (const auto& value : saved["completed"]) if (value.is_string()) {
+            const std::string id = value.get<std::string>();
+            for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) m_learnCompleted.insert(i);
+        }
+    }
+    if (saved.contains("current") && saved["current"].is_string()) {
+        const std::string id = saved["current"].get<std::string>();
+        for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
+            m_learnLesson = i; m_learnHasSavedCurrent = true; break;
+        }
+    }
+}
+
+void Editor::saveLearnProgress() {
+    loadLearnProgress();
+    nlohmann::json completed = nlohmann::json::array();
+    for (int i : m_learnCompleted) if (i >= 0 && i < kStudioLearnCount) completed.push_back(kStudioLearnIds[i]);
+    nlohmann::json progress = {{ "completed", completed },
+        { "current", kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] }};
+    const auto path = Paths::file("studio_learn_progress.json");
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (out) out << progress.dump(2);
+    m_learnHasSavedCurrent = true;
+    if (Online::online() && Online::me().value("userId", 0LL) > 0) {
+        Online::request("learn.progress.save", progress, [](const nlohmann::json& r) {
+            if (!r.value("ok", false)) Log::warn("Studio Learn progress wasn't synced: " + r.value("error", std::string("server error")));
+        });
+    }
+}
+
+void Editor::startLearnLesson(const std::string& id) {
+    loadLearnProgress();
+    for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
+        m_learnLesson = i; m_learnDemoStep = 0; m_learnHint = 0;
+        m_learnPractice = false; m_learnSawPlay = false; m_learnStatus.clear();
+        m_learnBaselineNodes.clear(); m_showLearn = true;
+        saveLearnProgress();
+        return;
+    }
+}
+
 // Studio Learn: short, task-based lessons that validate real scene changes.
 void Editor::renderLearn() {
     if (!m_showLearn) return;
+    loadLearnProgress();
+    if (!m_learnSyncRequested && Online::online() && Online::me().value("userId", 0LL) > 0) {
+        m_learnSyncRequested = true;
+        Online::request("learn.progress.get", {}, [this](const nlohmann::json& r) {
+            if (!r.value("ok", false) || !r.contains("progress") || !r["progress"].is_object()) return;
+            const auto& remote = r["progress"];
+            if (remote.contains("completed") && remote["completed"].is_array()) {
+                for (const auto& value : remote["completed"]) if (value.is_string()) {
+                    const std::string id = value.get<std::string>();
+                    for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) m_learnCompleted.insert(i);
+                }
+            }
+            if (!m_learnHasSavedCurrent && remote.contains("current") && remote["current"].is_string()) {
+                const std::string id = remote["current"].get<std::string>();
+                for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) { m_learnLesson = i; break; }
+            }
+            saveLearnProgress();
+        });
+    }
     if (m_playing && !m_learnWasPlaying) ++m_learnPlayStarts;
     m_learnWasPlaying = m_playing;
     if (m_playing) m_learnSawPlay = true;
@@ -698,6 +775,7 @@ void Editor::renderLearn() {
         m_learnSawPlay = false;
         m_learnStatus.clear();
         m_learnBaselineNodes.clear();
+        saveLearnProgress();
     }
     const Lesson& current = lessons[m_learnLesson];
     ImGui::TextDisabled("%s  |  %s  |  Lesson %d of %d",
@@ -883,6 +961,7 @@ void Editor::renderLearn() {
             if (passed) {
                 m_learnCompleted.insert(m_learnLesson);
                 m_learnStatus = "Completed. Your project contains a change that meets this lesson's check.";
+                if (passed) saveLearnProgress();
             } else {
                 m_learnStatus = "Not complete yet. " + feedback;
             }
@@ -903,6 +982,7 @@ void Editor::renderLearn() {
                     m_learnSawPlay = false;
                     m_learnStatus.clear();
                     m_learnBaselineNodes.clear();
+                    saveLearnProgress();
                 }
             }
         }
@@ -914,7 +994,7 @@ void Editor::renderLearn() {
         }
     }
     ImGui::Separator();
-    ImGui::TextDisabled("%zu of %d lessons completed in this Studio session. Progress is currently session-only.",
+    ImGui::TextDisabled("%zu of %d lessons completed. Progress is saved locally and synced to your account when signed in and online.",
                         m_learnCompleted.size(), lessonCount);
     ImGui::End();
 

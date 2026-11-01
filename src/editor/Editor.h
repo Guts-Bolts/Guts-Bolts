@@ -44,6 +44,7 @@ public:
     ~Editor();
     void render(float dt);
     void openFile(const std::string& path);
+    void startLearnLesson(const std::string& id);
     // Bring files in: 3D models, Roblox files, games, pictures, sounds and scripts
     // (File > Import, the Import button, or dragged from the computer onto Studio).
     // `mouse`: where they were dropped (the part under it gets pictures / sounds / scripts).
@@ -95,6 +96,8 @@ private:
     void renderTeamPanel();
     void renderPerformanceWindow();
     void renderLearn();
+    void loadLearnProgress();
+    void saveLearnProgress();
     void renderPerformanceDoctor();
     void renderLuaDebugger();
     void renderSceneValidator();
@@ -354,7 +357,7 @@ private:
     bool m_firstLayout = true;
     bool m_showSettings = false;
     bool m_showPerformance = false;
-    bool m_showLearn = false;
+    bool m_showLearn = false, m_learnLoaded = false, m_learnHasSavedCurrent = false, m_learnSyncRequested = false;
     int m_learnLesson = 0, m_learnDemoStep = 0, m_learnHint = 0;
     bool m_learnPractice = false, m_learnSawPlay = false, m_learnSawPublish = false, m_learnWasPlaying = false;
     int m_learnPlayStarts = 0;
