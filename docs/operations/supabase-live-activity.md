@@ -29,7 +29,7 @@ The website refreshes these feeds periodically through the Worker. This delibera
 
 ## Schema
 
-The applied schema is documented in supabase/live_activity_schema.sql.
+The applied schema is documented in supabase/migrations/20261101162338_guts_bolts_live_activity.sql.
 
 ## Operational notes
 
