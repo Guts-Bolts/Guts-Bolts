@@ -451,7 +451,7 @@ The current native runner validates the practice task against the scene rather t
 | 1. Your First Build | A newly created Part that is anchored and wider on X than Y |
 | 2. Make It Move | A newly created unanchored Part and a Play test during the challenge |
 | 3. Build a Tiny Obby | At least three newly created Parts and a Play test |
-| 4. Your First Script | A new Script containing a print call and a Play test |
+| 4. Your First Script | A new Script containing a literal print(\"message\") call, with that exact message observed in Output during Play |
 | 5. Light Up the Scene | A new enabled light with a changed brightness, range or colour, plus a Play test |
 | 6. Publish Your First Game | A successful publish response was received during this practice challenge and a published game ID is present |
 | 7. Meet the Explorer | A new Part has been renamed to something other than its default primitive name |
@@ -464,10 +464,10 @@ The current native runner validates the practice task against the scene rather t
 | 14. Connect the Parts | A new enabled Constraint has both endpoints assigned and a Play test occurs |
 | 15. Sound Check | A new Sound object exists and a Play test occurs |
 | 16. Your First GUI | A new TextLabel or TextButton is parented to a new ScreenGui and a Play test occurs |
-| 17. Make Things Happen | A new Script contains an event connection and a Play test occurred |
-| 18. Remembering Values | A new Script declares a local variable, uses print, and is run |
+| 17. Make Things Happen | A new Script contains an event connection, with its literal print message observed in Output during Play |
+| 18. Remembering Values | A new Script assigns a string to a local variable, prints that variable, and the exact value is observed in Output |
 | 19. Find and Fix Bugs | A new Script contains the corrected print call, not the example typo, and is run |
-| 20. Build, Test, Improve | Two Play-test starts occurred with a Part added or changed between the tests |
+| 20. Build, Test, Improve | A Part is added or changed after the first Play test ends, and a second Play test starts after that edit |
 
 These checks are deliberately based on meaningful outcomes rather than exact coordinates or exact object names, except where the lesson itself teaches a specific named object such as SpawnLocation. A check can confirm the presence of a relevant editor change, but it cannot yet prove every quality aspect of a build (for example, that an obby is fun or that a spawn point is safe). The lesson text therefore still asks the learner to inspect and playtest their work. Publishing only counts after the publish operation returns success; merely opening the publish dialog does not complete that lesson.
 
