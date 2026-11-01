@@ -990,7 +990,7 @@ export class GbServerObject extends DurableObject {
       created_at: new Date(now() * 1000).toISOString(),
     });
   }
-  recordForumActivity(thread, boardName, eventType, actorName, excerpt = '') {
+  recordForumActivity(thread, boardName, eventType, actorName) {
     if (!thread) return;
     this.queueSupabaseEvent('gb_forum_activity', {
       id: randomHex(12), thread_id: thread.id, board_id: thread.board,
@@ -4444,7 +4444,7 @@ export class GbServerObject extends DurableObject {
         pinned: false, locked: false, posts: [{ id: randomHex(6), by: me.id, text, at: t }] };
       this.forum.set(th.id, th);
       this.dirty.forum.add(th.id);
-      this.recordForumActivity(th, b.name, 'thread_created', me.name, text);
+      this.recordForumActivity(th, b.name, 'thread_created', me.name);
       // A full board: the threads quiet the longest go (pinned ones stay).
       const all = threadsIn(b.id).filter((x) => !x.pinned);
       for (const old of all.slice(kMaxBoardThreads)) { this.forum.delete(old.id); this.dirty.forum.add(old.id); }
@@ -4470,7 +4470,7 @@ export class GbServerObject extends DurableObject {
       th.posts.push({ id: randomHex(6), by: me.id, text, at: t });
       th.last = t; th.lastBy = me.id;
       this.dirty.forum.add(th.id);
-      this.recordForumActivity(th, (FORUM_BOARDS.find((board) => board.id === th.board) || {}).name, 'thread_reply', me.name, text);
+      this.recordForumActivity(th, (FORUM_BOARDS.find((board) => board.id === th.board) || {}).name, 'thread_reply', me.name);
       if (starter && starter.id !== me.id) this.notify(starter, 'forum', me.name + ' replied to "' + th.title.slice(0, 60) + '"', th.id);
       return threadPage(th, -1);
     }
