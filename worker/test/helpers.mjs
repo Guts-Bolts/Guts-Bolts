@@ -14,7 +14,7 @@ function fakeSql() {
     exec(query, ...bind) {
       if (!bind.length && query.split(';').filter((s) => s.trim()).length > 1) { db.exec(query); return []; }
       const st = db.prepare(query);
-      if (/^\s*select/i.test(query)) return st.all(...bind);
+      if (/^\s*(select|pragma)/i.test(query)) return st.all(...bind);
       st.run(...bind);
       return [];
     },
@@ -22,7 +22,8 @@ function fakeSql() {
 }
 
 export function makeServer() {
-  const s = new GbServerObject({ storage: { sql: fakeSql() } }, { OFFICIAL: STAFF });
+  const storage = { sql: fakeSql(), transactionSync: (fn) => fn() };
+  const s = new GbServerObject({ storage }, { OFFICIAL: STAFF });
   s.signUp = (name, id) => signUp(s, name, id);
   s.call = (me, op, args = {}) => { try { return s.op(op, me, args); } finally { s.flush(); } };
   s.addGame = (creator, name, extra = {}) => addGame(s, creator, name, extra);
