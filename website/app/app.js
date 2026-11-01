@@ -3710,15 +3710,24 @@ const actions = {
     if (!resume) progress.step = 0;
     if (signedIn()) {
       const remote = await call('learn.progress.get', {});
-      if (remote.ok && remote.progress && Number.isInteger(remote.progress.updatedAt))
-        progress.updatedAt = Math.max(Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0, remote.progress.updatedAt);
+      if (remote.ok && remote.progress) {
+        if (Array.isArray(remote.progress.completed))
+          progress.completed = [...new Set([...progress.completed, ...remote.progress.completed])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
+        if (Number.isInteger(remote.progress.updatedAt))
+          progress.updatedAt = Math.max(Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0, remote.progress.updatedAt);
+      }
     }
     progress.updatedAt = Math.max(Math.floor(Date.now() / 1000), (Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0) + 1);
     try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
     if (signedIn()) {
       const saved = await call('learn.progress.save', progress);
-      if (saved.ok && saved.progress && Number.isInteger(saved.progress.updatedAt)) {
-        progress.updatedAt = saved.progress.updatedAt;
+      if (saved.ok && saved.progress) {
+        if (Number.isInteger(saved.progress.updatedAt) && saved.progress.updatedAt > progress.updatedAt &&
+            STUDIO_LESSONS.some((l) => l[0] === saved.progress.current)) {
+          progress.current = saved.progress.current;
+          progress.step = Number.isInteger(saved.progress.step) && saved.progress.step >= 0 && saved.progress.step <= 2 ? saved.progress.step : 0;
+        }
+        if (Number.isInteger(saved.progress.updatedAt)) progress.updatedAt = saved.progress.updatedAt;
         try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
       }
     }
