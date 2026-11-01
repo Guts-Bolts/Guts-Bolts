@@ -872,7 +872,7 @@ void Editor::renderLearn() {
                     feedback = "Create a new Script that declares a local variable and uses it in print(...), then run it.";
                     break;
                 case 18:
-                    passed = m_learnSawPlay && hasText(newScripts, "print(") && !hasText(newScripts, "pritn(", "");
+                    passed = m_learnSawPlay && hasText(newScripts, "print(", "") && !hasText(newScripts, "pritn(", "");
                     feedback = "Create a practice Script, reproduce a typo, correct it to print(...), and run it with F5.";
                     break;
                 case 19:
