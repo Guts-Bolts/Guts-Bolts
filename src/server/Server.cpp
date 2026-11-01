@@ -605,10 +605,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             }
             int step = me.learnProgress.is_object() && me.learnProgress.contains("step") && me.learnProgress["step"].is_number_integer()
                 ? std::clamp(me.learnProgress["step"].get<int>(), 0, 2) : 0;
+            const bool practice = me.learnProgress.is_object() && me.learnProgress.value("practice", false);
             long long updatedAt = me.learnProgress.is_object() && me.learnProgress.contains("updatedAt") &&
                 me.learnProgress["updatedAt"].is_number_integer()
                 ? std::max(0LL, me.learnProgress["updatedAt"].get<long long>()) : 0LL;
-            json r = okay(); r["progress"] = {{ "completed", completed }, { "current", current }, { "step", step }, { "updatedAt", updatedAt }}; return r;
+            json r = okay(); r["progress"] = {{ "completed", completed }, { "current", current }, { "step", step }, { "practice", practice }, { "updatedAt", updatedAt }}; return r;
         }
         if (!args.contains("completed") || !args["completed"].is_array() || args["completed"].size() > 20)
             return fail("Studio Learn progress must contain a list of up to 20 completed lessons.");
@@ -629,6 +630,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             return fail("Studio Learn current lesson must be a lesson ID.");
         if (args.contains("step") && (!args["step"].is_number_integer() || args["step"].get<int>() < 0 || args["step"].get<int>() > 2))
             return fail("Studio Learn step must be between 0 and 2.");
+        if (args.contains("practice") && !args["practice"].is_boolean())
+            return fail("Studio Learn practice phase must be a boolean.");
         if (args.contains("updatedAt") && (!args["updatedAt"].is_number_integer() || args["updatedAt"].get<long long>() < 0))
             return fail("Studio Learn update timestamp must be a non-negative integer.");
         const long long previousUpdatedAt = me.learnProgress.is_object() && me.learnProgress.contains("updatedAt") &&
@@ -647,10 +650,13 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             ? me.learnProgress["current"].get<std::string>() : std::string();
         const int storedStep = me.learnProgress.is_object() && me.learnProgress.contains("step") &&
             me.learnProgress["step"].is_number_integer() ? std::clamp(me.learnProgress["step"].get<int>(), 0, 2) : 0;
+        const bool storedPractice = me.learnProgress.is_object() && me.learnProgress.value("practice", false);
+        const bool requestedPractice = args.contains("practice") ? args["practice"].get<bool>() : storedPractice;
         const std::string current = acceptResume ? requestedCurrent : storedCurrent;
         const int step = acceptResume ? requestedStep : storedStep;
+        const bool practice = acceptResume ? requestedPractice : storedPractice;
         const long long updatedAt = std::max(serverNow, std::max(previousUpdatedAt, incomingUpdatedAt));
-        me.learnProgress = {{ "completed", completed }, { "current", current }, { "step", step }, { "updatedAt", updatedAt }};
+        me.learnProgress = {{ "completed", completed }, { "current", current }, { "step", step }, { "practice", practice }, { "updatedAt", updatedAt }};
         saveUsers();
         json r = okay(); r["progress"] = me.learnProgress; return r;
     }
