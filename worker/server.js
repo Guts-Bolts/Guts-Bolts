@@ -1655,6 +1655,7 @@ export class GbServerObject extends DurableObject {
       const au = a.auction;
       if (!au || au.done || t < au.endsAt) continue;
       au.done = true;
+      this.recordAuctionEvent(a, 'auction_completed', 'Guts&Bolts', Math.max(0, ...au.bids.map((bid) => bid.amount)));
       for (const b of au.bids) {
         const u = this.users.get(b.by);
         if (!u) continue;
@@ -3363,6 +3364,7 @@ export class GbServerObject extends DurableObject {
       a.auction = { copies, minBid, startedAt: t, endsAt: t + Math.round(hours * 3600), bids: [], done: false };
       this.staffDid(me, 'auction', 'Started an auction for "' + a.name + '" (' + copies + (copies === 1 ? ' copy' : ' copies') + ', from ' + minBid + ' Bolts)', a.creator);
       this.saveAsset(a);
+      this.recordAuctionEvent(a, 'auction_started', me.name, minBid);
       return okay({ asset: this.publicAsset(a, me) });
     }
     if (name === 'auction.bid') {
@@ -3387,6 +3389,7 @@ export class GbServerObject extends DurableObject {
       }
       if (au.endsAt - t < kAuctionExtend) au.endsAt = t + kAuctionExtend;
       this.saveAsset(a);
+      this.recordAuctionEvent(a, 'bid_placed', me.name, amount);
       return okay({ asset: this.publicAsset(a, me), me: this.meJson(me) });
     }
     if (name === 'auction.cancel') {
@@ -3404,6 +3407,7 @@ export class GbServerObject extends DurableObject {
       a.auction.cancelled = true;
       this.staffDid(me, 'auction', 'Cancelled the auction for "' + a.name + '"', a.creator);
       this.saveAsset(a);
+      this.recordAuctionEvent(a, 'auction_cancelled', me.name);
       return okay({ asset: this.publicAsset(a, me), me: this.meJson(me) });
     }
     if (name === 'resale.list') {
@@ -4440,6 +4444,7 @@ export class GbServerObject extends DurableObject {
         pinned: false, locked: false, posts: [{ id: randomHex(6), by: me.id, text, at: t }] };
       this.forum.set(th.id, th);
       this.dirty.forum.add(th.id);
+      this.recordForumActivity(th, b.name, 'thread_created', me.name, text);
       // A full board: the threads quiet the longest go (pinned ones stay).
       const all = threadsIn(b.id).filter((x) => !x.pinned);
       for (const old of all.slice(kMaxBoardThreads)) { this.forum.delete(old.id); this.dirty.forum.add(old.id); }
@@ -4465,6 +4470,7 @@ export class GbServerObject extends DurableObject {
       th.posts.push({ id: randomHex(6), by: me.id, text, at: t });
       th.last = t; th.lastBy = me.id;
       this.dirty.forum.add(th.id);
+      this.recordForumActivity(th, (FORUM_BOARDS.find((board) => board.id === th.board) || {}).name, 'thread_reply', me.name, text);
       if (starter && starter.id !== me.id) this.notify(starter, 'forum', me.name + ' replied to "' + th.title.slice(0, 60) + '"', th.id);
       return threadPage(th, -1);
     }
@@ -5360,6 +5366,31 @@ export class GbServerObject extends DurableObject {
     if (typeof req.op === 'string' && req.op.startsWith('relay.')) return json(fail('Multiplayer needs the Guts&Bolts app.'));
     const h = request.headers;   // (set by worker/shield.js, which replaces anything a visitor sent in them)
     let answer = this.handle(req, { ip: h.get('x-gb-ip') || '', web: h.get('x-gb-web') === '1', human: h.get('x-gb-human') === '1', sitekey: h.get('x-gb-sitekey') || '' });
+    if (answer.ok && req.op === 'notes.list' && answer.me && answer.me.id) {
+      try {
+        if (this.hasSupabaseOutbox()) await this.flushSupabaseOutbox();
+        const archived = await listSupabaseNotifications(this.env, answer.me.id, 200);
+        const merged = new Map();
+        for (const row of archived) {
+          const at = Math.floor(Date.parse(row.created_at) / 1000) || 0;
+          merged.set(row.id, { id: row.id, kind: row.kind, text: row.message, about: row.about || '',
+            at, read: !!row.read_at });
+        }
+        for (const note of answer.notes || []) {
+          const old = merged.get(note.id);
+          merged.set(note.id, old ? Object.assign(old, note, { read: !!(old.read || note.read) }) : note);
+        }
+        answer.notes = [...merged.values()].sort((a, b) => b.at - a.at).slice(0, 200);
+      } catch { /* The native Durable Object notification list remains available. */ }
+    }
+    if (answer.ok && req.op === 'notes.read' && answer.me && answer.me.id) {
+      try { await markSupabaseNotificationsRead(this.env, answer.me.id); } catch { /* Native read state remains authoritative. */ }
+    }
+    if (this.hasSupabaseOutbox()) {
+      const delivery = this.flushSupabaseOutbox();
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(delivery);
+      else await delivery;
+    }
     if (answer.ok && answer.translate) answer = await this.translate(answer);
     if (this.outbox.length) await this.sendMail();
     if (this.lyretoQueue.length) await this.fetchLyretoCards();
