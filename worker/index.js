@@ -154,6 +154,14 @@ async function handleOauth(request, env, url) {
 }
 
 export default {
+  async scheduled(controller, env, ctx) {
+    const id = env.GB_SERVER_OBJECT.idFromName('main');
+    const stub = env.GB_SERVER_OBJECT.get(id);
+    ctx.waitUntil(stub.backupToR2().catch((error) => {
+      console.error('Scheduled database backup failed:', error && error.message || error);
+      throw error;
+    }));
+  },
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     // The site lives at gutsandbolts.net. The old workers.dev address only keeps answering
