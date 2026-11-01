@@ -435,6 +435,7 @@ void Editor::render(float dt) {
     m_perfCpuFrameMs = std::chrono::duration<float, std::milli>(
         std::chrono::steady_clock::now() - frameStart).count();
     renderPerformanceWindow();
+    renderLearn();
     renderPerformanceDoctor();
     renderLuaDebugger();
     renderSceneValidator();
@@ -452,6 +453,495 @@ void Editor::render(float dt) {
 
     trackChanges();
     updateTitle();
+}
+
+// Studio Learn: short, task-based lessons that validate real scene changes.
+void Editor::renderLearn() {
+    if (!m_showLearn) return;
+    if (m_playing && !m_learnWasPlaying) ++m_learnPlayStarts;
+    m_learnWasPlaying = m_playing;
+    if (m_playing) m_learnSawPlay = true;
+
+    struct Lesson {
+        const char* title;
+        const char* level;
+        const char* topic;
+        const char* why;
+        const char* outcome;
+        const char* demo[3];
+        const char* practice;
+        const char* hints[3];
+        int check;
+    };
+    static const Lesson lessons[] = {
+        {"Your First Build", "Beginner", "Building",
+         "Parts are the basic building blocks of almost every 3D game. Learning to transform and anchor one gives you control over the scene.",
+         "Create a wide, stable platform and understand the difference between position, size and physics.",
+         {"Use Add > Cube or Explorer > Insert Object > Parts > Part to create a basic Part.",
+          "Select it and use the Move and Scale tools in the HOME ribbon. Position changes where it is; size changes how much space it occupies.",
+          "In Properties, find Anchored and enable it. Use File > Save As to give the project a name."},
+         "Create a second Part, make it wider than it is tall, turn Anchored on, and give it a useful name. Do not copy the demonstration platform's dimensions.",
+         {"Create another Part from Add > Cube or Explorer > Insert Object.",
+          "Select it, then use the Move/Scale tools or Properties > Size.",
+          "Open Properties and enable Anchored. Rename it in Explorer."}, 0},
+        {"Make It Move", "Beginner", "Physics",
+         "Physics makes loose objects fall, roll and collide. Anchored objects ignore gravity; unanchored parts join the simulation.",
+         "Build a small physics test with one loose object and observe gravity in Play mode.",
+         {"Insert a Part and place it above the ground using Move.",
+          "Select it and turn Anchored off in Properties. Explain why a loose object needs a safe landing area.",
+          "Press F5 or use Mode > Play. Observe the fall, then stop the test and return to editing."},
+         "Create a different Part above the ground, leave it unanchored, and run a Play test. Return to editing when you have observed it fall.",
+         {"Select the practice Part and open Properties.",
+          "Find the Anchored checkbox. It must be off for gravity to move the Part.",
+          "Press F5 to start Play; stop the test when you have seen the result."}, 1},
+        {"Build a Tiny Obby", "Beginner", "Building",
+         "An obstacle course teaches spacing, scale and playtesting together. A route is only useful if a player can actually traverse it.",
+         "Create a start, at least three jumps and a finish that can be reached in Play mode.",
+         {"Insert a platform and place it as the starting ledge. Keep it anchored.",
+          "Duplicate it with Edit > Duplicate (Ctrl+D), then move the copy to create a gap.",
+          "Repeat to make a route, add a finish platform, and press F5 to test the jumps."},
+         "Build a different route with at least three new platforms and a finish. Playtest it. If a jump is impossible, adjust the gap and test again.",
+         {"Create platforms with Add > Cube or Explorer > Insert Object.",
+          "Use Edit > Duplicate, then Move to space each jump.",
+          "Press F5. Stop the test and change the spacing if the route cannot be completed."}, 2},
+        {"Your First Script", "Beginner", "Scripting",
+         "Scripts turn a static scene into a game. A print message is a safe first test because it lets you confirm that code actually ran.",
+         "Create a Script, edit its source, run it and find its output.",
+         {"In Explorer, select a suitable Part and use its context menu > Add Script inside, or use Add > Script.",
+          "Open the Script and find the code editor. A new Script includes a small Hello world example.",
+          "Press F5 and look in the Output panel for the printed message. Stop the test when it appears."},
+         "Create another Script, change its message to something unique, then run the game and find that exact message in Output.",
+         {"Select a Part in Explorer and use Add Script inside, or Add > Script.",
+          "Open the new Script and change the text inside print(...).",
+          "Press F5, then open VIEW ribbon > Output and look for your message."}, 3},
+        {"Light Up the Scene", "Beginner", "Lighting",
+         "Lighting changes readability and mood. A point light placed inside a Part illuminates the nearby area.",
+         "Add a light, adjust its brightness, range and colour, and compare the result.",
+         {"Create a small Part where you want the light source to sit.",
+          "Use Add > Point Light, or Explorer > Insert Object > Effects & Lights > PointLight, with the Part selected.",
+          "Select the light in Explorer and change Brightness, Range and Color in Properties."},
+         "Add a second light in another area. Give it a different colour or range, then press F5 to compare the lighting in the running scene.",
+         {"Select the Part that should hold the light, then use Add > Point Light.",
+          "Select the PointLight child in Explorer and open Properties.",
+          "Adjust Brightness, Range or Color. Compare it with the first light."}, 4},
+        {"Publish Your First Game", "Beginner", "Publishing",
+         "Saving protects the local project; publishing makes a version available through Guts & Bolts. Publishing is an explicit action and requires an account.",
+         "Set project metadata, save the project and complete the existing publish confirmation.",
+         {"Open File > Game Settings and choose a clear title and description.",
+          "Use File > Save or File > Save As to save the local project first.",
+          "Choose File > Publish to Guts&Bolts, review the details and confirm only when you are ready."},
+         "Publish this project, or publish an update if it already has a published ID. Do not publish anything you do not want public.",
+         {"Check the title and description in File > Game Settings.",
+          "Save the project with File > Save.",
+          "Use File > Publish to Guts&Bolts and follow the confirmation. Sign in if Studio asks."}, 5},
+        {"Meet the Explorer", "Beginner", "Studio basics",
+         "Explorer shows the scene hierarchy. Clear names and parent-child relationships make large projects easier to maintain.",
+         "Find objects in Explorer, rename them and distinguish a child from a top-level object.",
+         {"Open VIEW ribbon > Explorer if the Explorer panel is hidden.",
+          "Select a Part in the 3D view and locate its selected row in Explorer.",
+          "Right-click the row, choose Rename, enter a descriptive name and press Enter."},
+         "Create two new Parts, rename both so their purpose is obvious, and select each one from Explorer.",
+         {"Open VIEW ribbon > Explorer.",
+          "Create two Parts, then right-click each row and choose Rename (F2 also works).",
+          "Click each renamed row to select it. The selected object should match the row."}, 6},
+        {"The Properties Panel", "Beginner", "Studio basics",
+         "Properties exposes exact values that are difficult to set precisely with a mouse gizmo. It is also where many physics and appearance settings live.",
+         "Select an object, search its Properties and change a real value.",
+         {"Select a Part and open VIEW ribbon > Properties if the panel is hidden.",
+          "Use the Search properties... field to find Size. Notice the three dimensions.",
+          "Change one dimension, then search Anchored and inspect its checkbox."},
+         "Select a different Part and change its Size plus one other property, such as Color, Transparency or Anchored.",
+         {"Select a different Part and open Properties.",
+          "Use Search properties... to find Size, then change one dimension.",
+          "Search Color, Transparency or Anchored and make a second deliberate change."}, 7},
+        {"Copy, Group, Organize", "Beginner", "Building",
+         "Duplication speeds up repeated construction. Models keep related objects together without merging their geometry.",
+         "Duplicate a Part and group several related objects into a Model.",
+         {"Select a Part and choose Edit > Duplicate (Ctrl+D). Move the copy away from the original.",
+          "Create or select at least two related Parts. Ctrl-click rows in Explorer to multi-select.",
+          "Choose Edit > Group (Ctrl+G). Rename the new Model in Explorer."},
+         "Build a small three-Part object, duplicate one component, then group the related pieces into a clearly named Model.",
+         {"Use Edit > Duplicate (Ctrl+D) on a selected Part.",
+          "Ctrl-click multiple object rows in Explorer to select them together.",
+          "Choose Edit > Group (Ctrl+G), then rename the Model."}, 8},
+        {"Color and Materials", "Beginner", "Building",
+         "A deliberate palette makes a build readable and gives separate areas a visual identity. Material changes surface appearance, not just colour.",
+         "Style several Parts with more than one colour and material.",
+         {"Select a Part and find Color in Properties. Choose a colour that contrasts with the scene.",
+          "Find Material in Properties and choose a surface such as Metal, Wood, Glass or Neon.",
+          "Repeat on another Part and compare the visual difference."},
+         "Style at least three new Parts using two different materials or visibly different colours. Keep the palette intentional.",
+         {"Create or select three Parts.",
+          "Use Properties > Color to give them a coordinated palette.",
+          "Use Properties > Material to apply at least two different surfaces."}, 9},
+        {"Shape the World", "Beginner", "Terrain",
+         "Terrain is sculpted ground, not a collection of separate Parts. Raise, lower, smooth and paint brushes change the landscape itself.",
+         "Create terrain and make a visible sculpting edit without replacing the whole map.",
+         {"Open the TERRAIN ribbon tab and inspect the available brush tools.",
+          "Choose a small brush size and a Raise or Lower brush. Make one controlled edit in the viewport.",
+          "Switch to Smooth or Paint and refine the same area. Use Undo if the result is not what you intended."},
+         "Create a small hill, dip or ridge in a different area. Then make one refinement with Smooth or Paint.",
+         {"Open the TERRAIN ribbon tab and activate a brush.",
+          "Keep the brush small and make a controlled change in the viewport.",
+          "Use a second brush mode to refine the shape. Avoid large destructive edits."}, 10},
+        {"Spawn Into the Action", "Beginner", "Gameplay",
+         "A spawn point determines where players enter the world. A well-placed spawn should be above a safe, reachable surface.",
+         "Add a SpawnLocation and test where the player begins.",
+         {"In Explorer, use Insert Object > Parts > SpawnLocation.",
+          "Move it above a wide, anchored platform. Keep it clear of walls and hazards.",
+          "Press F5 and confirm the player starts at the intended location."},
+         "Add a new SpawnLocation in a different safe area and test the starting position. If the player appears somewhere unexpected, inspect the spawn placement.",
+         {"Select Workspace in Explorer and use Insert Object > Parts > SpawnLocation.",
+          "Move the SpawnLocation above a safe anchored platform.",
+          "Press F5 and observe the player's starting position."}, 11},
+        {"Collision Course", "Intermediate", "Physics",
+         "CanCollide controls whether a Part blocks physical movement. Decorative geometry often should not block players, while floors and walls usually should.",
+         "Set up a pair of Parts with different collision behavior and test them.",
+         {"Create a solid platform and a second Part that a player can walk through.",
+          "Select the second Part and turn CanCollide off in Properties.",
+          "Press F5 and compare how the player interacts with the solid platform and the non-colliding Part."},
+         "Make a new decorative Part non-collidable, then test that the player can pass through it while the floor still supports them.",
+         {"Select the decorative Part in Explorer or the viewport.",
+          "Open Properties and find CanCollide. Turn it off.",
+          "Press F5 and test the difference. Keep the floor collidable."}, 12},
+        {"Connect the Parts", "Intermediate", "Physics",
+         "Constraints create physical relationships such as ropes, hinges and springs. The endpoints matter: a constraint with the wrong attachments will not behave as intended.",
+         "Connect two physics objects with a supported constraint and test the connection.",
+         {"Create two Parts with space between them and make sure they can participate in physics.",
+          "Use the MODEL ribbon's connection tool and follow its prompts to choose the two parts or attachment points.",
+          "Inspect the resulting Constraint in Explorer and test it with Play or Simulate."},
+         "Connect a different pair of Parts with a constraint. Check that its endpoints refer to the intended objects, then test the movement.",
+         {"Create or select two separate Parts.",
+          "Choose the connection tool in the MODEL ribbon and select both endpoints.",
+          "Find the new Constraint in Explorer and run a physics test."}, 13},
+        {"Sound Check", "Beginner", "Audio",
+         "Sound objects can play effects from a location in the world. Volume and looping change how an effect feels in a game.",
+         "Add a Sound, configure its asset and playback settings, then test it.",
+         {"Select a Part and choose Add > Sound, or insert Sound from Explorer.",
+          "Select the Sound and inspect SoundId, Volume, Looped and Playing/Autoplay settings in Properties.",
+          "Use an available built-in or approved audio asset, then test playback through the supported workflow."},
+         "Add a different Sound to another object, set a sensible volume, and test it. Do not rely on an external or unapproved asset.",
+         {"Select a different Part and add a Sound.",
+          "Choose an available sound asset and adjust Volume in Properties.",
+          "Test playback. Turn looping on only if the sound should repeat."}, 14},
+        {"Your First GUI", "Beginner", "UI",
+         "A ScreenGui holds interface elements shown to the player. A TextLabel displays information; a TextButton is intended for interaction.",
+         "Create a ScreenGui with a visible text element and adjust its layout.",
+         {"In Explorer, insert a ScreenGui in StarterGui.",
+          "Insert a TextLabel inside the ScreenGui. Set its Text to a short title.",
+          "Adjust its Size, Position and text appearance in Properties, then test in Play mode."},
+         "Create a second interface element with different text and position it so both elements remain readable.",
+         {"Select the ScreenGui under StarterGui and insert a TextLabel or TextButton.",
+          "Change the Text property to your own message.",
+          "Adjust Size and Position in Properties, then press F5 to inspect it."}, 15},
+        {"Make Things Happen", "Intermediate", "Scripting",
+         "Events let a script react to what players do. Connecting a callback is the foundation of buttons, triggers and interactive objects.",
+         "Connect a supported event to a short callback and trigger it in a test.",
+         {"Create a Script inside a Part and open it in the Script Editor.",
+          "Study the Part.Touched event example in the editor's available script help. Explain what the callback receives.",
+          "Connect the event to a callback that prints a short message. Run the game and trigger the event."},
+         "Create a separate Script that connects a supported event to a different message. Trigger it during Play and find the output.",
+         {"Create a new Script inside a suitable Part.",
+          "Use a supported event and connect it with :Connect(function(...)).",
+          "Press F5, trigger the event, and check VIEW ribbon > Output."}, 16},
+        {"Remembering Values", "Intermediate", "Scripting",
+         "Variables give names to values so code can reuse and change them without repeating the same literal everywhere.",
+         "Store a value in a local variable and use it in visible output.",
+         {"Open a Script and declare a local variable with a clear name.",
+          "Assign it a string or number. Explain the difference between the variable name and its value.",
+          "Use the variable in print(...), run the game and inspect Output."},
+         "Create a new Script with a differently named variable, change its value, and use that variable in the output.",
+         {"Create and open a new Script.",
+          "Declare a local variable and assign it a value.",
+          "Pass that variable to print(...), then press F5 and inspect Output."}, 17},
+        {"Find and Fix Bugs", "Intermediate", "Scripting",
+         "Debugging is a repeatable loop: reproduce the problem, read the diagnostic, make one correction and run the test again.",
+         "Correct a small typo in a Script and verify the corrected code runs.",
+         {"Open a small Script and deliberately change print to the misspelled pritn.",
+          "Press F5, then open VIEW ribbon > Output and inspect the error or missing behavior.",
+          "Return to the Script Editor, correct the spelling and run again."},
+         "Create a new Script with a temporary misspelling in a print call, reproduce the problem, fix it, and verify the corrected message appears in Output.",
+         {"Start with a tiny print(...) example and introduce one typo.",
+          "Run with F5 and inspect VIEW ribbon > Output for the failure.",
+          "Correct the typo, run again and confirm the expected message appears."}, 18},
+        {"Build, Test, Improve", "Intermediate", "Publishing",
+         "A useful playtest checks a specific player journey. Fixing one observed problem at a time makes it possible to tell whether the change helped.",
+         "Run a structured test, identify one concrete issue, fix it and retest.",
+         {"Choose a short route or interaction in your scene and write down what should happen.",
+          "Press F5 and test that exact route. Stop and note one real problem, not just a cosmetic preference.",
+          "Return to editing, make one change and run the same test again."},
+         "Test a route or interaction in your own scene, fix one issue you actually observed, and repeat the same test to verify the improvement.",
+         {"Pick one repeatable player action to test.",
+          "Press F5, reproduce the issue, then stop the simulation.",
+          "Change the relevant object or script and rerun the same test."}, 19}
+    };
+
+    static const char* titles[] = {
+        "1. Your First Build", "2. Make It Move", "3. Build a Tiny Obby", "4. Your First Script",
+        "5. Light Up the Scene", "6. Publish Your First Game", "7. Meet the Explorer",
+        "8. The Properties Panel", "9. Copy, Group, Organize", "10. Color and Materials",
+        "11. Shape the World", "12. Spawn Into the Action", "13. Collision Course",
+        "14. Connect the Parts", "15. Sound Check", "16. Your First GUI",
+        "17. Make Things Happen", "18. Remembering Values", "19. Find and Fix Bugs",
+        "20. Build, Test, Improve"
+    };
+    constexpr int lessonCount = (int)(sizeof(lessons) / sizeof(lessons[0]));
+    m_learnLesson = std::clamp(m_learnLesson, 0, lessonCount - 1);
+
+    ImGui::SetNextWindowSize(ImVec2(520, 560), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Studio Learn", &m_showLearn)) { ImGui::End(); return; }
+
+    if (ImGui::Combo("Lesson", &m_learnLesson, titles, lessonCount)) {
+        m_learnDemoStep = 0;
+        m_learnHint = 0;
+        m_learnPractice = false;
+        m_learnSawPlay = false;
+        m_learnStatus.clear();
+        m_learnBaselineNodes.clear();
+    }
+    const Lesson& current = lessons[m_learnLesson];
+    ImGui::TextDisabled("%s  |  %s  |  Lesson %d of %d",
+                        current.level, current.topic, m_learnLesson + 1, lessonCount);
+    ImGui::Separator();
+    ImGui::TextWrapped("%s", current.outcome);
+    ImGui::Spacing();
+    ImGui::TextDisabled("WHY THIS MATTERS");
+    ImGui::TextWrapped("%s", current.why);
+    ImGui::Spacing();
+
+    if (!m_learnPractice) {
+        ImGui::SeparatorText("Guided demonstration");
+        ImGui::Text("Step %d of 3", m_learnDemoStep + 1);
+        ImGui::TextWrapped("%s", current.demo[m_learnDemoStep]);
+        ImGui::Spacing();
+        ImGui::TextDisabled("Follow the instruction in the real editor. This panel does not click controls or change your project for you.");
+        if (m_learnDemoStep > 0) {
+            if (ImGui::Button("Back")) { --m_learnDemoStep; m_learnStatus.clear(); }
+            ImGui::SameLine();
+        }
+        if (m_learnDemoStep < 2) {
+            if (ImGui::Button("Next guided step")) { ++m_learnDemoStep; m_learnStatus.clear(); }
+        } else if (ImGui::Button("Start practice challenge")) {
+            m_learnBaselineNodes.clear();
+            m_scene->forEach([this](SceneNode* n) {
+                if (n && !n->internal) m_learnBaselineNodes[n->id] = Serializer::nodeShallowToString(*n);
+            });
+            m_learnBaselineTerrainVersion = m_scene->terrain().version();
+            m_learnSawPlay = false;
+            m_learnSawPublish = false;
+            m_learnPlayStarts = 0;
+            m_learnWasPlaying = m_playing;
+            m_learnHint = 0;
+            m_learnPractice = true;
+            m_learnStatus.clear();
+        }
+    } else {
+        ImGui::SeparatorText("Try it yourself");
+        ImGui::TextWrapped("%s", current.practice);
+        ImGui::Spacing();
+        if (ImGui::Button("Lightbulb: reveal next hint")) {
+            if (m_learnHint < 3) ++m_learnHint;
+        }
+        for (int i = 0; i < m_learnHint; ++i) {
+            ImGui::BulletText("%s", current.hints[i]);
+        }
+        ImGui::Spacing();
+        if (ImGui::Button("Check my work")) {
+            std::vector<SceneNode*> changed, newParts, newScripts;
+            std::vector<SceneNode*> newLights, newModels, newConstraints, newSounds, newGui;
+            m_scene->forEach([&](SceneNode* n) {
+                if (!n || n->internal) return;
+                auto old = m_learnBaselineNodes.find(n->id);
+                if (old == m_learnBaselineNodes.end()) {
+                    if (n->isPart()) newParts.push_back(n);
+                    if (n->isScript()) newScripts.push_back(n);
+                    if (n->isLight()) newLights.push_back(n);
+                    if (n->kind == NodeKind::Model) newModels.push_back(n);
+                    if (n->kind == NodeKind::Constraint) newConstraints.push_back(n);
+                    if (n->isSound()) newSounds.push_back(n);
+                    if (n->kind == NodeKind::Gui) newGui.push_back(n);
+                } else if (Serializer::nodeShallowToString(*n) != old->second) {
+                    changed.push_back(n);
+                }
+            });
+            auto hasText = [](const std::vector<SceneNode*>& nodes, const std::string& a,
+                              const std::string& b) {
+                for (SceneNode* n : nodes)
+                    if (n->source.find(a) != std::string::npos &&
+                        (b.empty() || n->source.find(b) != std::string::npos)) return true;
+                return false;
+            };
+            bool passed = false;
+            std::string feedback;
+            switch (current.check) {
+                case 0:
+                    passed = std::any_of(newParts.begin(), newParts.end(), [](SceneNode* n) {
+                        return n->anchored && n->transform.scale.x > n->transform.scale.y;
+                    });
+                    feedback = "Create a new Part, make its X size larger than its Y size, and enable Anchored in Properties.";
+                    break;
+                case 1:
+                    passed = m_learnSawPlay && std::any_of(newParts.begin(), newParts.end(), [](SceneNode* n) { return !n->anchored; });
+                    feedback = "A new Part must be unanchored, and you must start a Play test with F5.";
+                    break;
+                case 2:
+                    passed = m_learnSawPlay && newParts.size() >= 3;
+                    feedback = "Create at least three new Parts for the route, then test it with F5.";
+                    break;
+                case 3:
+                    passed = m_learnSawPlay && hasText(newScripts, "print(", "");
+                    feedback = "Create a new Script containing print(...), then run it with F5.";
+                    break;
+                case 4:
+                    passed = m_learnSawPlay && std::any_of(newLights.begin(), newLights.end(), [](SceneNode* n) {
+                        return n->enabled && (n->brightness != 2.0f || n->range != 14.0f ||
+                               glm::length(n->color - glm::vec3(1.0f)) > 0.05f);
+                    });
+                    feedback = "Add a new enabled PointLight or SpotLight and change its Brightness, Range or Color.";
+                    break;
+                case 5:
+                    passed = m_learnSawPublish && !m_scene->info().publishedId.empty();
+                    feedback = "Use File > Publish to Guts&Bolts and complete the publish confirmation.";
+                    break;
+                case 6:
+                    passed = std::any_of(newParts.begin(), newParts.end(), [](SceneNode* n) {
+                        return n->name != "Part" && n->name != "Cube" && n->name != "Sphere";
+                    });
+                    feedback = "Create a new Part and rename it to describe its purpose.";
+                    break;
+                case 7:
+                    passed = std::any_of(changed.begin(), changed.end(), [](SceneNode* n) { return n->isPart(); });
+                    feedback = "Select a Part that existed before practice and change one of its Properties values.";
+                    break;
+                case 8:
+                    passed = std::any_of(newModels.begin(), newModels.end(), [](SceneNode* n) { return !n->children.empty(); });
+                    feedback = "Group at least two related objects with Edit > Group (Ctrl+G).";
+                    break;
+                case 9: {
+                    bool varied = false;
+                    for (size_t i = 0; i < newParts.size(); ++i)
+                        for (size_t j = i + 1; j < newParts.size(); ++j)
+                            varied |= newParts[i]->material != newParts[j]->material ||
+                                      glm::length(newParts[i]->color - newParts[j]->color) > 0.08f;
+                    passed = newParts.size() >= 3 && varied;
+                    feedback = "Create at least three new Parts and give them at least two different materials or visibly different colours.";
+                    break;
+                }
+                case 10:
+                    passed = m_scene->terrain().version() > m_learnBaselineTerrainVersion;
+                    feedback = "Open the TERRAIN tab and make a real terrain brush edit. Selecting a brush alone does not count.";
+                    break;
+                case 11:
+                    passed = m_learnSawPlay && std::any_of(newParts.begin(), newParts.end(), [](SceneNode* n) {
+                        return n->name == "SpawnLocation" ||
+                               std::find(n->tags.begin(), n->tags.end(), "SpawnLocation") != n->tags.end();
+                    });
+                    feedback = "Insert a new SpawnLocation from Explorer > Insert Object > Parts.";
+                    break;
+                case 12:
+                    passed = m_learnSawPlay && std::any_of(newParts.begin(), newParts.end(), [](SceneNode* n) { return !n->canCollide; });
+                    feedback = "Create a new Part, select it, and turn CanCollide off in Properties.";
+                    break;
+                case 13:
+                    passed = m_learnSawPlay && std::any_of(newConstraints.begin(), newConstraints.end(), [](SceneNode* n) {
+                        return n->enabled && n->ref0 != 0 && n->ref1 != 0;
+                    });
+                    feedback = "Create a new Constraint and connect both endpoints to the intended objects or attachments.";
+                    break;
+                case 14:
+                    passed = m_learnSawPlay && !newSounds.empty();
+                    feedback = "Add a new Sound object from Add > Sound or Explorer > Insert Object.";
+                    break;
+                case 15: {
+                    bool nestedText = false;
+                    for (SceneNode* n : newGui) {
+                        const bool isText = n->gui.type == GuiType::TextLabel || n->gui.type == GuiType::TextButton;
+                        nestedText |= isText && n->parent && n->parent->kind == NodeKind::Gui &&
+                                      n->parent->gui.type == GuiType::ScreenGui;
+                    }
+                    passed = m_learnSawPlay && nestedText;
+                    feedback = "Create a new ScreenGui and place a TextLabel or TextButton inside it.";
+                    break;
+                }
+                case 16:
+                    passed = m_learnSawPlay && (hasText(newScripts, ".Connect", "") || hasText(newScripts, "Connect(", ""));
+                    feedback = "Create a new Script with an event connection using :Connect(...), then test it with F5.";
+                    break;
+                case 17:
+                    passed = m_learnSawPlay && hasText(newScripts, "local ", "print(");
+                    feedback = "Create a new Script that declares a local variable and uses it in print(...), then run it.";
+                    break;
+                case 18:
+                    passed = m_learnSawPlay && hasText(newScripts, "print(", "") && !hasText(newScripts, "pritn(", "");
+                    feedback = "Create a practice Script, reproduce a typo, correct it to print(...), and run it with F5.";
+                    break;
+                case 19:
+                    passed = m_learnPlayStarts >= 2 && (!newParts.empty() || std::any_of(changed.begin(), changed.end(), [](SceneNode* n) { return n->isPart(); }));
+                    feedback = "Run a Play test, stop it, change a Part in edit mode, then run a second Play test to verify the fix.";
+                    break;
+            }
+            if (passed) {
+                m_learnCompleted.insert(m_learnLesson);
+                m_learnStatus = "Completed. Your project contains a change that meets this lesson's check.";
+            } else {
+                m_learnStatus = "Not complete yet. " + feedback;
+            }
+        }
+        if (!m_learnStatus.empty()) {
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", m_learnStatus.c_str());
+        }
+        if (m_learnCompleted.count(m_learnLesson)) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.45f, 1.0f), "Lesson complete");
+            if (m_learnLesson + 1 < lessonCount) {
+                if (ImGui::Button("Try next lesson")) {
+                    ++m_learnLesson;
+                    m_learnDemoStep = 0;
+                    m_learnHint = 0;
+                    m_learnPractice = false;
+                    m_learnSawPlay = false;
+                    m_learnStatus.clear();
+                    m_learnBaselineNodes.clear();
+                }
+            }
+        }
+        if (ImGui::Button("Back to demonstration")) {
+            m_learnPractice = false;
+            m_learnDemoStep = 0;
+            m_learnHint = 0;
+            m_learnStatus.clear();
+        }
+    }
+    ImGui::Separator();
+    ImGui::TextDisabled("%zu of %d lessons completed in this Studio session. Progress is currently session-only.",
+                        m_learnCompleted.size(), lessonCount);
+    ImGui::End();
+
+    // A hint never intercepts input. It outlines the relevant live panel while the
+    // learner reads the hint; hidden panels are not outlined at stale screen positions.
+    if (m_learnPractice && m_learnHint > 0) {
+        const char* targetName = nullptr;
+        switch (m_learnLesson) {
+            case 0: case 1: case 4: case 7: case 9: case 12: case 13: case 14:
+                targetName = "Properties"; break;
+            case 3: case 16: case 17: case 18:
+                targetName = m_learnHint == 1 ? "Script Editor" : "Output"; break;
+            case 6: case 8: case 11:
+                targetName = "Explorer"; break;
+            default: break;
+        }
+        if (targetName) {
+            ImGuiWindow* target = ImGui::FindWindowByName(targetName);
+            if (target && target->WasActive && !target->Hidden) {
+                const float pulse = 0.5f + 0.5f * std::sin((float)ImGui::GetTime() * 4.0f);
+                const ImU32 outline = ImGui::GetColorU32(ImVec4(0.20f, 0.68f, 1.0f, 0.55f + pulse * 0.35f));
+                ImGui::GetForegroundDrawList()->AddRect(target->Pos,
+                    ImVec2(target->Pos.x + target->Size.x, target->Pos.y + target->Size.y),
+                    outline, 6.0f, 0, 3.0f);
+            }
+        }
+    }
 }
 
 // Live frame-pacing and scene-complexity monitor. Timings are sampled on the editor
@@ -2858,6 +3348,7 @@ void Editor::renderMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Script Analysis", nullptr, m_scriptEditor->analysisShown())) m_scriptEditor->showAnalysis();
         if (ImGui::MenuItem("Project Dependency Map")) m_scriptEditor->showDependencyMap();
+        if (ImGui::MenuItem("Studio Learn...", nullptr, &m_showLearn)) {}
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
