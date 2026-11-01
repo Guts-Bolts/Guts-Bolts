@@ -958,7 +958,7 @@ export class GbServerObject extends DurableObject {
   notify(u, kind, text, id = '') {
     if (!u || u.userId === 0) return;
     const at = now();
-    const note = { id: randomHex(5), kind, text, about: id, at, read: false };
+    const note = { id: randomHex(12), kind, text, about: id, at, read: false };
     u.notes = [note, ...(u.notes || [])].slice(0, kMaxNotes);
     this.saveUser(u);
     this.queueSupabaseEvent('gb_notifications', {
