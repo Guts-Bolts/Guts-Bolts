@@ -31,6 +31,6 @@ export function withSecurityHeaders(response, request) {
   if (url.protocol === 'https:' && (url.hostname === 'gutsandbolts.net' || url.hostname.endsWith('.gutsandbolts.net')))
     headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   const type = headers.get('content-type') || '';
-  if (/^text\\/html(?:;|$)/i.test(type)) headers.set('Content-Security-Policy', CSP);
+  if (type.toLowerCase().startsWith('text/html')) headers.set('Content-Security-Policy', CSP);
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
