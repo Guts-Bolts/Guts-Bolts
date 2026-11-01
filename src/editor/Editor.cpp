@@ -512,7 +512,7 @@ void Editor::saveLearnProgress() {
     for (int i : m_learnCompleted) if (i >= 0 && i < kStudioLearnCount) completed.push_back(kStudioLearnIds[i]);
     const long long localNow = std::chrono::duration_cast<std::chrono::seconds>(
         std::chrono::system_clock::now().time_since_epoch()).count();
-    m_learnProgressUpdatedAt = std::max(m_learnProgressUpdatedAt, localNow);
+    m_learnProgressUpdatedAt = std::max(localNow, m_learnProgressUpdatedAt + 1);
     nlohmann::json progress = {{ "completed", completed },
         { "current", kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] },
         { "step", std::clamp(m_learnDemoStep, 0, 2) },
