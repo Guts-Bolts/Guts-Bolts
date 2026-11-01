@@ -10,7 +10,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://challenges.cloudflare.com wss:",
+  "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net",
   "frame-src https://challenges.cloudflare.com",
   "media-src 'self' blob: https:",
   "worker-src 'self' blob:",
