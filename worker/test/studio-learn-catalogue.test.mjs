@@ -23,7 +23,7 @@ test('website, Studio, worker and standalone server share the same 20 stable les
   const siteIds = [...siteBlock[1].matchAll(/^\s*\['([a-z0-9-]+)'/gm)].map((x) => x[1]);
   const workerIds = extract(worker, /const lessonIds\s*=\s*new Set\(\[([^\]]+)\]\)/, 'worker allowlist');
   const link = read('src/player/LaunchLink.cpp');
-  const linkIds = extract(link, /static const char\\* lessonIds\\[\\]\\s*=\\s*\\{([^}]+)\\}/, 'desktop link allowlist');
+  const linkIds = extract(link, /static const char\* lessonIds\[\]\s*=\s*\{([^}]+)\}/, 'desktop link allowlist');
   const serverIds = extract(server, /lessonIds\s*=\s*\{([^}]+)\}/, 'standalone server allowlist');
   assert.equal(ids.length, 20);
   assert.equal(new Set(ids).size, 20);
