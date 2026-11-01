@@ -607,26 +607,6 @@ async function fetchPublicActivity(path) {
     return await response.json();
   } catch { return { ok: false, events: [] }; }
 }
-function pollPublicActivity(path, targetId, renderEvents) {
-  const token = pageToken;
-  let busy = false;
-  const poll = async () => {
-    if (token !== pageToken) { clearInterval(timer); return; }
-    if (document.visibilityState !== 'visible' || busy) return;
-    const target = document.getElementById(targetId);
-    if (!target) { clearInterval(timer); return; }
-    busy = true;
-    try {
-      const result = await fetchPublicActivity(path);
-      if (token !== pageToken || !result.ok) return;
-      const current = document.getElementById(targetId);
-      if (current) current.innerHTML = renderEvents(result.events || []).s;
-    } finally {
-      busy = false;
-    }
-  };
-  const timer = setInterval(poll, 15000);
-}
 pages.home = async () => {
   // Everything the page needs is asked for at once, so it waits for one round trip, not four.
   const [games, items, fr, recent, favs, featured, , feedR, upd, mine, auctions, auctionEvents] = await Promise.all([
@@ -686,7 +666,6 @@ pages.home = async () => {
       ${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
     tickCountdowns();
     mountAvatar($('#homeAvatar'), defaultAvatar(), [], { width: 170 }).catch(() => {});
-    pollPublicActivity('/api/activity/auctions?limit=6', 'auctionBroadcasts', renderAuctionActivity);
     return;
   }
   const friends = fr.ok ? fr.friends || [] : [];
@@ -898,7 +877,6 @@ pages.forum = async (board, a, b) => {
           <td class="num">${x.threads}</td><td class="num">${x.posts}</td>
           <td class="small">${x.last ? html`<a href="#/forum/t/${x.last.thread}/9999">${x.last.title}</a><br><span class="muted">${ago(x.last.at)} by ${x.last.by.name}</span>`
             : html`<span class="muted">Nothing yet</span>`}</td></tr>`)}</tbody></table></div>`);
-    pollPublicActivity('/api/activity/forum?limit=10', 'forumActivity', renderForumActivity);
     return;
   }
   const page = Math.max(0, (Number(a) || 1) - 1);
