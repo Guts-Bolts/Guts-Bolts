@@ -3700,7 +3700,7 @@ const actions = {
     const url = 'gutsandbolts://learn/' + encodeURIComponent(lesson[0]);
     popup(html`<h1 class="popup-title">Opening Studio Learn...</h1>
       <p>Opening <b>${lesson[1]}</b> in desktop Guts&amp;Bolts Studio.</p>
-      <p class="small muted">If your browser asks, choose Open Guts&amp;Bolts. Lessons do not run in the mobile Player.</p>
+      <p class="small muted">If your browser asks, choose Open Guts&amp;Bolts. If you just installed the app, launch Guts&amp;Bolts Player once to register its link handler, then retry. Lessons do not run in the mobile Player.</p>
       <p class="popup-buttons"><a class="btn green" href="${url}">Open lesson</a> <a class="btn" href="../#download">Download the app</a></p>`);
     location.href = url;
   },

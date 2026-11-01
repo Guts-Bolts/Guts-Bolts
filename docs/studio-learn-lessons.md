@@ -475,7 +475,7 @@ This PR now includes the native 20-lesson runner, a website **Create > Learn** c
 
 Automated coverage includes account isolation, authentication, input validation, account persistence, and a cross-surface catalogue audit comparing all 20 stable lesson IDs across the website, Studio, Cloudflare worker and standalone server. Native platform builds and the worker test suite are the final acceptance gates.
 
-The validators confirm observable editor changes, not subjective quality. For example, they cannot determine whether an obstacle course is enjoyable or a spawn point is well designed. The publish lesson requires a successful publish response. The final lesson requires a Part edit after the first Play test has ended and a second Play test after that edit.
+The debugging lesson requires the deliberate `pritn(...)` runtime error on one Play run, then verifies the exact string printed by the corrected `print(...)` call on a second run. The first-script and event/variable scripting lessons also require actual Output activity during play. The validators confirm observable editor changes, not subjective quality. For example, they cannot determine whether an obstacle course is enjoyable or a spawn point is well designed. The publish lesson requires a successful publish response. The final lesson requires a Part edit after the first Play test has ended and a second Play test after that edit.
 
 
 ## PR #213 integration
