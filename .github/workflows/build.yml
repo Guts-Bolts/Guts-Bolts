@@ -51,13 +51,6 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: gradle
-      - name: Cache Android SDK components
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
-        with:
-          path: |
-            ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
-            ${{ env.ANDROID_HOME }}/cmake/3.31.5
-          key: android-sdk-ndk26.3-cmake3.31.5
       - name: Install the NDK and CMake
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
@@ -240,9 +233,15 @@ jobs:
           install: >-
             mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
             mingw-w64-x86_64-glfw mingw-w64-x86_64-glew mingw-w64-x86_64-glm git
+      - name: Cache CMake FetchContent dependencies
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        with:
+          path: ~/.cache/gb-fetchcontent
+          key: windows-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: windows-fetchcontent-
       - name: Build
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_BASE_DIR="$HOME/.cache/gb-fetchcontent"
           cmake --build build
       - name: Package
         run: |
@@ -264,9 +263,15 @@ jobs:
           persist-credentials: false
       - name: Install libraries
         run: brew install glfw glew glm ninja
+      - name: Cache CMake FetchContent dependencies
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        with:
+          path: ~/.cache/gb-fetchcontent
+          key: macos-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: macos-fetchcontent-
       - name: Build
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_BASE_DIR="$HOME/.cache/gb-fetchcontent"
           # (compile errors also show up on the pull request, not just in the log)
           set -o pipefail
           cmake --build build 2>&1 | tee build.log || { grep -E "error" build.log | head -20 | sed 's/^/::error::/'; exit 1; }
