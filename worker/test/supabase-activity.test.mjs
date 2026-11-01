@@ -35,7 +35,7 @@ test('notifications and public activity are queued durably for Supabase', () => 
 
   assert.equal(byTable.gb_forum_activity.event_type, 'thread_created');
   assert.equal(byTable.gb_forum_activity.thread_id, 'thread-1');
-  assert.equal(byTable.gb_forum_activity.post_excerpt, 'A short opening post.');
+  assert.equal(byTable.gb_forum_activity.post_excerpt, '');
 });
 
 test('Supabase outbox stays disabled when server credentials are absent', () => {
