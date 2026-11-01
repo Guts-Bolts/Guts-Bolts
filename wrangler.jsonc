@@ -36,7 +36,10 @@
   // they're always on it (see addExampleGames in worker/server.js).
   // The emotes and animation packs (assets/emotes/*.gbemotes) are bundled the same way.
   "rules": [{ "type": "Text", "globs": ["**/*.gbscene", "**/*.gbemotes"], "fallthrough": true }],
-  "vars": { "OFFICIAL": "78587146c5027463ff988ef3dd4da3830482f59d6ac0e16fd29548c4a2c84c45" },
+  "vars": {
+    "OFFICIAL": "78587146c5027463ff988ef3dd4da3830482f59d6ac0e16fd29548c4a2c84c45",
+    "SUPABASE_URL": "https://pfpzmmsosyetkcoymoct.supabase.co"
+  },
   "assets": {
     "directory": "./website",
     "binding": "ASSETS",
