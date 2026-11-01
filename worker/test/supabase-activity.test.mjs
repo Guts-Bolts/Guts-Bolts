@@ -45,3 +45,28 @@ test('Supabase outbox stays disabled when server credentials are absent', () => 
   assert.equal([...s.sql.exec('SELECT id FROM supabase_outbox')].length, 0);
   assert.equal(player.notes[0].text, 'This stays in the native notification store.');
 });
+
+test('outbox flush delivers idempotent batches and clears only after successful writes', async () => {
+  const s = makeServer(SUPABASE_ENV);
+  const player = signUp(s, 'DeliveryPlayer');
+  s.notify(player, 'friend', 'Queued notification.', 'friend-3');
+  s.recordAuctionEvent({
+    id: 'asset-2', name: 'Another Hat',
+    auction: { bids: [], endsAt: 1900000000 },
+  }, 'auction_started', 'Guts', 10);
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url: String(url), options });
+    return new Response(null, { status: 204 });
+  };
+  try {
+    await s.flushSupabaseOutbox();
+    assert.equal(calls.length, 2);
+    assert.equal([...s.sql.exec('SELECT id FROM supabase_outbox')].length, 0);
+    assert(calls.every((call) => call.options.headers.get('apikey') === SUPABASE_ENV.SUPABASE_SECRET_KEY));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
