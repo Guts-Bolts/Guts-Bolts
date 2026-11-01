@@ -27,7 +27,8 @@
   "name": "project-guts-and-bolts",
   "main": "worker/index.js",
   "compatibility_date": "2026-09-01",
-  "keep_vars": true,\n  "triggers": { "crons": ["0 3 * * *"] },
+  "keep_vars": true,
+  "triggers": { "crons": ["0 3 * * *"] },
   // Before every deploy (and `wrangler dev`): gather the update log's files in
   // worker/updates/ and the built-in roadmap's in worker/roadmap/ into
   // worker/updates-gathered.js and worker/roadmap-gathered.js (see worker/gather-updates.mjs).
@@ -51,7 +52,10 @@
   // daily amount; after that, lines just show as they were said until the next day.
   "ai": { "binding": "AI" },
   // The Player / Studio / Android downloads (worker/downloads.js).
-  "r2_buckets": [\n    { "binding": "DOWNLOADS", "bucket_name": "gutsandbolts-downloads" },\n    { "binding": "DB_BACKUPS", "bucket_name": "guts-and-bolts-db-backups" }\n  ],
+  "r2_buckets": [
+    { "binding": "DOWNLOADS", "bucket_name": "gutsandbolts-downloads" },
+    { "binding": "DB_BACKUPS", "bucket_name": "guts-and-bolts-db-backups" }
+  ],
   // The risk check's speed limits (worker/shield.js), counted by Cloudflare per IP. "limit" is
   // how many a minute; keep SHIELD.limits in shield.js the same. namespace_id is just a number
   // that names each counter.
