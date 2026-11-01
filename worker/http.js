@@ -1,5 +1,7 @@
 // Bounded request-body readers shared by the Worker, Durable Object and protocol endpoints.
-export async function readLimitedBytes(request, maxBytes) {
+const DEFAULT_MAX_BODY = 40 * 1024 * 1024;
+
+export async function readLimitedBytes(request, maxBytes = DEFAULT_MAX_BODY) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new TypeError('Invalid body limit.');
   if (!request.body) return new Uint8Array(0);
   const reader = request.body.getReader();
@@ -25,7 +27,7 @@ export async function readLimitedBytes(request, maxBytes) {
   return bytes;
 }
 
-export async function readLimitedText(request, maxBytes) {
+export async function readLimitedText(request, maxBytes = DEFAULT_MAX_BODY) {
   const bytes = await readLimitedBytes(request, maxBytes);
   return bytes === null ? null : new TextDecoder().decode(bytes);
 }
