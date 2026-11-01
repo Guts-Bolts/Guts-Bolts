@@ -533,7 +533,8 @@ void Editor::renderLearn() {
     loadLearnProgress();
     if (!m_learnSyncReady && ImGui::GetTime() >= m_learnSyncRetryAt && Online::online() && signedInUserId > 0) {
         m_learnSyncRetryAt = ImGui::GetTime() + 15.0;
-        Online::request("learn.progress.get", {}, [this](const nlohmann::json& r) {
+        Online::request("learn.progress.get", {}, [this, signedInUserId](const nlohmann::json& r) {
+            if (m_learnSyncUserId != signedInUserId || Online::me().value("userId", 0LL) != signedInUserId) return;
             if (!r.value("ok", false) || !r.contains("progress") || !r["progress"].is_object()) return;
             m_learnSyncReady = true;
             const auto& remote = r["progress"];

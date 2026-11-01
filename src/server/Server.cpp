@@ -609,6 +609,12 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             return fail("Studio Learn progress must contain a list of up to 20 completed lessons.");
         json completed = json::array();
         std::set<std::string> unique;
+        if (me.learnProgress.is_object() && me.learnProgress.contains("completed") && me.learnProgress["completed"].is_array()) {
+            for (const auto& value : me.learnProgress["completed"]) if (value.is_string()) {
+                const std::string id = value.get<std::string>();
+                if (lessonIds.count(id) && unique.insert(id).second) completed.push_back(id);
+            }
+        }
         for (const auto& value : args["completed"]) {
             if (!value.is_string() || !lessonIds.count(value.get<std::string>()))
                 return fail("Studio Learn progress contains an unknown lesson.");

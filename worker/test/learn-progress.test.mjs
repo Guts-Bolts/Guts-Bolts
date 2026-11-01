@@ -10,6 +10,9 @@ test('Studio Learn progress is saved to the signed-in account', () => {
   assert.deepEqual(saved.progress.completed, ['first-build', 'tiny-obby']);
   assert.equal(saved.progress.current, 'first-script');
   assert.deepEqual(s.call(a, 'learn.progress.get').progress, saved.progress);
+  const second = s.call(a, 'learn.progress.save', { completed: ['first-script'], current: 'tiny-obby' });
+  assert.deepEqual(second.progress.completed, ['first-build', 'tiny-obby', 'first-script']);
+  assert.equal(second.progress.current, 'tiny-obby');
   const row = s.sql.exec('SELECT data FROM users WHERE id = ?', a.id)[0];
   assert.ok(row, 'account row was written to persistent storage');
   assert.deepEqual(JSON.parse(row.data).learnProgress, saved.progress);

@@ -55,8 +55,11 @@ int main() {
         });
         check(r.value("ok", false) && r["progress"]["completed"].size() == 2 &&
               r["progress"]["current"] == "first-script", "save valid progress and de-duplicate lesson IDs");
+        r = ask(*server, "learn.progress.save", {{"completed", json::array({"first-script"})}, {"current", "tiny-obby"}});
+        check(r.value("ok", false) && r["progress"]["completed"].size() == 3 &&
+              r["progress"]["current"] == "tiny-obby", "merge new completions without erasing another device's progress");
         r = ask(*server, "learn.progress.get");
-        check(r.value("ok", false) && r["progress"]["completed"].size() == 2, "read the saved progress");
+        check(r.value("ok", false) && r["progress"]["completed"].size() == 3, "read the merged progress");
         check(error(ask(*server, "learn.progress.save", {{"completed", json::array({"not-a-lesson"})}})).find("unknown lesson") != std::string::npos,
               "reject unknown lesson IDs");
         check(!ask(*server, "learn.progress.save", {{"completed", json::array({"first-build"})}, {"current", 42}}).value("ok", false),
@@ -70,8 +73,8 @@ int main() {
         auto server = startServer();
         if (!server) { std::cout << "FAIL  couldn't restart: " << err << "\n"; return 1; }
         json r = ask(*server, "learn.progress.get");
-        check(r.value("ok", false) && r["progress"]["completed"].size() == 2 &&
-              r["progress"]["current"] == "first-script", "progress survives a server restart");
+        check(r.value("ok", false) && r["progress"]["completed"].size() == 3 &&
+              r["progress"]["current"] == "tiny-obby", "merged progress survives a server restart");
         Account::newKey();
         r = ask(*server, "learn.progress.get");
         check(!r.value("ok", false) && error(r).find("Sign in") != std::string::npos,

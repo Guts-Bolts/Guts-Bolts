@@ -1197,7 +1197,8 @@ export class GbServerObject extends DurableObject {
     if (!Array.isArray(args.completed) || args.completed.length > 20 ||
         args.completed.some((x) => typeof x !== 'string' || !lessonIds.has(x)))
       return fail('Studio Learn progress must contain up to 20 known completed lessons.');
-    const completed = [...new Set(args.completed)];
+    const previous = Array.isArray(saved.completed) ? saved.completed.filter((x) => typeof x === 'string' && lessonIds.has(x)) : [];
+    const completed = [...new Set([...previous, ...args.completed])];
     if (args.current !== undefined && typeof args.current !== 'string') return fail('Studio Learn current lesson must be a lesson ID.');
     const current = args.current || '';
     if (current && !lessonIds.has(current)) return fail('Studio Learn progress contains an unknown current lesson.');
