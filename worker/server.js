@@ -1209,13 +1209,14 @@ export class GbServerObject extends DurableObject {
     if (args.updatedAt !== undefined && (!Number.isInteger(args.updatedAt) || args.updatedAt < 0))
       return fail('Studio Learn update timestamp must be a non-negative integer.');
     const previousUpdatedAt = Number.isInteger(saved.updatedAt) && saved.updatedAt >= 0 ? saved.updatedAt : 0;
-    const incomingUpdatedAt = args.updatedAt === undefined ? previousUpdatedAt : args.updatedAt;
+    const serverNow = now();
+    const incomingUpdatedAt = args.updatedAt === undefined ? previousUpdatedAt : Math.min(args.updatedAt, serverNow + 300);
     const acceptResume = args.updatedAt === undefined || incomingUpdatedAt >= previousUpdatedAt;
     const storedCurrent = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
     const storedStep = Number.isInteger(saved.step) && saved.step >= 0 && saved.step <= 2 ? saved.step : 0;
     const nextCurrent = acceptResume ? current : storedCurrent;
     const nextStep = acceptResume ? step : storedStep;
-    const updatedAt = Math.max(now(), previousUpdatedAt, incomingUpdatedAt);
+    const updatedAt = Math.max(serverNow, previousUpdatedAt, incomingUpdatedAt);
     me.learnProgress = { completed, current: nextCurrent, step: nextStep, updatedAt };
     this.saveUser(me);
     return okay({ progress: me.learnProgress });
