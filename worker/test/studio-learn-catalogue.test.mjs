@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { Script } from 'node:vm';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
@@ -60,4 +61,5 @@ test('website Learn tab and its launch action exist', () => {
   assert.ok(site.includes("data-act=\"startLearn\""));
   assert.ok(site.includes("gutsandbolts://learn/"));
   assert.ok(site.includes("learn.progress.get"));
+  assert.doesNotThrow(() => new Script(site, { filename: 'website/app/app.js' }), 'website app JavaScript parses');
 });

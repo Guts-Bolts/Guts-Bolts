@@ -953,7 +953,7 @@ endif()
 
 
 # The website's gutsandbolts://learn/<id> route is parsed safely by the Player.
-if(BUILD_TESTING AND UNIX AND NOT APPLE AND NOT GB_MOBILE)
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_MOBILE)
     add_executable(LaunchLinkTests tests/LaunchLinkTests.cpp src/player/LaunchLink.cpp)
     target_include_directories(LaunchLinkTests PRIVATE src/)
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
