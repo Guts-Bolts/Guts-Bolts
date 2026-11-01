@@ -21,8 +21,8 @@ function fakeSql() {
   };
 }
 
-export function makeServer() {
-  const s = new GbServerObject({ storage: { sql: fakeSql() } }, { OFFICIAL: STAFF });
+export function makeServer(extraEnv = {}) {
+  const s = new GbServerObject({ storage: { sql: fakeSql() } }, Object.assign({ OFFICIAL: STAFF }, extraEnv));
   s.signUp = (name, id) => signUp(s, name, id);
   s.call = (me, op, args = {}) => { try { return s.op(op, me, args); } finally { s.flush(); } };
   s.addGame = (creator, name, extra = {}) => addGame(s, creator, name, extra);
