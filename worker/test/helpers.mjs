@@ -22,7 +22,7 @@ function fakeSql() {
 }
 
 export function makeServer() {
-  const s = new GbServerObject({ storage: { sql: fakeSql() } }, { OFFICIAL: STAFF });
+  const storage = { sql: fakeSql(), transactionSync: (fn) => fn() };\n  const s = new GbServerObject({ storage }, { OFFICIAL: STAFF });
   s.signUp = (name, id) => signUp(s, name, id);
   s.call = (me, op, args = {}) => { try { return s.op(op, me, args); } finally { s.flush(); } };
   s.addGame = (creator, name, extra = {}) => addGame(s, creator, name, extra);
