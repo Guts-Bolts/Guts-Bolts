@@ -14,6 +14,10 @@ on:
 permissions:
   contents: read
 
+# New commits supersede older PR runs. Keep independent workflows separate.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests:
@@ -34,7 +38,8 @@ jobs:
         run: node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.test.mjs'
 
   android:
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
+    # Expensive mobile packaging is validated on main and for releases, not on every PR.
+    if: github.event_name != 'pull_request'
     name: Android (APK)
     runs-on: ubuntu-latest
     steps:
@@ -45,6 +50,14 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+      - name: Cache Android SDK components
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/ndk/26.3.11579264
+            ${{ env.ANDROID_HOME }}/cmake/3.31.5
+          key: android-sdk-ndk26.3-cmake3.31.5
       - name: Install the NDK and CMake
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
@@ -87,6 +100,7 @@ jobs:
             GutsAndBoltsPlayer-Quest.apk
 
   ios-simulator:
+    if: github.event_name != 'pull_request'
     name: iOS Player (simulator and device compile)
     runs-on: macos-latest
     steps:
@@ -146,13 +160,21 @@ jobs:
           cmake --build build-ios-device --config Release --target GutsAndBoltsPlayer -- CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGNING_IDENTITY=""
 
   web:
+    if: github.event_name != 'pull_request'
     name: Web Player (Safari and other browsers)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Install Emscripten
+      - name: Restore Emscripten SDK
+        id: emsdk-cache
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        with:
+          path: ~/emsdk
+          key: emsdk-3.1.74-linux
+      - name: Install Emscripten (cache miss only)
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
           "$HOME/emsdk/emsdk" install 3.1.74
@@ -168,6 +190,7 @@ jobs:
           if-no-files-found: error
 
   linux:
+    # Linux remains the representative native compile/test gate on every PR.
     if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
     name: Linux
     runs-on: ubuntu-22.04
@@ -175,11 +198,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Cache CMake FetchContent dependencies
+        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        with:
+          path: ~/.cache/gb-fetchcontent
+          key: linux-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
+          restore-keys: linux-fetchcontent-
       - name: Install libraries
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libglfw3-dev libglew-dev libglm-dev libx11-dev
       - name: Build
         run: |
-          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_BASE_DIR="$HOME/.cache/gb-fetchcontent"
           cmake --build build
       - name: Run native CTest regression suite
         run: ctest --test-dir build --output-on-failure
@@ -195,7 +224,7 @@ jobs:
           path: GutsAndBolts-Linux.tar.gz
 
   windows:
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
+    if: github.event_name != 'pull_request'
     name: Windows
     runs-on: windows-latest
     defaults:
@@ -226,7 +255,7 @@ jobs:
           path: GutsAndBolts-Windows
 
   macos:
-    if: github.event_name != 'push' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') || contains(github.event.head_commit.message, '[release v')
+    if: github.event_name != 'pull_request'
     name: macOS
     runs-on: macos-latest
     steps:
