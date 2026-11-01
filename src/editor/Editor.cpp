@@ -536,7 +536,8 @@ void Editor::startLearnLesson(const std::string& id) {
         if (!resume) m_learnDemoStep = 0;
         m_learnHint = 0;
         m_learnPaused = false;
-        m_learnPractice = false; m_learnSawPlay = false; m_learnStatus.clear();
+        m_learnPractice = false; m_learnSawPlay = false; m_learnSawPublish = false;
+        m_learnPlayStarts = 0; m_learnWasPlaying = m_playing; m_learnStatus.clear();
         m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
         m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
         m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
@@ -559,7 +560,12 @@ void Editor::renderLearn() {
         m_learnLoadedGuestProgress = false;
         m_learnPaused = false;
         m_learnExplicitLaunch = false;
+        m_learnSawPlay = false; m_learnSawPublish = false; m_learnWasPlaying = m_playing;
+        m_learnPlayStarts = 0; m_learnStatus.clear();
+        m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
+        m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
         m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
+        m_learnBaselineTerrainVersion = 0;
         m_learnSyncReady = false;
         m_learnSyncRetryAt = 0.0;
     }
