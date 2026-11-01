@@ -18,12 +18,14 @@ inline std::unordered_map<std::string, ItemRect>& items() {
     return value;
 }
 
+inline void markRect(const std::string& id, const ImVec2& min, const ImVec2& max) {
+    if (!ImGui::GetCurrentContext() || id.empty() || max.x <= min.x || max.y <= min.y) return;
+    items()[id] = {min, max, ImGui::GetFrameCount()};
+}
+
 inline void mark(const std::string& id) {
     if (!ImGui::GetCurrentContext() || id.empty()) return;
-    const ImVec2 min = ImGui::GetItemRectMin();
-    const ImVec2 max = ImGui::GetItemRectMax();
-    if (max.x <= min.x || max.y <= min.y) return;
-    items()[id] = {min, max, ImGui::GetFrameCount()};
+    markRect(id, ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
 }
 
 inline bool find(const std::string& id, ImVec2& min, ImVec2& max) {
