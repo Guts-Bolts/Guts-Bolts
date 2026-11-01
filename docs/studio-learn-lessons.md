@@ -485,3 +485,6 @@ The Learn catalogue is available at **Create > Learn** on the website. It contai
 Completion and the selected lesson are stored locally in `studio_learn_progress.json`. When Studio is signed in and online, it merges local progress with the account's `learn.progress.get/save` record. The Cloudflare worker and standalone C++ server validate the same fixed set of 20 lesson IDs and store progress on the requesting account. Signed-out learners can browse and launch lessons; their progress remains local until they sign in.
 
 The website also saves browser-side progress and merges it with the account record for signed-in visitors. Studio remains usable offline; account synchronization runs when the user is signed in and the server is online.
+
+
+Lesson navigation also saves the current guided step (0–2). Reopening a lesson resumes at that step. Practice baselines are intentionally recreated when Studio restarts, so a learner who closes Studio during a challenge returns to the final guided step and starts a fresh practice check against the current scene.

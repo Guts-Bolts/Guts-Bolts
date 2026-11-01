@@ -1867,14 +1867,17 @@ const STUDIO_LESSONS = [
 
 async function learnPage(head) {
   const key = 'gb.studioLearn.' + (signedIn() ? me.id : 'guest');
-  let progress = { completed: [], current: '' };
+  let progress = { completed: [], current: '', step: 0 };
   const localKeys = signedIn() ? [key, 'gb.studioLearn.guest'] : [key];
   for (const localKey of localKeys) {
     try {
       const local = JSON.parse(localStorage.getItem(localKey) || 'null');
       if (local && Array.isArray(local.completed)) {
         progress.completed = [...new Set([...progress.completed, ...local.completed])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
-        if (!progress.current && STUDIO_LESSONS.some((l) => l[0] === local.current)) progress.current = local.current;
+        if (!progress.current && STUDIO_LESSONS.some((l) => l[0] === local.current)) {
+          progress.current = local.current;
+          progress.step = Number.isInteger(local.step) && local.step >= 0 && local.step <= 2 ? local.step : 0;
+        }
       }
     } catch { /* local progress is optional in private browsing */ }
   }
@@ -1882,7 +1885,10 @@ async function learnPage(head) {
     const remote = await pageCall('learn.progress.get', {});
     if (remote.ok && remote.progress) {
       progress.completed = [...new Set([...progress.completed, ...(Array.isArray(remote.progress.completed) ? remote.progress.completed : [])])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
-      if (!progress.current) progress.current = remote.progress.current || '';
+      if (!progress.current) {
+        progress.current = remote.progress.current || '';
+        progress.step = Number.isInteger(remote.progress.step) && remote.progress.step >= 0 && remote.progress.step <= 2 ? remote.progress.step : 0;
+      }
       await pageCall('learn.progress.save', progress);
     }
   }
@@ -3683,10 +3689,12 @@ const actions = {
     const lesson = STUDIO_LESSONS.find((x) => x[0] === d.id);
     if (!lesson) { toast('That lesson could not be found.'); return; }
     const key = 'gb.studioLearn.' + (signedIn() ? me.id : 'guest');
-    let progress = { completed: [], current: '' };
+    let progress = { completed: [], current: '', step: 0 };
     try { progress = JSON.parse(localStorage.getItem(key) || '{"completed":[]}'); } catch { /* ignore */ }
     progress.completed = Array.isArray(progress.completed) ? progress.completed.filter((x) => STUDIO_LESSONS.some((l) => l[0] === x)) : [];
+    const resume = progress.current === lesson[0] && !progress.completed.includes(lesson[0]);
     progress.current = lesson[0];
+    if (!resume) progress.step = 0;
     try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
     if (signedIn()) await call('learn.progress.save', progress);
     const url = 'gutsandbolts://learn/' + encodeURIComponent(lesson[0]);

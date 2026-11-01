@@ -5,17 +5,19 @@ import { makeServer } from './helpers.mjs';
 test('Studio Learn progress is saved to the signed-in account', () => {
   const s = makeServer();
   const a = s.signUp('LearnerA');
-  const saved = s.call(a, 'learn.progress.save', { completed: ['first-build', 'tiny-obby', 'first-build'], current: 'first-script' });
+  const saved = s.call(a, 'learn.progress.save', { completed: ['first-build', 'tiny-obby', 'first-build'], current: 'first-script', step: 2 });
   assert.equal(saved.ok, true);
   assert.deepEqual(saved.progress.completed, ['first-build', 'tiny-obby']);
   assert.equal(saved.progress.current, 'first-script');
+  assert.equal(saved.progress.step, 2);
   assert.deepEqual(s.call(a, 'learn.progress.get').progress, saved.progress);
-  const second = s.call(a, 'learn.progress.save', { completed: ['first-script'], current: 'tiny-obby' });
+  const second = s.call(a, 'learn.progress.save', { completed: ['first-script'], current: 'tiny-obby', step: 1 });
   assert.deepEqual(second.progress.completed, ['first-build', 'tiny-obby', 'first-script']);
   assert.equal(second.progress.current, 'tiny-obby');
+  assert.equal(second.progress.step, 1);
   const row = s.sql.exec('SELECT data FROM users WHERE id = ?', a.id)[0];
   assert.ok(row, 'account row was written to persistent storage');
-  assert.deepEqual(JSON.parse(row.data).learnProgress, saved.progress);
+  assert.deepEqual(JSON.parse(row.data).learnProgress, second.progress);
 });
 
 test('Studio Learn progress is isolated between accounts', () => {
@@ -29,6 +31,7 @@ test('Studio Learn progress rejects unknown IDs and malformed records', () => {
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['not-a-lesson'], current: '' }).ok, false);
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: '../outside' }).ok, false);
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: 42 }).ok, false);
+  assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: 'first-build', step: 3 }).ok, false);
   assert.equal(s.call(a, 'learn.progress.save', { completed: Array(21).fill('first-build'), current: '' }).ok, false);
 });
 
