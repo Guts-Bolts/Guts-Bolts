@@ -367,7 +367,7 @@ void PlayerApp::followLink() {
     if (!m_linkLesson.empty()) {
         const std::string lesson = std::move(m_linkLesson);
         m_linkLesson.clear();
-#if defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__) || defined(GB_IOS)
         m_status = "Studio Learn runs in the desktop Studio app. Use the download link on the website.";
 #else
         if (!Paths::launch(Paths::sibling("GutsAndBolts"), "--learn=" + lesson))

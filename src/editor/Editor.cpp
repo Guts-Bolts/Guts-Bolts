@@ -518,8 +518,8 @@ void Editor::startLearnLesson(const std::string& id) {
 void Editor::renderLearn() {
     if (!m_showLearn) return;
     loadLearnProgress();
-    if (!m_learnSyncRequested && Online::online() && Online::me().value("userId", 0LL) > 0) {
-        m_learnSyncRequested = true;
+    if (!m_learnSyncReady && ImGui::GetTime() >= m_learnSyncRetryAt && Online::online() && Online::me().value("userId", 0LL) > 0) {
+        m_learnSyncRetryAt = ImGui::GetTime() + 15.0;
         Online::request("learn.progress.get", {}, [this](const nlohmann::json& r) {
             if (!r.value("ok", false) || !r.contains("progress") || !r["progress"].is_object()) return;
             m_learnSyncReady = true;
