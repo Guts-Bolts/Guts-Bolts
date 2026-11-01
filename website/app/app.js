@@ -4689,14 +4689,14 @@ document.addEventListener('submit', async (e) => {
 let auctionRefreshBusy = false;
 async function refreshLiveAuctions() {
   if (auctionRefreshBusy || document.visibilityState !== 'visible') return;
-  const path = (location.hash.replace(/^#\\/?/, '').split('?')[0] || 'home').split('/');
+  const path = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/');
   if (path[0] !== 'home' && path[0] !== 'item') return;
   auctionRefreshBusy = true;
   try {
     if (path[0] === 'home') {
       const r = await pageCall('list', { kind: 'clothing', auctions: true, limit: 12 });
       const section = $('#liveAuctions');
-      if (!r.ok || !section || (location.hash.replace(/^#\\/?/, '').split('?')[0] || 'home') !== 'home') return;
+      if (!r.ok || !section || (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home') !== 'home') return;
       section.innerHTML = renderAuctionHomeSection(r.assets).s;
       tickCountdowns();
       upgradeItemPictures();
@@ -4706,7 +4706,7 @@ async function refreshLiveAuctions() {
     if (!id) return;
     const r = await pageCall('asset.info', { id });
     if (!r.ok || !r.asset || !r.asset.auction) return;
-    if (location.hash.replace(/^#\\/?/, '').split('?')[0] !== 'item/' + id) return;
+    if (location.hash.replace(/^#\/?/, '').split('?')[0] !== 'item/' + id) return;
     const a = r.asset, au = a.auction, open = auctionOpen(a);
     if (open && !$('#auctionLiveBid')) { render(); return; }
     const bid = $('#auctionLiveBid');
