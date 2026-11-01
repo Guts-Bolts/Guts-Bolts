@@ -563,7 +563,7 @@ void Editor::renderLearn() {
         m_learnLesson = 0; m_learnDemoStep = 0; m_learnHint = 0; m_learnPractice = false;
         m_learnHasSavedCurrent = false;
         m_learnProgressUpdatedAt = 0;
-        m_learnPaused = false;
+        m_learnPaused = false; m_learnDemoActionDone = false;
         m_learnExplicitLaunch = false;
         m_learnSawPlay = false; m_learnSawPublish = false; m_learnWasPlaying = m_playing;
         m_learnPlayStarts = 0; m_learnStatus.clear();
@@ -897,6 +897,7 @@ void Editor::renderLearn() {
         m_learnHasSavedCurrent = true;
         m_learnExplicitLaunch = false;
         m_learnDemoStep = 0;
+        m_learnDemoActionDone = false;
         m_learnHint = 0;
         m_learnPractice = false;
         m_learnSawPlay = false;
@@ -1225,6 +1226,7 @@ void Editor::renderLearn() {
                     m_learnHasSavedCurrent = true;
                     m_learnExplicitLaunch = false;
                     m_learnDemoStep = 0;
+                    m_learnDemoActionDone = false;
                     m_learnHint = 0;
                     m_learnPractice = false;
                     m_learnSawPlay = false;
