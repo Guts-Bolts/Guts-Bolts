@@ -22,12 +22,14 @@ int main() {
     check(LaunchLink::parse("gutsandbolts://learn/first-build", link) &&
           link.lesson == "first-build" && link.game.empty() && !link.edit,
           "valid lesson link is parsed");
-    check(LaunchLink::parse("gutsandbolts://learn/first-build%2d", link) &&
-          link.lesson == "first-build-", "percent-encoded safe slug is decoded");
+    check(LaunchLink::parse("gutsandbolts://learn/%66irst-build", link) &&
+          link.lesson == "first-build", "percent-encoded known slug is decoded");
     check(!LaunchLink::parse("gutsandbolts://learn/../outside", link),
           "path traversal is rejected");
     check(!LaunchLink::parse("gutsandbolts://learn/First-Build", link),
           "non-canonical lesson IDs are rejected");
+    check(!LaunchLink::parse("gutsandbolts://learn/first-build-", link),
+          "unknown but syntactically safe lesson IDs are rejected");
     check(!LaunchLink::parse("gutsandbolts://learn/first-build%2f..", link),
           "encoded separators are rejected");
     check(!LaunchLink::parse("gutsandbolts://learn/", link),

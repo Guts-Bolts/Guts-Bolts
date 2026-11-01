@@ -76,6 +76,12 @@ bool parse(const std::string& url, Link& out) {
     for (char c : rest) {
         if (learning ? !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') : !safeChar(c)) return false;
     }
+    if (learning) {
+        static const char* lessonIds[] = {"first-build", "make-it-move", "tiny-obby", "first-script", "light-up-scene", "publish-first-game", "meet-explorer", "properties-panel", "copy-group-organize", "color-materials", "shape-world", "spawn-into-action", "collision-course", "connect-parts", "sound-check", "first-gui", "make-things-happen", "remember-values", "find-fix-bugs", "build-test-improve"};
+        bool known = false;
+        for (const char* id : lessonIds) if (rest == id) { known = true; break; }
+        if (!known) return false;
+    }
     out.lesson = learning ? rest : "";
     out.game = learning ? "" : rest;
     out.edit = editing;
