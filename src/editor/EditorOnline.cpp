@@ -114,6 +114,7 @@ void Editor::publishGame(const std::string& name, const std::string& description
     Online::request(update ? "update" : "upload", args, [this, picture, name, description, done](const json& r) {
         m_onlineBusy = false;
         if (r.value("ok", false)) {
+            if (m_showLearn && m_learnPractice) m_learnSawPublish = true;
             m_scene->info().publishedId = r["asset"].value("id", std::string());
             if (!picture.empty())
                 Online::request("thumb.set", {{"id", m_scene->info().publishedId}, {"data", Online::base64Encode(picture)}},
