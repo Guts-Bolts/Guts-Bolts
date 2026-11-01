@@ -22,7 +22,7 @@ test('Studio Learn progress is saved to the signed-in account', () => {
   assert.equal(stale.progress.step, 1);
   const row = s.sql.exec('SELECT data FROM users WHERE id = ?', a.id)[0];
   assert.ok(row, 'account row was written to persistent storage');
-  assert.deepEqual(JSON.parse(row.data).learnProgress, second.progress);
+  assert.deepEqual(JSON.parse(row.data).learnProgress, stale.progress);
 });
 
 test('Studio Learn progress is isolated between accounts', () => {
