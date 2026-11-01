@@ -34,7 +34,7 @@ Objects are written under `daily/YYYY-MM-DD/`. The scheduled job removes only ob
 
 ### Memory safety limit
 
-The backup job refuses to start when the reported SQLite database size exceeds `DB_BACKUP_MAX_BYTES` (default 128 MiB). The export is assembled in memory before compression so that every table comes from one synchronous SQLite transaction. If the database grows beyond this threshold, backups fail closed rather than risk exhausting the Durable Object isolate. Increase the limit only after measuring memory headroom and changing the export implementation to stream safely.
+The backup job refuses to start when the reported SQLite database size exceeds `DB_BACKUP_MAX_BYTES` (default 16 MiB). The export is assembled in memory before compression so that every table comes from one synchronous SQLite transaction. If the database grows beyond this threshold, backups fail closed rather than risk exhausting the Durable Object isolate. Increase the limit only after measuring memory headroom and changing the export implementation to stream safely.
 
 ### Restore status
 
