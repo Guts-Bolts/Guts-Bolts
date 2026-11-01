@@ -971,11 +971,16 @@ export class GbServerObject extends DurableObject {
     if (!['gb_notifications', 'gb_auction_events', 'gb_forum_activity'].includes(table)) return;
     this.sql.exec('INSERT OR IGNORE INTO supabase_outbox (id, table_name, payload, created) VALUES (?, ?, ?, ?)',
       row.id, table, JSON.stringify(row), now());
-    try {
-      const alarm = this.ctx.storage.setAlarm(Date.now() + 1000);
-      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(alarm);
-      else alarm.catch(() => {});
-    } catch { /* The durable outbox is retried on the next request. */ }
+    this.scheduleSupabaseFlush(1000);
+  }
+  scheduleSupabaseFlush(delayMs) {
+    const schedule = (async () => {
+      const target = Date.now() + delayMs;
+      const current = await this.ctx.storage.getAlarm();
+      if (current === null || current > target) await this.ctx.storage.setAlarm(target);
+    })();
+    if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(schedule);
+    else schedule.catch(() => {});
   }
   recordAuctionEvent(asset, eventType, actorName, amount = null) {
     const auction = asset && asset.auction;
@@ -1019,21 +1024,11 @@ export class GbServerObject extends DurableObject {
         await insertSupabaseRows(this.env, table, batch.map((row) => JSON.parse(row.payload)));
         for (const row of batch) this.sql.exec('DELETE FROM supabase_outbox WHERE id = ?', row.id);
       } catch {
-        try {
-          const alarm = this.ctx.storage.setAlarm(Date.now() + 60000);
-          if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(alarm);
-          else alarm.catch(() => {});
-        } catch { /* The outbox remains durable and retries on the next request. */ }
+        this.scheduleSupabaseFlush(60000);
         return;
       }
     }
-    if (this.hasSupabaseOutbox()) {
-      try {
-        const alarm = this.ctx.storage.setAlarm(Date.now() + 1000);
-        if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(alarm);
-        else alarm.catch(() => {});
-      } catch { /* The remaining batch is durable. */ }
-    }
+    if (this.hasSupabaseOutbox()) this.scheduleSupabaseFlush(1000);
   }
   async alarm() { await this.flushSupabaseOutbox(); }
   saveAsset(a) { this.dirty.assets.add(a.id); }
