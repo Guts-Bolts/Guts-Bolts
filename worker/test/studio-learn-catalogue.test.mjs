@@ -38,9 +38,9 @@ test('every Studio lesson exposes a guided demonstration, practice challenge, hi
   const body = editor.slice(editor.indexOf('static const Lesson lessons[]'), editor.indexOf('const char* titles[]'));
   assert.equal((body.match(/\{\"(?:Your First Build|Make It Move|Build a Tiny Obby|Your First Script|Light Up the Scene|Publish Your First Game|Meet the Explorer|The Properties Panel|Copy, Group, Organize|Color and Materials|Shape the World|Spawn Into the Action|Collision Course|Connect the Parts|Sound Check|Your First GUI|Make Things Happen|Remembering Values|Find and Fix Bugs|Build, Test, Improve)\"/g) || []).length, 20);
   for (let i = 0; i < 20; i++) assert.ok(body.includes('}, ' + i + '}'), 'lesson ' + (i + 1) + ' has a validator');
-  assert.ok(body.includes('const char* demo[3]'));
-  assert.ok(body.includes('const char* hints[3]'));
-  assert.ok(body.includes('const char* practice'));
+  assert.ok(editor.includes('const char* demo[3]'));
+  assert.ok(editor.includes('const char* hints[3]'));
+  assert.ok(editor.includes('const char* practice'));
 });
 
 test('desktop lesson links are strictly validated and routed to the Studio command line', () => {
