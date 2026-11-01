@@ -465,26 +465,45 @@ void Editor::loadLearnProgress() {
     if (m_learnLoaded) return;
     m_learnLoaded = true;
     const long long userId = Online::me().value("userId", 0LL);
-    const std::string accountKey = userId > 0 ? std::to_string(userId) : "guest";
-    std::ifstream in(Paths::file("studio_learn_progress_" + accountKey + ".json"), std::ios::binary);
-    if (!in) return;
-    std::stringstream data; data << in.rdbuf();
-    const nlohmann::json saved = nlohmann::json::parse(data.str(), nullptr, false);
-    if (!saved.is_object()) return;
-    if (saved.contains("completed") && saved["completed"].is_array()) {
-        for (const auto& value : saved["completed"]) if (value.is_string()) {
-            const std::string id = value.get<std::string>();
-            for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) m_learnCompleted.insert(i);
+    auto mergeFile = [this](const std::string& accountKey, bool allowCurrent) {
+        std::ifstream in(Paths::file("studio_learn_progress_" + accountKey + ".json"), std::ios::binary);
+        if (!in) return false;
+        std::stringstream data; data << in.rdbuf();
+        const nlohmann::json saved = nlohmann::json::parse(data.str(), nullptr, false);
+        if (!saved.is_object()) return false;
+        if (saved.contains("completed") && saved["completed"].is_array()) {
+            for (const auto& value : saved["completed"]) if (value.is_string()) {
+                const std::string id = value.get<std::string>();
+                for (int i = 0; i < kStudioLearnCount; ++i)
+                    if (id == kStudioLearnIds[i]) m_learnCompleted.insert(i);
+            }
         }
-    }
-    if (saved.contains("current") && saved["current"].is_string()) {
-        const std::string id = saved["current"].get<std::string>();
-        for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
-            m_learnLesson = i; m_learnHasSavedCurrent = true; break;
+        bool loadedCurrent = false;
+        if (allowCurrent && saved.contains("current") && saved["current"].is_string()) {
+            const std::string id = saved["current"].get<std::string>();
+            for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
+                m_learnLesson = i;
+                m_learnHasSavedCurrent = true;
+                loadedCurrent = true;
+                break;
+            }
         }
+        if (loadedCurrent && saved.contains("step") && saved["step"].is_number_integer())
+            m_learnDemoStep = std::clamp(saved["step"].get<int>(), 0, 2);
+        return loadedCurrent;
+    };
+
+    if (userId > 0) {
+        mergeFile(std::to_string(userId), true);
+        // Guest progress is imported on first sign-in instead of disappearing when
+        // Studio switches from the guest file to the account-specific file.
+        if (!m_learnHasSavedCurrent)
+            m_learnLoadedGuestProgress = mergeFile("guest", true);
+        else
+            mergeFile("guest", false); // keep completed lessons without replacing account resume state
+    } else {
+        mergeFile("guest", true);
     }
-    if (saved.contains("step") && saved["step"].is_number_integer())
-        m_learnDemoStep = std::clamp(saved["step"].get<int>(), 0, 2);
 }
 
 void Editor::saveLearnProgress() {
@@ -536,6 +555,8 @@ void Editor::renderLearn() {
         m_learnCompleted.clear();
         m_learnLesson = 0; m_learnDemoStep = 0; m_learnHint = 0; m_learnPractice = false;
         m_learnHasSavedCurrent = false;
+        m_learnLoadedGuestProgress = false;
+        m_learnPaused = false;
         m_learnExplicitLaunch = false;
         m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
         m_learnSyncReady = false;
@@ -555,10 +576,16 @@ void Editor::renderLearn() {
                     for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) m_learnCompleted.insert(i);
                 }
             }
-            if (!m_learnHasSavedCurrent && remote.contains("current") && remote["current"].is_string()) {
+            if ((!m_learnHasSavedCurrent || m_learnLoadedGuestProgress) &&
+                remote.contains("current") && remote["current"].is_string()) {
                 const std::string remoteCurrent = remote["current"].get<std::string>();
                 if (!m_learnExplicitLaunch) {
-                    for (int i = 0; i < kStudioLearnCount; ++i) if (remoteCurrent == kStudioLearnIds[i]) { m_learnLesson = i; break; }
+                    for (int i = 0; i < kStudioLearnCount; ++i) if (remoteCurrent == kStudioLearnIds[i]) {
+                        m_learnLesson = i;
+                        m_learnHasSavedCurrent = true;
+                        m_learnLoadedGuestProgress = false;
+                        break;
+                    }
                 }
                 if (remoteCurrent == kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] &&
                     remote.contains("step") && remote["step"].is_number_integer())
@@ -830,6 +857,20 @@ void Editor::renderLearn() {
 
     ImGui::SetNextWindowSize(ImVec2(520, 560), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Studio Learn", &m_showLearn)) { ImGui::End(); return; }
+    if (m_learnPaused) {
+        ImGui::TextWrapped("This lesson is paused. Your saved progress is safe; the editor remains available.");
+        if (ImGui::Button("Resume lesson", ImVec2(140, 30))) m_learnPaused = false;
+        ImGui::SameLine();
+        if (ImGui::Button("Exit lesson", ImVec2(120, 30))) {
+            m_learnPaused = false;
+            m_showLearn = false;
+        }
+        ImGui::End();
+        return;
+    }
+    if (ImGui::Button("Pause")) { m_learnPaused = true; ImGui::End(); return; }
+    ImGui::SameLine();
+    if (ImGui::Button("Exit lesson")) { m_showLearn = false; ImGui::End(); return; }
 
     if (ImGui::Combo("Lesson", &m_learnLesson, titles, lessonCount)) {
         m_learnHasSavedCurrent = true;
@@ -860,6 +901,14 @@ void Editor::renderLearn() {
         ImGui::TextWrapped("%s", current.demo[m_learnDemoStep]);
         ImGui::Spacing();
         ImGui::TextDisabled("Follow the instruction in the real editor. This panel does not click controls or change your project for you.");
+        if (ImGui::Button("Repeat demonstration")) {
+            m_learnHasSavedCurrent = true;
+            m_learnDemoStep = 0;
+            m_learnHint = 0;
+            m_learnPractice = false;
+            m_learnStatus.clear();
+            saveLearnProgress();
+        }
         if (m_learnDemoStep > 0) {
             if (ImGui::Button("Back")) { m_learnHasSavedCurrent = true; --m_learnDemoStep; m_learnStatus.clear(); saveLearnProgress(); }
             ImGui::SameLine();
