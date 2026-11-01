@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { withSecurityHeaders } from '../security.js';
 
 test('HTML responses receive a restrictive CSP and baseline security headers', () => {
@@ -31,4 +32,17 @@ test('non-HTML responses get baseline headers but no document CSP', () => {
 test('workers.dev hosts do not receive HSTS for the Guts and Bolts domain', () => {
   const response = withSecurityHeaders(new Response('ok'), new Request('https://project-guts-and-bolts.workers.dev/'));
   assert.equal(response.headers.get('strict-transport-security'), null);
+});
+
+test('homepage uses an external module instead of inline scripts', () => {
+  const html = readFileSync(new URL('../../website/index.html', import.meta.url), 'utf8');
+  assert.match(html, /<script type="module" src="\/home\.js"><\/script>/);
+  assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/i);
+});
+
+test('browser signing key persistence encrypts before writing to localStorage', () => {
+  const source = readFileSync(new URL('../../website/app/gb.js', import.meta.url), 'utf8');
+  assert.match(source, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/);
+  assert.match(source, /localStorage\.setItem\(KEY, 'v1\.'/);
+  assert.doesNotMatch(source, /localStorage\.setItem\(KEY, hex\(secret\)\)/);
 });
