@@ -10,11 +10,13 @@ test('Studio Learn progress is saved to the signed-in account', () => {
   assert.deepEqual(saved.progress.completed, ['first-build', 'tiny-obby']);
   assert.equal(saved.progress.current, 'first-script');
   assert.equal(saved.progress.step, 2);
+  assert.ok(Number.isInteger(saved.progress.updatedAt) && saved.progress.updatedAt > 0, 'server timestamps the saved resume state');
   assert.deepEqual(s.call(a, 'learn.progress.get').progress, saved.progress);
   const second = s.call(a, 'learn.progress.save', { completed: ['first-script'], current: 'tiny-obby', step: 1 });
   assert.deepEqual(second.progress.completed, ['first-build', 'tiny-obby', 'first-script']);
   assert.equal(second.progress.current, 'tiny-obby');
   assert.equal(second.progress.step, 1);
+  assert.ok(second.progress.updatedAt >= saved.progress.updatedAt, 'newer saves advance the resume timestamp');
   const row = s.sql.exec('SELECT data FROM users WHERE id = ?', a.id)[0];
   assert.ok(row, 'account row was written to persistent storage');
   assert.deepEqual(JSON.parse(row.data).learnProgress, second.progress);
@@ -23,7 +25,7 @@ test('Studio Learn progress is saved to the signed-in account', () => {
 test('Studio Learn progress is isolated between accounts', () => {
   const s = makeServer(), a = s.signUp('LearnerA'), b = s.signUp('LearnerB');
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: 'first-build' }).ok, true);
-  assert.deepEqual(s.call(b, 'learn.progress.get').progress, { completed: [], current: '', step: 0 });
+  assert.deepEqual(s.call(b, 'learn.progress.get').progress, { completed: [], current: '', step: 0, updatedAt: 0 });
 });
 
 test('Studio Learn progress rejects unknown IDs and malformed records', () => {
