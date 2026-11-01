@@ -1248,12 +1248,16 @@ void Editor::renderLearn() {
                 case 7: targetName = "Properties"; targetControl = "properties.Position"; break;
                 case 8: targetName = "Explorer"; targetControl = "explorer.insert.Model"; break;
                 case 9: targetName = "Properties"; targetControl = "properties.Color"; break;
+                case 10: targetName = "Viewport"; break;
                 case 11: targetName = "Explorer"; targetControl = "explorer.insert.SpawnLocation"; break;
                 case 12: targetName = "Properties"; targetControl = "properties.Can Collide"; break;
                 case 13: targetName = "Properties"; targetControl = "properties.Attachment0"; break;
                 case 14: targetName = "Properties"; targetControl = "properties.Sound"; break;
                 case 15: targetName = "Explorer"; targetControl = "explorer.insert.ScreenGui"; break;
-                case 16: case 17: targetName = "Script Editor"; targetControl = "script.editor"; break;
+                case 16: case 17:
+                    targetName = m_learnHint == 1 ? "Script Editor" : "Output";
+                    targetControl = m_learnHint == 1 ? "script.editor" : "output.messages";
+                    break;
                 case 18: targetName = "Script Editor"; targetControl = m_learnHint == 1 ? "script.editor" : "output.errors"; break;
                 case 19: targetName = "Explorer"; targetControl = "explorer.selected"; break;
                 default: break;
