@@ -1018,7 +1018,7 @@ export class GbServerObject extends DurableObject {
     if (u) return u;
     u = { id, name: 'Player', created: now(), lastSeen: 0, ledger: [], grants: {}, owned: [], uploadDay: '', uploadsToday: 0,
       playDay: '', playEarned: 0, lastPlay: 0, banned: false, friends: [], friendIn: [], friendOut: [], following: [], followers: [],
-      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', learnProgress: { completed: [], current: '' } };
+      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', learnProgress: { completed: [], current: '', step: 0, updatedAt: 0 } };
     this.users.set(id, u);
     this.claimOfficial(u);
     this.saveUser(u);
@@ -1192,7 +1192,8 @@ export class GbServerObject extends DurableObject {
       const completed = Array.isArray(saved.completed) ? [...new Set(saved.completed.filter((x) => typeof x === 'string' && lessonIds.has(x)))] : [];
       const current = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
       const step = Number.isInteger(saved.step) && saved.step >= 0 && saved.step <= 2 ? saved.step : 0;
-      return okay({ progress: { completed, current, step } });
+      const updatedAt = Number.isInteger(saved.updatedAt) && saved.updatedAt >= 0 ? saved.updatedAt : 0;
+      return okay({ progress: { completed, current, step, updatedAt } });
     }
     if (name !== 'learn.progress.save') return fail('Unknown request: ' + name);
     if (!Array.isArray(args.completed) || args.completed.length > 20 ||
@@ -1206,7 +1207,8 @@ export class GbServerObject extends DurableObject {
     if (args.step !== undefined && (!Number.isInteger(args.step) || args.step < 0 || args.step > 2))
       return fail('Studio Learn step must be between 0 and 2.');
     const step = args.step === undefined ? 0 : args.step;
-    me.learnProgress = { completed, current, step };
+    const updatedAt = now();
+    me.learnProgress = { completed, current, step, updatedAt };
     this.saveUser(me);
     return okay({ progress: me.learnProgress });
   }
