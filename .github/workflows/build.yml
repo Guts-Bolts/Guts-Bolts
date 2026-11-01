@@ -162,7 +162,7 @@ jobs:
           persist-credentials: false
       - name: Restore Emscripten SDK
         id: emsdk-cache
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: ~/emsdk
           key: emsdk-3.1.74-linux
@@ -192,7 +192,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Cache CMake FetchContent dependencies
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: ~/.cache/gb-fetchcontent
           key: linux-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
@@ -234,7 +234,7 @@ jobs:
             mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
             mingw-w64-x86_64-glfw mingw-w64-x86_64-glew mingw-w64-x86_64-glm git
       - name: Cache CMake FetchContent dependencies
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: ~/.cache/gb-fetchcontent
           key: windows-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
@@ -264,7 +264,7 @@ jobs:
       - name: Install libraries
         run: brew install glfw glew glm ninja
       - name: Cache CMake FetchContent dependencies
-        uses: actions/cache@0c45773b623bea8c8e75f6c82b208c3cf94ea4f9
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
           path: ~/.cache/gb-fetchcontent
           key: macos-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
