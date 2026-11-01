@@ -1,4 +1,5 @@
 #include "PropertiesPanel.h"
+#include "../LearnHighlight.h"
 #include "../MaterialUi.h"
 #include "../BoneUi.h"
 #include "../../core/I18n.h"
@@ -61,6 +62,7 @@ void PropertiesPanel::render() {
     ImGui::Begin("Properties");
     ImGui::SetNextItemWidth(-1.0f);
     ImGui::InputTextWithHint("##propertyFilter", "Search properties...", &m_propertyFilter);
+    StudioLearnHighlight::mark("properties.search");
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Search common properties by name, like Position, Anchored, Color or Transparency.");
 
     SceneNode* node = m_scene->selected();
@@ -120,6 +122,7 @@ void PropertiesPanel::render() {
                 ImGui::TableNextColumn();
                 ImGui::SetNextItemWidth(-1.0f);
                 draw();
+                StudioLearnHighlight::mark(std::string("properties.") + label);
             };
             row("Name", [&] {
                 ImGui::BeginDisabled(m_scene->isProtected(node));
@@ -424,6 +427,7 @@ void PropertiesPanel::renderGui(SceneNode* node) {
     if (guiHasText(g.type)) {
         ImGui::SeparatorText("Text");
         ImGui::InputTextMultiline("Text", &g.text, ImVec2(-1, ImGui::GetTextLineHeight() * 3));
+        StudioLearnHighlight::mark("properties.Text");
         ImGui::ColorEdit3("TextColor3", &g.textColor.x);
         ImGui::DragFloat("TextSize", &g.textSize, 0.5f, 4.0f, 200.0f, "%.0f");
         ImGui::Checkbox("TextScaled", &g.textScaled);
@@ -865,6 +869,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::ColorEdit3("Color3", &node->color.x);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tints the picture. White shows it as it is.");
         ImGui::SliderFloat("Transparency", &node->transparency, 0.0f, 1.0f);
+        StudioLearnHighlight::mark("properties.Transparency");
         if (unsigned tex = Textures::get(node->texture)) {
             int w = 0, h = 0;
             Textures::size(node->texture, w, h);
@@ -912,6 +917,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     // --- Real liquid ---
     if (node->kind == NodeKind::FluidSystem) {
         ImGui::ColorEdit3("Color", &node->color.x);
+        StudioLearnHighlight::mark("properties.Color");
         ImGui::SliderFloat("Viscosity", &node->viscosity, 0.0f, 1.0f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How thick it is: 0 runs like water, 1 oozes like honey.");
         ImGui::SliderFloat("SurfaceTension", &node->surfaceTension, 0.0f, 1.0f);
@@ -953,7 +959,9 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
                 if (ImGui::Selectable(name.c_str(), node->soundId == name)) node->soundId = name;
             ImGui::EndCombo();
         }
+        StudioLearnHighlight::mark("properties.Sound");
         ImGui::InputText("File", &node->soundId);
+        StudioLearnHighlight::mark("properties.Sound");
         if (ImGui::IsItemDeactivatedAfterEdit()) node->soundId = Online::assetRef(node->soundId);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("A built-in name, or a .wav / .mp3 / .ogg / .flac file in the games folder\n(e.g. music/theme.mp3)");
@@ -1154,7 +1162,9 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
                 }
             };
             pick("Attachment0", node->ref0);
+            StudioLearnHighlight::mark("properties.Attachment0");
             pick("Attachment1", node->ref1);
+            StudioLearnHighlight::mark("properties.Attachment1");
         }
         if (ct == ConstraintType::Rope || ct == ConstraintType::Rod || ct == ConstraintType::Spring) {
             bool autoLen = node->length < 0.0f;
@@ -1255,7 +1265,9 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         if (ImGui::Combo("Type", &t, types, 2)) node->lightType = (LightType)t;
         ImGui::ColorEdit3("Color", &node->color.x);
         ImGui::SliderFloat("Brightness", &node->brightness, 0.0f, 20.0f);
+        StudioLearnHighlight::mark("properties.Brightness");
         ImGui::SliderFloat("Range", &node->range, 1.0f, 100.0f);
+        StudioLearnHighlight::mark("properties.Range");
         if (node->lightType == LightType::Spot) {
             ImGui::SliderFloat("Angle", &node->spotAngle, 5.0f, 170.0f, "%.0f\xc2\xb0");
             ImGui::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
@@ -1279,8 +1291,11 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     // --- Transform ---
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::DragFloat3("Position", &node->transform.position.x, 0.05f);
+        StudioLearnHighlight::mark("properties.Position");
         ImGui::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
+        StudioLearnHighlight::mark("properties.Rotation");
         ImGui::DragFloat3("Size",     &node->transform.scale.x,    0.05f, 0.001f, 1000.0f);
+        StudioLearnHighlight::mark("properties.Size");
 
         if (ImGui::Button("Reset Transform")) {
             node->transform.position = {0, 0, 0};
@@ -1361,6 +1376,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         int mat = (int)node->material;
         if (ImGui::Combo("Material", &mat, kMaterialNames, kMaterialCount))
             node->material = (Material)mat;
+        StudioLearnHighlight::mark("properties.Material");
         // MaterialVariant: one of the game's own materials (MaterialService). Picking one
         // also sets Material to its BaseMaterial, which it needs to show.
         {
@@ -1393,8 +1409,10 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     // --- Behavior ---
     if (ImGui::CollapsingHeader("Behavior", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Anchored",    &node->anchored);
+        StudioLearnHighlight::mark("properties.Anchored");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Unanchored parts fall with gravity in Play mode");
         ImGui::Checkbox("Can Collide", &node->canCollide);
+        StudioLearnHighlight::mark("properties.Can Collide");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Turn off to let things pass through");
         ImGui::Checkbox("Cast Shadow", &node->castShadow);
         // Collision Group (PhysicsService): which registered group it's in.
