@@ -982,19 +982,13 @@ void Editor::renderLearn() {
                         (b.empty() || n->source.find(b) != std::string::npos)) return true;
                 return false;
             };
-            auto hasOutput = [](int run) {
-                if (run <= 0) return false;
-                for (const Log::Entry& entry : Log::entries())
-                    if (entry.run == run && entry.level == Log::Level::Info) return true;
-                return false;
-            };
             auto hasLiteralPrintOutput = [](const std::vector<SceneNode*>& nodes, int run) {
                 if (run <= 0) return false;
                 for (SceneNode* n : nodes) {
                     if (!n) continue;
                     const size_t call = n->source.find("print(");
                     if (call == std::string::npos) continue;
-                    const size_t quote = n->source.find_first_of("\\"'", call + 6);
+                    const size_t quote = n->source.find_first_of("\"'", call + 6);
                     if (quote == std::string::npos) continue;
                     const size_t end = n->source.find(n->source[quote], quote + 1);
                     if (end == std::string::npos || end == quote + 1) continue;
@@ -1012,7 +1006,7 @@ void Editor::renderLearn() {
                     size_t local = source.find("local ");
                     while (local != std::string::npos) {
                         size_t nameStart = local + 6;
-                        while (nameStart < source.size() && (source[nameStart] == ' ' || source[nameStart] == '\\t')) ++nameStart;
+                        while (nameStart < source.size() && (source[nameStart] == ' ' || source[nameStart] == '\t')) ++nameStart;
                         size_t nameEnd = nameStart;
                         while (nameEnd < source.size() && ((source[nameEnd] >= 'a' && source[nameEnd] <= 'z') ||
                                (source[nameEnd] >= 'A' && source[nameEnd] <= 'Z') ||
@@ -1020,17 +1014,17 @@ void Editor::renderLearn() {
                         const std::string variable = source.substr(nameStart, nameEnd - nameStart);
                         const size_t equals = source.find('=', nameEnd);
                         if (!variable.empty() && equals != std::string::npos) {
-                            const size_t quote = source.find_first_of("\\"'", equals + 1);
+                            const size_t quote = source.find_first_of("\"'", equals + 1);
                             if (quote != std::string::npos) {
                                 const size_t end = source.find(source[quote], quote + 1);
                                 const size_t print = end == std::string::npos ? std::string::npos : source.find("print(", end + 1);
                                 if (end != std::string::npos && print != std::string::npos) {
                                     size_t argStart = print + 6;
-                                    while (argStart < source.size() && (source[argStart] == ' ' || source[argStart] == '\\t')) ++argStart;
+                                    while (argStart < source.size() && (source[argStart] == ' ' || source[argStart] == '\t')) ++argStart;
                                     size_t argEnd = argStart;
                                     while (argEnd < source.size() && source[argEnd] != ')' && source[argEnd] != ',' &&
-                                           source[argEnd] != ' ' && source[argEnd] != '\\t' &&
-                                           source[argEnd] != '\\r' && source[argEnd] != '\\n') ++argEnd;
+                                           source[argEnd] != ' ' && source[argEnd] != '\t' &&
+                                           source[argEnd] != '\r' && source[argEnd] != '\n') ++argEnd;
                                     if (source.substr(argStart, argEnd - argStart) == variable) {
                                         const std::string expected = source.substr(quote + 1, end - quote - 1);
                                         for (const Log::Entry& entry : Log::entries())
