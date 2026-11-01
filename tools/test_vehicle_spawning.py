@@ -99,20 +99,18 @@ def make_place(path):
     spawn_points = node("CarSpawnPoints", "Model", children=[
         part("Spawn1", [20, 3, -10], [8, 1, 8], anchored=True)
     ])
-    server_scripts = node("ServerScriptService", "Model", children=[
-        node("CarSpawner", "Script", source=SERVER_SCRIPT, enabled=True)
-    ])
-    starter_player = node("StarterPlayer", "Model", children=[
-        node("StarterPlayerScripts", "Model", children=[
-            node("CarSpawnerClient", "Script", source=CLIENT_SCRIPT,
-                 enabled=True, local=True)
-        ])
-    ])
+    # The headless multiplayer harness starts scripts placed directly in the
+    # generated Workspace. Keep the service containers above for the objects
+    # they expose, but put the test drivers at the same level as the engine's
+    # existing tools/test_multiplayer.py fixture.
+    server_script = node("CarSpawner", "Script", source=SERVER_SCRIPT, enabled=True)
+    client_script = node("CarSpawnerClient", "Script", source=CLIENT_SCRIPT,
+                         enabled=True, local=True)
     world = {"id": 1, "name": "Workspace", "kind": "Model",
              "pos": [0, 0, 0], "rot": [0, 0, 0], "size": [1, 1, 1],
              "children": [
                  part("Baseplate", [0, -0.5, 0], [100, 1, 100]),
-                 spawn_points, storage, replicated, server_scripts, starter_player
+                 spawn_points, storage, replicated, server_script, client_script
              ]}
     doc = {"format": "GutsAndBolts", "version": 2, "info": {"title": "Vehicle Spawn Test"},
            "world": {}, "environment": {}, "workspace": world}
