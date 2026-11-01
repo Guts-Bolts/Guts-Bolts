@@ -84,6 +84,8 @@ private:
         nlohmann::json receipts = nlohmann::json::array();  // developer products bought: {id, product, game, price, at, granted}
         nlohmann::json privateServers = nlohmann::json::object();   // game id -> when their paid private server runs out
         nlohmann::json sent = nlohmann::json::array();      // {id, to, subject, body, at}
+        nlohmann::json chats = nlohmann::json::array();     // persistent direct/group chat conversations
+        nlohmann::json partyInvites = nlohmann::json::array(); // pending invitations to group chats
         std::string messageDay; int messagesToday = 0;
         std::string privacyMessages = "everyone";            // who can send you messages
         std::string privacyInventory = "everyone";           // who can see what you own (and trade with you)
