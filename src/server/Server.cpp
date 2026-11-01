@@ -586,6 +586,82 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("data.", 0) == 0) return dataOp(name, me, args);
     if (name.rfind("msg.", 0) == 0) return msgOp(name, me, args);
     if (name.rfind("mem.", 0) == 0) return memOp(name, me, args);
+    if (name == "learn.progress.get" || name == "learn.progress.save") {
+        if (me.userId <= 0) return fail("Sign in to sync Studio Learn progress.");
+        static const std::set<std::string> lessonIds = {"first-build", "make-it-move", "tiny-obby", "first-script", "light-up-scene", "publish-first-game", "meet-explorer", "properties-panel", "copy-group-organize", "color-materials", "shape-world", "spawn-into-action", "collision-course", "connect-parts", "sound-check", "first-gui", "make-things-happen", "remember-values", "find-fix-bugs", "build-test-improve"};
+        if (name == "learn.progress.get") {
+            json completed = json::array();
+            std::set<std::string> unique;
+            if (me.learnProgress.is_object() && me.learnProgress.contains("completed") && me.learnProgress["completed"].is_array()) {
+                for (const auto& value : me.learnProgress["completed"]) if (value.is_string()) {
+                    const std::string id = value.get<std::string>();
+                    if (lessonIds.count(id) && unique.insert(id).second) completed.push_back(id);
+                }
+            }
+            std::string current;
+            if (me.learnProgress.is_object() && me.learnProgress.contains("current") && me.learnProgress["current"].is_string()) {
+                const std::string id = me.learnProgress["current"].get<std::string>();
+                if (lessonIds.count(id)) current = id;
+            }
+            int step = me.learnProgress.is_object() && me.learnProgress.contains("step") && me.learnProgress["step"].is_number_integer()
+                ? std::clamp(me.learnProgress["step"].get<int>(), 0, 2) : 0;
+            const bool practice = me.learnProgress.is_object() && me.learnProgress.contains("practice") &&
+                me.learnProgress["practice"].is_boolean() && me.learnProgress["practice"].get<bool>();
+            long long updatedAt = me.learnProgress.is_object() && me.learnProgress.contains("updatedAt") &&
+                me.learnProgress["updatedAt"].is_number_integer()
+                ? std::max(0LL, me.learnProgress["updatedAt"].get<long long>()) : 0LL;
+            json r = okay(); r["progress"] = {{ "completed", completed }, { "current", current }, { "step", step }, { "practice", practice }, { "updatedAt", updatedAt }}; return r;
+        }
+        if (!args.contains("completed") || !args["completed"].is_array() || args["completed"].size() > 20)
+            return fail("Studio Learn progress must contain a list of up to 20 completed lessons.");
+        json completed = json::array();
+        std::set<std::string> unique;
+        if (me.learnProgress.is_object() && me.learnProgress.contains("completed") && me.learnProgress["completed"].is_array()) {
+            for (const auto& value : me.learnProgress["completed"]) if (value.is_string()) {
+                const std::string id = value.get<std::string>();
+                if (lessonIds.count(id) && unique.insert(id).second) completed.push_back(id);
+            }
+        }
+        for (const auto& value : args["completed"]) {
+            if (!value.is_string() || !lessonIds.count(value.get<std::string>()))
+                return fail("Studio Learn progress contains an unknown lesson.");
+            if (unique.insert(value.get<std::string>()).second) completed.push_back(value);
+        }
+        if (args.contains("current") && !args["current"].is_string())
+            return fail("Studio Learn current lesson must be a lesson ID.");
+        if (args.contains("step") && (!args["step"].is_number_integer() || args["step"].get<int>() < 0 || args["step"].get<int>() > 2))
+            return fail("Studio Learn step must be between 0 and 2.");
+        if (args.contains("practice") && !args["practice"].is_boolean())
+            return fail("Studio Learn practice phase must be a boolean.");
+        if (args.contains("updatedAt") && (!args["updatedAt"].is_number_integer() || args["updatedAt"].get<long long>() < 0))
+            return fail("Studio Learn update timestamp must be a non-negative integer.");
+        const long long previousUpdatedAt = me.learnProgress.is_object() && me.learnProgress.contains("updatedAt") &&
+            me.learnProgress["updatedAt"].is_number_integer()
+            ? std::max(0LL, me.learnProgress["updatedAt"].get<long long>()) : 0LL;
+        const long long serverNow = Online::unixNow();
+        const long long incomingUpdatedAt = args.contains("updatedAt")
+            ? std::min(args["updatedAt"].get<long long>(), serverNow + 300) : previousUpdatedAt;
+        const bool acceptResume = !args.contains("updatedAt") || incomingUpdatedAt >= previousUpdatedAt;
+        const std::string requestedCurrent = args.value("current", std::string());
+        const int requestedStep = args.value("step", 0);
+        if (!requestedCurrent.empty() && !lessonIds.count(requestedCurrent))
+            return fail("Studio Learn progress contains an unknown current lesson.");
+        const std::string storedCurrent = me.learnProgress.is_object() && me.learnProgress.contains("current") &&
+            me.learnProgress["current"].is_string() && lessonIds.count(me.learnProgress["current"].get<std::string>())
+            ? me.learnProgress["current"].get<std::string>() : std::string();
+        const int storedStep = me.learnProgress.is_object() && me.learnProgress.contains("step") &&
+            me.learnProgress["step"].is_number_integer() ? std::clamp(me.learnProgress["step"].get<int>(), 0, 2) : 0;
+        const bool storedPractice = me.learnProgress.is_object() && me.learnProgress.contains("practice") &&
+            me.learnProgress["practice"].is_boolean() && me.learnProgress["practice"].get<bool>();
+        const bool requestedPractice = args.contains("practice") ? args["practice"].get<bool>() : storedPractice;
+        const std::string current = acceptResume ? requestedCurrent : storedCurrent;
+        const int step = acceptResume ? requestedStep : storedStep;
+        const bool practice = acceptResume ? requestedPractice : storedPractice;
+        const long long updatedAt = std::max(serverNow, std::max(previousUpdatedAt, incomingUpdatedAt));
+        me.learnProgress = {{ "completed", completed }, { "current", current }, { "step", step }, { "practice", practice }, { "updatedAt", updatedAt }};
+        saveUsers();
+        json r = okay(); r["progress"] = me.learnProgress; return r;
+    }
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);
     if (name.rfind("appeal.", 0) == 0) return appealOp(name, me, args);
@@ -1698,7 +1774,7 @@ void GbServer::saveUsers() {
                    {"friends", u.friends}, {"friendIn", u.friendIn}, {"friendOut", u.friendOut},
                    {"following", u.following}, {"followers", u.followers},
                    {"username", u.username}, {"userId", u.userId}, {"pwSalt", u.pwSalt}, {"pwHash", u.pwHash},
-                   {"keyBlob", u.keyBlob}, {"avatar", u.avatar}, {"gameBadges", u.gameBadges}};
+                   {"keyBlob", u.keyBlob}, {"avatar", u.avatar}, {"gameBadges", u.gameBadges}, {"learnProgress", u.learnProgress}};
         if (!u.appeal.is_null()) all[id]["appeal"] = u.appeal;
         if (u.deleted) all[id]["deleted"] = u.deleted;
         if (!u.totpSecret.empty()) { all[id]["totpSecret"] = u.totpSecret; all[id]["totpLast"] = u.totpLast; }
@@ -1982,6 +2058,7 @@ void GbServer::load() {
                 u.keyBlob = j.value("keyBlob", std::string());
                 if (j.contains("avatar") && j["avatar"].is_object()) u.avatar = j["avatar"];
                 if (j.contains("gameBadges") && j["gameBadges"].is_array()) u.gameBadges = j["gameBadges"];
+                if (j.contains("learnProgress") && j["learnProgress"].is_object()) u.learnProgress = j["learnProgress"];
                 for (const char* k : {"friends", "friendIn", "friendOut", "following", "followers"}) {
                     const std::string key = k;
                     std::set<std::string>& set = key == "friends" ? u.friends : key == "friendIn" ? u.friendIn

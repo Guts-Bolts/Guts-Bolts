@@ -61,6 +61,7 @@ Application::Application(LaunchOptions opts) : m_opts(std::move(opts)) {
     m_scene  = std::make_unique<Scene>();
     m_editor = std::make_unique<Editor>(m_window->handle(), m_scene.get());
     if (!m_opts.openFile.empty()) m_editor->openFile(m_opts.openFile);
+    if (!m_opts.learnLesson.empty()) m_editor->startLearnLesson(m_opts.learnLesson);
 }
 
 Application::~Application() {

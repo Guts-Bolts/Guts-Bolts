@@ -14,6 +14,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         auto next = [&]() -> const char* { return i + 1 < argc ? argv[++i] : ""; };
         if      (!std::strcmp(argv[i], "--open"))       opts.openFile   = next();
+        else if (!std::strncmp(argv[i], "--learn=", 8)) opts.learnLesson = argv[i] + 8;
         else if (!std::strcmp(argv[i], "--play"))       opts.play       = true;
         else if (!std::strcmp(argv[i], "--screenshot")) opts.screenshot = next();
         else if (!std::strcmp(argv[i], "--frames"))     opts.frames     = std::atoi(next());

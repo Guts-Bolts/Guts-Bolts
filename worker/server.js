@@ -1025,7 +1025,7 @@ export class GbServerObject extends DurableObject {
     if (u) return u;
     u = { id, name: 'Player', created: now(), lastSeen: 0, ledger: [], grants: {}, owned: [], uploadDay: '', uploadsToday: 0,
       playDay: '', playEarned: 0, lastPlay: 0, banned: false, friends: [], friendIn: [], friendOut: [], following: [], followers: [],
-      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', chats: [], partyInvites: [] };
+      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', chats: [], partyInvites: [], learnProgress: { completed: [], current: '', step: 0, practice: false, updatedAt: 0 } };
     this.users.set(id, u);
     this.claimOfficial(u);
     this.saveUser(u);
@@ -1189,6 +1189,51 @@ export class GbServerObject extends DurableObject {
   roadmapView(me) {
     const nameOf = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name } : null; };
     return this.roadmap.view(me.userId !== 0 ? me.id : '', nameOf);
+  }
+  learnOp(name, me, args) {
+    if (me.userId <= 0) return fail('Sign in to sync Studio Learn progress.');
+    const lessonIds = new Set(["first-build","make-it-move","tiny-obby","first-script","light-up-scene","publish-first-game","meet-explorer","properties-panel","copy-group-organize","color-materials","shape-world","spawn-into-action","collision-course","connect-parts","sound-check","first-gui","make-things-happen","remember-values","find-fix-bugs","build-test-improve"]);
+    const saved = me.learnProgress && typeof me.learnProgress === 'object'
+      ? me.learnProgress : (me.learnProgress = { completed: [], current: '' });
+    if (name === 'learn.progress.get') {
+      const completed = Array.isArray(saved.completed) ? [...new Set(saved.completed.filter((x) => typeof x === 'string' && lessonIds.has(x)))] : [];
+      const current = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
+      const step = Number.isInteger(saved.step) && saved.step >= 0 && saved.step <= 2 ? saved.step : 0;
+      const practice = saved.practice === true;
+      const updatedAt = Number.isInteger(saved.updatedAt) && saved.updatedAt >= 0 ? saved.updatedAt : 0;
+      return okay({ progress: { completed, current, step, practice, updatedAt } });
+    }
+    if (name !== 'learn.progress.save') return fail('Unknown request: ' + name);
+    if (!Array.isArray(args.completed) || args.completed.length > 20 ||
+        args.completed.some((x) => typeof x !== 'string' || !lessonIds.has(x)))
+      return fail('Studio Learn progress must contain up to 20 known completed lessons.');
+    const previous = Array.isArray(saved.completed) ? saved.completed.filter((x) => typeof x === 'string' && lessonIds.has(x)) : [];
+    const completed = [...new Set([...previous, ...args.completed])];
+    if (args.current !== undefined && typeof args.current !== 'string') return fail('Studio Learn current lesson must be a lesson ID.');
+    const current = args.current || '';
+    if (current && !lessonIds.has(current)) return fail('Studio Learn progress contains an unknown current lesson.');
+    if (args.step !== undefined && (!Number.isInteger(args.step) || args.step < 0 || args.step > 2))
+      return fail('Studio Learn step must be between 0 and 2.');
+    if (args.practice !== undefined && typeof args.practice !== 'boolean')
+      return fail('Studio Learn practice phase must be a boolean.');
+    if (args.updatedAt !== undefined && (!Number.isInteger(args.updatedAt) || args.updatedAt < 0))
+      return fail('Studio Learn update timestamp must be a non-negative integer.');
+    const previousUpdatedAt = Number.isInteger(saved.updatedAt) && saved.updatedAt >= 0 ? saved.updatedAt : 0;
+    const serverNow = now();
+    const incomingUpdatedAt = args.updatedAt === undefined ? previousUpdatedAt : Math.min(args.updatedAt, serverNow + 300);
+    const acceptResume = args.updatedAt === undefined || incomingUpdatedAt >= previousUpdatedAt;
+    const storedCurrent = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
+    const storedStep = Number.isInteger(saved.step) && saved.step >= 0 && saved.step <= 2 ? saved.step : 0;
+    const requestedStep = args.step === undefined ? 0 : args.step;
+    const storedPractice = saved.practice === true;
+    const requestedPractice = args.practice === undefined ? storedPractice : args.practice;
+    const nextCurrent = acceptResume ? current : storedCurrent;
+    const nextStep = acceptResume ? requestedStep : storedStep;
+    const nextPractice = acceptResume ? requestedPractice : storedPractice;
+    const updatedAt = Math.max(serverNow, previousUpdatedAt, incomingUpdatedAt);
+    me.learnProgress = { completed, current: nextCurrent, step: nextStep, practice: nextPractice, updatedAt };
+    this.saveUser(me);
+    return okay({ progress: me.learnProgress });
   }
   roadmapOp(name, me, args) {
     if (name === 'roadmap.get') return this.roadmapView(me);
@@ -2101,6 +2146,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
     if (name.startsWith('mem.')) return this.memOp(name, me, args);
+    if (name.startsWith('learn.')) return this.learnOp(name, me, args);
     if (name.startsWith('roadmap.')) return this.roadmapOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);

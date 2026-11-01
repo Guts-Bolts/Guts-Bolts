@@ -1,4 +1,5 @@
 #include "EnvironmentPanel.h"
+#include "../LearnHighlight.h"
 #include "../../scene/Scene.h"
 #include "../../scene/Environment.h"
 
@@ -36,6 +37,7 @@ void EnvironmentPanel::render() {
     ImGui::Spacing();
     if (ImGui::SliderFloat("Time of Day", &e.clockTime, 0.0f, 24.0f, "%.1f h"))
         EnvironmentPresets::applyTimeOfDay(e, e.clockTime);
+    StudioLearnHighlight::mark("environment.Time of Day");
     help("Moves the sun and changes the sky colours.\nScripts can change it too: Lighting.ClockTime = 18");
     ImGui::Separator();
 

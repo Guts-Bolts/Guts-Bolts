@@ -1,4 +1,5 @@
 #include "OutputPanel.h"
+#include "../LearnHighlight.h"
 #include "../../core/Log.h"
 
 #include <imgui.h>
@@ -31,6 +32,8 @@ void OutputPanel::render() {
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Text, col);
         ImGui::TextUnformatted(e.text.c_str());
+        if (e.level == Log::Level::Error) StudioLearnHighlight::mark("output.errors");
+        if (e.level == Log::Level::Info) StudioLearnHighlight::mark("output.messages");
         ImGui::PopStyleColor();
         if (ImGui::BeginPopupContextItem("##line")) {
             if (ImGui::MenuItem("Copy")) ImGui::SetClipboardText(e.text.c_str());

@@ -44,6 +44,7 @@ public:
     ~Editor();
     void render(float dt);
     void openFile(const std::string& path);
+    void startLearnLesson(const std::string& id);
     // Bring files in: 3D models, Roblox files, games, pictures, sounds and scripts
     // (File > Import, the Import button, or dragged from the computer onto Studio).
     // `mouse`: where they were dropped (the part under it gets pictures / sounds / scripts).
@@ -94,6 +95,9 @@ private:
     void renderDialogs();
     void renderTeamPanel();
     void renderPerformanceWindow();
+    void renderLearn();
+    void loadLearnProgress();
+    void saveLearnProgress();
     void renderPerformanceDoctor();
     void renderLuaDebugger();
     void renderSceneValidator();
@@ -353,6 +357,20 @@ private:
     bool m_firstLayout = true;
     bool m_showSettings = false;
     bool m_showPerformance = false;
+    bool m_showLearn = false, m_learnLoaded = false, m_learnHasSavedCurrent = false, m_learnSyncReady = false, m_learnExplicitLaunch = false;
+    bool m_learnPaused = false, m_learnDemoActionDone = false;
+    long long m_learnProgressUpdatedAt = 0;
+    double m_learnSyncRetryAt = 0.0;
+    long long m_learnSyncUserId = 0;
+    int m_learnLesson = 0, m_learnDemoStep = 0, m_learnHint = 0;
+    bool m_learnPractice = false, m_learnSawPlay = false, m_learnSawPublish = false, m_learnWasPlaying = false;
+    int m_learnPlayStarts = 0;
+    std::string m_learnStatus;
+    std::map<uint64_t, std::string> m_learnBaselineNodes, m_learnFirstPlayNodes;
+    bool m_learnFirstPlayEnded = false, m_learnEditedAfterFirstPlay = false, m_learnSecondPlayAfterEdit = false, m_learnSawScriptError = false;
+    int m_learnFirstPlayRun = 0, m_learnSecondPlayRun = 0;
+    uint64_t m_learnBaselineTerrainVersion = 0;
+    std::set<int> m_learnCompleted;
     bool m_showPerformanceDoctor = false;
     bool m_showLuaDebugger = false;
     int m_debugLineInput = 1;

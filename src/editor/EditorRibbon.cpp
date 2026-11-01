@@ -1,5 +1,6 @@
 // Studio's ribbon (HOME / MODEL / TEST / VIEW), laid out like Roblox Studio's.
 #include "Editor.h"
+#include "LearnHighlight.h"
 #include "../online/OnlineClient.h"
 #include "panels/ScriptEditorPanel.h"
 #include "Icons.h"
@@ -33,6 +34,7 @@ bool bigButton(const char* label, Icons::Id icon, bool active = false, bool enab
     ImVec2 p = ImGui::GetCursorScreenPos();
     ImGui::BeginDisabled(!enabled);
     bool clicked = ImGui::InvisibleButton("##b", ImVec2(w, h));
+    StudioLearnHighlight::mark(std::string("ribbon.") + label);
     ImGui::EndDisabled();
     bool hover = ImGui::IsItemHovered();
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -56,6 +58,7 @@ bool smallButton(const char* label, Icons::Id icon, bool active = false, bool en
     ImVec2 p = ImGui::GetCursorScreenPos();
     ImGui::BeginDisabled(!enabled);
     bool clicked = ImGui::InvisibleButton("##s", ImVec2(w, h));
+    StudioLearnHighlight::mark(std::string("ribbon.") + label);
     ImGui::EndDisabled();
     bool hover = ImGui::IsItemHovered();
     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -167,6 +170,7 @@ void Editor::renderToolbar() {
         ImGui::SetCursorScreenPos(a);
         ImGui::PushID(i);
         if (ImGui::InvisibleButton("##tab", ImVec2(b.x - a.x, tabsH))) m_ribbonTab = i;
+        StudioLearnHighlight::mark(std::string("ribbon.tab.") + tabs[i]);
         ImGui::PopID();
         bool on = m_ribbonTab == i;
         if (on) {
@@ -596,12 +600,15 @@ void Editor::renderToolbar() {
             Stack st;
             ImGui::SetNextItemWidth(130);
             ImGui::SliderFloat("##bsize", &m_state.terrainSize, 2.0f, 64.0f, "Size %.0f");
+            StudioLearnHighlight::mark("ribbon.terrain.brushSize");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("How big the brush is (studs from the middle to the edge)");
             ImGui::SetNextItemWidth(130);
             ImGui::SliderFloat("##bstr", &m_state.terrainStrength, 0.05f, 1.0f, "Strength %.2f");
+            StudioLearnHighlight::mark("ribbon.terrain.strength");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("How fast it changes the ground");
             ImGui::SetNextItemWidth(130);
             ImGui::Combo("##bmat", &m_state.terrainMaterial, kTerrainMaterialNames, kTerrainMaterialCount);
+            StudioLearnHighlight::mark("ribbon.terrain.material");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("What Paint paints");
         }
         break;

@@ -1846,10 +1846,109 @@ async function roadmapPage(head) {
     ${r.answered.length ? html`<h2>Answered lately</h2><div class="ideas">${r.answered.map((x) => ideaRow(x, staff))}</div>` : ''}`);
 }
 
+const STUDIO_LESSONS = [
+  ['first-build','Your First Build','Beginner','Building','Insert, transform, anchor and save a Part.','5 min'],
+  ['make-it-move','Make It Move','Beginner','Physics','See how gravity and Anchored affect a loose object.','6 min'],
+  ['tiny-obby','Build a Tiny Obby','Beginner','Building','Build and playtest a short obstacle course.','10 min'],
+  ['first-script','Your First Script','Beginner','Scripting','Create a Script, print a message and run it.','8 min'],
+  ['light-up-scene','Light Up the Scene','Beginner','Lighting','Add a light and tune its properties.','7 min'],
+  ['publish-first-game','Publish Your First Game','Beginner','Publishing','Name, describe, save and publish a project.','8 min'],
+  ['meet-explorer','Meet the Explorer','Beginner','Studio basics','Find, select, rename and organize scene objects.','6 min'],
+  ['properties-panel','The Properties Panel','Beginner','Studio basics','Inspect and change object properties.','6 min'],
+  ['copy-group-organize','Copy, Group, Organize','Beginner','Building','Duplicate objects and group related parts.','7 min'],
+  ['color-materials','Color and Materials','Beginner','Building','Style a small build with colors and materials.','7 min'],
+  ['shape-world','Shape the World','Beginner','Terrain','Use terrain tools to shape a small feature.','8 min'],
+  ['spawn-into-action','Spawn Into the Action','Beginner','Gameplay','Add and test a player spawn point.','7 min'],
+  ['collision-course','Collision Course','Intermediate','Physics','Configure collision and test object interactions.','8 min'],
+  ['connect-parts','Connect the Parts','Intermediate','Physics','Connect physics objects with a constraint.','9 min'],
+  ['sound-check','Sound Check','Beginner','Audio','Add a Sound object and configure playback.','7 min'],
+  ['first-gui','Your First GUI','Beginner','UI','Create a simple on-screen interface element.','8 min'],
+  ['make-things-happen','Make Things Happen','Intermediate','Scripting','Use an event connection to respond to a game event.','10 min'],
+  ['remember-values','Remembering Values','Intermediate','Scripting','Create variables and use them in simple behavior.','8 min'],
+  ['find-fix-bugs','Find and Fix Bugs','Intermediate','Scripting','Read an error and correct a simple script mistake.','9 min'],
+  ['build-test-improve','Build, Test, Improve','Intermediate','Publishing','Run a focused playtest, fix an issue and retest.','12 min'],
+];
+
+async function learnPage(head) {
+  const key = 'gb.studioLearn.' + (signedIn() ? me.id : 'guest');
+  let progress = { completed: [], current: '', step: 0, updatedAt: 0 };
+  const localKeys = signedIn() ? [key, 'gb.studioLearn.guest'] : [key];
+  for (const localKey of localKeys) {
+    try {
+      const local = JSON.parse(localStorage.getItem(localKey) || 'null');
+      if (local && Array.isArray(local.completed)) {
+        progress.completed = [...new Set([...progress.completed, ...local.completed])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
+        const localUpdatedAt = Number.isInteger(local.updatedAt) && local.updatedAt >= 0 ? local.updatedAt : 0;
+        if ((localUpdatedAt > progress.updatedAt || (!progress.current && localUpdatedAt === progress.updatedAt)) &&
+            STUDIO_LESSONS.some((l) => l[0] === local.current)) {
+          progress.current = local.current;
+          progress.step = Number.isInteger(local.step) && local.step >= 0 && local.step <= 2 ? local.step : 0;
+          progress.updatedAt = localUpdatedAt;
+        }
+      }
+    } catch { /* local progress is optional in private browsing */ }
+  }
+  if (signedIn()) {
+    const remote = await pageCall('learn.progress.get', {});
+    if (remote.ok && remote.progress) {
+      progress.completed = [...new Set([...progress.completed, ...(Array.isArray(remote.progress.completed) ? remote.progress.completed : [])])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
+      const remoteUpdatedAt = Number.isInteger(remote.progress.updatedAt) && remote.progress.updatedAt >= 0 ? remote.progress.updatedAt : 0;
+      if (remoteUpdatedAt >= progress.updatedAt && STUDIO_LESSONS.some((l) => l[0] === remote.progress.current)) {
+        progress.current = remote.progress.current;
+        progress.step = Number.isInteger(remote.progress.step) && remote.progress.step >= 0 && remote.progress.step <= 2 ? remote.progress.step : 0;
+        progress.updatedAt = remoteUpdatedAt;
+      }
+      progress.updatedAt = Math.max(Math.floor(Date.now() / 1000), progress.updatedAt + 1);
+      const saved = await pageCall('learn.progress.save', progress);
+      if (saved.ok && saved.progress) {
+        if (Number.isInteger(saved.progress.updatedAt) && saved.progress.updatedAt >= progress.updatedAt &&
+            STUDIO_LESSONS.some((l) => l[0] === saved.progress.current)) {
+          progress.current = saved.progress.current;
+          progress.step = Number.isInteger(saved.progress.step) && saved.progress.step >= 0 && saved.progress.step <= 2 ? saved.progress.step : 0;
+        }
+        if (Number.isInteger(saved.progress.updatedAt)) progress.updatedAt = saved.progress.updatedAt;
+      }
+    }
+  }
+  try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
+
+  let level = 'All', topic = 'All';
+  const draw = () => {
+    const filtered = STUDIO_LESSONS.filter((l) => (level === 'All' || l[2] === level) && (topic === 'All' || l[3] === topic));
+    const current = STUDIO_LESSONS.find((l) => l[0] === progress.current && !progress.completed.includes(l[0]));
+    show(html`${head}
+      <div class="learn-intro box">
+        <h2>Learn Studio by building things</h2>
+        <p>Short, hands-on lessons. Follow a guided demonstration in Studio, then complete a challenge yourself. Hints point you toward the right controls without doing the work for you.</p>
+        <p class="small muted">Browse without signing in. Progress is saved on this device and syncs across signed-in devices when you use desktop Studio.</p>
+        ${current ? html`<p><b>Continue learning:</b> ${current[1]} <button class="btn green" data-act="startLearn" data-id="${current[0]}">Continue lesson</button></p>` : ''}
+        <p class="small muted">${progress.completed.length} of 20 lessons completed</p>
+      </div>
+      <div class="learn-filters">
+        <label>Skill level <select id="learnLevel"><option>All</option><option>Beginner</option><option>Intermediate</option></select></label>
+        <label>Topic <select id="learnTopic"><option>All</option>${['Building','Physics','Scripting','Studio basics','Lighting','Terrain','Gameplay','Audio','UI','Publishing'].map(x=>html`<option>${x}</option>`)}</select></label>
+      </div>
+      <div class="learn-grid">${filtered.map((l) => {
+        const done = progress.completed.includes(l[0]);
+        return html`<article class="learn-card box">
+          <div class="row"><b class="grow">${l[1]}</b><span class="small muted">${done ? 'Completed' : l[2]}</span></div>
+          <p class="small muted">${l[3]} · ${l[5]}</p><p>${l[4]}</p>
+          <button class="btn ${done ? '' : 'blue'}" data-act="startLearn" data-id="${l[0]}">${done ? 'Practice again' : 'Start lesson'}</button>
+        </article>`;
+      })}</div>
+      <div class="box"><b>Desktop Studio required</b><p>Lessons run in the Windows, macOS or Linux Studio editor, not the mobile Player. If the app is not installed, download it first.</p><a class="btn" href="../#download">Download Guts &amp; Bolts</a></div>`);
+    const lv = $('#learnLevel'), tp = $('#learnTopic');
+    if (lv) { lv.value = level; lv.addEventListener('change', () => { level = lv.value; draw(); }); }
+    if (tp) { tp.value = topic; tp.addEventListener('change', () => { topic = tp.value; draw(); }); }
+  };
+  draw();
+}
+
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['roadmap', 'Roadmap']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
+  if (tab === 'learn') { await learnPage(head); return; }
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
   if (tab === 'roadmap') { await roadmapPage(head); return; }
@@ -3727,6 +3826,61 @@ function loginPage(signup) {
 // --- clicks and forms ----------------------------------------------------------
 
 const actions = {
+  async startLearn(d) {
+    const lesson = STUDIO_LESSONS.find((x) => x[0] === d.id);
+    if (!lesson) { toast('That lesson could not be found.'); return; }
+    const key = 'gb.studioLearn.' + (signedIn() ? me.id : 'guest');
+    let progress = { completed: [], current: '', step: 0, updatedAt: 0 };
+    try {
+      const local = JSON.parse(localStorage.getItem(key) || 'null');
+      if (local && typeof local === 'object' && !Array.isArray(local)) progress = Object.assign(progress, local);
+    } catch { /* ignore */ }
+    progress.completed = Array.isArray(progress.completed) ? progress.completed.filter((x) => STUDIO_LESSONS.some((l) => l[0] === x)) : [];
+    progress.current = typeof progress.current === 'string' ? progress.current : '';
+    progress.step = Number.isInteger(progress.step) && progress.step >= 0 && progress.step <= 2 ? progress.step : 0;
+    progress.updatedAt = Number.isInteger(progress.updatedAt) && progress.updatedAt >= 0 ? progress.updatedAt : 0;
+    const resume = progress.current === lesson[0] && !progress.completed.includes(lesson[0]);
+    progress.current = lesson[0];
+    if (!resume) progress.step = 0;
+    if (signedIn()) {
+      const remote = await call('learn.progress.get', {});
+      if (remote.ok && remote.progress) {
+        if (Array.isArray(remote.progress.completed))
+          progress.completed = [...new Set([...progress.completed, ...remote.progress.completed])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
+        if (Number.isInteger(remote.progress.updatedAt)) {
+          const localUpdatedAt = Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0;
+          if (remote.progress.updatedAt >= localUpdatedAt) {
+            const remoteCurrent = remote.progress.current;
+            if (remoteCurrent === lesson[0] && !progress.completed.includes(lesson[0]))
+              progress.step = Number.isInteger(remote.progress.step) && remote.progress.step >= 0 && remote.progress.step <= 2 ? remote.progress.step : 0;
+            else
+              progress.step = 0;
+          }
+          progress.updatedAt = Math.max(localUpdatedAt, remote.progress.updatedAt);
+        }
+      }
+    }
+    progress.updatedAt = Math.max(Math.floor(Date.now() / 1000), (Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0) + 1);
+    try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
+    if (signedIn()) {
+      const saved = await call('learn.progress.save', progress);
+      if (saved.ok && saved.progress) {
+        if (Number.isInteger(saved.progress.updatedAt) && saved.progress.updatedAt > progress.updatedAt &&
+            STUDIO_LESSONS.some((l) => l[0] === saved.progress.current)) {
+          progress.current = saved.progress.current;
+          progress.step = Number.isInteger(saved.progress.step) && saved.progress.step >= 0 && saved.progress.step <= 2 ? saved.progress.step : 0;
+        }
+        if (Number.isInteger(saved.progress.updatedAt)) progress.updatedAt = saved.progress.updatedAt;
+        try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
+      }
+    }
+    const url = 'gutsandbolts://learn/' + encodeURIComponent(lesson[0]);
+    popup(html`<h1 class="popup-title">Opening Studio Learn...</h1>
+      <p>Opening <b>${lesson[1]}</b> in desktop Guts&amp;Bolts Studio.</p>
+      <p class="small muted">If your browser asks, choose Open Guts&amp;Bolts. If you just installed the app, launch Guts&amp;Bolts Player once to register its link handler, then retry. Lessons do not run in the mobile Player.</p>
+      <p class="popup-buttons"><a class="btn green" href="${url}">Open lesson</a> <a class="btn" href="../#download">Download the app</a></p>`);
+    location.href = url;
+  },
   async boltworksRegister() {
     const r = await call('boltworks.register', {});
     if (!r.ok) { toast(r.error || 'Could not register right now.'); return; }
