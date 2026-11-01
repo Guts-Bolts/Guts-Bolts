@@ -13,6 +13,7 @@
 #include "../renderer/SceneRenderer.h"
 #include "../scene/Scene.h"
 #include "LaunchLink.h"
+#include "../core/Paths.h"
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
@@ -356,12 +357,24 @@ void PlayerApp::takeLink(const std::string& url) {
     LaunchLink::Link link;
     if (!LaunchLink::parse(url, link)) return;
     m_linkGame = link.game;
+    m_linkLesson = link.lesson;
     m_linkGuest = link.guest;
     m_linkServer = link.server;
     m_linkEdit = link.edit;
 }
 
 void PlayerApp::followLink() {
+    if (!m_linkLesson.empty()) {
+        const std::string lesson = std::move(m_linkLesson);
+        m_linkLesson.clear();
+#if defined(__EMSCRIPTEN__)
+        m_status = "Studio Learn runs in the desktop Studio app. Use the download link on the website.";
+#else
+        if (!Paths::launch(Paths::sibling("GutsAndBolts"), "--learn=" + lesson))
+            m_status = "Couldn't open Studio. Install the desktop Guts&Bolts app and try the lesson again.";
+#endif
+        return;
+    }
     if (m_linkGame.empty()) return;
     if (!Online::online()) {   // not connected yet: wait (a server that's switched off never answers)
         return;

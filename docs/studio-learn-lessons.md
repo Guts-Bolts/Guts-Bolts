@@ -481,3 +481,12 @@ This PR now contains an interactive native lesson panel and live scene checks fo
 - Refine checks that currently validate the presence of an object or code pattern but cannot inspect the full quality of the learner's result.
 
 Do not describe the website catalogue, cross-device sync, persistent progress, or precise control-level spotlight as implemented until those parts exist and have tests.
+
+
+## PR #213 integration
+
+The Learn catalogue is available at **Create > Learn** on the website. It contains all 20 lesson entries, skill-level and topic filters, a continue-learning prompt, and a desktop launch link using the validated `gutsandbolts://learn/<lesson-id>` route. The Player validates the lesson slug and starts the sibling desktop Studio with `--learn=<lesson-id>`; Studio opens the requested lesson without opening or overwriting a game file.
+
+Completion and the selected lesson are stored locally in `studio_learn_progress.json`. When Studio is signed in and online, it merges local progress with the account's `learn.progress.get/save` record. The Cloudflare worker and standalone C++ server validate the same fixed set of 20 lesson IDs and store progress on the requesting account. Signed-out learners can browse and launch lessons; their progress remains local until they sign in.
+
+The website also saves browser-side progress and merges it with the account record for signed-in visitors. Studio remains usable offline; account synchronization runs when the user is signed in and the server is online.
