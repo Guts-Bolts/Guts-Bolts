@@ -176,13 +176,15 @@ jobs:
         with:
           persist-credentials: false
       - name: Install libraries
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libglfw3-dev libglew-dev libglm-dev libx11-dev
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libglfw3-dev libglew-dev libglm-dev libx11-dev xvfb
       - name: Build
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build build
       - name: Run native CTest regression suite
         run: ctest --test-dir build --output-on-failure
+      - name: Test server-authoritative vehicle spawning with multiple players
+        run: python3 tools/test_vehicle_spawning.py --build build --players 2 --seconds 18
       - name: Package
         run: |
           mkdir -p GutsAndBolts-Linux
