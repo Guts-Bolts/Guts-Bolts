@@ -518,7 +518,9 @@ void Editor::startLearnLesson(const std::string& id) {
         m_learnHint = 0;
         m_learnPractice = false; m_learnSawPlay = false; m_learnStatus.clear();
         m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
-        m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_showLearn = true;
+        m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false;
+        m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
+        m_showLearn = true;
         saveLearnProgress();
         return;
     }
@@ -535,6 +537,7 @@ void Editor::renderLearn() {
         m_learnLesson = 0; m_learnDemoStep = 0; m_learnHint = 0; m_learnPractice = false;
         m_learnHasSavedCurrent = false;
         m_learnExplicitLaunch = false;
+        m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
         m_learnSyncReady = false;
         m_learnSyncRetryAt = 0.0;
     }
@@ -580,7 +583,22 @@ void Editor::renderLearn() {
                 m_learnEditedAfterFirstPlay = true;
         });
     }
-    if (m_playing && !m_learnWasPlaying) ++m_learnPlayStarts;
+    if (m_playing && !m_learnWasPlaying) {
+        ++m_learnPlayStarts;
+        if (m_learnPractice && m_learnLesson == 18) {
+            if (m_learnPlayStarts == 1) m_learnFirstPlayRun = Log::currentRun();
+            else if (m_learnPlayStarts == 2) m_learnSecondPlayRun = Log::currentRun();
+        }
+    }
+    if (m_learnPractice && m_learnLesson == 18 && m_learnFirstPlayRun > 0 && !m_learnSawScriptError) {
+        for (const Log::Entry& entry : Log::entries()) {
+            if (entry.run == m_learnFirstPlayRun && entry.level == Log::Level::Error &&
+                entry.text.find("pritn") != std::string::npos) {
+                m_learnSawScriptError = true;
+                break;
+            }
+        }
+    }
     m_learnWasPlaying = m_playing;
     if (m_playing) m_learnSawPlay = true;
 
@@ -823,6 +841,7 @@ void Editor::renderLearn() {
         m_learnStatus.clear();
         m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
         m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false;
+        m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
         saveLearnProgress();
     }
     const Lesson& current = lessons[m_learnLesson];
@@ -855,6 +874,7 @@ void Editor::renderLearn() {
             m_learnBaselineTerrainVersion = m_scene->terrain().version();
             m_learnFirstPlayNodes.clear();
             m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false;
+            m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
             m_learnSawPlay = false;
             m_learnSawPublish = false;
             m_learnPlayStarts = 0;
@@ -1003,10 +1023,32 @@ void Editor::renderLearn() {
                     passed = m_learnSawPlay && hasText(newScripts, "local ", "print(");
                     feedback = "Create a new Script that declares a local variable and uses it in print(...), then run it.";
                     break;
-                case 18:
-                    passed = m_learnSawPlay && hasText(newScripts, "print(", "") && !hasText(newScripts, "pritn(", "");
-                    feedback = "Create a practice Script, reproduce a typo, correct it to print(...), and run it with F5.";
+                case 18: {
+                    SceneNode* corrected = nullptr;
+                    std::string expectedOutput;
+                    for (SceneNode* n : newScripts) {
+                        const std::string& source = n->source;
+                        if (source.find("print(") == std::string::npos || source.find("pritn(") != std::string::npos) continue;
+                        const size_t call = source.find("print(");
+                        const size_t quote = source.find_first_of("\"'", call + 6);
+                        if (quote == std::string::npos) continue;
+                        const size_t end = source.find(source[quote], quote + 1);
+                        if (end == std::string::npos || end == quote + 1) continue;
+                        corrected = n;
+                        expectedOutput = source.substr(quote + 1, end - quote - 1);
+                        break;
+                    }
+                    bool printed = false;
+                    if (!expectedOutput.empty() && m_learnSecondPlayRun > 0) {
+                        for (const Log::Entry& entry : Log::entries()) {
+                            if (entry.run == m_learnSecondPlayRun && entry.level == Log::Level::Info &&
+                                entry.text == expectedOutput) { printed = true; break; }
+                        }
+                    }
+                    passed = corrected && m_learnSawScriptError && m_learnPlayStarts >= 2 && printed;
+                    feedback = "Run a Script with the deliberate pritn(...) typo, read the Output error, correct it to print(\"message\"), and run it again to verify that exact message appears.";
                     break;
+                }
                 case 19:
                     passed = m_learnPlayStarts >= 2 && m_learnEditedAfterFirstPlay;
                     feedback = "Run a Play test, stop it, change a Part in edit mode, then run a second Play test to verify the fix.";
@@ -1040,6 +1082,7 @@ void Editor::renderLearn() {
                     m_learnBaselineNodes.clear();
                     m_learnFirstPlayNodes.clear();
                     m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false;
+                    m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
                     saveLearnProgress();
                 }
             }

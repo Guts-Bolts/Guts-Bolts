@@ -365,7 +365,8 @@ private:
     int m_learnPlayStarts = 0;
     std::string m_learnStatus;
     std::map<uint64_t, std::string> m_learnBaselineNodes, m_learnFirstPlayNodes;
-    bool m_learnFirstPlayEnded = false, m_learnEditedAfterFirstPlay = false;
+    bool m_learnFirstPlayEnded = false, m_learnEditedAfterFirstPlay = false, m_learnSawScriptError = false;
+    int m_learnFirstPlayRun = 0, m_learnSecondPlayRun = 0;
     uint64_t m_learnBaselineTerrainVersion = 0;
     std::set<int> m_learnCompleted;
     bool m_showPerformanceDoctor = false;
