@@ -143,6 +143,10 @@ def main():
         print(exc.stdout or "")
         sys.exit("FAIL: multiplayer vehicle test timed out")
 
+    if proc.returncode != 0:
+        print(proc.stdout)
+        sys.exit(f"FAIL: Studio exited with status {proc.returncode}")
+
     results = {}
     for line in proc.stdout.splitlines():
         if line.startswith("MULTITEST "):
