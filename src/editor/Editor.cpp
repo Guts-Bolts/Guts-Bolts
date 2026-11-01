@@ -520,7 +520,7 @@ void Editor::renderLearn() {
          {"Create a small Part where you want the light source to sit.",
           "Use Add > Point Light, or Explorer > Insert Object > Effects & Lights > PointLight, with the Part selected.",
           "Select the light in Explorer and change Brightness, Range and Color in Properties."},
-         "Add a second light in another area. Give it a different colour or range so the two spaces feel distinct.",
+         "Add a second light in another area. Give it a different colour or range, then press F5 to compare the lighting in the running scene.",
          {"Select the Part that should hold the light, then use Add > Point Light.",
           "Select the PointLight child in Explorer and open Properties.",
           "Adjust Brightness, Range or Color. Compare it with the first light."}, 4},
@@ -793,7 +793,7 @@ void Editor::renderLearn() {
                     feedback = "Create a new Script containing print(...), then run it with F5.";
                     break;
                 case 4:
-                    passed = std::any_of(newLights.begin(), newLights.end(), [](SceneNode* n) {
+                    passed = m_learnSawPlay && std::any_of(newLights.begin(), newLights.end(), [](SceneNode* n) {
                         return n->enabled && (n->brightness != 2.0f || n->range != 14.0f ||
                                glm::length(n->color - glm::vec3(1.0f)) > 0.05f);
                     });
@@ -832,24 +832,24 @@ void Editor::renderLearn() {
                     feedback = "Open the TERRAIN tab and make a real terrain brush edit. Selecting a brush alone does not count.";
                     break;
                 case 11:
-                    passed = std::any_of(newParts.begin(), newParts.end(), [](SceneNode* n) {
+                    passed = m_learnSawPlay && std::any_of(newParts.begin(), newParts.end(), [](SceneNode* n) {
                         return n->name == "SpawnLocation" ||
                                std::find(n->tags.begin(), n->tags.end(), "SpawnLocation") != n->tags.end();
                     });
                     feedback = "Insert a new SpawnLocation from Explorer > Insert Object > Parts.";
                     break;
                 case 12:
-                    passed = std::any_of(newParts.begin(), newParts.end(), [](SceneNode* n) { return !n->canCollide; });
+                    passed = m_learnSawPlay && std::any_of(newParts.begin(), newParts.end(), [](SceneNode* n) { return !n->canCollide; });
                     feedback = "Create a new Part, select it, and turn CanCollide off in Properties.";
                     break;
                 case 13:
-                    passed = std::any_of(newConstraints.begin(), newConstraints.end(), [](SceneNode* n) {
+                    passed = m_learnSawPlay && std::any_of(newConstraints.begin(), newConstraints.end(), [](SceneNode* n) {
                         return n->enabled && n->ref0 != 0 && n->ref1 != 0;
                     });
                     feedback = "Create a new Constraint and connect both endpoints to the intended objects or attachments.";
                     break;
                 case 14:
-                    passed = !newSounds.empty();
+                    passed = m_learnSawPlay && !newSounds.empty();
                     feedback = "Add a new Sound object from Add > Sound or Explorer > Insert Object.";
                     break;
                 case 15: {
@@ -859,7 +859,7 @@ void Editor::renderLearn() {
                         nestedText |= isText && n->parent && n->parent->kind == NodeKind::Gui &&
                                       n->parent->gui.type == GuiType::ScreenGui;
                     }
-                    passed = nestedText;
+                    passed = m_learnSawPlay && nestedText;
                     feedback = "Create a new ScreenGui and place a TextLabel or TextButton inside it.";
                     break;
                 }
