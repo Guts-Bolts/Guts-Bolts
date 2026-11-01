@@ -70,14 +70,21 @@ test('Studio Learn outlines the exact visible control for the instrumented edito
   const explorer = read('src/editor/panels/OutlinerPanel.cpp');
   const scripts = read('src/editor/panels/ScriptEditorPanel.cpp');
   const output = read('src/editor/panels/OutputPanel.cpp');
+  const ribbon = read('src/editor/EditorRibbon.cpp');
+  const publish = read('src/editor/EditorOnline.cpp');
   assert.ok(highlight.includes('ImGui::GetItemRectMin()') && highlight.includes('ImGui::GetFrameCount()'));
+  assert.ok(highlight.includes('markRect("explorer.insert.open"') === false, 'non-ImGui target rectangles use the shared markRect API');
   assert.ok(editor.includes('StudioLearnHighlight::find(targetControl'));
   assert.ok(properties.includes('StudioLearnHighlight::mark("properties.Anchored")'));
   assert.ok(properties.includes('StudioLearnHighlight::mark("properties.Can Collide")'));
   assert.ok(properties.includes('StudioLearnHighlight::mark("properties.Size")'));
   assert.ok(explorer.includes('StudioLearnHighlight::mark(std::string("explorer.insert.") + what)'));
+  assert.ok(explorer.includes('StudioLearnHighlight::markRect("explorer.insert.open"'));
   assert.ok(scripts.includes('StudioLearnHighlight::mark("script.editor")'));
   assert.ok(output.includes('StudioLearnHighlight::mark("output.messages")'));
+  assert.ok(ribbon.includes('StudioLearnHighlight::mark(std::string("ribbon.") + label)'));
+  assert.ok(ribbon.includes('ribbon.tab.'));
+  assert.ok(publish.includes('StudioLearnHighlight::mark("publish.confirm")'));
 });
 
 test('desktop lesson links are strictly validated and routed to the Studio command line', () => {
