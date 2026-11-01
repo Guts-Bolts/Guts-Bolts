@@ -54,8 +54,9 @@ int main() {
             {"current", "first-script"}, {"step", 2}
         });
         check(r.value("ok", false) && r["progress"]["completed"].size() == 2 &&
-              r["progress"]["current"] == "first-script" && r["progress"]["step"] == 2,
-              "save valid progress, step and de-duplicate lesson IDs");
+              r["progress"]["current"] == "first-script" && r["progress"]["step"] == 2 &&
+              r["progress"]["updatedAt"].get<long long>() > 0,
+              "save valid progress, step, timestamp and de-duplicate lesson IDs");
         r = ask(*server, "learn.progress.save", {{"completed", json::array({"first-script"})}, {"current", "tiny-obby"}, {"step", 1}});
         check(r.value("ok", false) && r["progress"]["completed"].size() == 3 &&
               r["progress"]["current"] == "tiny-obby" && r["progress"]["step"] == 1,
@@ -78,8 +79,9 @@ int main() {
         if (!server) { std::cout << "FAIL  couldn't restart: " << err << "\n"; return 1; }
         json r = ask(*server, "learn.progress.get");
         check(r.value("ok", false) && r["progress"]["completed"].size() == 3 &&
-              r["progress"]["current"] == "tiny-obby" && r["progress"]["step"] == 1,
-              "merged progress and lesson step survive a server restart");
+              r["progress"]["current"] == "tiny-obby" && r["progress"]["step"] == 1 &&
+              r["progress"]["updatedAt"].get<long long>() > 0,
+              "merged progress, lesson step and timestamp survive a server restart");
         Account::newKey();
         r = ask(*server, "learn.progress.get");
         check(!r.value("ok", false) && error(r).find("Sign in") != std::string::npos,
