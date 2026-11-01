@@ -73,7 +73,7 @@ test('Studio Learn outlines the exact visible control for the instrumented edito
   const ribbon = read('src/editor/EditorRibbon.cpp');
   const publish = read('src/editor/EditorOnline.cpp');
   assert.ok(highlight.includes('ImGui::GetItemRectMin()') && highlight.includes('ImGui::GetFrameCount()'));
-  assert.ok(highlight.includes('markRect("explorer.insert.open"') === false, 'non-ImGui target rectangles use the shared markRect API');
+  assert.ok(highlight.includes('inline void markRect'), 'non-ImGui target rectangles use the shared markRect API');
   assert.ok(editor.includes('StudioLearnHighlight::find(targetControl'));
   assert.ok(properties.includes('StudioLearnHighlight::mark("properties.Anchored")'));
   assert.ok(properties.includes('StudioLearnHighlight::mark("properties.Can Collide")'));
