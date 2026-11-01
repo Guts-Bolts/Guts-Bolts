@@ -185,6 +185,7 @@ void OutlinerPanel::drawNode(SceneNode* node) {
         ImGui::SetNextItemWidth(-1);
         bool done = ImGui::InputText("##rename", &m_renameText,
                                      ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+        StudioLearnHighlight::mark("explorer.rename");
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) m_renaming = 0;
         else if (done || ImGui::IsItemDeactivated()) {
             if (!m_renameText.empty()) node->name = m_renameText;
