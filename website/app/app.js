@@ -300,7 +300,7 @@ function officialBadge(a) {
 function itemCard(a) {
   items3d.set(a.id, a);
   return html`<a class="card square" href="#/item/${a.id}">
-    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">LIMITED</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}
+    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">${a.limitedType === 'limited' ? 'LIMITED' : 'LIMITED U'}</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsale ? html`<span class="timed-tag">OFF SALE</span>` : a.offsaleAt ? html`<span class="timed-tag">TIMED</span>` : ''}
     <div class="name">${a.name}</div>
     <div class="by">${a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
       : a.price > 0 ? bolts(a.price) : raw('<span class="muted">Free</span>')} · by ${a.creatorName}${verified(a.creatorVerified)}</div></a>`;
@@ -1057,7 +1057,7 @@ function browseCard(a, href, price) {
     <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="" style="width:100%;height:100%;object-fit:contain;border:0">`
       : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
       : a.kind === 'audio' || a.kind === 'plugin' || a.kind === 'model' || a.kind === 'animation' ? html`<span class="lib-kind">${a.kind === 'audio' ? raw(SPEAKER_SVG) : ''}${KINDS[a.kind] || a.kind}</span>`
-      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
+      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">${a.limitedType === 'limited' ? 'LIMITED' : 'LIMITED U'}</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsale ? html`<span class="timed-tag">OFF SALE</span>` : a.offsaleAt ? html`<span class="timed-tag">TIMED</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
     <div class="bprice">${price}</div>
     ${a.kind === 'model' ? html`<div class="brating">${ratingLine(a)}</div>` : ''}
@@ -1499,8 +1499,9 @@ pages.catalog = async () => {
   if (cat === 'myfavorites' && !signedIn()) { show(html`<h1>My Favorites</h1>${needSignIn('see your favourite items')}`); return; }
   // (Auctions are asked for by name: they're Exclusive items, which the normal list leaves out.
   // My Favorites is your wishlist: the items you hearted on their pages.)
+  const publicPreview = !!(me.staff && q.get('public') === '1');
   const r = await listAll({ kind: 'clothing', query: q.get('q') || '', ...(cat === 'auctions' ? { auctions: true } : {}),
-    ...(cat === 'myfavorites' ? { favorites: true } : {}) });
+    ...(cat === 'myfavorites' ? { favorites: true } : {}), ...(publicPreview ? { publicView: true } : {}) });
   if (!r.ok) { show(html`<h1>Catalog</h1><p class="error">${r.error}</p>`); return; }
   const pick = CATALOG_PICK[cat] || ((a) => a.kind === cat);
   const price = PRICES[q.get('price')];
@@ -1509,11 +1510,11 @@ pages.catalog = async () => {
   const priceOf = (a) => auctionOpen(a) ? html`bid ${bolts(a.auction.need)}`
     : a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
     : a.offsale ? raw('<span class="muted">Off sale</span>') : a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>');
-  show(browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
+  show(html`${publicPreview ? html`<div class="box info"><b>Public player preview</b><p class="small">Hidden, exclusive and staff-review items are excluded using the same visibility rules players receive.</p><a class="btn small" href="#/catalog">Return to staff catalog</a></div>` : me.staff ? html`<p><a class="btn small" href="${browseLink({ public: '1' })}">View as Player</a></p>` : ''}${browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
     shown: browseSlice(list).map((a) => browseCard(a, '#/item/' + a.id, priceOf(a))), total: list.length,
     sorts: [...BROWSE_SORTS.slice(0, 2), ['favorited', 'Most Favorited'], ...BROWSE_SORTS.slice(2)],
     filters: [{ title: 'Price', key: 'price', options: [['', 'Any Price'], ['free', 'Free'], ['1-100', '1 - 100'], ['101-1000', '101 - 1,000'], ['over', 'Over 1,000']] },
-      creatorFilter()] }));
+      creatorFilter()] })}`);
 };
 
 // Pick which emote slot (1-8) an emote goes in, or take it out.
