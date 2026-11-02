@@ -210,8 +210,8 @@
   /* Live auction promotion: classic marketplace banner with a real, server-timed countdown. */
   .auction-promo { margin: 14px 0; border: 2px solid #8e1d25; background: linear-gradient(120deg, #fff8f4 0%, #f4e5e3 52%, #e9d9d8 100%); box-shadow: 0 2px 0 rgba(95,20,25,.16); overflow: hidden; }
   .auction-promo[hidden] { display: none; }
-  .auction-promo.urgent { border-color: #c81e1e; background: linear-gradient(120deg, #fff5f3, #f7d9d7 58%, #efc5c2); }
   .auction-promo.ending-today { border-color: #b45309; }
+  .auction-promo.urgent { border-color: #c81e1e; background: linear-gradient(120deg, #fff5f3, #f7d9d7 58%, #efc5c2); }
   .auction-promo-head { display: flex; align-items: center; gap: 10px; padding: 0 10px; background: linear-gradient(#fce8e5, #eac8c5); border-bottom: 1px solid #c98c89; }
   .auction-promo-head h2 { flex: 1; margin: 0; padding: 7px 0; color: #8e1d25; background: transparent; border: 0; font-size: 14px; letter-spacing: .7px; }
   .auction-promo-head a { color: #7f1d1d; font-weight: bold; font-size: 11px; white-space: nowrap; }
@@ -241,10 +241,10 @@
     .auction-promo-art { grid-row: span 2; }
     .auction-promo-copy h3 { font-size: 19px; }
     .auction-promo-copy p { margin-bottom: 7px; }
-    .auction-promo-clock { grid-column: 2; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 3px 8px; }
-    .auction-promo-clock > span { grid-column: 1 / -1; }
-    .auction-promo-clock strong { font-size: 22px; }
-    .auction-promo-cta { margin-top: 0; padding: 7px 9px; font-size: 11px; }
+    .auction-promo-clock { grid-column: 2; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 6px; }
+    .auction-promo-clock > span { width: 100%; }
+    .auction-promo-clock strong { font-size: 18px; }
+    .auction-promo-cta { margin-top: 0; padding: 6px 7px; font-size: 10px; }
     .auction-promo-more { grid-template-columns: 1fr; padding: 0 12px 12px; }
     .auction-promo-head { align-items: flex-start; }
     .auction-promo-head h2 { font-size: 12px; }

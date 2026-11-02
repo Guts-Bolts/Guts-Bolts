@@ -190,7 +190,7 @@
     if (loading || document.visibilityState === 'hidden') return;
     loading = true;
     try {
-      const response = await apiCall('list', { kind: 'clothing', auctions: true, limit: 12 });
+      const response = await apiCall('list', { kind: 'clothing', auctions: true, limit: 100 });
       if (response && response.ok && Array.isArray(response.assets)) render(response.assets);
       else if (!lastItems.length) root.hidden = true;
     } catch {
