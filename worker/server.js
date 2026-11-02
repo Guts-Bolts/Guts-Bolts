@@ -20,11 +20,11 @@ import { MemoryStore } from './memorystore.js';
 import { installMcpRelay } from './mcp-relay.js';   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Roadmap, builtInItems, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
 import BUILT_IN_ROADMAP from './roadmap-gathered.js';   // worker/roadmap/, one file per item (worker/gather-updates.mjs)
-import { broadcastSupabase, insertSupabaseRows, listSupabaseLeaderboards, listSupabaseNotifications, markSupabaseNotificationsRead, supabaseRpc } from './supabase.js';
+import { broadcastSupabase, insertSupabaseRows, listSupabaseFriendActivity, listSupabaseLeaderboards, listSupabaseNotifications, markSupabaseNotificationsRead, supabaseRpc } from './supabase.js';
 // Which Supabase tables have a live feed on the website (the Realtime event name).
 const LIVE_FEEDS = { gb_auction_events: 'auctions', gb_forum_activity: 'forum' };
 // The Supabase tables the server writes to, and the ones whose rows are "latest value wins".
-const SUPABASE_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_leaderboard_scores', 'gb_play_events', 'gb_search_items']);
+const SUPABASE_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_leaderboard_scores', 'gb_play_events', 'gb_search_items', 'gb_friend_activity']);
 const SUPABASE_UPSERT = new Set(['gb_leaderboard_scores', 'gb_search_items']);
 // The example games that come with Guts&Bolts: always on the server (as Guts's
 // games), so the website and the apps have something to play from day one.
@@ -996,6 +996,22 @@ export class GbServerObject extends DurableObject {
       score, updated_at: new Date(now() * 1000).toISOString(),
     });
   }
+  // Friend activity (the home page's My Feed): "X is playing Y", "X made Y", "X earned a badge
+  // in Y". Only public things, and a game played again within the hour isn't said twice.
+  // Who sees it is checked when the feed is read (their "who can see what I'm doing" setting).
+  recordFriendActivity(u, kind, a, extra = '') {
+    if (!u || u.userId === 0 || u.banned || !a || a.review || a.exclusive || (a.access || 'public') !== 'public') return;
+    if (kind === 'created' && a.kind !== 'game' && a.kind !== 'model' && !isCatalogItem(a.kind)) return;
+    if (kind === 'playing') {
+      const seen = this.feedPlays || (this.feedPlays = new Map()), key = u.id + '|' + a.id, t = now();
+      if (t - (seen.get(key) || 0) < 3600) return;
+      seen.set(key, t);
+      if (seen.size > 5000) seen.delete(seen.keys().next().value);
+    }
+    this.queueSupabaseEvent('gb_friend_activity', { id: randomHex(12), account_id: u.id, kind, about_id: a.id,
+      about_kind: String(a.kind || '').slice(0, 20), about_name: String(a.name || '').slice(0, 100),
+      detail: String(extra || '').slice(0, 100), created_at: new Date(now() * 1000).toISOString() });
+  }
   recordAuctionEvent(asset, eventType, actorName, amount = null) {
     const auction = asset && asset.auction;
     if (!auction) return;
@@ -1062,6 +1078,12 @@ export class GbServerObject extends DurableObject {
         for (const row of batch) this.sql.exec('DELETE FROM supabase_outbox WHERE id = ? AND payload = ?', row.id, row.payload);
         // Now the rows are there, tell open pages to look again.
         if (LIVE_FEEDS[table]) this.queueLive('gb-activity', LIVE_FEEDS[table]);
+        if (table === 'gb_friend_activity') {   // their friends' and followers' feeds
+          for (const row of batch) {
+            const u = this.users.get(JSON.parse(row.payload).account_id);
+            for (const id of u ? [...u.friends, ...(u.followers || [])].slice(0, 100) : []) this.livePing(this.users.get(id), 'feed');
+          }
+        }
       } catch {
         this.scheduleSupabaseFlush(60000);
         return;
@@ -1103,6 +1125,23 @@ export class GbServerObject extends DurableObject {
           answer.nearMatches = extra.length;
         }
       } catch { /* the plain search answer still stands */ }
+    }
+    if (want.feed && answer.asker) {
+      try {
+        const me = answer.asker;
+        const rows = await listSupabaseFriendActivity(this.env, want.feed, 40);
+        const items = [];
+        for (const row of Array.isArray(rows) ? rows : []) {
+          const u = this.users.get(row.account_id), a = this.assets.get(row.about_id);
+          // (checked again now: blocked, banned, their privacy, and the thing still public)
+          if (!u || u.banned || this.blocks(me, u) || !this.allows(this.privacyOf(u).status, me, u)) continue;
+          if (!a || a.review || (a.access || 'public') !== 'public' || !this.canPlay(a, me)) continue;
+          items.push({ activity: { kind: row.kind, id: a.id, num: a.num || 0, assetKind: a.kind, name: a.name, detail: row.detail || '' },
+            at: Math.floor(Date.parse(row.created_at) / 1000) || 0,
+            user: { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), avatar: u.avatar || null } });
+        }
+        answer.feed = [...answer.feed, ...items].sort((x, y) => y.at - x.at).slice(0, 40);
+      } catch { /* the posts alone still make a feed */ }
     }
     if (want.playtimes) {
       answer.playtimes = null;
@@ -2535,6 +2574,9 @@ export class GbServerObject extends DurableObject {
           feed.push({ text: post.text, at: post.at, user: { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), avatar: u.avatar || null } });
       }
       feed.sort((x, y) => y.at - x.at);
+      // What they've been up to (playing, making, badges) comes from Supabase: see supabaseFollowUp.
+      const others = [...ids].filter((id) => id !== me.id).slice(0, 150);
+      if (others.length && this.env.SUPABASE_URL && this.env.SUPABASE_SECRET_KEY) return okay({ feed: feed.slice(0, 40), supabase: { feed: others } });
       return okay({ feed: feed.slice(0, 40) });
     }
     // --- Saved outfits: your whole look (colours, hat, what you wear), kept to put back on later ---
@@ -2944,7 +2986,7 @@ export class GbServerObject extends DurableObject {
       if (name === 'admin.review') {
         const a = this.assets.get(str(args, 'id'));
         if (!a || !a.review) return fail('That isn\'t waiting for a check any more.');
-        if (args.ok === true) { delete a.review; delete a.reviewNote; }
+        if (args.ok === true) { delete a.review; delete a.reviewNote; this.recordFriendActivity(this.users.get(a.creator), 'created', a); }
         else { a.review = 'rejected'; a.reviewNote = cleanText(str(args, 'note'), 200); }
         this.notify(this.users.get(a.creator), 'upload', args.ok === true ? a.name + ' passed the staff check. Everyone can see it now.'
           : a.name + ' didn\'t pass the staff check.' + (a.reviewNote ? ' Staff said: "' + a.reviewNote + '"' : ''), a.id);
@@ -3199,6 +3241,7 @@ export class GbServerObject extends DurableObject {
       if ((kind === 'face' || kind === 'tshirt') && data.length <= 400 * 1024) { this.writeFile('thumb:' + a.id, data); a.thumb = t; }   // its own picture
       this.assets.set(a.id, a);
       this.saveAsset(a);
+      if (!a.review) this.recordFriendActivity(me, 'created', a);
       if (!me.owned.includes(a.id)) me.owned.push(a.id);
       if (!verified) me.uploadsToday++;
       if (fee > 0) this.add(me, -fee, 'Upload fee: ' + title, 'upload:' + a.id);
@@ -3356,6 +3399,7 @@ export class GbServerObject extends DurableObject {
       if (to.gameBadges.some((x) => x[0] === b.id)) return okay({ already: true, name: b.name });
       to.gameBadges.push([b.id, g.id, t]);
       b.awarded = (b.awarded || 0) + 1;
+      this.recordFriendActivity(to, 'badge', g, b.name);
       this.saveUser(to);
       this.saveAsset(g);
       return okay({ awarded: true, name: b.name, player: to.name });
@@ -3502,6 +3546,7 @@ export class GbServerObject extends DurableObject {
         me.played = me.played || [];
         const returning = me.played.includes(a.id);
         if (!returning) { me.played.push(a.id); if (me.played.length > 500) me.played.shift(); this.saveUser(me); }
+        this.recordFriendActivity(me, 'playing', a);
         // For the creator's "when people play" charts (who played isn't kept, only when).
         this.queueSupabaseEvent('gb_play_events', { id: randomHex(12), game_id: a.id, creator_id: a.creator,
           is_returning: returning && me.userId > 0, is_guest: me.userId === 0, created_at: new Date(t * 1000).toISOString() });

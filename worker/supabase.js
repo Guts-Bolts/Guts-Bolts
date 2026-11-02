@@ -139,7 +139,7 @@ const SUPABASE_ACTIVITY_TABLES = new Set(['gb_auction_events', 'gb_forum_activit
 
 /** Insert idempotent outbox rows. Replayed delivery cannot duplicate an event. */
 // The tables the Worker writes. Events are written once; the others are "latest value wins".
-const INSERT_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_play_events']);
+const INSERT_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_play_events', 'gb_friend_activity']);
 const UPSERT_TABLES = new Set(['gb_leaderboard_scores', 'gb_search_items']);
 
 export async function insertSupabaseRows(env, table, rows) {
@@ -232,6 +232,25 @@ export async function listSupabaseLeaderboards(env, gameId, perBoard = 10) {
   if (!response.ok) {
     if (response.body) await response.body.cancel();
     throw new Error('Supabase leaderboard lookup failed (' + response.status + ').');
+  }
+  return await response.json();
+}
+
+/** The newest things some accounts did (friend activity). The caller decides whose and checks privacy. */
+export async function listSupabaseFriendActivity(env, accountIds, limit = 40) {
+  const ids = (Array.isArray(accountIds) ? accountIds : []).filter((id) => typeof id === 'string' && /^[a-f0-9]{32,64}$/i.test(id)).slice(0, 150);
+  if (!ids.length) return [];
+  const query = new URLSearchParams({
+    select: 'account_id,kind,about_id,detail,created_at',
+    account_id: 'in.(' + ids.join(',') + ')',
+    created_at: 'gte.' + new Date(Date.now() - 14 * 86400000).toISOString(),
+    order: 'created_at.desc',
+    limit: String(Math.max(1, Math.min(100, Math.floor(Number(limit) || 40)))),
+  });
+  const response = await supabaseRest(env, '/rest/v1/gb_friend_activity?' + query.toString());
+  if (!response.ok) {
+    if (response.body) await response.body.cancel();
+    throw new Error('Supabase friend activity lookup failed (' + response.status + ').');
   }
   return await response.json();
 }

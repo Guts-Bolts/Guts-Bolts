@@ -634,11 +634,7 @@ pages.home = async () => {
   const feedBox = signedIn() ? html`<div class="box feed"><h2 class="boxhead">My Feed</h2>
       <form class="row" data-form="statusSet"><input type="text" name="status" maxlength="140" placeholder="Right now I'm..." style="flex:1">
         <button class="btn blue small">Share</button></form>
-      ${feedR.ok && feedR.feed.length ? html`<div class="feed-list">${feedR.feed.map((p) => html`<div class="feed-item">
-          <a href="#/user/${p.user.userId}" class="feed-pic" data-feed-avatar="${p.user.id}">${avatarSvg(p.user.avatar, 40)}</a>
-          <div><a class="link" href="#/user/${p.user.userId}">${p.user.name}</a>${verified(p.user.verified)}
-            <div>"${p.text}"</div><div class="small muted">${ago(p.at)}</div></div></div>`)}</div>`
-        : html`<p class="muted small">Nothing yet. What your friends and the people you follow are up to shows up here.</p>`}</div>` : '';
+      <div id="myFeed">${feedList(feedR)}</div></div>` : '';
   const favBox = mineBox('Favorites', favs, '#/games/mine/favorites');
   const gameBox = (title, r, more) => html`<div class="box"><h2 class="boxhead">${title}
       <a href="${more}" style="float:right">See more &raquo;</a></h2>
@@ -695,16 +691,46 @@ pages.home = async () => {
   // Dressed in what you're wearing (the server says which items those are).
   const worn = mine.ok ? mine.wearing || [] : [];
   if ($('#homeAvatar')) mountAvatar($('#homeAvatar'), me.avatar || defaultAvatar(), worn, { width: 170 }).catch(() => {});
-  // My Feed: each person's character next to what they said.
+  feedPictures(feedR, view);
+};
+// My Feed: what friends and people you follow said, and what they've been up to (playing a
+// game, making something, earning a badge).
+function feedList(feedR) {
+  if (!feedR.ok || !feedR.feed.length) return html`<p class="muted small">Nothing yet. What your friends and the people you follow are up to shows up here.</p>`;
+  const did = (x) => {
+    const link = x.assetKind === 'game' ? '#/game/' + x.id : x.assetKind === 'model' ? '#/library/' + (x.num || x.id) : '#/item/' + x.id;
+    const thing = html`<a class="link" href="${link}">${x.name}</a>`;
+    if (x.kind === 'playing') return html`🎮 played ${thing}`;
+    if (x.kind === 'badge') return html`🏅 earned the ${x.detail || ''} badge in ${thing}`;
+    return html`🛠️ made ${x.assetKind === 'game' ? 'a new game' : 'something new'}: ${thing}`;
+  };
+  return html`<div class="feed-list">${feedR.feed.map((p) => html`<div class="feed-item">
+      <a href="#/user/${p.user.userId}" class="feed-pic" data-feed-avatar="${p.user.id}">${avatarSvg(p.user.avatar, 40)}</a>
+      <div><a class="link" href="#/user/${p.user.userId}">${p.user.name}</a>${verified(p.user.verified)}
+        <div>${p.activity ? did(p.activity) : html`"${p.text}"`}</div><div class="small muted">${ago(p.at)}</div></div></div>`)}</div>`;
+}
+// Each person's character next to what they said or did.
+function feedPictures(feedR, where) {
   const seen = new Set();
   for (const p of feedR.ok ? feedR.feed : []) {
     if (seen.has(p.user.id)) continue;
     seen.add(p.user.id);
     avatarPicture(p.user.avatar, [], 40).then((url) => {
-      if (url) view.querySelectorAll(`[data-feed-avatar="${p.user.id}"]`).forEach((el) => { el.innerHTML = html`<img src="${url}" alt="" width="40" height="50">`.s; });
+      if (url) where.querySelectorAll(`[data-feed-avatar="${p.user.id}"]`).forEach((el) => { el.innerHTML = html`<img src="${url}" alt="" width="40" height="50">`.s; });
     }).catch(() => {});
   }
-};
+}
+// A live ping said a friend did something: redraw just the feed (not the whole home page).
+let feedRefreshBusy = false;
+async function refreshFeed() {
+  const box = $('#myFeed');
+  if (!box || feedRefreshBusy || !signedIn()) return;
+  feedRefreshBusy = true;
+  try {
+    const r = await gb.call('feed.list', {});
+    if (r.ok && $('#myFeed') === box) { box.innerHTML = feedList(r).s; feedPictures(r, box); }
+  } finally { feedRefreshBusy = false; }
+}
 
 // --- Updates: the update log, newest first. It checks for new ones by itself while
 // you're looking, and the Updates link lights up when there's one you haven't seen.
