@@ -749,10 +749,19 @@ void Editor::renderPluginsTab() {
             ImGui::PopID();
         }
     }
+    {
+        Group g("Make");
+        if (bigButton("New", Icons::Id::Script, false, !m_playing, "Make a new plugin: a Script you change right here in Studio"))
+            newPluginScript();
+        if (bigButton("Publish", Icons::Id::Export, m_showPublishPlugin, true, "Share a plugin in the Library, or update one you shared")) {
+            if (m_showPublishPlugin) m_showPublishPlugin = false;
+            else openPublishPlugin("");
+        }
+    }
     Group g("Manage");
     if (bigButton("Library", Icons::Id::Toolbox, m_showPluginLibrary, true, "Get plugins and audio people uploaded"))
         m_showPluginLibrary = !m_showPluginLibrary;
     if (bigButton("Reload", Icons::Id::Rotate, false, true, "Load the plugins folder again")) m_plugins->reload();
-    std::string where = "Plugins folder:\n" + Plugins::folder().string() + "\n\nPut .lua plugin files there.";
-    bigButton("Folder", Icons::Id::Folder, false, true, where.c_str());
+    std::string where = "Open the plugins folder:\n" + Plugins::folder().string();
+    if (bigButton("Folder", Icons::Id::Folder, false, true, where.c_str())) Plugins::showFolder();
 }

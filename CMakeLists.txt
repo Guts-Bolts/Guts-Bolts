@@ -791,6 +791,7 @@ set(EDITOR_SOURCES
     src/editor/EditorCompare.cpp
     src/editor/SceneDiff.cpp
     src/editor/EditorOnline.cpp
+    src/editor/EditorPluginPublish.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp
     src/editor/Premades.cpp

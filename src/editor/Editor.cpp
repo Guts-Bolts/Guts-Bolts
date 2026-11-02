@@ -403,6 +403,7 @@ void Editor::render(float dt) {
     renderArmature();
     renderUVEditor();
     renderPluginLibrary();
+    renderPublishPluginWindow();
     if (m_showPanel[kPanelCommandBar]) renderCommandBar();
     renderInsertObject();
     renderDialogs();

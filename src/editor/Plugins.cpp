@@ -6,7 +6,11 @@
 #include "../scripting/LuaApi.h"
 #include "../scripting/ScriptEngine.h"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
+#include <cctype>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 
@@ -66,6 +70,63 @@ std::filesystem::path Plugins::folder() {
     auto p = Paths::appFolder() / "plugins";
     std::filesystem::create_directories(p, ec);
     return p;
+}
+
+void Plugins::showFolder() {
+    const std::string p = folder().string();
+#if defined(_WIN32)
+    std::system(("explorer \"" + p + "\"").c_str());
+#elif defined(__APPLE__)
+    std::system(("open \"" + p + "\"").c_str());
+#else
+    std::system(("xdg-open \"" + p + "\" >/dev/null 2>&1 &").c_str());
+#endif
+}
+
+std::string Plugins::fileNameFor(const std::string& name) {
+    std::string out;
+    for (char c : name) out += (std::isalnum((unsigned char)c) || c == ' ' || c == '-' || c == '_') ? c : '_';
+    while (!out.empty() && out.back() == ' ') out.pop_back();
+    while (!out.empty() && out.front() == ' ') out.erase(out.begin());
+    return out.empty() ? "Plugin" : out;
+}
+
+namespace {
+nlohmann::json loadRecords() {
+    std::ifstream in(Plugins::folder() / "library.json", std::ios::binary);
+    nlohmann::json j = nlohmann::json::parse(in, nullptr, false);
+    if (!j.is_object()) j = nlohmann::json::object();
+    for (const char* k : {"published", "installed"})
+        if (!j.contains(k) || !j[k].is_object()) j[k] = nlohmann::json::object();
+    return j;
+}
+void saveRecords(const nlohmann::json& j) {
+    std::ofstream(Plugins::folder() / "library.json", std::ios::binary) << j.dump(2);
+}
+} // namespace
+
+std::string Plugins::publishedId(const std::string& file) {
+    const auto j = loadRecords();
+    return j["published"].value(file, std::string());
+}
+
+void Plugins::setPublished(const std::string& file, const std::string& id) {
+    auto j = loadRecords();
+    j["published"][file] = id;
+    saveRecords(j);
+}
+
+std::string Plugins::installedId(const std::string& file, std::string* stamp) {
+    const auto j = loadRecords();
+    const auto& e = j["installed"].value(file, nlohmann::json::object());
+    if (stamp) *stamp = e.is_object() ? e.value("stamp", std::string()) : std::string();
+    return e.is_object() ? e.value("id", std::string()) : std::string();
+}
+
+void Plugins::setInstalled(const std::string& file, const std::string& id, const std::string& stamp) {
+    auto j = loadRecords();
+    j["installed"][file] = {{"id", id}, {"stamp", stamp}};
+    saveRecords(j);
 }
 
 void Plugins::reload() {
