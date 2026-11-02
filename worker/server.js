@@ -62,6 +62,7 @@ const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
 const isAccessory = (k) => ACCESSORIES.includes(k);
 // Only Guts' own accessories and faces can become Limited.
 const canBeLimited = (k) => isAccessory(k) || k === 'face';
+const limitedTypeOf = (a) => a && a.meta && a.meta.limitedType === 'limited' ? 'limited' : 'limited_u';
 // Models (objects published from Studio to the Library) are public or private. Verified
 // creators can make as many public as they like; everyone else 5 a week.
 const kPublicModelsPerWeek = 5;
@@ -889,10 +890,10 @@ export class GbServerObject extends DurableObject {
     this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false, roadmap: false };
   }
   // --- Limited items: numbered copies (a.copies = [{ serial, owner, price }]) ---
-  copiesOf(u) {   // every limited copy this account holds
+  copiesOf(u) {   // every tradeable Limited U copy this account holds
     const out = [];
     for (const a of this.assets.values())
-      if (a.limited) for (const c of a.copies || []) if (c.owner === u.id) out.push({ id: a.id, name: a.name, kind: a.kind, serial: c.serial, price: c.price || 0 });
+      if (a.limited && limitedTypeOf(a) === 'limited_u') for (const c of a.copies || []) if (c.owner === u.id) out.push({ id: a.id, name: a.name, kind: a.kind, serial: c.serial, price: c.price || 0 });
     return out;
   }
   // A trade is over: it goes in both people's Past trades, with the names of the people and
@@ -1293,7 +1294,7 @@ export class GbServerObject extends DurableObject {
     if (u) return u;
     u = { id, name: 'Player', created: now(), lastSeen: 0, ledger: [], grants: {}, owned: [], uploadDay: '', uploadsToday: 0,
       playDay: '', playEarned: 0, lastPlay: 0, banned: false, friends: [], friendIn: [], friendOut: [], following: [], followers: [],
-      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', chats: [], partyInvites: [] };
+      username: '', userId: 0, pwSalt: '', pwHash: '', keyBlob: '', chats: [], partyInvites: [], learnProgress: { completed: [], current: '', step: 0, practice: false, updatedAt: 0 } };
     this.users.set(id, u);
     this.claimOfficial(u);
     this.saveUser(u);
@@ -1457,6 +1458,52 @@ export class GbServerObject extends DurableObject {
   roadmapView(me) {
     const nameOf = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name } : null; };
     return this.roadmap.view(me.userId !== 0 ? me.id : '', nameOf);
+  }
+  learnOp(name, me, args) {
+    if (me.userId <= 0) return fail('Sign in to sync Studio Learn progress.');
+    const lessonIds = new Set(["first-build","make-it-move","tiny-obby","first-script","light-up-scene","publish-first-game","meet-explorer","properties-panel","copy-group-organize","color-materials","shape-world","spawn-into-action","collision-course","connect-parts","sound-check","first-gui","make-things-happen","remember-values","find-fix-bugs","build-test-improve"]);
+    const saved = me.learnProgress && typeof me.learnProgress === 'object'
+      ? me.learnProgress : (me.learnProgress = { completed: [], current: '' });
+    if (name === 'learn.progress.get') {
+      const completed = Array.isArray(saved.completed) ? [...new Set(saved.completed.filter((x) => typeof x === 'string' && lessonIds.has(x)))] : [];
+      const current = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
+      const step = Number.isInteger(saved.step) && saved.step >= 0 && saved.step <= 2 ? saved.step : 0;
+      const practice = saved.practice === true;
+      const updatedAt = Number.isInteger(saved.updatedAt) && saved.updatedAt >= 0 ? saved.updatedAt : 0;
+      return okay({ progress: { completed, current, step, practice, updatedAt } });
+    }
+    if (name !== 'learn.progress.save') return fail('Unknown request: ' + name);
+    if (!Array.isArray(args.completed) || args.completed.length > 20 ||
+        args.completed.some((x) => typeof x !== 'string' || !lessonIds.has(x)))
+      return fail('Studio Learn progress must contain up to 20 known completed lessons.');
+    const previous = Array.isArray(saved.completed) ? saved.completed.filter((x) => typeof x === 'string' && lessonIds.has(x)) : [];
+    const completed = [...new Set([...previous, ...args.completed])];
+    if (args.current !== undefined && typeof args.current !== 'string') return fail('Studio Learn current lesson must be a lesson ID.');
+    const current = args.current || '';
+    if (current && !lessonIds.has(current)) return fail('Studio Learn progress contains an unknown current lesson.');
+    if (args.step !== undefined && (!Number.isInteger(args.step) || args.step < 0 || args.step > 2))
+      return fail('Studio Learn step must be between 0 and 2.');
+    if (args.practice !== undefined && typeof args.practice !== 'boolean')
+      return fail('Studio Learn practice phase must be a boolean.');
+    if (args.updatedAt !== undefined && (!Number.isInteger(args.updatedAt) || args.updatedAt < 0))
+      return fail('Studio Learn update timestamp must be a non-negative integer.');
+    const previousUpdatedAt = Number.isInteger(saved.updatedAt) && saved.updatedAt >= 0 ? saved.updatedAt : 0;
+    const serverNow = now();
+    const incomingUpdatedAt = args.updatedAt === undefined ? previousUpdatedAt : Math.min(args.updatedAt, serverNow + 300);
+    const acceptResume = args.updatedAt === undefined || incomingUpdatedAt >= previousUpdatedAt;
+    const storedCurrent = typeof saved.current === 'string' && lessonIds.has(saved.current) ? saved.current : '';
+    const storedStep = Number.isInteger(saved.step) && saved.step >= 0 && saved.step <= 2 ? saved.step : 0;
+    const requestedStep = args.step === undefined ? 0 : args.step;
+    const storedPractice = saved.practice === true;
+    // (no practice given: keep it only for the same lesson; a new lesson starts at its demonstration)
+    const requestedPractice = args.practice === undefined ? storedPractice && current === storedCurrent : args.practice;
+    const nextCurrent = acceptResume ? current : storedCurrent;
+    const nextStep = acceptResume ? requestedStep : storedStep;
+    const nextPractice = acceptResume ? requestedPractice : storedPractice;
+    const updatedAt = Math.max(serverNow, previousUpdatedAt, incomingUpdatedAt);
+    me.learnProgress = { completed, current: nextCurrent, step: nextStep, practice: nextPractice, updatedAt };
+    this.saveUser(me);
+    return okay({ progress: me.learnProgress });
   }
   roadmapOp(name, me, args) {
     if (name === 'roadmap.get') return this.roadmapView(me);
@@ -1780,7 +1827,7 @@ export class GbServerObject extends DurableObject {
       }
     }
   }
-  isOffsale(a, t = now()) { return !!a.offsaleAt && t >= a.offsaleAt; }
+  isOffsale(a, t = now()) { return !!(a.meta && a.meta.staffOffsale) || (!!a.offsaleAt && t >= a.offsaleAt); }
 
   // Gift boxes: a timed item staff point at another item (a.giftItem). Once the box goes
   // off sale, everyone who owns it gets that item (usually an Exclusive one, hidden from the
@@ -1969,7 +2016,8 @@ export class GbServerObject extends DurableObject {
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: !me ? undefined : a.kind === 'game' ? (me.favorites || []).includes(a.id)
         : isCatalogItem(a.kind) ? (me.itemFavorites || []).includes(a.id) : undefined,
-      offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), review: a.review || undefined, reviewNote: a.reviewNote || undefined,
+      offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), staffOffsale: !!(a.meta && a.meta.staffOffsale),
+      limitedType: a.limited ? limitedTypeOf(a) : undefined, review: a.review || undefined, reviewNote: a.reviewNote || undefined,
       exclusive: a.exclusive ? true : undefined, gift: a.giftItem ? true : undefined, auction: this.auctionJson(a, me),
       giftItem: a.giftItem && me && this.isStaff(me) ? this.giftJson(a) : undefined,   // (staff only: it's a surprise)
       privatePrice: a.kind === 'game' ? (a.privatePrice || 0) : undefined,
@@ -2383,6 +2431,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
     if (name.startsWith('mem.')) return this.memOp(name, me, args);
+    if (name.startsWith('learn.')) return this.learnOp(name, me, args);
     if (name.startsWith('roadmap.')) return this.roadmapOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
@@ -3516,6 +3565,7 @@ export class GbServerObject extends DurableObject {
       const favsOnly = args.favorites === true;   // catalog items you favourited (your wishlist)
       // ids: only these (the better-search matches, run through the same rules as everything else)
       const only = Array.isArray(args.ids) ? new Set(args.ids.filter((x) => typeof x === 'string').slice(0, 200)) : null;
+      const publicView = args.publicView === true && this.isStaff(me);   // staff-only preview using player visibility rules
       const found = [...this.assets.values()].filter((a) =>
         (!only || only.has(a.id)) &&
         (!auctions || this.auctionOpen(a, t)) &&
@@ -3523,9 +3573,9 @@ export class GbServerObject extends DurableObject {
         (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
         (!ownedOnly || me.owned.includes(a.id)) &&
         (!favsOnly || (isCatalogItem(a.kind) && (me.itemFavorites || []).includes(a.id))) &&
-        (!a.exclusive || ownedOnly || auctions || favsOnly || this.isStaff(me)) &&
+        (!a.exclusive || ownedOnly || auctions || favsOnly || (!publicView && this.isStaff(me))) &&
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
-        (!creator || a.creator === creator) && this.canPlay(a, me) &&
+        (!creator || a.creator === creator) && (publicView ? !a.review : this.canPlay(a, me)) &&
         (!genre || (a.genres || []).includes(genre)) &&
         (!q || only || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
       const playing = sort === 'playing' ? new Map(found.map((a) => [a.id, this.playingIn(a.id)])) : null;
@@ -3606,8 +3656,8 @@ export class GbServerObject extends DurableObject {
       if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: confirm an email in Settings and it\'s yours.');
       if (a.promoOnly) return fail('This item is only available through a promo code.');
       if (a.exclusive) return fail('This is an Exclusive item: it can\'t be bought. It comes from events and gift boxes.');
-      if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited ? ' Buy one from a reseller on the item\'s page.' : ''));
-      if (a.limited && a.sales >= a.stock) return fail('Sold out! Buy one from a reseller on the item\'s page.');
+      if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited && limitedTypeOf(a) === 'limited_u' ? ' Buy one from a reseller on the item\'s page.' : ''));
+      if (a.limited && a.sales >= a.stock) return fail(limitedTypeOf(a) === 'limited_u' ? 'Sold out! Buy one from a reseller on the item\'s page.' : 'Sold out! This Limited cannot be resold.');
       if (a.price > 0) {
         if (this.balance(me) < a.price) return fail('You need ' + (a.price - this.balance(me)) + ' more Bolts for that.');
         this.add(me, -a.price, 'Bought ' + a.name, 'buy:' + a.id);
@@ -3690,6 +3740,11 @@ export class GbServerObject extends DurableObject {
         a.offsaleAt = Math.max(0, num(args, 'offsaleAt'));
         a.timedFor = a.timedFor || 'set';
       }
+      if ('staffOffsale' in args) {
+        if (!this.isStaff(me)) return fail('Only staff can take an item off sale or put it back on sale.');
+        a.meta = a.meta || {};
+        a.meta.staffOffsale = args.staffOffsale === true;
+      }
       if ('exclusive' in args || 'giftItem' in args) {
         if (!this.isStaff(me)) return fail('Only staff can make items Exclusive or gift boxes.');
         if ('exclusive' in args) a.exclusive = args.exclusive === true;
@@ -3760,6 +3815,8 @@ export class GbServerObject extends DurableObject {
           if (u.owned.includes(a.id) && u.id !== a.creator) a.copies.push({ serial: ++serial, owner: u.id, price: 0 });
         a.sales = serial;
         a.limited = true;
+        a.meta = a.meta || {};
+        a.meta.limitedType = args.limitedType === 'limited' ? 'limited' : 'limited_u';
       }
       if (stock < a.sales) return fail(a.sales + ' copies are already out there: the stock can\'t be less than that.');
       a.stock = stock;
@@ -3842,6 +3899,7 @@ export class GbServerObject extends DurableObject {
       // Put your copy of a limited up for sale (price 0 = take it off sale).
       const a = this.assets.get(str(args, 'id'));
       const c = a && a.limited && (a.copies || []).find((x) => x.serial === num(args, 'serial'));
+      if (a && a.limited && limitedTypeOf(a) !== 'limited_u') return fail('This Limited is not resellable.');
       if (!c || c.owner !== me.id) return fail('You don\'t have that copy.');
       c.price = clamp(num(args, 'price'), 0, 10000000);
       this.saveAsset(a);
@@ -3850,6 +3908,7 @@ export class GbServerObject extends DurableObject {
     if (name === 'resale.buy') {
       const a = this.assets.get(str(args, 'id'));
       const c = a && a.limited && (a.copies || []).find((x) => x.serial === num(args, 'serial'));
+      if (a && a.limited && limitedTypeOf(a) !== 'limited_u') return fail('This Limited is not resellable.');
       if (!c || !(c.price > 0)) return fail('That copy isn\'t for sale (any more).');
       if (c.owner === me.id) return fail('That\'s your own copy.');
       if (this.balance(me) < c.price) return fail('You need ' + (c.price - this.balance(me)) + ' more Bolts for that.');
@@ -3885,7 +3944,7 @@ export class GbServerObject extends DurableObject {
       const pick = (list) => (Array.isArray(list) ? list : []).slice(0, 4).map((x) => ({ id: String(x && x.id || ''), serial: Number(x && x.serial) | 0 }));
       const give = pick(args.give), get = pick(args.get);
       if (!give.length || !get.length) return fail('Pick at least one of your limiteds and one of theirs.');
-      const holds = (u, list) => list.every((x) => { const a = this.assets.get(x.id); return a && a.limited && (a.copies || []).some((c) => c.serial === x.serial && c.owner === u.id); });
+      const holds = (u, list) => list.every((x) => { const a = this.assets.get(x.id); return a && a.limited && limitedTypeOf(a) === 'limited_u' && (a.copies || []).some((c) => c.serial === x.serial && c.owner === u.id); });
       if (!holds(me, give)) return fail('You don\'t have all of those.');
       if (!holds(to, get)) return fail('They don\'t have all of those.');
       if (this.trades.filter((x) => x.from === me.id && x.status === 'open').length >= 20) return fail('You have 20 trades waiting already.');

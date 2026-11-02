@@ -1,4 +1,5 @@
 #include "ScriptEditorPanel.h"
+#include "../LearnHighlight.h"
 #include "../VisualScript.h"
 #include "../../core/I18n.h"
 #include "../Premades.h"
@@ -537,6 +538,7 @@ void ScriptEditorPanel::render() {
     if (m_focusCode) { ImGui::SetKeyboardFocusHere(); m_focusCode = false; }
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
     ImGui::InputTextMultiline("##code", &s->source, ImVec2(-1, -footer), flags, &ScriptEditorPanel::onEdit, this);
+    StudioLearnHighlight::mark("script.editor");
     ImGui::PopStyleColor();
     m_codeActive = ImGui::IsItemActive();
     const float lineH = ImGui::GetTextLineHeight();

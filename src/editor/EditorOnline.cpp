@@ -1,6 +1,7 @@
 // Studio's online side: connecting to a Guts&Bolts server, publishing the
 // game, and the Library (plugins and audio people uploaded).
 #include "Editor.h"
+#include "LearnHighlight.h"
 #include "panels/ViewportPanel.h"
 #include "Plugins.h"
 #include "Thumbnailer.h"
@@ -272,11 +273,14 @@ void Editor::renderPublishDialog() {
     ImGui::BeginDisabled(m_onlineBusy || m_publishName.empty());
     if (!published.empty()) {
         if (ImGui::Button("Update published game", ImVec2(200, 30))) send(true);
+        StudioLearnHighlight::mark("publish.confirm");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Publish this as the newest version (the old ones are kept in the game's Version history on the website)");
         ImGui::SameLine();
         if (ImGui::Button("Publish as a new game", ImVec2(180, 30))) send(false);
+        StudioLearnHighlight::mark("publish.new");
     } else {
         if (ImGui::Button("Publish", ImVec2(140, 30))) send(false);
+        StudioLearnHighlight::mark("publish.confirm");
     }
     ImGui::EndDisabled();
     ImGui::SameLine();

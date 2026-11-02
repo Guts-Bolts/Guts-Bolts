@@ -301,7 +301,7 @@ function officialBadge(a) {
 function itemCard(a) {
   items3d.set(a.id, a);
   return html`<a class="card square" href="#/item/${a.id}">
-    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">LIMITED</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}
+    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">${a.limitedType === 'limited' ? 'LIMITED' : 'LIMITED U'}</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsale ? html`<span class="timed-tag">OFF SALE</span>` : a.offsaleAt ? html`<span class="timed-tag">TIMED</span>` : ''}
     <div class="name">${a.name}</div>
     <div class="by">${a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
       : a.price > 0 ? bolts(a.price) : raw('<span class="muted">Free</span>')} · by ${a.creatorName}${verified(a.creatorVerified)}</div></a>`;
@@ -1087,7 +1087,7 @@ function browseCard(a, href, price) {
     <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="" style="width:100%;height:100%;object-fit:contain;border:0">`
       : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
       : a.kind === 'audio' || a.kind === 'plugin' || a.kind === 'model' || a.kind === 'animation' ? html`<span class="lib-kind">${a.kind === 'audio' ? raw(SPEAKER_SVG) : ''}${KINDS[a.kind] || a.kind}</span>`
-      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">LIMITED</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}</a>
+      : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">${a.limitedType === 'limited' ? 'LIMITED' : 'LIMITED U'}</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsale ? html`<span class="timed-tag">OFF SALE</span>` : a.offsaleAt ? html`<span class="timed-tag">TIMED</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
     <div class="bprice">${price}</div>
     ${a.kind === 'model' ? html`<div class="brating">${ratingLine(a)}</div>` : ''}
@@ -1543,8 +1543,9 @@ pages.catalog = async () => {
   if (cat === 'myfavorites' && !signedIn()) { show(html`<h1>My Favorites</h1>${needSignIn('see your favourite items')}`); return; }
   // (Auctions are asked for by name: they're Exclusive items, which the normal list leaves out.
   // My Favorites is your wishlist: the items you hearted on their pages.)
+  const publicPreview = !!(me.staff && q.get('public') === '1');
   const r = await listAll({ kind: 'clothing', query: q.get('q') || '', ...(cat === 'auctions' ? { auctions: true } : {}),
-    ...(cat === 'myfavorites' ? { favorites: true } : {}) });
+    ...(cat === 'myfavorites' ? { favorites: true } : {}), ...(publicPreview ? { publicView: true } : {}) });
   if (!r.ok) { show(html`<h1>Catalog</h1><p class="error">${r.error}</p>`); return; }
   const pick = CATALOG_PICK[cat] || ((a) => a.kind === cat);
   const price = PRICES[q.get('price')];
@@ -1553,11 +1554,11 @@ pages.catalog = async () => {
   const priceOf = (a) => auctionOpen(a) ? html`bid ${bolts(a.auction.need)}`
     : a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
     : a.offsale ? raw('<span class="muted">Off sale</span>') : a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>');
-  show(browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
+  show(html`${publicPreview ? html`<div class="box info"><b>Public player preview</b><p class="small">Hidden, exclusive and staff-review items are excluded using the same visibility rules players receive.</p><a class="btn small" href="#/catalog">Return to staff catalog</a></div>` : me.staff ? html`<p><a class="btn small" href="${browseLink({ public: '1' })}">View as Player</a></p>` : ''}${browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
     shown: browseSlice(list).map((a) => browseCard(a, '#/item/' + a.id, priceOf(a))), total: list.length,
     sorts: [...BROWSE_SORTS.slice(0, 2), ['favorited', 'Most Favorited'], ...BROWSE_SORTS.slice(2)],
     filters: [{ title: 'Price', key: 'price', options: [['', 'Any Price'], ['free', 'Free'], ['1-100', '1 - 100'], ['101-1000', '101 - 1,000'], ['over', 'Over 1,000']] },
-      creatorFilter()] }));
+      creatorFilter()] })}`);
 };
 
 // Pick which emote slot (1-8) an emote goes in, or take it out.
@@ -1604,7 +1605,7 @@ pages.item = async (id) => {
     : auOpen ? html`<div id="auctionLiveBid">${auctionBidBox(a)}</div>`
     : a.exclusive ? html`<button class="btn big buy" disabled>Exclusive</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
-    : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
+    : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}" data-name="${a.name}" data-price="${a.price || 0}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
   // Paid items that aren't Limited can be bought for a friend (even if you have one yourself).
   const giftable = a.price > 0 && !L && !offsale && !a.review && !a.exclusive && !(a.meta && a.meta.award);
   const giftButton = giftable ? html`<button class="btn big gift" data-act="gift" data-id="${a.id}" data-name="${a.name}" data-price="${a.price}">&#127873; Buy as a gift</button>` : '';
@@ -1620,7 +1621,7 @@ pages.item = async (id) => {
           ${drawable3d(a) ? html`<button class="btn blue item-try-on" id="itemTryOn" type="button">Try On</button>` : ''}
           ${isNew ? html`<span class="item-ribbon">NEW</span>` : ''}
           ${timed ? html`<span class="item-clock" title="${offsaleText(a)}"><i></i></span>` : ''}
-          ${L ? html`<span class="item-limited">LIMITED<b>U</b></span>` : ''}
+          ${L ? html`<span class="item-limited">${a.limitedType === 'limited' ? 'LIMITED' : html`LIMITED<b>U</b>`}</span>` : ''}
           ${drawable3d(a) ? html`<button class="item-3d" id="item3dToggle" type="button" title="Switch to the 3D preview" aria-pressed="false">3D</button>` : ''}
         </div>
         <div class="item-info">
@@ -1679,7 +1680,8 @@ pages.item = async (id) => {
           : html`<label>New picture <span class="muted small">(optional, from the <a href="templates/${a.kind}_template.png" download>template</a>)</span></label><input type="file" name="picture" accept="image/png">`}
         ${canEdit ? html`<label>Goes off sale <span class="muted small">(a timed item; leave empty to sell it for good)</span></label>
           <input type="datetime-local" name="offsaleAt" value="${a.offsaleAt ? localInput(a.offsaleAt) : ''}" style="max-width:220px">` : ''}
-        ${me.staff ? html`<label><input type="checkbox" name="exclusive" ${a.exclusive ? 'checked' : ''}> Exclusive <span class="muted small">(staff only: hidden from the catalog and can't be bought; give it out with a gift box or the box below)</span></label>
+        ${me.staff ? html`<label><input type="checkbox" name="staffOffsale" ${a.staffOffsale ? 'checked' : ''}> Off sale now <span class="muted small">(staff only: blocks new purchases without deleting the item or affecting existing owners)</span></label>
+          <label><input type="checkbox" name="exclusive" ${a.exclusive ? 'checked' : ''}> Exclusive <span class="muted small">(staff only: hidden from the catalog and can't be bought; give it out with a gift box or the box below)</span></label>
           <label>Gift box: gives item ID <span class="muted small">(staff only: when this goes off sale, everyone who owns it gets that item; leave empty for a normal item)</span></label>
           <input type="text" name="giftItem" value="${a.giftItem ? a.giftItem.num || a.giftItem.id : ''}" placeholder="like 86" style="max-width:220px">` : ''}
         <p><button class="btn green">Save</button> <span id="itemEditMsg"></span></p></form>
@@ -1698,12 +1700,13 @@ pages.item = async (id) => {
       ${me.official && a.creator === me.id && canBeLimited(a) ? html`<form class="form" data-form="itemLimited"><input type="hidden" name="id" value="${a.id}">
         <label>${L ? 'Change the stock' : 'Make it Limited'} <span class="muted small">(only Guts can do this)</span></label>
         <input type="number" name="stock" min="1" value="${L ? L.stock : 100}" style="max-width:140px">
-        <p class="small muted">A Limited has a fixed number of numbered copies. When they're sold out, people buy and sell them from each other, and trade them.</p>
+        ${!L ? html`<label>Classification</label><select name="limitedType"><option value="limited_u">Limited U (resellable and tradable)</option><option value="limited">Limited (not resellable or tradable)</option></select>` : html`<p class="small muted">Classification: <b>${a.limitedType === 'limited' ? 'Limited' : 'Limited U'}</b>. This is fixed once copies have been issued.</p>`}
+        <p class="small muted">A Limited has a fixed number of numbered copies. Limited U copies can be resold and traded; standard Limited copies cannot.</p>
         <p><button class="btn gold">${L ? 'Save stock' : 'Make Limited'}</button></p></form>` : ''}</div>` : ''}
     ${au && !au.cancelled ? html`<div id="auctionLiveBidders">${auctionBidders(au, auOpen)}</div>` : ''}
-    ${L ? html`<h2>Resellers</h2>${forSale.length ? html`<table class="stats resellers"><tr><th>Seller</th><th>Copy</th><th>Price</th><th></th></tr>
+    ${L && a.limitedType !== 'limited' ? html`<h2>Resellers</h2>${forSale.length ? html`<table class="stats resellers"><tr><th>Seller</th><th>Copy</th><th>Price</th><th></th></tr>
         ${forSale.map((c) => html`<tr><td><a href="#/user/${c.owner}">${c.ownerName}</a></td><td>#${c.serial}</td><td>${bolts(c.price)}</td>
-          <td><button class="btn green small" data-act="resaleBuy" data-id="${a.id}" data-serial="${c.serial}" data-price="${c.price}">Buy</button></td></tr>`)}</table>`
+          <td><button class="btn green small" data-act="resaleBuy" data-id="${a.id}" data-name="${a.name}" data-serial="${c.serial}" data-price="${c.price}">Buy</button></td></tr>`)}</table>`
         : html`<p class="muted">Nobody is selling a copy right now.</p>`}
       ${mineCopies.length ? html`<h2>Your copies</h2>${mineCopies.map((c) => html`<form class="row" data-form="resaleList"><input type="hidden" name="id" value="${a.id}">
           <input type="hidden" name="serial" value="${c.serial}"><b>#${c.serial}</b>
@@ -1926,10 +1929,109 @@ async function roadmapPage(head) {
     ${r.answered.length ? html`<h2>Answered lately</h2><div class="ideas">${r.answered.map((x) => ideaRow(x, staff))}</div>` : ''}`);
 }
 
+const STUDIO_LESSONS = [
+  ['first-build','Your First Build','Beginner','Building','Insert, transform, anchor and save a Part.','5 min'],
+  ['make-it-move','Make It Move','Beginner','Physics','See how gravity and Anchored affect a loose object.','6 min'],
+  ['tiny-obby','Build a Tiny Obby','Beginner','Building','Build and playtest a short obstacle course.','10 min'],
+  ['first-script','Your First Script','Beginner','Scripting','Create a Script, print a message and run it.','8 min'],
+  ['light-up-scene','Light Up the Scene','Beginner','Lighting','Add a light and tune its properties.','7 min'],
+  ['publish-first-game','Publish Your First Game','Beginner','Publishing','Name, describe, save and publish a project.','8 min'],
+  ['meet-explorer','Meet the Explorer','Beginner','Studio basics','Find, select, rename and organize scene objects.','6 min'],
+  ['properties-panel','The Properties Panel','Beginner','Studio basics','Inspect and change object properties.','6 min'],
+  ['copy-group-organize','Copy, Group, Organize','Beginner','Building','Duplicate objects and group related parts.','7 min'],
+  ['color-materials','Color and Materials','Beginner','Building','Style a small build with colors and materials.','7 min'],
+  ['shape-world','Shape the World','Beginner','Terrain','Use terrain tools to shape a small feature.','8 min'],
+  ['spawn-into-action','Spawn Into the Action','Beginner','Gameplay','Add and test a player spawn point.','7 min'],
+  ['collision-course','Collision Course','Intermediate','Physics','Configure collision and test object interactions.','8 min'],
+  ['connect-parts','Connect the Parts','Intermediate','Physics','Connect physics objects with a constraint.','9 min'],
+  ['sound-check','Sound Check','Beginner','Audio','Add a Sound object and configure playback.','7 min'],
+  ['first-gui','Your First GUI','Beginner','UI','Create a simple on-screen interface element.','8 min'],
+  ['make-things-happen','Make Things Happen','Intermediate','Scripting','Use an event connection to respond to a game event.','10 min'],
+  ['remember-values','Remembering Values','Intermediate','Scripting','Create variables and use them in simple behavior.','8 min'],
+  ['find-fix-bugs','Find and Fix Bugs','Intermediate','Scripting','Read an error and correct a simple script mistake.','9 min'],
+  ['build-test-improve','Build, Test, Improve','Intermediate','Publishing','Run a focused playtest, fix an issue and retest.','12 min'],
+];
+
+async function learnPage(head) {
+  const key = 'gb.studioLearn.' + (signedIn() ? me.id : 'guest');
+  let progress = { completed: [], current: '', step: 0, updatedAt: 0 };
+  const localKeys = signedIn() ? [key, 'gb.studioLearn.guest'] : [key];
+  for (const localKey of localKeys) {
+    try {
+      const local = JSON.parse(localStorage.getItem(localKey) || 'null');
+      if (local && Array.isArray(local.completed)) {
+        progress.completed = [...new Set([...progress.completed, ...local.completed])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
+        const localUpdatedAt = Number.isInteger(local.updatedAt) && local.updatedAt >= 0 ? local.updatedAt : 0;
+        if ((localUpdatedAt > progress.updatedAt || (!progress.current && localUpdatedAt === progress.updatedAt)) &&
+            STUDIO_LESSONS.some((l) => l[0] === local.current)) {
+          progress.current = local.current;
+          progress.step = Number.isInteger(local.step) && local.step >= 0 && local.step <= 2 ? local.step : 0;
+          progress.updatedAt = localUpdatedAt;
+        }
+      }
+    } catch { /* local progress is optional in private browsing */ }
+  }
+  if (signedIn()) {
+    const remote = await pageCall('learn.progress.get', {});
+    if (remote.ok && remote.progress) {
+      progress.completed = [...new Set([...progress.completed, ...(Array.isArray(remote.progress.completed) ? remote.progress.completed : [])])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
+      const remoteUpdatedAt = Number.isInteger(remote.progress.updatedAt) && remote.progress.updatedAt >= 0 ? remote.progress.updatedAt : 0;
+      if (remoteUpdatedAt >= progress.updatedAt && STUDIO_LESSONS.some((l) => l[0] === remote.progress.current)) {
+        progress.current = remote.progress.current;
+        progress.step = Number.isInteger(remote.progress.step) && remote.progress.step >= 0 && remote.progress.step <= 2 ? remote.progress.step : 0;
+        progress.updatedAt = remoteUpdatedAt;
+      }
+      progress.updatedAt = Math.max(Math.floor(Date.now() / 1000), progress.updatedAt + 1);
+      const saved = await pageCall('learn.progress.save', progress);
+      if (saved.ok && saved.progress) {
+        if (Number.isInteger(saved.progress.updatedAt) && saved.progress.updatedAt >= progress.updatedAt &&
+            STUDIO_LESSONS.some((l) => l[0] === saved.progress.current)) {
+          progress.current = saved.progress.current;
+          progress.step = Number.isInteger(saved.progress.step) && saved.progress.step >= 0 && saved.progress.step <= 2 ? saved.progress.step : 0;
+        }
+        if (Number.isInteger(saved.progress.updatedAt)) progress.updatedAt = saved.progress.updatedAt;
+      }
+    }
+  }
+  try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
+
+  let level = 'All', topic = 'All';
+  const draw = () => {
+    const filtered = STUDIO_LESSONS.filter((l) => (level === 'All' || l[2] === level) && (topic === 'All' || l[3] === topic));
+    const current = STUDIO_LESSONS.find((l) => l[0] === progress.current && !progress.completed.includes(l[0]));
+    show(html`${head}
+      <div class="learn-intro box">
+        <h2>Learn Studio by building things</h2>
+        <p>Short, hands-on lessons. Follow a guided demonstration in Studio, then complete a challenge yourself. Hints point you toward the right controls without doing the work for you.</p>
+        <p class="small muted">Browse without signing in. Progress is saved on this device and syncs across signed-in devices when you use desktop Studio.</p>
+        ${current ? html`<p><b>Continue learning:</b> ${current[1]} <button class="btn green" data-act="startLearn" data-id="${current[0]}">Continue lesson</button></p>` : ''}
+        <p class="small muted">${progress.completed.length} of 20 lessons completed</p>
+      </div>
+      <div class="learn-filters">
+        <label>Skill level <select id="learnLevel"><option>All</option><option>Beginner</option><option>Intermediate</option></select></label>
+        <label>Topic <select id="learnTopic"><option>All</option>${['Building','Physics','Scripting','Studio basics','Lighting','Terrain','Gameplay','Audio','UI','Publishing'].map(x=>html`<option>${x}</option>`)}</select></label>
+      </div>
+      <div class="learn-grid">${filtered.map((l) => {
+        const done = progress.completed.includes(l[0]);
+        return html`<article class="learn-card box">
+          <div class="row"><b class="grow">${l[1]}</b><span class="small muted">${done ? 'Completed' : l[2]}</span></div>
+          <p class="small muted">${l[3]} · ${l[5]}</p><p>${l[4]}</p>
+          <button class="btn ${done ? '' : 'blue'}" data-act="startLearn" data-id="${l[0]}">${done ? 'Practice again' : 'Start lesson'}</button>
+        </article>`;
+      })}</div>
+      <div class="box"><b>Desktop Studio required</b><p>Lessons run in the Windows, macOS or Linux Studio editor, not the mobile Player. If the app is not installed, download it first.</p><a class="btn" href="../#download">Download Guts &amp; Bolts</a></div>`);
+    const lv = $('#learnLevel'), tp = $('#learnTopic');
+    if (lv) { lv.value = level; lv.addEventListener('change', () => { level = lv.value; draw(); }); }
+    if (tp) { tp.value = topic; tp.addEventListener('change', () => { topic = tp.value; draw(); }); }
+  };
+  draw();
+}
+
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['roadmap', 'Roadmap']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
+  if (tab === 'learn') { await learnPage(head); return; }
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
   if (tab === 'roadmap') { await roadmapPage(head); return; }
@@ -2220,7 +2322,7 @@ const TRADE_OUTCOMES = { accepted: 'Accepted', declined: 'Declined', cancelled: 
 const tradeItems = (items) => items.length
   ? items.map((i) => html`<a class="chip" href="#/item/${i.id}">${i.name} <b>#${i.serial}</b></a> `) : html`<span class="muted">Nothing</span>`;
 pages.trades = async (tab, pageNo) => {
-  if (!signedIn()) { show(html`<h1>Trades</h1>${needSignIn('trade Limited items')}`); return; }
+  if (!signedIn()) { show(html`<h1>Trades</h1>${needSignIn('trade Limited U items')}`); return; }
   if (tab === 'past') { await pastTradesPage(Number(pageNo) || 1); return; }
   const r = await pageCall('trade.list', {});
   const list = (items) => items.map((i) => html`<a href="#/item/${i.id}">${i.name} #${i.serial}</a>`).reduce((acc, x, k) => html`${acc}${k ? ', ' : ''}${x}`, html``);
@@ -2235,7 +2337,7 @@ pages.trades = async (tab, pageNo) => {
   };
   const open = r.ok ? r.trades.filter((x) => x.status === 'open') : [];
   show(html`<h1>Trades</h1>${tradeTabs('open')}
-    <p class="muted">Trade your Limited items with other players. Open someone's profile and press <b>Trade</b> to make an offer.
+    <p class="muted">Trade your Limited U items with other players. Standard Limited items cannot be resold or traded. Open someone's profile and press <b>Trade</b> to make an offer.
       A trade nobody answers runs out after 30 days.</p>
     ${r.ok ? '' : html`<p class="error">${r.error}</p>`}
     <h2>Your Limiteds</h2>${r.ok && r.items.length ? html`<div class="row">${r.items.map((i) => html`<a class="chip" href="#/item/${i.id}">${i.name} #${i.serial}</a>`)}</div>`
@@ -2279,7 +2381,7 @@ pages.trade = async (id) => {
   if (theirs.hidden) { show(html`<h1>Trade</h1><p class="muted">${theirs.user.name} keeps their inventory private, so you can't trade with them.</p>`); return; }
   const pickList = (items, side) => items.length ? html`<div class="trade-pick">${items.map((i) => html`<label class="choice">
       <input type="checkbox" name="${side}" value="${i.id}|${i.serial}"> ${i.name} <b>#${i.serial}</b></label>`)}</div>`
-    : html`<p class="muted">No Limited items.</p>`;
+    : html`<p class="muted">No tradable Limited U items.</p>`;
   show(html`<p><a href="#/user/${theirs.user.userId}">&lt; ${theirs.user.name}</a></p><h1>Trade with ${theirs.user.name}</h1>
     <form class="trade" data-form="tradeSend"><input type="hidden" name="to" value="${theirs.user.id}">
       <div class="trade-cols"><div class="box"><h2 class="boxhead">You give</h2>${pickList(mine.ok ? mine.items : [], 'give')}</div>
@@ -3861,6 +3963,67 @@ function loginPage(signup) {
 // --- clicks and forms ----------------------------------------------------------
 
 const actions = {
+  async startLearn(d) {
+    const lesson = STUDIO_LESSONS.find((x) => x[0] === d.id);
+    if (!lesson) { toast('That lesson could not be found.'); return; }
+    const key = 'gb.studioLearn.' + (signedIn() ? me.id : 'guest');
+    let progress = { completed: [], current: '', step: 0, updatedAt: 0 };
+    try {
+      const local = JSON.parse(localStorage.getItem(key) || 'null');
+      if (local && typeof local === 'object' && !Array.isArray(local)) progress = Object.assign(progress, local);
+    } catch { /* ignore */ }
+    progress.completed = Array.isArray(progress.completed) ? progress.completed.filter((x) => STUDIO_LESSONS.some((l) => l[0] === x)) : [];
+    progress.current = typeof progress.current === 'string' ? progress.current : '';
+    progress.step = Number.isInteger(progress.step) && progress.step >= 0 && progress.step <= 2 ? progress.step : 0;
+    progress.updatedAt = Number.isInteger(progress.updatedAt) && progress.updatedAt >= 0 ? progress.updatedAt : 0;
+    const resume = progress.current === lesson[0] && !progress.completed.includes(lesson[0]);
+    progress.current = lesson[0];
+    // practice: whether Studio skips straight to the challenge. Only keep it when picking up
+    // the same unfinished lesson; a different lesson always starts at its demonstration.
+    progress.practice = resume && progress.practice === true;
+    if (!resume) progress.step = 0;
+    if (signedIn()) {
+      const remote = await call('learn.progress.get', {});
+      if (remote.ok && remote.progress) {
+        if (Array.isArray(remote.progress.completed))
+          progress.completed = [...new Set([...progress.completed, ...remote.progress.completed])].filter((x) => STUDIO_LESSONS.some((l) => l[0] === x));
+        if (Number.isInteger(remote.progress.updatedAt)) {
+          const localUpdatedAt = Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0;
+          if (remote.progress.updatedAt >= localUpdatedAt) {
+            const remoteCurrent = remote.progress.current;
+            if (remoteCurrent === lesson[0] && !progress.completed.includes(lesson[0])) {
+              progress.step = Number.isInteger(remote.progress.step) && remote.progress.step >= 0 && remote.progress.step <= 2 ? remote.progress.step : 0;
+              progress.practice = remote.progress.practice === true;
+            } else {
+              progress.step = 0;
+              progress.practice = false;
+            }
+          }
+          progress.updatedAt = Math.max(localUpdatedAt, remote.progress.updatedAt);
+        }
+      }
+    }
+    progress.updatedAt = Math.max(Math.floor(Date.now() / 1000), (Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0) + 1);
+    try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
+    if (signedIn()) {
+      const saved = await call('learn.progress.save', progress);
+      if (saved.ok && saved.progress) {
+        if (Number.isInteger(saved.progress.updatedAt) && saved.progress.updatedAt > progress.updatedAt &&
+            STUDIO_LESSONS.some((l) => l[0] === saved.progress.current)) {
+          progress.current = saved.progress.current;
+          progress.step = Number.isInteger(saved.progress.step) && saved.progress.step >= 0 && saved.progress.step <= 2 ? saved.progress.step : 0;
+        }
+        if (Number.isInteger(saved.progress.updatedAt)) progress.updatedAt = saved.progress.updatedAt;
+        try { localStorage.setItem(key, JSON.stringify(progress)); } catch { /* local progress is optional */ }
+      }
+    }
+    const url = 'gutsandbolts://learn/' + encodeURIComponent(lesson[0]);
+    popup(html`<h1 class="popup-title">Opening Studio Learn...</h1>
+      <p>Opening <b>${lesson[1]}</b> in desktop Guts&amp;Bolts Studio.</p>
+      <p class="small muted">If your browser asks, choose Open Guts&amp;Bolts. If you just installed the app, launch Guts&amp;Bolts Player once to register its link handler, then retry. Lessons do not run in the mobile Player.</p>
+      <p class="popup-buttons"><a class="btn green" href="${url}">Open lesson</a> <a class="btn" href="../#download">Download the app</a></p>`);
+    location.href = url;
+  },
   async boltworksRegister() {
     const r = await call('boltworks.register', {});
     if (!r.ok) { toast(r.error || 'Could not register right now.'); return; }
@@ -3966,9 +4129,25 @@ const actions = {
   },
   async resaleBuy(d) {
     if (!signedIn()) { loginPopup('buy items'); return; }
-    if (!confirm('Buy copy #' + d.serial + ' for ' + d.price + ' Bolts?')) return;
+    const price = Math.max(0, Number(d.price) || 0);
+    const balance = Math.max(0, Number(me && me.bolts) || 0);
+    const remaining = Math.max(0, balance - price);
+    if (balance < price) { toast('You do not have enough Bolts for this copy.'); return; }
+    popup(html`<h1 class="popup-title">Confirm Purchase</h1>
+      <p>Are you sure you want to buy <b>"${d.name || 'this item'}"</b>, copy #${d.serial}?</p>
+      <div class="box info">
+        <p><b>Price:</b> ${bolts(price)}</p>
+        <p class="small muted">Your Bolt balance after purchasing: <b>${bolts(remaining)}</b>.</p>
+      </div>
+      <p class="popup-buttons">
+        <button class="btn green big" data-act="resaleBuyConfirm" data-id="${d.id}" data-serial="${d.serial}">Confirm Purchase</button>
+        <button class="btn" data-act="closeModal" type="button">Cancel</button>
+      </p>`);
+  },
+  async resaleBuyConfirm(d) {
     const r = await call('resale.buy', { id: d.id, serial: Number(d.serial) });
-    if (r.ok) setMe(r.me);
+    document.querySelectorAll('.modal').forEach((m) => m.remove());
+    if (r.ok && r.me) setMe(r.me);
     toast(r.ok ? 'It\'s yours!' : r.error);
     render();
   },
@@ -4252,7 +4431,25 @@ const actions = {
     render();
   },
   async buy(d) {
+    const price = Math.max(0, Number(d.price) || 0);
+    const balance = Math.max(0, Number(me && me.bolts) || 0);
+    const remaining = Math.max(0, balance - price);
+    if (balance < price) { toast('You do not have enough Bolts for this item.'); return; }
+    popup(html`<h1 class="popup-title">Confirm Purchase</h1>
+      <p>Are you sure you want to buy <b>"${d.name || 'this item'}"</b>?</p>
+      <div class="box info">
+        <p><b>Price:</b> ${bolts(price)}</p>
+        <p class="small muted">Your Bolt balance after purchasing: <b>${bolts(remaining)}</b>.</p>
+      </div>
+      <p class="popup-buttons">
+        <button class="btn green big" data-act="buyConfirm" data-id="${d.id}">Confirm Purchase</button>
+        <button class="btn" data-act="closeModal" type="button">Cancel</button>
+      </p>`);
+  },
+  async buyConfirm(d) {
     const r = await call('buy', { id: d.id });
+    document.querySelectorAll('.modal').forEach((m) => m.remove());
+    if (r.ok && r.me) setMe(r.me);
     toast(r.ok ? 'It\'s yours! Wear (or equip) it from the Avatar page.' : r.error);
     render();
   },
@@ -4812,6 +5009,7 @@ const forms = {
       if (Number.isNaN(when)) { m.className = 'error'; m.textContent = ' Pick a whole date and time for it to go off sale (or clear the box).'; return; }
       args.offsaleAt = when;
     }
+    if (field('staffOffsale')) args.staffOffsale = field('staffOffsale').checked;
     if (field('exclusive')) args.exclusive = field('exclusive').checked;
     if (field('giftItem')) args.giftItem = field('giftItem').value.trim();
     if (field('picture') && field('picture').files[0]) args.data = await gb.fileBase64(field('picture').files[0]);
@@ -4849,7 +5047,7 @@ const forms = {
     render();
   },
   async itemLimited(f) {
-    const r = await call('item.limited', { id: f.id.value, stock: Number(f.stock.value) || 0 });
+    const r = await call('item.limited', { id: f.id.value, stock: Number(f.stock.value) || 0, limitedType: f.elements.namedItem('limitedType')?.value || 'limited_u' });
     toast(r.ok ? 'It\'s Limited now!' : r.error);
     render();
   },

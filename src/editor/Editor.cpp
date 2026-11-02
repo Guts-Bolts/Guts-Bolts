@@ -1,7 +1,9 @@
 #include "Editor.h"
+#include "LearnHighlight.h"
 #include "../scene/Skin.h"
 #include "../scene/MaterialGraph.h"
 #include <sstream>
+#include <fstream>
 #include <cmath>
 #include <unordered_map>
 #include <unordered_set>
@@ -455,10 +457,205 @@ void Editor::render(float dt) {
     updateTitle();
 }
 
+namespace {
+const char* kStudioLearnIds[] = {"first-build", "make-it-move", "tiny-obby", "first-script", "light-up-scene", "publish-first-game", "meet-explorer", "properties-panel", "copy-group-organize", "color-materials", "shape-world", "spawn-into-action", "collision-course", "connect-parts", "sound-check", "first-gui", "make-things-happen", "remember-values", "find-fix-bugs", "build-test-improve"};
+constexpr int kStudioLearnCount = (int)(sizeof(kStudioLearnIds) / sizeof(kStudioLearnIds[0]));
+}
+
+void Editor::loadLearnProgress() {
+    if (m_learnLoaded) return;
+    m_learnLoaded = true;
+    const long long userId = Online::me().value("userId", 0LL);
+    auto mergeFile = [this](const std::string& accountKey, bool allowCurrent) {
+        const std::string progressFile = "studio_learn_progress_" + accountKey + ".json";
+        std::ifstream in(Paths::file(progressFile.c_str()), std::ios::binary);
+        if (!in) return;
+        std::stringstream data; data << in.rdbuf();
+        const nlohmann::json saved = nlohmann::json::parse(data.str(), nullptr, false);
+        if (!saved.is_object()) return;
+        if (saved.contains("completed") && saved["completed"].is_array()) {
+            for (const auto& value : saved["completed"]) if (value.is_string()) {
+                const std::string id = value.get<std::string>();
+                for (int i = 0; i < kStudioLearnCount; ++i)
+                    if (id == kStudioLearnIds[i]) m_learnCompleted.insert(i);
+            }
+        }
+        const long long savedUpdatedAt = saved.contains("updatedAt") && saved["updatedAt"].is_number_integer()
+            ? std::max(0LL, saved["updatedAt"].get<long long>()) : 0LL;
+        const bool newest = savedUpdatedAt > m_learnProgressUpdatedAt ||
+                            (savedUpdatedAt == m_learnProgressUpdatedAt && !m_learnHasSavedCurrent);
+        if (newest) {
+            m_learnProgressUpdatedAt = savedUpdatedAt;
+            if (allowCurrent && saved.contains("current") && saved["current"].is_string()) {
+                const std::string id = saved["current"].get<std::string>();
+                for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
+                    m_learnLesson = i;
+                    m_learnHasSavedCurrent = true;
+                    if (saved.contains("step") && saved["step"].is_number_integer())
+                        m_learnDemoStep = std::clamp(saved["step"].get<int>(), 0, 2);
+                    m_learnPractice = saved.value("practice", false);
+                    break;
+                }
+            }
+        }
+    };
+
+    if (userId > 0) {
+        mergeFile(std::to_string(userId), true);
+        // Import guest completions, and use the more recently updated resume point.
+        mergeFile("guest", true);
+    } else {
+        mergeFile("guest", true);
+    }
+}
+
+void Editor::saveLearnProgress() {
+    loadLearnProgress();
+    nlohmann::json completed = nlohmann::json::array();
+    for (int i : m_learnCompleted) if (i >= 0 && i < kStudioLearnCount) completed.push_back(kStudioLearnIds[i]);
+    const long long localNow = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    m_learnProgressUpdatedAt = std::max(localNow, m_learnProgressUpdatedAt + 1);
+    nlohmann::json progress = {{ "completed", completed },
+        { "current", kStudioLearnIds[std::clamp(m_learnLesson, 0, kStudioLearnCount - 1)] },
+        { "step", std::clamp(m_learnDemoStep, 0, 2) },
+        { "practice", m_learnPractice },
+        { "updatedAt", m_learnProgressUpdatedAt }};
+    const long long userId = Online::me().value("userId", 0LL);
+    const std::string accountKey = userId > 0 ? std::to_string(userId) : "guest";
+    const std::string progressFile = "studio_learn_progress_" + accountKey + ".json";
+    const auto path = Paths::file(progressFile.c_str());
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (out) out << progress.dump(2);
+    if (m_learnSyncReady && Online::online() && Online::me().value("userId", 0LL) > 0) {
+        Online::request("learn.progress.save", progress, [](const nlohmann::json& r) {
+            if (!r.value("ok", false)) Log::warn("Studio Learn progress wasn't synced: " + r.value("error", std::string("server error")));
+        });
+    }
+}
+
+void Editor::startLearnLesson(const std::string& id) {
+    loadLearnProgress();
+    for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) {
+        const bool resume = m_learnHasSavedCurrent && m_learnLesson == i && !m_learnCompleted.count(i);
+        const bool resumePractice = resume && m_learnPractice;
+        m_learnLesson = i;
+        m_learnExplicitLaunch = true;
+        if (!resume) m_learnDemoStep = 0;
+        m_learnHint = 0;
+        m_learnPaused = false; m_learnDemoActionDone = false;
+        m_learnPractice = resumePractice; m_learnSawPlay = false; m_learnSawPublish = false;
+        m_learnPlayStarts = 0; m_learnWasPlaying = m_playing; m_learnStatus.clear();
+        m_learnBaselineNodes.clear(); m_learnBaselineReady = false; m_learnFirstPlayNodes.clear();
+        m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
+        m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
+        m_showLearn = true;
+        saveLearnProgress();
+        return;
+    }
+}
+
 // Studio Learn: short, task-based lessons that validate real scene changes.
 void Editor::renderLearn() {
     if (!m_showLearn) return;
-    if (m_playing && !m_learnWasPlaying) ++m_learnPlayStarts;
+    const long long signedInUserId = Online::me().value("userId", 0LL);
+    if (signedInUserId != m_learnSyncUserId) {
+        m_learnSyncUserId = signedInUserId;
+        m_learnLoaded = false;
+        m_learnCompleted.clear();
+        m_learnLesson = 0; m_learnDemoStep = 0; m_learnHint = 0; m_learnPractice = false;
+        m_learnHasSavedCurrent = false;
+        m_learnProgressUpdatedAt = 0;
+        m_learnPaused = false; m_learnDemoActionDone = false;
+        m_learnExplicitLaunch = false;
+        m_learnSawPlay = false; m_learnSawPublish = false; m_learnWasPlaying = m_playing;
+        m_learnPlayStarts = 0; m_learnStatus.clear();
+        m_learnBaselineNodes.clear(); m_learnBaselineReady = false; m_learnFirstPlayNodes.clear();
+        m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
+        m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
+        m_learnBaselineTerrainVersion = 0;
+        m_learnSyncReady = false;
+        m_learnSyncRetryAt = 0.0;
+    }
+    loadLearnProgress();
+    if (!m_learnSyncReady && ImGui::GetTime() >= m_learnSyncRetryAt && Online::online() && signedInUserId > 0) {
+        m_learnSyncRetryAt = ImGui::GetTime() + 15.0;
+        Online::request("learn.progress.get", {}, [this, signedInUserId](const nlohmann::json& r) {
+            if (m_learnSyncUserId != signedInUserId || Online::me().value("userId", 0LL) != signedInUserId) return;
+            if (!r.value("ok", false) || !r.contains("progress") || !r["progress"].is_object()) return;
+            m_learnSyncReady = true;
+            const auto& remote = r["progress"];
+            if (remote.contains("completed") && remote["completed"].is_array()) {
+                for (const auto& value : remote["completed"]) if (value.is_string()) {
+                    const std::string id = value.get<std::string>();
+                    for (int i = 0; i < kStudioLearnCount; ++i) if (id == kStudioLearnIds[i]) m_learnCompleted.insert(i);
+                }
+            }
+            const long long remoteUpdatedAt = remote.contains("updatedAt") && remote["updatedAt"].is_number_integer()
+                ? std::max(0LL, remote["updatedAt"].get<long long>()) : 0LL;
+            if (remoteUpdatedAt > m_learnProgressUpdatedAt) {
+                const std::string remoteCurrent = remote.value("current", std::string());
+                if (!remoteCurrent.empty()) {
+                    for (int i = 0; i < kStudioLearnCount; ++i) if (remoteCurrent == kStudioLearnIds[i]) {
+                        if (!m_learnExplicitLaunch || i == m_learnLesson) {
+                            m_learnLesson = i;
+                            m_learnHasSavedCurrent = true;
+                            if (remote.contains("step") && remote["step"].is_number_integer())
+                                m_learnDemoStep = std::clamp(remote["step"].get<int>(), 0, 2);
+                            if (remote.contains("practice") && remote["practice"].is_boolean())
+                                m_learnPractice = remote["practice"].get<bool>();
+                        }
+                        break;
+                    }
+                }
+                m_learnProgressUpdatedAt = remoteUpdatedAt;
+            }
+            m_learnHasSavedCurrent = true;
+            saveLearnProgress();
+        });
+    }
+    if (m_learnPractice && m_learnLesson == 19 && m_learnWasPlaying && !m_playing && m_learnPlayStarts == 1) {
+        m_learnFirstPlayNodes.clear();
+        m_scene->forEach([this](SceneNode* n) {
+            if (n && !n->internal) m_learnFirstPlayNodes[n->id] = Serializer::nodeShallowToString(*n);
+        });
+        m_learnFirstPlayEnded = true;
+    }
+    if (m_learnPractice && m_learnLesson == 19 && m_learnFirstPlayEnded && !m_playing && !m_learnEditedAfterFirstPlay) {
+        m_scene->forEach([this](SceneNode* n) {
+            if (!n || n->internal || !n->isPart()) return;
+            const auto old = m_learnFirstPlayNodes.find(n->id);
+            if (old == m_learnFirstPlayNodes.end() || Serializer::nodeShallowToString(*n) != old->second)
+                m_learnEditedAfterFirstPlay = true;
+        });
+    }
+    if (m_playing && !m_learnWasPlaying) {
+        if (m_learnPractice && m_learnLesson == 19 && m_learnFirstPlayEnded) {
+            m_scene->forEach([this](SceneNode* n) {
+                if (!n || n->internal || !n->isPart()) return;
+                const auto old = m_learnFirstPlayNodes.find(n->id);
+                if (old == m_learnFirstPlayNodes.end() || Serializer::nodeShallowToString(*n) != old->second)
+                    m_learnEditedAfterFirstPlay = true;
+            });
+            m_learnSecondPlayAfterEdit = m_learnEditedAfterFirstPlay;
+        }
+        ++m_learnPlayStarts;
+        if (m_learnPractice && m_learnLesson == 18) {
+            if (m_learnPlayStarts == 1) m_learnFirstPlayRun = Log::currentRun();
+            else if (m_learnPlayStarts == 2) m_learnSecondPlayRun = Log::currentRun();
+        }
+    }
+    if (m_learnPractice && m_learnLesson == 18 && m_learnFirstPlayRun > 0 && !m_learnSawScriptError) {
+        for (const Log::Entry& entry : Log::entries()) {
+            if (entry.run == m_learnFirstPlayRun && entry.level == Log::Level::Error &&
+                entry.text.find("pritn") != std::string::npos) {
+                m_learnSawScriptError = true;
+                break;
+            }
+        }
+    }
     m_learnWasPlaying = m_playing;
     if (m_playing) m_learnSawPlay = true;
 
@@ -690,14 +887,34 @@ void Editor::renderLearn() {
 
     ImGui::SetNextWindowSize(ImVec2(520, 560), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Studio Learn", &m_showLearn)) { ImGui::End(); return; }
+    if (m_learnPaused) {
+        ImGui::TextWrapped("This lesson is paused. Your saved progress is safe; the editor remains available.");
+        if (ImGui::Button("Resume lesson", ImVec2(140, 30))) m_learnPaused = false;
+        ImGui::SameLine();
+        if (ImGui::Button("Exit lesson", ImVec2(120, 30))) {
+            m_learnPaused = false;
+            m_showLearn = false;
+        }
+        ImGui::End();
+        return;
+    }
+    if (ImGui::Button("Pause")) { m_learnPaused = true; ImGui::End(); return; }
+    ImGui::SameLine();
+    if (ImGui::Button("Exit lesson")) { m_showLearn = false; ImGui::End(); return; }
 
     if (ImGui::Combo("Lesson", &m_learnLesson, titles, lessonCount)) {
+        m_learnHasSavedCurrent = true;
+        m_learnExplicitLaunch = false;
         m_learnDemoStep = 0;
+        m_learnDemoActionDone = false;
         m_learnHint = 0;
         m_learnPractice = false;
         m_learnSawPlay = false;
         m_learnStatus.clear();
-        m_learnBaselineNodes.clear();
+        m_learnBaselineNodes.clear(); m_learnBaselineReady = false; m_learnFirstPlayNodes.clear();
+        m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
+        m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
+        saveLearnProgress();
     }
     const Lesson& current = lessons[m_learnLesson];
     ImGui::TextDisabled("%s  |  %s  |  Lesson %d of %d",
@@ -715,31 +932,77 @@ void Editor::renderLearn() {
         ImGui::TextWrapped("%s", current.demo[m_learnDemoStep]);
         ImGui::Spacing();
         ImGui::TextDisabled("Follow the instruction in the real editor. This panel does not click controls or change your project for you.");
+        if (ImGui::Button("Repeat demonstration")) {
+            m_learnHasSavedCurrent = true;
+            m_learnDemoStep = 0;
+            m_learnDemoActionDone = false;
+            m_learnHint = 0;
+            m_learnPractice = false;
+            m_learnStatus.clear();
+            saveLearnProgress();
+        }
         if (m_learnDemoStep > 0) {
-            if (ImGui::Button("Back")) { --m_learnDemoStep; m_learnStatus.clear(); }
+            if (ImGui::Button("Back")) { m_learnHasSavedCurrent = true; --m_learnDemoStep; m_learnDemoActionDone = false; m_learnStatus.clear(); saveLearnProgress(); }
             ImGui::SameLine();
         }
         if (m_learnDemoStep < 2) {
-            if (ImGui::Button("Next guided step")) { ++m_learnDemoStep; m_learnStatus.clear(); }
-        } else if (ImGui::Button("Start practice challenge")) {
+            ImGui::BeginDisabled(!m_learnDemoActionDone);
+            const bool nextStep = ImGui::Button("Next guided step");
+            ImGui::EndDisabled();
+            if (!m_learnDemoActionDone)
+                ImGui::TextDisabled("Use the highlighted control to complete this step before continuing.");
+            if (nextStep) {
+                m_learnHasSavedCurrent = true;
+                ++m_learnDemoStep;
+                m_learnDemoActionDone = false;
+                m_learnStatus.clear();
+                saveLearnProgress();
+            }
+        } else {
+            ImGui::BeginDisabled(!m_learnDemoActionDone);
+            const bool startPractice = ImGui::Button("Start practice challenge");
+            ImGui::EndDisabled();
+            if (!m_learnDemoActionDone)
+                ImGui::TextDisabled("Complete the highlighted action before starting the challenge.");
+            if (startPractice) {
+                m_learnBaselineNodes.clear(); m_learnBaselineReady = false;
+                m_scene->forEach([this](SceneNode* n) {
+                    if (n && !n->internal) m_learnBaselineNodes[n->id] = Serializer::nodeShallowToString(*n);
+                });
+                m_learnBaselineTerrainVersion = m_scene->terrain().version();
+                m_learnBaselineReady = true;
+                m_learnFirstPlayNodes.clear();
+                m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
+                m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
+                m_learnSawPlay = false;
+                m_learnSawPublish = false;
+                m_learnPlayStarts = 0;
+                m_learnWasPlaying = m_playing;
+                m_learnHint = 0;
+                m_learnPractice = true;
+                m_learnHasSavedCurrent = true;
+                m_learnDemoActionDone = false;
+                m_learnStatus.clear();
+                saveLearnProgress();
+            }
+        }
+    } else {
+        // Practice resumed from saved progress (a Studio restart or a website link) has no
+        // snapshot yet: take one now, or everything already in the project would count as
+        // the learner's new work and "Check my work" would pass without doing anything.
+        if (!m_learnBaselineReady) {
             m_learnBaselineNodes.clear();
             m_scene->forEach([this](SceneNode* n) {
                 if (n && !n->internal) m_learnBaselineNodes[n->id] = Serializer::nodeShallowToString(*n);
             });
             m_learnBaselineTerrainVersion = m_scene->terrain().version();
-            m_learnSawPlay = false;
-            m_learnSawPublish = false;
-            m_learnPlayStarts = 0;
-            m_learnWasPlaying = m_playing;
-            m_learnHint = 0;
-            m_learnPractice = true;
-            m_learnStatus.clear();
+            m_learnBaselineReady = true;
         }
-    } else {
         ImGui::SeparatorText("Try it yourself");
         ImGui::TextWrapped("%s", current.practice);
         ImGui::Spacing();
         if (ImGui::Button("Lightbulb: reveal next hint")) {
+            m_learnHasSavedCurrent = true;
             if (m_learnHint < 3) ++m_learnHint;
         }
         for (int i = 0; i < m_learnHint; ++i) {
@@ -747,6 +1010,7 @@ void Editor::renderLearn() {
         }
         ImGui::Spacing();
         if (ImGui::Button("Check my work")) {
+            m_learnHasSavedCurrent = true;
             std::vector<SceneNode*> changed, newParts, newScripts;
             std::vector<SceneNode*> newLights, newModels, newConstraints, newSounds, newGui;
             m_scene->forEach([&](SceneNode* n) {
@@ -771,6 +1035,63 @@ void Editor::renderLearn() {
                         (b.empty() || n->source.find(b) != std::string::npos)) return true;
                 return false;
             };
+            auto hasLiteralPrintOutput = [](const std::vector<SceneNode*>& nodes, int run) {
+                if (run <= 0) return false;
+                for (SceneNode* n : nodes) {
+                    if (!n) continue;
+                    const size_t call = n->source.find("print(");
+                    if (call == std::string::npos) continue;
+                    size_t quote = call + 6;
+                    while (quote < n->source.size() && (n->source[quote] == ' ' || n->source[quote] == '\t')) ++quote;
+                    if (quote >= n->source.size() || (n->source[quote] != '"' && n->source[quote] != '\'')) continue;
+                    const size_t end = n->source.find(n->source[quote], quote + 1);
+                    if (end == std::string::npos || end == quote + 1) continue;
+                    const std::string expected = n->source.substr(quote + 1, end - quote - 1);
+                    for (const Log::Entry& entry : Log::entries())
+                        if (entry.run == run && entry.level == Log::Level::Info && entry.text == expected) return true;
+                }
+                return false;
+            };
+            auto hasLocalVariablePrintOutput = [](const std::vector<SceneNode*>& nodes, int run) {
+                if (run <= 0) return false;
+                for (SceneNode* n : nodes) {
+                    if (!n) continue;
+                    const std::string& source = n->source;
+                    size_t local = source.find("local ");
+                    while (local != std::string::npos) {
+                        size_t nameStart = local + 6;
+                        while (nameStart < source.size() && (source[nameStart] == ' ' || source[nameStart] == '\t')) ++nameStart;
+                        size_t nameEnd = nameStart;
+                        while (nameEnd < source.size() && ((source[nameEnd] >= 'a' && source[nameEnd] <= 'z') ||
+                               (source[nameEnd] >= 'A' && source[nameEnd] <= 'Z') ||
+                               (source[nameEnd] >= '0' && source[nameEnd] <= '9') || source[nameEnd] == '_')) ++nameEnd;
+                        const std::string variable = source.substr(nameStart, nameEnd - nameStart);
+                        const size_t equals = source.find('=', nameEnd);
+                        if (!variable.empty() && equals != std::string::npos) {
+                            const size_t quote = source.find_first_of("\"'", equals + 1);
+                            if (quote != std::string::npos) {
+                                const size_t end = source.find(source[quote], quote + 1);
+                                const size_t print = end == std::string::npos ? std::string::npos : source.find("print(", end + 1);
+                                if (end != std::string::npos && print != std::string::npos) {
+                                    size_t argStart = print + 6;
+                                    while (argStart < source.size() && (source[argStart] == ' ' || source[argStart] == '\t')) ++argStart;
+                                    size_t argEnd = argStart;
+                                    while (argEnd < source.size() && source[argEnd] != ')' && source[argEnd] != ',' &&
+                                           source[argEnd] != ' ' && source[argEnd] != '\t' &&
+                                           source[argEnd] != '\r' && source[argEnd] != '\n') ++argEnd;
+                                    if (source.substr(argStart, argEnd - argStart) == variable) {
+                                        const std::string expected = source.substr(quote + 1, end - quote - 1);
+                                        for (const Log::Entry& entry : Log::entries())
+                                            if (entry.run == run && entry.level == Log::Level::Info && entry.text == expected) return true;
+                                    }
+                                }
+                            }
+                        }
+                        local = source.find("local ", local + 6);
+                    }
+                }
+                return false;
+            };
             bool passed = false;
             std::string feedback;
             switch (current.check) {
@@ -789,8 +1110,9 @@ void Editor::renderLearn() {
                     feedback = "Create at least three new Parts for the route, then test it with F5.";
                     break;
                 case 3:
-                    passed = m_learnSawPlay && hasText(newScripts, "print(", "");
-                    feedback = "Create a new Script containing print(...), then run it with F5.";
+                    passed = m_learnPlayStarts >= 1 && hasText(newScripts, "print(", "") &&
+                             hasLiteralPrintOutput(newScripts, Log::lastRun());
+                    feedback = "Create a new Script with a print(\"message\") call, run it with F5, and verify that exact message appears in Output.";
                     break;
                 case 4:
                     passed = m_learnSawPlay && std::any_of(newLights.begin(), newLights.end(), [](SceneNode* n) {
@@ -864,25 +1186,50 @@ void Editor::renderLearn() {
                     break;
                 }
                 case 16:
-                    passed = m_learnSawPlay && (hasText(newScripts, ".Connect", "") || hasText(newScripts, "Connect(", ""));
-                    feedback = "Create a new Script with an event connection using :Connect(...), then test it with F5.";
+                    passed = m_learnPlayStarts >= 1 &&
+                             (hasText(newScripts, ".Connect", "") || hasText(newScripts, "Connect(", "")) &&
+                             hasLiteralPrintOutput(newScripts, Log::lastRun());
+                    feedback = "Create a new Script with an event connection and a print(\"message\") call, then verify that exact message in Output during Play.";
                     break;
                 case 17:
-                    passed = m_learnSawPlay && hasText(newScripts, "local ", "print(");
-                    feedback = "Create a new Script that declares a local variable and uses it in print(...), then run it.";
+                    passed = m_learnPlayStarts >= 1 && hasLocalVariablePrintOutput(newScripts, Log::lastRun());
+                    feedback = "Create a Script with a local variable assigned a text value, print that variable, and verify the value appears in Output.";
                     break;
-                case 18:
-                    passed = m_learnSawPlay && hasText(newScripts, "print(", "") && !hasText(newScripts, "pritn(", "");
-                    feedback = "Create a practice Script, reproduce a typo, correct it to print(...), and run it with F5.";
+                case 18: {
+                    SceneNode* corrected = nullptr;
+                    std::string expectedOutput;
+                    for (SceneNode* n : newScripts) {
+                        const std::string& source = n->source;
+                        if (source.find("print(") == std::string::npos || source.find("pritn(") != std::string::npos) continue;
+                        const size_t call = source.find("print(");
+                        const size_t quote = source.find_first_of("\"'", call + 6);
+                        if (quote == std::string::npos) continue;
+                        const size_t end = source.find(source[quote], quote + 1);
+                        if (end == std::string::npos || end == quote + 1) continue;
+                        corrected = n;
+                        expectedOutput = source.substr(quote + 1, end - quote - 1);
+                        break;
+                    }
+                    bool printed = false;
+                    if (!expectedOutput.empty() && m_learnSecondPlayRun > 0) {
+                        for (const Log::Entry& entry : Log::entries()) {
+                            if (entry.run == m_learnSecondPlayRun && entry.level == Log::Level::Info &&
+                                entry.text == expectedOutput) { printed = true; break; }
+                        }
+                    }
+                    passed = corrected && m_learnSawScriptError && m_learnPlayStarts >= 2 && printed;
+                    feedback = "Run a Script with the deliberate pritn(...) typo, read the Output error, correct it to print(\"message\"), and run it again to verify that exact message appears.";
                     break;
+                }
                 case 19:
-                    passed = m_learnPlayStarts >= 2 && (!newParts.empty() || std::any_of(changed.begin(), changed.end(), [](SceneNode* n) { return n->isPart(); }));
-                    feedback = "Run a Play test, stop it, change a Part in edit mode, then run a second Play test to verify the fix.";
+                    passed = m_learnPlayStarts >= 2 && m_learnSecondPlayAfterEdit;
+                    feedback = "Run a Play test, stop it, change a Part in edit mode, then start a second Play test after that change.";
                     break;
             }
             if (passed) {
                 m_learnCompleted.insert(m_learnLesson);
                 m_learnStatus = "Completed. Your project contains a change that meets this lesson's check.";
+                if (passed) saveLearnProgress();
             } else {
                 m_learnStatus = "Not complete yet. " + feedback;
             }
@@ -897,48 +1244,197 @@ void Editor::renderLearn() {
             if (m_learnLesson + 1 < lessonCount) {
                 if (ImGui::Button("Try next lesson")) {
                     ++m_learnLesson;
+                    m_learnHasSavedCurrent = true;
+                    m_learnExplicitLaunch = false;
                     m_learnDemoStep = 0;
+                    m_learnDemoActionDone = false;
                     m_learnHint = 0;
                     m_learnPractice = false;
                     m_learnSawPlay = false;
                     m_learnStatus.clear();
-                    m_learnBaselineNodes.clear();
+                    m_learnBaselineNodes.clear(); m_learnBaselineReady = false;
+                    m_learnFirstPlayNodes.clear();
+                    m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
+                    m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
+                    saveLearnProgress();
                 }
             }
         }
         if (ImGui::Button("Back to demonstration")) {
+            m_learnHasSavedCurrent = true;
             m_learnPractice = false;
             m_learnDemoStep = 0;
+            m_learnDemoActionDone = false;
             m_learnHint = 0;
             m_learnStatus.clear();
+            saveLearnProgress();
         }
     }
     ImGui::Separator();
-    ImGui::TextDisabled("%zu of %d lessons completed in this Studio session. Progress is currently session-only.",
+    ImGui::TextDisabled("%zu of %d lessons completed. Progress is saved locally and synced to your account when signed in and online.",
                         m_learnCompleted.size(), lessonCount);
     ImGui::End();
 
-    // A hint never intercepts input. It outlines the relevant live panel while the
-    // learner reads the hint; hidden panels are not outlined at stale screen positions.
-    if (m_learnPractice && m_learnHint > 0) {
+    // Outline the live target panel, and (when it is visible this frame) the exact
+    // ImGui control the learner should use. Hints never intercept input.
+    if (!m_learnPractice || m_learnHint > 0) {
         const char* targetName = nullptr;
-        switch (m_learnLesson) {
-            case 0: case 1: case 4: case 7: case 9: case 12: case 13: case 14:
-                targetName = "Properties"; break;
-            case 3: case 16: case 17: case 18:
-                targetName = m_learnHint == 1 ? "Script Editor" : "Output"; break;
-            case 6: case 8: case 11:
-                targetName = "Explorer"; break;
-            default: break;
+        const char* targetControl = nullptr;
+        if (m_learnPractice) {
+            switch (m_learnLesson) {
+                case 0: targetName = m_learnHint == 1 ? "Explorer" : m_learnHint == 2 ? "Viewport" : "Properties"; targetControl = m_learnHint == 1 ? "ribbon.Part" : m_learnHint == 2 ? "ribbon.Scale" : "properties.Anchored"; break;
+                case 1: targetName = m_learnHint == 3 ? "Viewport" : m_learnHint == 1 ? "Viewport" : "Properties"; targetControl = m_learnHint == 3 ? "ribbon.Play" : m_learnHint == 1 ? "ribbon.Part" : "properties.Anchored"; break;
+                case 2: targetName = m_learnHint == 3 ? "Viewport" : "Home"; targetControl = m_learnHint == 3 ? "ribbon.Play" : m_learnHint == 2 ? "ribbon.Duplicate" : "ribbon.Part"; break;
+                case 3: targetName = m_learnHint == 1 ? "Script Editor" : "Output"; targetControl = m_learnHint == 1 ? "script.editor" : "output.messages"; break;
+                case 4: targetName = m_learnHint == 3 ? "Viewport" : "Properties"; targetControl = m_learnHint == 3 ? "ribbon.Play" : "properties.Brightness"; break;
+                case 5: targetName = m_learnHint == 3 ? "Publish to Guts&Bolts" : "File"; targetControl = m_learnHint == 1 ? "file.gameSettings" : m_learnHint == 2 ? "file.save" : "publish.confirm"; break;
+                case 6: targetName = m_learnHint == 1 ? "Home" : "Explorer"; targetControl = m_learnHint == 1 ? "ribbon.Explorer" : m_learnHint == 2 ? "explorer.selected" : "explorer.rename"; break;
+                case 7: targetName = m_learnHint == 1 ? "Home" : "Properties"; targetControl = m_learnHint == 1 ? "ribbon.Properties" : m_learnHint == 2 ? "properties.search" : "properties.Size"; break;
+                case 8: targetName = m_learnHint == 2 ? "Explorer" : "Home"; targetControl = m_learnHint == 1 ? "ribbon.Duplicate" : m_learnHint == 2 ? "explorer.selected" : "ribbon.Group"; break;
+                case 9: targetName = m_learnHint == 1 ? "Home" : "Properties"; targetControl = m_learnHint == 1 ? "ribbon.Part" : m_learnHint == 2 ? "properties.Color" : "properties.Material"; break;
+                case 10: targetName = "Viewport"; targetControl = m_learnHint == 1 ? "ribbon.tab.TERRAIN" : m_learnHint == 2 ? "ribbon.Raise" : "ribbon.Smooth"; break;
+                case 11: targetName = m_learnHint == 3 ? "Viewport" : "Explorer"; targetControl = m_learnHint == 3 ? "ribbon.Play" : "explorer.insert.SpawnLocation"; break;
+                case 12: targetName = m_learnHint == 3 ? "Viewport" : "Properties"; targetControl = m_learnHint == 3 ? "ribbon.Play" : "properties.Can Collide"; break;
+                case 13: targetName = m_learnHint == 1 ? "Home" : "Viewport"; targetControl = m_learnHint == 1 ? "ribbon.Part" : m_learnHint == 2 ? "ribbon.Weld" : "ribbon.Play"; break;
+                case 14: targetName = m_learnHint == 3 ? "Viewport" : "Properties"; targetControl = m_learnHint == 3 ? "ribbon.Play" : m_learnHint == 2 ? "properties.Volume" : "properties.Sound"; break;
+                case 15: targetName = m_learnHint == 3 ? "Viewport" : "Explorer"; targetControl = m_learnHint == 3 ? "ribbon.Play" : "explorer.insert.ScreenGui"; break;
+                case 16: targetName = m_learnHint == 1 ? "Explorer" : m_learnHint == 2 ? "Script Editor" : "Viewport"; targetControl = m_learnHint == 1 ? "explorer.insert.Script" : m_learnHint == 2 ? "script.editor" : "ribbon.Play"; break;
+                case 17: targetName = m_learnHint == 3 ? "Viewport" : "Script Editor"; targetControl = m_learnHint == 3 ? "ribbon.Play" : "script.editor"; break;
+                case 18: targetName = m_learnHint == 2 ? "Viewport" : "Script Editor"; targetControl = m_learnHint == 2 ? "ribbon.Play" : "script.editor"; break;
+                case 19: targetName = m_learnHint == 1 ? "Explorer" : "Viewport"; targetControl = m_learnHint == 1 ? "explorer.selected" : "ribbon.Play"; break;
+                default: break;
+            }
+        } else {
+            switch (m_learnLesson) {
+                case 0:
+                    targetName = m_learnDemoStep == 2 ? "Properties" : "Home";
+                    targetControl = m_learnDemoStep == 0 ? "ribbon.Part" :
+                                    m_learnDemoStep == 1 ? "ribbon.Scale" : "properties.Anchored";
+                    break;
+                case 1:
+                    targetName = m_learnDemoStep == 2 ? "Viewport" : m_learnDemoStep == 0 ? "Home" : "Properties";
+                    targetControl = m_learnDemoStep == 0 ? "ribbon.Part" :
+                                    m_learnDemoStep == 1 ? "properties.Anchored" : "ribbon.Play";
+                    break;
+                case 2:
+                    targetName = m_learnDemoStep == 2 ? "Viewport" : "Home";
+                    targetControl = m_learnDemoStep == 0 ? "ribbon.Part" :
+                                    m_learnDemoStep == 1 ? "ribbon.Duplicate" : "ribbon.Play";
+                    break;
+                case 3:
+                    targetName = m_learnDemoStep == 0 ? "Explorer" : m_learnDemoStep == 1 ? "Script Editor" : "Output";
+                    targetControl = m_learnDemoStep == 0 ? "explorer.insert.Script" :
+                                    m_learnDemoStep == 1 ? "script.editor" : "ribbon.Play";
+                    break;
+                case 4:
+                    targetName = m_learnDemoStep == 0 ? "Home" : m_learnDemoStep == 1 ? "Explorer" : "Properties";
+                    targetControl = m_learnDemoStep == 0 ? "ribbon.Part" :
+                                    m_learnDemoStep == 1 ? "explorer.insert.PointLight" : "properties.Brightness";
+                    break;
+                case 5:
+                    targetName = m_learnDemoStep == 2 ? "Publish to Guts&Bolts" : "File";
+                    targetControl = m_learnDemoStep == 0 ? "file.gameSettings" :
+                                    m_learnDemoStep == 1 ? "file.save" : "publish.confirm";
+                    break;
+                case 6: targetName = m_learnDemoStep == 0 ? "Home" : "Explorer"; targetControl = m_learnDemoStep == 0 ? "ribbon.Explorer" : m_learnDemoStep == 1 ? "explorer.selected" : "explorer.rename"; break;
+                case 7:
+                    targetName = m_learnDemoStep == 0 ? "Home" : "Properties";
+                    targetControl = m_learnDemoStep == 0 ? "ribbon.Properties" :
+                                    m_learnDemoStep == 1 ? "properties.search" : "properties.Size";
+                    break;
+                case 8:
+                    targetName = m_learnDemoStep == 1 ? "Explorer" : "Home";
+                    targetControl = m_learnDemoStep == 0 ? "ribbon.Duplicate" :
+                                    m_learnDemoStep == 1 ? "explorer.selected" : "ribbon.Group";
+                    break;
+                case 9:
+                    targetName = "Properties";
+                    targetControl = m_learnDemoStep == 0 ? "properties.Color" :
+                                    m_learnDemoStep == 1 ? "properties.Material" : "properties.Color";
+                    break;
+                case 10:
+                    targetName = "Viewport";
+                    targetControl = m_learnDemoStep == 0 ? "ribbon.tab.TERRAIN" :
+                                    m_learnDemoStep == 1 ? "ribbon.Raise" : "ribbon.Smooth";
+                    break;
+                case 11:
+                    targetName = m_learnDemoStep == 2 ? "Viewport" : (m_learnDemoStep == 0 ? "Explorer" : "Properties");
+                    targetControl = m_learnDemoStep == 0 ? "explorer.insert.SpawnLocation" :
+                                    m_learnDemoStep == 1 ? "properties.Position" : "ribbon.Play";
+                    break;
+                case 12:
+                    targetName = m_learnDemoStep == 0 ? "Home" : m_learnDemoStep == 2 ? "Viewport" : "Properties";
+                    targetControl = m_learnDemoStep == 0 ? "ribbon.Part" :
+                                    m_learnDemoStep == 1 ? "properties.Can Collide" : "ribbon.Play";
+                    break;
+                case 13:
+                    targetName = m_learnDemoStep == 0 ? "Home" : m_learnDemoStep == 1 ? "Viewport" : "Explorer";
+                    targetControl = m_learnDemoStep == 0 ? "ribbon.Part" :
+                                    m_learnDemoStep == 1 ? "ribbon.Weld" : "explorer.selected";
+                    break;
+                case 14:
+                    targetName = m_learnDemoStep == 0 ? "Explorer" : "Properties";
+                    targetControl = m_learnDemoStep == 0 ? "explorer.insert.Sound" :
+                                    m_learnDemoStep == 1 ? "properties.Sound" : "ribbon.Play";
+                    break;
+                case 15:
+                    targetName = m_learnDemoStep == 0 || m_learnDemoStep == 1 ? "Explorer" : "Viewport";
+                    targetControl = m_learnDemoStep == 0 ? "explorer.insert.ScreenGui" :
+                                    m_learnDemoStep == 1 ? "explorer.insert.TextLabel" : "ribbon.Play";
+                    break;
+                case 16:
+                    targetName = m_learnDemoStep == 0 ? "Explorer" : m_learnDemoStep == 1 ? "Script Editor" : "Viewport";
+                    targetControl = m_learnDemoStep == 0 ? "explorer.insert.Script" :
+                                    m_learnDemoStep == 1 ? "script.editor" : "ribbon.Play";
+                    break;
+                case 17:
+                    targetName = m_learnDemoStep == 2 ? "Viewport" : "Script Editor";
+                    targetControl = m_learnDemoStep == 2 ? "ribbon.Play" : "script.editor";
+                    break;
+                case 18:
+                    targetName = m_learnDemoStep == 1 ? "Viewport" : "Script Editor";
+                    targetControl = m_learnDemoStep == 1 ? "ribbon.Play" : "script.editor";
+                    break;
+                case 19:
+                    targetName = m_learnDemoStep == 0 ? "Explorer" : "Viewport";
+                    targetControl = m_learnDemoStep == 0 ? "explorer.selected" : "ribbon.Play";
+                    break;
+                default: break;
+            }
+        }
+
+        if (!m_learnPractice && targetControl && StudioLearnHighlight::interacted(targetControl))
+            m_learnDemoActionDone = true;
+        const float pulse = 0.5f + 0.5f * std::sin((float)ImGui::GetTime() * 4.0f);
+        const ImU32 outline = ImGui::GetColorU32(ImVec4(0.20f, 0.68f, 1.0f, 0.55f + pulse * 0.35f));
+        if (targetControl) {
+            ImVec2 min, max;
+            bool found = StudioLearnHighlight::find(targetControl, min, max);
+            const std::string requested = targetControl;
+            if (!found && requested.rfind("explorer.insert.", 0) == 0)
+                found = StudioLearnHighlight::find("explorer.insert.open", min, max);
+            if (!found && requested.rfind("file.", 0) == 0)
+                found = StudioLearnHighlight::find("file.menu", min, max);
+            if (!found && (requested == "publish.confirm" || requested == "publish.menu")) {
+                found = StudioLearnHighlight::find("publish.menu", min, max);
+                if (!found) found = StudioLearnHighlight::find("file.menu", min, max);
+            }
+            if (!found && requested.rfind("ribbon.", 0) == 0) {
+                const char* tab = requested.find("terrain") != std::string::npos ||
+                                  requested == "ribbon.Raise" || requested == "ribbon.Lower" ||
+                                  requested == "ribbon.Smooth" || requested == "ribbon.Paint" ||
+                                  requested == "ribbon.tab.TERRAIN" ? "ribbon.tab.TERRAIN" :
+                                  requested == "ribbon.Weld" ? "ribbon.tab.MODEL" : "ribbon.tab.HOME";
+                found = StudioLearnHighlight::find(tab, min, max);
+            }
+            if (found) ImGui::GetForegroundDrawList()->AddRect(min, max, outline, 4.0f, 0, 3.5f);
         }
         if (targetName) {
             ImGuiWindow* target = ImGui::FindWindowByName(targetName);
             if (target && target->WasActive && !target->Hidden) {
-                const float pulse = 0.5f + 0.5f * std::sin((float)ImGui::GetTime() * 4.0f);
-                const ImU32 outline = ImGui::GetColorU32(ImVec4(0.20f, 0.68f, 1.0f, 0.55f + pulse * 0.35f));
                 ImGui::GetForegroundDrawList()->AddRect(target->Pos,
                     ImVec2(target->Pos.x + target->Size.x, target->Pos.y + target->Size.y),
-                    outline, 6.0f, 0, 3.0f);
+                    outline, 6.0f, 0, 1.5f);
             }
         }
     }
@@ -3235,7 +3731,9 @@ void Editor::buildDockspace() {
 void Editor::renderMenuBar() {
     if (!ImGui::BeginMenuBar()) return;
 
-    if (ImGui::BeginMenu("File")) {
+    const bool fileMenuOpen = ImGui::BeginMenu("File");
+    StudioLearnHighlight::mark("file.menu");
+    if (fileMenuOpen) {
         if (ImGui::MenuItem("New Game", "Ctrl+N")) {
             m_pending = Pending::New;
             if (m_dirty) m_openDiscard = true; else { newScene(); m_pending = Pending::None; }
@@ -3245,8 +3743,12 @@ void Editor::renderMenuBar() {
             if (m_dirty) m_openDiscard = true; else m_openOpen = true;
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Save", "Ctrl+S")) save();
-        if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S")) {
+        const bool saveMenu = ImGui::MenuItem("Save", "Ctrl+S");
+        StudioLearnHighlight::mark("file.save");
+        if (saveMenu) save();
+        const bool saveAsMenu = ImGui::MenuItem("Save As...", "Ctrl+Shift+S");
+        StudioLearnHighlight::mark("file.saveAs");
+        if (saveAsMenu) {
             m_nameInput = m_scene->info().title;
             m_openSaveAs = true;
         }
@@ -3263,9 +3765,13 @@ void Editor::renderMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem(m_team->active() ? "Team Create (on)..." : "Team Create...")) m_openTeam = true;
         ImGui::Separator();
-        if (ImGui::MenuItem("Game Settings...")) m_openInfo = true;
+        const bool gameSettingsMenu = ImGui::MenuItem("Game Settings...");
+        StudioLearnHighlight::mark("file.gameSettings");
+        if (gameSettingsMenu) m_openInfo = true;
         ImGui::Separator();
-        if (ImGui::MenuItem("Publish to Guts&Bolts...")) m_openPublish = true;
+        const bool publishMenu = ImGui::MenuItem("Publish to Guts&Bolts...");
+        StudioLearnHighlight::mark("publish.menu");
+        if (publishMenu) m_openPublish = true;
         if (ImGui::MenuItem("Publish Selection to Library...", nullptr, false, m_scene->selected() != nullptr)) m_openPublishModel = true;
         if (Online::staff() && ImGui::MenuItem("Make Gear...")) m_openMakeGear = true;   // staff: Tools sold in the catalog
         if (ImGui::MenuItem("Upload Missing Item Pictures", nullptr, false, Online::online())) fixItemPictures();

@@ -406,6 +406,8 @@ These blueprints define the teaching experience and expected outcomes. Before im
 
 Represent each step with separate demonstration and practice states: not started, in progress, and complete. Save after meaningful transitions, not only when the whole lesson ends. Reopening a lesson should return to the current phase and step.
 
+A learner can pause without losing progress, resume from the paused panel, restart the guided demonstration, or exit the lesson while keeping the last saved checkpoint. When a guest signs in, Studio imports locally completed lessons into the account progress file. The most recently updated account or guest resume point wins. Both server implementations return and persist revision timestamps, merge completed lessons monotonically, reject stale resume writes, and cap client timestamps to a small future window.
+
 Show progress in human terms (for example, "Step 2 of 4 · Practice") rather than a percentage alone. On completion, summarize the skills demonstrated and offer a clear next action: repeat the lesson, return to Learn, or try the next recommended lesson.
 
 Do not show a failing red state for an unfinished task. Use neutral guidance while the learner is working, clear success feedback when the condition is met, and actionable recovery guidance when it is not.
@@ -449,7 +451,7 @@ The current native runner validates the practice task against the scene rather t
 | 1. Your First Build | A newly created Part that is anchored and wider on X than Y |
 | 2. Make It Move | A newly created unanchored Part and a Play test during the challenge |
 | 3. Build a Tiny Obby | At least three newly created Parts and a Play test |
-| 4. Your First Script | A new Script containing a print call and a Play test |
+| 4. Your First Script | A new Script containing a literal print(\"message\") call, with that exact message observed in Output during Play |
 | 5. Light Up the Scene | A new enabled light with a changed brightness, range or colour, plus a Play test |
 | 6. Publish Your First Game | A successful publish response was received during this practice challenge and a published game ID is present |
 | 7. Meet the Explorer | A new Part has been renamed to something other than its default primitive name |
@@ -462,22 +464,29 @@ The current native runner validates the practice task against the scene rather t
 | 14. Connect the Parts | A new enabled Constraint has both endpoints assigned and a Play test occurs |
 | 15. Sound Check | A new Sound object exists and a Play test occurs |
 | 16. Your First GUI | A new TextLabel or TextButton is parented to a new ScreenGui and a Play test occurs |
-| 17. Make Things Happen | A new Script contains an event connection and a Play test occurred |
-| 18. Remembering Values | A new Script declares a local variable, uses print, and is run |
+| 17. Make Things Happen | A new Script contains an event connection, with its literal print message observed in Output during Play |
+| 18. Remembering Values | A new Script assigns a string to a local variable, prints that variable, and the exact value is observed in Output |
 | 19. Find and Fix Bugs | A new Script contains the corrected print call, not the example typo, and is run |
-| 20. Build, Test, Improve | Two Play-test starts occurred with a Part added or changed between the tests |
+| 20. Build, Test, Improve | A Part is added or changed after the first Play test ends, and a second Play test starts after that edit |
 
 These checks are deliberately based on meaningful outcomes rather than exact coordinates or exact object names, except where the lesson itself teaches a specific named object such as SpawnLocation. A check can confirm the presence of a relevant editor change, but it cannot yet prove every quality aspect of a build (for example, that an obby is fun or that a spawn point is safe). The lesson text therefore still asks the learner to inspect and playtest their work. Publishing only counts after the publish operation returns success; merely opening the publish dialog does not complete that lesson.
 
-### Current scope and remaining work
+### Implemented scope and verification boundaries
 
-This PR now contains an interactive native lesson panel and live scene checks for all 20 lessons. It is not yet the complete website-to-Studio learning product. The following work remains:
+This PR now includes the native 20-lesson runner, a website **Create > Learn** catalogue, validated desktop launch links, local progress persistence, and signed-in account progress synchronization. The Cloudflare worker and standalone C++ server expose the same authenticated, allowlisted progress operations. The lesson panel outlines the exact visible ImGui control for instrumented targets such as common Part properties, Explorer insert items and rename fields, Home/Model/Terrain ribbon tools, File menu actions, the publish confirmation button, the Script Editor and Output. Viewport gizmos and controls that are not instrumented fall back to the live panel outline; the highlight never captures or blocks input.
 
-- Add the Create > Learn website catalogue and launch a selected lesson through the existing desktop launch flow.
-- Persist completed lesson IDs and the current phase across Studio restarts. The current completion count is session-only.
-- Replace broad panel outlines with precise, dynamically resolved control highlights where the relevant ImGui item can be safely targeted.
-- Add automated tests for each lesson validator, including negative cases, and end-to-end tests for starting, completing, repeating and switching lessons.
-- Verify every lesson on a clean project and on a project with existing objects. In particular, the publish lesson must be tested with signed-out, signed-in, already-published and permission-denied states.
-- Refine checks that currently validate the presence of an object or code pattern but cannot inspect the full quality of the learner's result.
+Automated coverage includes account isolation, authentication, input validation, account persistence, and a cross-surface catalogue audit comparing all 20 stable lesson IDs across the website, Studio, Cloudflare worker and standalone server. Native platform builds and the worker test suite are the final acceptance gates.
 
-Do not describe the website catalogue, cross-device sync, persistent progress, or precise control-level spotlight as implemented until those parts exist and have tests.
+The debugging lesson requires the deliberate `pritn(...)` runtime error on one Play run, then verifies the exact string printed by the corrected `print(...)` call on a second run. The first-script and event/variable scripting lessons also require actual Output activity during play. The validators confirm observable editor changes, not subjective quality. For example, they cannot determine whether an obstacle course is enjoyable or a spawn point is well designed. The publish lesson requires a successful publish response. The final lesson requires a Part edit after the first Play test has ended and a second Play test after that edit.
+
+
+## PR #213 integration
+
+The Learn catalogue is available at **Create > Learn** on the website. It contains all 20 lesson entries, skill-level and topic filters, a continue-learning prompt, and a desktop launch link using the validated `gutsandbolts://learn/<lesson-id>` route. The Player validates the lesson slug and starts the sibling desktop Studio with `--learn=<lesson-id>`; Studio opens the requested lesson without opening or overwriting a game file.
+
+Completion and the selected lesson are stored locally in `studio_learn_progress.json`. When Studio is signed in and online, it merges local progress with the account's `learn.progress.get/save` record. The Cloudflare worker and standalone C++ server validate the same fixed set of 20 lesson IDs and store progress on the requesting account. Signed-out learners can browse and launch lessons; their progress remains local until they sign in.
+
+The website also saves browser-side progress and merges it with the account record for signed-in visitors. Studio remains usable offline; account synchronization runs when the user is signed in and the server is online.
+
+
+Lesson navigation also saves the current guided step (0–2). Reopening a lesson resumes at that step. Practice baselines are intentionally recreated when Studio restarts, so a learner who closes Studio during a challenge returns to the final guided step and starts a fresh practice check against the current scene.
