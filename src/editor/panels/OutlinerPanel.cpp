@@ -1,4 +1,5 @@
 #include "OutlinerPanel.h"
+#include "../LearnHighlight.h"
 #include "../../core/I18n.h"
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
@@ -92,6 +93,8 @@ void OutlinerPanel::drawNode(SceneNode* node) {
         I18n::Pause keep;   // object names stay as they are
         open = ImGui::TreeNodeEx("##node", flags, "%*s%s", (int)(iconW / ImGui::CalcTextSize(" ").x) + 1, "",
                                  renaming ? "" : node->name.c_str());
+        StudioLearnHighlight::mark("explorer.tree");
+        if (node->selected) StudioLearnHighlight::mark("explorer.selected");
     }
     {
         // Icon drawn over the gap left before the name.
@@ -115,6 +118,8 @@ void OutlinerPanel::drawNode(SceneNode* node) {
     if ((rowHovered || node->selected) && onInsert && !m_scene->isCharacterPart(node) && !node->isScript()) {
         float h = rowMax.y - rowMin.y;
         ImVec2 c(rowMax.x - h * 0.5f - 2, (rowMin.y + rowMax.y) * 0.5f);
+        StudioLearnHighlight::markRect("explorer.insert.open",
+            ImVec2(c.x - h * 0.45f, rowMin.y + 1), ImVec2(c.x + h * 0.45f, rowMax.y - 1));
         ImVec2 mouse = ImGui::GetMousePos();
         bool over = mouse.x > c.x - h * 0.5f && mouse.x < c.x + h * 0.5f && mouse.y > rowMin.y && mouse.y < rowMax.y;
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -182,6 +187,7 @@ void OutlinerPanel::drawNode(SceneNode* node) {
         ImGui::SetNextItemWidth(-1);
         bool done = ImGui::InputText("##rename", &m_renameText,
                                      ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+        StudioLearnHighlight::mark("explorer.rename");
         if (ImGui::IsKeyPressed(ImGuiKey_Escape)) m_renaming = 0;
         else if (done || ImGui::IsItemDeactivated()) {
             if (!m_renameText.empty()) node->name = m_renameText;
@@ -230,11 +236,14 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
     };
     for (const Group& g : groups) {
         ImGui::TextDisabled("%s", g.title);
-        for (const char* what : g.items)
-            if (ImGui::MenuItem(what)) {
+        for (const char* what : g.items) {
+            const bool chosen = ImGui::MenuItem(what);
+            StudioLearnHighlight::mark(std::string("explorer.insert.") + what);
+            if (chosen) {
                 const std::string w = what;
                 onInsertNamed(w, parent);
             }
+        }
     }
     ImGui::Separator();
     if (onInsert && ImGui::MenuItem("More (search)...")) onInsert(parent);
@@ -302,6 +311,7 @@ void OutlinerPanel::render() {
     // (also > < >= <= ~=), and "or" between searches.
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - (m_filter.empty() ? 0 : 26));
     ImGui::InputTextWithHint("##filter", "Filter workspace (Ctrl+Shift+X)", &m_filter);
+    StudioLearnHighlight::mark("explorer.filter");
     if (ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift && ImGui::IsKeyPressed(ImGuiKey_X, false))
         ImGui::SetKeyboardFocusHere(-1);
     if (ImGui::IsItemHovered() && m_filter.empty())

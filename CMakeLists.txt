@@ -883,6 +883,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerItemFavoritesTests gb_version)
     target_link_libraries(ServerItemFavoritesTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerItemFavoritesTests COMMAND ServerItemFavoritesTests)
+
+    # Studio Learn progress: account validation, persistence across server restarts and guest denial.
+    add_executable(ServerLearnProgressTests tests/ServerLearnProgressTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerLearnProgressTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerLearnProgressTests gb_version)
+    target_link_libraries(ServerLearnProgressTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerLearnProgressTests COMMAND ServerLearnProgressTests)
 endif()
 
 # Studio's sample plugins.
@@ -928,6 +935,13 @@ if(MINGW)
     endforeach()
 endif()
 
+
+# The website's gutsandbolts://learn/<id> route is parsed safely by the Player.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_MOBILE)
+    add_executable(LaunchLinkTests tests/LaunchLinkTests.cpp src/player/LaunchLink.cpp)
+    target_include_directories(LaunchLinkTests PRIVATE src/)
+    add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
+endif()
 
 # Format-level regression fixtures for Roblox's binary mesh files. These
 # tests build tiny v1-v7 payloads in memory, including a generated Draco stream,

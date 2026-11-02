@@ -8,6 +8,7 @@ namespace LaunchLink {
 
 struct Link {
     std::string game;    // server asset id of the game to play
+    std::string lesson;  // stable Studio Learn lesson id
     std::string guest;   // "boy" / "girl" when a visitor picked a guest character, else ""
     std::string server;  // a running server to join (the game page's Join button), else ""
     bool        edit = false;   // open it in Studio instead of playing it

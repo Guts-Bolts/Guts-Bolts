@@ -63,17 +63,27 @@ void enqueue(const std::string& url) {
 }
 
 bool parse(const std::string& url, Link& out) {
-    const std::string play = "gutsandbolts://play/", edit = "gutsandbolts://edit/";
+    const std::string play = "gutsandbolts://play/", edit = "gutsandbolts://edit/", learn = "gutsandbolts://learn/";
     const bool editing = url.compare(0, edit.size(), edit) == 0;
-    if (!editing && url.compare(0, play.size(), play) != 0) return false;
-    std::string rest = url.substr(editing ? edit.size() : play.size());
+    const bool learning = url.compare(0, learn.size(), learn) == 0;
+    if (!editing && !learning && url.compare(0, play.size(), play) != 0) return false;
+    std::string rest = url.substr(learning ? learn.size() : editing ? edit.size() : play.size());
     std::string query;
     if (size_t q = rest.find('?'); q != std::string::npos) { query = rest.substr(q + 1); rest = rest.substr(0, q); }
     while (!rest.empty() && rest.back() == '/') rest.pop_back();
     rest = unescape(rest);
-    if (rest.empty() || rest.size() > 100) return false;
-    for (char c : rest) if (!safeChar(c)) return false;   // ids only: nothing that could reach a shell or a path
-    out.game = rest;
+    if (rest.empty() || rest.size() > (learning ? 64u : 100u)) return false;
+    for (char c : rest) {
+        if (learning ? !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') : !safeChar(c)) return false;
+    }
+    if (learning) {
+        static const char* lessonIds[] = {"first-build", "make-it-move", "tiny-obby", "first-script", "light-up-scene", "publish-first-game", "meet-explorer", "properties-panel", "copy-group-organize", "color-materials", "shape-world", "spawn-into-action", "collision-course", "connect-parts", "sound-check", "first-gui", "make-things-happen", "remember-values", "find-fix-bugs", "build-test-improve"};
+        bool known = false;
+        for (const char* id : lessonIds) if (rest == id) { known = true; break; }
+        if (!known) return false;
+    }
+    out.lesson = learning ? rest : "";
+    out.game = learning ? "" : rest;
     out.edit = editing;
     out.guest.clear();
     out.server.clear();

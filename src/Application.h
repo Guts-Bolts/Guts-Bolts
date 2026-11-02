@@ -9,6 +9,7 @@ class Editor;
 // Command-line options (mostly for testing and launching games directly).
 struct LaunchOptions {
     std::string openFile;          // --open <file>
+    std::string learnLesson;       // --learn=<lesson-id>: open Studio Learn at a lesson
     bool        play = false;      // --play            start in Play mode
     std::string screenshot;        // --screenshot <out.ppm>  (then quit)
     int         frames = 120;      // --frames <n>      when to take it
