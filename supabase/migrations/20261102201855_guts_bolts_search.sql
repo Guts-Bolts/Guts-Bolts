@@ -1,3 +1,4 @@
+-- Supabase migration version 20261102201855 (applied to project pfpzmmsosyetkcoymoct).
 -- Better search: the name, description, genres and creator of every game, catalog item and
 -- Library thing, copied here by the Cloudflare Worker so searching can forgive typos
 -- ("zombe" finds "Zombie Survival") and match whole words anywhere.

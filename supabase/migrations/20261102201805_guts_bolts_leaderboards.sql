@@ -1,3 +1,4 @@
+-- Supabase migration version 20261102201805 (applied to project pfpzmmsosyetkcoymoct).
 -- Game leaderboards: the scores games keep in OrderedDataStores, copied here by the
 -- Cloudflare Worker so the game's page can show the top players of each board.
 -- The Durable Object's gamedata table stays the real copy (GetSortedAsync reads it);

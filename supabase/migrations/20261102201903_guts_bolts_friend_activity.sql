@@ -1,3 +1,4 @@
+-- Supabase migration version 20261102201903 (applied to project pfpzmmsosyetkcoymoct).
 -- Friend activity for the home page's My Feed: "X is playing Y", "X made Y", "X earned a
 -- badge in Y". The Worker checks who may see each line (blocks, the person's privacy
 -- setting, the thing still being public) every time the feed is read.

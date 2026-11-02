@@ -1,3 +1,4 @@
+-- Supabase migration version 20261102201821 (applied to project pfpzmmsosyetkcoymoct).
 -- Creator stats: one row each time someone opens a game (not its creator), so the
 -- creator's stats page can show when people play, and how many come back.
 -- Who played isn't kept: only the game, its creator, new or returning, and when.

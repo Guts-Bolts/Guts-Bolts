@@ -1,3 +1,4 @@
+-- Supabase migration version 20261102201856 (applied to project pfpzmmsosyetkcoymoct).
 -- Staff numbers: one row a day with how many accounts there are and the most people
 -- online and playing at once that day (the Worker sends a reading every few minutes).
 -- With gb_play_events this makes the Staff page's Numbers tab. Only the Worker

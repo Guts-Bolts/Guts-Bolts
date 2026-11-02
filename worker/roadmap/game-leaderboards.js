@@ -1,5 +1,5 @@
 export default {
   id: 'game-leaderboards', title: 'Game leaderboards',
   text: 'OrderedDataStore:GetSortedAsync for scripts, and the top players of each board on the game\'s page (kept in Supabase).',
-  status: 'working', version: '', pr: 240, time: 1793649288,
+  status: 'done', version: '', pr: 240, time: 1793649288,
 };
