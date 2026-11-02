@@ -20,16 +20,23 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 SERVER_SCRIPT = """
+print("CAR_TEST_SERVER_START")
 local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local templates = ServerStorage:WaitForChild("CarTemplates")
-local points = workspace:WaitForChild("CarSpawnPoints")
-local request = ReplicatedStorage:WaitForChild("SpawnCar")
+print("CAR_TEST_SERVER_SERVICES_READY")
+local templates = ServerStorage:FindFirstChild("CarTemplates")
+local points = workspace:FindFirstChild("CarSpawnPoints")
+local request = ReplicatedStorage:FindFirstChild("SpawnCar")
+assert(templates, "ServerStorage.CarTemplates is missing")
+assert(points, "Workspace.CarSpawnPoints is missing")
+assert(request, "ReplicatedStorage.SpawnCar is missing")
+print("CAR_TEST_SERVER_READY")
 local active = {}
 local last = {}
 
 request.OnServerEvent:Connect(function(player)
+    print("CAR_TEST_SERVER_REQUEST|" .. player.Name)
     local now = os.clock()
     if last[player.UserId] and now - last[player.UserId] < 5 then
         request:FireClient(player, false, "cooldown")
@@ -62,13 +69,18 @@ end)
 """
 
 CLIENT_SCRIPT = """
+print("CAR_TEST_CLIENT_START")
 local Players = game:GetService("Players")
-local request = game:GetService("ReplicatedStorage"):WaitForChild("SpawnCar")
+local replicated = game:GetService("ReplicatedStorage")
+local request = replicated:FindFirstChild("SpawnCar")
+assert(request, "client ReplicatedStorage.SpawnCar is missing")
 local player = Players.LocalPlayer
+print("CAR_TEST_CLIENT_READY|" .. tostring(player and player.Name))
 request.OnClientEvent:Connect(function(ok, name)
     print("CAR_ACK|" .. player.Name .. "|" .. tostring(ok) .. "|" .. tostring(name))
 end)
 task.wait(1)
+print("CAR_TEST_CLIENT_SEND|" .. player.Name)
 request:FireServer()
 """
 
