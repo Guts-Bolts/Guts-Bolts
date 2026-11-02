@@ -649,7 +649,7 @@ pages.home = async () => {
       : html`<p class="muted small">Nothing here yet.</p>`}</div>`;
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const auctionBox = html`<div id="liveAuctions">${renderAuctionHomeSection(auctions.ok ? auctions.assets : [])}</div>`;
-  const auctionBroadcastBox = html`<div id="auctionBroadcasts">${renderAuctionActivity(auctionEvents.ok ? auctionEvents.events : []).s}</div>`;
+  const auctionBroadcastBox = html`<div id="auctionBroadcasts">${renderAuctionActivity(auctionEvents.ok ? auctionEvents.events : [])}</div>`;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
     <p><b>${latest.name}</b>${latest.version ? html` <span class="small muted">v${latest.version}</span>` : ''}
@@ -868,7 +868,7 @@ pages.forum = async (board, a, b) => {
     if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p>`); return; }
     show(html`<div class="forum-retro-masthead"><div><span class="forum-retro-kicker">GUTS &amp; BOLTS COMMUNITY · EST. 2004</span><h1>Forum</h1><p>Games, questions, arguments, and whatever else is on your mind.</p></div><span class="forum-retro-stamp">STILL<br>POSTING</span></div><p class="muted forum-intro">Old-school boards, real player avatars. Be kind: the forum follows the same <a href="#/terms">rules</a> as chat.</p>
       ${forumSearchForm(r.boards)}
-      <div id="forumActivity">${renderForumActivity(activity.ok ? activity.events : []).s}</div>
+      <div id="forumActivity">${renderForumActivity(activity.ok ? activity.events : [])}</div>
       <div class="table-wrap"><table class="forum">
         <thead><tr><th>Board</th><th class="num">Threads</th><th class="num">Posts</th><th>Last post</th></tr></thead>
         <tbody>${r.boards.map((x) => html`<tr>
