@@ -79,7 +79,6 @@ print("CAR_TEST_CLIENT_READY|" .. tostring(player and player.Name))
 request.OnClientEvent:Connect(function(ok, name)
     print("CAR_ACK|" .. player.Name .. "|" .. tostring(ok) .. "|" .. tostring(name))
 end)
-task.wait(1)
 print("CAR_TEST_CLIENT_SEND|" .. player.Name)
 request:FireServer()
 """
