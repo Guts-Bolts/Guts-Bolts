@@ -582,9 +582,34 @@ function renderAuctionHomeSection(assets) {
   if (!active.length) return '';
   return html`<section class="auction-home-section"><div class="auction-home-section-head"><h2>LIVE AUCTIONS</h2><a href="#/catalog?cat=auctions">VIEW ALL AUCTIONS &raquo;</a></div>${auctionBanner(active[0])}${active.length > 1 ? html`<div class="auction-home-more"><span>MORE LIVE AUCTIONS</span>${active.slice(1, 4).map((a) => html`<a href="#/item/${a.id}"><span class="auction-mini-tag">AUCTION</span><b>${a.name}</b><span data-countdown="${a.auction.endsAt}">${countdown(a.auction.endsAt)}</span></a>`)}</div>` : ''}</section>`;
 }
+function renderAuctionActivity(events = []) {
+  const label = (event) => ({
+    auction_started: 'Auction opened', bid_placed: 'New bid',
+    auction_cancelled: 'Auction cancelled', auction_completed: 'Auction ended',
+  }[event.event_type] || 'Auction update');
+  const detail = (event) => {
+    if (event.event_type === 'auction_started') return 'Starting at ' + Number(event.amount || 0).toLocaleString() + ' Bolts';
+    if (event.event_type === 'bid_placed') return (event.actor_name || 'A player') + ' bid ' + Number(event.amount || 0).toLocaleString() + ' Bolts';
+    if (event.event_type === 'auction_cancelled') return 'The auction was cancelled';
+    if (event.event_type === 'auction_completed') return 'The auction has finished';
+    return 'Auction activity';
+  };
+  return html`<div class="box auction-broadcast-box"><h2 class="boxhead">Auction Broadcasts</h2>
+    ${events.length ? html`<div class="list">${events.map((event) => html`<div class="small">
+      <b>${label(event)}:</b> <a href="#/item/${encodeURIComponent(event.asset_id)}">${event.asset_name}</a>
+      <span class="muted"> · ${detail(event)} · ${ago(Math.floor(Date.parse(event.created_at) / 1000))}</span>
+    </div>`)}</div>` : html`<p class="small muted">Auction activity will appear here when players start bidding.</p>`}</div>`;
+}
+async function fetchPublicActivity(path) {
+  try {
+    const response = await fetch(path, { headers: { accept: 'application/json' } });
+    if (!response.ok) return { ok: false, events: [] };
+    return await response.json();
+  } catch { return { ok: false, events: [] }; }
+}
 pages.home = async () => {
   // Everything the page needs is asked for at once, so it waits for one round trip, not four.
-  const [games, items, fr, recent, favs, featured, , feedR, upd, mine, auctions] = await Promise.all([
+  const [games, items, fr, recent, favs, featured, , feedR, upd, mine, auctions, auctionEvents] = await Promise.all([
     pageCall('list', { kind: 'game', sort: 'popular', limit: 8 }),
     pageCall('list', { kind: 'clothing', limit: 6 }),
     signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
@@ -596,6 +621,7 @@ pages.home = async () => {
     pageCall('updates.list', { limit: 1 }),
     signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
     pageCall('list', { kind: 'clothing', auctions: true, limit: 12 }),
+    fetchPublicActivity('/api/activity/auctions?limit=6'),
   ]);
   // "Continue playing" and your favourites (only when there's something in them).
   const mineBox = (title, r, more) => r.ok && r.assets.length ? html`<div class="box"><h2 class="boxhead">${title}
@@ -623,6 +649,7 @@ pages.home = async () => {
       : html`<p class="muted small">Nothing here yet.</p>`}</div>`;
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const auctionBox = html`<div id="liveAuctions">${renderAuctionHomeSection(auctions.ok ? auctions.assets : [])}</div>`;
+  const auctionBroadcastBox = html`<div id="auctionBroadcasts">${renderAuctionActivity(auctionEvents.ok ? auctionEvents.events : []).s}</div>`;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
     <p><b>${latest.name}</b>${latest.version ? html` <span class="small muted">v${latest.version}</span>` : ''}
@@ -636,7 +663,7 @@ pages.home = async () => {
           <p><a class="btn green big" href="#/signup">Sign Up and Play</a>
             <a class="btn" href="#/login">Login</a></p></div>
         <div class="welcome-guy" id="homeAvatar">${avatarSvg(defaultAvatar(), 150)}</div></div>
-      ${updateBox}${auctionBox}${featuredBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
+      ${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
     tickCountdowns();
     mountAvatar($('#homeAvatar'), defaultAvatar(), [], { width: 170 }).catch(() => {});
     return;
@@ -658,7 +685,7 @@ pages.home = async () => {
               <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
-      <div class="home-right">${updateBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
+      <div class="home-right">${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
     </div>`);
   tickCountdowns();
   // Dressed in what you're wearing (the server says which items those are).
@@ -826,13 +853,22 @@ pages.forumsearch = async (query, board = 'all', page = '1') => {
       ${r.pages > 1 ? html`<p class="pager">${r.page > 0 ? html`<a class="btn small" href="${base}/${r.page}">&lt; Back</a>` : ''}<span class="muted small">Page ${r.page + 1} of ${r.pages}</span>${r.page + 1 < r.pages ? html`<a class="btn small" href="${base}/${r.page + 2}">Next &gt;</a>` : ''}</p>` : ''}`
       : html`<div class="box forum-search-empty"><h2>No matching discussions</h2><p class="muted">Try a shorter phrase or search all boards.</p></div>`}`);
 };
+function renderForumActivity(events = []) {
+  return html`<section class="box forum-activity-box"><h2 class="boxhead">Recent Forum Activity</h2>
+    ${events.length ? html`<div class="list">${events.map((event) => html`<div class="small">
+      <a href="#/forum/t/${encodeURIComponent(event.thread_id)}/9999"><b>${event.thread_title}</b></a>
+      <span class="muted"> · ${event.event_type === 'thread_created' ? 'started' : 'replied in'} ${event.board_name} · by ${event.actor_name} · ${ago(Math.floor(Date.parse(event.created_at) / 1000))}</span>
+      ${event.post_excerpt ? html`<div class="muted">${event.post_excerpt}</div>` : ''}
+    </div>`)}</div>` : html`<p class="small muted">New threads and replies will appear here.</p>`}</section>`;
+}
 pages.forum = async (board, a, b) => {
   if (board === 't') { await forumThread(a, Math.max(0, (Number(b) || 1) - 1)); return; }
   if (!board) {
-    const r = await pageCall('forum.boards', {});
+    const [r, activity] = await Promise.all([pageCall('forum.boards', {}), fetchPublicActivity('/api/activity/forum?limit=10')]);
     if (!r.ok) { show(html`<h1>Forum</h1><p class="error">${r.error}</p>`); return; }
     show(html`<div class="forum-retro-masthead"><div><span class="forum-retro-kicker">GUTS &amp; BOLTS COMMUNITY · EST. 2004</span><h1>Forum</h1><p>Games, questions, arguments, and whatever else is on your mind.</p></div><span class="forum-retro-stamp">STILL<br>POSTING</span></div><p class="muted forum-intro">Old-school boards, real player avatars. Be kind: the forum follows the same <a href="#/terms">rules</a> as chat.</p>
       ${forumSearchForm(r.boards)}
+      <div id="forumActivity">${renderForumActivity(activity.ok ? activity.events : []).s}</div>
       <div class="table-wrap"><table class="forum">
         <thead><tr><th>Board</th><th class="num">Threads</th><th class="num">Posts</th><th>Last post</th></tr></thead>
         <tbody>${r.boards.map((x) => html`<tr>
@@ -3273,7 +3309,7 @@ pages.notifications = async () => {
   const r = await pageCall('notes.list', {});
   if (!r.ok) { show(html`<h1>Notifications</h1><p class="error">${r.error}</p>`); return; }
   const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', party: '👥', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁', roadmap: '🗺️' };
-  show(html`<h1>Notifications</h1>
+  show(html`<h1>Notifications</h1><p class="small muted">New notifications are archived securely, so your history can grow beyond the 50-entry account preview.</p>
     <div class="list notes">${r.notes.length ? r.notes.map((n) => {
       const link = noteLink(n);
       const body = html`<span class="note-icon" aria-hidden="true">${icon[n.kind] || '🔔'}</span><span class="grow">${n.text}</span>
@@ -4962,6 +4998,21 @@ document.addEventListener('submit', async (e) => {
 // Keep auction information current without re-rendering the whole page or disturbing
 // a bid form the visitor is using. The server remains authoritative for every bid.
 let auctionRefreshBusy = false;
+let activityRefreshBusy = false;
+async function refreshActivityFeeds() {
+  if (activityRefreshBusy || document.visibilityState !== 'visible') return;
+  const wantAuctions = !!$('#auctionBroadcasts'), wantForum = !!$('#forumActivity');
+  if (!wantAuctions && !wantForum) return;
+  activityRefreshBusy = true;
+  try {
+    const [auctions, forum] = await Promise.all([
+      wantAuctions ? fetchPublicActivity('/api/activity/auctions?limit=6') : Promise.resolve(null),
+      wantForum ? fetchPublicActivity('/api/activity/forum?limit=10') : Promise.resolve(null),
+    ]);
+    if (auctions?.ok && $('#auctionBroadcasts')) $('#auctionBroadcasts').innerHTML = renderAuctionActivity(auctions.events).s;
+    if (forum?.ok && $('#forumActivity')) $('#forumActivity').innerHTML = renderForumActivity(forum.events).s;
+  } finally { activityRefreshBusy = false; }
+}
 async function refreshLiveAuctions() {
   if (auctionRefreshBusy || document.visibilityState !== 'visible') return;
   const path = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/');
@@ -5059,6 +5110,8 @@ document.querySelector('.foot').append(languagePicker());
   checkRequests();
   checkUpdates();
   setInterval(() => { if (document.visibilityState === 'visible') { checkRequests(); checkUpdates(); keepFresh(); } }, 60000);
+  refreshActivityFeeds();
+  setInterval(refreshActivityFeeds, 15000);
   refreshLiveAuctions();
   setInterval(refreshLiveAuctions, 12000);
 })();

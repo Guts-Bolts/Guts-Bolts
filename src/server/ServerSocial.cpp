@@ -380,7 +380,10 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             json message;
             if (name == "party.game") {
                 auto game = findAsset(str("game"));
-                if (game == m_assets.end() || game->second.kind != "game") return fail("That game is not available to play.");
+                if (game == m_assets.end() || game->second.kind != "game" || !canSee(game->second, me) ||
+                    (game->second.meta.value("access", std::string("public")) == "friends" &&
+                     game->second.creator != me.id && !me.friends.count(game->second.creator)))
+                    return fail("That game is not available to play.");
                 if (me.messageDay != today) { me.messageDay = today; me.messagesToday = 0; }
                 if (me.messagesToday >= kMessagesPerDay) return fail("That is " + std::to_string(kMessagesPerDay) + " messages today. Try again tomorrow.");
                 ++me.messagesToday;

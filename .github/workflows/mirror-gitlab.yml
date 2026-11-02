@@ -1,0 +1,54 @@
+name: Mirror GitHub to GitLab
+
+# GitHub is canonical. This workflow only pushes GitHub refs to GitLab.
+# It never fetches from GitLab or changes GitHub refs.
+on:
+  push:
+    branches: ['**']
+    tags: ['**']
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-to-gitlab-mirror
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    name: Push branches and tags to GitLab
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the complete GitHub history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify mirror credential
+        env:
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        shell: bash
+        run: |
+          if [[ -z "$GITLAB_MIRROR_TOKEN" ]]; then
+            echo "::error::Missing GITLAB_MIRROR_TOKEN. Add a GitLab personal access token with write_repository access as a GitHub Actions repository secret."
+            exit 1
+          fi
+
+      - name: Synchronize all branches and tags
+        env:
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fetch every GitHub branch and tag into local refs. GitHub remains
+          # the only source; GitLab is never fetched or merged into this checkout.
+          git fetch --force origin '+refs/heads/*:refs/mirror/heads/*' '+refs/tags/*:refs/tags/*'
+          git remote add gitlab https://gitlab.com/useofscript/Guts-Bolts.git
+          auth="$(printf 'oauth2:%s' "$GITLAB_MIRROR_TOKEN" | base64 -w0)"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" push --force gitlab \
+            '+refs/mirror/heads/*:refs/heads/*' \
+            '+refs/tags/*:refs/tags/*'
