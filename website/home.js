@@ -133,7 +133,7 @@
     banner.appendChild(makePicture(item));
 
     const copy = element('div', 'auction-promo-copy');
-    copy.appendChild(element('span', 'auction-promo-kicker', urgent ? 'ENDING SOON' : today ? 'ENDING TODAY' : 'LIVE BIDDING'));
+    copy.appendChild(element('span', 'auction-promo-kicker', urgent ? 'AUCTION  ·  ENDING SOON' : today ? 'AUCTION  ·  ENDING TODAY' : 'LIVE AUCTION'));
     copy.appendChild(element('h3', '', item.name));
     copy.appendChild(element('p', '', item.description || 'A limited-time chance to claim this exclusive item.'));
     const bids = Array.isArray(auction.bids) ? auction.bids : [];
@@ -206,10 +206,14 @@
       if (end <= Date.now() / 1000) expired = true;
       node.textContent = countdown(end);
     });
-    if (expired) refresh();
+    if (expired) {
+      render(lastItems);   // remove an expired banner immediately, even before the next network response
+      refresh();
+    }
   }
   refresh();
   window.setInterval(tick, 1000);
-  window.setInterval(refresh, 20000);
+  window.setInterval(refresh, 15000);
+  window.addEventListener('focus', refresh);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
 })();
