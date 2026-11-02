@@ -46,9 +46,9 @@ jobs:
           set -euo pipefail
           # Fetch every GitHub branch and tag into local refs. GitHub remains
           # the only source; GitLab is never fetched or merged into this checkout.
-          git fetch --force origin '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*'
+          git fetch --force origin '+refs/heads/*:refs/mirror/heads/*' '+refs/tags/*:refs/tags/*'
           git remote add gitlab https://gitlab.com/useofscript/Guts-Bolts.git
           auth="$(printf 'oauth2:%s' "$GITLAB_MIRROR_TOKEN" | base64 -w0)"
           git -c http.extraheader="AUTHORIZATION: basic $auth" push --force gitlab \
-            '+refs/heads/*:refs/heads/*' \
+            '+refs/mirror/heads/*:refs/heads/*' \
             '+refs/tags/*:refs/tags/*'
