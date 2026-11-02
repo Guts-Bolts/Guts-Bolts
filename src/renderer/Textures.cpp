@@ -4,6 +4,7 @@
 #include "../core/Paths.h"
 #include "ShirtTemplate.h"   // generated: assets/templates/shirt_template.png
 #include "PantsTemplate.h"   // generated: assets/templates/pants_template.png
+#include "LogoPng.h"         // generated: assets/logo/logo.png
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>   // (Studio saves game pictures as PNG with it)
@@ -105,6 +106,8 @@ void load(const std::string& id, Entry& e) {
         const bool shirt = id == kShirtTemplatePicture;
         px = stbi_load_from_memory(shirt ? kShirtTemplate : kPantsTemplate,
                                    (int)(shirt ? kShirtTemplateSize : kPantsTemplateSize), &w, &h, &n, 4);
+    } else if (id == kLogoPicture) {                     // baked into the program too
+        px = stbi_load_from_memory(kLogoPng, (int)kLogoPngSize, &w, &h, &n, 4);
     } else {
         std::filesystem::path p = locate(id);
         if (p.empty()) { e.retryAt = now() + 1.0; return; }   // maybe it's still downloading

@@ -197,6 +197,25 @@ inline void logo(ImDrawList* dl, ImVec2 p, float size, const char* text) {
             dl->AddText(f, size, ImVec2(p.x + dx, p.y + dy), IM_COL32(255, 255, 255, 255), text);
     dl->AddText(f, size, p, kLogo, text);
 }
+
+// How wide the logo picture is when drawn `height` tall.
+inline float logoPictureWidth(float height) {
+    int w = 0, h = 0;
+    if (!Textures::size(Textures::kLogoPicture, w, h) || h <= 0) return height * 3.0f;
+    return height * (float)w / (float)h;
+}
+
+// The Guts & Bolts logo picture (assets/logo/logo.png), `height` tall with its
+// top-left corner at `p`. Gives back how wide it was. `alpha` fades it in.
+inline float logoPicture(ImDrawList* dl, ImVec2 p, float height, float alpha = 1.0f) {
+    const float w = logoPictureWidth(height);
+    if (unsigned tex = Textures::get(Textures::kLogoPicture))
+        dl->AddImage((ImTextureID)(intptr_t)tex, p, ImVec2(p.x + w, p.y + height), ImVec2(0, 1), ImVec2(1, 0),
+                     IM_COL32(255, 255, 255, (int)(255 * std::clamp(alpha, 0.0f, 1.0f))));
+    else   // (can't happen: it's baked in, but just in case) the old text logo
+        logo(dl, p, height * 0.6f, "GUTS&BOLTS");
+    return w;
+}
 } // namespace Classic
 // An item's picture ("gb:<id>"): asks the server for it the first time (it shows
 // up by itself once it has downloaded).

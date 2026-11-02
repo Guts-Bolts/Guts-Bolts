@@ -28,11 +28,8 @@ a:hover { text-decoration: underline; }
 /* Top bar: logo, search, your account */
 .topbar { background: linear-gradient(#2466c2, #0d3b82); border-bottom: 1px solid #072656; }
 .topbar .wrap { min-height: 52px; flex-wrap: wrap; padding-top: 4px; padding-bottom: 4px; }
-.logo {
-  font-family: var(--gb-font); font-size: 30px; letter-spacing: 1px; line-height: 1;
-  color: #e23b3b; text-decoration: none !important;
-  text-shadow: -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 2px 2px 0 #fff, 3px 4px 0 rgba(0,0,0,.45);
-}
+.logo { display: block; line-height: 0; text-decoration: none !important; }
+.logo img { display: block; height: 46px; width: auto; }   /* the logo picture (img/logo.png) */
 .topsearch { display: flex; gap: 4px; margin-left: 10px; }
 .topsearch input[type=search] { width: 190px; padding: 3px 6px; border-radius: 2px; border: 1px solid #06214a; font-size: 12px; }
 .me { margin-left: auto; color: #fff; font-size: 12px; text-align: right; line-height: 1.6; }
@@ -155,7 +152,7 @@ svg.check { display: inline-block; width: 1em; height: 1em; vertical-align: -2px
   .content { border-left: 0; border-right: 0; padding: 12px 12px 20px; }
   .topsearch { order: 3; margin: 0; flex: 1 1 100%; }
   .topsearch input[type=search] { width: auto; flex: 1; }
-  .logo { font-size: 26px; }
+  .logo img { height: 38px; }
   .nav a { padding: 7px 10px; font-size: 12px; }
   .status { display: none; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
@@ -397,7 +394,6 @@ html.gutstober body {
   background: var(--bg) radial-gradient(ellipse at 50% -10%, rgba(255,140,30,.18), transparent 60%) fixed;
 }
 html.gutstober .topbar { background: linear-gradient(#3a1752, #1a0828); border-bottom-color: #0b0312; }
-html.gutstober .logo { color: #ff8a1c; }
 html.gutstober .nav { background: linear-gradient(#ffad4d 0%, #f58a1f 50%, #e8740c 51%, #c95e05 100%);
   border-top-color: #ffd29a; border-bottom-color: #7a3500; }
 html.gutstober .subnav { background: linear-gradient(#4b2a63, #2f1842); border-bottom-color: #160a20; }
