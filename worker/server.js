@@ -22,7 +22,12 @@ import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gam
   kLogTitle, kLogText, kEventName, kEventText } from './extras.js';   // achievements, game update logs, events
 import { Roadmap, builtInItems, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
 import BUILT_IN_ROADMAP from './roadmap-gathered.js';   // worker/roadmap/, one file per item (worker/gather-updates.mjs)
-import { insertSupabaseRows, listSupabaseNotifications, markSupabaseNotificationsRead } from './supabase.js';
+import { broadcastSupabase, insertSupabaseRows, listSupabaseFriendActivity, listSupabaseLeaderboards, listSupabaseNotifications, markSupabaseNotificationsRead, supabaseRpc } from './supabase.js';
+// Which Supabase tables have a live feed on the website (the Realtime event name).
+const LIVE_FEEDS = { gb_auction_events: 'auctions', gb_forum_activity: 'forum' };
+// The Supabase tables the server writes to, and the ones whose rows are "latest value wins".
+const SUPABASE_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_leaderboard_scores', 'gb_play_events', 'gb_search_items', 'gb_friend_activity']);
+const SUPABASE_UPSERT = new Set(['gb_leaderboard_scores', 'gb_search_items']);
 // The example games that come with Guts&Bolts: always on the server (as Guts's
 // games), so the website and the apps have something to play from day one.
 import demolitionYard from '../games/Demolition Yard.gbscene';
@@ -408,7 +413,7 @@ const kMsgKept = 500;            // messages kept per game at most
 const kMsgPerPoll = 200;         // handed out per msg.poll
 const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
-const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'gamelog.list', 'events.list']);
+const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'game.leaderboards', 'gamelog.list', 'events.list']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
 const kCodeMinutes = 15, kCodeTries = 5, kMailGap = 60, kMailsPerDay = 8;
@@ -786,6 +791,7 @@ export class GbServerObject extends DurableObject {
     this.addStarterEmotes();
     this.timeGutstoberItems();
     this.numberAssets();
+    for (const a of this.assets.values()) this.syncSearch(a);   // (the first time: every asset goes to search)
     for (const u of this.users.values()) if (u.emailVerified && !u.owned.includes(VERIFIED_HAT_ID)) { this.giveVerifiedHat(u); this.saveUser(u); }
     // Keys made by "forgot password": they sign for the account they reset.
     this.aliases = new Map();
@@ -794,6 +800,9 @@ export class GbServerObject extends DurableObject {
     this.outbox = [];
     // Lyreto links whose preview card still needs fetching: [kind, id] (see fetchLyretoCards).
     this.lyretoQueue = [];
+    // Live pings to send through Supabase Realtime once the request is done (see sendLivePings):
+    // { topic, event }. They carry no data, only "look again", so a lost one costs nothing.
+    this.livePings = [];
     this.canMail = !!(((env.BREVO_API_KEY || env.RESEND_API_KEY) && env.MAIL_FROM) || env.MAIL_DEBUG);
     this.mailLast = null;   // how the last email went: { at, to, ok, error } (for the Staff page)
     this.failedLogins = new Map();
@@ -947,6 +956,7 @@ export class GbServerObject extends DurableObject {
     const note = { id: randomHex(12), kind, text, about: id, at, read: false };
     u.notes = [note, ...(u.notes || [])].slice(0, kMaxNotes);
     this.saveUser(u);
+    this.livePing(u);
     const archiveMessage = ({
       ticket: 'A new support ticket was submitted.',
       support: 'There is an update to your support ticket.',
@@ -962,9 +972,12 @@ export class GbServerObject extends DurableObject {
   }
   queueSupabaseEvent(table, row) {
     if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return;
-    if (!['gb_notifications', 'gb_auction_events', 'gb_forum_activity'].includes(table)) return;
-    this.sql.exec('INSERT OR IGNORE INTO supabase_outbox (id, table_name, payload, created) VALUES (?, ?, ?, ?)',
-      row.id, table, JSON.stringify(row), now());
+    if (!SUPABASE_TABLES.has(table)) return;
+    // Events are kept once (the first wins); rows that are "the latest value" (a leaderboard
+    // score, a search entry) replace what's waiting, so only the newest one is sent.
+    this.sql.exec((SUPABASE_UPSERT.has(table) ? 'INSERT OR REPLACE' : 'INSERT OR IGNORE') +
+      ' INTO supabase_outbox (id, table_name, payload, created) VALUES (?, ?, ?, ?)',
+      table + ':' + row.id, table, JSON.stringify(row), now());
     this.scheduleSupabaseFlush(1000);
   }
   scheduleSupabaseFlush(delayMs) {
@@ -975,6 +988,37 @@ export class GbServerObject extends DurableObject {
     })();
     if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(schedule);
     else schedule.catch(() => {});
+  }
+  // A score in an OrderedDataStore, for the game page's leaderboards. Keys are often a
+  // player's user number ("Player_12", "12"), so their name goes with it. Only public games'
+  // boards are sent (private games keep theirs to themselves); null removes the entry.
+  recordLeaderboard(asset, store, key, value) {
+    if (!asset || asset.kind !== 'game' || asset.access === 'private' || asset.review) return;
+    const score = typeof value === 'number' && Number.isFinite(value) ? value : null;
+    const m = /^(?:[A-Za-z]{1,20}_?)?(\d{1,10})$/.exec(key);
+    const player = m ? this.findUserId(Number(m[1])) : null;
+    this.queueSupabaseEvent('gb_leaderboard_scores', {
+      id: asset.id + '|' + store + '|' + key, game_id: asset.id, store: store.slice(0, 100), entry_key: key.slice(0, 100),
+      player_name: player && !player.banned ? player.name : filterText(key).slice(0, 40),
+      player_user_id: player && !player.banned ? player.userId : null,
+      score, updated_at: new Date(now() * 1000).toISOString(),
+    });
+  }
+  // Friend activity (the home page's My Feed): "X is playing Y", "X made Y", "X earned a badge
+  // in Y". Only public things, and a game played again within the hour isn't said twice.
+  // Who sees it is checked when the feed is read (their "who can see what I'm doing" setting).
+  recordFriendActivity(u, kind, a, extra = '') {
+    if (!u || u.userId === 0 || u.banned || !a || a.review || a.exclusive || (a.access || 'public') !== 'public') return;
+    if (kind === 'created' && a.kind !== 'game' && a.kind !== 'model' && !isCatalogItem(a.kind)) return;
+    if (kind === 'playing') {
+      const seen = this.feedPlays || (this.feedPlays = new Map()), key = u.id + '|' + a.id, t = now();
+      if (t - (seen.get(key) || 0) < 3600) return;
+      seen.set(key, t);
+      if (seen.size > 5000) seen.delete(seen.keys().next().value);
+    }
+    this.queueSupabaseEvent('gb_friend_activity', { id: randomHex(12), account_id: u.id, kind, about_id: a.id,
+      about_kind: String(a.kind || '').slice(0, 20), about_name: String(a.name || '').slice(0, 100),
+      detail: String(extra || '').slice(0, 100), created_at: new Date(now() * 1000).toISOString() });
   }
   recordAuctionEvent(asset, eventType, actorName, amount = null) {
     const auction = asset && asset.auction;
@@ -1002,6 +1046,26 @@ export class GbServerObject extends DurableObject {
       created_at: new Date(now() * 1000).toISOString(),
     });
   }
+  // Live updates (Supabase Realtime Broadcast). Each signed-up account has its own secret
+  // topic name; the website listens on it and asks the server again when a ping comes.
+  liveOn() { return !!(this.env.SUPABASE_URL && this.env.SUPABASE_SECRET_KEY && this.env.SUPABASE_PUBLISHABLE_KEY); }
+  liveTopic(u) {
+    if (!u.liveTopic) { u.liveTopic = 'gb-me-' + randomHex(16); this.saveUser(u); }
+    return u.liveTopic;
+  }
+  livePing(u, event = 'me') {
+    if (!u || u.userId === 0 || !this.liveOn()) return;
+    this.queueLive(this.liveTopic(u), event);
+  }
+  queueLive(topic, event) {
+    if (!this.liveOn() || this.livePings.some((p) => p.topic === topic && p.event === event)) return;
+    if (this.livePings.length < 200) this.livePings.push({ topic, event });
+  }
+  async sendLivePings() {
+    const messages = this.livePings.splice(0);
+    if (!messages.length) return;
+    try { await broadcastSupabase(this.env, messages); } catch { /* Pages still refresh on their own timers. */ }
+  }
   hasSupabaseOutbox() {
     for (const row of this.sql.exec('SELECT id FROM supabase_outbox LIMIT 1')) return true;
     return false;
@@ -1018,16 +1082,135 @@ export class GbServerObject extends DurableObject {
     for (const [table, batch] of groups) {
       try {
         await insertSupabaseRows(this.env, table, batch.map((row) => JSON.parse(row.payload)));
-        for (const row of batch) this.sql.exec('DELETE FROM supabase_outbox WHERE id = ?', row.id);
+        // (only if it wasn't replaced by a newer value while we were sending)
+        for (const row of batch) this.sql.exec('DELETE FROM supabase_outbox WHERE id = ? AND payload = ?', row.id, row.payload);
+        // Now the rows are there, tell open pages to look again.
+        if (LIVE_FEEDS[table]) this.queueLive('gb-activity', LIVE_FEEDS[table]);
+        if (table === 'gb_friend_activity') {   // their friends' and followers' feeds
+          for (const row of batch) {
+            const u = this.users.get(JSON.parse(row.payload).account_id);
+            for (const id of u ? [...u.friends, ...(u.followers || [])].slice(0, 100) : []) this.livePing(this.users.get(id), 'feed');
+          }
+        }
       } catch {
         this.scheduleSupabaseFlush(60000);
         return;
       }
     }
     if (this.hasSupabaseOutbox()) this.scheduleSupabaseFlush(1000);
+    await this.sendLivePings();
   }
   async alarm() { await this.flushSupabaseOutbox(); }
-  saveAsset(a) { this.dirty.assets.add(a.id); }
+  // How many accounts there are, and how many people are online and in games right now.
+  liveNumbers() {
+    let online = 0, playing = 0;
+    for (const u of this.users.values()) if (u.userId > 0 && now() - (u.lastSeen || 0) <= kOnlineFor) online++;
+    for (const s of this.sessions.values()) playing += s.players ? s.players.size : 0;
+    return { accounts: Math.max(0, this.nextUserId - 1), online, playing };
+  }
+  // Every few minutes, a reading for the Staff page's Numbers (Supabase keeps each day's biggest).
+  async recordDailyNumbers() {
+    const t = now();
+    if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY || t - (this.numbersAt || 0) < 300) return;
+    this.numbersAt = t;
+    const n = this.liveNumbers();
+    try {
+      await supabaseRpc(this.env, 'gb_record_daily', { p_day: new Date(t * 1000).toISOString().slice(0, 10),
+        p_accounts: n.accounts, p_online: n.online, p_playing: n.playing });
+    } catch { /* the next reading will do */ }
+  }
+  // Answers that need something read from Supabase: the op checked who's asking and left
+  // { supabase: {what} } in its answer; here we fetch it. Supabase being down never fails
+  // the request: the page just gets nothing for that part.
+  async supabaseFollowUp(answer) {
+    const want = answer.supabase;
+    delete answer.supabase;
+    if (want.leaderboards) {
+      answer.boards = [];
+      try {
+        const rows = await listSupabaseLeaderboards(this.env, want.leaderboards, 10);
+        const boards = new Map();
+        for (const row of Array.isArray(rows) ? rows : []) {
+          if (!boards.has(row.store)) boards.set(row.store, { name: row.store, entries: [] });
+          boards.get(row.store).entries.push({ rank: row.rank, name: row.player_name, userId: row.player_user_id || 0, score: row.score });
+        }
+        answer.boards = [...boards.values()].slice(0, 6);
+      } catch { answer.unavailable = true; }
+    }
+    if (want.search && answer.asker) {
+      try {
+        const rows = await supabaseRpc(this.env, 'gb_search', { p_query: want.search.q, p_section: want.search.section, p_limit: 100 });
+        const have = new Set((answer.assets || []).map((a) => a.id));
+        const ids = (Array.isArray(rows) ? rows : []).map((row) => row.id).filter((id) => typeof id === 'string' && !have.has(id));
+        if (ids.length) {
+          const more = this.op('list', answer.asker, Object.assign({}, want.search.args, { query: '', ids, offset: 0, limit: 100 }));
+          const byId = new Map((more.ok ? more.assets : []).map((a) => [a.id, a]));
+          const extra = ids.map((id) => byId.get(id)).filter(Boolean);   // (best match first)
+          answer.assets = [...answer.assets, ...extra].slice(0, Math.max(want.search.limit, answer.assets.length));
+          answer.total += extra.length;
+          answer.nearMatches = extra.length;
+        }
+      } catch { /* the plain search answer still stands */ }
+    }
+    if (want.feed && answer.asker) {
+      try {
+        const me = answer.asker;
+        const rows = await listSupabaseFriendActivity(this.env, want.feed, 40);
+        const items = [];
+        for (const row of Array.isArray(rows) ? rows : []) {
+          const u = this.users.get(row.account_id), a = this.assets.get(row.about_id);
+          // (checked again now: blocked, banned, their privacy, and the thing still public)
+          if (!u || u.banned || this.blocks(me, u) || !this.allows(this.privacyOf(u).status, me, u)) continue;
+          if (!a || a.review || (a.access || 'public') !== 'public' || !this.canPlay(a, me)) continue;
+          items.push({ activity: { kind: row.kind, id: a.id, num: a.num || 0, assetKind: a.kind, name: a.name, detail: row.detail || '' },
+            at: Math.floor(Date.parse(row.created_at) / 1000) || 0,
+            user: { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), avatar: u.avatar || null } });
+        }
+        answer.feed = [...answer.feed, ...items].sort((x, y) => y.at - x.at).slice(0, 40);
+      } catch { /* the posts alone still make a feed */ }
+    }
+    if (want.numbers) {
+      try {
+        const r = await supabaseRpc(this.env, 'gb_staff_numbers', { p_days: 60 });
+        answer.days = Array.isArray(r && r.days) ? r.days : [];
+        answer.topGames = (Array.isArray(r && r.topGames) ? r.topGames : []).map((g) => {
+          const a = this.assets.get(g.game);
+          return { id: g.game, num: a ? a.num || 0 : 0, name: a ? a.name : '(deleted)', plays: g.plays };
+        });
+      } catch { answer.unavailable = true; }
+    }
+    if (want.playtimes) {
+      answer.playtimes = null;
+      try { answer.playtimes = await supabaseRpc(this.env, 'gb_creator_playtimes', { p_games: want.playtimes, p_days: 90 }); }
+      catch { answer.unavailable = true; }
+    }
+    return answer;
+  }
+  saveAsset(a) { this.dirty.assets.add(a.id); this.syncSearch(a); }
+  // Better search: keep each asset's searchable words in Supabase (gb_search_items). Only sent
+  // when something searchable changed (a.searchSig remembers what was sent last).
+  syncSearch(a) {
+    if (!a || !this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return;
+    const shown = !a.review && !a.exclusive && !a.promoOnly && (a.access || 'public') === 'public' && this.assets.get(a.id) === a;
+    const creator = this.users.get(a.creator);
+    const popularity = (a.plays || 0) + (a.sales || 0);
+    const row = { id: a.id, section: a.kind === 'game' ? 'game' : isCatalogItem(a.kind) ? 'catalog' : String(a.kind || '').slice(0, 20),
+      kind: String(a.kind || '').slice(0, 20), name: String(a.name || '').slice(0, 100), description: String(a.description || '').slice(0, 1000),
+      genres: (a.genres || []).join(' ').slice(0, 200), creator_name: creator ? String(creator.name || '').slice(0, 40) : '',
+      popularity, removed: !shown };
+    // (popularity only counts when it doubles, so every play doesn't send it again)
+    const sig = JSON.stringify([row.section, row.name, row.description, row.genres, row.creator_name, row.removed, Math.floor(Math.log2(1 + popularity))]);
+    if (a.searchSig === sig) return;
+    a.searchSig = sig;
+    this.dirty.assets.add(a.id);
+    this.queueSupabaseEvent('gb_search_items', Object.assign(row, { updated_at: new Date(now() * 1000).toISOString() }));
+  }
+  // Asset gone (deleted): take it out of search.
+  unsearch(id) {
+    if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return;
+    this.queueSupabaseEvent('gb_search_items', { id, section: '', kind: '', name: '', description: '', genres: '', creator_name: '',
+      popularity: 0, removed: true, updated_at: new Date(now() * 1000).toISOString() });
+  }
   // Creator stats: count something on a day (plays, sales, bolts earned), kept for 60 days.
   // Passes and products also count on their game, so a game's page adds them up.
   tally(a, field, n = 1) {
@@ -1503,6 +1686,7 @@ export class GbServerObject extends DurableObject {
       avatar: u.avatar || null,
       email: maskEmail(u.emailVerified ? u.email : ''), emailPending: maskEmail(u.pendingEmail || ''),
       twoStep: !!(u.twoStep && u.emailVerified), canMail: this.canMail, authApp: !!u.totpSecret, privacy: this.privacyOf(u),
+      live: u.userId > 0 && this.liveOn() ? this.liveTopic(u) : '',   // the website listens here for news about you
       gear: (u.gear || []).filter((g) => u.owned.includes(g)),
       // Emotes in the emote menu's slots ('' = empty) and the animation pack, all things they own.
       emotes: this.emoteSlots(u),
@@ -2184,6 +2368,8 @@ export class GbServerObject extends DurableObject {
       this.openGiftBoxes();
       this.finishAuctions();
       const reply = this.op(c.opName, c.me, c.args);
+      // (who asked, for answers finished after a Supabase lookup; not sent back)
+      if (reply && reply.supabase) Object.defineProperty(reply, 'asker', { value: c.me, enumerable: false });
       if (gate.count && (reply.ok || GUESSES.has(c.opName))) gate.count();
       return reply;
     } catch (e) {
@@ -2196,6 +2382,16 @@ export class GbServerObject extends DurableObject {
   // --- the requests (GbServer::op) ---
   op(name, me, args) {
     const t = now(), today = utcDay(t);
+    // Staff numbers: right now from here, and the last 60 days from Supabase (supabaseFollowUp).
+    if (name === 'admin.numbers') {
+      if (!this.isStaff(me)) return fail('Only staff can see this.');
+      const live = this.liveNumbers();
+      const kinds = { games: 0, items: 0 };
+      for (const a of this.assets.values()) { if (a.kind === 'game') kinds.games++; else if (isCatalogItem(a.kind)) kinds.items++; }
+      const out = { now: Object.assign(live, kinds), days: [], topGames: [] };
+      if (this.env.SUPABASE_URL && this.env.SUPABASE_SECRET_KEY) out.supabase = { numbers: true };
+      return okay(out);
+    }
     if (name === 'staff.database.stats') {
       if (!this.isStaff(me)) return fail('Only staff can view database diagnostics.');
       return okay({ database: this.databaseDiagnostics() });
@@ -2537,6 +2733,9 @@ export class GbServerObject extends DurableObject {
       const faved = (me.favorites || []).map((id) => this.assets.get(id)).filter((a) => a && a.kind === 'game' && this.canPlay(a, me));
       feed.push(...gameLogFeed(faved, t));
       feed.sort((x, y) => y.at - x.at);
+      // What they've been up to (playing, making, badges) comes from Supabase: see supabaseFollowUp.
+      const others = [...ids].filter((id) => id !== me.id).slice(0, 150);
+      if (others.length && this.env.SUPABASE_URL && this.env.SUPABASE_SECRET_KEY) return okay({ feed: feed.slice(0, 40), supabase: { feed: others } });
       return okay({ feed: feed.slice(0, 40) });
     }
     // --- Saved outfits: your whole look (colours, hat, what you wear), kept to put back on later ---
@@ -2762,6 +2961,7 @@ export class GbServerObject extends DurableObject {
       me.messagesToday++;
       const id = randomHex(8);
       them.inbox = [{ id, from: me.id, subject, body, at: t, read: false }, ...(them.inbox || [])].slice(0, kMaxInbox);
+      this.livePing(them);
       me.sent = [{ id, to: them.id, subject, body, at: t }, ...(me.sent || [])].slice(0, kMaxSent);
       this.saveUser(me, them);
       return okay({ me: this.meJson(me) });
@@ -2946,7 +3146,7 @@ export class GbServerObject extends DurableObject {
       if (name === 'admin.review') {
         const a = this.assets.get(str(args, 'id'));
         if (!a || !a.review) return fail('That isn\'t waiting for a check any more.');
-        if (args.ok === true) { delete a.review; delete a.reviewNote; }
+        if (args.ok === true) { delete a.review; delete a.reviewNote; this.recordFriendActivity(this.users.get(a.creator), 'created', a); }
         else { a.review = 'rejected'; a.reviewNote = cleanText(str(args, 'note'), 200); }
         this.notify(this.users.get(a.creator), 'upload', args.ok === true ? a.name + ' passed the staff check. Everyone can see it now.'
           : a.name + ' didn\'t pass the staff check.' + (a.reviewNote ? ' Staff said: "' + a.reviewNote + '"' : ''), a.id);
@@ -3202,6 +3402,7 @@ export class GbServerObject extends DurableObject {
       if ((kind === 'face' || kind === 'tshirt') && data.length <= 400 * 1024) { this.writeFile('thumb:' + a.id, data); a.thumb = t; }   // its own picture
       this.assets.set(a.id, a);
       this.saveAsset(a);
+      if (!a.review) this.recordFriendActivity(me, 'created', a);
       if (!me.owned.includes(a.id)) me.owned.push(a.id);
       if (!verified) me.uploadsToday++;
       if (fee > 0) this.add(me, -fee, 'Upload fee: ' + title, 'upload:' + a.id);
@@ -3359,6 +3560,7 @@ export class GbServerObject extends DurableObject {
       if (to.gameBadges.some((x) => x[0] === b.id)) return okay({ already: true, name: b.name });
       to.gameBadges.push([b.id, g.id, t]);
       b.awarded = (b.awarded || 0) + 1;
+      this.recordFriendActivity(to, 'badge', g, b.name);
       this.saveUser(to);
       this.saveAsset(g);
       return okay({ awarded: true, name: b.name, player: to.name });
@@ -3435,8 +3637,11 @@ export class GbServerObject extends DurableObject {
       const ownedOnly = args.owned === true;   // your inventory (the Avatar page)
       const auctions = args.auctions === true;   // items up for auction right now (Exclusive ones too)
       const favsOnly = args.favorites === true;   // catalog items you favourited (your wishlist)
+      // ids: only these (the better-search matches, run through the same rules as everything else)
+      const only = Array.isArray(args.ids) ? new Set(args.ids.filter((x) => typeof x === 'string').slice(0, 200)) : null;
       const publicView = args.publicView === true && this.isStaff(me);   // staff-only preview using player visibility rules
       const found = [...this.assets.values()].filter((a) =>
+        (!only || only.has(a.id)) &&
         (!auctions || this.auctionOpen(a, t)) &&
         (sort !== 'featured' || a.featured > 0) &&
         (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
@@ -3446,7 +3651,7 @@ export class GbServerObject extends DurableObject {
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
         (!creator || a.creator === creator) && (publicView ? !a.review : this.canPlay(a, me)) &&
         (!genre || (a.genres || []).includes(genre)) &&
-        (!q || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
+        (!q || only || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
       const playing = sort === 'playing' ? new Map(found.map((a) => [a.id, this.playingIn(a.id)])) : null;
       const by = {
         popular: (x, y) => (y.plays + y.sales) - (x.plays + x.sales),
@@ -3461,7 +3666,20 @@ export class GbServerObject extends DurableObject {
       found.sort(by);
       const offset = Math.max(0, num(args, 'offset'));
       const limit = 'limit' in args ? clamp(num(args, 'limit'), 1, 100) : 60;
-      return okay({ assets: found.slice(offset, offset + limit).map((a) => this.publicAsset(a, me)), total: found.length, genres: GENRES });
+      const answer = { assets: found.slice(offset, offset + limit).map((a) => this.publicAsset(a, me)), total: found.length, genres: GENRES };
+      // Better search: also ask Supabase for near matches (typos, words in any order), added after
+      // these (see supabaseFollowUp). Only for the first page of a search.
+      if (q.length >= 2 && !only && !offset && !ownedOnly && !favsOnly && this.env.SUPABASE_URL && this.env.SUPABASE_SECRET_KEY)
+        answer.supabase = { search: { q, section: kind === 'clothing' ? 'catalog' : kind || null, args, limit } };
+      return okay(answer);
+    }
+    // A game's leaderboards (its OrderedDataStores), for the game's page. The scores are read
+    // from Supabase after this answer (see supabaseFollowUp); here we only check the game.
+    if (name === 'game.leaderboards') {
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || a.kind !== 'game' || !this.canPlay(a, me)) return fail('There\'s no game with that ID (or it\'s private).');
+      if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return okay({ boards: [] });
+      return okay({ supabase: { leaderboards: a.id } });
     }
     // One asset's page (the Library's "asset ID" pages): what it is, without downloading it.
     // Takes the ID people paste into games too ("gb:decal-..."). (src/server has the same.)
@@ -3488,7 +3706,12 @@ export class GbServerObject extends DurableObject {
         a.plays++;
         this.tally(a, 'plays');
         me.played = me.played || [];
-        if (!me.played.includes(a.id)) { me.played.push(a.id); if (me.played.length > 500) me.played.shift(); this.saveUser(me); }
+        const returning = me.played.includes(a.id);
+        if (!returning) { me.played.push(a.id); if (me.played.length > 500) me.played.shift(); this.saveUser(me); }
+        this.recordFriendActivity(me, 'playing', a);
+        // For the creator's "when people play" charts (who played isn't kept, only when).
+        this.queueSupabaseEvent('gb_play_events', { id: randomHex(12), game_id: a.id, creator_id: a.creator,
+          is_returning: returning && me.userId > 0, is_guest: me.userId === 0, created_at: new Date(t * 1000).toISOString() });
       }
       // A Library model someone else made, fetched to insert (Studio's Toolbox, or require() in a
       // script): now they've used it, so they can give it a thumbs up or down (model.vote).
@@ -3864,6 +4087,7 @@ export class GbServerObject extends DurableObject {
       for (const x of a.versions || []) this.sql.exec('DELETE FROM files WHERE id = ?', 'ver:' + a.id + ':' + x.v);   // its version history
       this.assets.delete(a.id);
       this.dirty.assets.add(a.id);
+      this.unsearch(a.id);
       return okay();
     }
     // Creator stats: everything you made, with totals and the last 30 days (plays, sales, Bolts earned).
@@ -3881,6 +4105,16 @@ export class GbServerObject extends DurableObject {
           plays30: series('plays'), sales30: series('sales'), bolts30: series('bolts'), bolts60: sum('bolts') };
       }).sort((x, y) => (y.plays + y.sales) - (x.plays + x.sales));
       return okay({ days, items });
+    }
+    // When people play your games: by hour of the day, new or returning players, and plays a day
+    // for 90 days. Read from Supabase after this answer (supabaseFollowUp). game: one of yours, or all.
+    if (name === 'creator.playtimes') {
+      if (me.userId === 0) return fail('Sign up first.');
+      const one = str(args, 'game');
+      const games = [...this.assets.values()].filter((a) => a.kind === 'game' && a.creator === me.id && (!one || a.id === one)).map((a) => a.id);
+      if (one && !games.length) return fail('That isn\'t one of your games.');
+      if (!games.length || !this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return okay({ playtimes: null });
+      return okay({ supabase: { playtimes: games.slice(0, 200) } });
     }
     if (name === 'stats') return okay({ users: this.users.size, assets: this.assets.size, name: this.name });
     return fail('The server doesn\'t know how to do "' + name + '". It might need updating.');
@@ -5230,6 +5464,20 @@ export class GbServerObject extends DurableObject {
     const trusted = this.isStaff(me) || asset.creator === me.id;
     if (name === 'data.can') return okay({ save: trusted });
     if (!trusted) return fail('Only the game\'s own servers can use its saved data.');
+    // OrderedDataStore:GetSortedAsync: the numbers saved in one store, biggest (or smallest) first.
+    //   data.sorted {game, store, ascending, limit (1-101: a page and one more), offset, min, max} -> {entries: [{key, value}]}
+    if (name === 'data.sorted') {
+      const store = typeof args.store === 'string' ? args.store : '';
+      if (!store || store.length > kDataName) return fail('DataStore names are 1-' + kDataName + ' letters.');
+      const limit = 'limit' in args ? clamp(num(args, 'limit'), 1, 101) : 50, offset = clamp(num(args, 'offset'), 0, 100000);
+      const where = ['game = ?', 'store = ?', 'json_valid(value)', "json_type(value) IN ('integer', 'real')"], bind = [game, store];
+      if (typeof args.min === 'number' && Number.isFinite(args.min)) { where.push('CAST(value AS REAL) >= ?'); bind.push(args.min); }
+      if (typeof args.max === 'number' && Number.isFinite(args.max)) { where.push('CAST(value AS REAL) <= ?'); bind.push(args.max); }
+      const order = args.ascending === true ? 'ASC' : 'DESC';
+      const rows = [...this.sql.exec('SELECT key, value FROM gamedata WHERE ' + where.join(' AND ') +
+        ' ORDER BY CAST(value AS REAL) ' + order + ', key LIMIT ? OFFSET ?', ...bind, limit, offset)];
+      return okay({ entries: rows.map((row) => ({ key: row.key, value: JSON.parse(row.value) })) });
+    }
     const store = typeof args.store === 'string' ? args.store : '', key = typeof args.key === 'string' ? args.key : '';
     if (!store || !key || store.length > kDataName || key.length > kDataName) return fail('DataStore names and keys are 1-' + kDataName + ' letters.');
     const read = () => {
@@ -5251,9 +5499,12 @@ export class GbServerObject extends DurableObject {
       this.sql.exec('INSERT OR REPLACE INTO gamedata (game, store, key, value, updated) VALUES (?, ?, ?, ?, ?)', game, store, key, text, now());
       return null;
     };
+    // Ordered stores (OrderedDataStore) also go to Supabase, for the leaderboards on the game's page.
+    const mirror = (value) => { if (args.ordered === true) this.recordLeaderboard(asset, store, key, value); };
     if (name === 'data.get') return okay({ value: read() });
     if (name === 'data.set') {
       const bad = write(args.value === undefined ? null : args.value);
+      if (!bad) mirror(args.value === undefined ? null : args.value);
       return bad || okay({});
     }
     if (name === 'data.increment') {   // in one step, so two servers adding at once both count
@@ -5262,6 +5513,7 @@ export class GbServerObject extends DurableObject {
       const delta = typeof args.delta === 'number' && Number.isFinite(args.delta) ? args.delta : 1;
       const value = (old || 0) + delta;
       const bad = write(value);
+      if (!bad) mirror(value);
       return bad || okay({ value });
     }
     return fail('Unknown request.');
@@ -5729,9 +5981,20 @@ export class GbServerObject extends DurableObject {
       if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(delivery);
       else await delivery;
     }
+    if (answer.ok && answer.supabase) answer = await this.supabaseFollowUp(answer);
     if (answer.ok && answer.translate) answer = await this.translate(answer);
     if (this.outbox.length) await this.sendMail();
     if (this.lyretoQueue.length) await this.fetchLyretoCards();
+    if (this.env.SUPABASE_URL && now() - (this.numbersAt || 0) >= 300) {
+      const reading = this.recordDailyNumbers();
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(reading);
+      else await reading;
+    }
+    if (this.livePings.length) {
+      const pings = this.sendLivePings();
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(pings);
+      else await pings;
+    }
     return json(answer);
   }
 }

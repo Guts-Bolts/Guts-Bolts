@@ -56,7 +56,10 @@
   "rules": [{ "type": "Text", "globs": ["**/*.gbscene", "**/*.gbemotes"], "fallthrough": true }],
   "vars": {
     "OFFICIAL": "78587146c5027463ff988ef3dd4da3830482f59d6ac0e16fd29548c4a2c84c45",
-    "SUPABASE_URL": "https://pfpzmmsosyetkcoymoct.supabase.co"
+    "SUPABASE_URL": "https://pfpzmmsosyetkcoymoct.supabase.co",
+    // Public on purpose: the website uses it only to listen for live pings (Realtime Broadcast).
+    // It can't read or change any Guts&Bolts table (they all deny it).
+    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_azLT1eBnEekgVwHvyUg-oA_6jj2nGyU"
   },
   "assets": {
     "directory": "./website",

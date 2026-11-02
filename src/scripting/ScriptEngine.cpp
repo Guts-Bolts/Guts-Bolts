@@ -481,14 +481,16 @@ end
 -- DataStoreService: save things between visits (coins, levels...). Kept on the
 -- Guts&Bolts server for the game's own servers, else in this computer's account
 -- folder. GetAsync / IncrementAsync wait for the answer, like Roblox.
-local dsStart, dsDone, dsSet = __gb_dsStart, __gb_dsDone, __gb_dsSet
-local function dsGet(store, key, kind, delta)
-    local ticket = dsStart(kind or "get", store, key, delta or 0)
+local dsStart, dsDone, dsSet, dsSorted = __gb_dsStart, __gb_dsDone, __gb_dsSet, __gb_dsSorted
+local function dsWait(ticket)
     while true do
         local done, value = dsDone(ticket)
         if done then return value end
         task.wait()
     end
+end
+local function dsGet(store, key, kind, delta, ordered)
+    return dsWait(dsStart(kind or "get", store, key, delta or 0, ordered and true or false))
 end
 DataStoreService = {}
 function DataStoreService:GetDataStore(name, scope)
@@ -511,7 +513,59 @@ function DataStoreService:GetDataStore(name, scope)
     end
     return ds
 end
-DataStoreService.GetOrderedDataStore = DataStoreService.GetDataStore
+-- OrderedDataStore: a store of numbers that can be read back sorted, for leaderboards:
+--   local coins = DataStoreService:GetOrderedDataStore("Coins")
+--   coins:SetAsync(tostring(player.UserId), 50)
+--   local pages = coins:GetSortedAsync(false, 10)       -- biggest first, 10 a page
+--   for rank, entry in ipairs(pages:GetCurrentPage()) do print(rank, entry.key, entry.value) end
+-- A published game's ordered stores also show as leaderboards on its page on the website.
+function DataStoreService:GetOrderedDataStore(name, scope)
+    local store = tostring(name) .. (scope and ("/" .. tostring(scope)) or "")
+    local ds = {}
+    function ds:GetAsync(key) return dsGet(store, tostring(key)) end
+    function ds:SetAsync(key, value)
+        if value ~= nil and type(value) ~= "number" then error("OrderedDataStore can only save numbers", 2) end
+        dsSet(store, tostring(key), value, true)
+    end
+    function ds:RemoveAsync(key)
+        local old = dsGet(store, tostring(key))
+        dsSet(store, tostring(key), nil, true)
+        return old
+    end
+    function ds:UpdateAsync(key, fn)
+        local new = fn(dsGet(store, tostring(key)))
+        if new ~= nil and type(new) ~= "number" then error("OrderedDataStore can only save numbers", 2) end
+        if new ~= nil then dsSet(store, tostring(key), new, true) end
+        return new
+    end
+    function ds:IncrementAsync(key, delta)
+        return dsGet(store, tostring(key), "inc", tonumber(delta) or 1, true)
+    end
+    -- GetSortedAsync(ascending, pageSize (1-100), minValue, maxValue) -> pages:
+    -- pages:GetCurrentPage() = { {key = ..., value = ...}, ... }, pages.IsFinished,
+    -- pages:AdvanceToNextPageAsync() for the next ones.
+    function ds:GetSortedAsync(ascending, pageSize, minValue, maxValue)
+        local size = math.floor(tonumber(pageSize) or 50)
+        if size < 1 then size = 1 elseif size > 100 then size = 100 end
+        local pages, offset, current = { IsFinished = false }, 0, {}
+        local function fetch()
+            local list = dsWait(dsSorted(store, ascending and true or false, size + 1, offset, tonumber(minValue), tonumber(maxValue)))
+            if type(list) ~= "table" then list = {} end
+            pages.IsFinished = #list <= size
+            if #list > size then list[#list] = nil end
+            current = list
+        end
+        fetch()
+        function pages:GetCurrentPage() return current end
+        function pages:AdvanceToNextPageAsync()
+            if pages.IsFinished then error("There are no more pages", 2) end
+            offset = offset + size
+            fetch()
+        end
+        return pages
+    end
+    return ds
+end
 
 -- MessagingService: messages between the running servers of this game (every one of them,
 -- this one too; never other games). Through the Guts&Bolts server for a published game's
@@ -1947,6 +2001,7 @@ __gb_heartbeat, __gb_inputBegan, __gb_inputEnded, __gb_isKeyDown, __gb_padState 
 __gb_playerAdded, __gb_playerRemoving, __gb_tagAdded, __gb_tagRemoved = nil, nil, nil, nil
 __gb_charSignals, __gb_setTeam, __gb_clientMode = nil, nil, nil
 __gb_playerNode, __gb_setRespawn, __gb_dsStart, __gb_dsDone, __gb_dsSet, __gb_navPath, __gb_navQuery = nil, nil, nil, nil, nil, nil, nil
+__gb_dsSorted = nil
 __gb_camOpt, __gb_setCamOpt, __gb_emotesMenu = nil, nil, nil
 __gb_awardBadge, __gb_hasBadge, __gb_teleport, __gb_joinData = nil, nil, nil, nil
 __gb_raycast, __gb_storage, __gb_addMethod, __gb_cgroups = nil, nil, nil, nil
@@ -2261,7 +2316,22 @@ int l_dsStart(lua_State* L) {
     std::string kind = luaL_checkstring(L, 1), store = luaL_checkstring(L, 2), key = luaL_checkstring(L, 3);
     if (store.empty() || key.empty() || store.size() > 100 || key.size() > 100)
         return luaL_error(L, "DataStore names and keys are 1-100 letters");
-    lua_pushinteger(L, LuaApi::engine(L)->dataStart(kind == "inc" ? "inc" : "get", store, key, luaL_optnumber(L, 4, 0)));
+    lua_pushinteger(L, LuaApi::engine(L)->dataStart(kind == "inc" ? "inc" : "get", store, key, luaL_optnumber(L, 4, 0), lua_toboolean(L, 5) != 0));
+    return 1;
+}
+
+// __gb_dsSorted(store, ascending, limit, offset, min, max) -> ticket (OrderedDataStore:GetSortedAsync)
+int l_dsSorted(lua_State* L) {
+    if (LuaApi::engine(L)->runMode() == ScriptEngine::RunMode::Client)
+        return luaL_error(L, "DataStores only work in Scripts on the server (this is a LocalScript)");
+    std::string store = luaL_checkstring(L, 1);
+    if (store.empty() || store.size() > 100) return luaL_error(L, "DataStore names are 1-100 letters");
+    nlohmann::json q = {{"ascending", lua_toboolean(L, 2) != 0},
+                        {"limit", std::clamp((int)luaL_optinteger(L, 3, 50), 1, 101)},
+                        {"offset", std::max(0, (int)luaL_optinteger(L, 4, 0))}};
+    if (lua_isnumber(L, 5)) q["min"] = lua_tonumber(L, 5);
+    if (lua_isnumber(L, 6)) q["max"] = lua_tonumber(L, 6);
+    lua_pushinteger(L, LuaApi::engine(L)->dataSorted(store, q));
     return 1;
 }
 
@@ -2281,7 +2351,7 @@ int l_dsSet(lua_State* L) {
         return luaL_error(L, "DataStore names and keys are 1-100 letters");
     nlohmann::json v = toJson(L, 3);
     if (v.dump().size() > 256 * 1024) return luaL_error(L, "That's too much to save in one key (256 KB at most)");
-    LuaApi::engine(L)->dataSet(store, key, v);
+    LuaApi::engine(L)->dataSet(store, key, v, lua_toboolean(L, 4) != 0);
     return 0;
 }
 
@@ -3198,6 +3268,7 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_dsStart", l_dsStart);
     lua_register(L, "__gb_dsDone", l_dsDone);
     lua_register(L, "__gb_dsSet", l_dsSet);
+    lua_register(L, "__gb_dsSorted", l_dsSorted);
     lua_register(L, "__gb_memStart", l_memStart);
     lua_register(L, "__gb_memDone", l_memDone);
     lua_register(L, "__gb_msgPublish", l_msgPublish);
@@ -4015,6 +4086,7 @@ void ScriptEngine::dataRun(const DataJob& job) {
     if (m_dataMode == DataMode::Unknown || m_dataMode == DataMode::Asking) { m_dataQueue.push_back(job); return; }
     if (m_dataMode == DataMode::Local) {
         if (job.kind == "set") { setSaveData(job.store, job.key, job.value); return; }
+        if (job.kind == "sorted") { m_dataDone[job.ticket] = sortedLocal(saveData(), job.store, job.value); return; }
         const nlohmann::json& all = saveData();
         nlohmann::json v = all.contains(job.store) && all[job.store].contains(job.key) ? all[job.store][job.key] : nlohmann::json();
         if (job.kind == "inc") {
@@ -4029,6 +4101,18 @@ void ScriptEngine::dataRun(const DataJob& job) {
     const int gen = m_dataGen, ticket = job.ticket;
     auto ours = [this, alive, gen] { return !alive.expired() && gen == m_dataGen; };
     nlohmann::json args = {{"game", m_dataGame}, {"store", job.store}, {"key", job.key}};
+    if (job.ordered) args["ordered"] = true;   // (the server shows ordered stores as leaderboards)
+    if (job.kind == "sorted") {
+        args.erase("key");
+        for (auto& [k, v] : job.value.items()) args[k] = v;
+        Online::request("data.sorted", args, [this, ours, ticket](const nlohmann::json& r) {
+            if (!ours()) return;
+            if (!r.value("ok", false)) Log::error("OrderedDataStore GetSortedAsync: " + r.value("error", std::string("no answer")));
+            nlohmann::json list = r.contains("entries") && r["entries"].is_array() ? r["entries"] : nlohmann::json::array();
+            m_dataDone[ticket] = list;
+        });
+        return;
+    }
     if (job.kind == "set") {
         DataCached& c = m_dataCache[ck];
         c.value = job.value; c.at = nowSeconds(); ++c.writing;
@@ -4066,6 +4150,29 @@ void ScriptEngine::dataRun(const DataJob& job) {
         if (!v.is_null()) { DataCached& c = m_dataCache[ck]; c.value = v; c.at = nowSeconds(); }
         m_dataDone[ticket] = v;
     });
+}
+
+// GetSortedAsync on this computer's save file: the numbers in one store, sorted, a page of them.
+nlohmann::json ScriptEngine::sortedLocal(const nlohmann::json& all, const std::string& store, const nlohmann::json& q) {
+    std::vector<std::pair<std::string, double>> rows;
+    if (all.is_object() && all.contains(store) && all[store].is_object())
+        for (auto& [k, v] : all[store].items()) {
+            if (!v.is_number()) continue;
+            const double x = v.get<double>();
+            if (q.contains("min") && q["min"].is_number() && x < q["min"].get<double>()) continue;
+            if (q.contains("max") && q["max"].is_number() && x > q["max"].get<double>()) continue;
+            rows.emplace_back(k, x);
+        }
+    const bool up = q.value("ascending", false);
+    std::sort(rows.begin(), rows.end(), [up](const auto& a, const auto& b) {
+        if (a.second != b.second) return up ? a.second < b.second : a.second > b.second;
+        return a.first < b.first;
+    });
+    const size_t offset = (size_t)std::max(0, q.value("offset", 0)), limit = (size_t)std::max(1, q.value("limit", 50));
+    nlohmann::json out = nlohmann::json::array();
+    for (size_t i = offset; i < rows.size() && out.size() < limit; ++i)
+        out.push_back({{"key", rows[i].first}, {"value", all[store][rows[i].first]}});
+    return out;
 }
 
 int ScriptEngine::libraryModule(const std::string& assetId, uint64_t& module, std::string& error) {
@@ -4131,11 +4238,20 @@ int ScriptEngine::libraryModule(const std::string& assetId, uint64_t& module, st
     return 0;
 }
 
-int ScriptEngine::dataStart(const std::string& kind, const std::string& store, const std::string& key, double delta) {
+int ScriptEngine::dataStart(const std::string& kind, const std::string& store, const std::string& key, double delta, bool ordered) {
     dataDecide();
     DataJob j;
     j.ticket = m_dataNext++;
-    j.kind = kind; j.store = store; j.key = key; j.delta = delta;
+    j.kind = kind; j.store = store; j.key = key; j.delta = delta; j.ordered = ordered;
+    dataRun(j);
+    return j.ticket;
+}
+
+int ScriptEngine::dataSorted(const std::string& store, const nlohmann::json& query) {
+    dataDecide();
+    DataJob j;
+    j.ticket = m_dataNext++;
+    j.kind = "sorted"; j.store = store; j.key = "*"; j.value = query; j.ordered = true;
     dataRun(j);
     return j.ticket;
 }
@@ -4148,10 +4264,10 @@ bool ScriptEngine::dataDone(int ticket, nlohmann::json& value) {
     return true;
 }
 
-void ScriptEngine::dataSet(const std::string& store, const std::string& key, const nlohmann::json& value) {
+void ScriptEngine::dataSet(const std::string& store, const std::string& key, const nlohmann::json& value, bool ordered) {
     dataDecide();
     DataJob j;
-    j.kind = "set"; j.store = store; j.key = key; j.value = value;
+    j.kind = "set"; j.store = store; j.key = key; j.value = value; j.ordered = ordered;
     dataRun(j);
 }
 

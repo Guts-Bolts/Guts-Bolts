@@ -4,6 +4,7 @@
 import * as gb from './gb.js';
 import { mountAvatar, avatarPicture, itemPicture, itemCamera } from './avatar3d.js';
 import { startTranslating, languagePicker } from '../lang/i18n.js';
+import { startLive, listen, stopListening, onLive } from './live.js';
 
 // --- small helpers ------------------------------------------------------------
 
@@ -436,8 +437,11 @@ async function pageCall(op, args) {
 
 const BELL_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"/></svg>';
 
+let liveTopic = '';   // your account's live topic (Supabase Realtime), while signed in
 function setMe(m) {
   me = m;
+  const topic = signedIn() && typeof me.live === 'string' ? me.live : '';
+  if (topic !== liveTopic) { stopListening(liveTopic); liveTopic = topic; listen(topic); }
   const msgLink = $('#nav a[data-page=messages]');
   if (msgLink) {
     const n = signedIn() ? me.unreadMessages || 0 : 0;
@@ -630,11 +634,7 @@ pages.home = async () => {
   const feedBox = signedIn() ? html`<div class="box feed"><h2 class="boxhead">My Feed</h2>
       <form class="row" data-form="statusSet"><input type="text" name="status" maxlength="140" placeholder="Right now I'm..." style="flex:1">
         <button class="btn blue small">Share</button></form>
-      ${feedR.ok && feedR.feed.length ? html`<div class="feed-list">${feedR.feed.map((p) => p.kind === 'gamelog' ? gameLogFeedItem(p) : html`<div class="feed-item">
-          <a href="#/user/${p.user.userId}" class="feed-pic" data-feed-avatar="${p.user.id}">${avatarSvg(p.user.avatar, 40)}</a>
-          <div><a class="link" href="#/user/${p.user.userId}">${p.user.name}</a>${verified(p.user.verified)}
-            <div>"${p.text}"</div><div class="small muted">${ago(p.at)}</div></div></div>`)}</div>`
-        : html`<p class="muted small">Nothing yet. What your friends and the people you follow are up to, and what's new in your favourite games, shows up here.</p>`}</div>` : '';
+      <div id="myFeed">${feedList(feedR)}</div></div>` : '';
   const favBox = mineBox('Favorites', favs, '#/games/mine/favorites');
   const gameBox = (title, r, more) => html`<div class="box"><h2 class="boxhead">${title}
       <a href="${more}" style="float:right">See more &raquo;</a></h2>
@@ -691,16 +691,46 @@ pages.home = async () => {
   // Dressed in what you're wearing (the server says which items those are).
   const worn = mine.ok ? mine.wearing || [] : [];
   if ($('#homeAvatar')) mountAvatar($('#homeAvatar'), me.avatar || defaultAvatar(), worn, { width: 170 }).catch(() => {});
-  // My Feed: each person's character next to what they said.
+  feedPictures(feedR, view);
+};
+// My Feed: what friends and people you follow said, and what they've been up to (playing a
+// game, making something, earning a badge).
+function feedList(feedR) {
+  if (!feedR.ok || !feedR.feed.length) return html`<p class="muted small">Nothing yet. What your friends and the people you follow are up to, and what's new in your favourite games, shows up here.</p>`;
+  const did = (x) => {
+    const link = x.assetKind === 'game' ? '#/game/' + x.id : x.assetKind === 'model' ? '#/library/' + (x.num || x.id) : '#/item/' + x.id;
+    const thing = html`<a class="link" href="${link}">${x.name}</a>`;
+    if (x.kind === 'playing') return html`🎮 played ${thing}`;
+    if (x.kind === 'badge') return html`🏅 earned the ${x.detail || ''} badge in ${thing}`;
+    return html`🛠️ made ${x.assetKind === 'game' ? 'a new game' : 'something new'}: ${thing}`;
+  };
+  return html`<div class="feed-list">${feedR.feed.map((p) => p.kind === 'gamelog' ? gameLogFeedItem(p) : html`<div class="feed-item">
+      <a href="#/user/${p.user.userId}" class="feed-pic" data-feed-avatar="${p.user.id}">${avatarSvg(p.user.avatar, 40)}</a>
+      <div><a class="link" href="#/user/${p.user.userId}">${p.user.name}</a>${verified(p.user.verified)}
+        <div>${p.activity ? did(p.activity) : html`"${p.text}"`}</div><div class="small muted">${ago(p.at)}</div></div></div>`)}</div>`;
+}
+// Each person's character next to what they said or did.
+function feedPictures(feedR, where) {
   const seen = new Set();
   for (const p of feedR.ok ? feedR.feed : []) {
     if (seen.has(p.user.id)) continue;
     seen.add(p.user.id);
     avatarPicture(p.user.avatar, [], 40).then((url) => {
-      if (url) view.querySelectorAll(`[data-feed-avatar="${p.user.id}"]`).forEach((el) => { el.innerHTML = html`<img src="${url}" alt="" width="40" height="50">`.s; });
+      if (url) where.querySelectorAll(`[data-feed-avatar="${p.user.id}"]`).forEach((el) => { el.innerHTML = html`<img src="${url}" alt="" width="40" height="50">`.s; });
     }).catch(() => {});
   }
-};
+}
+// A live ping said a friend did something: redraw just the feed (not the whole home page).
+let feedRefreshBusy = false;
+async function refreshFeed() {
+  const box = $('#myFeed');
+  if (!box || feedRefreshBusy || !signedIn()) return;
+  feedRefreshBusy = true;
+  try {
+    const r = await gb.call('feed.list', {});
+    if (r.ok && $('#myFeed') === box) { box.innerHTML = feedList(r).s; feedPictures(r, box); }
+  } finally { feedRefreshBusy = false; }
+}
 
 // --- Updates: the update log, newest first. It checks for new ones by itself while
 // you're looking, and the Updates link lights up when there's one you haven't seen.
@@ -1389,11 +1419,24 @@ document.addEventListener('touchend', (e) => {
   if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) galleryGo(gallery.i + (dx < 0 ? 1 : -1));
 }, { passive: true });
 
+// A game's leaderboards: the top players of each OrderedDataStore the game keeps
+// (scripts fill them with OrderedDataStore:SetAsync / IncrementAsync).
+function leaderboardsBlock(lb) {
+  const boards = lb && lb.ok && Array.isArray(lb.boards) ? lb.boards.filter((b) => b.entries && b.entries.length) : [];
+  if (!boards.length) return '';
+  const score = (n) => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '';
+  return html`<h2>Leaderboards</h2><div class="leaderboards">${boards.map((b) => html`<div class="box leaderboard">
+      <h3 class="boxhead">${b.name}</h3><ol>${b.entries.map((e) => html`<li class="${e.rank <= 3 ? 'top' + e.rank : ''}">
+        <span class="lb-rank">${e.rank}</span>
+        <span class="grow">${e.userId ? html`<a class="link" href="#/user/${e.userId}">${e.name}</a>` : e.name}</span>
+        <b>${score(e.score)}</b></li>`)}</ol></div>`)}</div>`;
+}
 pages.game = async (id) => {
   const [r, s] = await Promise.all([pageCall('list', { kind: 'game', limit: 100 }), pageCall('servers.list', { game: id })]);
   const g = r.ok && r.assets.find((a) => a.id === id || String(a.num) === id);
   if (!g) { show(html`<h1>Game not found</h1><p class="muted">${r.ok ? 'It may have been deleted, or its creator made it private.' : r.error}</p>`); return; }
-  const [pr, cr, lr] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('comments.list', { game: g.id }), pageCall('gamelog.list', { id: g.id })]);
+  const [pr, cr, lb, lr] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('comments.list', { game: g.id }),
+    pageCall('game.leaderboards', { id: g.id }), pageCall('gamelog.list', { id: g.id })]);
   const passes = pr.ok ? pr.passes.filter((p) => !p.offsale || p.owned) : [];
   const mine = signedIn() && (g.creator === me.id || me.staff);
   const servers = s.ok ? s.servers : [];
@@ -1449,6 +1492,7 @@ pages.game = async (id) => {
     ${(g.badges || []).length ? html`<h2>Badges</h2><div class="list">${g.badges.map((b) => html`<div>
         ${gameBadgeIcon(b, 44)}<span class="grow"><b>${b.name}</b><br><span class="small muted">${b.description || ''}</span></span>
         <span class="small muted">Won ${b.awarded || 0} time${b.awarded === 1 ? '' : 's'}</span></div>`)}</div>` : ''}
+    ${leaderboardsBlock(lb)}
     ${passes.length ? html`<h2>Passes</h2><div class="pass-grid">${passes.map(passCard)}</div>` : ''}
     ${privateServerBox(g, s)}
     <h2>Servers</h2>
@@ -2063,16 +2107,41 @@ pages.create = async (tab = 'games') => {
 };
 
 // Creator stats: how your games and items are doing, with the last 30 days as little bar charts.
-const statBars = (vals, days, unit) => {
+const statBars = (vals, days, unit, span = 'in the last 30 days') => {
   const top = Math.max(1, ...vals), w = 6, gap = 2, h = 40;
   return html`<svg class="bars" viewBox="0 0 ${vals.length * (w + gap)} ${h}" preserveAspectRatio="none" role="img"
-    aria-label="${vals.reduce((a, b) => a + b, 0)} ${unit} in the last 30 days">${vals.map((v, i) =>
+    aria-label="${vals.reduce((a, b) => a + b, 0)} ${unit} ${span}">${vals.map((v, i) =>
       html`<rect x="${i * (w + gap)}" y="${h - Math.max(v ? 2 : 0, (v / top) * h)}" width="${w}" height="${Math.max(v ? 2 : 0, (v / top) * h)}">
         <title>${days[i]}: ${v} ${unit}</title></rect>`)}</svg>`;
 };
+// When people play your games (from Supabase): busiest hours in your own time, new and
+// returning players, and plays a day for 90 days.
+function playtimesBlock(pt) {
+  const p = pt && pt.ok && pt.playtimes;
+  if (!p || !Array.isArray(p.hours) || !Array.isArray(p.days)) return '';
+  // The hours come in UTC: turn them round to the visitor's own clock.
+  const shift = Math.round(-new Date().getTimezoneOffset() / 60);
+  const hours = Array.from({ length: 24 }, (_, h) => p.hours[((h - shift) % 24 + 24) % 24] || 0);
+  const label = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: 'numeric' });
+  const busiest = hours.indexOf(Math.max(...hours));
+  const total = hours.reduce((a, b) => a + b, 0), who = (p.new || 0) + (p.returning || 0) + (p.guests || 0);
+  const pct = (n) => who ? Math.round((n / who) * 100) + '%' : '0%';
+  const days = p.days.map((d) => d.plays || 0), dayNames = p.days.map((d) => d.day);
+  return html`<h2>When people play</h2><div class="statcard playtimes">
+    ${total ? html`<p class="small muted">Busiest hour (your time): <b>${label(busiest)}</b>. Last 30 days, all your games.</p>
+      <div><span class="small muted">Plays by hour of the day</span>${statBars(hours, hours.map((_, h) => label(h)), 'plays', 'by hour of the day')}
+        <div class="hour-axis small muted"><span>${label(0)}</span><span>${label(6)}</span><span>${label(12)}</span><span>${label(18)}</span><span>${label(23)}</span></div></div>
+      <div class="who-played">
+        <span><b>${(p.new || 0).toLocaleString()}</b> new players (${pct(p.new || 0)})</span>
+        <span><b>${(p.returning || 0).toLocaleString()}</b> came back (${pct(p.returning || 0)})</span>
+        <span><b>${(p.guests || 0).toLocaleString()}</b> guests (${pct(p.guests || 0)})</span></div>`
+      : html`<p class="small muted">Nobody else has played your games in the last 30 days yet. Charts show up here once they do.</p>`}
+    <div><span class="small muted">Plays a day, last 90 days: ${days.reduce((a, b) => a + b, 0).toLocaleString()}</span>${statBars(days, dayNames, 'plays', 'in the last 90 days')}</div>
+  </div>`;
+}
 const statsPage = async (head) => {
   if (!signedIn()) { show(html`${head}${needSignIn('see how your games are doing')}`); return; }
-  const r = await pageCall('creator.stats', {});
+  const [r, pt] = await Promise.all([pageCall('creator.stats', {}), pageCall('creator.playtimes', {})]);
   if (!r.ok) { show(html`${head}<p class="error">${r.error}</p>`); return; }
   const sum = (a) => a.reduce((x, y) => x + y, 0);
   const games = r.items.filter((a) => a.kind === 'game'), sold = r.items.filter((a) => a.kind !== 'game' && (a.price > 0 || a.sales > 0));
@@ -2094,6 +2163,7 @@ const statsPage = async (head) => {
     <div class="stats-tiles">${tile(all('plays30'), 'plays in 30 days')}${tile(all('sales30'), 'sales in 30 days')}${tile(all('bolts30'), 'Bolts earned in 30 days')}</div>
     <p class="small muted">Plays count when someone else opens your game. Passes and products bought inside a game count on that game too.
       Days are in UTC; hover a bar to see its day.</p>
+    ${playtimesBlock(pt)}
     <h2>Games</h2>${games.length ? games.map(card) : html`<p class="muted">You haven't published a game yet.</p>`}
     <h2>Things you sell</h2>${sold.length ? sold.map(card) : html`<p class="muted">Nothing sold yet.</p>`}`);
 };
@@ -3155,7 +3225,34 @@ const GIVE_BADGES = [['tester', 'Tester'], ['bughunter', 'Bug Hunter'], ['featur
   ['partner', 'Partner'], ['staff', 'Staff']];
 const OTHER_BADGES = { tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
 const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
-  ['ideas', 'Ideas'], ['people', 'People'], ['log', 'Staff log'], ['tools', 'Tools'], ['database', 'Database']];
+  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['database', 'Database']];
+// Staff > Numbers: how the site is doing. Now from the server; history (a reading every few
+// minutes, kept by day) and the week's top games from Supabase.
+function staffNumbersBox(r) {
+  if (!r.ok) return html`<div class="box"><h2 class="boxhead">Numbers</h2><p class="error">${r.error}</p></div>`;
+  const n = r.now, days = r.days || [];
+  const card = (v, label, note) => html`<div class="staff-card"><b>${Number(v || 0).toLocaleString()}</b><span>${label}</span>${note ? html`<span class="small muted">${note}</span>` : ''}</div>`;
+  // Sign-ups a day: how much the account count grew since the day before.
+  const signups = days.map((d, i) => i ? Math.max(0, d.accounts - days[i - 1].accounts) : 0);
+  const names = days.map((d) => d.day);
+  const chart = (vals, unit, title) => html`<div><span class="small muted">${title}</span>${statBars(vals, names, unit, 'in the last ' + days.length + ' days')}</div>`;
+  const week = signups.slice(-7).reduce((a, b) => a + b, 0);
+  return html`<div class="box"><h2 class="boxhead">Right now</h2>
+    <div class="staff-cards">${card(n.online, 'Online', 'signed-up people seen in the last few minutes')}${card(n.playing, 'In games')}
+      ${card(n.accounts, 'Accounts')}${card(n.games, 'Games')}${card(n.items, 'Catalog items')}</div></div>
+    <div class="box"><h2 class="boxhead">The last ${days.length || 60} days</h2>
+    ${r.unavailable ? html`<p class="error">Supabase didn't answer, so the history can't be shown right now.</p>`
+      : days.length ? html`<div class="staff-cards">${card(week, 'Sign-ups this week')}
+          ${card(Math.max(...days.slice(-7).map((d) => d.peakOnline)), 'Most online at once (7 days)')}
+          ${card(days.slice(-7).reduce((a, d) => a + d.plays, 0), 'Plays this week')}</div>
+        <div class="charts staff-charts">${chart(signups, 'sign-ups', 'Sign-ups a day')}${chart(days.map((d) => d.peakOnline), 'online', 'Most online at once')}
+          ${chart(days.map((d) => d.peakPlaying), 'in games', 'Most in games at once')}${chart(days.map((d) => d.plays), 'plays', 'Plays a day')}</div>
+        <p class="small muted">Days are in UTC. A day's numbers are the biggest seen in a reading taken every few minutes.</p>`
+      : html`<p class="muted">Nothing yet: the history starts filling in from today.</p>`}</div>
+    <div class="box"><h2 class="boxhead">Most played this week</h2>
+    ${(r.topGames || []).length ? html`<ol class="top-games">${r.topGames.map((g) => html`<li><a class="link" href="#/game/${g.id}">${g.name}</a>
+        <span class="small muted">${Number(g.plays).toLocaleString()} plays</span></li>`)}</ol>` : html`<p class="muted">No plays recorded this week yet.</p>`}</div>`;
+}
 pages.staff = async () => {
   if (!signedIn() || !me.staff) { show(html`<h1>Staff</h1><p class="muted">Only Guts&amp;Bolts staff can see this page.</p>`); return; }
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
@@ -3217,7 +3314,8 @@ pages.staff = async () => {
         <a class="btn small" href="#/staff?log=${u.userId || u.id}" title="What staff did to or by them">Log</a>
       </div>`) : html`<p class="error">${r.error}</p>`}</div>
     </div>`;
-  } else if (tab === 'log') body = staffLogBox(await pageCall('admin.log', logFor ? { user: logFor } : {}), logFor);
+  } else if (tab === 'numbers') body = staffNumbersBox(await pageCall('admin.numbers', {}));
+  else if (tab === 'log') body = staffLogBox(await pageCall('admin.log', logFor ? { user: logFor } : {}), logFor);
   else if (tab === 'database') {
     const r = await pageCall('staff.database.stats', {});
     if (!r.ok) body = html`<div class="box"><h2 class="boxhead">Database diagnostics</h2><p class="error">${r.error}</p></div>`;
@@ -5273,4 +5371,22 @@ document.querySelector('.foot').append(languagePicker());
   setInterval(refreshActivityFeeds, 15000);
   refreshLiveAuctions();
   setInterval(refreshLiveAuctions, 12000);
+  // Live updates: refresh the moment something happens (the timers above stay as a backup).
+  onLive((topic, event) => {
+    if (document.visibilityState !== 'visible') return;
+    const page = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/')[0];
+    if (topic === 'gb-activity') {
+      if (event === 'auctions') { refreshActivityFeeds(); refreshLiveAuctions(); }
+      if (event === 'forum') refreshActivityFeeds();
+      return;
+    }
+    if (topic !== liveTopic) return;
+    if (event === 'me') {   // a notification, a message, a friend request...
+      keepFresh();
+      checkRequests();
+      if (page === 'notifications') render();
+    }
+    if (event === 'feed' && page === 'home') refreshFeed();
+  });
+  startLive();
 })();
