@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { Script } from 'node:vm';
+import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const read = (p) => readFileSync(resolve(root, p), 'utf8');
@@ -106,5 +106,6 @@ test('website Learn tab and its launch action exist', () => {
   assert.ok(site.includes("learn.progress.get"));
   assert.ok(site.includes("remoteUpdatedAt >= progress.updatedAt"), 'website chooses the latest timestamped resume point');
   assert.ok(site.includes("Date.now() / 1000"), 'website stamps local lesson starts');
-  assert.doesNotThrow(() => new Script(site, { filename: 'website/app/app.js' }), 'website app JavaScript parses');
+  const syntax = spawnSync(process.execPath, ['--check', '--input-type=module'], { input: site, encoding: 'utf8' });
+  assert.equal(syntax.status, 0, `website app JavaScript parses as an ES module: ${syntax.stderr || syntax.stdout}`);
 });
