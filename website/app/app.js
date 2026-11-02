@@ -1662,7 +1662,7 @@ pages.item = async (id) => {
     ${au && !au.cancelled ? html`<div id="auctionLiveBidders">${auctionBidders(au, auOpen)}</div>` : ''}
     ${L && a.limitedType !== 'limited' ? html`<h2>Resellers</h2>${forSale.length ? html`<table class="stats resellers"><tr><th>Seller</th><th>Copy</th><th>Price</th><th></th></tr>
         ${forSale.map((c) => html`<tr><td><a href="#/user/${c.owner}">${c.ownerName}</a></td><td>#${c.serial}</td><td>${bolts(c.price)}</td>
-          <td><button class="btn green small" data-act="resaleBuy" data-id="${a.id}" data-serial="${c.serial}" data-price="${c.price}">Buy</button></td></tr>`)}</table>`
+          <td><button class="btn green small" data-act="resaleBuy" data-id="${a.id}" data-name="${a.name}" data-serial="${c.serial}" data-price="${c.price}">Buy</button></td></tr>`)}</table>`
         : html`<p class="muted">Nobody is selling a copy right now.</p>`}
       ${mineCopies.length ? html`<h2>Your copies</h2>${mineCopies.map((c) => html`<form class="row" data-form="resaleList"><input type="hidden" name="id" value="${a.id}">
           <input type="hidden" name="serial" value="${c.serial}"><b>#${c.serial}</b>
@@ -3871,9 +3871,25 @@ const actions = {
   },
   async resaleBuy(d) {
     if (!signedIn()) { loginPopup('buy items'); return; }
-    if (!confirm('Buy copy #' + d.serial + ' for ' + d.price + ' Bolts?')) return;
+    const price = Math.max(0, Number(d.price) || 0);
+    const balance = Math.max(0, Number(me && me.bolts) || 0);
+    const remaining = Math.max(0, balance - price);
+    if (balance < price) { toast('You do not have enough Bolts for this copy.'); return; }
+    popup(html`<h1 class="popup-title">Confirm Purchase</h1>
+      <p>Are you sure you want to buy <b>"${d.name || 'this item'}"</b>, copy #${d.serial}?</p>
+      <div class="box info">
+        <p><b>Price:</b> ${bolts(price)}</p>
+        <p class="small muted">Your Bolt balance after purchasing: <b>${bolts(remaining)}</b>.</p>
+      </div>
+      <p class="popup-buttons">
+        <button class="btn green big" data-act="resaleBuyConfirm" data-id="${d.id}" data-serial="${d.serial}">Confirm Purchase</button>
+        <button class="btn" data-act="closeModal" type="button">Cancel</button>
+      </p>`);
+  },
+  async resaleBuyConfirm(d) {
     const r = await call('resale.buy', { id: d.id, serial: Number(d.serial) });
-    if (r.ok) setMe(r.me);
+    document.querySelectorAll('.modal').forEach((m) => m.remove());
+    if (r.ok && r.me) setMe(r.me);
     toast(r.ok ? 'It\'s yours!' : r.error);
     render();
   },
