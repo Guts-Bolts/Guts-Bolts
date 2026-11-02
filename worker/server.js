@@ -3545,12 +3545,10 @@ export class GbServerObject extends DurableObject {
           if (u.owned.includes(a.id) && u.id !== a.creator) a.copies.push({ serial: ++serial, owner: u.id, price: 0 });
         a.sales = serial;
         a.limited = true;
-      }
-      if (stock < a.sales) return fail(a.sales + ' copies are already out there: the stock can\'t be less than that.');
-      if (!a.limited) {
         a.meta = a.meta || {};
         a.meta.limitedType = args.limitedType === 'limited' ? 'limited' : 'limited_u';
       }
+      if (stock < a.sales) return fail(a.sales + ' copies are already out there: the stock can\'t be less than that.');
       a.stock = stock;
       this.saveAsset(a);
       return okay({ asset: this.publicAsset(a, me) });
