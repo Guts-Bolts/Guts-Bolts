@@ -1636,7 +1636,8 @@ pages.item = async (id) => {
           : html`<label>New picture <span class="muted small">(optional, from the <a href="templates/${a.kind}_template.png" download>template</a>)</span></label><input type="file" name="picture" accept="image/png">`}
         ${canEdit ? html`<label>Goes off sale <span class="muted small">(a timed item; leave empty to sell it for good)</span></label>
           <input type="datetime-local" name="offsaleAt" value="${a.offsaleAt ? localInput(a.offsaleAt) : ''}" style="max-width:220px">` : ''}
-        ${me.staff ? html`<label><input type="checkbox" name="exclusive" ${a.exclusive ? 'checked' : ''}> Exclusive <span class="muted small">(staff only: hidden from the catalog and can't be bought; give it out with a gift box or the box below)</span></label>
+        ${me.staff ? html`<label><input type="checkbox" name="staffOffsale" ${a.staffOffsale ? 'checked' : ''}> Off sale now <span class="muted small">(staff only: blocks new purchases without deleting the item or affecting existing owners)</span></label>
+          <label><input type="checkbox" name="exclusive" ${a.exclusive ? 'checked' : ''}> Exclusive <span class="muted small">(staff only: hidden from the catalog and can't be bought; give it out with a gift box or the box below)</span></label>
           <label>Gift box: gives item ID <span class="muted small">(staff only: when this goes off sale, everyone who owns it gets that item; leave empty for a normal item)</span></label>
           <input type="text" name="giftItem" value="${a.giftItem ? a.giftItem.num || a.giftItem.id : ''}" placeholder="like 86" style="max-width:220px">` : ''}
         <p><button class="btn green">Save</button> <span id="itemEditMsg"></span></p></form>
@@ -4716,6 +4717,7 @@ const forms = {
       if (Number.isNaN(when)) { m.className = 'error'; m.textContent = ' Pick a whole date and time for it to go off sale (or clear the box).'; return; }
       args.offsaleAt = when;
     }
+    if (field('staffOffsale')) args.staffOffsale = field('staffOffsale').checked;
     if (field('exclusive')) args.exclusive = field('exclusive').checked;
     if (field('giftItem')) args.giftItem = field('giftItem').value.trim();
     if (field('picture') && field('picture').files[0]) args.data = await gb.fileBase64(field('picture').files[0]);
