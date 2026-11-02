@@ -17,7 +17,9 @@ import wasmModule from '../website/app/gbcrypto.wasm';
 import { BUILT_IN_UPDATES } from './updates.js';
 import { filterText, nameHasHateWord } from './textfilter.js';
 import { MemoryStore } from './memorystore.js';
-import { installMcpRelay } from './mcp-relay.js';   // Studio's AI tools for connected apps (worker/mcp.js)
+import { installMcpRelay } from './mcp-relay.js';
+import { installGameWeb } from './game-web.js';
+import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Roadmap, builtInItems, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
 import BUILT_IN_ROADMAP from './roadmap-gathered.js';   // worker/roadmap/, one file per item (worker/gather-updates.mjs)
 import { broadcastSupabase, insertSupabaseRows, listSupabaseFriendActivity, listSupabaseLeaderboards, listSupabaseNotifications, markSupabaseNotificationsRead, supabaseRpc } from './supabase.js';
@@ -450,7 +452,7 @@ const kAuctionMostCopies = 100, kAuctionMostHours = 720, kAuctionMostBid = 10000
 const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this much is left
 // Guests (no account) can also play: download games, find and join servers (not chat, that's in the game).
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'servers.private', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
-  'msg.publish', 'msg.poll', 'chat.translate',
+  'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 
 // In-game chat translation: each player's app asks for the lines that were said in another
@@ -522,7 +524,7 @@ function usernameProblem(name, official = false) {
   return '';
 }
 // What people write for others to read goes through the text filter (textfilter.js).
-const say = (s, maxLen, allowNewlines = false) => filterText(cleanText(s, maxLen, allowNewlines));
+export const say = (s, maxLen, allowNewlines = false) => filterText(cleanText(s, maxLen, allowNewlines));
 
 // Lyreto (lyreto.com) is the chat app Guts&Bolts partners with: a game or a group can
 // link its Lyreto server, and its page shows the link as a card (like Roblox does with Guilded).
@@ -741,6 +743,8 @@ export class GbServerObject extends DurableObject {
       CREATE INDEX IF NOT EXISTS pasttrades_at ON pasttrades (at);
       CREATE TABLE IF NOT EXISTS supabase_outbox (id TEXT PRIMARY KEY, table_name TEXT NOT NULL, payload TEXT NOT NULL, created INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS supabase_outbox_created ON supabase_outbox (created);`);
+    this.secretsInit();   // games' secrets for web requests (game-web.js)
+    this.chatsInit();     // calls and the Lyreto gateway (chats.js)
     this.official = lower(env.OFFICIAL || '');
     this.name = env.SERVER_NAME || 'Guts&Bolts';
     this.users = new Map(); this.assets = new AssetMap(); this.groups = new Map(); this.forum = new Map();
@@ -1584,7 +1588,8 @@ export class GbServerObject extends DurableObject {
     const g = s && this.assets.get(s.game);
     const playing = s ? { game: s.game, title: s.title || (g ? g.name : 'a game'), private: s.priv,
       full: this.headcount(s) >= s.max, session: this.allows(pv.join, viewer, u) ? s.id : null } : null;
-    return { online: this.isOnline(u), playing };
+    const online = this.isOnline(u);
+    return { online, playing, dnd: online && !!u.dnd };   // dnd: Do Not Disturb (chats.js)
   }
   // The player badges `u` has earned (PLAYER_BADGES), each { key, name, need }.
   playerBadgesOf(u) {
@@ -1621,6 +1626,7 @@ export class GbServerObject extends DurableObject {
       email: maskEmail(u.emailVerified ? u.email : ''), emailPending: maskEmail(u.pendingEmail || ''),
       twoStep: !!(u.twoStep && u.emailVerified), canMail: this.canMail, authApp: !!u.totpSecret, privacy: this.privacyOf(u),
       live: u.userId > 0 && this.liveOn() ? this.liveTopic(u) : '',   // the website listens here for news about you
+      dnd: !!u.dnd,   // Do Not Disturb (chats.js)
       gear: (u.gear || []).filter((g) => u.owned.includes(g)),
       // Emotes in the emote menu's slots ('' = empty) and the animation pack, all things they own.
       emotes: this.emoteSlots(u),
@@ -2431,6 +2437,9 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
     if (name.startsWith('mem.')) return this.memOp(name, me, args);
+    if (name === 'http.request') return this.webOp(name, me, args);
+    if (name.startsWith('call.') || name === 'chat.inbox' || name === 'chat.bridge' || name === 'chat.unbridge' || name === 'presence.set') return this.chatOp(name, me, args);   // HttpService (game-web.js)
+    if (name === 'game.secrets' || name === 'game.secretSet' || name === 'game.secretRemove') return this.secretOp(name, me, args);
     if (name.startsWith('learn.')) return this.learnOp(name, me, args);
     if (name.startsWith('roadmap.')) return this.roadmapOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
@@ -2617,6 +2626,7 @@ export class GbServerObject extends DurableObject {
       }
       if ('maxPlayers' in args) a.maxPlayers = clamp(num(args, 'maxPlayers'), 2, kMostPlayers);
       if ('allowGear' in args) a.allowGear = args.allowGear === true;
+      if ('http' in args) a.httpOn = args.http === true;   // web requests from its server scripts (game-web.js)
       if ('comments' in args) a.commentsOff = args.comments === false;
       if ('privatePrice' in args) a.privatePrice = clamp(num(args, 'privatePrice'), 0, kMaxPrivatePrice);
       if ('lyreto' in args && !this.setLyreto('game', a, str(args, 'lyreto'))) return fail('That isn\'t a Lyreto link. Copy your server\'s invite link in Lyreto: it starts with https://lyreto.com/');
@@ -2789,6 +2799,7 @@ export class GbServerObject extends DurableObject {
           u.partyInvites = [{ id, owner: me.id, ownerName: me.username || me.name, title, at: now() }, ...(u.partyInvites || []).filter((x) => x.id !== id)].slice(0, 50);
           this.saveUser(u);
           this.notify(u, 'party', (me.username || me.name) + ' invited you to a party: ' + title, id);
+          this.livePing(u, 'chat');
         }
         return okay({ chat, me: this.meJson(me) });
       }
@@ -2803,7 +2814,7 @@ export class GbServerObject extends DurableObject {
         if (chat.members.length >= 20) { removeInvite(me, invite.id); return fail('That party is full.'); }
         if (chat.members.some((x) => x.id === me.id)) { removeInvite(me, invite.id); return okay({ chat, me: this.meJson(me) }); }
         chat.members.push(person(me)); chat.readAt = chat.readAt || {}; chat.readAt[me.id] = now(); chat.updated = now();
-        removeInvite(me, invite.id); syncChat(chat);
+        removeInvite(me, invite.id); syncChat(chat); this.chatPing(chat);
         return okay({ chat, me: this.meJson(me) });
       }
       const chatId = str(args, 'id');
@@ -2837,6 +2848,7 @@ export class GbServerObject extends DurableObject {
         }
         chat.messages = [...(chat.messages || []), message].slice(-200);
         chat.updated = now(); syncChat(chat);
+        this.chatPosted(chat, message);   // live pings, and the Lyreto gateway (chats.js)
         return okay({ chat, me: this.meJson(me) });
       }
       if (name === 'party.invite') {
@@ -2866,7 +2878,7 @@ export class GbServerObject extends DurableObject {
         const leaving = this.users.get(target);
         if (leaving) { leaving.chats = (leaving.chats || []).filter((x) => x.id !== chat.id); this.saveUser(leaving); }
         if (!chat.members.length) return okay({ left: true });
-        chat.updated = now(); syncChat(chat); return okay({ chat, left: target === me.id });
+        chat.updated = now(); syncChat(chat); this.chatPing(chat); return okay({ chat, left: target === me.id });
       }
       return fail('Unknown party request.');
     }
@@ -4353,7 +4365,7 @@ export class GbServerObject extends DurableObject {
         const u = this.findUser(id);
         if (!u) continue;
         const pr = this.presence(me, u);
-        const f = Object.assign(person(u), { online: pr.online });
+        const f = Object.assign(person(u), { online: pr.online, dnd: pr.dnd || undefined });
         if (pr.playing) f.playing = pr.playing;
         friends.push(f);
       }
@@ -5758,6 +5770,7 @@ export class GbServerObject extends DurableObject {
     if (!c.window || t - c.window >= 10000) { c.window = t; c.sent = 0; }
     const reply = ++c.sent > kWsRequestsPer10s ? Object.assign(fail('Whoa, that\'s a lot of requests. Slow down a little.'), { slowDown: true })
       : this.handle(req, { ip: c.ip });
+    if (reply.webJob || reply.iceJob) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
     if ('id' in req) reply.id = req.id;
     this.sendTo(c, reply);
   }
@@ -5871,6 +5884,16 @@ export class GbServerObject extends DurableObject {
       const jpg = data[0] === 0xff && data[1] === 0xd8;
       return new Response(data, { headers: { 'content-type': jpg ? 'image/jpeg' : 'image/png', 'cache-control': 'public, max-age=86400' } });
     }
+    // POST /api/bridge/lyreto: Lyreto's server talking to the gateway (chats.js; signed, not a person).
+    if (url.pathname === '/api/bridge/lyreto' && request.method === 'POST') {
+      let body;
+      try { body = await readLimitedText(request, 64 * 1024); } catch { body = null; }
+      if (body === null) return json(fail('That wasn\'t a proper request.'), 400);
+      const r = await this.bridgeRequest(request, body);
+      if (this.livePings.length) await this.sendLivePings();
+      if (this.bridgeOut.length) await this.bridgeFlush();
+      return json(r, r.ok ? 200 : 400);
+    }
     // POST /api: one request, one answer. Enforce the byte limit here too: the
     // Worker may forward requests directly to this Durable Object without reading them.
     let text;
@@ -5909,6 +5932,13 @@ export class GbServerObject extends DurableObject {
     }
     if (answer.ok && answer.supabase) answer = await this.supabaseFollowUp(answer);
     if (answer.ok && answer.translate) answer = await this.translate(answer);
+    if (answer.ok && answer.webJob) answer = await this.webFetch(answer);
+    if (answer.ok && answer.iceJob) answer = await this.iceFetch(answer);
+    if (this.bridgeOut && this.bridgeOut.length) {
+      const sending = this.bridgeFlush();
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(sending);
+      else await sending;
+    }
     if (this.outbox.length) await this.sendMail();
     if (this.lyretoQueue.length) await this.fetchLyretoCards();
     if (this.env.SUPABASE_URL && now() - (this.numbersAt || 0) >= 300) {
@@ -5934,3 +5964,5 @@ export function json(obj, status = 200) {
 }
 
 installMcpRelay(GbServerObject);
+installGameWeb(GbServerObject);
+installChats(GbServerObject);

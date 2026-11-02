@@ -58,6 +58,7 @@ nlohmann::json GbServer::presence(const User& viewer, const User& u) const {
     json r = {{"online", false}, {"playing", nullptr}};
     if (!allows(u.privacyStatus) || blocks(viewer, u)) return r;
     r["online"] = isOnline(u);
+    r["dnd"] = isOnline(u) && u.dnd;   // Do Not Disturb (ServerChats.cpp)
     if (const Session* s = sessionOf(u.id)) {
         auto g = findAsset(s->game);
         r["playing"] = {{"game", s->game}, {"title", !s->title.empty() ? s->title : g != m_assets.end() ? g->second.name : std::string("a game")},
@@ -84,6 +85,7 @@ json GbServer::friendOp(const std::string& name, User& me, const json& args) {
             json f = person(*u);
             json pr = presence(me, *u);
             f["online"] = pr["online"];
+            if (pr.value("dnd", false)) f["dnd"] = true;
             if (!pr["playing"].is_null()) f["playing"] = pr["playing"];   // (friends can join private servers too)
             friends.push_back(f);
         }

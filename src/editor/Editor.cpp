@@ -367,6 +367,8 @@ void Editor::render(float dt) {
                       "): the Buy window shows in the Guts&Bolts Player, not in Studio tests.");
             m_session->scripts().passPromptDone(userId, pass, false);
         }
+        // DisplaySystemMessage: there's no chat in a Studio test, so it goes in Output.
+        for (auto& line : m_session->scripts().takeSystemChat()) Log::info("[System chat] " + line);
         Player* p = m_scene->player();
         if (p && !m_session->runOnly()) m_viewport->followPlayer(*p, dt);   // Run: the camera stays free
     }

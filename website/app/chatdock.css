@@ -1,0 +1,104 @@
+/* The chat panel (chatdock.js): docked in the bottom corner on computers, the Chat tab on phones.
+   Always dark, so it stands out from the page under it. */
+.cd-panel {
+  --cd-bg: #191b1f; --cd-bg2: #24272d; --cd-line: #33373f; --cd-text: #f2f4f7; --cd-muted: #a3a9b4;
+  --cd-blue: #3d8bfd; --cd-red: #e5484d; --cd-green: #30a46c;
+  background: var(--cd-bg); color: var(--cd-text); display: flex; flex-direction: column; min-height: 0;
+  font-size: 13px; line-height: 1.35;
+}
+.cd-panel a { color: #8cc2ff; }
+.cd-panel .btn { font-size: 12px; }
+
+/* The dock itself */
+.chat-dock { position: fixed; right: 16px; bottom: 0; z-index: 900; width: 340px; font-family: var(--gb-font); }
+.chat-dock[hidden] { display: none; }
+.cd-tab { margin-left: auto; display: flex; align-items: center; gap: 8px; width: 180px; padding: 9px 14px; border: 0;
+  border-radius: 10px 10px 0 0; background: #191b1f; color: #f2f4f7; font: inherit; font-size: 14px; font-weight: bold; cursor: pointer;
+  box-shadow: 0 -2px 12px rgba(0,0,0,.35); }
+.cd-tab span:first-child { flex: 1; text-align: left; }
+.chat-dock .cd-body { display: none; height: min(560px, calc(100vh - 80px)); border-radius: 12px 12px 0 0; overflow: hidden; box-shadow: 0 -4px 24px rgba(0,0,0,.45); }
+.chat-dock.open .cd-tab { display: none; }
+.chat-dock.open .cd-body { display: flex; }
+
+/* The Chat page (phones) */
+.chat-page-title { margin-bottom: 8px; }
+.cd-page { border-radius: 10px; overflow: hidden; height: calc(100vh - 210px); min-height: 420px; }
+.nav-chat .unread, .cd-badge { display: inline-block; min-width: 18px; padding: 1px 5px; border-radius: 9px; background: var(--cd-red, #e5484d);
+  color: #fff; font-size: 11px; font-weight: bold; text-align: center; line-height: 16px; }
+.cd-badge[hidden] { display: none; }
+@media (min-width: 901px) { .nav-chat { display: none; } }
+@media (max-width: 900px) { .chat-dock { display: none; } .cd-page { height: calc(100vh - 300px); height: calc(100dvh - 300px); min-height: 380px; } }
+
+/* Header, search, rows */
+.cd-head { display: flex; align-items: center; gap: 6px; padding: 12px 12px 8px; }
+.cd-title { flex: 1; min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-icon { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--cd-text); cursor: pointer; }
+.cd-icon:hover { background: var(--cd-bg2); }
+.cd-icon.off { color: var(--cd-red); }
+.cd-dnd { border: 1px solid var(--cd-line); border-radius: 12px; background: transparent; color: var(--cd-muted); font: inherit; font-size: 11px; padding: 3px 9px; cursor: pointer; }
+.cd-dnd::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--cd-green); margin-right: 5px; vertical-align: 0; }
+.cd-dnd.on { color: #ffb3b5; border-color: #6b2a2d; }
+.cd-dnd.on::before { background: var(--cd-red); }
+.cd-search { display: flex; align-items: center; gap: 8px; margin: 0 12px 8px; padding: 7px 11px; border: 1px solid var(--cd-line); border-radius: 9px; color: var(--cd-muted); }
+.cd-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--cd-text); font: inherit; font-size: 14px; }
+.cd-list, .cd-msgs, .cd-info, .cd-new { flex: 1; min-height: 0; overflow-y: auto; }
+.cd-row { display: flex; align-items: center; gap: 11px; width: 100%; padding: 8px 12px; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cd-row:hover { background: var(--cd-bg2); }
+.cd-av { position: relative; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: bold; font-size: 17px; }
+.cd-av.small { flex-basis: 26px; width: 26px; height: 26px; font-size: 12px; }
+.cd-dot { position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--cd-bg); }
+.cd-dot.on { background: var(--cd-green); } .cd-dot.dnd { background: var(--cd-red); }
+.cd-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cd-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.cd-line b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.cd-line small { color: var(--cd-muted); font-weight: bold; white-space: nowrap; }
+.cd-prev { flex: 1; min-width: 0; color: var(--cd-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cd-row.unread .cd-prev { color: var(--cd-text); font-weight: bold; }
+.cd-live { color: var(--cd-green); display: inline-grid; }
+.cd-none, .cd-empty { color: var(--cd-muted); padding: 16px; text-align: center; }
+.cd-invite { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: #1f2a3b; border-bottom: 1px solid var(--cd-line); }
+.cd-invite span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cd-invite small { color: var(--cd-muted); }
+
+/* A chat */
+.cd-msgs { padding: 8px 12px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--cd-line); }
+.cd-msg { max-width: 85%; align-self: flex-start; }
+.cd-msg.mine { align-self: flex-end; }
+.cd-meta { display: flex; gap: 7px; align-items: center; font-size: 11px; color: var(--cd-muted); margin: 0 3px 2px; }
+.cd-msg.mine .cd-meta { justify-content: flex-end; }
+.cd-bubble { background: var(--cd-bg2); border-radius: 12px 12px 12px 3px; padding: 7px 10px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.cd-msg.mine .cd-bubble { background: #1f4f99; border-radius: 12px 12px 3px 12px; }
+.cd-sys { align-self: center; color: var(--cd-muted); font-size: 11px; text-align: center; }
+.cd-via { background: #5b3cc4; color: #fff; border-radius: 4px; padding: 0 5px; font-size: 10px; font-weight: bold; }
+.cd-compose { display: flex; gap: 6px; align-items: flex-end; padding: 8px 12px 12px; border-top: 1px solid var(--cd-line); }
+.cd-compose textarea { flex: 1; min-width: 0; resize: none; height: 36px; min-height: 36px; max-height: 120px; border: 1px solid var(--cd-line); border-radius: 9px; padding: 7px 9px;
+  background: var(--cd-bg2); color: var(--cd-text); font: inherit; font-size: 14px; }
+.cd-bridge { margin: 0 12px 6px; padding: 6px 9px; border-radius: 7px; background: #2a2150; color: #d8ccff; font-size: 12px; }
+.cd-callnote, .cd-callbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 12px 8px; padding: 8px 10px; border-radius: 9px; background: #17351f; color: #c9f3d6; }
+.cd-callinfo { flex: 1; min-width: 0; }
+.cd-callinfo svg { vertical-align: -3px; }
+.cd-warn { color: #f5d78e; }
+
+/* Details, new chat */
+.cd-info { padding: 4px 12px 12px; border-top: 1px solid var(--cd-line); }
+.cd-info h4 { margin: 12px 0 6px; font-size: 13px; }
+.cd-member { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.cd-member a { flex: 1; } .cd-member small { color: var(--cd-muted); }
+.cd-row-form { display: flex; gap: 6px; margin: 8px 0; }
+.cd-row-form select, .cd-row-form input, .cd-new input[name=title] { flex: 1; min-width: 0; padding: 5px 8px; border: 1px solid var(--cd-line); border-radius: 7px; background: var(--cd-bg2); color: var(--cd-text); font: inherit; }
+.cd-note { color: var(--cd-muted); font-size: 12px; margin: 6px 0; }
+.cd-codetext { font-size: 18px; letter-spacing: 1px; user-select: all; }
+.cd-new { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.cd-new input[name=title] { flex: none; }
+.cd-picks { display: flex; flex-direction: column; border: 1px solid var(--cd-line); border-radius: 8px; max-height: 300px; overflow-y: auto; }
+.cd-pick { display: flex; align-items: center; gap: 9px; padding: 6px 9px; cursor: pointer; }
+.cd-pick:hover { background: var(--cd-bg2); }
+
+/* Someone's calling */
+.cd-ring { position: fixed; z-index: 1000; right: 16px; bottom: 70px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; max-width: calc(100vw - 32px);
+  padding: 12px 14px; border-radius: 12px; background: #191b1f; color: #f2f4f7; box-shadow: 0 6px 24px rgba(0,0,0,.5); font-family: var(--gb-font); font-size: 13px; }
+.cd-ring span:nth-child(2) { display: flex; flex-direction: column; min-width: 120px; }
+.cd-ring small { color: #a3a9b4; }
+.cd-ringicon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: #30a46c; color: #fff; animation: cd-pulse 1.2s infinite; }
+@keyframes cd-pulse { 50% { transform: scale(1.12); } }
+@media (max-width: 900px) { .cd-ring { left: 16px; right: 16px; bottom: 16px; } }
