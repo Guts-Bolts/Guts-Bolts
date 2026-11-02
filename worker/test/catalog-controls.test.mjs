@@ -1,4 +1,4 @@
-// Marketplace controls: staff off-sale, public catalog preview, and Limited vs Limited U.
+// Catalog controls: staff off-sale, public catalog preview, and Limited vs Limited U.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeServer } from './helpers.mjs';

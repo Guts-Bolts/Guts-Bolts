@@ -4191,12 +4191,9 @@ const actions = {
   async buyConfirm(d) {
     const r = await call('buy', { id: d.id });
     document.querySelectorAll('.modal').forEach((m) => m.remove());
-    if (r.ok && r.me) me = r.me;
+    if (r.ok && r.me) setMe(r.me);
     toast(r.ok ? 'It\'s yours! Wear (or equip) it from the Avatar page.' : r.error);
     render();
-  },
-  closeModal() {
-    document.querySelectorAll('.modal').forEach((m) => m.remove());
   },
   async emoteEquip(d) {
     const r = await call('emotes.equip', { slot: Number(d.slot), id: d.id || '' });
