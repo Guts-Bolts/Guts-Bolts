@@ -1514,10 +1514,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             return fail("This item is only available through a promo code.");
         if (a.meta.is_object() && a.meta.value("exclusive", false))
             return fail("This is an Exclusive item: it can't be bought. It comes from events and gift boxes.");
+        const bool resellableLimited = !a.limited || !a.meta.is_object() || a.meta.value("limitedType", std::string("limited_u")) == "limited_u";
         if ((a.meta.is_object() && a.meta.value("staffOffsale", false)) || (a.meta.is_object() && a.meta.value("offsaleAt", 0LL) > 0 && now >= a.meta.value("offsaleAt", 0LL)))
             return fail(std::string("This item is off sale: it was only for sale for a limited time.") +
-                        (a.limited ? " Buy one from a reseller on the item's page." : ""));
-        if (a.limited && a.sales >= a.stock) return fail("Sold out! Buy one from a reseller on the item's page.");
+                        (a.limited && resellableLimited ? " Buy one from a reseller on the item's page." : ""));
+        if (a.limited && a.sales >= a.stock) return fail(resellableLimited ? "Sold out! Buy one from a reseller on the item's page." : "Sold out! This Limited cannot be resold.");
         if (a.price > 0) {
             if (balance(me) < a.price)
                 return fail("You need " + std::to_string(a.price - balance(me)) + " more Bolts for that.");

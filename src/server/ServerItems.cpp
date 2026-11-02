@@ -88,10 +88,10 @@ long long wholeNumber(const json& v) {
 
 // --- Limiteds -----------------------------------------------------------------------
 
-json GbServer::copiesOf(const User& u) const {
+json GbServer::copiesOf(const User& u) const {   // only Limited U copies can be traded
     json out = json::array();
     for (const auto& [id, a] : m_assets) {
-        if (!a.limited) continue;
+        if (!a.limited || (a.meta.is_object() && a.meta.value("limitedType", std::string("limited_u")) != "limited_u")) continue;
         for (const json& c : a.copies)
             if (c.value("owner", std::string()) == u.id)
                 out.push_back({{"id", a.id}, {"name", a.name}, {"kind", a.kind}, {"serial", c.value("serial", 0LL)}, {"price", c.value("price", 0LL)}});
