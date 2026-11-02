@@ -467,7 +467,8 @@ void Editor::loadLearnProgress() {
     m_learnLoaded = true;
     const long long userId = Online::me().value("userId", 0LL);
     auto mergeFile = [this](const std::string& accountKey, bool allowCurrent) {
-        std::ifstream in(Paths::file("studio_learn_progress_" + accountKey + ".json"), std::ios::binary);
+        const std::string progressFile = "studio_learn_progress_" + accountKey + ".json";
+        std::ifstream in(Paths::file(progressFile.c_str()), std::ios::binary);
         if (!in) return;
         std::stringstream data; data << in.rdbuf();
         const nlohmann::json saved = nlohmann::json::parse(data.str(), nullptr, false);
@@ -522,7 +523,8 @@ void Editor::saveLearnProgress() {
         { "updatedAt", m_learnProgressUpdatedAt }};
     const long long userId = Online::me().value("userId", 0LL);
     const std::string accountKey = userId > 0 ? std::to_string(userId) : "guest";
-    const auto path = Paths::file("studio_learn_progress_" + accountKey + ".json");
+    const std::string progressFile = "studio_learn_progress_" + accountKey + ".json";
+    const auto path = Paths::file(progressFile.c_str());
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
