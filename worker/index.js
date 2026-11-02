@@ -22,7 +22,7 @@ import { withSecurityHeaders } from './security.js';
 import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
-import { checkSupabaseHealth } from './supabase.js';
+import { checkSupabaseHealth, listSupabaseActivity } from './supabase.js';
 export { GbServerObject };
 
 const MAX_REQUEST = 40 * 1024 * 1024;   // a whole game, base64
@@ -183,7 +183,8 @@ async function route(request, env, ctx) {
     const picture = /^\/(thumb|icon|shot|wear|decal|avatar)\//.test(url.pathname);
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
     const supabaseHealthPath = url.pathname === '/api/supabase/health';
-    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath ? 'api' : mcp ? 'mcp' : '';
+    const supabaseActivityPath = /^\/api\/activity\/(auctions|forum)$/.test(url.pathname);
+    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath ? 'api' : mcp ? 'mcp' : '';
     let info = null;
     if (kind) {
       info = await check(request, env, url, kind);
@@ -199,6 +200,16 @@ async function route(request, env, ctx) {
       if (request.method !== 'GET') return reply({ ok: false, error: 'Use GET.' }, 405);
       const health = await checkSupabaseHealth(env);
       return reply({ ok: health.connected, supabase: health }, health.connected ? 200 : 503);
+    }
+    if (supabaseActivityPath) {
+      if (request.method !== 'GET') return reply({ ok: false, error: 'Use GET.' }, 405);
+      const table = url.pathname.endsWith('/auctions') ? 'gb_auction_events' : 'gb_forum_activity';
+      try {
+        const events = await listSupabaseActivity(env, table, url.searchParams.get('limit'));
+        return reply({ ok: true, events });
+      } catch {
+        return reply({ ok: false, error: 'Activity feed is temporarily unavailable.' }, 503);
+      }
     }
     // The server on Cloudflare: one Durable Object holds everything.
     const builtIn = () => env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main'));
