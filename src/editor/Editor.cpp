@@ -128,6 +128,8 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     if (std::getenv("GB_TEST_BLOCKS")) m_showBlocks = true;   // (tests: start with it showing)
     m_scriptEditor->setDebugger(&m_session->scripts());   // breakpoints in its line numbers
     if (std::getenv("GB_TEST_LEVELGEN")) m_showLevelGen = true;   // (tests: start with it showing)
+    if (std::getenv("GB_TEST_CUTSCENES")) m_showCutscenes = true;
+    if (std::getenv("GB_TEST_TEMPLATES")) m_showTemplates = true;
     m_animEditor   = std::make_unique<AnimationEditor>(scene, &m_state);
     m_assistant    = std::make_unique<AssistantPanel>(*this);
     m_team         = std::make_unique<TeamCreate>(scene);
@@ -448,6 +450,8 @@ void Editor::render(float dt) {
     renderAiActivity();
     renderScriptHistory();
     renderLevelGenerator();
+    renderTemplates();
+    renderCutscenes();
     renderPhysicsReplay();
     renderCompare();
     // Draw sign-in last so the optional account window stays above Studio's panels.
@@ -3738,6 +3742,7 @@ void Editor::renderMenuBar() {
             m_pending = Pending::New;
             if (m_dirty) m_openDiscard = true; else { newScene(); m_pending = Pending::None; }
         }
+        if (ImGui::MenuItem("New from Template...")) m_showTemplates = true;
         if (ImGui::MenuItem("Open...", "Ctrl+O")) {
             m_pending = Pending::Open;
             if (m_dirty) m_openDiscard = true; else m_openOpen = true;
@@ -3865,6 +3870,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("AI Activity", nullptr, &m_showAiActivity)) {}
         if (ImGui::MenuItem("Script History", nullptr, &m_showScriptHistory)) {}
         if (ImGui::MenuItem("Level Generator", nullptr, &m_showLevelGen)) {}
+        if (ImGui::MenuItem("Cutscene Maker", nullptr, &m_showCutscenes)) {}
         if (ImGui::MenuItem("Physics Replay", nullptr, &m_showReplay)) {}
         if (ImGui::MenuItem("Compare and Merge", nullptr, &m_showCompare)) {}
         ImGui::Separator();
@@ -3961,6 +3967,7 @@ void Editor::renderDialogs() {
         if (ImGui::Button("Discard changes", ImVec2(150, 0))) {
             ImGui::CloseCurrentPopup();
             if (m_pending == Pending::New) { newScene(); m_pending = Pending::None; }
+            else if (m_pending == Pending::Template) { m_pending = Pending::None; newFromTemplate(m_templateKind); }
             else if (m_pending == Pending::Open) m_openOpen = true;
             else if (m_pending == Pending::OpenDropped) { m_pending = Pending::None; openFile(m_droppedGame); }
         }

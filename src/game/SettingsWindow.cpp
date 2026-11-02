@@ -76,6 +76,18 @@ void draw(bool* open) {
     ImGui::Checkbox("Gutstober theme (October)", &s.seasonTheme);
     help("In October the app dresses up for Halloween: orange and purple, a pumpkin and bats. Turn off for the usual blue.");
 
+    ImGui::SeparatorText("Accessibility");
+    ImGui::Combo("Colorblind mode", &s.colorBlind, GraphicsSettings::colorBlindNames(), 4);
+    help("Shifts the game's colours so reds, greens or blues are easier to tell apart.");
+    ImGui::SliderFloat("Text size", &s.textSize, 1.0f, 2.0f, "%.1fx");
+    help("Makes all the writing on the screen bigger.");
+    ImGui::Checkbox("Sound captions", &s.captions);
+    help("Shows the sounds you hear as words while playing, with an arrow when they come from the side.");
+
+    ImGui::SeparatorText("Clips");
+    ImGui::Checkbox("Clip recorder", &s.clipRecorder);
+    help("Keeps the last 30 seconds of the game you're playing, so F3 (or Save Clip in the menu) can save them as a GIF.");
+
     ImGui::SeparatorText("Controls");
     const char* touch[] = {"Auto (phones and tablets)", "Always on", "Off"};
     ImGui::Combo("Touch controls", &s.touchControls, touch, 3);

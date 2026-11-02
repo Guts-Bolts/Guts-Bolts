@@ -107,6 +107,10 @@ private:
     void renderMaterialGraph();     // EditorMaterialGraph.cpp
     void renderScriptHistory();     // EditorScriptHistory.cpp
     void renderLevelGenerator();               // (EditorLevelGen.cpp)
+    void renderTemplates();                    // File > New from Template (EditorTemplates.cpp)
+    void newFromTemplate(int kind);
+    void renderCutscenes();                    // Tools > Cutscene Maker (EditorCutscenes.cpp)
+    void stopCutscenePreview();
     void renderPhysicsReplay();     // EditorPhysicsReplay.cpp
     void renderCompare();           // Compare and Merge (EditorCompare.cpp)
     // Compares the open game with a saved one (and the version both started from, if given).
@@ -399,6 +403,14 @@ private:
     int  m_historyKind = 0;           // 0 every entry, 1 property changes, 2 events
     bool m_historySelected = false;   // only the selected object's
     // Level Generator (EditorLevelGen.cpp)
+    // Cutscene Maker (EditorCutscenes.cpp)
+    bool     m_showCutscenes = false, m_cutPreview = false;
+    uint64_t m_cutsceneId = 0;
+    double   m_cutPreviewStart = 0.0;
+    float    m_cutPreviewFov = 60.0f;
+    // New from Template (EditorTemplates.cpp)
+    bool m_showTemplates = false;
+    int  m_templateKind = 0;
     bool m_showLevelGen = false, m_levelGenReplace = true, m_levelGenBrowse = false;
     LevelGen::Settings m_levelGen;
     uint64_t m_levelGenLast = 0;
@@ -513,7 +525,7 @@ private:
     std::string m_studioLoginUser, m_studioLoginPass, m_studioLoginCode, m_studioLoginMessage;
 
     // Dialogs
-    enum class Pending { None, New, Open, OpenDropped };
+    enum class Pending { None, New, Open, OpenDropped, Template };
     Pending     m_pending = Pending::None;      // waiting on "discard changes?"
     bool        m_openSaveAs = false, m_openOpen = false, m_openDiscard = false,
                 m_openInfo = false;

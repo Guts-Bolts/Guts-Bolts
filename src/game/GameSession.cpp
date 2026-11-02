@@ -67,6 +67,7 @@ void GameSession::start() {
         if (!n->isSound() || !n->autoplay) return;
         glm::vec3 at = n->parent ? glm::vec3(n->parent->worldMatrix()[3]) : glm::vec3(0.0f);
         bool in3d = n->parent && n->parent->isPart();
+        if (n->name != "Sound") Audio::caption(n->name + (n->looped ? " (playing)" : ""), in3d ? &at : nullptr);   // (captions)
         n->audioHandle = Audio::play(n->soundId, SoundMix::volume(*m_scene, n), n->pitch, n->looped, in3d ? &at : nullptr);
         SoundMix::apply(*m_scene, n, n->audioHandle);   // its effects and SoundGroup
     });

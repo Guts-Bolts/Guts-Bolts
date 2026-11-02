@@ -430,6 +430,7 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
         io.DisplayFramebufferScale = ImVec2(fbW / io.DisplaySize.x, fbH / io.DisplaySize.y);
     Pad::injectApply();   // (tests)
     if (beforeImGui) beforeImGui();
+    ImGui::GetStyle().FontScaleMain = GraphicsSettings::get().textSize;   // Settings > Accessibility > Text size
     ImGui::NewFrame();
     Pad::update();
     return dt;

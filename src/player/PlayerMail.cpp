@@ -422,6 +422,17 @@ void PlayerApp::drawFeed() {
         if (++shown > 5) break;
         const json& u = p.value("user", json::object());
         ImGui::PushID(shown);
+        if (p.value("kind", std::string()) == "gamelog") {   // what's new in a game you favourited
+            const json& g = p.value("game", json::object());
+            ImGui::TextColored(Classic::kLink, "%s", g.value("name", std::string("A game")).c_str());
+            ImGui::SameLine();
+            ImGui::PushTextWrapPos(0);
+            ImGui::Text("posted an update: %s", p.value("text", std::string()).c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::TextDisabled("  %s", agoText(p.value("at", 0LL)).c_str());
+            ImGui::PopID();
+            continue;
+        }
         ImGui::PushStyleColor(ImGuiCol_Text, Classic::kLink);
         if (ImGui::Selectable(u.value("name", std::string("?")).c_str(), false, 0,
                               ImGui::CalcTextSize(u.value("name", std::string("?")).c_str())))

@@ -105,6 +105,7 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
                     all.push_back({{"text", u.posts[k].value("text", std::string())}, {"at", u.posts[k].value("at", 0LL)},
                                    {"user", {{"id", u.id}, {"userId", u.userId}, {"name", u.name}, {"verified", isVerified(u)}, {"avatar", u.avatar}}}});
             }
+            for (const json& note : gameLogFeed(me)) all.push_back(note);   // what's new in games you favourited (ServerExtras.cpp)
             std::sort(all.begin(), all.end(), [](const json& a, const json& b) { return a.value("at", 0LL) > b.value("at", 0LL); });
             for (size_t k = 0; k < all.size() && k < 40; ++k) feed.push_back(all[k]);
         }

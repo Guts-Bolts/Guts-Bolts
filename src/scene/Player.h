@@ -111,6 +111,7 @@ public:
     glm::vec3  spawnSpot() const;
     // Move to spawnSpot() without dying (the team was set just after we came in).
     void       placeAtSpawn();
+    void       moveTo(const glm::vec3& p);   // put the character here, standing still (the host's anti-cheat)
     float      aliveTime() const { return m_aliveTime; }   // seconds since we last (re)spawned
     // Called just before the character comes back to life (Player.CharacterRemoving).
     std::function<void()> onRespawning;

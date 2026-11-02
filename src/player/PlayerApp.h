@@ -15,6 +15,8 @@ namespace Catalog { struct Item; }
 #include "../game/Catalog.h"
 #include "../game/PlayerEntry.h"
 #include "../game/TouchControls.h"
+#include "../game/ClipRecorder.h"
+#include <future>
 #include "../core/Vr.h"
 #include <imgui.h>
 #include <nlohmann/json.hpp>
@@ -437,6 +439,31 @@ private:
     void photoCamera(float dt, bool hovered);
     void takePhoto();
     void drawPhotoMode(ImDrawList* dl, ImVec2 pos, ImVec2 max);
+    // Spectate mode (PlayerSpectate.cpp): watch other players through a camera that follows
+    // them. On by itself while you're dead (until you respawn), from the menu's Spectate
+    // button, or when a script asks (StarterGui:SetCore("Spectate", true)).
+    bool        m_spectate = false;        // turned on from the menu
+    Camera      m_specCam;
+    uint64_t    m_specTarget = 0;          // whose character we watch (0 = pick one)
+    bool        m_specWasOn = false;
+    bool spectating() const;               // watching someone right now
+    bool spectateManual() const;           // ...because you (or a script) asked, not because you died
+    std::vector<std::pair<uint64_t, std::string>> spectateTargets() const;   // (root id, name), alive ones
+    void spectateNext(int step);
+    void spectateCamera(float dt, bool hovered);
+    void drawSpectate(ImDrawList* dl, ImVec2 pos, ImVec2 max);
+    // The clip recorder (PlayerClips.cpp): keeps the last 30 seconds of the game; F3 (or the
+    // menu's Save Clip button) saves them as a .gif in the Clips folder.
+    ClipRecorder m_clips;
+    Framebuffer  m_clipFbo;                 // the view, shrunk, to read back
+    std::vector<unsigned char> m_clipPx;
+    std::future<std::string> m_clipSaving;  // being written (answers with what to tell you)
+    std::string  m_clipMsg;
+    double       m_clipMsgUntil = 0.0;
+    bool canSaveClip() const;
+    void recordClipFrame();
+    void saveClip();
+    void drawClipMsg(ImDrawList* dl, ImVec2 pos, ImVec2 max);
     // Game passes: the Buy window a game's script asked for (PlayerPasses.cpp).
     std::string    m_passPrompt, m_passMsg;   // the pass being offered ("" = none)
     nlohmann::json m_passInfo;

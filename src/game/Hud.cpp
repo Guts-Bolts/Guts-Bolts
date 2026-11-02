@@ -5,6 +5,7 @@
 #include "../scripting/ScriptEngine.h"
 #include "Badges.h"
 #include "../core/Voice.h"
+#include "../core/Audio.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -222,6 +223,28 @@ void drawSpeaker(ImDrawList* dl, ImVec2 c, float size, bool talking, bool muted)
         }
     }
     if (muted) dl->AddLine(P(-7, 6), P(6, -6), IM_COL32(230, 70, 70, 255), 2.0f * u);
+}
+
+void drawCaptions(ImDrawList* dl, ImVec2 min, ImVec2 max) {
+    const std::vector<Audio::Caption> list = Audio::captions(3.0);
+    if (list.empty()) return;
+    const double now = Audio::captionClock();
+    ImFont* font = ImGui::GetFont();
+    const float size = ImGui::GetFontSize() * 1.15f, lineH = size + 10.0f;
+    float y = max.y - 110.0f - lineH * (float)std::min<size_t>(list.size(), 5);
+    for (size_t i = list.size() > 5 ? list.size() - 5 : 0; i < list.size(); ++i) {
+        const Audio::Caption& c = list[i];
+        std::string text = "[" + c.text + "]";
+        if (c.count > 1) text += " x" + std::to_string(c.count);
+        if (c.side < 0) text = "<  " + text;
+        if (c.side > 0) text += "  >";
+        const float fade = (float)std::clamp(3.0 - (now - c.at), 0.0, 1.0);   // fades out in its last second
+        const ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text.c_str());
+        const ImVec2 at((min.x + max.x - ts.x) * 0.5f, y);
+        dl->AddRectFilled(ImVec2(at.x - 8, at.y - 4), ImVec2(at.x + ts.x + 8, at.y + ts.y + 4), IM_COL32(0, 0, 0, (int)(170 * fade)), 4.0f);
+        dl->AddText(font, size, at, IM_COL32(255, 255, 255, (int)(255 * fade)), text.c_str());
+        y += lineH;
+    }
 }
 
 void drawVoiceTags(ImDrawList* dl, ImVec2 min, ImVec2 max, const glm::mat4& viewProj) {
