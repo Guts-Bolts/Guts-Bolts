@@ -1,7 +1,6 @@
 // Languages (website/lang): translates this page and adds the picker to the footer.
   import { startTranslating, languagePicker } from './lang/i18n.js';
   import { call as apiCall } from './app/gb.js';
-  import { itemPicture } from './app/avatar3d.js';
   startTranslating();
   const foot = document.querySelector('footer');
   foot.append(document.createElement('br'), document.createElement('br'), languagePicker());
@@ -114,7 +113,8 @@
       img.src = '/thumb/' + encodeURIComponent(item.id) + '?v=' + encodeURIComponent(item.thumb);
       art.appendChild(img);
     } else {
-      itemPicture(item, 240).then((url) => {
+      // (the 3D drawer is big, so it only loads when an item has no picture yet)
+      import('./app/avatar3d.js').then((m) => m.itemPicture(item, 240)).then((url) => {
         if (!url || !art.isConnected) return;
         img.src = url;
         art.replaceChildren(img);
@@ -190,7 +190,8 @@
     if (loading || document.visibilityState === 'hidden') return;
     loading = true;
     try {
-      const response = await apiCall('list', { kind: 'clothing', auctions: true, limit: 100 });
+      // again=false: a busy server's "are you a person?" check never pops up on the front page.
+      const response = await apiCall('list', { kind: 'clothing', auctions: true, limit: 100 }, false);
       if (response && response.ok && Array.isArray(response.assets)) render(response.assets);
       else if (!lastItems.length) root.hidden = true;
     } catch {
@@ -213,7 +214,7 @@
   }
   refresh();
   window.setInterval(tick, 1000);
-  window.setInterval(refresh, 15000);
+  window.setInterval(refresh, 60000);   // (the countdown ticks by itself; bids don't need a fast refresh)
   window.addEventListener('focus', refresh);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
 })();
