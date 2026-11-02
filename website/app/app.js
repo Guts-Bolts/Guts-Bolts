@@ -4160,13 +4160,27 @@ const actions = {
     const price = Math.max(0, Number(d.price) || 0);
     const balance = Math.max(0, Number(me && me.bolts) || 0);
     const remaining = Math.max(0, balance - price);
-    const promptText = 'Are you sure you want to buy "' + (d.name || 'this item') + '"?\n\nPrice: ' + price.toLocaleString() + ' Bolts.\n\nAfter purchasing, you will have ' + remaining.toLocaleString() + ' Bolts.';
     if (balance < price) { toast('You do not have enough Bolts for this item.'); return; }
-    if (!confirm(promptText)) return;
+    popup(html`<h1 class="popup-title">Confirm Purchase</h1>
+      <p>Are you sure you want to buy <b>"${d.name || 'this item'}"</b>?</p>
+      <div class="box info">
+        <p><b>Price:</b> ${bolts(price)}</p>
+        <p class="small muted">Your Bolt balance after purchasing: <b>${bolts(remaining)}</b>.</p>
+      </div>
+      <p class="popup-buttons">
+        <button class="btn green big" data-act="buyConfirm" data-id="${d.id}">Confirm Purchase</button>
+        <button class="btn" data-act="closeModal" type="button">Cancel</button>
+      </p>`);
+  },
+  async buyConfirm(d) {
     const r = await call('buy', { id: d.id });
+    document.querySelectorAll('.modal').forEach((m) => m.remove());
     if (r.ok && r.me) me = r.me;
     toast(r.ok ? 'It\'s yours! Wear (or equip) it from the Avatar page.' : r.error);
     render();
+  },
+  closeModal() {
+    document.querySelectorAll('.modal').forEach((m) => m.remove());
   },
   async emoteEquip(d) {
     const r = await call('emotes.equip', { slot: Number(d.slot), id: d.id || '' });
