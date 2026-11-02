@@ -498,6 +498,10 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
             a.meta["offsaleAt"] = std::max(0LL, num("offsaleAt"));
             if (a.meta.value("timedFor", std::string()).empty()) a.meta["timedFor"] = "set";
         }
+        if (args.contains("staffOffsale")) {
+            if (!isStaff(me)) return fail("Only staff can take an item off sale or put it back on sale.");
+            a.meta["staffOffsale"] = args["staffOffsale"] == true;
+        }
         if (a.kind == "hat" && args.contains("style")) a.meta["style"] = std::clamp(num("style"), 1LL, 3LL);   // the hat's shape
         const bool picture = a.kind == "shirt" || a.kind == "pants" || a.kind == "face" || a.kind == "tshirt";
         if (picture && !str("data").empty()) {   // a new clothing / face picture
@@ -560,6 +564,8 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
                 if (u.owned.count(a.id) && u.id != a.creator) a.copies.push_back({{"serial", ++serial}, {"owner", u.id}, {"price", 0}});
             a.sales = serial;
             a.limited = true;
+            if (!a.meta.is_object()) a.meta = json::object();
+            a.meta["limitedType"] = str("limitedType") == "limited" ? "limited" : "limited_u";
         }
         if (stock < a.sales) {
             saveAssets();
@@ -590,6 +596,8 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
     if (name == "resale.list") {
         // Put your copy of a Limited up for sale (price 0 = take it off sale).
         auto it = findAsset(str("id"));
+        if (it != m_assets.end() && it->second.meta.is_object() && it->second.meta.value("limitedType", std::string("limited_u")) != "limited_u")
+            return fail("This Limited is not resellable.");
         json* c = it == m_assets.end() ? nullptr : copyIn(it->second, num("serial"));
         if (!c || c->value("owner", std::string()) != me.id) return fail("You don't have that copy.");
         (*c)["price"] = std::clamp(num("price"), 0LL, 10000000LL);
@@ -598,6 +606,8 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
     }
     if (name == "resale.buy") {
         auto it = findAsset(str("id"));
+        if (it != m_assets.end() && it->second.meta.is_object() && it->second.meta.value("limitedType", std::string("limited_u")) != "limited_u")
+            return fail("This Limited is not resellable.");
         json* c = it == m_assets.end() ? nullptr : copyIn(it->second, num("serial"));
         if (!c || c->value("price", 0LL) <= 0) return fail("That copy isn't for sale (any more).");
         Asset& a = it->second;
@@ -652,6 +662,8 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         if (give.empty() || get.empty()) return fail("Pick at least one of your limiteds and one of theirs.");
         auto holds = [&](const User& u, const json& list) {
             for (const json& x : list) {
+                auto asset = findAsset(x["id"].get<std::string>());
+                if (asset == m_assets.end() || (asset->second.meta.is_object() && asset->second.meta.value("limitedType", std::string("limited_u")) != "limited_u")) return false;
                 const json* c = copyOf(x["id"].get<std::string>(), x["serial"].get<long long>());
                 if (!c || c->value("owner", std::string()) != u.id) return false;
             }

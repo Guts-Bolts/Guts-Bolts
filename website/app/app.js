@@ -300,7 +300,7 @@ function officialBadge(a) {
 function itemCard(a) {
   items3d.set(a.id, a);
   return html`<a class="card square" href="#/item/${a.id}">
-    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">LIMITED</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsaleAt ? html`<span class="timed-tag">${a.offsale ? 'OFF SALE' : 'TIMED'}</span>` : ''}
+    <div class="pic-wrap"><div class="pic">${itemIcon(a)}</div>${officialBadge(a)}</div>${a.limited ? html`<span class="limited-tag">${a.limitedType === 'limited' ? 'LIMITED' : 'LIMITED U'}</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsale ? html`<span class="timed-tag">OFF SALE</span>` : a.offsaleAt ? html`<span class="timed-tag">TIMED</span>` : ''}
     <div class="name">${a.name}</div>
     <div class="by">${a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
       : a.price > 0 ? bolts(a.price) : raw('<span class="muted">Free</span>')} · by ${a.creatorName}${verified(a.creatorVerified)}</div></a>`;
@@ -1499,8 +1499,9 @@ pages.catalog = async () => {
   if (cat === 'myfavorites' && !signedIn()) { show(html`<h1>My Favorites</h1>${needSignIn('see your favourite items')}`); return; }
   // (Auctions are asked for by name: they're Exclusive items, which the normal list leaves out.
   // My Favorites is your wishlist: the items you hearted on their pages.)
+  const publicPreview = !!(me.staff && q.get('public') === '1');
   const r = await listAll({ kind: 'clothing', query: q.get('q') || '', ...(cat === 'auctions' ? { auctions: true } : {}),
-    ...(cat === 'myfavorites' ? { favorites: true } : {}) });
+    ...(cat === 'myfavorites' ? { favorites: true } : {}), ...(publicPreview ? { publicView: true } : {}) });
   if (!r.ok) { show(html`<h1>Catalog</h1><p class="error">${r.error}</p>`); return; }
   const pick = CATALOG_PICK[cat] || ((a) => a.kind === cat);
   const price = PRICES[q.get('price')];
@@ -1509,11 +1510,11 @@ pages.catalog = async () => {
   const priceOf = (a) => auctionOpen(a) ? html`bid ${bolts(a.auction.need)}`
     : a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
     : a.offsale ? raw('<span class="muted">Off sale</span>') : a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>');
-  show(browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
+  show(html`${publicPreview ? html`<div class="box info"><b>Public player preview</b><p class="small">Hidden, exclusive and staff-review items are excluded using the same visibility rules players receive.</p><a class="btn small" href="#/catalog">Return to staff catalog</a></div>` : me.staff ? html`<p><a class="btn small" href="${browseLink({ public: '1' })}">View as Player</a></p>` : ''}${browsePage({ title: 'Catalog', cats: CATALOG_CATS, cat, heading: flat.find((c) => c[0] === cat)[1],
     shown: browseSlice(list).map((a) => browseCard(a, '#/item/' + a.id, priceOf(a))), total: list.length,
     sorts: [...BROWSE_SORTS.slice(0, 2), ['favorited', 'Most Favorited'], ...BROWSE_SORTS.slice(2)],
     filters: [{ title: 'Price', key: 'price', options: [['', 'Any Price'], ['free', 'Free'], ['1-100', '1 - 100'], ['101-1000', '101 - 1,000'], ['over', 'Over 1,000']] },
-      creatorFilter()] }));
+      creatorFilter()] })}`);
 };
 
 // Pick which emote slot (1-8) an emote goes in, or take it out.
@@ -1560,7 +1561,7 @@ pages.item = async (id) => {
     : auOpen ? html`<div id="auctionLiveBid">${auctionBidBox(a)}</div>`
     : a.exclusive ? html`<button class="btn big buy" disabled>Exclusive</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
-    : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
+    : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}" data-name="${a.name}" data-price="${a.price || 0}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
   // Paid items that aren't Limited can be bought for a friend (even if you have one yourself).
   const giftable = a.price > 0 && !L && !offsale && !a.review && !a.exclusive && !(a.meta && a.meta.award);
   const giftButton = giftable ? html`<button class="btn big gift" data-act="gift" data-id="${a.id}" data-name="${a.name}" data-price="${a.price}">&#127873; Buy as a gift</button>` : '';
@@ -1576,7 +1577,7 @@ pages.item = async (id) => {
           ${drawable3d(a) ? html`<button class="btn blue item-try-on" id="itemTryOn" type="button">Try On</button>` : ''}
           ${isNew ? html`<span class="item-ribbon">NEW</span>` : ''}
           ${timed ? html`<span class="item-clock" title="${offsaleText(a)}"><i></i></span>` : ''}
-          ${L ? html`<span class="item-limited">LIMITED<b>U</b></span>` : ''}
+          ${L ? html`<span class="item-limited">${a.limitedType === 'limited' ? 'LIMITED' : html`LIMITED<b>U</b>`}</span>` : ''}
           ${drawable3d(a) ? html`<button class="item-3d" id="item3dToggle" type="button" title="Switch to the 3D preview" aria-pressed="false">3D</button>` : ''}
         </div>
         <div class="item-info">
@@ -1635,7 +1636,8 @@ pages.item = async (id) => {
           : html`<label>New picture <span class="muted small">(optional, from the <a href="templates/${a.kind}_template.png" download>template</a>)</span></label><input type="file" name="picture" accept="image/png">`}
         ${canEdit ? html`<label>Goes off sale <span class="muted small">(a timed item; leave empty to sell it for good)</span></label>
           <input type="datetime-local" name="offsaleAt" value="${a.offsaleAt ? localInput(a.offsaleAt) : ''}" style="max-width:220px">` : ''}
-        ${me.staff ? html`<label><input type="checkbox" name="exclusive" ${a.exclusive ? 'checked' : ''}> Exclusive <span class="muted small">(staff only: hidden from the catalog and can't be bought; give it out with a gift box or the box below)</span></label>
+        ${me.staff ? html`<label><input type="checkbox" name="staffOffsale" ${a.staffOffsale ? 'checked' : ''}> Off sale now <span class="muted small">(staff only: blocks new purchases without deleting the item or affecting existing owners)</span></label>
+          <label><input type="checkbox" name="exclusive" ${a.exclusive ? 'checked' : ''}> Exclusive <span class="muted small">(staff only: hidden from the catalog and can't be bought; give it out with a gift box or the box below)</span></label>
           <label>Gift box: gives item ID <span class="muted small">(staff only: when this goes off sale, everyone who owns it gets that item; leave empty for a normal item)</span></label>
           <input type="text" name="giftItem" value="${a.giftItem ? a.giftItem.num || a.giftItem.id : ''}" placeholder="like 86" style="max-width:220px">` : ''}
         <p><button class="btn green">Save</button> <span id="itemEditMsg"></span></p></form>
@@ -1654,7 +1656,8 @@ pages.item = async (id) => {
       ${me.official && a.creator === me.id && canBeLimited(a) ? html`<form class="form" data-form="itemLimited"><input type="hidden" name="id" value="${a.id}">
         <label>${L ? 'Change the stock' : 'Make it Limited'} <span class="muted small">(only Guts can do this)</span></label>
         <input type="number" name="stock" min="1" value="${L ? L.stock : 100}" style="max-width:140px">
-        <p class="small muted">A Limited has a fixed number of numbered copies. When they're sold out, people buy and sell them from each other, and trade them.</p>
+        ${!L ? html`<label>Classification</label><select name="limitedType"><option value="limited_u">Limited U (resellable and tradable)</option><option value="limited">Limited (not resellable or tradable)</option></select>` : html`<p class="small muted">Classification: <b>${a.limitedType === 'limited' ? 'Limited' : 'Limited U'}</b>. This is fixed once copies have been issued.</p>`}
+        <p class="small muted">A Limited has a fixed number of numbered copies. Limited U copies can be resold and traded; standard Limited copies cannot.</p>
         <p><button class="btn gold">${L ? 'Save stock' : 'Make Limited'}</button></p></form>` : ''}</div>` : ''}
     ${au && !au.cancelled ? html`<div id="auctionLiveBidders">${auctionBidders(au, auOpen)}</div>` : ''}
     ${L ? html`<h2>Resellers</h2>${forSale.length ? html`<table class="stats resellers"><tr><th>Seller</th><th>Copy</th><th>Price</th><th></th></tr>
@@ -4154,7 +4157,21 @@ const actions = {
     render();
   },
   async buy(d) {
-    const r = await call('buy', { id: d.id });
+    const price = Math.max(0, Number(d.price) || 0), balance = Math.max(0, Number(me && me.bolts) || 0);
+    const remaining = balance - price, enough = balance >= price;
+    popup(html`<h1 class="popup-title">Confirm Purchase</h1>
+      <p>Are you sure you want to buy <b>"${d.name || 'this item'}"</b>?</p>
+      <div class="box info"><div><b>Price:</b> ${bolts(price)}</div>
+        <p class="small muted">Your balance after purchasing: <b>${bolts(remaining)}</b>.</p>
+        ${!enough ? html`<p class="error small">You don't have enough Bolts to buy this item.</p>` : ''}</div>
+      <form class="form" data-form="buyConfirm"><input type="hidden" name="id" value="${d.id}">
+        <p class="popup-buttons"><button class="btn green big" ${enough ? '' : 'disabled'}>Confirm Purchase</button>
+          <a href="#" class="btn" data-act="closeModal">Cancel</a></p></form>`);
+  },
+  async buyConfirm(f) {
+    const r = await call('buy', { id: f.id.value });
+    if (r.ok && r.me) me = r.me;
+    document.querySelectorAll('.modal').forEach((m) => m.remove());
     toast(r.ok ? 'It\'s yours! Wear (or equip) it from the Avatar page.' : r.error);
     render();
   },
@@ -4714,6 +4731,8 @@ const forms = {
       if (Number.isNaN(when)) { m.className = 'error'; m.textContent = ' Pick a whole date and time for it to go off sale (or clear the box).'; return; }
       args.offsaleAt = when;
     }
+    if (field('staffOffsale')) args.staffOffsale = field('staffOffsale').checked;
+    if (field('staffOffsale')) args.staffOffsale = field('staffOffsale').checked;
     if (field('exclusive')) args.exclusive = field('exclusive').checked;
     if (field('giftItem')) args.giftItem = field('giftItem').value.trim();
     if (field('picture') && field('picture').files[0]) args.data = await gb.fileBase64(field('picture').files[0]);
@@ -4751,7 +4770,7 @@ const forms = {
     render();
   },
   async itemLimited(f) {
-    const r = await call('item.limited', { id: f.id.value, stock: Number(f.stock.value) || 0 });
+    const r = await call('item.limited', { id: f.id.value, stock: Number(f.stock.value) || 0, limitedType: f.elements.namedItem('limitedType')?.value || 'limited_u' });
     toast(r.ok ? 'It\'s Limited now!' : r.error);
     render();
   },
