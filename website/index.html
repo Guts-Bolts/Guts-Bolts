@@ -32,9 +32,7 @@
   .topbar { background: linear-gradient(#2466c2, #0d3b82); border-bottom: 1px solid #072656; }
   .topbar .wrap { min-height: 52px; }
   .logo { display: flex; align-items: center; gap: 10px; text-decoration: none !important; }
-  .logo img { width: 36px; height: 36px; border-radius: 7px; border: 1px solid #06214a; }
-  .logo b { font-family: var(--gb-font); font-size: 30px; letter-spacing: 1px; font-weight: normal; color: #e23b3b;
-    text-shadow: -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 2px 2px 0 #fff, 3px 4px 0 rgba(0,0,0,.45); }
+  .logo img { display: block; height: 46px; width: auto; }   /* the logo picture (img/logo.png) */
   .acct { margin-left: auto; color: #fff; }
   .acct a { color: #fff; font-weight: bold; }
   nav { background: linear-gradient(#6cb1f7 0%, #3c8ae4 50%, #2a78d4 51%, #1f69c2 100%); border-top: 1px solid #9ccbff; border-bottom: 1px solid #154f99;
@@ -197,7 +195,7 @@
     .acct { display: none; }
   }
   @media (max-width: 420px) {
-    .logo b { font-size: 24px; }
+    .logo img { height: 38px; }
     .facts { grid-template-columns: 1fr 1fr; }
     .facts div { border-right: 1px solid var(--line) !important; }
     .facts div:nth-child(2n) { border-right: 0 !important; }
@@ -211,7 +209,7 @@
 <body>
 <header class="topbar">
   <div class="wrap">
-    <a class="logo" href="./"><img src="img/icon.png" alt=""><b>GUTS&amp;BOLTS</b></a>
+    <a class="logo" href="./"><img src="img/logo.png" alt="Guts &amp; Bolts" width="720" height="242"></a>
     <span class="acct"><a href="app/#/signup">Sign Up</a> | <a href="app/#/login">Login</a></span>
   </div>
 </header>
