@@ -88,3 +88,81 @@ export async function checkSupabaseHealth(env) {
     };
   }
 }
+
+const SUPABASE_ACTIVITY_TABLES = new Set(['gb_auction_events', 'gb_forum_activity']);
+
+/** Insert idempotent outbox rows. Replayed delivery cannot duplicate an event. */
+export async function insertSupabaseRows(env, table, rows) {
+  if (!['gb_notifications', 'gb_auction_events', 'gb_forum_activity'].includes(table)) {
+    throw new TypeError('Unsupported Supabase activity table.');
+  }
+  if (!Array.isArray(rows) || !rows.length) return;
+  const response = await supabaseRest(env, '/rest/v1/' + table + '?on_conflict=id', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      prefer: 'resolution=ignore-duplicates,return=minimal',
+    },
+    body: JSON.stringify(rows),
+  });
+  if (!response.ok) {
+    if (response.body) await response.body.cancel();
+    throw new Error('Supabase insert failed (' + response.status + ').');
+  }
+  if (response.body) await response.body.cancel();
+}
+
+/** Read a player's private notification archive. The caller must authenticate first. */
+export async function listSupabaseNotifications(env, accountId, limit = 200) {
+  if (typeof accountId !== 'string' || !/^[a-f0-9]{32,64}$/i.test(accountId)) {
+    throw new TypeError('Invalid notification account.');
+  }
+  const count = Math.max(1, Math.min(200, Math.floor(Number(limit) || 200)));
+  const query = new URLSearchParams({
+    select: 'id,kind,message,about,created_at,read_at',
+    account_id: 'eq.' + accountId,
+    order: 'created_at.desc',
+    limit: String(count),
+  });
+  const response = await supabaseRest(env, '/rest/v1/gb_notifications?' + query.toString());
+  if (!response.ok) {
+    if (response.body) await response.body.cancel();
+    throw new Error('Supabase notification lookup failed (' + response.status + ').');
+  }
+  return await response.json();
+}
+
+/** Mark all archived notifications read for one authenticated account. */
+export async function markSupabaseNotificationsRead(env, accountId) {
+  if (typeof accountId !== 'string' || !/^[a-f0-9]{32,64}$/i.test(accountId)) {
+    throw new TypeError('Invalid notification account.');
+  }
+  const query = new URLSearchParams({ account_id: 'eq.' + accountId, read_at: 'is.null' });
+  const response = await supabaseRest(env, '/rest/v1/gb_notifications?' + query.toString(), {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', prefer: 'return=minimal' },
+    body: JSON.stringify({ read_at: new Date().toISOString() }),
+  });
+  if (!response.ok) {
+    if (response.body) await response.body.cancel();
+    throw new Error('Supabase notification update failed (' + response.status + ').');
+  }
+  if (response.body) await response.body.cancel();
+}
+
+/** Read only the public event columns needed by the website activity feeds. */
+export async function listSupabaseActivity(env, table, limit = 8) {
+  if (!SUPABASE_ACTIVITY_TABLES.has(table)) throw new TypeError('Unsupported activity feed.');
+  const count = Math.max(1, Math.min(20, Math.floor(Number(limit) || 8)));
+  const fields = table === 'gb_auction_events'
+    ? 'id,asset_id,asset_name,event_type,actor_name,amount,current_high_bid,ends_at,created_at'
+    : 'id,thread_id,board_id,board_name,thread_title,event_type,actor_name,post_excerpt,created_at';
+  const query = new URLSearchParams({ select: fields, order: 'created_at.desc', limit: String(count) });
+  const response = await supabaseRest(env, '/rest/v1/' + table + '?' + query.toString());
+  if (!response.ok) {
+    if (response.body) await response.body.cancel();
+    throw new Error('Supabase activity lookup failed (' + response.status + ').');
+  }
+  return await response.json();
+}
+
