@@ -548,7 +548,7 @@ void Editor::startLearnLesson(const std::string& id) {
         m_learnPaused = false; m_learnDemoActionDone = false;
         m_learnPractice = resumePractice; m_learnSawPlay = false; m_learnSawPublish = false;
         m_learnPlayStarts = 0; m_learnWasPlaying = m_playing; m_learnStatus.clear();
-        m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
+        m_learnBaselineNodes.clear(); m_learnBaselineReady = false; m_learnFirstPlayNodes.clear();
         m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
         m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
         m_showLearn = true;
@@ -572,7 +572,7 @@ void Editor::renderLearn() {
         m_learnExplicitLaunch = false;
         m_learnSawPlay = false; m_learnSawPublish = false; m_learnWasPlaying = m_playing;
         m_learnPlayStarts = 0; m_learnStatus.clear();
-        m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
+        m_learnBaselineNodes.clear(); m_learnBaselineReady = false; m_learnFirstPlayNodes.clear();
         m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
         m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
         m_learnBaselineTerrainVersion = 0;
@@ -911,7 +911,7 @@ void Editor::renderLearn() {
         m_learnPractice = false;
         m_learnSawPlay = false;
         m_learnStatus.clear();
-        m_learnBaselineNodes.clear(); m_learnFirstPlayNodes.clear();
+        m_learnBaselineNodes.clear(); m_learnBaselineReady = false; m_learnFirstPlayNodes.clear();
         m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
         m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
         saveLearnProgress();
@@ -965,11 +965,12 @@ void Editor::renderLearn() {
             if (!m_learnDemoActionDone)
                 ImGui::TextDisabled("Complete the highlighted action before starting the challenge.");
             if (startPractice) {
-                m_learnBaselineNodes.clear();
+                m_learnBaselineNodes.clear(); m_learnBaselineReady = false;
                 m_scene->forEach([this](SceneNode* n) {
                     if (n && !n->internal) m_learnBaselineNodes[n->id] = Serializer::nodeShallowToString(*n);
                 });
                 m_learnBaselineTerrainVersion = m_scene->terrain().version();
+                m_learnBaselineReady = true;
                 m_learnFirstPlayNodes.clear();
                 m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
                 m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;
@@ -986,6 +987,17 @@ void Editor::renderLearn() {
             }
         }
     } else {
+        // Practice resumed from saved progress (a Studio restart or a website link) has no
+        // snapshot yet: take one now, or everything already in the project would count as
+        // the learner's new work and "Check my work" would pass without doing anything.
+        if (!m_learnBaselineReady) {
+            m_learnBaselineNodes.clear();
+            m_scene->forEach([this](SceneNode* n) {
+                if (n && !n->internal) m_learnBaselineNodes[n->id] = Serializer::nodeShallowToString(*n);
+            });
+            m_learnBaselineTerrainVersion = m_scene->terrain().version();
+            m_learnBaselineReady = true;
+        }
         ImGui::SeparatorText("Try it yourself");
         ImGui::TextWrapped("%s", current.practice);
         ImGui::Spacing();
@@ -1240,7 +1252,7 @@ void Editor::renderLearn() {
                     m_learnPractice = false;
                     m_learnSawPlay = false;
                     m_learnStatus.clear();
-                    m_learnBaselineNodes.clear();
+                    m_learnBaselineNodes.clear(); m_learnBaselineReady = false;
                     m_learnFirstPlayNodes.clear();
                     m_learnFirstPlayEnded = false; m_learnEditedAfterFirstPlay = false; m_learnSecondPlayAfterEdit = false;
                     m_learnSawScriptError = false; m_learnFirstPlayRun = m_learnSecondPlayRun = 0;

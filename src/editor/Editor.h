@@ -370,6 +370,7 @@ private:
     bool m_learnFirstPlayEnded = false, m_learnEditedAfterFirstPlay = false, m_learnSecondPlayAfterEdit = false, m_learnSawScriptError = false;
     int m_learnFirstPlayRun = 0, m_learnSecondPlayRun = 0;
     uint64_t m_learnBaselineTerrainVersion = 0;
+    bool m_learnBaselineReady = false;   // a practice snapshot was taken (a resumed practice takes one first)
     std::set<int> m_learnCompleted;
     bool m_showPerformanceDoctor = false;
     bool m_showLuaDebugger = false;

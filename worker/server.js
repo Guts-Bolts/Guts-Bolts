@@ -1311,7 +1311,8 @@ export class GbServerObject extends DurableObject {
     const storedStep = Number.isInteger(saved.step) && saved.step >= 0 && saved.step <= 2 ? saved.step : 0;
     const requestedStep = args.step === undefined ? 0 : args.step;
     const storedPractice = saved.practice === true;
-    const requestedPractice = args.practice === undefined ? storedPractice : args.practice;
+    // (no practice given: keep it only for the same lesson; a new lesson starts at its demonstration)
+    const requestedPractice = args.practice === undefined ? storedPractice && current === storedCurrent : args.practice;
     const nextCurrent = acceptResume ? current : storedCurrent;
     const nextStep = acceptResume ? requestedStep : storedStep;
     const nextPractice = acceptResume ? requestedPractice : storedPractice;

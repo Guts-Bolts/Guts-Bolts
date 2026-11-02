@@ -3877,6 +3877,9 @@ const actions = {
     progress.updatedAt = Number.isInteger(progress.updatedAt) && progress.updatedAt >= 0 ? progress.updatedAt : 0;
     const resume = progress.current === lesson[0] && !progress.completed.includes(lesson[0]);
     progress.current = lesson[0];
+    // practice: whether Studio skips straight to the challenge. Only keep it when picking up
+    // the same unfinished lesson; a different lesson always starts at its demonstration.
+    progress.practice = resume && progress.practice === true;
     if (!resume) progress.step = 0;
     if (signedIn()) {
       const remote = await call('learn.progress.get', {});
@@ -3887,10 +3890,13 @@ const actions = {
           const localUpdatedAt = Number.isInteger(progress.updatedAt) ? progress.updatedAt : 0;
           if (remote.progress.updatedAt >= localUpdatedAt) {
             const remoteCurrent = remote.progress.current;
-            if (remoteCurrent === lesson[0] && !progress.completed.includes(lesson[0]))
+            if (remoteCurrent === lesson[0] && !progress.completed.includes(lesson[0])) {
               progress.step = Number.isInteger(remote.progress.step) && remote.progress.step >= 0 && remote.progress.step <= 2 ? remote.progress.step : 0;
-            else
+              progress.practice = remote.progress.practice === true;
+            } else {
               progress.step = 0;
+              progress.practice = false;
+            }
           }
           progress.updatedAt = Math.max(localUpdatedAt, remote.progress.updatedAt);
         }

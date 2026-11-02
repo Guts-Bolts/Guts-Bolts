@@ -17,15 +17,23 @@ test('Studio Learn progress is saved to the signed-in account', () => {
   assert.deepEqual(second.progress.completed, ['first-build', 'tiny-obby', 'first-script']);
   assert.equal(second.progress.current, 'tiny-obby');
   assert.equal(second.progress.step, 1);
-  assert.equal(second.progress.practice, true, 'an older website client cannot clear the saved practice phase');
+  assert.equal(second.progress.practice, false, 'a different lesson starts at its demonstration, not the old practice phase');
   assert.ok(second.progress.updatedAt >= saved.progress.updatedAt + 1, 'newer saves advance the resume timestamp');
   const stale = s.call(a, 'learn.progress.save', { completed: ['first-script'], current: 'first-build', step: 0, updatedAt: saved.progress.updatedAt });
   assert.equal(stale.progress.current, 'tiny-obby', 'a stale device cannot replace the latest resume point');
   assert.equal(stale.progress.step, 1);
-  assert.equal(stale.progress.practice, true);
+  assert.equal(stale.progress.practice, false);
   const row = s.sql.exec('SELECT data FROM users WHERE id = ?', a.id)[0];
   assert.ok(row, 'account row was written to persistent storage');
   assert.deepEqual(JSON.parse(row.data).learnProgress, stale.progress);
+});
+
+test('Studio Learn keeps the practice phase when the same lesson is saved without it', () => {
+  const s = makeServer();
+  const a = s.signUp('LearnerP');
+  const first = s.call(a, 'learn.progress.save', { completed: [], current: 'first-script', step: 2, practice: true });
+  const again = s.call(a, 'learn.progress.save', { completed: [], current: 'first-script', step: 2, updatedAt: first.progress.updatedAt + 1 });
+  assert.equal(again.progress.practice, true, 'an older client that never sends practice cannot clear it');
 });
 
 test('Studio Learn progress is isolated between accounts', () => {

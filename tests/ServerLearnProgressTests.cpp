@@ -60,12 +60,12 @@ int main() {
         const long long firstUpdatedAt = r["progress"]["updatedAt"].get<long long>();
         r = ask(*server, "learn.progress.save", {{"completed", json::array({"first-script"})}, {"current", "tiny-obby"}, {"step", 1}, {"updatedAt", firstUpdatedAt + 1}});
         check(r.value("ok", false) && r["progress"]["completed"].size() == 3 &&
-              r["progress"]["current"] == "tiny-obby" && r["progress"]["step"] == 1,
-              "merge new completions without erasing another device's progress");
+              r["progress"]["current"] == "tiny-obby" && r["progress"]["step"] == 1 && r["progress"]["practice"] == false,
+              "merge new completions; a new lesson starts at its demonstration");
         const long long latestUpdatedAt = r["progress"]["updatedAt"].get<long long>();
         json stale = ask(*server, "learn.progress.save", {{"completed", json::array({"first-script"})}, {"current", "first-build"}, {"step", 0}, {"updatedAt", firstUpdatedAt}});
         check(stale.value("ok", false) && stale["progress"]["current"] == "tiny-obby" &&
-              stale["progress"]["step"] == 1 && stale["progress"]["practice"] == true &&
+              stale["progress"]["step"] == 1 && stale["progress"]["practice"] == false &&
               stale["progress"]["updatedAt"].get<long long>() >= latestUpdatedAt,
               "stale device writes cannot replace a newer resume point");
         r = ask(*server, "learn.progress.get");
@@ -87,7 +87,7 @@ int main() {
         json r = ask(*server, "learn.progress.get");
         check(r.value("ok", false) && r["progress"]["completed"].size() == 3 &&
               r["progress"]["current"] == "tiny-obby" && r["progress"]["step"] == 1 &&
-              r["progress"]["practice"] == true && r["progress"]["updatedAt"].get<long long>() > 0,
+              r["progress"]["practice"] == false && r["progress"]["updatedAt"].get<long long>() > 0,
               "merged progress, lesson step and timestamp survive a server restart");
         Account::newKey();
         r = ask(*server, "learn.progress.get");

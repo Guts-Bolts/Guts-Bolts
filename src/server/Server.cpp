@@ -653,7 +653,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             me.learnProgress["step"].is_number_integer() ? std::clamp(me.learnProgress["step"].get<int>(), 0, 2) : 0;
         const bool storedPractice = me.learnProgress.is_object() && me.learnProgress.contains("practice") &&
             me.learnProgress["practice"].is_boolean() && me.learnProgress["practice"].get<bool>();
-        const bool requestedPractice = args.contains("practice") ? args["practice"].get<bool>() : storedPractice;
+        // (no practice given: keep it only for the same lesson, like worker/server.js)
+        const bool requestedPractice = args.contains("practice") ? args["practice"].get<bool>() : storedPractice && requestedCurrent == storedCurrent;
         const std::string current = acceptResume ? requestedCurrent : storedCurrent;
         const int step = acceptResume ? requestedStep : storedStep;
         const bool practice = acceptResume ? requestedPractice : storedPractice;
