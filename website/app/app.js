@@ -1577,7 +1577,7 @@ pages.item = async (id) => {
           ${drawable3d(a) ? html`<button class="btn blue item-try-on" id="itemTryOn" type="button">Try On</button>` : ''}
           ${isNew ? html`<span class="item-ribbon">NEW</span>` : ''}
           ${timed ? html`<span class="item-clock" title="${offsaleText(a)}"><i></i></span>` : ''}
-          ${L ? html`<span class="item-limited">LIMITED<b>U</b></span>` : ''}
+          ${L ? html`<span class="item-limited">${a.limitedType === 'limited' ? 'LIMITED' : html`LIMITED<b>U</b>`}</span>` : ''}
           ${drawable3d(a) ? html`<button class="item-3d" id="item3dToggle" type="button" title="Switch to the 3D preview" aria-pressed="false">3D</button>` : ''}
         </div>
         <div class="item-info">
@@ -1655,7 +1655,8 @@ pages.item = async (id) => {
       ${me.official && a.creator === me.id && canBeLimited(a) ? html`<form class="form" data-form="itemLimited"><input type="hidden" name="id" value="${a.id}">
         <label>${L ? 'Change the stock' : 'Make it Limited'} <span class="muted small">(only Guts can do this)</span></label>
         <input type="number" name="stock" min="1" value="${L ? L.stock : 100}" style="max-width:140px">
-        <p class="small muted">A Limited has a fixed number of numbered copies. When they're sold out, people buy and sell them from each other, and trade them.</p>
+        ${!L ? html`<label>Classification</label><select name="limitedType"><option value="limited_u">Limited U (resellable and tradable)</option><option value="limited">Limited (not resellable or tradable)</option></select>` : html`<p class="small muted">Classification: <b>${a.limitedType === 'limited' ? 'Limited' : 'Limited U'}</b>. This is fixed once copies have been issued.</p>`}
+        <p class="small muted">A Limited has a fixed number of numbered copies. Limited U copies can be resold and traded; standard Limited copies cannot.</p>
         <p><button class="btn gold">${L ? 'Save stock' : 'Make Limited'}</button></p></form>` : ''}</div>` : ''}
     ${au && !au.cancelled ? html`<div id="auctionLiveBidders">${auctionBidders(au, auOpen)}</div>` : ''}
     ${L ? html`<h2>Resellers</h2>${forSale.length ? html`<table class="stats resellers"><tr><th>Seller</th><th>Copy</th><th>Price</th><th></th></tr>
@@ -4752,7 +4753,7 @@ const forms = {
     render();
   },
   async itemLimited(f) {
-    const r = await call('item.limited', { id: f.id.value, stock: Number(f.stock.value) || 0 });
+    const r = await call('item.limited', { id: f.id.value, stock: Number(f.stock.value) || 0, limitedType: f.elements.namedItem('limitedType')?.value || 'limited_u' });
     toast(r.ok ? 'It\'s Limited now!' : r.error);
     render();
   },
