@@ -14,10 +14,17 @@
 #include <imgui.h>
 #include <iostream>
 #include <string>
-#include <unistd.h>
+#include <chrono>
 
 namespace {
 int failures = 0;
+void setEnv(const char* name, const std::string& value) {
+#ifdef _WIN32
+    _putenv_s(name, value.c_str());
+#else
+    setenv(name, value.c_str(), 1);
+#endif
+}
 void check(bool ok, const std::string& what) {
     std::cout << (ok ? "ok    " : "FAIL  ") << what << "\n";
     if (!ok) ++failures;
@@ -38,10 +45,11 @@ bool run(GameSession& session, const std::string& code, std::string& err) {
 int main(int argc, char** argv) {
     if (argc < 2) { std::cerr << "usage: OrderedDataStoreTests <game file>\n"; return 2; }
     // Save files go to a folder of our own, not the real account's.
-    const auto dir = std::filesystem::temp_directory_path() / ("gb-ordered-ds-" + std::to_string(getpid()));
+    const auto dir = std::filesystem::temp_directory_path() /
+        ("gb-ordered-ds-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
     std::filesystem::create_directories(dir);
-    setenv("XDG_CONFIG_HOME", dir.string().c_str(), 1);
-    setenv("GB_ACCOUNT_DIR", (dir / "account").string().c_str(), 1);
+    setEnv("XDG_CONFIG_HOME", dir.string());
+    setEnv("GB_ACCOUNT_DIR", (dir / "account").string());
 
     Mesh::headless = true;
     ImGui::CreateContext();
