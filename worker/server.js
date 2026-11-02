@@ -1093,6 +1093,24 @@ export class GbServerObject extends DurableObject {
     await this.sendLivePings();
   }
   async alarm() { await this.flushSupabaseOutbox(); }
+  // How many accounts there are, and how many people are online and in games right now.
+  liveNumbers() {
+    let online = 0, playing = 0;
+    for (const u of this.users.values()) if (u.userId > 0 && now() - (u.lastSeen || 0) <= kOnlineFor) online++;
+    for (const s of this.sessions.values()) playing += s.players ? s.players.size : 0;
+    return { accounts: Math.max(0, this.nextUserId - 1), online, playing };
+  }
+  // Every few minutes, a reading for the Staff page's Numbers (Supabase keeps each day's biggest).
+  async recordDailyNumbers() {
+    const t = now();
+    if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY || t - (this.numbersAt || 0) < 300) return;
+    this.numbersAt = t;
+    const n = this.liveNumbers();
+    try {
+      await supabaseRpc(this.env, 'gb_record_daily', { p_day: new Date(t * 1000).toISOString().slice(0, 10),
+        p_accounts: n.accounts, p_online: n.online, p_playing: n.playing });
+    } catch { /* the next reading will do */ }
+  }
   // Answers that need something read from Supabase: the op checked who's asking and left
   // { supabase: {what} } in its answer; here we fetch it. Supabase being down never fails
   // the request: the page just gets nothing for that part.
@@ -1142,6 +1160,16 @@ export class GbServerObject extends DurableObject {
         }
         answer.feed = [...answer.feed, ...items].sort((x, y) => y.at - x.at).slice(0, 40);
       } catch { /* the posts alone still make a feed */ }
+    }
+    if (want.numbers) {
+      try {
+        const r = await supabaseRpc(this.env, 'gb_staff_numbers', { p_days: 60 });
+        answer.days = Array.isArray(r && r.days) ? r.days : [];
+        answer.topGames = (Array.isArray(r && r.topGames) ? r.topGames : []).map((g) => {
+          const a = this.assets.get(g.game);
+          return { id: g.game, num: a ? a.num || 0 : 0, name: a ? a.name : '(deleted)', plays: g.plays };
+        });
+      } catch { answer.unavailable = true; }
     }
     if (want.playtimes) {
       answer.playtimes = null;
@@ -2240,6 +2268,16 @@ export class GbServerObject extends DurableObject {
   // --- the requests (GbServer::op) ---
   op(name, me, args) {
     const t = now(), today = utcDay(t);
+    // Staff numbers: right now from here, and the last 60 days from Supabase (supabaseFollowUp).
+    if (name === 'admin.numbers') {
+      if (!this.isStaff(me)) return fail('Only staff can see this.');
+      const live = this.liveNumbers();
+      const kinds = { games: 0, items: 0 };
+      for (const a of this.assets.values()) { if (a.kind === 'game') kinds.games++; else if (isCatalogItem(a.kind)) kinds.items++; }
+      const out = { now: Object.assign(live, kinds), days: [], topGames: [] };
+      if (this.env.SUPABASE_URL && this.env.SUPABASE_SECRET_KEY) out.supabase = { numbers: true };
+      return okay(out);
+    }
     if (name === 'staff.database.stats') {
       if (!this.isStaff(me)) return fail('Only staff can view database diagnostics.');
       return okay({ database: this.databaseDiagnostics() });
@@ -5814,6 +5852,11 @@ export class GbServerObject extends DurableObject {
     if (answer.ok && answer.translate) answer = await this.translate(answer);
     if (this.outbox.length) await this.sendMail();
     if (this.lyretoQueue.length) await this.fetchLyretoCards();
+    if (this.env.SUPABASE_URL && now() - (this.numbersAt || 0) >= 300) {
+      const reading = this.recordDailyNumbers();
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(reading);
+      else await reading;
+    }
     if (this.livePings.length) {
       const pings = this.sendLivePings();
       if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(pings);

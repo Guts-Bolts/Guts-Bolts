@@ -201,7 +201,7 @@ export async function markSupabaseNotificationsRead(env, accountId) {
 }
 
 // The database functions the Worker may call (each one's grants allow only service_role).
-const RPC_FUNCTIONS = new Set(['gb_leaderboard_top', 'gb_creator_playtimes', 'gb_search']);
+const RPC_FUNCTIONS = new Set(['gb_leaderboard_top', 'gb_creator_playtimes', 'gb_search', 'gb_record_daily', 'gb_staff_numbers']);
 
 /** Call one of the known database functions with JSON arguments; returns its JSON answer. */
 export async function supabaseRpc(env, fn, args) {
@@ -215,7 +215,8 @@ export async function supabaseRpc(env, fn, args) {
     if (response.body) await response.body.cancel();
     throw new Error('Supabase ' + fn + ' failed (' + response.status + ').');
   }
-  return await response.json();
+  const text = await response.text();   // (a function that returns nothing answers with no body)
+  return text ? JSON.parse(text) : null;
 }
 
 /**

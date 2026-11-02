@@ -1163,3 +1163,8 @@ table:not(.stats):not(.versions) tbody tr:nth-child(even) {
 /* Creator stats: when people play */
 .playtimes .hour-axis { display: flex; justify-content: space-between; margin-top: 2px; }
 .playtimes .who-played { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0; }
+
+/* Staff > Numbers */
+.staff-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.top-games li { padding: 3px 0; }
+.top-games li .small { margin-left: 6px; }

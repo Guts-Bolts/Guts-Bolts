@@ -3121,7 +3121,34 @@ const GIVE_BADGES = [['tester', 'Tester'], ['bughunter', 'Bug Hunter'], ['featur
   ['partner', 'Partner'], ['staff', 'Staff']];
 const OTHER_BADGES = { tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
 const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
-  ['ideas', 'Ideas'], ['people', 'People'], ['log', 'Staff log'], ['tools', 'Tools'], ['database', 'Database']];
+  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['database', 'Database']];
+// Staff > Numbers: how the site is doing. Now from the server; history (a reading every few
+// minutes, kept by day) and the week's top games from Supabase.
+function staffNumbersBox(r) {
+  if (!r.ok) return html`<div class="box"><h2 class="boxhead">Numbers</h2><p class="error">${r.error}</p></div>`;
+  const n = r.now, days = r.days || [];
+  const card = (v, label, note) => html`<div class="staff-card"><b>${Number(v || 0).toLocaleString()}</b><span>${label}</span>${note ? html`<span class="small muted">${note}</span>` : ''}</div>`;
+  // Sign-ups a day: how much the account count grew since the day before.
+  const signups = days.map((d, i) => i ? Math.max(0, d.accounts - days[i - 1].accounts) : 0);
+  const names = days.map((d) => d.day);
+  const chart = (vals, unit, title) => html`<div><span class="small muted">${title}</span>${statBars(vals, names, unit, 'in the last ' + days.length + ' days')}</div>`;
+  const week = signups.slice(-7).reduce((a, b) => a + b, 0);
+  return html`<div class="box"><h2 class="boxhead">Right now</h2>
+    <div class="staff-cards">${card(n.online, 'Online', 'signed-up people seen in the last few minutes')}${card(n.playing, 'In games')}
+      ${card(n.accounts, 'Accounts')}${card(n.games, 'Games')}${card(n.items, 'Catalog items')}</div></div>
+    <div class="box"><h2 class="boxhead">The last ${days.length || 60} days</h2>
+    ${r.unavailable ? html`<p class="error">Supabase didn't answer, so the history can't be shown right now.</p>`
+      : days.length ? html`<div class="staff-cards">${card(week, 'Sign-ups this week')}
+          ${card(Math.max(...days.slice(-7).map((d) => d.peakOnline)), 'Most online at once (7 days)')}
+          ${card(days.slice(-7).reduce((a, d) => a + d.plays, 0), 'Plays this week')}</div>
+        <div class="charts staff-charts">${chart(signups, 'sign-ups', 'Sign-ups a day')}${chart(days.map((d) => d.peakOnline), 'online', 'Most online at once')}
+          ${chart(days.map((d) => d.peakPlaying), 'in games', 'Most in games at once')}${chart(days.map((d) => d.plays), 'plays', 'Plays a day')}</div>
+        <p class="small muted">Days are in UTC. A day's numbers are the biggest seen in a reading taken every few minutes.</p>`
+      : html`<p class="muted">Nothing yet: the history starts filling in from today.</p>`}</div>
+    <div class="box"><h2 class="boxhead">Most played this week</h2>
+    ${(r.topGames || []).length ? html`<ol class="top-games">${r.topGames.map((g) => html`<li><a class="link" href="#/game/${g.id}">${g.name}</a>
+        <span class="small muted">${Number(g.plays).toLocaleString()} plays</span></li>`)}</ol>` : html`<p class="muted">No plays recorded this week yet.</p>`}</div>`;
+}
 pages.staff = async () => {
   if (!signedIn() || !me.staff) { show(html`<h1>Staff</h1><p class="muted">Only Guts&amp;Bolts staff can see this page.</p>`); return; }
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
@@ -3183,7 +3210,8 @@ pages.staff = async () => {
         <a class="btn small" href="#/staff?log=${u.userId || u.id}" title="What staff did to or by them">Log</a>
       </div>`) : html`<p class="error">${r.error}</p>`}</div>
     </div>`;
-  } else if (tab === 'log') body = staffLogBox(await pageCall('admin.log', logFor ? { user: logFor } : {}), logFor);
+  } else if (tab === 'numbers') body = staffNumbersBox(await pageCall('admin.numbers', {}));
+  else if (tab === 'log') body = staffLogBox(await pageCall('admin.log', logFor ? { user: logFor } : {}), logFor);
   else if (tab === 'database') {
     const r = await pageCall('staff.database.stats', {});
     if (!r.ok) body = html`<div class="box"><h2 class="boxhead">Database diagnostics</h2><p class="error">${r.error}</p></div>`;
