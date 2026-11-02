@@ -34,7 +34,7 @@ test('standard Limited is labelled and cannot be resold or traded', () => {
   const owner = s.signUp('limitedowner'), other = s.signUp('otherowner');
   const standard = s.addGame(s.staff, 'Standard Limited', { kind: 'hat', price: 10 });
   const tradable = s.addGame(s.staff, 'Limited U', { kind: 'hat', price: 10 });
-  assert.ok(s.call(s.staff, 'item.limited', { id: standard.id, stock: 5, limitedType: 'limited' }).ok);
+  assert.ok(s.call(s.staff, 'item.limited', { id: standard.id, stock: 1, limitedType: 'limited' }).ok);
   assert.ok(s.call(s.staff, 'item.limited', { id: tradable.id, stock: 5, limitedType: 'limited_u' }).ok);
   assert.equal(s.call(owner, 'asset.info', { id: standard.id }).asset.limitedType, 'limited');
   assert.equal(s.call(owner, 'asset.info', { id: tradable.id }).asset.limitedType, 'limited_u');
@@ -44,6 +44,9 @@ test('standard Limited is labelled and cannot be resold or traded', () => {
   assert.doesNotMatch(offsale.error, /reseller/i);
   assert.ok(s.call(s.staff, 'item.edit', { id: standard.id, staffOffsale: false }).ok);
   assert.ok(s.call(owner, 'buy', { id: standard.id }).ok);
+  const soldOut = s.call(other, 'buy', { id: standard.id });
+  assert.match(soldOut.error, /sold out/i);
+  assert.doesNotMatch(soldOut.error, /reseller/i);
   assert.ok(s.call(other, 'buy', { id: tradable.id }).ok);
   assert.match(s.call(owner, 'resale.list', { id: standard.id, serial: 1, price: 20 }).error, /not resellable/i);
   const theirTradeInventory = s.call(owner, 'trade.inventory', { user: other.id });

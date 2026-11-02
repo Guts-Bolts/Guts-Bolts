@@ -881,7 +881,7 @@ export class GbServerObject extends DurableObject {
     this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false, roadmap: false };
   }
   // --- Limited items: numbered copies (a.copies = [{ serial, owner, price }]) ---
-  copiesOf(u) {   // every limited copy this account holds
+  copiesOf(u) {   // every tradeable Limited U copy this account holds
     const out = [];
     for (const a of this.assets.values())
       if (a.limited && limitedTypeOf(a) === 'limited_u') for (const c of a.copies || []) if (c.owner === u.id) out.push({ id: a.id, name: a.name, kind: a.kind, serial: c.serial, price: c.price || 0 });

@@ -88,7 +88,7 @@ long long wholeNumber(const json& v) {
 
 // --- Limiteds -----------------------------------------------------------------------
 
-json GbServer::copiesOf(const User& u) const {
+json GbServer::copiesOf(const User& u) const {   // only Limited U copies can be traded
     json out = json::array();
     for (const auto& [id, a] : m_assets) {
         if (!a.limited || (a.meta.is_object() && a.meta.value("limitedType", std::string("limited_u")) != "limited_u")) continue;
