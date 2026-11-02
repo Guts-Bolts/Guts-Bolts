@@ -38,9 +38,19 @@ test('standard Limited is labelled and cannot be resold or traded', () => {
   assert.ok(s.call(s.staff, 'item.limited', { id: tradable.id, stock: 5, limitedType: 'limited_u' }).ok);
   assert.equal(s.call(owner, 'asset.info', { id: standard.id }).asset.limitedType, 'limited');
   assert.equal(s.call(owner, 'asset.info', { id: tradable.id }).asset.limitedType, 'limited_u');
+  assert.ok(s.call(s.staff, 'item.edit', { id: standard.id, staffOffsale: true }).ok);
+  const offsale = s.call(owner, 'buy', { id: standard.id });
+  assert.match(offsale.error, /off sale/i);
+  assert.doesNotMatch(offsale.error, /reseller/i);
+  assert.ok(s.call(s.staff, 'item.edit', { id: standard.id, staffOffsale: false }).ok);
   assert.ok(s.call(owner, 'buy', { id: standard.id }).ok);
   assert.ok(s.call(other, 'buy', { id: tradable.id }).ok);
   assert.match(s.call(owner, 'resale.list', { id: standard.id, serial: 1, price: 20 }).error, /not resellable/i);
+  const theirTradeInventory = s.call(owner, 'trade.inventory', { user: other.id });
+  assert.ok(theirTradeInventory.items.some((item) => item.id === tradable.id));
+  assert.ok(!theirTradeInventory.items.some((item) => item.id === standard.id));
+  const myTradeInventory = s.call(other, 'trade.inventory', { user: owner.id });
+  assert.ok(!myTradeInventory.items.some((item) => item.id === standard.id));
   assert.equal(s.call(owner, 'trade.send', {
     to: other.id, give: [{ id: standard.id, serial: 1 }], get: [{ id: tradable.id, serial: 1 }],
   }).ok, false);

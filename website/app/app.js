@@ -1660,7 +1660,7 @@ pages.item = async (id) => {
         <p class="small muted">A Limited has a fixed number of numbered copies. Limited U copies can be resold and traded; standard Limited copies cannot.</p>
         <p><button class="btn gold">${L ? 'Save stock' : 'Make Limited'}</button></p></form>` : ''}</div>` : ''}
     ${au && !au.cancelled ? html`<div id="auctionLiveBidders">${auctionBidders(au, auOpen)}</div>` : ''}
-    ${L ? html`<h2>Resellers</h2>${forSale.length ? html`<table class="stats resellers"><tr><th>Seller</th><th>Copy</th><th>Price</th><th></th></tr>
+    ${L && a.limitedType !== 'limited' ? html`<h2>Resellers</h2>${forSale.length ? html`<table class="stats resellers"><tr><th>Seller</th><th>Copy</th><th>Price</th><th></th></tr>
         ${forSale.map((c) => html`<tr><td><a href="#/user/${c.owner}">${c.ownerName}</a></td><td>#${c.serial}</td><td>${bolts(c.price)}</td>
           <td><button class="btn green small" data-act="resaleBuy" data-id="${a.id}" data-serial="${c.serial}" data-price="${c.price}">Buy</button></td></tr>`)}</table>`
         : html`<p class="muted">Nobody is selling a copy right now.</p>`}
@@ -2153,7 +2153,7 @@ const TRADE_OUTCOMES = { accepted: 'Accepted', declined: 'Declined', cancelled: 
 const tradeItems = (items) => items.length
   ? items.map((i) => html`<a class="chip" href="#/item/${i.id}">${i.name} <b>#${i.serial}</b></a> `) : html`<span class="muted">Nothing</span>`;
 pages.trades = async (tab, pageNo) => {
-  if (!signedIn()) { show(html`<h1>Trades</h1>${needSignIn('trade Limited items')}`); return; }
+  if (!signedIn()) { show(html`<h1>Trades</h1>${needSignIn('trade Limited U items')}`); return; }
   if (tab === 'past') { await pastTradesPage(Number(pageNo) || 1); return; }
   const r = await pageCall('trade.list', {});
   const list = (items) => items.map((i) => html`<a href="#/item/${i.id}">${i.name} #${i.serial}</a>`).reduce((acc, x, k) => html`${acc}${k ? ', ' : ''}${x}`, html``);
@@ -2168,7 +2168,7 @@ pages.trades = async (tab, pageNo) => {
   };
   const open = r.ok ? r.trades.filter((x) => x.status === 'open') : [];
   show(html`<h1>Trades</h1>${tradeTabs('open')}
-    <p class="muted">Trade your Limited items with other players. Open someone's profile and press <b>Trade</b> to make an offer.
+    <p class="muted">Trade your Limited U items with other players. Standard Limited items cannot be resold or traded. Open someone's profile and press <b>Trade</b> to make an offer.
       A trade nobody answers runs out after 30 days.</p>
     ${r.ok ? '' : html`<p class="error">${r.error}</p>`}
     <h2>Your Limiteds</h2>${r.ok && r.items.length ? html`<div class="row">${r.items.map((i) => html`<a class="chip" href="#/item/${i.id}">${i.name} #${i.serial}</a>`)}</div>`
@@ -2212,7 +2212,7 @@ pages.trade = async (id) => {
   if (theirs.hidden) { show(html`<h1>Trade</h1><p class="muted">${theirs.user.name} keeps their inventory private, so you can't trade with them.</p>`); return; }
   const pickList = (items, side) => items.length ? html`<div class="trade-pick">${items.map((i) => html`<label class="choice">
       <input type="checkbox" name="${side}" value="${i.id}|${i.serial}"> ${i.name} <b>#${i.serial}</b></label>`)}</div>`
-    : html`<p class="muted">No Limited items.</p>`;
+    : html`<p class="muted">No tradable Limited U items.</p>`;
   show(html`<p><a href="#/user/${theirs.user.userId}">&lt; ${theirs.user.name}</a></p><h1>Trade with ${theirs.user.name}</h1>
     <form class="trade" data-form="tradeSend"><input type="hidden" name="to" value="${theirs.user.id}">
       <div class="trade-cols"><div class="box"><h2 class="boxhead">You give</h2>${pickList(mine.ok ? mine.items : [], 'give')}</div>

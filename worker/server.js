@@ -884,7 +884,7 @@ export class GbServerObject extends DurableObject {
   copiesOf(u) {   // every limited copy this account holds
     const out = [];
     for (const a of this.assets.values())
-      if (a.limited) for (const c of a.copies || []) if (c.owner === u.id) out.push({ id: a.id, name: a.name, kind: a.kind, serial: c.serial, price: c.price || 0 });
+      if (a.limited && limitedTypeOf(a) === 'limited_u') for (const c of a.copies || []) if (c.owner === u.id) out.push({ id: a.id, name: a.name, kind: a.kind, serial: c.serial, price: c.price || 0 });
     return out;
   }
   // A trade is over: it goes in both people's Past trades, with the names of the people and
@@ -3386,8 +3386,8 @@ export class GbServerObject extends DurableObject {
       if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: confirm an email in Settings and it\'s yours.');
       if (a.promoOnly) return fail('This item is only available through a promo code.');
       if (a.exclusive) return fail('This is an Exclusive item: it can\'t be bought. It comes from events and gift boxes.');
-      if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited ? ' Buy one from a reseller on the item\'s page.' : ''));
-      if (a.limited && a.sales >= a.stock) return fail('Sold out! Buy one from a reseller on the item\'s page.');
+      if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited && limitedTypeOf(a) === 'limited_u' ? ' Buy one from a reseller on the item\'s page.' : ''));
+      if (a.limited && a.sales >= a.stock) return fail(limitedTypeOf(a) === 'limited_u' ? 'Sold out! Buy one from a reseller on the item\'s page.' : 'Sold out! This Limited cannot be resold.');
       if (a.price > 0) {
         if (this.balance(me) < a.price) return fail('You need ' + (a.price - this.balance(me)) + ' more Bolts for that.');
         this.add(me, -a.price, 'Bought ' + a.name, 'buy:' + a.id);
