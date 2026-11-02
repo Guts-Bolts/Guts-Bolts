@@ -91,7 +91,7 @@ int main() {
               "merged progress, lesson step and timestamp survive a server restart");
         Account::newKey();
         r = ask(*server, "learn.progress.get");
-        check(!r.value("ok", false) && error(r).find("Sign in") != std::string::npos,
+        check(!r.value("ok", false) && error(r).find("Sign up or log in first") != std::string::npos,
               "guests cannot read another account's progress");
     }
     std::error_code ec;
