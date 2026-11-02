@@ -20,7 +20,9 @@ import { MemoryStore } from './memorystore.js';
 import { installMcpRelay } from './mcp-relay.js';   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Roadmap, builtInItems, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
 import BUILT_IN_ROADMAP from './roadmap-gathered.js';   // worker/roadmap/, one file per item (worker/gather-updates.mjs)
-import { insertSupabaseRows, listSupabaseNotifications, markSupabaseNotificationsRead } from './supabase.js';
+import { broadcastSupabase, insertSupabaseRows, listSupabaseNotifications, markSupabaseNotificationsRead } from './supabase.js';
+// Which Supabase tables have a live feed on the website (the Realtime event name).
+const LIVE_FEEDS = { gb_auction_events: 'auctions', gb_forum_activity: 'forum' };
 // The example games that come with Guts&Bolts: always on the server (as Guts's
 // games), so the website and the apps have something to play from day one.
 import demolitionYard from '../games/Demolition Yard.gbscene';
@@ -788,6 +790,9 @@ export class GbServerObject extends DurableObject {
     this.outbox = [];
     // Lyreto links whose preview card still needs fetching: [kind, id] (see fetchLyretoCards).
     this.lyretoQueue = [];
+    // Live pings to send through Supabase Realtime once the request is done (see sendLivePings):
+    // { topic, event }. They carry no data, only "look again", so a lost one costs nothing.
+    this.livePings = [];
     this.canMail = !!(((env.BREVO_API_KEY || env.RESEND_API_KEY) && env.MAIL_FROM) || env.MAIL_DEBUG);
     this.mailLast = null;   // how the last email went: { at, to, ok, error } (for the Staff page)
     this.failedLogins = new Map();
@@ -939,6 +944,7 @@ export class GbServerObject extends DurableObject {
     const note = { id: randomHex(12), kind, text, about: id, at, read: false };
     u.notes = [note, ...(u.notes || [])].slice(0, kMaxNotes);
     this.saveUser(u);
+    this.livePing(u);
     const archiveMessage = ({
       ticket: 'A new support ticket was submitted.',
       support: 'There is an update to your support ticket.',
@@ -994,6 +1000,26 @@ export class GbServerObject extends DurableObject {
       created_at: new Date(now() * 1000).toISOString(),
     });
   }
+  // Live updates (Supabase Realtime Broadcast). Each signed-up account has its own secret
+  // topic name; the website listens on it and asks the server again when a ping comes.
+  liveOn() { return !!(this.env.SUPABASE_URL && this.env.SUPABASE_SECRET_KEY && this.env.SUPABASE_PUBLISHABLE_KEY); }
+  liveTopic(u) {
+    if (!u.liveTopic) { u.liveTopic = 'gb-me-' + randomHex(16); this.saveUser(u); }
+    return u.liveTopic;
+  }
+  livePing(u, event = 'me') {
+    if (!u || u.userId === 0 || !this.liveOn()) return;
+    this.queueLive(this.liveTopic(u), event);
+  }
+  queueLive(topic, event) {
+    if (!this.liveOn() || this.livePings.some((p) => p.topic === topic && p.event === event)) return;
+    if (this.livePings.length < 200) this.livePings.push({ topic, event });
+  }
+  async sendLivePings() {
+    const messages = this.livePings.splice(0);
+    if (!messages.length) return;
+    try { await broadcastSupabase(this.env, messages); } catch { /* Pages still refresh on their own timers. */ }
+  }
   hasSupabaseOutbox() {
     for (const row of this.sql.exec('SELECT id FROM supabase_outbox LIMIT 1')) return true;
     return false;
@@ -1011,12 +1037,15 @@ export class GbServerObject extends DurableObject {
       try {
         await insertSupabaseRows(this.env, table, batch.map((row) => JSON.parse(row.payload)));
         for (const row of batch) this.sql.exec('DELETE FROM supabase_outbox WHERE id = ?', row.id);
+        // Now the rows are there, tell open pages to look again.
+        if (LIVE_FEEDS[table]) this.queueLive('gb-activity', LIVE_FEEDS[table]);
       } catch {
         this.scheduleSupabaseFlush(60000);
         return;
       }
     }
     if (this.hasSupabaseOutbox()) this.scheduleSupabaseFlush(1000);
+    await this.sendLivePings();
   }
   async alarm() { await this.flushSupabaseOutbox(); }
   saveAsset(a) { this.dirty.assets.add(a.id); }
@@ -1390,6 +1419,7 @@ export class GbServerObject extends DurableObject {
       avatar: u.avatar || null,
       email: maskEmail(u.emailVerified ? u.email : ''), emailPending: maskEmail(u.pendingEmail || ''),
       twoStep: !!(u.twoStep && u.emailVerified), canMail: this.canMail, authApp: !!u.totpSecret, privacy: this.privacyOf(u),
+      live: u.userId > 0 && this.liveOn() ? this.liveTopic(u) : '',   // the website listens here for news about you
       gear: (u.gear || []).filter((g) => u.owned.includes(g)),
       // Emotes in the emote menu's slots ('' = empty) and the animation pack, all things they own.
       emotes: this.emoteSlots(u),
@@ -2641,6 +2671,7 @@ export class GbServerObject extends DurableObject {
       me.messagesToday++;
       const id = randomHex(8);
       them.inbox = [{ id, from: me.id, subject, body, at: t, read: false }, ...(them.inbox || [])].slice(0, kMaxInbox);
+      this.livePing(them);
       me.sent = [{ id, to: them.id, subject, body, at: t }, ...(me.sent || [])].slice(0, kMaxSent);
       this.saveUser(me, them);
       return okay({ me: this.meJson(me) });
@@ -5599,6 +5630,11 @@ export class GbServerObject extends DurableObject {
     if (answer.ok && answer.translate) answer = await this.translate(answer);
     if (this.outbox.length) await this.sendMail();
     if (this.lyretoQueue.length) await this.fetchLyretoCards();
+    if (this.livePings.length) {
+      const pings = this.sendLivePings();
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(pings);
+      else await pings;
+    }
     return json(answer);
   }
 }

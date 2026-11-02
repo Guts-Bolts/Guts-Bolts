@@ -64,6 +64,49 @@ export async function supabaseRest(env, path, options = {}) {
   }
 }
 
+const LIVE_TOPIC = /^gb-(activity|me-[a-f0-9]{32})$/;
+const LIVE_EVENT = /^[a-z]{1,20}$/;
+
+/**
+ * Send Realtime Broadcast pings ({ topic, event }) to the website's open pages. Pings carry
+ * no data: a page that hears one asks the Guts&Bolts server again, which checks who it is.
+ */
+export async function broadcastSupabase(env, pings) {
+  const config = supabaseConfig(env);
+  if (!config) throw new Error('Supabase is not configured correctly.');
+  const messages = (Array.isArray(pings) ? pings : [])
+    .filter((p) => p && LIVE_TOPIC.test(p.topic) && LIVE_EVENT.test(p.event))
+    .slice(0, 100)
+    .map((p) => ({ topic: p.topic, event: p.event, payload: {}, private: false }));
+  if (!messages.length) return;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(config.origin + '/realtime/v1/api/broadcast', {
+      method: 'POST',
+      headers: { apikey: config.secretKey, 'content-type': 'application/json' },
+      body: JSON.stringify({ messages }),
+      signal: controller.signal,
+      redirect: 'manual',
+    });
+    if (response.body) await response.body.cancel();
+    if (!response.ok) throw new Error('Supabase broadcast failed (' + response.status + ').');
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/**
+ * What the website needs to listen for live pings: the project URL and its publishable key.
+ * Both are public by design (the publishable key can't read any Guts&Bolts table).
+ */
+export function supabasePublicConfig(env) {
+  const config = supabaseConfig(env);
+  const key = typeof env.SUPABASE_PUBLISHABLE_KEY === 'string' ? env.SUPABASE_PUBLISHABLE_KEY.trim() : '';
+  if (!config || !/^sb_publishable_[A-Za-z0-9_-]{10,100}$/.test(key)) return null;
+  return { url: config.origin, key };
+}
+
 /** Return a safe connection summary without exposing credentials or schema. */
 export async function checkSupabaseHealth(env) {
   if (!supabaseConfig(env)) {

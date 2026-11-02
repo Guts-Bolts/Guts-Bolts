@@ -4,6 +4,7 @@
 import * as gb from './gb.js';
 import { mountAvatar, avatarPicture, itemPicture, itemCamera } from './avatar3d.js';
 import { startTranslating, languagePicker } from '../lang/i18n.js';
+import { startLive, listen, stopListening, onLive } from './live.js';
 
 // --- small helpers ------------------------------------------------------------
 
@@ -436,8 +437,11 @@ async function pageCall(op, args) {
 
 const BELL_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"/></svg>';
 
+let liveTopic = '';   // your account's live topic (Supabase Realtime), while signed in
 function setMe(m) {
   me = m;
+  const topic = signedIn() && typeof me.live === 'string' ? me.live : '';
+  if (topic !== liveTopic) { stopListening(liveTopic); liveTopic = topic; listen(topic); }
   const msgLink = $('#nav a[data-page=messages]');
   if (msgLink) {
     const n = signedIn() ? me.unreadMessages || 0 : 0;
@@ -4960,4 +4964,22 @@ document.querySelector('.foot').append(languagePicker());
   setInterval(refreshActivityFeeds, 15000);
   refreshLiveAuctions();
   setInterval(refreshLiveAuctions, 12000);
+  // Live updates: refresh the moment something happens (the timers above stay as a backup).
+  onLive((topic, event) => {
+    if (document.visibilityState !== 'visible') return;
+    const page = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/')[0];
+    if (topic === 'gb-activity') {
+      if (event === 'auctions') { refreshActivityFeeds(); refreshLiveAuctions(); }
+      if (event === 'forum') refreshActivityFeeds();
+      return;
+    }
+    if (topic !== liveTopic) return;
+    if (event === 'me') {   // a notification, a message, a friend request...
+      keepFresh();
+      checkRequests();
+      if (page === 'notifications') render();
+    }
+    if (event === 'feed' && page === 'home') refreshFeed();
+  });
+  startLive();
 })();
