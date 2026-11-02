@@ -1561,7 +1561,7 @@ pages.item = async (id) => {
     : auOpen ? html`<div id="auctionLiveBid">${auctionBidBox(a)}</div>`
     : a.exclusive ? html`<button class="btn big buy" disabled>Exclusive</button>`
     : offsale ? html`<button class="btn big buy" disabled>Off sale</button>`
-    : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
+    : html`<button class="btn green big buy" data-act="buy" data-id="${a.id}" data-name="${a.name}" data-price="${a.price || 0}">${a.price > 0 ? html`Buy with ${boltIcon}` : 'Get it free'}</button>`;
   // Paid items that aren't Limited can be bought for a friend (even if you have one yourself).
   const giftable = a.price > 0 && !L && !offsale && !a.review && !a.exclusive && !(a.meta && a.meta.award);
   const giftButton = giftable ? html`<button class="btn big gift" data-act="gift" data-id="${a.id}" data-name="${a.name}" data-price="${a.price}">&#127873; Buy as a gift</button>` : '';
@@ -4157,7 +4157,14 @@ const actions = {
     render();
   },
   async buy(d) {
+    const price = Math.max(0, Number(d.price) || 0);
+    const balance = Math.max(0, Number(me && me.bolts) || 0);
+    const remaining = Math.max(0, balance - price);
+    const promptText = 'Are you sure you want to buy "' + (d.name || 'this item') + '"?\n\nPrice: ' + price.toLocaleString() + ' Bolts.\n\nAfter purchasing, you will have ' + remaining.toLocaleString() + ' Bolts.';
+    if (balance < price) { toast('You do not have enough Bolts for this item.'); return; }
+    if (!confirm(promptText)) return;
     const r = await call('buy', { id: d.id });
+    if (r.ok && r.me) me = r.me;
     toast(r.ok ? 'It\'s yours! Wear (or equip) it from the Avatar page.' : r.error);
     render();
   },
