@@ -140,7 +140,7 @@ const SUPABASE_ACTIVITY_TABLES = new Set(['gb_auction_events', 'gb_forum_activit
 /** Insert idempotent outbox rows. Replayed delivery cannot duplicate an event. */
 // The tables the Worker writes. Events are written once; the others are "latest value wins".
 const INSERT_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_play_events']);
-const UPSERT_TABLES = new Set(['gb_leaderboard_scores']);
+const UPSERT_TABLES = new Set(['gb_leaderboard_scores', 'gb_search_items']);
 
 export async function insertSupabaseRows(env, table, rows) {
   if (!INSERT_TABLES.has(table) && !UPSERT_TABLES.has(table)) {
@@ -201,7 +201,7 @@ export async function markSupabaseNotificationsRead(env, accountId) {
 }
 
 // The database functions the Worker may call (each one's grants allow only service_role).
-const RPC_FUNCTIONS = new Set(['gb_leaderboard_top', 'gb_creator_playtimes']);
+const RPC_FUNCTIONS = new Set(['gb_leaderboard_top', 'gb_creator_playtimes', 'gb_search']);
 
 /** Call one of the known database functions with JSON arguments; returns its JSON answer. */
 export async function supabaseRpc(env, fn, args) {

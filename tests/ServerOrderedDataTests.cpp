@@ -2,6 +2,7 @@
 // worker/test/leaderboards.test.mjs checks the website's): a store's numbers, sorted, a page
 // at a time. Requests are signed like the apps sign them.
 #include "core/Account.h"
+#include "core/Paths.h"
 #include "online/Protocol.h"
 #include "server/Server.h"
 
@@ -35,7 +36,12 @@ std::string keys(const json& r) {
 }
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    // The example games are the staff account's games; put one where the server looks for them.
+    if (argc > 1) {
+        std::error_code copyErr;
+        fs::copy_file(argv[1], Paths::gamesFolder() / fs::path(argv[1]).filename(), fs::copy_options::skip_existing, copyErr);
+    }
     std::srand((unsigned)Online::unixNow() ^ (unsigned)getpid());
     const fs::path dir = fs::temp_directory_path() / ("gb-ordered-" + std::to_string(std::rand()) + std::to_string(Online::unixNow()));
     fs::create_directories(dir / "account");

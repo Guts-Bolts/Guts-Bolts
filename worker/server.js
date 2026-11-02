@@ -24,8 +24,8 @@ import { broadcastSupabase, insertSupabaseRows, listSupabaseLeaderboards, listSu
 // Which Supabase tables have a live feed on the website (the Realtime event name).
 const LIVE_FEEDS = { gb_auction_events: 'auctions', gb_forum_activity: 'forum' };
 // The Supabase tables the server writes to, and the ones whose rows are "latest value wins".
-const SUPABASE_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_leaderboard_scores', 'gb_play_events']);
-const SUPABASE_UPSERT = new Set(['gb_leaderboard_scores']);
+const SUPABASE_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_leaderboard_scores', 'gb_play_events', 'gb_search_items']);
+const SUPABASE_UPSERT = new Set(['gb_leaderboard_scores', 'gb_search_items']);
 // The example games that come with Guts&Bolts: always on the server (as Guts's
 // games), so the website and the apps have something to play from day one.
 import demolitionYard from '../games/Demolition Yard.gbscene';
@@ -785,6 +785,7 @@ export class GbServerObject extends DurableObject {
     this.addStarterEmotes();
     this.timeGutstoberItems();
     this.numberAssets();
+    for (const a of this.assets.values()) this.syncSearch(a);   // (the first time: every asset goes to search)
     for (const u of this.users.values()) if (u.emailVerified && !u.owned.includes(VERIFIED_HAT_ID)) { this.giveVerifiedHat(u); this.saveUser(u); }
     // Keys made by "forgot password": they sign for the account they reset.
     this.aliases = new Map();
@@ -1088,6 +1089,21 @@ export class GbServerObject extends DurableObject {
         answer.boards = [...boards.values()].slice(0, 6);
       } catch { answer.unavailable = true; }
     }
+    if (want.search && answer.asker) {
+      try {
+        const rows = await supabaseRpc(this.env, 'gb_search', { p_query: want.search.q, p_section: want.search.section, p_limit: 100 });
+        const have = new Set((answer.assets || []).map((a) => a.id));
+        const ids = (Array.isArray(rows) ? rows : []).map((row) => row.id).filter((id) => typeof id === 'string' && !have.has(id));
+        if (ids.length) {
+          const more = this.op('list', answer.asker, Object.assign({}, want.search.args, { query: '', ids, offset: 0, limit: 100 }));
+          const byId = new Map((more.ok ? more.assets : []).map((a) => [a.id, a]));
+          const extra = ids.map((id) => byId.get(id)).filter(Boolean);   // (best match first)
+          answer.assets = [...answer.assets, ...extra].slice(0, Math.max(want.search.limit, answer.assets.length));
+          answer.total += extra.length;
+          answer.nearMatches = extra.length;
+        }
+      } catch { /* the plain search answer still stands */ }
+    }
     if (want.playtimes) {
       answer.playtimes = null;
       try { answer.playtimes = await supabaseRpc(this.env, 'gb_creator_playtimes', { p_games: want.playtimes, p_days: 90 }); }
@@ -1095,7 +1111,31 @@ export class GbServerObject extends DurableObject {
     }
     return answer;
   }
-  saveAsset(a) { this.dirty.assets.add(a.id); }
+  saveAsset(a) { this.dirty.assets.add(a.id); this.syncSearch(a); }
+  // Better search: keep each asset's searchable words in Supabase (gb_search_items). Only sent
+  // when something searchable changed (a.searchSig remembers what was sent last).
+  syncSearch(a) {
+    if (!a || !this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return;
+    const shown = !a.review && !a.exclusive && !a.promoOnly && (a.access || 'public') === 'public' && this.assets.get(a.id) === a;
+    const creator = this.users.get(a.creator);
+    const popularity = (a.plays || 0) + (a.sales || 0);
+    const row = { id: a.id, section: a.kind === 'game' ? 'game' : isCatalogItem(a.kind) ? 'catalog' : String(a.kind || '').slice(0, 20),
+      kind: String(a.kind || '').slice(0, 20), name: String(a.name || '').slice(0, 100), description: String(a.description || '').slice(0, 1000),
+      genres: (a.genres || []).join(' ').slice(0, 200), creator_name: creator ? String(creator.name || '').slice(0, 40) : '',
+      popularity, removed: !shown };
+    // (popularity only counts when it doubles, so every play doesn't send it again)
+    const sig = JSON.stringify([row.section, row.name, row.description, row.genres, row.creator_name, row.removed, Math.floor(Math.log2(1 + popularity))]);
+    if (a.searchSig === sig) return;
+    a.searchSig = sig;
+    this.dirty.assets.add(a.id);
+    this.queueSupabaseEvent('gb_search_items', Object.assign(row, { updated_at: new Date(now() * 1000).toISOString() }));
+  }
+  // Asset gone (deleted): take it out of search.
+  unsearch(id) {
+    if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return;
+    this.queueSupabaseEvent('gb_search_items', { id, section: '', kind: '', name: '', description: '', genres: '', creator_name: '',
+      popularity: 0, removed: true, updated_at: new Date(now() * 1000).toISOString() });
+  }
   // Creator stats: count something on a day (plays, sales, bolts earned), kept for 60 days.
   // Passes and products also count on their game, so a game's page adds them up.
   tally(a, field, n = 1) {
@@ -2147,6 +2187,8 @@ export class GbServerObject extends DurableObject {
       this.openGiftBoxes();
       this.finishAuctions();
       const reply = this.op(c.opName, c.me, c.args);
+      // (who asked, for answers finished after a Supabase lookup; not sent back)
+      if (reply && reply.supabase) Object.defineProperty(reply, 'asker', { value: c.me, enumerable: false });
       if (gate.count && (reply.ok || GUESSES.has(c.opName))) gate.count();
       return reply;
     } catch (e) {
@@ -3390,7 +3432,10 @@ export class GbServerObject extends DurableObject {
       const ownedOnly = args.owned === true;   // your inventory (the Avatar page)
       const auctions = args.auctions === true;   // items up for auction right now (Exclusive ones too)
       const favsOnly = args.favorites === true;   // catalog items you favourited (your wishlist)
+      // ids: only these (the better-search matches, run through the same rules as everything else)
+      const only = Array.isArray(args.ids) ? new Set(args.ids.filter((x) => typeof x === 'string').slice(0, 200)) : null;
       const found = [...this.assets.values()].filter((a) =>
+        (!only || only.has(a.id)) &&
         (!auctions || this.auctionOpen(a, t)) &&
         (sort !== 'featured' || a.featured > 0) &&
         (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
@@ -3400,7 +3445,7 @@ export class GbServerObject extends DurableObject {
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
         (!creator || a.creator === creator) && this.canPlay(a, me) &&
         (!genre || (a.genres || []).includes(genre)) &&
-        (!q || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
+        (!q || only || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
       const playing = sort === 'playing' ? new Map(found.map((a) => [a.id, this.playingIn(a.id)])) : null;
       const by = {
         popular: (x, y) => (y.plays + y.sales) - (x.plays + x.sales),
@@ -3415,7 +3460,12 @@ export class GbServerObject extends DurableObject {
       found.sort(by);
       const offset = Math.max(0, num(args, 'offset'));
       const limit = 'limit' in args ? clamp(num(args, 'limit'), 1, 100) : 60;
-      return okay({ assets: found.slice(offset, offset + limit).map((a) => this.publicAsset(a, me)), total: found.length, genres: GENRES });
+      const answer = { assets: found.slice(offset, offset + limit).map((a) => this.publicAsset(a, me)), total: found.length, genres: GENRES };
+      // Better search: also ask Supabase for near matches (typos, words in any order), added after
+      // these (see supabaseFollowUp). Only for the first page of a search.
+      if (q.length >= 2 && !only && !offset && !ownedOnly && !favsOnly && this.env.SUPABASE_URL && this.env.SUPABASE_SECRET_KEY)
+        answer.supabase = { search: { q, section: kind === 'clothing' ? 'catalog' : kind || null, args, limit } };
+      return okay(answer);
     }
     // A game's leaderboards (its OrderedDataStores), for the game's page. The scores are read
     // from Supabase after this answer (see supabaseFollowUp); here we only check the game.
@@ -3821,6 +3871,7 @@ export class GbServerObject extends DurableObject {
       for (const x of a.versions || []) this.sql.exec('DELETE FROM files WHERE id = ?', 'ver:' + a.id + ':' + x.v);   // its version history
       this.assets.delete(a.id);
       this.dirty.assets.add(a.id);
+      this.unsearch(a.id);
       return okay();
     }
     // Creator stats: everything you made, with totals and the last 30 days (plays, sales, Bolts earned).

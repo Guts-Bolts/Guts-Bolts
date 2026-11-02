@@ -891,7 +891,7 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     target_include_directories(ServerOrderedDataTests PRIVATE src/ ${GB_GENERATED})
     add_dependencies(ServerOrderedDataTests gb_version)
     target_link_libraries(ServerOrderedDataTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
-    add_test(NAME ServerOrderedDataTests COMMAND ServerOrderedDataTests)
+    add_test(NAME ServerOrderedDataTests COMMAND ServerOrderedDataTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
 endif()
 
 # Studio's sample plugins.

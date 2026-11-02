@@ -9,6 +9,7 @@ const SUPABASE_ENV = {
 
 test('notifications and public activity are queued durably for Supabase', () => {
   const s = makeServer(SUPABASE_ENV);
+  s.sql.exec('DELETE FROM supabase_outbox');   // (the example games' search entries, sent at start)
   const player = signUp(s, 'ArchivePlayer');
 
   s.notify(player, 'friend', 'A player sent you a friend request.', 'friend-1');
@@ -60,6 +61,7 @@ test('Supabase outbox stays disabled when server credentials are absent', () => 
 
 test('outbox flush delivers idempotent batches and clears only after successful writes', async () => {
   const s = makeServer(SUPABASE_ENV);
+  s.sql.exec('DELETE FROM supabase_outbox');   // (the example games' search entries, sent at start)
   const player = signUp(s, 'DeliveryPlayer');
   s.notify(player, 'friend', 'Queued notification.', 'friend-3');
   s.recordAuctionEvent({
@@ -84,6 +86,7 @@ test('outbox flush delivers idempotent batches and clears only after successful 
 
 test('failed Supabase delivery leaves events in the durable outbox for retry', async () => {
   const s = makeServer(SUPABASE_ENV);
+  s.sql.exec('DELETE FROM supabase_outbox');   // (the example games' search entries, sent at start)
   const player = signUp(s, 'RetryPlayer');
   s.notify(player, 'friend', 'Retry this notification.', 'friend-retry');
   const originalFetch = globalThis.fetch;
