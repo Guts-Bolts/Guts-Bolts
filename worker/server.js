@@ -57,6 +57,7 @@ const ACCESSORIES = ['hat', 'hair', 'faceacc', 'neck', 'shoulder', 'waist'];
 const isAccessory = (k) => ACCESSORIES.includes(k);
 // Only Guts' own accessories and faces can become Limited.
 const canBeLimited = (k) => isAccessory(k) || k === 'face';
+const limitedTypeOf = (a) => a && a.meta && a.meta.limitedType === 'limited' ? 'limited' : 'limited_u';
 // Models (objects published from Studio to the Library) are public or private. Verified
 // creators can make as many public as they like; everyone else 5 a week.
 const kPublicModelsPerWeek = 5;
@@ -880,10 +881,10 @@ export class GbServerObject extends DurableObject {
     this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false, roadmap: false };
   }
   // --- Limited items: numbered copies (a.copies = [{ serial, owner, price }]) ---
-  copiesOf(u) {   // every limited copy this account holds
+  copiesOf(u) {   // every tradeable Limited U copy this account holds
     const out = [];
     for (const a of this.assets.values())
-      if (a.limited) for (const c of a.copies || []) if (c.owner === u.id) out.push({ id: a.id, name: a.name, kind: a.kind, serial: c.serial, price: c.price || 0 });
+      if (a.limited && limitedTypeOf(a) === 'limited_u') for (const c of a.copies || []) if (c.owner === u.id) out.push({ id: a.id, name: a.name, kind: a.kind, serial: c.serial, price: c.price || 0 });
     return out;
   }
   // A trade is over: it goes in both people's Past trades, with the names of the people and
@@ -1642,7 +1643,7 @@ export class GbServerObject extends DurableObject {
       }
     }
   }
-  isOffsale(a, t = now()) { return !!a.offsaleAt && t >= a.offsaleAt; }
+  isOffsale(a, t = now()) { return !!(a.meta && a.meta.staffOffsale) || (!!a.offsaleAt && t >= a.offsaleAt); }
 
   // Gift boxes: a timed item staff point at another item (a.giftItem). Once the box goes
   // off sale, everyone who owns it gets that item (usually an Exclusive one, hidden from the
@@ -1831,7 +1832,8 @@ export class GbServerObject extends DurableObject {
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: !me ? undefined : a.kind === 'game' ? (me.favorites || []).includes(a.id)
         : isCatalogItem(a.kind) ? (me.itemFavorites || []).includes(a.id) : undefined,
-      offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), review: a.review || undefined, reviewNote: a.reviewNote || undefined,
+      offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), staffOffsale: !!(a.meta && a.meta.staffOffsale),
+      limitedType: a.limited ? limitedTypeOf(a) : undefined, review: a.review || undefined, reviewNote: a.reviewNote || undefined,
       exclusive: a.exclusive ? true : undefined, gift: a.giftItem ? true : undefined, auction: this.auctionJson(a, me),
       giftItem: a.giftItem && me && this.isStaff(me) ? this.giftJson(a) : undefined,   // (staff only: it's a surprise)
       privatePrice: a.kind === 'game' ? (a.privatePrice || 0) : undefined,
@@ -3359,15 +3361,16 @@ export class GbServerObject extends DurableObject {
       const ownedOnly = args.owned === true;   // your inventory (the Avatar page)
       const auctions = args.auctions === true;   // items up for auction right now (Exclusive ones too)
       const favsOnly = args.favorites === true;   // catalog items you favourited (your wishlist)
+      const publicView = args.publicView === true && this.isStaff(me);   // staff-only preview using player visibility rules
       const found = [...this.assets.values()].filter((a) =>
         (!auctions || this.auctionOpen(a, t)) &&
         (sort !== 'featured' || a.featured > 0) &&
         (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
         (!ownedOnly || me.owned.includes(a.id)) &&
         (!favsOnly || (isCatalogItem(a.kind) && (me.itemFavorites || []).includes(a.id))) &&
-        (!a.exclusive || ownedOnly || auctions || favsOnly || this.isStaff(me)) &&
+        (!a.exclusive || ownedOnly || auctions || favsOnly || (!publicView && this.isStaff(me))) &&
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
-        (!creator || a.creator === creator) && this.canPlay(a, me) &&
+        (!creator || a.creator === creator) && (publicView ? !a.review : this.canPlay(a, me)) &&
         (!genre || (a.genres || []).includes(genre)) &&
         (!q || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
       const playing = sort === 'playing' ? new Map(found.map((a) => [a.id, this.playingIn(a.id)])) : null;
@@ -3430,8 +3433,8 @@ export class GbServerObject extends DurableObject {
       if (a.meta && a.meta.award === 'email') return fail('This hat can\'t be bought: confirm an email in Settings and it\'s yours.');
       if (a.promoOnly) return fail('This item is only available through a promo code.');
       if (a.exclusive) return fail('This is an Exclusive item: it can\'t be bought. It comes from events and gift boxes.');
-      if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited ? ' Buy one from a reseller on the item\'s page.' : ''));
-      if (a.limited && a.sales >= a.stock) return fail('Sold out! Buy one from a reseller on the item\'s page.');
+      if (this.isOffsale(a)) return fail('This item is off sale: it was only for sale for a limited time.' + (a.limited && limitedTypeOf(a) === 'limited_u' ? ' Buy one from a reseller on the item\'s page.' : ''));
+      if (a.limited && a.sales >= a.stock) return fail(limitedTypeOf(a) === 'limited_u' ? 'Sold out! Buy one from a reseller on the item\'s page.' : 'Sold out! This Limited cannot be resold.');
       if (a.price > 0) {
         if (this.balance(me) < a.price) return fail('You need ' + (a.price - this.balance(me)) + ' more Bolts for that.');
         this.add(me, -a.price, 'Bought ' + a.name, 'buy:' + a.id);
@@ -3514,6 +3517,11 @@ export class GbServerObject extends DurableObject {
         a.offsaleAt = Math.max(0, num(args, 'offsaleAt'));
         a.timedFor = a.timedFor || 'set';
       }
+      if ('staffOffsale' in args) {
+        if (!this.isStaff(me)) return fail('Only staff can take an item off sale or put it back on sale.');
+        a.meta = a.meta || {};
+        a.meta.staffOffsale = args.staffOffsale === true;
+      }
       if ('exclusive' in args || 'giftItem' in args) {
         if (!this.isStaff(me)) return fail('Only staff can make items Exclusive or gift boxes.');
         if ('exclusive' in args) a.exclusive = args.exclusive === true;
@@ -3584,6 +3592,8 @@ export class GbServerObject extends DurableObject {
           if (u.owned.includes(a.id) && u.id !== a.creator) a.copies.push({ serial: ++serial, owner: u.id, price: 0 });
         a.sales = serial;
         a.limited = true;
+        a.meta = a.meta || {};
+        a.meta.limitedType = args.limitedType === 'limited' ? 'limited' : 'limited_u';
       }
       if (stock < a.sales) return fail(a.sales + ' copies are already out there: the stock can\'t be less than that.');
       a.stock = stock;
@@ -3666,6 +3676,7 @@ export class GbServerObject extends DurableObject {
       // Put your copy of a limited up for sale (price 0 = take it off sale).
       const a = this.assets.get(str(args, 'id'));
       const c = a && a.limited && (a.copies || []).find((x) => x.serial === num(args, 'serial'));
+      if (a && a.limited && limitedTypeOf(a) !== 'limited_u') return fail('This Limited is not resellable.');
       if (!c || c.owner !== me.id) return fail('You don\'t have that copy.');
       c.price = clamp(num(args, 'price'), 0, 10000000);
       this.saveAsset(a);
@@ -3674,6 +3685,7 @@ export class GbServerObject extends DurableObject {
     if (name === 'resale.buy') {
       const a = this.assets.get(str(args, 'id'));
       const c = a && a.limited && (a.copies || []).find((x) => x.serial === num(args, 'serial'));
+      if (a && a.limited && limitedTypeOf(a) !== 'limited_u') return fail('This Limited is not resellable.');
       if (!c || !(c.price > 0)) return fail('That copy isn\'t for sale (any more).');
       if (c.owner === me.id) return fail('That\'s your own copy.');
       if (this.balance(me) < c.price) return fail('You need ' + (c.price - this.balance(me)) + ' more Bolts for that.');
@@ -3709,7 +3721,7 @@ export class GbServerObject extends DurableObject {
       const pick = (list) => (Array.isArray(list) ? list : []).slice(0, 4).map((x) => ({ id: String(x && x.id || ''), serial: Number(x && x.serial) | 0 }));
       const give = pick(args.give), get = pick(args.get);
       if (!give.length || !get.length) return fail('Pick at least one of your limiteds and one of theirs.');
-      const holds = (u, list) => list.every((x) => { const a = this.assets.get(x.id); return a && a.limited && (a.copies || []).some((c) => c.serial === x.serial && c.owner === u.id); });
+      const holds = (u, list) => list.every((x) => { const a = this.assets.get(x.id); return a && a.limited && limitedTypeOf(a) === 'limited_u' && (a.copies || []).some((c) => c.serial === x.serial && c.owner === u.id); });
       if (!holds(me, give)) return fail('You don\'t have all of those.');
       if (!holds(to, get)) return fail('They don\'t have all of those.');
       if (this.trades.filter((x) => x.from === me.id && x.status === 'open').length >= 20) return fail('You have 20 trades waiting already.');
