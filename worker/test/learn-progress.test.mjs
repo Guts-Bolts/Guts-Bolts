@@ -31,7 +31,7 @@ test('Studio Learn progress is saved to the signed-in account', () => {
 test('Studio Learn progress is isolated between accounts', () => {
   const s = makeServer(), a = s.signUp('LearnerA'), b = s.signUp('LearnerB');
   assert.equal(s.call(a, 'learn.progress.save', { completed: ['first-build'], current: 'first-build' }).ok, true);
-  assert.deepEqual(s.call(b, 'learn.progress.get').progress, { completed: [], current: '', step: 0, updatedAt: 0 });
+  assert.deepEqual(s.call(b, 'learn.progress.get').progress, { completed: [], current: '', step: 0, practice: false, updatedAt: 0 });
 });
 
 test('Studio Learn progress rejects unknown IDs and malformed records', () => {
