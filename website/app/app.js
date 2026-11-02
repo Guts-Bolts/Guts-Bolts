@@ -1393,11 +1393,24 @@ document.addEventListener('touchend', (e) => {
   if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) galleryGo(gallery.i + (dx < 0 ? 1 : -1));
 }, { passive: true });
 
+// A game's leaderboards: the top players of each OrderedDataStore the game keeps
+// (scripts fill them with OrderedDataStore:SetAsync / IncrementAsync).
+function leaderboardsBlock(lb) {
+  const boards = lb && lb.ok && Array.isArray(lb.boards) ? lb.boards.filter((b) => b.entries && b.entries.length) : [];
+  if (!boards.length) return '';
+  const score = (n) => typeof n === 'number' ? n.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '';
+  return html`<h2>Leaderboards</h2><div class="leaderboards">${boards.map((b) => html`<div class="box leaderboard">
+      <h3 class="boxhead">${b.name}</h3><ol>${b.entries.map((e) => html`<li class="${e.rank <= 3 ? 'top' + e.rank : ''}">
+        <span class="lb-rank">${e.rank}</span>
+        <span class="grow">${e.userId ? html`<a class="link" href="#/user/${e.userId}">${e.name}</a>` : e.name}</span>
+        <b>${score(e.score)}</b></li>`)}</ol></div>`)}</div>`;
+}
 pages.game = async (id) => {
   const [r, s] = await Promise.all([pageCall('list', { kind: 'game', limit: 100 }), pageCall('servers.list', { game: id })]);
   const g = r.ok && r.assets.find((a) => a.id === id || String(a.num) === id);
   if (!g) { show(html`<h1>Game not found</h1><p class="muted">${r.ok ? 'It may have been deleted, or its creator made it private.' : r.error}</p>`); return; }
-  const [pr, cr] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('comments.list', { game: g.id })]);
+  const [pr, cr, lb] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('comments.list', { game: g.id }),
+    pageCall('game.leaderboards', { id: g.id })]);
   const passes = pr.ok ? pr.passes.filter((p) => !p.offsale || p.owned) : [];
   const mine = signedIn() && (g.creator === me.id || me.staff);
   const servers = s.ok ? s.servers : [];
@@ -1452,6 +1465,7 @@ pages.game = async (id) => {
     ${(g.badges || []).length ? html`<h2>Badges</h2><div class="list">${g.badges.map((b) => html`<div>
         ${gameBadgeIcon(b, 44)}<span class="grow"><b>${b.name}</b><br><span class="small muted">${b.description || ''}</span></span>
         <span class="small muted">Won ${b.awarded || 0} time${b.awarded === 1 ? '' : 's'}</span></div>`)}</div>` : ''}
+    ${leaderboardsBlock(lb)}
     ${passes.length ? html`<h2>Passes</h2><div class="pass-grid">${passes.map(passCard)}</div>` : ''}
     ${privateServerBox(g, s)}
     <h2>Servers</h2>
@@ -1964,16 +1978,41 @@ pages.create = async (tab = 'games') => {
 };
 
 // Creator stats: how your games and items are doing, with the last 30 days as little bar charts.
-const statBars = (vals, days, unit) => {
+const statBars = (vals, days, unit, span = 'in the last 30 days') => {
   const top = Math.max(1, ...vals), w = 6, gap = 2, h = 40;
   return html`<svg class="bars" viewBox="0 0 ${vals.length * (w + gap)} ${h}" preserveAspectRatio="none" role="img"
-    aria-label="${vals.reduce((a, b) => a + b, 0)} ${unit} in the last 30 days">${vals.map((v, i) =>
+    aria-label="${vals.reduce((a, b) => a + b, 0)} ${unit} ${span}">${vals.map((v, i) =>
       html`<rect x="${i * (w + gap)}" y="${h - Math.max(v ? 2 : 0, (v / top) * h)}" width="${w}" height="${Math.max(v ? 2 : 0, (v / top) * h)}">
         <title>${days[i]}: ${v} ${unit}</title></rect>`)}</svg>`;
 };
+// When people play your games (from Supabase): busiest hours in your own time, new and
+// returning players, and plays a day for 90 days.
+function playtimesBlock(pt) {
+  const p = pt && pt.ok && pt.playtimes;
+  if (!p || !Array.isArray(p.hours) || !Array.isArray(p.days)) return '';
+  // The hours come in UTC: turn them round to the visitor's own clock.
+  const shift = Math.round(-new Date().getTimezoneOffset() / 60);
+  const hours = Array.from({ length: 24 }, (_, h) => p.hours[((h - shift) % 24 + 24) % 24] || 0);
+  const label = (h) => new Date(2000, 0, 1, h).toLocaleTimeString([], { hour: 'numeric' });
+  const busiest = hours.indexOf(Math.max(...hours));
+  const total = hours.reduce((a, b) => a + b, 0), who = (p.new || 0) + (p.returning || 0) + (p.guests || 0);
+  const pct = (n) => who ? Math.round((n / who) * 100) + '%' : '0%';
+  const days = p.days.map((d) => d.plays || 0), dayNames = p.days.map((d) => d.day);
+  return html`<h2>When people play</h2><div class="statcard playtimes">
+    ${total ? html`<p class="small muted">Busiest hour (your time): <b>${label(busiest)}</b>. Last 30 days, all your games.</p>
+      <div><span class="small muted">Plays by hour of the day</span>${statBars(hours, hours.map((_, h) => label(h)), 'plays', 'by hour of the day')}
+        <div class="hour-axis small muted"><span>${label(0)}</span><span>${label(6)}</span><span>${label(12)}</span><span>${label(18)}</span><span>${label(23)}</span></div></div>
+      <div class="who-played">
+        <span><b>${(p.new || 0).toLocaleString()}</b> new players (${pct(p.new || 0)})</span>
+        <span><b>${(p.returning || 0).toLocaleString()}</b> came back (${pct(p.returning || 0)})</span>
+        <span><b>${(p.guests || 0).toLocaleString()}</b> guests (${pct(p.guests || 0)})</span></div>`
+      : html`<p class="small muted">Nobody else has played your games in the last 30 days yet. Charts show up here once they do.</p>`}
+    <div><span class="small muted">Plays a day, last 90 days: ${days.reduce((a, b) => a + b, 0).toLocaleString()}</span>${statBars(days, dayNames, 'plays', 'in the last 90 days')}</div>
+  </div>`;
+}
 const statsPage = async (head) => {
   if (!signedIn()) { show(html`${head}${needSignIn('see how your games are doing')}`); return; }
-  const r = await pageCall('creator.stats', {});
+  const [r, pt] = await Promise.all([pageCall('creator.stats', {}), pageCall('creator.playtimes', {})]);
   if (!r.ok) { show(html`${head}<p class="error">${r.error}</p>`); return; }
   const sum = (a) => a.reduce((x, y) => x + y, 0);
   const games = r.items.filter((a) => a.kind === 'game'), sold = r.items.filter((a) => a.kind !== 'game' && (a.price > 0 || a.sales > 0));
@@ -1995,6 +2034,7 @@ const statsPage = async (head) => {
     <div class="stats-tiles">${tile(all('plays30'), 'plays in 30 days')}${tile(all('sales30'), 'sales in 30 days')}${tile(all('bolts30'), 'Bolts earned in 30 days')}</div>
     <p class="small muted">Plays count when someone else opens your game. Passes and products bought inside a game count on that game too.
       Days are in UTC; hover a bar to see its day.</p>
+    ${playtimesBlock(pt)}
     <h2>Games</h2>${games.length ? games.map(card) : html`<p class="muted">You haven't published a game yet.</p>`}
     <h2>Things you sell</h2>${sold.length ? sold.map(card) : html`<p class="muted">Nothing sold yet.</p>`}`);
 };

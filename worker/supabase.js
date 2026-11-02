@@ -138,8 +138,12 @@ export async function checkSupabaseHealth(env) {
 const SUPABASE_ACTIVITY_TABLES = new Set(['gb_auction_events', 'gb_forum_activity']);
 
 /** Insert idempotent outbox rows. Replayed delivery cannot duplicate an event. */
+// The tables the Worker writes. Events are written once; the others are "latest value wins".
+const INSERT_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_play_events']);
+const UPSERT_TABLES = new Set(['gb_leaderboard_scores']);
+
 export async function insertSupabaseRows(env, table, rows) {
-  if (!['gb_notifications', 'gb_auction_events', 'gb_forum_activity'].includes(table)) {
+  if (!INSERT_TABLES.has(table) && !UPSERT_TABLES.has(table)) {
     throw new TypeError('Unsupported Supabase activity table.');
   }
   if (!Array.isArray(rows) || !rows.length) return;
@@ -147,7 +151,7 @@ export async function insertSupabaseRows(env, table, rows) {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      prefer: 'resolution=ignore-duplicates,return=minimal',
+      prefer: (UPSERT_TABLES.has(table) ? 'resolution=merge-duplicates' : 'resolution=ignore-duplicates') + ',return=minimal',
     },
     body: JSON.stringify(rows),
   });
@@ -194,6 +198,42 @@ export async function markSupabaseNotificationsRead(env, accountId) {
     throw new Error('Supabase notification update failed (' + response.status + ').');
   }
   if (response.body) await response.body.cancel();
+}
+
+// The database functions the Worker may call (each one's grants allow only service_role).
+const RPC_FUNCTIONS = new Set(['gb_leaderboard_top', 'gb_creator_playtimes']);
+
+/** Call one of the known database functions with JSON arguments; returns its JSON answer. */
+export async function supabaseRpc(env, fn, args) {
+  if (!RPC_FUNCTIONS.has(fn)) throw new TypeError('Unknown Supabase function.');
+  const response = await supabaseRest(env, '/rest/v1/rpc/' + fn, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(args || {}),
+  });
+  if (!response.ok) {
+    if (response.body) await response.body.cancel();
+    throw new Error('Supabase ' + fn + ' failed (' + response.status + ').');
+  }
+  return await response.json();
+}
+
+/**
+ * The top scores of each of a game's leaderboards (its OrderedDataStores), through the
+ * gb_leaderboard_top database function. The caller checks the visitor may see the game.
+ */
+export async function listSupabaseLeaderboards(env, gameId, perBoard = 10) {
+  if (typeof gameId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(gameId)) throw new TypeError('Invalid game.');
+  const response = await supabaseRest(env, '/rest/v1/rpc/gb_leaderboard_top', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ p_game: gameId, p_per_board: Math.max(1, Math.min(25, Math.floor(Number(perBoard) || 10))) }),
+  });
+  if (!response.ok) {
+    if (response.body) await response.body.cancel();
+    throw new Error('Supabase leaderboard lookup failed (' + response.status + ').');
+  }
+  return await response.json();
 }
 
 /** Read only the public event columns needed by the website activity feeds. */

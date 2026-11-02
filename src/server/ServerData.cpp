@@ -19,9 +19,11 @@
 #include "ServerUtil.h"
 #include "../online/Protocol.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <set>
+#include <vector>
 
 using json = nlohmann::json;
 using namespace ServerUtil;
@@ -37,6 +39,31 @@ constexpr long long kMsgKeep    = 30;        // seconds a message waits to be pi
 constexpr size_t    kMsgKept    = 500;       // messages kept per game at most
 constexpr size_t    kMsgPerPoll = 200;       // handed out per msg.poll
 constexpr long long kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
+} // namespace
+
+namespace {
+// The numbers saved in one store, sorted, one page of them (data.sorted).
+json sortedEntries(const json& all, const std::string& store, const json& q) {
+    std::vector<std::pair<std::string, double>> rows;
+    if (all.contains(store) && all[store].is_object())
+        for (auto& [k, v] : all[store].items()) {
+            if (!v.is_number()) continue;
+            const double x = v.get<double>();
+            if (q.contains("min") && x < q["min"].get<double>()) continue;
+            if (q.contains("max") && x > q["max"].get<double>()) continue;
+            rows.emplace_back(k, x);
+        }
+    const bool up = q.value("ascending", false);
+    std::sort(rows.begin(), rows.end(), [up](const auto& a, const auto& b) {
+        if (a.second != b.second) return up ? a.second < b.second : a.second > b.second;
+        return a.first < b.first;
+    });
+    const size_t offset = (size_t)q.value("offset", 0), limit = (size_t)q.value("limit", 50);
+    json out = json::array();
+    for (size_t i = offset; i < rows.size() && out.size() < limit; ++i)
+        out.push_back({{"key", rows[i].first}, {"value", all[store][rows[i].first]}});
+    return out;
+}
 } // namespace
 
 json& GbServer::gameData(const std::string& game) {
@@ -65,6 +92,20 @@ json GbServer::dataOp(const std::string& name, User& me, const json& args) {
     const bool trusted = isStaff(me) || a->second.creator == me.id;
     if (name == "data.can") { json r = okay(); r["save"] = trusted; return r; }
     if (!trusted) return fail("Only the game's own servers can use its saved data.");
+    // OrderedDataStore:GetSortedAsync (worker/server.js has the same):
+    //   data.sorted {game, store, ascending, limit (1-101), offset, min, max} -> {entries: [{key, value}]}
+    if (name == "data.sorted") {
+        const std::string st = args.contains("store") && args["store"].is_string() ? args["store"].get<std::string>() : "";
+        if (st.empty() || st.size() > kDataName) return fail("DataStore names are 1-" + std::to_string(kDataName) + " letters.");
+        json q = {{"ascending", args.value("ascending", false) == true},
+                  {"limit", args.contains("limit") && args["limit"].is_number() ? std::clamp(args["limit"].get<int>(), 1, 101) : 50},
+                  {"offset", args.contains("offset") && args["offset"].is_number() ? std::clamp(args["offset"].get<int>(), 0, 100000) : 0}};
+        if (args.contains("min") && args["min"].is_number()) q["min"] = args["min"];
+        if (args.contains("max") && args["max"].is_number()) q["max"] = args["max"];
+        json r = okay();
+        r["entries"] = sortedEntries(gameData(game), st, q);
+        return r;
+    }
     const std::string store = args.contains("store") && args["store"].is_string() ? args["store"].get<std::string>() : "";
     const std::string key = args.contains("key") && args["key"].is_string() ? args["key"].get<std::string>() : "";
     if (store.empty() || key.empty() || store.size() > kDataName || key.size() > kDataName)

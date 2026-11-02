@@ -20,9 +20,12 @@ import { MemoryStore } from './memorystore.js';
 import { installMcpRelay } from './mcp-relay.js';   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Roadmap, builtInItems, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
 import BUILT_IN_ROADMAP from './roadmap-gathered.js';   // worker/roadmap/, one file per item (worker/gather-updates.mjs)
-import { broadcastSupabase, insertSupabaseRows, listSupabaseNotifications, markSupabaseNotificationsRead } from './supabase.js';
+import { broadcastSupabase, insertSupabaseRows, listSupabaseLeaderboards, listSupabaseNotifications, markSupabaseNotificationsRead, supabaseRpc } from './supabase.js';
 // Which Supabase tables have a live feed on the website (the Realtime event name).
 const LIVE_FEEDS = { gb_auction_events: 'auctions', gb_forum_activity: 'forum' };
+// The Supabase tables the server writes to, and the ones whose rows are "latest value wins".
+const SUPABASE_TABLES = new Set(['gb_notifications', 'gb_auction_events', 'gb_forum_activity', 'gb_leaderboard_scores', 'gb_play_events']);
+const SUPABASE_UPSERT = new Set(['gb_leaderboard_scores']);
 // The example games that come with Guts&Bolts: always on the server (as Guts's
 // games), so the website and the apps have something to play from day one.
 import demolitionYard from '../games/Demolition Yard.gbscene';
@@ -405,7 +408,7 @@ const kMsgKept = 500;            // messages kept per game at most
 const kMsgPerPoll = 200;         // handed out per msg.poll
 const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
-const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get']);
+const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'game.leaderboards']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
 const kCodeMinutes = 15, kCodeTries = 5, kMailGap = 60, kMailsPerDay = 8;
@@ -960,9 +963,12 @@ export class GbServerObject extends DurableObject {
   }
   queueSupabaseEvent(table, row) {
     if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return;
-    if (!['gb_notifications', 'gb_auction_events', 'gb_forum_activity'].includes(table)) return;
-    this.sql.exec('INSERT OR IGNORE INTO supabase_outbox (id, table_name, payload, created) VALUES (?, ?, ?, ?)',
-      row.id, table, JSON.stringify(row), now());
+    if (!SUPABASE_TABLES.has(table)) return;
+    // Events are kept once (the first wins); rows that are "the latest value" (a leaderboard
+    // score, a search entry) replace what's waiting, so only the newest one is sent.
+    this.sql.exec((SUPABASE_UPSERT.has(table) ? 'INSERT OR REPLACE' : 'INSERT OR IGNORE') +
+      ' INTO supabase_outbox (id, table_name, payload, created) VALUES (?, ?, ?, ?)',
+      table + ':' + row.id, table, JSON.stringify(row), now());
     this.scheduleSupabaseFlush(1000);
   }
   scheduleSupabaseFlush(delayMs) {
@@ -973,6 +979,21 @@ export class GbServerObject extends DurableObject {
     })();
     if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(schedule);
     else schedule.catch(() => {});
+  }
+  // A score in an OrderedDataStore, for the game page's leaderboards. Keys are often a
+  // player's user number ("Player_12", "12"), so their name goes with it. Only public games'
+  // boards are sent (private games keep theirs to themselves); null removes the entry.
+  recordLeaderboard(asset, store, key, value) {
+    if (!asset || asset.kind !== 'game' || asset.access === 'private' || asset.review) return;
+    const score = typeof value === 'number' && Number.isFinite(value) ? value : null;
+    const m = /^(?:[A-Za-z]{1,20}_?)?(\d{1,10})$/.exec(key);
+    const player = m ? this.findUserId(Number(m[1])) : null;
+    this.queueSupabaseEvent('gb_leaderboard_scores', {
+      id: asset.id + '|' + store + '|' + key, game_id: asset.id, store: store.slice(0, 100), entry_key: key.slice(0, 100),
+      player_name: player && !player.banned ? player.name : filterText(key).slice(0, 40),
+      player_user_id: player && !player.banned ? player.userId : null,
+      score, updated_at: new Date(now() * 1000).toISOString(),
+    });
   }
   recordAuctionEvent(asset, eventType, actorName, amount = null) {
     const auction = asset && asset.auction;
@@ -1036,7 +1057,8 @@ export class GbServerObject extends DurableObject {
     for (const [table, batch] of groups) {
       try {
         await insertSupabaseRows(this.env, table, batch.map((row) => JSON.parse(row.payload)));
-        for (const row of batch) this.sql.exec('DELETE FROM supabase_outbox WHERE id = ?', row.id);
+        // (only if it wasn't replaced by a newer value while we were sending)
+        for (const row of batch) this.sql.exec('DELETE FROM supabase_outbox WHERE id = ? AND payload = ?', row.id, row.payload);
         // Now the rows are there, tell open pages to look again.
         if (LIVE_FEEDS[table]) this.queueLive('gb-activity', LIVE_FEEDS[table]);
       } catch {
@@ -1048,6 +1070,31 @@ export class GbServerObject extends DurableObject {
     await this.sendLivePings();
   }
   async alarm() { await this.flushSupabaseOutbox(); }
+  // Answers that need something read from Supabase: the op checked who's asking and left
+  // { supabase: {what} } in its answer; here we fetch it. Supabase being down never fails
+  // the request: the page just gets nothing for that part.
+  async supabaseFollowUp(answer) {
+    const want = answer.supabase;
+    delete answer.supabase;
+    if (want.leaderboards) {
+      answer.boards = [];
+      try {
+        const rows = await listSupabaseLeaderboards(this.env, want.leaderboards, 10);
+        const boards = new Map();
+        for (const row of Array.isArray(rows) ? rows : []) {
+          if (!boards.has(row.store)) boards.set(row.store, { name: row.store, entries: [] });
+          boards.get(row.store).entries.push({ rank: row.rank, name: row.player_name, userId: row.player_user_id || 0, score: row.score });
+        }
+        answer.boards = [...boards.values()].slice(0, 6);
+      } catch { answer.unavailable = true; }
+    }
+    if (want.playtimes) {
+      answer.playtimes = null;
+      try { answer.playtimes = await supabaseRpc(this.env, 'gb_creator_playtimes', { p_games: want.playtimes, p_days: 90 }); }
+      catch { answer.unavailable = true; }
+    }
+    return answer;
+  }
   saveAsset(a) { this.dirty.assets.add(a.id); }
   // Creator stats: count something on a day (plays, sales, bolts earned), kept for 60 days.
   // Passes and products also count on their game, so a game's page adds them up.
@@ -3370,6 +3417,14 @@ export class GbServerObject extends DurableObject {
       const limit = 'limit' in args ? clamp(num(args, 'limit'), 1, 100) : 60;
       return okay({ assets: found.slice(offset, offset + limit).map((a) => this.publicAsset(a, me)), total: found.length, genres: GENRES });
     }
+    // A game's leaderboards (its OrderedDataStores), for the game's page. The scores are read
+    // from Supabase after this answer (see supabaseFollowUp); here we only check the game.
+    if (name === 'game.leaderboards') {
+      const a = this.assets.get(str(args, 'id'));
+      if (!a || a.kind !== 'game' || !this.canPlay(a, me)) return fail('There\'s no game with that ID (or it\'s private).');
+      if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return okay({ boards: [] });
+      return okay({ supabase: { leaderboards: a.id } });
+    }
     // One asset's page (the Library's "asset ID" pages): what it is, without downloading it.
     // Takes the ID people paste into games too ("gb:decal-..."). (src/server has the same.)
     if (name === 'asset.info') {
@@ -3395,7 +3450,11 @@ export class GbServerObject extends DurableObject {
         a.plays++;
         this.tally(a, 'plays');
         me.played = me.played || [];
-        if (!me.played.includes(a.id)) { me.played.push(a.id); if (me.played.length > 500) me.played.shift(); this.saveUser(me); }
+        const returning = me.played.includes(a.id);
+        if (!returning) { me.played.push(a.id); if (me.played.length > 500) me.played.shift(); this.saveUser(me); }
+        // For the creator's "when people play" charts (who played isn't kept, only when).
+        this.queueSupabaseEvent('gb_play_events', { id: randomHex(12), game_id: a.id, creator_id: a.creator,
+          is_returning: returning && me.userId > 0, is_guest: me.userId === 0, created_at: new Date(t * 1000).toISOString() });
       }
       // A Library model someone else made, fetched to insert (Studio's Toolbox, or require() in a
       // script): now they've used it, so they can give it a thumbs up or down (model.vote).
@@ -3779,6 +3838,16 @@ export class GbServerObject extends DurableObject {
           plays30: series('plays'), sales30: series('sales'), bolts30: series('bolts'), bolts60: sum('bolts') };
       }).sort((x, y) => (y.plays + y.sales) - (x.plays + x.sales));
       return okay({ days, items });
+    }
+    // When people play your games: by hour of the day, new or returning players, and plays a day
+    // for 90 days. Read from Supabase after this answer (supabaseFollowUp). game: one of yours, or all.
+    if (name === 'creator.playtimes') {
+      if (me.userId === 0) return fail('Sign up first.');
+      const one = str(args, 'game');
+      const games = [...this.assets.values()].filter((a) => a.kind === 'game' && a.creator === me.id && (!one || a.id === one)).map((a) => a.id);
+      if (one && !games.length) return fail('That isn\'t one of your games.');
+      if (!games.length || !this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return okay({ playtimes: null });
+      return okay({ supabase: { playtimes: games.slice(0, 200) } });
     }
     if (name === 'stats') return okay({ users: this.users.size, assets: this.assets.size, name: this.name });
     return fail('The server doesn\'t know how to do "' + name + '". It might need updating.');
@@ -5128,6 +5197,20 @@ export class GbServerObject extends DurableObject {
     const trusted = this.isStaff(me) || asset.creator === me.id;
     if (name === 'data.can') return okay({ save: trusted });
     if (!trusted) return fail('Only the game\'s own servers can use its saved data.');
+    // OrderedDataStore:GetSortedAsync: the numbers saved in one store, biggest (or smallest) first.
+    //   data.sorted {game, store, ascending, limit (1-101: a page and one more), offset, min, max} -> {entries: [{key, value}]}
+    if (name === 'data.sorted') {
+      const store = typeof args.store === 'string' ? args.store : '';
+      if (!store || store.length > kDataName) return fail('DataStore names are 1-' + kDataName + ' letters.');
+      const limit = 'limit' in args ? clamp(num(args, 'limit'), 1, 101) : 50, offset = clamp(num(args, 'offset'), 0, 100000);
+      const where = ['game = ?', 'store = ?', 'json_valid(value)', "json_type(value) IN ('integer', 'real')"], bind = [game, store];
+      if (typeof args.min === 'number' && Number.isFinite(args.min)) { where.push('CAST(value AS REAL) >= ?'); bind.push(args.min); }
+      if (typeof args.max === 'number' && Number.isFinite(args.max)) { where.push('CAST(value AS REAL) <= ?'); bind.push(args.max); }
+      const order = args.ascending === true ? 'ASC' : 'DESC';
+      const rows = [...this.sql.exec('SELECT key, value FROM gamedata WHERE ' + where.join(' AND ') +
+        ' ORDER BY CAST(value AS REAL) ' + order + ', key LIMIT ? OFFSET ?', ...bind, limit, offset)];
+      return okay({ entries: rows.map((row) => ({ key: row.key, value: JSON.parse(row.value) })) });
+    }
     const store = typeof args.store === 'string' ? args.store : '', key = typeof args.key === 'string' ? args.key : '';
     if (!store || !key || store.length > kDataName || key.length > kDataName) return fail('DataStore names and keys are 1-' + kDataName + ' letters.');
     const read = () => {
@@ -5149,9 +5232,12 @@ export class GbServerObject extends DurableObject {
       this.sql.exec('INSERT OR REPLACE INTO gamedata (game, store, key, value, updated) VALUES (?, ?, ?, ?, ?)', game, store, key, text, now());
       return null;
     };
+    // Ordered stores (OrderedDataStore) also go to Supabase, for the leaderboards on the game's page.
+    const mirror = (value) => { if (args.ordered === true) this.recordLeaderboard(asset, store, key, value); };
     if (name === 'data.get') return okay({ value: read() });
     if (name === 'data.set') {
       const bad = write(args.value === undefined ? null : args.value);
+      if (!bad) mirror(args.value === undefined ? null : args.value);
       return bad || okay({});
     }
     if (name === 'data.increment') {   // in one step, so two servers adding at once both count
@@ -5160,6 +5246,7 @@ export class GbServerObject extends DurableObject {
       const delta = typeof args.delta === 'number' && Number.isFinite(args.delta) ? args.delta : 1;
       const value = (old || 0) + delta;
       const bad = write(value);
+      if (!bad) mirror(value);
       return bad || okay({ value });
     }
     return fail('Unknown request.');
@@ -5627,6 +5714,7 @@ export class GbServerObject extends DurableObject {
       if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(delivery);
       else await delivery;
     }
+    if (answer.ok && answer.supabase) answer = await this.supabaseFollowUp(answer);
     if (answer.ok && answer.translate) answer = await this.translate(answer);
     if (this.outbox.length) await this.sendMail();
     if (this.lyretoQueue.length) await this.fetchLyretoCards();
