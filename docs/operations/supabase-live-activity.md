@@ -37,3 +37,30 @@ The applied schema and least-privilege grants are tracked in supabase/migrations
 - Notification history is mirrored independently of the native 50-entry notification preview. The native store remains authoritative for unread badge counts.
 - Event rows are append-only except notification read_at. Add a retention policy only after deciding the desired audit/history window.
 - Monitor the Durable Object supabase_outbox table and Supabase API health endpoint at /api/supabase/health if feed delivery stalls.
+
+## More features on Supabase (PR #240)
+
+All of these follow the same rules: the Durable Object stays the real copy and decides who
+may see what; Supabase only stores supporting copies; every table has RLS on with no client
+policies, and only the Worker's secret key (service_role) can reach them.
+
+- **Live updates:** after a request (and after outbox rows land) the Worker sends data-free
+  Realtime Broadcast pings: topic `gb-activity` (events `auctions`, `forum`) and each signed-up
+  account's secret topic `gb-me-<random>` (events `me`, `feed`; the website learns its topic from
+  `me.live`). `website/app/live.js` listens with the publishable key (`SUPABASE_PUBLISHABLE_KEY`
+  in wrangler.jsonc, served at `/api/supabase/live`) and asks the server again when a ping comes.
+  Bursts are folded into one refresh, since anyone with the publishable key could send pings.
+- **Leaderboards:** `gb_leaderboard_scores` (ordered DataStore writes of public games, latest
+  value wins) and `gb_leaderboard_top()`; op `game.leaderboards`.
+- **Creator play times:** `gb_play_events` (game, creator, new/returning/guest, time; never who)
+  and `gb_creator_playtimes()`; op `creator.playtimes`.
+- **Search:** `gb_search_items` (sent when an asset's searchable words change; private, under
+  review and deleted ones are marked removed) and `gb_search()` (text search + pg_trgm). A `list`
+  search adds these near matches after the plain ones, through the normal catalog rules.
+- **Friend activity:** `gb_friend_activity`; `feed.list` merges it, checking blocks, the
+  person's status privacy and that the thing is still public every time.
+- **Staff numbers:** `gb_daily_stats` (a reading every 5 minutes via `gb_record_daily()`) and
+  `gb_staff_numbers()`; op `admin.numbers`.
+
+Ops that read Supabase leave `{ supabase: {...} }` in their answer and
+`GbServerObject.supabaseFollowUp` fills it in; if Supabase is down the page just leaves that part out.

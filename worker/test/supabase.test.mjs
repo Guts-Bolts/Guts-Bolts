@@ -27,7 +27,7 @@ test('Supabase health validates the secret key against the Data API without expo
     assert.equal(init.headers.get('apikey'), env.SUPABASE_SECRET_KEY);
     assert.equal(init.headers.get('authorization'), null);
     assert.equal(init.headers.get('accept'), 'application/openapi+json');
-    assert.equal(init.redirect, 'error');
+    assert.equal(init.redirect, 'manual');
     return new Response('{}', { status: 200 });
   }, async () => {
     assert.deepEqual(await checkSupabaseHealth(env), { configured: true, connected: true });
@@ -55,7 +55,7 @@ test('Supabase REST helper removes caller-supplied Authorization and keeps the s
     assert.equal(new URL(input).origin, 'https://pfpzmmsosyetkcoymoct.supabase.co');
     assert.equal(init.headers.get('apikey'), env.SUPABASE_SECRET_KEY);
     assert.equal(init.headers.get('authorization'), null);
-    assert.equal(init.redirect, 'error');
+    assert.equal(init.redirect, 'manual');
     return new Response('[]', { status: 200 });
   }, async () => {
     const response = await supabaseRest(env, '/rest/v1/auction_events?select=id', {
@@ -114,3 +114,16 @@ test('public activity reads are bounded and reject private notification tables',
   });
 });
 
+
+test('Supabase REST helper never asks Cloudflare for the unsupported "error" redirect mode', async () => {
+  // Cloudflare Workers throw "Invalid redirect value" for redirect: 'error',
+  // which made every Supabase call fail on the live site.
+  await withFetch(async (input, init) => {
+    assert.ok(['follow', 'manual'].includes(init.redirect));
+    return new Response(null, { status: 302, headers: { location: 'https://elsewhere.example/' } });
+  }, async () => {
+    const health = await checkSupabaseHealth(env);
+    assert.equal(health.connected, false);
+    assert.equal(health.reason, 'api_error');
+  });
+});

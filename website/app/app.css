@@ -1154,3 +1154,24 @@ table:not(.stats):not(.versions) tbody tr:nth-child(even) {
   background: #a71919;
   color: #fff;
 }
+
+/* Game leaderboards (a game's OrderedDataStores, from Supabase) */
+.leaderboards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.leaderboard { margin: 0; }
+.leaderboard ol { list-style: none; margin: 0; padding: 0; }
+.leaderboard li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid var(--line); }
+.leaderboard li:first-child { border-top: 0; }
+.leaderboard .lb-rank { min-width: 24px; text-align: center; font-weight: 700; color: var(--muted, #777); }
+.leaderboard li.top1 .lb-rank { color: #c9a227; }
+.leaderboard li.top2 .lb-rank { color: #9aa3ad; }
+.leaderboard li.top3 .lb-rank { color: #b0703a; }
+.leaderboard .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Creator stats: when people play */
+.playtimes .hour-axis { display: flex; justify-content: space-between; margin-top: 2px; }
+.playtimes .who-played { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0; }
+
+/* Staff > Numbers */
+.staff-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.top-games li { padding: 3px 0; }
+.top-games li .small { margin-left: 6px; }

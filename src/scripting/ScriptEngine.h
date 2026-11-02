@@ -95,9 +95,11 @@ public:
     // Otherwise they're the file above, as before.
     void setOnlineData(bool on, const std::string& gameId) { m_onlineData = on; m_dataGame = gameId; }
     // Script calls (they wait in Lua until done(ticket) is true): "get" or "inc".
-    int  dataStart(const std::string& kind, const std::string& store, const std::string& key, double delta);
+    int  dataStart(const std::string& kind, const std::string& store, const std::string& key, double delta, bool ordered = false);
+    int  dataSorted(const std::string& store, const nlohmann::json& query);   // OrderedDataStore:GetSortedAsync
+    static nlohmann::json sortedLocal(const nlohmann::json& all, const std::string& store, const nlohmann::json& query);
     bool dataDone(int ticket, nlohmann::json& value);
-    void dataSet(const std::string& store, const std::string& key, const nlohmann::json& value);
+    void dataSet(const std::string& store, const std::string& key, const nlohmann::json& value, bool ordered = false);
     // MessagingService: messages between the running servers of this game (each one gets every
     // message, the sender too). Online - through the Guts&Bolts server - when setOnlineData is on
     // and the server says we're running a server of the game; otherwise on this computer (a
@@ -317,7 +319,7 @@ private:
     bool     m_saveLoaded = false;
     // Online DataStores (see setOnlineData).
     enum class DataMode { Unknown, Asking, Local, Online };
-    struct DataJob { int ticket = 0; std::string kind, store, key; double delta = 0.0; nlohmann::json value; };
+    struct DataJob { int ticket = 0; std::string kind, store, key; double delta = 0.0; nlohmann::json value; bool ordered = false; };
     struct DataCached { nlohmann::json value; double at = 0.0; int writing = 0; };
     void dataDecide();                  // local file or the server?
     void dataRun(const DataJob& job);

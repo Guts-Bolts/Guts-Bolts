@@ -150,7 +150,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // except looking around: visitors to the website can browse before signing up.
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
-                                                    "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get",
+                                                    "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove"};   // (guests can host games too, and read chat)
@@ -1704,6 +1704,29 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::sort(items.begin(), items.end(), [](const json& x, const json& y) {
             return x["plays"].get<long long>() + x["sales"].get<long long>() > y["plays"].get<long long>() + y["sales"].get<long long>(); });
         json r = okay(); r["days"] = days; r["items"] = items; return r;
+    }
+    // The website's server keeps these in Supabase (game page leaderboards, "when people play",
+    // the Staff page's history). This server has no Supabase, so it answers with nothing there
+    // and the website just leaves those bits out.
+    if (name == "game.leaderboards") {
+        auto a = findAsset(args.value("id", std::string()));
+        if (a == m_assets.end() || a->second.kind != "game" || !canSee(a->second, me)) return fail("There's no game with that ID (or it's private).");
+        json r = okay(); r["boards"] = json::array(); return r;
+    }
+    if (name == "creator.playtimes") {
+        if (me.userId == 0) return fail("Sign up first.");
+        json r = okay(); r["playtimes"] = nullptr; return r;
+    }
+    if (name == "admin.numbers") {
+        if (!isStaff(me)) return fail("Only staff can see this.");
+        long long online = 0, playing = 0, games = 0, items = 0;
+        for (const auto& [id, u] : m_users) if (u.userId > 0 && now - u.lastSeen <= 150) online++;
+        for (const auto& [sid, s] : m_sessions) playing += headcount(s);
+        for (const auto& [id, a] : m_assets) { if (a.kind == "game") games++; else if (Online::isCatalogItem(a.kind)) items++; }
+        json r = okay();
+        r["now"] = {{"accounts", std::max(0LL, m_nextUserId - 1)}, {"online", online}, {"playing", playing}, {"games", games}, {"items", items}};
+        r["days"] = json::array(); r["topGames"] = json::array();
+        return r;
     }
     if (name == "stats") {
         json r = okay();

@@ -22,7 +22,7 @@ import { withSecurityHeaders } from './security.js';
 import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
-import { checkSupabaseHealth, listSupabaseActivity } from './supabase.js';
+import { checkSupabaseHealth, listSupabaseActivity, supabasePublicConfig } from './supabase.js';
 export { GbServerObject };
 
 const MAX_REQUEST = 40 * 1024 * 1024;   // a whole game, base64
@@ -182,7 +182,7 @@ async function route(request, env, ctx) {
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
     const picture = /^\/(thumb|icon|shot|wear|decal|avatar)\//.test(url.pathname);
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
-    const supabaseHealthPath = url.pathname === '/api/supabase/health';
+    const supabaseHealthPath = url.pathname === '/api/supabase/health' || url.pathname === '/api/supabase/live';
     const supabaseActivityPath = /^\/api\/activity\/(auctions|forum)$/.test(url.pathname);
     const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath ? 'api' : mcp ? 'mcp' : '';
     let info = null;
@@ -195,6 +195,12 @@ async function route(request, env, ctx) {
     if (mcp) return handleMcp(request, env, url, serverAsk);
     if (url.pathname === '/api/info') {
       return reply({ ok: true, server: env.GB_SERVER || 'cloudflare', time: Math.floor(Date.now() / 1000) });
+    }
+    if (url.pathname === '/api/supabase/live') {
+      // Where the website listens for live pings (Supabase Realtime). Public on purpose.
+      if (request.method !== 'GET') return reply({ ok: false, error: 'Use GET.' }, 405);
+      const live = supabasePublicConfig(env);
+      return reply(live ? { ok: true, live } : { ok: false, error: 'Live updates are off on this server.' });
     }
     if (supabaseHealthPath) {
       if (request.method !== 'GET') return reply({ ok: false, error: 'Use GET.' }, 405);

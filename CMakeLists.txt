@@ -892,6 +892,15 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_test(NAME ServerLearnProgressTests COMMAND ServerLearnProgressTests)
 endif()
 
+# The server's OrderedDataStore:GetSortedAsync (data.sorted), with signed requests like the apps send.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
+    add_executable(ServerOrderedDataTests tests/ServerOrderedDataTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerOrderedDataTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerOrderedDataTests gb_version)
+    target_link_libraries(ServerOrderedDataTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerOrderedDataTests COMMAND ServerOrderedDataTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
+endif()
+
 # Studio's sample plugins.
 add_custom_command(TARGET GutsAndBolts POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GutsAndBolts>/plugins"
@@ -1022,6 +1031,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(ScriptingHelpTests tests/ScriptingHelpTests.cpp)
     target_link_libraries(ScriptingHelpTests PRIVATE gb_engine)
     add_test(NAME ScriptingHelpTests COMMAND ScriptingHelpTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # OrderedDataStore:GetSortedAsync from a script, played offline.
+    add_executable(OrderedDataStoreTests tests/OrderedDataStoreTests.cpp)
+    target_link_libraries(OrderedDataStoreTests PRIVATE gb_engine)
+    add_test(NAME OrderedDataStoreTests COMMAND OrderedDataStoreTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # MemoryStoreService: the store's rules and the script side, played offline.
