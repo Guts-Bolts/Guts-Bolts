@@ -206,6 +206,50 @@
     .gallery { grid-template-columns: 1fr; }
   }
   @media (prefers-reduced-motion: reduce) { .hero .slide { transition: none; } html { scroll-behavior: auto; } }
+
+  /* Live auction promotion: classic marketplace banner with a real, server-timed countdown. */
+  .auction-promo { margin: 14px 0; border: 2px solid #8e1d25; background: linear-gradient(120deg, #fff8f4 0%, #f4e5e3 52%, #e9d9d8 100%); box-shadow: 0 2px 0 rgba(95,20,25,.16); overflow: hidden; }
+  .auction-promo[hidden] { display: none; }
+  .auction-promo.urgent { border-color: #c81e1e; background: linear-gradient(120deg, #fff5f3, #f7d9d7 58%, #efc5c2); }
+  .auction-promo.ending-today { border-color: #b45309; }
+  .auction-promo-head { display: flex; align-items: center; gap: 10px; padding: 0 10px; background: linear-gradient(#fce8e5, #eac8c5); border-bottom: 1px solid #c98c89; }
+  .auction-promo-head h2 { flex: 1; margin: 0; padding: 7px 0; color: #8e1d25; background: transparent; border: 0; font-size: 14px; letter-spacing: .7px; }
+  .auction-promo-head a { color: #7f1d1d; font-weight: bold; font-size: 11px; white-space: nowrap; }
+  .auction-promo-main { display: grid; grid-template-columns: minmax(145px, 205px) minmax(0, 1fr) minmax(150px, 190px); gap: 18px; align-items: center; padding: 16px; color: #251b1b; text-decoration: none !important; }
+  .auction-promo-main:hover { background: rgba(255,255,255,.28); }
+  .auction-promo-art { aspect-ratio: 1; min-width: 0; display: grid; place-items: center; background: radial-gradient(circle, #fff 0%, #eadcda 72%); border: 1px solid #b78d89; box-shadow: inset 0 1px 5px rgba(0,0,0,.12); }
+  .auction-promo-art img { width: 100%; height: 100%; object-fit: contain; }
+  .auction-promo-art-fallback { color: #6b3030; font-weight: bold; font-size: 13px; text-align: center; padding: 12px; }
+  .auction-promo-kicker { color: #9b252b; font-size: 10px; font-weight: bold; letter-spacing: 1.2px; }
+  .auction-promo-copy h3 { margin: 3px 0 5px; color: #281c1c; font-size: 25px; line-height: 1.12; overflow-wrap: anywhere; }
+  .auction-promo-copy p { margin: 0 0 12px; color: #5c4848; font-size: 12px; }
+  .auction-promo-bid { display: flex; flex-direction: column; gap: 2px; }
+  .auction-promo-bid span, .auction-promo-clock > span { color: #6b5555; font-size: 9px; font-weight: bold; letter-spacing: .8px; }
+  .auction-promo-bid strong { color: #241616; font-size: 21px; line-height: 1.15; }
+  .auction-promo-clock { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+  .auction-promo-clock strong { color: #8e1d25; font: bold 27px/1.1 Consolas, "Courier New", monospace; white-space: nowrap; }
+  .auction-promo.urgent .auction-promo-clock strong { color: #c81e1e; }
+  .auction-promo-cta { display: inline-block; margin-top: 5px; padding: 9px 14px; color: #fff; background: linear-gradient(#df4545, #a71922); border: 1px solid #74151b; border-radius: 3px; box-shadow: inset 0 1px 0 rgba(255,255,255,.3); font-weight: bold; font-size: 13px; letter-spacing: .4px; text-shadow: 0 1px rgba(0,0,0,.35); }
+  .auction-promo-more { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; padding: 0 16px 14px; }
+  .auction-promo-more > a { min-width: 0; display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; color: #2c2020; background: rgba(255,255,255,.55); border: 1px solid #c9aaa7; }
+  .auction-promo-more > a:hover { background: #fff; text-decoration: none; }
+  .auction-promo-mini-tag { color: #9b252b; font-size: 9px; font-weight: bold; letter-spacing: .8px; }
+  .auction-promo-mini-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
+  .auction-promo-mini-time { color: #7f1d1d; font: bold 11px Consolas, "Courier New", monospace; }
+  @media (max-width: 680px) {
+    .auction-promo-main { grid-template-columns: 104px minmax(0, 1fr); gap: 12px; padding: 12px; }
+    .auction-promo-art { grid-row: span 2; }
+    .auction-promo-copy h3 { font-size: 19px; }
+    .auction-promo-copy p { margin-bottom: 7px; }
+    .auction-promo-clock { grid-column: 2; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 3px 8px; }
+    .auction-promo-clock > span { grid-column: 1 / -1; }
+    .auction-promo-clock strong { font-size: 22px; }
+    .auction-promo-cta { margin-top: 0; padding: 7px 9px; font-size: 11px; }
+    .auction-promo-more { grid-template-columns: 1fr; padding: 0 12px 12px; }
+    .auction-promo-head { align-items: flex-start; }
+    .auction-promo-head h2 { font-size: 12px; }
+    .auction-promo-head a { padding-top: 8px; font-size: 9px; }
+  }
 </style>
 </head>
 <body>
@@ -249,6 +293,8 @@
     <div><b>18</b><span>materials</span></div>
     <div><b>.rbxl</b><span>import and export</span></div>
   </div>
+
+  <section id="auction-feature" class="auction-promo" aria-label="Live auctions" hidden></section>
 
   <section id="new">
     <h2><span id="new-name">What's new in 0.7.2: Feature Creep</span><a href="app/#/updates">Every update »</a></h2>
