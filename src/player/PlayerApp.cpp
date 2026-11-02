@@ -979,10 +979,19 @@ void PlayerApp::drawTopBar(ImVec2 pos, float width) {
     ImVec2 b0 = pos, b1(pos.x + width, pos.y + bannerH);
     dl->AddImageRounded((ImTextureID)(intptr_t)m_bannerView.colorTexture(), b0, b1, ImVec2(0, 1), ImVec2(1, 0),
                         IM_COL32_WHITE, 8.0f, ImDrawFlags_RoundCornersTop);
-    Classic::logo(dl, ImVec2(pos.x + 26, pos.y + (bannerH - logoSize) * 0.5f - 4), logoSize, "GUTS&BOLTS");
+    // The logo picture, as tall as the old text logo's letters plus room for its splatter
+    // (and never so wide it runs into the avatar on the right).
+    float logoH = std::min(logoSize * 1.35f, bannerH - 10.0f);
+    logoH = std::min(logoH, width * 0.5f / std::max(1.0f, Classic::logoPictureWidth(1.0f)));
+    float logoRoom = bannerH;   // the height it's centred in
+#ifndef GB_MOBILE
+    if (!shortScreen) logoRoom = bannerH - 36.0f;   // leave room for the online button under it
+#endif
+    logoH = std::min(logoH, logoRoom - 6.0f);
+    const float logoY = pos.y + (logoRoom - logoH) * 0.5f;
+    const float lw = Classic::logoPicture(dl, ImVec2(pos.x + 18, logoY), logoH);
     if (Classic::gutstober) {   // Gutstober: a pumpkin after the logo and bats flapping across the banner
-        const float lw = ImGui::GetFont()->CalcTextSizeA(logoSize, FLT_MAX, 0, "GUTS&BOLTS").x;
-        Classic::pumpkin(dl, ImVec2(pos.x + 26 + lw + logoSize * 0.6f, pos.y + bannerH * 0.5f - 2), logoSize * 0.33f);
+        Classic::pumpkin(dl, ImVec2(pos.x + 18 + lw + logoSize * 0.5f, logoY + logoH * 0.5f), logoSize * 0.33f);
         const float tt = (float)ImGui::GetTime();
         for (int k = 0; k < 3; ++k) {
             float x = std::fmod(tt * (22.0f + k * 9.0f) + k * 260.0f, width + 80.0f) - 40.0f;
@@ -990,7 +999,9 @@ void PlayerApp::drawTopBar(ImVec2 pos, float width) {
         }
     }
 #ifndef GB_MOBILE
-    drawServerButton(ImVec2(pos.x + 26, b1.y - 30));   // online / offline (phones: in the nav bar)
+    // online / offline (phones: in the nav bar). Under the logo, or beside it on a short window.
+    const float serverX = shortScreen ? pos.x + 18 + lw + (Classic::gutstober ? logoSize * 1.4f : 14.0f) : pos.x + 26;
+    drawServerButton(ImVec2(serverX, b1.y - 30));
 #endif
 
     // Account box, top-right of the banner: name, your Bolts and a link to the avatar editor.
@@ -2022,14 +2033,15 @@ void PlayerApp::drawLoading(ImVec2 pos, ImVec2 size, float alpha, const char* st
 
     // Everything is stacked in the middle; shrink it on short (phone) screens.
     const float k = std::clamp(size.y / 560.0f, 0.6f, 1.5f);
-    const float iconSize = 96.0f * k, spin = 30.0f * k, logoSize = 30.0f * k;
+    const float iconSize = 96.0f * k, spin = 30.0f * k, logoH = 64.0f * k;
     const float wrap = std::max(120.0f, size.x - 60.0f);
     float big = base * 1.8f * std::max(0.8f, k);
     const float small = base * std::max(1.0f, k);   // "By ..." and the status line
     ImVec2 ts = font->CalcTextSizeA(big, FLT_MAX, wrap, title.c_str());
     const std::string by = m_currentAuthor.empty() ? std::string() : "By " + m_currentAuthor;
     const float byH = by.empty() ? 0.0f : base * std::max(1.0f, k) + 4;
-    const ImVec2 lsz = font->CalcTextSizeA(logoSize, FLT_MAX, 0.0f, "GUTS&BOLTS");
+    const float logoW = std::min(Classic::logoPictureWidth(logoH), size.x - 40.0f);   // narrow phones: shrink it to fit
+    const ImVec2 lsz(logoW, logoW * logoH / std::max(1.0f, Classic::logoPictureWidth(logoH)));
     const float total = iconSize + 14 + ts.y + byH + 34 * k + spin * 2 + 16 + base + 34 * k + lsz.y;
     float y = pos.y + std::max(10.0f, (size.y - total) * 0.5f);
     const float cx = pos.x + size.x * 0.5f;
@@ -2088,8 +2100,7 @@ void PlayerApp::drawLoading(ImVec2 pos, ImVec2 size, float alpha, const char* st
     y += small + 34 * k;
 
     // The logo under it all.
-    if (alpha > 0.99f) Classic::logo(dl, ImVec2(cx - lsz.x * 0.5f, y), logoSize, "GUTS&BOLTS");
-    else dl->AddText(font, logoSize, ImVec2(cx - lsz.x * 0.5f, y), col(222, 34, 28), "GUTS&BOLTS");
+    Classic::logoPicture(dl, ImVec2(cx - lsz.x * 0.5f, y), lsz.y, alpha);
 }
 
 // Pressing Play: show the connecting screen straight away, and fetch the game's icon for it.

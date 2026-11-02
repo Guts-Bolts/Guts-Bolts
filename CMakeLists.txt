@@ -356,6 +356,8 @@ if(NOT "${lang_old}" STREQUAL "${lang_text}")
 endif()
 gb_embed("${CMAKE_SOURCE_DIR}/assets/templates/shirt_template.png" kShirtTemplate "${GB_GENERATED}/ShirtTemplate.h")
 gb_embed("${CMAKE_SOURCE_DIR}/assets/templates/pants_template.png" kPantsTemplate "${GB_GENERATED}/PantsTemplate.h")
+# The Guts & Bolts logo picture (the Player's banner and loading screen).
+gb_embed("${CMAKE_SOURCE_DIR}/assets/logo/logo.png" kLogoPng "${GB_GENERATED}/LogoPng.h")
 # The UI font for Studio and the Player (Inter Black, a free Helvetica Black lookalike; see assets/fonts/OFL.txt).
 gb_embed("${CMAKE_SOURCE_DIR}/assets/fonts/Inter-Black.otf" kUiFontData "${GB_GENERATED}/UiFont.h")
 # Recorded sound effects (the rest are made in code, see Audio.cpp).

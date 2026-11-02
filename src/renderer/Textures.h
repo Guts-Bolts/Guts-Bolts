@@ -16,6 +16,8 @@ inline constexpr const char* kClassicFace = "builtin:face";
 // The blank shirt / pants clothing templates (assets/templates), to try a body on with.
 inline constexpr const char* kShirtTemplatePicture = "builtin:shirt-template";
 inline constexpr const char* kPantsTemplatePicture = "builtin:pants-template";
+// The Guts & Bolts logo (assets/logo/logo.png), baked into the program.
+inline constexpr const char* kLogoPicture = "builtin:logo";
 bool     size(const std::string& id, int& width, int& height);
 // Forget one image (e.g. a file that was just replaced) or all of them.
 void     forget(const std::string& id);
