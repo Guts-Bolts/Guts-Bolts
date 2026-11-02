@@ -54,7 +54,10 @@ export async function supabaseRest(env, path, options = {}) {
       ...options,
       headers,
       signal: controller.signal,
-      redirect: 'error',
+      // Cloudflare's fetch only knows 'follow' and 'manual': 'error' throws
+      // before any request is sent. With 'manual' a redirect comes back as a
+      // 3xx answer, which callers already treat as a failure (not response.ok).
+      redirect: 'manual',
     });
   } finally {
     clearTimeout(timeout);
