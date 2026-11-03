@@ -14,6 +14,8 @@ itself. Physics got steadier and phones run smoother too.
   can restyle or hide it.
 - A new Blaster gear, plus Weld, Motor6D, character joints, hinge limits
   and CylinderMesh, so scripts like a grab knife just work.
+- Lyreto's Roblox Game Bridge script runs as-is, thanks to about a dozen
+  more Roblox functions.
 - Real leaderboards: OrderedDataStore sorts, and the top 10 show on the
   game's page.
 - Accessibility settings (colorblind modes, bigger text, captions) and a
