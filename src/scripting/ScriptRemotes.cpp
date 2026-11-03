@@ -353,6 +353,11 @@ bool ScriptEngine::wantsScript(const SceneNode* script) const {
     if (!script || script->isModule) return true;          // modules run wherever require() is
     if (!script->isLocal) return m_runMode != RunMode::Client;
     if (m_runMode == RunMode::Server) return false;
+    // Like Roblox, a LocalScript in ServerScriptService or ServerStorage doesn't run (a module
+    // keeps one there as a template to copy to players).
+    if (m_scene)
+        for (const SceneNode* p = script->parent; p; p = p->parent)
+            if (m_scene->isServiceFolder(p) && (p->name == "ServerScriptService" || p->name == "ServerStorage")) return false;
     // A LocalScript belongs to whoever's character or backpack it's in: not someone
     // else's (on the host, a joined player's tools carry LocalScripts that are theirs).
     for (const SceneNode* p = script->parent; p; p = p->parent) {

@@ -27,7 +27,8 @@ export const kWebMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 export const kWebUrl = 2048, kWebBody = 64 * 1024, kWebAnswer = 1024 * 1024, kWebHeaders = 30, kWebHeaderValue = 4096;
 export const kWebPerMinute = 120;          // per server (host account + game)
 export const kWebGamePerMinute = 500;      // per game, every server together
-export const kWebTimeoutMs = 10000;
+// (25 seconds: sites like Lyreto's chat bridge keep a request open up to 20 seconds while they wait for news)
+export const kWebTimeoutMs = 25000;
 export const kSecretsPerGame = 20, kSecretValue = 2048;
 export const kSecretName = /^[A-Za-z0-9_]{1,50}$/;
 // Headers scripts can't send (we set some of them ourselves, the rest would confuse the site or Cloudflare).
@@ -106,7 +107,8 @@ export function installGameWeb(Cls) {
     const game = this.assets.resolve(typeof args.game === 'string' ? args.game.slice(0, 80) : '');
     const a = this.assets.get(game);
     if (!a || a.kind !== 'game') return fail('that game isn\'t there');
-    if (!a.httpOn) return fail('web requests are off for this game. Its creator can turn them on in the game\'s Settings on the website.');
+    // (Worded like Roblox's, so scripts written for Roblox see what's wrong.)
+    if (!a.httpOn) return fail('HTTP requests are not enabled for this game. Its creator can turn on web requests in the game\'s Settings on the website.');
     // Who's asking: a live server of the game (the host's account), or the creator testing in Studio.
     const mine = [...this.sessions.values()].filter((s) => s.host === me.id && this.assets.resolve(s.game) === game);
     const dedicated = mine.some((s) => s.dedicated);

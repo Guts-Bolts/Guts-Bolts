@@ -157,7 +157,7 @@ private:
     uint32_t m_mask = 1023;                       // hash table size - 1
 
     // The graphics card version, and what's been asked of it: "how much liquid
-    // is around here?" is answered a frame later (m_probeSent -> m_probeAnswered).
+    // is around here?" is answered a frame or two later (see LiquidGpu::Results).
     std::unique_ptr<LiquidGpu> m_gpu;
     std::vector<uint64_t> m_gpuColliderIds;         // the colliders the graphics card had last frame
     // Which parts the liquid touched this frame (one flag per collider), and until when each part is wet.
@@ -168,6 +168,5 @@ private:
     void markWet(uint64_t id) { m_wetUntil[id] = m_time + 20.0f; }
     std::vector<glm::vec4> m_incoming;
     mutable std::vector<glm::vec4> m_probeAsk;     // asked this frame (centre, radius)
-    std::vector<glm::vec4> m_probeSent, m_probeAnswered;
     static int s_contexts;
 };

@@ -233,7 +233,7 @@ void Liquid::end() {
     m_colliders.clear();
     if (m_gpu && s_contexts <= 0) m_gpu->forget();
     m_gpu.reset();
-    m_probeAsk.clear(); m_probeSent.clear(); m_probeAnswered.clear();
+    m_probeAsk.clear();
     m_gpuColliderIds.clear();
     m_wetUntil.clear();
     m_time = 0.0f;
@@ -770,8 +770,9 @@ int Liquid::sample(const glm::vec3& p, float radius, glm::vec3* velocity, float*
         const auto& res = m_gpu->results().probes;
         int best = -1;
         float bestD = 3.0f;
-        for (size_t i = 0; i < m_probeAnswered.size() && i < res.size(); ++i) {
-            const glm::vec4& q = m_probeAnswered[i];
+        const auto& answered = m_gpu->results().asked;
+        for (size_t i = 0; i < answered.size() && i < res.size(); ++i) {
+            const glm::vec4& q = answered[i];
             const float d = glm::length(glm::vec3(q) - p);
             if (std::abs(q.w - radius) < 0.01f && d < bestD) { bestD = d; best = (int)i; }
         }
@@ -871,8 +872,7 @@ void Liquid::update(float dt, Scene& scene) {
 void Liquid::updateGpu(float dt, Scene& scene) {
     const auto t0 = std::chrono::steady_clock::now();
     for (float& p : m_prof) p = 0.0f;
-    m_gpu->beginFrame();                               // (waits for last frame's work to finish)
-    m_probeAnswered = m_probeSent;
+    m_gpu->beginFrame();                               // (picks up what's ready; never waits)
     const LiquidGpu::Results& res = m_gpu->results();
     // Drops that fell into pools make ripples (and spray if they hit hard).
     WaterSystem& water = scene.water();
@@ -888,13 +888,9 @@ void Liquid::updateGpu(float dt, Scene& scene) {
             ++sprays;
         }
     }
-    // Parts the liquid ran over last frame are wet.
+    // Parts the liquid ran over lately are wet.
     m_time += dt;
-    {
-        const std::vector<uint32_t> touched = m_gpu->takeTouched(m_gpuColliderIds.size());
-        for (size_t i = 0; i < touched.size(); ++i)
-            if (touched[i]) markWet(m_gpuColliderIds[i]);
-    }
+    for (uint64_t id : res.wet) markWet(id);
     const auto t1 = std::chrono::steady_clock::now();
     m_prof[3] = std::chrono::duration<float, std::milli>(t1 - t0).count();
 
@@ -915,7 +911,7 @@ void Liquid::updateGpu(float dt, Scene& scene) {
     std::vector<int> grid(m_cgStart);
     const int items = (int)grid.size();
     grid.insert(grid.end(), m_cgItems.begin(), m_cgItems.end());
-    m_gpu->setColliders(packed, grid, items, m_cgMin, m_cgDim, m_cgCell);
+    m_gpu->setColliders(packed, m_gpuColliderIds, grid, items, m_cgMin, m_cgDim, m_cgCell);
     std::vector<LiquidGpu::Pool> pools;
     for (const WaterSystem::Body& b : water.bodies()) {
         const glm::vec3 mid = (b.min + b.max) * 0.5f;
@@ -944,7 +940,6 @@ void Liquid::updateGpu(float dt, Scene& scene) {
         }
     }
     m_gpu->endFrame(m_probeAsk);
-    m_probeSent = m_probeAsk;
     m_probeAsk.clear();
     pushThings(dt, scene);
     m_draw.clear();

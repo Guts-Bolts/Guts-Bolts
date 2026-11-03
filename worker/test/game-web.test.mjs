@@ -34,7 +34,7 @@ test('http.request needs web requests on, and a live server (or the creator)', a
   const ann = s.signUp('ann'), ben = s.signUp('ben'), cat = s.signUp('cat');
   const game = s.addGame(ann, 'Bridge');
   const ask = (who) => s.call(who, 'http.request', { game: game.id, url: 'https://lyreto.com/api/ping' });
-  assert.match(ask(ann).error, /web requests are off/);
+  assert.match(ask(ann).error, /HTTP requests are not enabled/);
   assert.equal(s.call(ben, 'game.settings', { id: game.id, http: true }).ok, false);   // not theirs
   assert.ok(s.call(ann, 'game.settings', { id: game.id, http: true }).ok);
   assert.ok(ask(ann).ok, 'the creator can test from Studio');
