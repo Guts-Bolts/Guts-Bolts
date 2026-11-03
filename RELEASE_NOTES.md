@@ -17,6 +17,8 @@ itself. Physics got steadier and phones run smoother too.
 - Accessibility settings (colorblind modes, bigger text, captions) and a
   basic anti-cheat.
 - Steadier physics, and Low / Medium graphics run much better on phones.
+- Better quality settings: a new Auto setting (the default), Very Low, a
+  Shadows switch and a Sharpness slider.
 
 ## New in Studio
 - A Cutscene Maker, and File > New from Template (Obby, Tycoon, Sword
@@ -43,6 +45,8 @@ itself. Physics got steadier and phones run smoother too.
 ## Bugs we squashed
 - The website couldn't save anything to its database; now it can.
 - The Auction Broadcasts and forum boxes showed up as raw code.
+- Water made games laggy (like 14 fps on big water slides); it's much
+  faster now.
 - WaitForChild gave up straight away instead of waiting.
 - Chats disappeared from the list when the server was older than the site.
 
