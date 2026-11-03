@@ -1038,6 +1038,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME GameBridgeTests COMMAND GameBridgeTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # Roblox chat-bridge modules (like Lyreto's Game Bridge) running as they are.
+    add_executable(RobloxChatBridgeTests tests/RobloxChatBridgeTests.cpp)
+    target_link_libraries(RobloxChatBridgeTests PRIVATE gb_engine)
+    add_test(NAME RobloxChatBridgeTests COMMAND RobloxChatBridgeTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # The character: held-down ragdolls, knocked off seats, swimming.
     add_executable(CharacterTests tests/CharacterTests.cpp)
     target_link_libraries(CharacterTests PRIVATE gb_engine)
