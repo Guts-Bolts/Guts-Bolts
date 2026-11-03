@@ -35,6 +35,9 @@ itself. Physics got steadier and phones run smoother too.
   "Blender keys" switch for S, A, Shift+D and Shift+A.
 - Import Roblox animations: they're turned, shrunk and fitted onto our R6
   or R15 dummies by themselves.
+- X-ray (Alt+Z), Wireframe / Solid / Flat / Material view styles, extra
+  viewports with Four Views, and a workspace you can drag around, save and
+  reset.
 
 ## New on the website
 - A Chat panel in the corner of every page, parties, and voice calls with
