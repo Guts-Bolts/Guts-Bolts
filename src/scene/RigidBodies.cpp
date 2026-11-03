@@ -817,7 +817,22 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             if (ia == index.end() || ib == index.end() || ia->second == ib->second) continue;
             j.a = ia->second; j.b = ib->second;
             Body &A = bodies[j.a], &B = bodies[j.b];
-            if (!cn->jointReady) {
+            if (cn->legacyJoint) {
+                // Weld / Motor6D: where C0 and C1 say, not where they happen to be.
+                const glm::mat4 a = cn->jointC0 * (cn->legacyJoint >= 2 && cn->currentAngle != 0.0f
+                                                       ? glm::rotate(glm::mat4(1.0f), cn->currentAngle, glm::vec3(0, 0, 1))
+                                                       : glm::mat4(1.0f)) * cn->jointXform;
+                auto rotOf = [](const glm::mat4& m) {
+                    glm::mat3 r(m);
+                    for (int i = 0; i < 3; ++i) r[i] = glm::normalize(r[i]);
+                    return glm::quat_cast(r);
+                };
+                cn->jointA = glm::vec3(a[3]);
+                cn->jointB = glm::vec3(cn->jointC1[3]);
+                const glm::quat q = rotOf(a) * glm::inverse(rotOf(cn->jointC1));
+                cn->jointRot = {q.x, q.y, q.z, q.w};
+                cn->jointReady = true;
+            } else if (!cn->jointReady) {
                 // Remember how the two parts sit relative to each other right now.
                 glm::vec3 mid = (A.pos + B.pos) * 0.5f;
                 cn->jointA = glm::inverse(A.rot) * (mid - A.pos);
@@ -1169,6 +1184,19 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                     glm::vec3 p2 = glm::cross(axA, p1);
                     angularRow(p1, glm::dot(e, p1));
                     angularRow(p2, glm::dot(e, p2));
+
+                    // LimitsEnabled: it only swings between LowerAngle and UpperAngle (a door, a knee).
+                    if (j.node->joint.angularLimitsEnabled) {
+                        JointProps hp;   // (a hinge turns around its attachments' X)
+                        const float ang = spinAngle(A.rot * j.qa, B.rot * j.qb, hp);
+                        const float lo = glm::radians(std::min(j.node->joint.lowerAngle, j.node->joint.upperAngle));
+                        const float hi = glm::radians(std::max(j.node->joint.lowerAngle, j.node->joint.upperAngle));
+                        const float spin = glm::dot(B.w - A.w, axA);
+                        if (ang < lo && spin < 0.0f) angularRow(axA, ang - lo);
+                        else if (ang < lo) angularRow(axA, (ang - lo) * 0.5f);
+                        if (ang > hi && spin > 0.0f) angularRow(axA, ang - hi);
+                        else if (ang > hi) angularRow(axA, (ang - hi) * 0.5f);
+                    }
 
                     // Motor: spin B around the axis at the chosen speed.
                     if (j.node->motorTorque > 0.0f) {

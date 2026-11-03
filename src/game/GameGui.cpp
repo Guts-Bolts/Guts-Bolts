@@ -1120,11 +1120,19 @@ bool handle(Scene& scene, ImVec2 min, ImVec2 max, ImVec2 pointer, bool in, bool 
         input.hovered = button;
     }
     if (tapped) {   // a finger: a tap on a button presses it straight away
-        if (button) events.push_back({EventKind::Click, button});
+        if (button) {
+            events.push_back({EventKind::Down, button});
+            events.push_back({EventKind::Up, button});
+            events.push_back({EventKind::Click, button});
+        }
         input.pressed = 0;
     } else {
-        if (down) input.pressed = button;
+        if (down) {
+            input.pressed = button;
+            if (button) events.push_back({EventKind::Down, button});
+        }
         if (up) {
+            if (button) events.push_back({EventKind::Up, button});
             if (input.pressed && input.pressed == button) events.push_back({EventKind::Click, button});
             input.pressed = 0;
         }

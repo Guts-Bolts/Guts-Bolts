@@ -169,6 +169,16 @@ local playerMeta = {
         if k == "Chatted" and makeChatted then local s = makeChatted() rawset(t, "Chatted", s) return s end
         if k == "PlayerGui" then return playerGuiOf(rawget(t, "Name")) end
         if k == "PlayerScripts" then return playerScripts(t) end
+        -- player:WaitForChild("PlayerGui") / FindFirstChild: it's made the first time it's
+        -- asked for, so looking it up has to make it too (or WaitForChild waits forever).
+        if k == "FindFirstChild" or k == "WaitForChild" then
+            local find = rawget(t, "__node")[k]
+            return function(self, name, ...)
+                if name == "PlayerGui" then return playerGuiOf(rawget(t, "Name")) end
+                if name == "PlayerScripts" then return playerScripts(t) end
+                return find(self, name, ...)
+            end
+        end
         if k == "GetMouse" then return function(self) return getMouse(self) end end
         if k == "GetJoinData" then return getJoinData end
         if k == "Team" or k == "TeamColor" or k == "Neutral" then return rawget(t, "__" .. k) end
@@ -1000,6 +1010,7 @@ end
 addMethod("FindPartOnRay", function(_, ray, ignore) return findOnRay(ray, ignore and { ignore } or {}, false) end)
 addMethod("FindPartOnRayWithIgnoreList", function(_, ray, list) return findOnRay(ray, list, false) end)
 addMethod("FindPartOnRayWithWhitelist", function(_, ray, list) return findOnRay(ray, list, true) end)
+addMethod("PGSIsEnabled", function() return true end)   -- (workspace:PGSIsEnabled(): there's only the one solver)
 
 -- Legacy Player:GetMouse(): cursor-relative raycasting and the input events used by
 -- older LocalScripts. Coordinates start at the game screen's corner (also inside
@@ -1024,13 +1035,35 @@ getMouse = function(player)
     mouse.KeyDown, mouse.KeyUp = keyDown.Event, keyUp.Event
     mouse.Button1Down, mouse.Button1Up = button1Down.Event, button1Up.Event
     mouse.Button2Down, mouse.Button2Up = button2Down.Event, button2Up.Event
+    -- mouse.Move fires whenever the mouse moves (checked each frame).
+    local move, idle = Instance.new("BindableEvent"), Instance.new("BindableEvent")
+    mouse.Move, mouse.Idle = move.Event, idle.Event
+    local lastX, lastY
+    RunService.Heartbeat:Connect(function()
+        local p = mousePosition()
+        if p and (p.X ~= lastX or p.Y ~= lastY) then
+            local first = lastX == nil
+            lastX, lastY = p.X, p.Y
+            if not first then move:Fire() end
+        else
+            idle:Fire()
+        end
+    end)
+    -- Like Roblox, mouse.KeyDown / KeyUp give the key as a lower-case letter ("e", "1", " ").
+    local digits = { Zero = "0", One = "1", Two = "2", Three = "3", Four = "4", Five = "5", Six = "6", Seven = "7", Eight = "8", Nine = "9" }
+    local special = { Space = " ", Return = "\r", Tab = "\t", Backspace = "\b", LeftShift = "0", RightShift = "/", LeftControl = "2", RightControl = "1" }
+    local function keyText(kc)
+        local name = tostring(kc):match("([^%.]+)$") or tostring(kc)
+        if #name == 1 then return name:lower() end
+        return digits[name] or special[name] or name:lower()
+    end
     UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == "Keyboard" then keyDown:Fire(input.KeyCode)
+        if input.UserInputType == "Keyboard" then keyDown:Fire(keyText(input.KeyCode))
         elseif input.UserInputType == "MouseButton1" then button1Down:Fire()
         elseif input.UserInputType == "MouseButton2" then button2Down:Fire() end
     end)
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == "Keyboard" then keyUp:Fire(input.KeyCode)
+        if input.UserInputType == "Keyboard" then keyUp:Fire(keyText(input.KeyCode))
         elseif input.UserInputType == "MouseButton1" then button1Up:Fire()
         elseif input.UserInputType == "MouseButton2" then button2Up:Fire() end
     end)

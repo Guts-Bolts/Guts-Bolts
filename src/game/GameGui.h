@@ -26,7 +26,8 @@ struct Input {
 // Focused / FocusLost / TextChanged are a TextBox's (`enter`: FocusLost because Enter was pressed).
 // Prompt* are a ProximityPrompt's (see prompts()).
 enum class EventKind { Click, Enter, Leave, Focused, FocusLost, TextChanged,
-                       PromptShown, PromptHidden, PromptHoldBegan, PromptHoldEnded, PromptTriggered, PromptTriggerEnded };
+                       PromptShown, PromptHidden, PromptHoldBegan, PromptHoldEnded, PromptTriggered, PromptTriggerEnded,
+                       Down, Up };   // (a button pressed / let go: MouseButton1Down / Up)
 struct Event { EventKind kind; uint64_t id; bool enter = false; };
 
 // The camera the world is drawn with (before draw / handle each frame), so BillboardGuis

@@ -60,9 +60,18 @@ int v3_lerp(lua_State* L) {
     return 1;
 }
 
+// Roblox still accepts the old lower-case names (v.magnitude, cf.lookVector, cf:toObjectSpace...),
+// and lots of older scripts use them, so the first letter can be either case.
+std::string upperFirst(const char* k) {
+    std::string s = k;
+    if (!s.empty() && s[0] >= 'a' && s[0] <= 'z') s[0] = char(s[0] - 'a' + 'A');
+    return s;
+}
+
 int v3_index(lua_State* L) {
     glm::vec3 v = LuaApi::checkVector3(L, 1);
-    const char* k = luaL_checkstring(L, 2);
+    const std::string key = upperFirst(luaL_checkstring(L, 2));
+    const char* k = key.c_str();
     if (!std::strcmp(k, "X") || !std::strcmp(k, "x")) { lua_pushnumber(L, v.x); return 1; }
     if (!std::strcmp(k, "Y") || !std::strcmp(k, "y")) { lua_pushnumber(L, v.y); return 1; }
     if (!std::strcmp(k, "Z") || !std::strcmp(k, "z")) { lua_pushnumber(L, v.z); return 1; }
@@ -211,6 +220,21 @@ int cf_angles(lua_State* L) {
     LuaApi::pushCFrame(L, m);
     return 1;
 }
+int cf_fromOrientation(lua_State* L) {   // turned Y, then X, then Z (like Part.Orientation), in radians
+    float x = (float)luaL_optnumber(L, 1, 0), y = (float)luaL_optnumber(L, 2, 0),
+          z = (float)luaL_optnumber(L, 3, 0);
+    glm::mat4 m = glm::rotate(glm::mat4(1.0f), y, {0, 1, 0});
+    m = glm::rotate(m, x, {1, 0, 0});
+    m = glm::rotate(m, z, {0, 0, 1});
+    LuaApi::pushCFrame(L, m);
+    return 1;
+}
+int cf_fromAxisAngle(lua_State* L) {
+    glm::vec3 axis = LuaApi::checkVector3(L, 1);
+    float a = (float)luaL_checknumber(L, 2);
+    LuaApi::pushCFrame(L, glm::length(axis) > 1e-6f ? glm::rotate(glm::mat4(1.0f), a, glm::normalize(axis)) : glm::mat4(1.0f));
+    return 1;
+}
 int cf_lookAt(lua_State* L) {
     glm::vec3 pos = LuaApi::checkVector3(L, 1), at = LuaApi::checkVector3(L, 2);
     LuaApi::pushCFrame(L, lookAtFrame(pos, at));
@@ -244,10 +268,43 @@ int cf_toObject(lua_State* L) {
     return 1;
 }
 
+int cf_toObjectSpace(lua_State* L) {   // a:ToObjectSpace(b) = a:Inverse() * b
+    LuaApi::pushCFrame(L, glm::inverse(LuaApi::checkCFrame(L, 1)) * LuaApi::checkCFrame(L, 2));
+    return 1;
+}
+int cf_toWorldSpace(lua_State* L) {    // a:ToWorldSpace(b) = a * b
+    LuaApi::pushCFrame(L, LuaApi::checkCFrame(L, 1) * LuaApi::checkCFrame(L, 2));
+    return 1;
+}
+int cf_vecToWorld(lua_State* L) {
+    LuaApi::pushVector3(L, glm::vec3(LuaApi::checkCFrame(L, 1) * glm::vec4(LuaApi::checkVector3(L, 2), 0.0f)));
+    return 1;
+}
+int cf_vecToObject(lua_State* L) {
+    LuaApi::pushVector3(L, glm::vec3(glm::inverse(LuaApi::checkCFrame(L, 1)) * glm::vec4(LuaApi::checkVector3(L, 2), 0.0f)));
+    return 1;
+}
+int cf_toOrientation(lua_State* L) {   // the angles of Part.Orientation (turned Y, then X, then Z), in radians
+    glm::mat4 m = LuaApi::checkCFrame(L, 1);
+    float x, y, z;
+    glm::extractEulerAngleYXZ(m, y, x, z);
+    lua_pushnumber(L, x); lua_pushnumber(L, y); lua_pushnumber(L, z);
+    return 3;
+}
+int cf_components(lua_State* L) {      // x, y, z, then the rotation matrix row by row
+    glm::mat4 m = LuaApi::checkCFrame(L, 1);
+    lua_pushnumber(L, m[3].x); lua_pushnumber(L, m[3].y); lua_pushnumber(L, m[3].z);
+    for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c) lua_pushnumber(L, m[c][r]);
+    return 12;
+}
+
 int cf_index(lua_State* L) {
     glm::mat4 m = LuaApi::checkCFrame(L, 1);
-    const char* k = luaL_checkstring(L, 2);
-    if (!std::strcmp(k, "Position") || !std::strcmp(k, "p")) { LuaApi::pushVector3(L, cfPos(m)); return 1; }
+    const std::string key = upperFirst(luaL_checkstring(L, 2));
+    const char* k = key.c_str();
+    if (!std::strcmp(k, "Position") || !std::strcmp(k, "P")) {   // (cf.p, the old name)
+        LuaApi::pushVector3(L, cfPos(m)); return 1; }
     if (!std::strcmp(k, "X")) { lua_pushnumber(L, m[3].x); return 1; }
     if (!std::strcmp(k, "Y")) { lua_pushnumber(L, m[3].y); return 1; }
     if (!std::strcmp(k, "Z")) { lua_pushnumber(L, m[3].z); return 1; }
@@ -258,6 +315,12 @@ int cf_index(lua_State* L) {
     if (!std::strcmp(k, "Inverse"))  { lua_pushcfunction(L, cf_inverse);  return 1; }
     if (!std::strcmp(k, "Lerp"))     { lua_pushcfunction(L, cf_lerp);     return 1; }
     if (!std::strcmp(k, "ToEulerAnglesXYZ")) { lua_pushcfunction(L, cf_toEuler); return 1; }
+    if (!std::strcmp(k, "ToOrientation") || !std::strcmp(k, "ToEulerAnglesYXZ")) { lua_pushcfunction(L, cf_toOrientation); return 1; }
+    if (!std::strcmp(k, "ToObjectSpace"))  { lua_pushcfunction(L, cf_toObjectSpace); return 1; }
+    if (!std::strcmp(k, "ToWorldSpace"))   { lua_pushcfunction(L, cf_toWorldSpace);  return 1; }
+    if (!std::strcmp(k, "VectorToWorldSpace"))  { lua_pushcfunction(L, cf_vecToWorld);  return 1; }
+    if (!std::strcmp(k, "VectorToObjectSpace")) { lua_pushcfunction(L, cf_vecToObject); return 1; }
+    if (!std::strcmp(k, "GetComponents") || !std::strcmp(k, "Components")) { lua_pushcfunction(L, cf_components); return 1; }
     if (!std::strcmp(k, "PointToWorldSpace"))  { lua_pushcfunction(L, cf_toWorld);  return 1; }
     if (!std::strcmp(k, "PointToObjectSpace")) { lua_pushcfunction(L, cf_toObject); return 1; }
     return luaL_error(L, "'%s' is not a valid member of CFrame", k);
@@ -547,6 +610,9 @@ void registerTypes(lua_State* L) {
     lua_pushcfunction(L, cf_angles); lua_setfield(L, -2, "Angles");
     lua_pushcfunction(L, cf_angles); lua_setfield(L, -2, "fromEulerAnglesXYZ");
     lua_pushcfunction(L, cf_lookAt); lua_setfield(L, -2, "lookAt");
+    lua_pushcfunction(L, cf_fromOrientation); lua_setfield(L, -2, "fromOrientation");
+    lua_pushcfunction(L, cf_fromOrientation); lua_setfield(L, -2, "fromEulerAnglesYXZ");
+    lua_pushcfunction(L, cf_fromAxisAngle);   lua_setfield(L, -2, "fromAxisAngle");
     lua_setglobal(L, "CFrame");
 }
 

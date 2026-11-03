@@ -439,6 +439,7 @@ add_library(gb_engine STATIC
     src/scene/PlayerVrBody.cpp
     src/scene/Emotes.cpp
     src/scene/Physics.cpp
+    src/scene/LegacyJoints.cpp
     src/scene/NavMesh.cpp
     src/scene/Npc.cpp
     src/scene/Water.cpp
@@ -1003,6 +1004,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(CopsAndRobbersApiTests tests/CopsAndRobbersApiTests.cpp)
     target_link_libraries(CopsAndRobbersApiTests PRIVATE gb_engine)
     add_test(NAME CopsAndRobbersApiTests COMMAND CopsAndRobbersApiTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Weld / Motor6D / character joints, hinge limits, mesh stand-ins, fast bullets, the Blaster gun.
+    add_executable(WeaponsAndJointsTests tests/WeaponsAndJointsTests.cpp src/editor/Premades.cpp)
+    target_include_directories(WeaponsAndJointsTests PRIVATE src/)
+    target_link_libraries(WeaponsAndJointsTests PRIVATE gb_engine)
+    add_test(NAME WeaponsAndJointsTests COMMAND WeaponsAndJointsTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # workspace:GetPartsInPart / GetPartBoundsInBox / GetPartBoundsInRadius and OverlapParams.
