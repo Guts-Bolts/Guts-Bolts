@@ -665,6 +665,10 @@ public:
     bool                  selected = false;
     bool                  visible  = true;
     bool                  internal = false;  // hidden from the outliner / picking
+    // Studio only: hidden for now while you build (the eye in the Explorer, H), like
+    // Blender's eye. Not saved, not sent, never hidden in a playtest.
+    bool                  editorHidden = false;
+    bool                  shown() const { return visible && !editorHidden; }
 
     // Appearance
     float    transparency = 0.0f;            // 0 = opaque, 1 = invisible

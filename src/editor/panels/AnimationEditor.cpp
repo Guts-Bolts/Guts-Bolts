@@ -3,6 +3,8 @@
 #include "../../core/Paths.h"
 #include "../../online/OnlineClient.h"
 #include "../../online/Protocol.h"
+#include "../../scene/RobloxAnim.h"
+#include "../../scene/RobloxFile.h"
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
 
@@ -333,9 +335,11 @@ void AnimationEditor::drawToolbar(Anim::Clip& c) {
     ImGui::SameLine(0, 18);
     if (ImGui::SmallButton("Done")) { m_doneRequested = true; }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Stop animating this rig");
-    if (ImGui::GetTime() - m_messageAt < 5.0) {
+    if (ImGui::GetTime() - m_messageAt < (m_message.size() > 60 ? 15.0 : 5.0)) {   // (long ones stay longer)
         ImGui::SameLine(0, 14);
-        ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.5f, 1), "%s", m_message.c_str());
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.45f, 0.85f, 0.5f, 1));
+        ImGui::TextWrapped("%s", m_message.c_str());
+        ImGui::PopStyleColor();
     }
 
     SceneNode* r = rig();
@@ -698,6 +702,29 @@ void AnimationEditor::importText(const std::string& text, const std::string& fal
     m_messageAt = ImGui::GetTime();
 }
 
+// A Roblox animation (.rbxm / .rbxmx with a KeyframeSequence in it), made to fit this rig:
+// R15 animations go on R6 bodies (and back), turned to face our way and halved in size.
+void AnimationEditor::importRoblox(const std::string& path) {
+    std::vector<RobloxAnim::Clip> clips;
+    std::string error;
+    m_messageAt = ImGui::GetTime();
+    if (!RobloxFile::readAnimations(path, clips, error)) { m_message = error; return; }
+    SceneNode* r = rig();
+    if (!r) return;
+    const RobloxAnim::Target target = RobloxAnim::targetOf(r);
+    std::vector<std::string> notes;
+    std::string names;
+    for (const RobloxAnim::Clip& rc : clips) {
+        std::string name = rc.name;
+        if (name.empty() || name == "KeyframeSequence") name = std::filesystem::path(path).stem().string();
+        createAnimation(name, Anim::dump(RobloxAnim::convert(rc, target, &notes)));
+        names += (names.empty() ? "\"" : ", \"") + name + "\"";
+    }
+    m_message = "Imported " + names + " from Roblox.";
+    for (const std::string& n : notes) m_message += " " + n;
+    m_message += " (Facing the wrong way? \"...\" > Turn Around.)";
+}
+
 void AnimationEditor::drawFileMenu(Anim::Clip& c) {
     if (!ImGui::BeginPopup("##animFile")) return;
     SceneNode* r = rig();
@@ -732,7 +759,19 @@ void AnimationEditor::drawFileMenu(Anim::Clip& c) {
                 importText(buf.str(), std::filesystem::path(path).stem().string());
             }
         }
+        if (ImGui::MenuItem("From Roblox (.rbxm / .rbxmx)...", nullptr, false, FileDialog::available())) {
+            const std::string path = FileDialog::openAny("Import a Roblox animation", "Roblox animation (KeyframeSequence)", "*.rbxm *.rbxmx");
+            if (!path.empty()) importRoblox(path);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("In Roblox Studio: right-click the animation's KeyframeSequence\n"
+                              "(ServerStorage > RBX_ANIMSAVES) > Save to File.\n"
+                              "R6 and R15 animations both work: they're fitted to this rig.");
         ImGui::EndMenu();
+    }
+    if (ImGui::MenuItem("Turn Around (front / back)")) {
+        RobloxAnim::turnAround(c);   // for an animation that plays facing backwards on this rig
+        save(c);
     }
     if (ImGui::BeginMenu("Export")) {
         if (ImGui::MenuItem("Publish to Guts&Bolts...")) { m_openPublish = true; m_pubName = a->name; m_pubDesc.clear(); }

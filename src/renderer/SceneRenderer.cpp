@@ -464,9 +464,9 @@ void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, 
     m_depth->bind();
     m_depth->setMat4("uLightSpace", lightSpace);
     scene.forEach([&](SceneNode* node) {
-        if (!node->mesh || !node->visible || !node->castShadow) return;
+        if (!node->mesh || !node->shown() || !node->castShadow) return;
         for (SceneNode* p = node->parent; p; p = p->parent)   // inside something hidden (a backpack) or a ViewportFrame
-            if (!p->visible || p->isViewportFrame()) return;
+            if (!p->shown() || p->isViewportFrame()) return;
         if (node->kind != NodeKind::Part || node->transparency > 0.5f) return;
         const glm::mat4 m = node->worldMatrix();
         if (tooFar(glm::vec3(m[3]), partRadius(m))) return;
@@ -699,7 +699,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     glm::vec3 camPos = camera.position();
     scene.forEach([&](SceneNode* n) {
         if (!n->isLight() || !n->enabled || n->brightness <= 0.0f) return;
-        for (SceneNode* p = n; p; p = p->parent) if (!p->visible) return;
+        for (SceneNode* p = n; p; p = p->parent) if (!p->shown()) return;
         glm::mat4 m = n->worldMatrix();
         glm::vec3 pos(m[3]);
         if (tooFar(pos, n->range)) return;   // its light can't reach anything we draw
@@ -755,14 +755,14 @@ void SceneRenderer::drawHighlights(Scene& scene, const Camera& camera, Framebuff
         if (!on) continue;
         // Its parts: the adornee and everything in it that shows (hidden models hide theirs).
         bool hidden = false;
-        for (SceneNode* p = on; p; p = p->parent) if (!p->visible) hidden = true;
+        for (SceneNode* p = on; p; p = p->parent) if (!p->shown()) hidden = true;
         if (hidden) continue;
         parts.clear();
         stack.assign(1, on);
         while (!stack.empty()) {
             SceneNode* n = stack.back();
             stack.pop_back();
-            if (!n->visible) continue;
+            if (!n->shown()) continue;
             if (n->kind == NodeKind::Part && n->mesh && n->shownTransparency() < 0.99f && !Player::isWater(n)) parts.push_back(n);
             for (auto& c : n->children) stack.push_back(c.get());
         }
@@ -848,7 +848,7 @@ void SceneRenderer::drawConstraints(Scene& scene, bool editing) {
             draw(m, n->selected ? glm::vec3(1, 0.6f, 0.1f) : glm::vec3(0.2f, 1.0f, 0.3f), Material::Neon, *ball);
             return;
         }
-        if (!n->isConstraint() || !n->visible || n->constraintType == ConstraintType::Weld) return;
+        if (!n->isConstraint() || !n->shown() || n->constraintType == ConstraintType::Weld) return;
         SceneNode* a0 = scene.findById(n->ref0);
         SceneNode* a1 = scene.findById(n->ref1);
         if (!a0 || !a1) return;
@@ -1242,7 +1242,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     while (!stack.empty()) {
         auto [node, ff] = stack.back();
         stack.pop_back();
-        if (!node->visible) continue;
+        if (!node->shown()) continue;
         ff = ff || node->hasForceField();
         if (!node->isViewportFrame())   // (the parts in a ViewportFrame are only its picture)
             for (auto& c : node->children) stack.push_back({c.get(), ff});
@@ -1765,7 +1765,7 @@ void SceneRenderer::drawRibbons(Scene& scene, const Camera& camera) {
 
     std::vector<RibbonVertex> verts, edgeA, edgeB;
     auto shown = [](const SceneNode* n) {
-        for (const SceneNode* p = n; p; p = p->parent) if (!p->visible) return false;
+        for (const SceneNode* p = n; p; p = p->parent) if (!p->shown()) return false;
         return true;
     };
     for (SceneNode* n : items) {

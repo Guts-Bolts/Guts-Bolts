@@ -6,6 +6,8 @@
 #include <vector>
 
 class Scene;
+struct ImDrawList;
+struct ImVec2;
 class SceneNode;
 
 // The Explorer: every object in the scene as a tree. Click to select
@@ -33,11 +35,16 @@ public:
     std::function<void(const std::string& what, SceneNode* parent)> onInsertNamed;
     // The Lighting row was clicked (show its settings).
     std::function<void()> onLighting;
+    // The eye on a row: hide / show that object while you build (Studio only, not saved).
+    // Shift+click: just this one shows, everything else hides (Blender's "isolate").
+    std::function<void(SceneNode*, bool isolate)> onEye;
     // Is a game running? (Then the character shows in the Workspace, like Roblox.)
     std::function<bool()> playing;
 
 private:
     void drawNode(SceneNode* node);
+    bool hasEye(const SceneNode* node) const;
+    static void drawEye(ImDrawList* dl, ImVec2 c, float size, bool open, unsigned int col);
     void insertMenu(SceneNode* parent);                // the Insert Object submenu
     bool serviceRow(const char* name, int icon, bool hasKids, bool selected);   // Lighting / StarterPlayer
     void folderService(const char* name, int icon, const char* tip, const std::function<void()>& onClick = {});           // ReplicatedStorage, StarterPack...

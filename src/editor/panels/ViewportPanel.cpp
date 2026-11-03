@@ -136,7 +136,8 @@ void ViewportPanel::followPlayer(Player& p, float dt) {
     PlayCamera::fade(*m_scene, p, m_camera);
 }
 
-bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsing() || m_scaleDrag >= 0 || m_sculpting || m_weightPainting || m_modalOn || m_state->modeling.modal != MeshModal::None; }
+bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsing() || m_scaleDrag >= 0 || m_sculpting || m_weightPainting || m_modalOn || m_state->modeling.modal != MeshModal::None ||
+                                                m_objOn || m_state->objectModal != ObjectModal::None; }
 
 bool ViewportPanel::focusSelected() {
     // The box around every part in the selection (and inside selected models / tools).
@@ -212,7 +213,8 @@ void ViewportPanel::handleInput(float dt) {
     // Roblox Studio camera: right-drag looks around, middle-drag pans, the
     // wheel zooms, and WASD / Q E fly (hold Shift to go faster).
     static bool looking = false;
-    const bool modal = m_state->mode == StudioMode::Modeling && (m_modalOn || m_state->modeling.modal != MeshModal::None);
+    const bool modal = (m_state->mode == StudioMode::Modeling && (m_modalOn || m_state->modeling.modal != MeshModal::None)) ||
+                       m_objOn || m_state->objectModal != ObjectModal::None;
     if (m_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !modal) looking = true;
     if (!ImGui::IsMouseDown(ImGuiMouseButton_Right)) looking = false;
     if (looking) m_camera.look(io.MouseDelta.x, io.MouseDelta.y);
@@ -256,7 +258,9 @@ void ViewportPanel::handleInput(float dt) {
         }
     }
     // In Modeling mode the letter keys are tools (E extrude, ...), so fly only while right-dragging.
-    bool keysFly = m_state->mode == StudioMode::Modeling ? looking : (focused || looking);
+    // (So do Blender keys in Build mode: S scales, A picks all, Shift+D duplicates...)
+    const bool letterTools = m_state->mode == StudioMode::Modeling || GraphicsSettings::get().studioBlenderKeys;
+    bool keysFly = letterTools ? looking : (focused || looking);
     if (keysFly && !io.WantTextInput && !io.KeyCtrl && !io.KeyAlt) {
         float speed = (io.KeyShift ? 60.0f : 18.0f) * dt;
         float f = 0, r = 0, u = 0;
@@ -943,7 +947,8 @@ void ViewportPanel::render(float dt) {
             dl->AddText(ImVec2(imgPos.x + 12, imgMax.y - ImGui::GetFontSize() - 10), IM_COL32(255, 255, 255, 200), tip);
         } else {
             drawSelectionBoxes(view, proj, imgMin, imgSize);
-            drawGizmo(view, proj, imgMin, imgSize);
+            const bool objModal = objectModal(view, proj, imgMin, imgSize);   // G / R / S (Blender keys)
+            if (!objModal) drawGizmo(view, proj, imgMin, imgSize);
 
             // Team Create: a coloured box around what each other person has selected.
             if (m_team && m_team->active()) {
@@ -1094,7 +1099,8 @@ void ViewportPanel::render(float dt) {
             }
 
             // Left-click to pick — but not while interacting with the gizmo.
-            bool overGizmo = ImGuizmo::IsOver() || ImGuizmo::IsUsing() || m_scaleHover >= 0 || m_scaleDrag >= 0;
+            bool overGizmo = ImGuizmo::IsOver() || ImGuizmo::IsUsing() || m_scaleHover >= 0 || m_scaleDrag >= 0 ||
+                             objModal || m_state->objectModalBusy(ImGui::GetFrameCount());   // (that click finished a G / R / S)
             // Ctrl+click adds / removes, Shift+click adds.
             auto pick = [&](SceneNode* hit) {
                 ImGuiIO& io = ImGui::GetIO();
@@ -1141,7 +1147,7 @@ void ViewportPanel::render(float dt) {
                         const glm::mat4 vp = proj * view;
                         std::vector<SceneNode*> found;
                         m_scene->forEach([&](SceneNode* n) {
-                            if (!n->isPart() || n->locked || n->internal || !n->visible || m_scene->isCharacterPart(n)) return;
+                            if (!n->isPart() || n->locked || n->internal || !n->shown() || m_scene->isCharacterPart(n)) return;
                             glm::vec4 c = vp * glm::vec4(glm::vec3(n->worldMatrix()[3]), 1.0f);
                             if (c.w <= 0.01f) return;   // behind the camera
                             const float sx = imgMin.x + (c.x / c.w * 0.5f + 0.5f) * imgSize.x;

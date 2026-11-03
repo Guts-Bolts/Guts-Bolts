@@ -8,6 +8,8 @@
 #include "RobloxMesh.h"
 #include "Skin.h"
 #include "Physics.h"
+#include "RobloxAnim.h"
+#include "Animation.h"
 #include "../core/Paths.h"
 #include "../renderer/MeshLibrary.h"
 #include "../scripting/Luau.h"
@@ -846,6 +848,48 @@ std::string writeCollisionGroups(const CollisionGroups& g) {
         out += g.names[i] + "^" + std::to_string(i) + "^" + std::to_string((int32_t)g.masks[i]);
     }
     return out;
+}
+
+// A KeyframeSequence (a Roblox animation) as it is in the file: every Pose under
+// each Keyframe, by the part it moves.
+void collectPoses(const Inst& in, std::map<std::string, RobloxAnim::Pose>& out) {
+    for (const Inst* c : in.children) {
+        if (!c) continue;
+        if (c->className == "Pose") {
+            RobloxAnim::Pose p;
+            if (const Value* v = c->get("CFrame"); v && v->kind == Value::CFrame) { p.pos = v->v; p.rot = v->r; }
+            p.weight = (float)c->num("Weight", 1.0);
+            p.style = (int)c->num("EasingStyle", 0);
+            p.dir = (int)c->num("EasingDirection", 0);
+            out[c->str("Name", "Pose")] = p;
+        }
+        collectPoses(*c, out);   // poses sit inside their parent part's pose
+    }
+}
+
+RobloxAnim::Clip readKeyframeSequence(const Inst& seq) {
+    RobloxAnim::Clip clip;
+    clip.name = seq.str("Name", "Animation");
+    clip.loop = seq.flag("Loop", false);
+    clip.priority = (int)seq.num("Priority", 2);
+    for (const Inst* k : seq.children) {
+        if (!k || k->className != "Keyframe") continue;
+        RobloxAnim::Keyframe key;
+        key.time = (float)k->num("Time", 0.0);
+        key.name = k->str("Name", "Keyframe");
+        collectPoses(*k, key.poses);
+        clip.keys.push_back(std::move(key));
+    }
+    std::sort(clip.keys.begin(), clip.keys.end(), [](const RobloxAnim::Keyframe& a, const RobloxAnim::Keyframe& b) { return a.time < b.time; });
+    return clip;
+}
+
+void findClasses(const std::vector<Inst*>& list, const char* cls, std::vector<const Inst*>& out) {
+    for (const Inst* i : list) {
+        if (!i) continue;
+        if (i->className == cls) out.push_back(i);
+        else findClasses(i->children, cls, out);
+    }
 }
 
 struct Converter {
@@ -1768,6 +1812,18 @@ struct Converter {
             }
             ++report.other;
             return nullptr;
+        } else if (c == "KeyframeSequence") {
+            // A Roblox animation: made to fit the rig it's in (or our dummies), as an Animation.
+            SceneNode* rig = parent ? Anim::rigOf(parent) : nullptr;
+            const RobloxAnim::Target target = rig && !Anim::rigParts(rig).empty() ? RobloxAnim::targetOf(rig) : RobloxAnim::dummyTarget();
+            std::vector<std::string> notes;
+            node = std::make_unique<SceneNode>(name, NodeKind::Animation);
+            node->source = Anim::dump(RobloxAnim::convert(readKeyframeSequence(in), target, &notes));
+            for (const std::string& n : notes) note("Animation \"" + name + "\": " + n);
+            ++report.other;
+            SceneNode* raw = parent ? parent->addChild(std::move(node)) : scene.insert(std::move(node));
+            made[&in] = raw;
+            return raw;   // (its Keyframes and Poses are in the animation now)
         } else {
             ++report.other;
             // Unknown containers still keep their children (e.g. a Folder-like service).
@@ -2741,6 +2797,23 @@ bool exportModel(Scene& scene, const std::vector<SceneNode*>& nodes, const std::
     for (SceneNode* n : nodes) w.item(*n);
     w.end();
     return writeText(path, w.o.str(), error);
+}
+
+bool readAnimations(const std::string& path, std::vector<RobloxAnim::Clip>& out, std::string& error) {
+    Document doc;
+    if (!readFile(path, doc)) { error = doc.error; return false; }
+    std::vector<const Inst*> seqs;
+    findClasses(doc.roots, "KeyframeSequence", seqs);
+    for (const Inst* s : seqs) out.push_back(readKeyframeSequence(*s));
+    if (!out.empty()) return true;
+    std::vector<const Inst*> other;
+    findClasses(doc.roots, "CurveAnimation", other);
+    if (!other.empty()) { error = "This is a CurveAnimation (Roblox's newer kind). Turn it back into keyframes in Roblox's Animation Editor, then save it again."; return false; }
+    other.clear();
+    findClasses(doc.roots, "Animation", other);
+    if (!other.empty()) { error = "This file only has a link to an animation on Roblox's site, not the animation itself. In Roblox Studio, right-click the KeyframeSequence (in ServerStorage > RBX_ANIMSAVES) and Save to File."; return false; }
+    error = "There's no animation (KeyframeSequence) in this file.";
+    return false;
 }
 
 } // namespace RobloxFile

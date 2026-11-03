@@ -76,7 +76,7 @@ SceneNode* Physics::raycastIf(Scene& scene, const glm::vec3& ro, const glm::vec3
     while (!stack.empty()) {
         SceneNode* node = stack.back();
         stack.pop_back();
-        if (!node->visible || !counts(node)) continue;
+        if (!node->shown() || !counts(node)) continue;
         if (node->isViewportFrame()) continue;   // (its parts are only a picture)
         for (auto& c : node->children) stack.push_back(c.get());
         if (!node->isPart() || node->internal) continue;

@@ -4,6 +4,7 @@
 
 class Scene;
 class SceneNode;
+namespace RobloxAnim { struct Clip; }
 
 // Roblox place and model files: .rbxl / .rbxm (binary) and .rbxlx / .rbxmx (XML).
 //
@@ -34,5 +35,10 @@ std::vector<SceneNode*> importModel(Scene& scene, SceneNode* parent, const std::
 bool exportPlace(Scene& scene, const std::string& path, std::string& error);
 // Save some objects as a Roblox model (.rbxmx).
 bool exportModel(Scene& scene, const std::vector<SceneNode*>& nodes, const std::string& path, std::string& error);
+
+// The animations in a Roblox file: every KeyframeSequence in a .rbxm / .rbxmx (as
+// Roblox wrote it; RobloxAnim::convert makes them fit our characters). False with
+// a reason if there are none (or it's only a link to one on Roblox's site).
+bool readAnimations(const std::string& path, std::vector<RobloxAnim::Clip>& out, std::string& error);
 
 } // namespace RobloxFile

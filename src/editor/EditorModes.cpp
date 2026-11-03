@@ -384,6 +384,7 @@ void Editor::testMesh(const std::string& steps) {
         else if (s == "flip") meshOp(MeshOp::Flip);
         else if (s == "smooth") meshOp(MeshOp::Smooth);
         else if (s == "xray") m_state.modeling.xray = !m_state.modeling.xray;
+        else if (s.rfind("blender:", 0) == 0) testBlender(s.substr(8));   // EditorBlender.cpp
         else if (s.rfind("chain:", 0) == 0) { if (SceneNode* p = armaturePart()) addBone(p, std::atoi(s.c_str() + 6)); m_showArmature = true; }
         else if (s == "bind") { if (SceneNode* p = armaturePart()) { Skin::bindAutomatic(*p); MeshEdit::refresh(*p); } }
         else if (s.rfind("rig:", 0) == 0) { if (SceneNode* p = armaturePart()) addRig(p, std::atoi(s.c_str() + 4), 4); m_showArmature = true; }
