@@ -2,6 +2,7 @@
 #include <set>
 #include <cstdint>
 #include <functional>
+#include <deque>
 #include <map>
 #include <memory>
 #include <string>
@@ -120,6 +121,17 @@ public:
     // A request (op "mem.get" ... with its args): ticket; memDone gives the reply when it's back.
     int  memStart(const std::string& op, nlohmann::json args, int players);
     bool memDone(int ticket, nlohmann::json& reply);
+    // HttpService web requests (Scripts on the server): always through the Guts&Bolts server's
+    // http.request, which only reaches sites on its list and puts in the game's secrets itself.
+    int  httpStart(nlohmann::json request);   // {url, method, headers, body} -> ticket
+    bool httpDone(int ticket, nlohmann::json& reply);
+    // Chat: someone in the game said something (Players.PlayerChatted, player.Chatted). The host
+    // (or playing alone) calls it with what they said after the chat filter.
+    void fireChatted(const std::string& playerName, const std::string& text);
+    // TextChatService:DisplaySystemMessage: grey chat lines the app shows (the host: to everyone).
+    static constexpr size_t kSystemChatLength = 200, kSystemChatPer10s = 20;
+    bool queueSystemChat(const std::string& text, std::string& error);
+    std::vector<std::string> takeSystemChat() { std::vector<std::string> out; out.swap(m_systemChat); return out; }
     // require(ID): a model from the Library, fetched once per game. 0 = still getting it,
     // 1 = ready (module = its MainModule), 2 = couldn't (error says why).
     int  libraryModule(const std::string& assetId, uint64_t& module, std::string& error);
@@ -341,6 +353,10 @@ private:
     MemMode m_memMode = MemMode::Unknown;
     int     m_memNext = 1;
     std::map<int, nlohmann::json> m_memDone;         // ticket -> reply
+    int     m_httpNext = 1;
+    std::map<int, nlohmann::json> m_httpDone;        // web requests: ticket -> reply
+    std::vector<std::string> m_systemChat;           // DisplaySystemMessage lines waiting for the app
+    std::deque<double> m_systemChatAt;               // when the last ones were sent (the limit)
     // MessagingService (see msgPublish).
     enum class MsgMode { Unknown, Asking, Local, Online };
     struct MsgOut { int ticket = 0; std::string topic; nlohmann::json data; };

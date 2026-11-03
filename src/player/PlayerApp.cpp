@@ -1,4 +1,5 @@
 #include "PlayerApp.h"
+#include "../core/TextFilter.h"
 #include "../core/Language.h"
 #include "../core/Pad.h"
 #include <map>
@@ -660,7 +661,10 @@ void PlayerApp::sendChat(const std::string& text) {
     }
     if (m_server)      m_server->say(text);
     else if (m_client) m_client->say(text);
-    else               m_soloChat->add(Online::playerName(), text, false, Account::iAmStaff(), Badges::iHave(Badges::Id::Verified));
+    else {
+        m_soloChat->add(Online::playerName(), text, false, Account::iAmStaff(), Badges::iHave(Badges::Id::Verified));
+        if (m_session) m_session->scripts().fireChatted(m_session->scripts().playerName(), TextFilter::filter(text));
+    }
 }
 
 // Off to another game: look it up first (if it's not a game we can play, we stay here),
@@ -1765,6 +1769,12 @@ void PlayerApp::drawGame(float dt) {
             if (r.value("awarded", false) && m_server)
                 m_server->announce(r.value("player", std::string()) + " earned the badge \"" + r.value("name", std::string()) + "\"!");
         });
+    }
+
+    // TextChatService:DisplaySystemMessage: hosting, everyone sees the line; otherwise just us.
+    for (auto& line : m_session->scripts().takeSystemChat()) {
+        if (m_server) m_server->announce(line);
+        else chat().add("", line, true);
     }
 
     // TeleportService: players the game's scripts sent to another game. We go ourselves;

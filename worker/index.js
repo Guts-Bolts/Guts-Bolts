@@ -220,6 +220,12 @@ async function route(request, env, ctx) {
     // The server on Cloudflare: one Durable Object holds everything.
     const builtIn = () => env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main'));
     if (url.pathname === '/ws') return builtIn().fetch(tagged(request, info));
+    // Lyreto's server talking to the chat gateway (worker/chats.js checks its signature).
+    if (url.pathname === '/api/bridge/lyreto') {
+      if (request.method !== 'POST') return reply({ ok: false, error: 'Use POST.' }, 405);
+      if (env.GB_SERVER) return reply({ ok: false, error: 'The Lyreto gateway only runs on the main Guts&Bolts server.' }, 404);
+      return builtIn().fetch(request);
+    }
     if (url.pathname === '/api') {
       if (request.method !== 'POST') return reply({ ok: false, error: 'Use POST.' }, 405);
       if (!env.GB_SERVER) {

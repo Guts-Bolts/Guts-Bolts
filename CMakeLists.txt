@@ -22,6 +22,8 @@ set(GB_SERVER_SOURCES
     src/server/ServerGroups.cpp
     src/server/ServerSupport.cpp
     src/server/ServerPromos.cpp
+    src/server/ServerGameWeb.cpp
+    src/server/ServerChats.cpp
     src/server/ServerRoadmap.cpp
     src/server/ServerExtras.cpp
     src/server/ServerConnect.cpp
@@ -797,6 +799,7 @@ set(EDITOR_SOURCES
     src/editor/EditorCompare.cpp
     src/editor/SceneDiff.cpp
     src/editor/EditorOnline.cpp
+    src/editor/EditorPluginPublish.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp
     src/editor/Premades.cpp
@@ -1018,6 +1021,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(MoveGuardTests tests/MoveGuardTests.cpp)
     target_link_libraries(MoveGuardTests PRIVATE gb_engine)
     add_test(NAME MoveGuardTests COMMAND MoveGuardTests)
+
+    # Bridging games to other sites: PlayerChatted, DisplaySystemMessage, game.GameId, HttpService Secrets.
+    add_executable(GameBridgeTests tests/GameBridgeTests.cpp)
+    target_link_libraries(GameBridgeTests PRIVATE gb_engine)
+    add_test(NAME GameBridgeTests COMMAND GameBridgeTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # The character: held-down ragdolls, knocked off seats, swimming.
     add_executable(CharacterTests tests/CharacterTests.cpp)

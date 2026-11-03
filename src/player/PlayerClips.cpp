@@ -29,11 +29,13 @@ std::filesystem::path clipName(const std::filesystem::path& folder) {
 } // namespace
 
 bool PlayerApp::canSaveClip() const {
-    return m_page == Page::Game && m_scene && GraphicsSettings::get().clipRecorder && m_clips.frameCount() > 0;
+    return m_page == Page::Game && m_scene && GraphicsSettings::get().clipRecorder && !studioTest() && m_clips.frameCount() > 0;
 }
 
 void PlayerApp::recordClipFrame() {
-    if (!GraphicsSettings::get().clipRecorder || m_page != Page::Game) {
+    // (Studio's "Test with N players" windows don't record: several share one computer, and
+    // reading the picture back every tenth of a second slows them all down.)
+    if (!GraphicsSettings::get().clipRecorder || m_page != Page::Game || studioTest()) {
         if (m_clips.frameCount()) m_clips.clear();   // (turned off: give the memory back)
         return;
     }

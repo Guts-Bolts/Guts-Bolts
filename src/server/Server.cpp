@@ -152,7 +152,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards", "gamelog.list", "events.list",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
-                                                    "msg.publish", "msg.poll", "chat.translate",
+                                                    "msg.publish", "msg.poll", "chat.translate", "http.request",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove"};   // (guests can host games too, and read chat)
     // (A game server machine's own account is never signed up, but staff are let in.)
     if (me.userId == 0 && opName != "hello" && opName != "ping" && opName.rfind("account.", 0) != 0 &&
@@ -259,6 +259,7 @@ json GbServer::meJson(const User& u) const {
     j["hasPassword"] = !u.keyBlob.empty();   // can log in on other devices
     j["authApp"] = !u.totpSecret.empty();    // logging in needs an authenticator-app code
     j["privacy"] = {{"status", u.privacyStatus}, {"join", u.privacyJoin}, {"messages", u.privacyMessages}, {"inventory", u.privacyInventory}};
+    j["dnd"] = u.dnd;   // Do Not Disturb (ServerChats.cpp)
     long long unread = 0;
     if (u.inbox.is_array()) for (const json& m : u.inbox) if (!m.value("read", false)) ++unread;
     j["unreadMessages"] = unread;
@@ -589,6 +590,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     if (name.rfind("data.", 0) == 0) return dataOp(name, me, args);
     if (name.rfind("msg.", 0) == 0) return msgOp(name, me, args);
     if (name.rfind("mem.", 0) == 0) return memOp(name, me, args);
+    if (name.rfind("call.", 0) == 0 || name == "chat.inbox" || name == "chat.bridge" || name == "chat.unbridge" || name == "presence.set") return chatOp(name, me, args);
+    if (name == "http.request" || name == "game.secrets" || name == "game.secretSet" || name == "game.secretRemove") return webOp(name, me, args);
     if (name == "learn.progress.get" || name == "learn.progress.save") {
         if (me.userId <= 0) return fail("Sign in to sync Studio Learn progress.");
         static const std::set<std::string> lessonIds = {"first-build", "make-it-move", "tiny-obby", "first-script", "light-up-scene", "publish-first-game", "meet-explorer", "properties-panel", "copy-group-organize", "color-materials", "shape-world", "spawn-into-action", "collision-course", "connect-parts", "sound-check", "first-gui", "make-things-happen", "remember-values", "find-fix-bugs", "build-test-improve"};
@@ -1020,11 +1023,17 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         meta.erase("image");
         meta.erase("model");
         meta.erase("allowGear");
+        meta.erase("httpOn");
         meta.erase("review");
         meta.erase("reviewNote");
         meta.erase("color");   // items don't have a colour: hats are Studio models, clothes are template pictures
         meta.erase("style");
         if (reviewedKind(kind) && !verified && !isStaff(me)) meta["review"] = "pending";
+        // A plugin's version ("1.2"), shown in the Library. (worker/server.js has the same.)
+        if (kind == "plugin") {
+            meta.erase("version");
+            if (std::string v = say(str("version"), 20); !v.empty()) meta["version"] = v;
+        }
         if (kind == "gear")
             if (std::string problem = Online::gearProblem(data); !problem.empty()) return fail(problem);
         if (Online::isEmoteItem(kind))
@@ -1375,6 +1384,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::string title = say(str("name"), 50);
         if (!title.empty()) a.name = title;
         if (args.contains("description")) a.description = say(str("description"), 1000, true);
+        if (a.kind == "plugin" && args.contains("version")) {   // (a plugin's version, shown in the Library)
+            std::string v = say(str("version"), 20);
+            if (!v.empty()) a.meta["version"] = v;
+            else a.meta.erase("version");
+        }
         if (args.contains("price") && a.kind != "game" && !Online::alwaysFree(a.kind)) {
             long long price = std::clamp(num("price"), 0LL, 1000000LL);
             if (price > 0 && !isVerified(me)) return fail("Only Verified creators can sell things.");
@@ -1508,12 +1522,13 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         saveUsers();
         json r = okay(); r["me"] = meJson(me); return r;
     }
-    if (name == "game.settings") {   // (the website's game settings; here just "Allow gear")
+    if (name == "game.settings") {   // (the website's game settings; not all of them here)
         auto it = findAsset(str("id"));
         if (it == m_assets.end() || it->second.kind != "game") return fail("That game doesn't exist (any more).");
         Asset& a = it->second;
         if (a.creator != me.id && !isStaff(me)) return fail("You can only change your own games.");
         if (args.contains("allowGear")) a.meta["allowGear"] = args["allowGear"] == true;
+        if (args.contains("http")) a.meta["httpOn"] = args["http"] == true;   // web requests from its server scripts (ServerGameWeb.cpp)
         if (args.contains("comments")) a.meta["commentsOff"] = args["comments"] == false;
         if (args.contains("privatePrice"))   // paid private servers (0 = free)
             a.meta["privatePrice"] = std::clamp(args["privatePrice"].is_number_integer() ? args["privatePrice"].get<long long>() : 0LL, 0LL, 10000LL);
@@ -1813,6 +1828,7 @@ void GbServer::saveUsers() {
         if (!u.totpSecret.empty()) { all[id]["totpSecret"] = u.totpSecret; all[id]["totpLast"] = u.totpLast; }
         if (!u.totpPending.empty()) all[id]["totpPending"] = u.totpPending;
         all[id]["privacy"] = {{"status", u.privacyStatus}, {"join", u.privacyJoin}, {"messages", u.privacyMessages}, {"inventory", u.privacyInventory}};
+        if (u.dnd) all[id]["dnd"] = true;
         all[id]["gear"] = u.gear;
         if (!u.emotes.empty()) all[id]["emotes"] = u.emotes;
         if (!u.animPack.empty()) all[id]["animPack"] = u.animPack;
@@ -2036,6 +2052,7 @@ void GbServer::load() {
                     std::string inv = j["privacy"].value("inventory", std::string("everyone"));
                     u.privacyInventory = ok(inv) ? inv : "everyone";
                 }
+                u.dnd = j.value("dnd", false) == true;
                 if (j.contains("outfits") && j["outfits"].is_array()) u.outfits = j["outfits"];
                 if (j.contains("inbox") && j["inbox"].is_array()) u.inbox = j["inbox"];
                 if (j.contains("notes") && j["notes"].is_array()) u.notes = j["notes"];

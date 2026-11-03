@@ -5,6 +5,8 @@ import * as gb from './gb.js';
 import { mountAvatar, avatarPicture, itemPicture, itemCamera } from './avatar3d.js';
 import { startTranslating, languagePicker } from '../lang/i18n.js';
 import { startLive, listen, stopListening, onLive } from './live.js';
+import { mountGameWeb } from './gameweb.js';
+import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 
 // --- small helpers ------------------------------------------------------------
 
@@ -438,8 +440,10 @@ async function pageCall(op, args) {
 const BELL_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z"/></svg>';
 
 let liveTopic = '';   // your account's live topic (Supabase Realtime), while signed in
+let chatSignedIn = false;
 function setMe(m) {
   me = m;
+  if (signedIn() !== chatSignedIn) { chatSignedIn = signedIn(); setTimeout(() => refreshChat(), 0); }   // (the chat panel)
   const topic = signedIn() && typeof me.live === 'string' ? me.live : '';
   if (topic !== liveTopic) { stopListening(liveTopic); liveTopic = topic; listen(topic); }
   const msgLink = $('#nav a[data-page=messages]');
@@ -1085,7 +1089,7 @@ const lower = (s) => String(s || '').toLowerCase();
 function browseCard(a, href, price) {
   return html`<div class="card square bcard">
     <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="" style="width:100%;height:100%;object-fit:contain;border:0">`
-      : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
+      : (a.kind === 'model' || a.kind === 'plugin') && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
       : a.kind === 'audio' || a.kind === 'plugin' || a.kind === 'model' || a.kind === 'animation' ? html`<span class="lib-kind">${a.kind === 'audio' ? raw(SPEAKER_SVG) : ''}${KINDS[a.kind] || a.kind}</span>`
       : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">${a.limitedType === 'limited' ? 'LIMITED' : 'LIMITED U'}</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsale ? html`<span class="timed-tag">OFF SALE</span>` : a.offsaleAt ? html`<span class="timed-tag">TIMED</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
@@ -1203,7 +1207,7 @@ pages.library = async (id = '') => {
     decal: 'In Studio, select a Decal (or a Part) and paste the ID into its Texture. Scripts can use it too: decal.Texture = "' + assetNum(a) + '"',
     audio: 'In Studio, select a Sound and paste the ID into its File (SoundId). Scripts can use it too: sound.SoundId = "' + assetNum(a) + '"',
     model: 'In Studio, open the Toolbox, pick the Library tab and search for it to insert it into your game.',
-    plugin: 'In Studio, open the Toolbox\'s Plugins tab and install it from there.',
+    plugin: 'In Studio, open the PLUGINS tab, press Library and install it from there. Its buttons show up in the PLUGINS tab.',
     animation: 'In Studio\'s Animation Editor, press ... > Import > From the Library and paste its ID (or search for it).',
   }[a.kind] || '';
   const canDelete = signedIn() && (a.creator === me.id || me.staff);
@@ -1216,7 +1220,7 @@ pages.library = async (id = '') => {
       <div class="item-cols asset-cols">
         <div class="item-pic">
           <div class="pic" id="assetPic">${a.kind === 'decal' ? html`<span class="muted">Loading...</span>`
-            : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
+            : (a.kind === 'model' || a.kind === 'plugin') && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
             : a.kind === 'audio' ? html`<span class="lib-kind audio-big">${raw(SPEAKER_SVG)}Audio</span>`
             : html`<span class="lib-kind">${KINDS[a.kind] || a.kind}</span>`}</div>
           ${officialBadge(a)}
@@ -1228,6 +1232,7 @@ pages.library = async (id = '') => {
               <tr><td>Creator:</td><td><a href="#/user/${a.creator}">${a.creatorName}</a>${verified(a.creatorVerified)}</td></tr>
               <tr><td>Created:</td><td>${a.created ? new Date(a.created * 1000).toLocaleDateString() : '?'}</td></tr>
               <tr><td>Updated:</td><td>${ago(a.updated || a.created)}</td></tr>
+              ${a.kind === 'plugin' && a.meta && a.meta.version ? html`<tr><td>Version:</td><td>${a.meta.version}</td></tr>` : ''}
             </table>
           </div>
           <p class="item-desc">${a.description || html`<span class="muted">No description.</span>`}</p>
@@ -2067,7 +2072,8 @@ pages.create = async (tab = 'games') => {
         <label style="font-weight:normal"><input type="checkbox" name="headless"> Headless: wearing it hides the head and face</label>`
       : html`<label>File</label><input type="file" name="file" accept="${accept}" required>
         <p class="small muted">${{ decal: 'A .png or .jpg picture (up to 4 MB).', audio: 'An .mp3, .wav, .ogg or .flac file (up to 6 MB).',
-          plugin: 'A Lua plugin for Studio.', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).', gear: 'A .gbmodel file exported from Studio containing one Tool with a Handle. Gear is equipped from the catalog and appears in games that allow gear.' }[kind]}</p>`}
+          plugin: 'A Lua plugin for Studio. (It\'s easier from Studio: PLUGINS > Publish, which can also update it later for free.)', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).', gear: 'A .gbmodel file exported from Studio containing one Tool with a Handle. Gear is equipped from the catalog and appears in games that allow gear.' }[kind]}</p>`}
+      ${kind === 'plugin' ? html`<label>Version <span class="muted small">(optional, like 1.0)</span></label><input type="text" name="version" maxlength="20" value="1.0">` : ''}
       ${['decal', 'audio'].includes(kind) ? html`<p class="small muted">${kind === 'decal' ? 'Decals' : 'Sounds'} are always free: anyone can use them in their games.</p>`
         : (me.verified || face || bundle) && kind !== 'game' ? html`<label>Price (Bolts)</label><input type="number" name="price" min="0" value="0">` : ''}
       ${kind === 'decal' || face || tee ? html`<img class="thumb" id="preview" alt="Preview" hidden style="width:120px;height:120px;margin-top:10px">` : ''}
@@ -2231,6 +2237,7 @@ pages.configure = async (id) => {
         <button type="button" class="btn red" data-act="deleteAsset" data-id="${g.id}" data-name="${g.name}" style="float:right">Delete game</button>
         <span id="configMsg"></span></p>
     </form>
+    <div class="box" id="gameWeb"></div>
     <div class="box" id="screenshots"><h2 class="boxhead">Screenshots</h2>
       <p class="small muted">Up to ${SHOT_MOST} pictures of your game, shown after the thumbnail on its page (people can click them to see them bigger).
         .png, .jpg or .webp, up to ${SHOT_MB} MB each. Pictures from your game in the Player or Studio work best.</p>
@@ -2306,6 +2313,7 @@ pages.configure = async (id) => {
         <label>Price in Bolts <span class="muted small">(selling needs a Verified account)</span></label><input type="number" name="price" min="0" max="1000000" value="10" style="max-width:140px">
         <p><button class="btn green">Make product</button></p></form></div>`);
   loadThumbs();
+  mountGameWeb($('#gameWeb'), g.id, call, toast);   // web requests and secrets (gameweb.js)
   // Show a picked picture straight away.
   view.querySelectorAll('input[data-preview]').forEach((inp) => inp.addEventListener('change', () => {
     const file = inp.files[0];
@@ -2767,101 +2775,13 @@ pages.messages = async (box = 'inbox') => {
   }));
 };
 
-let partyChatPoll = null;
-pages.parties = async (chatId = '') => {
-  if (partyChatPoll) { clearInterval(partyChatPoll); partyChatPoll = null; }
-  if (!signedIn()) { show(raw('<h1>Parties</h1>' + needSignIn('chat with friends and create parties').s)); return; }
-  const [r, fr] = await Promise.all([pageCall('party.list', {}), pageCall('friends.list', {})]);
-  if (!r.ok) { show(raw('<h1>Parties</h1><p class="error">' + esc(r.error) + '</p>')); return; }
-  const chats = r.chats || [], invites = r.invites || [], friends = fr.ok ? (fr.friends || []) : [];
-  const chat = chatId ? chats.find((x) => x.id === chatId) : null;
-  const messagesHtml = (items) => (items || []).map((m) =>
-    '<div class="party-message ' + (m.from === me.id ? 'mine' : '') + '"><div class="party-message-meta"><a href="#/user/' +
-    esc(m.from) + '">' + esc(m.name || 'Player') + '</a><span>' + esc(ago(m.at)) + '</span></div><div class="party-message-body">' +
-    esc(m.body || '') + (m.game ? ' <a class="btn small blue" href="#/game/' + encodeURIComponent(m.game) + '">View game</a>' : '') + '</div></div>'
-  ).join('');
-  const shell = '<div class="tabs"><a class="btn blue" href="#/parties">Chats &amp; Parties</a><a class="btn" href="#/messages">Classic inbox</a></div>';
-  if (chatId) {
-    if (!chat) { show(raw('<h1>Party not found</h1>' + shell + '<p class="muted">You may have left this conversation.</p>')); return; }
-    await pageCall('party.read', { id: chat.id });
-    const members = chat.members || [], others = friends.filter((u) => !members.some((m) => m.id === u.id));
-    const gamesR = await pageCall('list', { kind: 'game', sort: 'popular', limit: 20 });
-    const gameOptions = gamesR.ok ? (gamesR.assets || []).map((g) => '<option value="' + esc(g.id) + '">' + esc(g.name) + '</option>').join('') : '';
-    const memberHtml = members.map((m) => '<div class="party-member"><a href="#/user/' + esc(m.userId || m.id) + '">' +
-      esc(m.name || 'Player') + '</a>' + (m.id === chat.owner ? '<span class="badge-pill">Owner</span>' : '') +
-      (chat.owner === me.id && m.id !== me.id ? '<button class="btn small red" data-kick="' + esc(m.id) + '">Remove</button>' : '') + '</div>').join('');
-    const inviteOptions = others.map((u) => '<option value="' + esc(u.id) + '">' + esc(u.username || u.name) + '</option>').join('');
-    show(raw('<h1>' + esc(chat.title || 'Party') + '</h1>' + shell + '<div class="party-layout"><section class="box party-room">' +
-      '<div class="party-room-head"><b>' + members.length + ' members</b><span class="muted small">' + (chat.owner === me.id ? 'You own this party' : 'Party conversation') +
-      '</span></div><div class="party-messages" id="partyMessages">' + messagesHtml(chat.messages) + '</div>' +
-      '<form id="partySend" class="party-compose"><textarea name="body" maxlength="1000" rows="2" placeholder="Write a message..." required></textarea><button class="btn blue">Send</button></form>' +
-      '</section><aside class="box party-members"><h2 class="boxhead">Party members</h2>' + memberHtml +
-      (gameOptions ? '<form id="partyGame" class="form party-invite-form"><label>Invite everyone to a game</label><select name="game" required>' + gameOptions + '</select><button class="btn small blue">Send game invite</button></form>' : '') +
-      (chat.owner === me.id && others.length ? '<form id="partyInvite" class="form party-invite-form"><label>Invite a friend</label><select name="user" required>' +
-        inviteOptions + '</select><button class="btn small green">Invite</button></form>' : '') +
-      '<button class="btn small red" id="partyLeave">Leave party</button></aside></div>'));
-    const box = $('#partyMessages'); if (box) box.scrollTop = box.scrollHeight;
-    $('#partySend').addEventListener('submit', async (e) => {
-      e.preventDefault(); const form = e.currentTarget, body = form.body.value;
-      const sent = await call('party.send', { id: chat.id, body });
-      if (!sent.ok) { toast(sent.error); return; }
-      form.body.value = ''; render();
-    });
-    $('#partyGame')?.addEventListener('submit', async (e) => {
-      e.preventDefault(); const sent = await call('party.game', { id: chat.id, game: e.currentTarget.game.value });
-      if (!sent.ok) toast(sent.error); else render();
-    });
-    $('#partyInvite')?.addEventListener('submit', async (e) => {
-      e.preventDefault(); const sent = await call('party.invite', { id: chat.id, user: e.currentTarget.user.value });
-      toast(sent.ok ? 'Party invitation sent.' : sent.error); if (sent.ok) render();
-    });
-    $('#partyLeave').addEventListener('click', async () => {
-      if (!confirm('Leave this party?')) return;
-      const left = await call('party.leave', { id: chat.id }); if (!left.ok) toast(left.error); else location.hash = '#/parties';
-    });
-    view.querySelectorAll('[data-kick]').forEach((el) => el.addEventListener('click', async () => {
-      if (!confirm('Remove this person from the party?')) return;
-      const kicked = await call('party.kick', { id: chat.id, user: el.dataset.kick });
-      toast(kicked.ok ? 'Player removed.' : kicked.error); if (kicked.ok) render();
-    }));
-    partyChatPoll = setInterval(async () => {
-      if (location.hash.split('?')[0] !== '#/parties/' + chat.id || document.visibilityState !== 'visible') return;
-      const fresh = await call('party.list', {}), latest = fresh.ok && (fresh.chats || []).find((x) => x.id === chat.id), target = $('#partyMessages');
-      if (!latest || !target) return;
-      const bottom = target.scrollHeight - target.scrollTop - target.clientHeight < 80;
-      target.innerHTML = messagesHtml(latest.messages); if (bottom) target.scrollTop = target.scrollHeight;
-    }, 4000);
-    return;
-  }
-  const rows = chats.sort((a, b) => (b.updated || b.created) - (a.updated || a.created)).map((c) => {
-    const last = (c.messages || []).slice(-1)[0], preview = last ? (last.name || 'Player') + ': ' + last.body : 'Party created. Start talking.';
-    return '<a class="party-chat-row" href="#/parties/' + encodeURIComponent(c.id) + '"><span class="party-chat-icon">' +
-      esc((c.title || 'P').slice(0, 1).toUpperCase()) + '</span><span class="party-chat-copy"><b>' + esc(c.title || 'Party') +
-      '</b><span>' + esc(preview) + '</span><small>' + (c.members || []).length + ' members · ' + esc(ago(c.updated || c.created)) +
-      '</small></span><span class="party-chat-arrow">›</span></a>';
-  }).join('');
-  const inviteRows = invites.map((x) => '<div class="party-invite-row"><span><b>' + esc(x.title) + '</b><small>Invited by ' +
-    esc(x.ownerName) + ' · ' + esc(ago(x.at)) + '</small></span><button class="btn small green" data-accept="' + esc(x.id) +
-    '">Join</button><button class="btn small" data-decline="' + esc(x.id) + '">Decline</button></div>').join('');
-  const friendRows = friends.map((u) => '<label><input type="checkbox" name="members" value="' + esc(u.id) + '"> ' + esc(u.username || u.name) + '</label>').join('');
-  show(raw('<h1>Parties</h1>' + shell + (invites.length ? '<div class="box"><h2 class="boxhead">Party invitations <span class="count">' +
-    invites.length + '</span></h2>' + inviteRows + '</div>' : '') + '<div class="box"><h2 class="boxhead">Your conversations</h2>' +
-    (rows || '<p class="muted">No parties yet. Start one with your friends below.</p>') + '</div><div class="box"><h2 class="boxhead">Start a conversation</h2>' +
-    (friends.length ? '<form id="partyCreate" class="form"><label>Party name <span class="muted small">(optional)</span></label><input name="title" maxlength="60" placeholder="Give your party a name">' +
-      '<label>Invite friends</label><div class="party-friend-picker">' + friendRows + '</div><p class="small muted">Choose one friend for a private chat or several for a group party. Up to 19 friends.</p>' +
-      '<button class="btn green">Create chat</button></form>' : '<p class="muted">Add some friends first, then you can start a conversation.</p>') + '</div>'));
-  $('#partyCreate')?.addEventListener('submit', async (e) => {
-    e.preventDefault(); const form = e.currentTarget, members = [...form.querySelectorAll('input[name=members]:checked')].map((x) => x.value);
-    if (!members.length) { toast('Choose at least one friend.'); return; }
-    const made = await call('party.create', { title: form.title.value, members });
-    if (!made.ok) toast(made.error); else location.hash = '#/parties/' + encodeURIComponent(made.chat.id);
-  });
-  view.querySelectorAll('[data-accept],[data-decline]').forEach((el) => el.addEventListener('click', async () => {
-    const id = el.dataset.accept || el.dataset.decline, accepted = !!el.dataset.accept;
-    const result = await call('party.respond', { id, accept: accepted });
-    if (!result.ok) toast(result.error); else if (result.chat) location.hash = '#/parties/' + encodeURIComponent(result.chat.id); else render();
-  }));
+// Chats and parties: the chat panel (chatdock.js). On a computer it's docked in the corner of every
+// page; this is the whole-page version (the Chat tab on phones).
+pages.chat = async (chatId = '') => {
+  show(html`<h1 class="chat-page-title">Chat</h1><div id="chatPage"></div>`);
+  mountChatPage($('#chatPage'), chatId);
 };
+pages.parties = (chatId = '') => pages.chat(chatId);
 
 pages.avatar = async () => {
   const [r, outfitsR] = signedIn() ? await Promise.all([pageCall('list', { kind: 'clothing', owned: true, limit: 100 }), pageCall('outfit.list', {})])
@@ -3393,7 +3313,7 @@ function staffLogBox(lg, logFor) {
 // Opening the page marks them all read.
 function noteLink(n) {
   if (n.kind === 'friendRequest') return '#/friends';
-  if (n.kind === 'party') return '#/parties';
+  if (n.kind === 'party') return '#/chat';
   if (n.kind === 'friend' || n.kind === 'follow') return '#/user/' + n.about;
   if (n.kind === 'trade') return '#/trades';
   if (n.kind === 'group') return '#/group/' + n.about;
@@ -4989,6 +4909,7 @@ const forms = {
       if (!file) { msg.textContent = 'Pick a file first.'; return; }
       args.data = await gb.fileBase64(file);
       if (kind === 'audio') args.meta = { ext: (file.name.split('.').pop() || '').toLowerCase() };
+      if (kind === 'plugin' && f.version) args.version = f.version.value;
     }
     msg.className = 'muted'; msg.textContent = ' Uploading...';
     f.querySelector('button').disabled = true;
@@ -5330,10 +5251,11 @@ async function render() {
   const path = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/');
   route = path;
   const name = pages[path[0]] ? path[0] : 'home';
+  routeChanged();   // the docked chat panel hides on the Chat page
   document.querySelectorAll('#nav a[data-page]').forEach((a) => {
     const p = a.dataset.page;
     a.classList.toggle('on', p === name || (p === 'games' && name === 'game') || (p === 'catalog' && name === 'item') || (p === 'create' && name === 'library') ||
-      (p === 'people' && name === 'user') || (p === 'groups' && name === 'group') || (p === 'forum' && name === 'forum'));
+      (p === 'people' && name === 'user') || (p === 'groups' && name === 'group') || (p === 'forum' && name === 'forum') || (p === 'chat' && name === 'parties'));
   });
   if (name !== 'avatar') avatarDraft = null;   // leaving the avatar page drops unsaved changes
   if (!me) {
@@ -5353,7 +5275,6 @@ async function render() {
 actions.retry = async () => { await hello(); render(); };
 
 window.addEventListener('hashchange', () => {
-  if (partyChatPoll) { clearInterval(partyChatPoll); partyChatPoll = null; }
   document.querySelectorAll('.modal').forEach((m) => m.remove());
   window.scrollTo(0, 0);
   render();
@@ -5362,6 +5283,8 @@ const langReady = startTranslating();   // (loads while we say hello)
 document.querySelector('.foot').append(languagePicker());
 (async () => {
   await hello();
+  setupChat({ call, me: () => me, toast, onLive });
+  mountDock();
   await langReady;
   render();
   checkRequests();

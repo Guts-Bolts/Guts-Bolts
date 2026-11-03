@@ -728,6 +728,7 @@ void NetServer::say(const std::string& text) {
     }
     m_chat.add(Online::playerName(), t, false, admin, ver, lang);
     broadcast(json{{"t", "chat"}, {"from", Online::playerName()}, {"text", t}, {"adm", admin}, {"ver", ver}, {"lang", lang}}.dump());
+    m_session->scripts().fireChatted(m_session->scripts().playerName(), t);   // Players.PlayerChatted
 }
 
 NetServer::Client* NetServer::findClient(const std::string& name) {
@@ -1265,6 +1266,7 @@ void NetServer::handle(Client& c, const std::string& text) {
         }
         m_chat.add(c.name, msg, false, c.admin, c.verified, lang);
         broadcast(json{{"t", "chat"}, {"from", c.name}, {"text", msg}, {"adm", c.admin}, {"ver", c.verified}, {"lang", lang}}.dump());
+        m_session->scripts().fireChatted(c.name, msg);   // Players.PlayerChatted / player.Chatted
     }
 }
 

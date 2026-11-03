@@ -220,6 +220,15 @@ private:
     void       renderAccessoryWindow();      // AVATAR > Accessories (Verified creators)
     void       renderBundleWindow();         // AVATAR > Bundles (staff): bundles with a new body
     void       renderPluginsTab();
+    // Making and sharing plugins (EditorPluginPublish.cpp): the Publish Plugin window, writing a
+    // plugin as a Script in Studio, and the right-click "Save as Plugin" / "Publish as Plugin".
+    void       renderPublishPluginWindow();
+    void       openPublishPlugin(const std::string& file);   // a file name in the plugins folder ("" = keep)
+    void       newPluginScript();                            // a ready-to-change plugin, as a Script
+    void       editPluginInStudio(const std::string& file);  // a plugin file, as a Script you can change
+    bool       savePluginScript(SceneNode* script, std::string& file, std::string& error);
+    void       pluginMenuItems();                            // right-click on a Script
+    void       pickPluginToPublish(const std::string& file);
     void       insertObject(const std::string& what, SceneNode* parent);
     // "#42", "Workspace.Castle.Door" or a service path like "StarterPack" / "game.ServerScriptService.Main".
     // `create`: make a service's folder (StarterPack, StarterPlayer.StarterPlayerScripts...) if it isn't there yet.
@@ -313,6 +322,10 @@ private:
     std::string m_serverInput, m_publishName, m_publishDesc, m_publishMsg, m_marketMsg, m_marketQuery;
     int         m_marketTab = 0, m_publishPluginIndex = 0, m_publishPluginPrice = 0;
     bool        m_marketLoaded = false, m_onlineBusy = false;
+    // The Publish Plugin window (EditorPluginPublish.cpp)
+    bool        m_showPublishPlugin = false, m_ppMineLoaded = false, m_ppBad = false, m_ppFilled = false;
+    std::string m_ppFile, m_ppName, m_ppDesc, m_ppVersion, m_ppPicture, m_ppTarget, m_ppMsg;
+    nlohmann::json m_ppMine = nlohmann::json::array();   // your plugins in the Library
     // Library: publishing a model (public or private) and browsing everyone's public ones.
     bool        m_openPublishModel = false, m_modelPublic = true, m_libraryLoaded = false;
     bool        m_modelAsGear = false;   // staff: sell a Tool in the catalog as Gear

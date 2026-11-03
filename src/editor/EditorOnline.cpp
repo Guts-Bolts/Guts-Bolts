@@ -39,21 +39,6 @@ void byLine(const json& a) {
     if (a.value("creatorVerified", false)) { ImGui::SameLine(0, 3); Badges::check(); }
 }
 
-// A safe file name for an installed plugin.
-std::string fileName(const std::string& name) {
-    std::string out;
-    for (char c : name) out += (std::isalnum((unsigned char)c) || c == ' ' || c == '-' || c == '_') ? c : '_';
-    while (!out.empty() && out.back() == ' ') out.pop_back();
-    return out.empty() ? "Plugin" : out;
-}
-
-std::string readFile(const std::filesystem::path& p) {
-    std::ifstream f(p, std::ios::binary);
-    std::stringstream s;
-    s << f.rdbuf();
-    return s.str();
-}
-
 void onlineLine() {
     ImVec4 col = Online::online() ? ImVec4(0.4f, 0.85f, 0.45f, 1) : ImVec4(1.0f, 0.5f, 0.45f, 1);
     ImGui::TextColored(col, "%s", Online::configured() ? Online::statusText().c_str() : "Not connected to a server");
@@ -327,34 +312,53 @@ void Editor::renderPluginLibrary() {
         // --- Plugins ---
         if (ImGui::BeginTabItem("Plugins")) {
             if (m_marketPlugins.empty()) ImGui::TextDisabled("No plugins yet. Be the first - see the Publish tab!");
+            if (ImGui::SmallButton("Publish your own plugin...")) openPublishPlugin("");
             for (size_t i = 0; i < m_marketPlugins.size(); ++i) {
                 const json a = m_marketPlugins[i];
                 std::string id = a.value("id", std::string()), name = a.value("name", std::string());
                 ImGui::PushID((int)i);
                 ImGui::Separator();
                 ImGui::TextUnformatted(name.c_str());
+                const json meta = a.value("meta", json::object());
+                const std::string version = meta.is_object() ? meta.value("version", std::string()) : std::string();
+                if (!version.empty()) { ImGui::SameLine(); ImGui::TextDisabled("v%s", version.c_str()); }
                 ImGui::SameLine();
                 byLine(a);
                 ImGui::PushTextWrapPos(0);
                 ImGui::TextDisabled("%s", a.value("description", std::string()).c_str());
                 ImGui::PopTextWrapPos();
                 long long price = a.value("price", 0LL);
-                bool installed = std::filesystem::exists(Plugins::folder() / (fileName(name) + ".lua"));
+                const std::string file = Plugins::fileNameFor(name);
+                // Which version of it you have: a new one is out when it changed since you installed it.
+                const std::string stamp = std::to_string(a.value("updated", a.value("created", 0LL))) + "|" + version;
+                std::string haveStamp;
+                const bool fromHere = Plugins::installedId(file, &haveStamp) == id;
+                bool installed = std::filesystem::exists(Plugins::folder() / (file + ".lua"));
+                const bool newer = installed && fromHere && haveStamp != stamp;
                 bool owned = price == 0 || Online::owns(id) || a.value("creator", std::string()) == Account::id();
                 if (!owned) { Bolts::amount(price); ImGui::SameLine(); }
                 ImGui::BeginDisabled(m_onlineBusy);
-                std::string label = installed ? "Reinstall" : owned ? "Install" : "Buy & install";
-                if (ImGui::Button(label.c_str())) {
+                std::string label = newer ? "Update" : installed ? "Reinstall" : owned ? "Install" : "Buy & install";
+                if (newer) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.55f, 0.25f, 1));
+                const bool pressed = ImGui::Button(label.c_str());
+                if (newer) {
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine();
+                    ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.45f, 1), "A new version is out!");
+                }
+                if (pressed) {
                     m_onlineBusy = true;
-                    auto install = [this, id, name]() {
-                        Online::download(id, [this, name](bool ok, const std::filesystem::path& file, const json& info) {
+                    auto install = [this, id, name, file, stamp, newer]() {
+                        Online::download(id, [this, id, name, file, stamp, newer](bool ok, const std::filesystem::path& got, const json& info) {
                             m_onlineBusy = false;
                             if (!ok) { m_marketMsg = info.value("error", std::string("Download failed.")); return; }
                             std::error_code ec;
-                            std::filesystem::copy_file(file, Plugins::folder() / (fileName(name) + ".lua"),
+                            std::filesystem::copy_file(got, Plugins::folder() / (file + ".lua"),
                                                        std::filesystem::copy_options::overwrite_existing, ec);
+                            if (ec) { m_marketMsg = "Couldn't put it in the plugins folder: " + ec.message(); return; }
+                            if (Plugins::publishedId(file) != id) Plugins::setInstalled(file, id, stamp);
                             m_plugins->reload();
-                            m_marketMsg = "Installed " + name + " - look in the PLUGINS tab.";
+                            m_marketMsg = (newer ? "Updated " : "Installed ") + name + " - look in the PLUGINS tab.";
                             m_ribbonTab = 4;
                         }, true);
                     };
@@ -411,44 +415,13 @@ void Editor::renderPluginLibrary() {
             }
             ImGui::EndTabItem();
         }
-        // --- Publish a plugin ---
+        // --- Publish a plugin (the Publish Plugin window does it) ---
         if (ImGui::BeginTabItem("Publish a plugin")) {
-            auto& list = m_plugins->list();
-            if (list.empty()) {
-                ImGui::TextWrapped("Put a .lua plugin in %s first.", Plugins::folder().string().c_str());
-            } else {
-                m_publishPluginIndex = std::clamp(m_publishPluginIndex, 0, (int)list.size() - 1);
-                if (ImGui::BeginCombo("Plugin", list[m_publishPluginIndex]->name.c_str())) {
-                    for (int k = 0; k < (int)list.size(); ++k)
-                        if (ImGui::Selectable(list[k]->name.c_str(), k == m_publishPluginIndex)) m_publishPluginIndex = k;
-                    ImGui::EndCombo();
-                }
-                const bool verified = Online::verified();
-                if (verified) {
-                    ImGui::SetNextItemWidth(160);
-                    ImGui::InputInt("Price (Bolts)", &m_publishPluginPrice, 5, 50);
-                    m_publishPluginPrice = std::clamp(m_publishPluginPrice, 0, 1000000);
-                }
-                ImGui::TextDisabled(verified ? "You're Verified: publishing is free, and you can sell it."
-                                             : "Publishing a plugin costs 20 Bolts (free for Verified creators).");
-                const bool canPublish = !Account::id().empty() && Online::online() && Online::me().value("userId", 0LL) > 0;
-                ImGui::BeginDisabled(m_onlineBusy || !canPublish);
-                if (ImGui::Button("Publish plugin")) {
-                    auto& p = *list[m_publishPluginIndex];
-                    m_onlineBusy = true;
-                    Online::request("upload", {{"kind", "plugin"}, {"name", p.name},
-                                               {"price", verified ? m_publishPluginPrice : 0},
-                                               {"data", Online::base64Encode(readFile(p.file))}},
-                                    [this](const json& r) {
-                        m_onlineBusy = false;
-                        m_marketMsg = r.value("ok", false) ? "Published! Others can install it from the Library."
-                                                           : r.value("error", std::string());
-                        m_marketLoaded = false;
-                    });
-                }
-                ImGui::EndDisabled();
-                if (!canPublish && ImGui::Button("Sign in to publish plugin")) requireStudioLogin("publish this plugin");
-            }
+            ImGui::TextWrapped("Made a plugin? Share it so anyone can install it from here. You can give it a "
+                               "description, a version and a picture, and update it later for free.");
+            if (ImGui::Button("Open Publish Plugin...", ImVec2(200, 30))) openPublishPlugin("");
+            ImGui::SameLine();
+            if (ImGui::Button("New plugin", ImVec2(120, 30))) newPluginScript();
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -469,6 +442,7 @@ void Editor::testSnapshot(const std::string& file) {
 // The right-click menus' way in (Explorer and viewport): what's selected, as a model.
 void Editor::publishMenuItem() {
     ImGui::Separator();
+    pluginMenuItems();   // (a Script: Save as Plugin / Publish as Plugin...)
     if (ImGui::MenuItem("Publish to Guts&Bolts...", nullptr, false, m_scene->selected() != nullptr))
         m_openPublishModel = true;
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
