@@ -58,6 +58,7 @@ export async function refresh() {
   refreshing = (async () => {
     const [r, f] = await Promise.all([api.call('chat.inbox', {}), friends.length ? null : api.call('friends.list', {})]);
     if (r.ok) inbox = r;
+    else if (/doesn't know how to do/.test(r.error || '')) inbox = await oldInbox();   // (a server that hasn't been updated yet)
     if (f && f.ok) friends = f.friends || [];
     // A call ringing for us? (Not on Do Not Disturb, and not one we're already in.)
     const ring = inbox.chats.find((c) => c.call && c.call.ringing && (!session || session.chat !== c.id));
@@ -67,6 +68,21 @@ export async function refresh() {
     drawRing();
   })().finally(() => { refreshing = null; });
   return refreshing;
+}
+// Servers from before the chat panel only have party.list: build the same summary here,
+// so chats still show up. Calls and Do Not Disturb need the newer server (old: true hides them).
+async function oldInbox() {
+  const r = await api.call('party.list', {});
+  if (!r.ok) return inbox;
+  const meId = api.me() && api.me().id;
+  const chats = (r.chats || []).filter((c) => (c.members || []).some((m) => m.id === meId)).map((c) => {
+    const msgs = c.messages || [], last = msgs[msgs.length - 1] || null, readAt = (c.readAt || {})[meId] || 0;
+    let unread = 0;
+    for (let i = msgs.length - 1; i >= 0 && unread < 99; i--) { if (msgs[i].at <= readAt) break; if (msgs[i].from !== meId) unread++; }
+    return { id: c.id, title: c.title, owner: c.owner, members: c.members || [], updated: c.updated || c.created, unread, call: null, bridge: null,
+      last: last ? { name: last.name, body: last.body, at: last.at, system: !!last.system, mine: last.from === meId } : null };
+  }).sort((a, b) => b.updated - a.updated);
+  return { chats, invites: r.invites || [], dnd: false, relay: false, bridge: false, old: true };
 }
 async function refreshFriends() { const f = await api.call('friends.list', {}); if (f.ok) friends = f.friends || []; }
 
@@ -140,8 +156,8 @@ class Panel {
       '<button type="button" class="btn small green" data-accept="' + esc(x.id) + '">Join</button><button type="button" class="btn small" data-decline="' + esc(x.id) + '">No</button></div>').join('');
     const list = invites + (rows || '<p class="cd-none">' + (q ? 'Nobody by that name.' : 'No chats yet. Press the pencil to start one.') + '</p>');
     if (onlyRows && this.root.querySelector('.cd-list')) { this.root.querySelector('.cd-list').innerHTML = list; return; }
-    this.root.innerHTML = this.head('Chat', '', '<button type="button" class="cd-dnd' + (inbox.dnd ? ' on' : '') + '" data-dnd title="Do Not Disturb: no calls ring, and friends see you\'re busy">' +
-        (inbox.dnd ? 'Do Not Disturb' : 'Available') + '</button><button type="button" class="cd-icon" data-new title="New chat" aria-label="New chat">' + ICON.pencil + '</button>' +
+    this.root.innerHTML = this.head('Chat', '', (inbox.old ? '' : '<button type="button" class="cd-dnd' + (inbox.dnd ? ' on' : '') + '" data-dnd title="Do Not Disturb: no calls ring, and friends see you\'re busy">' +
+        (inbox.dnd ? 'Do Not Disturb' : 'Available') + '</button>') + '<button type="button" class="cd-icon" data-new title="New chat" aria-label="New chat">' + ICON.pencil + '</button>' +
         (this.page ? '' : '<button type="button" class="cd-icon" data-collapse title="Close" aria-label="Close chat">' + ICON.chev + '</button>')) +
       callBar() + '<label class="cd-search">' + ICON.search + '<input name="q" type="search" placeholder="Search for friends" autocomplete="off" value="' + esc(this.query) + '"></label>' +
       '<div class="cd-list">' + list + '</div>';
@@ -186,7 +202,7 @@ class Panel {
     else if (call && call.ringing) banner = '<div class="cd-callnote">' + esc(call.members.map((m) => m.name).join(', ')) + ' ' + (call.members.length === 1 ? 'is' : 'are') + ' calling <button type="button" class="btn small green" data-join>Answer</button> <button type="button" class="btn small" data-declinecall>Decline</button></div>';
     else if (call) banner = '<div class="cd-callnote">Call going on with ' + esc(call.members.map((m) => m.name).join(', ')) + ' <button type="button" class="btn small green" data-join>Join</button></div>';
     this.root.innerHTML = this.head(esc(titleOf(sum || c)), '<button type="button" class="cd-icon" data-back aria-label="Back">' + ICON.back + '</button>',
-        (inThis ? '' : '<button type="button" class="cd-icon" data-call title="Voice call" aria-label="Voice call">' + ICON.phone + '</button>') +
+        (inThis || inbox.old ? '' : '<button type="button" class="cd-icon" data-call title="Voice call" aria-label="Voice call">' + ICON.phone + '</button>') +
         '<button type="button" class="cd-icon" data-info title="Chat details" aria-label="Chat details">' + ICON.more + '</button>') + banner +
       (c.bridge ? '<div class="cd-bridge">Linked to Lyreto: messages here are shared with the channel "' + esc(c.bridge.name) + '".</div>' : '') +
       '<div class="cd-msgs">' + (msgs || '<p class="cd-none">No messages yet. Say hi!</p>') + '</div>' +
