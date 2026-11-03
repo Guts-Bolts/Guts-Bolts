@@ -130,10 +130,18 @@ public:
     // Chat: someone in the game said something (Players.PlayerChatted, player.Chatted). The host
     // (or playing alone) calls it with what they said after the chat filter.
     void fireChatted(const std::string& playerName, const std::string& text);
-    // TextChatService:DisplaySystemMessage: grey chat lines the app shows (the host: to everyone).
+    // TextChatService:DisplaySystemMessage: grey chat lines the app shows. From a server Script the
+    // host shows it to everyone; from a LocalScript (or StarterGui:SetCore("ChatMakeSystemMessage"))
+    // only on this computer, like Roblox (takeLocalChat).
     static constexpr size_t kSystemChatLength = 200, kSystemChatPer10s = 20;
-    bool queueSystemChat(const std::string& text, std::string& error);
+    bool queueSystemChat(const std::string& text, std::string& error, bool localOnly = false);
     std::vector<std::string> takeSystemChat() { std::vector<std::string> out; out.swap(m_systemChat); return out; }
+    std::vector<std::string> takeLocalChat() { std::vector<std::string> out; out.swap(m_localChat); return out; }
+    bool currentScriptIsLocal() const;
+    // RunService:IsStudio() (a Studio play test) and game.JobId (this server's own ID; "" in Studio).
+    void setInStudio(bool on) { m_inStudio = on; }
+    bool inStudio() const { return m_inStudio; }
+    const std::string& jobId();
     // require(ID): a model from the Library, fetched once per game. 0 = still getting it,
     // 1 = ready (module = its MainModule), 2 = couldn't (error says why).
     int  libraryModule(const std::string& assetId, uint64_t& module, std::string& error);
@@ -389,6 +397,9 @@ private:
     int     m_httpNext = 1;
     std::map<int, nlohmann::json> m_httpDone;        // web requests: ticket -> reply
     std::vector<std::string> m_systemChat;           // DisplaySystemMessage lines waiting for the app
+    std::vector<std::string> m_localChat;            // ...the ones only for this computer
+    bool        m_inStudio = false;
+    std::string m_jobId;
     std::deque<double> m_systemChatAt;               // when the last ones were sent (the limit)
     // MessagingService (see msgPublish).
     enum class MsgMode { Unknown, Asking, Local, Online };

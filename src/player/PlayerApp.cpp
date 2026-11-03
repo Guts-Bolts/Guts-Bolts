@@ -1790,6 +1790,8 @@ void PlayerApp::drawGame(float dt) {
         if (m_server) m_server->announce(line);
         else chat().add("", line, true);
     }
+    // ...and the lines a LocalScript showed: only in our own chat.
+    for (auto& line : m_session->scripts().takeLocalChat()) chat().add("", line, true);
 
     // TeleportService: players the game's scripts sent to another game. We go ourselves;
     // people who joined us get told to go (their app does the rest).
