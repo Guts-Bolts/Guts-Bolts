@@ -1,5 +1,6 @@
 #include "GameSession.h"
 #include "../core/FrameProfile.h"
+#include "../scene/LegacyJoints.h"
 #include "../core/Pad.h"
 #include "../scene/Serializer.h"
 #include "../scripting/LuaApi.h"   // SignalKind (tool events)
@@ -487,6 +488,8 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
 
     // Animations (after the character has walked, so they win where they pose).
     m_scene->animator().update(dt, *m_scene);
+    // Weld / Motor6D: parts follow the part they're joined to (and scripts posing limbs).
+    LegacyJoints::update(*m_scene, dt);
     if (!client) m_scripts.fireAnimationEvents();
     else m_scene->animator().events.clear();
 
@@ -557,6 +560,8 @@ void GameSession::guiEvents(const std::vector<GameGui::Event>& events) {
         }
         switch (e.kind) {
             case GameGui::EventKind::Click:       m_scripts.fireGui(SignalKind::GuiClick, e.id); break;
+            case GameGui::EventKind::Down:        m_scripts.fireGui(SignalKind::GuiDown, e.id); break;
+            case GameGui::EventKind::Up:          m_scripts.fireGui(SignalKind::GuiUp, e.id); break;
             case GameGui::EventKind::Enter:       m_scripts.fireGui(SignalKind::GuiEnter, e.id); break;
             case GameGui::EventKind::Leave:       m_scripts.fireGui(SignalKind::GuiLeave, e.id); break;
             case GameGui::EventKind::Focused:     m_scripts.fireGui(SignalKind::GuiFocused, e.id); break;

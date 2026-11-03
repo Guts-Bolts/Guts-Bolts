@@ -16,11 +16,11 @@ enum class Premade {
     TimeBomb, Nuke, DepthCharge,   // explosions (Liquid Assets & Explosive Results)
     WaterWheel,                    // water pushing things (a river turns it)
     // Ready-made Tools, like Roblox's classic gear (staff can sell them in the catalog: File > Make Gear)
-    GearSword, GearRocketLauncher, GearSpeedCoil, GearGravityCoil, GearBomb,
+    GearSword, GearRocketLauncher, GearSpeedCoil, GearGravityCoil, GearBomb, GearBlaster,
     WindZone, BreakableBridge,     // the physics workbench: force zones and joints that snap
     Car, Boat,                     // vehicles: a VehicleSeat drives them (scene/Vehicles.h)
 };
-inline bool isGearPremade(Premade p) { return p >= Premade::GearSword && p <= Premade::GearBomb; }
+inline bool isGearPremade(Premade p) { return p >= Premade::GearSword && p <= Premade::GearBlaster; }
 
 struct PremadeInfo {
     Premade     kind;

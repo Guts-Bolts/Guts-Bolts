@@ -1,4 +1,5 @@
 #include "Player.h"
+#include "LegacyJoints.h"
 #include "Scene.h"
 #include "SceneNode.h"
 #include "Physics.h"
@@ -317,6 +318,7 @@ SceneNode* Player::buildRig(Scene& scene, const std::string& name, const glm::ve
     for (auto& c : r->children) usePlayerModel(*c);
 
     addFace(head);
+    LegacyJoints::addCharacterJoints(scene, r);   // Neck, Right Shoulder... (Roblox's R6 joints)
     scene.markDirty();
     return r;
 }

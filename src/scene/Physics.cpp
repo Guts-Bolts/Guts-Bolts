@@ -620,6 +620,45 @@ void Physics::collectTouches(Scene& scene, std::vector<TouchEvent>& out, std::ve
         }
     }
 
+    // Fast unanchored parts (bullets, thrown things) can move further in one frame than
+    // they are long, and jump right past a thin wall or a character without ever
+    // overlapping it. Check the path they took since last frame too. (Only movement their
+    // speed explains: a script teleporting a part doesn't touch everything on the way.)
+    {
+        std::unordered_map<uint64_t, glm::vec3> centers;
+        for (size_t i = 0; i < m_colliders.size(); ++i) {
+            const Collider& ci = m_colliders[i];
+            if (!ci.dynamic) continue;
+            const glm::vec3 c = (ci.box.min + ci.box.max) * 0.5f;
+            const glm::vec3 half = (ci.box.max - ci.box.min) * 0.5f;
+            centers[ci.node->id] = c;
+            auto it = m_lastCenter.find(ci.node->id);
+            if (it == m_lastCenter.end()) continue;
+            const glm::vec3 from = it->second, d = c - from;
+            const float dist = glm::length(d), speed = glm::length(ci.node->velocity);
+            if (dist <= std::min(half.x, std::min(half.y, half.z)) || dist > speed * 0.25f + 0.5f) continue;
+            for (size_t j = 0; j < m_colliders.size(); ++j) {
+                if (i == j) continue;
+                const AABB big{m_colliders[j].box.min - half, m_colliders[j].box.max + half};
+                // The segment from -> c against the box (slab test).
+                float t0 = 0.0f, t1 = 1.0f;
+                bool hit = true;
+                for (int k = 0; k < 3 && hit; ++k) {
+                    if (std::fabs(d[k]) < 1e-6f) { hit = from[k] >= big.min[k] && from[k] <= big.max[k]; continue; }
+                    float a = (big.min[k] - from[k]) / d[k], b = (big.max[k] - from[k]) / d[k];
+                    if (a > b) std::swap(a, b);
+                    t0 = std::max(t0, a); t1 = std::min(t1, b);
+                    hit = t0 <= t1;
+                }
+                if (!hit) continue;
+                const uint64_t idA = ci.node->id, idB = m_colliders[j].node->id;
+                report(idA, idB, idB);
+                report(idB, idA, idA);
+            }
+        }
+        m_lastCenter.swap(centers);
+    }
+
     if (ended)
         for (const auto& key : m_touching)
             if (!now.count(key)) ended->push_back({key.first, key.second});

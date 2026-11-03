@@ -773,6 +773,20 @@ public:
     float       breakForce  = 0.0f;        // BreakForce: pulled harder than this, it snaps (0 = never)
     bool        broken      = false;       // it snapped (and switched itself off) in this play session
     float       jointForce  = 0.0f;        // (play: how hard it's being pulled right now, for Studio's physics view)
+    // Roblox's older joints, as a Weld-type constraint: Weld / ManualWeld / Snap (1), Motor6D (2)
+    // and Motor (3). Part1 sits at Part0.CFrame * C0 * Transform * C1:Inverse() (a WeldConstraint,
+    // 0, keeps the parts where they were instead). Motor / Motor6D also turn CurrentAngle
+    // (radians) around C0's Z axis towards DesiredAngle, MaxVelocity radians a frame.
+    uint8_t     legacyJoint = 0;
+    glm::mat4   jointC0{1.0f}, jointC1{1.0f}, jointXform{1.0f};
+    float       desiredAngle = 0.0f, maxVelocity = 0.0f, currentAngle = 0.0f;
+    // A joint built into a character (Neck, Right Shoulder...): the animation moves the limb
+    // and the joint only changes it when a script changes C0 / C1 / Transform. Rest = as built.
+    bool        characterJoint = false;
+    glm::mat4   jointC0Rest{1.0f}, jointC1Rest{1.0f};
+    // (play: what this joint wrote into Part1 last frame, and the pose the animation gave it)
+    bool        jointWrote = false;
+    glm::vec3   jointWrotePos{0.0f}, jointWroteRot{0.0f}, jointAnimPos{0.0f}, jointAnimRot{0.0f};
 
     // Decal (kind == Decal): which picture, on which side. `color` tints it
     // (white = as it is), `transparency` fades it.
