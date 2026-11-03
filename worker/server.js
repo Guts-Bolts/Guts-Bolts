@@ -3234,6 +3234,8 @@ export class GbServerObject extends DurableObject {
       }
       if (kind === 'game' && !isJson(data)) return fail('That isn\'t a Guts&Bolts game file.');
       if (kind === 'plugin' && !data.length) return fail('That plugin is empty.');
+      // A plugin's version ("1.2"), shown in the Library. (src/server has the same.)
+      if (kind === 'plugin') { const v = say(str(args, 'version'), 20); if (v) meta.version = v; else delete meta.version; }
       if (kind === 'gear') { const problem = gearProblem(data); if (problem) return fail(problem); }
       if (isEmoteItem(kind)) { const problem = emoteProblem(kind, data); if (problem) return fail(problem); }
       let access;
@@ -3524,6 +3526,11 @@ export class GbServerObject extends DurableObject {
       const title = say(str(args, 'name'), 50);
       if (title) a.name = title;
       if ('description' in args) a.description = say(str(args, 'description'), 1000, true);
+      if (a.kind === 'plugin' && 'version' in args) {   // (a plugin's version, shown in the Library)
+        const v = say(str(args, 'version'), 20);
+        a.meta = a.meta || {};
+        if (v) a.meta.version = v; else delete a.meta.version;
+      }
       if ('price' in args && a.kind !== 'game' && !alwaysFree(a.kind)) {
         const price = clamp(num(args, 'price'), 0, 1000000);
         if (price > 0 && !this.isVerified(me)) return fail('Only Verified creators can sell things.');

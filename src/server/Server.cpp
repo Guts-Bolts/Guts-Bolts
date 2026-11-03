@@ -1020,6 +1020,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         meta.erase("color");   // items don't have a colour: hats are Studio models, clothes are template pictures
         meta.erase("style");
         if (reviewedKind(kind) && !verified && !isStaff(me)) meta["review"] = "pending";
+        // A plugin's version ("1.2"), shown in the Library. (worker/server.js has the same.)
+        if (kind == "plugin") {
+            meta.erase("version");
+            if (std::string v = say(str("version"), 20); !v.empty()) meta["version"] = v;
+        }
         if (kind == "gear")
             if (std::string problem = Online::gearProblem(data); !problem.empty()) return fail(problem);
         if (Online::isEmoteItem(kind))
@@ -1370,6 +1375,11 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::string title = say(str("name"), 50);
         if (!title.empty()) a.name = title;
         if (args.contains("description")) a.description = say(str("description"), 1000, true);
+        if (a.kind == "plugin" && args.contains("version")) {   // (a plugin's version, shown in the Library)
+            std::string v = say(str("version"), 20);
+            if (!v.empty()) a.meta["version"] = v;
+            else a.meta.erase("version");
+        }
         if (args.contains("price") && a.kind != "game" && !Online::alwaysFree(a.kind)) {
             long long price = std::clamp(num("price"), 0LL, 1000000LL);
             if (price > 0 && !isVerified(me)) return fail("Only Verified creators can sell things.");

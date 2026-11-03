@@ -1085,7 +1085,7 @@ const lower = (s) => String(s || '').toLowerCase();
 function browseCard(a, href, price) {
   return html`<div class="card square bcard">
     <a class="pic-wrap" href="${href}"><div class="pic">${a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="" style="width:100%;height:100%;object-fit:contain;border:0">`
-      : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
+      : (a.kind === 'model' || a.kind === 'plugin') && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
       : a.kind === 'audio' || a.kind === 'plugin' || a.kind === 'model' || a.kind === 'animation' ? html`<span class="lib-kind">${a.kind === 'audio' ? raw(SPEAKER_SVG) : ''}${KINDS[a.kind] || a.kind}</span>`
       : itemIcon(a)}</div>${officialBadge(a)}${a.limited ? html`<span class="limited-tag">${a.limitedType === 'limited' ? 'LIMITED' : 'LIMITED U'}</span>` : auctionOpen(a) ? html`<span class="timed-tag">AUCTION</span>` : a.exclusive ? html`<span class="timed-tag">EXCLUSIVE</span>` : a.offsale ? html`<span class="timed-tag">OFF SALE</span>` : a.offsaleAt ? html`<span class="timed-tag">TIMED</span>` : ''}</a>
     <a class="name" href="${href}">${a.name}</a>
@@ -1203,7 +1203,7 @@ pages.library = async (id = '') => {
     decal: 'In Studio, select a Decal (or a Part) and paste the ID into its Texture. Scripts can use it too: decal.Texture = "' + assetNum(a) + '"',
     audio: 'In Studio, select a Sound and paste the ID into its File (SoundId). Scripts can use it too: sound.SoundId = "' + assetNum(a) + '"',
     model: 'In Studio, open the Toolbox, pick the Library tab and search for it to insert it into your game.',
-    plugin: 'In Studio, open the Toolbox\'s Plugins tab and install it from there.',
+    plugin: 'In Studio, open the PLUGINS tab, press Library and install it from there. Its buttons show up in the PLUGINS tab.',
     animation: 'In Studio\'s Animation Editor, press ... > Import > From the Library and paste its ID (or search for it).',
   }[a.kind] || '';
   const canDelete = signedIn() && (a.creator === me.id || me.staff);
@@ -1216,7 +1216,7 @@ pages.library = async (id = '') => {
       <div class="item-cols asset-cols">
         <div class="item-pic">
           <div class="pic" id="assetPic">${a.kind === 'decal' ? html`<span class="muted">Loading...</span>`
-            : a.kind === 'model' && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
+            : (a.kind === 'model' || a.kind === 'plugin') && a.thumb ? html`<img class="lib-thumb" data-thumb="${a.id}" data-v="${a.thumb}" alt="">`
             : a.kind === 'audio' ? html`<span class="lib-kind audio-big">${raw(SPEAKER_SVG)}Audio</span>`
             : html`<span class="lib-kind">${KINDS[a.kind] || a.kind}</span>`}</div>
           ${officialBadge(a)}
@@ -1228,6 +1228,7 @@ pages.library = async (id = '') => {
               <tr><td>Creator:</td><td><a href="#/user/${a.creator}">${a.creatorName}</a>${verified(a.creatorVerified)}</td></tr>
               <tr><td>Created:</td><td>${a.created ? new Date(a.created * 1000).toLocaleDateString() : '?'}</td></tr>
               <tr><td>Updated:</td><td>${ago(a.updated || a.created)}</td></tr>
+              ${a.kind === 'plugin' && a.meta && a.meta.version ? html`<tr><td>Version:</td><td>${a.meta.version}</td></tr>` : ''}
             </table>
           </div>
           <p class="item-desc">${a.description || html`<span class="muted">No description.</span>`}</p>
@@ -2066,7 +2067,8 @@ pages.create = async (tab = 'games') => {
         <label style="font-weight:normal"><input type="checkbox" name="headless"> Headless: wearing it hides the head and face</label>`
       : html`<label>File</label><input type="file" name="file" accept="${accept}" required>
         <p class="small muted">${{ decal: 'A .png or .jpg picture (up to 4 MB).', audio: 'An .mp3, .wav, .ogg or .flac file (up to 6 MB).',
-          plugin: 'A Lua plugin for Studio.', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).', gear: 'A .gbmodel file exported from Studio containing one Tool with a Handle. Gear is equipped from the catalog and appears in games that allow gear.' }[kind]}</p>`}
+          plugin: 'A Lua plugin for Studio. (It\'s easier from Studio: PLUGINS > Publish, which can also update it later for free.)', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).', gear: 'A .gbmodel file exported from Studio containing one Tool with a Handle. Gear is equipped from the catalog and appears in games that allow gear.' }[kind]}</p>`}
+      ${kind === 'plugin' ? html`<label>Version <span class="muted small">(optional, like 1.0)</span></label><input type="text" name="version" maxlength="20" value="1.0">` : ''}
       ${['decal', 'audio'].includes(kind) ? html`<p class="small muted">${kind === 'decal' ? 'Decals' : 'Sounds'} are always free: anyone can use them in their games.</p>`
         : (me.verified || face || bundle) && kind !== 'game' ? html`<label>Price (Bolts)</label><input type="number" name="price" min="0" value="0">` : ''}
       ${kind === 'decal' || face || tee ? html`<img class="thumb" id="preview" alt="Preview" hidden style="width:120px;height:120px;margin-top:10px">` : ''}
@@ -4987,6 +4989,7 @@ const forms = {
       if (!file) { msg.textContent = 'Pick a file first.'; return; }
       args.data = await gb.fileBase64(file);
       if (kind === 'audio') args.meta = { ext: (file.name.split('.').pop() || '').toLowerCase() };
+      if (kind === 'plugin' && f.version) args.version = f.version.value;
     }
     msg.className = 'muted'; msg.textContent = ' Uploading...';
     f.querySelector('button').disabled = true;
