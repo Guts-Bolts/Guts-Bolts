@@ -439,6 +439,7 @@ add_library(gb_engine STATIC
     src/scene/PlayerVrBody.cpp
     src/scene/Emotes.cpp
     src/scene/Physics.cpp
+    src/scene/LegacyJoints.cpp
     src/scene/NavMesh.cpp
     src/scene/Npc.cpp
     src/scene/Water.cpp
@@ -775,6 +776,7 @@ set(EDITOR_SOURCES
     src/editor/Icons.cpp
     src/editor/panels/ViewportModeling.cpp
     src/editor/panels/ViewportObjectModal.cpp
+    src/editor/panels/ViewportHeader.cpp
     src/editor/panels/ViewportBones.cpp
     src/editor/panels/ViewportTerrain.cpp
     src/editor/EditorModes.cpp
@@ -795,6 +797,7 @@ set(EDITOR_SOURCES
     src/editor/EditorCutscenes.cpp
     src/editor/EditorBulkEdit.cpp
     src/editor/EditorBlender.cpp
+    src/editor/EditorWorkspace.cpp
     src/editor/EditorBlocks.cpp
     src/editor/VisualScript.cpp
     src/editor/EditorScriptHistory.cpp
@@ -993,6 +996,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME SampleGamesTests COMMAND SampleGamesTests "${CMAKE_SOURCE_DIR}/games" 5
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # Graphics quality presets, and Auto stepping down when a game is laggy.
+    add_executable(GraphicsQualityTests tests/GraphicsQualityTests.cpp)
+    target_link_libraries(GraphicsQualityTests PRIVATE gb_engine)
+    add_test(NAME GraphicsQualityTests COMMAND GraphicsQualityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # Lighting.Weather: scripts, saving, and rain stopping on roofs.
     add_executable(WeatherTests tests/WeatherTests.cpp)
     target_link_libraries(WeatherTests PRIVATE gb_engine)
@@ -1003,6 +1011,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(CopsAndRobbersApiTests tests/CopsAndRobbersApiTests.cpp)
     target_link_libraries(CopsAndRobbersApiTests PRIVATE gb_engine)
     add_test(NAME CopsAndRobbersApiTests COMMAND CopsAndRobbersApiTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Weld / Motor6D / character joints, hinge limits, mesh stand-ins, fast bullets, the Blaster gun.
+    add_executable(WeaponsAndJointsTests tests/WeaponsAndJointsTests.cpp src/editor/Premades.cpp)
+    target_include_directories(WeaponsAndJointsTests PRIVATE src/)
+    target_link_libraries(WeaponsAndJointsTests PRIVATE gb_engine)
+    add_test(NAME WeaponsAndJointsTests COMMAND WeaponsAndJointsTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # workspace:GetPartsInPart / GetPartBoundsInBox / GetPartBoundsInRadius and OverlapParams.
@@ -1036,6 +1051,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(GameBridgeTests tests/GameBridgeTests.cpp)
     target_link_libraries(GameBridgeTests PRIVATE gb_engine)
     add_test(NAME GameBridgeTests COMMAND GameBridgeTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Roblox chat-bridge modules (like Lyreto's Game Bridge) running as they are.
+    add_executable(RobloxChatBridgeTests tests/RobloxChatBridgeTests.cpp)
+    target_link_libraries(RobloxChatBridgeTests PRIVATE gb_engine)
+    add_test(NAME RobloxChatBridgeTests COMMAND RobloxChatBridgeTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # The character: held-down ragdolls, knocked off seats, swimming.

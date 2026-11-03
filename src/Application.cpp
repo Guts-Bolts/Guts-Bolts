@@ -58,6 +58,10 @@ Application::Application(LaunchOptions opts) : m_opts(std::move(opts)) {
     if (!m_opts.testCommand.empty()) ScriptEngine::testHooks = true;   // (__gb_testInput for tests)
     m_window = std::make_unique<AppWindow>("Guts and Bolts", 1280, 720, "editor_layout.ini");
     m_window->setFixedTimestep(!m_opts.screenshot.empty());
+    // Tests (they end with a screenshot) always start from the standard layout, and
+    // don't change the one you arranged.
+    // (GB_TEST_LAYOUT: a test of that layout file itself.)
+    if (!m_opts.screenshot.empty() && !std::getenv("GB_TEST_LAYOUT")) ImGui::GetIO().IniFilename = nullptr;
     m_scene  = std::make_unique<Scene>();
     m_editor = std::make_unique<Editor>(m_window->handle(), m_scene.get());
     if (!m_opts.openFile.empty()) m_editor->openFile(m_opts.openFile);

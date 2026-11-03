@@ -106,6 +106,8 @@ uniform float uAlpha;
 uniform bool  uSelected;
 uniform vec3  uViewPos;
 uniform float uTime;
+uniform int   uShading;       // Studio's view style: 0 the real look, 1 Solid, 2 Flat colours (SceneRenderer::Shading)
+uniform float uXrayFade;      // X-ray: how much see-through to add (0 = none)
 
 uniform vec3  uSunDir;        // surface -> sun
 uniform vec3  uSunColor;
@@ -640,12 +642,23 @@ void main() {
 
     if (uVariant && uVParams.z > 0.0) color += albedo * uVParams.z * 2.0;   // a glowing variant
 
+    // Studio's building views: Solid = the colours under a soft light from the camera and
+    // above (like Blender's), Flat = just the colours. No shadows, sun or fog in either.
+    if (uShading == 1) {
+        float head = max(dot(N, V), 0.0);
+        float top  = N.y * 0.5 + 0.5;
+        color = albedo * (0.12 + 0.75 * head * head + 0.3 * top) * 1.3;
+    } else if (uShading == 2) {
+        color = albedo * 1.1;
+    }
+    alpha *= 1.0 - uXrayFade;
+
     if (uSelected) {
         float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
         color = mix(color, vec3(2.0, 0.9, 0.2), rim * 0.8);
     }
 
-    if (uFogEnabled) {
+    if (uFogEnabled && uShading == 0) {
         float dist = length(uViewPos - vWorldPos);
         float f = 1.0 - exp(-uFogDensity * dist);
         vec3 fog = lin(uFogColor);
@@ -653,7 +666,7 @@ void main() {
         fog += lin(uSunColor) * uSunIntensity * toward * uFogSunGlow * 0.6;
         color = mix(color, fog, clamp(f, 0.0, 1.0));
     }
-    if (uRenderDist > 0.0) {
+    if (uRenderDist > 0.0 && uShading == 0) {
         // Near the edge of the render distance, fade into the sky behind (no popping).
         vec3 away = vWorldPos - uViewPos;
         float edge = smoothstep(uRenderDist * 0.8, uRenderDist, length(away));
@@ -1520,7 +1533,15 @@ void main() {
     vSpeed = rest - nearby * 64.0;
     vColor = uFluidColor[int(clamp(kind, 0.0, 15.0))];
     vRadius = uRadius * mix(0.5, 1.0, clamp(nearby / 5.0, 0.0, 1.0));
-    gl_Position = uProj * vp;
+    // The sprite sits at the drop's nearest possible depth (pulled towards the camera
+    // along its own line of sight, so it stays in the same spot on the screen). The
+    // real depth worked out per pixel is never nearer than that, so the graphics card
+    // can skip pixels already covered by nearer liquid before running the drop's
+    // maths (see "depth_greater" in the depth pass): much less work where lots of
+    // drops overlap, like riding down a water slide.
+    float reach = vRadius * vLong;
+    float k = -vp.z > 0.12 ? max(-vp.z - reach, 0.12) / -vp.z : 1.0;
+    gl_Position = uProj * vec4(vp.xyz * k, 1.0);
     gl_PointSize = clamp(2.1 * vRadius * vLong * uPointScale / max(0.05, -vp.z), 1.0, 256.0);
     if (uRenderDist > 0.0 && -vp.z > uRenderDist) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);   // too far: skipped
 }
@@ -1549,6 +1570,12 @@ bool hitDrop(out vec3 ray, out float t0, out float t1) {
 
 // Pass 1: how far away the nearest liquid is (in each pixel).
 inline const char* fluidDepthFrag = R"(#version 410 core
+#ifndef GL_ES
+#extension GL_ARB_conservative_depth : enable
+#endif
+#ifdef GL_ARB_conservative_depth
+layout(depth_greater) out float gl_FragDepth;
+#endif
 in vec3  vCenter;
 in float vSpeed;
 in float vRadius;

@@ -301,6 +301,107 @@ struct Rewriter {
         }
     }
 
+    // Is the token at i where an expression goes (after =, (, ",", return, and...)? Then an `if`
+    // there is Luau's if-expression, not an if statement.
+    bool expressionSpot(size_t i) const {
+        long p = prev((long)i);
+        if (p < 0) return false;
+        const Tok& b = t[p];
+        if (b.type == T::Symbol) return !isSym(b, ")") && !isSym(b, "]") && !isSym(b, "}") && !isSym(b, ";") && !isSym(b, "::");
+        return b.type == T::Name && (b.text == "return" || b.text == "and" || b.text == "or" || b.text == "not" ||
+                                     b.text == "in" || b.text == "until");
+    }
+
+    // x = if a then b elseif c then d else e
+    //   ->  x = (function() if a then return b elseif c then return d else return e end end)()
+    void ifExpressions() {
+        for (size_t i = 0; t[i].type != T::End; ++i) {
+            if (!isName(t[i], "if") || !expressionSpot(i)) continue;
+            long fp = prev((long)i);
+            if (fp >= 0 && (isSym(t[fp], ".") || isSym(t[fp], ":"))) continue;
+            // Walk it: then/elseif/else at our level; the last branch ends where the expression does.
+            std::vector<size_t> returnsAfter;   // `then` / `else` tokens of ours
+            int depth = 0, blocks = 0;
+            bool inElse = false, varargs = false, ok = false;
+            size_t last = i;                   // last token of the expression
+            for (size_t j = next(i); t[j].type != T::End; j = next(j)) {
+                const Tok& k = t[j];
+                if (isSym(k, "...")) varargs = true;
+                if (blocks == 0 && depth == 0) {
+                    if (isName(k, "then") || isName(k, "else")) { returnsAfter.push_back(j); if (isName(k, "else")) inElse = true; last = j; continue; }
+                    if (isName(k, "elseif")) { last = j; continue; }
+                    if (inElse) {
+                        // where the else-branch's expression stops
+                        if (isSym(k, ")") || isSym(k, "]") || isSym(k, "}") || isSym(k, ",") || isSym(k, ";")) { ok = true; break; }
+                        if (k.type == T::Name && (k.text == "end" || k.text == "else" || k.text == "elseif" || k.text == "then" ||
+                                                  k.text == "do" || k.text == "until" || k.text == "local" || k.text == "return" ||
+                                                  k.text == "for" || k.text == "while" || k.text == "repeat" || k.text == "break" ||
+                                                  k.text == "goto")) { ok = true; break; }
+                        // a value right after a finished value starts the next statement
+                        const Tok& b = t[last];
+                        const bool done = b.type == T::Number || b.type == T::String || b.type == T::Interp ||
+                                          isSym(b, ")") || isSym(b, "]") || isSym(b, "}") ||
+                                          (b.type == T::Name && b.text != "and" && b.text != "or" && b.text != "not" && b.text != "else");
+                        const bool starts = k.type == T::Number || k.type == T::String || k.type == T::Interp ||
+                                            (k.type == T::Name && k.text != "and" && k.text != "or");
+                        if (done && starts && last != returnsAfter.back()) { ok = true; break; }
+                    }
+                }
+                if (isSym(k, "(") || isSym(k, "{") || isSym(k, "[")) ++depth;
+                if (isSym(k, ")") || isSym(k, "}") || isSym(k, "]")) --depth;
+                if (k.type == T::Name && k.text == "function") ++blocks;       // a function inside it
+                else if (blocks > 0 && (isName(k, "do") || isName(k, "then") || isName(k, "repeat"))) ++blocks;
+                else if (blocks > 0 && (isName(k, "end") || isName(k, "until"))) --blocks;
+                if (depth < 0) { ok = true; break; }
+                last = j;
+            }
+            if (t[next(last)].type == T::End) ok = true;
+            if (!ok || !inElse) continue;   // (not one we understand: leave it, Lua will say)
+            t[i].text = varargs ? "(function(...) if" : "(function() if";
+            for (size_t r : returnsAfter) t[r].text += " return";
+            t[last].text += varargs ? " end end)(...)" : " end end)()";
+            note("if-then-else expressions were rewritten");
+        }
+    }
+
+    // for k, v in list do  ->  for k, v in __gb_iter(list) do   (Luau's generalized iteration;
+    // pairs(...) / ipairs(...) / next, t are left as they are)
+    void iteration() {
+        for (size_t i = 0; t[i].type != T::End; ++i) {
+            if (!isName(t[i], "for")) continue;
+            long fp = prev((long)i);
+            if (fp >= 0 && (isSym(t[fp], ".") || isSym(t[fp], ":"))) continue;
+            size_t j = next(i), in = 0;
+            for (; t[j].type != T::End; j = next(j)) {
+                if (isSym(t[j], "=")) break;                       // a counting loop
+                if (isName(t[j], "in")) { in = j; break; }
+                if (t[j].type != T::Name && !isSym(t[j], ",")) break;
+            }
+            if (!in) continue;
+            size_t first = next(in);
+            if (isName(t[first], "pairs") || isName(t[first], "ipairs") || isName(t[first], "next") ||
+                isName(t[first], "__gb_iter")) continue;
+            int depth = 0, blocks = 0;
+            bool comma = false;
+            size_t last = 0;
+            for (j = first; t[j].type != T::End; j = next(j)) {
+                const Tok& k = t[j];
+                if (depth == 0 && blocks == 0 && isName(k, "do")) break;
+                if (depth == 0 && blocks == 0 && isSym(k, ",")) comma = true;
+                if (isSym(k, "(") || isSym(k, "{") || isSym(k, "[")) ++depth;
+                if (isSym(k, ")") || isSym(k, "}") || isSym(k, "]")) --depth;
+                if (isName(k, "function")) ++blocks;
+                else if (blocks > 0 && (isName(k, "do") || isName(k, "then"))) ++blocks;
+                else if (blocks > 0 && isName(k, "end")) --blocks;
+                last = j;
+            }
+            if (!last || comma || !isName(t[j], "do")) continue;   // (an iterator triple: as it is)
+            t[first].text = "__gb_iter(" + t[first].text;
+            t[last].text += ")";
+            note("generalized for loops (for k, v in t do) were rewritten");
+        }
+    }
+
     // continue -> goto __continue_N, with the label at the end of the loop body.
     void continues() {
         struct Block { int kind; size_t doTok; int label; bool used; };   // kind: 0 other, 1 loop, 2 repeat, 3 function
@@ -405,6 +506,8 @@ std::string toLua(const std::string& source, std::vector<std::string>* notes) {
     Rewriter r{lex(source), notes, {}};
     r.interpolation();
     r.stripTypes();
+    r.ifExpressions();
+    r.iteration();
     r.compoundAssign();
     r.continues();
     return r.join();

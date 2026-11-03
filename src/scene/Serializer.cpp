@@ -20,6 +20,22 @@ using json = nlohmann::json;
 namespace {
 
 json vec(const glm::vec3& v) { return json::array({v.x, v.y, v.z}); }
+// A CFrame (Weld.C0...): 12 numbers, position then the three axes, like Roblox's components.
+json frameJson(const glm::mat4& m) {
+    return json::array({m[3].x, m[3].y, m[3].z, m[0].x, m[1].x, m[2].x, m[0].y, m[1].y, m[2].y, m[0].z, m[1].z, m[2].z});
+}
+glm::mat4 frameFrom(const json& j, const char* key) {
+    glm::mat4 m(1.0f);
+    auto it = j.find(key);
+    if (it == j.end() || !it->is_array() || it->size() != 12) return m;
+    float v[12];
+    for (int i = 0; i < 12; ++i) v[i] = (*it)[i].is_number() ? (*it)[i].get<float>() : 0.0f;
+    m[3] = glm::vec4(v[0], v[1], v[2], 1.0f);
+    m[0] = glm::vec4(v[3], v[6], v[9], 0.0f);
+    m[1] = glm::vec4(v[4], v[7], v[10], 0.0f);
+    m[2] = glm::vec4(v[5], v[8], v[11], 0.0f);
+    return m;
+}
 
 glm::vec3 vec(const json& j, const char* key, glm::vec3 fallback) {
     auto it = j.find(key);
@@ -903,7 +919,14 @@ json toJson(const SceneNode& n) {
         j["motorSpeed"] = n.motorSpeed; j["motorTorque"] = n.motorTorque;
         j["thickness"] = n.thickness; j["color"] = vec(n.color); j["enabled"] = n.enabled;
         if (n.breakForce > 0.0f) j["breakForce"] = n.breakForce;
-        if (usesJointProps(n.constraintType)) j["joint"] = Serializer::jointToJson(n.joint);
+        if (usesJointProps(n.constraintType) || (n.constraintType == ConstraintType::Hinge && n.joint.angularLimitsEnabled))
+            j["joint"] = Serializer::jointToJson(n.joint);
+        if (n.legacyJoint) {   // Weld / Motor6D
+            j["legacy"] = n.legacyJoint;
+            j["c0"] = frameJson(n.jointC0); j["c1"] = frameJson(n.jointC1);
+            if (n.maxVelocity != 0.0f || n.desiredAngle != 0.0f) { j["maxVelocity"] = n.maxVelocity; j["desiredAngle"] = n.desiredAngle; }
+            if (n.characterJoint) { j["charJoint"] = true; j["c0Rest"] = frameJson(n.jointC0Rest); j["c1Rest"] = frameJson(n.jointC1Rest); }
+        }
     }
     if (n.kind == NodeKind::Mover) {
         const MoverProps& m = n.mover;
@@ -1181,6 +1204,16 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
         n->thickness = get<float>(j, "thickness", 0.1f);
         n->breakForce = get<float>(j, "breakForce", 0.0f);
         n->color = vec(j, "color", {0.45f, 0.32f, 0.2f});
+        n->legacyJoint = (uint8_t)std::clamp(get<int>(j, "legacy", 0), 0, 3);
+        if (n->legacyJoint) {
+            n->constraintType = ConstraintType::Weld;
+            n->jointC0 = frameFrom(j, "c0"); n->jointC1 = frameFrom(j, "c1");
+            n->maxVelocity = get<float>(j, "maxVelocity", 0.0f);
+            n->desiredAngle = get<float>(j, "desiredAngle", 0.0f);
+            n->characterJoint = get<bool>(j, "charJoint", false);
+            n->jointC0Rest = n->characterJoint ? frameFrom(j, "c0Rest") : n->jointC0;
+            n->jointC1Rest = n->characterJoint ? frameFrom(j, "c1Rest") : n->jointC1;
+        }
     }
     if (n->kind == NodeKind::Mover) {
         const std::string type = get<std::string>(j, "type", "BodyVelocity");
@@ -1582,6 +1615,10 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.breakForce = src->breakForce;
     dst.motorSpeed = src->motorSpeed; dst.motorTorque = src->motorTorque; dst.thickness = src->thickness;
     dst.joint = src->joint;
+    dst.legacyJoint = src->legacyJoint; dst.jointC0 = src->jointC0; dst.jointC1 = src->jointC1;
+    dst.jointXform = src->jointXform; dst.desiredAngle = src->desiredAngle; dst.maxVelocity = src->maxVelocity;
+    dst.currentAngle = src->currentAngle; dst.characterJoint = src->characterJoint;
+    dst.jointC0Rest = src->jointC0Rest; dst.jointC1Rest = src->jointC1Rest;
     dst.viscosity = src->viscosity; dst.surfaceTension = src->surfaceTension;
     dst.fluidRate = src->fluidRate; dst.fluidVelocity = src->fluidVelocity; dst.fluidSystem = src->fluidSystem;
     dst.mover = src->mover;

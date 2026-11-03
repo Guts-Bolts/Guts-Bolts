@@ -2,6 +2,7 @@
 #include "../../game/GameGui.h"
 #include "../../scene/SceneNode.h"
 #include <functional>
+#include <string>
 #include <cstdint>
 #include <vector>
 #include <memory>
@@ -28,11 +29,34 @@ struct EditMesh;
 // to scripts and draws the in-game HUD.
 class ViewportPanel {
 public:
-    ViewportPanel(GLFWwindow* window, Scene* scene, EditorState* state);
+    // `number` 1 is the main "Viewport"; 2, 3... are extra views you open yourself
+    // ("Viewport 2"...), each with its own camera and view style (EditorWorkspace.cpp).
+    ViewportPanel(GLFWwindow* window, Scene* scene, EditorState* state, int number = 1);
     ~ViewportPanel();
 
     void render(float dt);
     void resetCamera();
+
+    // --- More than one view (like Blender's) ---
+    int         number() const { return m_number; }
+    const char* title() const { return m_title.c_str(); }
+    bool        isOpen() const { return m_open; }          // an extra view's X closes it
+    // The view the mouse was last in: Blender's keys (G / R / S, Z, Alt+Z) work there.
+    static ViewportPanel* active();
+    bool        isActive() const { return active() == this; }
+    // While a game plays in the main Viewport, the extra ones just watch it.
+    void        setWatching(bool watching) { m_watching = watching; }
+    // How it draws: Material (the real look), Solid, Flat colours or Wireframe; and X-ray.
+    SceneRenderer::Shading shading = SceneRenderer::Shading::Material;
+    bool        xray = false;
+    bool        orthographic() const;
+    void        setOrthographic(bool on);
+    // Look from a side: 0 front, 1 back, 2 right, 3 left, 4 top, 5 bottom (orthographic,
+    // like Blender's numpad 1 / 3 / 7).
+    void        lookFrom(int side);
+    // Z (Blender): the view style menu, opened at the mouse.
+    void        openShadingMenu() { m_openShadingMenu = true; }
+    void        shadingMenuItems();   // the view styles and X-ray, as menu items
 
     float     cameraYaw() const;                  // for camera-relative controls
     float     swimLook() const;                   // (and swimming up / down)
@@ -139,6 +163,17 @@ private:
     void terrainView(const glm::mat4& view, const glm::mat4& proj, const glm::vec2& imgMin, const glm::vec2& imgSize, float dt);
     bool  m_sculpting = false;     // the mouse is down with a brush (one undo step)
     float m_sculptLevel = 0.0f;    // Flatten: the height where the stroke started
+
+    // The view style buttons and the View menu in the top-right corner; true while
+    // the mouse is on them. Viewport's Z menu too.
+    bool drawViewHeader(ImVec2 imgPos, ImVec2 imgMax);
+    int         m_number = 1;
+    std::string m_title = "Viewport";
+    bool        m_open = true;
+    bool        m_watching = false;
+    bool        m_ortho = false;            // an extra view's own (the main one uses EditorState's)
+    bool        m_looking = false;          // right-dragging to look around
+    bool        m_openShadingMenu = false;
 
     GLFWwindow*  m_window;
     Scene*       m_scene;

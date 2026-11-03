@@ -116,7 +116,7 @@ void Editor::toggleLocalView() {
         for (uint64_t id : m_localView)
             if (SceneNode* n = m_scene->findById(id)) setEditorHidden(n, false);
         m_localView.clear();
-        if (!m_scene->selectionRoots().empty()) m_viewport->focusSelected();
+        if (!m_scene->selectionRoots().empty()) activeView()->focusSelected();
         return;
     }
     if (m_scene->selectionRoots().empty()) return;
@@ -124,11 +124,11 @@ void Editor::toggleLocalView() {
     hideUnselected();
     for (uint64_t id : m_editorHidden)
         if (!before.count(id)) m_localView.insert(id);
-    m_viewport->focusSelected();
+    activeView()->focusSelected();
 }
 
 void Editor::startObjectModal(ObjectModal m) {
-    if (m_scene->selectionRoots().empty() || !m_viewport->hovered()) return;   // (it follows the mouse in the 3D view)
+    if (m_scene->selectionRoots().empty() || !activeView()->hovered()) return;   // (it follows the mouse in the 3D view)
     m_state.objectModal = m;
 }
 
@@ -208,7 +208,7 @@ bool Editor::handleBlenderKeys() {
     auto pressed = [](ImGuiKey k) { return ImGui::IsKeyPressed(k, false); };
     if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) return false;   // flying the camera
     const bool blender = GraphicsSettings::get().studioBlenderKeys;
-    const bool overView = m_viewport->hovered();
+    const bool overView = activeView()->hovered();
     if (io.KeyShift) {
         if (pressed(ImGuiKey_H)) { hideUnselected(); return true; }
         if (blender && overView && pressed(ImGuiKey_D)) {
@@ -230,7 +230,7 @@ bool Editor::handleBlenderKeys() {
     if (pressed(ImGuiKey_Home)) {   // everything in view (the selection stays as it was)
         const std::vector<SceneNode*> keep = m_scene->selection();
         selectAll();
-        m_viewport->focusSelected();
+        activeView()->focusSelected();
         m_scene->deselect();
         for (SceneNode* n : keep) m_scene->addToSelection(n);
         return true;

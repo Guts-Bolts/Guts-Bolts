@@ -169,6 +169,25 @@ local playerMeta = {
         if k == "Chatted" and makeChatted then local s = makeChatted() rawset(t, "Chatted", s) return s end
         if k == "PlayerGui" then return playerGuiOf(rawget(t, "Name")) end
         if k == "PlayerScripts" then return playerScripts(t) end
+        -- player:WaitForChild("PlayerGui") / FindFirstChild: it's made the first time it's
+        -- asked for, so looking it up has to make it too (or WaitForChild waits forever).
+        if k == "FindFirstChild" or k == "WaitForChild" then
+            local find = rawget(t, "__node")[k]
+            return function(self, name, ...)
+                if name == "PlayerGui" then return playerGuiOf(rawget(t, "Name")) end
+                if name == "PlayerScripts" then return playerScripts(t) end
+                return find(self, name, ...)
+            end
+        end
+        if k == "FindFirstChildOfClass" or k == "FindFirstChildWhichIsA" then
+            -- (PlayerGui and PlayerScripts are made the first time they're wanted)
+            return function(self, cls, ...)
+                if cls == "PlayerGui" then return playerGuiOf(rawget(self, "Name")) end
+                if cls == "PlayerScripts" then return playerScripts(self) end
+                local node = rawget(self, "__node")
+                return node[k](node, cls, ...)
+            end
+        end
         if k == "GetMouse" then return function(self) return getMouse(self) end end
         if k == "GetJoinData" then return getJoinData end
         if k == "Team" or k == "TeamColor" or k == "Neutral" then return rawget(t, "__" .. k) end
@@ -1000,6 +1019,7 @@ end
 addMethod("FindPartOnRay", function(_, ray, ignore) return findOnRay(ray, ignore and { ignore } or {}, false) end)
 addMethod("FindPartOnRayWithIgnoreList", function(_, ray, list) return findOnRay(ray, list, false) end)
 addMethod("FindPartOnRayWithWhitelist", function(_, ray, list) return findOnRay(ray, list, true) end)
+addMethod("PGSIsEnabled", function() return true end)   -- (workspace:PGSIsEnabled(): there's only the one solver)
 
 -- Legacy Player:GetMouse(): cursor-relative raycasting and the input events used by
 -- older LocalScripts. Coordinates start at the game screen's corner (also inside
@@ -1024,13 +1044,35 @@ getMouse = function(player)
     mouse.KeyDown, mouse.KeyUp = keyDown.Event, keyUp.Event
     mouse.Button1Down, mouse.Button1Up = button1Down.Event, button1Up.Event
     mouse.Button2Down, mouse.Button2Up = button2Down.Event, button2Up.Event
+    -- mouse.Move fires whenever the mouse moves (checked each frame).
+    local move, idle = Instance.new("BindableEvent"), Instance.new("BindableEvent")
+    mouse.Move, mouse.Idle = move.Event, idle.Event
+    local lastX, lastY
+    RunService.Heartbeat:Connect(function()
+        local p = mousePosition()
+        if p and (p.X ~= lastX or p.Y ~= lastY) then
+            local first = lastX == nil
+            lastX, lastY = p.X, p.Y
+            if not first then move:Fire() end
+        else
+            idle:Fire()
+        end
+    end)
+    -- Like Roblox, mouse.KeyDown / KeyUp give the key as a lower-case letter ("e", "1", " ").
+    local digits = { Zero = "0", One = "1", Two = "2", Three = "3", Four = "4", Five = "5", Six = "6", Seven = "7", Eight = "8", Nine = "9" }
+    local special = { Space = " ", Return = "\r", Tab = "\t", Backspace = "\b", LeftShift = "0", RightShift = "/", LeftControl = "2", RightControl = "1" }
+    local function keyText(kc)
+        local name = tostring(kc):match("([^%.]+)$") or tostring(kc)
+        if #name == 1 then return name:lower() end
+        return digits[name] or special[name] or name:lower()
+    end
     UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType == "Keyboard" then keyDown:Fire(input.KeyCode)
+        if input.UserInputType == "Keyboard" then keyDown:Fire(keyText(input.KeyCode))
         elseif input.UserInputType == "MouseButton1" then button1Down:Fire()
         elseif input.UserInputType == "MouseButton2" then button2Down:Fire() end
     end)
     UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == "Keyboard" then keyUp:Fire(input.KeyCode)
+        if input.UserInputType == "Keyboard" then keyUp:Fire(keyText(input.KeyCode))
         elseif input.UserInputType == "MouseButton1" then button1Up:Fire()
         elseif input.UserInputType == "MouseButton2" then button2Up:Fire() end
     end)
@@ -1585,6 +1627,57 @@ do
         if text == nil then error("DisplaySystemMessage needs the text to show", 2) end
         systemChat(tostring(text))
     end)
+    __gb_chatLine = function(text) systemChat(tostring(text), true) end   -- (StarterGui:SetCore("ChatMakeSystemMessage"))
+end
+
+-- TextService:FilterStringAsync(text, fromUserId, context): text through Guts&Bolts' chat filter,
+-- like Roblox's. The result has :GetNonChatStringForBroadcastAsync(), :GetNonChatStringForUserAsync(id)
+-- and :GetChatForUserAsync(id) (all the same filtered text here).
+do
+    local filterText = __gb_filterText
+    local resultMeta = { __type = "TextFilterResult", __tostring = function() return "TextFilterResult" end }
+    resultMeta.__index = {
+        GetNonChatStringForBroadcastAsync = function(self) return rawget(self, "__text") end,
+        GetNonChatStringForUserAsync = function(self) return rawget(self, "__text") end,
+        GetChatForUserAsync = function(self) return rawget(self, "__text") end,
+    }
+    TextService = { Name = "TextService", ClassName = "TextService" }
+    function TextService:FilterStringAsync(text, fromUserId, context)
+        if type(text) ~= "string" then error("FilterStringAsync needs the text first", 2) end
+        return setmetatable({ __text = filterText(text) }, resultMeta)
+    end
+    function TextService:GetTextSize(text, size, font, frame)
+        -- (roughly: half the font size per letter)
+        local n = utf8.len(tostring(text)) or #tostring(text)
+        return Vector2.new(n * (tonumber(size) or 14) * 0.5, tonumber(size) or 14)
+    end
+end
+
+-- RunService:IsServer() / IsClient() / IsStudio() / IsRunning(), and game.JobId (below).
+do
+    local runInfo = __gb_runInfo
+    function RunService:IsServer() local s = runInfo() return s end
+    function RunService:IsClient() local _, c = runInfo() return c end
+    function RunService:IsStudio() local _, _, st = runInfo() return st end
+    function RunService:IsRunning() return true end
+    function RunService:IsRunMode() local _, _, st = runInfo() return st end
+end
+
+-- Luau's table.clear (empties a table, keeping the same table).
+function table.clear(t) for k in pairs(t) do t[k] = nil end end
+
+-- Luau's generalized iteration (`for i, v in list do`): Roblox scripts get their loops rewritten
+-- to `for i, v in __gb_iter(list) do` (see Luau.cpp). A function (pairs(t), ipairs(t)...) goes
+-- through as it is; a table walks like pairs, or its __iter if it has one.
+function __gb_iter(x, ...)
+    if type(x) == "function" then return x, ... end
+    local mt = getmetatable(x)
+    if type(mt) == "table" then
+        if rawget(mt, "__iter") then return rawget(mt, "__iter")(x) end
+        if rawget(mt, "__call") then return x, ... end
+    end
+    if type(x) == "table" then return next, x, nil end
+    return x, ...   -- (Lua says what's wrong)
 end
 
 -- Random.new(seed): its own stream of random numbers (the same seed, the same numbers).
@@ -1897,7 +1990,7 @@ local services = { Workspace = workspace, PathfindingService = PathfindingServic
                    MessagingService = MessagingService, MemoryStoreService = MemoryStoreService,
                    TweenService = TweenService, HttpService = HttpService, CutsceneService = CutsceneService,
                    ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService,
-                   ContextActionService = ContextActionService, VRService = VRService }
+                   ContextActionService = ContextActionService, VRService = VRService, TextService = TextService }
 -- The container services are folders at the top of the game (Studio shows them in the Explorer).
 local storageNames = { ReplicatedStorage = true, ServerStorage = true, ReplicatedFirst = true, ServerScriptService = true,
                        StarterPack = true, StarterPlayer = true, SoundService = true, Chat = true, TextChatService = true,
@@ -1908,7 +2001,7 @@ local storage = __gb_storage
 local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, ScriptContext = {}, TestService = {},
     Stats = {}, GuiService = {}, HapticService = {}, LocalizationService = {},
     AnalyticsService = { LogCustomEvent = true, LogEconomyEvent = true, LogProgressionEvent = true },
-    PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {}, TextService = {},
+    PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {},
     VoiceChatService = {},
     InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
@@ -1943,9 +2036,10 @@ local function findService(name)
 end
 -- game.GameId (and game.PlaceId, the same here): this game's ID on Guts&Bolts, the number in its
 -- page's address. 0 when it hasn't been published yet.
-local gameId = __gb_gameId
+local gameId, jobId = __gb_gameId, __gb_jobId
 game = setmetatable({}, { __index = function(_, name)
     if name == "GameId" or name == "PlaceId" then return gameId() end
+    if name == "JobId" then return jobId() end
     return findService(name)
 end })
 function game:GetService(name)
@@ -2160,6 +2254,7 @@ if typeof == nil then
         local t = type(v)
         if t ~= "userdata" and t ~= "table" then return t end
         local mt = getmetatable(v)
+        if mt == "Secret" then return "Secret" end   -- (HttpService:GetSecret's, whose metatable is hidden)
         if type(mt) == "table" then
             local n = rawget(mt, "__type") or rawget(mt, "__name")
             if type(n) == "string" then return instanceNames[n] and "Instance" or n end
@@ -2780,11 +2875,30 @@ int l_httpDone(lua_State* L) {
 }
 
 // __gb_systemChat(text): TextChatService:DisplaySystemMessage
+// (from a LocalScript, or with `true` second: only on this computer)
 int l_systemChat(lua_State* L) {
     std::string err;
-    if (!LuaApi::engine(L)->queueSystemChat(luaL_checkstring(L, 1), err))
-        return luaL_error(L, "DisplaySystemMessage: %s", err.c_str());
+    ScriptEngine* e = LuaApi::engine(L);
+    const bool localOnly = lua_toboolean(L, 2) || e->currentScriptIsLocal();
+    if (!e->queueSystemChat(luaL_checkstring(L, 1), err, localOnly))
+        return luaL_error(L, "%s: %s", localOnly && lua_toboolean(L, 2) ? "ChatMakeSystemMessage" : "DisplaySystemMessage", err.c_str());
     return 0;
+}
+
+// __gb_runInfo() -> isServer, isClient, isStudio (RunService)
+int l_runInfo(lua_State* L) {
+    ScriptEngine* e = LuaApi::engine(L);
+    lua_pushboolean(L, e->runMode() != ScriptEngine::RunMode::Client);
+    lua_pushboolean(L, e->runMode() != ScriptEngine::RunMode::Server && !e->noLocalPlayer());
+    lua_pushboolean(L, e->inStudio());
+    return 3;
+}
+// __gb_jobId() -> game.JobId
+int l_jobId(lua_State* L) { lua_pushstring(L, LuaApi::engine(L)->jobId().c_str()); return 1; }
+// __gb_filterText(text) -> the text through Guts&Bolts' chat filter (TextService:FilterStringAsync)
+int l_filterText(lua_State* L) {
+    lua_pushstring(L, TextFilter::filter(luaL_checkstring(L, 1)).c_str());
+    return 1;
 }
 
 // __gb_gameId() -> the published game's number (0 = not published)
@@ -3361,11 +3475,26 @@ int l_storage(lua_State* L) {
     Scene* scene = LuaApi::engine(L)->scene();
     const std::string name = luaL_checkstring(L, 1);
     if (!scene) return 0;
+    SceneNode* found = nullptr;
     for (auto& c : scene->root()->children)
-        if (c->name == name && c->kind == NodeKind::Model) { LuaApi::pushInstance(L, c->id); return 1; }
-    auto folder = std::make_unique<SceneNode>(name, NodeKind::Model);
-    folder->visible = false;
-    LuaApi::pushInstance(L, scene->insert(std::move(folder))->id);
+        if (c->name == name && c->kind == NodeKind::Model) { found = c.get(); break; }
+    if (!found) {
+        auto folder = std::make_unique<SceneNode>(name, NodeKind::Model);
+        folder->visible = false;
+        found = scene->insert(std::move(folder));
+    }
+    // StarterPlayer always has its StarterPlayerScripts and StarterCharacterScripts, like Roblox's
+    // (scripts look for them with FindFirstChildOfClass).
+    if (name == "StarterPlayer")
+        for (const char* inner : {"StarterPlayerScripts", "StarterCharacterScripts"}) {
+            if (found->findChild(inner)) continue;
+            auto f = std::make_unique<SceneNode>(inner, NodeKind::Model);
+            f->visible = false;
+            Attribute a; a.name = "RobloxClass"; a.type = Attribute::String; a.s = inner;
+            f->attributes.push_back(a);
+            found->addChild(std::move(f));
+        }
+    LuaApi::pushInstance(L, found->id);
     return 1;
 }
 
@@ -3729,6 +3858,9 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_httpStart", l_httpStart);
     lua_register(L, "__gb_httpDone", l_httpDone);
     lua_register(L, "__gb_systemChat", l_systemChat);
+    lua_register(L, "__gb_runInfo", l_runInfo);
+    lua_register(L, "__gb_jobId", l_jobId);
+    lua_register(L, "__gb_filterText", l_filterText);
     lua_register(L, "__gb_gameId", l_gameId);
     lua_register(L, "__gb_memStart", l_memStart);
     lua_register(L, "__gb_memDone", l_memDone);
@@ -4887,7 +5019,26 @@ void ScriptEngine::fireChatted(const std::string& playerName, const std::string&
     }
 }
 
-bool ScriptEngine::queueSystemChat(const std::string& raw, std::string& error) {
+bool ScriptEngine::currentScriptIsLocal() const {
+    if (!m_current || !m_scene) return false;
+    const SceneNode* s = m_scene->findById(m_current);
+    return s && s->isLocal;
+}
+
+const std::string& ScriptEngine::jobId() {
+    if (m_inStudio) { static const std::string none; return none; }   // (Roblox Studio's is empty too)
+    if (m_jobId.empty()) {
+        std::random_device rd;
+        static const char* hex = "0123456789abcdef";
+        for (int i = 0; i < 32; ++i) {
+            if (i == 8 || i == 12 || i == 16 || i == 20) m_jobId += '-';
+            m_jobId += hex[rd() % 16];
+        }
+    }
+    return m_jobId;
+}
+
+bool ScriptEngine::queueSystemChat(const std::string& raw, std::string& error, bool localOnly) {
     const std::string text = TextFilter::filter(Online::cleanText(raw, kSystemChatLength));
     if (text.empty()) { error = "there's nothing to show (the text is empty)"; return false; }
     const double now = nowSeconds();
@@ -4897,8 +5048,9 @@ bool ScriptEngine::queueSystemChat(const std::string& raw, std::string& error) {
         return false;
     }
     m_systemChatAt.push_back(now);
-    m_systemChat.push_back(text);
-    if (m_systemChat.size() > 100) m_systemChat.erase(m_systemChat.begin());   // (nobody's taking them: Studio's play test)
+    std::vector<std::string>& queue = localOnly ? m_localChat : m_systemChat;
+    queue.push_back(text);
+    if (queue.size() > 100) queue.erase(queue.begin());   // (nobody's taking them)
     return true;
 }
 
@@ -5319,8 +5471,12 @@ bool ScriptEngine::setParent(SceneNode* node, SceneNode* newParent, std::string&
     if (newParent) {
         SceneNode* moved = newParent->addChild(std::move(owned));
         m_scene->markDirty();
-        // Like Roblox: scripts start when they arrive in the world (a clone parented in, say).
-        if (!inScene && topOf(moved) == m_scene->root()) runScriptsIn(moved);
+        // Like Roblox: scripts start when they arrive in the world (a clone parented in, say)...
+        // but not in StarterPlayer: what's put in StarterPlayerScripts is for players who join after.
+        bool starter = false;
+        for (const SceneNode* p = moved; p; p = p->parent)
+            if (m_scene->isServiceFolder(p) && p->name == "StarterPlayer") { starter = true; break; }
+        if (!inScene && !starter && topOf(moved) == m_scene->root()) runScriptsIn(moved);
         // ...and in our own PlayerGui (a ScreenGui with a LocalScript, cloned in by a script).
         if (SceneNode* mine = localPlayerGui(); mine && (moved == mine || mine->isAncestorOf(moved))) runScriptsIn(moved);
     } else {

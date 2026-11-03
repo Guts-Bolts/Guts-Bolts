@@ -660,17 +660,17 @@ void barrier() { glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_COMMAND_BARR
 GLuint groups(size_t n) { return (GLuint)((n + kGroup - 1) / kGroup); }
 
 // Read the start of a buffer back (OpenGL ES has no glGetBufferSubData).
-void readBack(GLuint b, size_t bytes, void* out) {
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, b);
+void readBack(GLuint b, size_t bytes, void* out, GLenum target = GL_SHADER_STORAGE_BUFFER) {
+    glBindBuffer(target, b);
 #ifdef GB_GLES
-    if (void* m = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)bytes, GL_MAP_READ_BIT)) {
+    if (void* m = glMapBufferRange(target, 0, (GLsizeiptr)bytes, GL_MAP_READ_BIT)) {
         std::memcpy(out, m, bytes);
-        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+        glUnmapBuffer(target);
     } else {
         std::memset(out, 0, bytes);
     }
 #else
-    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)bytes, out);
+    glGetBufferSubData(target, 0, (GLsizeiptr)bytes, out);
 #endif
 }
 
@@ -679,6 +679,7 @@ void readBack(GLuint b, size_t bytes, void* out) {
 LiquidGpu::LiquidGpu() = default;
 
 LiquidGpu::~LiquidGpu() {
+    dropReadbacks();
     for (unsigned& p : m_prog) if (p) glDeleteProgram(p);
     unsigned* bufs[] = {&m_x[0], &m_x[1], &m_v[0], &m_v[1], &m_p[0], &m_p[1], &m_scratch, &m_lambda,
                         &m_key, &m_grid, &m_coll, &m_cgrid, &m_in, &m_touched, &m_shape};
@@ -686,6 +687,7 @@ LiquidGpu::~LiquidGpu() {
 }
 
 void LiquidGpu::forget() {
+    for (Readback& r : m_rb) r = Readback{};   // (the context is gone: nothing to delete)
     for (unsigned& p : m_prog) p = 0;
     m_x[0] = m_x[1] = m_v[0] = m_v[1] = m_p[0] = m_p[1] = 0;
     m_scratch = m_lambda = m_key = m_grid = m_coll = m_cgrid = m_in = m_touched = m_shape = 0;
@@ -772,40 +774,76 @@ void LiquidGpu::clear() {
     for (int k = 0; k < 3; ++k) { s[kStats + k] = 0xFFFFFFFFu; s[kStats + 3 + k] = 0u; }
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_grid);
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, kState * 4, s.data());
-    m_pending = false;
+    dropReadbacks();
     m_res = Results{};
 }
 
-void LiquidGpu::beginFrame() {
-    if (m_pending) {
-        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
-        std::vector<uint32_t> s(kState);
-        readBack(m_grid, kState * 4, s.data());
-        Results r;
-        r.count = s[0];
-        if (r.count) {
-            r.lo = {unsortable(s[16]), unsortable(s[17]), unsortable(s[18])};
-            r.hi = {unsortable(s[19]), unsortable(s[20]), unsortable(s[21])};
-            r.fastest = s[22] / 1000.0f;
-        }
-        const uint32_t ns = std::min<uint32_t>(s[8], kMaxSplashes);
-        for (uint32_t i = 0; i < ns; ++i) {
-            glm::vec4 v;
-            std::memcpy(&v, &s[kSplash + i * 4], 16);
-            r.splashes.push_back(v);
-        }
-        for (size_t k = 0; k < m_probes.size(); ++k) {
-            const uint32_t* q = &s[kProbe + k * 5];
-            Results::Probe p;
-            p.count = (int)q[0];
-            if (p.count)
-                p.vel = glm::vec3((int32_t)q[1], (int32_t)q[2], (int32_t)q[3]) / (256.0f * (float)p.count);
-            p.top = p.count ? unsortable(q[4]) + 0.3f : 0.0f;
-            r.probes.push_back(p);
-        }
-        m_res = std::move(r);
-        m_pending = false;
+void LiquidGpu::dropReadbacks() {
+    for (Readback& r : m_rb) {
+        if (r.fence) glDeleteSync((GLsync)r.fence);
+        if (r.buf) glDeleteBuffers(1, &r.buf);
+        r = Readback{};
     }
+    m_rbNext = 0;
+}
+
+// A slot the graphics card has finished filling: what the liquid did that frame.
+// `fresh`: it's the newest one ready, so its numbers become the current ones
+// (older ones only add their splashes and wet parts).
+void LiquidGpu::collect(Readback& r, bool fresh) {
+    std::vector<uint32_t> s(kState + r.touched);
+    readBack(r.buf, s.size() * 4, s.data(), GL_COPY_READ_BUFFER);
+    glDeleteSync((GLsync)r.fence);
+    r.fence = nullptr;
+    const uint32_t ns = std::min<uint32_t>(s[8], kMaxSplashes);
+    for (uint32_t i = 0; i < ns; ++i) {
+        glm::vec4 v;
+        std::memcpy(&v, &s[kSplash + i * 4], 16);
+        m_res.splashes.push_back(v);
+    }
+    for (size_t i = 0; i < r.touched && i < r.ids.size(); ++i)
+        if (s[kState + i]) m_res.wet.push_back(r.ids[i]);
+    if (!fresh) return;
+    m_res.count = s[0];
+    if (m_res.count) {
+        m_res.lo = {unsortable(s[16]), unsortable(s[17]), unsortable(s[18])};
+        m_res.hi = {unsortable(s[19]), unsortable(s[20]), unsortable(s[21])};
+        m_res.fastest = s[22] / 1000.0f;
+    }
+    m_res.probes.clear();
+    for (size_t k = 0; k < r.probes.size(); ++k) {
+        const uint32_t* q = &s[kProbe + k * 5];
+        Results::Probe p;
+        p.count = (int)q[0];
+        if (p.count)
+            p.vel = glm::vec3((int32_t)q[1], (int32_t)q[2], (int32_t)q[3]) / (256.0f * (float)p.count);
+        p.top = p.count ? unsortable(q[4]) + 0.3f : 0.0f;
+        m_res.probes.push_back(p);
+    }
+    m_res.asked = r.probes;
+}
+
+void LiquidGpu::beginFrame() {
+    // Pick up the results the graphics card has finished (without waiting for it),
+    // oldest first. Nothing ready yet? Last frame's numbers stay.
+    m_res.splashes.clear();
+    m_res.wet.clear();
+    int newest = -1;
+    for (int k = 0; k < kReadbacks; ++k) {
+        const int slot = (m_rbNext + k) % kReadbacks;
+        Readback& r = m_rb[slot];
+        if (!r.fence) continue;
+        const GLenum st = glClientWaitSync((GLsync)r.fence, 0, 0);
+        if (st == GL_ALREADY_SIGNALED || st == GL_CONDITION_SATISFIED) newest = slot;
+        else break;   // later ones can't be done either
+    }
+    if (newest >= 0)
+        for (int k = 0; k < kReadbacks; ++k) {
+            const int slot = (m_rbNext + k) % kReadbacks;
+            if (!m_rb[slot].fence) continue;
+            collect(m_rb[slot], slot == newest);
+            if (slot == newest) break;
+        }
     // Start this frame's tallies again (the drop count stays).
     std::vector<uint32_t> s(kState - 8, 0u);
     for (int k = 0; k < 3; ++k) { s[kStats - 8 + k] = 0xFFFFFFFFu; s[kStats - 8 + 3 + k] = 0u; }
@@ -813,8 +851,10 @@ void LiquidGpu::beginFrame() {
     glBufferSubData(GL_SHADER_STORAGE_BUFFER, 8 * 4, (kState - 8) * 4, s.data());
 }
 
-void LiquidGpu::setColliders(const std::vector<glm::vec4>& packed, const std::vector<int>& grid, int gridItems,
+void LiquidGpu::setColliders(const std::vector<glm::vec4>& packed, const std::vector<uint64_t>& ids,
+                             const std::vector<int>& grid, int gridItems,
                              const glm::ivec3& cgMin, const glm::ivec3& cgDim, float cgCell) {
+    m_collIds = ids;
     auto upload = [](GLuint& b, size_t& cap, const void* data, size_t bytes) {
         if (!b) glGenBuffers(1, &b);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, b);
@@ -839,17 +879,6 @@ void LiquidGpu::setColliders(const std::vector<glm::vec4>& packed, const std::ve
     m_cgMin = cgMin;
     m_cgDim = packed.empty() ? glm::ivec3(0) : cgDim;
     m_cgCell = cgCell;
-}
-
-std::vector<uint32_t> LiquidGpu::takeTouched(size_t colliders) {
-    std::vector<uint32_t> out(std::min(colliders, m_touchedCap), 0u);
-    if (out.empty() || !m_touched) return out;
-    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
-    readBack(m_touched, out.size() * 4, out.data());
-    const std::vector<uint32_t> zero(out.size(), 0u);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_touched);
-    glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)(zero.size() * 4), zero.data());
-    return out;
 }
 
 void LiquidGpu::setPools(const std::vector<Pool>& pools) {
@@ -1003,7 +1032,7 @@ void LiquidGpu::step(float dt, const glm::vec3& gravity, const std::vector<glm::
 }
 
 void LiquidGpu::endFrame(const std::vector<glm::vec4>& probes) {
-    m_probes.assign(probes.begin(), probes.begin() + std::min<size_t>(probes.size(), kMaxProbes));
+    const std::vector<glm::vec4> asked(probes.begin(), probes.begin() + std::min<size_t>(probes.size(), kMaxProbes));
     // Each drop's shape for drawing.
     glUseProgram(m_prog[SHAPE]);
     glUniform1ui(U(m_prog[SHAPE], "uT"), m_table);
@@ -1014,14 +1043,44 @@ void LiquidGpu::endFrame(const std::vector<glm::vec4>& probes) {
     glUniform1ui(U(m_prog[STATS], "uT"), m_table);
     bind(3, m_grid); bind(0, m_x[m_cur]); bind(1, m_v[m_cur]);
     std::vector<glm::vec4> pr(kMaxProbes, glm::vec4(0.0f));
-    std::copy(m_probes.begin(), m_probes.end(), pr.begin());
+    std::copy(asked.begin(), asked.end(), pr.begin());
     glUniform4fv(U(m_prog[STATS], "uProbe"), kMaxProbes, &pr[0].x);
-    glUniform1i(U(m_prog[STATS], "uProbes"), (int)m_probes.size());
+    glUniform1i(U(m_prog[STATS], "uProbes"), (int)asked.size());
     dispatchDrops();
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT |
                     GL_BUFFER_UPDATE_BARRIER_BIT);
     glUseProgram(0);
-    m_pending = true;
+
+    // Copy this frame's results aside (and which parts got wet), then let the CPU
+    // know when they're ready with a fence. All three slots still busy (a very slow
+    // graphics card)? Then the oldest is waited for after all.
+    Readback& r = m_rb[m_rbNext];
+    if (r.fence) {
+        glClientWaitSync((GLsync)r.fence, GL_SYNC_FLUSH_COMMANDS_BIT, 1000000000ull);
+        collect(r, true);
+    }
+    const size_t touched = m_touched ? std::min(m_collIds.size(), m_touchedCap) : 0;
+    const size_t bytes = (kState + touched) * 4;
+    if (!r.buf) glGenBuffers(1, &r.buf);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, r.buf);
+    glBufferData(GL_COPY_WRITE_BUFFER, (GLsizeiptr)bytes, nullptr, GL_STREAM_READ);
+    glBindBuffer(GL_COPY_READ_BUFFER, m_grid);
+    glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, kState * 4);
+    if (touched) {
+        glBindBuffer(GL_COPY_READ_BUFFER, m_touched);
+        glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, kState * 4, (GLsizeiptr)(touched * 4));
+        const std::vector<uint32_t> zero(touched, 0u);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, m_touched);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, (GLsizeiptr)(touched * 4), zero.data());
+    }
+    glBindBuffer(GL_COPY_READ_BUFFER, 0);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, 0);
+    r.probes = asked;
+    r.ids.assign(m_collIds.begin(), m_collIds.begin() + touched);
+    r.touched = touched;
+    r.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glFlush();   // so the graphics card starts on it now
+    m_rbNext = (m_rbNext + 1) % kReadbacks;
 }
 
 std::vector<glm::vec4> LiquidGpu::readDrops() {

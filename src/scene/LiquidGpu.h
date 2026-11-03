@@ -23,14 +23,19 @@
 // GPU's memory.
 class LiquidGpu {
 public:
-    // What the CPU learns each frame (from the frame before: no waiting on the GPU).
+    // What the CPU learns each frame. It comes from a frame or two ago: the
+    // graphics card copies it aside and the CPU only picks it up once it's ready,
+    // so the CPU never sits and waits for the graphics card to catch up (that
+    // waiting used to cost a whole frame's worth of time, every frame).
     struct Results {
         uint32_t count = 0;
         glm::vec3 lo{0.0f}, hi{0.0f};
         float fastest = 0.0f;
         std::vector<glm::vec4> splashes;               // drops that fell into pools: position, speed
         struct Probe { int count = 0; glm::vec3 vel{0.0f}; float top = 0.0f; };
-        std::vector<Probe> probes;                     // one per probe given to endFrame()
+        std::vector<Probe> probes;                     // one per probe in `asked`
+        std::vector<glm::vec4> asked;                  // the probes these answer (centre, radius)
+        std::vector<uint64_t> wet;                     // parts the liquid ran over (ids)
     };
     struct Pool { glm::vec3 min, max; };               // max.y = the water's surface
 
@@ -52,15 +57,14 @@ public:
     // Once a frame, before stepping: what came back from last frame.
     const Results& results() const { return m_res; }
     void beginFrame();
-    // Solid things (packed Liquid colliders, 7 vec4s each) and their grid.
-    void setColliders(const std::vector<glm::vec4>& packed, const std::vector<int>& grid, int gridItems,
+    // Solid things (packed Liquid colliders, 7 vec4s each, and which part each is) and their grid.
+    void setColliders(const std::vector<glm::vec4>& packed, const std::vector<uint64_t>& ids,
+                      const std::vector<int>& grid, int gridItems,
                       const glm::ivec3& cgMin, const glm::ivec3& cgDim, float cgCell);
     void setPools(const std::vector<Pool>& pools);
     void setMaxAge(float seconds) { m_maxAge = seconds; }
     // Each kind of liquid: viscosity, surface tension (drops carry their kind in X.w / 4096).
     void setFluids(const std::vector<glm::vec2>& params) { m_fluidParams = params; }
-    // Which colliders the liquid touched since the last call (one flag each), then start again.
-    std::vector<uint32_t> takeTouched(size_t colliders);
     // One physics step. `incoming`: new drops (position, velocity pairs).
     void step(float dt, const glm::vec3& gravity, const std::vector<glm::vec4>& incoming);
     // After the last step: work out the results (read back next frame).
@@ -94,7 +98,20 @@ private:
     std::vector<Pool> m_pools;
     std::vector<glm::vec2> m_fluidParams;
     float m_maxAge = 120.0f;
-    std::vector<glm::vec4> m_probes;                   // asked for at the last endFrame()
-    bool m_pending = false;                            // results waiting to be read back
+    std::vector<uint64_t> m_collIds;                   // the part behind each collider
+    // Results on their way back: a few little buffers the graphics card copies
+    // each frame's results into, each with a fence that says when it's done.
+    struct Readback {
+        unsigned buf = 0;
+        void* fence = nullptr;                         // (a GLsync)
+        std::vector<glm::vec4> probes;
+        std::vector<uint64_t> ids;                     // the colliders' parts that frame
+        size_t touched = 0;                            // how many touched flags were copied
+    };
+    static constexpr int kReadbacks = 3;
+    Readback m_rb[kReadbacks];
+    int m_rbNext = 0;                                  // the slot the next endFrame() fills (the oldest)
+    void collect(Readback& r, bool fresh);             // read a finished slot into m_res
+    void dropReadbacks();
     Results m_res;
 };

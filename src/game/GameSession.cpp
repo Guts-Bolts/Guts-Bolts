@@ -1,4 +1,6 @@
 #include "GameSession.h"
+#include "../core/FrameProfile.h"
+#include "../scene/LegacyJoints.h"
 #include "../core/Pad.h"
 #include "../scene/Serializer.h"
 #include "../scripting/LuaApi.h"   // SignalKind (tool events)
@@ -339,7 +341,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     m_time += dt;
 
     // 1. Scripts: wake up waits, keyboard events (bound actions first), Heartbeat.
-    m_scripts.update(dt);   // (a joined player's LocalScripts)
+    { FrameProfile::Scope prof("game: scripts"); m_scripts.update(dt); }   // (a joined player's LocalScripts)
     if (m_scripts.takeTestClick()) click(0);   // (tests: a pretend click in the game view)
 
     // 2. Physics for loose (unanchored) parts (the host does this for everyone),
@@ -347,6 +349,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     m_scene->vehicles().update(*m_scene, dt, !client);
     m_physics.gather(*m_scene);
     if (!client) {
+        FrameProfile::Scope prof("game: part physics");
         std::vector<uint64_t> fallen;
         m_physics.stepParts(*m_scene, dt, fallen);
         for (uint64_t id : fallen)
@@ -451,7 +454,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
             m_inputTrace.close();
         }
         p->setSwimInput(acceptInput ? swimLook : 0.0f, dive);
-        p->update(dt, move, jump, m_physics);
+        { FrameProfile::Scope prof("game: character"); p->update(dt, move, jump, m_physics); }
         if (p->isDead()) m_scene->animator().stopRig(p->rootId(), false, *m_scene);   // the body falls apart instead
         if (p->consumeDied()) m_scripts.fireDied(p->rootId());
         if (p->consumeRespawned()) {
@@ -481,10 +484,12 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     holdTools();
 
     // Waves, ripples and splashes.
-    m_scene->water().update(dt, *m_scene);
+    { FrameProfile::Scope prof("game: water"); m_scene->water().update(dt, *m_scene); }
 
     // Animations (after the character has walked, so they win where they pose).
     m_scene->animator().update(dt, *m_scene);
+    // Weld / Motor6D: parts follow the part they're joined to (and scripts posing limbs).
+    LegacyJoints::update(*m_scene, dt);
     if (!client) m_scripts.fireAnimationEvents();
     else m_scene->animator().events.clear();
 
@@ -499,7 +504,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     // Blood, oil, sparks, smoke...
     const WorldSettings& ws = m_scene->world();
     m_scene->particles().setBlood(ws.bloodColor, ws.bloodAmount, ws.bloodStay);
-    m_scene->particles().update(dt, m_scene->world().gravity, m_physics);
+    { FrameProfile::Scope prof("game: particles"); m_scene->particles().update(dt, m_scene->world().gravity, m_physics); }
     m_scene->particles().follow(*m_scene);   // blood stains move with the bodies they're on
     // ParticleEmitters, Fire, Smoke, Sparkles: every screen makes its own (a game server
     // with no screen doesn't bother).
@@ -508,7 +513,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
 
     // 4. Touched events (after everything has moved).
     std::vector<TouchEvent> touches, ended;
-    m_physics.collectTouches(*m_scene, touches, &ended);
+    { FrameProfile::Scope prof("game: touches"); m_physics.collectTouches(*m_scene, touches, &ended); }
     if (client) {
         // Only our own character's touches matter here: the host's scripts hear about
         // them, and so do our LocalScripts.
@@ -555,6 +560,8 @@ void GameSession::guiEvents(const std::vector<GameGui::Event>& events) {
         }
         switch (e.kind) {
             case GameGui::EventKind::Click:       m_scripts.fireGui(SignalKind::GuiClick, e.id); break;
+            case GameGui::EventKind::Down:        m_scripts.fireGui(SignalKind::GuiDown, e.id); break;
+            case GameGui::EventKind::Up:          m_scripts.fireGui(SignalKind::GuiUp, e.id); break;
             case GameGui::EventKind::Enter:       m_scripts.fireGui(SignalKind::GuiEnter, e.id); break;
             case GameGui::EventKind::Leave:       m_scripts.fireGui(SignalKind::GuiLeave, e.id); break;
             case GameGui::EventKind::Focused:     m_scripts.fireGui(SignalKind::GuiFocused, e.id); break;

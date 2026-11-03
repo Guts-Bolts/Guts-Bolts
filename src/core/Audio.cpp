@@ -115,6 +115,9 @@ std::map<std::string, Samples> synthesize() {
     { Samples s = make(0.16f); rumble(s, 0, 0.16f, 1800, 300, 1.0f); tone(s, 0, 0.1f, 160, 70, 0, 0.5f); normalize(s, 0.7f); out["splat"] = s; }
     { Samples s = make(0.03f); rumble(s, 0, 0.03f, 6000, 3000, 1.0f); normalize(s, 0.5f); out["click"] = s; }
     { Samples s = make(0.2f); tone(s, 0, 0.2f, 140, 60, 0, 0.9f); rumble(s, 0, 0.08f, 3000, 500, 0.5f); normalize(s, 0.8f); out["hit"] = s; }
+    // A gun: a sharp crack with a short low thump, and the clack of a new magazine.
+    { Samples s = make(0.35f); rumble(s, 0, 0.35f, 7000, 400, 1.0f); tone(s, 0, 0.12f, 180, 50, 0, 0.7f); normalize(s, 0.8f); out["gunshot"] = s; }
+    { Samples s = make(0.4f); rumble(s, 0, 0.04f, 5000, 2500, 0.8f); rumble(s, 0.22f, 0.06f, 4000, 1500, 1.0f); normalize(s, 0.6f); out["reload"] = s; }
     {   Samples s = make(0.9f);
         const float notes[] = {523.25f, 659.25f, 783.99f, 1046.5f};
         for (int i = 0; i < 4; ++i) tone(s, i * 0.12f, i == 3 ? 0.5f : 0.14f, notes[i], notes[i], 1, 0.6f);
@@ -268,7 +271,7 @@ Instance* find(int handle) {
 
 const std::vector<std::string>& builtinNames() {
     static const std::vector<std::string> names = {
-        "jump", "coin", "oof", "explosion", "splat", "click", "hit", "win", "boing", "spawn", "respawn", "footsteps", "splash"};
+        "jump", "coin", "oof", "explosion", "splat", "click", "hit", "win", "boing", "spawn", "respawn", "footsteps", "splash", "gunshot", "reload"};
     return names;
 }
 

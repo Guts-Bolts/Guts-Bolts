@@ -18,12 +18,13 @@ bool LiquidGpu::init(std::string& error) {
 
 uint32_t LiquidGpu::maxCapacity() { return 0; }
 void LiquidGpu::beginFrame() {}
-void LiquidGpu::setColliders(const std::vector<glm::vec4>&, const std::vector<int>&, int,
+void LiquidGpu::setColliders(const std::vector<glm::vec4>&, const std::vector<uint64_t>&, const std::vector<int>&, int,
                              const glm::ivec3&, const glm::ivec3&, float) {}
 void LiquidGpu::setPools(const std::vector<Pool>&) {}
-std::vector<uint32_t> LiquidGpu::takeTouched(size_t colliders) { return std::vector<uint32_t>(colliders, 0); }
 void LiquidGpu::step(float, const glm::vec3&, const std::vector<glm::vec4>&) {}
 void LiquidGpu::endFrame(const std::vector<glm::vec4>&) {}
 void LiquidGpu::clear() { m_res = Results{}; }
+void LiquidGpu::dropReadbacks() {}
+void LiquidGpu::collect(Readback&, bool) {}
 void LiquidGpu::forget() { clear(); }
 std::vector<glm::vec4> LiquidGpu::readDrops() { return {}; }
