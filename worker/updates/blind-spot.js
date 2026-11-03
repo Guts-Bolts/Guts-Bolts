@@ -1,5 +1,5 @@
 export default {
-  id: 'blind-spot', name: 'Blind Spot', time: 1793717668, tag: 'Studio',
+  id: 'blind-spot', name: 'Blind Spot', version: '0.7.9', time: 1793717668, tag: 'Studio',
   summary: 'An eye in the Explorer to hide things while you build, Blender\'s G / R / S in Build mode, and Roblox animations that fit our dummies.',
   items: [
     'Every row in the Explorer has an eye (like Blender\'s): click it to hide that thing while you build. Only you stop seeing it: the game, saving and playtests still have it. Shift+click the eye to hide everything else',
