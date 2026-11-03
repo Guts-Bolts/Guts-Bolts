@@ -458,6 +458,7 @@ add_library(gb_engine STATIC
     src/scene/Blast.cpp
     src/scene/Serializer.cpp
     src/scene/RobloxFile.cpp
+    src/scene/RobloxAnim.cpp
     src/scene/RobloxMesh.cpp
     src/scene/EditMesh.cpp
     src/scene/MeshTools.cpp
@@ -773,6 +774,7 @@ set(EDITOR_SOURCES
     src/editor/EditorRibbon.cpp
     src/editor/Icons.cpp
     src/editor/panels/ViewportModeling.cpp
+    src/editor/panels/ViewportObjectModal.cpp
     src/editor/panels/ViewportBones.cpp
     src/editor/panels/ViewportTerrain.cpp
     src/editor/EditorModes.cpp
@@ -792,6 +794,7 @@ set(EDITOR_SOURCES
     src/editor/EditorTemplates.cpp
     src/editor/EditorCutscenes.cpp
     src/editor/EditorBulkEdit.cpp
+    src/editor/EditorBlender.cpp
     src/editor/EditorBlocks.cpp
     src/editor/VisualScript.cpp
     src/editor/EditorScriptHistory.cpp
@@ -1083,6 +1086,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(BoneRigTests PRIVATE gb_engine)
     add_test(NAME BoneRigTests COMMAND BoneRigTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Roblox animations (KeyframeSequence) fitted to our characters: R6 and R15, facing and size.
+    add_executable(RobloxAnimTests tests/RobloxAnimTests.cpp)
+    target_link_libraries(RobloxAnimTests PRIVATE gb_engine)
+    add_test(NAME RobloxAnimTests COMMAND RobloxAnimTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Script help (the autocomplete's "how to use it"), wrong-case names, mouse button binds.
     add_executable(ScriptingHelpTests tests/ScriptingHelpTests.cpp)

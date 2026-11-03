@@ -10,6 +10,7 @@
 #include "../Icons.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <sstream>
 
@@ -62,6 +63,36 @@ void OutlinerPanel::beginRename(SceneNode* node) {
     m_renameFocus = true;
 }
 
+// Which rows get an eye: things you can see in the 3D view.
+bool OutlinerPanel::hasEye(const SceneNode* node) const {
+    if (!node->parent || node->isScript() || node->isGui() || m_scene->isServiceFolder(node)) return false;
+    return node->isPart() || node->kind == NodeKind::Model || node->isLight() || node->isEffect() || node->isDecal();
+}
+
+// An eye: open (an almond with a pupil) or shut (a curve with lashes).
+void OutlinerPanel::drawEye(ImDrawList* dl, ImVec2 c, float size, bool open, ImU32 col) {
+    const float w = size * 0.5f, h = size * 0.28f;
+    const int n = 10;
+    ImVec2 top[n + 1], bottom[n + 1];
+    for (int i = 0; i <= n; ++i) {
+        const float t = (float)i / n, x = c.x - w + 2 * w * t, y = std::sin(t * 3.14159f) * h;
+        top[i] = ImVec2(x, c.y - y);
+        bottom[i] = ImVec2(x, c.y + y);
+    }
+    if (open) {
+        dl->AddPolyline(top, n + 1, col, 0, 1.4f);
+        dl->AddPolyline(bottom, n + 1, col, 0, 1.4f);
+        dl->AddCircleFilled(c, h * 0.75f, col);
+    } else {
+        dl->AddPolyline(bottom, n + 1, col, 0, 1.8f);
+        for (int i = 2; i <= n - 2; i += 2) {   // lashes
+            const ImVec2 b = bottom[i];
+            const float dx = (b.x - c.x) / w;
+            dl->AddLine(b, ImVec2(b.x + dx * size * 0.15f, b.y + size * 0.2f), col, 1.5f);
+        }
+    }
+}
+
 void OutlinerPanel::drawNode(SceneNode* node) {
     if (node->internal) return;   // hidden helper geometry (e.g. the face)
     if (!m_filter.empty() && node->parent && !anyMatch(node)) return;
@@ -80,7 +111,9 @@ void OutlinerPanel::drawNode(SceneNode* node) {
 
     // Roblox-style: a class icon, then the name (dimmed if hidden / disabled).
     ImVec4 col = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-    if (!node->visible || (node->isScript() && !node->enabled)) col.w = 0.5f;
+    bool eyeClosed = false;   // hidden for now (itself or something it's in)
+    for (const SceneNode* p = node; p; p = p->parent) if (p->editorHidden) eyeClosed = true;
+    if (!node->visible || eyeClosed || (node->isScript() && !node->enabled)) col.w = 0.5f;
     if (!m_filter.empty() && !matches(node)) col.w = 0.45f;          // only here because something inside matches
     ImGui::PushStyleColor(ImGuiCol_Text, col);
 
@@ -115,6 +148,31 @@ void OutlinerPanel::drawNode(SceneNode* node) {
     // A "+" at the end of the row (like Roblox) opens Insert Object for it.
     bool rowHovered = ImGui::IsItemHovered();
     ImVec2 rowMax = ImGui::GetItemRectMax(), rowMin = ImGui::GetItemRectMin();
+
+    // The eye (like Blender's): hide it while you build, without changing the game.
+    bool eyeClicked = false;
+    if (onEye && hasEye(node)) {
+        const float h = rowMax.y - rowMin.y;
+        const ImVec2 c(rowMax.x - h * 1.5f - 6, (rowMin.y + rowMax.y) * 0.5f);
+        const ImVec2 mouse = ImGui::GetMousePos();
+        const bool over = ImGui::IsWindowHovered() && mouse.x > c.x - h * 0.5f && mouse.x < c.x + h * 0.5f &&
+                          mouse.y > rowMin.y && mouse.y < rowMax.y;
+        StudioLearnHighlight::markRect("explorer.eye", ImVec2(c.x - h * 0.45f, rowMin.y + 1), ImVec2(c.x + h * 0.45f, rowMax.y - 1));
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        if (over) dl->AddRectFilled(ImVec2(c.x - h * 0.45f, rowMin.y + 1), ImVec2(c.x + h * 0.45f, rowMax.y - 1), IM_COL32(90, 90, 90, 255), 3);
+        // The open eye shows on the row under the mouse (or picked); a shut one always shows.
+        if (node->editorHidden || over || rowHovered || node->selected)
+            drawEye(dl, c, h * 0.95f, !node->editorHidden,
+                    node->editorHidden ? IM_COL32(120, 170, 255, 255) : IM_COL32(200, 202, 208, over ? 255 : 150));
+        else if (eyeClosed)
+            drawEye(dl, c, h * 0.95f, true, IM_COL32(200, 202, 208, 60));   // hidden because something it's in is
+        if (over) {
+            ImGui::SetTooltip(node->editorHidden ? "Show it again (Alt+H shows everything)"
+                                                 : "Hide it while you build (H). The game still has it.\nShift+click: hide everything else");
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { onEye(node, ImGui::GetIO().KeyShift); eyeClicked = true; }
+        }
+    }
+
     if ((rowHovered || node->selected) && onInsert && !m_scene->isCharacterPart(node) && !node->isScript()) {
         float h = rowMax.y - rowMin.y;
         ImVec2 c(rowMax.x - h * 0.5f - 2, (rowMin.y + rowMax.y) * 0.5f);
@@ -128,7 +186,7 @@ void OutlinerPanel::drawNode(SceneNode* node) {
         if (over && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { onInsert(node); ImGui::PopID(); return; }
     }
 
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) {
+    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() && !eyeClicked) {
         ImGuiIO& io = ImGui::GetIO();
         if (io.KeyCtrl)       m_scene->toggleSelection(node);
         else if (io.KeyShift) m_scene->addToSelection(node);
@@ -163,7 +221,9 @@ void OutlinerPanel::drawNode(SceneNode* node) {
         if (node->isScript() && ImGui::MenuItem("Edit Script")) m_openScript(node);
         if (node->isPart() && ImGui::MenuItem("Add Script inside")) m_addScriptTo(node);
         if (ImGui::MenuItem("Rename", "F2", false, !locked)) beginRename(node);
-        if (ImGui::MenuItem(node->visible ? "Hide" : "Show", "H"))
+        if (onEye && hasEye(node) && ImGui::MenuItem(node->editorHidden ? "Show (while building)" : "Hide (while building)", "H"))
+            onEye(node, false);
+        if (ImGui::MenuItem(node->visible ? "Make Invisible in the Game" : "Make Visible in the Game"))
             node->visible = !node->visible;
         if (node->parent && node->parent != m_scene->root() && !locked &&
             ImGui::MenuItem("Move to Workspace")) {

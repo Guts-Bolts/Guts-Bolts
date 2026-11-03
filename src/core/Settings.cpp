@@ -82,6 +82,7 @@ void GraphicsSettings::load() {
     rd("volume", volume); rd("fullscreen", fullscreen);
     rd("voiceChat", voiceChat); rd("voiceOpenMic", voiceOpenMic); rd("voiceVolume", voiceVolume);
     rd("translateChat", translateChat);
+    rd("studioBlenderKeys", studioBlenderKeys);
     rd("colorBlind", colorBlind); rd("textSize", textSize); rd("captions", captions); rd("clipRecorder", clipRecorder);
     colorBlind = std::clamp(colorBlind, 0, 3);
     textSize = std::clamp(textSize, 1.0f, 2.0f);
@@ -217,6 +218,7 @@ void GraphicsSettings::save() const {
         {"voiceChat", voiceChat}, {"voiceOpenMic", voiceOpenMic}, {"voiceVolume", voiceVolume}, {"translateChat", translateChat},
         {"colorBlind", colorBlind}, {"textSize", textSize}, {"captions", captions}, {"clipRecorder", clipRecorder},
         {"waterQuality", waterQuality}, {"graphicsApi", graphicsApi}, {"renderDistance", renderDistance},
+        {"studioBlenderKeys", studioBlenderKeys},
     };
     std::ofstream f(settingsFile());
     if (f) f << j.dump(2);
