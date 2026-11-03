@@ -378,6 +378,7 @@ void Editor::render(float dt) {
         }
         // DisplaySystemMessage: there's no chat in a Studio test, so it goes in Output.
         for (auto& line : m_session->scripts().takeSystemChat()) Log::info("[System chat] " + line);
+        for (auto& line : m_session->scripts().takeLocalChat()) Log::info("[Chat, this player only] " + line);
         Player* p = m_scene->player();
         if (m_playing && p && !m_session->runOnly()) m_viewport->followPlayer(*p, dt);   // Run: the camera stays free
     }
@@ -2193,6 +2194,7 @@ void Editor::togglePlay() {
         const int run = Log::beginRun();
         Log::system(m_session->runOnly() ? "Simulation started (run " + std::to_string(run) + ", no character) - Shift+F5 to stop."
                                          : "Game started (run " + std::to_string(run) + ").");
+        m_session->scripts().setInStudio(true);   // (RunService:IsStudio())
         m_session->start();
     } else {
         uint64_t sel = m_scene->selected() ? m_scene->selected()->id : 0;

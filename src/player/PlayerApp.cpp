@@ -1,3 +1,4 @@
+#include "../core/FrameProfile.h"
 #include "PlayerApp.h"
 #include "../core/TextFilter.h"
 #include "../core/Language.h"
@@ -405,7 +406,9 @@ void PlayerApp::frame() {
                 m_window->injectTouch(9, 0.55f + 0.004f * (m_frame - 40), 0.4f, true);
             }
         }
-        frame(dt);
+        { FrameProfile::Scope prof("frame (all of it)", true); frame(dt); }
+        // Auto graphics quality: steps down when a game gets laggy (not in tests: they use a fixed clock).
+        if (m_page == Page::Game && m_scene && m_opts.screenshot.empty()) GraphicsSettings::get().autoAdjust(dt);
         WebKeyboard::update();   // (the browser Player: the phone's keyboard)
         if (std::getenv("GB_TRACE_POS") && m_scene)   // test: the character's height every frame
             if (Player* p = m_scene->player()) std::printf("TRACE %d %.3f %.3f\n", m_frame, p->position().z, p->position().y);
@@ -440,7 +443,7 @@ void PlayerApp::frame() {
             std::fflush(stdout);
         }
         m_window->endFrame(shoot ? m_opts.screenshot : std::string());
-        if (shoot) m_window->close();
+        if (shoot) { FrameProfile::report(); m_window->close(); }
     }
 }
 
@@ -1787,6 +1790,8 @@ void PlayerApp::drawGame(float dt) {
         if (m_server) m_server->announce(line);
         else chat().add("", line, true);
     }
+    // ...and the lines a LocalScript showed: only in our own chat.
+    for (auto& line : m_session->scripts().takeLocalChat()) chat().add("", line, true);
 
     // TeleportService: players the game's scripts sent to another game. We go ourselves;
     // people who joined us get told to go (their app does the rest).
@@ -2531,9 +2536,38 @@ void PlayerApp::drawPauseMenu() {
         onOff("Fullscreen", gs.fullscreen);
 #endif
         row("Graphics Quality");
-        static const char* q[] = {"Low", "Medium", "High", "Ultra", "Custom"};
-        int qi = std::clamp(gs.quality, 0, 4);
-        if (ImGui::Combo("##quality", &qi, q, 5)) { if (qi < 4) gs.applyPreset(qi); else gs.quality = qi; changed = true; }
+        {
+            int qi = GraphicsSettings::menuIndexOf(gs.quality);
+            if (ImGui::Combo("##quality", &qi, GraphicsSettings::qualityNames(), GraphicsSettings::kQualityChoices)) {
+                const int q = GraphicsSettings::qualityAt(qi);
+                if (q != GraphicsSettings::Custom) gs.applyPreset(q); else gs.quality = q;
+                changed = true;
+            }
+            ImGui::SetCursorPosX(labelW);
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("%s", GraphicsSettings::qualityHelp(gs.quality));
+            if (gs.quality == GraphicsSettings::Auto && gs.autoFps() > 0.0f) {
+                ImGui::SetCursorPosX(labelW);
+                ImGui::TextDisabled("Right now: %s (%.0f FPS)", GraphicsSettings::autoLevelName(gs.autoLevel()), gs.autoFps());
+            }
+            ImGui::PopTextWrapPos();
+        }
+        {
+            const bool had = gs.shadows;
+            onOff("Shadows", gs.shadows);
+            if (gs.shadows != had) gs.quality = GraphicsSettings::Custom;
+        }
+        row("Sharpness");
+        {
+            int pct = (int)std::lround(std::clamp(gs.renderScale, 0.5f, 1.0f) * 100.0f);
+            if (ImGui::SliderInt("##sharp", &pct, 50, 100, "%d%%")) {
+                gs.renderScale = pct / 100.0f;
+                gs.quality = GraphicsSettings::Custom;
+                changed = true;
+            }
+            ImGui::SetCursorPosX(labelW);
+            ImGui::TextDisabled("Lower = blurrier but faster");
+        }
         {
             // Render distance, like the old graphics bar: - [][][][][][][][][][] +
             row("Render Distance");

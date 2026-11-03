@@ -98,19 +98,30 @@ void draw(bool* open) {
     ImGui::EndDisabled();
 
     ImGui::SeparatorText("Graphics");
-    const char* presets[] = {"Low", "Medium", "High", "Ultra", "Custom"};
-    int q = s.quality;
-    if (ImGui::Combo("Quality", &q, presets, IM_ARRAYSIZE(presets)) && q != GraphicsSettings::Custom)
-        s.applyPreset(q);
-    help("Low = maximum performance: reduced render scale, fewer lights, shorter view distance and a strict water budget. Medium balances performance and image quality. High and Ultra enable progressively more expensive effects.");
+    int qi = GraphicsSettings::menuIndexOf(s.quality);
+    if (ImGui::Combo("Quality", &qi, GraphicsSettings::qualityNames(), GraphicsSettings::kQualityChoices)) {
+        const int q = GraphicsSettings::qualityAt(qi);
+        if (q != GraphicsSettings::Custom) s.applyPreset(q); else s.quality = q;
+    }
+    help("Auto turns the graphics down by itself when a game gets laggy, and back up when it can. "
+         "Very Low and Low are for slow computers; High and Ultra look best.");
+    ImGui::PushTextWrapPos(0);
+    ImGui::TextDisabled("%s", GraphicsSettings::qualityHelp(s.quality));
+    if (s.quality == GraphicsSettings::Auto && s.autoFps() > 0.0f)
+        ImGui::TextDisabled("Auto is on %s right now (%.0f FPS).", GraphicsSettings::autoLevelName(s.autoLevel()), s.autoFps());
+    ImGui::PopTextWrapPos();
 
     bool custom = false;
+    custom |= ImGui::Checkbox("Shadows", &s.shadows);
+    help("Turning shadows off is the biggest single speed-up on slow computers.");
+    ImGui::BeginDisabled(!s.shadows);
     const char* resNames[] = {"1024 (fast)", "2048", "4096 (sharpest)"};
     const int   resValues[] = {1024, 2048, 4096};
     int resIdx = s.shadowRes >= 4096 ? 2 : s.shadowRes >= 2048 ? 1 : 0;
     if (ImGui::Combo("Shadow Detail", &resIdx, resNames, 3)) { s.shadowRes = resValues[resIdx]; custom = true; }
     const char* sq[] = {"Hard", "Soft", "Realistic (contact-hardening)"};
     custom |= ImGui::Combo("Shadow Style", &s.shadowQuality, sq, 3);
+    ImGui::EndDisabled();
     custom |= ImGui::Checkbox("Ambient Occlusion", &s.ssao);
     help("Darkens corners and contact points");
     custom |= ImGui::Checkbox("Bloom", &s.bloom);
@@ -131,7 +142,7 @@ void draw(bool* open) {
     }
     const char* wq[] = {"Low", "Medium", "High", "Ultra"};
     custom |= ImGui::Combo("Water Quality", &s.waterQuality, wq, 4);
-    help("Real liquid (FluidSource / FluidEmitter). Low: half resolution, 1 smoothing pass, 8,000 drops. Medium: 3/4 resolution, 2 passes, 20,000 drops. High: full resolution, 3 passes, 60,000 drops. Ultra: full resolution, 4 passes, 150,000 drops. Lower water quality reduces simulation and rendering work.");
+    help("Real liquid (FluidSource / FluidEmitter). Low: half resolution, 1 smoothing pass, 5,000 drops. Medium: 3/4 resolution, 2 passes, 20,000 drops. High: full resolution, 3 passes, 60,000 drops. Ultra: full resolution, 4 passes, 150,000 drops. Lower water quality reduces simulation and rendering work.");
     if (custom) s.quality = GraphicsSettings::Custom;
 
     ImGui::SeparatorText("Graphics API");

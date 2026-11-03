@@ -273,6 +273,9 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
     if (n->kind == NodeKind::Part && (cls == "BasePart" || cls == "Part" || cls == "PVInstance")) return true;
     if (n->kind == NodeKind::Model && (cls == "Model" || cls == "Folder" || cls == "PVInstance")) return true;
     if (n->kind == NodeKind::Model && cls == "WorldRoot" && mine == "WorldModel") return true;
+    // Folders standing in for Roblox's player containers (from an older import, without a class).
+    if (n->kind == NodeKind::Model && n->name == cls &&
+        (cls == "StarterPlayerScripts" || cls == "StarterCharacterScripts" || cls == "PlayerScripts")) return true;
     if (n->kind == NodeKind::Script && (cls == "LuaSourceContainer" || (cls == "BaseScript" && !n->isModule) ||
                                         (cls == "Script" && n->isLocal))) return true;   // LocalScript is a Script
     if (n->kind == NodeKind::Light && cls == "Light") return true;
@@ -556,7 +559,14 @@ int m_IsA(lua_State* L) {
 int m_IsDescendantOf(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
     SceneNode* other = LuaApi::checkNode(L, 2);
-    lua_pushboolean(L, other->isAncestorOf(n));
+    bool inside = other->isAncestorOf(n);
+    // Like Roblox: what's in ReplicatedStorage, ServerScriptService, StarterGui... isn't in the
+    // Workspace (here those folders sit at the top of the game, which is also `workspace`).
+    Scene* scene = E(L)->scene();
+    if (inside && other == scene->root())
+        for (const SceneNode* p = n; p && p->parent; p = p->parent)
+            if (scene->isServiceFolder(p)) { inside = false; break; }
+    lua_pushboolean(L, inside);
     return 1;
 }
 
@@ -2385,6 +2395,12 @@ int inst_index(lua_State* L) {
 
     // Like Roblox, `workspace.Door` finds a child called "Door".
     if (SceneNode* c = n->findChild(k)) { LuaApi::pushInstance(L, c->id); return 1; }
+    // TextChatService.ChatVersion: chat here works like Roblox's older chat (scripts written for both
+    // then use StarterGui:SetCore("ChatMakeSystemMessage"), which works).
+    if (is(k, "ChatVersion") && n->name == "TextChatService" && E(L)->scene()->isServiceFolder(n)) {
+        lua_pushstring(L, "LegacyChatService");
+        return 1;
+    }
     if (SceneNode* c = starterFallback(L, n, k, false)) { LuaApi::pushInstance(L, c->id); return 1; }
     if (n == E(L)->scene()->root() && is(k, "Terrain")) { LuaApi::pushInstance(L, Scene::kTerrainId); return 1; }
     return luaL_error(L, "'%s' is not a valid member of %s \"%s\"", k, className(L, n), n->name.c_str());
@@ -3399,7 +3415,16 @@ int m_SetCore(lua_State* L) {
     if (what == "Spectate") g.spectate = lua_toboolean(L, 3);
     else if (what == "SpectateWhenDead") g.spectateWhenDead = lua_toboolean(L, 3);
     else if (what == "PlayerListStyle") setPlayerListStyle(L, 3, E(L)->scene()->world().playerList);
-    else return luaL_error(L, "SetCore: '%s' isn't something you can set (try \"Spectate\", \"SpectateWhenDead\" or \"PlayerListStyle\")", what.c_str());
+    else if (what == "ChatMakeSystemMessage") {
+        // { Text = "...", Color = Color3 }: a grey line in this player's own chat (old Roblox chat).
+        // (The colour isn't used: system lines all look the same here.)
+        std::string text;
+        if (lua_istable(L, 3)) { lua_getfield(L, 3, "Text"); if (lua_isstring(L, -1)) text = lua_tostring(L, -1); lua_pop(L, 1); }
+        else if (lua_isstring(L, 3)) text = lua_tostring(L, 3);
+        std::string err;
+        if (!E(L)->queueSystemChat(text, err, true)) return luaL_error(L, "SetCore ChatMakeSystemMessage: %s", err.c_str());
+    }
+    else return luaL_error(L, "SetCore: '%s' isn't something you can set (try \"Spectate\", \"SpectateWhenDead\", \"PlayerListStyle\" or \"ChatMakeSystemMessage\")", what.c_str());
     return 0;
 }
 int m_GetCore(lua_State* L) {

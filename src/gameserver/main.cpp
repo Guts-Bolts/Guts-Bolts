@@ -145,6 +145,7 @@ int runGame(const std::string& gameId, int max, const GameExtra& extra) {
         for (auto& tp : session.scripts().takeTeleports())
             if (!server.teleport(tp.player, tp.place, tp.data, gameId)) say("Teleport: " + tp.player + " isn't here");
         for (auto& line : session.scripts().takeSystemChat()) server.announce(line);   // DisplaySystemMessage
+        session.scripts().takeLocalChat();   // (nobody plays on this machine to see those)
         ImGui::EndFrame();
 
         if (!server.relayed() && !server.relayError().empty()) { say("Server closed: " + server.relayError()); break; }
@@ -205,6 +206,7 @@ int runLocalTest(const std::string& place, int port) {
         for (auto& tp : session.scripts().takeTeleports())
             say("Teleport: " + tp.player + " would go to " + tp.place + " (teleports don't work in a test)");
         for (auto& line : session.scripts().takeSystemChat()) server.announce(line);   // DisplaySystemMessage
+        session.scripts().takeLocalChat();   // (nobody plays on this machine to see those)
         ImGui::EndFrame();
 
         std::vector<std::string> now;

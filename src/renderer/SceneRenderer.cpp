@@ -14,6 +14,7 @@
 #include "../scene/Gerstner.h"
 #include "../scene/Skin.h"
 #include "../core/Settings.h"
+#include "../core/FrameProfile.h"
 #include "MeshLibrary.h"
 
 #include "GL.h"
@@ -540,8 +541,9 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
                                       lsCenter.y - extent, lsCenter.y + extent,
                                       -lsCenter.z - sunDist, -lsCenter.z + sunDist);
     glm::mat4 lightSpace = lightProj * lightView0;
-    bool shadows = env.shadows && env.sunElevation > -5.0f && shading == Shading::Material;   // (Studio's plain views have none)
-    if (shadows) renderShadowPass(scene, lightSpace, m_shadow);
+    bool shadows = env.shadows && gs.shadows && env.sunElevation > -5.0f && shading == Shading::Material;   // (Studio's plain views have none)
+    FrameProfile::finishGpu() = []() { glFinish(); };
+    if (shadows) { FrameProfile::Scope prof("draw: shadows", true); renderShadowPass(scene, lightSpace, m_shadow); }
     m_lightSpace = lightSpace;
     m_shadowsOn = shadows;
     // The sharp one: the same, but only ~20 studs round the camera's focus.
@@ -555,6 +557,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         c.y = std::floor(c.y / texelNear) * texelNear;
         lightSpaceNear = glm::ortho(c.x - extentNear, c.x + extentNear, c.y - extentNear, c.y + extentNear,
                                     -c.z - sunDist, -c.z + sunDist) * lightView0;
+        FrameProfile::Scope prof("draw: shadows near", true);
         renderShadowPass(scene, lightSpaceNear, m_shadowNear);
     }
 
@@ -735,12 +738,12 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lit->setVec4Array("uLightColor", lc, count);
     m_lit->setVec4Array("uLightDir", ld, count);
 
-    drawGeometry(scene, camera, showGrid);
+    { FrameProfile::Scope prof("draw: parts and water", true); drawGeometry(scene, camera, showGrid); }
     drawOverlay(view, proj);
     glBindVertexArray(0);
-    renderLiquid(scene, camera);
+    { FrameProfile::Scope prof("draw: liquid", true); renderLiquid(scene, camera); }
 
-    postProcess(scene, camera, target);
+    { FrameProfile::Scope prof("draw: post effects", true); postProcess(scene, camera, target); }
     drawHighlights(scene, camera, target);
 }
 
@@ -1427,7 +1430,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     if (shading == Shading::Wireframe) { wireframe(false); glEnable(GL_CULL_FACE); }
     drawConstraints(scene, editing);
     if (!waters.empty()) {
-        drawWater(scene, camera, waters);
+        { FrameProfile::Scope prof("draw: water surfaces", true); drawWater(scene, camera, waters); }
         m_lit->bind();
     }
 
@@ -2006,13 +2009,18 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
 #endif
         createTarget(m_fDepth, fw, fh, depthFmt, true);
         createTarget(m_fTmp, fw, fh, depthFmt, false);
-        createTarget(m_fThick, fw, fh, GL_RGBA16F, false);
-        createTarget(m_fColor, fw, fh, GL_RGBA16F, false);
+        // How much liquid (and its colour) changes slowly across the screen, so those
+        // two are worked out at half size: a quarter of the work for the busiest pass
+        // (every drop adds itself in, even the ones hidden behind others).
+        createTarget(m_fThick, (fw + 1) / 2, (fh + 1) / 2, GL_RGBA16F, false);
+        createTarget(m_fColor, (fw + 1) / 2, (fh + 1) / 2, GL_RGBA16F, false);
         createTarget(m_sceneCopy, w, h, hdrFormat(), true);   // colour and depth of what's behind
     }
     const glm::vec2 texel(1.0f / fw, 1.0f / fh);
     const float fluidScale = pointScale * (float)fh / (float)h;   // drop sizes in the liquid's (maybe smaller) pictures
     auto setDropsSmall = [&](Shader& s) { setDrops(s); s.setFloat("uPointScale", fluidScale); };
+    const glm::vec2 halfTexel(1.0f / m_fThick.w, 1.0f / m_fThick.h);
+    const float halfScale = fluidScale * (float)m_fThick.h / (float)fh;
 
     // 1. Nearest liquid in each pixel.
     bindTarget(m_fDepth);
@@ -2033,19 +2041,21 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE);
-    setDropsSmall(*m_fluidThick);
+    setDrops(*m_fluidThick);
+    m_fluidThick->setFloat("uPointScale", halfScale);
     bindTex(0, m_hdr.depth);
     m_fluidThick->setInt("uSceneDepth", 0);
-    m_fluidThick->setVec2("uTexel", texel);
+    m_fluidThick->setVec2("uTexel", halfTexel);
     drawDrops();
     // 2b. With more than one kind of liquid: which colour, where.
     if (tinted) {
         bindTarget(m_fColor);
         glClear(GL_COLOR_BUFFER_BIT);
-        setDropsSmall(*m_fluidColor);
+        setDrops(*m_fluidColor);
+        m_fluidColor->setFloat("uPointScale", halfScale);
         bindTex(0, m_hdr.depth);
         m_fluidColor->setInt("uSceneDepth", 0);
-        m_fluidColor->setVec2("uTexel", texel);
+        m_fluidColor->setVec2("uTexel", halfTexel);
         drawDrops();
     }
     glDisable(GL_BLEND);
@@ -2180,7 +2190,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     //     (each half the size of the last, smoothed back up one size, like the UI's blur),
     //     mixed in by the composite. A handful of tiny passes, so phones keep it. Depth of
     //     field is skipped on Low graphics. ---
-    const bool lowEnd = gs.quality == GraphicsSettings::Low;
+    const bool lowEnd = gs.lowEnd();
     const bool useDof = m_fx.dof && !lowEnd;
     // BlurEffect.Size in pixels -> which copy: each is about twice as blurry as the last.
     const float blurLevel = m_fx.blur > 0.5f ? std::clamp(std::log2(m_fx.blur / 1.5f), 0.0f, 4.0f) * (m_fx.blur < 3.0f ? m_fx.blur / 3.0f : 1.0f) : 0.0f;
