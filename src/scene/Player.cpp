@@ -575,6 +575,16 @@ void Player::placeAtSpawn() {
     m_groundId = 0;
 }
 
+void Player::moveTo(const glm::vec3& p) {
+    SceneNode* r = root();
+    if (!r || m_dead) return;
+    if (m_seatId) standUp(false);
+    r->transform.position = p;
+    m_velocity = glm::vec3(0.0f);
+    m_grounded = false;
+    m_groundId = 0;
+}
+
 void Player::beginPlay() {
     m_nativeControlsEnabled = true; // reset a legacy ControlScript toggle from the previous play session
     m_seatId = 0;   // (off any seat)

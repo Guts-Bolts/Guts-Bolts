@@ -523,6 +523,7 @@ void startSound(lua_State* L, SceneNode* n) {
     glm::vec3 at = in3d ? glm::vec3(n->parent->worldMatrix()[3]) : glm::vec3(0.0f);
     Scene& scene = *E(L)->scene();
     const float volume = SoundMix::volume(scene, n);   // (times its SoundGroup's Volume)
+    if (n->name != "Sound" && volume > 0.05f) Audio::caption(n->name, in3d ? &at : nullptr);   // (captions: "Thunder", "Door creaks")
     n->audioHandle = Audio::play(n->soundId, volume, n->pitch, n->looped, in3d ? &at : nullptr);
     SoundMix::apply(scene, n, n->audioHandle);          // its effects, and its group's
     if (!n->looped) scene.pushFx(FxEvent::Sound, at, volume, n->soundId, n->id, in3d);   // multiplayer
@@ -741,6 +742,8 @@ int m_GetTags(lua_State* L) {
 
 int m_LoadAnimation(lua_State* L);   // (with the animation code below)
 int m_SetCoreGuiEnabled(lua_State* L);   // (with the Humanoid code below)
+int m_SetCore(lua_State* L);
+int m_GetCore(lua_State* L);
 int m_GetCoreGuiEnabled(lua_State* L);
 bool parsePriority(const char* s, Anim::Priority& out);
 
@@ -880,6 +883,7 @@ const luaL_Reg kMethods[] = {
     {"HasTag", m_HasTag}, {"AddTag", m_AddTag}, {"RemoveTag", m_RemoveTag}, {"GetTags", m_GetTags},
     {"LoadAnimation", m_LoadAnimation}, {"GetMass", m_GetMass},
     {"SetCoreGuiEnabled", m_SetCoreGuiEnabled}, {"GetCoreGuiEnabled", m_GetCoreGuiEnabled},
+    {"SetCore", m_SetCore}, {"GetCore", m_GetCore},
     {nullptr, nullptr}};
 
 // ===========================================================================
@@ -3345,6 +3349,28 @@ int m_SetCoreGuiEnabled(lua_State* L) {
     luaL_checkany(L, 3);
     E(L)->scene()->coreGui().set(type, lua_toboolean(L, 3));
     return 0;
+}
+// StarterGui:SetCore("Spectate", true) puts this player in spectate mode (watching the other
+// players; false lets them play again). SetCore("SpectateWhenDead", false) stops the automatic
+// spectating while waiting to respawn. GetCore reads them back.
+int m_SetCore(lua_State* L) {
+    checkStarterGui(L, "SetCore");
+    const std::string what = luaL_checkstring(L, 2);
+    luaL_checkany(L, 3);
+    CoreGuiState& g = E(L)->scene()->coreGui();
+    if (what == "Spectate") g.spectate = lua_toboolean(L, 3);
+    else if (what == "SpectateWhenDead") g.spectateWhenDead = lua_toboolean(L, 3);
+    else return luaL_error(L, "SetCore: '%s' isn't something you can set (try \"Spectate\" or \"SpectateWhenDead\")", what.c_str());
+    return 0;
+}
+int m_GetCore(lua_State* L) {
+    checkStarterGui(L, "GetCore");
+    const std::string what = luaL_checkstring(L, 2);
+    const CoreGuiState& g = E(L)->scene()->coreGui();
+    if (what == "Spectate") lua_pushboolean(L, g.spectate);
+    else if (what == "SpectateWhenDead") lua_pushboolean(L, g.spectateWhenDead);
+    else return luaL_error(L, "GetCore: '%s' isn't something you can read", what.c_str());
+    return 1;
 }
 int m_GetCoreGuiEnabled(lua_State* L) {
     checkStarterGui(L, "GetCoreGuiEnabled");

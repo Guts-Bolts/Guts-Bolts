@@ -25,6 +25,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerGameWeb.cpp
     src/server/ServerChats.cpp
     src/server/ServerRoadmap.cpp
+    src/server/ServerExtras.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -485,6 +486,7 @@ add_library(gb_engine STATIC
     src/game/UpdateToast.cpp
     src/game/Badges.cpp
     src/game/Bolts.cpp
+    src/game/ClipRecorder.cpp
     src/online/Protocol.cpp
     src/online/MemoryStore.cpp
     src/online/OnlineClient.cpp
@@ -493,6 +495,7 @@ add_library(gb_engine STATIC
     src/game/TouchControls.cpp
     src/net/Socket.cpp
     src/net/NetGame.cpp
+    src/net/MoveGuard.cpp
     src/net/ChatTranslate.cpp
     src/editor/Theme.cpp
 )
@@ -594,7 +597,7 @@ endif()
 if(GB_MOBILE)
     # Phones and tablets get the Player only. On Android it's a library that
     # SDL's Java activity loads (it must be called "main").
-    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerPhoto.cpp src/player/WebKeyboard.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/PlayerVr.cpp src/player/LaunchLink.cpp)
+    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerPhoto.cpp src/player/PlayerSpectate.cpp src/player/PlayerClips.cpp src/player/WebKeyboard.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/PlayerVr.cpp src/player/LaunchLink.cpp)
     if(ANDROID)
         add_library(main SHARED ${PLAYER_SOURCES})
         target_link_libraries(main PRIVATE gb_engine)
@@ -785,6 +788,9 @@ set(EDITOR_SOURCES
     src/editor/EditorAiActivity.cpp
     src/editor/EditorLevelGen.cpp
     src/editor/LevelGen.cpp
+    src/editor/GameTemplates.cpp
+    src/editor/EditorTemplates.cpp
+    src/editor/EditorCutscenes.cpp
     src/editor/EditorBulkEdit.cpp
     src/editor/EditorBlocks.cpp
     src/editor/VisualScript.cpp
@@ -832,6 +838,8 @@ set(PLAYER_SOURCES
     src/player/PlayerDevConsole.cpp
     src/player/PlayerPasses.cpp
     src/player/PlayerPhoto.cpp
+    src/player/PlayerSpectate.cpp
+    src/player/PlayerClips.cpp
     src/player/WebKeyboard.cpp
     src/player/PlayerFriends.cpp
     src/player/PlayerLogin.cpp
@@ -887,6 +895,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerItemFavoritesTests gb_version)
     target_link_libraries(ServerItemFavoritesTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerItemFavoritesTests COMMAND ServerItemFavoritesTests)
+
+    # Achievements, game update logs and events (ServerExtras.cpp).
+    add_executable(ServerExtrasTests tests/ServerExtrasTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerExtrasTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerExtrasTests gb_version)
+    target_link_libraries(ServerExtrasTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerExtrasTests COMMAND ServerExtrasTests)
 
     # Studio Learn progress: account validation, persistence across server restarts and guest denial.
     add_executable(ServerLearnProgressTests tests/ServerLearnProgressTests.cpp ${GB_SERVER_TEST_SOURCES})
@@ -992,6 +1007,27 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(SpatialQueriesTests PRIVATE gb_engine)
     add_test(NAME SpatialQueriesTests COMMAND SpatialQueriesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Cutscenes: the camera flies through the shots in order and comes back.
+    add_executable(CutsceneTests tests/CutsceneTests.cpp)
+    target_link_libraries(CutsceneTests PRIVATE gb_engine)
+    add_test(NAME CutsceneTests COMMAND CutsceneTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Game templates: each builds, saves, loads and plays with no script errors.
+    add_executable(GameTemplatesTests tests/GameTemplatesTests.cpp src/editor/GameTemplates.cpp src/editor/LevelGen.cpp src/editor/Premades.cpp)
+    target_include_directories(GameTemplatesTests PRIVATE src/)
+    target_link_libraries(GameTemplatesTests PRIVATE gb_engine)
+    add_test(NAME GameTemplatesTests COMMAND GameTemplatesTests 4 WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The clip recorder: keeps the last 30 seconds and writes a GIF that reads back the same.
+    add_executable(ClipRecorderTests tests/ClipRecorderTests.cpp)
+    target_link_libraries(ClipRecorderTests PRIVATE gb_engine)
+    add_test(NAME ClipRecorderTests COMMAND ClipRecorderTests)
+
+    # Basic anti-cheat: zooming, teleporting and flying get caught; normal play doesn't.
+    add_executable(MoveGuardTests tests/MoveGuardTests.cpp)
+    target_link_libraries(MoveGuardTests PRIVATE gb_engine)
+    add_test(NAME MoveGuardTests COMMAND MoveGuardTests)
 
     # Bridging games to other sites: PlayerChatted, DisplaySystemMessage, game.GameId, HttpService Secrets.
     add_executable(GameBridgeTests tests/GameBridgeTests.cpp)

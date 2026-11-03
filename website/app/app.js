@@ -700,7 +700,7 @@ pages.home = async () => {
 // My Feed: what friends and people you follow said, and what they've been up to (playing a
 // game, making something, earning a badge).
 function feedList(feedR) {
-  if (!feedR.ok || !feedR.feed.length) return html`<p class="muted small">Nothing yet. What your friends and the people you follow are up to shows up here.</p>`;
+  if (!feedR.ok || !feedR.feed.length) return html`<p class="muted small">Nothing yet. What your friends and the people you follow are up to, and what's new in your favourite games, shows up here.</p>`;
   const did = (x) => {
     const link = x.assetKind === 'game' ? '#/game/' + x.id : x.assetKind === 'model' ? '#/library/' + (x.num || x.id) : '#/item/' + x.id;
     const thing = html`<a class="link" href="${link}">${x.name}</a>`;
@@ -708,7 +708,7 @@ function feedList(feedR) {
     if (x.kind === 'badge') return html`🏅 earned the ${x.detail || ''} badge in ${thing}`;
     return html`🛠️ made ${x.assetKind === 'game' ? 'a new game' : 'something new'}: ${thing}`;
   };
-  return html`<div class="feed-list">${feedR.feed.map((p) => html`<div class="feed-item">
+  return html`<div class="feed-list">${feedR.feed.map((p) => p.kind === 'gamelog' ? gameLogFeedItem(p) : html`<div class="feed-item">
       <a href="#/user/${p.user.userId}" class="feed-pic" data-feed-avatar="${p.user.id}">${avatarSvg(p.user.avatar, 40)}</a>
       <div><a class="link" href="#/user/${p.user.userId}">${p.user.name}</a>${verified(p.user.verified)}
         <div>${p.activity ? did(p.activity) : html`"${p.text}"`}</div><div class="small muted">${ago(p.at)}</div></div></div>`)}</div>`;
@@ -1440,8 +1440,8 @@ pages.game = async (id) => {
   const [r, s] = await Promise.all([pageCall('list', { kind: 'game', limit: 100 }), pageCall('servers.list', { game: id })]);
   const g = r.ok && r.assets.find((a) => a.id === id || String(a.num) === id);
   if (!g) { show(html`<h1>Game not found</h1><p class="muted">${r.ok ? 'It may have been deleted, or its creator made it private.' : r.error}</p>`); return; }
-  const [pr, cr, lb] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('comments.list', { game: g.id }),
-    pageCall('game.leaderboards', { id: g.id })]);
+  const [pr, cr, lb, lr] = await Promise.all([pageCall('pass.list', { game: g.id }), pageCall('comments.list', { game: g.id }),
+    pageCall('game.leaderboards', { id: g.id }), pageCall('gamelog.list', { id: g.id })]);
   const passes = pr.ok ? pr.passes.filter((p) => !p.offsale || p.owned) : [];
   const mine = signedIn() && (g.creator === me.id || me.staff);
   const servers = s.ok ? s.servers : [];
@@ -1492,6 +1492,7 @@ pages.game = async (id) => {
           ${g.featured ? 'Stop featuring' : 'Feature this game'}</button> <span class="small muted">(staff)</span></p>` : ''}
         <p class="small muted">Games run in the Guts&amp;Bolts app (Windows, Mac, Linux and Android).${mine ? '' : html` ${reportLink('game', g.id, g.name)}`}</p></div></div>
     <h2>Description</h2><p style="white-space:pre-wrap">${g.description || 'No description yet.'}</p>
+    ${gameLogBlock(g, lr, mine)}
     ${g.lyreto ? html`<h2>Community</h2>${lyretoCard(g.lyreto, 'the players')}` : ''}
     ${(g.badges || []).length ? html`<h2>Badges</h2><div class="list">${g.badges.map((b) => html`<div>
         ${gameBadgeIcon(b, 44)}<span class="grow"><b>${b.name}</b><br><span class="small muted">${b.description || ''}</span></span>
@@ -2527,6 +2528,7 @@ pages.user = async (id, tab, page, more) => {
             const got = (r.playerBadges || []).some((x) => x.key === b.key);
             return html`<span class="game-badge player-badge ${got ? '' : 'locked'}" title="${b.name}: ${got ? 'earned!' : b.need}">${playerBadgeIcon(b.key, 44)}<span>${b.name}</span></span>`;
           })}</div></div>` : ''}
+        ${achievementsBox(r)}
         <div class="box"><h2 class="boxhead">Game Badges (${(r.gameBadges || []).length})</h2>
           ${(r.gameBadges || []).length ? html`<div class="badge-grid">${r.gameBadges.slice(0, 24).map((b) => html`<a class="game-badge" href="#/game/${b.game}"
               title="${b.name}${b.description ? ': ' + b.description : ''} (${b.gameName})">${gameBadgeIcon(b, 48)}<span>${b.name}</span></a>`)}</div>`
@@ -5130,6 +5132,119 @@ async function refreshLiveAuctions() {
 }
 
 // --- the page picker ------------------------------------------------------------------
+
+// --- Achievements, game update logs and events (worker/extras.js has the rules) ---
+function achievementsBox(r) {
+  const list = r.achievements || [];
+  if (!list.length) return '';
+  const got = list.filter((x) => x.earned).length;
+  return html`<div class="box"><h2 class="boxhead">Achievements (${got} of ${list.length})</h2>
+    <div class="achievements">${list.map((x) => html`<div class="achievement ${x.earned ? 'earned' : 'locked'}" title="${x.text}">
+      <span class="achievement-icon">${x.earned ? raw('&#127942;') : raw('&#128274;')}</span>
+      <span class="grow"><b>${x.name}</b><br><span class="small muted">${x.text}</span>
+        ${x.earned ? '' : html`<span class="achievement-bar"><span style="width:${Math.round(100 * x.have / x.need)}%"></span></span>
+          <span class="small muted">${x.have} / ${x.need}</span>`}</span></div>`)}</div></div>`;
+}
+const gameLogFeedItem = (p) => html`<div class="feed-item gamelog-item">
+    <a href="#/game/${p.game.id}" class="feed-pic">${gameIcon({ id: p.game.id, name: p.game.name }, 40)}</a>
+    <div><a class="link" href="#/game/${p.game.id}">${p.game.name}</a> <span class="badge-pill">Update</span>
+      <div><b>${p.title}</b>${p.text.length > p.title.length ? html` <span>${p.text.slice(p.title.length + 2)}</span>` : ''}</div>
+      <div class="small muted">${ago(p.at)}</div></div></div>`;
+function gameLogBlock(g, lr, mine) {
+  const entries = lr && lr.ok ? lr.entries : [];
+  if (!entries.length && !mine) return '';
+  return html`<h2 id="whats-new">What's new</h2>
+    ${mine ? html`<details class="box"><summary><b>Post an update</b> <span class="small muted">(people who favourited your game see it in their feed)</span></summary>
+      <form class="form" data-form="gameLogPost"><input type="hidden" name="id" value="${g.id}">
+        <label>Title</label><input type="text" name="title" maxlength="80" required placeholder="like: Winter map is here!">
+        <label>What changed <span class="muted small">(optional)</span></label><textarea name="text" maxlength="1000" rows="3"></textarea>
+        <p><button class="btn green">Post update</button> <span class="small muted">Up to 5 a day.</span></p></form></details>` : ''}
+    ${entries.length ? html`<div class="gamelog">${entries.slice(0, 10).map((e) => html`<div class="gamelog-entry">
+        <p><b>${e.title}</b> <span class="small muted">${ago(e.at)}</span>
+          ${mine ? html` <a href="#" class="small" data-act="gameLogDelete" data-game="${g.id}" data-id="${e.id}">Delete</a>` : ''}</p>
+        ${e.text ? html`<p style="white-space:pre-wrap">${e.text}</p>` : ''}</div>`)}</div>`
+      : html`<p class="muted small">No updates posted yet.</p>`}`;
+}
+const EVENT_STATE = { soon: 'Starts soon', live: 'On now', over: 'Ended' };
+function eventCountdown(t) {
+  const s = Math.max(0, t - Math.floor(Date.now() / 1000));
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return d ? d + 'd ' + h + 'h' : h ? h + 'h ' + m + 'm' : m + 'm';
+}
+const toLocalInput = (t) => { const d = new Date(t * 1000); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+function eventForm(e) {
+  const t = Math.floor(Date.now() / 1000);
+  return html`<form class="form" data-form="eventSave"><input type="hidden" name="id" value="${e ? e.id : ''}">
+    <label>Name</label><input type="text" name="name" maxlength="60" required value="${e ? e.name : ''}" placeholder="like: Winter Fest">
+    <label>What it's about</label><textarea name="text" maxlength="600" rows="2">${e ? e.text : ''}</textarea>
+    <label>Starts</label><input type="datetime-local" name="start" required value="${toLocalInput(e ? e.start : t)}">
+    <label>Ends</label><input type="datetime-local" name="end" required value="${toLocalInput(e ? e.end : t + 7 * 86400)}">
+    <label>Free item's ID <span class="muted small">(a catalog item; leave empty for none)</span></label><input type="text" name="item" value="${e && e.item ? e.item.id : ''}">
+    <label>Minutes of playing to earn it</label><input type="number" name="minutes" min="0" max="600" step="5" value="${e ? e.minutes : 30}">
+    <p><button class="btn green">${e ? 'Save' : 'Add event'}</button></p></form>`;
+}
+pages.events = async () => {
+  const r = await pageCall('events.list', {});
+  if (!r.ok) { show(html`<h1>Events</h1><p class="error">${r.error}</p>`); return; }
+  const staff = signedIn() && me.staff;
+  const card = (e) => {
+    const pct = e.minutes ? Math.round(100 * e.played / e.minutes) : 100;
+    const ready = e.state !== 'soon' && e.played >= e.minutes && !e.claimed;
+    return html`<div class="box event-card event-${e.state}">
+      <h2 class="boxhead">${e.name} <span class="badge-pill">${EVENT_STATE[e.state]}</span></h2>
+      ${e.text ? html`<p>${e.text}</p>` : ''}
+      <p class="small">${e.state === 'soon' ? html`Starts in <b>${eventCountdown(e.start)}</b>` : e.state === 'live' ? html`Ends in <b>${eventCountdown(e.end)}</b>`
+        : html`Ended ${ago(e.end)}`} <span class="muted">(${new Date(e.start * 1000).toLocaleString()} to ${new Date(e.end * 1000).toLocaleString()})</span></p>
+      ${e.item ? html`<p>Free item: <a href="#/item/${e.item.id}"><b>${e.item.name}</b></a> for playing any game for <b>${e.minutes} minutes</b> while it's on.</p>
+        ${signedIn() ? html`<div class="event-progress"><span style="width:${pct}%"></span></div>
+          <p class="small muted">You've played ${e.played} of ${e.minutes} minutes.</p>
+          ${e.claimed ? html`<p><span class="badge-pill">You got it!</span></p>`
+            : html`<p><button class="btn ${ready ? 'green' : ''}" data-act="eventClaim" data-id="${e.id}" ${ready ? '' : 'disabled'}>Get the item</button></p>`}`
+          : html`<p class="small"><a href="#/signup">Sign up</a> or <a href="#/login">log in</a> to earn it.</p>`}` : ''}
+      ${staff ? html`<details class="small"><summary>Edit (staff)</summary>${eventForm(e)}
+        <p><button class="btn small red" data-act="eventRemove" data-id="${e.id}">Remove</button></p></details>` : ''}</div>`;
+  };
+  show(html`<h1>Events</h1>
+    <p class="muted">Special times on Guts&amp;Bolts. Play any game while an event is on to earn its free item. Minutes count while you're in a game in the Player.</p>
+    ${staff ? html`<details class="box"><summary><b>Add an event</b> (staff)</summary>${eventForm(null)}</details>` : ''}
+    ${r.events.length ? r.events.map(card) : html`<p class="muted">No events right now. Check back soon!</p>`}`);
+};
+Object.assign(forms, {
+  async gameLogPost(f) {
+    const r = await call('gamelog.post', { id: f.id.value, title: f.title.value, text: f.text.value });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Posted! People who favourited your game will see it.');
+    render();
+  },
+  async eventSave(f) {
+    const when = (box) => Math.floor(new Date(box.value).getTime() / 1000);
+    const r = await call('admin.eventSave', { id: f.id.value, name: f.name.value, text: f.text.value, start: when(f.start), end: when(f.end),
+      item: f.item.value.trim(), minutes: Number(f.minutes.value) });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Saved.');
+    render();
+  },
+});
+Object.assign(actions, {
+  async gameLogDelete(d) {
+    if (!confirm('Delete this update?')) return;
+    const r = await call('gamelog.delete', { id: d.game, entry: d.id });
+    if (!r.ok) { toast(r.error); return; }
+    render();
+  },
+  async eventClaim(d) {
+    const r = await call('events.claim', { id: d.id });
+    if (!r.ok) { toast(r.error); return; }
+    toast(r.got ? 'You got ' + r.got.name + '! It\'s in your inventory.' : 'Done!');
+    render();
+  },
+  async eventRemove(d) {
+    if (!confirm('Remove this event?')) return;
+    const r = await call('admin.eventRemove', { id: d.id });
+    if (!r.ok) { toast(r.error); return; }
+    render();
+  },
+});
 
 async function render() {
   const token = ++pageToken;

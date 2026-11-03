@@ -1296,6 +1296,7 @@ uniform bool  uRaysOn;
 uniform sampler2D uRays;
 uniform vec3  uRaysColor;
 uniform bool  uGrade;
+uniform int   uColorBlind;     // Settings > Accessibility: 0 off, 1 protanopia, 2 deuteranopia, 3 tritanopia
 uniform vec4  uGradeParams;    // Brightness, Contrast (1 = same), Saturation (1 = same), unused
 uniform vec3  uGradeTint;
 out vec4 FragColor;
@@ -1429,6 +1430,19 @@ void main() {
         c = (c - 0.5) * uGradeParams.y + 0.5;
         float gl = dot(c, vec3(0.2126, 0.7152, 0.0722));
         c = mix(vec3(gl), c, uGradeParams.z) * uGradeTint;
+    }
+    if (uColorBlind > 0) {
+        // Daltonize: work out what someone with that colour blindness sees (Machado 2009), and move
+        // the colour difference they'd miss into colours they can tell apart.
+        vec3 r0, r1, r2;
+        if (uColorBlind == 1)      { r0 = vec3(0.152286, 1.052583, -0.204868); r1 = vec3(0.114503, 0.786281, 0.099216); r2 = vec3(-0.003882, -0.048116, 1.051998); }
+        else if (uColorBlind == 2) { r0 = vec3(0.367322, 0.860646, -0.227968); r1 = vec3(0.280085, 0.672501, 0.047413); r2 = vec3(-0.011820, 0.042940, 0.968881); }
+        else                       { r0 = vec3(1.255528, -0.076749, -0.178779); r1 = vec3(-0.078411, 0.930809, 0.147602); r2 = vec3(0.004733, 0.691367, 0.303900); }
+        vec3 seen = vec3(dot(r0, c), dot(r1, c), dot(r2, c));
+        vec3 lost = c - seen;
+        vec3 shift = uColorBlind == 3 ? vec3(lost.r + 0.7 * lost.b, lost.g + 0.7 * lost.b, 0.0)
+                                      : vec3(0.0, 0.7 * lost.r + lost.g, 0.7 * lost.r + lost.b);
+        c = c + shift;
     }
     c = clamp(c, 0.0, 1.0);
     FragColor = vec4(c, uLumaAlpha ? dot(c, vec3(0.299, 0.587, 0.114)) : 1.0);

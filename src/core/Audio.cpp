@@ -318,6 +318,7 @@ void update() {
 }
 
 int play(const std::string& soundId, float volume, float pitch, bool loop, const glm::vec3* position) {
+    if (!loop && volume > 0.05f) caption(builtinCaption(soundId), position);   // (even with no sound device)
     if (!g_ready || soundId.empty()) return 0;
     if (g_playing.size() > 96) return 0;   // don't let a runaway script flood the mixer
 
@@ -451,7 +452,51 @@ void setPosition(int handle, const glm::vec3& p) {
     if (Instance* in = find(handle)) ma_sound_set_position(&in->sound, p.x, p.y, p.z);
 }
 
+namespace {
+std::vector<Caption> g_captions;
+glm::vec3 g_listenerAt{0.0f}, g_listenerDir{0.0f, 0.0f, -1.0f};
+} // namespace
+
+double captionClock() {
+    using namespace std::chrono;
+    return duration<double>(steady_clock::now().time_since_epoch()).count();
+}
+
+std::string builtinCaption(const std::string& id) {
+    static const std::pair<const char*, const char*> words[] = {
+        {"jump", "Jump"}, {"coin", "Coin"}, {"oof", "Oof!"}, {"explosion", "Explosion"}, {"splat", "Splat"}, {"hit", "Hit"},
+        {"win", "Win!"}, {"boing", "Boing"}, {"spawn", "Spawn"}, {"respawn", "Respawn"}, {"splash", "Splash"}};
+    for (const auto& [k, w] : words) if (id == k) return w;
+    return "";
+}
+
+void caption(const std::string& text, const glm::vec3* position) {
+    if (text.empty()) return;
+    const double now = captionClock();
+    int side = 0;
+    if (position) {
+        const glm::vec3 to = *position - g_listenerAt;
+        const glm::vec3 right = glm::cross(g_listenerDir, glm::vec3(0.0f, 1.0f, 0.0f));
+        const float len = glm::length(to), sideways = glm::length(right) > 0.001f && len > 0.001f ? glm::dot(to / len, glm::normalize(right)) : 0.0f;
+        side = sideways > 0.4f ? 1 : sideways < -0.4f ? -1 : 0;
+    }
+    for (Caption& c : g_captions)   // the same sound again: count it instead of a new line
+        if (c.text == text && now - c.at < 1.0 && c.side == side) { c.at = now; ++c.count; return; }
+    g_captions.push_back({text, now, side, 1});
+    if (g_captions.size() > 32) g_captions.erase(g_captions.begin());
+}
+
+std::vector<Caption> captions(double keepSeconds) {
+    const double now = captionClock();
+    g_captions.erase(std::remove_if(g_captions.begin(), g_captions.end(), [&](const Caption& c) { return now - c.at > 10.0; }), g_captions.end());
+    std::vector<Caption> out;
+    for (const Caption& c : g_captions) if (now - c.at <= keepSeconds) out.push_back(c);
+    return out;
+}
+
 void setListener(const glm::vec3& p, const glm::vec3& f) {
+    g_listenerAt = p;
+    g_listenerDir = f;
     if (!g_ready) return;
     ma_engine_listener_set_position(&g_engine, 0, p.x, p.y, p.z);
     ma_engine_listener_set_direction(&g_engine, 0, f.x, f.y, f.z);

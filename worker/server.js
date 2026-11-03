@@ -20,6 +20,8 @@ import { MemoryStore } from './memorystore.js';
 import { installMcpRelay } from './mcp-relay.js';
 import { installGameWeb } from './game-web.js';
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
+import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
+  kLogTitle, kLogText, kEventName, kEventText } from './extras.js';   // achievements, game update logs, events
 import { Roadmap, builtInItems, kRoadTitle, kRoadText, kRoadVersion, kRoadNote } from './roadmap.js';
 import BUILT_IN_ROADMAP from './roadmap-gathered.js';   // worker/roadmap/, one file per item (worker/gather-updates.mjs)
 import { broadcastSupabase, insertSupabaseRows, listSupabaseFriendActivity, listSupabaseLeaderboards, listSupabaseNotifications, markSupabaseNotificationsRead, supabaseRpc } from './supabase.js';
@@ -383,6 +385,8 @@ const COSTLY = {
   'bolts.redeem':        [20, 60, 600],    // (so nobody can guess promo codes over and over)
   'roadmap.suggest':     [5, 15, 3600],
   'roadmap.vote':        [120, 360, 600],
+  'gamelog.post':        [10, 30, 3600],
+  'events.claim':        [20, 60, 600],
 };
 const GUESSES = new Set(['account.salt', 'account.login', 'account.reset', 'account.emailVerify', 'bolts.redeem']);
 // The apps' connection (/ws) can send this many requests every 10 seconds (games sending
@@ -411,7 +415,7 @@ const kMsgKept = 500;            // messages kept per game at most
 const kMsgPerPoll = 200;         // handed out per msg.poll
 const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
-const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'game.leaderboards']);
+const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'game.leaderboards', 'gamelog.list', 'events.list']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
 const kCodeMinutes = 15, kCodeTries = 5, kMailGap = 60, kMailsPerDay = 8;
@@ -749,7 +753,7 @@ export class GbServerObject extends DurableObject {
     this.name = env.SERVER_NAME || 'Guts&Bolts';
     this.users = new Map(); this.assets = new AssetMap(); this.groups = new Map(); this.forum = new Map();
     // What changed and needs writing (set up first: loading can already change things).
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false, roadmap: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false, roadmap: false, events: false };
     for (const r of this.sql.exec('SELECT id, data FROM users')) this.users.set(r.id, JSON.parse(r.data));
     for (const r of this.sql.exec('SELECT id, data FROM assets')) {
       const a = JSON.parse(r.data);
@@ -770,6 +774,7 @@ export class GbServerObject extends DurableObject {
     // Who used one is kept on their account (u.promos), so each person can use it once.
     this.promos = this.getMeta('promos', []);
     this.roadmap = new Roadmap(this.getMeta('roadmap', {}), builtInItems(BUILT_IN_ROADMAP));   // the public roadmap and ideas (roadmap.js)
+    this.events = new Events(this.getMeta('events', []));   // timed events with a free item (extras.js)
     // Connected apps: { secrets: {app: {hash, at}}, codes: [{hash, account, app, redirect, at}],
     // tokens: [{hash, account, app, at, expires}], pictures: {account: when its avatar picture was saved} }
     this.connect = Object.assign({ secrets: {}, codes: [], tokens: [], pictures: {} }, this.getMeta('connect', {}));
@@ -887,11 +892,13 @@ export class GbServerObject extends DurableObject {
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'roadmap', JSON.stringify(this.roadmap));
     if (this.dirty.connect)
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'connect', JSON.stringify(this.connect));
+    if (this.dirty.events)
+      this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'events', JSON.stringify(this.events));
     if (this.dirty.staffLog) {
       if (this.staffLog.length > kMaxStaffLog) this.staffLog.splice(0, this.staffLog.length - kMaxStaffLog);
       this.sql.exec('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', 'stafflog', JSON.stringify(this.staffLog));
     }
-    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false, roadmap: false };
+    this.dirty = { users: new Set(), assets: new Set(), groups: new Set(), forum: new Set(), ids: false, trades: false, updates: false, reports: false, staffLog: false, tickets: false, connect: false, promos: false, roadmap: false, events: false };
   }
   // --- Limited items: numbered copies (a.copies = [{ serial, owner, price }]) ---
   copiesOf(u) {   // every tradeable Limited U copy this account holds
@@ -1508,6 +1515,65 @@ export class GbServerObject extends DurableObject {
     me.learnProgress = { completed, current: nextCurrent, step: nextStep, practice: nextPractice, updatedAt };
     this.saveUser(me);
     return okay({ progress: me.learnProgress });
+  }
+  // --- Game update logs: a game's creator posts what's new (extras.js has the rules) ---
+  gameLogOp(name, me, args) {
+    const a = this.assets.get(str(args, 'id'));
+    if (!a || a.kind !== 'game' || !this.canPlay(a, me)) return fail('That game doesn\'t exist (any more).');
+    if (name === 'gamelog.list') return okay({ entries: gameLogView(a) });
+    if (a.creator !== me.id && !this.isStaff(me)) return fail('Only the game\'s creator can post its updates.');
+    let r;
+    if (name === 'gamelog.post')
+      r = gameLogPost(a, say(str(args, 'title'), kLogTitle), say(str(args, 'text'), kLogText, true), randomHex(6), now(), utcDay(now()));
+    else if (name === 'gamelog.delete') r = gameLogDelete(a, str(args, 'entry'));
+    else return fail('Unknown request: ' + name);
+    if (r) return r;
+    this.saveAsset(a);
+    return okay({ entries: gameLogView(a) });
+  }
+  // --- Events: timed, with a free item for playing (extras.js has the rules) ---
+  eventItem(id) {
+    const a = id ? this.assets.get(id) : null;
+    return a && isCatalogItem(a.kind) ? { id: a.id, name: a.name, kind: a.kind } : null;
+  }
+  eventsView(me) { return this.events.view(now(), me.userId > 0 ? me : null, (id) => this.eventItem(id)); }
+  eventsOp(name, me, args) {
+    if (name === 'events.list') return this.eventsView(me);
+    if (name !== 'events.claim') return fail('Unknown request: ' + name);
+    if (me.userId === 0) return fail('Sign up to get event items.');
+    const e = this.events.claimable(me, str(args, 'id'), now());
+    if (e.ok === false) return e;
+    const a = e.item ? this.assets.get(e.item) : null;
+    me.eventClaims = [...(me.eventClaims || []), e.id].slice(-200);
+    let got = null;
+    if (a && isCatalogItem(a.kind) && !a.limited && !me.owned.includes(a.id)) {
+      me.owned.push(a.id);
+      this.giveBundle(me, a);
+      a.sales++;
+      this.saveAsset(a);
+      got = { id: a.id, name: a.name };
+      this.notify(me, 'gift', 'You got ' + a.name + ' from the event "' + e.name + '"!', a.id);
+    }
+    this.saveUser(me);
+    return Object.assign(this.eventsView(me), { got });
+  }
+  eventsAdmin(name, me, args) {
+    let r;
+    if (name === 'admin.eventSave') {
+      const item = str(args, 'item');
+      if (item && !this.eventItem(item)) return fail('The event\'s item must be a catalog item (or nothing).');
+      const fields = { id: str(args, 'id'), name: cleanText(str(args, 'name'), kEventName), text: cleanText(str(args, 'text'), kEventText, true),
+        start: num(args, 'start'), end: num(args, 'end'), item, minutes: num(args, 'minutes') };
+      r = this.events.save(fields, 'e' + randomHex(6), now());
+      if (r.ok !== false) this.staffDid(me, 'event', (fields.id ? 'Changed' : 'Added') + ' the event "' + r.name + '"');
+    } else {
+      const x = this.events.list.find((e) => e.id === str(args, 'id'));
+      r = this.events.remove(str(args, 'id'));
+      if (!r && x) this.staffDid(me, 'event', 'Removed the event "' + x.name + '"');
+    }
+    if (r && r.ok === false) return r;
+    this.dirty.events = true;
+    return this.eventsView(me);
   }
   roadmapOp(name, me, args) {
     if (name === 'roadmap.get') return this.roadmapView(me);
@@ -2383,7 +2449,8 @@ export class GbServerObject extends DurableObject {
         followerCount: (u.followers || []).length, followingCount: (u.following || []).length,
         isFollowing: (me.following || []).includes(u.id), blocked: (me.blocked || []).includes(u.id),
         online: this.presence(me, u).online, playing: this.presence(me, u).playing, placeVisits, gameBadges,
-        blurb: u.blurb || '', status: (u.posts || [])[0] || null, playerBadges: this.playerBadgesOf(u), allPlayerBadges: PLAYER_BADGES });
+        blurb: u.blurb || '', status: (u.posts || [])[0] || null, playerBadges: this.playerBadgesOf(u), allPlayerBadges: PLAYER_BADGES,
+        achievements: achievementsOf(achievementStats(u, [...this.assets.values()].filter((a) => a.creator === u.id), t)) });
     }
     if (name === 'profile.inventory') {
       // Everything someone owns from the catalog, a page at a time, in one group (INVENTORY_CATS).
@@ -2442,6 +2509,8 @@ export class GbServerObject extends DurableObject {
     if (name === 'game.secrets' || name === 'game.secretSet' || name === 'game.secretRemove') return this.secretOp(name, me, args);
     if (name.startsWith('learn.')) return this.learnOp(name, me, args);
     if (name.startsWith('roadmap.')) return this.roadmapOp(name, me, args);
+    if (name.startsWith('gamelog.')) return this.gameLogOp(name, me, args);
+    if (name.startsWith('events.')) return this.eventsOp(name, me, args);
     if (name.startsWith('updates.')) return this.updateOp(name, me, args);
     if (name.startsWith('block.') || name.startsWith('report.')) return this.safetyOp(name, me, args);
     if (name.startsWith('appeal.')) return this.appealOp(name, me, args);
@@ -2670,6 +2739,9 @@ export class GbServerObject extends DurableObject {
         for (const post of (u.posts || []).slice(0, 5))
           feed.push({ text: post.text, at: post.at, user: { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), avatar: u.avatar || null } });
       }
+      // What's new in the games you favourited (their creators' update notes).
+      const faved = (me.favorites || []).map((id) => this.assets.get(id)).filter((a) => a && a.kind === 'game' && this.canPlay(a, me));
+      feed.push(...gameLogFeed(faved, t));
       feed.sort((x, y) => y.at - x.at);
       // What they've been up to (playing, making, badges) comes from Supabase: see supabaseFollowUp.
       const others = [...ids].filter((id) => id !== me.id).slice(0, 150);
@@ -3042,6 +3114,7 @@ export class GbServerObject extends DurableObject {
       if (t - me.lastPlay < 280) return fail('Keep playing!');
       if (me.playDay !== today) { me.playDay = today; me.playEarned = 0; }
       me.lastPlay = t;
+      if (me.userId > 0) this.events.played(me, t);   // minutes towards live events' free items
       this.saveUser(me);
       if (me.playEarned >= 50) return fail('That\'s all the Bolts from playing for today.');
       me.playEarned += 5;
@@ -3144,6 +3217,7 @@ export class GbServerObject extends DurableObject {
         return this.isOfficial(me) ? this.promoAdmin(name, me, args) : fail('Only the official Guts account can do that.');
       if (name === 'admin.roadmapSave' || name === 'admin.roadmapRemove' || name === 'admin.ideaAnswer' || name === 'admin.ideaRemove')
         return this.roadmapAdmin(name, me, args);
+      if (name === 'admin.eventSave' || name === 'admin.eventRemove') return this.eventsAdmin(name, me, args);
       if (!to) return fail('There\'s no account with that ID on this server.');
       if (name === 'admin.grant') {
         const key = str(args, 'key'), sig = str(args, 'sig');

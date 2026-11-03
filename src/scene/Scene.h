@@ -68,6 +68,9 @@ struct CoreGuiState {
     static constexpr const char* kTypes[] = {"PlayerList", "Health", "Backpack", "Chat", "EmotesMenu", "SelfView", "Captures"};
     std::map<std::string, bool> on;   // type -> shown (missing = shown)
     bool emotesOpen = false;          // the emote menu is open (B, its button, or GuiService:SetEmotesMenuOpen)
+    // Spectate mode (StarterGui:SetCore("Spectate", on) / SetCore("SpectateWhenDead", on)).
+    bool spectate = false;            // a script wants this player watching others
+    bool spectateWhenDead = true;     // watch someone else while waiting to respawn
     static bool known(const std::string& type) {
         if (type == "All") return true;
         for (const char* t : kTypes) if (type == t) return true;

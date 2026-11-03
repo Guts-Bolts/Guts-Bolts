@@ -212,6 +212,7 @@ float AppWindow::beginFrame(const std::function<void()>& beforeImGui) {
     ImGui_ImplGlfw_NewFrame();
     Pad::injectApply();   // (tests)
     if (beforeImGui) beforeImGui();
+    ImGui::GetStyle().FontScaleMain = GraphicsSettings::get().textSize;   // Settings > Accessibility > Text size
     ImGui::NewFrame();
     Pad::update();
     return dt;

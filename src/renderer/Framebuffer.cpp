@@ -46,6 +46,20 @@ void Framebuffer::unbind() const {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+bool Framebuffer::readShrunk(Framebuffer& small, int w, int h, std::vector<unsigned char>& rgba) const {
+    if (m_w <= 0 || m_h <= 0 || w <= 0 || h <= 0) return false;
+    small.resize(w, h);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, small.m_fbo);
+    glBlitFramebuffer(0, 0, m_w, m_h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+    glBindFramebuffer(GL_FRAMEBUFFER, small.m_fbo);
+    rgba.resize((size_t)w * h * 4);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return true;
+}
+
 std::string Framebuffer::toPng() const {
     const int w = m_w, h = m_h;
     if (w <= 0 || h <= 0) return {};

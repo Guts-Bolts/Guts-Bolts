@@ -25,6 +25,20 @@ struct GraphicsSettings {
     float mouseSensitivity = 1.0f;
     bool  invertCamera  = false;
 
+    // Accessibility
+    enum ColorBlind { SeeNormal, Protanopia, Deuteranopia, Tritanopia };
+    int   colorBlind    = SeeNormal;   // shift colours so reds / greens / blues are easier to tell apart
+    float textSize      = 1.0f;        // everything written on the screen, bigger (1 = normal, up to 2)
+    bool  captions      = false;       // show what you hear as words at the bottom of the screen
+
+    // Clip recorder: keep the last 30 seconds of play so F3 can save them (about 40 MB of memory)
+#if defined(GB_MOBILE) || defined(__EMSCRIPTEN__)
+    bool  clipRecorder  = false;
+#else
+    bool  clipRecorder  = true;
+#endif
+    static const char* const* colorBlindNames();   // 4 names, for a menu
+
     // Sound and screen
     float volume        = 1.0f;
     bool  fullscreen    = false;

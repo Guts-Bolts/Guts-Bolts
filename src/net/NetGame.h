@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <vector>
 #include "Socket.h"
+#include "MoveGuard.h"
+struct RemoteCharacter;
 #include "../core/Log.h"
 #include "../game/PlayerEntry.h"
 #include <nlohmann/json.hpp>
@@ -152,6 +154,8 @@ private:
     uint64_t    m_terrainSent = 0;    // the terrain version everyone has (0 = not checked yet)
     double      m_terrainAt = 0.0;    // when it was last sent
     std::unordered_map<uint64_t, PoseBuffer> m_poses;   // joined players' characters, shown smoothly
+    MoveGuard   m_guard;    // basic anti-cheat: checks how joined players move (MoveGuard.h)
+    void        guardMove(Client& c, RemoteCharacter& rc, const glm::vec3& pos, bool free);
     ChatLog     m_chat;
     float       m_tick = 0.0f;
     int         m_nextId = 1;
