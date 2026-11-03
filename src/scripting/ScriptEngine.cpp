@@ -123,6 +123,9 @@ end }
 -- Players are tables with an object behind them (__node), so `player.leaderstats`
 -- and `folder.Parent = player` work like Roblox.
 local playerNode, setRespawn = __gb_playerNode, __gb_setRespawn
+-- player.PlayerGui: UI only that player sees. (Looking something up in it that isn't there
+-- looks in StarterGui too, so `PlayerGui.MainGui` finds the StarterGui's MainGui.)
+local playerGuiOf = __gb_playerGui
 local charSignals, setTeam = __gb_charSignals, __gb_setTeam
 local applyTeam, teamByColor   -- (Teams, below)
 -- Game UI lives in a folder called StarterGui (game.StarterGui, player.PlayerGui).
@@ -164,7 +167,7 @@ local makeChatted   -- player.Chatted: a signal made the first time a script ask
 local playerMeta = {
     __index = function(t, k)
         if k == "Chatted" and makeChatted then local s = makeChatted() rawset(t, "Chatted", s) return s end
-        if k == "PlayerGui" then return uiFolder() end
+        if k == "PlayerGui" then return playerGuiOf(rawget(t, "Name")) end
         if k == "PlayerScripts" then return playerScripts(t) end
         if k == "GetMouse" then return function(self) return getMouse(self) end end
         if k == "GetJoinData" then return getJoinData end
@@ -317,6 +320,21 @@ function __gb_playerById(id, name)
     for _, p in ipairs(playerList) do if p.UserId == id then return p end end
     if id == nil or id == 0 then return nil end
     return { Name = name or "", DisplayName = name or "", UserId = id }
+end
+-- The player list (leaderboard) asks which team someone is on: name, r, g, b (nil = none).
+function __gb_teamOf(name)
+    for _, p in ipairs(playerList) do
+        if p.Name == name then
+            local team = rawget(p, "__Team")
+            if team == nil or rawget(p, "__Neutral") then return nil end
+            local ok, tname, c = pcall(function() return team.Name, team:GetAttribute("TeamColor") end)
+            if not ok or tname == nil then return nil end
+            c = c or rawget(p, "__TeamColor")
+            if c and c.R then return tname, c.R, c.G, c.B end
+            return tname, 1, 1, 1
+        end
+    end
+    return nil
 end
 function __gb_removePlayer(name)
     for i, p in ipairs(playerList) do
@@ -2135,6 +2153,230 @@ __gb_wait, __gb_spawn, __gb_delay, __gb_character, __gb_playerName, __gb_backpac
 __gb_noLocalPlayer = nil
 __gb_heartbeat, __gb_inputBegan, __gb_inputEnded, __gb_isKeyDown, __gb_padState = nil, nil, nil, nil, nil
 __gb_playerAdded, __gb_playerRemoving, __gb_tagAdded, __gb_tagRemoved = nil, nil, nil, nil
+-- typeof(value): like type(), but names Roblox's types ("Vector3", "Color3", "Instance"...).
+if typeof == nil then
+    local instanceNames = { Instance = true, Humanoid = true, Animator = true, AnimationTrack = true }
+    function typeof(v)
+        local t = type(v)
+        if t ~= "userdata" and t ~= "table" then return t end
+        local mt = getmetatable(v)
+        if type(mt) == "table" then
+            local n = rawget(mt, "__type") or rawget(mt, "__name")
+            if type(n) == "string" then return instanceNames[n] and "Instance" or n end
+        end
+        return t
+    end
+end
+playerMeta.__type = "Instance"
+
+-- BrickColor: Roblox's named colours ("Bright blue", "Really red"...). Works wherever a
+-- Color3 does (team.TeamColor, part.BrickColor, SpawnLocation.TeamColor...).
+do
+    local palette = {
+        {1, "White", 242, 243, 243}, {2, "Grey", 161, 165, 162}, {3, "Light yellow", 249, 233, 153},
+        {5, "Brick yellow", 215, 197, 154}, {6, "Light green (Mint)", 194, 218, 184}, {9, "Light reddish violet", 232, 186, 200},
+        {11, "Pastel Blue", 128, 187, 219}, {12, "Light orange brown", 203, 132, 66}, {18, "Nougat", 204, 142, 105},
+        {21, "Bright red", 196, 40, 28}, {22, "Med. reddish violet", 196, 112, 160}, {23, "Bright blue", 13, 105, 172},
+        {24, "Bright yellow", 245, 205, 48}, {25, "Earth orange", 98, 71, 50}, {26, "Black", 27, 42, 53},
+        {27, "Dark grey", 109, 110, 108}, {28, "Dark green", 40, 127, 71}, {29, "Medium green", 161, 196, 140},
+        {37, "Bright green", 75, 151, 75}, {38, "Dark orange", 160, 95, 53}, {104, "Bright violet", 107, 50, 124},
+        {106, "Bright orange", 218, 133, 65}, {107, "Bright bluish green", 0, 143, 156}, {119, "Br. yellowish green", 164, 189, 71},
+        {135, "Sand blue", 116, 134, 157}, {141, "Earth green", 39, 70, 45}, {151, "Sand green", 120, 144, 130},
+        {192, "Reddish brown", 105, 64, 40}, {194, "Medium stone grey", 163, 162, 165}, {199, "Dark stone grey", 99, 95, 98},
+        {208, "Light stone grey", 229, 228, 223}, {1001, "Institutional white", 248, 248, 248}, {1003, "Really black", 17, 17, 17},
+        {1004, "Really red", 255, 0, 0}, {1005, "Deep orange", 255, 176, 0}, {1006, "Alder", 180, 128, 255},
+        {1009, "New Yeller", 255, 255, 0}, {1010, "Really blue", 0, 0, 255}, {1011, "Navy blue", 0, 32, 96},
+        {1012, "Deep blue", 33, 84, 185}, {1013, "Cyan", 4, 175, 236}, {1015, "Magenta", 170, 0, 170},
+        {1016, "Pink", 255, 102, 204}, {1019, "Toothpaste", 0, 255, 255}, {1020, "Lime green", 0, 255, 0},
+        {1032, "Hot pink", 255, 0, 191},
+    }
+    local meta = { __type = "BrickColor" }
+    meta.__index = meta
+    meta.__tostring = function(b) return b.Name end
+    meta.__eq = function(a, b) return a.Number == b.Number end
+    local byName, byNumber, list = {}, {}, {}
+    for _, e in ipairs(palette) do
+        local c = Color3.fromRGB(e[3], e[4], e[5])
+        local b = setmetatable({ Number = e[1], Name = e[2], Color = c, __brickColor = c,
+                                 r = c.R, g = c.G, b = c.B, R = c.R, G = c.G, B = c.B }, meta)
+        byName[e[2]:lower()] = b
+        byNumber[e[1]] = b
+        list[#list + 1] = b
+    end
+    local function nearest(r, g, b)
+        local best, bestD = nil, math.huge
+        for _, bc in ipairs(list) do
+            local d = (bc.r - r) ^ 2 + (bc.g - g) ^ 2 + (bc.b - b) ^ 2
+            if d < bestD then best, bestD = bc, d end
+        end
+        return best
+    end
+    local default = byNumber[194]
+    BrickColor = {
+        new = function(a, g, b)
+            if type(a) == "string" then return byName[a:lower()] or default end
+            if type(a) == "number" and g == nil then return byNumber[math.floor(a)] or default end
+            if type(a) == "number" then return nearest(a, tonumber(g) or 0, tonumber(b) or 0) end
+            if typeof(a) == "Color3" then return nearest(a.R, a.G, a.B) end
+            if type(a) == "table" and getmetatable(a) == meta then return a end
+            return default
+        end,
+        random = function() return list[math.random(1, #list)] end,
+        palette = function(i) return list[(math.floor(tonumber(i) or 0) % #list) + 1] end,
+        White = function() return byNumber[1] end, Gray = function() return byNumber[194] end,
+        DarkGray = function() return byNumber[199] end, Black = function() return byNumber[26] end,
+        Red = function() return byNumber[21] end, Yellow = function() return byNumber[24] end,
+        Green = function() return byNumber[28] end, Blue = function() return byNumber[23] end,
+    }
+    __gb_brickColor = function(c) return nearest(c.R, c.G, c.B) end
+end
+
+-- ---------------------------------------------------------------------------
+-- Cops and robbers basics (the "Lights, Sirens, Labels" update): team:GetPlayers(),
+-- player:LoadCharacter() / :Kick(), Players.RespawnTime / CharacterAutoLoads /
+-- GetPlayerByUserId, game:BindToClose, DateTime, UserInputService.TouchEnabled.
+-- ---------------------------------------------------------------------------
+do
+    -- team:GetPlayers(): everyone on that Team object.
+    addMethod("GetPlayers", function(self)
+        if self:GetAttribute("RobloxClass") ~= "Team" then
+            error("GetPlayers is a method of Team objects (for everyone in the game: Players:GetPlayers())", 2)
+        end
+        return Teams:GetPlayersOnTeam(self)
+    end)
+
+    -- obj:WaitForChild(name [, timeout]): waits until it's there, like Roblox (it used to
+    -- give up at once). After 5 seconds it warns once; with a timeout it gives nil back.
+    addMethod("WaitForChild", function(self, name, timeout)
+        local c = self:FindFirstChild(name)
+        if c ~= nil then return c end
+        timeout = tonumber(timeout)
+        local waited, warned = 0, false
+        while true do
+            waited = waited + task.wait()
+            c = self:FindFirstChild(name)
+            if c ~= nil then return c end
+            if timeout and waited >= timeout then return nil end
+            if not timeout and not warned and waited >= 5 then
+                warned = true
+                warn("Infinite yield possible on '" .. tostring(self) .. ":WaitForChild(\"" .. tostring(name) .. "\")'")
+            end
+        end
+    end)
+
+    -- guiObject:TweenPosition / TweenSize / TweenSizeAndPosition(goal(s), direction, style,
+    -- time, override, callback), Roblox's older shortcut for TweenService on UI.
+    local guiTweens = setmetatable({}, { __mode = "k" })
+    local function guiTween(self, goals, direction, style, time, override, callback)
+        local running = guiTweens[self]
+        if running and running.PlaybackState == "Playing" then
+            if not override then return false end
+            running:Cancel()
+        end
+        local info = TweenInfo.new(tonumber(time) or 1, style or "Quad", direction or "Out")
+        local tw = TweenService:Create(self, info, goals)
+        guiTweens[self] = tw
+        if type(callback) == "function" then
+            tw.Completed:Connect(function(status) callback(status) end)
+        end
+        tw:Play()
+        return true
+    end
+    addMethod("TweenPosition", function(self, pos, direction, style, time, override, callback)
+        return guiTween(self, { Position = pos }, direction, style, time, override, callback)
+    end)
+    addMethod("TweenSize", function(self, size, direction, style, time, override, callback)
+        return guiTween(self, { Size = size }, direction, style, time, override, callback)
+    end)
+    addMethod("TweenSizeAndPosition", function(self, size, pos, direction, style, time, override, callback)
+        return guiTween(self, { Size = size, Position = pos }, direction, style, time, override, callback)
+    end)
+
+    -- player:LoadCharacter() (a fresh body at a spawn) and player:Kick(reason).
+    local playerCmd = __gb_playerCmd
+    local baseIndex = playerMeta.__index
+    local function loadCharacter(self) playerCmd(rawget(self, "Name"), "respawn") end
+    local function kick(self, reason)
+        playerCmd(rawget(self, "Name"), "kick", reason ~= nil and tostring(reason) or nil)
+    end
+    playerMeta.__index = function(t, k)
+        if k == "LoadCharacter" then return loadCharacter end
+        if k == "Kick" then return kick end
+        return baseIndex(t, k)
+    end
+
+    -- Players.RespawnTime (seconds, 4 to start with) and Players.CharacterAutoLoads (false:
+    -- a dead player stays dead until a script calls player:LoadCharacter()).
+    local respawnRules = __gb_respawnRules
+    local rules = { RespawnTime = 4, CharacterAutoLoads = true }
+    setmetatable(Players, {
+        __index = function(_, k) return rules[k] end,
+        __newindex = function(t, k, v)
+            if k == "RespawnTime" then
+                v = tonumber(v)
+                if v == nil then error("Players.RespawnTime must be a number", 2) end
+                rules.RespawnTime = math.max(0, v)
+                respawnRules(rules.RespawnTime, rules.CharacterAutoLoads)
+            elseif k == "CharacterAutoLoads" then
+                rules.CharacterAutoLoads = v and true or false
+                respawnRules(rules.RespawnTime, rules.CharacterAutoLoads)
+            else
+                rawset(t, k, v)
+            end
+        end,
+    })
+    function Players:GetPlayerByUserId(id)
+        id = tonumber(id)
+        for _, p in ipairs(playerList) do if p.UserId == id then return p end end
+        return nil
+    end
+
+    -- game:BindToClose(fn): runs fn when the game server closes (Studio's Stop, the host
+    -- leaving): the place to save everyone's stats. Saving with SetAsync works; anything
+    -- that waits (task.wait, GetAsync) stops there.
+    local closeFns, server = {}, not __gb_clientMode
+    rawset(game, "BindToClose", function(_, fn)
+        if type(fn) ~= "function" then error("BindToClose needs a function", 2) end
+        if server then closeFns[#closeFns + 1] = fn end
+    end)
+    __gb_runClose = function()
+        for _, fn in ipairs(closeFns) do
+            local ok, err = coroutine.resume(coroutine.create(fn))
+            if not ok then warn("BindToClose: " .. tostring(err)) end
+        end
+        closeFns = {}
+    end
+
+    -- DateTime: the current time in Unix seconds / milliseconds, and as text.
+    local dtMeta = {}
+    dtMeta.__index = dtMeta
+    dtMeta.__type = "DateTime"
+    local function make(ms) return setmetatable({ UnixTimestampMillis = math.floor(ms), UnixTimestamp = math.floor(ms / 1000) }, dtMeta) end
+    local function parts(self, utc)
+        local d = os.date(utc and "!*t" or "*t", self.UnixTimestamp)
+        return { Year = d.year, Month = d.month, Day = d.day, Hour = d.hour, Minute = d.min, Second = d.sec,
+                 Millisecond = self.UnixTimestampMillis % 1000 }
+    end
+    function dtMeta:ToUniversalTime() return parts(self, true) end
+    function dtMeta:ToLocalTime() return parts(self, false) end
+    function dtMeta:ToIsoDate() return os.date("!%Y-%m-%dT%H:%M:%SZ", self.UnixTimestamp) end
+    dtMeta.__tostring = function(self) return self:ToIsoDate() end
+    dtMeta.__eq = function(a, b) return a.UnixTimestampMillis == b.UnixTimestampMillis end
+    dtMeta.__lt = function(a, b) return a.UnixTimestampMillis < b.UnixTimestampMillis end
+    dtMeta.__le = function(a, b) return a.UnixTimestampMillis <= b.UnixTimestampMillis end
+    DateTime = {
+        now = function() return make(tick() * 1000) end,
+        fromUnixTimestamp = function(s) return make((tonumber(s) or 0) * 1000) end,
+        fromUnixTimestampMillis = function(ms) return make(tonumber(ms) or 0) end,
+    }
+
+    -- Phones and tablets: TouchEnabled (and no keyboard or mouse to speak of).
+    local touch = __gb_touchScreen and __gb_touchScreen() or false
+    UserInputService.TouchEnabled = touch
+    UserInputService.KeyboardEnabled = not touch
+    UserInputService.MouseEnabled = not touch
+end
+__gb_playerCmd, __gb_respawnRules, __gb_touchScreen, __gb_playerGui = nil, nil, nil, nil
 __gb_charSignals, __gb_setTeam, __gb_clientMode = nil, nil, nil
 __gb_playerNode, __gb_setRespawn, __gb_dsStart, __gb_dsDone, __gb_dsSet, __gb_navPath, __gb_navQuery = nil, nil, nil, nil, nil, nil, nil
 __gb_dsSorted = nil
@@ -2820,6 +3062,32 @@ int l_materialPhysics(lua_State* L) {
     return 0;
 }
 
+// __gb_playerCmd(name, what, value): player:LoadCharacter() ("respawn"), player:Kick(reason)
+// ("kick"). Our own player happens here; someone who joined is told by the host.
+int l_playerCmd(lua_State* L) {
+    ScriptEngine* e = LuaApi::engine(L);
+    Scene& scene = *e->scene();
+    const std::string name = luaL_checkstring(L, 1), what = luaL_checkstring(L, 2);
+    const std::string reason = lua_isstring(L, 3) ? lua_tostring(L, 3) : "";
+    if (!e->noLocalPlayer() && name == e->playerName()) {
+        if (what == "respawn") { if (Player* p = scene.player()) p->loadCharacter(); }
+        else if (what == "kick") e->kickLocal(reason);
+        return 0;
+    }
+    for (RemoteCharacter& r : scene.remotes())
+        if (r.name == name) {
+            if (what == "respawn") r.respawnNow = true;
+            else if (what == "kick") { r.kick = reason.empty() ? "You were kicked from this game." : reason; r.kicked = true; }
+        }
+    return 0;
+}
+
+// __gb_respawnRules(time, autoLoads): Players.RespawnTime / Players.CharacterAutoLoads
+int l_respawnRules(lua_State* L) {
+    LuaApi::engine(L)->setRespawnRules((float)luaL_checknumber(L, 1), lua_toboolean(L, 2));
+    return 0;
+}
+
 // LocalPlayer.RespawnLocation = part (nil = back to the normal spawn)
 int l_setRespawn(lua_State* L) {
     Player* p = LuaApi::engine(L)->scene()->player();
@@ -3403,6 +3671,10 @@ void ScriptEngine::openLibraries() {
 
 void ScriptEngine::start(bool runScripts) {
     stop();
+    m_kicked = false;
+    m_kickReason.clear();
+    m_healthSeen.clear();
+    setRespawnRules(4.0f, true);   // (Players.RespawnTime / CharacterAutoLoads start over)
     m_L = luaL_newstate();
     *static_cast<ScriptEngine**>(lua_getextraspace(m_L)) = this;
     m_time = 0.0;
@@ -3436,6 +3708,14 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_padState", l_padState);
     lua_register(L, "__gb_playerNode", l_playerNode);
     lua_register(L, "__gb_setRespawn", l_setRespawn);
+    lua_register(L, "__gb_playerCmd", l_playerCmd);
+    lua_register(L, "__gb_playerGui", [](lua_State* L) -> int {
+        SceneNode* g = LuaApi::engine(L)->playerGui(luaL_checkstring(L, 1), true);
+        LuaApi::pushInstance(L, g ? g->id : 0);
+        return 1;
+    });
+    lua_register(L, "__gb_respawnRules", l_respawnRules);
+    lua_register(L, "__gb_touchScreen", [](lua_State* L) -> int { lua_pushboolean(L, ScriptEngine::touchScreen()); return 1; });
     lua_register(L, "__gb_charSignals", l_charSignals);
     lua_register(L, "__gb_setTeam", l_setTeam);
     lua_register(L, "__gb_materialPhysics", l_materialPhysics);
@@ -3546,6 +3826,18 @@ void ScriptEngine::start(bool runScripts) {
     // obj:GetAttributeChangedSignal(name) is built in Lua (see the prelude).
     lua_getglobal(L, "__gb_attrSignal");
     lua_setfield(L, LUA_REGISTRYINDEX, "GB.attrSignal");
+    lua_getglobal(L, "__gb_brickColor");   // part.BrickColor: the nearest named colour
+    lua_setfield(L, LUA_REGISTRYINDEX, "GB.brickColor");
+    lua_pushnil(L);
+    lua_setglobal(L, "__gb_brickColor");
+    lua_getglobal(L, "__gb_teamOf");   // the player list: which team someone is on
+    lua_setfield(L, LUA_REGISTRYINDEX, "GB.teamOf");
+    lua_pushnil(L);
+    lua_setglobal(L, "__gb_teamOf");
+    lua_getglobal(L, "__gb_runClose");   // game:BindToClose's functions (run by stop())
+    lua_setfield(L, LUA_REGISTRYINDEX, "GB.runClose");
+    lua_pushnil(L);
+    lua_setglobal(L, "__gb_runClose");
     lua_pushnil(L);
     lua_setglobal(L, "__gb_attrSignal");
     lua_getglobal(L, "PhysicalProperties");   // (part.CustomPhysicalProperties makes these)
@@ -3746,6 +4038,21 @@ void ScriptEngine::stop() {
     // A paused coroutine must never outlive its Lua VM. Release its registry reference
     // before closing the state and reset transient stepping state; configured breakpoints
     // remain available for the next local session.
+    // game:BindToClose: the game's last words (saving stats) before it closes.
+    if (m_L && !m_closing) {
+        m_closing = true;
+        lua_getfield(m_L, LUA_REGISTRYINDEX, "GB.runClose");
+        if (lua_isfunction(m_L, -1)) {
+            m_resumeStart = nowSeconds();
+            ++m_depth;
+            if (lua_pcall(m_L, 0, 0, 0) != LUA_OK) {
+                Log::warn(std::string("BindToClose: ") + (lua_tostring(m_L, -1) ? lua_tostring(m_L, -1) : "error"));
+                lua_pop(m_L, 1);
+            }
+            --m_depth;
+        } else lua_pop(m_L, 1);
+        m_closing = false;
+    }
     debugForget();
     m_resumeStack.clear();
     if (m_L) lua_close(m_L);
@@ -4117,6 +4424,24 @@ void ScriptEngine::update(float dt) {
         }
     }
 
+    // Humanoid.HealthChanged: health changes in many places (damage, falling, scripts,
+    // people who joined), so look at the ones scripts listen to once a frame.
+    {
+        const std::set<uint64_t> ids = listeners(SignalKind::HealthChanged);
+        for (auto it = m_healthSeen.begin(); it != m_healthSeen.end();)
+            it = ids.count(it->first) ? std::next(it) : m_healthSeen.erase(it);
+        for (uint64_t id : ids) {
+            const Humanoid* h = m_scene->humanoidOf(id);
+            if (!h) continue;
+            auto [it, fresh] = m_healthSeen.try_emplace(id, h->health);
+            if (fresh || it->second == h->health) continue;
+            it->second = h->health;
+            const float hp = h->health;
+            fire(SignalKind::HealthChanged, id, [hp](lua_State* co) { lua_pushnumber(co, hp); return 1; });
+            if (!m_L) return;
+        }
+    }
+
     fire(SignalKind::Heartbeat, 0, [dt](lua_State* co) { lua_pushnumber(co, dt); return 1; });
 
     if (m_gui.messageTime > 0.0f) {
@@ -4170,6 +4495,13 @@ void ScriptEngine::fire(SignalKind kind, uint64_t id, const std::function<int(lu
         int nargs = pushArgs ? pushArgs(co) : 0;
         resume(co, ref, nargs);
     }
+}
+
+void ScriptEngine::fireTouchEnded(uint64_t partId, uint64_t otherId) {
+    fire(SignalKind::TouchEnded, partId, [otherId](lua_State* co) {
+        LuaApi::pushInstance(co, otherId);
+        return 1;
+    });
 }
 
 void ScriptEngine::fireTouched(uint64_t partId, uint64_t otherId) {
@@ -4759,6 +5091,36 @@ uint64_t ScriptEngine::playerNode(const std::string& name) {
     return root->addChild(std::make_unique<SceneNode>(name, NodeKind::Model))->id;
 }
 
+SceneNode* ScriptEngine::playerGui(const std::string& name, bool create) {
+    SceneNode* p = nullptr;
+    if (create) p = resolve(playerNode(name));
+    else if (SceneNode* root = m_playersRoot ? resolve(m_playersRoot) : nullptr) p = root->findChild(name);
+    if (!p) return nullptr;
+    for (auto& c : p->children) if (isPlayerGui(c.get())) return c.get();
+    if (!create) return nullptr;
+    auto g = std::make_unique<SceneNode>("PlayerGui", NodeKind::Model);
+    Attribute a;
+    a.name = "RobloxClass"; a.type = Attribute::String; a.s = "PlayerGui";
+    g->attributes.push_back(a);
+    return p->addChild(std::move(g));
+}
+
+SceneNode* ScriptEngine::localPlayerGui() {
+    if (m_noLocalPlayer || m_playerName.empty()) return nullptr;
+    return playerGui(m_playerName, false);
+}
+
+bool ScriptEngine::isPlayerGui(const SceneNode* n) {
+    if (!n || n->kind != NodeKind::Model || n->name != "PlayerGui") return false;
+    const Attribute* a = n->findAttribute("RobloxClass");
+    return a && a->type == Attribute::String && a->s == "PlayerGui";
+}
+
+SceneNode* ScriptEngine::starterGui() {
+    SceneNode* f = m_scene->root()->findChild("StarterGui");
+    return f && !f->isGui() ? f : nullptr;
+}
+
 std::vector<std::pair<std::string, std::string>> ScriptEngine::leaderstats(const std::string& name) {
     std::vector<std::pair<std::string, std::string>> out;
     SceneNode* root = m_playersRoot ? resolve(m_playersRoot) : nullptr;
@@ -4768,6 +5130,33 @@ std::vector<std::pair<std::string, std::string>> ScriptEngine::leaderstats(const
     for (auto& c : ls->children)
         if (c->isValue() && out.size() < 4) out.push_back({c->name, c->valueText()});   // Roblox shows up to 4
     return out;
+}
+
+bool ScriptEngine::playerTeam(const std::string& name, std::string& team, glm::vec3& color) {
+    if (!m_L || m_depth > 0) return false;   // (not while a script is running)
+    lua_getfield(m_L, LUA_REGISTRYINDEX, "GB.teamOf");
+    if (!lua_isfunction(m_L, -1)) { lua_pop(m_L, 1); return false; }
+    lua_pushstring(m_L, name.c_str());
+    m_resumeStart = nowSeconds();
+    ++m_depth;
+    const int status = lua_pcall(m_L, 1, 4, 0);
+    --m_depth;
+    if (status != LUA_OK) { lua_pop(m_L, 1); return false; }
+    const bool ok = lua_type(m_L, -4) == LUA_TSTRING;
+    if (ok) {
+        team = lua_tostring(m_L, -4);
+        color = glm::vec3((float)lua_tonumber(m_L, -3), (float)lua_tonumber(m_L, -2), (float)lua_tonumber(m_L, -1));
+    }
+    lua_pop(m_L, 4);
+    return ok;
+}
+
+void ScriptEngine::fillTeam(PlayerEntry& e, const std::string& name) {
+    std::string team;
+    glm::vec3 c(1.0f);
+    if (!playerTeam(name, team, c)) return;
+    e.team = team;
+    e.teamColor[0] = c.r; e.teamColor[1] = c.g; e.teamColor[2] = c.b;
 }
 
 void ScriptEngine::addPlayer(const std::string& name, uint64_t rootId, int userId, uint64_t backpackId) {
@@ -4896,12 +5285,22 @@ SceneNode* ScriptEngine::adopt(std::unique_ptr<SceneNode> n) {
 }
 
 bool ScriptEngine::setParent(SceneNode* node, SceneNode* newParent, std::string& err) {
-    if (m_scene->isProtected(node)) { err = "You can't change the Parent of " + node->name; return false; }
+    if (m_scene->isProtected(node) || isPlayerGui(node)) { err = "You can't change the Parent of " + node->name; return false; }
     if (newParent && (newParent == node || node->isAncestorOf(newParent))) {
         err = "Can't put an object inside itself";
         return false;
     }
     if (node->parent == newParent && newParent) return true;
+
+    // (DescendantRemoving / ChildRemoved first: the scripts listening may move or destroy it.)
+    const uint64_t movedId = node->id;
+    if (node->parent) {
+        treeLeaving(movedId, false);
+        node = resolve(movedId);
+        if (!node) return true;
+        if (node->parent == newParent && newParent) return true;
+        if (newParent && (newParent == node || node->isAncestorOf(newParent))) return true;
+    }
 
     // Take ownership of the node, wherever it currently lives.
     std::unique_ptr<SceneNode> owned;
@@ -4922,14 +5321,111 @@ bool ScriptEngine::setParent(SceneNode* node, SceneNode* newParent, std::string&
         m_scene->markDirty();
         // Like Roblox: scripts start when they arrive in the world (a clone parented in, say).
         if (!inScene && topOf(moved) == m_scene->root()) runScriptsIn(moved);
+        // ...and in our own PlayerGui (a ScreenGui with a LocalScript, cloned in by a script).
+        if (SceneNode* mine = localPlayerGui(); mine && (moved == mine || mine->isAncestorOf(moved))) runScriptsIn(moved);
     } else {
         m_detached.push_back(std::move(owned));
     }
+    treeArrived(movedId);
     return true;
 }
 
+void ScriptEngine::setRespawnRules(float time, bool autoLoads) {
+    m_respawnTime = std::clamp(time, 0.0f, 1.0e6f);
+    m_autoLoads = autoLoads;
+    if (Player* p = m_scene->player()) p->setRespawnRules(m_respawnTime, m_autoLoads);
+}
+
+std::set<uint64_t> ScriptEngine::listeners(SignalKind kind) const {
+    std::set<uint64_t> ids;
+    for (const Connection& c : m_conns) if (c.alive && c.kind == kind) ids.insert(c.id);
+    return ids;
+}
+
+namespace {
+void subtreeIds(const SceneNode* n, std::vector<uint64_t>& out) {
+    for (const auto& c : n->children) {
+        if (c->internal) continue;
+        out.push_back(c->id);
+        subtreeIds(c.get(), out);
+    }
+}
+} // namespace
+
+// About to leave its parent (moved or destroyed): Destroying on it and everything in it,
+// DescendantRemoving on everything above it, ChildRemoved on its parent.
+void ScriptEngine::treeLeaving(uint64_t id, bool destroying) {
+    SceneNode* node = resolve(id);
+    if (!node || !m_L) return;
+    std::vector<uint64_t> moving{id};
+    subtreeIds(node, moving);
+    if (destroying) {
+        const std::set<uint64_t> d = listeners(SignalKind::Destroying);
+        if (!d.empty())
+            for (uint64_t m : moving) if (d.count(m)) fire(SignalKind::Destroying, m, nullptr);
+    }
+    node = resolve(id);
+    if (!node || !node->parent || !m_L) return;
+    const uint64_t parent = node->parent->id;
+    const std::set<uint64_t> desc = listeners(SignalKind::DescendantRemoving);
+    if (!desc.empty()) {
+        std::vector<uint64_t> above;
+        for (SceneNode* p = node->parent; p; p = p->parent) above.push_back(p->id);
+        for (uint64_t a : above) {
+            if (!desc.count(a)) continue;
+            for (uint64_t m : moving)
+                fire(SignalKind::DescendantRemoving, a, [m](lua_State* co) { LuaApi::pushInstance(co, m); return 1; });
+        }
+    }
+    if (listeners(SignalKind::ChildRemoved).count(parent))
+        fire(SignalKind::ChildRemoved, parent, [id](lua_State* co) { LuaApi::pushInstance(co, id); return 1; });
+}
+
+// Just arrived under a new parent (or taken out, Parent = nil): ChildAdded on the parent,
+// DescendantAdded on everything above, AncestryChanged on it and everything in it.
+void ScriptEngine::treeArrived(uint64_t id) {
+    SceneNode* node = resolve(id);
+    if (!node || !m_L) return;
+    std::vector<uint64_t> moved{id};
+    subtreeIds(node, moved);
+    const uint64_t parent = node->parent ? node->parent->id : 0;
+    if (parent && listeners(SignalKind::ChildAdded).count(parent))
+        fire(SignalKind::ChildAdded, parent, [id](lua_State* co) { LuaApi::pushInstance(co, id); return 1; });
+    if (!m_L) return;
+    if (node = resolve(id); node && node->parent) {
+        const std::set<uint64_t> desc = listeners(SignalKind::DescendantAdded);
+        if (!desc.empty()) {
+            std::vector<uint64_t> above;
+            for (SceneNode* p = node->parent; p; p = p->parent) above.push_back(p->id);
+            for (uint64_t a : above) {
+                if (!desc.count(a)) continue;
+                for (uint64_t m : moved) {
+                    if (!resolve(m)) continue;
+                    fire(SignalKind::DescendantAdded, a, [m](lua_State* co) { LuaApi::pushInstance(co, m); return 1; });
+                }
+            }
+        }
+    }
+    if (!m_L) return;
+    const std::set<uint64_t> anc = listeners(SignalKind::AncestryChanged);
+    for (uint64_t m : moved) {
+        if (!anc.count(m) || !resolve(m)) continue;
+        fire(SignalKind::AncestryChanged, m, [id, parent](lua_State* co) {
+            LuaApi::pushInstance(co, id);
+            if (parent) LuaApi::pushInstance(co, parent); else lua_pushnil(co);
+            return 2;
+        });
+    }
+}
+
 bool ScriptEngine::destroy(SceneNode* node, std::string& err) {
-    if (m_scene->isProtected(node)) { err = "You can't Destroy " + node->name; return false; }
+    if (m_scene->isProtected(node) || isPlayerGui(node)) { err = "You can't Destroy " + node->name; return false; }
+    // (Destroying, DescendantRemoving and ChildRemoved first, while it can still be read.)
+    const uint64_t id = node->id;
+    treeLeaving(id, true);
+    node = resolve(id);
+    if (!node) return true;
+    if (m_scene->isProtected(node)) return true;
     stopScripts(node);
     if (topOf(node) == m_scene->root() || topOf(node) == m_scene->cameraNode()) {
         m_scene->removeNode(node);

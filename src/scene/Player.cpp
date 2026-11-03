@@ -2112,7 +2112,7 @@ void Player::updateDeath(float dt, Physics& physics) {
     m_deadTime += dt;
     if (m_ragdoll.active()) {
         m_ragdoll.update(dt, *m_scene, physics);
-        if (m_deadTime >= m_respawnDelay) respawn();
+        if (m_autoRespawn && m_deadTime >= m_respawnDelay) respawn();
         return;
     }
     const float g = m_scene->world().gravity;
@@ -2131,5 +2131,5 @@ void Player::updateDeath(float dt, Physics& physics) {
             d.spin *= 0.8f;
         }
     }
-    if (m_deadTime >= m_respawnDelay) respawn();
+    if (m_autoRespawn && m_deadTime >= m_respawnDelay) respawn();
 }

@@ -15,6 +15,7 @@
 #include "../scene/Skin.h"
 #include "../scene/Guis.h"
 #include "../game/GameGui.h"
+#include "../game/RichText.h"
 #include "../renderer/MeshLibrary.h"
 #include "../core/Audio.h"
 #include "../scene/SoundMix.h"
@@ -338,12 +339,21 @@ void setCFrame(lua_State* L, SceneNode* n, const glm::mat4& cf) {
 // Instance methods
 // ===========================================================================
 
+// A PlayerGui shows the StarterGui's things too (they're on that player's screen), so
+// looking something up in it that isn't there looks in StarterGui next.
+SceneNode* starterFallback(lua_State* L, SceneNode* n, const std::string& name, bool recursive) {
+    if (!ScriptEngine::isPlayerGui(n)) return nullptr;
+    SceneNode* s = E(L)->starterGui();
+    return s ? s->findChild(name, recursive) : nullptr;
+}
+
 int m_FindFirstChild(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
     std::string name = luaL_checkstring(L, 2);
     bool recursive = lua_toboolean(L, 3);
     if (name == "Humanoid" && hasHumanoid(L, n)) { LuaApi::pushHumanoid(L, n->id); return 1; }
     SceneNode* c = n->findChild(name, recursive);
+    if (!c) c = starterFallback(L, n, name, recursive);
     LuaApi::pushInstance(L, c ? c->id : 0);
     return 1;
 }
@@ -405,6 +415,7 @@ int m_WaitForChild(lua_State* L) {
     std::string name = luaL_checkstring(L, 2);
     if (name == "Humanoid" && hasHumanoid(L, n)) { LuaApi::pushHumanoid(L, n->id); return 1; }
     SceneNode* c = n->findChild(name);
+    if (!c) c = starterFallback(L, n, name, false);
     if (!c) return luaL_error(L, "'%s' has no child called '%s'", n->name.c_str(), name.c_str());
     LuaApi::pushInstance(L, c->id);
     return 1;
@@ -419,6 +430,13 @@ int m_GetChildren(lua_State* L) {
         LuaApi::pushInstance(L, c->id);
         lua_rawseti(L, -2, i++);
     }
+    if (ScriptEngine::isPlayerGui(n))   // (and the StarterGui's, also on that screen)
+        if (SceneNode* s = E(L)->starterGui())
+            for (auto& c : s->children) {
+                if (c->internal || n->findChild(c->name)) continue;
+                LuaApi::pushInstance(L, c->id);
+                lua_rawseti(L, -2, i++);
+            }
     return 1;
 }
 
@@ -443,6 +461,19 @@ int m_Destroy(lua_State* L) {
     std::string err;
     if (!E(L)->destroy(n, err)) return luaL_error(L, "%s", err.c_str());
     return 0;
+}
+
+// part:GetTouchingParts(): what touches it right now (characters' body parts, held tools,
+// loose parts bumping into it).
+int m_GetTouchingParts(lua_State* L) {
+    SceneNode* n = LuaApi::checkNode(L, 1);
+    lua_newtable(L);
+    const Physics* ph = E(L)->physics();
+    if (!ph) return 1;
+    int i = 1;
+    for (uint64_t id : ph->touching(n->id))
+        if (E(L)->scene()->findById(id)) { LuaApi::pushInstance(L, id); lua_rawseti(L, -2, i++); }
+    return 1;
 }
 
 int m_ClearAllChildren(lua_State* L) {
@@ -1482,7 +1513,8 @@ bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "TextStrokeTransparency")) { lua_pushnumber(L, g.strokeTransparency); return true; }
         if (is(k, "Font"))             { lua_pushstring(L, g.bold ? "SourceSansBold" : "SourceSans"); return true; }
         if (is(k, "Bold"))             { lua_pushboolean(L, g.bold); return true; }   // (Font gives the same: ...Bold)
-        if (is(k, "ContentText"))      { lua_pushstring(L, g.text.c_str()); return true; }
+        if (is(k, "RichText"))         { lua_pushboolean(L, g.richText); return true; }
+        if (is(k, "ContentText"))      { lua_pushstring(L, (g.richText ? RichText::strip(g.text) : g.text).c_str()); return true; }
     }
     if (hasImage(n)) {
         if (is(k, "Image"))             { lua_pushstring(L, g.image.c_str()); return true; }
@@ -1703,6 +1735,7 @@ bool guiNewIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "TextStrokeColor3")) { g.strokeColor = LuaApi::checkColor3(L, 3); return true; }
         if (is(k, "TextStrokeTransparency")) { g.strokeTransparency = t01(); return true; }
         if (is(k, "Bold"))             { g.bold = lua_toboolean(L, 3); return true; }   // (Font then reads SourceSansBold)
+        if (is(k, "RichText"))         { g.richText = lua_toboolean(L, 3); return true; }
         if (is(k, "Font")) {   // Enum.Font.SourceSansBold -> bold; every font looks the same otherwise
             std::string f = luaL_tolstring(L, 3, nullptr);
             lua_pop(L, 1);
@@ -1992,6 +2025,15 @@ int inst_index(lua_State* L) {
     if (is(k, "Name"))      { lua_pushstring(L, n->name.c_str()); return 1; }
     if (is(k, "ClassName")) { lua_pushstring(L, className(L, n)); return 1; }
     if (is(k, "AttributeChanged")) { LuaApi::pushSignal(L, SignalKind::AttributeChanged, n->id); return 1; }
+    // Changes to the object tree (scripts moving and destroying things), like Roblox.
+    if (k[0] == 'C' || k[0] == 'D' || k[0] == 'A') {
+        static const std::pair<const char*, SignalKind> treeSignals[] = {
+            {"ChildAdded", SignalKind::ChildAdded}, {"ChildRemoved", SignalKind::ChildRemoved},
+            {"DescendantAdded", SignalKind::DescendantAdded}, {"DescendantRemoving", SignalKind::DescendantRemoving},
+            {"AncestryChanged", SignalKind::AncestryChanged}, {"Destroying", SignalKind::Destroying}};
+        for (const auto& [name, kind] : treeSignals)
+            if (is(k, name)) { LuaApi::pushSignal(L, kind, n->id); return 1; }
+    }
     if (n->isAttachment()) {
         if (is(k, "Position"))      { LuaApi::pushVector3(L, n->transform.position); return 1; }
         if (is(k, "WorldPosition")) { LuaApi::pushVector3(L, worldPosition(n)); return 1; }
@@ -2139,6 +2181,15 @@ int inst_index(lua_State* L) {
             if (is(k, "AllowTeamChangeOnTouch")) { lua_pushboolean(L, n->allowTeamChange); return 1; }
         }
         if (is(k, "Touched"))      { LuaApi::pushSignal(L, SignalKind::Touched, n->id); return 1; }
+        if (is(k, "TouchEnded"))   { LuaApi::pushSignal(L, SignalKind::TouchEnded, n->id); return 1; }
+        if (is(k, "BrickColor")) {   // the nearest named colour (see BrickColor in the prelude)
+            lua_getfield(L, LUA_REGISTRYINDEX, "GB.brickColor");
+            if (!lua_isfunction(L, -1)) return 1;
+            LuaApi::pushColor3(L, n->color);
+            lua_call(L, 1, 1);
+            return 1;
+        }
+        if (is(k, "GetTouchingParts")) { lua_pushcfunction(L, m_GetTouchingParts); return 1; }
         if (is(k, "Clicked"))      { LuaApi::pushSignal(L, SignalKind::Clicked, n->id); return 1; }
     }
     if (n->kind == NodeKind::Model && is(k, "PrimaryPart")) {
@@ -2334,6 +2385,7 @@ int inst_index(lua_State* L) {
 
     // Like Roblox, `workspace.Door` finds a child called "Door".
     if (SceneNode* c = n->findChild(k)) { LuaApi::pushInstance(L, c->id); return 1; }
+    if (SceneNode* c = starterFallback(L, n, k, false)) { LuaApi::pushInstance(L, c->id); return 1; }
     if (n == E(L)->scene()->root() && is(k, "Terrain")) { LuaApi::pushInstance(L, Scene::kTerrainId); return 1; }
     return luaL_error(L, "'%s' is not a valid member of %s \"%s\"", k, className(L, n), n->name.c_str());
 }
@@ -2457,7 +2509,7 @@ int inst_set(lua_State* L) {
     }
 
     if (part) {
-        if (is(k, "Color"))        { n->color = LuaApi::checkColor3(L, 3); return 0; }
+        if (is(k, "Color") || is(k, "BrickColor")) { n->color = LuaApi::checkColor3(L, 3); return 0; }
         if (is(k, "Transparency")) { n->transparency = glm::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
         if (Player::isWater(n)) {
             if (is(k, "FlowVelocity")) { setAttr(n, "Flow", Attribute::Vector3, 0.0, LuaApi::checkVector3(L, 3)); return 0; }
@@ -2812,6 +2864,12 @@ int inst_new(lua_State* L) {
     PrimitiveType shape;
     if (cls == "Model" || cls == "Folder") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Model);
+    } else if (cls == "Team") {   // (goes in the Teams folder; players on it spawn on SpawnLocations of its TeamColor)
+        n = std::make_unique<SceneNode>(cls, NodeKind::Model);
+        Attribute c; c.name = "RobloxClass"; c.type = Attribute::String; c.s = "Team";
+        Attribute col; col.name = "TeamColor"; col.type = Attribute::Color3; col.v = glm::vec3(1.0f);
+        Attribute aa; aa.name = "AutoAssignable"; aa.type = Attribute::Bool; aa.b = true;
+        n->attributes = {c, col, aa};
     } else if (cls == "WorldModel") {   // (a Model in a ViewportFrame; ours are all the same)
         n = std::make_unique<SceneNode>(cls, NodeKind::Model);
         Attribute a;
@@ -3292,6 +3350,44 @@ int m_SetCoreGuiEnabled(lua_State* L) {
     E(L)->scene()->coreGui().set(type, lua_toboolean(L, 3));
     return 0;
 }
+// StarterGui:SetCore("PlayerListStyle", { Title = "Cops & Robbers", BackgroundColor = Color3,
+// BackgroundTransparency = 0.5, TitleColor = Color3, TextColor = Color3, ShowTeams = true,
+// Visible = true }): how the player list (leaderboard) looks on this computer. Leave out
+// what shouldn't change. GetCore("PlayerListStyle") gives the whole table back.
+void setPlayerListStyle(lua_State* L, int idx, PlayerListStyle& st) {
+    luaL_checktype(L, idx, LUA_TTABLE);
+    PlayerListStyle out = st;
+    lua_pushnil(L);
+    while (lua_next(L, idx)) {
+        const char* k = lua_type(L, -2) == LUA_TSTRING ? lua_tostring(L, -2) : nullptr;
+        auto color = [&](glm::vec3& c) {
+            const glm::vec3* v = LuaApi::toColor3(L, -1);
+            if (!v) luaL_error(L, "PlayerListStyle.%s must be a Color3", k);
+            c = *v;
+        };
+        if (!k) luaL_error(L, "PlayerListStyle: use names like Title = \"...\"");
+        else if (!std::strcmp(k, "Title")) out.title = std::string(luaL_checkstring(L, -1)).substr(0, 60);
+        else if (!std::strcmp(k, "BackgroundColor") || !std::strcmp(k, "BackgroundColor3")) color(out.background);
+        else if (!std::strcmp(k, "BackgroundTransparency")) out.transparency = std::clamp((float)luaL_checknumber(L, -1), 0.0f, 1.0f);
+        else if (!std::strcmp(k, "TitleColor") || !std::strcmp(k, "TitleColor3")) color(out.titleColor);
+        else if (!std::strcmp(k, "TextColor") || !std::strcmp(k, "TextColor3")) color(out.textColor);
+        else if (!std::strcmp(k, "ShowTeams")) out.teams = lua_toboolean(L, -1);
+        else if (!std::strcmp(k, "Visible")) out.show = lua_toboolean(L, -1);
+        else luaL_error(L, "PlayerListStyle has no '%s' (Title, BackgroundColor, BackgroundTransparency, TitleColor, TextColor, ShowTeams, Visible)", k);
+        lua_pop(L, 1);
+    }
+    st = out;
+}
+void pushPlayerListStyle(lua_State* L, const PlayerListStyle& st) {
+    lua_newtable(L);
+    lua_pushstring(L, st.title.c_str()); lua_setfield(L, -2, "Title");
+    LuaApi::pushColor3(L, st.background); lua_setfield(L, -2, "BackgroundColor");
+    lua_pushnumber(L, st.transparency); lua_setfield(L, -2, "BackgroundTransparency");
+    LuaApi::pushColor3(L, st.titleColor); lua_setfield(L, -2, "TitleColor");
+    LuaApi::pushColor3(L, st.textColor); lua_setfield(L, -2, "TextColor");
+    lua_pushboolean(L, st.teams); lua_setfield(L, -2, "ShowTeams");
+    lua_pushboolean(L, st.show); lua_setfield(L, -2, "Visible");
+}
 // StarterGui:SetCore("Spectate", true) puts this player in spectate mode (watching the other
 // players; false lets them play again). SetCore("SpectateWhenDead", false) stops the automatic
 // spectating while waiting to respawn. GetCore reads them back.
@@ -3302,7 +3398,8 @@ int m_SetCore(lua_State* L) {
     CoreGuiState& g = E(L)->scene()->coreGui();
     if (what == "Spectate") g.spectate = lua_toboolean(L, 3);
     else if (what == "SpectateWhenDead") g.spectateWhenDead = lua_toboolean(L, 3);
-    else return luaL_error(L, "SetCore: '%s' isn't something you can set (try \"Spectate\" or \"SpectateWhenDead\")", what.c_str());
+    else if (what == "PlayerListStyle") setPlayerListStyle(L, 3, E(L)->scene()->world().playerList);
+    else return luaL_error(L, "SetCore: '%s' isn't something you can set (try \"Spectate\", \"SpectateWhenDead\" or \"PlayerListStyle\")", what.c_str());
     return 0;
 }
 int m_GetCore(lua_State* L) {
@@ -3311,6 +3408,7 @@ int m_GetCore(lua_State* L) {
     const CoreGuiState& g = E(L)->scene()->coreGui();
     if (what == "Spectate") lua_pushboolean(L, g.spectate);
     else if (what == "SpectateWhenDead") lua_pushboolean(L, g.spectateWhenDead);
+    else if (what == "PlayerListStyle") pushPlayerListStyle(L, E(L)->scene()->world().playerList);
     else return luaL_error(L, "GetCore: '%s' isn't something you can read", what.c_str());
     return 1;
 }
@@ -3381,6 +3479,7 @@ int hum_index(lua_State* L) {
     if (is(k, "Name") || is(k, "ClassName")) { lua_pushstring(L, "Humanoid"); return 1; }
     if (is(k, "Parent"))     { LuaApi::pushInstance(L, humRoot(L)); return 1; }
     if (is(k, "Died"))       { LuaApi::pushSignal(L, SignalKind::Died, humRoot(L)); return 1; }
+    if (is(k, "HealthChanged")) { LuaApi::pushSignal(L, SignalKind::HealthChanged, humRoot(L)); return 1; }
     if (is(k, "TakeDamage")) { lua_pushcfunction(L, hum_takeDamage); return 1; }
     if (is(k, "BreakJoints")) { lua_pushcfunction(L, hum_breakJoints); return 1; }
     if (is(k, "EquipTool"))   { lua_pushcfunction(L, hum_equipTool); return 1; }

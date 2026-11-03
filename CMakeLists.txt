@@ -477,6 +477,7 @@ add_library(gb_engine STATIC
     src/game/Hud.cpp
     src/game/EmoteMenu.cpp
     src/game/GameGui.cpp
+    src/game/RichText.cpp
     src/game/Prompts.cpp
     src/game/ClickDetectors.cpp
     src/game/PlayCamera.cpp
@@ -993,6 +994,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(WeatherTests tests/WeatherTests.cpp)
     target_link_libraries(WeatherTests PRIVATE gb_engine)
     add_test(NAME WeatherTests COMMAND WeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Per-player PlayerGui, RichText, team:GetPlayers, BrickColor, typeof, tree events, respawn settings.
+    add_executable(CopsAndRobbersApiTests tests/CopsAndRobbersApiTests.cpp)
+    target_link_libraries(CopsAndRobbersApiTests PRIVATE gb_engine)
+    add_test(NAME CopsAndRobbersApiTests COMMAND CopsAndRobbersApiTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # workspace:GetPartsInPart / GetPartBoundsInBox / GetPartBoundsInRadius and OverlapParams.

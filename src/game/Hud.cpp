@@ -11,6 +11,7 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -367,15 +368,69 @@ int drawBackpack(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const ImV
     return selected;
 }
 
+namespace {
+ImU32 rgba(const glm::vec3& c, float a) {
+    auto b = [](float v) { return (int)std::lround(std::clamp(v, 0.0f, 1.0f) * 255.0f); };
+    return IM_COL32(b(c.r), b(c.g), b(c.b), b(a));
+}
+// "12" -> 12; anything that isn't a number -> nothing (so it isn't added up or sorted).
+bool statNumber(const std::string& s, double& out) {
+    if (s.empty()) return false;
+    char* end = nullptr;
+    out = std::strtod(s.c_str(), &end);
+    return end && *end == 0;
+}
+std::string statText(double v) {
+    char buf[32];
+    if (v == std::floor(v) && std::fabs(v) < 1e15) std::snprintf(buf, sizeof(buf), "%.0f", v);
+    else std::snprintf(buf, sizeof(buf), "%.2f", v);
+    return buf;
+}
+} // namespace
+
+std::vector<PlayerListGroup> groupPlayers(const std::vector<PlayerEntry>& players, bool teams) {
+    std::vector<PlayerListGroup> groups;
+    bool anyTeam = false;
+    for (const auto& p : players) anyTeam = anyTeam || !p.team.empty();
+    for (size_t i = 0; i < players.size(); ++i) {
+        const std::string key = teams && anyTeam ? players[i].team : std::string();
+        auto g = std::find_if(groups.begin(), groups.end(), [&](const PlayerListGroup& x) { return x.team == key; });
+        if (g == groups.end()) {
+            groups.push_back({key, {}});
+            g = groups.end() - 1;
+            if (!key.empty()) for (int k = 0; k < 3; ++k) g->color[k] = players[i].teamColor[k];
+        }
+        g->rows.push_back(i);
+    }
+    // Neutral players (no team) go last, under their own "Neutral" heading.
+    std::stable_partition(groups.begin(), groups.end(), [](const PlayerListGroup& g) { return !g.team.empty(); });
+    // Within each group, the best first by the first stat (like Roblox), when it's a number.
+    for (auto& g : groups)
+        std::stable_sort(g.rows.begin(), g.rows.end(), [&](size_t a, size_t b) {
+            double x = 0, y = 0;
+            const bool hx = !players[a].stats.empty() && statNumber(players[a].stats[0].second, x);
+            const bool hy = !players[b].stats.empty() && statNumber(players[b].stats[0].second, y);
+            if (hx != hy) return hx;
+            return hx && x > y;
+        });
+    return groups;
+}
+
 std::string drawPlayerList(ImDrawList* dl, ImVec2 min, ImVec2 max, const std::vector<PlayerEntry>& players,
-                           bool& open, ImVec2* clickedAt, const ImVec2* tap) {
+                           bool& open, ImVec2* clickedAt, const ImVec2* tap, const PlayerListStyle* styleIn) {
+    static const PlayerListStyle kDefault;
+    const PlayerListStyle& style = styleIn ? *styleIn : kDefault;
     std::string picked;
-    if (players.empty()) return picked;
+    if (players.empty() || !style.show) return picked;
     // leaderstats columns (like Roblox's leaderboard): every stat name anyone has, in order.
     std::vector<std::string> cols;
     for (const auto& p : players)
         for (const auto& [k, v] : p.stats)
             if (std::find(cols.begin(), cols.end(), k) == cols.end() && cols.size() < 4) cols.push_back(k);
+    const std::vector<PlayerListGroup> groups = groupPlayers(players, style.teams);
+    const bool headings = groups.size() > 1 || (!groups.empty() && !groups[0].team.empty());
+    const size_t lines = players.size() + (headings ? groups.size() : 0);
+
     const float rowH = 22.0f, nameW = 170.0f, colW = 64.0f;
     const float w = nameW + colW * (float)cols.size() + (cols.empty() ? 30.0f : 0.0f);
     float y = min.y + 50;
@@ -386,20 +441,26 @@ std::string drawPlayerList(ImDrawList* dl, ImVec2 min, ImVec2 max, const std::ve
         bool t = tap && tap->x >= a.x && tap->x < b.x && tap->y >= a.y && tap->y < b.y;
         return std::make_pair(m, t || (m && ImGui::IsMouseClicked(ImGuiMouseButton_Left)));
     };
+    const float bgAlpha = 1.0f - std::clamp(style.transparency, 0.0f, 1.0f);
+    const ImU32 titleCol = rgba(style.titleColor, 1.0f), textCol = rgba(style.textColor, 0.92f);
+    const std::string title = style.title.empty() ? std::string("Players") : style.title;
 
     // The title bar, with the fold arrow on its left. Folded, only a small tab shows.
-    const float headW = open ? w + 8 : 92.0f;
+    const float headW = open ? w + 8 : std::max(92.0f, ImGui::CalcTextSize(title.c_str()).x + 34.0f);
     const ImVec2 h0(max.x - headW - 12, y - 4), h1(max.x - 12, y + 20);
     auto [headHover, headClick] = inside(h0, h1);
-    dl->AddRectFilled(h0, h1, IM_COL32(0, 0, 0, headHover ? 165 : 130), 6.0f,
+    dl->AddRectFilled(h0, h1, rgba(style.background, std::min(1.0f, bgAlpha + (headHover ? 0.2f : 0.05f))), 6.0f,
                       open ? ImDrawFlags_RoundCornersTop : ImDrawFlags_RoundCornersAll);
     {   // the arrow: pointing down when open, left when folded away
         const ImVec2 c(h0.x + 11, y + 8);
-        const ImU32 ac = IM_COL32(255, 200, 120, 255);
-        if (open) dl->AddTriangleFilled(ImVec2(c.x - 5, c.y - 3), ImVec2(c.x + 5, c.y - 3), ImVec2(c.x, c.y + 4), ac);
-        else dl->AddTriangleFilled(ImVec2(c.x + 3, c.y - 5), ImVec2(c.x + 3, c.y + 5), ImVec2(c.x - 4, c.y), ac);
+        if (open) dl->AddTriangleFilled(ImVec2(c.x - 5, c.y - 3), ImVec2(c.x + 5, c.y - 3), ImVec2(c.x, c.y + 4), titleCol);
+        else dl->AddTriangleFilled(ImVec2(c.x + 3, c.y - 5), ImVec2(c.x + 3, c.y + 5), ImVec2(c.x - 4, c.y), titleCol);
     }
-    dl->AddText(ImVec2(h0.x + 22, y), IM_COL32(255, 200, 120, 255), "Players");
+    {
+        std::string t = title;   // (a long title is cut to fit)
+        while (t.size() > 1 && ImGui::CalcTextSize(t.c_str()).x > h1.x - h0.x - 30) t.pop_back();
+        dl->AddText(ImVec2(h0.x + 22, y), titleCol, t.c_str());
+    }
     if (headHover) {
         const char* tip = open ? "Hide (Tab)" : "Show players (Tab)";
         ImVec2 ts = ImGui::CalcTextSize(tip);
@@ -409,59 +470,80 @@ std::string drawPlayerList(ImDrawList* dl, ImVec2 min, ImVec2 max, const std::ve
     if (headClick) open = !open;
     if (!open) return picked;
 
-    dl->AddRectFilled(ImVec2(x - 4, y + 20), ImVec2(x + w + 4, y + 24 + players.size() * rowH),
-                      IM_COL32(0, 0, 0, 120), 6.0f, ImDrawFlags_RoundCornersBottom);
+    dl->AddRectFilled(ImVec2(x - 4, y + 20), ImVec2(x + w + 4, y + 24 + lines * rowH),
+                      rgba(style.background, bgAlpha * 0.92f), 6.0f, ImDrawFlags_RoundCornersBottom);
     auto rightText = [&](float colRight, float ty, const std::string& text, ImU32 col) {
         std::string t = text;
         while (t.size() > 1 && ImGui::CalcTextSize(t.c_str()).x > colW - 6) t.pop_back();
         dl->AddText(ImVec2(colRight - ImGui::CalcTextSize(t.c_str()).x, ty), col, t.c_str());
     };
     for (size_t c = 0; c < cols.size(); ++c)
-        rightText(x + nameW + colW * (float)(c + 1), y, cols[c], IM_COL32(255, 200, 120, 255));
+        rightText(x + nameW + colW * (float)(c + 1), y, cols[c], titleCol);
     y += 24;
     float t = (float)ImGui::GetTime();
-    for (size_t i = 0; i < players.size(); ++i) {
-        const PlayerEntry& p = players[i];
-        // The whole row is a button: click someone's name to friend or follow them.
-        auto [hover, click] = inside(ImVec2(x - 4, y - 1), ImVec2(x + w + 4, y + rowH - 1));
-        if (hover) dl->AddRectFilled(ImVec2(x - 2, y - 1), ImVec2(x + w + 2, y + rowH - 2), IM_COL32(255, 255, 255, 40), 4.0f);
-        if (click) { picked = p.name; if (clickedAt) *clickedAt = ImVec2(x - 4, y + rowH); }
-        float tx = x + 4;
-        if (p.admin) {
-            // The Administrator badge bobs gently next to the name.
-            float bob = std::sin(t * 2.4f + (float)i) * 2.0f;
-            ImVec2 c(x + 12, y + 8 + bob);
-            dl->AddCircleFilled(c, 11.0f, IM_COL32(255, 60, 60, 40), 20);   // soft glow
-            Badges::drawIcon(dl, c, 17.0f, Badges::Id::Administrator);
-            tx = x + 26;
-        }
-        dl->AddText(ImVec2(tx, y), p.admin ? IM_COL32(255, 225, 120, 255) : IM_COL32(255, 255, 255, 230),
-                    p.name.c_str());
-        float after = tx + ImGui::CalcTextSize(p.name.c_str()).x + 3;   // where the next little icon goes
-        if (p.verified || p.admin) {   // blue check after Verified names (staff are always verified)
-            Badges::drawCheck(dl, ImVec2(after + 6, y + ImGui::GetFontSize() * 0.5f + 1), 13.0f);
-            after += 15;
-        }
-        if (p.creator) {   // a little hammer: they made this game
-            const ImVec2 c(after + 8, y + ImGui::GetFontSize() * 0.5f + 1);
-            drawHammer(dl, c, 14.0f);
-            if (ImGui::IsMouseHoveringRect(ImVec2(c.x - 7, c.y - 7), ImVec2(c.x + 7, c.y + 7))) {
-                const char* tip = "Made this game";
-                ImVec2 ts = ImGui::CalcTextSize(tip);
-                ImVec2 t0(c.x - ts.x * 0.5f - 6, c.y - ts.y - 18);
-                dl->AddRectFilled(t0, ImVec2(t0.x + ts.x + 12, t0.y + ts.y + 6), IM_COL32(20, 22, 28, 230), 4.0f);
-                dl->AddText(ImVec2(t0.x + 6, t0.y + 3), IM_COL32(255, 255, 255, 255), tip);
+    for (const PlayerListGroup& g : groups) {
+        glm::vec3 tc(g.color[0], g.color[1], g.color[2]);
+        if (headings) {
+            // The team's heading: its name on a bar in its colour, and the team's totals.
+            if (g.team.empty()) tc = glm::vec3(0.55f);
+            dl->AddRectFilled(ImVec2(x - 2, y), ImVec2(x + w + 2, y + rowH - 3), rgba(tc, 0.85f), 4.0f);
+            const float lum = 0.299f * tc.r + 0.587f * tc.g + 0.114f * tc.b;
+            const ImU32 on = lum > 0.6f ? IM_COL32(20, 20, 25, 255) : IM_COL32(255, 255, 255, 255);
+            dl->AddText(ImVec2(x + 6, y + 1), on, g.team.empty() ? "Neutral" : g.team.c_str());
+            for (size_t c = 0; c < cols.size(); ++c) {
+                double sum = 0;
+                bool any = false, numbers = true;
+                for (size_t r : g.rows)
+                    for (const auto& [k, v] : players[r].stats)
+                        if (k == cols[c]) { double n; if (statNumber(v, n)) { sum += n; any = true; } else numbers = false; }
+                if (any && numbers) rightText(x + nameW + colW * (float)(c + 1), y + 1, statText(sum), on);
             }
-            after += 18;
+            y += rowH;
         }
-        if (p.voice) {   // voice chat: talking now, or muted by us
-            drawSpeaker(dl, ImVec2(after + 10, y + ImGui::GetFontSize() * 0.5f + 1), 13.0f, p.voice == 1, p.voice == 2);
-            after += 18;
+        for (size_t row : g.rows) {
+            const PlayerEntry& p = players[row];
+            // The whole row is a button: click someone's name to friend or follow them.
+            auto [hover, click] = inside(ImVec2(x - 4, y - 1), ImVec2(x + w + 4, y + rowH - 1));
+            if (hover) dl->AddRectFilled(ImVec2(x - 2, y - 1), ImVec2(x + w + 2, y + rowH - 2), IM_COL32(255, 255, 255, 40), 4.0f);
+            if (click) { picked = p.name; if (clickedAt) *clickedAt = ImVec2(x - 4, y + rowH); }
+            if (headings && !g.team.empty())   // a thin stripe in the team's colour
+                dl->AddRectFilled(ImVec2(x - 2, y + 1), ImVec2(x + 1, y + rowH - 4), rgba(tc, 1.0f), 1.0f);
+            float tx = x + 4;
+            if (p.admin) {
+                // The Administrator badge bobs gently next to the name.
+                float bob = std::sin(t * 2.4f + (float)row) * 2.0f;
+                ImVec2 c(x + 12, y + 8 + bob);
+                dl->AddCircleFilled(c, 11.0f, IM_COL32(255, 60, 60, 40), 20);   // soft glow
+                Badges::drawIcon(dl, c, 17.0f, Badges::Id::Administrator);
+                tx = x + 26;
+            }
+            dl->AddText(ImVec2(tx, y), p.admin ? IM_COL32(255, 225, 120, 255) : textCol, p.name.c_str());
+            float after = tx + ImGui::CalcTextSize(p.name.c_str()).x + 3;   // where the next little icon goes
+            if (p.verified || p.admin) {   // blue check after Verified names (staff are always verified)
+                Badges::drawCheck(dl, ImVec2(after + 6, y + ImGui::GetFontSize() * 0.5f + 1), 13.0f);
+                after += 15;
+            }
+            if (p.creator) {   // a little hammer: they made this game
+                const ImVec2 c(after + 8, y + ImGui::GetFontSize() * 0.5f + 1);
+                drawHammer(dl, c, 14.0f);
+                if (ImGui::IsMouseHoveringRect(ImVec2(c.x - 7, c.y - 7), ImVec2(c.x + 7, c.y + 7))) {
+                    const char* tip = "Made this game";
+                    ImVec2 ts = ImGui::CalcTextSize(tip);
+                    ImVec2 t0(c.x - ts.x * 0.5f - 6, c.y - ts.y - 18);
+                    dl->AddRectFilled(t0, ImVec2(t0.x + ts.x + 12, t0.y + ts.y + 6), IM_COL32(20, 22, 28, 230), 4.0f);
+                    dl->AddText(ImVec2(t0.x + 6, t0.y + 3), IM_COL32(255, 255, 255, 255), tip);
+                }
+                after += 18;
+            }
+            if (p.voice) {   // voice chat: talking now, or muted by us
+                drawSpeaker(dl, ImVec2(after + 10, y + ImGui::GetFontSize() * 0.5f + 1), 13.0f, p.voice == 1, p.voice == 2);
+                after += 18;
+            }
+            for (size_t c = 0; c < cols.size(); ++c)
+                for (const auto& [k, v] : p.stats)
+                    if (k == cols[c]) rightText(x + nameW + colW * (float)(c + 1), y, v, textCol);
+            y += rowH;
         }
-        for (size_t c = 0; c < cols.size(); ++c)
-            for (const auto& [k, v] : p.stats)
-                if (k == cols[c]) rightText(x + nameW + colW * (float)(c + 1), y, v, IM_COL32(255, 255, 255, 230));
-        y += rowH;
     }
     return picked;
 }

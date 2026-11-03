@@ -126,6 +126,7 @@ private:
     struct Client;
     struct NodeState;
     void handle(Client& c, const std::string& msg);
+    SceneNode* guiFor(Client& c, uint64_t id);   // a UI object they may use: in the world, or in their own PlayerGui
     Client* findClient(const std::string& name);                        // a joined player, by name (any capitals)
     static bool sameName(const std::string& a, const std::string& b);
     void addClient(std::unique_ptr<Net::Connection> conn);
@@ -191,7 +192,7 @@ public:
     void disconnect();
     void update(float dt);
     void say(const std::string& text);
-    void reportTouch(uint64_t partId, const std::string& limb);
+    void reportTouch(uint64_t partId, const std::string& limb, bool ended = false);
     void reportClick(uint64_t partId);
 
     State state() const { return m_state; }

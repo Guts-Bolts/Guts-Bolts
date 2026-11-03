@@ -551,6 +551,7 @@ nlohmann::json guiToJson(const GuiProps& g) {
     if (guiHasText(g.type)) {
         j["text"] = g.text; j["textColor"] = vec(g.textColor); j["textSize"] = g.textSize;
         j["scaled"] = g.textScaled; j["wrapped"] = g.textWrapped; j["bold"] = g.bold;
+        if (g.richText) j["rich"] = true;
         j["xAlign"] = g.xAlign; j["yAlign"] = g.yAlign; j["textT"] = g.textTransparency;
         j["strokeColor"] = vec(g.strokeColor); j["strokeT"] = g.strokeTransparency;
     }
@@ -643,6 +644,7 @@ void guiFromJson(GuiProps& g, const nlohmann::json& j) {
     g.textScaled = get<bool>(j, "scaled", g.textScaled);
     g.textWrapped = get<bool>(j, "wrapped", g.textWrapped);
     g.bold = get<bool>(j, "bold", g.bold);
+    g.richText = get<bool>(j, "rich", g.richText);
     g.xAlign = std::clamp(get<int>(j, "xAlign", g.xAlign), 0, 2);
     g.yAlign = std::clamp(get<int>(j, "yAlign", g.yAlign), 0, 2);
     g.textTransparency = get<float>(j, "textT", g.textTransparency);
@@ -1366,6 +1368,12 @@ json settingsJson(Scene& scene) {
     if (ws.playerCamera != CameraOptions{})   // (only games that changed them)
         j["world"]["playerCamera"] = {{"lockFirstPerson", ws.playerCamera.lockFirstPerson},
                                       {"minZoom", ws.playerCamera.minZoom}, {"maxZoom", ws.playerCamera.maxZoom}};
+    if (!(ws.playerList == PlayerListStyle{})) {   // (only games that changed it)
+        const PlayerListStyle& pl = ws.playerList;
+        j["world"]["playerList"] = {{"show", pl.show}, {"title", pl.title}, {"background", vec(pl.background)},
+                                    {"transparency", pl.transparency}, {"titleColor", vec(pl.titleColor)},
+                                    {"textColor", vec(pl.textColor)}, {"teams", pl.teams}};
+    }
     if (Player* p = scene.player()) {
         const Humanoid& h = p->humanoid();
         j["player"] = {
@@ -1423,6 +1431,17 @@ void applySettings(Scene& scene, const json& j) {
             o.lockFirstPerson = get<bool>(pc, "lockFirstPerson", o.lockFirstPerson);
             o.minZoom = std::clamp(get<float>(pc, "minZoom", o.minZoom), 0.0f, CameraOptions::kLimit);
             o.maxZoom = std::clamp(get<float>(pc, "maxZoom", o.maxZoom), 0.0f, CameraOptions::kLimit);
+        }
+        if (j["world"].contains("playerList") && j["world"]["playerList"].is_object()) {
+            const json& pj = j["world"]["playerList"];
+            PlayerListStyle& pl = w.playerList;
+            pl.show = get<bool>(pj, "show", pl.show);
+            pl.title = get<std::string>(pj, "title", pl.title).substr(0, 60);
+            pl.background = vec(pj, "background", pl.background);
+            pl.transparency = std::clamp(get<float>(pj, "transparency", pl.transparency), 0.0f, 1.0f);
+            pl.titleColor = vec(pj, "titleColor", pl.titleColor);
+            pl.textColor = vec(pj, "textColor", pl.textColor);
+            pl.teams = get<bool>(pj, "teams", pl.teams);
         }
     }
     scene.world() = w;

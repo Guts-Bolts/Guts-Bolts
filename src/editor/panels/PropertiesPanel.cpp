@@ -436,6 +436,9 @@ void PropertiesPanel::renderGui(SceneNode* node) {
         ImGui::Checkbox("TextWrapped", &g.textWrapped);
         ImGui::SameLine();
         ImGui::Checkbox("Bold", &g.bold);
+        ImGui::SameLine();
+        ImGui::Checkbox("RichText", &g.richText);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tags in the text: <b>bold</b>, <font color=\"#ff0000\">red</font>, <font size=\"30\">big</font>, <u>, <s>, <br />");
         const char* xs[] = {"Left", "Center", "Right"};
         const char* ys[] = {"Top", "Center", "Bottom"};
         ImGui::Combo("TextXAlignment", &g.xAlign, xs, 3);

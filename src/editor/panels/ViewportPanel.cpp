@@ -912,11 +912,16 @@ void ViewportPanel::render(float dt) {
             Hud::draw(dl, imgPos, imgMax, *m_scene, m_session->gui());
             if (int slot = Hud::drawHotbar(dl, imgPos, imgMax, *m_scene); slot >= 0 && m_hovered && !emotesOpen) m_session->selectToolSlot(slot);
             if (int slot = Hud::drawBackpack(dl, imgPos, imgMax, *m_scene); slot >= 0 && m_hovered && !emotesOpen) m_session->selectToolSlot(slot);
-            // The leaderboard, once the game gives the player some leaderstats.
-            if (auto stats = m_session->scripts().leaderstats(m_session->scripts().playerName()); !stats.empty())
+            // The leaderboard, once the game gives the player some leaderstats or a team.
             {
+                ScriptEngine& se = m_session->scripts();
+                std::vector<PlayerEntry> me = {{se.playerName(), false, false, se.leaderstats(se.playerName()), true}};
+                se.fillTeam(me[0], se.playerName());
+                PlayerListStyle style = m_scene->world().playerList;
+                style.show = style.show && m_scene->coreGui().enabled("PlayerList");
                 static bool listOpen = true;   // (the arrow on its title folds it away)
-                Hud::drawPlayerList(dl, imgPos, imgMax, {{m_session->scripts().playerName(), false, false, stats, true}}, listOpen);
+                if (!me[0].stats.empty() || !me[0].team.empty())
+                    Hud::drawPlayerList(dl, imgPos, imgMax, me, listOpen, nullptr, nullptr, &style);
             }
             // The emote menu (B), over everything else.
             EmoteMenu::update(dl, imgPos, imgMax, *m_scene, !ImGui::GetIO().WantTextInput && !m_state->simPaused, nullptr, m_hovered);

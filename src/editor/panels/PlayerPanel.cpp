@@ -4,6 +4,7 @@
 
 #include <imgui.h>
 #include <algorithm>
+#include <cstdio>
 
 PlayerPanel::PlayerPanel(Scene* scene) : m_scene(scene) {}
 
@@ -117,6 +118,35 @@ void drawGameRules(WorldSettings& w) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("On: players who turned voice chat on can talk to each other (their voices come from their characters).\n"
                           "Off: nobody can talk in this game. Scripts: workspace.VoiceChatEnabled = false");
+
+    ImGui::SeparatorText("Player list");
+    {
+        PlayerListStyle& pl = w.playerList;
+        ImGui::Checkbox("Show player list", &pl.show);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("The leaderboard in the top right: everyone's name, team and leaderstats.\n"
+                              "Off: this game has no player list. A LocalScript can also hide it:\n"
+                              "StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)");
+        ImGui::BeginDisabled(!pl.show);
+        char title[64];
+        std::snprintf(title, sizeof(title), "%s", pl.title.c_str());
+        if (ImGui::InputText("Title", title, sizeof(title))) pl.title = title;
+        ImGui::Checkbox("Group by team", &pl.teams);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Players are listed under their team's name, in the team's colour,\n"
+                              "with the team's total for each stat.");
+        ImGui::ColorEdit3("Background", &pl.background.x, ImGuiColorEditFlags_NoInputs);
+        ImGui::SameLine();
+        ImGui::ColorEdit3("Title colour", &pl.titleColor.x, ImGuiColorEditFlags_NoInputs);
+        ImGui::SameLine();
+        ImGui::ColorEdit3("Text", &pl.textColor.x, ImGuiColorEditFlags_NoInputs);
+        ImGui::SliderFloat("See-through", &pl.transparency, 0.0f, 1.0f, "%.2f");
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("How see-through the background is (0 = solid).\n"
+                              "Scripts: StarterGui:SetCore(\"PlayerListStyle\", { BackgroundTransparency = 0.3 })");
+        if (ImGui::SmallButton("Default look")) { const bool shown = pl.show; pl = PlayerListStyle{}; pl.show = shown; }
+        ImGui::EndDisabled();
+    }
 
     ImGui::SeparatorText("Camera");
     ImGui::Checkbox("Orthographic", &w.orthographic);

@@ -10,6 +10,7 @@
 #include "Animation.h"
 #include "CollisionGroups.h"
 #include "Vehicles.h"
+#include "PlayerListStyle.h"
 #include <functional>
 #include <map>
 #include <memory>
@@ -117,6 +118,8 @@ struct WorldSettings {
     float      orthographicSize = 0.0f;
     // Every player's camera to start with: CameraMode and zoom limits (Roblox's StarterPlayer).
     CameraOptions playerCamera;
+    // The in-game player list (leaderboard): shown or not, its colours and title.
+    PlayerListStyle playerList;
 };
 
 // Another player's character in a multiplayer game. On the host, scripts can
@@ -140,6 +143,9 @@ struct RemoteCharacter {
     bool        neutral = true;
     glm::vec3   teamColor{1.0f};
     bool        teamDirty = false;
+    bool        respawnNow = false;      // a script called player:LoadCharacter(): tell them to respawn
+    std::string kick;                    // a script called player:Kick(reason): send them away ("" = no)
+    bool        kicked = false;
 };
 
 // A visual effect to show on every player's screen (multiplayer).

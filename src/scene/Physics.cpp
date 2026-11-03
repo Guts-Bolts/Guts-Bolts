@@ -547,7 +547,7 @@ bool Physics::terrainGround(const glm::vec3& feet, float yaw, float& y) const {
 
 // stepParts (rigid bodies + constraints) lives in RigidBodies.cpp.
 
-void Physics::collectTouches(Scene& scene, std::vector<TouchEvent>& out) {
+void Physics::collectTouches(Scene& scene, std::vector<TouchEvent>& out, std::vector<TouchEvent>* ended) {
     std::set<std::pair<uint64_t, uint64_t>> now;
 
     auto report = [&](uint64_t part, uint64_t pairKey, uint64_t other) {
@@ -620,7 +620,17 @@ void Physics::collectTouches(Scene& scene, std::vector<TouchEvent>& out) {
         }
     }
 
+    if (ended)
+        for (const auto& key : m_touching)
+            if (!now.count(key)) ended->push_back({key.first, key.second});
     m_touching.swap(now);
+}
+
+std::vector<uint64_t> Physics::touching(uint64_t part) const {
+    std::vector<uint64_t> out;
+    for (auto it = m_touching.lower_bound({part, 0}); it != m_touching.end() && it->first == part; ++it)
+        out.push_back(it->second);
+    return out;
 }
 
 const NavMesh& Physics::navMesh() const {

@@ -58,6 +58,15 @@ enum class SignalKind : int {
     ClickHoverLeave,     // detector.MouseHoverLeave  (player)
     CharacterAdded,      // player.CharacterAdded     (character)  (id = the character)
     CharacterRemoving,   // player.CharacterRemoving  (character)
+    // The object tree (fired when a script moves or destroys something)
+    ChildAdded,          // obj.ChildAdded            (child)
+    ChildRemoved,        // obj.ChildRemoved          (child)
+    DescendantAdded,     // obj.DescendantAdded       (descendant)
+    DescendantRemoving,  // obj.DescendantRemoving    (descendant)
+    AncestryChanged,     // obj.AncestryChanged       (child, parent)
+    Destroying,          // obj.Destroying            ()
+    TouchEnded,          // part.TouchEnded           (otherPart)
+    HealthChanged,       // humanoid.HealthChanged    (health)  (id = character)
 };
 
 namespace LuaApi {

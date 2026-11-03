@@ -1,4 +1,5 @@
 #include "GameGui.h"
+#include "RichText.h"
 #include "../core/I18n.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
@@ -497,6 +498,27 @@ void findLayers(SceneNode* n, std::vector<SceneNode*>& out) {
     }
 }
 
+SceneNode* g_private = nullptr;   // our player's PlayerGui (see setPrivateRoot)
+
+// Every UI layer: in the world (StarterGui, BillboardGuis on parts...) and in our PlayerGui.
+void allLayers(Scene& scene, std::vector<SceneNode*>& out) {
+    findLayers(scene.root(), out);
+    if (g_private) findLayers(g_private, out);
+}
+
+// A UI object by id: in the world, or in our PlayerGui.
+SceneNode* findGui(Scene& scene, uint64_t id) {
+    if (SceneNode* n = scene.findById(id)) return n;
+    if (!g_private || !id) return nullptr;
+    std::vector<SceneNode*> stack{g_private};
+    while (!stack.empty()) {
+        SceneNode* n = stack.back(); stack.pop_back();
+        if (n->id == id) return n;
+        for (auto& c : n->children) stack.push_back(c.get());
+    }
+    return nullptr;
+}
+
 // The part a BillboardGui / SurfaceGui sits on: its Adornee, else the part it's in
 // (in a model: its Head, else its first part).
 SceneNode* adorneeOf(Scene& scene, const SceneNode* gui) {
@@ -574,7 +596,7 @@ bool canvasPoint(const Surface& s, ImVec2 p, ImVec2& out) {
 // SurfaceGuis and BillboardGuis (furthest first), then ScreenGuis by DisplayOrder.
 std::vector<Item> items(Scene& scene, ImVec2 min, ImVec2 max) {
     std::vector<SceneNode*> layers;
-    findLayers(scene.root(), layers);
+    allLayers(scene, layers);
     std::vector<Item> out;
     g_surfaces.clear();
     g_itemsMin = min;
@@ -683,6 +705,91 @@ bool blocks(const SceneNode* n) {
     return n->gui.bgTransparency < 0.95f || ((n->gui.type == GuiType::ImageLabel) && !n->gui.image.empty());
 }
 
+// RichText: the text in pieces, each with its own colour / size / bold..., wrapped word by
+// word and lined up like plain text (TextXAlignment / TextYAlignment).
+void drawRich(ImDrawList* dl, const Item& it, const GuiProps& g, float baseSize, float wrap, float pad, const Gradient* grad) {
+    ImFont* font = ImGui::GetFont();
+    const float k = it.node->gui.absScale;
+    struct Piece { std::string text; const RichText::Style* st; float size, w; bool space, newline; };
+    const std::vector<RichText::Run> runs = RichText::parse(g.text);
+    std::vector<Piece> pieces;
+    for (const RichText::Run& r : runs) {
+        const float size = r.style.size > 0.0f ? r.style.size * k : baseSize;
+        if (r.text == "\n") { pieces.push_back({"", &r.style, size, 0.0f, false, true}); continue; }
+        size_t i = 0;
+        while (i < r.text.size()) {   // words, spaces and line breaks
+            const char c = r.text[i];
+            if (c == '\n') { pieces.push_back({"", &r.style, size, 0.0f, false, true}); ++i; continue; }
+            const bool sp = c == ' ' || c == '\t';
+            size_t j = i;
+            while (j < r.text.size() && r.text[j] != '\n' && ((r.text[j] == ' ' || r.text[j] == '\t') == sp)) ++j;
+            std::string t = r.text.substr(i, j - i);
+            const float w = font->CalcTextSizeA(size, FLT_MAX, 0.0f, t.c_str()).x + (r.style.bold ? k : 0.0f);
+            pieces.push_back({std::move(t), &r.style, size, w, sp, false});
+            i = j;
+        }
+    }
+    // Lines: the pieces on each, its width and height.
+    struct Line { size_t from, to; float w, h; };
+    std::vector<Line> lines;
+    Line cur{0, 0, 0.0f, 0.0f};
+    auto endLine = [&](size_t at) {
+        cur.to = at;
+        float w = 0.0f;   // (spaces at the end don't count)
+        size_t last = cur.to;
+        while (last > cur.from && pieces[last - 1].space) --last;
+        for (size_t p = cur.from; p < last; ++p) w += pieces[p].w;
+        cur.w = w;
+        if (cur.h <= 0.0f) cur.h = baseSize;
+        lines.push_back(cur);
+        cur = {at, at, 0.0f, 0.0f};
+    };
+    float x = 0.0f;
+    for (size_t p = 0; p < pieces.size(); ++p) {
+        const Piece& pc = pieces[p];
+        if (pc.newline) { cur.h = std::max(cur.h, pc.size); endLine(p + 1); x = 0.0f; continue; }
+        if (wrap > 0.0f && !pc.space && x > 0.0f && x + pc.w > wrap) {
+            endLine(p);
+            x = 0.0f;
+        }
+        if (pc.space && x == 0.0f && !lines.empty() && cur.from == p) { cur.from = p + 1; continue; }   // (no space starting a wrapped line)
+        x += pc.w;
+        cur.h = std::max(cur.h, pc.size);
+    }
+    endLine(pieces.size());
+    float total = 0.0f;
+    for (const Line& l : lines) total += l.h;
+    const float y0 = g.yAlign == 0 ? it.a.y : g.yAlign == 2 ? it.b.y - total : it.a.y + (it.b.y - it.a.y - total) * 0.5f;
+    const int start = dl->VtxBuffer.Size;
+    float y = y0;
+    for (const Line& l : lines) {
+        float lx = g.xAlign == 0 ? it.a.x + pad : g.xAlign == 2 ? it.b.x - pad - l.w : it.a.x + (it.b.x - it.a.x - l.w) * 0.5f;
+        for (size_t p = l.from; p < l.to && p < pieces.size(); ++p) {
+            const Piece& pc = pieces[p];
+            if (pc.newline) continue;
+            const RichText::Style& st = *pc.st;
+            const float tr = st.transparency >= 0.0f ? st.transparency : g.textTransparency;
+            const ImU32 col = rgba(st.hasColor ? st.color : g.textColor, tr);
+            const ImVec2 at(lx, y + (l.h - pc.size) * 0.8f);   // (on a shared baseline, roughly)
+            if (!pc.space) {
+                if (g.strokeTransparency < 1.0f) {
+                    const ImU32 sc = rgba(g.strokeColor, std::max(g.strokeTransparency, tr));
+                    for (int dx = -1; dx <= 1; ++dx)
+                        for (int dy = -1; dy <= 1; ++dy)
+                            if (dx || dy) dl->AddText(font, pc.size, ImVec2(at.x + dx * k, at.y + dy * k), sc, pc.text.c_str());
+                }
+                dl->AddText(font, pc.size, at, col, pc.text.c_str());
+                if (st.bold || g.bold) dl->AddText(font, pc.size, ImVec2(at.x + k, at.y), col, pc.text.c_str());
+            }
+            if (st.underline) dl->AddLine(ImVec2(at.x, at.y + pc.size * 0.95f), ImVec2(at.x + pc.w, at.y + pc.size * 0.95f), col, std::max(1.0f, k));
+            if (st.strike)    dl->AddLine(ImVec2(at.x, at.y + pc.size * 0.55f), ImVec2(at.x + pc.w, at.y + pc.size * 0.55f), col, std::max(1.0f, k));
+            lx += pc.w;
+        }
+        y += l.h;
+    }
+    if (grad) grad->recolor(dl, start);
+}
+
 void drawText(ImDrawList* dl, const Item& it, const GuiProps& gIn, float radius, const Gradient* grad) {
     GuiProps shown;
     const GuiProps* gp = &gIn;
@@ -700,15 +807,19 @@ void drawText(ImDrawList* dl, const Item& it, const GuiProps& gIn, float radius,
     const float pad = std::min(4.0f * k, radius * 0.5f + 2.0f * k);
     float wrap = g.textWrapped || g.textScaled ? std::max(1.0f, w - pad * 2) : 0.0f;
     float size = g.textSize * k;
+    const bool rich = g.richText && gp == &gIn;   // (not the greyed-out placeholder)
+    const std::string plain = rich ? RichText::strip(g.text) : std::string();
+    const char* measure = rich ? plain.c_str() : g.text.c_str();
     if (g.textScaled) {   // as big as fits
         size = std::max(6.0f, h * 0.85f);
         for (int i = 0; i < 24; ++i) {
-            ImVec2 s = font->CalcTextSizeA(size, FLT_MAX, g.textWrapped ? wrap : 0.0f, g.text.c_str());
+            ImVec2 s = font->CalcTextSizeA(size, FLT_MAX, g.textWrapped ? wrap : 0.0f, measure);
             if (s.x <= w - pad * 2 && s.y <= h) break;
             size *= 0.88f;
         }
         if (!g.textWrapped) wrap = 0.0f;
     }
+    if (rich) { drawRich(dl, it, g, size, wrap, pad, grad); return; }
     ImVec2 ts = font->CalcTextSizeA(size, FLT_MAX, wrap, g.text.c_str());
     float x = g.xAlign == 0 ? it.a.x + pad : g.xAlign == 2 ? it.b.x - pad - ts.x : it.a.x + (w - ts.x) * 0.5f;
     float y = g.yAlign == 0 ? it.a.y : g.yAlign == 2 ? it.b.y - ts.y : it.a.y + (h - ts.y) * 0.5f;
@@ -728,13 +839,15 @@ void drawText(ImDrawList* dl, const Item& it, const GuiProps& gIn, float radius,
 } // namespace
 
 void refresh(Scene& scene) { items(scene, g_lastMin, g_lastMax); }
+
+void setPrivateRoot(SceneNode* playerGui) { g_private = playerGui; }
 void lastScreen(ImVec2& min, ImVec2& max) { min = g_lastMin; max = g_lastMax; }
 
 Scene* g_drawScene = nullptr;   // (ViewportFrames draw the parts in it)
 
 bool needsBackdrop(Scene& scene) {
     std::vector<SceneNode*> screens;
-    findLayers(scene.root(), screens);
+    allLayers(scene, screens);
     for (SceneNode* s : screens) if (s->gui.type == GuiType::ScreenGui && s->enabled && anyBlur(s)) return true;
     return false;
 }
@@ -974,7 +1087,7 @@ bool handle(Scene& scene, ImVec2 min, ImVec2 max, ImVec2 pointer, bool in, bool 
         }
     }
     if (input.dragging) {
-        SceneNode* s = scene.findById(input.dragging);
+        SceneNode* s = findGui(scene, input.dragging);
         if (!s || !s->isGui() || !ImGui::IsMouseDown(ImGuiMouseButton_Left)) input.dragging = 0;
         else {
             GuiProps& g = s->gui;
@@ -1044,7 +1157,7 @@ void textInput(Scene& scene, std::vector<Event>& events) {
         g_wantFocus = 0;
         if (want == ~0ull) lose(g_releaseEnter);
         else if (want != g_focus) {
-            SceneNode* n = scene.findById(want);
+            SceneNode* n = findGui(scene, want);
             if (n && n->isGui() && n->gui.type == GuiType::TextBox) {
                 lose(false);
                 g_focus = want;
@@ -1058,7 +1171,7 @@ void textInput(Scene& scene, std::vector<Event>& events) {
         }
     }
     if (!g_focus) return;
-    SceneNode* n = scene.findById(g_focus);
+    SceneNode* n = findGui(scene, g_focus);
     bool shown = n && n->isGui() && n->gui.type == GuiType::TextBox && n->visible && n->gui.editable;
     for (SceneNode* p = n ? n->parent : nullptr; shown && p && p->isGui(); p = p->parent)
         shown = p->gui.type == GuiType::ScreenGui ? p->enabled : p->visible;
