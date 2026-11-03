@@ -33,12 +33,34 @@
 #include <cstdio>
 #include <cstdlib>
 
-ViewportPanel::ViewportPanel(GLFWwindow* window, Scene* scene, EditorState* state)
-    : m_window(window), m_scene(scene), m_state(state) {
+namespace { ViewportPanel* g_activeView = nullptr; ViewportPanel* g_mainView = nullptr; }
+
+ViewportPanel::ViewportPanel(GLFWwindow* window, Scene* scene, EditorState* state, int number)
+    : m_number(std::max(1, number)), m_window(window), m_scene(scene), m_state(state) {
+    if (m_number > 1) m_title = "Viewport " + std::to_string(m_number);
+    else g_mainView = this;
     resetCamera();
 }
 
-ViewportPanel::~ViewportPanel() = default;
+ViewportPanel::~ViewportPanel() {
+    if (g_activeView == this) g_activeView = nullptr;
+    if (g_mainView == this) g_mainView = nullptr;
+}
+
+ViewportPanel* ViewportPanel::active() { return g_activeView ? g_activeView : g_mainView; }
+
+bool ViewportPanel::orthographic() const { return m_number == 1 ? m_state->orthographic : m_ortho; }
+void ViewportPanel::setOrthographic(bool on) { (m_number == 1 ? m_state->orthographic : m_ortho) = on; }
+
+void ViewportPanel::lookFrom(int side) {
+    static const float kYaw[6]   = {90.0f, -90.0f, 0.0f, 180.0f, 90.0f, 90.0f};
+    static const float kPitch[6] = {0.0f, 0.0f, 0.0f, 0.0f, 89.9f, -89.9f};
+    side = std::clamp(side, 0, 5);
+    m_camera.yaw = kYaw[side];
+    m_camera.pitch = kPitch[side];
+    m_glide = -1.0f;
+    setOrthographic(true);
+}
 
 void ViewportPanel::resetCamera() {
     m_camera.yaw      = 45.0f;
@@ -136,7 +158,7 @@ void ViewportPanel::followPlayer(Player& p, float dt) {
     PlayCamera::fade(*m_scene, p, m_camera);
 }
 
-bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsing() || m_scaleDrag >= 0 || m_sculpting || m_weightPainting || m_modalOn || m_state->modeling.modal != MeshModal::None ||
+bool ViewportPanel::gizmoInUse() const { return ImGuizmo::IsUsingAny() || m_scaleDrag >= 0 || m_sculpting || m_weightPainting || m_modalOn || m_state->modeling.modal != MeshModal::None ||
                                                 m_objOn || m_state->objectModal != ObjectModal::None; }
 
 bool ViewportPanel::focusSelected() {
@@ -212,7 +234,7 @@ void ViewportPanel::handleInput(float dt) {
 
     // Roblox Studio camera: right-drag looks around, middle-drag pans, the
     // wheel zooms, and WASD / Q E fly (hold Shift to go faster).
-    static bool looking = false;
+    bool& looking = m_looking;
     const bool modal = (m_state->mode == StudioMode::Modeling && (m_modalOn || m_state->modeling.modal != MeshModal::None)) ||
                        m_objOn || m_state->objectModal != ObjectModal::None;
     if (m_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right) && !modal) looking = true;
@@ -226,7 +248,7 @@ void ViewportPanel::handleInput(float dt) {
 
     // Numpad 5: orthographic / perspective, like Blender.
     if ((focused || m_hovered) && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Keypad5, false))
-        m_state->orthographic = !m_state->orthographic;
+        setOrthographic(!orthographic());
     // Numpad 1 / 3 / 7: look from the front / right / top (Ctrl: back / left / bottom);
     // 2 / 4 / 6 / 8 turn the view in steps, 9 looks from the other side. All like Blender.
     if ((focused || m_hovered) && !io.WantTextInput) {
@@ -789,9 +811,17 @@ void ViewportPanel::render(float dt) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     if (m_wantFocus) { ImGui::SetNextWindowFocus(); m_wantFocus = false; }
     // Playing: a controller plays the game here, it doesn't move between buttons.
-    ImGui::Begin("Viewport", nullptr, m_session ? ImGuiWindowFlags_NoNav : 0);
+    // (An extra view has an X to close it, and its own gizmo.)
+    ImGui::Begin(m_title.c_str(), m_number > 1 ? &m_open : nullptr, m_session ? ImGuiWindowFlags_NoNav : 0);
+    if (m_number > 1) ImGuizmo::PushID(m_number);
+    struct PopGizmoId { int n; ~PopGizmoId() { if (n > 1) ImGuizmo::PopID(); } } popGizmoId{m_number};
 
     m_hovered = ImGui::IsWindowHovered();
+    // The view the mouse is in is the one Blender's keys work in (not mid-tool).
+    if (m_hovered && g_activeView != this && !gizmoInUse() && !ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+        !ImGui::IsMouseDown(ImGuiMouseButton_Right) && !ImGui::IsMouseDown(ImGuiMouseButton_Middle))
+        g_activeView = this;
+    if (m_watching) m_hovered = m_hovered && !m_session;   // (watching the game: just the camera)
     handleInput(dt);
 
     ImVec2 avail = ImGui::GetContentRegionAvail();
@@ -804,9 +834,13 @@ void ViewportPanel::render(float dt) {
         }
         bool playing = m_session != nullptr;
         if (!playing) {   // (while playing, the game's own camera setting counts: PlayCamera)
-            m_camera.orthographic = m_state->orthographic;
+            m_camera.orthographic = orthographic();
             m_camera.orthoSize = 0.0f;
         }
+        // The view style (playing: always the real look). Modeling's X-ray shows through too.
+        m_renderer.shading = playing && !m_session->runOnly() ? SceneRenderer::Shading::Material : shading;
+        m_renderer.xray = !(playing && !m_session->runOnly()) &&
+                          (xray || (m_state->mode == StudioMode::Modeling && m_state->modeling.xray && !playing));
         m_renderer.setGridSpacing(m_state->snapEnabled && m_state->snapTranslate >= 0.25f ? m_state->snapTranslate : 1.0f);
         updateNavOverlay();
         m_renderer.render(*m_scene, m_camera, m_fbo, m_state->showGrid && (!playing || m_session->runOnly()));
@@ -818,7 +852,7 @@ void ViewportPanel::render(float dt) {
         } else {
             GameGui::setBackdrop(nullptr, 0);
         }
-        Audio::setListener(m_camera.position(), m_camera.forward());
+        if (m_number == 1) Audio::setListener(m_camera.position(), m_camera.forward());   // (you hear from the main view)
 
         ImVec2 imgPos = ImGui::GetCursorScreenPos();
         // Flip V so the framebuffer texture is the right way up in ImGui.
@@ -826,7 +860,19 @@ void ViewportPanel::render(float dt) {
                      avail, ImVec2(0, 1), ImVec2(1, 0));
         m_viewMin = imgPos;
         m_viewMax = ImVec2(imgPos.x + avail.x, imgPos.y + avail.y);
+        if (m_watching) {
+            // An extra view while the game plays in the main Viewport: it only watches.
+            ImDrawList* wdl = ImGui::GetWindowDrawList();
+            wdl->AddRect(imgPos, m_viewMax, IM_COL32(60, 200, 90, 160), 0.0f, 0, 2.0f);
+            wdl->AddText(ImVec2(imgPos.x + 12, m_viewMax.y - ImGui::GetFontSize() - 10), IM_COL32(255, 255, 255, 170),
+                         I18n::tr("Watching the game (play it in the main Viewport)"));
+            ImGui::End();
+            ImGui::PopStyleVar();
+            return;
+        }
         if (drawModeMenu(imgPos)) m_hovered = false;   // clicks on the menu aren't clicks in the world
+        if (!playing || m_session->runOnly())
+            if (drawViewHeader(imgPos, m_viewMax)) m_hovered = false;
 
         glm::mat4 view = m_camera.view();
         glm::mat4 proj = m_camera.projection();
@@ -947,7 +993,7 @@ void ViewportPanel::render(float dt) {
             dl->AddText(ImVec2(imgPos.x + 12, imgMax.y - ImGui::GetFontSize() - 10), IM_COL32(255, 255, 255, 200), tip);
         } else {
             drawSelectionBoxes(view, proj, imgMin, imgSize);
-            const bool objModal = objectModal(view, proj, imgMin, imgSize);   // G / R / S (Blender keys)
+            const bool objModal = isActive() && objectModal(view, proj, imgMin, imgSize);   // G / R / S (Blender keys), in the view the mouse is in
             if (!objModal) drawGizmo(view, proj, imgMin, imgSize);
 
             // Team Create: a coloured box around what each other person has selected.
@@ -1267,7 +1313,14 @@ std::string ViewportPanel::snapshotPng(int width, int height, bool fromView) {
     m_scene->forEach([&](SceneNode* n) { if (n->selected) { selected.push_back(n); n->selected = false; } });
     Framebuffer fb;
     fb.resize(width, height);
+    // (The real look, whatever view style this viewport is in.)
+    const SceneRenderer::Shading shadingWas = m_renderer.shading;
+    const bool xrayWas = m_renderer.xray;
+    m_renderer.shading = SceneRenderer::Shading::Material;
+    m_renderer.xray = false;
     m_renderer.render(*m_scene, cam, fb, false);
+    m_renderer.shading = shadingWas;
+    m_renderer.xray = xrayWas;
     for (SceneNode* n : selected) n->selected = true;
 
     std::vector<unsigned char> px((size_t)width * height * 4);

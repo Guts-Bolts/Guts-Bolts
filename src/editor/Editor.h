@@ -264,6 +264,23 @@ private:
     void       renderMoveTo();
     void       renderBlenderKeysToggle();       // the "Blender keys" switch (F1 window, View menu)
     void       testBlender(const std::string& step);   // --test-mesh "blender:..." steps
+    // The workspace (EditorWorkspace.cpp): extra 3D views, Quad View, Reset Workspace,
+    // and remembering it all in the layout file.
+    ViewportPanel* activeView();                // the 3D view the mouse was last in
+    ViewportPanel* addViewport();
+    void       renderMoreViews(float dt);
+    void       quadView();
+    void       resetWorkspace();
+    void       applyWorkspaceRequests(unsigned dockspaceId);
+    void       renderWorkspaceMenu();
+    void       registerWorkspaceSettings();
+    bool       handleViewKeys();                // Z, Shift+Z, Alt+Z
+    void       testWorkspace(const std::string& step);   // --test-mesh "workspace:..." steps
+    std::vector<std::unique_ptr<ViewportPanel>> m_moreViews;
+    std::vector<std::pair<int, unsigned>> m_dockNewView;   // a new view (its number) -> the dock to open in
+    bool        m_wantQuadView = false;
+    bool        m_workspaceLoaded = false;
+    std::string m_workspaceSaved;
     void       renderShortcuts();
     void       renderCollisionGroups();   // the Collision Groups editor (PhysicsService's table)
 public:

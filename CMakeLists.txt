@@ -776,6 +776,7 @@ set(EDITOR_SOURCES
     src/editor/Icons.cpp
     src/editor/panels/ViewportModeling.cpp
     src/editor/panels/ViewportObjectModal.cpp
+    src/editor/panels/ViewportHeader.cpp
     src/editor/panels/ViewportBones.cpp
     src/editor/panels/ViewportTerrain.cpp
     src/editor/EditorModes.cpp
@@ -796,6 +797,7 @@ set(EDITOR_SOURCES
     src/editor/EditorCutscenes.cpp
     src/editor/EditorBulkEdit.cpp
     src/editor/EditorBlender.cpp
+    src/editor/EditorWorkspace.cpp
     src/editor/EditorBlocks.cpp
     src/editor/VisualScript.cpp
     src/editor/EditorScriptHistory.cpp

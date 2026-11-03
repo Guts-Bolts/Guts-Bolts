@@ -85,6 +85,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_showReplay = std::getenv("GB_TEST_REPLAY") != nullptr;   // (tests: start with it showing)
     m_showCompare = std::getenv("GB_TEST_COMPARE") != nullptr;   // (tests: start with it showing)
     m_viewport = std::make_unique<ViewportPanel>(window, scene, &m_state);
+    registerWorkspaceSettings();   // (before the layout file is read, on the first frame)
     auto open  = [this](SceneNode* n) { openScript(n); };
     m_outliner = std::make_unique<OutlinerPanel>(scene, open, [this](SceneNode* n) { addScript(n); });
     EditorTheme::applyStudio();
@@ -388,6 +389,7 @@ void Editor::render(float dt) {
     applyEditorHidden();   // (the Explorer's eye: still hidden after an undo)
     const auto viewportStart = std::chrono::steady_clock::now();
     m_viewport->render(dt);
+    renderMoreViews(dt);   // Viewport 2, 3... (EditorWorkspace.cpp)
     m_perfViewportMs = std::chrono::duration<float, std::milli>(
         std::chrono::steady_clock::now() - viewportStart).count();
     // Files dragged from the computer onto Studio.
@@ -2226,6 +2228,7 @@ void Editor::resetHistory() {
 void Editor::trackChanges() {
     // Wait until a drag / text edit is finished so it becomes one undo step.
     if (m_playing || ImGui::IsAnyItemActive() || m_viewport->gizmoInUse() || m_uv.modal) return;
+    for (auto& v : m_moreViews) if (v->gizmoInUse()) return;
     std::string now = Serializer::saveScene(*m_scene);
     if (now == m_committed) return;
     // Changed what's inside one copy of a linked model: every other copy changes to match
@@ -2796,13 +2799,14 @@ void Editor::handleShortcuts() {
         return;
     }
     if (m_uv.hovered && !io.KeyCtrl) return;   // the UV Editor has its own keys (G, R, S, A, L, U)
+    if (handleViewKeys()) return;   // Z / Shift+Z / Alt+Z: how the 3D view looks (EditorWorkspace.cpp)
     if (m_state.mode == StudioMode::Modeling) { handleModelingKeys(); return; }
     // Tab: reshape the selected part (Blender's Edit Mode).
     if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !io.KeyCtrl && !io.KeyAlt) { setMode(StudioMode::Modeling); return; }
     // F: zoom to the selection (things with a body only), from any panel.
     if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl && !io.KeyAlt && !io.KeyShift &&
         !ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
-        if (!m_viewport->focusSelected() && m_scene->selected())
+        if (!activeView()->focusSelected() && m_scene->selected())
             Log::info("F zooms to things with a body (parts, models, tools) - \"" + m_scene->selected()->name + "\" has none.");
     }
 
@@ -2811,6 +2815,7 @@ void Editor::handleShortcuts() {
         if (ImGui::IsKeyPressed(ImGuiKey_A, false)) toggleAnchored();
         if (ImGui::IsKeyPressed(ImGuiKey_H, false)) unhideAll();     // Blender: show everything hidden
         if (ImGui::IsKeyPressed(ImGuiKey_P, false)) clearParent();   // Blender: out of what it's in
+        if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Q, false)) quadView();   // Blender's Quad View
         return;
     }
 
@@ -3724,6 +3729,7 @@ void Editor::buildDockspace() {
     float statusH = ImGui::GetFrameHeightWithSpacing();
     ImGuiID dsId = ImGui::GetID("MainDockSpace");
     ImGui::DockSpace(dsId, ImVec2(0, -statusH), ImGuiDockNodeFlags_None);
+    applyWorkspaceRequests(dsId);   // the saved extra views, Quad View (EditorWorkspace.cpp)
 
     if (m_firstLayout) {
         m_firstLayout = false;
@@ -3887,6 +3893,11 @@ void Editor::renderMenuBar() {
 
     if (ImGui::BeginMenu("View")) {
         if (ImGui::MenuItem("Reset Camera")) m_viewport->resetCamera();
+        renderWorkspaceMenu();   // Add Viewport, Four Views, Reset Workspace
+        if (ImGui::BeginMenu(I18n::tr("View Style"))) {   // the 3D view the mouse was last in
+            activeView()->shadingMenuItems();
+            ImGui::EndMenu();
+        }
         ImGui::Separator();
         SceneNode* sel = m_scene->selected();
         if (ImGui::MenuItem("Expand Selected", "Ctrl+Right", false, sel != nullptr)) m_outliner->expand(m_scene->selection());
