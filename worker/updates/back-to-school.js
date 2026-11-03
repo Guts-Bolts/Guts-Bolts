@@ -1,5 +1,5 @@
 export default {
-  id: 'back-to-school', name: 'Back to School', time: 1793646800, tag: 'Studio',
+  id: 'back-to-school', name: 'Back to School', version: '0.7.9', time: 1793646800, tag: 'Studio',
   summary: 'Studio Learn: 20 hands-on lessons that teach you Studio by doing it.',
   items: [
     'Create > Learn on the website lists 20 short lessons, from your first Part to your first script',

@@ -1,3 +1,46 @@
+# Guts&Bolts 0.7.9: Harder Better Faster Stronger (November 3, 2026)
+
+Work it, make it, do it, makes us... a lot of new stuff. Chat with your
+friends from any page and call them, make cutscenes, start from a game
+template, build a cops and robbers game, and watch the website update by
+itself. Physics got steadier and phones run smoother too.
+
+## New in games
+- Spectate other players after you die, and save the last 30 seconds as a
+  GIF clip with F3.
+- Each player has their own screen (PlayerGui), plus RichText, Kick,
+  LoadCharacter, teams and lots more events for scripts.
+- The player list shows teams in their colours, sorts by score, and games
+  can restyle or hide it.
+- Real leaderboards: OrderedDataStore sorts, and the top 10 show on the
+  game's page.
+- Accessibility settings (colorblind modes, bigger text, captions) and a
+  basic anti-cheat.
+- Steadier physics, and Low / Medium graphics run much better on phones.
+
+## New in Studio
+- A Cutscene Maker, and File > New from Template (Obby, Tycoon, Sword
+  Fight, Racing).
+- Studio Learn: 20 hands-on lessons, with hints when you get stuck.
+- Make, try, publish and update your own plugins right inside Studio.
+- Studio works offline; you only sign in to publish.
+
+## New on the website
+- A Chat panel in the corner of every page, parties, and voice calls with
+  Do Not Disturb.
+- Pages update live: bids, forum posts, your bell and your Messages count.
+- A brand new logo, live auctions on the front page, and Limited vs
+  Limited U items with a buy confirmation.
+- Search forgives typos, My Feed shows what friends are up to, and
+  creators can see when people play their games.
+- Events with free items, achievements on profiles, and game update logs.
+
+## Bugs we squashed
+- The website couldn't save anything to its database; now it can.
+- The Auction Broadcasts and forum boxes showed up as raw code.
+- WaitForChild gave up straight away instead of waiting.
+- Chats disappeared from the list when the server was older than the site.
+
 # Guts&Bolts 0.7.8: Bed Bugs (October 28, 2026)
 
 We went bug hunting under the mattress. The updater can't trap you in a

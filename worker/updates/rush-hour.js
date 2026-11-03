@@ -1,5 +1,5 @@
 export default {
-  id: 'rush-hour', name: 'Rush Hour', time: 1793649288, tag: 'Website',
+  id: 'rush-hour', name: 'Rush Hour', version: '0.7.9', time: 1793649288, tag: 'Website',
   summary: 'Creator stats now show when people play your games.',
   items: [
     'A chart of plays by hour of the day, in your own time, with your busiest hour',

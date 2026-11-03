@@ -1,5 +1,5 @@
 export default {
-  id: 'the-auction-never-sleeps', name: 'The Auction Never Sleeps', time: 1793491200, tag: 'Website',
+  id: 'the-auction-never-sleeps', name: 'The Auction Never Sleeps', version: '0.7.9', time: 1793491200, tag: 'Website',
   summary: 'Auction pages keep their bids, bidder lists and homepage promotions up to date without making visitors refresh.',
   items: [
     'Refresh the homepage auction showcase every 12 seconds while the page is visible.',

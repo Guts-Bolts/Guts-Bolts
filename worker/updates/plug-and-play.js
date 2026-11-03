@@ -1,5 +1,5 @@
 export default {
-  id: 'plug-and-play', name: 'Plug and Play', time: 1793662800, tag: 'Studio',
+  id: 'plug-and-play', name: 'Plug and Play', version: '0.7.9', time: 1793662800, tag: 'Studio',
   summary: 'Making and sharing Studio plugins is easy now: write them in Studio, try them, publish them, and update them later for free.',
   items: [
     'PLUGINS > New makes a plugin as a Script you change in Studio\'s own script editor (it sits in ServerStorage, switched off, so it never runs in your game).',
