@@ -24,6 +24,9 @@ itself. Physics got steadier and phones run smoother too.
 - Studio Learn: 20 hands-on lessons, with hints when you get stuck.
 - Make, try, publish and update your own plugins right inside Studio.
 - Studio works offline; you only sign in to publish.
+- Blender-style tools: an eye in the Explorer to hide things, the G / R /
+  X / M / Ctrl+P keys, and a "Blender keys" switch.
+- Import Roblox animations, and they fit R6 dummies by themselves.
 
 ## New on the website
 - A Chat panel in the corner of every page, parties, and voice calls with
