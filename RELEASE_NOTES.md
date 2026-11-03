@@ -16,6 +16,8 @@ itself. Physics got steadier and phones run smoother too.
   and CylinderMesh, so scripts like a grab knife just work.
 - Lyreto's Roblox Game Bridge script runs as-is, thanks to about a dozen
   more Roblox functions.
+- Scripts can swap a player's whole outfit with HumanoidDescription.
+- Games only draw what the camera can see, so big maps run faster.
 - Real leaderboards: OrderedDataStore sorts, and the top 10 show on the
   game's page.
 - Accessibility settings (colorblind modes, bigger text, captions) and a
