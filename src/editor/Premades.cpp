@@ -321,6 +321,155 @@ tool.Activated:Connect(function()
 end)
 )";
 
+// Blaster: a gun that really hits. The LocalScript sends where your mouse points; the server
+// checks it, raycasts from the barrel, draws the tracer and does the damage. (A Script can't see
+// a joiner's mouse, and a LocalScript's damage doesn't count, so a good gun needs both halves.)
+const char* kGearBlasterServer = R"(-- Blaster (server half): checks each shot, raycasts, and does the damage.
+local tool = script.Parent
+local fire = tool:WaitForChild("Fire")       -- the RemoteEvent the LocalScript talks to
+local muzzle = tool:WaitForChild("Muzzle")   -- a small see-through part at the tip of the barrel
+local Debris = game:GetService("Debris")
+local Players = game:GetService("Players")
+
+local DAMAGE = 20          -- per hit (a headshot does double)
+local RANGE = 150
+local MAG_SIZE = 12
+local RELOAD_TIME = 1.5
+local FIRE_DELAY = 0.15    -- seconds between shots
+local FRIENDLY_FIRE = false
+
+local ammo = MAG_SIZE
+local reloading = false
+local lastShot = 0
+
+-- Tracers go in their own folder so shots never hit them.
+local tracers = workspace:FindFirstChild("Tracers")
+if not tracers then
+    tracers = Instance.new("Folder")
+    tracers.Name = "Tracers"
+    tracers.Parent = workspace
+end
+
+local function holder()
+    local character = tool.Parent
+    return character, character and Players:GetPlayerFromCharacter(character)
+end
+
+local function tellAmmo(player)
+    fire:FireClient(player, "ammo", ammo, MAG_SIZE)
+end
+
+local function reload(player)
+    if reloading or ammo == MAG_SIZE then return end
+    reloading = true
+    fire:FireClient(player, "reloading")
+    Sounds.Play("reload", muzzle.Position)
+    task.wait(RELOAD_TIME)
+    ammo = MAG_SIZE
+    reloading = false
+    tellAmmo(player)
+end
+
+local function tracer(from, to)
+    local length = (to - from).Magnitude
+    local beam = Instance.new("Part")
+    beam.Anchored = true
+    beam.CanCollide = false
+    beam.Material = Enum.Material.Neon
+    beam.Color = Color3.fromRGB(255, 215, 110)
+    beam.Size = Vector3.new(0.05, 0.05, length)
+    beam.CFrame = CFrame.lookAt(from, to) * CFrame.new(0, 0, -length / 2)
+    beam.Parent = tracers
+    Debris:AddItem(beam, 0.06)
+end
+
+fire.OnServerEvent:Connect(function(player, action, target)
+    local character, owner = holder()
+    if owner ~= player then return end                 -- only whoever is holding it
+    if action == "reload" then reload(player) return end
+    if action ~= "shoot" or typeof(target) ~= "Vector3" then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 or reloading then return end
+    if time() - lastShot < FIRE_DELAY then return end  -- no faster than the gun can fire
+    if ammo <= 0 then reload(player) return end
+    lastShot = time()
+    ammo = ammo - 1
+
+    local from = muzzle.Position
+    local aim = target - from
+    if aim.Magnitude < 0.01 then return end
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = { character, tracers }
+    local result = workspace:Raycast(from, aim.Unit * RANGE, params)
+    local hitPos = result and result.Position or from + aim.Unit * RANGE
+
+    tracer(from, hitPos)
+    Sounds.Play("gunshot", from, 0.6)
+    if result then
+        Effects.Sparks(hitPos, 6)
+        local model = result.Instance:FindFirstAncestorOfClass("Model")
+        local victim = model and model:FindFirstChildOfClass("Humanoid")
+        local victimPlayer = model and Players:GetPlayerFromCharacter(model)
+        local sameTeam = victimPlayer and player.Team and victimPlayer.Team == player.Team
+        if victim and victim.Health > 0 and (FRIENDLY_FIRE or not sameTeam) then
+            victim:TakeDamage(result.Instance.Name == "Head" and DAMAGE * 2 or DAMAGE)
+        end
+    end
+    tellAmmo(player)
+    if ammo == 0 then reload(player) end
+end)
+)";
+
+const char* kGearBlasterLocal = R"(-- Blaster (your half): hold the mouse to fire where you point, R to reload.
+local tool = script.Parent
+local fire = tool:WaitForChild("Fire")
+local player = game:GetService("Players").LocalPlayer
+local mouse = player:GetMouse()
+local UserInputService = game:GetService("UserInputService")
+
+local FIRE_DELAY = 0.15
+local shooting = false
+local equipped = false
+
+-- An ammo counter in the corner of your screen (only you see it).
+local gui = Instance.new("ScreenGui")
+gui.Name = "BlasterAmmo"
+gui.Enabled = false
+local label = Instance.new("TextLabel")
+label.Size = UDim2.fromOffset(160, 44)
+label.Position = UDim2.new(1, -176, 1, -110)
+label.BackgroundColor3 = Color3.new(0, 0, 0)
+label.BackgroundTransparency = 0.4
+label.TextColor3 = Color3.new(1, 1, 1)
+label.TextSize = 24
+label.Text = "12 / 12"
+label.Parent = gui
+gui.Parent = player:WaitForChild("PlayerGui")
+
+tool.Equipped:Connect(function() equipped = true gui.Enabled = true end)
+tool.Unequipped:Connect(function() equipped = false shooting = false gui.Enabled = false end)
+
+tool.Activated:Connect(function()
+    if shooting then return end
+    shooting = true
+    while shooting and equipped do
+        fire:FireServer("shoot", mouse.Hit.Position)
+        task.wait(FIRE_DELAY)
+    end
+end)
+tool.Deactivated:Connect(function() shooting = false end)
+
+UserInputService.InputBegan:Connect(function(input, typing)
+    if not typing and equipped and input.KeyCode == Enum.KeyCode.R then fire:FireServer("reload") end
+end)
+
+fire.OnClientEvent:Connect(function(what, ammo, size)
+    if what == "ammo" then label.Text = ammo .. " / " .. size
+    elseif what == "reloading" then label.Text = "Reloading..." end
+end)
+)";
+
 const char* kGearSpeedCoil = R"(-- Speed Coil: hold it to run twice as fast.
 local tool = script.Parent
 local humanoid, oldSpeed
@@ -574,9 +723,10 @@ void vehicleSeatSettings(SceneNode* seat, float maxSpeed, float torque, float tu
     }
 }
 
-void addScript(Scene& scene, SceneNode* parent, const char* source) {
-    auto s = std::make_unique<SceneNode>("Script", NodeKind::Script);
+void addScript(Scene& scene, SceneNode* parent, const char* source, bool local = false) {
+    auto s = std::make_unique<SceneNode>(local ? "LocalScript" : "Script", NodeKind::Script);
     s->source = source;
+    s->isLocal = local;
     scene.insert(std::move(s), parent);
 }
 
@@ -681,6 +831,7 @@ const std::vector<PremadeInfo>& premadeList() {
         {Premade::GearSpeedCoil,        "Speed Coil",      "Gear: hold it to run twice as fast"},
         {Premade::GearGravityCoil,      "Gravity Coil",    "Gear: hold it to jump really high"},
         {Premade::GearBomb,             "Bomb",            "Gear: drop a bomb that goes off after 3 seconds"},
+        {Premade::GearBlaster,          "Blaster",         "Gear: a gun that hits where you aim (hold to fire, R to reload, 20 damage)"},
         {Premade::DepthCharge,          "Depth Charge",    "Drop it in water: a column of spray and, in big water, a tsunami"},
         {Premade::WaterWheel,           "Water Wheel",     "A wheel in a flowing river: the current turns it (change the river's Flow)"},
         {Premade::LampPost,             "Lamp Post",       "A street lamp with a real light (try it at night)"},
@@ -1033,6 +1184,24 @@ SceneNode* buildPremade(Scene& scene, Premade kind, const glm::vec3& at) {
             toolPart(scene, n, "Fuse", PrimitiveType::Cylinder, {0, 0.32f, 0}, {0.05f, 0.18f, 0.05f}, {0.9f, 0.75f, 0.4f});
             addScript(scene, n, kGearBomb);
             break;
+        case Premade::GearBlaster: {
+            // Like a Roblox gun: the grip is the Handle and the barrel points along the Handle's -Z
+            // (forward when it's held). Shots leave from the Muzzle, a small part at the tip.
+            n = makeTool(scene, "Blaster", "Hold to fire, R to reload", at);
+            toolPart(scene, n, "Handle", Cube, {0, 0, 0}, {0.14f, 0.45f, 0.2f}, {0.12f, 0.12f, 0.13f}, Material::Metal);
+            toolPart(scene, n, "Body", Cube, {0, 0.28f, -0.22f}, {0.18f, 0.24f, 0.85f}, {0.2f, 0.21f, 0.24f}, Material::Metal);
+            SceneNode* barrel = toolPart(scene, n, "Barrel", PrimitiveType::Cylinder, {0, 0.3f, -0.8f}, {0.09f, 0.4f, 0.09f}, {0.08f, 0.08f, 0.09f}, Material::Metal);
+            barrel->transform.rotation = {90, 0, 0};
+            SceneNode* muzzle = toolPart(scene, n, "Muzzle", Cube, {0, 0.3f, -1.02f}, {0.05f, 0.05f, 0.05f}, {1, 1, 1});
+            muzzle->transparency = 1.0f;
+            muzzle->castShadow = false;
+            toolPart(scene, n, "Sight", Cube, {0, 0.43f, -0.5f}, {0.05f, 0.06f, 0.08f}, {1.0f, 0.35f, 0.1f}, Material::Neon);
+            auto fire = std::make_unique<SceneNode>("Fire", NodeKind::Remote);
+            scene.insert(std::move(fire), n);
+            addScript(scene, n, kGearBlasterServer);
+            addScript(scene, n, kGearBlasterLocal, true);
+            break;
+        }
         case Premade::ExplodingBarrel:
             n = addPart(scene, "ExplodingBarrel", PrimitiveType::Cylinder, at + glm::vec3(0, 0.75f, 0), {1.0f, 1.5f, 1.0f}, {0.8f, 0.12f, 0.08f}, Material::Metal);
             n->anchored = false;

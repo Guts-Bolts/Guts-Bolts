@@ -49,6 +49,18 @@ bool is(const char* a, const char* b) { return std::strcmp(a, b) == 0; }
 
 bool parseMaterial(const std::string& s, Material& out) { return materialFromName(s, out); }
 
+// A CylinderMesh (or a SpecialMesh set to Cylinder / Sphere) put in a part reshapes that part.
+void meshReshape(SceneNode* mesh, SceneNode* part) {
+    if (!mesh || !part || part->kind != NodeKind::Part || mesh->kind != NodeKind::Model) return;
+    std::string rc, mt;
+    for (const Attribute& a : mesh->attributes) {
+        if (a.name == "RobloxClass") rc = a.s;
+        if (a.name == "MeshType") mt = a.s;
+    }
+    if (rc == "CylinderMesh" || (rc == "SpecialMesh" && mt == "Cylinder")) part->primitiveType = PrimitiveType::Cylinder;
+    else if (rc == "SpecialMesh" && mt == "Sphere") part->primitiveType = PrimitiveType::Sphere;
+}
+
 const char* shapeName(PrimitiveType t) {
     switch (t) {
         case PrimitiveType::Sphere:   return "Ball";
@@ -256,6 +268,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::FluidEmitter: return "FluidEmitter";
         case NodeKind::Mover:        return kMoverClassNames[(int)n->mover.type];
         case NodeKind::Constraint:
+            if (n->legacyJoint) return n->legacyJoint == 2 ? "Motor6D" : n->legacyJoint == 3 ? "Motor" : "Weld";
             return kConstraintClassNames[std::clamp((int)n->constraintType, 0, kConstraintTypeCount - 1)];
         default:
             if (isFluidVolume(n)) return "FluidVolume";
@@ -281,6 +294,9 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
     if (n->kind == NodeKind::Light && cls == "Light") return true;
     if (n->isBone() && cls == "Attachment") return true;   // a Bone is an Attachment
     if (n->isPostEffect() && cls == "PostEffect") return true;
+    if (n->kind == NodeKind::Constraint && n->legacyJoint)   // Weld / Motor / Motor6D are JointInstances
+        return cls == "JointInstance" || (n->legacyJoint == 2 && cls == "Motor") ||
+               (n->legacyJoint == 1 && (cls == "ManualWeld" || cls == "Snap"));
     if (n->kind == NodeKind::Constraint && cls == "Constraint") return true;
     if (n->isMover() && cls == (isBodyMover(n->mover.type) ? "BodyMover" : "Constraint")) return true;
     if (n->kind == NodeKind::Tool && cls == "BackpackItem") return true;
@@ -1502,7 +1518,7 @@ bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
     if (is(k, "AbsoluteSize"))     { LuaApi::pushVector2(L, g.absSize); return true; }
     if (is(k, "Visible"))          { lua_pushboolean(L, n->visible); return true; }
     if (is(k, "BackgroundColor3")) { LuaApi::pushColor3(L, g.bg); return true; }
-    if (is(k, "BackgroundTransparency")) { lua_pushnumber(L, g.bgTransparency); return true; }
+    if (is(k, "BackgroundTransparency") || is(k, "Transparency")) { lua_pushnumber(L, g.bgTransparency); return true; }
     if (is(k, "BorderColor3"))     { LuaApi::pushColor3(L, g.borderColor); return true; }
     if (is(k, "BorderSizePixel"))  { lua_pushinteger(L, g.border); return true; }
     if (is(k, "ZIndex"))           { lua_pushinteger(L, g.zIndex); return true; }
@@ -1533,6 +1549,8 @@ bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
     }
     if (n->isGuiButton()) {
         if (is(k, "MouseButton1Click") || is(k, "Activated")) { LuaApi::pushSignal(L, SignalKind::GuiClick, n->id); return true; }
+        if (is(k, "MouseButton1Down")) { LuaApi::pushSignal(L, SignalKind::GuiDown, n->id); return true; }
+        if (is(k, "MouseButton1Up"))   { LuaApi::pushSignal(L, SignalKind::GuiUp, n->id); return true; }
         if (is(k, "AutoButtonColor")) { lua_pushboolean(L, g.autoButtonColor); return true; }
     }
     return false;
@@ -1727,7 +1745,7 @@ bool guiNewIndex(lua_State* L, SceneNode* n, const char* k) {
     if (is(k, "AnchorPoint"))      { g.anchor = LuaApi::checkVector2(L, 3); return true; }
     if (is(k, "Visible"))          { n->visible = lua_toboolean(L, 3); return true; }
     if (is(k, "BackgroundColor3")) { g.bg = LuaApi::checkColor3(L, 3); return true; }
-    if (is(k, "BackgroundTransparency")) { g.bgTransparency = t01(); return true; }
+    if (is(k, "BackgroundTransparency") || is(k, "Transparency")) { g.bgTransparency = t01(); return true; }
     if (is(k, "BorderColor3"))     { g.borderColor = LuaApi::checkColor3(L, 3); return true; }
     if (is(k, "BorderSizePixel"))  { g.border = std::max(0, (int)luaL_checkinteger(L, 3)); return true; }
     if (is(k, "ZIndex"))           { g.zIndex = (int)luaL_checkinteger(L, 3); return true; }
@@ -1737,6 +1755,14 @@ bool guiNewIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "Text"))             { g.text = luaL_tolstring(L, 3, nullptr); lua_pop(L, 1); return true; }
         if (is(k, "TextColor3"))       { g.textColor = LuaApi::checkColor3(L, 3); return true; }
         if (is(k, "TextSize"))         { g.textSize = std::clamp(num(), 1.0f, 200.0f); return true; }
+        if (is(k, "FontSize")) {   // Roblox's old name: Enum.FontSize.Size14 (or a number)
+            std::string v = lua_type(L, 3) == LUA_TNUMBER ? std::to_string((int)lua_tonumber(L, 3)) : luaL_tolstring(L, 3, nullptr);
+            if (lua_type(L, 3) != LUA_TNUMBER) lua_pop(L, 1);
+            const size_t at = v.find_last_not_of("0123456789");
+            const std::string digits = at == std::string::npos ? v : v.substr(at + 1);
+            if (!digits.empty()) g.textSize = std::clamp((float)std::atof(digits.c_str()), 1.0f, 200.0f);
+            return true;
+        }
         if (is(k, "TextScaled"))       { g.textScaled = lua_toboolean(L, 3); return true; }
         if (is(k, "TextWrapped"))      { g.textWrapped = lua_toboolean(L, 3); return true; }
         if (is(k, "TextXAlignment"))   { g.xAlign = parseAlign(luaL_checkstring(L, 3)); return true; }
@@ -2076,6 +2102,21 @@ int inst_index(lua_State* L) {
     if (n->isMaterialVariant() && variantIndex(L, n, k)) return 1;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointIndex(L, n, k)) return 1;
     if (n->isParticles() && particleIndex(L, n, k)) return 1;
+    if (n->isConstraint() && n->legacyJoint) {   // Weld / Motor6D
+        if (is(k, "C0"))           { LuaApi::pushCFrame(L, n->jointC0); return 1; }
+        if (is(k, "C1"))           { LuaApi::pushCFrame(L, n->jointC1); return 1; }
+        if (is(k, "Transform"))    { LuaApi::pushCFrame(L, n->jointXform); return 1; }
+        if (is(k, "DesiredAngle")) { lua_pushnumber(L, n->desiredAngle); return 1; }
+        if (is(k, "MaxVelocity"))  { lua_pushnumber(L, n->maxVelocity); return 1; }
+        if (is(k, "CurrentAngle")) { lua_pushnumber(L, n->currentAngle); return 1; }
+        if (is(k, "Active"))       { lua_pushboolean(L, n->enabled && n->ref0 && n->ref1); return 1; }
+    }
+    if (n->isConstraint() && n->constraintType == ConstraintType::Hinge) {   // hinge limits
+        if (is(k, "LimitsEnabled")) { lua_pushboolean(L, n->joint.angularLimitsEnabled); return 1; }
+        if (is(k, "UpperAngle"))    { lua_pushnumber(L, n->joint.upperAngle); return 1; }
+        if (is(k, "LowerAngle"))    { lua_pushnumber(L, n->joint.lowerAngle); return 1; }
+        if (is(k, "Restitution"))   { lua_pushnumber(L, n->joint.restitution); return 1; }
+    }
     if (n->isConstraint()) {
         bool weld = n->constraintType == ConstraintType::Weld;
         const bool hingeProps = !usesJointProps(n->constraintType);
@@ -2368,6 +2409,7 @@ int inst_index(lua_State* L) {
     if (n == E(L)->scene()->root()) {
         const WorldSettings& w = E(L)->scene()->world();
         if (is(k, "Gravity"))    { lua_pushnumber(L, w.gravity); return 1; }
+        if (is(k, "FilteringEnabled")) { lua_pushboolean(L, 1); return 1; }   // (always on, like Roblox: clients can't change the server)
         if (is(k, "DeathStyle")) { lua_pushstring(L, w.deathStyle == DeathStyle::Ragdoll ? "Ragdoll" : "Classic"); return 1; }
         if (is(k, "Knockdowns")) { lua_pushboolean(L, w.knockdowns); return 1; }
         if (is(k, "Gore"))       { lua_pushstring(L, w.gore == GoreLevel::Blood ? "Blood" : w.gore == GoreLevel::OilAndBolts ? "Oil" : "Off"); return 1; }
@@ -2429,6 +2471,23 @@ int inst_set(lua_State* L) {
     if (n->isAttachment()) {
         if (is(k, "Position"))      { n->transform.position = LuaApi::checkVector3(L, 3); return 0; }
         if (is(k, "WorldPosition")) { setWorldPosition(L, n, LuaApi::checkVector3(L, 3)); return 0; }
+        // Axis (the attachment's X) and SecondaryAxis (its Y): another way to turn it.
+        if (is(k, "Axis") || is(k, "SecondaryAxis")) {
+            glm::mat3 r = glm::mat3(n->transform.matrix());
+            for (int i = 0; i < 3; ++i) r[i] = glm::normalize(r[i]);
+            glm::vec3 ax = r[0], sec = r[1];
+            glm::vec3 v = LuaApi::checkVector3(L, 3);
+            if (glm::length(v) < 1e-6f) return 0;
+            v = glm::normalize(v);
+            if (is(k, "Axis")) ax = v; else sec = v;
+            if (std::abs(glm::dot(ax, sec)) > 0.999f) sec = std::abs(ax.y) < 0.9f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+            sec = glm::normalize(sec - ax * glm::dot(ax, sec));
+            glm::mat3 m(ax, sec, glm::cross(ax, sec));
+            float z, y, x;
+            glm::extractEulerAngleZYX(glm::mat4(m), z, y, x);
+            n->transform.rotation = glm::degrees(glm::vec3(x, y, z));
+            return 0;
+        }
     }
     if (n->isBone()) {
         BoneRig& r = n->rig;
@@ -2459,6 +2518,26 @@ int inst_set(lua_State* L) {
     if (n->isMaterialVariant() && variantNewIndex(L, n, k)) return 0;
     if (n->isConstraint() && usesJointProps(n->constraintType) && jointNewIndex(L, n, k)) return 0;
     if (n->isParticles() && particleNewIndex(L, n, k)) return 0;
+    if (n->isConstraint() && n->legacyJoint) {   // Weld / Motor6D
+        auto frame = [&](glm::mat4& m) {
+            glm::mat4 cf = LuaApi::checkCFrame(L, 3);
+            for (int i = 0; i < 3; ++i) cf[i] = glm::vec4(glm::normalize(glm::vec3(cf[i]) + glm::vec3(1e-12f)), 0.0f);
+            m = cf;
+            n->jointReady = false;
+        };
+        if (is(k, "C0"))           { frame(n->jointC0); return 0; }
+        if (is(k, "C1"))           { frame(n->jointC1); return 0; }
+        if (is(k, "Transform"))    { frame(n->jointXform); return 0; }
+        if (is(k, "DesiredAngle")) { n->desiredAngle = (float)luaL_checknumber(L, 3); return 0; }
+        if (is(k, "MaxVelocity"))  { n->maxVelocity = (float)luaL_checknumber(L, 3); return 0; }
+        if (is(k, "CurrentAngle")) { n->currentAngle = n->desiredAngle = (float)luaL_checknumber(L, 3); return 0; }
+    }
+    if (n->isConstraint() && n->constraintType == ConstraintType::Hinge) {   // hinge limits (degrees)
+        if (is(k, "LimitsEnabled")) { n->joint.angularLimitsEnabled = lua_toboolean(L, 3); return 0; }
+        if (is(k, "UpperAngle"))    { n->joint.upperAngle = std::clamp((float)luaL_checknumber(L, 3), -180.0f, 180.0f); return 0; }
+        if (is(k, "LowerAngle"))    { n->joint.lowerAngle = std::clamp((float)luaL_checknumber(L, 3), -180.0f, 180.0f); return 0; }
+        if (is(k, "Restitution"))   { n->joint.restitution = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+    }
     if (n->isConstraint()) {
         bool weld = n->constraintType == ConstraintType::Weld;
         const bool hingeProps = !usesJointProps(n->constraintType);
@@ -2505,6 +2584,7 @@ int inst_set(lua_State* L) {
         SceneNode* p = lua_isnil(L, 3) ? nullptr : LuaApi::checkNode(L, 3);
         std::string err;
         if (!E(L)->setParent(n, p, err)) return luaL_error(L, "%s", err.c_str());
+        meshReshape(n, p);
         return 0;
     }
     if (is(k, "Position"))  { setWorldPosition(L, n, LuaApi::checkVector3(L, 3)); return 0; }
@@ -2856,6 +2936,30 @@ int inst_set(lua_State* L) {
             lua_call(L, 3, 0);
             return 0;
         }
+    // Roblox properties that change nothing here (studs on part faces, the old physics solver,
+    // GUI SizeConstraint, a Sound's roll-off...). Old scripts set them, so take them and keep
+    // them as attributes (reading them back works) instead of stopping the script.
+    static const char* const kKeptOnly[] = {
+        "TopSurface", "BottomSurface", "LeftSurface", "RightSurface", "FrontSurface", "BackSurface",
+        "TopSurfaceInput", "BottomSurfaceInput", "FormFactor", "formFactor", "Elasticity", "Friction",
+        "SizeConstraint", "MaxDistance", "MinDistance", "EmitterSize", "RollOffMode", "TimePosition",
+        "PGSPhysicsSolverEnabled", "StreamingEnabled", "Archivable", "Locked", "VelocitySpread"};
+    for (const char* kept : kKeptOnly)
+        if (is(k, kept)) {
+            if (is(k, "VelocitySpread") && n->kind == NodeKind::Particles) {   // the old SpreadAngle
+                const float a = std::clamp((float)luaL_checknumber(L, 3), -360.0f, 360.0f);
+                n->particle.spread = glm::vec2(a, a);
+                return 0;
+            }
+            lua_pushcfunction(L, m_SetAttribute);
+            lua_pushvalue(L, 1);
+            lua_pushvalue(L, 2);
+            const int t = lua_type(L, 3);
+            if (t == LUA_TNUMBER || t == LUA_TBOOLEAN || t == LUA_TSTRING) lua_pushvalue(L, 3);
+            else luaL_tolstring(L, 3, nullptr);   // (an Enum item: keep its name)
+            lua_call(L, 3, 0);
+            return 0;
+        }
     return luaL_error(L, "'%s' can't be set on %s \"%s\"", k, className(L, n), n->name.c_str());
 }
 
@@ -2891,6 +2995,20 @@ int inst_new(lua_State* L) {
         Attribute a;
         a.name = "RobloxClass"; a.type = Attribute::String; a.s = "WorldModel";
         n->attributes.push_back(a);
+    } else if (cls == "CylinderMesh" || cls == "BlockMesh" || cls == "SpecialMesh") {
+        // Roblox mesh tweaks. We keep them as stand-ins with their settings as attributes;
+        // a CylinderMesh turns the part it's put in into a cylinder.
+        n = std::make_unique<SceneNode>(cls, NodeKind::Model);
+        Attribute c; c.name = "RobloxClass"; c.type = Attribute::String; c.s = cls;
+        Attribute sc; sc.name = "Scale"; sc.type = Attribute::Vector3; sc.v = glm::vec3(1.0f);
+        Attribute of; of.name = "Offset"; of.type = Attribute::Vector3; of.v = glm::vec3(0.0f);
+        n->attributes = {c, sc, of};
+        if (cls == "SpecialMesh") {
+            Attribute mt; mt.name = "MeshType"; mt.type = Attribute::String; mt.s = "Head";
+            Attribute id; id.name = "MeshId"; id.type = Attribute::String;
+            Attribute tx; tx.name = "TextureId"; tx.type = Attribute::String;
+            n->attributes.push_back(mt); n->attributes.push_back(id); n->attributes.push_back(tx);
+        }
     } else if (cls == "Camera") {   // for a ViewportFrame's CurrentCamera
         n = std::make_unique<SceneNode>(cls, NodeKind::Camera);
     } else if (cls == "Script" || cls == "LocalScript" || cls == "ModuleScript") {
@@ -2921,6 +3039,13 @@ int inst_new(lua_State* L) {
     } else if (cls == "Attachment" || cls == "Bone") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Attachment);
         n->bone = cls == "Bone";
+    } else if (cls == "Weld" || cls == "ManualWeld" || cls == "Snap" || cls == "Glue" || cls == "ManualGlue" ||
+               cls == "Motor" || cls == "Motor6D") {
+        // Roblox's older joints: Part1 sits at Part0.CFrame * C0 * C1:Inverse() (see LegacyJoints).
+        n = std::make_unique<SceneNode>(cls, NodeKind::Constraint);
+        n->constraintType = ConstraintType::Weld;
+        n->legacyJoint = cls == "Motor6D" ? 2 : cls == "Motor" ? 3 : 1;
+        n->visible = false;
     } else if (auto ct = std::find(std::begin(kConstraintClassNames), std::end(kConstraintClassNames), cls);
                ct != std::end(kConstraintClassNames)) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Constraint);
@@ -3006,6 +3131,7 @@ int inst_new(lua_State* L) {
     if (!lua_isnoneornil(L, 2)) {
         std::string err;
         if (!E(L)->setParent(raw, LuaApi::checkNode(L, 2), err)) return luaL_error(L, "%s", err.c_str());
+        meshReshape(raw, LuaApi::checkNode(L, 2));
     }
     LuaApi::pushInstance(L, raw->id);
     return 1;
@@ -3485,6 +3611,15 @@ int hum_index(lua_State* L) {
     Humanoid& h = hum(L);
     if (is(k, "Health"))     { lua_pushnumber(L, h.health);     return 1; }
     if (is(k, "MaxHealth"))  { lua_pushnumber(L, h.maxHealth);  return 1; }
+    if (is(k, "RigType")) {   // our characters are R6 (Torso, Right Arm... with Roblox's R6 joints)
+        lua_getglobal(L, "Enum");
+        if (lua_istable(L, -1) || lua_isuserdata(L, -1)) {
+            lua_getfield(L, -1, "HumanoidRigType");
+            if (!lua_isnil(L, -1)) { lua_getfield(L, -1, "R6"); return 1; }
+        }
+        lua_pushstring(L, "R6");
+        return 1;
+    }
     if (is(k, "WalkSpeed"))  { lua_pushnumber(L, h.walkSpeed);  return 1; }
     if (is(k, "JumpPower"))  { lua_pushnumber(L, h.jumpPower);  return 1; }
     if (is(k, "JumpHeight")) { lua_pushnumber(L, h.jumpHeight); return 1; }

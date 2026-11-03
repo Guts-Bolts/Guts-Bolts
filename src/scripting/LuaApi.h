@@ -67,6 +67,8 @@ enum class SignalKind : int {
     Destroying,          // obj.Destroying            ()
     TouchEnded,          // part.TouchEnded           (otherPart)
     HealthChanged,       // humanoid.HealthChanged    (health)  (id = character)
+    GuiDown,             // button.MouseButton1Down   ()
+    GuiUp,               // button.MouseButton1Up     ()
 };
 
 namespace LuaApi {

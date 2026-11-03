@@ -173,6 +173,7 @@ private:
     CollisionGroups                        m_groups;              // this frame's collision groups
     std::vector<Collider>                  m_bodies;   // characters' body boxes (players bumping into players)
     std::set<std::pair<uint64_t, uint64_t>> m_touching;
+    std::unordered_map<uint64_t, glm::vec3> m_lastCenter;   // where each unanchored part was last frame (fast ones)
     uint64_t                               m_staticHash = 0;     // the anchored solid parts, as a number
     mutable NavMesh::Settings              m_navSettings;
     mutable NavMesh                        m_nav;
