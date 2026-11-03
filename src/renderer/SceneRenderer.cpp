@@ -43,6 +43,16 @@ double now() {
     return duration<double>(steady_clock::now().time_since_epoch()).count();
 }
 
+// Studio's Wireframe view: draw only the edges of triangles (computers only; phones'
+// OpenGL ES has no lines mode, and only Studio asks for it).
+void wireframe(bool on) {
+#if !defined(GB_GLES) && !defined(GB_IOS) && !defined(__EMSCRIPTEN__)
+    glPolygonMode(GL_FRONT_AND_BACK, on ? GL_LINE : GL_FILL);
+#else
+    (void)on;
+#endif
+}
+
 void destroyTarget(SceneRenderer::Target& t) {
     if (t.fbo)   glDeleteFramebuffers(1, &t.fbo);
     if (t.color) glDeleteTextures(1, &t.color);
@@ -530,7 +540,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
                                       lsCenter.y - extent, lsCenter.y + extent,
                                       -lsCenter.z - sunDist, -lsCenter.z + sunDist);
     glm::mat4 lightSpace = lightProj * lightView0;
-    bool shadows = env.shadows && env.sunElevation > -5.0f;
+    bool shadows = env.shadows && env.sunElevation > -5.0f && shading == Shading::Material;   // (Studio's plain views have none)
     if (shadows) renderShadowPass(scene, lightSpace, m_shadow);
     m_lightSpace = lightSpace;
     m_shadowsOn = shadows;
@@ -559,7 +569,11 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     glm::mat4 proj = camera.projection();
     float time = (float)(now() - m_startTime);
 
-    if (env.showSky) {
+    if (shading != Shading::Material) {
+        // Studio's plain views: a plain grey backdrop (like Blender's), not the sky.
+        glClearColor(0.045f, 0.047f, 0.052f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+    } else if (env.showSky) {
         glDisable(GL_DEPTH_TEST);
         glDepthMask(GL_FALSE);
         m_sky->bind();
@@ -679,6 +693,9 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lit->setFloat("uFogDensity", env.fogDensity);
     m_lit->setFloat("uFogSunGlow", env.fogSunGlow);
     m_lit->setBool("uShadowsEnabled", shadows);
+    // Studio's view style (Wireframe's lines are the plain colours) and X-ray.
+    m_lit->setInt("uShading", shading == Shading::Wireframe ? 2 : (int)shading);
+    m_lit->setFloat("uXrayFade", 0.0f);
     m_lit->setInt("uShadowQuality", gs.shadowQuality);
     m_lit->setFloat("uShadowSoftness", env.shadowSoftness);
     m_lit->setFloat("uShadowStrength", env.shadowStrength);
@@ -1261,6 +1278,12 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         bool see = alpha < 0.999f || node->material == Material::Glass;
         (see ? transparent : opaque).push_back({node, model, dist});
     }
+    // X-ray (Studio): everything is drawn see-through, with the see-through things.
+    const bool xrayOn = xray || shading == Shading::Wireframe;
+    if (xray) {
+        transparent.insert(transparent.end(), opaque.begin(), opaque.end());
+        opaque.clear();
+    }
     // Transparent things are drawn last, far to near, so blending looks right.
     std::sort(transparent.begin(), transparent.end(), [](auto& a, auto& b) { return a.dist > b.dist; });
 
@@ -1388,6 +1411,8 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     };
 
     glDisable(GL_BLEND);
+    // Wireframe (Studio): only the edges, the back ones too.
+    if (shading == Shading::Wireframe) { wireframe(true); glDisable(GL_CULL_FACE); }
     for (auto& it : opaque) draw(it);
     if (Mesh* tm = terrainMesh(scene)) {
         m_lit->setMat4("uModel", glm::mat4(1.0f));
@@ -1399,6 +1424,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         m_lit->setFloat("uWetPart", 0.0f);
         tm->draw();
     }
+    if (shading == Shading::Wireframe) { wireframe(false); glEnable(GL_CULL_FACE); }
     drawConstraints(scene, editing);
     if (!waters.empty()) {
         drawWater(scene, camera, waters);
@@ -1520,7 +1546,18 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         glDisable(GL_POLYGON_OFFSET_FILL);
     }
 
+    if (xrayOn) {
+        // X-ray: faded, and the backs show too (Wireframe: just the lines).
+        if (xray) m_lit->setFloat("uXrayFade", 0.65f);
+        if (shading == Shading::Wireframe) wireframe(true);
+        glDisable(GL_CULL_FACE);
+    }
     for (auto& it : transparent) draw(it);
+    if (xrayOn) {
+        m_lit->setFloat("uXrayFade", 0.0f);
+        wireframe(false);
+        glEnable(GL_CULL_FACE);
+    }
 
     // Flowing water from WaterSources.
     if (const WaterSystem::Flood* fl = waves.flood()) {

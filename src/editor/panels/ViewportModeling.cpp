@@ -84,7 +84,8 @@ void ViewportPanel::modelingView(const glm::mat4& view, const glm::mat4& proj,
     if (ms.sel.size() != node->editMesh->verts.size()) ms.sel.assign(node->editMesh->verts.size(), 0);   // e.g. after undo
     ms.hidden.resize(node->editMesh->verts.size(), 0);
     // A tool following the mouse (G, R, S...) changes the mesh first; then it's drawn as usual.
-    const bool modal = modelingModal(*node, view, proj, imgMin, imgSize);
+    // (Only in the view the mouse is in; other views wait while it runs.)
+    const bool modal = isActive() ? modelingModal(*node, view, proj, imgMin, imgSize) : ms.modal != MeshModal::None;
     const EditMesh& m = *node->editMesh;
     if (ms.sel.size() != m.verts.size()) ms.sel.resize(m.verts.size(), 0);
     if (ms.hidden.size() != m.verts.size()) ms.hidden.resize(m.verts.size(), 0);

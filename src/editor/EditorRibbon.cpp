@@ -703,6 +703,22 @@ void Editor::renderToolbar() {
                 if (bigButton(p.label, p.icon, m_showPanel[p.panel], true, "Show / hide")) m_showPanel[p.panel] = !m_showPanel[p.panel];
         }
         {
+            Group g("3D View");   // EditorWorkspace.cpp
+            ViewportPanel* v = activeView();
+            if (bigButton("X-Ray", Icons::Id::XRay, v->xray, true, "See through everything in the 3D view, and box-select what's behind (Alt+Z)"))
+                v->xray = !v->xray;
+            if (bigButton("Wireframe", Icons::Id::Mesh, v->shading == SceneRenderer::Shading::Wireframe, true,
+                          "Only the edges of everything (Shift+Z). The buttons in the 3D view's corner have the other styles."))
+                v->shading = v->shading == SceneRenderer::Shading::Wireframe ? SceneRenderer::Shading::Material : SceneRenderer::Shading::Wireframe;
+            if (bigButton("Add View", Icons::Id::Workspace, false, true, "Another 3D view with its own camera. Drag its tab anywhere."))
+                addViewport();
+            if (bigButton("4 Views", Icons::Id::Workspace, m_moreViews.size() >= 3, true,
+                          "Like Blender's Quad View: your view plus flat views from the top, front and right (Ctrl+Alt+Q)"))
+                quadView();
+            if (bigButton("Reset Workspace", Icons::Id::Workspace, false, true, "Put every panel back where it started and close the extra views"))
+                resetWorkspace();
+        }
+        {
             Group g("Other");
             if (bigButton("Script Analysis", Icons::Id::Script, m_scriptEditor->analysisShown(), true,
                           "Find mistakes in every script without pressing Play"))

@@ -24,6 +24,14 @@ public:
 
     void render(Scene& scene, const Camera& camera, Framebuffer& target, bool showGrid);
 
+    // Studio's view styles (like Blender's viewport shading). Material is the real look;
+    // the others are for building: Solid (plain colours, soft studio light, no shadows),
+    // Flat (just the colours, no light at all) and Wireframe (only the edges).
+    enum class Shading { Material = 0, Solid = 1, Flat = 2, Wireframe = 3 };
+    Shading shading = Shading::Material;
+    // X-ray: everything see-through, so you can see (and box-select) what's behind.
+    bool xray = false;
+
     // Blurred copies of what render() just drew into `target`, for game UI that blurs
     // the world behind it (UIBlur). Only made when something asks (it's a few tiny
     // passes). backdrop(0) is a little blurry, backdrop(kBackdropLevels - 1) very.

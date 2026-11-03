@@ -106,6 +106,8 @@ uniform float uAlpha;
 uniform bool  uSelected;
 uniform vec3  uViewPos;
 uniform float uTime;
+uniform int   uShading;       // Studio's view style: 0 the real look, 1 Solid, 2 Flat colours (SceneRenderer::Shading)
+uniform float uXrayFade;      // X-ray: how much see-through to add (0 = none)
 
 uniform vec3  uSunDir;        // surface -> sun
 uniform vec3  uSunColor;
@@ -640,12 +642,23 @@ void main() {
 
     if (uVariant && uVParams.z > 0.0) color += albedo * uVParams.z * 2.0;   // a glowing variant
 
+    // Studio's building views: Solid = the colours under a soft light from the camera and
+    // above (like Blender's), Flat = just the colours. No shadows, sun or fog in either.
+    if (uShading == 1) {
+        float head = max(dot(N, V), 0.0);
+        float top  = N.y * 0.5 + 0.5;
+        color = albedo * (0.12 + 0.75 * head * head + 0.3 * top) * 1.3;
+    } else if (uShading == 2) {
+        color = albedo * 1.1;
+    }
+    alpha *= 1.0 - uXrayFade;
+
     if (uSelected) {
         float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
         color = mix(color, vec3(2.0, 0.9, 0.2), rim * 0.8);
     }
 
-    if (uFogEnabled) {
+    if (uFogEnabled && uShading == 0) {
         float dist = length(uViewPos - vWorldPos);
         float f = 1.0 - exp(-uFogDensity * dist);
         vec3 fog = lin(uFogColor);
@@ -653,7 +666,7 @@ void main() {
         fog += lin(uSunColor) * uSunIntensity * toward * uFogSunGlow * 0.6;
         color = mix(color, fog, clamp(f, 0.0, 1.0));
     }
-    if (uRenderDist > 0.0) {
+    if (uRenderDist > 0.0 && uShading == 0) {
         // Near the edge of the render distance, fade into the sky behind (no popping).
         vec3 away = vWorldPos - uViewPos;
         float edge = smoothstep(uRenderDist * 0.8, uRenderDist, length(away));
