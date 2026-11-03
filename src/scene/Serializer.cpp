@@ -551,6 +551,7 @@ nlohmann::json guiToJson(const GuiProps& g) {
     if (guiHasText(g.type)) {
         j["text"] = g.text; j["textColor"] = vec(g.textColor); j["textSize"] = g.textSize;
         j["scaled"] = g.textScaled; j["wrapped"] = g.textWrapped; j["bold"] = g.bold;
+        if (g.richText) j["rich"] = true;
         j["xAlign"] = g.xAlign; j["yAlign"] = g.yAlign; j["textT"] = g.textTransparency;
         j["strokeColor"] = vec(g.strokeColor); j["strokeT"] = g.strokeTransparency;
     }
@@ -643,6 +644,7 @@ void guiFromJson(GuiProps& g, const nlohmann::json& j) {
     g.textScaled = get<bool>(j, "scaled", g.textScaled);
     g.textWrapped = get<bool>(j, "wrapped", g.textWrapped);
     g.bold = get<bool>(j, "bold", g.bold);
+    g.richText = get<bool>(j, "rich", g.richText);
     g.xAlign = std::clamp(get<int>(j, "xAlign", g.xAlign), 0, 2);
     g.yAlign = std::clamp(get<int>(j, "yAlign", g.yAlign), 0, 2);
     g.textTransparency = get<float>(j, "textT", g.textTransparency);

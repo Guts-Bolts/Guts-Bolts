@@ -360,6 +360,11 @@ void Editor::render(float dt) {
         m_perfSimulationMs = std::chrono::duration<float, std::milli>(
             std::chrono::steady_clock::now() - simulationStart).count();
         m_state.simStep = false;
+        // A script did player:Kick() on us: the playtest ends, like leaving the game.
+        if (std::string why; m_session->scripts().takeKick(why)) {
+            Log::warn("You were kicked: " + (why.empty() ? std::string("no reason given") : why));
+            togglePlay();   // (the rest of this frame sees an ordinary, stopped Studio)
+        }
         // Game pass Buy windows only show in the Player: a test here answers "not bought".
         for (auto& [userId, pass] : m_session->scripts().takePassPrompts()) {
             const bool product = pass.rfind("product:", 0) == 0;
@@ -370,7 +375,7 @@ void Editor::render(float dt) {
         // DisplaySystemMessage: there's no chat in a Studio test, so it goes in Output.
         for (auto& line : m_session->scripts().takeSystemChat()) Log::info("[System chat] " + line);
         Player* p = m_scene->player();
-        if (p && !m_session->runOnly()) m_viewport->followPlayer(*p, dt);   // Run: the camera stays free
+        if (m_playing && p && !m_session->runOnly()) m_viewport->followPlayer(*p, dt);   // Run: the camera stays free
     }
     buildDockspace();
     if (!m_playing) m_animEditor->update(dt, m_viewport->gizmoInUse());   // show the rig posed

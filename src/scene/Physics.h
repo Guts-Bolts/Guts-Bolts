@@ -147,7 +147,10 @@ public:
     void setNavSettings(const NavMesh::Settings& s) const { m_navSettings = s; m_navHash = ~0ull; }
     void rebakeNavMesh() const;   // right now (Studio's Bake button, scripts)
     // New touches since the last call (parts vs character, unanchored vs others).
-    void collectTouches(Scene& scene, std::vector<TouchEvent>& out);
+    // `ended` (if given) gets the touches that stopped since the last call (TouchEnded).
+    void collectTouches(Scene& scene, std::vector<TouchEvent>& out, std::vector<TouchEvent>* ended = nullptr);
+    // What's touching this part right now (as of the last collectTouches): part:GetTouchingParts().
+    std::vector<uint64_t> touching(uint64_t part) const;
 
 private:
     friend class NavMesh;

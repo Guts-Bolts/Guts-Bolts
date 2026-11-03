@@ -162,6 +162,39 @@ const std::vector<Entry>& all() {
         {"Triggered", "prompt.Triggered:Connect(function(player) ... end)", "Someone used the ProximityPrompt", false},
         {"MouseClick", "clickDetector.MouseClick:Connect(function(player) ... end)", "Someone clicked the ClickDetector's part", false},
         {"Changed", "obj.Changed:Connect(function(propertyName) ... end)", "One of its properties changed", false},
+
+        // --- Screen UI (text and buttons on the screen) ---
+        {"ScreenGui", "Instance.new(\"ScreenGui\")", "Holds UI on the screen. Put it in player.PlayerGui (only they see it) or StarterGui (everyone)", false},
+        {"TextLabel", "Instance.new(\"TextLabel\")", "Text on the screen: .Text, .TextSize, .TextColor3, .Size = UDim2.fromOffset(200, 50), .Position", false},
+        {"TextButton", "Instance.new(\"TextButton\")", "A button with text: button.MouseButton1Click:Connect(function() ... end)", false},
+        {"PlayerGui", "player.PlayerGui", "That player's own screen: UI put here shows only for them (StarterGui's UI shows too)", false},
+        {"RichText", "label.RichText = true", "Lets Text use tags: <b>bold</b> <font color=\"#ff0000\">red</font> <font size=\"30\">big</font> <u> <s> <br />", false},
+        {"TweenPosition", "guiObject:TweenPosition(UDim2, direction?, style?, seconds?, override?, callback?)", "Slides UI to a new Position", false},
+        {"TweenSize", "guiObject:TweenSize(UDim2, direction?, style?, seconds?, override?, callback?)", "Grows / shrinks UI to a new Size", false},
+        {"UDim2.fromOffset", "UDim2.fromOffset(x, y) -> UDim2", "A UI size or position in pixels", true},
+        {"UDim2.fromScale", "UDim2.fromScale(x, y) -> UDim2", "A UI size or position as parts of the screen (0.5 = half)", true},
+        {"UDim2.new", "UDim2.new(xScale, xOffset, yScale, yOffset) -> UDim2", "A UI size or position: scale (0..1 of the parent) + pixels", true},
+
+        // --- Players, teams, respawning ---
+        {"GetPlayers", "Players:GetPlayers() / team:GetPlayers() -> {Player}", "Everyone in the game, or everyone on that Team", false},
+        {"GetPlayerByUserId", "Players:GetPlayerByUserId(userId) -> Player?", "The player with that UserId (nil if they're not here)", false},
+        {"LoadCharacter", "player:LoadCharacter()", "A fresh character at a spawn right now (round resets, leaving jail)", false},
+        {"Kick", "player:Kick(reason?)", "Sends the player out of the game with a message", false},
+        {"RespawnTime", "Players.RespawnTime = seconds", "How long dead players wait before coming back (4 to start with)", false},
+        {"CharacterAutoLoads", "Players.CharacterAutoLoads = false", "Dead players stay dead until a script calls player:LoadCharacter()", false},
+        {"BrickColor.new", "BrickColor.new(\"Bright blue\") -> BrickColor", "A named colour (works wherever a Color3 does, like team.TeamColor)", true},
+        {"typeof", "typeof(value) -> string", "Like type() but knows \"Vector3\", \"Color3\", \"Instance\"...", true},
+        {"DateTime.now", "DateTime.now() -> DateTime", "The time now: .UnixTimestamp, :ToIsoDate()", true},
+        {"BindToClose", "game:BindToClose(function() ... end)", "Runs when the server closes: save everyone's stats here", false},
+
+        // --- More events ---
+        {"ChildAdded", "obj.ChildAdded:Connect(function(child) ... end)", "Something was put inside it (by a script)", false},
+        {"ChildRemoved", "obj.ChildRemoved:Connect(function(child) ... end)", "Something was taken out of it (by a script)", false},
+        {"DescendantAdded", "obj.DescendantAdded:Connect(function(descendant) ... end)", "Something arrived anywhere inside it", false},
+        {"Destroying", "obj.Destroying:Connect(function() ... end)", "It's about to be destroyed", false},
+        {"TouchEnded", "part.TouchEnded:Connect(function(otherPart) ... end)", "Something stopped touching it (left a zone)", false},
+        {"GetTouchingParts", "part:GetTouchingParts() -> {BasePart}", "Everything touching it right now", false},
+        {"HealthChanged", "humanoid.HealthChanged:Connect(function(health) ... end)", "Their health went up or down", false},
     };
     return list;
 }

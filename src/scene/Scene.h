@@ -137,6 +137,9 @@ struct RemoteCharacter {
     bool        neutral = true;
     glm::vec3   teamColor{1.0f};
     bool        teamDirty = false;
+    bool        respawnNow = false;      // a script called player:LoadCharacter(): tell them to respawn
+    std::string kick;                    // a script called player:Kick(reason): send them away ("" = no)
+    bool        kicked = false;
 };
 
 // A visual effect to show on every player's screen (multiplayer).

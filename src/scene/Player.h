@@ -159,6 +159,10 @@ public:
     void hurt(float damage, float force, const glm::vec3& impulse);
     bool isDead() const { return m_dead; }
     bool hasForceField() const;
+    // player:LoadCharacter(): a fresh body at a spawn right now (dead or alive).
+    void  loadCharacter() { respawn(); }
+    // Players.RespawnTime (seconds) and CharacterAutoLoads, from scripts.
+    void  setRespawnRules(float delay, bool autoRespawn) { m_respawnDelay = delay; m_autoRespawn = autoRespawn; }
     float respawnIn() const { return m_dead ? m_respawnDelay - m_deadTime : 0.0f; }
 
     void      setSpawn(const glm::vec3& p) { m_spawn = p; }
@@ -396,7 +400,8 @@ private:
     // Death ("oof") — parts tumble apart, then the character respawns.
     bool  m_dead = false, m_diedFlag = false;
     float m_deadTime = 0.0f;
-    const float m_respawnDelay = 4.0f;
+    float m_respawnDelay = 4.0f;   // Players.RespawnTime
+    bool  m_autoRespawn = true;    // Players.CharacterAutoLoads (off: dead until player:LoadCharacter())
     struct Debris { uint64_t id; glm::vec3 vel; glm::vec3 spin; };
     std::vector<Debris> m_debris;
 

@@ -91,4 +91,8 @@ void drawPrompts(ImDrawList* dl);
 // Its rectangle on screen as last drawn (min, max). False if it isn't on screen.
 bool rectOf(Scene& scene, ImVec2 min, ImVec2 max, const SceneNode* node, ImVec2& a, ImVec2& b);
 
+// Our own player's PlayerGui (only we see it; it lives outside the world): drawn and
+// clicked together with the world's StarterGui. Null = none. Set each frame by GameSession.
+void setPrivateRoot(SceneNode* playerGui);
+
 } // namespace GameGui

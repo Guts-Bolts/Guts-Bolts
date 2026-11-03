@@ -242,6 +242,7 @@ struct GuiProps {
     glm::vec3 textColor{0.1f};
     float     textSize = 14.0f;
     bool      textScaled = false, textWrapped = false, bold = false;
+    bool      richText = false;                     // RichText: <b>, <font color=...> tags in Text (game/RichText.h)
     int       xAlign = 1, yAlign = 1;               // 0 = Left/Top, 1 = Center, 2 = Right/Bottom
     float     textTransparency = 0.0f;
     glm::vec3 strokeColor{0.0f};                    // TextStrokeColor3

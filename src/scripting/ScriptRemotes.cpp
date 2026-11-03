@@ -355,8 +355,11 @@ bool ScriptEngine::wantsScript(const SceneNode* script) const {
     if (m_runMode == RunMode::Server) return false;
     // A LocalScript belongs to whoever's character or backpack it's in: not someone
     // else's (on the host, a joined player's tools carry LocalScripts that are theirs).
-    for (const SceneNode* p = script->parent; p; p = p->parent)
+    for (const SceneNode* p = script->parent; p; p = p->parent) {
         if (m_scene && m_scene->findRemote(p->id)) return false;
+        // (someone else's PlayerGui, kept here on the host: theirs to run)
+        if (isPlayerGui(p) && p->parent && (m_noLocalPlayer || p->parent->name != m_playerName)) return false;
+    }
     return true;
 }
 

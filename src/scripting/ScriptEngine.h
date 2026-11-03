@@ -72,6 +72,7 @@ public:
     // Called once per frame in Play mode.
     void update(float dt);
     void fireTouched(uint64_t partId, uint64_t otherId);
+    void fireTouchEnded(uint64_t partId, uint64_t otherId);
     void fireClicked(uint64_t partId);
     void fireDied(uint64_t characterRootId);
     void fireMoveToFinished(uint64_t characterRootId, bool reached);
@@ -178,6 +179,12 @@ public:
     std::vector<Receipt> takeReceipts() { return std::move(m_receipts); }
     // Players' objects (outside the world) and what's in their leaderstats folder.
     uint64_t playerNode(const std::string& name);
+    // player.PlayerGui: UI only that player sees (outside the world, inside their player
+    // object). create = false: null when it hasn't been made yet.
+    SceneNode* playerGui(const std::string& name, bool create);
+    SceneNode* localPlayerGui();            // ours (null on a game server machine)
+    static bool isPlayerGui(const SceneNode* n);
+    SceneNode* starterGui();                // the world's StarterGui folder (null if none)
     std::vector<std::pair<std::string, std::string>> leaderstats(const std::string& playerName);
     // Start the scripts inside `root` that haven't run yet (objects that just
     // arrived in the world, like a cloned tool).
@@ -255,6 +262,16 @@ public:
     // A game server machine: nobody plays here, so there's no LocalPlayer (only people who join).
     void setNoLocalPlayer(bool on) { m_noLocalPlayer = on; }
     bool noLocalPlayer() const { return m_noLocalPlayer; }
+    // UserInputService.TouchEnabled: the Player app says whether this is a phone / tablet.
+    static bool touchScreen() { return s_touchScreen; }
+    static void setTouchScreen(bool on) { s_touchScreen = on; }
+    // Players.RespawnTime / CharacterAutoLoads (the host sends them to everyone who joins).
+    float respawnTime() const { return m_respawnTime; }
+    bool  autoLoads() const { return m_autoLoads; }
+    void  setRespawnRules(float time, bool autoLoads);
+    // player:Kick(reason) on our own player: the game should end with this message.
+    bool takeKick(std::string& reason) { if (!m_kicked) return false; m_kicked = false; reason = std::move(m_kickReason); return true; }
+    void kickLocal(const std::string& reason) { m_kicked = true; m_kickReason = reason; }
     // While set, events only reach Scripts, not LocalScripts: on the host, a joined
     // player's clicks and typing are theirs, not the host's.
     void setJoinerEvent(bool on) { m_joinerEvent = on; }
@@ -276,6 +293,11 @@ public:
     SceneNode* adopt(std::unique_ptr<SceneNode> n);  // new object with Parent = nil
     bool       setParent(SceneNode* node, SceneNode* newParent, std::string& err);
     bool       destroy(SceneNode* node, std::string& err);
+    // ChildAdded / ChildRemoved / DescendantAdded / DescendantRemoving / AncestryChanged /
+    // Destroying, when a script moves or destroys something.
+    std::set<uint64_t> listeners(SignalKind kind) const;
+    void treeLeaving(uint64_t id, bool destroying);
+    void treeArrived(uint64_t id);
     int        connect(SignalKind kind, uint64_t id, int fnRef, bool once);
     int        connectWaiter(SignalKind kind, uint64_t id, lua_State* thread);
     void       disconnect(int index);
@@ -315,6 +337,13 @@ private:
     int     m_nextCall = 1;
     friend struct RemoteLua;
     std::unordered_set<uint64_t> m_started;   // scripts that have run (so nothing runs twice)
+    static inline bool s_touchScreen = false;
+    bool  m_closing = false;
+    float m_respawnTime = 4.0f;
+    bool  m_autoLoads = true;
+    bool  m_kicked = false;
+    std::string m_kickReason;
+    std::map<uint64_t, float> m_healthSeen;   // Humanoid.HealthChanged: the health each listened-to humanoid had
     std::vector<uint64_t> m_charsAdded;       // characters whose CharacterAdded fires next update
     uint64_t m_playersRoot = 0;               // "Players": one object per player (detached)
     nlohmann::json m_saveData;                // loaded on first use

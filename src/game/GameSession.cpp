@@ -307,6 +307,7 @@ void GameSession::holdTools() {
 }
 
 void GameSession::stop() {
+    GameGui::setPrivateRoot(nullptr);   // (our PlayerGui goes with the scripts)
     m_scripts.stop();
     m_scene->npcs().end();
     m_scene->water().end();
@@ -329,6 +330,7 @@ void GameSession::stop() {
 }
 
 void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swimLook) {
+    GameGui::setPrivateRoot(m_running ? m_scripts.localPlayerGui() : nullptr);   // our player.PlayerGui is on our screen
     if (!m_running) return;
     dt = std::min(dt, 1.0f / 30.0f);   // big hitches would let things tunnel
 
@@ -504,8 +506,8 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     m_scene->blasts().update(dt, *m_scene, m_physics);   // explosions (the host pushes things; everyone sees them)
 
     // 4. Touched events (after everything has moved).
-    std::vector<TouchEvent> touches;
-    m_physics.collectTouches(*m_scene, touches);
+    std::vector<TouchEvent> touches, ended;
+    m_physics.collectTouches(*m_scene, touches, &ended);
     if (client) {
         // Only our own character's touches matter here: the host's scripts hear about
         // them, and so do our LocalScripts.
@@ -516,11 +518,21 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
             if (onTouch) onTouch(t.partId, limb->name);
             if (m_scripts.running()) m_scripts.fireTouched(t.partId, t.otherId);
         }
+        for (const TouchEvent& t : ended) {
+            SceneNode* limb = m_scene->findById(t.otherId);
+            if (!p || !limb || !limb->parent || limb->parent->id != p->rootId()) continue;
+            if (onTouchEnded) onTouchEnded(t.partId, limb->name);
+            if (m_scripts.running()) m_scripts.fireTouchEnded(t.partId, t.otherId);
+        }
         return;
     }
     for (const TouchEvent& t : touches) {
         if (!m_scripts.running()) break;
         m_scripts.fireTouched(t.partId, t.otherId);
+    }
+    for (const TouchEvent& t : ended) {
+        if (!m_scripts.running()) break;
+        if (m_scene->findById(t.partId) && m_scene->findById(t.otherId)) m_scripts.fireTouchEnded(t.partId, t.otherId);
     }
     pickUpTools(touches);
     reachCheckpoints(touches);
@@ -532,7 +544,7 @@ void GameSession::guiEvents(const std::vector<GameGui::Event>& events) {
         if (m_role == Role::Client) {   // the host's scripts hear about clicks and typing (and our LocalScripts, below)
             if (e.kind == GameGui::EventKind::Click && onGuiClick) onGuiClick(e.id);
             if (e.kind == GameGui::EventKind::FocusLost && onGuiText)
-                if (SceneNode* box = m_scene->findById(e.id)) onGuiText(e.id, box->gui.text, e.enter);
+                if (SceneNode* box = m_scripts.resolve(e.id)) onGuiText(e.id, box->gui.text, e.enter);
             if (onPrompt) {
                 if (e.kind == GameGui::EventKind::PromptTriggered)    onPrompt(e.id, "t");
                 if (e.kind == GameGui::EventKind::PromptTriggerEnded) onPrompt(e.id, "te");

@@ -1206,6 +1206,7 @@ struct Converter {
                 f("TextSize", g.textSize);
                 g.textScaled = in.flag("TextScaled", false);
                 g.textWrapped = in.flag("TextWrapped", false);
+                g.richText = in.flag("RichText", false);
                 int xa = (int)in.num("TextXAlignment", 2), ya = (int)in.num("TextYAlignment", 1);   // Roblox: Left 0, Right 1, Center 2
                 g.xAlign = xa == 0 ? 0 : xa == 1 ? 2 : 1;
                 g.yAlign = std::clamp(ya, 0, 2);
@@ -2286,6 +2287,7 @@ struct XmlWriter {
                 flt("TextSize", g.textSize);
                 boolean("TextScaled", g.textScaled);
                 boolean("TextWrapped", g.textWrapped);
+                boolean("RichText", g.richText);
                 token("TextXAlignment", g.xAlign == 0 ? 0 : g.xAlign == 2 ? 1 : 2);
                 token("TextYAlignment", g.yAlign);
                 flt("TextTransparency", g.textTransparency);

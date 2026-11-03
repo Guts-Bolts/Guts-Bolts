@@ -31,6 +31,7 @@ public:
     Role role() const { return m_role; }
     // Client mode: where touches and clicks get sent (to the host).
     std::function<void(uint64_t part, const std::string& limb)> onTouch;
+    std::function<void(uint64_t part, const std::string& limb)> onTouchEnded;   // (part.TouchEnded)
     std::function<void(uint64_t part)>                          onClick;
     std::function<void(uint64_t button)>                        onGuiClick;   // a game UI button
     std::function<void(uint64_t box, const std::string& text, bool enter)> onGuiText;   // a TextBox typed in (when it loses focus)

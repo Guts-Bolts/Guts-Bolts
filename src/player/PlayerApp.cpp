@@ -340,7 +340,9 @@ void PlayerApp::frame() {
             if (!m_opts.testClick.empty() && std::sscanf(m_opts.testClick.c_str(), "%f,%f", &cx, &cy) == 2) {
                 ImGuiIO& io = ImGui::GetIO();
                 io.AddMousePosEvent(cx * io.DisplaySize.x, cy * io.DisplaySize.y);
-                int t = m_frame - 50;
+                // ("x,y@N": start at frame N instead of 50, e.g. once a joined game has loaded)
+                const size_t atSign = m_opts.testClick.find('@');
+                int t = m_frame - (atSign != std::string::npos ? std::atoi(m_opts.testClick.c_str() + atSign + 1) : 50);
                 if (t >= 0 && t < 30 && t % 10 == 0) io.AddMouseButtonEvent(0, true);
                 if (t >= 0 && t < 30 && t % 10 == 2) io.AddMouseButtonEvent(0, false);
                 // "x,y;x2,y2": then one more click somewhere else (e.g. outside a popup it opened).
@@ -1757,7 +1759,16 @@ void PlayerApp::drawGame(float dt) {
         vrTrack();
     }
     else       m_session->setTouchInput(glm::vec2(0.0f), false);
+    ScriptEngine::setTouchScreen(m_window->hasTouchScreen());   // (UserInputService.TouchEnabled)
     m_session->update(dt, m_camera.yaw, acceptInput, PlayCamera::swimLook(m_camera));
+    // A script did player:Kick() on us (playing alone, or hosting): leave with the reason.
+    if (std::string why; m_session->scripts().takeKick(why)) {
+        const std::string msg = "You were kicked: " + (why.empty() ? std::string("no reason given") : why);
+        m_status = msg;
+        leaveGame();
+        m_status = msg;
+        return;
+    }
 
     // BadgeService:AwardBadge from the game's scripts: the server checks we're this
     // game's host and the player is here, then everyone hears about it.

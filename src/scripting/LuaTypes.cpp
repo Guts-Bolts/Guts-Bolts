@@ -431,7 +431,17 @@ namespace LuaApi {
 
 void pushVector3(lua_State* L, const glm::vec3& v) { newUd(L, kVec, v); }
 glm::vec3* toVector3(lua_State* L, int idx) { return static_cast<glm::vec3*>(luaL_testudata(L, idx, kVec)); }
-glm::vec3* toColor3(lua_State* L, int idx) { return static_cast<glm::vec3*>(luaL_testudata(L, idx, kColor)); }
+glm::vec3* toColor3(lua_State* L, int idx) {
+    if (auto* c = static_cast<glm::vec3*>(luaL_testudata(L, idx, kColor))) return c;
+    // A BrickColor (a table, see the prelude) works wherever a Color3 does: its colour.
+    if (lua_type(L, idx) == LUA_TTABLE) {
+        lua_getfield(L, idx, "__brickColor");
+        auto* c = static_cast<glm::vec3*>(luaL_testudata(L, -1, kColor));
+        lua_pop(L, 1);   // (the table still holds it)
+        return c;
+    }
+    return nullptr;
+}
 glm::vec3 checkVector3(lua_State* L, int idx) {
     if (auto* v = toVector3(L, idx)) return *v;
     luaL_typeerror(L, idx, "Vector3");
@@ -440,7 +450,7 @@ glm::vec3 checkVector3(lua_State* L, int idx) {
 
 void pushColor3(lua_State* L, const glm::vec3& c) { newUd(L, kColor, glm::clamp(c, 0.0f, 1.0f)); }
 glm::vec3 checkColor3(lua_State* L, int idx) {
-    if (auto* c = static_cast<glm::vec3*>(luaL_testudata(L, idx, kColor))) return *c;
+    if (auto* c = toColor3(L, idx)) return *c;
     luaL_typeerror(L, idx, "Color3");
     return {};
 }

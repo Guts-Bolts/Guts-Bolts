@@ -608,6 +608,9 @@ struct NetServer::Client {
     unsigned long long logSent = 0;  // Log::count() already sent to them
     std::string toolsSent;           // the tools they carry, as last sent to them
     std::string cameraSent;          // their camera options (player.CameraMode...), as last sent to them
+    std::string respawnSent;         // Players.RespawnTime / CharacterAutoLoads, as last sent to them
+    double      kickAt = -1.0;       // when a script kicked them (they're dropped soon after)
+    std::map<uint64_t, std::string> pguiSent;   // their player.PlayerGui, as last sent to them (like m_sent)
     std::map<uint64_t, std::string> heldSent;   // what each other character holds, as last sent
     std::map<uint64_t, std::string> fxSent;     // the Highlights / Trails / Beams on each character, as last sent
     double      remoteBudget = 60.0;  // RemoteEvent messages they may still send (refills over time)
@@ -836,7 +839,8 @@ void NetServer::update(float dt) {
         bool ok = c.conn->poll();
         std::string msg;
         while (c.conn->pop(msg)) handle(c, msg);
-        if (!ok || !c.conn->alive()) { dropClient(i, "left the game"); continue; }
+        if (!ok || !c.conn->alive()) { dropClient(i, c.kickAt >= 0.0 ? "was kicked" : "left the game"); continue; }
+        if (c.kickAt >= 0.0 && clockNow() - c.kickAt > 1.0) { dropClient(i, "was kicked"); continue; }   // (didn't go by themselves)
         ++i;
     }
     // What the scripts are sending players (FireClient / FireAllClients / answers).
@@ -910,6 +914,13 @@ void NetServer::updateVoice(double) {
         if (!allowed || m_dedicated || !iUseVoice() || !me || !me->root()) continue;
         passVoice(Online::playerName(), me->rootId(), Online::base64Encode(packet), nullptr);
     }
+}
+
+SceneNode* NetServer::guiFor(Client& c, uint64_t id) {
+    if (SceneNode* n = m_scene->findById(id)) return n;
+    SceneNode* pg = m_session->scripts().playerGui(c.name, false);
+    SceneNode* n = pg ? m_session->scripts().resolve(id) : nullptr;
+    return n && pg->isAncestorOf(n) ? n : nullptr;   // (never someone else's)
 }
 
 void NetServer::handle(Client& c, const std::string& text) {
@@ -1065,6 +1076,15 @@ void NetServer::handle(Client& c, const std::string& text) {
                 glm::length(glm::vec3(seat->worldMatrix()[3]) - rig->transform.position) < 12.0f)
                 m_scene->vehicles().drive(seat->id, c.rootId, d[1].get<float>(), d[2].get<float>());
         }
+    } else if (t == "untouch") {   // their body part stopped touching something (TouchEnded)
+        uint64_t part = m.value("part", (uint64_t)0);
+        SceneNode* rig = m_scene->findById(c.rootId);
+        SceneNode* limb = rig ? rig->findChild(m.value("limb", std::string())) : nullptr;
+        if (limb && m_scene->findById(part)) {
+            m_session->scripts().setJoinerEvent(true);
+            m_session->scripts().fireTouchEnded(part, limb->id);
+            m_session->scripts().setJoinerEvent(false);
+        }
     } else if (t == "touch") {
         uint64_t part = m.value("part", (uint64_t)0);
         SceneNode* rig = m_scene->findById(c.rootId);
@@ -1094,7 +1114,7 @@ void NetServer::handle(Client& c, const std::string& text) {
         devCommand(m.value("code", std::string()));
     } else if (t == "guiclick") {
         uint64_t id = m.value("id", (uint64_t)0);
-        if (SceneNode* b = m_scene->findById(id); b && b->isGuiButton()) {
+        if (SceneNode* b = guiFor(c, id); b && b->isGuiButton()) {
             m_session->scripts().setJoinerEvent(true);
             m_session->scripts().fireGui(SignalKind::GuiClick, id);
             m_session->scripts().setJoinerEvent(false);
@@ -1102,7 +1122,7 @@ void NetServer::handle(Client& c, const std::string& text) {
     } else if (t == "guitext") {   // they typed in a TextBox (and it lost focus)
         if (c.guest) return;           // (it shows for everyone, like chat, so guests don't)
         uint64_t id = m.value("id", (uint64_t)0);
-        SceneNode* box = m_scene->findById(id);
+        SceneNode* box = guiFor(c, id);
         if (!box || !box->isGui() || box->gui.type != GuiType::TextBox || !box->gui.editable) return;
         std::string text = m.value("text", std::string());
         if (text.size() > 10000) text.resize(10000);
@@ -1419,6 +1439,54 @@ void NetServer::sendTick() {
             for (auto& k : rc->kills)
                 c->conn->send(json{{"t", "kill"}, {"force", k.force}, {"impulse", vec3(k.impulse)}}.dump());
             rc->kills.clear();
+            // player:LoadCharacter(): they respawn themselves.
+            if (rc->respawnNow) {
+                c->conn->send(json{{"t", "respawn"}}.dump());
+                rc->respawnNow = false;
+            }
+            // player:Kick(reason): they leave with the reason (and are dropped soon either way).
+            if (rc->kicked && c->kickAt < 0.0) {
+                c->conn->send(json{{"t", "kick"}, {"reason", rc->kick}}.dump());
+                c->kickAt = clockNow();
+            }
+        }
+        // Their player.PlayerGui (UI only they see): what changed, like the world.
+        if (SceneNode* pg = m_session->scripts().playerGui(c->name, false)) {
+            json add = json::array(), upd = json::array(), del = json::array();
+            std::set<uint64_t> seen, addedNow;
+            std::vector<SceneNode*> stack;
+            for (auto it = pg->children.rbegin(); it != pg->children.rend(); ++it) stack.push_back(it->get());
+            while (!stack.empty()) {
+                SceneNode* n = stack.back();
+                stack.pop_back();
+                for (auto it = n->children.rbegin(); it != n->children.rend(); ++it) stack.push_back(it->get());
+                seen.insert(n->id);
+                const uint64_t parent = n->parent == pg ? 0 : n->parent->id;
+                std::string state = nodeState(n);
+                auto found = c->pguiSent.find(n->id);
+                if (found == c->pguiSent.end()) {
+                    if (!addedNow.count(parent)) {
+                        HideServerCode hide(n);
+                        add.push_back({{"parent", parent}, {"node", Serializer::nodeToString(*n)}});
+                    }
+                    addedNow.insert(n->id);
+                } else if (found->second != state) {
+                    upd.push_back(nodeUpdate(n));
+                }
+                c->pguiSent[n->id] = std::move(state);
+            }
+            for (auto it = c->pguiSent.begin(); it != c->pguiSent.end();) {
+                if (!seen.count(it->first)) { del.push_back(it->first); it = c->pguiSent.erase(it); }
+                else ++it;
+            }
+            if (!add.empty() || !upd.empty() || !del.empty())
+                c->conn->send(json{{"t", "pgui"}, {"add", add}, {"upd", upd}, {"del", del}}.dump());
+        }
+        // Players.RespawnTime / CharacterAutoLoads (they respawn themselves).
+        {
+            std::string rules = json{{"t", "respawnopt"}, {"time", m_session->scripts().respawnTime()},
+                                     {"auto", m_session->scripts().autoLoads()}}.dump();
+            if (rules != c->respawnSent) { c->conn->send(rules); c->respawnSent = std::move(rules); }
         }
     }
 }
@@ -1454,6 +1522,7 @@ void NetClient::disconnect() {
         m_session->stop();
         m_session->setRole(GameSession::Role::Solo);
         m_session->onTouch = nullptr;
+        m_session->onTouchEnded = nullptr;
         m_session->onClick = nullptr;
         m_session->onGuiClick = nullptr;
         m_session->onGuiText = nullptr;
@@ -1478,8 +1547,8 @@ void NetClient::say(const std::string& text) {
     m_conn->send(json{{"t", "chat"}, {"text", t}, {"lang", ChatLog::myLanguage()}}.dump());
 }
 
-void NetClient::reportTouch(uint64_t part, const std::string& limb) {
-    if (m_conn && part < kLocalIdBase) m_conn->send(json{{"t", "touch"}, {"part", part}, {"limb", limb}}.dump());
+void NetClient::reportTouch(uint64_t part, const std::string& limb, bool ended) {
+    if (m_conn && part < kLocalIdBase) m_conn->send(json{{"t", ended ? "untouch" : "touch"}, {"part", part}, {"limb", limb}}.dump());
 }
 
 void NetClient::reportClick(uint64_t part) {
@@ -1630,6 +1699,7 @@ void NetClient::handle(const std::string& text) {
 
         m_session->setRole(GameSession::Role::Client);
         m_session->onTouch = [this](uint64_t part, const std::string& limb) { reportTouch(part, limb); };
+        m_session->onTouchEnded = [this](uint64_t part, const std::string& limb) { reportTouch(part, limb, true); };
         m_session->onClick = [this](uint64_t part) { reportClick(part); };
         m_session->onGuiClick = [this](uint64_t button) {   // a game UI button: the host's scripts hear it
             if (m_conn && button < kLocalIdBase) m_conn->send(json{{"t", "guiclick"}, {"id", button}}.dump());
@@ -1834,6 +1904,43 @@ void NetClient::handle(const std::string& text) {
         me->setTeam(neutral, color);
         if (changed && me->aliveTime() < 2.0f) me->placeAtSpawn();   // (just arrived: start on our team's spawn)
         m_session->scripts().setLocalTeam(m.value("team", (uint64_t)0), neutral, color.r, color.g, color.b);
+        return;
+    }
+    if (t == "respawn" && me) { me->loadCharacter(); return; }
+    if (t == "pgui") {   // our player.PlayerGui: what the host's scripts put there (only we see it)
+        ScriptEngine& scripts = m_session->scripts();
+        SceneNode* pg = scripts.playerGui(scripts.playerName(), true);
+        if (!pg) return;
+        auto inMine = [&](SceneNode* n) { return n && (n == pg || pg->isAncestorOf(n)); };
+        auto drop = [&](SceneNode* n) {
+            scripts.stopScripts(n);
+            if (n->parent) n->parent->removeChild(n);
+        };
+        for (const auto& d : m.value("del", json::array()))
+            if (d.is_number_unsigned())
+                if (SceneNode* n = scripts.resolve(d.get<uint64_t>()); inMine(n) && n != pg) drop(n);
+        for (const auto& a : m.value("add", json::array())) {
+            auto node = Serializer::nodeFromString(a.value("node", std::string()), false);
+            if (!node || node->id >= kLocalIdBase) continue;
+            if (SceneNode* old = scripts.resolve(node->id)) { if (!inMine(old) || old == pg) continue; drop(old); }
+            const uint64_t pid = a.value("parent", (uint64_t)0);
+            SceneNode* parent = pid ? scripts.resolve(pid) : pg;
+            if (!inMine(parent)) continue;
+            scripts.runScriptsIn(parent->addChild(std::move(node)));   // (its LocalScripts are ours)
+        }
+        for (const auto& u : m.value("upd", json::array()))
+            if (SceneNode* n = scripts.resolve(u.value("i", (uint64_t)0)); inMine(n) && n != pg) applyUpdate(n, u);
+        return;
+    }   // the host's scripts: player:LoadCharacter()
+    if (t == "respawnopt" && me) {   // Players.RespawnTime / CharacterAutoLoads
+        me->setRespawnRules(m.value("time", 4.0f), m.value("auto", true));
+        return;
+    }
+    if (t == "kick") {   // the host's scripts: player:Kick(reason). Leave (don't look for a new host).
+        m_error = "You were kicked: " + m.value("reason", std::string("no reason given"));
+        m_hostGone = false;
+        disconnect();
+        m_state = State::Failed;
         return;
     }
     if (t == "camopt") {   // the host's scripts changed our player.CameraMode / zoom limits
