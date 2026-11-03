@@ -89,6 +89,7 @@ private:
         nlohmann::json partyInvites = nlohmann::json::array(); // pending invitations to group chats
         std::string messageDay; int messagesToday = 0;
         std::string privacyMessages = "everyone";            // who can send you messages
+        bool        dnd = false;                             // Do Not Disturb: calls don't ring (ServerChats.cpp)
         std::string privacyInventory = "everyone";           // who can see what you own (and trade with you)
         std::string blurb;                                   // "About me"
         nlohmann::json posts = nlohmann::json::array();     // "Right now I'm..." {text, at}, newest first
@@ -279,6 +280,12 @@ private:
     // And MemoryStoreService: quick data every server of a game shares, gone after its
     // expiration (worker/server.js memOp has the same). In memory too.
     nlohmann::json memOp(const std::string& name, User& me, const nlohmann::json& args);
+    // ServerGameWeb.cpp: a game's "Web requests" switch and its secrets (worker/game-web.js has the
+    // same; only the Cloudflare server can really make the requests).
+    nlohmann::json webOp(const std::string& name, User& me, const nlohmann::json& args);
+    // ServerChats.cpp: the website's chat panel inbox and Do Not Disturb (worker/chats.js has the
+    // same; voice calls and the Lyreto gateway only run on the Cloudflare server).
+    nlohmann::json chatOp(const std::string& name, User& me, const nlohmann::json& args);
     std::map<std::string, MemoryStore> m_memory;                // game id ->
     // ServerConnect.cpp: connected apps, "Log in with Guts&Bolts" for partner apps like Lyreto
     // (worker/server.js has the same). connect.json: {secrets, codes, tokens, pictures}.

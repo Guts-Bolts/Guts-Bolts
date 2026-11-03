@@ -6,6 +6,8 @@
 #include "../online/OnlineClient.h"
 #include "../online/AssetCache.h"
 #include "../online/MemoryStore.h"
+#include "../online/Protocol.h"
+#include "../core/TextFilter.h"
 #include "../scene/Serializer.h"
 #include <cctype>
 #include <sstream>
@@ -158,8 +160,10 @@ local function getJoinData(self) return joinData(rawget(self, "Name")) end
 local camOpt, setCamOpt = __gb_camOpt, __gb_setCamOpt
 local cameraOptions = { CameraMode = true, CameraMinZoomDistance = true, CameraMaxZoomDistance = true }
 local getMouse  -- filled in below, after Ray and the legacy raycast helpers exist
+local makeChatted   -- player.Chatted: a signal made the first time a script asks (luaSignal, below)
 local playerMeta = {
     __index = function(t, k)
+        if k == "Chatted" and makeChatted then local s = makeChatted() rawset(t, "Chatted", s) return s end
         if k == "PlayerGui" then return uiFolder() end
         if k == "PlayerScripts" then return playerScripts(t) end
         if k == "GetMouse" then return function(self) return getMouse(self) end end
@@ -1330,8 +1334,134 @@ end
 function HttpService:UrlEncode(s)
     return (tostring(s):gsub("[^%w%-_%.~]", function(c) return string.format("%%%02X", c:byte()) end))
 end
-function HttpService:GetAsync() error("Games can't reach other websites from Guts&Bolts.", 2) end
-HttpService.PostAsync, HttpService.RequestAsync = HttpService.GetAsync, HttpService.GetAsync
+
+-- Web requests (GetAsync / PostAsync / RequestAsync), from Scripts on the server only. They go
+-- through the Guts&Bolts server, never straight from the host's computer:
+--   * only to the sites on Guts&Bolts' list (lyreto.com for now), only over https;
+--   * only for games whose creator turned on "Web requests" (the game's Settings on the website);
+--   * secrets (HttpService:GetSecret) are put in by the Guts&Bolts server, so whoever hosts the
+--     server never sees them. A Secret can only go in a header, to the site it was saved for.
+--   local r = HttpService:RequestAsync({ Url = "https://lyreto.com/api/...", Method = "POST",
+--       Headers = { ["Content-Type"] = "application/json",
+--                   Authorization = HttpService:GetSecret("LyretoKey"):AddPrefix("Bearer ") },
+--       Body = HttpService:JSONEncode({ text = "hi" }) })
+--   print(r.Success, r.StatusCode, r.Body)
+do
+    local httpStart, httpDone = __gb_httpStart, __gb_httpDone
+    local secrets = setmetatable({}, { __mode = "k" })   -- Secret -> { name, prefix, suffix } (scripts can't look inside)
+    local secretMeta = { __type = "Secret", __metatable = "Secret" }
+    local secretMethods = {}
+    secretMeta.__index = secretMethods
+    secretMeta.__tostring = function() return "Secret" end
+    secretMeta.__concat = function() error("A Secret can't be joined to text: use secret:AddPrefix(text) or secret:AddSuffix(text)", 2) end
+    local function makeSecret(name, prefix, suffix)
+        local s = setmetatable({}, secretMeta)
+        secrets[s] = { name, prefix, suffix }
+        return s
+    end
+    function secretMethods:AddPrefix(text)
+        local d = secrets[self]
+        if not d then error("AddPrefix: call it on a Secret (secret:AddPrefix(\"Bearer \"))", 2) end
+        return makeSecret(d[1], tostring(text) .. d[2], d[3])
+    end
+    function secretMethods:AddSuffix(text)
+        local d = secrets[self]
+        if not d then error("AddSuffix: call it on a Secret (secret:AddSuffix(text))", 2) end
+        return makeSecret(d[1], d[2], d[3] .. tostring(text))
+    end
+    function HttpService:GetSecret(name)
+        if type(name) ~= "string" or #name < 1 or #name > 50 or not name:match("^[%w_]+$") then
+            error("HttpService:GetSecret: secret names are 1-50 letters, numbers and _", 2)
+        end
+        return makeSecret(name, "", "")
+    end
+    local function utf8Text(call, what, v)
+        if utf8.len(v) == nil then error(call .. ": " .. what .. " must be plain (UTF-8) text", 4) end
+        return v
+    end
+    local function send(call, opts)
+        local url, method, body = opts.Url, opts.Method or "GET", opts.Body
+        if type(url) ~= "string" then error(call .. ": Url must be text, like \"https://lyreto.com/...\"", 3) end
+        if type(method) ~= "string" then error(call .. ": Method must be text (GET, POST, PUT, PATCH, DELETE)", 3) end
+        if body ~= nil and type(body) ~= "string" then error(call .. ": Body must be text (HttpService:JSONEncode makes text from a table)", 3) end
+        local headers = {}
+        if opts.Headers ~= nil then
+            if type(opts.Headers) ~= "table" then error(call .. ": Headers must be a table of name = text", 3) end
+            for k, v in pairs(opts.Headers) do
+                if type(k) ~= "string" then error(call .. ": header names must be text", 3) end
+                local d = secrets[v]
+                if d then headers[k] = { secret = d[1], prefix = utf8Text(call, "a Secret's prefix", d[2]), suffix = utf8Text(call, "a Secret's suffix", d[3]) }
+                elseif type(v) == "string" or type(v) == "number" then headers[k] = utf8Text(call, "header " .. k, tostring(v))
+                else error(call .. ": header " .. k .. " must be text or a Secret", 3) end
+            end
+        end
+        local req = { url = utf8Text(call, "Url", url), method = method:upper(), headers = headers }
+        if body ~= nil then req.body = utf8Text(call, "Body", body) end
+        local ticket = httpStart(req)
+        while true do
+            local done, r = httpDone(ticket)
+            if done then
+                if not r.ok then error(call .. ": " .. tostring(r.error), 3) end
+                local status = tonumber(r.status) or 0
+                return { Success = status >= 200 and status < 300, StatusCode = status, StatusMessage = r.statusText or "",
+                         Headers = type(r.headers) == "table" and r.headers or {}, Body = r.body or "" }
+            end
+            task.wait()
+        end
+    end
+    function HttpService:RequestAsync(opts)
+        if type(opts) ~= "table" then error("HttpService:RequestAsync needs a table: { Url = ..., Method = ..., Headers = ..., Body = ... }", 2) end
+        return send("HttpService:RequestAsync", opts)
+    end
+    function HttpService:GetAsync(url, _noCache, headers)
+        local r = send("HttpService:GetAsync", { Url = url, Method = "GET", Headers = headers })
+        if not r.Success then error("HttpService:GetAsync: the site answered " .. r.StatusCode .. " " .. r.StatusMessage, 2) end
+        return r.Body
+    end
+    local contentTypes = { ApplicationJson = "application/json", ApplicationXml = "application/xml",
+                           ApplicationUrlEncoded = "application/x-www-form-urlencoded", TextPlain = "text/plain", TextXml = "text/xml" }
+    function HttpService:PostAsync(url, data, contentType, _compress, headers)
+        local h = {}
+        if headers ~= nil then
+            if type(headers) ~= "table" then error("HttpService:PostAsync: headers must be a table", 2) end
+            for k, v in pairs(headers) do h[k] = v end
+        end
+        local ct = "application/json"
+        if type(contentType) == "string" then ct = contentType
+        elseif type(contentType) == "table" or type(contentType) == "userdata" then ct = contentTypes[tostring(contentType.Name)] or ct end
+        local hasType = false
+        for k in pairs(h) do if type(k) == "string" and k:lower() == "content-type" then hasType = true end end
+        if not hasType then h["Content-Type"] = ct end
+        local r = send("HttpService:PostAsync", { Url = url, Method = "POST", Headers = h, Body = data == nil and "" or tostring(data) })
+        if not r.Success then error("HttpService:PostAsync: the site answered " .. r.StatusCode .. " " .. r.StatusMessage, 2) end
+        return r.Body
+    end
+end
+
+-- Chat from scripts, on the server:
+--   Players.PlayerChatted:Connect(function(player, message) ... end)   -- anyone says something
+--   player.Chatted:Connect(function(message) ... end)                   -- this player does
+-- (What they said after the chat filter. Whispers to one person aren't included.)
+--   game:GetService("TextChatService"):DisplaySystemMessage("The round starts!")
+-- puts a grey line in everyone's chat (from a LocalScript: only in that player's own chat).
+-- At most 20 lines every 10 seconds; they go through the chat filter too.
+do
+    makeChatted = luaSignal
+    Players.PlayerChatted = luaSignal()
+    function __gb_chatted(name, text)
+        local who
+        for _, p in ipairs(playerList) do if p.Name == name then who = p break end end
+        if who == nil then return end
+        Players.PlayerChatted:Fire(who, text)
+        local own = rawget(who, "Chatted")
+        if own then own:Fire(text) end
+    end
+    local systemChat = __gb_systemChat
+    addMethod("DisplaySystemMessage", function(_, text)
+        if text == nil then error("DisplaySystemMessage needs the text to show", 2) end
+        systemChat(tostring(text))
+    end)
+end
 
 -- Random.new(seed): its own stream of random numbers (the same seed, the same numbers).
 Random = {}
@@ -1687,7 +1817,13 @@ local function findService(name)
     if quiet[name] then return quietService(name) end
     return nil
 end
-game = setmetatable({}, { __index = function(_, name) return findService(name) end })
+-- game.GameId (and game.PlaceId, the same here): this game's ID on Guts&Bolts, the number in its
+-- page's address. 0 when it hasn't been published yet.
+local gameId = __gb_gameId
+game = setmetatable({}, { __index = function(_, name)
+    if name == "GameId" or name == "PlaceId" then return gameId() end
+    return findService(name)
+end })
 function game:GetService(name)
     local s = findService(name)
     if s == nil then
@@ -1903,6 +2039,7 @@ __gb_passLookup, __gb_passReady, __gb_passOwns, __gb_passPrompt, __gb_passResult
 __gb_receiptCheck, __gb_receipts, __gb_receiptDone = nil, nil, nil
 __gb_msgPublish, __gb_msgDone, __gb_msgSubscribe, __gb_msgTake = nil, nil, nil, nil
 __gb_memStart, __gb_memDone = nil, nil
+__gb_httpStart, __gb_httpDone, __gb_systemChat, __gb_gameId = nil, nil, nil, nil
 __gb_casBind, __gb_casUnbind, __gb_casUnbindAll, __gb_casInfo, __gb_casAll, __gb_casButton, __gb_casButtonGet = nil, nil, nil, nil, nil, nil, nil
 )LUA";
 
@@ -2270,6 +2407,46 @@ int l_memDone(lua_State* L) {
     lua_pushboolean(L, 1);
     pushJson(L, reply);
     return 2;
+}
+
+// --- HttpService web requests, chat lines and game.GameId (the Lua side is in the prelude) ---
+
+// __gb_httpStart({url, method, headers, body}) -> ticket
+int l_httpStart(lua_State* L) {
+    if (LuaApi::engine(L)->runMode() == ScriptEngine::RunMode::Client)
+        return luaL_error(L, "HttpService web requests only work in Scripts on the server (this is a LocalScript). "
+                             "Ask the server with a RemoteFunction instead.");
+    luaL_checktype(L, 1, LUA_TTABLE);
+    nlohmann::json req = toJson(L, 1, 0, "HttpService: a request can only hold text and tables");
+    lua_pushinteger(L, LuaApi::engine(L)->httpStart(std::move(req)));
+    return 1;
+}
+
+// __gb_httpDone(ticket) -> done, reply ({ok, error, status, statusText, headers, body})
+int l_httpDone(lua_State* L) {
+    nlohmann::json reply;
+    if (!LuaApi::engine(L)->httpDone((int)luaL_checkinteger(L, 1), reply)) { lua_pushboolean(L, 0); return 1; }
+    lua_pushboolean(L, 1);
+    pushJson(L, reply);
+    return 2;
+}
+
+// __gb_systemChat(text): TextChatService:DisplaySystemMessage
+int l_systemChat(lua_State* L) {
+    std::string err;
+    if (!LuaApi::engine(L)->queueSystemChat(luaL_checkstring(L, 1), err))
+        return luaL_error(L, "DisplaySystemMessage: %s", err.c_str());
+    return 0;
+}
+
+// __gb_gameId() -> the published game's number (0 = not published)
+int l_gameId(lua_State* L) {
+    const std::string id = LuaApi::engine(L)->onlineGameId();
+    const bool number = !id.empty() && id.size() < 16 && std::all_of(id.begin(), id.end(), [](char c) { return c >= '0' && c <= '9'; });
+    if (number) lua_pushinteger(L, (lua_Integer)std::stoll(id));
+    else if (id.empty() || id.rfind("local:", 0) == 0) lua_pushinteger(L, 0);
+    else lua_pushstring(L, id.c_str());   // (an older game's text ID)
+    return 1;
 }
 
 // --- MessagingService (the Lua side is in the prelude) -----------------------
@@ -3163,6 +3340,10 @@ void ScriptEngine::start(bool runScripts) {
     lua_register(L, "__gb_dsDone", l_dsDone);
     lua_register(L, "__gb_dsSet", l_dsSet);
     lua_register(L, "__gb_dsSorted", l_dsSorted);
+    lua_register(L, "__gb_httpStart", l_httpStart);
+    lua_register(L, "__gb_httpDone", l_httpDone);
+    lua_register(L, "__gb_systemChat", l_systemChat);
+    lua_register(L, "__gb_gameId", l_gameId);
     lua_register(L, "__gb_memStart", l_memStart);
     lua_register(L, "__gb_memDone", l_memDone);
     lua_register(L, "__gb_msgPublish", l_msgPublish);
@@ -4214,6 +4395,72 @@ bool ScriptEngine::memDone(int ticket, nlohmann::json& reply) {
     if (it == m_memDone.end()) return false;
     reply = std::move(it->second);
     m_memDone.erase(it);
+    return true;
+}
+
+// --- HttpService web requests -------------------------------------------------
+//
+// Always through the Guts&Bolts server's http.request (worker/server.js): it checks the site is
+// on its list and the game allows web requests, and puts in the game's secrets itself.
+
+int ScriptEngine::httpStart(nlohmann::json req) {
+    const int ticket = m_httpNext++;
+    const std::string game = onlineGameId();
+    if (game.empty() || game.rfind("local:", 0) == 0) {
+        m_httpDone[ticket] = {{"ok", false}, {"error", "web requests need a published game. Publish it, then turn on "
+                                                       "\"Web requests\" in the game's Settings on the website."}};
+        return ticket;
+    }
+    if (!Online::online()) {
+        m_httpDone[ticket] = {{"ok", false}, {"error", "you need to be connected to Guts&Bolts to make web requests"}};
+        return ticket;
+    }
+    nlohmann::json args = {{"game", game}, {"url", req.value("url", std::string())}, {"method", req.value("method", std::string("GET"))},
+                           {"headers", req.contains("headers") && req["headers"].is_object() ? req["headers"] : nlohmann::json::object()}};
+    if (req.contains("body") && req["body"].is_string()) args["body"] = req["body"];
+    std::weak_ptr<bool> alive = m_alive;
+    const int gen = m_dataGen;
+    Online::request("http.request", args, [this, alive, gen, ticket](const nlohmann::json& r) {
+        if (alive.expired() || gen != m_dataGen) return;
+        m_httpDone[ticket] = r.is_object() ? r : nlohmann::json{{"ok", false}, {"error", "no answer"}};
+    }, 30);
+    return ticket;
+}
+
+bool ScriptEngine::httpDone(int ticket, nlohmann::json& reply) {
+    auto it = m_httpDone.find(ticket);
+    if (it == m_httpDone.end()) return false;
+    reply = std::move(it->second);
+    m_httpDone.erase(it);
+    return true;
+}
+
+// --- Chat ---------------------------------------------------------------------
+
+void ScriptEngine::fireChatted(const std::string& playerName, const std::string& text) {
+    if (!m_L || text.empty()) return;
+    lua_getglobal(m_L, "__gb_chatted");
+    if (!lua_isfunction(m_L, -1)) { lua_pop(m_L, 1); return; }
+    lua_pushstring(m_L, playerName.c_str());
+    lua_pushstring(m_L, text.c_str());
+    if (lua_pcall(m_L, 2, 0, 0) != LUA_OK) {
+        Log::warn(std::string("PlayerChatted: ") + (lua_tostring(m_L, -1) ? lua_tostring(m_L, -1) : "error"));
+        lua_pop(m_L, 1);
+    }
+}
+
+bool ScriptEngine::queueSystemChat(const std::string& raw, std::string& error) {
+    const std::string text = TextFilter::filter(Online::cleanText(raw, kSystemChatLength));
+    if (text.empty()) { error = "there's nothing to show (the text is empty)"; return false; }
+    const double now = nowSeconds();
+    while (!m_systemChatAt.empty() && m_systemChatAt.front() <= now - 10.0) m_systemChatAt.pop_front();
+    if (m_systemChatAt.size() >= kSystemChatPer10s) {
+        error = "too many system messages (" + std::to_string(kSystemChatPer10s) + " every 10 seconds is the most)";
+        return false;
+    }
+    m_systemChatAt.push_back(now);
+    m_systemChat.push_back(text);
+    if (m_systemChat.size() > 100) m_systemChat.erase(m_systemChat.begin());   // (nobody's taking them: Studio's play test)
     return true;
 }
 

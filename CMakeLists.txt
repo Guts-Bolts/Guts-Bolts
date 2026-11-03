@@ -22,6 +22,8 @@ set(GB_SERVER_SOURCES
     src/server/ServerGroups.cpp
     src/server/ServerSupport.cpp
     src/server/ServerPromos.cpp
+    src/server/ServerGameWeb.cpp
+    src/server/ServerChats.cpp
     src/server/ServerRoadmap.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
@@ -982,6 +984,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(SpatialQueriesTests tests/SpatialQueriesTests.cpp)
     target_link_libraries(SpatialQueriesTests PRIVATE gb_engine)
     add_test(NAME SpatialQueriesTests COMMAND SpatialQueriesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Bridging games to other sites: PlayerChatted, DisplaySystemMessage, game.GameId, HttpService Secrets.
+    add_executable(GameBridgeTests tests/GameBridgeTests.cpp)
+    target_link_libraries(GameBridgeTests PRIVATE gb_engine)
+    add_test(NAME GameBridgeTests COMMAND GameBridgeTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # The character: held-down ragdolls, knocked off seats, swimming.
