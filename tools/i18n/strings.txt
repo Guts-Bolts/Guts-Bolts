@@ -3179,7 +3179,7 @@
 "ReadAsync: count is 1-100."
 "Ready-made"
 "Ready-made pieces: spawns, checkpoints, jump pads, bombs, a nuke"
-"Real liquid (FluidSource / FluidEmitter). Low: half resolution, 1 smoothing pass, 8,000 drops. Medium: 3/4 resolution, 2 passes, 20,000 drops. High: full resolution, 3 passes, 60,000 drops. Ultra: full resolution, 4 passes, 150,000 drops. Lower water quality reduces simulation and rendering work."
+"Real liquid (FluidSource / FluidEmitter). Low: half resolution, 1 smoothing pass, 5,000 drops. Medium: 3/4 resolution, 2 passes, 20,000 drops. High: full resolution, 3 passes, 60,000 drops. Ultra: full resolution, 4 passes, 150,000 drops. Lower water quality reduces simulation and rendering work."
 "Real physics, 18 materials"
 "Real shadows and reflections"
 "Realistic (contact-hardening)"
