@@ -990,6 +990,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME SampleGamesTests COMMAND SampleGamesTests "${CMAKE_SOURCE_DIR}/games" 5
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # Graphics quality presets, and Auto stepping down when a game is laggy.
+    add_executable(GraphicsQualityTests tests/GraphicsQualityTests.cpp)
+    target_link_libraries(GraphicsQualityTests PRIVATE gb_engine)
+    add_test(NAME GraphicsQualityTests COMMAND GraphicsQualityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # Lighting.Weather: scripts, saving, and rain stopping on roofs.
     add_executable(WeatherTests tests/WeatherTests.cpp)
     target_link_libraries(WeatherTests PRIVATE gb_engine)
