@@ -682,14 +682,35 @@ std::vector<std::pair<std::string, std::string>> statsFrom(const json& j) {
 }
 } // namespace
 
+// A player's team for the player list, in the host's messages: "tm" name, "tc" colour.
+static void teamJson(json& j, const char* nameKey, const char* colorKey, ScriptEngine& s, const std::string& player) {
+    PlayerEntry e;
+    s.fillTeam(e, player);
+    if (e.team.empty()) return;
+    j[nameKey] = e.team;
+    j[colorKey] = {e.teamColor[0], e.teamColor[1], e.teamColor[2]};
+}
+static void teamFrom(PlayerEntry& e, const json& j, const char* nameKey, const char* colorKey) {
+    if (!j.contains(nameKey) || !j[nameKey].is_string()) return;
+    e.team = j[nameKey].get<std::string>().substr(0, 60);
+    if (j.contains(colorKey) && j[colorKey].is_array() && j[colorKey].size() == 3)
+        for (int k = 0; k < 3; ++k)
+            if (j[colorKey][k].is_number()) e.teamColor[k] = std::clamp(j[colorKey][k].get<float>(), 0.0f, 1.0f);
+}
+
 std::vector<PlayerEntry> NetServer::players() const {
     std::vector<PlayerEntry> out;
     ScriptEngine& s = m_session->scripts();
-    if (!m_dedicated)
+    if (!m_dedicated) {
         out.push_back({Online::playerName() + " (host)", Account::iAmStaff(), Badges::iHave(Badges::Id::Verified),
                        s.leaderstats(Online::playerName()), iAmOwner()});
+        s.fillTeam(out.back(), Online::playerName());
+    }
     for (auto& c : m_clients)
-        if (c->joined) out.push_back({c->name, c->admin, c->verified, s.leaderstats(c->name), c->owner});
+        if (c->joined) {
+            out.push_back({c->name, c->admin, c->verified, s.leaderstats(c->name), c->owner});
+            s.fillTeam(out.back(), c->name);
+        }
     return out;
 }
 
@@ -1446,6 +1467,7 @@ void NetServer::sendTick() {
                           {"pose", poseJson(Player::capturePose(ch.root))}};
             if (const std::string& g = Physics::characterGroup(ch.root); g != CollisionGroups::kDefault) entry["cg"] = g;
             if (auto st = m_session->scripts().leaderstats(ch.name); !st.empty()) entry["s"] = statsJson(st);
+            teamJson(entry, "tm", "tc", m_session->scripts(), ch.name);
             if (!c->knownChars.count(ch.id)) {                   // first time: send the whole model
                 entry["rig"] = Serializer::nodeToString(*ch.root);
                 c->knownChars.insert(ch.id);
@@ -1459,6 +1481,7 @@ void NetServer::sendTick() {
         if (SceneNode* mine = m_scene->findById(c->rootId))
             if (const std::string& g = Physics::characterGroup(mine); g != CollisionGroups::kDefault) msg["mycg"] = g;
         if (auto mine = m_session->scripts().leaderstats(c->name); !mine.empty()) msg["mys"] = statsJson(mine);
+        teamJson(msg, "mytm", "mytc", m_session->scripts(), c->name);
         c->conn->send(msg.dump());
         // Highlights, Trails and Beams on characters (their own too), when they change.
         for (auto& ch : chars) {
@@ -1884,6 +1907,7 @@ void NetClient::handle(const std::string& text) {
             m_players.clear();
             m_players.push_back({me && me->root() ? me->root()->name : Online::playerName(), Account::iAmStaff(),
                                  Badges::iHave(Badges::Id::Verified), statsFrom(m.value("mys", json::array())), m_devOwner});
+            teamFrom(m_players.back(), m, "mytm", "mytc");
             for (const auto& ch : m["chars"]) {
                 uint64_t id = ch.value("i", (uint64_t)0);
                 std::string name = ch.value("n", std::string());
@@ -1892,6 +1916,7 @@ void NetClient::handle(const std::string& text) {
                 bool ver = id == m_hostRoot ? m_hostVerified : ch.value("v", false);
                 if (Account::nameIsReserved(name) && !admin) name = "Player";
                 m_players.push_back({name, admin, ver, statsFrom(ch.value("s", json::array())), ch.value("c", false)});
+                teamFrom(m_players.back(), ch, "tm", "tc");
                 if (id == m_myServerRoot) continue;
                 SceneNode* root = m_scene->findById(id);
                 if (!root && ch.contains("rig")) {

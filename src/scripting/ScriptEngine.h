@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <vector>
 #include <glm/glm.hpp>
+#include "../game/PlayerEntry.h"
 
 struct lua_State;
 struct lua_Debug;
@@ -185,6 +186,9 @@ public:
     SceneNode* localPlayerGui();            // ours (null on a game server machine)
     static bool isPlayerGui(const SceneNode* n);
     SceneNode* starterGui();                // the world's StarterGui folder (null if none)
+    // Which team a player is on (for the player list): false = none (Neutral).
+    bool playerTeam(const std::string& name, std::string& team, glm::vec3& color);
+    void fillTeam(PlayerEntry& e, const std::string& name);   // sets e.team / e.teamColor
     std::vector<std::pair<std::string, std::string>> leaderstats(const std::string& playerName);
     // Start the scripts inside `root` that haven't run yet (objects that just
     // arrived in the world, like a cloned tool).

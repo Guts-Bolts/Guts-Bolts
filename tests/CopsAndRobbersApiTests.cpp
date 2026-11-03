@@ -5,6 +5,7 @@
 //   CopsAndRobbersApiTests <a game file with a baseplate>
 #include "core/Log.h"
 #include "game/GameSession.h"
+#include "game/Hud.h"
 #include "game/RichText.h"
 #include "renderer/Mesh.h"
 #include "scene/Scene.h"
@@ -119,6 +120,40 @@ int main(int argc, char** argv) {
 
     out = run(session, R"(local l = Instance.new("TextLabel") l.RichText = true l.Text = "<b>Hi</b> there" print(l.ContentText, l.RichText))");
     check(out.find("Hi there true") != std::string::npos, "TextLabel.RichText and ContentText (" + out + ")");
+
+    // The player list: our team (from the Team test above) and the game's own look.
+    {
+        PlayerEntry e;
+        session.scripts().fillTeam(e, session.scripts().playerName());
+        check(e.team == "Cops" && e.teamColor[2] > 0.5f && e.teamColor[0] < 0.3f, "the player list knows our team and its colour (" + e.team + ")");
+        std::vector<PlayerEntry> list(4);
+        list[0].name = "a"; list[0].team = "Robbers"; list[0].stats = {{"Cash", "5"}};
+        list[1].name = "b"; list[1].team = "Cops";    list[1].stats = {{"Cash", "9"}};
+        list[2].name = "c";                           list[2].stats = {{"Cash", "50"}};
+        list[3].name = "d"; list[3].team = "Robbers"; list[3].stats = {{"Cash", "20"}};
+        auto g = Hud::groupPlayers(list, true);
+        check(g.size() == 3 && g[0].team == "Robbers" && g[1].team == "Cops" && g[2].team.empty(), "teams in order, Neutral last");
+        check(g.size() == 3 && g[0].rows.size() == 2 && g[0].rows[0] == 3 && g[0].rows[1] == 0, "the most Cash first within a team");
+        auto flat = Hud::groupPlayers(list, false);
+        check(flat.size() == 1 && flat[0].rows[0] == 2, "ShowTeams off: one list, best first");
+    }
+    out = run(session, R"(
+        local sg = game:GetService("StarterGui")
+        sg:SetCore("PlayerListStyle", { Title = "Cops & Robbers", BackgroundColor = Color3.new(0, 0, 0.5), ShowTeams = false })
+        local st = sg:GetCore("PlayerListStyle")
+        print(st.Title, st.ShowTeams, st.Visible, pcall(function() sg:SetCore("PlayerListStyle", { Colour = 1 }) end))
+        sg:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
+        print("listshown", sg:GetCoreGuiEnabled(Enum.CoreGuiType.PlayerList))
+    )");
+    check(out.find("Cops & Robbers false true false") != std::string::npos && out.find("listshown false") != std::string::npos,
+          "SetCore(\"PlayerListStyle\") / GetCore and hiding the list (" + out + ")");
+    check(scene.world().playerList.title == "Cops & Robbers" && !scene.world().playerList.teams &&
+          scene.world().playerList.background.b == 0.5f, "the style reaches the engine");
+    {
+        Scene saved;
+        Serializer::loadScene(saved, Serializer::saveScene(scene));
+        check(saved.world().playerList == scene.world().playerList, "the player list's look is saved with the place");
+    }
 
     out = run(session, R"(game:GetService("Players").LocalPlayer:Kick("Busted"))");
     std::string why;

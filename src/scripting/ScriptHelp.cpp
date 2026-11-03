@@ -186,6 +186,8 @@ const std::vector<Entry>& all() {
         {"typeof", "typeof(value) -> string", "Like type() but knows \"Vector3\", \"Color3\", \"Instance\"...", true},
         {"DateTime.now", "DateTime.now() -> DateTime", "The time now: .UnixTimestamp, :ToIsoDate()", true},
         {"BindToClose", "game:BindToClose(function() ... end)", "Runs when the server closes: save everyone's stats here", false},
+        {"PlayerListStyle", "StarterGui:SetCore(\"PlayerListStyle\", { Title = \"...\", BackgroundColor = Color3, ... })", "Colours and title of the player list (LocalScript; also TitleColor, TextColor, BackgroundTransparency, ShowTeams, Visible)", false},
+        {"SetCoreGuiEnabled", "StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)", "Hides the player list (or EmotesMenu...) on this player's screen (LocalScript)", false},
 
         // --- More events ---
         {"ChildAdded", "obj.ChildAdded:Connect(function(child) ... end)", "Something was put inside it (by a script)", false},

@@ -10,6 +10,7 @@
 #include "Animation.h"
 #include "CollisionGroups.h"
 #include "Vehicles.h"
+#include "PlayerListStyle.h"
 #include <functional>
 #include <map>
 #include <memory>
@@ -117,6 +118,8 @@ struct WorldSettings {
     float      orthographicSize = 0.0f;
     // Every player's camera to start with: CameraMode and zoom limits (Roblox's StarterPlayer).
     CameraOptions playerCamera;
+    // The in-game player list (leaderboard): shown or not, its colours and title.
+    PlayerListStyle playerList;
 };
 
 // Another player's character in a multiplayer game. On the host, scripts can

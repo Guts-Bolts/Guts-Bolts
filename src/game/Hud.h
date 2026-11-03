@@ -10,6 +10,7 @@ struct GuiState;
 #include <unordered_map>
 #include <vector>
 #include "PlayerEntry.h"
+#include "../scene/PlayerListStyle.h"
 
 namespace Hud {
 // `topOffset` pushes the top-left labels down (under the touch buttons).
@@ -29,8 +30,16 @@ void drawNameTags(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const gl
 // The player list (leaderboard), top right. Like old Roblox it folds away: click
 // the little arrow on its title bar (or press Tab - the caller handles the key).
 // Returns the name of a player whose row was clicked ("" if none), and where.
+// With teams (and `style.teams` on), players are listed under their team's name in its
+// colour, with the team's totals; the first stat (a number) puts the best at the top.
+// `style`: the game's colours and title, and whether it's shown at all.
 std::string drawPlayerList(ImDrawList* dl, ImVec2 min, ImVec2 max, const std::vector<PlayerEntry>& players,
-                           bool& open, ImVec2* clickedAt = nullptr, const ImVec2* tap = nullptr);
+                           bool& open, ImVec2* clickedAt = nullptr, const ImVec2* tap = nullptr,
+                           const PlayerListStyle* style = nullptr);
+// The player list's groups: one per team (Neutral last), each player's index in `players`,
+// sorted by their first stat. (Without teams, or `teams` off: one group named "".)
+struct PlayerListGroup { std::string team; std::vector<size_t> rows; float color[3] = {1.0f, 1.0f, 1.0f}; };
+std::vector<PlayerListGroup> groupPlayers(const std::vector<PlayerEntry>& players, bool teams);
 // The tool hotbar along the bottom (slots 1-9 and 0). Returns the selected slot or -1.
 // Extra tools can be selected from the Roblox-style Backpack panel; returned indices are absolute tool slots.
 int  drawHotbar(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const ImVec2* tap = nullptr);

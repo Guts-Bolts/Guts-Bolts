@@ -1987,7 +1987,10 @@ void PlayerApp::drawGame(float dt) {
         m_listOpen = !m_listOpen;
     {
         ImVec2 at;
-        std::string who = Hud::drawPlayerList(dl, pos, max, currentPlayers(), m_listOpen, &at, tapped ? &tapAt : nullptr);
+        // (The game can hide it: Studio's Player list setting, or SetCoreGuiEnabled(PlayerList, false).)
+        PlayerListStyle style = m_scene->world().playerList;
+        style.show = style.show && m_scene->coreGui().enabled("PlayerList");
+        std::string who = Hud::drawPlayerList(dl, pos, max, currentPlayers(), m_listOpen, &at, tapped ? &tapAt : nullptr, &style);
         if (!who.empty() && who != Online::playerName()) {
             m_listMenu = who;
             m_listMenuAt = at;
@@ -2363,8 +2366,10 @@ std::vector<PlayerEntry> PlayerApp::currentPlayers() const {
         }
         return list;
     }
-    return {{Online::playerName(), Account::iAmStaff(), Badges::iHave(Badges::Id::Verified),
-             m_session->scripts().leaderstats(Online::playerName()), m_iMadeThis}};
+    std::vector<PlayerEntry> solo = {{Online::playerName(), Account::iAmStaff(), Badges::iHave(Badges::Id::Verified),
+                                      m_session->scripts().leaderstats(Online::playerName()), m_iMadeThis}};
+    m_session->scripts().fillTeam(solo[0], Online::playerName());
+    return solo;
 }
 
 // The in-game menu, laid out like Roblox's: tabs along the top (Players,

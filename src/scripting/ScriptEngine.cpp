@@ -321,6 +321,21 @@ function __gb_playerById(id, name)
     if id == nil or id == 0 then return nil end
     return { Name = name or "", DisplayName = name or "", UserId = id }
 end
+-- The player list (leaderboard) asks which team someone is on: name, r, g, b (nil = none).
+function __gb_teamOf(name)
+    for _, p in ipairs(playerList) do
+        if p.Name == name then
+            local team = rawget(p, "__Team")
+            if team == nil or rawget(p, "__Neutral") then return nil end
+            local ok, tname, c = pcall(function() return team.Name, team:GetAttribute("TeamColor") end)
+            if not ok or tname == nil then return nil end
+            c = c or rawget(p, "__TeamColor")
+            if c and c.R then return tname, c.R, c.G, c.B end
+            return tname, 1, 1, 1
+        end
+    end
+    return nil
+end
 function __gb_removePlayer(name)
     for i, p in ipairs(playerList) do
         if p.Name == name then table.remove(playerList, i) return p end
@@ -3815,6 +3830,10 @@ void ScriptEngine::start(bool runScripts) {
     lua_setfield(L, LUA_REGISTRYINDEX, "GB.brickColor");
     lua_pushnil(L);
     lua_setglobal(L, "__gb_brickColor");
+    lua_getglobal(L, "__gb_teamOf");   // the player list: which team someone is on
+    lua_setfield(L, LUA_REGISTRYINDEX, "GB.teamOf");
+    lua_pushnil(L);
+    lua_setglobal(L, "__gb_teamOf");
     lua_getglobal(L, "__gb_runClose");   // game:BindToClose's functions (run by stop())
     lua_setfield(L, LUA_REGISTRYINDEX, "GB.runClose");
     lua_pushnil(L);
@@ -5111,6 +5130,33 @@ std::vector<std::pair<std::string, std::string>> ScriptEngine::leaderstats(const
     for (auto& c : ls->children)
         if (c->isValue() && out.size() < 4) out.push_back({c->name, c->valueText()});   // Roblox shows up to 4
     return out;
+}
+
+bool ScriptEngine::playerTeam(const std::string& name, std::string& team, glm::vec3& color) {
+    if (!m_L || m_depth > 0) return false;   // (not while a script is running)
+    lua_getfield(m_L, LUA_REGISTRYINDEX, "GB.teamOf");
+    if (!lua_isfunction(m_L, -1)) { lua_pop(m_L, 1); return false; }
+    lua_pushstring(m_L, name.c_str());
+    m_resumeStart = nowSeconds();
+    ++m_depth;
+    const int status = lua_pcall(m_L, 1, 4, 0);
+    --m_depth;
+    if (status != LUA_OK) { lua_pop(m_L, 1); return false; }
+    const bool ok = lua_type(m_L, -4) == LUA_TSTRING;
+    if (ok) {
+        team = lua_tostring(m_L, -4);
+        color = glm::vec3((float)lua_tonumber(m_L, -3), (float)lua_tonumber(m_L, -2), (float)lua_tonumber(m_L, -1));
+    }
+    lua_pop(m_L, 4);
+    return ok;
+}
+
+void ScriptEngine::fillTeam(PlayerEntry& e, const std::string& name) {
+    std::string team;
+    glm::vec3 c(1.0f);
+    if (!playerTeam(name, team, c)) return;
+    e.team = team;
+    e.teamColor[0] = c.r; e.teamColor[1] = c.g; e.teamColor[2] = c.b;
 }
 
 void ScriptEngine::addPlayer(const std::string& name, uint64_t rootId, int userId, uint64_t backpackId) {

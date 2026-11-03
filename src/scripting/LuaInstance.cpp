@@ -3350,6 +3350,44 @@ int m_SetCoreGuiEnabled(lua_State* L) {
     E(L)->scene()->coreGui().set(type, lua_toboolean(L, 3));
     return 0;
 }
+// StarterGui:SetCore("PlayerListStyle", { Title = "Cops & Robbers", BackgroundColor = Color3,
+// BackgroundTransparency = 0.5, TitleColor = Color3, TextColor = Color3, ShowTeams = true,
+// Visible = true }): how the player list (leaderboard) looks on this computer. Leave out
+// what shouldn't change. GetCore("PlayerListStyle") gives the whole table back.
+void setPlayerListStyle(lua_State* L, int idx, PlayerListStyle& st) {
+    luaL_checktype(L, idx, LUA_TTABLE);
+    PlayerListStyle out = st;
+    lua_pushnil(L);
+    while (lua_next(L, idx)) {
+        const char* k = lua_type(L, -2) == LUA_TSTRING ? lua_tostring(L, -2) : nullptr;
+        auto color = [&](glm::vec3& c) {
+            const glm::vec3* v = LuaApi::toColor3(L, -1);
+            if (!v) luaL_error(L, "PlayerListStyle.%s must be a Color3", k);
+            c = *v;
+        };
+        if (!k) luaL_error(L, "PlayerListStyle: use names like Title = \"...\"");
+        else if (!std::strcmp(k, "Title")) out.title = std::string(luaL_checkstring(L, -1)).substr(0, 60);
+        else if (!std::strcmp(k, "BackgroundColor") || !std::strcmp(k, "BackgroundColor3")) color(out.background);
+        else if (!std::strcmp(k, "BackgroundTransparency")) out.transparency = std::clamp((float)luaL_checknumber(L, -1), 0.0f, 1.0f);
+        else if (!std::strcmp(k, "TitleColor") || !std::strcmp(k, "TitleColor3")) color(out.titleColor);
+        else if (!std::strcmp(k, "TextColor") || !std::strcmp(k, "TextColor3")) color(out.textColor);
+        else if (!std::strcmp(k, "ShowTeams")) out.teams = lua_toboolean(L, -1);
+        else if (!std::strcmp(k, "Visible")) out.show = lua_toboolean(L, -1);
+        else luaL_error(L, "PlayerListStyle has no '%s' (Title, BackgroundColor, BackgroundTransparency, TitleColor, TextColor, ShowTeams, Visible)", k);
+        lua_pop(L, 1);
+    }
+    st = out;
+}
+void pushPlayerListStyle(lua_State* L, const PlayerListStyle& st) {
+    lua_newtable(L);
+    lua_pushstring(L, st.title.c_str()); lua_setfield(L, -2, "Title");
+    LuaApi::pushColor3(L, st.background); lua_setfield(L, -2, "BackgroundColor");
+    lua_pushnumber(L, st.transparency); lua_setfield(L, -2, "BackgroundTransparency");
+    LuaApi::pushColor3(L, st.titleColor); lua_setfield(L, -2, "TitleColor");
+    LuaApi::pushColor3(L, st.textColor); lua_setfield(L, -2, "TextColor");
+    lua_pushboolean(L, st.teams); lua_setfield(L, -2, "ShowTeams");
+    lua_pushboolean(L, st.show); lua_setfield(L, -2, "Visible");
+}
 // StarterGui:SetCore("Spectate", true) puts this player in spectate mode (watching the other
 // players; false lets them play again). SetCore("SpectateWhenDead", false) stops the automatic
 // spectating while waiting to respawn. GetCore reads them back.
@@ -3360,7 +3398,8 @@ int m_SetCore(lua_State* L) {
     CoreGuiState& g = E(L)->scene()->coreGui();
     if (what == "Spectate") g.spectate = lua_toboolean(L, 3);
     else if (what == "SpectateWhenDead") g.spectateWhenDead = lua_toboolean(L, 3);
-    else return luaL_error(L, "SetCore: '%s' isn't something you can set (try \"Spectate\" or \"SpectateWhenDead\")", what.c_str());
+    else if (what == "PlayerListStyle") setPlayerListStyle(L, 3, E(L)->scene()->world().playerList);
+    else return luaL_error(L, "SetCore: '%s' isn't something you can set (try \"Spectate\", \"SpectateWhenDead\" or \"PlayerListStyle\")", what.c_str());
     return 0;
 }
 int m_GetCore(lua_State* L) {
@@ -3369,6 +3408,7 @@ int m_GetCore(lua_State* L) {
     const CoreGuiState& g = E(L)->scene()->coreGui();
     if (what == "Spectate") lua_pushboolean(L, g.spectate);
     else if (what == "SpectateWhenDead") lua_pushboolean(L, g.spectateWhenDead);
+    else if (what == "PlayerListStyle") pushPlayerListStyle(L, E(L)->scene()->world().playerList);
     else return luaL_error(L, "GetCore: '%s' isn't something you can read", what.c_str());
     return 1;
 }

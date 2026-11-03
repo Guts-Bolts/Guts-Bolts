@@ -1368,6 +1368,12 @@ json settingsJson(Scene& scene) {
     if (ws.playerCamera != CameraOptions{})   // (only games that changed them)
         j["world"]["playerCamera"] = {{"lockFirstPerson", ws.playerCamera.lockFirstPerson},
                                       {"minZoom", ws.playerCamera.minZoom}, {"maxZoom", ws.playerCamera.maxZoom}};
+    if (!(ws.playerList == PlayerListStyle{})) {   // (only games that changed it)
+        const PlayerListStyle& pl = ws.playerList;
+        j["world"]["playerList"] = {{"show", pl.show}, {"title", pl.title}, {"background", vec(pl.background)},
+                                    {"transparency", pl.transparency}, {"titleColor", vec(pl.titleColor)},
+                                    {"textColor", vec(pl.textColor)}, {"teams", pl.teams}};
+    }
     if (Player* p = scene.player()) {
         const Humanoid& h = p->humanoid();
         j["player"] = {
@@ -1425,6 +1431,17 @@ void applySettings(Scene& scene, const json& j) {
             o.lockFirstPerson = get<bool>(pc, "lockFirstPerson", o.lockFirstPerson);
             o.minZoom = std::clamp(get<float>(pc, "minZoom", o.minZoom), 0.0f, CameraOptions::kLimit);
             o.maxZoom = std::clamp(get<float>(pc, "maxZoom", o.maxZoom), 0.0f, CameraOptions::kLimit);
+        }
+        if (j["world"].contains("playerList") && j["world"]["playerList"].is_object()) {
+            const json& pj = j["world"]["playerList"];
+            PlayerListStyle& pl = w.playerList;
+            pl.show = get<bool>(pj, "show", pl.show);
+            pl.title = get<std::string>(pj, "title", pl.title).substr(0, 60);
+            pl.background = vec(pj, "background", pl.background);
+            pl.transparency = std::clamp(get<float>(pj, "transparency", pl.transparency), 0.0f, 1.0f);
+            pl.titleColor = vec(pj, "titleColor", pl.titleColor);
+            pl.textColor = vec(pj, "textColor", pl.textColor);
+            pl.teams = get<bool>(pj, "teams", pl.teams);
         }
     }
     scene.world() = w;

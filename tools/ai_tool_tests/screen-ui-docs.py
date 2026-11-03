@@ -4,7 +4,7 @@ TITLE = 'The engine reference explains screen UI and the cops and robbers API'
 def run(m, t):
     d = m.call("get_engine_info", topic="concepts")
     text = d.get("text", "") if t.ok(d) else ""
-    for word in ("ScreenGui", "TextLabel", "player.PlayerGui", "RichText", "LoadCharacter", "team:GetPlayers()", "TouchEnded"):
+    for word in ("ScreenGui", "TextLabel", "player.PlayerGui", "RichText", "LoadCharacter", "team:GetPlayers()", "TouchEnded", "PlayerListStyle", "CoreGuiType.PlayerList"):
         t.check(word in text, "concepts mention " + word, None)
     c = m.call("get_engine_info", topic="capabilities")
     ui = ((c.get("manifest") or {}).get("capabilities") or {}).get("ui") if t.ok(c) else None
