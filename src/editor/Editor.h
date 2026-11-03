@@ -245,6 +245,25 @@ private:
     void       selectParent();
     void       selectChildren();
     void       toggleHidden();
+    // Blender-style (EditorBlender.cpp): hide things while you build (the Explorer's eye,
+    // H / Shift+H / Alt+H, / to look at just the selection), G / R / S / Shift+D, M move to, Ctrl+P / Alt+P.
+    std::set<uint64_t> m_editorHidden;          // hidden while building (ids; not saved)
+    std::set<uint64_t> m_localView;             // what "/" hid (so "/" again shows just those)
+    bool       m_openMoveTo = false;            // M: the "Move to" menu
+    void       applyEditorHidden();             // once a frame: hidden things stay hidden after undo / Stop
+    void       setEditorHidden(SceneNode* n, bool hide);
+    void       eyeClicked(SceneNode* n, bool isolate);
+    void       hideSelected();
+    void       hideUnselected();
+    void       unhideAll();
+    void       toggleLocalView();
+    bool       handleBlenderKeys();             // true if it used the key
+    void       startObjectModal(ObjectModal m);
+    void       parentToActive();
+    void       clearParent();
+    void       renderMoveTo();
+    void       renderBlenderKeysToggle();       // the "Blender keys" switch (F1 window, View menu)
+    void       testBlender(const std::string& step);   // --test-mesh "blender:..." steps
     void       renderShortcuts();
     void       renderCollisionGroups();   // the Collision Groups editor (PhysicsService's table)
 public:

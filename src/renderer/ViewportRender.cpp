@@ -68,7 +68,7 @@ struct Item { const SceneNode* node; glm::mat4 model; float dist; };
 // other UI, and not hidden ones).
 void gather(const SceneNode* n, std::vector<Item>& out) {
     for (auto& c : n->children) {
-        if (c->isGui() || !c->visible) continue;
+        if (c->isGui() || !c->shown()) continue;
         if (c->isPart() && c->shownTransparency() < 0.999f) out.push_back({c.get(), c->worldMatrix(), 0.0f});
         gather(c.get(), out);
     }

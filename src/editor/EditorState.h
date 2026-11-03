@@ -20,6 +20,10 @@ inline const char* const kStudioModeNames[4] = {"Build", "Modeling", "Simulate",
 // right-click or Esc to put it back), I inset and Ctrl+R loop cut.
 enum class MeshModal { None, Grab, Rotate, Scale, Inset, LoopCut };
 
+// The same in Build mode, for whole objects (Blender's Object Mode): G move,
+// R rotate, S scale what's selected, following the mouse.
+enum class ObjectModal { None, Grab, Rotate, Scale };
+
 // Modeling mode: which part is being reshaped and what's picked on it.
 struct ModelingState {
     unsigned long long node = 0;
@@ -81,4 +85,9 @@ struct EditorState {
     float snapTranslate = 0.5f;     // world units
     float snapRotate    = 15.0f;    // degrees
     float snapScale     = 0.25f;    // factor
+
+    // Build mode's G / R / S (Blender keys): running now, and the frame it ended (its keys are used up).
+    ObjectModal objectModal = ObjectModal::None;
+    int         objectModalEnded = -1;
+    bool        objectModalBusy(int frame) const { return objectModal != ObjectModal::None || objectModalEnded == frame; }
 };
