@@ -24,6 +24,7 @@ struct GraphicsSettings {
     bool  shiftLockSwitch = true;
     float mouseSensitivity = 1.0f;
     bool  invertCamera  = false;
+    bool  studioBlenderKeys = false;   // Studio: S scales, A picks all, Shift+D / Shift+A... (WASD flies only while right-dragging)
 
     // Accessibility
     enum ColorBlind { SeeNormal, Protanopia, Deuteranopia, Tritanopia };

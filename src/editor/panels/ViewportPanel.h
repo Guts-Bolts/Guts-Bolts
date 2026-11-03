@@ -124,6 +124,12 @@ private:
     // A Blender-style tool that follows the mouse (G / R / S / I / Ctrl+R). True while one runs.
     bool modelingModal(SceneNode& node, const glm::mat4& view, const glm::mat4& proj,
                        const glm::vec2& imgMin, const glm::vec2& imgSize);
+    // Build mode's Blender keys: G / R / S move, turn or stretch the selection with the
+    // mouse. True while one runs. ViewportObjectModal.cpp.
+    bool objectModal(const glm::mat4& view, const glm::mat4& proj, const glm::vec2& imgMin, const glm::vec2& imgSize);
+    struct ObjectModalItem { uint64_t id; Transform start; glm::mat4 world; };
+    std::vector<ObjectModalItem> m_objItems;
+    bool m_objOn = false;
     bool drawModeMenu(ImVec2 imgPos);   // true while the mouse is on it
     // Armatures: bones drawn over the view; returns the bone whose joint is under the mouse.
     // `onlyPart`: just that part's (Modeling mode). ViewportBones.cpp.

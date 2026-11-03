@@ -89,6 +89,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_outliner = std::make_unique<OutlinerPanel>(scene, open, [this](SceneNode* n) { addScript(n); });
     EditorTheme::applyStudio();
     m_outliner->onInsert = [this](SceneNode* parent) { m_insertParent = parent; m_openInsert = true; };
+    m_outliner->onEye = [this](SceneNode* n, bool isolate) { eyeClicked(n, isolate); };
     m_outliner->onInsertNamed = [this](const std::string& what, SceneNode* parent) {
         m_deferred = [this, what, parent] { insertObject(what, parent); };   // (not while the Explorer is drawing)
     };
@@ -383,6 +384,7 @@ void Editor::render(float dt) {
     if (!m_playing) m_animEditor->update(dt, m_viewport->gizmoInUse());   // show the rig posed
     if (!m_playing) m_scene->particles().runEmitters(*m_scene, dt);       // particle effects show while you edit too
     Skin::setLive(m_playing || m_armPreview);   // Jiggle / LookAt / IK bones: in the game, or the Armature window's Preview
+    applyEditorHidden();   // (the Explorer's eye: still hidden after an undo)
     const auto viewportStart = std::chrono::steady_clock::now();
     m_viewport->render(dt);
     m_perfViewportMs = std::chrono::duration<float, std::milli>(
@@ -417,6 +419,7 @@ void Editor::render(float dt) {
     renderInsertObject();
     renderDialogs();
     renderShortcuts();
+    renderMoveTo();
     renderModelingMenus();
     renderCollisionGroups();
     renderBulkEdit();
@@ -2174,6 +2177,9 @@ void Editor::renderSceneValidator() {
 void Editor::togglePlay() {
     if (!m_playing) {
         m_animEditor->close();   // the rig goes back how it really is
+        m_state.objectModal = ObjectModal::None;
+        // Everything shows in a playtest (Stop hides it again: the ids are kept).
+        for (uint64_t id : m_editorHidden) if (SceneNode* n = m_scene->findById(id)) n->editorHidden = false;
         // Remember the world exactly as it is, so Stop can put it back.
         m_playSnapshot = Serializer::saveScene(*m_scene);
         m_playing = true;
@@ -2769,6 +2775,7 @@ void Editor::updateTitle() {
 void Editor::handleShortcuts() {
     ImGuiIO& io = ImGui::GetIO();
     if (io.WantTextInput) return;   // don't steal keys while typing
+    if (m_state.objectModalBusy(ImGui::GetFrameCount())) return;   // G / R / S use the keys (X, numbers, Enter...)
 
     // Testing (like Roblox Studio): F5 Play, F8 Simulate, Shift+F5 Stop.
     if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
@@ -2800,6 +2807,8 @@ void Editor::handleShortcuts() {
     if (io.KeyAlt) {
         if (ImGui::IsKeyPressed(ImGuiKey_L, false)) toggleLocked();
         if (ImGui::IsKeyPressed(ImGuiKey_A, false)) toggleAnchored();
+        if (ImGui::IsKeyPressed(ImGuiKey_H, false)) unhideAll();     // Blender: show everything hidden
+        if (ImGui::IsKeyPressed(ImGuiKey_P, false)) clearParent();   // Blender: out of what it's in
         return;
     }
 
@@ -2807,6 +2816,7 @@ void Editor::handleShortcuts() {
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) { io.KeyShift ? redo() : undo(); }
         if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) redo();
         if (ImGui::IsKeyPressed(ImGuiKey_J, false)) joinSelected();   // Blender's Join
+        if (ImGui::IsKeyPressed(ImGuiKey_P, false)) parentToActive();   // Blender's Make Parent
         if (ImGui::IsKeyPressed(ImGuiKey_C, false)) copySelected();
         if (ImGui::IsKeyPressed(ImGuiKey_X, false) && !io.KeyShift) cutSelected();   // Ctrl+Shift+X = Explorer search
         if (ImGui::IsKeyPressed(ImGuiKey_V, false)) { if (io.KeyShift) pasteInto(); else paste(); }
@@ -2838,7 +2848,7 @@ void Editor::handleShortcuts() {
     }
 
     // Plain keys (W A S D Q E fly the camera in the Viewport).
-    if (ImGui::IsKeyPressed(ImGuiKey_H, false)) toggleHidden();
+    if (handleBlenderKeys()) return;   // G, R, H, X, M, / ... (EditorBlender.cpp)
     if (ImGui::IsKeyPressed(ImGuiKey_F2, false)) m_outliner->beginRename(m_scene->selected());
     if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) deleteSelected();
     if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) { m_scene->deselect(); m_state.connectTool = -1; }
@@ -3503,7 +3513,8 @@ void Editor::renderShortcuts() {
          {"Ctrl+Shift+Left", "Collapse the whole Explorer"},
          {"Ctrl+I", "Insert Object (searchable)"},
          {"F2", "Rename"},
-         {"H", "Hide / show"}},
+         {"H / Shift+H / Alt+H", "Hide while building / hide the rest / show all (the eye)"},
+         {"/", "Just the selection (again = everything back)"}},
         {{"Ctrl+C / X / V", "Copy / cut / paste"},
          {"Ctrl+Shift+V", "Paste into the selection"},
          {"Ctrl+D", "Duplicate"},
@@ -3513,6 +3524,16 @@ void Editor::renderShortcuts() {
          {"Alt+L", "Lock (can't be clicked in the Viewport)"},
          {"Alt+A", "Anchor / unanchor"},
          {"Ctrl+Z / Ctrl+Y", "Undo / redo"}},
+        {{"G / R", "Move / rotate with the mouse (click = done, right-click = cancel)"},
+         {"  then X / Y / Z", "Lock to an axis (twice = its own); Shift+X = not X; type a number"},
+         {"S", "Scale with the mouse (Blender keys on)"},
+         {"Shift+D", "Duplicate and move (Blender keys on)"},
+         {"A / Shift+A", "Pick all / Insert Object (Blender keys on)"},
+         {"X", "Delete"},
+         {"M", "Move into a Model or Folder"},
+         {"Ctrl+P / Alt+P", "Put inside the last picked / take out to the Workspace"},
+         {"Home", "Show everything in the view"},
+         {"Numpad 1 / 3 / 7 / 5", "Front / right / top view / flat (orthographic)"}},
         {{"Ctrl+N / Ctrl+O", "New / open (also Roblox .rbxl / .rbxm)"},
          {"Ctrl+S", "Save (Ctrl+Shift+S: save as)"},
          {"F1", "Show / hide this list"}},
@@ -3555,12 +3576,13 @@ void Editor::renderShortcuts() {
          {"Right-drag + WASD", "Fly the camera (letters are tools here)"},
          {"Ctrl+J (Build mode)", "Join the selected parts into one mesh"}},
     };
-    static const char* kTitles[] = {"Camera & tools", "Selecting", "Explorer", "Editing", "Files",
+    static const char* kTitles[] = {"Camera & tools", "Selecting", "Explorer", "Editing", "Blender keys (Build mode)", "Files",
                                     "Modes", "Modeling mode"};
     ImGui::SetNextWindowSize(ImVec2(520, 560), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
     if (ImGui::Begin("Keyboard Shortcuts", &m_showShortcuts)) {
-        for (int s = 0; s < 7; ++s) {
+        renderBlenderKeysToggle();
+        for (int s = 0; s < 8; ++s) {
             ImGui::SeparatorText(kTitles[s]);
             if (ImGui::BeginTable(kTitles[s], 2)) {
                 ImGui::TableSetupColumn("keys", ImGuiTableColumnFlags_WidthFixed, 190.0f);
@@ -3831,7 +3853,11 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Negate", "Ctrl+Shift+N", false, editable)) negateSelected();
         if (ImGui::MenuItem("Intersect", "Ctrl+Shift+I", false, editable)) unionSelected(1);
         if (ImGui::MenuItem("Separate", "Ctrl+Shift+U", false, editable && !sel->unionSource.empty())) separateSelected();
-        if (ImGui::MenuItem("Hide / Show", "H", false, sel != nullptr)) toggleHidden();
+        if (ImGui::MenuItem("Hide While Building", "H", false, sel != nullptr)) hideSelected();
+        if (ImGui::MenuItem("Hide Everything Else", "Shift+H", false, sel != nullptr)) hideUnselected();
+        if (ImGui::MenuItem("Show Everything Hidden", "Alt+H", false, !m_editorHidden.empty())) unhideAll();
+        if (ImGui::MenuItem("Just the Selection (Local View)", "/", !m_localView.empty())) toggleLocalView();
+        if (ImGui::MenuItem(sel && !sel->visible ? "Make Visible in the Game" : "Make Invisible in the Game", nullptr, false, sel != nullptr)) toggleHidden();
         ImGui::EndMenu();
     }
 
@@ -3884,6 +3910,7 @@ void Editor::renderMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Settings...")) m_showSettings = true;
         if (ImGui::MenuItem("Keyboard Shortcuts", "F1", m_showShortcuts)) m_showShortcuts = !m_showShortcuts;
+        renderBlenderKeysToggle();
         if (ImGui::MenuItem("Collision Groups", nullptr, m_showCollisionGroups)) m_showCollisionGroups = !m_showCollisionGroups;
         if (ImGui::MenuItem("Physics View", nullptr, m_state.showPhysics)) m_state.showPhysics = !m_state.showPhysics;
         ImGui::EndMenu();
@@ -4229,7 +4256,7 @@ void Editor::selectionMenuItems(bool inViewport) {
         if (ImGui::MenuItem(sel && sel->isPart() && sel->anchored ? "Unanchor" : "Anchor", "Alt+A")) later([this] { toggleAnchored(); });
         if (ImGui::MenuItem(sel && sel->locked ? "Unlock" : "Lock", "Alt+L")) later([this] { toggleLocked(); });
     }
-    if (inViewport && any && ImGui::MenuItem(sel->visible ? "Hide" : "Show", "H")) later([this] { toggleHidden(); });
+    if (inViewport && any && ImGui::MenuItem("Hide While Building", "H")) later([this] { hideSelected(); });
     if (ImGui::MenuItem("Export As...", nullptr, false, any && !m_playing)) later([this] { openExportAs(true); });
     publishMenuItem();
 }

@@ -51,6 +51,11 @@ private:
     SceneNode* createAnimation(const std::string& name, const std::string& text);
     std::string fileText(const std::string& name);   // this animation as a .gbanim file
     void       importText(const std::string& text, const std::string& fallbackName);
+    void       importRoblox(const std::string& path);   // a Roblox KeyframeSequence, fitted to this rig
+public:
+    void       testImportRoblox(const std::string& path) { importRoblox(path); }
+    const std::string& message() const { return m_message; }
+private:
 
     Scene*       m_scene;
     EditorState* m_state;
