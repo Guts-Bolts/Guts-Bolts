@@ -39,6 +39,9 @@ int  drawBackpack(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, const Im
 void drawSpeaker(ImDrawList* dl, ImVec2 center, float size, bool talking, bool muted = false);
 // A speaker over the head of everyone talking right now (voice chat).
 void drawVoiceTags(ImDrawList* dl, ImVec2 min, ImVec2 max, const glm::mat4& viewProj);
+// Captions (Settings > Accessibility): the sounds you just heard, as words above the hotbar,
+// with an arrow when it came from your left or right.
+void drawCaptions(ImDrawList* dl, ImVec2 min, ImVec2 max);
 // Is `p` on the hotbar? (so clicking a slot doesn't also swing the tool)
 bool overHotbar(ImVec2 min, ImVec2 max, Scene& scene, ImVec2 p);
 }

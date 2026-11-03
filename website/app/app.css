@@ -1155,6 +1155,18 @@ table:not(.stats):not(.versions) tbody tr:nth-child(even) {
   color: #fff;
 }
 
+/* Achievements on profiles, game update logs and the Events page */
+.achievements { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.achievement { display: flex; gap: 8px; align-items: flex-start; padding: 6px; border: 1px solid var(--line, #ccc); border-radius: 6px; }
+.achievement.locked { opacity: 0.6; }
+.achievement-icon { font-size: 24px; line-height: 1; }
+.achievement-bar, .event-progress { display: block; height: 6px; background: rgba(127, 127, 127, 0.25); border-radius: 3px; overflow: hidden; margin: 4px 0 2px; }
+.achievement-bar span, .event-progress span { display: block; height: 100%; background: #2e9e3e; }
+.event-progress { height: 10px; max-width: 420px; }
+.gamelog-entry { border-left: 3px solid #2e7bd6; padding: 2px 10px; margin: 8px 0; }
+.gamelog-entry p { margin: 4px 0; }
+.event-card.event-over { opacity: 0.7; }
+
 /* Game leaderboards (a game's OrderedDataStores, from Supabase) */
 .leaderboards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .leaderboard { margin: 0; }

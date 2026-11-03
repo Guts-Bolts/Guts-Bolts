@@ -72,11 +72,19 @@ void GraphicsSettings::load() {
     rd("volume", volume); rd("fullscreen", fullscreen);
     rd("voiceChat", voiceChat); rd("voiceOpenMic", voiceOpenMic); rd("voiceVolume", voiceVolume);
     rd("translateChat", translateChat);
+    rd("colorBlind", colorBlind); rd("textSize", textSize); rd("captions", captions); rd("clipRecorder", clipRecorder);
+    colorBlind = std::clamp(colorBlind, 0, 3);
+    textSize = std::clamp(textSize, 1.0f, 2.0f);
     rd("waterQuality", waterQuality); rd("graphicsApi", graphicsApi); rd("renderDistance", renderDistance);
     renderDistance = std::clamp(renderDistance, 1, kMaxRenderDistance);
     waterQuality = std::clamp(waterQuality, 0, 3);
     renderScale = std::clamp(renderScale, 0.5f, 2.0f);
     maxLights = std::clamp(maxLights, 0, 32);
+}
+
+const char* const* GraphicsSettings::colorBlindNames() {
+    static const char* const names[] = {"Off", "Red-blind (protanopia)", "Green-blind (deuteranopia)", "Blue-blind (tritanopia)"};
+    return names;
 }
 
 const char* const* GraphicsSettings::apiNames() {
@@ -115,6 +123,7 @@ void GraphicsSettings::save() const {
         {"shiftLockSwitch", shiftLockSwitch}, {"mouseSensitivity", mouseSensitivity}, {"invertCamera", invertCamera},
         {"volume", volume}, {"fullscreen", fullscreen},
         {"voiceChat", voiceChat}, {"voiceOpenMic", voiceOpenMic}, {"voiceVolume", voiceVolume}, {"translateChat", translateChat},
+        {"colorBlind", colorBlind}, {"textSize", textSize}, {"captions", captions}, {"clipRecorder", clipRecorder},
         {"waterQuality", waterQuality}, {"graphicsApi", graphicsApi}, {"renderDistance", renderDistance},
     };
     std::ofstream f(settingsFile());

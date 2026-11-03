@@ -1,6 +1,7 @@
 #pragma once
 #include "GL.h"
 #include <string>
+#include <vector>
 
 class Framebuffer {
 public:
@@ -19,6 +20,9 @@ public:
     int height() const { return m_h; }
     // What it shows, as a .png file (no see-through pixels). For thumbnails.
     std::string toPng() const;
+    // What it shows, shrunk into `small` (resized to w x h) and read back as RGBA, bottom row
+    // first. Quick enough to do several times a second (the clip recorder).
+    bool readShrunk(Framebuffer& small, int w, int h, std::vector<unsigned char>& rgba) const;
 
 private:
     void create(int w, int h);

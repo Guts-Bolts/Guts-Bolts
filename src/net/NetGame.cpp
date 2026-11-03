@@ -323,6 +323,7 @@ void replayFx(Scene& scene, const json& list) {
                 SceneNode* node = f.contains("id") ? scene.findById(f.value("id", (uint64_t)0)) : nullptr;
                 if (node && !node->isSound()) node = nullptr;
                 const float pitch = node ? node->pitch : 1.0f;
+                if (node && node->name != "Sound") Audio::caption(node->name, f.value("pos3d", true) ? &p : nullptr);   // (captions)
                 const int h = f.value("pos3d", true) ? Audio::play(name, amount, pitch, false, &p) : Audio::play(name, amount, pitch);
                 if (node && h) {
                     SoundMix::apply(scene, node, h);
@@ -749,9 +750,55 @@ bool NetServer::sameName(const std::string& a, const std::string& b) {
     return true;
 }
 
+// Basic anti-cheat (MoveGuard.h): check where a joined player says they are, and pull
+// them back to their last good spot if they zoomed, teleported or flew.
+void NetServer::guardMove(Client& c, RemoteCharacter& rc, const glm::vec3& pos, bool free) {
+    MoveGuard::Rules rules;
+    if (SceneNode* ws = m_scene->root()) {
+        if (const Attribute* a = ws->findAttribute("AntiCheat"); a && a->type == Attribute::Bool) rules.on = a->b;
+        if (const Attribute* a = ws->findAttribute("AntiCheatSpeed"); a && a->type == Attribute::Number)
+            rules.slack = std::clamp((float)a->n, 0.25f, 100.0f);
+    }
+    m_guard.setRules(rules);
+    if (!m_guard.nearSomething) {
+        // Anything solid within reach: under their feet (a jump's height), or beside them (ladders, walls).
+        m_guard.nearSomething = [this](const glm::vec3& at) {
+            const glm::vec3 lo = at - glm::vec3(3.0f, 9.0f, 3.0f), hi = at + glm::vec3(3.0f, 3.0f, 3.0f);
+            bool found = false;
+            m_scene->forEach([&](SceneNode* n) {
+                if (found || !n->isPart()) return;   // (water and see-through parts count too: swimming is fine)
+                for (const SceneNode* up = n; up; up = up->parent)   // (not anyone's character: that's below)
+                    if (m_scene->findRemote(up->id) || m_scene->isCharacterPart(up)) return;
+                const glm::vec3 c(n->worldMatrix()[3]);
+                const float r = glm::length(n->transform.scale) * 0.5f;   // (a box around it, roughly)
+                if (c.x + r >= lo.x && c.x - r <= hi.x && c.y + r >= lo.y && c.y - r <= hi.y && c.z + r >= lo.z && c.z - r <= hi.z)
+                    found = true;
+            });
+            for (float d = 0.0f; !found && d <= 9.0f; d += 1.0f)   // the terrain under them, or water
+                found = m_scene->terrain().solidAt(at - glm::vec3(0.0f, d, 0.0f)) || m_scene->water().at(at - glm::vec3(0.0f, d, 0.0f));
+            if (!found) for (auto& r : m_scene->remotes())   // standing on another player
+                if (SceneNode* rig = m_scene->findById(r.rootId)) {
+                    const glm::vec3 o(rig->worldMatrix()[3]);
+                    if (o != at && glm::length(o - at) < 6.0f) found = true;
+                }
+            if (!found) if (Player* p = m_scene->player())   // or on the host
+                if (glm::length(p->position() - at) < 6.0f) found = true;
+            return found;
+        };
+    }
+    const float g = m_scene->world().gravity;
+    const MoveGuard::Verdict v = m_guard.check(c.rootId, pos, m_session->scripts().time(), rc.humanoid.walkSpeed,
+                                               rc.humanoid.launchSpeed(g), g, free);
+    if (v == MoveGuard::Verdict::Ok) return;
+    const glm::vec3 back = m_guard.lastGood(c.rootId);
+    c.conn->send(json{{"t", "moveback"}, {"p", vec3(back)}, {"why", MoveGuard::words(v)}}.dump());
+    Log::info("Anti-cheat: pulled " + c.name + " back for " + MoveGuard::words(v));
+}
+
 void NetServer::dropClient(size_t index, const char* reason) {
     Client& c = *m_clients[index];
     if (c.joined) {
+        m_guard.forget(c.rootId);
         if (SceneNode* rig = m_scene->findById(c.rootId)) {
             m_session->scripts().stopScripts(rig);   // (the tools they carried)
             m_scene->removeNode(rig);
@@ -1036,8 +1083,15 @@ void NetServer::handle(Client& c, const std::string& text) {
     RemoteCharacter* rc = m_scene->findRemote(c.rootId);
 
     if (t == "state" && rc) {
-        if (m.contains("ts")) m_poses[c.rootId].push(m.value("ts", 0.0), clockNow(), poseFrom(m.value("pose", json())));
-        else if (SceneNode* rig = m_scene->findById(c.rootId)) Player::applyPose(rig, poseFrom(m.value("pose", json())));   // older players
+        const CharacterPose pose = poseFrom(m.value("pose", json()));
+        if (m.contains("ts")) m_poses[c.rootId].push(m.value("ts", 0.0), clockNow(), pose);
+        else if (SceneNode* rig = m_scene->findById(c.rootId)) Player::applyPose(rig, pose);   // older players
+        // Basic anti-cheat: did they move further / higher than they could have?
+        bool seated = false;   // in a seat (a moving car carries them): only if that seat really is right there
+        if (m.contains("seat") && m["seat"].is_number_unsigned())
+            if (SceneNode* seat = m_scene->findById(m["seat"].get<uint64_t>()))
+                seated = glm::length(glm::vec3(seat->worldMatrix()[3]) - pose.root.position) < 8.0f;
+        guardMove(c, *rc, pose.root.position, !rc->alive || m.value("dead", false) || seated || rc->humanoid.platformStand);
         double now = m_session->scripts().time();
         // Their own damage (e.g. fall damage) counts, unless a script just changed it.
         if (now - rc->editedAt > 0.5 && m.contains("health"))
@@ -1416,8 +1470,10 @@ void NetServer::sendTick() {
                 std::string camera = json{{"t", "camopt"}, {"o", cameraJson(rc->camera)}}.dump();
                 if (camera != c->cameraSent) { c->conn->send(camera); c->cameraSent = std::move(camera); }
             }
-            for (auto& k : rc->kills)
+            for (auto& k : rc->kills) {
+                m_guard.excuse(c->rootId, m_session->scripts().time() + 3.0);   // (a launch moves them fast, for real)
                 c->conn->send(json{{"t", "kill"}, {"force", k.force}, {"impulse", vec3(k.impulse)}}.dump());
+            }
             rc->kills.clear();
         }
     }
@@ -1525,6 +1581,7 @@ void NetClient::update(float dt) {
                     const Vehicles& v = m_scene->vehicles();
                     if (uint64_t seat = p->seatId(); seat && v.driver(seat) == p->rootId())
                         st["drive"] = {seat, v.throttle(seat), v.steer(seat)};
+                    if (p->seatId()) st["seat"] = p->seatId();   // (the host's anti-cheat leaves seated people alone)
                     m_conn->send(st.dump());
                 }
         }
@@ -1840,6 +1897,11 @@ void NetClient::handle(const std::string& text) {
         ScriptCamera& sc = m_scene->camera();
         sc.options = cameraFrom(m.value("o", json::object()));
         sc.optionsSet = true;
+        return;
+    }
+    if (t == "moveback" && me) {   // the host's anti-cheat thinks we moved impossibly: back to where we were
+        me->moveTo(vec3(m.value("p", json())));
+        Log::warn("The game moved you back (" + m.value("why", std::string("moving oddly")) + ").");
         return;
     }
     if (t == "kill" && me) {

@@ -127,7 +127,7 @@ const std::vector<Entry>& all() {
         {"GetPartBoundsInBox", "workspace:GetPartBoundsInBox(cframe, size, params?) -> {BasePart}", "Parts in a box", false},
         {"GetPartsInPart", "workspace:GetPartsInPart(part, params?) -> {BasePart}", "Parts touching a part", false},
         {"Create", "TweenService:Create(object, tweenInfo, {Property = goal}) -> Tween", "Smoothly changes properties. Call :Play() on it", false},
-        {"Play", "tween:Play() / sound:Play() / track:Play()", "Starts it", false},
+        {"Play", "tween:Play() / sound:Play() / track:Play() / CutsceneService:Play(cutscene)", "Starts it (a cutscene waits until it's over)", false},
         {"GetMouse", "player:GetMouse() -> Mouse", "mouse.Hit, mouse.Target, mouse.Button1Down (LocalScripts only)", false},
         {"GetMouseLocation", "UserInputService:GetMouseLocation() -> Vector2", "Where the mouse is on the screen", false},
         {"IsKeyDown", "UserInputService:IsKeyDown(keyCode) -> boolean", "Is that key held? e.g. Enum.KeyCode.W", false},

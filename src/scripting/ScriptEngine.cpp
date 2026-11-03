@@ -1216,6 +1216,112 @@ function TweenService:Create(obj, info, goals)
     return tw
 end
 
+-- CutsceneService: plays a camera fly-through made in Studio (Tools > Cutscene Maker).
+-- A cutscene is a Model (with the attribute Cutscene = true) holding "shot" parts: the
+-- camera goes from shot to shot in order (by their Order attribute, else by name: Shot1,
+-- Shot2...), looking the way each shot part faces. Each shot can say how many seconds it
+-- takes to get there (Time, 2 by default), how long to stay (Hold) and its FieldOfView.
+--   CutsceneService:Play(workspace.Intro)   -- waits until it's over
+--   CutsceneService:Stop()
+-- A cutscene with PlayOnStart = true plays by itself when the game starts.
+CutsceneService = { ClassName = "CutsceneService", Name = "CutsceneService", Playing = nil }
+CutsceneService.Finished = luaSignal()
+local cutRun = 0
+local function shotsOf(cut)
+    local shots = {}
+    for _, c in ipairs(cut:GetChildren()) do
+        if c:IsA("BasePart") then table.insert(shots, c) end
+    end
+    local function num(s) return tonumber(tostring(s.Name):match("(%d+)%s*$")) or math.huge end
+    table.sort(shots, function(a, b)
+        local oa, ob = a:GetAttribute("Order"), b:GetAttribute("Order")
+        if oa and ob and oa ~= ob then return oa < ob end
+        if num(a) ~= num(b) then return num(a) < num(b) end
+        return tostring(a.Name) < tostring(b.Name)
+    end)
+    return shots
+end
+CutsceneService.GetShots = function(_, cut) return shotsOf(cut) end
+-- Catmull-Rom through p1 -> p2 (p0 and p3 are the shots either side): a smooth curve.
+local function curve(p0, p1, p2, p3, t)
+    local t2, t3 = t * t, t * t * t
+    return (p1 * 2 + (p2 - p0) * t + (p0 * 2 - p1 * 5 + p2 * 4 - p3) * t2 + (p1 * 3 - p0 - p2 * 3 + p3) * t3) * 0.5
+end
+local function smooth(t) return t * t * (3 - 2 * t) end
+function CutsceneService:Stop()
+    if not self.Playing then return end
+    cutRun = cutRun + 1
+    local cut = self.Playing
+    self.Playing = nil
+    local cam = workspace.CurrentCamera
+    cam.CameraType = Enum.CameraType.Custom
+    cam.FieldOfView = 70
+    self.Finished:Fire(cut, false)
+end
+function CutsceneService:Play(cut)
+    if type(cut) == "nil" or type(cut) == "string" or type(cut) == "number" then error("CutsceneService:Play needs the cutscene's Model", 2) end
+    local shots = shotsOf(cut)
+    if #shots == 0 then warn("Cutscene " .. cut.Name .. " has no shots in it"); return end
+    self:Stop()
+    cutRun = cutRun + 1
+    local me = cutRun
+    self.Playing = cut
+    local cam = workspace.CurrentCamera
+    local oldFov = cam.FieldOfView
+    cam.CameraType = Enum.CameraType.Scriptable
+    cam.CFrame = shots[1].CFrame
+    cam.FieldOfView = shots[1]:GetAttribute("FieldOfView") or oldFov
+    local function hold(s)
+        local h = s:GetAttribute("Hold") or 0
+        if h > 0 then task.wait(h) end
+    end
+    hold(shots[1])
+    for i = 2, #shots do
+        if cutRun ~= me then return end
+        local a, b = shots[i - 1], shots[i]
+        local p0 = (shots[i - 2] or a).Position
+        local p3 = (shots[i + 1] or b).Position
+        local fromFov = a:GetAttribute("FieldOfView") or oldFov
+        local toFov = b:GetAttribute("FieldOfView") or fromFov
+        local length = math.max(0, b:GetAttribute("Time") or 2)
+        local start = time()
+        while true do
+            if cutRun ~= me then return end
+            local t = length <= 0 and 1 or math.min(1, (time() - start) / length)
+            local e = smooth(t)
+            local pos = curve(p0, a.Position, b.Position, p3, e)
+            cam.CFrame = CFrame.new(pos) * a.CFrame.Rotation:Lerp(b.CFrame.Rotation, e)
+            cam.FieldOfView = fromFov + (toFov - fromFov) * e
+            if t >= 1 then break end
+            task.wait()
+        end
+        hold(b)
+    end
+    if cutRun ~= me then return end
+    self.Playing = nil
+    cam.CameraType = Enum.CameraType.Custom
+    cam.FieldOfView = oldFov
+    self.Finished:Fire(cut, true)
+end
+-- When the game starts: the shot parts are only markers, so they go invisible; and cutscenes
+-- marked PlayOnStart play for the person playing (not on a game server, which sees nothing).
+task.spawn(function()
+    task.wait()
+    local starters = {}
+    for _, d in ipairs(workspace:GetDescendants()) do
+        if d:GetAttribute("Cutscene") == true then
+            for _, s in ipairs(shotsOf(d)) do
+                s.Transparency = 1
+                s.CanCollide = false
+            end
+            if d:GetAttribute("PlayOnStart") == true then table.insert(starters, d) end
+        end
+    end
+    if LocalPlayer then
+        for _, d in ipairs(starters) do CutsceneService:Play(d) end
+    end
+end)
+
 -- HttpService: JSON in and out, and unique ids. (Games can't reach other websites.)
 HttpService = { ClassName = "HttpService", Name = "HttpService", HttpEnabled = false }
 local function jsonString(s)
@@ -1771,7 +1877,7 @@ local services = { Workspace = workspace, PathfindingService = PathfindingServic
                    RunService = RunService, UserInputService = UserInputService, Gui = Gui,
                    CollectionService = CollectionService, DataStoreService = DataStoreService,
                    MessagingService = MessagingService, MemoryStoreService = MemoryStoreService,
-                   TweenService = TweenService, HttpService = HttpService,
+                   TweenService = TweenService, HttpService = HttpService, CutsceneService = CutsceneService,
                    ProximityPromptService = ProximityPromptService, PhysicsService = PhysicsService,
                    ContextActionService = ContextActionService, VRService = VRService }
 -- The container services are folders at the top of the game (Studio shows them in the Explorer).

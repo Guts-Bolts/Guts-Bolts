@@ -1734,7 +1734,8 @@ void PlayerApp::drawGame(float dt) {
         m_chatOpen = true;
 
     // Simulate (the world keeps running while the menu is open, like Roblox).
-    bool acceptInput = !m_paused && !m_showSettings && !m_chatOpen && !m_photo;   // (photo mode: you stand still)
+    bool acceptInput = !m_paused && !m_showSettings && !m_chatOpen && !m_photo &&   // (photo mode: you stand still)
+                       !(spectateManual() && spectating());                       // (and while watching others)
     ImVec2 max(pos.x + size.x, pos.y + size.y);
     const bool touch = GraphicsSettings::get().touchEnabled();
     // VR: wait for the headset's next picture, read its controllers (they walk you
@@ -1843,7 +1844,9 @@ void PlayerApp::drawGame(float dt) {
         if (vr) vrShowBody(*p);
     }
     if (m_photo) photoCamera(dt, hovered);
-    Camera& shownCam = m_photo ? m_photoCam : m_camera;
+    spectateCamera(dt, hovered);   // (PlayerSpectate.cpp)
+    const bool watching = spectating();
+    Camera& shownCam = m_photo ? m_photoCam : watching ? m_specCam : m_camera;
 
 #ifdef GB_MOBILE
     // Phones: render with the real pixels, not the (bigger) UI pixels.
@@ -1853,11 +1856,13 @@ void PlayerApp::drawGame(float dt) {
 #endif
     m_camera.resize((int)px.x, (int)px.y);
     m_photoCam.resize((int)px.x, (int)px.y);
+    m_specCam.resize((int)px.x, (int)px.y);
     if (vr) {   // each eye for the headset (the screen shows the left one)
         if (vrDraw) vrRender(vrEyes);   // (vrAfterUi finishes the headset's picture, once the menus are drawn)
     } else {
         m_view.resize((int)px.x, (int)px.y);
         m_renderer->render(*m_scene, shownCam, m_view, false);
+        recordClipFrame();   // (the clip recorder: PlayerClips.cpp)
     }
     if (GameGui::needsBackdrop(*m_scene) && !vr) {   // UIBlur: the world behind the UI, blurred
         m_renderer->makeBackdrop(m_view);
@@ -1867,7 +1872,7 @@ void PlayerApp::drawGame(float dt) {
     } else {
         GameGui::setBackdrop(nullptr, 0);
     }
-    Audio::setListener(m_camera.position(), m_camera.forward());
+    Audio::setListener(shownCam.position(), shownCam.forward());
     if (vr) vrMirror(size);
     else ImGui::Image((ImTextureID)(intptr_t)m_view.colorTexture(), size, ImVec2(0, 1), ImVec2(1, 0));
     if (m_photo) {   // nothing else on the screen: no HUD, chat, name tags or game UI
@@ -1955,9 +1960,12 @@ void PlayerApp::drawGame(float dt) {
         m_session->selectToolSlot(slot);
     if (int slot = Hud::drawBackpack(dl, pos, max, *m_scene, tapped && onHotbar && !emotesOpen ? &tapAt : nullptr); slot >= 0 && acceptInput && !emotesOpen)
         m_session->selectToolSlot(slot);
-    Hud::drawNameTags(dl, pos, max, *m_scene, m_camera.projection() * m_camera.view(), m_camera.position());
-    Hud::drawBubbles(dl, pos, max, *m_scene, m_camera.projection() * m_camera.view(), chat().bubbles);
-    Hud::drawVoiceTags(dl, pos, max, m_camera.projection() * m_camera.view());
+    Hud::drawNameTags(dl, pos, max, *m_scene, shownCam.projection() * shownCam.view(), shownCam.position());
+    Hud::drawBubbles(dl, pos, max, *m_scene, shownCam.projection() * shownCam.view(), chat().bubbles);
+    Hud::drawVoiceTags(dl, pos, max, shownCam.projection() * shownCam.view());
+    if (GraphicsSettings::get().captions) Hud::drawCaptions(dl, pos, max);   // Settings > Accessibility
+    drawSpectate(dl, pos, max);   // "Spectating ..." with < > (PlayerSpectate.cpp)
+    drawClipMsg(dl, pos, max);    // F3: save the last 30 seconds (PlayerClips.cpp)
     drawVoiceHud(dl, pos, max, touch);
     // The emote menu: B (or the smiley button on phones) opens a wheel of your emotes.
     EmoteMenu::update(dl, pos, max, *m_scene, acceptInput && !io.WantTextInput && !m_session->runOnly(),
@@ -2448,6 +2456,19 @@ void PlayerApp::drawPauseMenu() {
             ImGui::Spacing();
             if (bigButton("[F2]  Photo Mode", ImVec4(0.2f, 0.21f, 0.24f, 1), ImVec2(-1, 38))) startPhoto();
         }
+        // Save the last 30 seconds as a GIF (PlayerClips.cpp).
+        if (canSaveClip()) {
+            ImGui::Spacing();
+            if (bigButton("[F3]  Save Clip (last 30 seconds)", ImVec4(0.2f, 0.21f, 0.24f, 1), ImVec2(-1, 38))) saveClip();
+        }
+        // Spectate: watch the other players (PlayerSpectate.cpp).
+        if (!spectateTargets().empty() && !m_vrOn) {
+            ImGui::Spacing();
+            if (bigButton(m_spectate ? "Stop Spectating" : "Spectate", ImVec4(0.2f, 0.21f, 0.24f, 1), ImVec2(-1, 38))) {
+                m_spectate = !m_spectate;
+                m_paused = false;   // (back to the game, watching)
+            }
+        }
     } else if (m_menuTab == 1) {
         // VR: show the game in a headset (SteamVR, Quest Link...) instead.
         ImGui::AlignTextToFramePadding();
@@ -2561,6 +2582,17 @@ void PlayerApp::drawPauseMenu() {
                                 "Games can turn voice chat off.");
             ImGui::PopTextWrapPos();
         }
+        ImGui::SeparatorText("Accessibility");
+        row("Colorblind Mode");
+        if (ImGui::Combo("##colorblind", &gs.colorBlind, GraphicsSettings::colorBlindNames(), 4)) changed = true;
+        row("Text Size");
+        {
+            int pct = (int)std::lround(gs.textSize * 100.0f);
+            if (ImGui::SliderInt("##textsize", &pct, 100, 200, "%d%%")) { gs.textSize = pct / 100.0f; changed = true; }
+        }
+        onOff("Sound Captions", gs.captions);
+        ImGui::SeparatorText("Clips");
+        onOff("Clip Recorder (F3 saves)", gs.clipRecorder);
         ImGui::SeparatorText("Chat");
         onOff("Translate Chat", gs.translateChat);
         ImGui::SetCursorPosX(labelW);

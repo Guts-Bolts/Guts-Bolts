@@ -46,4 +46,18 @@ void keepBuses(const std::set<uint64_t>& used);                           // dro
 // The sound engine itself (a ma_engine*), for voice chat. Null with no sound device.
 void* engineHandle();
 
+// Captions (Settings > Accessibility): the sounds playing, as words. Built-in sounds caption
+// themselves ("Explosion", "Splash"); a game's Sound objects are captioned with their name.
+struct Caption {
+    std::string text;
+    double      at = 0.0;      // seconds (only differences matter: see captionClock)
+    int         side = 0;      // -1 on your left, 1 on your right, 0 ahead / everywhere
+    int         count = 1;     // the same sound again within a second: "Hit x3"
+};
+void caption(const std::string& text, const glm::vec3* position = nullptr);
+std::vector<Caption> captions(double keepSeconds = 3.0);   // newest last
+double captionClock();
+// "explosion" -> "Explosion"; "" for sounds not worth a caption (footsteps, clicks) or not built in.
+std::string builtinCaption(const std::string& soundId);
+
 } // namespace Audio

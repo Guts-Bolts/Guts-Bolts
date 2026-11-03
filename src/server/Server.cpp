@@ -150,7 +150,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // except looking around: visitors to the website can browse before signing up.
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
-                                                    "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards",
+                                                    "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards", "gamelog.list", "events.list",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate", "http.request",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove"};   // (guests can host games too, and read chat)
@@ -516,6 +516,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         r["status"] = u->posts.is_array() && !u->posts.empty() ? u->posts[0] : json();
         r["playerBadges"] = playerBadgesOf(*u);
         r["allPlayerBadges"] = allPlayerBadges();
+        r["achievements"] = achievementsOf(*u);
         {   // their inventory (the first few; profile.inventory has the rest), unless they hid it
             const bool canSee = seesInventory(me, *u);
             json owns = canSee ? inventoryOf(*u, "all") : json::array();
@@ -669,6 +670,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         json r = okay(); r["progress"] = me.learnProgress; return r;
     }
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
+    if (name.rfind("gamelog.", 0) == 0) return gameLogOp(name, me, args);   // ServerExtras.cpp
+    if (name.rfind("events.", 0) == 0) return eventsOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);
     if (name.rfind("appeal.", 0) == 0) return appealOp(name, me, args);
     if (name.rfind("outfit.", 0) == 0 || name.rfind("message.", 0) == 0 || name.rfind("party.", 0) == 0 || name.rfind("notes.", 0) == 0 || name == "game.favorite" || name == "games.mine" || name.rfind("comments.", 0) == 0 ||
@@ -800,6 +803,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (now - me.lastPlay < 280) return fail("Keep playing!");
         if (me.playDay != today) { me.playDay = today; me.playEarned = 0; }
         me.lastPlay = now;
+        eventsPlayed(me);   // minutes towards live events' free items (ServerExtras.cpp)
         if (me.playEarned >= 50) { saveUsers(); return fail("That's all the Bolts from playing for today."); }
         me.playEarned += 5;
         add(me, 5, "Playing games", "play:" + today);
@@ -916,6 +920,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             return isOfficial(me) ? promoAdmin(name, me, args) : fail("Only the official Guts account can do that.");
         if (name == "admin.roadmapSave" || name == "admin.roadmapRemove" || name == "admin.ideaAnswer" || name == "admin.ideaRemove")
             return roadmapAdmin(name, me, args);
+        if (name == "admin.eventSave" || name == "admin.eventRemove") return eventsAdmin(name, me, args);
         if (!to) return fail("There's no account with that ID on this server.");
         if (name == "admin.grant") {
             // The signed badge comes from the app (made with the staff member's own key).
@@ -1851,6 +1856,8 @@ void GbServer::saveUsers() {
         all[id]["played"] = u.played;
         if (!u.usedModels.empty()) all[id]["usedModels"] = u.usedModels;
         if (!u.promos.empty()) all[id]["promos"] = u.promos;
+        if (!u.eventPlay.empty()) all[id]["eventPlay"] = u.eventPlay;
+        if (!u.eventClaims.empty()) all[id]["eventClaims"] = u.eventClaims;
         all[id]["publicWeek"] = u.publicWeek;
         all[id]["publicThisWeek"] = u.publicThisWeek;
     }
@@ -1883,6 +1890,7 @@ void GbServer::saveAssets() {
         if (a.limited) { all[id]["limited"] = true; all[id]["stock"] = a.stock; all[id]["copies"] = a.copies; }
         if (!a.shots.empty()) all[id]["shots"] = a.shots;
         if (!a.versions.empty()) all[id]["versions"] = a.versions;
+        if (!a.updateLog.empty()) { all[id]["updateLog"] = a.updateLog; all[id]["updateLogDay"] = a.updateLogDay; all[id]["updateLogToday"] = a.updateLogToday; }
     }
     writeFile(m_opts.data / "assets.json", all.dump(1));
 }
@@ -2073,6 +2081,9 @@ void GbServer::load() {
                             if (v.is_string())
                                 (std::string(k) == "played" ? u.played : std::string(k) == "usedModels" ? u.usedModels
                                  : std::string(k) == "promos" ? u.promos : u.pastNames).push_back(v.get<std::string>());
+                if (j.contains("eventPlay") && j["eventPlay"].is_object()) u.eventPlay = j["eventPlay"];
+                if (j.contains("eventClaims") && j["eventClaims"].is_array())
+                    for (const auto& v : j["eventClaims"]) if (v.is_string()) u.eventClaims.push_back(v.get<std::string>());
                 u.publicWeek = j.value("publicWeek", 0LL);
                 u.publicThisWeek = j.value("publicThisWeek", 0);
                 if (j.contains("gear") && j["gear"].is_array())
@@ -2144,6 +2155,10 @@ void GbServer::load() {
                 if (j.contains("versions") && j["versions"].is_array())
                     for (const json& x : j["versions"])
                         if (x.is_object() && x.contains("v") && x["v"].is_number_integer()) a.versions.push_back(x);
+                if (j.contains("updateLog") && j["updateLog"].is_array())
+                    for (const json& x : j["updateLog"]) if (x.is_object()) a.updateLog.push_back(x);
+                a.updateLogDay = j.value("updateLogDay", std::string());
+                a.updateLogToday = j.value("updateLogToday", 0);
                 a.limited = j.value("limited", false);
                 a.stock = j.value("stock", 0LL);
                 if (j.contains("copies") && j["copies"].is_array())
@@ -2163,6 +2178,7 @@ void GbServer::load() {
     loadStaffLog();
     loadPromos();
     loadRoadmap();
+    loadEvents();
     if (std::string text; readFile(m_opts.data / "boltworks.json", text)) {
         json all = json::parse(text, nullptr, false);
         if (all.is_array()) m_boltworks = all;

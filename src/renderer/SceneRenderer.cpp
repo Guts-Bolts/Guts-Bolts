@@ -2243,6 +2243,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     m_composite->setBool("uDof", useDof);
     m_composite->setBool("uRaysOn", useRays);
     m_composite->setBool("uGrade", m_fx.grade);
+    m_composite->setInt("uColorBlind", std::clamp(gs.colorBlind, 0, 3));   // Settings > Accessibility
     if (useBlur) {
         static const char* const names[4] = {"uBlur1", "uBlur2", "uBlur3", "uBlur4"};
         for (int i = 0; i < 4; ++i) { bindTex(4 + i, m_blurUp[i].color); m_composite->setInt(names[i], 4 + i); }

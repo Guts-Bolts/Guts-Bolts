@@ -104,6 +104,9 @@ private:
         long long   publicWeek = 0;           // the week (unix time / 7 days) publicThisWeek counts
         int         publicThisWeek = 0;       // models made public that week (Verified: no limit)
         std::vector<std::string> promos;      // promo codes they've used (ServerPromos.cpp)
+        // ServerExtras.cpp: minutes played during each event (event id -> minutes), and events they got the item of.
+        nlohmann::json eventPlay = nlohmann::json::object();
+        std::vector<std::string> eventClaims;
     };
     struct Asset {
         std::string id, kind, name, description, creator;
@@ -127,6 +130,9 @@ private:
         // Games: version history, {v, at, by, size, restored?}, oldest first (the last is live). Empty for a
         // game published before history existed: its file counts as version 1. (worker/server.js a.versions)
         nlohmann::json versions = nlohmann::json::array();
+        // Games: the creator's update notes, {id, title, text, at}, newest first (ServerExtras.cpp).
+        nlohmann::json updateLog = nlohmann::json::array();
+        std::string updateLogDay; int updateLogToday = 0;
     };
 
     struct Post { std::string by, text; long long time = 0; };
@@ -257,6 +263,16 @@ private:
     nlohmann::json roadmapAdmin(const std::string& name, const User& me, const nlohmann::json& args);
     void saveRoadmap();
     void loadRoadmap();
+    // ServerExtras.cpp: achievements on profiles, game update logs, timed events (events.json).
+    nlohmann::json achievementsOf(const User& u) const;
+    nlohmann::json gameLogFeed(const User& me) const;
+    nlohmann::json gameLogOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json eventsView(const User& me) const;
+    nlohmann::json eventsOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json eventsAdmin(const std::string& name, const User& me, const nlohmann::json& args);
+    void eventsPlayed(User& me);
+    void saveEvents();
+    void loadEvents();
     // The staff action log (stafflog.json): what staff did, newest last. about: who it was done to.
     void staffDid(const User& staff, const std::string& action, const std::string& text, const std::string& about = "");
     nlohmann::json staffLogJson(const std::string& who) const;
@@ -406,6 +422,7 @@ private:
     nlohmann::json m_promos = nlohmann::json::array();
     // The public roadmap (ServerRoadmap.cpp): {items: [{id, title, text, status, version, at}], ideas: [{id, title, text, by, at, votes, status, note}]}.
     nlohmann::json m_roadmap = {{"items", nlohmann::json::array()}, {"ideas", nlohmann::json::array()}};
+    nlohmann::json m_events = nlohmann::json::array();   // ServerExtras.cpp
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.
