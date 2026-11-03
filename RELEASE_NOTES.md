@@ -12,6 +12,8 @@ itself. Physics got steadier and phones run smoother too.
   LoadCharacter, teams and lots more events for scripts.
 - The player list shows teams in their colours, sorts by score, and games
   can restyle or hide it.
+- A new Blaster gear, plus Weld, Motor6D, character joints, hinge limits
+  and CylinderMesh, so scripts like a grab knife just work.
 - Real leaderboards: OrderedDataStore sorts, and the top 10 show on the
   game's page.
 - Accessibility settings (colorblind modes, bigger text, captions) and a
@@ -47,6 +49,7 @@ itself. Physics got steadier and phones run smoother too.
 - The Auction Broadcasts and forum boxes showed up as raw code.
 - Water made games laggy (like 14 fps on big water slides); it's much
   faster now.
+- Fast bullets flew straight through people.
 - WaitForChild gave up straight away instead of waiting.
 - Chats disappeared from the list when the server was older than the site.
 
