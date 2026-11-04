@@ -1395,7 +1395,8 @@ json settingsJson(Scene& scene) {
                   {"fallDamageScale", ws.fallDamageScale}, {"bloodColor", vec(ws.bloodColor)},
                   {"bloodAmount", ws.bloodAmount}, {"bloodStay", ws.bloodStay},
                   {"playerCollisions", ws.playerCollisions}, {"voiceChat", ws.voiceChat}, {"maxFluidParticles", ws.maxFluidParticles},
-                  {"orthographic", ws.orthographic}, {"orthographicSize", ws.orthographicSize}};
+                  {"orthographic", ws.orthographic}, {"orthographicSize", ws.orthographicSize},
+                  {"streaming", ws.streaming}, {"streamRadius", ws.streamRadius}};
     if (!ws.collisionGroups.isDefault())   // (only games that use them)
         j["world"]["collisionGroups"] = Serializer::collisionGroupsToJson(ws.collisionGroups);
     if (ws.playerCamera != CameraOptions{})   // (only games that changed them)
@@ -1454,6 +1455,8 @@ void applySettings(Scene& scene, const json& j) {
         w.orthographic      = get<bool>(j["world"], "orthographic", w.orthographic);
         w.orthographicSize  = std::clamp(get<float>(j["world"], "orthographicSize", w.orthographicSize), 0.0f, 2000.0f);
         w.maxFluidParticles = std::clamp(get<int>(j["world"], "maxFluidParticles", w.maxFluidParticles), 0, 1 << 20);
+        w.streaming         = get<bool>(j["world"], "streaming", w.streaming);
+        w.streamRadius      = std::clamp(get<float>(j["world"], "streamRadius", w.streamRadius), 32.0f, 5000.0f);
         w.bloodColor        = vec(j["world"], "bloodColor", w.bloodColor);
         w.bloodAmount       = get<float>(j["world"], "bloodAmount", w.bloodAmount);
         w.bloodStay         = get<float>(j["world"], "bloodStay", w.bloodStay);

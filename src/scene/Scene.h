@@ -116,6 +116,10 @@ struct WorldSettings {
     // (0 = the mouse wheel zooms like normal).
     bool       orthographic = false;
     float      orthographicSize = 0.0f;
+    // Loading big maps in pieces (Roblox's StreamingEnabled / StreamingTargetRadius):
+    // joined players only get the parts of the map within streamRadius studs of them.
+    bool       streaming    = false;
+    float      streamRadius = 512.0f;
     // Every player's camera to start with: CameraMode and zoom limits (Roblox's StarterPlayer).
     CameraOptions playerCamera;
     // The in-game player list (leaderboard): shown or not, its colours and title.

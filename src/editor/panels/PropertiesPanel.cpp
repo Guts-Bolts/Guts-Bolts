@@ -1286,6 +1286,16 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::Separator();
         ImGui::TextDisabled("The Workspace holds everything in your game.");
         ImGui::DragFloat("Gravity", &m_scene->world().gravity, 0.1f, 0.0f, 200.0f);
+        WorldSettings& w = m_scene->world();
+        ImGui::Checkbox("Load Map In Pieces", &w.streaming);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("StreamingEnabled: players who join only get the part of the map near them;\n"
+                              "the rest loads in as they walk towards it. Good for big maps.\n"
+                              "Scripts on players' computers should use WaitForChild for far-away things.");
+        if (w.streaming) {
+            ImGui::DragFloat("Streaming Radius", &w.streamRadius, 4.0f, 32.0f, 5000.0f, "%.0f studs");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("StreamingTargetRadius: how far around each player the map is loaded.");
+        }
         return;
     }
 

@@ -498,6 +498,7 @@ add_library(gb_engine STATIC
     src/game/TouchControls.cpp
     src/net/Socket.cpp
     src/net/NetGame.cpp
+    src/net/Streaming.cpp
     src/net/MoveGuard.cpp
     src/net/ChatTranslate.cpp
     src/editor/Theme.cpp
@@ -1107,6 +1108,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(VehiclesTests tests/VehiclesTests.cpp)
     target_link_libraries(VehiclesTests PRIVATE gb_engine)
     add_test(NAME VehiclesTests COMMAND VehiclesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Loading big maps in pieces (StreamingEnabled): which pieces a joined player gets.
+    add_executable(StreamingTests tests/StreamingTests.cpp)
+    target_link_libraries(StreamingTests PRIVATE gb_engine)
+    add_test(NAME StreamingTests COMMAND StreamingTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Network ownership: a joined player's car moves on their computer; the host waits.

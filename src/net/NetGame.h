@@ -135,6 +135,7 @@ private:
     void dropClient(size_t index, const char* reason);
     void broadcast(const std::string& msg, const Client* except = nullptr);
     std::string worldMessage(bool full);
+    void        streamMap();
 
     void sendDevLog();
     void updateVoice(double now);
