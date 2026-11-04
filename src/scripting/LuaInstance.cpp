@@ -15,6 +15,7 @@
 #include "../scene/EditMesh.h"
 #include "../scene/Skin.h"
 #include "../scene/Guis.h"
+#include "../game/Videos.h"
 #include "../game/GameGui.h"
 #include "../game/RichText.h"
 #include "../renderer/MeshLibrary.h"
@@ -552,7 +553,8 @@ void startSound(lua_State* L, SceneNode* n) {
 }
 int m_Play(lua_State* L) {
     SceneNode* n = LuaApi::checkNode(L, 1);
-    if (!n->isSound()) return luaL_error(L, "Play only works on Sound objects");
+    if (n->kind == NodeKind::Gui && n->gui.type == GuiType::VideoFrame) { n->gui.playing = true; return 0; }   // (a video)
+    if (!n->isSound()) return luaL_error(L, "Play only works on Sound and VideoFrame objects");
     startSound(L, n);
     return 0;
 }
@@ -943,6 +945,7 @@ int box_ReleaseFocus(lua_State* L) {
     if (GameGui::focused() == LuaApi::checkNode(L, 1)->id) GameGui::focus(0, lua_toboolean(L, 2));
     return 0;
 }
+int video_Pause(lua_State* L) { LuaApi::checkNode(L, 1)->gui.playing = false; return 0; }
 int box_IsFocused(lua_State* L) { lua_pushboolean(L, GameGui::focused() == LuaApi::checkNode(L, 1)->id); return 1; }
 int gui_ApplyLayout(lua_State* L) { (void)L; GameGui::refresh(*E(L)->scene()); return 0; }
 
@@ -1467,6 +1470,24 @@ bool guiIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "ImageColor3"))    { LuaApi::pushColor3(L, g.imageColor); return true; }
         if (is(k, "ImageTransparency")) { lua_pushnumber(L, g.imageTransparency); return true; }
     }
+    if (g.type == GuiType::VideoFrame) {   // (game/Videos.h plays it)
+        if (is(k, "Video"))          { lua_pushstring(L, g.video.c_str()); return true; }
+        if (is(k, "Playing"))        { lua_pushboolean(L, g.playing); return true; }
+        if (is(k, "Looped"))         { lua_pushboolean(L, g.looped); return true; }
+        if (is(k, "Volume"))         { lua_pushnumber(L, g.volume); return true; }
+        if (is(k, "TimePosition"))   { lua_pushnumber(L, Videos::position(*n)); return true; }
+        if (is(k, "TimeLength"))     { lua_pushnumber(L, Videos::length(*n)); return true; }
+        if (is(k, "IsLoaded"))       { lua_pushboolean(L, Videos::loaded(*n)); return true; }
+        if (is(k, "Resolution"))     { const glm::ivec2 r = Videos::resolution(*n); LuaApi::pushVector2(L, glm::vec2(r)); return true; }
+        if (is(k, "ImageColor3"))    { LuaApi::pushColor3(L, g.imageColor); return true; }
+        if (is(k, "ImageTransparency")) { lua_pushnumber(L, g.imageTransparency); return true; }
+        if (is(k, "Pause"))          { lua_pushcfunction(L, video_Pause); return true; }
+        if (is(k, "Loaded"))         { LuaApi::pushSignal(L, SignalKind::VideoLoaded, n->id); return true; }
+        if (is(k, "Played"))         { LuaApi::pushSignal(L, SignalKind::VideoPlayed, n->id); return true; }
+        if (is(k, "Paused"))         { LuaApi::pushSignal(L, SignalKind::VideoPaused, n->id); return true; }
+        if (is(k, "Ended"))          { LuaApi::pushSignal(L, SignalKind::VideoEnded, n->id); return true; }
+        if (is(k, "DidLoop"))        { LuaApi::pushSignal(L, SignalKind::VideoDidLoop, n->id); return true; }
+    }
     if (isGuiLayout(g.type)) {
         if (is(k, "AbsoluteContentSize")) { GameGui::refresh(*E(L)->scene()); LuaApi::pushVector2(L, g.contentSize); return true; }
         if (is(k, "FillDirection"))       { lua_pushstring(L, g.fill ? "Horizontal" : "Vertical"); return true; }
@@ -1686,6 +1707,17 @@ bool guiNewIndex(lua_State* L, SceneNode* n, const char* k) {
         if (is(k, "LightDirection")) { g.lightDir = LuaApi::checkVector3(L, 3); return true; }
         if (is(k, "ImageColor3"))    { g.imageColor = LuaApi::checkColor3(L, 3); return true; }
         if (is(k, "ImageTransparency")) { g.imageTransparency = t01(); return true; }
+    }
+    if (g.type == GuiType::VideoFrame) {
+        if (is(k, "Video"))          { g.video = std::string(luaL_checkstring(L, 3)).substr(0, 1000); return true; }
+        if (is(k, "Playing"))        { g.playing = lua_toboolean(L, 3); return true; }
+        if (is(k, "Looped"))         { g.looped = lua_toboolean(L, 3); return true; }
+        if (is(k, "Volume"))         { g.volume = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 10.0f); return true; }
+        if (is(k, "TimePosition"))   { Videos::seek(*n, luaL_checknumber(L, 3)); return true; }
+        if (is(k, "ImageColor3"))    { g.imageColor = LuaApi::checkColor3(L, 3); return true; }
+        if (is(k, "ImageTransparency")) { g.imageTransparency = t01(); return true; }
+        if (is(k, "TimeLength") || is(k, "IsLoaded") || is(k, "Resolution"))
+            luaL_error(L, "%s can't be set: it comes from the video file", k);
     }
     if (isGuiLayout(g.type)) {
         if (is(k, "FillDirection"))       { g.fill = is(luaL_checkstring(L, 3), "Horizontal") ? 1 : 0; return true; }

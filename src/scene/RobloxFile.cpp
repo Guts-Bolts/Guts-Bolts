@@ -1265,6 +1265,13 @@ struct Converter {
                 f("ImageTransparency", g.imageTransparency);
                 if (g.image.find("rbxasset") != std::string::npos) note("Roblox pictures can't be downloaded; pick one for " + name + ".");
             }
+            if (gt == GuiType::VideoFrame) {
+                g.video = in.str("Video");   // rbxassetid:// videos won't load here, but are kept
+                g.playing = in.flag("Playing", false);
+                g.looped = in.flag("Looped", false);
+                f("Volume", g.volume);
+                if (g.video.find("rbxasset") != std::string::npos) note("Roblox videos can't be downloaded; pick an .mpg file for " + name + ".");
+            }
             if (gt == GuiType::TextButton || gt == GuiType::ImageButton) g.autoButtonColor = in.flag("AutoButtonColor", true);
             if (gt == GuiType::ScreenGui) { node->enabled = in.flag("Enabled", true); g.displayOrder = (int)in.num("DisplayOrder", 0); }
             if (gt == GuiType::BillboardGui || gt == GuiType::SurfaceGui) {   // (Roblox studs are twice ours)
@@ -2401,6 +2408,12 @@ struct XmlWriter {
                 o << "<Content name=\"Image\"><url>" << esc(g.image) << "</url></Content>\n";
                 color3("ImageColor3", g.imageColor);
                 flt("ImageTransparency", g.imageTransparency);
+            }
+            if (g.type == GuiType::VideoFrame) {
+                o << "<Content name=\"Video\"><url>" << esc(g.video) << "</url></Content>\n";
+                boolean("Playing", g.playing);
+                boolean("Looped", g.looped);
+                flt("Volume", g.volume);
             }
             if (g.type == GuiType::TextButton || g.type == GuiType::ImageButton) boolean("AutoButtonColor", g.autoButtonColor);
             if (g.type == GuiType::ViewportFrame) {

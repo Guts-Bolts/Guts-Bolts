@@ -227,13 +227,13 @@ struct IkProps {
 // from its CurrentCamera (a Camera object, kind == Camera).
 enum class GuiType { ScreenGui, Frame, TextLabel, TextButton, ImageLabel, ImageButton, UICorner, UIStroke, UIShadow, UIBlur,
                      TextBox, ScrollingFrame, UIListLayout, UIGridLayout, UIPadding, BillboardGui, SurfaceGui,
-                     UIGradient, UIScale, UIAspectRatioConstraint, ViewportFrame };
-inline constexpr int kGuiTypeCount = 21;
+                     UIGradient, UIScale, UIAspectRatioConstraint, ViewportFrame, VideoFrame };
+inline constexpr int kGuiTypeCount = 22;
 inline const char* const kGuiClassNames[kGuiTypeCount] = {"ScreenGui", "Frame", "TextLabel", "TextButton", "ImageLabel",
                                                           "ImageButton", "UICorner", "UIStroke", "UIShadow", "UIBlur",
                                                           "TextBox", "ScrollingFrame", "UIListLayout", "UIGridLayout", "UIPadding",
                                                           "BillboardGui", "SurfaceGui", "UIGradient", "UIScale",
-                                                          "UIAspectRatioConstraint", "ViewportFrame"};
+                                                          "UIAspectRatioConstraint", "ViewportFrame", "VideoFrame"};
 inline bool isGuiModifier(GuiType t) {
     return t == GuiType::UICorner || t == GuiType::UIStroke || t == GuiType::UIShadow || t == GuiType::UIBlur ||
            t == GuiType::UIListLayout || t == GuiType::UIGridLayout || t == GuiType::UIPadding ||
@@ -272,6 +272,10 @@ struct GuiProps {
     std::string image;
     glm::vec3 imageColor{1.0f};
     float     imageTransparency = 0.0f;
+    // VideoFrame: Video is an .mpg file in the games folder (or "gb:<id>"); game/Videos.h plays it
+    std::string video;
+    bool      playing = false, looped = false;
+    float     volume = 0.5f;
     bool      autoButtonColor = true;               // buttons darken when you point at / press them
     int       displayOrder = 0;                     // ScreenGui: higher ones are drawn on top
     UDim2     corner{0.0f, 8.0f, 0.0f, 0.0f};       // UICorner.CornerRadius (xs, xo used)

@@ -1,65 +1,61 @@
 #pragma once
 #include <chrono>
-#include <cstdio>
-#include <cstdlib>
-#include <map>
 #include <string>
+#include <vector>
 
-// A stopwatch for finding what makes a game slow. Start the Player with the
-// environment variable GB_FRAME_PROFILE=1 and, when it closes, it prints how
-// many milliseconds each part of a frame took on average (physics, water,
-// drawing the parts, the liquid...). Off (and free) otherwise.
+// A stopwatch for finding what makes a game slow.
+//
+// Live: the Live Profiler (Studio's View menu, or Ctrl+F6 in the Player) turns it on and
+// shows, frame by frame, how many milliseconds each part of the game takes (physics,
+// scripts, water, drawing...) and which scripts take the longest.
+//
+// Exact: start the Player with the environment variable GB_FRAME_PROFILE=1 and, when it
+// closes, it prints how long each part took on average. Only then does the renderer wait
+// for the graphics card at the end of each timed bit (glFinish), so drawing times are
+// fair but the game runs a little slower. Off (and nearly free) otherwise.
 //
 //   { FrameProfile::Scope s("water"); ...work... }
-//
-// The graphics card works in the background, so to time drawing fairly the
-// renderer waits for it (glFinish) at the end of each timed bit, but only
-// while profiling.
 namespace FrameProfile {
 
-inline bool on() {
-    static const bool enabled = std::getenv("GB_FRAME_PROFILE") != nullptr;
-    return enabled;
-}
+bool exact();                       // GB_FRAME_PROFILE is set
+bool& live();                       // the Live Profiler is open
+inline bool on() { return live() || exact(); }
 
-struct Entry { double total = 0.0; long count = 0; };
-inline std::map<std::string, Entry>& entries() {
-    static std::map<std::string, Entry> e;
-    return e;
-}
+void add(const char* name, double ms);                  // a timed bit of this frame
+void addScript(const std::string& name, double ms);     // time a script's code ran this frame
+void endFrame(double frameMs);                          // once a frame, with the whole frame's time
 
-inline void add(const char* name, double ms) {
-    Entry& e = entries()[name];
-    e.total += ms;
-    ++e.count;
-}
+// What the Live Profiler shows: each part's time, over the last couple of seconds.
+struct Row {
+    std::string name;
+    float now = 0.0f;   // the last frame (ms)
+    float avg = 0.0f;   // average a frame (ms)
+    float max = 0.0f;   // the slowest frame (ms)
+};
+std::vector<Row> sections();        // slowest first
+std::vector<Row> scripts();         // slowest first
+const std::vector<float>& frames(); // whole frames (ms), oldest first
+void clear();
 
-inline void report() {
-    if (!on() || entries().empty()) return;
-    std::printf("FRAME PROFILE (average ms each time):\n");
-    for (const auto& [name, e] : entries())
-        std::printf("  %-22s %8.2f ms  (x%ld)\n", name.c_str(), e.count ? e.total / e.count : 0.0, e.count);
-    std::fflush(stdout);
-}
+void report();                      // GB_FRAME_PROFILE: print the averages
 
 // The graphics card's "wait until you're done" (set by the renderer).
-inline void (*&finishGpu())() {
-    static void (*fn)() = nullptr;
-    return fn;
-}
+void (*&finishGpu())();
 
 struct Scope {
     const char* name;
     bool gpu;
+    bool running = false;
     std::chrono::steady_clock::time_point t0;
     explicit Scope(const char* n, bool waitForGpu = false) : name(n), gpu(waitForGpu) {
         if (!on()) return;
-        if (gpu && finishGpu()) finishGpu()();
+        running = true;
+        if (gpu && exact() && finishGpu()) finishGpu()();
         t0 = std::chrono::steady_clock::now();
     }
     ~Scope() {
-        if (!on()) return;
-        if (gpu && finishGpu()) finishGpu()();
+        if (!running) return;
+        if (gpu && exact() && finishGpu()) finishGpu()();
         add(name, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
     }
 };

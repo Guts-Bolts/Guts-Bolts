@@ -5,6 +5,7 @@
 #include "AiTools.h"
 #include "VisualScript.h"
 #include "Editor.h"
+#include "../scripting/ScriptCheck.h"
 #include "../scripting/ScriptHistory.h"
 #include "MultiTest.h"
 #include "ModelExport.h"
@@ -124,6 +125,19 @@ json syntaxOf(const std::string& source, const std::string& name) {
     json out = {{"ok", r == LUA_OK}};
     if (r != LUA_OK) out["error"] = lua_tostring(L, -1) ? lua_tostring(L, -1) : "syntax error";
     lua_close(L);
+    return out;
+}
+
+// Likely mistakes that still compile (a misspelt name, math.flor, part.Destroy()): the
+// Script editor's orange lines (ScriptCheck), as [{line, text, fix?}].
+json mistakesOf(const std::string& source) {
+    json out = json::array();
+    for (const ScriptCheck::Mark& m : ScriptCheck::check(source)) {
+        if (m.error) continue;   // (syntax errors are reported on their own)
+        json one = {{"line", m.line}, {"text", m.text}};
+        if (!m.fix.empty()) one["fix"] = m.fix;
+        out.push_back(one);
+    }
     return out;
 }
 
@@ -1025,7 +1039,13 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         SceneNode* made = m_scene->insert(std::move(s), parent);
         json d = {{"object_id", idOf(made)}, {"name", made->name}, {"class", classOf(made, root)}, {"parent_id", idOf(parent)},
                   {"path", pathOf(made)}, {"syntax", syntaxOf(made->source, made->name)}, {"resulting_state", state(made)}};
-        if (!d["syntax"]["ok"].get<bool>()) d["warnings"] = json::array({"The script has a syntax error and won't run until it's fixed."});
+        json warn = json::array();
+        if (!d["syntax"]["ok"].get<bool>()) warn.push_back("The script has a syntax error and won't run until it's fixed.");
+        else if (json mistakes = mistakesOf(made->source); !mistakes.empty()) {
+            d["mistakes"] = mistakes;
+            warn.push_back("Likely mistakes (see mistakes): they'd stop the script when it reaches that line.");
+        }
+        if (!warn.empty()) d["warnings"] = warn;
         return done(d);
     }
     if (name == "visual_script") {
@@ -1110,6 +1130,10 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
         json d = {{"object_id", idOf(n)}, {"syntax", syntaxOf(n->source, n->name)}, {"resulting_state", state(n)}};
         json warn = json::array();
         if (!d["syntax"]["ok"].get<bool>()) warn.push_back("The script now has a syntax error and won't run until it's fixed.");
+        else if (json mistakes = mistakesOf(n->source); !mistakes.empty()) {
+            d["mistakes"] = mistakes;
+            warn.push_back("Likely mistakes (see mistakes): they'd stop the script when it reaches that line.");
+        }
         if (m_playing) warn.push_back("A playtest is running: it keeps using the old code until it is stopped and started again.");
         if (!warn.empty()) d["warnings"] = warn;
         return done(d);

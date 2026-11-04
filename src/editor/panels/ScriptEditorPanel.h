@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <imgui.h>
+#include "../../scripting/ScriptCheck.h"
 
 class Scene;
 class ScriptEngine;
@@ -47,9 +48,8 @@ private:
     ScriptEngine* m_debugger = nullptr;
     uint64_t    m_id = 0;
     bool        m_focus = false;
-    std::string m_checked;          // source text the error below belongs to
-    std::string m_error;
-    int         m_errorLine = 0;
+    std::string m_checked;          // source text the mistakes below belong to
+    std::vector<ScriptCheck::Mark> m_marks;   // its red / orange wavy lines (ScriptCheck)
     int         m_cursorLine = 1;
     int         m_cursor = 0;       // byte position of the text cursor
 

@@ -291,7 +291,7 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
         {"Body Movers (classic)", {"BodyVelocity", "BodyPosition", "BodyGyro", "BodyAngularVelocity", "BodyThrust", "BodyForce"}},
         {"User Interface", {"ScreenGui", "BillboardGui", "SurfaceGui", "Frame", "TextLabel", "TextButton", "ImageLabel", "ImageButton", "TextBox", "ScrollingFrame",
                             "UICorner", "UIStroke", "UIShadow", "UIBlur", "UIGradient", "UIScale", "UIAspectRatioConstraint",
-                            "UIListLayout", "UIGridLayout", "UIPadding", "ViewportFrame", "Camera", "WorldModel"}},
+                            "UIListLayout", "UIGridLayout", "UIPadding", "ViewportFrame", "VideoFrame", "Camera", "WorldModel"}},
         {"Values", {"IntValue", "NumberValue", "StringValue", "BoolValue"}},
     };
     for (const Group& g : groups) {

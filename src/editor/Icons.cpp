@@ -646,6 +646,7 @@ Id forNode(const SceneNode& n) {
                 case GuiType::UIListLayout: case GuiType::UIGridLayout: case GuiType::UIPadding:
                 case GuiType::UIGradient: case GuiType::UIScale: case GuiType::UIAspectRatioConstraint: return Id::GuiCorner;
                 case GuiType::ViewportFrame: return Id::GuiViewport;
+                case GuiType::VideoFrame: return Id::GuiImage;
                 default:                  return Id::GuiFrame;
             }
         default: break;
