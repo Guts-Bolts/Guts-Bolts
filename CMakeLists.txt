@@ -785,6 +785,7 @@ set(EDITOR_SOURCES
     src/editor/PictureImport.cpp
     src/editor/AiTools.cpp
     src/editor/AiToolsRun.cpp
+    src/editor/AiMeshTools.cpp
     src/editor/StudioMcp.cpp
     src/editor/StudioRelay.cpp
     src/editor/panels/AssistantPanel.cpp
