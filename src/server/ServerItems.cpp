@@ -71,7 +71,8 @@ std::string tshirtProblem(const std::string& data) {
 std::string noSeeText(const std::string& kind, const json& meta) {
     const std::string review = meta.is_object() ? meta.value("review", std::string()) : std::string();
     return review == "pending" ? "This is waiting for a staff check." : review == "rejected" ? "This didn't pass the staff check."
-         : kind == "animation" ? "This animation is private." : "This model is private.";
+         : kind == "animation" ? "This animation is private." : kind == "audio" ? "This sound is private."
+         : kind == "decal" ? "This decal is private." : "This model is private.";
 }
 // An id sent as text or as a number; a whole number sent as a number or as text.
 std::string idText(const json& v) {
@@ -336,11 +337,11 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         return r;
     }
     if (name == "model.access") {
-        // Make one of your Library models public or private.
+        // Make one of your Library things (a model, animation, sound or decal) public or private.
         auto it = findAsset(str("id"));
-        if (it == m_assets.end() || (it->second.kind != "model" && it->second.kind != "animation")) return fail("That model doesn't exist (any more).");
+        if (it == m_assets.end() || !Online::hasAccess(it->second.kind)) return fail("That doesn't exist (any more).");
         Asset& a = it->second;
-        if (a.creator != me.id && !isStaff(me)) return fail("You can only change your own models.");
+        if (a.creator != me.id && !isStaff(me)) return fail("You can only change your own things.");
         const std::string access = str("access") == "private" ? "private" : "public";
         if (!a.meta.is_object()) a.meta = json::object();
         if (access == "public" && a.meta.value("access", std::string("public")) != "public" && a.kind == "model") {

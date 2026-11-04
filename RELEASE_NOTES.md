@@ -50,6 +50,8 @@ itself. Physics got steadier and phones run smoother too.
 - Search forgives typos, My Feed shows what friends are up to, and
   creators can see when people play their games.
 - Events with free items, achievements on profiles, and game update logs.
+- Sounds, decals, models and animations you upload start private, with a
+  Public tick box; inventories are sorted like the catalog.
 
 ## Bugs we squashed
 - The website couldn't save anything to its database; now it can.

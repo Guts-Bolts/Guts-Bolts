@@ -143,6 +143,8 @@ const std::vector<Entry>& all() {
         {"GetPlayerFromCharacter", "Players:GetPlayerFromCharacter(model) -> Player?", "Whose character this is (nil if nobody's)", false},
         {"GetPlayers", "Players:GetPlayers() -> {Player}", "Everyone in the game", false},
         {"LoadAnimation", "animator:LoadAnimation(animation) -> AnimationTrack", "Get a track you can :Play()", false},
+        {"ApplyDescription", "humanoid:ApplyDescription(description)", "Dress the character in an outfit (a HumanoidDescription)", false},
+        {"GetAppliedDescription", "humanoid:GetAppliedDescription() -> HumanoidDescription", "The outfit the character has on now", false},
 
         // --- Events (obj.Name:Connect(...)) ---
         {"Touched", "part.Touched:Connect(function(otherPart) ... end)", "Something bumped into the part", false},

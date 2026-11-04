@@ -3430,6 +3430,103 @@ int hum_findChild(lua_State* L) {
     return 1;
 }
 
+// --- HumanoidDescription: outfits from scripts (scene/Outfits.cpp does the dressing) ---
+//   local d = humanoid:GetAppliedDescription()
+//   d.Shirt = 123  d.TorsoColor = Color3.new(1, 0, 0)  d.HatAccessory = "456"
+//   humanoid:ApplyDescription(d)
+// Ids are the Asset IDs on the website (a number, or "gb:<id>"); 0 / "" takes it off.
+struct DescField { const char* lua; const char* look; const char* accessory; };
+constexpr DescField kDescIds[] = {
+    {"Shirt", "shirtImage", nullptr}, {"Pants", "pantsImage", nullptr}, {"GraphicTShirt", "tshirtImage", nullptr},
+    {"Face", "faceImage", nullptr},
+    {"HatAccessory", nullptr, "hat"}, {"HairAccessory", nullptr, "hair"}, {"FaceAccessory", nullptr, "faceacc"},
+    {"NeckAccessory", nullptr, "neck"}, {"ShouldersAccessory", nullptr, "shoulder"}, {"WaistAccessory", nullptr, "waist"},
+};
+constexpr std::pair<const char*, const char*> kDescColors[] = {
+    {"HeadColor", "head"}, {"TorsoColor", "torso"}, {"LeftArmColor", "leftArm"},
+    {"RightArmColor", "rightArm"}, {"LeftLegColor", "leftLeg"}, {"RightLegColor", "rightLeg"},
+};
+
+// A description's id field -> "gb:<id>" ("" = nothing). Roblox's accessory fields are
+// lists ("12,34"): the first one is worn.
+std::string descId(lua_State* L, int idx) {
+    std::string s;
+    if (lua_type(L, idx) == LUA_TNUMBER) {
+        const double n = lua_tonumber(L, idx);
+        if (n >= 1.0 && n < 1e15) s = std::to_string((long long)n);
+    } else if (lua_type(L, idx) == LUA_TSTRING) {
+        s = lua_tostring(L, idx);
+        if (s.rfind("gb:", 0) == 0) s = s.substr(3);
+        if (size_t c = s.find(','); c != std::string::npos) s = s.substr(0, c);
+        s.erase(std::remove_if(s.begin(), s.end(), [](char ch) { return std::isspace((unsigned char)ch); }), s.end());
+        if (s == "0") s.clear();
+    }
+    if (s.empty() || s.size() > 60) return {};
+    for (char ch : s) if (!std::isalnum((unsigned char)ch) && ch != '-' && ch != '_') return {};
+    return "gb:" + s;
+}
+// "gb:123" -> 123 (a number when it is one, like Roblox's ids), "" -> 0.
+void pushDescId(lua_State* L, const std::string& src) {
+    const std::string id = src.rfind("gb:", 0) == 0 ? src.substr(3) : src;
+    if (id.empty()) { lua_pushinteger(L, 0); return; }
+    const bool digits = id.size() < 16 && std::all_of(id.begin(), id.end(), [](char c) { return std::isdigit((unsigned char)c); });
+    if (digits) lua_pushinteger(L, (lua_Integer)std::stoll(id));
+    else lua_pushstring(L, id.c_str());
+}
+
+SceneNode* humRig(lua_State* L) {
+    SceneNode* r = E(L)->scene()->findById(humRoot(L));
+    if (!r) luaL_error(L, "This character has left the game");
+    return r;
+}
+
+int hum_getAppliedDescription(lua_State* L) {
+    const nlohmann::json look = Player::lookOf(*E(L)->scene(), humRig(L));
+    lua_getglobal(L, "Instance");
+    lua_getfield(L, -1, "new");
+    lua_pushstring(L, "HumanoidDescription");
+    lua_call(L, 1, 1);
+    const int d = lua_gettop(L);
+    for (const auto& [field, key] : kDescColors) {
+        const auto& c = look[key];
+        LuaApi::pushColor3(L, {c[0].get<float>(), c[1].get<float>(), c[2].get<float>()});
+        lua_setfield(L, d, field);
+    }
+    for (const DescField& f : kDescIds) {
+        const nlohmann::json& v = f.look ? look.value(f.look, nlohmann::json("")) : look["accessories"].value(f.accessory, nlohmann::json(""));
+        pushDescId(L, v.is_string() ? v.get<std::string>() : std::string());
+        lua_setfield(L, d, f.lua);
+    }
+    return 1;
+}
+
+int hum_applyDescription(lua_State* L) {
+    luaL_checktype(L, 2, LUA_TTABLE);
+    lua_getfield(L, 2, "ClassName");
+    const bool isDesc = lua_isstring(L, -1) && is(lua_tostring(L, -1), "HumanoidDescription");
+    lua_pop(L, 1);
+    if (!isDesc) return luaL_error(L, "ApplyDescription needs a HumanoidDescription (Instance.new(\"HumanoidDescription\"))");
+    Scene& scene = *E(L)->scene();
+    SceneNode* r = humRig(L);
+    nlohmann::json look = Player::lookOf(scene, r);   // (what a description doesn't hold stays: a bundle's body...)
+    for (const auto& [field, key] : kDescColors) {
+        lua_getfield(L, 2, field);
+        if (const glm::vec3* c = LuaApi::toColor3(L, -1)) look[key] = {c->x, c->y, c->z};
+        lua_pop(L, 1);
+    }
+    for (const DescField& f : kDescIds) {
+        lua_getfield(L, 2, f.lua);
+        const std::string id = descId(L, -1);
+        lua_pop(L, 1);
+        if (f.look) look[f.look] = id;
+        else if (id.empty()) look["accessories"].erase(f.accessory);
+        else look["accessories"][f.accessory] = id;
+    }
+    if (look["accessories"].contains("hat") || look["accessories"].contains("hair")) look["hat"] = 0;   // (instead of the built-in hat)
+    Player::dressRig(scene, r, look);
+    return 0;
+}
+
 int hum_isA(lua_State* L) {
     const char* c = luaL_checkstring(L, 2);
     lua_pushboolean(L, is(c, "Humanoid") || is(c, "Instance"));
@@ -3646,6 +3743,8 @@ int hum_index(lua_State* L) {
     if (is(k, "UnequipTools")) { lua_pushcfunction(L, hum_unequipTools); return 1; }
     if (is(k, "IsA"))        { lua_pushcfunction(L, hum_isA); return 1; }
     if (is(k, "LoadAnimation")) { lua_pushcfunction(L, hum_loadAnimation); return 1; }
+    if (is(k, "ApplyDescription")) { lua_pushcfunction(L, hum_applyDescription); return 1; }
+    if (is(k, "GetAppliedDescription")) { lua_pushcfunction(L, hum_getAppliedDescription); return 1; }
     if (is(k, "GetState"))   { lua_pushcfunction(L, hum_getState); return 1; }
     if (is(k, "MoveTo"))     { lua_pushcfunction(L, hum_moveTo); return 1; }
     if (is(k, "PathfindTo")) { lua_getglobal(L, "__gb_pathfindTo"); return 1; }

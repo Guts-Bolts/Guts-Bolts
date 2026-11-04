@@ -363,7 +363,7 @@ private:
     std::string m_ppFile, m_ppName, m_ppDesc, m_ppVersion, m_ppPicture, m_ppTarget, m_ppMsg;
     nlohmann::json m_ppMine = nlohmann::json::array();   // your plugins in the Library
     // Library: publishing a model (public or private) and browsing everyone's public ones.
-    bool        m_openPublishModel = false, m_modelPublic = true, m_libraryLoaded = false;
+    bool        m_openPublishModel = false, m_modelPublic = false, m_libraryLoaded = false;
     bool        m_modelAsGear = false;   // staff: sell a Tool in the catalog as Gear
     bool        m_openMakeGear = false, m_openPublishGear = false;
     int         m_gearPrice = 0;

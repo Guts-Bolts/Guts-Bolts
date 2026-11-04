@@ -83,7 +83,7 @@ private:
     // The "..." menu's windows.
     bool        m_openSaveAs = false, m_openPublish = false, m_openImport = false;
     std::string m_saveAsName, m_pubName, m_pubDesc, m_importId, m_message;
-    bool        m_pubPublic = true, m_busy = false, m_doneRequested = false;
+    bool        m_pubPublic = false, m_busy = false, m_doneRequested = false;
     double      m_messageAt = -100.0;
     std::string m_importQuery, m_importLoaded;
     std::vector<std::pair<std::string, std::string>> m_importList;   // id, "name - by creator"

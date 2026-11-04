@@ -24,16 +24,30 @@ bool GbServer::seesInventory(const User& viewer, const User& u) const {
 
 // The catalog items someone owns, in one group, sorted by name (this server has no
 // purchase order), with the numbers of the Limited copies they hold.
-nlohmann::json GbServer::inventoryOf(const User& u, const std::string& cat) const {
+nlohmann::json GbServer::inventoryOf(const User& u, const std::string& cat, const User& viewer) const {
+    // One group's kind (worker/server.js INVENTORY_KIND), or a group of kinds.
+    static const std::map<std::string, std::string> kKind = {
+        {"hats", "hat"}, {"hair", "hair"}, {"faceacc", "faceacc"}, {"neck", "neck"}, {"shoulder", "shoulder"}, {"waist", "waist"},
+        {"shirts", "shirt"}, {"tshirts", "tshirt"}, {"pants", "pants"}, {"faces", "face"}, {"bundles", "bundle"}, {"gear", "gear"},
+        {"emote", "emote"}, {"animpacks", "animpack"}, {"games", "game"}, {"audio", "audio"}, {"models", "model"}, {"decals", "decal"},
+        {"plugins", "plugin"}, {"animations", "animation"}};
+    auto creation = [](const std::string& k) { return k == "game" || k == "audio" || k == "model" || k == "decal" || k == "plugin" || k == "animation"; };
     std::vector<const Asset*> found;
     for (const std::string& id : u.owned) {
         auto it = findAsset(id);
         if (it == m_assets.end()) continue;
-        const std::string& k = it->second.kind;
-        if (!Online::isCatalogItem(k)) continue;
-        const bool in = cat == "accessories" ? Online::isAccessory(k) : cat == "clothing" ? (k == "shirt" || k == "pants" || k == "tshirt")
-                      : cat == "faces" ? k == "face" : cat == "bundles" ? k == "bundle" : cat == "bodyparts" ? k == "bodypart" : cat == "gear" ? k == "gear" : cat == "emotes" ? Online::isEmoteItem(k) : cat == "limited" ? it->second.limited : true;
-        if (in) found.push_back(&it->second);
+        const Asset& a = it->second;
+        const std::string& k = a.kind;
+        if (!Online::isCatalogItem(k) && !creation(k)) continue;
+        if (!Online::isCatalogItem(k) && !canSee(a, viewer)) continue;   // their private things
+        const bool head = k == "bodypart" && a.meta.is_object() && a.meta.value("bodyPart", std::string()) == "Head";
+        auto kind = kKind.find(cat);
+        const bool in = kind != kKind.end() ? k == kind->second
+                      : cat == "accessories" ? Online::isAccessory(k) : cat == "clothing" ? (k == "shirt" || k == "pants" || k == "tshirt")
+                      : cat == "body" ? (k == "face" || k == "bundle" || k == "bodypart") : cat == "heads" ? head
+                      : cat == "bodyparts" ? (k == "bodypart" && !head) : cat == "emotes" ? Online::isEmoteItem(k)
+                      : cat == "creations" ? creation(k) : cat == "limited" ? a.limited : true;
+        if (in) found.push_back(&a);
     }
     std::sort(found.begin(), found.end(), [](const Asset* a, const Asset* b) { return a->name < b->name; });
     json out = json::array();

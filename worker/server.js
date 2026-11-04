@@ -77,8 +77,14 @@ const kMostPasses = 50;   // game passes per game
 const kMaxVersions = 50, kMaxVersionBytes = 100 << 20;
 // Animations (published from Studio's Animation Editor) are public or private too, so other
 // creators can use them, or not. They're free and have no weekly limit.
-// Things that are public or private: games, models and animations.
-const hasAccess = (k) => k === 'game' || k === 'model' || k === 'animation';
+// Things that are public or private: games, models, animations, audio and decals.
+// Asset privacy: everything you make in Studio or upload (models, animations, audio, decals)
+// starts private; its creator ticks "Public" to share it. Private audio and decals are left out
+// of the Library, search and their asset page for everyone else, but a game that already uses
+// one's ID still loads it (so a creator's private sounds still play in their own game).
+// Things nobody gave an access to (made before this rule) stay public. (src/server has the same.)
+const hasAccess = (k) => k === 'game' || k === 'model' || k === 'animation' || k === 'audio' || k === 'decal';
+const loadsWhenPrivate = (k) => k === 'audio' || k === 'decal';
 const weekOf = (t) => Math.floor(t / (7 * 86400));
 const MAX_SIZE = { audio: 6 << 20, game: 24 << 20, plugin: 512 << 10, decal: 4 << 20, shirt: 1 << 20, pants: 1 << 20, model: 4 << 20,
   hat: 1 << 20, hair: 1 << 20, faceacc: 1 << 20, neck: 1 << 20, shoulder: 1 << 20, waist: 1 << 20, face: 1 << 20, tshirt: 1 << 20, gear: 4 << 20, animation: 1 << 20,
@@ -134,15 +140,27 @@ function bundleBody(body) {
 }
 const isCatalogItem = (k) => isClothing(k) || k === 'gear' || isEmoteItem(k) || k === 'bundle' || k === 'bodypart';   // sold in the catalog
 // Inventory on profiles: what someone owns from the catalog, in these groups. (src/server has the same.)
-const INVENTORY_CATS = ['all', 'accessories', 'clothing', 'faces', 'bundles', 'bodyparts', 'gear', 'emotes', 'limited'];
+// Sorted like the catalog: a group (accessories, clothing, body...) and the kinds inside it
+// (hats, hair, faces, heads...), plus what you made or got from the Library (games, audio,
+// models, decals, plugins, animations).
+const INVENTORY_CATS = ['all', 'accessories', 'hats', 'hair', 'faceacc', 'neck', 'shoulder', 'waist',
+  'clothing', 'shirts', 'tshirts', 'pants', 'body', 'faces', 'heads', 'bodyparts', 'bundles', 'gear', 'emotes', 'emote', 'animpacks',
+  'creations', 'games', 'audio', 'models', 'decals', 'plugins', 'animations', 'limited'];
+const INVENTORY_KIND = { hats: 'hat', hair: 'hair', faceacc: 'faceacc', neck: 'neck', shoulder: 'shoulder', waist: 'waist',
+  shirts: 'shirt', tshirts: 'tshirt', pants: 'pants', faces: 'face', bundles: 'bundle', gear: 'gear', emote: 'emote', animpacks: 'animpack',
+  games: 'game', audio: 'audio', models: 'model', decals: 'decal', plugins: 'plugin', animations: 'animation' };
+const CREATION_KINDS = ['game', 'audio', 'model', 'decal', 'plugin', 'animation'];
+const inInventory = (k) => isCatalogItem(k) || CREATION_KINDS.includes(k);
+const isHead = (a) => a.kind === 'bodypart' && a.meta && a.meta.bodyPart === 'Head';
 function inventoryCat(cat, a) {
+  if (INVENTORY_KIND[cat]) return a.kind === INVENTORY_KIND[cat];
   if (cat === 'accessories') return isAccessory(a.kind);
   if (cat === 'clothing') return a.kind === 'shirt' || a.kind === 'pants' || a.kind === 'tshirt';
-  if (cat === 'faces') return a.kind === 'face';
-  if (cat === 'bundles') return a.kind === 'bundle';
-  if (cat === 'bodyparts') return a.kind === 'bodypart';
-  if (cat === 'gear') return a.kind === 'gear';
+  if (cat === 'body') return a.kind === 'face' || a.kind === 'bundle' || a.kind === 'bodypart';
+  if (cat === 'heads') return isHead(a);
+  if (cat === 'bodyparts') return a.kind === 'bodypart' && !isHead(a);
   if (cat === 'emotes') return isEmoteItem(a.kind);
+  if (cat === 'creations') return CREATION_KINDS.includes(a.kind);
   if (cat === 'limited') return !!a.limited;
   return true;
 }
@@ -1365,12 +1383,14 @@ export class GbServerObject extends DurableObject {
   seesInventory(viewer, u) {
     return (!!viewer && this.isStaff(viewer)) || (this.allows(this.privacyOf(u).inventory, viewer, u) && !this.blocks(viewer, u));
   }
-  // Someone's inventory: the catalog items they own, newest first, with the numbers of the Limited copies they hold.
-  inventoryOf(u, cat = 'all') {
+  // Someone's inventory: the catalog items and Library things they own (or made), newest first,
+  // with the numbers of the Limited copies they hold. Private things only show to whoever can see them.
+  inventoryOf(u, cat = 'all', viewer = null) {
     const items = [];
     for (const id of [...(u.owned || [])].reverse()) {
       const a = this.assets.get(id);
-      if (!a || !isCatalogItem(a.kind) || !inventoryCat(cat, a)) continue;
+      if (!a || !inInventory(a.kind) || !inventoryCat(cat, a)) continue;
+      if (!isCatalogItem(a.kind) && !(viewer ? this.canPlay(a, viewer) : !a.review && (!a.access || a.access === 'public'))) continue;
       const serials = a.limited ? (a.copies || []).filter((c) => c.owner === u.id).map((c) => c.serial).sort((x, y) => x - y) : [];
       items.push(Object.assign(this.publicAsset(a), { serials }));
     }
@@ -2148,6 +2168,8 @@ export class GbServerObject extends DurableObject {
     if (a.review === 'rejected') return 'This didn\'t pass the staff check.';
     if (a.kind === 'model') return 'This model is private.';
     if (a.kind === 'animation') return 'This animation is private.';
+    if (a.kind === 'audio') return 'This sound is private.';
+    if (a.kind === 'decal') return 'This decal is private.';
     return a.access === 'friends' ? 'Only ' + (c ? c.name : 'the creator') + '\'s friends can play this game.' : 'This game is private.';
   }
   publicGroup(g) {
@@ -2443,7 +2465,7 @@ export class GbServerObject extends DurableObject {
         return b ? { id: b.id, name: b.name, description: b.description, color: b.color, game: gid, gameName: g.name, earned: when } : null;
       }).filter(Boolean).reverse();
       // Their inventory (the first few; profile.inventory has the rest), unless they hid it.
-      const canSee = this.seesInventory(me, u), owns = canSee ? this.inventoryOf(u) : [];
+      const canSee = this.seesInventory(me, u), owns = canSee ? this.inventoryOf(u, 'all', me) : [];
       const inventory = { hidden: !canSee, total: owns.length, items: owns.slice(0, 12) };
       return okay({ user, creations, groups, friendCount: u.friends.length, friendship, wearing, friends, inventory,
         followerCount: (u.followers || []).length, followingCount: (u.following || []).length,
@@ -2453,13 +2475,13 @@ export class GbServerObject extends DurableObject {
         achievements: achievementsOf(achievementStats(u, [...this.assets.values()].filter((a) => a.creator === u.id), t)) });
     }
     if (name === 'profile.inventory') {
-      // Everything someone owns from the catalog, a page at a time, in one group (INVENTORY_CATS).
+      // Everything someone owns (catalog items, games, audio, models...), a page at a time, in one group (INVENTORY_CATS).
       const want = str(args, 'id');
       const u = want && want.length < 12 && /^[0-9]+$/.test(want) ? this.findUserId(Number(want)) : this.findPerson(want);
       if (!u || u.userId === 0) return fail('There\'s no account with that ID on this server.');
       if (!this.seesInventory(me, u)) return okay({ user: this.publicUser(u), hidden: true, cat: 'all', total: 0, counts: {}, items: [] });
       const cat = INVENTORY_CATS.includes(str(args, 'cat')) ? str(args, 'cat') : 'all';
-      const all = this.inventoryOf(u);
+      const all = this.inventoryOf(u, 'all', me);
       const counts = Object.fromEntries(INVENTORY_CATS.map((c) => [c, all.filter((a) => inventoryCat(c, a)).length]));
       const list = cat === 'all' ? all : all.filter((a) => inventoryCat(cat, a));
       const offset = Math.max(0, num(args, 'offset'));
@@ -3324,17 +3346,16 @@ export class GbServerObject extends DurableObject {
       if (kind === 'plugin') { const v = say(str(args, 'version'), 20); if (v) meta.version = v; else delete meta.version; }
       if (kind === 'gear') { const problem = gearProblem(data); if (problem) return fail(problem); }
       if (isEmoteItem(kind)) { const problem = emoteProblem(kind, data); if (problem) return fail(problem); }
-      let access;
+      // Private unless they ticked "Public" (games pick who can play on their Configure page).
+      const access = hasAccess(kind) && kind !== 'game' ? (str(args, 'access') === 'public' ? 'public' : 'private') : undefined;
       if (kind === 'model') {
         if (!isJson(data)) return fail('That isn\'t a Guts&Bolts model.');
-        access = str(args, 'access') === 'private' ? 'private' : 'public';
         if (access === 'public' && !this.publicModelOk(me)) return fail(this.publicModelLimitText());
       }
       if (kind === 'animation') {
         let anim = null;
         try { anim = JSON.parse(new TextDecoder().decode(data)); } catch { anim = null; }
         if (!anim || anim.format !== 'gbanim' || !anim.clip || typeof anim.clip !== 'object') return fail('That isn\'t a Guts&Bolts animation.');
-        access = str(args, 'access') === 'private' ? 'private' : 'public';
       }
       delete meta.image; delete meta.model;
       delete meta.color; delete meta.style;   // items don't have a colour: hats are Studio models, clothes are template pictures
@@ -3714,7 +3735,8 @@ export class GbServerObject extends DurableObject {
       if (!a) return fail('That doesn\'t exist (any more).');
       const mine = me.owned.includes(a.id) || a.creator === me.id;
       if (a.price > 0 && !mine && !this.isStaff(me) && (a.kind === 'plugin' || a.kind === 'audio' || a.kind === 'gear')) return fail('Buy it first.');
-      if (!this.canPlay(a, me)) return fail(this.noPlay(a));
+      // (Private audio and decals still load by their ID, so games that use them keep working.)
+      if (!this.canPlay(a, me) && !(loadsWhenPrivate(a.kind) && !a.review)) return fail(this.noPlay(a));
       const data = this.readFile(a.id);
       if (!data) return fail('The server lost that file.');
       if (a.kind === 'game' && me.userId > 0) {   // "Continue playing" (newest first)
@@ -3800,10 +3822,10 @@ export class GbServerObject extends DurableObject {
       return okay({ me: this.meJson(me), to: this.publicUser(to) });
     }
     if (name === 'model.access') {
-      // Make one of your Library models public or private.
+      // Make one of your Library things (a model, animation, sound or decal) public or private.
       const a = this.assets.get(str(args, 'id'));
-      if (!a || (a.kind !== 'model' && a.kind !== 'animation')) return fail('That model doesn\'t exist (any more).');
-      if (a.creator !== me.id && !this.isStaff(me)) return fail('You can only change your own models.');
+      if (!a || !hasAccess(a.kind) || a.kind === 'game') return fail('That doesn\'t exist (any more).');
+      if (a.creator !== me.id && !this.isStaff(me)) return fail('You can only change your own things.');
       const access = str(args, 'access') === 'private' ? 'private' : 'public';
       if (access === 'public' && a.access !== 'public' && a.kind === 'model') {
         if (!this.publicModelOk(me)) return fail(this.publicModelLimitText());
