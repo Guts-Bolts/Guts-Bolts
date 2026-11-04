@@ -1,5 +1,5 @@
 export default {
-  id: 'now-showing', name: 'Now Showing', time: 1793802050, tag: 'Engine',
+  id: 'now-showing', name: 'Now Showing', version: '0.7.9', time: 1793802050, tag: 'Engine',
   summary: 'Games can play videos now: on the screen, or on a part like a TV or a cinema screen.',
   items: [
     'New VideoFrame: put it in a ScreenGui for the screen, or in a SurfaceGui to show the video on a part',

@@ -1,5 +1,5 @@
 export default {
-  id: 'red-pen', name: 'Red Pen', time: 1793799769, tag: 'Studio',
+  id: 'red-pen', name: 'Red Pen', version: '0.7.9', time: 1793799769, tag: 'Studio',
   summary: 'The Script editor now underlines mistakes while you type, before you ever press Play.',
   items: [
     'Red wavy lines where Lua can\'t read the script, with plain words on what\'s wrong (like "use == to check if two things are the same")',

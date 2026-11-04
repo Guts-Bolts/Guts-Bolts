@@ -6,8 +6,7 @@ template, build a cops and robbers game, and watch the website update by
 itself. Physics got steadier and phones run smoother too.
 
 ## New in games
-- Spectate other players after you die, and save the last 30 seconds as a
-  GIF clip with F3.
+- Spectate after you die, and save the last 30 seconds as a GIF (F3).
 - Each player has their own screen (PlayerGui), plus RichText, Kick,
   LoadCharacter, teams and lots more events for scripts.
 - The player list shows teams in their colours, sorts by score, and games
@@ -16,6 +15,7 @@ itself. Physics got steadier and phones run smoother too.
   and CylinderMesh, so scripts like a grab knife just work.
 - Lyreto's Roblox Game Bridge script runs as-is.
 - Scripts can swap a player's whole outfit with HumanoidDescription.
+- Games can play videos (VideoFrame), on the screen or on a part like a TV.
 - Games only draw what the camera can see, and draw lots of copies of the
   same thing in one go, so big maps run faster.
 - Big maps can load in pieces (StreamingEnabled), and your own car's
@@ -24,8 +24,7 @@ itself. Physics got steadier and phones run smoother too.
   the mouse and drag them).
 - Real leaderboards: OrderedDataStore sorts, and the top 10 show on the
   game's page.
-- Accessibility settings (colorblind modes, bigger text, captions) and a
-  basic anti-cheat.
+- Accessibility settings and a basic anti-cheat.
 - Steadier physics, and Low / Medium graphics run much better on phones.
 - Better quality settings: a new Auto setting (the default), Very Low, a
   Shadows switch and a Sharpness slider.
@@ -33,9 +32,11 @@ itself. Physics got steadier and phones run smoother too.
 ## New in Studio
 - A Cutscene Maker, and File > New from Template (Obby, Tycoon, Sword
   Fight, Racing).
-- Studio Learn: 20 hands-on lessons, with hints when you get stuck.
+- Studio Learn: 20 hands-on lessons.
 - Make, try, publish and update your own plugins right inside Studio.
 - Studio works offline; you only sign in to publish.
+- A Live Profiler shows what's making your game slow, and the script
+  editor underlines mistakes while you type.
 - More Blender in Studio: an eye in the Explorer to hide things while you
   build (H / Alt+H), G and R to move and turn with the mouse, and a
   "Blender keys" switch for S, A, Shift+D and Shift+A.
