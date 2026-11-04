@@ -696,8 +696,12 @@ void PlayerApp::drawUploadForm(const std::string& kind) {
                                             : "A Lua plugin for Studio (see the README for how plugins work).");
     }
     const bool canPrice = verified && !Online::alwaysFree(kind);
+    if (Online::hasAccess(kind)) {   // private unless ticked: only you see it in the Library
+        ImGui::Checkbox("Public: show it in the Library so anyone can find it", &m_createPublic);
+        ImGui::TextDisabled(m_createPublic ? "Everyone can find and use it." : "Private: only you can see it in the Library (your own games can still use it).");
+    }
     if (Online::alwaysFree(kind)) {
-        ImGui::TextDisabled("%s are always free: anyone can use them in their games.", kind == "decal" ? "Decals" : "Sounds");
+        ImGui::TextDisabled("%s are always free.", kind == "decal" ? "Decals" : "Sounds");
     } else if (canPrice) {
         ImGui::SetNextItemWidth(fieldW);
         if (ImGui::InputInt("Price (Bolts)", &m_createPrice, 5, 50)) m_createPrice = std::clamp(m_createPrice, 0, 1000000);
@@ -731,6 +735,7 @@ void PlayerApp::drawUploadForm(const std::string& kind) {
     ImGui::BeginDisabled(m_busy);
     if (Classic::button(m_busy ? "Uploading..." : label.c_str(), Classic::kPlay, ImVec2(200, 34))) {
         json args = {{"kind", kind}, {"name", m_createName}, {"description", m_createDesc}, {"price", canPrice ? m_createPrice : 0}};
+        if (Online::hasAccess(kind)) args["access"] = m_createPublic ? "public" : "private";
         bool ok = true;
         if (clothing) {   // the template picture
             std::string path = cleanPath(m_createPath);

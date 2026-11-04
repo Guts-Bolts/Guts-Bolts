@@ -225,10 +225,11 @@ private:
     // ServerSafety.cpp: blocking people and reporting things to staff.
     nlohmann::json safetyOp(const std::string& name, User& me, const nlohmann::json& args);
     bool blocks(const User& a, const User& b) const;   // has either of them blocked the other?
-    // Inventory on profiles (ServerFriends.cpp, worker/server.js inventoryOf): the catalog
-    // items someone owns, in one group (all, accessories, clothing, faces, gear, emotes, limited).
+    // Inventory on profiles (ServerFriends.cpp, worker/server.js inventoryOf): the catalog items
+    // and Library things someone owns, in one group (all, hats, hair, faces, heads, games, audio...).
+    // Private things only show to people who can see them (the viewer).
     bool seesInventory(const User& viewer, const User& u) const;
-    nlohmann::json inventoryOf(const User& u, const std::string& cat) const;
+    nlohmann::json inventoryOf(const User& u, const std::string& cat, const User& viewer) const;
     nlohmann::json reportsJson(const std::string& status) const;   // for the Staff page
     nlohmann::json closeReport(const User& staff, const std::string& id, const std::string& outcome);
     // Ban appeals (ServerSafety.cpp; worker/server.js has the same): one short note per ban, for staff to answer.

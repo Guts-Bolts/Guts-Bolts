@@ -532,6 +532,7 @@ private:
     std::string    m_deleteName, m_deletePassword, m_deleteMsg;   // Your account > Delete my account (account.delete)
     bool           m_deleteBusy = false;
     int            m_createKind = 0, m_createPrice = 0, m_giveServerBolts = 100;
+    bool           m_createPublic = false;   // audio and decals start private (worker/server.js hasAccess)
     std::string    m_createName, m_createDesc, m_createPath;
     std::string    m_renameKey, m_renameText;      // My Games row being renamed
     bool           m_renameFocus = false;

@@ -656,8 +656,11 @@ void PlayerApp::drawInventoryDialog() {
     ImGui::Text("%s's Inventory", u.value("name", std::string()).c_str());
     ImGui::SetWindowFontScale(1.0f);
     // The same groups as the website (worker/server.js INVENTORY_CATS); they wrap on narrow screens.
-    static const char* kTabs[][2] = {{"all", "All"}, {"accessories", "Accessories"}, {"clothing", "Clothing"},
-                                     {"faces", "Faces"}, {"gear", "Gear"}, {"emotes", "Emotes"}, {"limited", "Limiteds"}};
+    static const char* kTabs[][2] = {{"all", "All"}, {"hats", "Hats"}, {"hair", "Hair"}, {"accessories", "Accessories"},
+                                     {"clothing", "Clothing"}, {"faces", "Faces"}, {"heads", "Heads"}, {"bodyparts", "Body Parts"},
+                                     {"bundles", "Bundles"}, {"gear", "Gear"}, {"emotes", "Emotes"}, {"games", "Games"},
+                                     {"audio", "Audio"}, {"models", "Models"}, {"decals", "Decals"}, {"plugins", "Plugins"},
+                                     {"animations", "Animations"}, {"limited", "Limiteds"}};
     for (int i = 0; i < (int)(sizeof(kTabs) / sizeof(kTabs[0])); ++i) {
         const std::string label = std::string(kTabs[i][1]) + " (" + std::to_string(m_invCounts.value(kTabs[i][0], 0LL)) + ")";
         const float w = ImGui::CalcTextSize(label.c_str()).x + 20;
@@ -668,7 +671,7 @@ void PlayerApp::drawInventoryDialog() {
     }
     ImGui::Separator();
     if (!m_invMsg.empty()) ImGui::TextDisabled("%s", m_invMsg.c_str());
-    else if (m_inv.empty()) ImGui::TextDisabled(m_invCat == "all" ? "Nothing from the catalog yet." : "Nothing here.");
+    else if (m_inv.empty()) ImGui::TextDisabled(m_invCat == "all" ? "Nothing in here yet." : "Nothing here.");
     // As tall as the rows need (a tile plus two lines of text each), scrolling past that.
     const int perRow = std::max(2, (int)(ImGui::GetContentRegionAvail().x / 110.0f)), rows = ((int)m_inv.size() + perRow - 1) / perRow;
     const float tileH = (ImGui::GetContentRegionAvail().x - 8.0f * (perRow - 1)) / (float)perRow + ImGui::GetTextLineHeightWithSpacing() * 2 + 8;

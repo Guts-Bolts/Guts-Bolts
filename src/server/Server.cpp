@@ -519,14 +519,14 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         r["achievements"] = achievementsOf(*u);
         {   // their inventory (the first few; profile.inventory has the rest), unless they hid it
             const bool canSee = seesInventory(me, *u);
-            json owns = canSee ? inventoryOf(*u, "all") : json::array();
+            json owns = canSee ? inventoryOf(*u, "all", me) : json::array();
             json first = json::array();
             for (size_t i = 0; i < owns.size() && i < 12; ++i) first.push_back(owns[i]);
             r["inventory"] = {{"hidden", !canSee}, {"total", owns.size()}, {"items", first}};
         }
         return r;
     }
-    if (name == "profile.inventory") {   // everything someone owns from the catalog, a page at a time (worker/server.js)
+    if (name == "profile.inventory") {   // everything someone owns (catalog items, games, audio...), a page at a time (worker/server.js)
         std::string want = str("id");
         User* u = !want.empty() && want.size() < 12 && std::all_of(want.begin(), want.end(), ::isdigit)
                       ? findUserId(std::atoll(want.c_str())) : findPerson(want);
@@ -537,14 +537,17 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             r["hidden"] = true; r["cat"] = "all"; r["total"] = 0; r["counts"] = json::object(); r["items"] = json::array();
             return r;
         }
-        static const char* kCats[] = {"all", "accessories", "clothing", "faces", "bundles", "bodyparts", "gear", "emotes", "limited"};
+        static const char* kCats[] = {"all", "accessories", "hats", "hair", "faceacc", "neck", "shoulder", "waist",
+                                      "clothing", "shirts", "tshirts", "pants", "body", "faces", "heads", "bodyparts", "bundles", "gear",
+                                      "emotes", "emote", "animpacks", "creations", "games", "audio", "models", "decals", "plugins",
+                                      "animations", "limited"};
         std::string cat = "all";
         json counts = json::object();
         for (const char* c : kCats) {
-            counts[c] = inventoryOf(*u, c).size();
+            counts[c] = inventoryOf(*u, c, me).size();
             if (str("cat") == c) cat = c;
         }
-        const json list = inventoryOf(*u, cat);
+        const json list = inventoryOf(*u, cat, me);
         const long long offset = std::max(0LL, num("offset"));
         const long long limit = args.contains("limit") ? std::clamp(num("limit"), 1LL, 100LL) : 60;
         json items = json::array();
@@ -1044,7 +1047,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
                 return fail("That isn't a Guts&Bolts animation.");
         }
         meta.erase("access");
-        if (Online::hasAccess(kind)) meta["access"] = str("access") == "private" ? "private" : "public";
+        if (Online::hasAccess(kind)) meta["access"] = str("access") == "public" ? "public" : "private";   // private unless they ticked "Public"
         // Public models: a few a week, unless you're Verified (worker/server.js publicModelOk).
         if (kind == "model" && meta["access"] == "public" && publicModelsLeft(me) == 0) return fail(publicModelLimitText());
         if (Online::isAccessory(kind)) {   // made in Studio's Accessory window
@@ -1570,10 +1573,12 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         const bool mine = me.owned.count(a.id) || a.creator == me.id;
         if (a.price > 0 && !mine && !isStaff(me) && (a.kind == "plugin" || a.kind == "audio" || a.kind == "gear"))
             return fail("Buy it first.");
-        if (!canSee(a, me)) {
+        // (Private audio and decals still load by their ID, so games that use them keep working.)
+        if (!canSee(a, me) && !(Online::loadsWhenPrivate(a.kind) && reviewOf(a.meta).empty())) {
             const std::string review = reviewOf(a.meta);
             return fail(review == "pending" ? "This is waiting for a staff check." : review == "rejected" ? "This didn't pass the staff check."
-                        : a.kind == "animation" ? "This animation is private." : "This model is private.");
+                        : a.kind == "animation" ? "This animation is private." : a.kind == "audio" ? "This sound is private."
+                        : a.kind == "decal" ? "This decal is private." : "This model is private.");
         }
         std::string data;
         if (!readFile(blobPath(a.id), data)) return fail("The server lost that file.");
