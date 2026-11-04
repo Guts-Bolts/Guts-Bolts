@@ -18,6 +18,7 @@
 #include "MeshLibrary.h"
 
 #include "GL.h"
+#include "Frustum.h"
 #include <cstddef>
 #include <cstring>
 #include <glm/gtc/matrix_transform.hpp>
@@ -26,6 +27,12 @@
 #include <chrono>
 #include <cmath>
 #include <vector>
+
+// A MeshPart with Bones: its mesh can bend far out of its box, so it's always drawn.
+static bool bentByBones(const SceneNode* n) {
+    for (const auto& c : n->children) if (c->isBone()) return true;
+    return false;
+}
 
 // How far a part reaches from its middle (half its diagonal): for render distance.
 static float partRadius(const glm::mat4& m) {
@@ -1255,6 +1262,13 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     std::vector<Item> opaque, transparent, shielded, decals;
     std::vector<WaterItem> waters;
     glm::vec3 camPos = camera.position();
+    // Parts off to the side of or behind the camera aren't drawn. The ball is a bit
+    // bigger than the part, for meshes that poke out of their box.
+    const Frustum view(camera.projection() * camera.view());
+    auto offScreen = [&](const SceneNode* n) {
+        const glm::mat4& m = n->worldMatrix();
+        return !view.sees(glm::vec3(m[3]), partRadius(m) * 1.5f + 1.0f);
+    };
 
     // Walk manually so hidden models hide everything inside them, and so
     // everything inside a character with a ForceField gets the glowing shell.
@@ -1268,10 +1282,12 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
             for (auto& c : node->children) stack.push_back({c.get(), ff});
         if (node->isDecal() && !node->texture.empty() && node->shownTransparency() < 0.99f &&
             node->parent && node->parent->kind == NodeKind::Part)
-            if (!tooFar(glm::vec3(node->parent->worldMatrix()[3]), partRadius(node->parent->worldMatrix())))
+            if (!tooFar(glm::vec3(node->parent->worldMatrix()[3]), partRadius(node->parent->worldMatrix())) &&
+                !offScreen(node->parent))
                 decals.push_back({node, decalMatrix(*node), 0.0f});
         if (!node->mesh || node->kind != NodeKind::Part) continue;
         if (tooFar(glm::vec3(node->worldMatrix()[3]), partRadius(node->worldMatrix()))) continue;   // past the render distance
+        if (offScreen(node) && !bentByBones(node)) continue;   // not on screen
         if (ff && !node->internal && node->shownTransparency() < 0.99f) shielded.push_back({node, node->worldMatrix(), 0.0f});
         float alpha = 1.0f - node->shownTransparency();
         if (alpha <= 0.001f) continue;   // fully transparent — nothing to draw

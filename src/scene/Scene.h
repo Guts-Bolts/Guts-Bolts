@@ -253,6 +253,13 @@ public:
     // Kill any character; `force` 0..1 = how violently.
     void             killCharacter(uint64_t rootId, float force, const glm::vec3& impulse);
     void             markHumanoidEdited(uint64_t rootId, double now);
+    // Outfits put on by scripts (humanoid:ApplyDescription, see Player::dressRig): each
+    // character's look as JSON (the avatar format), and a count that goes up every time
+    // it changes, so the host knows to send that character to everyone again.
+    struct Look { nlohmann::json look; int version = 0; };
+    std::unordered_map<uint64_t, Look>& looks() { return m_looks; }
+    // Gone once this scene is: lets a download that finishes later check it's still here.
+    std::weak_ptr<int> alive() const { return m_alive; }
 
     // Effects the host should show on everyone's screen.
     bool                  recordFx = false;
@@ -279,6 +286,8 @@ private:
     WorldSettings              m_world;
     GameInfo                   m_info;
     std::vector<RemoteCharacter> m_remotes;
+    std::unordered_map<uint64_t, Look> m_looks;
+    std::shared_ptr<int> m_alive = std::make_shared<int>(0);
     NpcSystem                  m_npcs;
     WaterSystem                m_water;
     Vehicles                   m_vehicles;
