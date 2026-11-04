@@ -32,8 +32,8 @@ const char* signalName(SignalKind kind) {
         "PromptHidden", "MouseClick", "RightMouseClick", "MouseHoverEnter", "MouseHoverLeave",
         "CharacterAdded", "CharacterRemoving", "ChildAdded", "ChildRemoved", "DescendantAdded",
         "DescendantRemoving", "AncestryChanged", "Destroying", "TouchEnded", "HealthChanged",
-        "MouseButton1Down", "MouseButton1Up"};
-    static_assert(sizeof(names) / sizeof(names[0]) == (int)SignalKind::GuiUp + 1,
+        "MouseButton1Down", "MouseButton1Up", "DragStart", "DragContinue", "DragEnd"};
+    static_assert(sizeof(names) / sizeof(names[0]) == (int)SignalKind::DragEnd + 1,
                   "add the new SignalKind's name here");
     int i = (int)kind;
     return i >= 0 && i < (int)(sizeof(names) / sizeof(names[0])) ? names[i] : "?";

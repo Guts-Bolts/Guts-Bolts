@@ -1,5 +1,6 @@
 #include "NetGame.h"
 #include "Streaming.h"
+#include "../game/DragDetectors.h"
 #include <cmath>
 #include <unordered_set>
 #include "../scripting/LuaApi.h"   // SignalKind (UI clicks)
@@ -220,7 +221,7 @@ std::string nodeState(const SceneNode* n) {
     if (!extra.empty()) return std::string(buf) + extra;   // (parts and models: none of the kinds below)
     if (n->isGui()) return std::string(buf) + Serializer::guiToJson(n->gui).dump();   // text, colours, sizes...
     if (n->isPrompt()) return std::string(buf) + Serializer::promptToJson(n->prompt, n->enabled).dump();
-    if (n->isClickDetector()) return std::string(buf) + Serializer::clickToJson(n->click).dump();
+    if (n->isClickDetector()) return std::string(buf) + Serializer::clickToJson(n->click, n->enabled).dump();
     if (n->isHighlight()) return std::string(buf) + Serializer::highlightToJson(n->highlight, n->enabled).dump();
     if (n->isEffect()) return std::string(buf) + Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam).dump();
     if (n->isSound() || n->isSoundGroup() || n->isSoundEffect()) return std::string(buf) + Serializer::soundToJson(*n).dump();
@@ -241,7 +242,7 @@ json nodeUpdate(const SceneNode* n) {
     if (!n->materialVariant.empty()) u["mv"] = n->materialVariant;
     if (n->isGui()) u["gui"] = Serializer::guiToJson(n->gui);
     if (n->isPrompt()) u["pr"] = Serializer::promptToJson(n->prompt, n->enabled);
-    if (n->isClickDetector()) u["cd"] = Serializer::clickToJson(n->click);
+    if (n->isClickDetector()) u["cd"] = Serializer::clickToJson(n->click, n->enabled);
     if (n->isHighlight()) u["hl"] = Serializer::highlightToJson(n->highlight, n->enabled);
     if (n->isEffect()) u["fx"] = Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam);
     if (n->isSound() || n->isSoundGroup() || n->isSoundEffect()) u["snd"] = Serializer::soundToJson(*n);
@@ -282,7 +283,7 @@ void applyUpdate(SceneNode* n, const json& u) {
         n->gui.absPos = absPos; n->gui.absSize = absSize;
     }
     if (n->isPrompt() && u.contains("pr") && u["pr"].is_object()) Serializer::promptFromJson(u["pr"], n->prompt, n->enabled);
-    if (n->isClickDetector() && u.contains("cd") && u["cd"].is_object()) Serializer::clickFromJson(u["cd"], n->click);
+    if (n->isClickDetector() && u.contains("cd") && u["cd"].is_object()) Serializer::clickFromJson(u["cd"], n->click, n->enabled);
     if (n->isHighlight() && u.contains("hl") && u["hl"].is_object()) Serializer::highlightFromJson(u["hl"], n->highlight, n->enabled);
     if (n->isEffect() && u.contains("fx") && u["fx"].is_object()) Serializer::effectFromJson(u["fx"], n->effect, n->enabled);
     if (u.contains("snd") && u["snd"].is_object()) Serializer::soundFromJson(*n, u["snd"]);
@@ -630,6 +631,9 @@ struct NetServer::Client {
     bool        voiceOn = false;      // they turned voice chat on (they hear others and may talk)
     double      voiceBudget = 40.0;   // voice packets they may still send (about 17 a second while talking)
     double      voiceAt = 0.0;
+    DragDetectors::Drag drag;                    // what they're dragging (a DragDetector's thing)
+    double      dragBudget = 40.0;               // drag messages they may still send (refills over time)
+    double      dragAt = 0.0;
     std::unordered_set<uint64_t> streamedOut;   // map pieces not on their computer (StreamingEnabled)
     double      streamAt = 0.0;                 // when we last looked what they should have
 };
@@ -1265,6 +1269,56 @@ void NetServer::handle(Client& c, const std::string& text) {
         m_session->scripts().setJoinerEvent(true);
         m_session->scripts().fireClickDetector(k->second, id, c.id + 1);
         m_session->scripts().setJoinerEvent(false);
+    } else if (t == "drag") {   // they're dragging a DragDetector's thing (we move it, if they're close enough)
+        const double now = clockNow();   // (about 20 moves a second; a burst is fine)
+        c.dragBudget = std::min(40.0, c.dragBudget + (now - c.dragAt) * 30.0);
+        c.dragAt = now;
+        if (c.dragBudget < 1.0) return;
+        c.dragBudget -= 1.0;
+        const std::string what = m.value("do", std::string());
+        const uint64_t id = m.value("id", (uint64_t)0);
+        auto vecOf = [&](const char* key, glm::vec3& out) {
+            const json v = m.value(key, json());
+            if (!v.is_array() || v.size() != 3 || !v[0].is_number() || !v[1].is_number() || !v[2].is_number()) return false;
+            out = {v[0].get<float>(), v[1].get<float>(), v[2].get<float>()};
+            return std::isfinite(out.x) && std::isfinite(out.y) && std::isfinite(out.z);
+        };
+        SceneNode* rig = m_scene->findById(c.rootId);
+        const glm::vec3 me = rig ? glm::vec3(rig->worldMatrix()[3]) : glm::vec3(0.0f);
+        auto letGo = [&]() {
+            if (!c.drag.active()) return;
+            const uint64_t was = c.drag.detector;
+            DragDetectors::end(*m_scene, c.drag, 1.0f / 60.0f);
+            if (m_scene->findById(was)) {
+                m_session->scripts().setJoinerEvent(true);
+                m_session->scripts().fireClickDetector(SignalKind::DragEnd, was, c.id + 1);
+                m_session->scripts().setJoinerEvent(false);
+            }
+        };
+        if (what == "s") {
+            letGo();
+            SceneNode* cd = m_scene->findById(id);
+            glm::vec3 hit, look;
+            if (!rc || !rc->alive || !rig || !DragDetectors::isDrag(cd) || !vecOf("a", hit) || !vecOf("b", look)) return;
+            if (ClickDetectors::distance(cd, me) > cd->click.range + 4.0f || glm::length(hit - me) > cd->click.range + 30.0f) return;
+            if (!DragDetectors::begin(*m_scene, cd, hit, look, c.drag)) return;
+            m_session->scripts().setJoinerEvent(true);
+            m_session->scripts().fireClickDetector(SignalKind::DragStart, id, c.id + 1);
+            m_session->scripts().setJoinerEvent(false);
+        } else if (what == "m") {
+            glm::vec3 ro, rd;
+            if (!c.drag.active() || c.drag.detector != id || !vecOf("a", ro) || !vecOf("b", rd)) return;
+            SceneNode* cd = m_scene->findById(id);
+            // Their camera is near them; and they let go if they wander off (or die).
+            if (!rc || !rc->alive || !rig || !cd || glm::length(ro - me) > 150.0f ||
+                ClickDetectors::distance(cd, me) > cd->click.range * 2.0f + 10.0f) { letGo(); return; }
+            if (!DragDetectors::move(*m_scene, c.drag, ro, rd, 1.0f / 20.0f)) { letGo(); return; }
+            m_session->scripts().setJoinerEvent(true);
+            m_session->scripts().fireClickDetector(SignalKind::DragContinue, id, c.id + 1);
+            m_session->scripts().setJoinerEvent(false);
+        } else if (what == "e") {
+            letGo();
+        }
     } else if (t == "remote" || t == "invoke") {   // a LocalScript's FireServer / InvokeServer
         // At most about 60 a second each (a burst of 60 is fine), and 64 KB apiece.
         const double now = clockNow();
@@ -1705,6 +1759,7 @@ void NetClient::disconnect() {
         m_session->onToolRequest = nullptr;
         m_session->onPrompt = nullptr;
         m_session->onClickDetector = nullptr;
+        m_session->onDrag = nullptr;
         m_session->scripts().idToServer = nullptr;
         m_session->scripts().idFromServer = nullptr;
         if (Player* p = m_scene->player()) p->clearTools();
@@ -1901,6 +1956,9 @@ void NetClient::handle(const std::string& text) {
         };
         m_session->onClickDetector = [this](uint64_t detector, const char* what) {   // a ClickDetector: the host's scripts hear it
             if (m_conn && detector < kLocalIdBase) m_conn->send(json{{"t", "clickdet"}, {"id", detector}, {"do", what}}.dump());
+        };
+        m_session->onDrag = [this](uint64_t detector, const char* what, const glm::vec3& a, const glm::vec3& b) {   // a DragDetector: the host moves it for everyone
+            if (m_conn && detector < kLocalIdBase) m_conn->send(json{{"t", "drag"}, {"id", detector}, {"do", what}, {"a", vec3(a)}, {"b", vec3(b)}}.dump());
         };
         m_session->onToolRequest = [this](const std::string& what, uint64_t tool, bool down) {   // the host has our tools
             if (m_conn) m_conn->send(json{{"t", "tool"}, {"do", what}, {"id", tool}, {"down", down}}.dump());

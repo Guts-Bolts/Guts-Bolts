@@ -69,6 +69,10 @@ enum class SignalKind : int {
     HealthChanged,       // humanoid.HealthChanged    (health)  (id = character)
     GuiDown,             // button.MouseButton1Down   ()
     GuiUp,               // button.MouseButton1Up     ()
+    // DragDetectors (player): the computer it happened on, and the game's server
+    DragStart,           // detector.DragStart        (player)
+    DragContinue,        // detector.DragContinue     (player)
+    DragEnd,             // detector.DragEnd          (player)
 };
 
 namespace LuaApi {

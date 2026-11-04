@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "../scene/Physics.h"
+#include "DragDetectors.h"
 #include "../scripting/ScriptEngine.h"
 #include "GameGui.h"
 
@@ -52,6 +53,9 @@ public:
     std::function<void(uint64_t prompt, const char* what)> onPrompt;
     // A ClickDetector: "c" MouseClick, "r" RightMouseClick, "he" / "hl" MouseHoverEnter / Leave.
     std::function<void(uint64_t detector, const char* what)> onClickDetector;
+    // A DragDetector: "s" took hold (a = where, b = the camera's look), "m" moved (a, b =
+    // the pointer's ray), "e" let go.
+    std::function<void(uint64_t detector, const char* what, const glm::vec3& a, const glm::vec3& b)> onDrag;
     // Client mode: tool requests for the host ("equip" with a tool id or 0, "drop",
     // "use" with down = mouse pressed / let go). The host keeps everyone's tools.
     std::function<void(const std::string& what, uint64_t tool, bool down)> onToolRequest;
@@ -74,6 +78,12 @@ public:
     void rightClick(uint64_t partId);            // RightMouseClick
     void mouseDown(int button);                  // the right (2) or middle (3) button went down on the game view
     bool clickDetector(uint64_t partId);         // just MouseClick (a controller's RT); false if there's none in reach
+    // DragDetectors (game/DragDetectors.h): the button went down on `partId` at `hit`
+    // (true if that started a drag), the pointer's ray each frame while held, let go.
+    bool dragBegin(uint64_t partId, const glm::vec3& hit, const glm::vec3& camForward);
+    void dragMove(const glm::vec3& rayOrigin, const glm::vec3& rayDir);
+    void dragEnd();
+    bool dragging() const { return m_drag.active(); }
     void useTool();                              // the held tool's Activated (a click, a controller's RT)
     // Game UI: pointer events from GameGui (clicks go to the host in multiplayer).
     void guiEvents(const std::vector<GameGui::Event>& events);
@@ -131,6 +141,8 @@ private:
     bool         m_toolDown = false;          // mouse held after activating the tool
     bool         m_padTrigger = false;        // a controller's RT held
     uint64_t     m_hoverDetector = 0;         // the ClickDetector the pointer is on
+    DragDetectors::Drag m_drag;               // what we're dragging (a DragDetector's thing)
+    double       m_dragSent = 0.0;            // (moves go to the host about 20 times a second)
     SceneNode*   reachableDetector(uint64_t partId);
     void         fireDetector(SignalKind kind, const char* what, uint64_t detector);
 };

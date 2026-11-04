@@ -590,9 +590,29 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
 
     if (node->isClickDetector()) {
         ClickProps& c = node->click;
-        ImGui::SeparatorText("ClickDetector");
+        ImGui::SeparatorText(c.drag ? "DragDetector" : "ClickDetector");
         ImGui::DragFloat("MaxActivationDistance", &c.range, 0.1f, 0.0f, 500.0f, "%.1f");
         ImGui::InputText("CursorIcon", &c.cursor);
+        if (c.drag) {
+            ImGui::Checkbox("Enabled", &node->enabled);
+            ImGui::Combo("DragStyle", &c.dragStyle, "TranslatePlane\0TranslateLine\0TranslateViewPlane\0RotateAxis\0");
+            if (ImGui::DragFloat3("Axis", &c.axis.x, 0.05f, -1.0f, 1.0f) && !(glm::length(c.axis) > 1e-4f)) c.axis = {0, 1, 0};
+            if (c.dragStyle == 1) {
+                ImGui::DragFloat("MinDragTranslation", &c.minMove, 0.1f, -1e6f, 0.0f, "%.1f");
+                ImGui::DragFloat("MaxDragTranslation", &c.maxMove, 0.1f, 0.0f, 1e6f, "%.1f");
+            }
+            if (c.dragStyle == 3) {
+                ImGui::DragFloat("MinDragAngle", &c.minAngle, 1.0f, -1e6f, 0.0f, "%.0f");
+                ImGui::DragFloat("MaxDragAngle", &c.maxAngle, 1.0f, 0.0f, 1e6f, "%.0f");
+            }
+            ImGui::Spacing();
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextDisabled("Players can grab the part or model it's in and drag it: across the floor (TranslatePlane), "
+                                "along a line (TranslateLine), across the screen (TranslateViewPlane) or spin it (RotateAxis). "
+                                "Fires DragStart, DragContinue and DragEnd, with the player.");
+            ImGui::PopTextWrapPos();
+            return;
+        }
         ImGui::Spacing();
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled("Players can click (or tap) the part or model it's in when they're this close. "

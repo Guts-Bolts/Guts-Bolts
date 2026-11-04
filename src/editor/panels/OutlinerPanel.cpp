@@ -277,7 +277,7 @@ void OutlinerPanel::insertMenu(SceneNode* parent) {
     static const Group groups[] = {
         {"Parts", {"Part", "Sphere", "Cylinder", "MeshPart", "TrussPart", "SpawnLocation", "Seat", "VehicleSeat"}},
         {"Scripts", {"Script", "LocalScript", "ModuleScript", "RemoteEvent", "RemoteFunction"}},
-        {"Characters & Tools", {"Tool", "Rig", "Animation", "Team", "ProximityPrompt", "ClickDetector"}},
+        {"Characters & Tools", {"Tool", "Rig", "Animation", "Team", "ProximityPrompt", "ClickDetector", "DragDetector"}},
         {"Containers", {"Model", "Folder"}},
         {"Effects & Lights", {"PointLight", "SpotLight", "Sound", "ForceField", "Decal", "Highlight", "Trail", "Beam"}},
         {"Sound", {"SoundGroup", "ReverbSoundEffect", "EchoSoundEffect", "EqualizerSoundEffect", "DistortionSoundEffect",
@@ -511,7 +511,7 @@ std::string className(const SceneNode& n) {
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n.post.type];
         case NodeKind::Sky:        return "Sky";
         case NodeKind::MaterialVariant: return "MaterialVariant";
-        case NodeKind::ClickDetector: return "ClickDetector";
+        case NodeKind::ClickDetector: return n.click.drag ? "DragDetector" : "ClickDetector";
         case NodeKind::Trail:      return "Trail";
         case NodeKind::Beam:       return "Beam";
         case NodeKind::Particles:  return n.particleClass();

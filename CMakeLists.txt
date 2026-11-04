@@ -484,6 +484,7 @@ add_library(gb_engine STATIC
     src/game/RichText.cpp
     src/game/Prompts.cpp
     src/game/ClickDetectors.cpp
+    src/game/DragDetectors.cpp
     src/game/PlayCamera.cpp
     src/game/SettingsWindow.cpp
     src/game/Profile.cpp
@@ -1109,6 +1110,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(VehiclesTests tests/VehiclesTests.cpp)
     target_link_libraries(VehiclesTests PRIVATE gb_engine)
     add_test(NAME VehiclesTests COMMAND VehiclesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # DragDetectors: grab a part with the pointer and drag it (plane, line, spin, throw).
+    add_executable(DragDetectorTests tests/DragDetectorTests.cpp)
+    target_link_libraries(DragDetectorTests PRIVATE gb_engine)
+    add_test(NAME DragDetectorTests COMMAND DragDetectorTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # IKControl: the normal character's arms reach for things and its head looks at them.
