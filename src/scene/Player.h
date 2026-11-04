@@ -402,7 +402,6 @@ private:
     glm::vec3 m_sitSpot{0.0f};       // where our feet were when we sat down
     // BodyVelocity, BodyGyro... inside the character (flying, jetpacks).
     void  characterMovers(float dt);
-    bool  m_moverDriven = false;     // a BodyVelocity / AlignPosition... drives us this frame (jetpacks, boards)
     bool  m_gyro = false;            // a BodyGyro / AlignOrientation holds our tilt
     float m_gyroTilt = 0.0f;         // ...at this (degrees, + = leaning forward)
     float m_wet = 0.0f;              // seconds you stay slippery after leaving a stream of liquid (a wet slide)

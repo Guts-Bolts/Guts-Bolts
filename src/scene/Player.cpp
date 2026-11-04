@@ -1,5 +1,4 @@
 #include "Player.h"
-#include "CharacterFooting.h"
 #include "LegacyJoints.h"
 #include "Scene.h"
 #include "SceneNode.h"
@@ -1090,7 +1089,6 @@ void Player::sitHereStep(float dt, bool jump, Physics& physics) {
 void Player::characterMovers(float dt) {
     using namespace Movers;
     m_gyro = false;
-    m_moverDriven = false;
     SceneNode* r = root();
     if (!r || dt <= 0.0f) return;
     std::vector<SceneNode*> movers;
@@ -1121,12 +1119,6 @@ void Player::characterMovers(float dt) {
         const glm::vec3 at = att0 ? glm::vec3(att0->worldMatrix()[3]) : glm::vec3(part->worldMatrix()[3]);
         const glm::quat rot = att0 ? worldRot(att0) : worldRot(part);
         const glm::vec3 lift = at - feet;   // (we steer the feet; the mover sits higher up the body)
-        // A script mover flies the character itself (a jetpack, a board): walking
-        // must not steer or brake that, so the footing below leaves it alone.
-        if (m.type == MoverType::BodyForce || m.type == MoverType::BodyThrust || m.type == MoverType::VectorForce ||
-            m.type == MoverType::BodyVelocity || m.type == MoverType::LinearVelocity ||
-            m.type == MoverType::BodyPosition || m.type == MoverType::AlignPosition)
-            m_moverDriven = true;
         switch (m.type) {
             case MoverType::BodyForce:   m_velocity += m.value * dt / M; break;
             case MoverType::BodyThrust:  m_velocity += (worldRot(part) * m.value) * dt / M; break;
@@ -1435,6 +1427,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         else if (SceneNode* g = m_scene->findById(m_groundId))
             wet = std::find(g->tags.begin(), g->tags.end(), "Slippery") != g->tags.end();
     }
+    float drag = std::max(0.0f, 1.0f - (m_grounded ? (wet ? 0.3f : 8.0f) : 0.8f) * dt);
     // (Before working out this frame's move, so the push counts straight away.)
     const bool sliding = wet && !m_swimming && !m_climbing;
     if (sliding) {
@@ -1461,28 +1454,13 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         const float sp = glm::length(glm::vec2(m_velocity.x, m_velocity.z));
         if (sp > 40.0f) { m_velocity.x *= 40.0f / sp; m_velocity.z *= 40.0f / sp; }
     }
-    // Walking, like a Roblox character: get up to WalkSpeed over a moment and stop
-    // just as quickly on the ground, and in the air keep the momentum you jumped
-    // with instead of snapping to the keys. Swimming, ladders, slippery surfaces
-    // and script movers (a jetpack's BodyVelocity) keep their own controls.
-    glm::vec3 delta;
-    if (!m_climbing && !m_swimming && !sliding && !m_moverDriven) {
-        const glm::vec2 v = CharacterFooting::step({m_velocity.x, m_velocity.z}, {horiz.x, horiz.z},
-                                                   m_humanoid.walkSpeed, m_grounded, dt);
-        m_velocity.x = v.x;
-        m_velocity.z = v.y;
-        delta = {m_velocity.x * dt, 0.0f, m_velocity.z * dt};
-    } else {
-        // Walking plus any leftover push (from jump pads, etc.), which fades out.
-        const float drag = std::max(0.0f, 1.0f - (m_grounded ? (wet ? 0.3f : 8.0f) : 0.8f) * dt);
-        m_velocity.x *= drag;
-        m_velocity.z *= drag;
-        delta = horiz * speed * dt;
-        delta.x += m_velocity.x * dt;
-        delta.z += m_velocity.z * dt;
-    }
-    delta += current * (m_swimming ? dt : 0.0f);
+    // Walking plus any leftover push (from jump pads, etc.), which fades out.
+    glm::vec3 delta = horiz * speed * dt + current * (m_swimming ? dt : 0.0f);
+    delta.x += m_velocity.x * dt;
+    delta.z += m_velocity.z * dt;
     delta.y = m_velocity.y * dt;
+    m_velocity.x *= drag;
+    m_velocity.z *= drag;
 
     Physics::MoveResult res = physics.moveCharacter(pos, delta, m_grounded, r->transform.rotation.y, m_rootId, physics.groupOf(r));
     if (sliding && dt > 0.0f) {
