@@ -477,6 +477,7 @@ add_library(gb_engine STATIC
     src/scripting/SpatialQueries.cpp
     src/scripting/ScriptActions.cpp
     src/scripting/ScriptHelp.cpp
+    src/scripting/ScriptCheck.cpp
     src/game/GameSession.cpp
     src/game/Hud.cpp
     src/game/EmoteMenu.cpp
@@ -1163,6 +1164,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(OrderedDataStoreTests PRIVATE gb_engine)
     add_test(NAME OrderedDataStoreTests COMMAND OrderedDataStoreTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The Script editor's wavy lines: script mistakes found without running anything.
+    add_executable(ScriptCheckTests tests/ScriptCheckTests.cpp)
+    target_link_libraries(ScriptCheckTests PRIVATE gb_engine)
+    add_test(NAME ScriptCheckTests COMMAND ScriptCheckTests "${CMAKE_SOURCE_DIR}/games" WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # MemoryStoreService: the store's rules and the script side, played offline.
     add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)

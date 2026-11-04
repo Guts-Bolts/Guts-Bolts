@@ -8,6 +8,7 @@
 #include "../../scene/SceneNode.h"
 #include "../../scripting/ScriptEngine.h"
 #include "../../scripting/ScriptHelp.h"
+#include "../../scripting/ScriptCheck.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -543,6 +544,30 @@ void ScriptEditorPanel::render() {
     ImGui::PopStyleColor();
     m_codeActive = ImGui::IsItemActive();
     const float lineH = ImGui::GetTextLineHeight();
+    // --- Live check for mistakes (only re-run when the text changes) ---
+    if (s->source != m_checked) {
+        m_checked = s->source;
+        m_marks = ScriptCheck::check(s->source);
+    }
+    // Where each line starts, and the marks to show: not an orange one on the word being
+    // typed right now (it isn't finished yet).
+    std::vector<size_t> lineStarts{0};
+    for (size_t k = 0; k < s->source.size(); ++k) if (s->source[k] == '\n') lineStarts.push_back(k + 1);
+    std::vector<const ScriptCheck::Mark*> shown;
+    for (const ScriptCheck::Mark& m : m_marks) {
+        if (m.line < 1 || m.line > (int)lineStarts.size()) continue;
+        if (!m.error && m_codeActive && m.line == m_cursorLine) {
+            const int col = m_cursor - (int)lineStarts[(size_t)m.line - 1];
+            if (col >= m.col && col <= m.col + m.len) continue;
+        }
+        shown.push_back(&m);
+    }
+    auto lineMark = [&](int line) -> const ScriptCheck::Mark* {   // the worst one on a line
+        const ScriptCheck::Mark* found = nullptr;
+        for (const ScriptCheck::Mark* m : shown)
+            if (m->line == line && (!found || (m->error && !found->error))) found = m;
+        return found;
+    };
     {
         const ImVec2 boxMin = ImGui::GetItemRectMin(), boxMax = ImGui::GetItemRectMax();
         // The text box scrolls inside its own little window (the last child made just now).
@@ -561,10 +586,11 @@ void ScriptEditorPanel::render() {
         for (int i = first; i < last; ++i) {
             const std::string n = std::to_string(i + 1);
             const float y = origin.y + i * lineH;
-            const bool bad = !m_error.empty() && m_errorLine == i + 1;
+            const ScriptCheck::Mark* bad = lineMark(i + 1);
             const bool here = m_cursorLine == i + 1;
             dl->AddText(ImVec2(gutterPos.x + gutter - 8 - ImGui::CalcTextSize(n.c_str()).x, y),
-                        bad ? IM_COL32(255, 90, 80, 255) : here ? IM_COL32(220, 220, 220, 255) : IM_COL32(120, 120, 120, 255), n.c_str());
+                        bad ? (bad->error ? IM_COL32(255, 90, 80, 255) : IM_COL32(240, 170, 60, 255))
+                            : here ? IM_COL32(220, 220, 220, 255) : IM_COL32(120, 120, 120, 255), n.c_str());
             if (m_debugger && m_debugger->debugHasBreakpoint(m_id, i + 1))
                 dl->AddCircleFilled(ImVec2(gutterPos.x + 8, y + lineH * 0.5f), lineH * 0.3f, IM_COL32(230, 60, 55, 255));
             if (pausedHere && m_debugger->debugLine() == i + 1)   // the line it's paused on: a yellow arrow
@@ -589,17 +615,33 @@ void ScriptEditorPanel::render() {
             dl->AddRectFilled(ImVec2(boxMin.x + 1, y), ImVec2(boxMax.x - 1, y + lineH), IM_COL32(255, 200, 60, 45));
         }
         drawColoredCode(dl, s->source, origin, lineH, first, last);
-        // A red wavy line under the line with the mistake.
-        if (!m_error.empty() && m_errorLine >= 1 && m_errorLine <= lines) {
-            size_t ls = 0;
-            for (int k = 1; k < m_errorLine; ++k) ls = s->source.find('\n', ls) + 1;
-            size_t le = s->source.find('\n', ls);
-            if (le == std::string::npos) le = s->source.size();
-            const float w = std::max(20.0f, ImGui::CalcTextSize(s->source.data() + ls, s->source.data() + le).x);
-            const float y = origin.y + m_errorLine * lineH - 1.0f;
+        // Wavy lines under the mistakes: red where Lua can't read it, orange for a likely
+        // mistake. Pointing at one tells you what's wrong.
+        const ImVec2 mouse = ImGui::GetMousePos();
+        const bool overBox = mouse.x >= boxMin.x && mouse.x < boxMax.x && mouse.y >= boxMin.y && mouse.y < boxMax.y;
+        for (const ScriptCheck::Mark* m : shown) {
+            if (m->line - 1 < first || m->line - 1 > last) continue;
+            const char* ls = s->source.data() + lineStarts[(size_t)m->line - 1];
+            const size_t lineLen = (m->line < (int)lineStarts.size() ? lineStarts[(size_t)m->line] - 1 : s->source.size()) -
+                                   lineStarts[(size_t)m->line - 1];
+            const int c0 = std::clamp(m->col, 0, (int)lineLen), c1 = std::clamp(m->col + m->len, c0, (int)lineLen);
+            const float x0 = origin.x + ImGui::CalcTextSize(ls, ls + c0).x;
+            const float w = std::max(8.0f, ImGui::CalcTextSize(ls + c0, ls + c1).x);
+            const float y = origin.y + m->line * lineH - 1.0f;
+            const ImU32 col = m->error ? IM_COL32(255, 70, 60, 255) : IM_COL32(240, 170, 60, 255);
             for (float x = 0; x < w; x += 4.0f)
-                dl->AddLine(ImVec2(origin.x + x, y + ((int)(x / 4) % 2 ? 2.0f : 0.0f)),
-                            ImVec2(origin.x + x + 4, y + ((int)(x / 4) % 2 ? 0.0f : 2.0f)), IM_COL32(255, 70, 60, 255), 1.2f);
+                dl->AddLine(ImVec2(x0 + x, y + ((int)(x / 4) % 2 ? 2.0f : 0.0f)),
+                            ImVec2(x0 + std::min(x + 4, w), y + ((int)(x / 4) % 2 ? 0.0f : 2.0f)), col, 1.2f);
+            if (overBox && !(m_codeActive && !m_suggest.empty()) && mouse.x >= x0 && mouse.x < x0 + w &&
+                mouse.y >= y - lineH && mouse.y < y + 3.0f) {
+                ImGui::BeginTooltip();
+                ImGui::TextColored(m->error ? ImVec4(1.0f, 0.42f, 0.4f, 1) : ImVec4(0.95f, 0.7f, 0.3f, 1), m->error ? "Mistake" : "Warning");
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+                ImGui::TextUnformatted(m->text.c_str());
+                ImGui::PopTextWrapPos();
+                if (!m->fix.empty()) ImGui::TextDisabled("Put the text cursor on this line and press Fix (below).");
+                ImGui::EndTooltip();
+            }
         }
         dl->PopClipRect();
     }
@@ -647,16 +689,34 @@ void ScriptEditorPanel::render() {
         }
     }
 
-    // --- Live syntax check (only re-run when the text changes) ---
-    if (s->source != m_checked) {
-        m_checked = s->source;
-        m_error.clear();
-        ScriptEngine::checkSyntax(s->source, m_error, m_errorLine);
-    }
-    if (m_error.empty()) {
+    // --- The mistakes, under the code: the one on the cursor's line, else the first ---
+    if (shown.empty()) {
         ImGui::TextColored(ImVec4(0.45f, 0.85f, 0.45f, 1), "No mistakes found");
     } else {
-        ImGui::TextColored(ImVec4(1.0f, 0.42f, 0.4f, 1), "Line %d: %s", m_errorLine, m_error.c_str());
+        const ScriptCheck::Mark* m = lineMark(m_cursorLine);
+        if (!m) m = shown.front();
+        if (shown.size() > 1) {
+            ImGui::TextDisabled("%d problems:", (int)shown.size());
+            ImGui::SameLine();
+        }
+        char text[600];
+        std::snprintf(text, sizeof(text), "Line %d: %s", m->line, m->text.c_str());
+        ImGui::TextColored(m->error ? ImVec4(1.0f, 0.42f, 0.4f, 1) : ImVec4(0.95f, 0.7f, 0.3f, 1), "%s", text);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click to go to line %d", m->line);
+        if (ImGui::IsItemClicked()) goToLine(m->line);
+        if (!m->fix.empty() && m->line == m_cursorLine) {
+            ImGui::SameLine();
+            const std::string label = "Fix: " + m->fix;
+            if (ImGui::SmallButton(label.c_str())) {
+                const size_t at = lineStarts[(size_t)m->line - 1] + (size_t)m->col;
+                if (at + (size_t)m->len <= s->source.size()) {
+                    s->source.replace(at, (size_t)m->len, m->fix);
+                    m_cursor = (int)(at + m->fix.size());
+                    m_selectStart = m_selectEnd = m_cursor;
+                    m_focusCode = true;
+                }
+            }
+        }
     }
     ImGui::SameLine();
     char pos[32];
