@@ -62,6 +62,16 @@ export function limitUploadStream(stream, maxBytes) {
   });
 }
 
+// R2 only takes a stream when it knows how many bytes are coming. A stream we made
+// ourselves (like the size-checking one above) doesn't say, so R2 threw and every
+// release upload failed with a 500. FixedLengthStream tells R2 the size up front.
+export function knownLength(stream, length) {
+  if (typeof FixedLengthStream !== 'function') return stream;   // not on Cloudflare (tests)
+  const fixed = new FixedLengthStream(length);
+  stream.pipeTo(fixed.writable).catch(() => {});   // a failed pipe makes the put fail too
+  return fixed.readable;
+}
+
 export function normalizeReleaseManifest(m) {
   if (!m || typeof m !== 'object' || Array.isArray(m) ||
       typeof m.version !== 'string' || typeof m.files !== 'object' || !m.files || Array.isArray(m.files)) return null;
@@ -141,12 +151,13 @@ export async function handleDownload(request, env, url) {
     if (request.method !== 'PUT' || !FILE.test(name) || !/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version)) return json({ ok: false, error: 'Bad upload.' }, 400);
     const lengthHeader = request.headers.get('content-length');
     const length = lengthHeader === null ? null : Number(lengthHeader);
-    if (length !== null && (!Number.isSafeInteger(length) || length > MAX_RELEASE_FILE)) return json({ ok: false, error: 'Release file is too large.' }, 413);
-    if (!request.body) return json({ ok: false, error: 'Empty file.' }, 400);
+    if (length === null) return json({ ok: false, error: 'Send the file size (Content-Length).' }, 411);
+    if (!Number.isSafeInteger(length) || length > MAX_RELEASE_FILE) return json({ ok: false, error: 'Release file is too large.' }, 413);
+    if (!length || !request.body) return json({ ok: false, error: 'Empty file.' }, 400);
     const meta = { httpMetadata: { contentType: 'application/octet-stream', contentDisposition: 'attachment; filename="' + name + '"' } };
     const versionKey = version + '/' + name;
     try {
-      await env.DOWNLOADS.put(versionKey, limitUploadStream(request.body, MAX_RELEASE_FILE), meta);
+      await env.DOWNLOADS.put(versionKey, knownLength(limitUploadStream(request.body, MAX_RELEASE_FILE), length), meta);
     } catch (error) {
       if (error instanceof RangeError) return json({ ok: false, error: 'Release file is too large.' }, 413);
       if (error && error.code === 'EMPTY_UPLOAD') return json({ ok: false, error: 'Empty file.' }, 400);
@@ -154,7 +165,7 @@ export async function handleDownload(request, env, url) {
     }
     const stored = await env.DOWNLOADS.get(versionKey);
     if (!stored) return json({ ok: false, error: 'The release upload could not be verified.' }, 500);
-    await env.DOWNLOADS.put('latest/' + name, stored.body, meta);
+    await env.DOWNLOADS.put('latest/' + name, knownLength(stored.body, stored.size), meta);
     return json({ ok: true, size: stored.size });
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') return json({ ok: false, error: 'Use GET.' }, 405);
