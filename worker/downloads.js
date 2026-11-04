@@ -131,6 +131,61 @@ async function allowed(request) {
   try { return !!(await verifyGithubToken(got)); } catch { return false; }
 }
 
+// The size of one upload request, which must be sent and fit under the limit.
+function uploadLength(request) {
+  const header = request.headers.get('content-length');
+  if (header === null) return { error: json({ ok: false, error: 'Send the file size (Content-Length).' }, 411) };
+  const value = Number(header);
+  if (!Number.isSafeInteger(value) || value > MAX_RELEASE_FILE) return { error: json({ ok: false, error: 'Release file is too large.' }, 413) };
+  if (!value || !request.body) return { error: json({ ok: false, error: 'Empty file.' }, 400) };
+  return { value };
+}
+
+// After a version's file is saved, it also becomes the newest copy people download.
+async function copyToLatest(env, versionKey, name, meta) {
+  const stored = await env.DOWNLOADS.get(versionKey);
+  if (!stored) return json({ ok: false, error: 'The release upload could not be verified.' }, 500);
+  await env.DOWNLOADS.put('latest/' + name, knownLength(stored.body, stored.size), meta);
+  return json({ ok: true, size: stored.size });
+}
+
+// Files bigger than one request may be (Cloudflare stops requests at 100 MB, and the
+// Windows download is bigger) go up in pieces with R2's multipart upload:
+//   POST upload/<file>/start?version=X                  -> { uploadId }
+//   PUT  upload/<file>/part?version=X&uploadId=U&n=1..   (one piece, up to 90 MB) -> { part }
+//   POST upload/<file>/finish?version=X&uploadId=U       { parts: [...] } -> { ok, size }
+// Every piece but the last must be the same size (split -b does that).
+export const MAX_RELEASE_PARTS = 40;
+export async function handleMultipartStep(request, env, url, step, name, versionKey, meta) {
+  if (step === 'start' && request.method === 'POST') {
+    const upload = await env.DOWNLOADS.createMultipartUpload(versionKey, meta);
+    return json({ ok: true, uploadId: upload.uploadId });
+  }
+  const uploadId = url.searchParams.get('uploadId') || '';
+  if (!uploadId || uploadId.length > 1024) return json({ ok: false, error: 'Bad upload.' }, 400);
+  const upload = env.DOWNLOADS.resumeMultipartUpload(versionKey, uploadId);
+  if (step === 'part' && request.method === 'PUT') {
+    const n = Number(url.searchParams.get('n'));
+    if (!Number.isInteger(n) || n < 1 || n > MAX_RELEASE_PARTS) return json({ ok: false, error: 'Bad part number.' }, 400);
+    const length = uploadLength(request);
+    if (length.error) return length.error;
+    const part = await upload.uploadPart(n, knownLength(request.body, length.value));
+    return json({ ok: true, part: { partNumber: part.partNumber, etag: part.etag } });
+  }
+  if (step === 'finish' && request.method === 'POST') {
+    const text = await readLimitedText(request, MAX_MANIFEST);
+    let parts;
+    try { parts = JSON.parse(text || '').parts; } catch { parts = null; }
+    if (!Array.isArray(parts) || !parts.length || parts.length > MAX_RELEASE_PARTS ||
+        !parts.every((p) => p && Number.isInteger(p.partNumber) && typeof p.etag === 'string')) {
+      return json({ ok: false, error: 'Bad part list.' }, 400);
+    }
+    await upload.complete(parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag })));
+    return copyToLatest(env, versionKey, name, meta);
+  }
+  return json({ ok: false, error: 'Bad upload.' }, 400);
+}
+
 export async function handleDownload(request, env, url) {
   if (!env.DOWNLOADS) return json({ ok: false, error: 'Downloads aren\'t set up yet.' }, 503);
   const rest = url.pathname.slice('/download/'.length);
@@ -147,26 +202,23 @@ export async function handleDownload(request, env, url) {
       await env.DOWNLOADS.put('latest.json', JSON.stringify(manifest), { httpMetadata: { contentType: 'application/json' } });
       return json({ ok: true, manifest });
     }
-    const name = rest.slice('upload/'.length), version = (url.searchParams.get('version') || '').replace(/^v/, '');
-    if (request.method !== 'PUT' || !FILE.test(name) || !/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version)) return json({ ok: false, error: 'Bad upload.' }, 400);
-    const lengthHeader = request.headers.get('content-length');
-    const length = lengthHeader === null ? null : Number(lengthHeader);
-    if (length === null) return json({ ok: false, error: 'Send the file size (Content-Length).' }, 411);
-    if (!Number.isSafeInteger(length) || length > MAX_RELEASE_FILE) return json({ ok: false, error: 'Release file is too large.' }, 413);
-    if (!length || !request.body) return json({ ok: false, error: 'Empty file.' }, 400);
+    const [name, step = ''] = rest.slice('upload/'.length).split('/');
+    const version = (url.searchParams.get('version') || '').replace(/^v/, '');
+    if (!FILE.test(name) || !/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version)) return json({ ok: false, error: 'Bad upload.' }, 400);
     const meta = { httpMetadata: { contentType: 'application/octet-stream', contentDisposition: 'attachment; filename="' + name + '"' } };
     const versionKey = version + '/' + name;
+    if (step) return handleMultipartStep(request, env, url, step, name, versionKey, meta);
+    if (request.method !== 'PUT') return json({ ok: false, error: 'Bad upload.' }, 400);
+    const length = uploadLength(request);
+    if (length.error) return length.error;
     try {
-      await env.DOWNLOADS.put(versionKey, knownLength(limitUploadStream(request.body, MAX_RELEASE_FILE), length), meta);
+      await env.DOWNLOADS.put(versionKey, knownLength(limitUploadStream(request.body, MAX_RELEASE_FILE), length.value), meta);
     } catch (error) {
       if (error instanceof RangeError) return json({ ok: false, error: 'Release file is too large.' }, 413);
       if (error && error.code === 'EMPTY_UPLOAD') return json({ ok: false, error: 'Empty file.' }, 400);
       throw error;
     }
-    const stored = await env.DOWNLOADS.get(versionKey);
-    if (!stored) return json({ ok: false, error: 'The release upload could not be verified.' }, 500);
-    await env.DOWNLOADS.put('latest/' + name, knownLength(stored.body, stored.size), meta);
-    return json({ ok: true, size: stored.size });
+    return copyToLatest(env, versionKey, name, meta);
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') return json({ ok: false, error: 'Use GET.' }, 405);
   if (rest === 'latest.json') {

@@ -1,4 +1,4 @@
-# Guts&Bolts 0.7.9: Harder Better Faster Stronger (November 3, 2026)
+# Guts&Bolts 0.7.9: Harder Better Faster Stronger (November 4, 2026)
 
 Work it, make it, do it, makes us... a lot of new stuff. Chat with your
 friends from any page and call them, make cutscenes, start from a game
@@ -14,10 +14,14 @@ itself. Physics got steadier and phones run smoother too.
   can restyle or hide it.
 - A new Blaster gear, plus Weld, Motor6D, character joints, hinge limits
   and CylinderMesh, so scripts like a grab knife just work.
-- Lyreto's Roblox Game Bridge script runs as-is, thanks to about a dozen
-  more Roblox functions.
+- Lyreto's Roblox Game Bridge script runs as-is.
 - Scripts can swap a player's whole outfit with HumanoidDescription.
-- Games only draw what the camera can see, so big maps run faster.
+- Games only draw what the camera can see, and draw lots of copies of the
+  same thing in one go, so big maps run faster.
+- Big maps can load in pieces (StreamingEnabled), and your own car's
+  physics run on your computer, so driving feels instant.
+- IKControl (arms reach, heads look) and DragDetector (grab things with
+  the mouse and drag them).
 - Real leaderboards: OrderedDataStore sorts, and the top 10 show on the
   game's page.
 - Accessibility settings (colorblind modes, bigger text, captions) and a
@@ -37,9 +41,7 @@ itself. Physics got steadier and phones run smoother too.
   "Blender keys" switch for S, A, Shift+D and Shift+A.
 - Import Roblox animations: they're turned, shrunk and fitted onto our R6
   or R15 dummies by themselves.
-- X-ray (Alt+Z), Wireframe / Solid / Flat / Material view styles, extra
-  viewports with Four Views, and a workspace you can drag around, save and
-  reset.
+- X-ray (Alt+Z), view styles, Four Views and a workspace you can arrange.
 
 ## New on the website
 - A Chat panel in the corner of every page, parties, and voice calls with
@@ -47,6 +49,7 @@ itself. Physics got steadier and phones run smoother too.
 - Pages update live: bids, forum posts, your bell and your Messages count.
 - A brand new logo, live auctions on the front page, and Limited vs
   Limited U items with a buy confirmation.
+- Boltworks Club members get a little bolt badge next to their name.
 - Search forgives typos, My Feed shows what friends are up to, and
   creators can see when people play their games.
 - Events with free items, achievements on profiles, and game update logs.
@@ -55,7 +58,6 @@ itself. Physics got steadier and phones run smoother too.
 
 ## Bugs we squashed
 - The website couldn't save anything to its database; now it can.
-- The Auction Broadcasts and forum boxes showed up as raw code.
 - Water made games laggy (like 14 fps on big water slides); it's much
   faster now.
 - Fast bullets flew straight through people.

@@ -1,5 +1,5 @@
 export default {
-  id: 'copy-paste-forest', name: 'Copy-Paste Forest', time: 1793757000, tag: 'Engine',
+  id: 'copy-paste-forest', name: 'Copy-Paste Forest', version: '0.7.9', time: 1793757000, tag: 'Engine',
   summary: 'Lots of copies of the same thing are now drawn in one go, so big builds lag less.',
   items: [
     'Parts with the same shape (bricks, balls, the same mesh) are drawn together instead of one by one',

@@ -1,5 +1,5 @@
 export default {
-  id: 'reach-out', name: 'Reach Out', time: 1793764398, tag: 'Engine',
+  id: 'reach-out', name: 'Reach Out', version: '0.7.9', time: 1793764398, tag: 'Engine',
   summary: 'IKControl is here: characters can reach for things and look at them, on top of their animation.',
   items: [
     'Put an IKControl in a character, set its EndEffector (an arm, leg or the head) and its Target',

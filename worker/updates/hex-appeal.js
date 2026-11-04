@@ -1,5 +1,5 @@
 export default {
-  id: 'hex-appeal', name: 'Hex Appeal', time: 1793752892, tag: 'Website',
+  id: 'hex-appeal', name: 'Hex Appeal', version: '0.7.9', time: 1793752892, tag: 'Website',
   summary: 'Boltworks Club members now get a little bolt-head badge next to their name.',
   items: [
     'Three Boltworks Club tiers, each with its own icon: BWC (blue, one stripe), TBC (gold, two stripes) and OBC (red, three stripes)',
