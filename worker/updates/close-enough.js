@@ -1,5 +1,5 @@
 export default {
-  id: 'close-enough', name: 'Close Enough', time: 1793649778, tag: 'Website',
+  id: 'close-enough', name: 'Close Enough', version: '0.7.9', time: 1793649778, tag: 'Website',
   summary: 'Search forgives typos now.',
   items: [
     'Searching games, the catalog or the Library also finds close matches, so "zombe" still finds Zombie Survival',

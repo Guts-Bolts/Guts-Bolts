@@ -1,5 +1,5 @@
 export default {
-  id: 'top-of-the-board', name: 'Top of the Board', time: 1793649288, tag: 'Engine',
+  id: 'top-of-the-board', name: 'Top of the Board', version: '0.7.9', time: 1793649288, tag: 'Engine',
   summary: 'Games can keep real leaderboards, and they show up on the game\'s page.',
   items: [
     'OrderedDataStore now sorts: GetSortedAsync gives back the biggest (or smallest) scores first, a page at a time',

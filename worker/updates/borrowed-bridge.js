@@ -1,5 +1,5 @@
 export default {
-  id: 'borrowed-bridge', name: 'Borrowed Bridge', time: 1793727226, tag: 'Engine',
+  id: 'borrowed-bridge', name: 'Borrowed Bridge', version: '0.7.9', time: 1793727226, tag: 'Engine',
   summary: 'Chat-bridge scripts made for Roblox games, like Lyreto\'s Game Bridge, now run in Guts&Bolts games as they are.',
   items: [
     'Roblox-style loops like "for _, player in Players:GetPlayers() do" and "if ... then ... else ..." values work in scripts',

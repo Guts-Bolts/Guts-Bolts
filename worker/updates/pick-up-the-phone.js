@@ -1,5 +1,5 @@
 export default {
-  id: 'pick-up-the-phone', name: 'Pick Up the Phone', time: 1793663516, tag: 'Website',
+  id: 'pick-up-the-phone', name: 'Pick Up the Phone', version: '0.7.9', time: 1793663516, tag: 'Website',
   summary: 'Chats live in the corner of every page now, you can voice call your friends, and games can talk to Lyreto.',
   items: [
     'A Chat panel sits in the bottom corner on a computer: search your friends, see every chat and party with its last message, and start a new one with the pencil',

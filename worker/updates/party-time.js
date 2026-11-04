@@ -1,5 +1,5 @@
 export default {
-  id: 'party-time', name: 'Party Time', time: 1793421419, tag: 'Website',
+  id: 'party-time', name: 'Party Time', version: '0.7.9', time: 1793421419, tag: 'Website',
   summary: 'A proper chat system for talking with friends, starting private conversations, and pulling everyone into a party.',
   items: [
     'Chats live separately from the classic Inbox, so the old message system still works',

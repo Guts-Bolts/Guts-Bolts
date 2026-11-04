@@ -1,6 +1,6 @@
 export default {
   id: 'physics-performance-overhaul',
-  name: 'The Laws of Physics Are Getting a Tune-Up',
+  name: 'The Laws of Physics Are Getting a Tune-Up', version: '0.7.9',
   time: 1793508000,
   tag: 'Engine',
   summary: 'Improve rigid-body stability during slow frames and make graphics and real-water quality settings much more useful on lower-powered devices.',

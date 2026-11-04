@@ -1,5 +1,5 @@
 export default {
-  id: 'taking-the-pulse', name: 'Taking the Pulse', time: 1793650237, tag: 'Website',
+  id: 'taking-the-pulse', name: 'Taking the Pulse', version: '0.7.9', time: 1793650237, tag: 'Website',
   summary: 'Staff get a Numbers tab showing how the site is doing.',
   items: [
     'Right now: how many people are online, how many are in games, and how many accounts, games and catalog items there are',

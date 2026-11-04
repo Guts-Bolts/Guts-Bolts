@@ -1,5 +1,5 @@
 export default {
-  id: 'whats-everyone-up-to', name: 'What\'s Everyone Up To', time: 1793649877, tag: 'Website',
+  id: 'whats-everyone-up-to', name: 'What\'s Everyone Up To', version: '0.7.9', time: 1793649877, tag: 'Website',
   summary: 'My Feed now shows what your friends are doing, not just what they post.',
   items: [
     'See when a friend (or someone you follow) plays a game, makes a new game or item, or earns a badge',

@@ -1,5 +1,5 @@
 export default {
-  id: 'no-refresh-needed', name: 'No Refresh Needed', time: 1793648755, tag: 'Website',
+  id: 'no-refresh-needed', name: 'No Refresh Needed', version: '0.7.9', time: 1793648755, tag: 'Website',
   summary: 'The website now updates the moment something happens, without reloading.',
   items: [
     'New bids on the home page and auction pages show up straight away',

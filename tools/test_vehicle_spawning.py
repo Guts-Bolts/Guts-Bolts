@@ -131,7 +131,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--build", default=str(ROOT / "build"))
     parser.add_argument("--players", type=int, default=2)
-    parser.add_argument("--seconds", type=float, default=18.0)
+    parser.add_argument("--seconds", type=float, default=30.0)
     opts = parser.parse_args()
     if opts.players < 2 or opts.players > 4:
         sys.exit("--players must be between 2 and 4")
