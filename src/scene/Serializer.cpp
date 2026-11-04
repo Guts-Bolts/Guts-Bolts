@@ -168,15 +168,26 @@ void promptFromJson(const nlohmann::json& j, PromptProps& p, bool& enabled) {
     enabled       = j.value("on", true);
 }
 
-nlohmann::json clickToJson(const ClickProps& c) {
+nlohmann::json clickToJson(const ClickProps& c, bool enabled) {
     nlohmann::json j = {{"range", c.range}};
     if (!c.cursor.empty()) j["cursor"] = c.cursor;
+    if (c.drag) j["drag"] = {{"style", c.dragStyle}, {"axis", vec(c.axis)}, {"min", c.minMove}, {"max", c.maxMove},
+                             {"minA", c.minAngle}, {"maxA", c.maxAngle}, {"on", enabled}};
     return j;
 }
 
-void clickFromJson(const nlohmann::json& j, ClickProps& c) {
+void clickFromJson(const nlohmann::json& j, ClickProps& c, bool& enabled) {
     c.range  = std::clamp(j.value("range", 16.0f), 0.0f, 500.0f);
     c.cursor = j.value("cursor", std::string());
+    if (auto d = j.find("drag"); d != j.end() && d->is_object()) {
+        c.drag      = true;
+        c.dragStyle = std::clamp(d->value("style", 0), 0, 3);
+        c.axis      = vec(*d, "axis", glm::vec3(0, 1, 0));
+        if (!(glm::length(c.axis) > 1e-4f)) c.axis = {0, 1, 0};
+        c.minMove   = d->value("min", -1e6f);  c.maxMove  = d->value("max", 1e6f);
+        c.minAngle  = d->value("minA", -1e6f); c.maxAngle = d->value("maxA", 1e6f);
+        enabled     = d->value("on", true);
+    }
 }
 
 nlohmann::json highlightToJson(const HighlightProps& h, bool enabled) {
@@ -1005,7 +1016,7 @@ json toJson(const SceneNode& n) {
     if (n.isLocal)  j["local"]    = true;
     if (n.remoteFunction) j["function"] = true;
     if (n.isPrompt()) j["prompt"] = Serializer::promptToJson(n.prompt, n.enabled);
-    if (n.isClickDetector()) j["click"] = Serializer::clickToJson(n.click);
+    if (n.isClickDetector()) j["click"] = Serializer::clickToJson(n.click, n.enabled);
     if (n.isHighlight()) j["highlight"] = Serializer::highlightToJson(n.highlight, n.enabled);
     if (n.isIkControl()) {
         const IkProps& k = n.ik;
@@ -1309,7 +1320,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     n->isLocal       = get<bool>(j, "local", false);
     n->remoteFunction = get<bool>(j, "function", false);
     if (auto p = j.find("prompt"); p != j.end() && p->is_object()) Serializer::promptFromJson(*p, n->prompt, n->enabled);
-    if (auto c = j.find("click"); c != j.end() && c->is_object()) Serializer::clickFromJson(*c, n->click);
+    if (auto c = j.find("click"); c != j.end() && c->is_object()) Serializer::clickFromJson(*c, n->click, n->enabled);
     if (auto h = j.find("highlight"); h != j.end() && h->is_object()) Serializer::highlightFromJson(*h, n->highlight, n->enabled);
     if (n->isIkControl()) IkControls::noteMade();
     if (auto k = j.find("ik"); k != j.end() && k->is_object()) {

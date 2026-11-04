@@ -88,6 +88,12 @@ struct PromptProps {
 struct ClickProps {
     float       range = 16.0f;   // MaxActivationDistance (Roblox's default 32 studs; 0 = can't be clicked)
     std::string cursor;          // CursorIcon: a picture for the mouse pointer ("" = the hand)
+    // A DragDetector (a ClickDetector you can also grab and drag; game/DragDetectors.h).
+    bool        drag = false;
+    int         dragStyle = 0;           // DragStyle: 0 TranslatePlane, 1 TranslateLine, 2 TranslateViewPlane, 3 RotateAxis
+    glm::vec3   axis{0.0f, 1.0f, 0.0f};  // Axis, in the dragged thing's own frame: the line / the plane's normal / what it spins round
+    float       minMove = -1e6f, maxMove = 1e6f;      // Min/MaxDragTranslation (studs along a TranslateLine)
+    float       minAngle = -1e6f, maxAngle = 1e6f;    // Min/MaxDragAngle (degrees, RotateAxis)
 };
 
 // ColorSequence / NumberSequence: a colour or number that changes along something

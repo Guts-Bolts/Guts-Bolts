@@ -934,12 +934,23 @@ void ViewportPanel::render(float dt) {
             m_session->guiEvents(guiEvents);
             const bool toWorld = m_hovered && !onHotbar && !onGui && !onPrompt;
             SceneNode* under = nullptr;   // the part under the mouse (not our own character)
-            if (toWorld) {
+            float underDist = 0.0f;
+            glm::vec3 ro(0.0f), rd(0.0f, 0.0f, -1.0f);
+            {
                 ImVec2 m = ImGui::GetMousePos();
-                glm::vec3 ro, rd;
                 mouseRay({m.x, m.y}, imgMin, imgSize, view, proj, ro, rd);
+            }
+            if (toWorld) {
                 const SceneNode* character = m_scene->player() ? m_scene->player()->root() : nullptr;
-                under = Physics::raycast(*m_scene, ro, rd, nullptr, character);
+                under = Physics::raycast(*m_scene, ro, rd, &underDist, character);
+            }
+            // DragDetectors: hold the button on one to drag its part; let go to drop it.
+            const glm::vec3 camLook = -glm::vec3(view[0][2], view[1][2], view[2][2]);
+            if (toWorld && under && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                m_session->dragBegin(under->id, ro + rd * underDist, camLook);
+            if (m_session->dragging()) {
+                if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_session->dragMove(ro, rd);
+                else m_session->dragEnd();
             }
             // ClickDetectors: hovering one fires MouseHoverEnter / Leave and shows a hand.
             std::string cursorIcon;

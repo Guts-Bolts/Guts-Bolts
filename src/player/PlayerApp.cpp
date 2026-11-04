@@ -1938,6 +1938,34 @@ void PlayerApp::drawGame(float dt) {
     std::string cursorIcon;
     const bool onClickable = m_session->hoverPart(under ? under->id : 0, &cursorIcon);
     if (onClickable && !padAim) ClickDetectors::showPointer(pointer, cursorIcon);
+    // DragDetectors: press on one (mouse or finger) and hold to drag its part; let go to drop it.
+    auto rayAt = [&](ImVec2 m, glm::vec3& ro, glm::vec3& rd) {
+        float nx = (m.x - pos.x) / size.x * 2.0f - 1.0f;
+        float ny = 1.0f - (m.y - pos.y) / size.y * 2.0f;
+        glm::mat4 inv = glm::inverse(m_camera.projection() * m_camera.view());
+        glm::vec4 a = inv * glm::vec4(nx, ny, -1, 1), b = inv * glm::vec4(nx, ny, 1, 1);
+        ro = glm::vec3(a) / a.w;
+        rd = glm::normalize(glm::vec3(b) / b.w - ro);
+    };
+    if (toWorld && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        glm::vec3 ro, rd;
+        rayAt(pointer, ro, rd);
+        float dist = 0.0f;
+        const SceneNode* character = m_scene->player() ? m_scene->player()->root() : nullptr;
+        if (SceneNode* hit = Physics::raycast(*m_scene, ro, rd, &dist, character)) {
+            const glm::mat4 v = m_camera.view();
+            m_session->dragBegin(hit->id, ro + rd * dist, -glm::vec3(v[0][2], v[1][2], v[2][2]));
+        }
+    }
+    if (m_session->dragging()) {
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            glm::vec3 ro, rd;
+            rayAt(pointer, ro, rd);
+            m_session->dragMove(ro, rd);
+        } else {
+            m_session->dragEnd();
+        }
+    }
     if (toWorld && (tapped || (!touch && hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)))) {
         SceneNode* hit = partAt(pointer);
         m_session->click(hit ? hit->id : 0);

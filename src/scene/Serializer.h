@@ -40,8 +40,8 @@ void                       guiFromJson(GuiProps& g, const nlohmann::json& j);
 nlohmann::json             promptToJson(const PromptProps& p, bool enabled);
 void                       promptFromJson(const nlohmann::json& j, PromptProps& p, bool& enabled);
 // A ClickDetector's settings, the same way.
-nlohmann::json             clickToJson(const ClickProps& c);
-void                       clickFromJson(const nlohmann::json& j, ClickProps& c);
+nlohmann::json             clickToJson(const ClickProps& c, bool enabled = true);
+void                       clickFromJson(const nlohmann::json& j, ClickProps& c, bool& enabled);
 // A Highlight's settings (and whether it's on), the same way.
 nlohmann::json             highlightToJson(const HighlightProps& h, bool enabled);
 void                       highlightFromJson(const nlohmann::json& j, HighlightProps& h, bool& enabled);

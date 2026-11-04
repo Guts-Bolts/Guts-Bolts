@@ -247,7 +247,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
         case NodeKind::IKControl: return "IKControl";
-        case NodeKind::ClickDetector: return "ClickDetector";
+        case NodeKind::ClickDetector: return n->click.drag ? "DragDetector" : "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
@@ -287,6 +287,7 @@ bool isA(lua_State* L, const SceneNode* n, const std::string& cls) {
     if (cls == mine) return true;
     if (n->kind == NodeKind::Part && (cls == "BasePart" || cls == "Part" || cls == "PVInstance")) return true;
     if (n->kind == NodeKind::Model && (cls == "Model" || cls == "Folder" || cls == "PVInstance")) return true;
+    if (n->isClickDetector() && cls == "ClickDetector") return true;   // (a DragDetector is one too)
     if (n->kind == NodeKind::Model && cls == "WorldRoot" && mine == "WorldModel") return true;
     // Folders standing in for Roblox's player containers (from an older import, without a class).
     if (n->kind == NodeKind::Model && n->name == cls &&
@@ -2317,6 +2318,20 @@ int inst_index(lua_State* L) {
         if (is(k, "RightMouseClick"))       { LuaApi::pushSignal(L, SignalKind::ClickRightClick, n->id); return 1; }
         if (is(k, "MouseHoverEnter"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverEnter, n->id); return 1; }
         if (is(k, "MouseHoverLeave"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverLeave, n->id); return 1; }
+        if (n->click.drag) {   // a DragDetector (game/DragDetectors.h)
+            static const char* const kStyles[] = {"TranslatePlane", "TranslateLine", "TranslateViewPlane", "RotateAxis"};
+            const ClickProps& c = n->click;
+            if (is(k, "DragStyle"))          { lua_pushstring(L, kStyles[std::clamp(c.dragStyle, 0, 3)]); return 1; }
+            if (is(k, "Axis"))               { LuaApi::pushVector3(L, c.axis); return 1; }
+            if (is(k, "MinDragTranslation")) { lua_pushnumber(L, c.minMove); return 1; }
+            if (is(k, "MaxDragTranslation")) { lua_pushnumber(L, c.maxMove); return 1; }
+            if (is(k, "MinDragAngle"))       { lua_pushnumber(L, c.minAngle); return 1; }
+            if (is(k, "MaxDragAngle"))       { lua_pushnumber(L, c.maxAngle); return 1; }
+            if (is(k, "Enabled"))            { lua_pushboolean(L, n->enabled); return 1; }
+            if (is(k, "DragStart"))          { LuaApi::pushSignal(L, SignalKind::DragStart, n->id); return 1; }
+            if (is(k, "DragContinue"))       { LuaApi::pushSignal(L, SignalKind::DragContinue, n->id); return 1; }
+            if (is(k, "DragEnd"))            { LuaApi::pushSignal(L, SignalKind::DragEnd, n->id); return 1; }
+        }
     }
     if (n->isIkControl()) {
         const IkProps& p = n->ik;
@@ -2754,6 +2769,36 @@ int inst_set(lua_State* L) {
             n->click.cursor = c;
             return 0;
         }
+        if (n->click.drag) {
+            ClickProps& c = n->click;
+            // A number, or a Vector3 (its biggest part, for Roblox scripts that pass one).
+            auto amount = [&]() -> float {
+                if (lua_isnumber(L, 3)) return (float)lua_tonumber(L, 3);
+                const glm::vec3 v = LuaApi::checkVector3(L, 3);
+                return std::fabs(v.x) >= std::fabs(v.y) && std::fabs(v.x) >= std::fabs(v.z) ? v.x : std::fabs(v.y) >= std::fabs(v.z) ? v.y : v.z;
+            };
+            if (is(k, "DragStyle")) {   // Enum.DragDetectorDragStyle.TranslateLine / "RotateAxis"...
+                std::string s = luaL_tolstring(L, 3, nullptr);
+                lua_pop(L, 1);
+                if (s.find("ViewPlane") != std::string::npos)       c.dragStyle = 2;
+                else if (s.find("TranslateLine") != std::string::npos) c.dragStyle = 1;
+                else if (s.find("Rotate") != std::string::npos)      c.dragStyle = 3;
+                else if (s.find("Translate") != std::string::npos || s.find("BestForDevice") != std::string::npos) c.dragStyle = 0;
+                else return luaL_error(L, "DragStyle must be TranslatePlane, TranslateLine, TranslateViewPlane or RotateAxis");
+                return 0;
+            }
+            if (is(k, "Axis")) {
+                const glm::vec3 a = LuaApi::checkVector3(L, 3);
+                if (!(glm::length(a) > 1e-4f)) return luaL_error(L, "Axis can't be (0, 0, 0)");
+                c.axis = glm::normalize(a);
+                return 0;
+            }
+            if (is(k, "MinDragTranslation")) { c.minMove = std::clamp(amount(), -1e6f, 1e6f); return 0; }
+            if (is(k, "MaxDragTranslation")) { c.maxMove = std::clamp(amount(), -1e6f, 1e6f); return 0; }
+            if (is(k, "MinDragAngle"))       { c.minAngle = std::clamp((float)luaL_checknumber(L, 3), -1e6f, 1e6f); return 0; }
+            if (is(k, "MaxDragAngle"))       { c.maxAngle = std::clamp((float)luaL_checknumber(L, 3), -1e6f, 1e6f); return 0; }
+            if (is(k, "Enabled"))            { n->enabled = lua_toboolean(L, 3); return 0; }
+        }
     }
     if (n->isIkControl()) {
         IkProps& p = n->ik;
@@ -3068,8 +3113,9 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, NodeKind::IKControl);
         n->visible = false;
         IkControls::noteMade();
-    } else if (cls == "ClickDetector") {
+    } else if (cls == "ClickDetector" || cls == "DragDetector") {   // (a DragDetector is a ClickDetector you can drag)
         n = std::make_unique<SceneNode>(cls, NodeKind::ClickDetector);
+        n->click.drag = cls == "DragDetector";
     } else if (cls == "Trail" || cls == "Beam") {
         n = std::make_unique<SceneNode>(cls, cls == "Trail" ? NodeKind::Trail : NodeKind::Beam);
     } else if (std::find(std::begin(kPostEffectClassNames), std::end(kPostEffectClassNames), cls) != std::end(kPostEffectClassNames)) {

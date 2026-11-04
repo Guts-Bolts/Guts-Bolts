@@ -1407,10 +1407,21 @@ struct Converter {
             p.clickable = in.flag("ClickablePrompt", true);
             node->enabled = in.flag("Enabled", true);
             ++report.other;
-        } else if (c == "ClickDetector") {
+        } else if (c == "ClickDetector" || c == "DragDetector") {
             node = std::make_unique<SceneNode>(name, NodeKind::ClickDetector);
             node->click.range = std::max(0.0f, (float)in.num("MaxActivationDistance", 32.0) * kImportScale);
             node->click.cursor = in.str("CursorIcon");   // (an rbxassetid:// picture won't load here, but is kept)
+            if (c == "DragDetector") {
+                ClickProps& k = node->click;
+                k.drag = true;
+                // Roblox's DragStyle numbers (Enum.DragDetectorDragStyle, in its order): 0 TranslateLine, 1 TranslatePlane, 2 TranslatePlaneFree,
+                // 3 TranslateLineOrPlane, 4 TranslateFree, 5 RotateAxis, 6 RotateTrackball, 7 Scriptable,
+                // 8 BestForDevice, 9 TranslateViewPlane.
+                const int style = (int)in.num("DragStyle", 1);
+                k.dragStyle = style == 0 ? 1 : style == 5 || style == 6 ? 3 : style == 9 || style == 4 ? 2 : 0;
+                if (const Value* v = in.get("Axis"); v && glm::length(v->v) > 1e-4f) k.axis = glm::normalize(v->v);
+                node->enabled = in.flag("Enabled", true);
+            }
             ++report.other;
         } else if (c == "Trail" || c == "Beam") {
             const bool beam = c == "Beam";
@@ -2066,7 +2077,7 @@ struct XmlWriter {
             case NodeKind::IKControl:  cls = "IKControl"; break;
             case NodeKind::PostEffect: cls = kPostEffectClassNames[(int)n.post.type]; break;
             case NodeKind::Sky:        cls = "Sky"; break;
-            case NodeKind::ClickDetector: cls = "ClickDetector"; break;
+            case NodeKind::ClickDetector: cls = n.click.drag ? "DragDetector" : "ClickDetector"; break;
             case NodeKind::Trail:      cls = "Trail"; break;
             case NodeKind::Beam:       cls = "Beam"; break;
             case NodeKind::Particles:  cls = n.particleClass(); break;

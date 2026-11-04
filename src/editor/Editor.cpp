@@ -3129,13 +3129,15 @@ void Editor::insertObject(const std::string& what, SceneNode* parent) {
         parent = service;
         put(std::make_unique<SceneNode>("MaterialVariant", NodeKind::MaterialVariant));
     }
-    else if (what == "ClickDetector") {
-        // It goes on the part (or model) players click.
+    else if (what == "ClickDetector" || what == "DragDetector") {
+        // It goes on the part (or model) players click / drag.
         if (!parent || parent == m_scene->root() || (!parent->isPart() && parent->kind != NodeKind::Model)) {
-            Log::warn("Select a part or model first: a ClickDetector goes inside the thing players click.");
+            Log::warn("Select a part or model first: a " + what + " goes inside the thing players click.");
             return;
         }
-        put(std::make_unique<SceneNode>("ClickDetector", NodeKind::ClickDetector));
+        auto d = std::make_unique<SceneNode>(what, NodeKind::ClickDetector);
+        d->click.drag = what == "DragDetector";
+        put(std::move(d));
     }
     else if (what == "Highlight") {
         // It colours what it's in (a part or a model).
@@ -3358,7 +3360,7 @@ const std::vector<InsertItem>& insertItems() {
         {"Sky", Icons::Id::Lighting}, {"ColorCorrectionEffect", Icons::Id::Lighting}, {"SunRaysEffect", Icons::Id::Lighting},
         {"MaterialVariant", Icons::Id::Lighting},
         {"DepthOfFieldEffect", Icons::Id::Lighting}, {"BloomEffect", Icons::Id::Lighting}, {"BlurEffect", Icons::Id::Lighting},
-        {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"ClickDetector", Icons::Id::Click}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
+        {"RemoteEvent", Icons::Id::Remote}, {"RemoteFunction", Icons::Id::Remote}, {"ProximityPrompt", Icons::Id::Prompt}, {"ClickDetector", Icons::Id::Click}, {"DragDetector", Icons::Id::Click}, {"Highlight", Icons::Id::Highlight}, {"Trail", Icons::Id::Ribbon}, {"Beam", Icons::Id::Ribbon},
         {"ParticleEmitter", Icons::Id::Particles}, {"Fire", Icons::Id::Particles}, {"Smoke", Icons::Id::Particles}, {"Sparkles", Icons::Id::Particles},
         {"PointLight", Icons::Id::Light}, {"SpotLight", Icons::Id::Light}, {"Sound", Icons::Id::Sound},
         {"SoundGroup", Icons::Id::Sound}, {"ReverbSoundEffect", Icons::Id::Sound}, {"EchoSoundEffect", Icons::Id::Sound},

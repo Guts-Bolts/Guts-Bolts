@@ -331,6 +331,7 @@ void GameSession::stop() {
     }
     m_running = false;
     m_hoverDetector = 0;
+    m_drag = DragDetectors::Drag{};
 }
 
 void GameSession::updateOwnership() {
@@ -654,6 +655,39 @@ bool GameSession::clickDetector(uint64_t partId) {
     SceneNode* d = reachableDetector(partId);
     if (d) fireDetector(SignalKind::ClickMouseClick, "c", d->id);
     return d != nullptr;
+}
+
+bool GameSession::dragBegin(uint64_t partId, const glm::vec3& hit, const glm::vec3& camForward) {
+    if (!m_running) return false;
+    if (m_drag.active()) dragEnd();
+    SceneNode* d = reachableDetector(partId);
+    if (!d || !DragDetectors::begin(*m_scene, d, hit, camForward, m_drag)) return false;
+    if (m_role == Role::Client && onDrag) onDrag(d->id, "s", hit, camForward);
+    m_scripts.fireClickDetector(SignalKind::DragStart, d->id);
+    return true;
+}
+
+void GameSession::dragMove(const glm::vec3& ro, const glm::vec3& rd) {
+    if (!m_drag.active()) return;
+    const uint64_t id = m_drag.detector;
+    if (!DragDetectors::move(*m_scene, m_drag, ro, rd, 1.0f / 60.0f)) { dragEnd(); return; }
+    // Walked away from it (or died): let go.
+    SceneNode* d = m_scene->findById(id);
+    Player* p = m_runOnly ? nullptr : m_scene->player();
+    if (p && (p->isDead() || !p->root() || !d || ClickDetectors::distance(d, p->position()) > d->click.range * 2.0f + 10.0f)) {
+        dragEnd();
+        return;
+    }
+    if (m_role == Role::Client && onDrag && m_time - m_dragSent >= 0.05) { m_dragSent = m_time; onDrag(id, "m", ro, rd); }
+    m_scripts.fireClickDetector(SignalKind::DragContinue, id);
+}
+
+void GameSession::dragEnd() {
+    if (!m_drag.active()) return;
+    const uint64_t id = m_drag.detector;
+    DragDetectors::end(*m_scene, m_drag, 1.0f / 60.0f);
+    if (m_role == Role::Client && onDrag) onDrag(id, "e", glm::vec3(0.0f), glm::vec3(0.0f));
+    if (m_scene->findById(id)) m_scripts.fireClickDetector(SignalKind::DragEnd, id);
 }
 
 void GameSession::click(uint64_t partId) {
