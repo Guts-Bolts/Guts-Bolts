@@ -226,6 +226,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(stb)
 
+# pl_mpeg: plays MPEG-1 videos (VideoFrame), picture and sound, in one small file.
+FetchContent_Declare(
+    plmpeg
+    GIT_REPOSITORY https://github.com/phoboslab/pl_mpeg.git
+    GIT_TAG        c871f2be022ece7ef4f64230b4fb8e1fb9eb6023
+)
+FetchContent_MakeAvailable(plmpeg)
+
 # portable-file-dialogs: the system's own "Open file" window (Browse... buttons).
 FetchContent_Declare(
     pfd
@@ -479,6 +487,9 @@ add_library(gb_engine STATIC
     src/scripting/ScriptHelp.cpp
     src/scripting/ScriptCheck.cpp
     src/game/GameSession.cpp
+    src/game/LiveProfiler.cpp
+    src/game/Videos.cpp
+    src/core/FrameProfile.cpp
     src/game/Hud.cpp
     src/game/EmoteMenu.cpp
     src/game/GameGui.cpp
@@ -545,7 +556,7 @@ endforeach()
 gb_embed("${CMAKE_SOURCE_DIR}/assets/certs/cacert.pem" kCaCerts "${GB_GENERATED}/CaCerts.h")
 target_compile_definitions(gb_engine PRIVATE GB_WEBSOCKETS)
 
-target_include_directories(gb_engine PUBLIC src/ ${miniaudio_SOURCE_DIR} ${GB_GENERATED} ${stb_SOURCE_DIR} ${pfd_SOURCE_DIR} ${GB_DRACO_INCLUDE_DIR} ${CMAKE_BINARY_DIR})
+target_include_directories(gb_engine PUBLIC src/ ${miniaudio_SOURCE_DIR} ${GB_GENERATED} ${stb_SOURCE_DIR} ${plmpeg_SOURCE_DIR} ${pfd_SOURCE_DIR} ${GB_DRACO_INCLUDE_DIR} ${CMAKE_BINARY_DIR})
 add_dependencies(gb_engine gb_version)
 find_package(Threads REQUIRED)
 target_link_libraries(gb_engine PUBLIC Threads::Threads ${CMAKE_DL_LIBS} opus)
@@ -1169,6 +1180,18 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(ScriptCheckTests tests/ScriptCheckTests.cpp)
     target_link_libraries(ScriptCheckTests PRIVATE gb_engine)
     add_test(NAME ScriptCheckTests COMMAND ScriptCheckTests "${CMAKE_SOURCE_DIR}/games" WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # VideoFrame: videos on screens and parts.
+    add_executable(VideoFrameTests tests/VideoFrameTests.cpp)
+    target_link_libraries(VideoFrameTests PRIVATE gb_engine)
+    add_test(NAME VideoFrameTests COMMAND VideoFrameTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             "${CMAKE_SOURCE_DIR}/tests/media/red-then-blue.mpg" WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The Live Profiler: times the parts of a frame and each script, only while it's open.
+    add_executable(LiveProfilerTests tests/LiveProfilerTests.cpp)
+    target_link_libraries(LiveProfilerTests PRIVATE gb_engine)
+    add_test(NAME LiveProfilerTests COMMAND LiveProfilerTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # MemoryStoreService: the store's rules and the script side, played offline.
     add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)

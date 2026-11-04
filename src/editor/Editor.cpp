@@ -35,6 +35,8 @@
 #include "../scene/Player.h"
 #include "../scene/Serializer.h"
 #include "../game/GameSession.h"
+#include "../game/LiveProfiler.h"
+#include "../core/FrameProfile.h"
 #include "../game/SettingsWindow.h"
 #include "../game/UpdateToast.h"
 #include "../core/Settings.h"
@@ -84,6 +86,7 @@ Editor::Editor(GLFWwindow* window, Scene* scene)
     m_showScriptHistory = std::getenv("GB_TEST_SCRIPTHISTORY") != nullptr;   // (tests: start with it showing)
     m_showReplay = std::getenv("GB_TEST_REPLAY") != nullptr;   // (tests: start with it showing)
     m_showCompare = std::getenv("GB_TEST_COMPARE") != nullptr;   // (tests: start with it showing)
+    m_showLiveProfiler = std::getenv("GB_TEST_PROFILER") != nullptr;   // (tests: start with it showing)
     m_viewport = std::make_unique<ViewportPanel>(window, scene, &m_state);
     registerWorkspaceSettings();   // (before the layout file is read, on the first frame)
     auto open  = [this](SceneNode* n) { openScript(n); };
@@ -449,10 +452,12 @@ void Editor::render(float dt) {
         m_perfSampleMode = m_playing;
     }
     m_perfFrameSamples.push_back(std::max(0.0f, dt * 1000.0f));
+    FrameProfile::endFrame(dt * 1000.0);   // (the Live Profiler, when it's open)
     if (m_perfFrameSamples.size() > 180) m_perfFrameSamples.erase(m_perfFrameSamples.begin());
     m_perfCpuFrameMs = std::chrono::duration<float, std::milli>(
         std::chrono::steady_clock::now() - frameStart).count();
     renderPerformanceWindow();
+    LiveProfiler::draw(&m_showLiveProfiler);
     renderLearn();
     renderPerformanceDoctor();
     renderLuaDebugger();
@@ -3383,7 +3388,7 @@ const std::vector<InsertItem>& insertItems() {
         {"TextBox", Icons::Id::GuiText}, {"ScrollingFrame", Icons::Id::GuiFrame}, {"UIListLayout", Icons::Id::GuiCorner},
         {"UIGridLayout", Icons::Id::GuiCorner}, {"UIPadding", Icons::Id::GuiCorner},
         {"UIGradient", Icons::Id::GuiCorner}, {"UIScale", Icons::Id::GuiCorner}, {"UIAspectRatioConstraint", Icons::Id::GuiCorner},
-        {"ViewportFrame", Icons::Id::GuiViewport}, {"Camera", Icons::Id::Camera}, {"WorldModel", Icons::Id::Model},
+        {"ViewportFrame", Icons::Id::GuiViewport}, {"VideoFrame", Icons::Id::GuiImage}, {"Camera", Icons::Id::Camera}, {"WorldModel", Icons::Id::Model},
         {"BillboardGui", Icons::Id::ScreenGui}, {"SurfaceGui", Icons::Id::ScreenGui},
         {"IntValue", Icons::Id::Value}, {"NumberValue", Icons::Id::Value}, {"StringValue", Icons::Id::Value}, {"BoolValue", Icons::Id::Value}};
     return list;
@@ -3910,6 +3915,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Project Dependency Map")) m_scriptEditor->showDependencyMap();
         if (ImGui::MenuItem("Studio Learn...", nullptr, &m_showLearn)) {}
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
+        if (ImGui::MenuItem("Live Profiler", nullptr, &m_showLiveProfiler)) {}
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}

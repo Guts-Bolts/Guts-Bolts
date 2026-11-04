@@ -1,3 +1,4 @@
+#include "Videos.h"
 #include "GameGui.h"
 #include "RichText.h"
 #include "../core/I18n.h"
@@ -933,6 +934,14 @@ void drawItem(ImDrawList* dl, const Item& it, ImVec2 min, ImVec2 max, const Inpu
                 else imageRounded(dl, tex, it.a, it.b, ImVec2(0, 1), ImVec2(1, 0), tint, radii);
             }
     }
+
+    // A VideoFrame: the video's picture now (game/Videos.h).
+    if (g.type == GuiType::VideoFrame && !Mesh::headless && g.imageTransparency < 1.0f)
+        if (unsigned tex = Videos::texture(*n)) {
+            const ImU32 tint = rgba(g.imageColor, g.imageTransparency);
+            if (gr) fillGradient(dl, it.a, it.b, tint, radii, *gr, tex, ImVec2(0, 1), ImVec2(1, 0));
+            else imageRounded(dl, tex, it.a, it.b, ImVec2(0, 1), ImVec2(1, 0), tint, radii);
+        }
 
     if (!input || n->id != g_focus) drawText(dl, it, g, radius, gr);   // (the TextBox being typed in shows its own)
 

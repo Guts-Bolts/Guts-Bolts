@@ -52,7 +52,7 @@ const char* const kClassNames[] = {"Part", "WedgePart", "CornerWedgePart", "Trus
     "PrismaticConstraint", "AlignPosition", "AlignOrientation", "LinearVelocity", "AngularVelocity",
     "VectorForce", "BodyVelocity", "BodyPosition", "BodyGyro", "BodyForce", "ClickDetector", "DragDetector",
     "ProximityPrompt", "Highlight", "Decal", "Texture", "SurfaceGui", "BillboardGui", "ScreenGui", "Frame",
-    "TextLabel", "TextButton", "TextBox", "ImageLabel", "ImageButton", "ScrollingFrame", "ViewportFrame",
+    "TextLabel", "TextButton", "TextBox", "ImageLabel", "ImageButton", "ScrollingFrame", "ViewportFrame", "VideoFrame",
     "UICorner", "UIStroke", "UIGradient", "UIListLayout", "UIGridLayout", "UIPadding", "UIScale",
     "UIAspectRatioConstraint", "RemoteEvent", "RemoteFunction", "BindableEvent", "BindableFunction",
     "IntValue", "NumberValue", "StringValue", "BoolValue", "ObjectValue", "Vector3Value", "CFrameValue",

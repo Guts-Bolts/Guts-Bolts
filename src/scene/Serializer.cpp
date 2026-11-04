@@ -588,6 +588,10 @@ nlohmann::json guiToJson(const GuiProps& g) {
     if (g.type == GuiType::ImageLabel || g.type == GuiType::ImageButton) {
         j["image"] = g.image; j["imageColor"] = vec(g.imageColor); j["imageT"] = g.imageTransparency;
     }
+    if (g.type == GuiType::VideoFrame) {
+        j["video"] = g.video; j["playing"] = g.playing; j["looped"] = g.looped; j["volume"] = g.volume;
+        j["imageColor"] = vec(g.imageColor); j["imageT"] = g.imageTransparency;
+    }
     if (g.type == GuiType::TextButton || g.type == GuiType::ImageButton) j["autoColor"] = g.autoButtonColor;
     if (g.type == GuiType::ScreenGui) j["order"] = g.displayOrder;
     if (g.type == GuiType::UICorner) {
@@ -756,6 +760,10 @@ void guiFromJson(GuiProps& g, const nlohmann::json& j) {
     g.aspectType = std::clamp(get<int>(j, "aspectType", g.aspectType), 0, 1);
     g.dominantAxis = std::clamp(get<int>(j, "dominantAxis", g.dominantAxis), 0, 1);
     g.camera = get<uint64_t>(j, "camera", g.camera);
+    if (auto it = j.find("video"); it != j.end() && it->is_string()) g.video = it->get<std::string>().substr(0, 1000);
+    g.playing = get<bool>(j, "playing", g.playing);
+    g.looped = get<bool>(j, "looped", g.looped);
+    g.volume = std::clamp(get<float>(j, "volume", g.volume), 0.0f, 10.0f);
     g.ambient = glm::clamp(vec(j, "ambient", g.ambient), 0.0f, 1.0f);
     g.lightColor = glm::clamp(vec(j, "lightColor", g.lightColor), 0.0f, 1.0f);
     g.lightDir = vec(j, "lightDir", g.lightDir);

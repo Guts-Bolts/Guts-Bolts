@@ -6,6 +6,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <unordered_set>
@@ -468,6 +469,12 @@ private:
     uint64_t   m_debugScript = 0, m_debugOwner = 0;
     std::string m_debugSource, m_debugReason, m_debugCantPause;
     std::vector<lua_State*> m_resumeStack;    // coroutines resume() is running, innermost last
+    // Live Profiler: which script each coroutine belongs to, and the time its code runs
+    // (its own time: code it starts in another script counts for that one).
+    std::unordered_map<lua_State*, std::string> m_profName;
+    struct ProfRun { double start; double inner; };
+    std::vector<ProfRun> m_profStack;
+    std::string profNameOf(lua_State* co, int nargs);
     std::unordered_set<uint64_t> m_stopped;
 
     std::vector<Waiting>                    m_waiting;

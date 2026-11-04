@@ -450,6 +450,13 @@ void keepBuses(const std::set<uint64_t>& used) {
 }
 
 void setVolume(int handle, float v) { if (Instance* in = find(handle)) ma_sound_set_volume(&in->sound, std::max(0.0f, v)); }
+void seek(int handle, double seconds) {
+    Instance* in = find(handle);
+    if (!in) return;
+    ma_uint32 rate = 0;
+    if (ma_sound_get_data_format(&in->sound, nullptr, nullptr, &rate, nullptr, 0) != MA_SUCCESS || !rate) return;
+    ma_sound_seek_to_pcm_frame(&in->sound, (ma_uint64)(std::max(0.0, seconds) * rate));
+}
 void setPitch(int handle, float p)  { if (Instance* in = find(handle)) ma_sound_set_pitch(&in->sound, std::max(0.05f, p)); }
 void setPosition(int handle, const glm::vec3& p) {
     if (Instance* in = find(handle)) ma_sound_set_position(&in->sound, p.x, p.y, p.z);
