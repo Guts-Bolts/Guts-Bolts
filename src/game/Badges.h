@@ -48,6 +48,13 @@ bool        redeem(const std::string& code, std::string& message);
 void drawIcon(ImDrawList* dl, ImVec2 c, float size, Id id);
 // A badge picture as an ImGui item (with a tooltip).
 void icon(Id id, float size);
+// Boltworks Club tier from signed "bwc" / "tbc" / "obc" grants: 0 none, 1 BWC, 2 TBC, 3 OBC
+// (the best one wins). Only the official account can give them out.
+int  clubTier(const std::string& accountId, const std::vector<Grant>& grants);
+int  myClubTier();
+// The Boltworks Club icon: a hex bolt head (blue, gold, red) with 1-3 white slanted stripes.
+// Same look as clubSvg on the website.
+void drawClub(ImDrawList* dl, ImVec2 c, float size, int tier);
 // The little blue check shown next to Verified people's names.
 void drawCheck(ImDrawList* dl, ImVec2 c, float size);
 // The check as an ImGui item, on the current line (with a tooltip).

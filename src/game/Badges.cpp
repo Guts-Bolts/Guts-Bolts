@@ -203,6 +203,40 @@ void drawIcon(ImDrawList* dl, ImVec2 c, float s, Id id) {
     }
 }
 
+int clubTier(const std::string& accountId, const std::vector<Grant>& grants) {
+    const std::string official = Account::officialId();
+    if (official.empty()) return 0;
+    int best = 0;
+    for (const auto& [key, sig] : grants) {
+        int tier = key == "bwc" ? 1 : key == "tbc" ? 2 : key == "obc" ? 3 : 0;
+        if (tier > best && grantValid(official, key, accountId, sig)) best = tier;
+    }
+    return best;
+}
+
+int myClubTier() { return clubTier(Account::id(), Profile::get().grants); }
+
+void drawClub(ImDrawList* dl, ImVec2 c, float s, int tier) {
+    if (tier < 1 || tier > 3) return;
+    // (fill, lighter top half, dark rim) for BWC, TBC, OBC
+    static const ImU32 fill[] = {IM_COL32(36, 120, 230, 255), IM_COL32(245, 163, 0, 255), IM_COL32(217, 22, 28, 255)};
+    static const ImU32 top[]  = {IM_COL32(140, 203, 255, 140), IM_COL32(255, 233, 140, 140), IM_COL32(255, 138, 115, 140)};
+    static const ImU32 rim[]  = {IM_COL32(10, 37, 80, 255), IM_COL32(77, 48, 0, 255), IM_COL32(61, 3, 6, 255)};
+    const float k = s / 20.0f;   // drawn on a 20x20 grid, like the website's SVG
+    auto P = [&](float x, float y) { return ImVec2(c.x + (x - 10.0f) * k, c.y + (y - 10.0f) * k); };
+    ImVec2 hex[] = {P(10, 0.9f), P(18, 5.45f), P(18, 14.55f), P(10, 19.1f), P(2, 14.55f), P(2, 5.45f)};
+    dl->AddConvexPolyFilled(hex, 6, fill[tier - 1]);
+    ImVec2 upper[] = {P(10, 0.9f), P(18, 5.45f), P(18, 10), P(2, 10), P(2, 5.45f)};
+    dl->AddConvexPolyFilled(upper, 5, top[tier - 1]);
+    dl->AddPolyline(hex, 6, rim[tier - 1], ImDrawFlags_Closed, std::max(1.0f, 1.5f * k));
+    const float w = tier == 3 ? 2.5f : 2.8f, gap = 1.15f, h = 9.4f, slant = 1.9f;
+    float x = 10.0f - (tier * w + (tier - 1) * gap + slant) * 0.5f;
+    for (int i = 0; i < tier; ++i, x += w + gap) {
+        ImVec2 q[] = {P(x + slant, 10 - h / 2), P(x + slant + w, 10 - h / 2), P(x + w, 10 + h / 2), P(x, 10 + h / 2)};
+        dl->AddConvexPolyFilled(q, 4, IM_COL32(255, 255, 255, 255));
+    }
+}
+
 void drawCheck(ImDrawList* dl, ImVec2 c, float s) {
     // A blue badge with a white tick, like other sites' verified mark.
     const int n = 12;

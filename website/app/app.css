@@ -1187,3 +1187,13 @@ table:not(.stats):not(.versions) tbody tr:nth-child(even) {
 .staff-charts { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
 .top-games li { padding: 3px 0; }
 .top-games li .small { margin-left: 6px; }
+
+/* Boltworks Club tier icon (hex bolt head, 1-3 stripes) next to names, and the box on profiles */
+.club-icon{display:inline-block;vertical-align:-2px;flex:none}
+h1 .club-icon{vertical-align:-4px}
+.club-box{display:flex;align-items:center;gap:12px}.club-box b{font-size:14px}
+.club-short{font-family:var(--gb-font);font-size:20px;letter-spacing:1px;line-height:1}
+.club-bwc .club-short{color:#2478e6}.club-tbc .club-short{color:#d68a00}.club-obc .club-short{color:#d9161c}
+.list .club-pick,.club-pick{width:auto;max-width:120px;flex:none;font-size:12px;padding:2px 4px}
+.boltworks-tier-preview>div>.club-icon{margin-bottom:2px}
+.boltworks-copy h2{background:none;border:0;padding:0}

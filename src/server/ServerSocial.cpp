@@ -103,7 +103,7 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
                 const User& u = it->second;
                 for (size_t k = 0; k < u.posts.size() && k < 5; ++k)
                     all.push_back({{"text", u.posts[k].value("text", std::string())}, {"at", u.posts[k].value("at", 0LL)},
-                                   {"user", {{"id", u.id}, {"userId", u.userId}, {"name", u.name}, {"verified", isVerified(u)}, {"avatar", u.avatar}}}});
+                                   {"user", {{"id", u.id}, {"userId", u.userId}, {"name", u.name}, {"verified", isVerified(u)}, {"club", clubOf(u)}, {"avatar", u.avatar}}}});
             }
             for (const json& note : gameLogFeed(me)) all.push_back(note);   // what's new in games you favourited (ServerExtras.cpp)
             std::sort(all.begin(), all.end(), [](const json& a, const json& b) { return a.value("at", 0LL) > b.value("at", 0LL); });
@@ -219,7 +219,7 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
             const std::string by = c.value("by", std::string());
             const User* u = findUser(by);
             if (u && blocks(me, *u)) continue;
-            json who = u ? json{{"id", u->id}, {"userId", u->userId}, {"name", u->name}, {"verified", isVerified(*u)}, {"staff", isStaff(*u)}, {"partner", isPartner(*u)}}
+            json who = u ? json{{"id", u->id}, {"userId", u->userId}, {"name", u->name}, {"verified", isVerified(*u)}, {"club", clubOf(*u)}, {"staff", isStaff(*u)}, {"partner", isPartner(*u)}}
                          : json{{"id", by}, {"userId", 0}, {"name", "?"}};
             out.push_back({{"id", c.value("id", std::string())}, {"text", c.value("text", std::string())}, {"at", c.value("at", 0LL)},
                            {"by", who}, {"creator", by == a.creator}, {"canDelete", me.userId != 0 && (by == me.id || mod)}});
@@ -274,7 +274,7 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
         if (!me.chats.is_array()) me.chats = json::array();
         if (!me.partyInvites.is_array()) me.partyInvites = json::array();
         auto person = [&](const User& u) {
-            return json{{"id", u.id}, {"userId", u.userId}, {"name", u.username.empty() ? u.name : u.username}, {"verified", isVerified(u)}};
+            return json{{"id", u.id}, {"userId", u.userId}, {"name", u.username.empty() ? u.name : u.username}, {"verified", isVerified(u)}, {"club", clubOf(u)}};
         };
         auto findChat = [&](User& u, const std::string& id) -> json* {
             if (!u.chats.is_array()) return nullptr;
@@ -497,7 +497,7 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
         auto who = [&](const std::string& id) {
             auto it = m_users.find(id);
             if (it == m_users.end()) return json{{"id", id}, {"userId", 0}, {"name", "?"}};
-            return json{{"id", id}, {"userId", it->second.userId}, {"name", it->second.name}, {"verified", isVerified(it->second)}};
+            return json{{"id", id}, {"userId", it->second.userId}, {"name", it->second.name}, {"verified", isVerified(it->second)}, {"club", clubOf(it->second)}};
         };
         json out = json::array();
         const json& box = sent ? me.sent : me.inbox;
