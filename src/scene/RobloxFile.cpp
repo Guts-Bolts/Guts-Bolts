@@ -2677,6 +2677,8 @@ bool importPlace(Scene& scene, const std::string& path, Report& report, std::str
     // Workspace + Lighting settings.
     double g = ws->num("Gravity", kRobloxGravity);
     scene.world().gravity = (float)(22.0 * g / kRobloxGravity);
+    scene.world().streaming = ws->flag("StreamingEnabled", false);
+    scene.world().streamRadius = std::clamp((float)ws->num("StreamingTargetRadius", 1024.0) * kImportScale, 32.0f, 5000.0f);
     if (const Inst* light = findChild(doc.roots, "Lighting")) {
         Environment& env = scene.environment();
         EnvironmentPresets::applyTimeOfDay(env, (float)light->num("ClockTime", 14.0));
@@ -2737,6 +2739,8 @@ bool exportPlace(Scene& scene, const std::string& path, std::string& error) {
     w.o << "<Item class=\"Workspace\" referent=\"RBXWORKSPACE\">\n<Properties>\n";
     w.str("Name", "Workspace");
     w.flt("Gravity", scene.world().gravity / 22.0f * kRobloxGravity);
+    w.boolean("StreamingEnabled", scene.world().streaming);
+    w.o << "<int name=\"StreamingTargetRadius\">" << (int)std::lround(scene.world().streamRadius / kImportScale) << "</int>\n";
     if (!scene.world().collisionGroups.isDefault()) w.str("CollisionGroups", writeCollisionGroups(scene.world().collisionGroups));
     w.o << "</Properties>\n";
     const SceneNode* ui = scene.root()->findChild("StarterGui");

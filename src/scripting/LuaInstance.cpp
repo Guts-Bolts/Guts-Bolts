@@ -2421,6 +2421,8 @@ int inst_index(lua_State* L) {
         if (is(k, "Orthographic"))     { lua_pushboolean(L, w.orthographic); return 1; }
         if (is(k, "CurrentCamera"))    { LuaApi::pushCamera(L); return 1; }
         if (is(k, "OrthographicSize")) { lua_pushnumber(L, w.orthographicSize); return 1; }
+        if (is(k, "StreamingEnabled"))      { lua_pushboolean(L, w.streaming); return 1; }
+        if (is(k, "StreamingTargetRadius")) { lua_pushnumber(L, w.streamRadius); return 1; }
         if (is(k, "BloodColor"))  { LuaApi::pushColor3(L, w.bloodColor); return 1; }
         if (is(k, "BloodAmount")) { lua_pushnumber(L, w.bloodAmount); return 1; }
         if (is(k, "MaxFluidParticles")) { lua_pushinteger(L, w.maxFluidParticles); return 1; }
@@ -2922,6 +2924,8 @@ int inst_set(lua_State* L) {
         if (is(k, "Orthographic"))     { w.orthographic = lua_toboolean(L, 3); return 0; }
         if (is(k, "CurrentCamera"))    return 0;   // (there's only ever the one camera)
         if (is(k, "OrthographicSize")) { w.orthographicSize = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 2000.0f); return 0; }
+        if (is(k, "StreamingEnabled"))      { w.streaming = lua_toboolean(L, 3); return 0; }
+        if (is(k, "StreamingTargetRadius")) { w.streamRadius = std::clamp((float)luaL_checknumber(L, 3), 32.0f, 5000.0f); return 0; }
         if (is(k, "BloodColor"))  { w.bloodColor = LuaApi::checkColor3(L, 3); return 0; }
         if (is(k, "BloodAmount")) { w.bloodAmount = glm::clamp((float)luaL_checknumber(L, 3), 0.0f, 5.0f); return 0; }
         if (is(k, "MaxFluidParticles")) { w.maxFluidParticles = std::clamp((int)luaL_checkinteger(L, 3), 0, 1 << 20); return 0; }

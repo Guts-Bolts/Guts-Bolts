@@ -1,4 +1,5 @@
 #include "NetGame.h"
+#include "Streaming.h"
 #include <cmath>
 #include <unordered_set>
 #include "../scripting/LuaApi.h"   // SignalKind (UI clicks)
@@ -629,6 +630,8 @@ struct NetServer::Client {
     bool        voiceOn = false;      // they turned voice chat on (they hear others and may talk)
     double      voiceBudget = 40.0;   // voice packets they may still send (about 17 a second while talking)
     double      voiceAt = 0.0;
+    std::unordered_set<uint64_t> streamedOut;   // map pieces not on their computer (StreamingEnabled)
+    double      streamAt = 0.0;                 // when we last looked what they should have
 };
 
 NetServer::NetServer(Scene* scene, GameSession* session) : m_scene(scene), m_session(session) {}
@@ -1054,7 +1057,17 @@ void NetServer::handle(Client& c, const std::string& text) {
         Player* hostPlayer = m_scene->player();
         const uint64_t hostChar = hostPlayer && hostPlayer->root() ? hostPlayer->rootId() : 0;   // 0: a game server machine (nobody)
         std::string scene;
-        { HideServerCode hide(m_scene->root()); scene = Serializer::saveScene(*m_scene); }
+        {
+            HideServerCode hide(m_scene->root());
+            // StreamingEnabled: only the pieces of the map near where they start.
+            if (m_scene->world().streaming) {
+                const float radius = m_scene->world().streamRadius;
+                const glm::vec3 at(rig->worldMatrix()[3]);
+                for (const Streaming::Piece& p : Streaming::pieces(*m_scene, radius))
+                    if (!Streaming::wanted(p, at, radius, false)) c.streamedOut.insert(p.node->id);
+            }
+            scene = Streaming::sceneWithout(*m_scene, c.streamedOut);
+        }
         c.conn->send(json{{"t", "welcome"}, {"version", kVersion}, {"you", rig->id}, {"name", name}, {"host", proof},
                           {"hostChar", hostChar}, {"uid", c.id + 1}, {"voice", voiceAllowed()},
                           {"scene", scene},
@@ -1305,6 +1318,59 @@ void NetServer::handle(Client& c, const std::string& text) {
     }
 }
 
+// StreamingEnabled: send each joined player the map pieces they've come near, and take
+// away the ones they've left far behind (a few times a second; Streaming.h).
+void NetServer::streamMap() {
+    const WorldSettings& ws = m_scene->world();
+    const double now = clockNow();
+    std::vector<Streaming::Piece> pieces;
+    bool counted = false;
+    for (auto& up : m_clients) {
+        Client& c = *up;
+        if (!c.joined || now - c.streamAt < 0.25) continue;
+        if (!ws.streaming && c.streamedOut.empty()) continue;
+        c.streamAt = now;
+        if (!counted) { pieces = Streaming::pieces(*m_scene, ws.streamRadius); counted = true; }
+        SceneNode* me = m_scene->findById(c.rootId);
+        SceneNode* focus = me ? me->findChild("HumanoidRootPart") : nullptr;
+        if (!focus) focus = me ? me->findChild("Torso") : nullptr;
+        if (!me) continue;
+        const glm::vec3 at((focus ? focus : me)->worldMatrix()[3]);
+        json in = json::array(), out = json::array();
+        size_t bytes = 0;
+        for (const Streaming::Piece& p : pieces) {
+            const bool have = !c.streamedOut.count(p.node->id);
+            const bool want = !ws.streaming || Streaming::wanted(p, at, ws.streamRadius, have);
+            if (have && !want) {
+                out.push_back(p.node->id);
+                c.streamedOut.insert(p.node->id);
+            } else if (!have && want && bytes < 512 * 1024) {   // (a big batch: the rest next time)
+                HideServerCode hide(p.node);
+                std::string node = Serializer::nodeToString(*p.node);
+                bytes += node.size();
+                in.push_back({{"parent", p.node->parent ? p.node->parent->id : 0}, {"node", std::move(node)}});
+                c.streamedOut.erase(p.node->id);
+            }
+        }
+        // Ones that are gone from the map, or aren't pieces any more (a script moved them
+        // into something they have): forget them, sending them over if they still exist.
+        std::unordered_set<uint64_t> isPiece;
+        for (const Streaming::Piece& p : pieces) isPiece.insert(p.node->id);
+        for (auto it = c.streamedOut.begin(); it != c.streamedOut.end();) {
+            SceneNode* n = m_scene->findById(*it);
+            if (n && isPiece.count(*it)) { ++it; continue; }
+            bool inside = false;   // (inside another piece they don't have: it comes with that)
+            for (SceneNode* a = n ? n->parent : nullptr; a && !inside; a = a->parent) inside = c.streamedOut.count(a->id) > 0;
+            if (n && !inside) {
+                HideServerCode hide(n);
+                in.push_back({{"parent", n->parent ? n->parent->id : 0}, {"node", Serializer::nodeToString(*n)}});
+            }
+            it = c.streamedOut.erase(it);
+        }
+        if (!in.empty() || !out.empty()) c.conn->send(json{{"t", "stream"}, {"in", in}, {"out", out}}.dump());
+    }
+}
+
 std::string NetServer::worldMessage(bool) {
     json upd = json::array(), add = json::array(), del = json::array();
     std::set<uint64_t> seen, addedNow;
@@ -1456,9 +1522,29 @@ void NetServer::sendTick() {
         if (SceneNode* t = Player::heldTool(ch.root)) { ch.held = t->id; ch.heldNode = toolString(t); }
     for (Char& ch : chars) ch.fx = charEffects(*m_scene, ch.root);
 
+    streamMap();
+
     for (auto& c : m_clients) {
         if (!c->joined) continue;
         json msg = w;
+        // Map pieces they don't have (StreamingEnabled): no news about anything in them.
+        if (!c->streamedOut.empty()) {
+            auto away = [&](uint64_t id) {
+                for (SceneNode* a = m_scene->findById(id); a; a = a->parent)
+                    if (c->streamedOut.count(a->id)) return true;
+                return false;
+            };
+            if (msg.contains("upd")) {
+                json keep = json::array();
+                for (auto& u : msg["upd"]) if (!away(u.value("i", (uint64_t)0))) keep.push_back(std::move(u));
+                if (keep.empty()) msg.erase("upd"); else msg["upd"] = std::move(keep);
+            }
+            if (msg.contains("add")) {
+                json keep = json::array();
+                for (auto& a : msg["add"]) if (!away(a.value("parent", (uint64_t)0))) keep.push_back(std::move(a));
+                if (keep.empty()) msg.erase("add"); else msg["add"] = std::move(keep);
+            }
+        }
         json list = json::array();
         for (auto& ch : chars) {
             if (ch.id == c->rootId) continue;
@@ -1890,6 +1976,25 @@ void NetClient::handle(const std::string& text) {
 
     if (t == "remote" || t == "invoked") { scripts.remoteIn(m); return; }
 
+    // StreamingEnabled: map pieces we've come near, and ones we've left far behind.
+    if (t == "stream") {
+        if (m.contains("out") && m["out"].is_array())
+            for (const auto& o : m["out"])
+                if (SceneNode* n = o.is_number_unsigned() ? m_scene->findById(o.get<uint64_t>()) : nullptr)
+                    if (!m_scene->isCharacterPart(n) && !m_scene->isServiceFolder(n) && n != m_scene->root()) drop(n);
+        bool any = false;
+        if (m.contains("in") && m["in"].is_array())
+            for (const auto& a : m["in"]) {
+                auto node = Serializer::nodeFromString(a.value("node", std::string()), false);
+                if (!node) continue;
+                if (SceneNode* old = m_scene->findById(node->id)) drop(old);
+                SceneNode* parent = m_scene->findById(a.value("parent", (uint64_t)0));
+                scripts.runScriptsIn(m_scene->insert(std::move(node), parent ? parent : m_scene->root()));
+                any = true;
+            }
+        if (any) Online::fetchSounds(*m_scene);   // (pictures and sounds on what arrived)
+        return;
+    }
     if (t == "world") {
         if (m.contains("add"))
             for (const auto& a : m["add"]) {
