@@ -1,5 +1,5 @@
 export default {
-  id: 'lock-and-load', name: 'Lock and Load', time: 1793725200, tag: 'Engine',
+  id: 'lock-and-load', name: 'Lock and Load', version: '0.7.9', time: 1793725200, tag: 'Engine',
   summary: 'Guns that really hit, a ready-made Blaster gear, and Roblox\'s Weld and Motor6D joints so old weapon scripts work.',
   items: [
     'New ready-made gear: the Blaster. Hold the mouse to fire where you aim, R to reload, 12 shots, 20 damage (double for headshots), with tracers, sparks, sounds and an ammo counter. It works for players who joined your game too',

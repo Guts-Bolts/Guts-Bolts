@@ -1,5 +1,5 @@
 export default {
-  id: 'four-eyes', name: 'Four Eyes', time: 1793728392, tag: 'Studio',
+  id: 'four-eyes', name: 'Four Eyes', version: '0.7.9', time: 1793728392, tag: 'Studio',
   summary: 'X-ray and view styles for the 3D view, as many 3D views as you want, and a workspace you can arrange your way (and reset).',
   items: [
     'X-ray, like Blender: everything in the 3D view turns see-through, so you can see (and box-select) what\'s behind walls. Press Alt+Z or click the X-ray button in the 3D view\'s top-right corner',

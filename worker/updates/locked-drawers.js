@@ -1,5 +1,5 @@
 export default {
-  id: 'locked-drawers', name: 'Locked Drawers', time: 1793751417, tag: 'Website',
+  id: 'locked-drawers', name: 'Locked Drawers', version: '0.7.9', time: 1793751417, tag: 'Website',
   summary: 'Your uploads start private, and your inventory is sorted like the catalog.',
   items: [
     'Uploading a sound or a decal has a new "Public" tick box. Leave it unticked and it stays private: only you see it in the Library',

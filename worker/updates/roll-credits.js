@@ -1,5 +1,5 @@
 export default {
-  id: 'roll-credits', name: 'Roll Credits', time: 1793654000, tag: 'Engine',
+  id: 'roll-credits', name: 'Roll Credits', version: '0.7.9', time: 1793654000, tag: 'Engine',
   summary: 'Cutscenes, game templates, clips, spectating, achievements, events and a lot more.',
   items: [
     'Studio has a Cutscene Maker (Tools menu): fly the camera around, add shots, preview it, and it plays in your game',

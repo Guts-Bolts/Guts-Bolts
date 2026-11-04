@@ -1,5 +1,5 @@
 export default {
-  id: 'no-more-belly-flops', name: 'No More Belly Flops', time: 1793717509, tag: 'Engine',
+  id: 'no-more-belly-flops', name: 'No More Belly Flops', version: '0.7.9', time: 1793717509, tag: 'Engine',
   summary: 'Games with lots of flowing water (like Mega Water Slide) run much smoother, and a new Auto graphics setting keeps games from getting laggy.',
   items: [
     'Flowing water no longer makes the game stop and wait for your graphics card every frame (it used to do that twice a frame)',

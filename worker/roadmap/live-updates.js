@@ -1,5 +1,5 @@
 export default {
   id: 'live-updates', title: 'Live updates without refreshing',
   text: 'Bids, forum posts, notifications and messages show up on the website the moment they happen, using Supabase Realtime.',
-  status: 'done', version: '', pr: 240, time: 1793648755,
+  status: 'done', version: '0.7.9', pr: 240, time: 1793648755,
 };

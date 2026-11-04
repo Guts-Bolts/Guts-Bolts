@@ -1,5 +1,5 @@
 export default {
-  id: 'serial-numbers-matter', name: 'Serial Numbers Matter', time: 1793646700, tag: 'Website',
+  id: 'serial-numbers-matter', name: 'Serial Numbers Matter', version: '0.7.9', time: 1793646700, tag: 'Website',
   summary: 'Limiteds now come in two kinds, staff can pull items off sale, and buying asks you first.',
   items: [
     'Limited U items can be resold and traded like before; plain Limited items can\'t be resold or traded',

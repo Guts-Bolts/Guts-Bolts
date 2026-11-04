@@ -1,5 +1,5 @@
 export default {
-  id: 'going-once-going-twice', name: 'Going Once, Going Twice', time: 1793646600, tag: 'Website',
+  id: 'going-once-going-twice', name: 'Going Once, Going Twice', version: '0.7.9', time: 1793646600, tag: 'Website',
   summary: 'The front page now shows live auctions with a ticking countdown.',
   items: [
     'When an auction is running, a red Live Auctions banner shows up on the front page',

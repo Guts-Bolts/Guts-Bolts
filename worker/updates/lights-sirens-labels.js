@@ -1,5 +1,5 @@
 export default {
-  id: 'lights-sirens-labels', name: 'Lights, Sirens, Labels', time: 1793681488, tag: 'Engine',
+  id: 'lights-sirens-labels', name: 'Lights, Sirens, Labels', version: '0.7.9', time: 1793681488, tag: 'Engine',
   summary: 'Screens just for one player, respawning on command, and the Roblox bits a cops and robbers game needs.',
   items: [
     'player.PlayerGui is now that player\'s own screen: a server script can show "You are a Cop!" to just one person. StarterGui is still the screen everyone shares',

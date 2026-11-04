@@ -1,5 +1,5 @@
 export default {
-  id: 'team-colours', name: 'Team Colours', time: 1793708400, tag: 'Engine',
+  id: 'team-colours', name: 'Team Colours', version: '0.7.9', time: 1793708400, tag: 'Engine',
   summary: 'The in-game player list now shows teams, sorts by score, and each game can colour it or hide it.',
   items: [
     'When players are on teams, the player list puts them under each team\'s name in the team\'s colour, with the team\'s total for every stat',

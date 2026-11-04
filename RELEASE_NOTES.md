@@ -1,3 +1,67 @@
+# Guts&Bolts 0.7.9: Harder Better Faster Stronger (November 3, 2026)
+
+Work it, make it, do it, makes us... a lot of new stuff. Chat with your
+friends from any page and call them, make cutscenes, start from a game
+template, build a cops and robbers game, and watch the website update by
+itself. Physics got steadier and phones run smoother too.
+
+## New in games
+- Spectate other players after you die, and save the last 30 seconds as a
+  GIF clip with F3.
+- Each player has their own screen (PlayerGui), plus RichText, Kick,
+  LoadCharacter, teams and lots more events for scripts.
+- The player list shows teams in their colours, sorts by score, and games
+  can restyle or hide it.
+- A new Blaster gear, plus Weld, Motor6D, character joints, hinge limits
+  and CylinderMesh, so scripts like a grab knife just work.
+- Lyreto's Roblox Game Bridge script runs as-is, thanks to about a dozen
+  more Roblox functions.
+- Scripts can swap a player's whole outfit with HumanoidDescription.
+- Games only draw what the camera can see, so big maps run faster.
+- Real leaderboards: OrderedDataStore sorts, and the top 10 show on the
+  game's page.
+- Accessibility settings (colorblind modes, bigger text, captions) and a
+  basic anti-cheat.
+- Steadier physics, and Low / Medium graphics run much better on phones.
+- Better quality settings: a new Auto setting (the default), Very Low, a
+  Shadows switch and a Sharpness slider.
+
+## New in Studio
+- A Cutscene Maker, and File > New from Template (Obby, Tycoon, Sword
+  Fight, Racing).
+- Studio Learn: 20 hands-on lessons, with hints when you get stuck.
+- Make, try, publish and update your own plugins right inside Studio.
+- Studio works offline; you only sign in to publish.
+- More Blender in Studio: an eye in the Explorer to hide things while you
+  build (H / Alt+H), G and R to move and turn with the mouse, and a
+  "Blender keys" switch for S, A, Shift+D and Shift+A.
+- Import Roblox animations: they're turned, shrunk and fitted onto our R6
+  or R15 dummies by themselves.
+- X-ray (Alt+Z), Wireframe / Solid / Flat / Material view styles, extra
+  viewports with Four Views, and a workspace you can drag around, save and
+  reset.
+
+## New on the website
+- A Chat panel in the corner of every page, parties, and voice calls with
+  Do Not Disturb.
+- Pages update live: bids, forum posts, your bell and your Messages count.
+- A brand new logo, live auctions on the front page, and Limited vs
+  Limited U items with a buy confirmation.
+- Search forgives typos, My Feed shows what friends are up to, and
+  creators can see when people play their games.
+- Events with free items, achievements on profiles, and game update logs.
+- Sounds, decals, models and animations you upload start private, with a
+  Public tick box; inventories are sorted like the catalog.
+
+## Bugs we squashed
+- The website couldn't save anything to its database; now it can.
+- The Auction Broadcasts and forum boxes showed up as raw code.
+- Water made games laggy (like 14 fps on big water slides); it's much
+  faster now.
+- Fast bullets flew straight through people.
+- WaitForChild gave up straight away instead of waiting.
+- Chats disappeared from the list when the server was older than the site.
+
 # Guts&Bolts 0.7.8: Bed Bugs (October 28, 2026)
 
 We went bug hunting under the mattress. The updater can't trap you in a

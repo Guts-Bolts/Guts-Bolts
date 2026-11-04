@@ -1,5 +1,5 @@
 export default {
-  id: 'blood-on-the-sign', name: 'Blood on the Sign', time: 1793642740, tag: 'Website',
+  id: 'blood-on-the-sign', name: 'Blood on the Sign', version: '0.7.9', time: 1793642740, tag: 'Website',
   summary: 'A brand new Guts & Bolts logo: white GUTS, red BOLTS, a gear behind the & and a splash of blood.',
   items: [
     'The new logo is at the top of the front page and every page of the site, in place of the old red text',
