@@ -233,6 +233,19 @@ public:
     static bool           setBodyPart(SceneNode& part, const nlohmann::json& j);
     static std::shared_ptr<EditMesh> bodyPartMesh(const nlohmann::json& j, const std::string& rigPart);   // (no GPU copy yet)
     static void           resetBodyPart(SceneNode& part);   // the normal shape, size and spot
+    // --- Outfits from scripts (Roblox's HumanoidDescription) --------------------
+    // A look is JSON in the same shape as the avatar a joiner sends (NetGame's avatarJson):
+    // head/torso/leftArm/rightArm/leftLeg/rightLeg colours, hat/hatColor, shirtImage,
+    // pantsImage, tshirtImage, faceImage, headless, body, bodyParts, accessories.
+    // Only server pictures and models ("gb:<id>") are used from it.
+    // dressRig: put a look on any character (someone who joined, an NPC). What isn't
+    // downloaded yet is fetched, and the character is dressed again when it arrives.
+    static void           dressRig(Scene& scene, SceneNode* root, const nlohmann::json& look);
+    // wear: put a look on this computer's own character (it stays on after respawning).
+    void                  wear(const nlohmann::json& look);
+    // A character's look now: what dressRig / wear last put on, with the colours it has now.
+    static nlohmann::json lookOf(Scene& scene, const SceneNode* root);
+
     // An accessory file's contents -> its objects (placed relative to the character's feet).
     static std::unique_ptr<SceneNode> accessoryFrom(const std::string& json);
 

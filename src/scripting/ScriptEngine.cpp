@@ -1822,6 +1822,20 @@ do
     Instance.new = function(cls, parent)
         if cls == "BindableEvent" or cls == "BindableFunction" then return bindable(cls, parent) end
         if cls == "Explosion" then return __gb_newExplosion(parent) end
+        if cls == "HumanoidDescription" then   -- an outfit: humanoid:ApplyDescription(d)
+            local grey = Color3.fromRGB(163, 162, 165)
+            local o = { ClassName = cls, Name = cls, Parent = parent,
+                        HeadColor = grey, TorsoColor = grey, LeftArmColor = grey, RightArmColor = grey,
+                        LeftLegColor = grey, RightLegColor = grey,
+                        Shirt = 0, Pants = 0, GraphicTShirt = 0, Face = 0,
+                        HatAccessory = "", HairAccessory = "", FaceAccessory = "", NeckAccessory = "",
+                        ShouldersAccessory = "", WaistAccessory = "" }
+            function o:IsA(c) return c == cls or c == "Instance" end
+            function o:Clone() local c = {} for k, v in pairs(self) do c[k] = v end return c end
+            function o:Destroy() self.Parent = nil end
+            function o:GetFullName() return self.Name end
+            return o
+        end
         if cls == "TeleportOptions" then   -- TeleportService:TeleportAsync's options
             local o = { ClassName = "TeleportOptions", Name = "TeleportOptions", ShouldReserveServer = false,
                         ServerInstanceId = "", ReservedServerAccessCode = "" }

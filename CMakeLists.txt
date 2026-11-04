@@ -436,6 +436,7 @@ add_library(gb_engine STATIC
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
     src/scene/Player.cpp
+    src/scene/Outfits.cpp
     src/scene/PlayerVrBody.cpp
     src/scene/Emotes.cpp
     src/scene/Physics.cpp
@@ -1000,6 +1001,17 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(GraphicsQualityTests tests/GraphicsQualityTests.cpp)
     target_link_libraries(GraphicsQualityTests PRIVATE gb_engine)
     add_test(NAME GraphicsQualityTests COMMAND GraphicsQualityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Outfits from scripts: HumanoidDescription, ApplyDescription, GetAppliedDescription.
+    add_executable(OutfitsTests tests/OutfitsTests.cpp)
+    target_link_libraries(OutfitsTests PRIVATE gb_engine)
+    add_test(NAME OutfitsTests COMMAND OutfitsTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Only drawing what the camera can see.
+    add_executable(FrustumTests tests/FrustumTests.cpp)
+    target_link_libraries(FrustumTests PRIVATE gb_engine)
+    add_test(NAME FrustumTests COMMAND FrustumTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Lighting.Weather: scripts, saving, and rain stopping on roofs.
     add_executable(WeatherTests tests/WeatherTests.cpp)

@@ -105,7 +105,8 @@ const char* const kWords[] = {
     "Acceleration", "Drag", "RotSpeed", "LockedToPart", "SecondaryColor", "Heat", "Opacity", "RiseVelocity", "SparkleColor",
     // Emotes and the emote menu
     "PlayEmote", "SetCoreGuiEnabled", "GetCoreGuiEnabled", "CoreGuiType", "EmotesMenu", "GuiService",
-    "SetEmotesMenuOpen", "GetEmotesMenuOpen", "GetPlayingAnimationTracks",
+    "SetEmotesMenuOpen", "GetEmotesMenuOpen", "GetPlayingAnimationTracks", "HumanoidDescription", "ApplyDescription",
+    "GetAppliedDescription", "GraphicTShirt", "HatAccessory", "HairAccessory",
 };
 
 bool wordChar(char c) { return std::isalnum((unsigned char)c) || c == '_'; }
