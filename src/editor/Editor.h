@@ -410,6 +410,7 @@ private:
     bool m_firstLayout = true;
     bool m_showSettings = false;
     bool m_showPerformance = false;
+    bool m_showLiveProfiler = false;   // View > Live Profiler (game/LiveProfiler.h)
     bool m_showLearn = false, m_learnLoaded = false, m_learnHasSavedCurrent = false, m_learnSyncReady = false, m_learnExplicitLaunch = false;
     bool m_learnPaused = false, m_learnDemoActionDone = false;
     long long m_learnProgressUpdatedAt = 0;

@@ -1,3 +1,4 @@
+#include "../core/FrameProfile.h"
 #include "ScriptEngine.h"
 #include "ScriptHistory.h"
 #include "SpatialQueries.h"
@@ -4270,6 +4271,28 @@ void ScriptEngine::checkTimeout(lua_State* L) {
                       "did you forget a wait() inside a loop?", (int)kTimeoutSeconds);
 }
 
+// The script a coroutine's code comes from ("Workspace.Door.Script"), for the Live Profiler.
+std::string ScriptEngine::profNameOf(lua_State* co, int nargs) {
+    auto it = m_profName.find(co);
+    if (it != m_profName.end()) return it->second;
+    std::string name;
+    lua_Debug ar;
+    if (lua_status(co) == LUA_OK && lua_gettop(co) > nargs) {   // a new one: the function it starts with
+        lua_pushvalue(co, -(nargs + 1));
+        if (lua_getinfo(co, ">S", &ar)) name = ar.source ? ar.source : "";
+    } else {                                                    // one that waited: where it is now
+        for (int level = 0; level < 20 && lua_getstack(co, level, &ar); ++level)
+            if (lua_getinfo(co, "S", &ar) && ar.source && ar.source[0] == '=' && std::string(ar.source) != "=[C]") {
+                name = ar.source;
+                break;
+            }
+    }
+    if (!name.empty() && (name[0] == '=' || name[0] == '@')) name.erase(0, 1);
+    if (name.empty() || name == "[C]" || name.rfind("[string", 0) == 0) name = "(the engine's own Lua)";
+    m_profName[co] = name;
+    return name;
+}
+
 void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, std::string* result) {
     if (result) result->clear();
     if (!m_L) return;
@@ -4281,7 +4304,21 @@ void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, st
     ++m_depth;
     int nres = 0;
     m_resumeStack.push_back(co);
+    const bool profiling = FrameProfile::live();
+    std::string profName;
+    if (profiling) {
+        profName = profNameOf(co, nargs);
+        m_profStack.push_back({nowSeconds(), 0.0});
+    }
     int status = lua_resume(co, from ? from : m_L, nargs, &nres);
+    if (profiling && !m_profStack.empty()) {
+        const ProfRun run = m_profStack.back();
+        m_profStack.pop_back();
+        const double took = nowSeconds() - run.start;
+        FrameProfile::addScript(profName, std::max(0.0, took - run.inner) * 1000.0);
+        if (!m_profStack.empty()) m_profStack.back().inner += took;
+    }
+    if (status != LUA_YIELD) m_profName.erase(co);
     m_resumeStack.pop_back();
     --m_depth;
     if (status != LUA_YIELD && co == m_debugStepThread) {   // finished while stepping: nothing left to step

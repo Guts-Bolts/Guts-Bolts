@@ -22,6 +22,7 @@ inline void setDefaults(SceneNode& n) {
         case GuiType::TextBox:    g.size = {0, 200, 0, 50}; g.placeholder = "Type here"; break;
         case GuiType::UIGridLayout: g.fill = 1; g.padding = {0, 5, 0, 5}; break;
         case GuiType::BillboardGui: g.size = {0, 200, 0, 50}; g.studsOffset = {0, 2, 0}; break;
+        case GuiType::VideoFrame: g.size = {0, 320, 0, 180}; g.bg = {0, 0, 0}; g.border = 0; g.volume = 0.5f; break;
         default: break;   // Frame / ImageLabel / ImageButton / ScrollingFrame: 100 x 100
     }
 }

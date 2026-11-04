@@ -1,3 +1,4 @@
+#include "../../game/Videos.h"
 #include "PropertiesPanel.h"
 #include "../LearnHighlight.h"
 #include "../MaterialUi.h"
@@ -477,6 +478,27 @@ void PropertiesPanel::renderGui(SceneNode* node) {
         }
         ImGui::ColorEdit3("ImageColor3", &g.imageColor.x);
         ImGui::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
+    }
+    if (g.type == GuiType::VideoFrame) {
+        ImGui::SeparatorText("VideoFrame");
+        ImGui::InputTextWithHint("Video", "an .mpg file in the games folder", &g.video);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("An MPEG-1 video (.mpg). Any free video converter can make one:\n"
+                              "pick \"MPEG-1\" (or \"VCD\") as the format.");
+        ImGui::Checkbox("Playing", &g.playing);
+        ImGui::SameLine();
+        ImGui::Checkbox("Looped", &g.looped);
+        ImGui::SliderFloat("Volume", &g.volume, 0.0f, 3.0f);
+        ImGui::ColorEdit3("ImageColor3", &g.imageColor.x);
+        ImGui::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
+        if (!g.video.empty()) {
+            if (Videos::loaded(*node)) {
+                const glm::ivec2 r = Videos::resolution(*node);
+                ImGui::TextDisabled("%d x %d, %.1f seconds long", r.x, r.y, Videos::length(*node));
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1), "Can't play this file (it needs to be an MPEG-1 .mpg)");
+            }
+        }
     }
     if (g.type == GuiType::ViewportFrame) {
         ImGui::SeparatorText("ViewportFrame");

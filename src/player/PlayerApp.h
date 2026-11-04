@@ -414,6 +414,7 @@ private:
     bool        m_micAsked = false;   // asked the phone for the microphone already
     // Developer Console (PlayerDevConsole.cpp): F9 or /devconsole.
     bool        m_devConsole = false, m_devFollow = true;
+    bool        m_liveProfiler = false;   // Ctrl+F6: the Live Profiler (game/LiveProfiler.h)
     int         m_devTab = 0;
     std::string m_devFilter, m_devCommand;
     std::string m_gameOwner;   // the account that made the game we're hosting

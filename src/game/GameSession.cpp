@@ -1,3 +1,4 @@
+#include "Videos.h"
 #include "GameSession.h"
 #include "../core/FrameProfile.h"
 #include "../scene/LegacyJoints.h"
@@ -312,6 +313,7 @@ void GameSession::holdTools() {
 
 void GameSession::stop() {
     GameGui::setPrivateRoot(nullptr);   // (our PlayerGui goes with the scripts)
+    Videos::stopAll();
     m_scripts.stop();
     m_scene->npcs().end();
     m_scene->water().end();
@@ -369,7 +371,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     // own computer (no waiting for the host); the host leaves it alone meanwhile.
     updateOwnership();
     const bool ownCar = client && !m_owned.empty();
-    m_scene->vehicles().update(*m_scene, dt, !client || ownCar);
+    { FrameProfile::Scope prof("game: vehicles"); m_scene->vehicles().update(*m_scene, dt, !client || ownCar); }
     m_physics.gather(*m_scene);
     if (!client || ownCar) {
         FrameProfile::Scope prof("game: part physics");
@@ -499,7 +501,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     // NPCs walk where their scripts sent them (the host moves them for everyone).
     if (!client) {
         NpcSystem& npcs = m_scene->npcs();
-        npcs.update(dt, *m_scene, m_physics);
+        { FrameProfile::Scope prof("game: NPCs walking"); npcs.update(dt, *m_scene, m_physics); }
         for (uint64_t id : npcs.died) {
             m_scene->animator().stopRig(id, false, *m_scene);
             m_scripts.fireDied(id);
@@ -515,21 +517,35 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     { FrameProfile::Scope prof("game: water"); m_scene->water().update(dt, *m_scene); }
 
     // Animations (after the character has walked, so they win where they pose).
-    m_scene->animator().update(dt, *m_scene);
-    // Weld / Motor6D: parts follow the part they're joined to (and scripts posing limbs).
-    LegacyJoints::update(*m_scene, dt);
-    // IKControls: limbs reach for things and heads look at them, on top of the animation.
-    IkControls::apply(*m_scene, dt);
+    {
+        FrameProfile::Scope prof("game: animations and joints");
+        m_scene->animator().update(dt, *m_scene);
+        // Weld / Motor6D: parts follow the part they're joined to (and scripts posing limbs).
+        LegacyJoints::update(*m_scene, dt);
+        // IKControls: limbs reach for things and heads look at them, on top of the animation.
+        IkControls::apply(*m_scene, dt);
+    }
     if (!client) m_scripts.fireAnimationEvents();
     else m_scene->animator().events.clear();
+    {   // VideoFrames play on every computer (their events go to the scripts here)
+        FrameProfile::Scope prof("game: videos");
+        Videos::update(*m_scene, dt, [this](uint64_t id, Videos::Event e) {
+            static const SignalKind kinds[] = {SignalKind::VideoLoaded, SignalKind::VideoPlayed, SignalKind::VideoPaused,
+                                               SignalKind::VideoEnded, SignalKind::VideoDidLoop};
+            if (m_scripts.running()) m_scripts.fireGui(kinds[(int)e], id);
+        });
+    }
 
     // Sounds inside moving parts follow them.
-    m_scene->forEach([](SceneNode* n) {
-        if (n->isSound() && n->audioHandle && n->parent && n->parent->isPart())
-            Audio::setPosition(n->audioHandle, glm::vec3(n->parent->worldMatrix()[3]));
-    });
-    // SoundGroup volumes and sound effects (scripts may have changed them).
-    SoundMix::update(*m_scene);
+    {
+        FrameProfile::Scope prof("game: sounds");
+        m_scene->forEach([](SceneNode* n) {
+            if (n->isSound() && n->audioHandle && n->parent && n->parent->isPart())
+                Audio::setPosition(n->audioHandle, glm::vec3(n->parent->worldMatrix()[3]));
+        });
+        // SoundGroup volumes and sound effects (scripts may have changed them).
+        SoundMix::update(*m_scene);
+    }
 
     // Blood, oil, sparks, smoke...
     const WorldSettings& ws = m_scene->world();
@@ -538,7 +554,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     m_scene->particles().follow(*m_scene);   // blood stains move with the bodies they're on
     // ParticleEmitters, Fire, Smoke, Sparkles: every screen makes its own (a game server
     // with no screen doesn't bother).
-    if (!Mesh::headless) m_scene->particles().runEmitters(*m_scene, dt);
+    if (!Mesh::headless) { FrameProfile::Scope prof("game: particle emitters"); m_scene->particles().runEmitters(*m_scene, dt); }
     m_scene->blasts().update(dt, *m_scene, m_physics);   // explosions (the host pushes things; everyone sees them)
 
     // 4. Touched events (after everything has moved).

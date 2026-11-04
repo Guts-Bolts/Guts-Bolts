@@ -10,6 +10,7 @@
 #include "../core/Paths.h"
 #include "../renderer/MeshLibrary.h"
 #include "../scene/EditMesh.h"
+#include "../scene/Guis.h"
 #include "../scene/Physics.h"
 #include "../scene/RobloxFile.h"
 #include "../scene/RobloxMesh.h"
@@ -28,7 +29,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-enum class FileType { Model, RobloxMesh, RobloxModel, Place, Picture, Sound, Script, Unknown };
+enum class FileType { Model, RobloxMesh, RobloxModel, Place, Picture, Sound, Script, Video, Unknown };
 
 FileType typeOf(const std::string& path) {
     std::string e = fs::path(path).extension().string();
@@ -40,6 +41,7 @@ FileType typeOf(const std::string& path) {
     if (PictureImport::isPicture(path)) return FileType::Picture;
     if (e == ".wav" || e == ".mp3" || e == ".flac" || e == ".ogg" || e == ".oga") return FileType::Sound;
     if (e == ".lua" || e == ".luau") return FileType::Script;
+    if (e == ".mpg" || e == ".mpeg") return FileType::Video;
     return FileType::Unknown;
 }
 
@@ -247,6 +249,34 @@ void Editor::importFiles(const std::vector<std::string>& paths, ImVec2 mouse, bo
             Log::system("Added the script " + name + (under ? " inside " + under->name : "") + ".");
             break;
         }
+        case FileType::Video: {
+            // A screen (a flat part facing you) with a SurfaceGui and a VideoFrame that plays it.
+            SceneNode* screen = m_scene->addNode(stem(path) + " Screen", PrimitiveType::Cube, MeshLibrary::get(PrimitiveType::Cube));
+            screen->transform.scale = {16.0f, 9.0f, 0.4f};
+            screen->transform.position = at + right * (spread > 0.0f ? spread + 8.0f : 0.0f) + glm::vec3(0.0f, 5.0f, 0.0f);
+            glm::vec3 toCam = m_viewport->cameraPosition() - screen->transform.position;
+            screen->transform.rotation.y = glm::degrees(std::atan2(-toCam.x, -toCam.z));
+            screen->color = {0.05f, 0.05f, 0.05f};
+            screen->anchored = true;
+            spread += spread > 0.0f ? 17.0f : 8.0f;
+            auto surface = std::make_unique<SceneNode>("SurfaceGui", NodeKind::Gui);
+            surface->gui.type = GuiType::SurfaceGui;
+            Guis::setDefaults(*surface);
+            surface->gui.face = 5;   // (Front)
+            SceneNode* sg = m_scene->insert(std::move(surface), screen);
+            auto video = std::make_unique<SceneNode>("VideoFrame", NodeKind::Gui);
+            video->gui.type = GuiType::VideoFrame;
+            Guis::setDefaults(*video);
+            video->gui.size = {1.0f, 0.0f, 1.0f, 0.0f};
+            video->gui.video = Paths::relativeToGames(fs::path(path));
+            video->gui.playing = true;
+            video->gui.looped = true;
+            m_scene->insert(std::move(video), sg);
+            added.push_back(screen);
+            Log::system("Added the video " + name + " on a screen. It plays when the game runs (untick Playing in its VideoFrame to "
+                        "start it from a script instead).");
+            break;
+        }
         case FileType::Unknown: {
             std::string e = fs::path(path).extension().string();
             for (char& c : e) c = (char)std::tolower((unsigned char)c);
@@ -255,11 +285,12 @@ void Editor::importFiles(const std::vector<std::string>& paths, ImVec2 mouse, bo
                                 e == ".mid" || e == ".midi"))
                 why = "Studio can't play " + e + " sounds. Turn it into an .mp3 or .ogg first (Audacity, or any free online converter).";
             if (why.empty() && (e == ".mp4" || e == ".mov" || e == ".webm" || e == ".avi" || e == ".mkv"))
-                why = "Studio can't play videos yet. A picture from the video, or its sound saved as an .mp3, can go in.";
+                why = "Studio plays MPEG-1 videos (.mpg). Turn it into one first: any free video converter can, pick "
+                      "\"MPEG-1\" (or \"VCD\") as the format. Then drop the .mpg in.";
             if (!why.empty()) { Log::warn(name + ": " + why); break; }
             Log::warn("Studio doesn't know what to do with " + name + ". It can take 3D models (" +
                       ModelImport::formatList() + "), Roblox meshes (.mesh), Roblox files (.rbxm, .rbxl), games (.gbscene), "
-                      "pictures (.png, .jpg, .webp, .svg, .gif, .bmp, .tga, .psd, .hdr), sounds (.wav, .mp3, .ogg, .flac) "
+                      "pictures (.png, .jpg, .webp, .svg, .gif, .bmp, .tga, .psd, .hdr), sounds (.wav, .mp3, .ogg, .flac), videos (.mpg) "
                       "and scripts (.lua, .luau).");
             break;
         }

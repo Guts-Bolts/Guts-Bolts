@@ -28,6 +28,7 @@ void stopAll();
 bool isPlaying(int handle);
 void setVolume(int handle, float volume);
 void setPitch(int handle, float pitch);
+void seek(int handle, double seconds);           // jump to this far into a sound file
 void setPosition(int handle, const glm::vec3& position);
 void setListener(const glm::vec3& position, const glm::vec3& forward);
 void setMasterVolume(float v);                   // 0..1

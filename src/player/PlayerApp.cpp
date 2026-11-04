@@ -1,4 +1,5 @@
 #include "../core/FrameProfile.h"
+#include "../game/LiveProfiler.h"
 #include "PlayerApp.h"
 #include "../core/TextFilter.h"
 #include "../core/Language.h"
@@ -407,6 +408,7 @@ void PlayerApp::frame() {
             }
         }
         { FrameProfile::Scope prof("frame (all of it)", true); frame(dt); }
+        FrameProfile::endFrame(dt * 1000.0);   // (the Live Profiler, when it's open)
         // Auto graphics quality: steps down when a game gets laggy (not in tests: they use a fixed clock).
         if (m_page == Page::Game && m_scene && m_opts.screenshot.empty()) GraphicsSettings::get().autoAdjust(dt);
         WebKeyboard::update();   // (the browser Player: the phone's keyboard)
@@ -2039,6 +2041,8 @@ void PlayerApp::drawGame(float dt) {
     if (m_loadingT <= 0.3f) drawChat(pos, max);   // not over the loading screen
     if (ImGui::IsKeyPressed(ImGuiKey_F9, false)) m_devConsole = !m_devConsole;
     drawDevConsole();
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F6, false)) m_liveProfiler = !m_liveProfiler;
+    LiveProfiler::draw(&m_liveProfiler);
     updatePassPrompts();
     drawPassPrompt();
 

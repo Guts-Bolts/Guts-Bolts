@@ -73,6 +73,12 @@ enum class SignalKind : int {
     DragStart,           // detector.DragStart        (player)
     DragContinue,        // detector.DragContinue     (player)
     DragEnd,             // detector.DragEnd          (player)
+    // VideoFrames (game/Videos.h): on every computer, each playing its own copy
+    VideoLoaded,         // video.Loaded              ()
+    VideoPlayed,         // video.Played              ()
+    VideoPaused,         // video.Paused              ()
+    VideoEnded,          // video.Ended               ()
+    VideoDidLoop,        // video.DidLoop             ()
 };
 
 namespace LuaApi {

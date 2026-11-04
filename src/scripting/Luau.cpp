@@ -158,7 +158,10 @@ struct Rewriter {
             // type / export type aliases at the start of a statement
             if ((isName(k, "type") || isName(k, "export")) && k.type == T::Name) {
                 long p = prev((long)i);
-                bool stmtStart = p < 0 || t[p].newline || isSym(t[p], ";") || t[p].type == T::Space ||
+                // (a line break between the last thing and here also starts a statement)
+                bool lineBreak = false;
+                for (long q = p + 1; q < (long)i; ++q) lineBreak = lineBreak || t[q].newline;
+                bool stmtStart = p < 0 || lineBreak || isSym(t[p], ";") ||
                                  isName(t[p], "end") || isName(t[p], "then") || isName(t[p], "do");
                 size_t n = next(i);
                 if (isName(k, "export") && isName(t[n], "type")) n = next(n);
