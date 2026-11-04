@@ -43,6 +43,19 @@ float volumeOf(const SceneNode* n) {
 
 } // namespace
 
+std::vector<SceneNode*> Vehicles::movingParts(SceneNode* seat) {
+    std::vector<SceneNode*> parts;
+    if (!seat) return parts;
+    std::vector<SceneNode*> stack{vehicleOf(seat)};
+    while (!stack.empty()) {
+        SceneNode* n = stack.back();
+        stack.pop_back();
+        if (movesByItself(n)) parts.push_back(n);
+        for (auto& c : n->children) stack.push_back(c.get());
+    }
+    return parts;
+}
+
 bool Vehicles::isVehicleSeat(const SceneNode* n) {
     if (!n || !n->isPart()) return false;
     if (n->name == "VehicleSeat" || std::find(n->tags.begin(), n->tags.end(), "VehicleSeat") != n->tags.end()) return true;

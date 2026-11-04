@@ -768,6 +768,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         if (!n->isPart() || n->internal) continue;
         if (n->isForceZone() && n->enabled) zones.push_back({n, Physics::worldOBB(n)});
         bool dynamic = !n->anchored && !hasDynamicAncestorPart(n);
+        if (dynamic && mayMove && !mayMove(n)) dynamic = false;   // (someone else moves it: network ownership)
         if (!dynamic && !n->canCollide) {
             // Only matters as an anchor for constraints.
             bool used = false;

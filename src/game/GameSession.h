@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include "../scene/Physics.h"
 #include "../scripting/ScriptEngine.h"
 #include "GameGui.h"
@@ -25,6 +26,18 @@ public:
     explicit GameSession(Scene* scene);
 
     void setRole(Role r) { m_role = r; m_scripts.setNetworked(r != Role::Solo); }
+    // Network ownership (your own car's physics on your own computer):
+    //  * joined (Client): the parts of the vehicle we're driving; we move them ourselves
+    //    and tell the host where they are (NetGame). Empty when we're not driving.
+    const std::unordered_set<uint64_t>& ownedParts() const { return m_owned; }
+    //  * hosting: parts a joined player is moving on their computer right now, and when
+    //    they last told us (they hold still in our physics for half a second after).
+    void   joinerMoves(uint64_t part) { m_joinerOwned[part] = m_time; }
+    bool   joinerMoving(uint64_t part) const {
+        auto it = m_joinerOwned.find(part);
+        return it != m_joinerOwned.end() && m_time - it->second < kOwnLapse;
+    }
+    static constexpr double kOwnLapse = 0.5;
     // Studio's "Run": the world simulates and scripts run, but there's no player.
     void setRunOnly(bool on) { m_runOnly = on; }
     bool runOnly() const { return m_runOnly; }
@@ -112,6 +125,9 @@ private:
     std::vector<std::unique_ptr<SceneNode>> m_gear;          // your own gear (only yours, not joiners')
     std::unordered_map<uint64_t, double> m_noPickupUntil;    // just dropped: don't grab it straight back
     double       m_time = 0.0;
+    std::unordered_set<uint64_t> m_owned;                    // (see ownedParts)
+    std::unordered_map<uint64_t, double> m_joinerOwned;      // (see joinerMoves)
+    void         updateOwnership();
     bool         m_toolDown = false;          // mouse held after activating the tool
     bool         m_padTrigger = false;        // a controller's RT held
     uint64_t     m_hoverDetector = 0;         // the ClickDetector the pointer is on

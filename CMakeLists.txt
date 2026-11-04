@@ -1109,6 +1109,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME VehiclesTests COMMAND VehiclesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # Network ownership: a joined player's car moves on their computer; the host waits.
+    add_executable(OwnershipTests tests/OwnershipTests.cpp)
+    target_link_libraries(OwnershipTests PRIVATE gb_engine)
+    add_test(NAME OwnershipTests COMMAND OwnershipTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # The auto UV map for bundle body parts: clothing templates fit any shape.
     add_executable(ClothingUVTests tests/ClothingUVTests.cpp)
     target_link_libraries(ClothingUVTests PRIVATE gb_engine)
