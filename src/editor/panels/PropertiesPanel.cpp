@@ -32,6 +32,7 @@ const char* PropertiesPanel::className(const SceneNode* node) const {
            : node->kind == NodeKind::Remote   ? (node->remoteFunction ? "RemoteFunction" : "RemoteEvent")
            : node->kind == NodeKind::Prompt   ? "ProximityPrompt"
            : node->kind == NodeKind::Highlight ? "Highlight"
+           : node->kind == NodeKind::IKControl ? "IKControl"
            : node->kind == NodeKind::PostEffect ? kPostEffectClassNames[(int)node->post.type]
            : node->kind == NodeKind::Sky      ? "Sky"
            : node->kind == NodeKind::MaterialVariant ? "MaterialVariant"
@@ -614,6 +615,25 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         ImGui::PushTextWrapPos(0);
         ImGui::TextDisabled(h.onTop ? "Colours the part or model it's in, with an outline round it, seen even through walls."
                                     : "Colours the part or model it's in, with an outline round it, only where you can see it.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+
+    if (node->isIkControl()) {
+        IkProps& k = node->ik;
+        ImGui::SeparatorText("IKControl");
+        ImGui::Checkbox("Enabled", &node->enabled);
+        int type = (int)k.type;
+        if (ImGui::Combo("Type", &type, "Transform\0Position\0Rotation\0LookAt\0")) k.type = (IkType)type;
+        ImGui::SliderFloat("Weight", &k.weight, 0.0f, 1.0f, "%.2f");
+        ImGui::DragFloat("SmoothTime", &k.smoothTime, 0.01f, 0.0f, 10.0f, "%.2f s");
+        auto name = [&](uint64_t id) { SceneNode* n = id ? m_scene->findById(id) : nullptr; return n ? n->name : std::string("(none)"); };
+        ImGui::Text("EndEffector: %s", name(k.endEffector).c_str());
+        ImGui::Text("Target: %s", name(k.target).c_str());
+        ImGui::Spacing();
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Put it in a character: its arm or leg reaches for the Target (Position), or its head looks at it "
+                            "(LookAt). Set EndEffector and Target from a script, e.g. ik.Target = workspace.Ball");
         ImGui::PopTextWrapPos();
         return;
     }

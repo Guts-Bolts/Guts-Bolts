@@ -1,3 +1,4 @@
+#include "IkControls.h"
 #include "RobloxFile.h"
 #include "Guis.h"
 #include "Scene.h"
@@ -1561,6 +1562,17 @@ struct Converter {
             h.onTop = (int)in.num("DepthMode", 0) == 0;   // 0 AlwaysOnTop, 1 Occluded
             node->enabled = in.flag("Enabled", true);
             ++report.other;
+        } else if (c == "IKControl") {   // (its ChainRoot, EndEffector, Target and Pole are hooked up below)
+            node = std::make_unique<SceneNode>(name, NodeKind::IKControl);
+            node->visible = false;
+            IkProps& k = node->ik;
+            k.type = (IkType)std::clamp((int)in.num("Type", 0), 0, 3);   // 0 Transform, 1 Position, 2 Rotation, 3 LookAt
+            k.weight = std::clamp((float)in.num("Weight", 1.0), 0.0f, 1.0f);
+            k.smoothTime = std::clamp((float)in.num("SmoothTime", 0.05), 0.0f, 10.0f);
+            k.priority = (int)in.num("Priority", 0);
+            node->enabled = in.flag("Enabled", true);
+            IkControls::noteMade();
+            ++report.other;
         } else if (c == "RemoteEvent" || c == "RemoteFunction" || c == "UnreliableRemoteEvent") {
             node = std::make_unique<SceneNode>(name, NodeKind::Remote);
             node->remoteFunction = c == "RemoteFunction";
@@ -1870,6 +1882,18 @@ struct Converter {
                     if (auto it = byRef.find(v->ref); it != byRef.end() && it->second->isPart()) node->primaryPart = it->second->id;
                 continue;
             }
+            if (node->isIkControl()) {   // (what it bends, reaches with and reaches for)
+                auto ref = [&](const char* prop, uint64_t& out) {
+                    const Value* v = inst->get(prop);
+                    if (v && v->kind == Value::Ref)
+                        if (auto it = byRef.find(v->ref); it != byRef.end()) out = it->second->id;
+                };
+                ref("ChainRoot", node->ik.chainRoot);
+                ref("EndEffector", node->ik.endEffector);
+                ref("Target", node->ik.target);
+                ref("Pole", node->ik.pole);
+                continue;
+            }
             if (node->isHighlight()) {   // (its Adornee)
                 const Value* v = inst->get("Adornee");
                 if (v && v->kind == Value::Ref)
@@ -2039,6 +2063,7 @@ struct XmlWriter {
             case NodeKind::Remote:     cls = n.remoteFunction ? "RemoteFunction" : "RemoteEvent"; break;
             case NodeKind::Prompt:     cls = "ProximityPrompt"; break;
             case NodeKind::Highlight:  cls = "Highlight"; break;
+            case NodeKind::IKControl:  cls = "IKControl"; break;
             case NodeKind::PostEffect: cls = kPostEffectClassNames[(int)n.post.type]; break;
             case NodeKind::Sky:        cls = "Sky"; break;
             case NodeKind::ClickDetector: cls = "ClickDetector"; break;
@@ -2224,6 +2249,16 @@ struct XmlWriter {
             flt("OutlineTransparency", n.highlight.outlineTransparency);
             token("DepthMode", n.highlight.onTop ? 0 : 1);
             refProp("Adornee", n.highlight.adornee);
+            boolean("Enabled", n.enabled);
+            break;
+        case NodeKind::IKControl:
+            token("Type", (int)n.ik.type);
+            refProp("ChainRoot", n.ik.chainRoot);
+            refProp("EndEffector", n.ik.endEffector);
+            refProp("Target", n.ik.target);
+            refProp("Pole", n.ik.pole);
+            flt("Weight", n.ik.weight);
+            flt("SmoothTime", n.ik.smoothTime);
             boolean("Enabled", n.enabled);
             break;
         case NodeKind::ClickDetector:

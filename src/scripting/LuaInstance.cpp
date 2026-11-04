@@ -4,6 +4,7 @@
 #include "../online/Protocol.h"
 #include "ScriptEngine.h"
 #include "ScriptHistory.h"
+#include "../scene/IkControls.h"
 #include "../scene/Animation.h"
 #include "../scene/Physics.h"
 #include "../scene/Player.h"
@@ -245,6 +246,7 @@ const char* className(lua_State* L, const SceneNode* n) {
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::IKControl: return "IKControl";
         case NodeKind::ClickDetector: return "ClickDetector";
         case NodeKind::Trail:     return "Trail";
         case NodeKind::Beam:      return "Beam";
@@ -2316,6 +2318,20 @@ int inst_index(lua_State* L) {
         if (is(k, "MouseHoverEnter"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverEnter, n->id); return 1; }
         if (is(k, "MouseHoverLeave"))       { LuaApi::pushSignal(L, SignalKind::ClickHoverLeave, n->id); return 1; }
     }
+    if (n->isIkControl()) {
+        const IkProps& p = n->ik;
+        auto ref = [&](uint64_t id) { if (id && E(L)->scene()->findById(id)) LuaApi::pushInstance(L, id); else lua_pushnil(L); return 1; };
+        static const char* const kTypes[] = {"Transform", "Position", "Rotation", "LookAt"};
+        if (is(k, "Type"))        { lua_pushstring(L, kTypes[(int)p.type]); return 1; }
+        if (is(k, "ChainRoot"))   return ref(p.chainRoot);
+        if (is(k, "EndEffector")) return ref(p.endEffector);
+        if (is(k, "Target"))      return ref(p.target);
+        if (is(k, "Pole"))        return ref(p.pole);
+        if (is(k, "Weight"))      { lua_pushnumber(L, p.weight); return 1; }
+        if (is(k, "SmoothTime"))  { lua_pushnumber(L, p.smoothTime); return 1; }
+        if (is(k, "Priority"))    { lua_pushinteger(L, p.priority); return 1; }
+        if (is(k, "Enabled"))     { lua_pushboolean(L, n->enabled); return 1; }
+    }
     if (n->isHighlight()) {
         const HighlightProps& h = n->highlight;
         if (is(k, "FillColor"))           { LuaApi::pushColor3(L, h.fill); return 1; }
@@ -2739,6 +2755,28 @@ int inst_set(lua_State* L) {
             return 0;
         }
     }
+    if (n->isIkControl()) {
+        IkProps& p = n->ik;
+        auto ref = [&]() -> uint64_t { SceneNode* a = lua_isnoneornil(L, 3) ? nullptr : LuaApi::checkNode(L, 3); return a ? a->id : 0; };
+        if (is(k, "Type")) {   // Enum.IKControlType.Position / "LookAt"...
+            std::string t = luaL_tolstring(L, 3, nullptr);
+            lua_pop(L, 1);
+            if (t.find("LookAt") != std::string::npos || t == "3")        p.type = IkType::LookAt;
+            else if (t.find("Rotation") != std::string::npos || t == "2") p.type = IkType::Rotation;
+            else if (t.find("Position") != std::string::npos || t == "1") p.type = IkType::Position;
+            else if (t.find("Transform") != std::string::npos || t == "0") p.type = IkType::Transform;
+            else return luaL_error(L, "Type must be Transform, Position, Rotation or LookAt");
+            return 0;
+        }
+        if (is(k, "ChainRoot"))   { p.chainRoot = ref(); return 0; }
+        if (is(k, "EndEffector")) { p.endEffector = ref(); return 0; }
+        if (is(k, "Target"))      { p.target = ref(); return 0; }
+        if (is(k, "Pole"))        { p.pole = ref(); return 0; }
+        if (is(k, "Weight"))      { p.weight = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+        if (is(k, "SmoothTime"))  { p.smoothTime = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 10.0f); return 0; }
+        if (is(k, "Priority"))    { p.priority = (int)luaL_checkinteger(L, 3); return 0; }
+        if (is(k, "Enabled"))     { n->enabled = lua_toboolean(L, 3); return 0; }
+    }
     if (n->isHighlight()) {
         HighlightProps& h = n->highlight;
         if (is(k, "FillColor"))           { h.fill = glm::clamp(LuaApi::checkColor3(L, 3), 0.0f, 1.0f); return 0; }
@@ -3026,6 +3064,10 @@ int inst_new(lua_State* L) {
         n = std::make_unique<SceneNode>(cls, NodeKind::Prompt);
     } else if (cls == "Highlight") {
         n = std::make_unique<SceneNode>(cls, NodeKind::Highlight);
+    } else if (cls == "IKControl") {   // a limb reaches for / the head looks at a Target (scene/IkControls.h)
+        n = std::make_unique<SceneNode>(cls, NodeKind::IKControl);
+        n->visible = false;
+        IkControls::noteMade();
     } else if (cls == "ClickDetector") {
         n = std::make_unique<SceneNode>(cls, NodeKind::ClickDetector);
     } else if (cls == "Trail" || cls == "Beam") {
@@ -4140,6 +4182,12 @@ SceneNode* checkNode(lua_State* L, int idx) {
     // Lighting and the Camera stand for what holds their children (effect.Parent = Lighting).
     if (luaL_testudata(L, idx, kLight)) return engine(L)->scene()->lightingFolder(true);
     if (luaL_testudata(L, idx, kCam)) return engine(L)->scene()->cameraNode();
+    // A Humanoid stands for its character (`ik.Parent = humanoid`, like Roblox's things in a Humanoid).
+    if (auto* h = static_cast<HumRef*>(luaL_testudata(L, idx, kHum))) {
+        SceneNode* n = engine(L)->resolve(h->rootId);
+        if (!n) luaL_error(L, "This character has left the game");
+        return n;
+    }
     // A player (a Lua table) stands for its object: `folder.Parent = player`.
     if (lua_type(L, idx) == LUA_TTABLE) {
         idx = lua_absindex(L, idx);
