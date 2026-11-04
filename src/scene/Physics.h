@@ -108,6 +108,11 @@ public:
     // constraints (ropes, rods, springs, welds, hinges). Ids of parts that fell
     // out of the world are appended to `fallen`. See RigidBodies.cpp.
     void stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen);
+    // Network ownership: when set, a loose part only moves in stepParts if this says
+    // yes; the others hold still this step, like anchored parts. A joined player's
+    // computer sets it to "only my car's parts"; the host to "not the parts a joined
+    // player is moving themselves" (GameSession).
+    std::function<bool(const SceneNode*)> mayMove;
     // Studio's Physics View: while debugOn() is set, stepParts keeps what it worked out
     // last step (where things touch, how hard each joint is pulled) for drawing.
     struct DebugView {

@@ -1,4 +1,6 @@
 #include "NetGame.h"
+#include <cmath>
+#include <unordered_set>
 #include "../scripting/LuaApi.h"   // SignalKind (UI clicks)
 #include "../scene/PlayerModel.h"
 #include "../online/AssetCache.h"
@@ -1117,6 +1119,32 @@ void NetServer::handle(Client& c, const std::string& text) {
                 glm::length(glm::vec3(seat->worldMatrix()[3]) - rig->transform.position) < 12.0f)
                 m_scene->vehicles().drive(seat->id, c.rootId, d[1].get<float>(), d[2].get<float>());
         }
+        // Network ownership: they're driving, so their computer moves the car; take where
+        // its parts are from them (only that car's parts, and only a believable step).
+        const json& own = m.contains("own") ? m["own"] : json();
+        if (rc->alive && own.is_array() && own.size() <= 64 && d.is_array() && d.size() == 3 && d[0].is_number_unsigned()) {
+            SceneNode* seat = m_scene->findById(d[0].get<uint64_t>());
+            if (seat && Vehicles::isVehicleSeat(seat) && m_scene->vehicles().driver(seat->id) == c.rootId) {
+                std::unordered_set<uint64_t> car;
+                for (SceneNode* n : Vehicles::movingParts(seat)) car.insert(n->id);
+                for (const json& e : own) {
+                    if (!e.is_array() || e.size() != 4 || !e[0].is_number_unsigned()) continue;
+                    SceneNode* n = car.count(e[0].get<uint64_t>()) ? m_scene->findById(e[0].get<uint64_t>()) : nullptr;
+                    if (!n) continue;
+                    Transform t = transformFrom(e[1]);
+                    const glm::vec3 v = vec3(e[2]), w = vec3(e[3]);
+                    auto finite = [](const glm::vec3& x) { return std::isfinite(x.x) && std::isfinite(x.y) && std::isfinite(x.z); };
+                    if (!finite(t.position) || !finite(t.rotation) || !finite(v) || !finite(w)) continue;
+                    if (glm::length(t.position - n->transform.position) > 40.0f) continue;   // (no teleporting cars)
+                    n->transform.position = t.position;
+                    n->transform.rotation = t.rotation;   // (not its size: that's the host's)
+                    n->velocity = v;
+                    n->angularVelocity = w;
+                    n->sleepTime = 0.0f;
+                    m_session->joinerMoves(n->id);
+                }
+            }
+        }
     } else if (t == "untouch") {   // their body part stopped touching something (TouchEnded)
         uint64_t part = m.value("part", (uint64_t)0);
         SceneNode* rig = m_scene->findById(c.rootId);
@@ -1657,6 +1685,14 @@ void NetClient::update(float dt) {
                     if (uint64_t seat = p->seatId(); seat && v.driver(seat) == p->rootId())
                         st["drive"] = {seat, v.throttle(seat), v.steer(seat)};
                     if (p->seatId()) st["seat"] = p->seatId();   // (the host's anti-cheat leaves seated people alone)
+                    // Our own car's physics runs here (network ownership): tell the host where its parts are.
+                    if (!m_session->ownedParts().empty()) {
+                        json own = json::array();
+                        for (uint64_t id : m_session->ownedParts())
+                            if (const SceneNode* n = m_scene->findById(id))
+                                own.push_back({id, transformJson(n->transform), vec3(n->velocity), vec3(n->angularVelocity)});
+                        st["own"] = own;
+                    }
                     m_conn->send(st.dump());
                 }
         }
@@ -1869,7 +1905,11 @@ void NetClient::handle(const std::string& text) {
                 if (SceneNode* n = m_scene->findById(u.value("i", (uint64_t)0)))
                     if (!m_scene->isCharacterPart(n)) {
                         const std::string had = n->texture;
+                        const bool mine = m_session->ownedParts().count(n->id) > 0;   // (we move this one: keep ours)
+                        const Transform keep = n->transform;
+                        const glm::vec3 keepV = n->velocity, keepW = n->angularVelocity;
                         applyUpdate(n, u);
+                        if (mine) { n->transform = keep; n->velocity = keepV; n->angularVelocity = keepW; }
                         newPicture = newPicture || n->texture != had;
                     }
             if (newPicture) Online::fetchSounds(*m_scene);   // (download a picture we don't have yet)

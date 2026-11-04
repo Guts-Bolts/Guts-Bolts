@@ -19,6 +19,7 @@
 // The host does the driving (it runs the physics); joined players send their keys.
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 class Scene;
 class SceneNode;
@@ -30,6 +31,9 @@ public:
     static float torque(const SceneNode* seat);
     static float turnSpeed(const SceneNode* seat);
     static constexpr float kMaxSpeed = 12.0f, kTorque = 10.0f, kTurnSpeed = 1.0f;
+    // The loose parts that move as a seat's vehicle (each one moves by itself, carrying
+    // the parts inside it): what a driver's own computer simulates (network ownership).
+    static std::vector<SceneNode*> movingParts(SceneNode* seat);
 
     // Someone in the seat is pressing these (-1..1). `driver` is their character's id.
     // Called every frame they sit there; it lapses half a second after they stop.

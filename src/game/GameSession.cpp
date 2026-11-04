@@ -332,6 +332,23 @@ void GameSession::stop() {
     m_hoverDetector = 0;
 }
 
+void GameSession::updateOwnership() {
+    m_owned.clear();
+    // A joined player stopped moving a part: it's ours to simulate again (woken up, so it
+    // doesn't hang in the air if they let go of it there).
+    for (auto it = m_joinerOwned.begin(); it != m_joinerOwned.end();) {
+        if (m_time - it->second < kOwnLapse) { ++it; continue; }
+        if (SceneNode* n = m_scene->findById(it->first)) n->sleepTime = 0.0f;
+        it = m_joinerOwned.erase(it);
+    }
+    if (m_role != Role::Client) return;
+    Player* p = m_runOnly ? nullptr : m_scene->player();
+    if (!p || p->isDead() || !p->seatId()) return;
+    SceneNode* seat = m_scene->findById(p->seatId());
+    if (!seat || !Vehicles::isVehicleSeat(seat) || m_scene->vehicles().driver(seat->id) != p->rootId()) return;
+    for (SceneNode* n : Vehicles::movingParts(seat)) m_owned.insert(n->id);
+}
+
 void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swimLook) {
     GameGui::setPrivateRoot(m_running ? m_scripts.localPlayerGui() : nullptr);   // our player.PlayerGui is on our screen
     if (!m_running) return;
@@ -346,15 +363,24 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
 
     // 2. Physics for loose (unanchored) parts (the host does this for everyone),
     // after the VehicleSeats have spun their wheels.
-    m_scene->vehicles().update(*m_scene, dt, !client);
+    // Network ownership: a joined player driving a car moves that car here, on their
+    // own computer (no waiting for the host); the host leaves it alone meanwhile.
+    updateOwnership();
+    const bool ownCar = client && !m_owned.empty();
+    m_scene->vehicles().update(*m_scene, dt, !client || ownCar);
     m_physics.gather(*m_scene);
-    if (!client) {
+    if (!client || ownCar) {
         FrameProfile::Scope prof("game: part physics");
+        if (ownCar) m_physics.mayMove = [this](const SceneNode* n) { return m_owned.count(n->id) > 0; };
+        else if (!m_joinerOwned.empty()) m_physics.mayMove = [this](const SceneNode* n) { return !joinerMoving(n->id); };
+        else m_physics.mayMove = nullptr;
         std::vector<uint64_t> fallen;
         m_physics.stepParts(*m_scene, dt, fallen);
-        for (uint64_t id : fallen)
-            if (SceneNode* n = m_scene->findById(id)) m_scene->removeNode(n);
-        if (!fallen.empty()) m_physics.gather(*m_scene);
+        m_physics.mayMove = nullptr;
+        if (!client)   // (a joined player's computer never deletes things; the host does)
+            for (uint64_t id : fallen)
+                if (SceneNode* n = m_scene->findById(id)) m_scene->removeNode(n);
+        if (!fallen.empty() && !client) m_physics.gather(*m_scene);
     }
 
     // 3. The character, driven by WASD / Space relative to the camera.
