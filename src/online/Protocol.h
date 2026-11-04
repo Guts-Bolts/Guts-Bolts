@@ -59,8 +59,12 @@ std::string emoteProblem(const std::string& kind, const std::string& data);   //
 constexpr int kEmoteSlots = 8;
 bool        isAccessory(const std::string& kind);      // hat, hair, faceacc, neck, shoulder, waist
 bool        alwaysFree(const std::string& kind);       // decals, audio and animations: free-use assets, never sold
-// Models and animations are public (anyone can find and use them) or private (only their creator).
-inline bool hasAccess(const std::string& kind) { return kind == "model" || kind == "animation"; }
+// Models, animations, audio and decals are public (anyone can find and use them) or private
+// (only their creator). New ones start private: their creator ticks "Public" to share them.
+// Private audio and decals still load by their ID, so games that use them keep working; they're
+// just left out of the Library, search and their page. (worker/server.js has the same.)
+inline bool hasAccess(const std::string& kind) { return kind == "model" || kind == "animation" || kind == "audio" || kind == "decal"; }
+inline bool loadsWhenPrivate(const std::string& kind) { return kind == "audio" || kind == "decal"; }
 long long   uploadFee(const std::string& kind);
 size_t      maxSize(const std::string& kind);
 const char* kindTitle(const std::string& kind);        // "Hat", "Audio", ...

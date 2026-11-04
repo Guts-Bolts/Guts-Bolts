@@ -279,6 +279,7 @@ function loadThumbs(root = view) {
 
 function upgradeItemPictures() {
   loadThumbs();
+  view.querySelectorAll('img[data-decal]:not([src])').forEach(decalPicture);   // (decals in inventories)
   view.querySelectorAll('[data-item3d]').forEach(async (el) => {
     if (el.dataset.rendering) return;
     el.dataset.rendering = '1';
@@ -2074,7 +2075,8 @@ pages.create = async (tab = 'games') => {
         <p class="small muted">${{ decal: 'A .png or .jpg picture (up to 4 MB).', audio: 'An .mp3, .wav, .ogg or .flac file (up to 6 MB).',
           plugin: 'A Lua plugin for Studio. (It\'s easier from Studio: PLUGINS > Publish, which can also update it later for free.)', game: 'A .gbscene file saved from Studio (or use File > Publish in Studio).', gear: 'A .gbmodel file exported from Studio containing one Tool with a Handle. Gear is equipped from the catalog and appears in games that allow gear.' }[kind]}</p>`}
       ${kind === 'plugin' ? html`<label>Version <span class="muted small">(optional, like 1.0)</span></label><input type="text" name="version" maxlength="20" value="1.0">` : ''}
-      ${['decal', 'audio'].includes(kind) ? html`<p class="small muted">${kind === 'decal' ? 'Decals' : 'Sounds'} are always free: anyone can use them in their games.</p>`
+      ${['decal', 'audio'].includes(kind) ? html`<label style="font-weight:normal"><input type="checkbox" name="public"> Public: show it in the Library so anyone can find and use it</label>
+        <p class="small muted">Left unticked, it's private: only you see it in the Library, and your own games can still use it. You can change this later. ${kind === 'decal' ? 'Decals' : 'Sounds'} are always free.</p>`
         : (me.verified || face || bundle) && kind !== 'game' ? html`<label>Price (Bolts)</label><input type="number" name="price" min="0" value="0">` : ''}
       ${kind === 'decal' || face || tee ? html`<img class="thumb" id="preview" alt="Preview" hidden style="width:120px;height:120px;margin-top:10px">` : ''}
       <p><button class="btn green">${FEES[kind] && !me.verified ? 'Upload for ' + FEES[kind] + ' Bolts' : 'Upload (free)'}</button>
@@ -2096,7 +2098,9 @@ pages.create = async (tab = 'games') => {
       <div class="grow"><b>${a.kind === 'decal' || a.kind === 'audio' || a.kind === 'plugin' ? html`<a href="#/library/${assetNum(a)}">${a.name}</a>` : a.name}</b><br><span class="small muted">
         ${a.kind === 'game' ? html`${a.plays} plays · ${ACCESS_NAMES[a.access || 'public']}` : html`${a.price > 0 ? bolts(a.price) : 'free'} · ${a.sales} sold`}
         ${a.kind === 'decal' || a.kind === 'audio' ? html` · ID ${assetNum(a)}` : ''}</span></div>
-      ${a.kind === 'decal' || a.kind === 'audio' ? html`<button class="btn small" data-act="copyId" data-id="${assetNum(a)}">Copy ID</button>` : ''}
+      ${a.kind === 'decal' || a.kind === 'audio' ? html`<span class="badge-pill">${a.access === 'private' ? 'Private' : 'Public'}</span>
+        <button class="btn small" data-act="modelAccess" data-id="${a.id}" data-access="${a.access === 'private' ? 'public' : 'private'}">Make ${a.access === 'private' ? 'public' : 'private'}</button>
+        <button class="btn small" data-act="copyId" data-id="${assetNum(a)}">Copy ID</button>` : ''}
       ${a.kind === 'game' ? html`<a class="btn small" href="#/game/${a.id}">View</a>
         <a class="btn small blue" href="#/configure/${a.id}">Configure</a>
         <button class="btn small" data-act="editInStudio" data-id="${a.id}" data-name="${a.name}">Edit in Studio</button>` : ''}
@@ -2430,8 +2434,26 @@ async function peoplePage(id, which, page) {
 }
 
 // Someone's inventory: #/user/5/inventory (or /inventory/limited/2 for a group and a page).
-const INVENTORY_TABS = [['all', 'All'], ['accessories', 'Accessories'], ['clothing', 'Clothing'], ['faces', 'Faces'], ['bundles', 'Bundles'], ['bodyparts', 'Body Parts'], ['gear', 'Gear'], ['emotes', 'Emotes'], ['limited', 'Limiteds']];
+// Sorted like the Catalog: a group, then the kinds inside it (worker/server.js INVENTORY_CATS).
+const INVENTORY_GROUPS = [['all', 'All'], ['limited', 'Limiteds'],
+  ['accessories', 'Accessories', [['hats', 'Hats'], ['hair', 'Hair'], ['faceacc', 'Face'], ['neck', 'Neck'], ['shoulder', 'Shoulder'], ['waist', 'Waist']]],
+  ['clothing', 'Clothing', [['shirts', 'Shirts'], ['tshirts', 'T-Shirts'], ['pants', 'Pants']]],
+  ['body', 'Body', [['faces', 'Faces'], ['heads', 'Heads'], ['bodyparts', 'Body Parts'], ['bundles', 'Bundles']]],
+  ['gear', 'Gear'],
+  ['emotes', 'Emotes', [['emote', 'Emotes'], ['animpacks', 'Animation Packs']]],
+  ['creations', 'Creations', [['games', 'Games'], ['audio', 'Audio'], ['models', 'Models'], ['decals', 'Decals'], ['plugins', 'Plugins'], ['animations', 'Animations']]]];
+const INVENTORY_TABS = INVENTORY_GROUPS.flatMap((g) => [g, ...(g[2] || [])]);
+const INVENTORY_LINK = { game: (a) => '#/game/' + a.id, audio: (a) => '#/library/' + assetNum(a), decal: (a) => '#/library/' + assetNum(a),
+  plugin: (a) => '#/library/' + assetNum(a), model: (a) => '#/library/' + assetNum(a), animation: (a) => '#/library/' + assetNum(a) };
+const INVENTORY_ICON = { game: '&#127918;', audio: '&#127925;', decal: '&#128444;', plugin: '&#129513;', model: '&#129521;', animation: '&#127939;' };
 function inventoryCard(a) {   // an item card, plus which numbered copies of a Limited they hold
+  if (INVENTORY_LINK[a.kind]) {   // a game or Library thing: its picture (or an icon) and a link to its page
+    return html`<div class="inv-item"><a class="card square" href="${INVENTORY_LINK[a.kind](a)}">
+      <div class="pic-wrap"><div class="pic">${a.kind === 'game' ? gameIcon(a, 150)
+        : a.kind === 'decal' ? html`<img class="thumb" data-decal="${a.id}" alt="">` : html`<span style="font-size:48px">${raw(INVENTORY_ICON[a.kind])}</span>`}</div></div>
+      ${a.access === 'private' ? html`<span class="timed-tag">PRIVATE</span>` : ''}
+      <div class="name">${a.name}</div><div class="by">${KINDS[a.kind] || a.kind} · by ${a.creatorName}${verified(a.creatorVerified)}</div></a></div>`;
+  }
   return html`<div class="inv-item">${itemCard(a)}${(a.serials || []).length ? html`<div class="small serials">${a.serials.map((n) => '#' + n).join(', ')}</div>` : ''}</div>`;
 }
 function inventoryHidden(u, f) {
@@ -2447,12 +2469,15 @@ async function inventoryPage(id, cat, page) {
       <span class="muted small">Page ${at + 1} of ${pages}</span>
       ${at + 1 < pages ? html`<a class="btn small" href="${base}/${at + 2}">Next &gt;</a>` : ''}</p>` : '';
   const mine = signedIn() && me.id === u.id;
+  // The group that's open (the one picked, or the one the picked kind is in), to show its kinds.
+  const open = INVENTORY_GROUPS.find((g) => g[0] === r.cat || (g[2] || []).some(([k]) => k === r.cat));
   show(html`<p><a href="#/user/${u.userId}">&lt; ${u.username}'s profile</a></p>
     <h1><a href="#/user/${u.userId}">${u.username}</a>${verified(u.verified)}: Inventory</h1>
     ${r.hidden ? html`<div class="box info">${u.username} keeps their inventory private.</div>` : html`
-      <div class="tabs">${INVENTORY_TABS.map(([k, label]) => html`<a class="btn ${k === r.cat ? 'blue' : ''}" href="#/user/${u.userId}/inventory/${k}">${label} (${r.counts[k] || 0})</a>`)}</div>
+      <div class="tabs">${INVENTORY_GROUPS.map(([k, label]) => html`<a class="btn ${k === r.cat || (open && open[0] === k) ? 'blue' : ''}" href="#/user/${u.userId}/inventory/${k}">${label} (${r.counts[k] || 0})</a>`)}</div>
+      ${open && open[2] ? html`<div class="tabs small">${open[2].map(([k, label]) => html`<a class="btn small ${k === r.cat ? 'blue' : ''}${r.counts[k] ? '' : ' muted'}" href="#/user/${u.userId}/inventory/${k}">${label} (${r.counts[k] || 0})</a>`)}</div>` : ''}
       ${r.items.length ? html`<div class="grid">${r.items.map(inventoryCard)}</div>${pager}`
-        : html`<p class="muted">${r.cat === 'all' ? 'Nothing from the catalog yet.' : 'Nothing here.'}</p>`}
+        : html`<p class="muted">${r.cat === 'all' ? 'Nothing in here yet.' : 'Nothing here.'}</p>`}
       ${mine ? html`<p class="small muted">Who can see this is up to you: <a href="#/settings">Settings</a> &gt; Privacy.</p>`
         : signedIn() && r.counts.limited ? html`<p><a class="btn small" href="#/trade/${u.id}">Trade with ${u.username}</a></p>` : ''}`}`);
 }
@@ -4909,6 +4934,7 @@ const forms = {
       if (!file) { msg.textContent = 'Pick a file first.'; return; }
       args.data = await gb.fileBase64(file);
       if (kind === 'audio') args.meta = { ext: (file.name.split('.').pop() || '').toLowerCase() };
+      if (kind === 'audio' || kind === 'decal') args.access = f.public && f.public.checked ? 'public' : 'private';   // private unless ticked
       if (kind === 'plugin' && f.version) args.version = f.version.value;
     }
     msg.className = 'muted'; msg.textContent = ' Uploading...';
