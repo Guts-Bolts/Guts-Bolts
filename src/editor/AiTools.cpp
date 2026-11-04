@@ -426,6 +426,219 @@ const std::vector<Tool>& tools() {
          schema({{"format", {{"type", "string"}, {"enum", {"obj", "fbx", "glb", "gltf", "mesh", "stl", "ply", "dae", "rbxmx", "rbxlx"}}}},
                  {"objects", {{"type", "array"}, {"items", kObject}}}, {"name", {{"type", "string"}}},
                  {"folder", {{"type", "string"}}}}, {"format"})},
+        // ------------------------------------------------------------- MODELING
+        {"edit_mesh", "Shape a part's mesh (model it, like Modeling mode)", "MODELING", false, false, false, Risk::Low,
+         {"Reshapes a part's own mesh step by step with Studio's Modeling mode tools, so you can MAKE 3D things: hats, "
+          "helmets, crowns, props. The part becomes a MeshPart. Works in studs from the part's middle (Y up, front = -Z). "
+          "Every call is one undo step, and a call that fails changes nothing.",
+          "\"Make me a top hat\", \"model a cowboy hat\", \"turn this cube into a crown\", \"make the top rounder\", \"pull "
+          "the top out\", \"add a brim\", \"make a beanie with a pom-pom\".",
+          "To move or resize the whole part, set_property Position / Size. To paint it, texture_mesh. To wear it, make_accessory.",
+          "object: a Part or MeshPart. steps: a list, done in order. Each step is {op, select?, ...}:\n"
+          "- start {shape: cube|cylinder|sphere|icosphere|cone|torus|capsule|plane|circle|grid, size?: [x,y,z] studs}: a fresh shape (throws the old mesh away).\n"
+          "- add_shape {shape, position, size, rotation}: another shape joined into the same mesh (a pom-pom, a band, horns).\n"
+          "- move {by: [x,y,z]}, scale {by: number or [x,y,z], pivot?: center|bottom|top|origin|[x,y,z]}, rotate {degrees: [x,y,z], pivot?}: the picked corners.\n"
+          "- extrude {distance}: pull the picked faces out along their normal, building walls (distance 0 = a copy in place, ready to scale: that's how a brim is made).\n"
+          "- inset {amount: 0-1}: a smaller face inside each picked face.\n"
+          "- subdivide {times: 1-3}, smooth_subdivide {times: 1-3}: more faces (smooth_subdivide also rounds it off).\n"
+          "- smooth {amount: 0-1, times}: round off the picked corners. delete: remove the picked faces. flip, fix_normals, merge_close {distance}.\n"
+          "- shading {shading: smooth|flat}.\n"
+          "select picks what a step changes: \"all\" (default), a side (\"top\", \"bottom\", \"left\", \"right\", \"front\", \"back\": "
+          "faces facing that way), or {side?, spread? (degrees, default 45), faces?: [i], vertices?: [i], axis?: x|y|z (default y), "
+          "from/to (0 = the mesh's lowest point, 1 = its highest; e.g. {from: 0.9, to: 1} = the top tenth) or min/max (studs)}. "
+          "Everything given must match. extrude, inset and delete need whole faces picked.",
+          "{object_id, vertices, faces, Size, Position, bounds_min, bounds_max, steps: [{op, picked_corners, picked_faces, vertices, faces}]}.",
+          "A part that isn't part of the character; not during a playtest.",
+          "The part's mesh and Size change (its box always wraps the new shape). Its texture keeps fitting the faces that stayed the same.",
+          "insert_object Part -> edit_mesh (start, then shape it) -> screenshot -> edit_mesh to fix -> texture_mesh -> make_accessory.",
+          "Sizes: the mannequin's head is about 0.6 studs wide and 0.6 tall, so a hat's crown is about 0.7-0.8 across (make_accessory says head_size). "
+          "Top hat: [{op: \"start\", shape: \"cylinder\", size: [0.8, 0.75, 0.8]}, {op: \"extrude\", select: \"bottom\", distance: 0}, "
+          "{op: \"scale\", select: \"bottom\", by: [1.7, 1, 1.7]}, {op: \"extrude\", select: \"bottom\", distance: 0.05}]. "
+          "Cowboy hat: start cylinder, scale {select: {from: 0.95, to: 1}, by: [0.8, 1, 0.8]} (a narrower top), the same brim, then "
+          "move {select: {axis: \"x\", min: 0.55}, by: [0, 0.12, 0]} and {select: {axis: \"x\", max: -0.55}, by: [0, 0.12, 0]} (the brim curls up at the sides). "
+          "Beanie: start sphere, delete {select: {from: 0, to: 0.4}}, add_shape sphere for the pom-pom."},
+         schema({{"object", kObject},
+                 {"steps", {{"type", "array"}, {"maxItems", 64},
+                            {"items", {{"type", "object"}, {"properties", {{"op", {{"type", "string"}, {"enum", {"start", "add_shape", "move", "scale",
+                                       "rotate", "extrude", "inset", "subdivide", "smooth_subdivide", "smooth", "delete", "flip", "fix_normals",
+                                       "merge_close", "shading"}}}}}}, {"required", {"op"}}}}}}}, {"object", "steps"})},
+        {"texture_mesh", "Paint a texture for a mesh", "MODELING", false, false, false, Risk::Low,
+         {"Makes a picture (texture) for a part and wraps it on: lays the mesh out flat (UV unwrap, like the UV Editor), "
+          "paints a base colour, then layers of colours and patterns on the parts you pick, and saves it as a PNG in the "
+          "games folder's textures folder. Patterns are worked out on the real 3D surface, so stripes go round a hat "
+          "without breaking at the seams.",
+          "\"Paint the hat black with a red band\", \"give it a checker pattern\", \"make it look like fabric / felt\", "
+          "\"texture it\", \"make the brim a different colour\".",
+          "For one plain colour on an ordinary part, set_property Color is enough. To change the shape, edit_mesh.",
+          "object. color: the base ([r,g,b] 0-1, \"#rrggbb\" or a name like \"navy\"). layers: up to 16, painted in order, each "
+          "{select (the same as edit_mesh's: a side, or {axis, from, to} for a band), color, pattern: solid|stripes|checker|dots|noise|gradient, "
+          "color2 (the stripes' / dots' / noise's other colour, the gradient's end), scale (studs: one stripe + gap, one square...), "
+          "axis (stripes and gradient, default y), amount (noise, 0-1)}. unwrap: auto (default: keep a good layout, else smart), "
+          "smart, cube, cylinder, sphere, unwrap or keep. size: the picture's width in pixels (64-2048, default 512).",
+          "{object_id, Texture, path, size, unwrap, faces, layers: [{layer, pattern, pixels}], warnings?}. A layer with 0 pixels picked nothing.",
+          "A part (a plain one becomes a MeshPart first); not during a playtest.",
+          "The part's Texture is the new picture (and its Color the base colour). Calling it again paints a new picture over the old one.",
+          "edit_mesh -> texture_mesh -> screenshot -> texture_mesh again to adjust -> make_accessory.",
+          "Top hat with a band: {color: \"black\", layers: [{select: {axis: \"y\", from: 0.15, to: 0.3}, color: \"dark red\"}]}. "
+          "Felt: {color: \"brown\", layers: [{pattern: \"noise\", color: \"brown\", color2: \"tan\", scale: 0.2, amount: 0.3}]}."},
+         schema({{"object", kObject}, {"color", {{"description", "[r, g, b] 0-1, \"#rrggbb\" or a colour name"}}},
+                 {"layers", {{"type", "array"}, {"maxItems", 16}, {"items", {{"type", "object"}}}}},
+                 {"unwrap", {{"type", "string"}, {"enum", {"auto", "keep", "smart", "cube", "cylinder", "sphere", "unwrap"}}}},
+                 {"size", {{"type", "integer"}, {"minimum", 64}, {"maximum", 2048}}}}, {"object"})},
+        {"make_accessory", "Make a part or model a hat (or other accessory)", "MODELING", false, false, false, Risk::Low,
+         {"Turns what you made into an avatar accessory, the same as AVATAR > Accessories: puts it in a Model (if it's one part), "
+          "adds the Accessory Mannequin if there isn't one, sits it on the mannequin (a hat comes down over the top of the head), "
+          "saves that position on the Model and opens the Accessories window on it. Uploading it to the catalog stays the person's "
+          "job: they press Upload there (it needs a signed-in Verified creator).",
+          "\"Make it a hat\", \"save it as a hat\", \"put it on the mannequin\", \"turn this into hair / a face accessory\", "
+          "\"move the hat down a bit\" (call it again with offset).",
+          "Don't use it for gear (things held in the hand): that's a Tool. Never try to upload or sell it yourself.",
+          "object: the part or Model. kind: hat (default), hair, faceacc, neck, shoulder, waist. name: the accessory's name. "
+          "offset: [x, y, z] studs from the spot it picks (a hat: [0, -0.1, 0] sits it lower).",
+          "{object_id, name, kind, placement, mannequin_id, head_size (the mannequin's head: compare it with bounds and "
+          "edit_mesh scale the hat if it's far too big or small), bounds_min, bounds_max, next, warnings?}.",
+          "Not during a playtest; not the character's own parts.",
+          "The Model sits on the mannequin and has an AccessoryPlacement attribute (its saved position). The Accessories window is open on it.",
+          "edit_mesh -> texture_mesh -> make_accessory -> screenshot -> make_accessory {offset} if it floats or sinks -> tell the person to press Upload.",
+          "\"Make a red top hat\" -> insert_object Part -> edit_mesh (top hat steps) -> texture_mesh -> make_accessory {kind: \"hat\", name: \"Red Top Hat\"}."},
+         schema({{"object", kObject}, {"kind", {{"type", "string"}, {"enum", {"hat", "hair", "faceacc", "neck", "shoulder", "waist"}}}},
+                 {"name", {{"type", "string"}}},
+                 {"offset", {{"type", "array"}, {"items", {{"type", "number"}}}, {"minItems", 3}, {"maxItems", 3}}}}, {"object"})},
+        // ----------------------------------------------------------- GAME MAKING
+        // (AiGameTools.cpp) Bigger building blocks so an AI can make a whole game, not one part at a time.
+        {"build", "Build many parts at once (a map, a house, a bridge)", "GAME", false, false, false, Risk::Low,
+         {"Makes up to 500 parts in ONE call and puts them together in a Model: give each part's shape, position, size, "
+          "colour and material. A part can be repeated in a line (stairs, fences, rows of pillars) with `repeat`. Everything "
+          "is checked BEFORE anything is made (a bad material or colour makes nothing), and the answer warns about parts "
+          "sunk into each other, parts below the world and loose parts with nothing under them.",
+          "Building any scenery or structure: \"build a castle / house / arena / bridge / city block / lobby\", a map for a "
+          "game, walls around an area, stairs, platforms for an obby you design yourself.",
+          "For one part use insert_object or create_physical_object. For ready-made gadgets (Kill Brick, Coin, Jump Pad...) "
+          "use insert_object with their name. For hills and ground use terrain. For a random dungeon or obby use generate_level.",
+          "parts (required): [{name, shape (Block, Ball or Cylinder; default Block), position [x, y, z] (the centre, world "
+          "space), size [x, y, z], color ([r, g, b] 0-1 or 0-255, \"#rrggbb\" or a name like \"red\", \"dark green\"), "
+          "material (Plastic, Wood, Brick, Concrete, Metal, Neon, Glass, Grass, Sand, Slate, Marble...), orientation [x, y, z] "
+          "degrees, transparency, anchored (default true), can_collide (default true), tags [..] (CollectionService), "
+          "repeat {count (2-100), step [dx, dy, dz] (how far each copy moves), size_step [dx, dy, dz] (optional growth)}}]. "
+          "model (optional): the new Model's name (default \"Build\"). parent (optional): where the Model goes (default "
+          "Workspace; ServerStorage or ReplicatedStorage for maps a script copies in later). into (optional): add the parts "
+          "to an existing Model instead of making a new one. at (optional [x, y, z]): moves every position by this much.",
+          "{object_id (the Model), path, count, parts: [{object_id, name}] (the first 100), bounds: {min, max}, warnings?}. "
+          "A bad part fails with INVALID_INPUT and part_index (nothing is made).",
+          "Not during a playtest.",
+          "One Model with all the parts (anchored unless you said otherwise). One undo takes it all away.",
+          "get_game_tree (where is the floor? what's there?) -> terrain height_at (if building on hills) -> build -> screenshot -> build {into} to add more.",
+          "\"Build a small house\" -> build {model: \"House\", parts: [floor, 4 walls, roof...]}. \"A staircase of 10 steps\" -> "
+          "build {parts: [{name: \"Step\", position: [0, 0.25, 0], size: [4, 0.5, 1.5], repeat: {count: 10, step: [0, 0.5, -1.5]}}]}."},
+         schema({{"parts", {{"type", "array"}, {"minItems", 1}, {"maxItems", 500}, {"items", {{"type", "object"}}}}},
+                 {"model", {{"type", "string"}}}, {"parent", kParent}, {"into", kObject},
+                 {"at", {{"type", "array"}, {"items", {{"type", "number"}}}, {"minItems", 3}, {"maxItems", 3}}}}, {"parts"})},
+        {"terrain", "Make and shape terrain (hills, valleys, paths, water)", "GAME", false, false, false, Risk::Medium,
+         {"Studio's Terrain (a height map of ground: grass, dirt, sand, rock, snow, mud) without the brushes: generate rolling "
+          "hills, make it flat, fill or dig boxes and balls, run a brush (raise, lower, smooth, flatten, paint) at one spot or "
+          "along a line of points (a road, a river bed), add a Water part, read the ground height at points so you can put "
+          "things ON the ground, or clear it. There are no caves or overhangs (it's a height map): build those with parts.",
+          "\"Make hills / mountains / a valley / an island / a beach\", \"add grass ground\", \"make a sand path\", "
+          "\"flatten a spot for the house\", \"add a lake\", and before placing things on hilly ground (height_at).",
+          "For flat floors, platforms and buildings use build (parts). Terrain can't be water: action water adds a swimmable Water part.",
+          "action (required): info, generate {seed, hills 0-1, size studs 64-1024}, flat {size, height, material}, "
+          "fill_box / dig_box {position (centre), size [x, y, z], material}, fill_ball / dig_ball {position, radius, material}, "
+          "brush {brush: Raise | Lower | Smooth | Flatten | Paint, position OR points [[x, y, z]...] (a dab every few studs "
+          "along the line), radius, strength (Raise/Lower: studs; Smooth/Flatten: 0-1), material}, height_at {points: [[x, z] or "
+          "[x, y, z]...]} (up to 200), water {level (the water's top, default a little above the lowest ground), size [x, z] "
+          "(default the terrain's size), position [x, z]}, clear. Materials: Grass, Dirt, Sand, Rock, Snow, Mud.",
+          "{exists, size, cells, cell_size, lowest, highest, materials: {Grass: %...}} after every action; height_at adds "
+          "heights: [{x, z, height | null (off the terrain)}]; water adds object_id.",
+          "Not during a playtest (scripts can change terrain at runtime with workspace.Terrain).",
+          "The terrain changed (undoable). generate replaces the whole terrain; clear removes it.",
+          "terrain generate -> terrain brush Flatten (where a building goes) -> terrain height_at -> build on top -> terrain water -> screenshot.",
+          "\"Make a hilly island with a lake\" -> terrain generate {hills: 0.6} -> terrain water {level: 2} -> screenshot."},
+         schema({{"action", {{"type", "string"}, {"enum", {"info", "generate", "flat", "fill_box", "dig_box", "fill_ball", "dig_ball",
+                                                            "brush", "height_at", "water", "clear"}}}},
+                 {"seed", {{"type", "integer"}, {"minimum", 0}}}, {"hills", {{"type", "number"}, {"minimum", 0}, {"maximum", 1}}},
+                 {"size", {{"type", {"number", "array"}}}}, {"height", {{"type", "number"}}}, {"material", {{"type", "string"}}},
+                 {"position", {{"type", "array"}, {"items", {{"type", "number"}}}}}, {"radius", {{"type", "number"}}},
+                 {"brush", {{"type", "string"}, {"enum", {"Raise", "Lower", "Smooth", "Flatten", "Paint"}}}},
+                 {"strength", {{"type", "number"}}}, {"points", {{"type", "array"}, {"items", {{"type", "array"}}}}},
+                 {"level", {{"type", "number"}}}}, {"action"})},
+        {"create_ui", "Make a whole screen UI in one go (menus, HUDs, shops)", "GAME", false, false, false, Risk::Low,
+         {"Makes a tree of UI objects in one call: a ScreenGui with Frames, TextLabels, TextButtons, ImageLabels, layouts "
+          "and UICorners inside, each with its properties. It is the same as insert_object + set_property for each one, so "
+          "the same class and property names work (and bad ones are reported with the choices), but in one step.",
+          "\"Make a main menu\", \"add a coins counter / timer on the screen\", \"a health bar\", \"a shop window\", any "
+          "screen UI or a BillboardGui over a part.",
+          "To change one property of existing UI use set_property. The behaviour (what a button does) still needs a "
+          "LocalScript: put it inside the ScreenGui with create_script (type LocalScript).",
+          "ui (required): one object or a list: {class (ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, "
+          "ImageButton, ScrollingFrame, UIListLayout, UIGridLayout, UICorner, UIStroke, UIGradient, UIPadding, "
+          "BillboardGui...), name, props: {Property: value} (UI Size/Position: [xScale, xOffset, yScale, yOffset]; colours "
+          "[r, g, b] 0-1; AnchorPoint [x, y]; UDim ones like a UIListLayout's Padding or a UICorner's CornerRadius can't be set here: leave the default or set them from a LocalScript), children: [more of the same]}. parent (optional): where the top goes "
+          "(default StarterGui, which every player gets; a part for a BillboardGui / SurfaceGui).",
+          "{object_id (the first top object), made: [{object_id, name, class, path}], problems: [{name, property?, error}]}. "
+          "A problem with one property doesn't stop the rest.",
+          "Not during a playtest (it would be thrown away).",
+          "The UI exists (undoable). StarterGui UI shows on every player's screen when they join.",
+          "create_ui -> create_script LocalScript inside it (button clicks, updating text) -> playtest start -> screenshot -> playtest stop.",
+          "\"Add a coins counter\" -> create_ui {ui: {class: \"ScreenGui\", name: \"HUD\", children: [{class: \"TextLabel\", "
+          "name: \"Coins\", props: {Size: [0, 200, 0, 50], Position: [0, 10, 0, 10], Text: \"Coins: 0\", TextScaled: true}}]}}."},
+         schema({{"ui", {{"type", {"object", "array"}}}}, {"parent", kParent}}, {"ui"})},
+        {"add_game_system", "Add a ready-made game system (leaderboard, rounds, teams, shop...)", "GAME", false, false, false, Risk::Medium,
+         {"Adds a complete, tested game system: the scripts (server and player), the RemoteEvents and the UI it needs, set "
+          "up with your settings. The scripts are normal Lua with the settings at the top, so they can be read and changed "
+          "with read_script / edit_script afterwards. Systems: leaderboard (numbers on the player list, optionally saved "
+          "between visits), teams (Teams, auto-assign and a coloured spawn for each), rounds (a game loop: intermission, "
+          "round, winners, with a status bar on everyone's screen), collectibles (parts called/tagged Coin give points when "
+          "touched, then come back), checkpoints (obby stages: touching one saves your stage and you respawn there), shop "
+          "(a shop window: buy Tools with a leaderboard number; bought items come back after you respawn). They work together: "
+          "rounds, collectibles, checkpoints and shop use the leaderboard's numbers (and add the leaderboard if it's missing).",
+          "Whenever a game needs one of these: \"make it a round-based game\", \"add a leaderboard / points / wins\", \"save "
+          "coins\", \"add teams\", \"red vs blue\", \"coins to collect\", \"checkpoints\", \"a shop to buy swords\". Prefer it "
+          "over writing these systems by hand: they're already tested.",
+          "For one-off behaviour (a door, a trap) write a script with create_script. Calling it again for the same system "
+          "replaces that system's scripts with the new settings (no copies).",
+          "system (required) and its settings: leaderboard {stats: [\"Coins\", \"Wins\"] (names), save (bool, default false)}; "
+          "teams {teams: [{name, color}] (2-8), spawns (default true: one SpawnLocation per team, around `at`), at [x, y, z], "
+          "spread (studs between spawns)}; rounds {intermission (seconds, 15), round_time (seconds, 60), min_players (1), "
+          "map (a Model, best kept in ServerStorage: copied in each round and removed after), arena_spawns (parts named "
+          "ArenaSpawn inside the map, or a Model of them: players are moved there when a round starts), mode: survival (players still "
+          "alive at the end win) or most_points (the most of `stat` this round wins), stat (default Wins: +1 for each winner)}; "
+          "collectibles {name (default Coin: parts called this or tagged with it), stat (Coins), amount (1), respawn (seconds, 10)}; "
+          "checkpoints {name (default Checkpoint), stat (Stage), save (false)}; "
+          "shop {currency (Coins), items: [{name, price, item (a Tool to sell, \"#42\" or a path; or a ready-made gear "
+          "name like \"Classic Sword\", \"Rocket Launcher\", \"Speed Coil\", \"Gravity Coil\", \"Blaster\", \"Bomb\")}], "
+          "title (the window's title)}.",
+          "{system, made: [{object_id, name, class, path}], replaced: [names], notes: [what to do next], settings}.",
+          "Not during a playtest.",
+          "Scripts in ServerScriptService (and UI in StarterGui, RemoteEvents in ReplicatedStorage, Tools in ServerStorage.ShopItems).",
+          "add_game_system leaderboard -> add_game_system rounds / shop -> playtest start -> get_errors {run: \"latest\"} -> get_output -> playtest stop.",
+          "\"Make a sword fighting game with rounds\" -> build (arena Model in ServerStorage) -> add_game_system leaderboard {stats: "
+          "[\"Wins\", \"Kills\"]} -> add_game_system rounds {map, mode: \"survival\"} -> insert_object \"Classic Sword\" {parent: StarterPack} -> playtest."},
+         schema({{"system", {{"type", "string"}, {"enum", {"leaderboard", "teams", "rounds", "collectibles", "checkpoints", "shop"}}}},
+                 {"stats", {{"type", "array"}, {"items", {{"type", "string"}}}}}, {"save", {{"type", "boolean"}}},
+                 {"teams", {{"type", "array"}, {"items", {{"type", "object"}}}}}, {"spawns", {{"type", "boolean"}}},
+                 {"at", {{"type", "array"}, {"items", {{"type", "number"}}}}}, {"spread", {{"type", "number"}}},
+                 {"intermission", {{"type", "number"}}}, {"round_time", {{"type", "number"}}},
+                 {"min_players", {{"type", "integer"}, {"minimum", 1}}}, {"map", kObject},
+                 {"mode", {{"type", "string"}, {"enum", {"survival", "most_points"}}}}, {"stat", {{"type", "string"}}},
+                 {"name", {{"type", "string"}}}, {"amount", {{"type", "number"}}}, {"respawn", {{"type", "number"}}},
+                 {"currency", {{"type", "string"}}}, {"items", {{"type", "array"}, {"items", {{"type", "object"}}}}},
+                 {"title", {{"type", "string"}}}}, {"system"})},
+        {"set_atmosphere", "Set the time of day, sky mood, fog and weather", "GAME", false, false, true, Risk::Low,
+         {"Sets how the world looks in one call: a mood preset (day, morning, sunset, night, foggy, spooky, rainy, snowy, "
+          "space) and/or exact values for the clock, fog, colours and weather. Changes the Lighting settings, the same ones "
+          "set_property \"Lighting\" changes.",
+          "\"Make it night\", \"a spooky atmosphere\", \"sunset\", \"add fog\", \"make it rain / snow\", \"brighter\".",
+          "For lamps and glowing things use insert_object PointLight / SpotLight inside parts, or material Neon.",
+          "preset (optional, see above); clock_time (0-24); brightness; ambient [r, g, b]; sun_color; fog (true/false); "
+          "fog_density (0-1); fog_color; weather (Clear, Rain, Snow); weather_intensity (0-1). Values you give win over the preset's.",
+          "{lighting: every Lighting setting now}.", "None.", "Lighting changed (undoable outside a playtest).",
+          "set_atmosphere -> screenshot.", "\"Make it a spooky night\" -> set_atmosphere {preset: \"spooky\"}."},
+         schema({{"preset", {{"type", "string"}, {"enum", {"day", "morning", "sunset", "night", "foggy", "spooky", "rainy", "snowy", "space"}}}},
+                 {"clock_time", {{"type", "number"}, {"minimum", 0}, {"maximum", 24}}}, {"brightness", {{"type", "number"}}},
+                 {"ambient", {{"type", {"array", "string"}}}}, {"sun_color", {{"type", {"array", "string"}}}},
+                 {"fog", {{"type", "boolean"}}}, {"fog_density", {{"type", "number"}}}, {"fog_color", {{"type", {"array", "string"}}}},
+                 {"weather", {{"type", "string"}, {"enum", {"Clear", "Rain", "Snow"}}}},
+                 {"weather_intensity", {{"type", "number"}, {"minimum", 0}, {"maximum", 1}}}}, {})},
         {"physics_replay", "Record the physics, look at any moment, save physics tests", "DEBUG", false, false, false, Risk::Low,
          {"Studio's Physics Replay: runs only the physics (no scripts, no players) on a copy of the scene as it is now, "
           "60 steps a second, and remembers where every loose (unanchored) part was each step. Studio shows any frame of "
@@ -775,6 +988,14 @@ json workflowOf(const std::string& name) {
         {"physics_replay", {{"get_game_tree"}, {"screenshot", "playtest"}}},
         {"compare_scenes", {{"checkpoint"}, {"get_game_tree", "undo"}}},
         {"export_model", {{"get_game_tree"}, {}}},
+        {"edit_mesh", {{"insert_object"}, {"screenshot", "texture_mesh", "make_accessory"}}},
+        {"texture_mesh", {{"edit_mesh"}, {"screenshot", "make_accessory"}}},
+        {"make_accessory", {{"edit_mesh", "texture_mesh"}, {"screenshot"}}},
+        {"build", {{"get_game_tree", "terrain"}, {"screenshot", "build"}}},
+        {"terrain", {{"get_game_tree"}, {"terrain", "build", "screenshot"}}},
+        {"create_ui", {{"get_game_tree"}, {"create_script", "playtest", "screenshot"}}},
+        {"add_game_system", {{"get_game_tree", "build"}, {"playtest", "get_errors", "read_script"}}},
+        {"set_atmosphere", {{}, {"screenshot"}}},
         {"get_errors", {{"playtest"}, {"read_script", "edit_script"}}},
         {"diagnose_object", {{"find_objects"}, {"set_property", "edit_script"}}},
         {"validate_scene", {{}, {"diagnose_object", "playtest"}}},
@@ -825,6 +1046,10 @@ Your loop: UNDERSTAND the request -> INSPECT the game -> PLAN -> ACT with tools 
 - "Is it running? Is it laggy? What's moving?" -> get_runtime_state.
 - "Try something risky" -> checkpoint save first; checkpoint restore if it goes wrong.
 - Many similar changes at once -> run_lua with a loop.
+- "Make a game" / "make an obby / sword fight / tycoon-style game" -> make the WHOLE game, not one piece: plan the map, the rules and the UI, then: build (the map, many parts in one call) and terrain (hills, paths, water) -> add_game_system for the standard parts (leaderboard, rounds, teams, collectibles, checkpoints, shop) -> create_script for what's special about this game -> create_ui for extra screen UI -> set_atmosphere for the mood -> playtest and get_errors {run: "latest"} until there are no errors -> screenshot. Get_engine_info topic "workflows" has a full example.
+- Building scenery or a map -> build (up to 500 parts per call, grouped in a Model). Hills and ground -> terrain. Put things ON hilly ground with terrain height_at first.
+- Leaderboards, rounds, teams, coins to collect, checkpoints, a shop -> add_game_system (tested scripts and UI) instead of writing them by hand. Read its scripts with read_script before changing them.
+- Screen UI with more than one or two objects -> create_ui (the whole tree in one call). Time of day, fog, rain, a spooky mood -> set_atmosphere.
 - "Test it" -> playtest start, then get_errors / get_output {run: "latest"} / screenshot, then playtest stop.
 - "Test it with 2 players" / RemoteEvents / LocalScripts / joining and leaving -> multiplayer_test start, wait a few seconds, multiplayer_test output, then multiplayer_test stop.
 - "Give everyone a sword" -> insert_object Tool with parent "StarterPack". Game rules -> create_script in "ServerScriptService". UI -> ScreenGui in "StarterGui". Per-player LocalScripts -> "StarterPlayer.StarterPlayerScripts". In every character -> "StarterPlayer.StarterCharacterScripts".
@@ -929,6 +1154,7 @@ What the tools give you:
 - Change: insert_object, set_property, delete_object, create_script, edit_script, run_lua (any Lua, like the Command Bar).
 - Run and check: playtest (play, simulate, pause, step), multiplayer_test (a local server and 2-4 player windows), get_runtime_state, diagnose_object, validate_scene.
 - Physics and navigation: create_physical_object, spawn_explosion, bake_navmesh, find_path, walk_character_to.
+- Model and paint 3D things (hats!): edit_mesh (shape a part's mesh), texture_mesh (paint a picture for it), make_accessory (wear it as a hat).
 - Stay safe: undo / redo, and checkpoint (save points to try things and roll back).
 - Share: publish_game (File > Publish, as the signed-in account; only when asked).
 - Learn: get_engine_info (this text, capabilities, concepts, coordinates, workflows, examples, classes).
@@ -1043,6 +1269,15 @@ const char* kWorkflows = R"DOC(# Workflows
 
 Tools work in chains. Don't call a later step if an earlier one failed: read the error and fix that first.
 
+MAKE A WHOLE GAME ("make me a round-based sword fighting game")
+1. Plan: what the player does, how they win, what's on screen. Keep it small enough to finish.
+2. Map: terrain generate / flat (ground) -> build {model: "Arena", parent: "ServerStorage"} for a map that rounds copy in, or build in Workspace for a fixed map (use terrain height_at to sit buildings on hills) -> insert_object ready-made things (Kill Brick, Coin, Jump Pad, Zombie...) and move them with set_property.
+3. Rules: add_game_system leaderboard {stats} -> rounds / teams / collectibles / checkpoints / shop as needed -> create_script for the game's own rules (ServerScriptService).
+4. Player stuff: Tools in StarterPack (insert_object "Classic Sword" {parent: "StarterPack"}), create_ui for extra screen UI with a LocalScript inside it.
+5. Look: set_atmosphere {preset}.
+6. Test: validate_scene -> playtest start -> get_errors {run: "latest"} and get_output -> fix with edit_script -> playtest stop -> repeat until there are no errors -> screenshot. multiplayer_test for team and round games.
+7. Tell the person what's in the game and how to play it.
+
 CREATE AN OBJECT
 get_game_tree (where should it go?) -> insert_object -> set_property Position / Size / Color / Material ... -> get_object or diagnose_object (verify) -> screenshot (optional).
 
@@ -1117,6 +1352,7 @@ json capabilities() {
             {"runtime", true},                        // playtest start / stop
             {"runtime_inspection", true},             // get_runtime_state, get_object runtime values, errors
             {"physics", "via properties (Anchored, CanCollide, Density...), movers, constraints and scripts; simulates during playtests"},
+            {"modeling", "edit_mesh: shape a part's own mesh (extrude, inset, scale...); texture_mesh: paint a picture for it; make_accessory: make it a hat on the mannequin (the person uploads it)"},
             {"navigation", true},                     // bake_navmesh, find_path, walk_character_to; PathfindingService in scripts
             {"explosions", true},                     // spawn_explosion (playtest); Explosion objects in scripts
             {"rendering", "partial: part colour, material, transparency, lights, decals, particles (ParticleEmitter, Fire, Smoke, Sparkles); no shader or post-processing tools"},
@@ -1124,11 +1360,13 @@ json capabilities() {
             {"cross_server_messaging", "MessagingService (PublishAsync / SubscribeAsync) between a game's running servers"},
             {"memory_stores", "MemoryStoreService sorted maps, hash maps and queues shared by a game's running servers"},
             {"ui", "screen UI like Roblox: ScreenGui, Frame, TextLabel, TextButton, TextBox, ImageLabel, ImageButton, ScrollingFrame, layouts, UICorner/UIStroke/UIGradient, RichText; StarterGui (everyone) or player.PlayerGui (one player); BillboardGui / SurfaceGui on parts"},
+            {"game_making", "build (many parts in one call), terrain (hills, paths, water, ground heights), create_ui (whole UI trees), add_game_system (tested leaderboard, teams, rounds, collectibles, checkpoints and shop systems), set_atmosphere (time of day, fog, weather)"},
+            {"terrain", "height-map terrain (Grass, Dirt, Sand, Rock, Snow, Mud): the terrain tool, or workspace.Terrain in scripts; no caves or overhangs"},
             {"assets", false},                        // the Library isn't reachable from these tools
             {"prefabs", "linked models: Models sharing a LinkId attribute change together in Studio"},
             {"undo", true}, {"redo", true},
             {"transactions", "checkpoints: save, experiment, restore (Studio session only)"},
-            {"compound_tools", json::array({"create_physical_object", "spawn_explosion", "walk_character_to"})},
+            {"compound_tools", json::array({"create_physical_object", "spawn_explosion", "walk_character_to", "build", "create_ui", "add_game_system"})},
             {"screenshots", true},
             {"diagnostics", true},
             {"multiplayer_testing", "multiplayer_test: a local test server and 2-4 Player windows on this computer; read what each prints"},
@@ -1173,6 +1411,9 @@ const json& prompts() {
          {"description", "Inspect, diagnose, fix one cause and verify."},
          {"arguments", json::array({{{"name", "object"}, {"description", "The object"}, {"required", true}},
                                     {{"name", "problem"}, {"description", "What's wrong (\"doesn't fall\", \"script does nothing\")"}, {"required", true}}})}},
+        {{"name", "make_game"}, {"title", "Make a whole game"},
+         {"description", "Plan, build, script, test and finish a complete small game."},
+         {"arguments", json::array({{{"name", "idea"}, {"description", "What kind of game (\"a round-based sword fight\", \"a coin obby\")"}, {"required", true}}})}},
         {{"name", "describe_scene"}, {"title", "Describe what's in the game"},
          {"description", "Look at the real game and summarise it."}, {"arguments", json::array()}},
     });
@@ -1204,6 +1445,13 @@ json prompt(const std::string& name, const json& args) {
                "Workflow: find_objects / get_object -> diagnose_object -> read_script if a script is involved -> fix the ONE "
                "cause you found (set_property / edit_script) -> diagnose_object again -> playtest start -> get_errors / "
                "get_object -> playtest stop -> say what was wrong and what you changed. Don't change things you didn't check.";
+    else if (name == "make_game")
+        text = "Make this game in Guts and Bolts: " + arg("idea", "a small fun game") + ".\n\n"
+               "Workflow: get_game_tree (what's there already) -> plan the map, the rules, the UI and how to win (keep it small "
+               "enough to finish) -> terrain / build for the map -> add_game_system for leaderboard, rounds, teams, "
+               "collectibles, checkpoints or a shop -> create_script for this game's own rules -> create_ui for extra screen "
+               "UI -> set_atmosphere -> validate_scene -> playtest start -> get_errors {run: \"latest\"} -> fix -> playtest "
+               "stop -> repeat until there are no errors -> screenshot -> tell the person how to play it.";
     else if (name == "describe_scene")
         text = "What is in my game?\n\nWorkflow: get_game_tree (and get_object for anything interesting) -> describe only what "
                "the tools returned. Never invent objects.";

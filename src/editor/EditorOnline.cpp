@@ -19,6 +19,7 @@
 #include "../scene/Serializer.h"
 #include "../scene/Physics.h"
 #include "../scene/Player.h"
+#include "../scene/EditMesh.h"
 #include "../renderer/Textures.h"
 
 #include <imgui.h>
@@ -1126,4 +1127,66 @@ void Editor::renderAccessoryWindow() {
     if (!saved) { ImGui::SameLine(); ImGui::TextDisabled("Save its position first."); }
     if (!m_accessoryMsg.empty()) { ImGui::PushTextWrapPos(0); ImGui::TextUnformatted(m_accessoryMsg.c_str()); ImGui::PopTextWrapPos(); }
     ImGui::End();
+}
+
+// The AI's way through the window above (make_accessory, AiMeshTools.cpp): the same
+// mannequin, the same spot for each kind and the same saved position, so the person
+// only has to press Upload. Hats and hair sit on the mannequin's real head.
+json Editor::aiPlaceAccessory(SceneNode* model, const std::string& kindKey, glm::vec3 offset, std::string& error) {
+    int ki = -1;
+    for (int i = 0; i < (int)std::size(kAccessoryKinds); ++i) if (kindKey == kAccessoryKinds[i].key) ki = i;
+    if (ki < 0) { error = "kind must be hat, hair, faceacc, neck, shoulder or waist."; return {}; }
+    if (!model || model->kind != NodeKind::Model) { error = "The accessory has to be a Model."; return {}; }
+    const AccessoryKind& kind = kAccessoryKinds[ki];
+    SceneNode* mannequin = m_scene->root()->findChild("Accessory Mannequin");
+    if (!mannequin) mannequin = Player::buildRig(*m_scene, "Accessory Mannequin", glm::vec3(0.0f));
+    if (!mannequin) { error = "Couldn't add the Accessory Mannequin."; return {}; }
+
+    // Where the accessory's shapes are in the world (their real corners when it's a mesh).
+    auto bounds = [](SceneNode* n, glm::vec3& lo, glm::vec3& hi) {
+        lo = glm::vec3(1e30f); hi = glm::vec3(-1e30f);
+        std::function<void(SceneNode*)> walk = [&](SceneNode* s) {
+            if (s->isPart()) {
+                const glm::mat4 w = s->worldMatrix();
+                auto add = [&](glm::vec3 p) { glm::vec3 q = glm::vec3(w * glm::vec4(p, 1.0f)); lo = glm::min(lo, q); hi = glm::max(hi, q); };
+                if (s->editMesh && !s->editMesh->verts.empty()) for (const glm::vec3& v : s->editMesh->verts) add(v);
+                else for (int c = 0; c < 8; ++c) add(glm::vec3(c & 1 ? 0.5f : -0.5f, c & 2 ? 0.5f : -0.5f, c & 4 ? 0.5f : -0.5f));
+            }
+            for (auto& ch : s->children) walk(ch.get());
+        };
+        walk(n);
+        return lo.x <= hi.x;
+    };
+    glm::vec3 lo, hi;
+    if (!bounds(model, lo, hi)) { error = "The Model has no parts in it."; return {}; }
+    glm::vec3 target = glm::vec3(mannequin->worldMatrix() * glm::vec4(kind.spot, 1.0f));
+    glm::vec3 from = (lo + hi) * 0.5f;   // what lands on the spot
+    SceneNode* head = mannequin->findChild("Head");
+    glm::vec3 hlo, hhi;
+    if ((kind.key == std::string("hat") || kind.key == std::string("hair")) && head && bounds(head, hlo, hhi)) {
+        // The bottom of a hat comes down over the top quarter of the head (hair: half of it).
+        const float cover = (kind.key == std::string("hat") ? 0.25f : 0.5f) * (hhi.y - hlo.y);
+        target = glm::vec3((hlo.x + hhi.x) * 0.5f, hhi.y - cover, (hlo.z + hhi.z) * 0.5f);
+        from = glm::vec3(from.x, lo.y, from.z);
+    }
+    const glm::vec3 move = target + offset - from;
+    const glm::mat4 toParent = model->parent ? glm::inverse(model->parent->worldMatrix()) : glm::mat4(1.0f);
+    model->transform.position += glm::vec3(toParent * glm::vec4(move, 0.0f));
+
+    Transform rel = relativeTo(mannequin->worldMatrix(), model->worldMatrix());
+    json place = {{"kind", kind.key}, {"position", {rel.position.x, rel.position.y, rel.position.z}},
+                  {"rotation", {rel.rotation.x, rel.rotation.y, rel.rotation.z}}, {"scale", {rel.scale.x, rel.scale.y, rel.scale.z}}};
+    setString(*model, "AccessoryPlacement", place.dump());
+    m_accessoryKind = ki;
+    m_accessoryName = model->name;
+    m_accessoryMsg = "The AI saved where it sits (" + std::string(kind.title) + "). Check it, then press Upload.";
+    m_showAccessory = true;
+    m_scene->select(model);
+    m_viewport->focusSelected();   // (the person sees it straight away; so does a screenshot)
+    m_scene->markDirty();
+    bounds(model, lo, hi);
+    return {{"kind", kind.key}, {"title", kind.title}, {"where", kind.where}, {"placement", place},
+            {"mannequin_id", "#" + std::to_string(mannequin->id)},
+            {"head_size", head && bounds(head, hlo, hhi) ? json{hhi.x - hlo.x, hhi.y - hlo.y, hhi.z - hlo.z} : json(nullptr)},
+            {"bounds_min", {lo.x, lo.y, lo.z}}, {"bounds_max", {hi.x, hi.y, hi.z}}};
 }

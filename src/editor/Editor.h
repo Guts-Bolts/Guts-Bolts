@@ -218,6 +218,13 @@ private:
     unsigned   libraryPicture(const nlohmann::json& asset);
     void       useLibraryAsset(const nlohmann::json& asset);
     void       renderAccessoryWindow();      // AVATAR > Accessories (Verified creators)
+    // Studio's AI making hats (AiMeshTools.cpp): edit_mesh, texture_mesh and make_accessory.
+    AiToolResult   runMeshAiTool(const std::string& name, const nlohmann::json& args);
+    // Studio's AI making whole games (AiGameTools.cpp): build, terrain, create_ui, add_game_system, set_atmosphere.
+    AiToolResult   runGameAiTool(const std::string& name, const nlohmann::json& args);
+    // Put a Model on the Accessory Mannequin as a `kind` ("hat", "hair"...), remember where
+    // it sits (like Save position) and open the Accessories window on it. {} + `error` if it can't.
+    nlohmann::json aiPlaceAccessory(SceneNode* model, const std::string& kind, glm::vec3 offset, std::string& error);
     void       renderBundleWindow();         // AVATAR > Bundles (staff): bundles with a new body
     void       renderPluginsTab();
     // Making and sharing plugins (EditorPluginPublish.cpp): the Publish Plugin window, writing a

@@ -22,7 +22,7 @@ json rpcError(const json& id, int code, const std::string& message) {
 // worker/mcp-policy.js). Read ones need studio.read; the rest studio.write. Anything else, like
 // publish_game or compare_scenes (it opens files by path), is refused here even if the server let it by.
 const char* kAppReadTools[] = {"get_engine_info", "get_game_tree", "find_objects", "get_object", "read_script", "get_output", "get_errors", "diagnose_object", "analyze_scene_performance", "analyze_script_dependencies", "validate_scene", "find_path", "get_runtime_state", "screenshot"};
-const char* kAppWriteTools[] = {"insert_object", "delete_object", "set_property", "find_and_change", "select", "create_script", "edit_script", "visual_script", "generate_level", "run_lua", "playtest", "multiplayer_test", "physics_replay", "lua_debugger", "create_physical_object", "spawn_explosion", "bake_navmesh", "walk_character_to", "script_history", "ai_activity", "checkpoint", "undo", "redo"};
+const char* kAppWriteTools[] = {"insert_object", "delete_object", "set_property", "find_and_change", "select", "create_script", "edit_script", "visual_script", "generate_level", "run_lua", "playtest", "multiplayer_test", "physics_replay", "lua_debugger", "create_physical_object", "spawn_explosion", "bake_navmesh", "walk_character_to", "script_history", "ai_activity", "checkpoint", "undo", "redo", "build", "terrain", "create_ui", "add_game_system", "set_atmosphere"};
 
 bool appMay(const std::string& tool, bool canChange) {
     for (const char* t : kAppReadTools) if (tool == t) return true;
