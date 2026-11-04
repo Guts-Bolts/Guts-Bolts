@@ -41,6 +41,13 @@ layout(location=2) in vec2 aUV;
 layout(location=3) in vec4 aBlend;   // terrain: how much grass, dirt, sand, rock (snow and mud in aUV)
 layout(location=4) in vec4 aColor;
 layout(location=5) in vec4 aTangent;
+// Many copies of one mesh drawn at once (Mesh::drawInstanced): each copy's own settings.
+layout(location=8)  in mat4 aIModel;   // (8-11)
+layout(location=12) in vec4 aIColor;   // rgb, alpha
+layout(location=13) in vec4 aIInfo;    // material, selected, wet
+uniform bool uInstanced;
+flat out vec4 vIColor;
+flat out vec4 vIInfo;
 
 uniform mat4 uModel;
 uniform mat4 uView;
@@ -58,16 +65,27 @@ out vec4 vColor;
 out vec4 vTangent;
 
 void main() {
+    mat4 model = uModel;
+    mat3 normalMat = uNormalMat;
+    vIColor = aIColor;
+    vIInfo = aIInfo;
+    if (uInstanced) {
+        model = aIModel;
+        // (copies are only ever moved, turned and stretched along their own sides, so
+        // this is the same as transpose(inverse(...)), without the work)
+        vec3 x = model[0].xyz, y = model[1].xyz, z = model[2].xyz;
+        normalMat = mat3(x / max(dot(x, x), 1e-12), y / max(dot(y, y), 1e-12), z / max(dot(z, z), 1e-12));
+    }
     vUV = aUV;
     vBlend = aBlend;
     vColor = aColor;
-    vTangent = vec4(normalize(mat3(uModel) * aTangent.xyz), aTangent.w);
+    vTangent = vec4(normalize(mat3(model) * aTangent.xyz), aTangent.w);
     vLocalPos = aPos;
     vLocalNormal = aNormal;
-    vObjPos = (aPos + 0.5) * vec3(length(uModel[0].xyz), length(uModel[1].xyz), length(uModel[2].xyz));
-    vec4 world = uModel * vec4(aPos, 1.0);
+    vObjPos = (aPos + 0.5) * vec3(length(model[0].xyz), length(model[1].xyz), length(model[2].xyz));
+    vec4 world = model * vec4(aPos, 1.0);
     vWorldPos  = world.xyz;
-    vNormal    = normalize(uNormalMat * aNormal);
+    vNormal    = normalize(normalMat * aNormal);
     gl_Position = uProj * uView * world;
 }
 )";
@@ -137,6 +155,16 @@ uniform int   uSplatLook;     // landed blood (uMaterial 30): 0 pool / splash / 
 uniform float uSplatSeed;     // 0..1: every splat gets its own wobbly edge
 uniform float uSplatDry;      // 0 fresh and wet .. 1 dried dark and dull
 uniform float uFogSunGlow;
+// Drawing many copies at once (uInstanced): each copy's colour, material... come from
+// the vertex shader instead of the uniforms.
+uniform bool uInstanced;
+flat in vec4 vIColor;
+flat in vec4 vIInfo;
+#define gColor    (uInstanced ? vIColor.rgb : uColor)
+#define gAlpha    (uInstanced ? vIColor.a : uAlpha)
+#define gMaterial (uInstanced ? int(vIInfo.x + 0.5) : uMaterial)
+#define gSelected (uInstanced ? (vIInfo.y > 0.5) : uSelected)
+#define gWetPart  (uInstanced ? vIInfo.z : uWetPart)
 
 uniform bool      uShadowsEnabled;
 uniform int       uShadowQuality;     // 0 hard, 1 soft, 2 PCSS
@@ -304,7 +332,7 @@ float lineAA(float d, float w, float px) { return 1.0 - smoothstep(w - px * 0.35
 void main() {
     vec3 N = normalize(vNormal);
     vec3 V = normalize(uViewPos - vWorldPos);
-    vec3 albedo = lin(uColor) * lin(vColor.rgb);
+    vec3 albedo = lin(gColor) * lin(vColor.rgb);
     float decalAlpha = vColor.a;
     if (uUseDecal) {
         vec4 px = texture(uDecal, vUV);
@@ -348,14 +376,14 @@ void main() {
         metal = uVHas.w > 0.5 ? tiled(uVMetal, uv).r : uVParams.y;
         if (uVHas.y > 0.5) N = mapNormal(N, uv, tiled(uVNormal, uv).xyz * 2.0 - 1.0);
     }
-    else if (uMaterial == 1) { rough = 0.3; metal = 1.0;
+    else if (gMaterial == 1) { rough = 0.3; metal = 1.0;
         albedo *= mix(1.0, 0.92 + 0.08 * vnoise(vec2(dot(vWorldPos.xz, vec2(1.0)) * 60.0, vWorldPos.y * 2.0)), detail * 0.5); }
-    else if (uMaterial == 3) {                                    // wood grain
+    else if (gMaterial == 3) {                                    // wood grain
         float rings = sin((vWorldPos.x * 0.7 + vWorldPos.z * 0.3 + fbm(vWorldPos.xy * 1.5) * 1.2) * 14.0);
         albedo *= 0.78 + 0.22 * (0.5 + 0.5 * rings);
         rough = 0.75;
     }
-    else if (uMaterial == 9) {                                    // terrain: a mix of grounds (Terrain.h)
+    else if (gMaterial == 9) {                                    // terrain: a mix of grounds (Terrain.h)
         float n1 = fbm(vWorldPos.xz * 0.35), n2 = vnoise(vWorldPos.xz * 4.0);
         float strata = 0.5 + 0.5 * sin(vWorldPos.y * 1.7 + n1 * 4.0);
         // How much of each: grass, dirt, sand, rock, snow, mud. A little noise on
@@ -380,13 +408,13 @@ void main() {
         rough = total > 1e-4 ? r / total : 0.9;
         albedo *= mix(1.0, 0.85 + 0.3 * n2, detail);
     }
-    else if (uMaterial == 4) { rough = 0.04; }                    // glass
-    else if (uMaterial == 5) {                                    // concrete speckle
+    else if (gMaterial == 4) { rough = 0.04; }                    // glass
+    else if (gMaterial == 5) {                                    // concrete speckle
         albedo *= mix(0.92, 0.85 + 0.25 * hash13(floor(vWorldPos * 24.0)) * vnoise(vWorldPos.xz * 3.0), detail);
         rough = 0.95;
     }
-    else if (uMaterial == 6) { rough = 0.08; albedo = mix(albedo, vec3(0.8, 0.9, 1.0), 0.2); }
-    else if (uMaterial >= 10 && uMaterial <= 20) {
+    else if (gMaterial == 6) { rough = 0.08; albedo = mix(albedo, vec3(0.8, 0.9, 1.0), 0.2); }
+    else if (gMaterial >= 10 && gMaterial <= 20) {
         // The newer materials are drawn on each face of the part in its own space
         // (so bricks line up with its edges and patterns move with it), from its corner.
         vec3 an = abs(vLocalNormal);
@@ -395,14 +423,14 @@ void main() {
         float px = length(fwidth(vWorldPos));                    // one pixel, in world units
         float h = 0.0;
         vec2 cid;
-        if (uMaterial == 10) {                                    // sand: fine grains, wind ripples
+        if (gMaterial == 10) {                                    // sand: fine grains, wind ripples
             float f = fadeAt(px, 0.03);
             float grain = hash12(floor(uv * 35.0));
             float ripple = sin(uv.x * 3.5 + uv.y * 1.2 + fbm(uv * 0.5) * 5.0);
             albedo *= mix(1.0, 0.85 + 0.25 * grain, f) * (0.82 + 0.3 * fbm(uv * 2.5)) * (0.95 + 0.05 * ripple);
             h = ripple * 0.02 * fadeAt(px, 1.5) + grain * 0.003 * f;
             rough = 0.95;
-        } else if (uMaterial == 11) {                             // grass: blades (upright on the sides), patches
+        } else if (gMaterial == 11) {                             // grass: blades (upright on the sides), patches
             float f = fadeAt(px, 0.07);
             float blades = top ? vnoise(uv * 28.0) : vnoise(vec2(uv.x * 26.0, uv.y * 3.0 + vnoise(uv * 7.0) * 2.0));
             float clumps = vnoise(uv * 5.0);
@@ -411,7 +439,7 @@ void main() {
             albedo *= mix(vec3(1.0), vec3(1.1, 1.05, 0.75), smoothstep(0.55, 0.8, patches) * 0.6);   // sun-dried bits
             h = blades * 0.015 * f;
             rough = 0.92;
-        } else if (uMaterial == 12) {                             // brick: rows of bricks, every other row shifted
+        } else if (gMaterial == 12) {                             // brick: rows of bricks, every other row shifted
             vec2 b = uv / vec2(1.0, 0.4);
             float row = floor(b.y);
             b.x += mod(row, 2.0) * 0.5;
@@ -425,7 +453,7 @@ void main() {
             albedo = mix(albedo * 0.95, mix(brick, mortarCol, mortar), f);
             h = (1.0 - mortar) * 0.02 * f + vnoise(uv * 20.0) * 0.003 * f;
             rough = 0.9;
-        } else if (uMaterial == 13) {                             // fabric: woven threads, a bit fuzzy
+        } else if (gMaterial == 13) {                             // fabric: woven threads, a bit fuzzy
             vec2 t = uv * 16.0;
             float over = mod(floor(t.x) + floor(t.y), 2.0);
             float thread = over > 0.5 ? sin(3.14159 * fract(t.y)) : sin(3.14159 * fract(t.x));
@@ -434,14 +462,14 @@ void main() {
             albedo *= mix(0.92, 0.76 + 0.28 * thread, f) * (0.8 + 0.3 * fuzz) * (0.92 + 0.12 * fbm(uv * 1.5));
             h = thread * 0.01 * f;
             rough = 1.0;
-        } else if (uMaterial == 14) {                             // slate: flat, layered slabs
+        } else if (gMaterial == 14) {                             // slate: flat, layered slabs
             float n = fbm(uv * vec2(0.6, 1.8) + vec2(3.1, 0.0));
             float slabs = floor(n * 6.0) / 6.0;
             float f = fadeAt(px, 0.1);
             albedo *= (0.7 + 0.5 * slabs) * mix(1.0, 0.9 + 0.2 * vnoise(uv * 18.0), f);
             h = slabs * 0.04 + vnoise(uv * 6.0) * 0.006 * f;
             rough = 0.75;
-        } else if (uMaterial == 15) {                             // granite: dark and light crystals, polished
+        } else if (gMaterial == 15) {                             // granite: dark and light crystals, polished
             vec3 v = voronoi(uv * 9.0, cid);
             float f = fadeAt(px, 0.11);
             vec3 g = albedo * (0.8 + 0.35 * fbm(uv * 1.5));
@@ -450,14 +478,14 @@ void main() {
             else if (v.z > 0.7) g = albedo * vec3(1.15, 0.95, 0.9);
             albedo = mix(albedo * (0.8 + 0.3 * fbm(uv * 1.5)), g, f);
             rough = 0.4;
-        } else if (uMaterial == 16) {                             // marble: polished, with soft winding veins
+        } else if (gMaterial == 16) {                             // marble: polished, with soft winding veins
             float w = fbm(uv * 0.8);
             float vein  = 1.0 - smoothstep(0.0, 0.1, abs(sin((uv.x + uv.y * 0.6) * 1.6 + w * 7.0)));
             float vein2 = 1.0 - smoothstep(0.0, 0.05, abs(sin((uv.x * 0.4 - uv.y) * 3.5 + fbm(uv * 1.7 + 3.0) * 6.0)));
             albedo *= 0.94 + 0.12 * w;
             albedo = mix(albedo, albedo * 0.35, max(vein * 0.75, vein2 * 0.45) * fadeAt(px, 0.3));
             rough = 0.12;
-        } else if (uMaterial == 17) {                             // cobblestone: rounded stones, dark gaps
+        } else if (gMaterial == 17) {                             // cobblestone: rounded stones, dark gaps
             vec3 v = voronoi(uv * 1.7, cid);
             float gap = lineAA(v.y / 1.7, 0.035, px);
             float f = fadeAt(px, 0.3);
@@ -465,7 +493,7 @@ void main() {
             albedo = mix(albedo * 0.85, mix(stone, albedo * 0.25, gap), f);
             h = (smoothstep(0.0, 0.2, v.y) * 0.05 + vnoise(uv * 8.0) * 0.005) * f;
             rough = 0.85;
-        } else if (uMaterial == 18) {                             // foil: thin crinkled metal, every facet tilted
+        } else if (gMaterial == 18) {                             // foil: thin crinkled metal, every facet tilted
             vec3 v = voronoi(uv * 5.0, cid);
             float f = fadeAt(px, 0.2);
             vec3 tilt = vec3(hash12(cid + 3.7), hash12(cid + 9.1), hash12(cid + 5.3)) - 0.5;
@@ -473,7 +501,7 @@ void main() {
             albedo *= mix(1.0, 0.85 + 0.25 * v.z, f);
             h = v.y * 0.01 * f;
             metal = 1.0; rough = 0.25;
-        } else if (uMaterial == 19) {                             // diamond plate: raised stripes, every other one turned
+        } else if (gMaterial == 19) {                             // diamond plate: raised stripes, every other one turned
             vec2 p = uv * 1.6;
             vec2 cell = floor(p), q = fract(p) - 0.5;
             q = mod(cell.x + cell.y, 2.0) > 0.5 ? vec2(q.x + q.y, q.x - q.y) : vec2(q.x - q.y, q.x + q.y);
@@ -488,11 +516,11 @@ void main() {
         }
         N = bump(N, h);
     }
-    else if (uMaterial == 8) {                                    // wet liquid (blood, oil): glossy, a bit darker in the middle
+    else if (gMaterial == 8) {                                    // wet liquid (blood, oil): glossy, a bit darker in the middle
         rough = 0.15;
         albedo *= 0.7;
     }
-    else if (uMaterial == 31) {                                   // a gib: lumpy wet meat (skin on one side if cut from a body part)
+    else if (gMaterial == 31) {                                   // a gib: lumpy wet meat (skin on one side if cut from a body part)
         vec3 lp = vLocalPos + uGibSeed * 7.0;
         float lumps = fbm(lp.xz * 4.0 + lp.y * 3.0);
         vec2 cid;
@@ -510,7 +538,7 @@ void main() {
             rough = mix(0.55, 0.22, torn);
         }
     }
-    else if (uMaterial == 30) {                                   // blood that has landed: pools, smears, footprints, stains
+    else if (gMaterial == 30) {                                   // blood that has landed: pools, smears, footprints, stains
         if (vLocalNormal.y < 0.5) discard;                        // just a film on top of the surface
         vec2 q = vLocalPos.xz * 2.0;                              // -1..1 across
         float sd = uSplatSeed * 37.0;
@@ -520,7 +548,7 @@ void main() {
             float heel = length((q - vec2(0.0, -0.55)) / vec2(0.72, 0.42));
             float d = min(sole, heel);
             float tread = vnoise(q * vec2(9.0, 5.0) + sd) * 0.55 + vnoise(q * 22.0 + sd) * 0.45;
-            if (d > 1.0 || tread < 0.3 + 0.25 * (1.0 - uAlpha)) discard;   // fainter prints are patchier
+            if (d > 1.0 || tread < 0.3 + 0.25 * (1.0 - gAlpha)) discard;   // fainter prints are patchier
             inside = 1.0 - d;
         } else if (uSplatLook == 1) {                             // smear: streaks along the way it was dragged (z)
             float streak = vnoise(vec2(q.x * 7.0 + sd, q.y * 0.6)) * 0.7 + vnoise(vec2(q.x * 19.0 - sd, q.y * 1.3)) * 0.3;
@@ -556,7 +584,7 @@ void main() {
         // A domed surface (surface tension) catches the light along the rim.
         N = bump(N, smoothstep(0.0, 0.3, inside) * 0.008 * splatWet);
     }
-    else if (uMaterial == 7) {                                    // water: little moving ripples on top
+    else if (gMaterial == 7) {                                    // water: little moving ripples on top
         rough = 0.02;
         if (N.y > 0.3) {
             vec2 p = vWorldPos.xz;
@@ -569,16 +597,16 @@ void main() {
 
     // Wet things: darker (water soaks into wood, concrete and the like) and shinier,
     // with little puddles on flat tops. Patchy as they dry.
-    if (uMaterial != 2 && uMaterial != 7 && uMaterial != 8 && uMaterial != 30 && uMaterial != 31) {
-        float wet = max(uWetPart, uRainWet * smoothstep(-0.4, 0.3, N.y));
+    if (gMaterial != 2 && gMaterial != 7 && gMaterial != 8 && gMaterial != 30 && gMaterial != 31) {
+        float wet = max(gWetPart, uRainWet * smoothstep(-0.4, 0.3, N.y));
         for (int i = 0; i < uWetCount; ++i) {
             float d = length(vWorldPos - uWetSpots[i].xyz);
             wet = max(wet, uWetAmt[i] * (1.0 - smoothstep(uWetSpots[i].w * 0.5, uWetSpots[i].w, d)));
         }
         if (wet > 0.0) {
             wet *= smoothstep(0.15, 0.55, vnoise(vWorldPos.xz * 1.3 + vWorldPos.y * 0.7) * 0.6 + wet * 0.6);
-            bool soaks = uMaterial == 3 || uMaterial == 5 || (uMaterial >= 10 && uMaterial <= 14) || uMaterial == 17;
-            float porous = soaks ? 0.5 : (uMaterial == 0 || uMaterial == 20 ? 0.72 : 0.88);
+            bool soaks = gMaterial == 3 || gMaterial == 5 || (gMaterial >= 10 && gMaterial <= 14) || gMaterial == 17;
+            float porous = soaks ? 0.5 : (gMaterial == 0 || gMaterial == 20 ? 0.72 : 0.88);
             albedo *= mix(1.0, porous, wet);
             float puddle = wet * smoothstep(0.75, 0.95, N.y);
             rough = mix(rough, 0.05, max(wet * 0.75, puddle));
@@ -594,9 +622,9 @@ void main() {
     }
 
     vec3 color;
-    float alpha = uAlpha * decalAlpha;
+    float alpha = gAlpha * decalAlpha;
 
-    if (uMaterial == 2) {
+    if (gMaterial == 2) {
         // Neon glows on its own (and blooms).
         color = albedo * 4.0;
     } else {
@@ -633,11 +661,11 @@ void main() {
         vec3  env = lin(skyGradient(R, uZenith, uHorizon, uGround));
         vec3  avg = lin((uZenith + uHorizon + uGround) / 3.0);
         env = mix(env, avg, rough);
-        color += env * F * (uMaterial == 7 ? max(uReflections, 0.8) : uMaterial == 8 ? uReflections * 0.2 : uMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : uMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
+        color += env * F * (gMaterial == 7 ? max(uReflections, 0.8) : gMaterial == 8 ? uReflections * 0.2 : gMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : gMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
 
         // Glass & ice get more opaque at glancing angles.
-        if (uMaterial == 4 || uMaterial == 6 || uMaterial == 7)
-            alpha = mix(alpha, 1.0, pow(1.0 - NoV, 3.0) * (uMaterial == 7 ? 0.85 : 0.7));
+        if (gMaterial == 4 || gMaterial == 6 || gMaterial == 7)
+            alpha = mix(alpha, 1.0, pow(1.0 - NoV, 3.0) * (gMaterial == 7 ? 0.85 : 0.7));
     }
 
     if (uVariant && uVParams.z > 0.0) color += albedo * uVParams.z * 2.0;   // a glowing variant
@@ -653,7 +681,7 @@ void main() {
     }
     alpha *= 1.0 - uXrayFade;
 
-    if (uSelected) {
+    if (gSelected) {
         float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
         color = mix(color, vec3(2.0, 0.9, 0.2), rim * 0.8);
     }

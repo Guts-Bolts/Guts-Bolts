@@ -1,4 +1,5 @@
 #include "Mesh.h"
+#include <cstddef>
 
 Mesh::Mesh(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices) {
     upload(verts, indices);
@@ -89,4 +90,25 @@ void Mesh::draw() const {
     glBindVertexArray(m_vao);
     glDrawElements(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
+}
+
+void Mesh::drawInstanced(GLuint perCopy, int count) const {
+    if (count <= 0 || !m_vao) return;
+    glBindVertexArray(m_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, perCopy);
+    const GLsizei stride = sizeof(InstanceData);
+    for (int i = 0; i < 6; ++i) {   // 4 for the matrix's columns, then colour and info
+        const size_t at = i < 4 ? offsetof(InstanceData, model) + sizeof(glm::vec4) * i
+                        : i == 4 ? offsetof(InstanceData, color) : offsetof(InstanceData, info);
+        glEnableVertexAttribArray(8 + i);
+        glVertexAttribPointer(8 + i, 4, GL_FLOAT, GL_FALSE, stride, (void*)at);
+        glVertexAttribDivisor(8 + i, 1);
+    }
+    glDrawElementsInstanced(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, nullptr, count);
+    for (int i = 0; i < 6; ++i) {   // (so plain draws of this mesh don't read them)
+        glVertexAttribDivisor(8 + i, 0);
+        glDisableVertexAttribArray(8 + i);
+    }
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
