@@ -1,5 +1,5 @@
 export default {
-  id: 'grab-and-go', name: 'Grab and Go', time: 1793794635, tag: 'Engine',
+  id: 'grab-and-go', name: 'Grab and Go', version: '0.7.9', time: 1793794635, tag: 'Engine',
   summary: 'DragDetectors are here: players can grab things with the mouse and drag them around.',
   items: [
     'Put a DragDetector in a part or model (Insert Object, or Instance.new("DragDetector"))',

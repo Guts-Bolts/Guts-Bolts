@@ -1,5 +1,5 @@
 export default {
-  id: 'lag-hunter', name: 'Lag Hunter', time: 1793802000, tag: 'Studio',
+  id: 'lag-hunter', name: 'Lag Hunter', version: '0.7.9', time: 1793802000, tag: 'Studio',
   summary: 'A Live Profiler shows what is making your game slow while it runs.',
   items: [
     'Open it from View > Live Profiler in Studio, or press Ctrl+F6 while playing a game',
