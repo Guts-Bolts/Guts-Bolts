@@ -56,6 +56,7 @@ const kDailyUploadsUnverified = 5;
 const REVIEWED_KINDS = ['decal', 'audio', 'tshirt'];
 const kCreatorSharePercent = 70;
 const kMaxNotes = 50;   // notifications kept per account (the bell)
+const kMaxWishlistAlerts = 2000;   // most people one price change rings (the rest still see the new price)
 const KINDS = ['hat', 'shirt', 'pants', 'audio', 'plugin', 'game', 'decal', 'model', 'hair', 'faceacc', 'neck', 'shoulder', 'waist', 'face', 'tshirt', 'gear', 'animation',
   'emote', 'animpack', 'bundle', 'bodypart'];
 const FEE = { hat: 10, shirt: 10, pants: 10, audio: 20, plugin: 20, game: 0, decal: 5, model: 0,
@@ -993,6 +994,27 @@ export class GbServerObject extends DurableObject {
       id: note.id, account_id: u.id, kind: note.kind, message: archiveMessage.slice(0, 500),
       about: note.about || '', created_at: new Date(at * 1000).toISOString(), read_at: null,
     });
+  }
+  // Wishlist alerts: an item got cheaper, or came back on sale, so everyone who has it in
+  // their favourites (Catalog > My Favorites) gets a bell note. Only for items they can
+  // still see, and not the person who made the change. (src/server/ServerItems.cpp too.)
+  wishlistAlert(a, before, by) {
+    if (this.isOffsale(a)) return;
+    const price = a.price || 0;
+    const backOnSale = before.offsale, cheaper = price < before.price;
+    if (!backOnSale && !cheaper) return;
+    const cost = price > 0 ? price + ' Bolts' : 'free';
+    const text = backOnSale ? a.name + ' from your favourites is back on sale (' + cost + ')!'
+      : price > 0 ? a.name + ' from your favourites dropped from ' + before.price + ' to ' + price + ' Bolts!'
+      : a.name + ' from your favourites is free now!';
+    let sent = 0;
+    for (const u of this.users.values()) {
+      if (sent >= kMaxWishlistAlerts) break;
+      if (u.id === by.id || !(u.itemFavorites || []).includes(a.id) || (u.owned || []).includes(a.id)) continue;
+      if (!this.canPlay(a, u)) continue;
+      this.notify(u, 'wishlist', text, a.id);
+      sent++;
+    }
   }
   queueSupabaseEvent(table, row) {
     if (!this.env.SUPABASE_URL || !this.env.SUPABASE_SECRET_KEY) return;
@@ -3850,6 +3872,7 @@ export class GbServerObject extends DurableObject {
       const a = this.assets.get(str(args, 'id'));
       if (!a || !isCatalogItem(a.kind)) return fail('That item doesn\'t exist (any more).');
       if (a.creator !== me.id && !this.isStaff(me)) return fail('Only the item\'s creator or staff can change it.');
+      const before = { price: a.price || 0, offsale: this.isOffsale(a) };   // (for the wishlist alert)
       if ('name' in args) {
         const title = say(str(args, 'name'), 50);
         if (!title) return fail('Give it a name.');
@@ -3905,6 +3928,7 @@ export class GbServerObject extends DurableObject {
       }
       a.updated = t;
       this.saveAsset(a);
+      this.wishlistAlert(a, before, me);
       return okay({ asset: this.publicAsset(a, me) });
     }
     if (name === 'item.give') {

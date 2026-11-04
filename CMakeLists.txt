@@ -920,6 +920,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     target_link_libraries(ServerItemFavoritesTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerItemFavoritesTests COMMAND ServerItemFavoritesTests)
 
+    add_executable(ServerWishlistAlertTests tests/ServerWishlistAlertTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerWishlistAlertTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerWishlistAlertTests gb_version)
+    target_link_libraries(ServerWishlistAlertTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerWishlistAlertTests COMMAND ServerWishlistAlertTests)
+
     # Achievements, game update logs and events (ServerExtras.cpp).
     add_executable(ServerExtrasTests tests/ServerExtrasTests.cpp ${GB_SERVER_TEST_SOURCES})
     target_include_directories(ServerExtrasTests PRIVATE src/ ${GB_GENERATED})
