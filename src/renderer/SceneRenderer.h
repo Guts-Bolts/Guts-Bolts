@@ -48,6 +48,10 @@ public:
 private:
     void renderShadowPass(Scene& scene, const glm::mat4& lightSpace, ShadowMap& target);
     void drawGeometry(Scene& scene, const Camera& camera, bool editing);
+public:
+    // How many groups of copies were drawn in one go last frame (Instancing.h; for tests).
+    int lastCopyGroups() const { return m_lastCopies; }
+private:
     // The terrain's mesh, rebuilt when the terrain changes (null = no terrain).
     Mesh* terrainMesh(Scene& scene);
     struct WaterItem { SceneNode* node; glm::mat4 model; };
@@ -135,6 +139,8 @@ private:
     Target m_bdDown[kBackdropLevels + 1], m_bdUp[kBackdropLevels];   // makeBackdrop()
 
     unsigned int m_gridVao = 0, m_gridVbo = 0;
+    unsigned int m_instanceVbo = 0;   // each copy's settings when many are drawn at once (Instancing.h)
+    int          m_lastCopies = 0;    // how many groups of copies the last frame drew in one go
     std::unique_ptr<Shader> m_overlay;
     unsigned int m_overlayVao = 0, m_overlayVbo = 0;
     // Explosions' smoke and fire (Blast.h), and their shockwaves.

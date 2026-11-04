@@ -1008,6 +1008,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME OutfitsTests COMMAND OutfitsTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # Drawing many copies of one mesh at once: which parts can be copies.
+    add_executable(InstancingTests tests/InstancingTests.cpp)
+    target_link_libraries(InstancingTests PRIVATE gb_engine)
+    add_test(NAME InstancingTests COMMAND InstancingTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # Only drawing what the camera can see.
     add_executable(FrustumTests tests/FrustumTests.cpp)
     target_link_libraries(FrustumTests PRIVATE gb_engine)

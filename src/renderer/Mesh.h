@@ -11,6 +11,13 @@ struct Vertex {
     glm::vec4 tangent{1.0f, 0.0f, 0.0f, 1.0f};
 };
 
+// One copy's settings when many copies of a mesh are drawn at once (Mesh::drawInstanced).
+struct InstanceData {
+    glm::mat4 model;   // where it is (shader inputs 8-11)
+    glm::vec4 color;   // rgb, alpha (12)
+    glm::vec4 info;    // material id, selected (0/1), wet (0..1), unused (13)
+};
+
 class Mesh {
 public:
     Mesh() = default;
@@ -23,6 +30,9 @@ public:
     Mesh& operator=(Mesh&& o) noexcept;
 
     void draw() const;
+    // Draw `count` copies at once (instancing): `perCopy` is a buffer of InstanceData,
+    // one for each copy (shader inputs 8-13). See SceneRenderer's part drawing.
+    void drawInstanced(GLuint perCopy, int count) const;
     // Replace the whole mesh (for shapes that change every frame, like waves).
     void update(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices);
     int  indexCount() const { return m_indexCount; }

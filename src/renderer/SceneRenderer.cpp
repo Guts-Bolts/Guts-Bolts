@@ -19,8 +19,10 @@
 
 #include "GL.h"
 #include "Frustum.h"
+#include "Instancing.h"
 #include <cstddef>
 #include <cstring>
+#include <cstdlib>
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <map>
@@ -170,6 +172,7 @@ SceneRenderer::SceneRenderer() {
 SceneRenderer::~SceneRenderer() {
     Liquid::graphicsContext(-1);
     if (m_gridVbo)  glDeleteBuffers(1, &m_gridVbo);
+    if (m_instanceVbo) glDeleteBuffers(1, &m_instanceVbo);
     if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
     if (m_overlayVao) glDeleteVertexArrays(1, &m_overlayVao);
     if (m_gridVao)  glDeleteVertexArrays(1, &m_gridVao);
@@ -1429,10 +1432,46 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         }
     };
 
+    // Many copies of one mesh: one draw for all of them. The rest go one by one.
+    auto drawCopies = [&](std::vector<Item>& items, auto& wet, auto& one) {
+        std::unordered_map<const Mesh*, std::vector<const Item*>> groups;
+        std::vector<const Item*> single;
+        static const bool off = std::getenv("GB_NO_INSTANCING") != nullptr;   // (to compare, or if a graphics card mis-draws it)
+        for (const Item& it : items) {
+            if (!off && Instancing::canCopy(*it.node, it.model, Player::isWater(it.node))) groups[it.node->mesh.get()].push_back(&it);
+            else single.push_back(&it);
+        }
+        if (!Mesh::headless && !m_instanceVbo) glGenBuffers(1, &m_instanceVbo);
+        std::vector<InstanceData> data;
+        int batches = 0;
+        for (auto& [mesh, list] : groups) {
+            if ((int)list.size() < Instancing::kMinCopies || !m_instanceVbo) {
+                single.insert(single.end(), list.begin(), list.end());
+                continue;
+            }
+            data.clear();
+            data.reserve(list.size());
+            for (const Item* it : list) {
+                const SceneNode* n = it->node;
+                data.push_back({it->model, glm::vec4(n->color, 1.0f - n->shownTransparency()),
+                                glm::vec4((float)materialShaderId(n->material), n->selected ? 1.0f : 0.0f, wet(n), 0.0f)});
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, m_instanceVbo);
+            glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(data.size() * sizeof(InstanceData)), data.data(), GL_STREAM_DRAW);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            m_lit->setBool("uInstanced", true);
+            mesh->drawInstanced(m_instanceVbo, (int)data.size());
+            m_lit->setBool("uInstanced", false);
+            ++batches;
+        }
+        for (const Item* it : single) one(*it);
+        m_lastCopies = batches;
+    };
+
     glDisable(GL_BLEND);
     // Wireframe (Studio): only the edges, the back ones too.
     if (shading == Shading::Wireframe) { wireframe(true); glDisable(GL_CULL_FACE); }
-    for (auto& it : opaque) draw(it);
+    drawCopies(opaque, wetPart, draw);   // parts that share a mesh, in one go each (Instancing.h)
     if (Mesh* tm = terrainMesh(scene)) {
         m_lit->setMat4("uModel", glm::mat4(1.0f));
         m_lit->setMat3("uNormalMat", glm::mat3(1.0f));
