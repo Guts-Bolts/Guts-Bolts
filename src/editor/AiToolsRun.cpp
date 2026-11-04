@@ -58,6 +58,7 @@ const char* classOf(const SceneNode* n, const SceneNode* root) {
         case NodeKind::Remote: return n->remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt: return "ProximityPrompt";
         case NodeKind::Highlight: return "Highlight";
+        case NodeKind::IKControl: return "IKControl";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n->post.type];
         case NodeKind::Sky:       return "Sky";
         case NodeKind::MaterialVariant: return "MaterialVariant";
@@ -176,6 +177,7 @@ const char* const kLuaProperties[] = {
     "CanBeDropped", "RequiresHandle", "Grip", "GripPos", "GripForward", "GripRight", "GripUp", "ActionText",
     "ObjectText", "KeyboardKeyCode", "HoldDuration", "MaxActivationDistance", "RequiresLineOfSight", "ClickablePrompt",
     "Style", "FillColor", "OutlineColor", "FillTransparency", "OutlineTransparency", "DepthMode", "Adornee",
+    "ChainRoot", "EndEffector", "Target", "Pole", "Weight", "SmoothTime",
     "Attachment0", "Attachment1", "Part0", "Part1", "WorldPosition", "Length", "FreeLength", "Stiffness", "Damping",
     "AngularVelocity", "MotorMaxTorque", "ActuatorType", "Thickness", "LightEmission", "LightInfluence", "FaceCamera",
     "TextureMode", "TextureLength", "TextureSpeed", "Lifetime", "MinLength", "MaxLength", "WidthScale", "Width0",

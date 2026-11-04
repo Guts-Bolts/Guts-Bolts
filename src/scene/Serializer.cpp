@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include "IkControls.h"
 #include "Serializer.h"
 #include "Skin.h"
 #include "EditMesh.h"
@@ -70,6 +71,7 @@ const char* kindName(NodeKind k) {
         case NodeKind::Remote:       return "Remote";
         case NodeKind::Prompt:       return "Prompt";
         case NodeKind::Highlight:    return "Highlight";
+        case NodeKind::IKControl:    return "IKControl";
         case NodeKind::Trail:        return "Trail";
         case NodeKind::Beam:         return "Beam";
         case NodeKind::SoundGroup:   return "SoundGroup";
@@ -102,6 +104,7 @@ NodeKind kindFrom(const std::string& s) {
     if (s == "Remote")       return NodeKind::Remote;
     if (s == "Prompt")       return NodeKind::Prompt;
     if (s == "Highlight")    return NodeKind::Highlight;
+    if (s == "IKControl")    return NodeKind::IKControl;
     if (s == "Trail")        return NodeKind::Trail;
     if (s == "Beam")         return NodeKind::Beam;
     if (s == "SoundGroup")   return NodeKind::SoundGroup;
@@ -1004,6 +1007,11 @@ json toJson(const SceneNode& n) {
     if (n.isPrompt()) j["prompt"] = Serializer::promptToJson(n.prompt, n.enabled);
     if (n.isClickDetector()) j["click"] = Serializer::clickToJson(n.click);
     if (n.isHighlight()) j["highlight"] = Serializer::highlightToJson(n.highlight, n.enabled);
+    if (n.isIkControl()) {
+        const IkProps& k = n.ik;
+        j["ik"] = {{"type", (int)k.type}, {"root", k.chainRoot}, {"end", k.endEffector}, {"target", k.target}, {"pole", k.pole},
+                   {"weight", k.weight}, {"smooth", k.smoothTime}, {"priority", k.priority}, {"on", n.enabled}};
+    }
     if (n.isEffect()) j["effect"] = Serializer::effectToJson(n.effect, n.enabled, n.kind == NodeKind::Beam);
     if (n.isPostEffect()) j["post"] = Serializer::postEffectToJson(n.post, n.enabled);
     if (n.isSky()) j["sky"] = Serializer::skyToJson(n.sky);
@@ -1303,6 +1311,17 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     if (auto p = j.find("prompt"); p != j.end() && p->is_object()) Serializer::promptFromJson(*p, n->prompt, n->enabled);
     if (auto c = j.find("click"); c != j.end() && c->is_object()) Serializer::clickFromJson(*c, n->click);
     if (auto h = j.find("highlight"); h != j.end() && h->is_object()) Serializer::highlightFromJson(*h, n->highlight, n->enabled);
+    if (n->isIkControl()) IkControls::noteMade();
+    if (auto k = j.find("ik"); k != j.end() && k->is_object()) {
+        IkProps& p = n->ik;
+        auto id = [&](const char* key) { auto it = k->find(key); return it != k->end() && it->is_number_unsigned() ? it->get<uint64_t>() : (uint64_t)0; };
+        p.type = (IkType)std::clamp(k->value("type", 0), 0, 3);
+        p.chainRoot = id("root"); p.endEffector = id("end"); p.target = id("target"); p.pole = id("pole");
+        p.weight = std::clamp(k->value("weight", 1.0f), 0.0f, 1.0f);
+        p.smoothTime = std::clamp(k->value("smooth", 0.05f), 0.0f, 10.0f);
+        p.priority = k->value("priority", 0);
+        n->enabled = k->value("on", true);
+    }
     if (auto e = j.find("effect"); e != j.end() && e->is_object()) Serializer::effectFromJson(*e, n->effect, n->enabled);
     if (auto f = j.find("soundFx"); f != j.end() && f->is_object() && n->isSoundEffect()) Serializer::soundFromJson(*n, *f);
     if (auto e = j.find("post"); n->isPostEffect() && e != j.end() && e->is_object()) Serializer::postEffectFromJson(*e, n->post, n->enabled);
@@ -1594,7 +1613,7 @@ void applyNodeShallow(SceneNode& dst, const std::string& text) {
     dst.source = src->source;       dst.enabled = src->enabled;
     dst.isModule = src->isModule;   dst.locked = src->locked;
     dst.isLocal = src->isLocal;     dst.remoteFunction = src->remoteFunction;
-    dst.prompt = src->prompt;       dst.highlight = src->highlight;
+    dst.prompt = src->prompt;       dst.highlight = src->highlight;   dst.ik = src->ik;
     dst.click = src->click;
     dst.effect = src->effect;       dst.particle = src->particle;
     dst.post = src->post;           dst.sky = src->sky;
@@ -1662,6 +1681,9 @@ void remapRefs(SceneNode& n, const std::unordered_map<uint64_t, uint64_t>& map) 
         if (auto it = map.find(n.gui.adornee); it != map.end()) n.gui.adornee = it->second;
     if (n.isGui() && n.gui.camera)   // (a copied ViewportFrame looks through the copied Camera, if it came along)
         if (auto it = map.find(n.gui.camera); it != map.end()) n.gui.camera = it->second;
+    if (n.isIkControl())   // (a copied IKControl reaches with the copy's own parts)
+        for (uint64_t* r : {&n.ik.chainRoot, &n.ik.endEffector, &n.ik.target, &n.ik.pole})
+            if (auto it = map.find(*r); *r && it != map.end()) *r = it->second;
     if (n.isHighlight() && n.highlight.adornee)   // (the same for a copied Highlight)
         if (auto it = map.find(n.highlight.adornee); it != map.end()) n.highlight.adornee = it->second;
     if (n.isEffect()) {   // (a copied Trail / Beam uses the copied attachments)

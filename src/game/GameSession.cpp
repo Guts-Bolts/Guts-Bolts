@@ -1,6 +1,7 @@
 #include "GameSession.h"
 #include "../core/FrameProfile.h"
 #include "../scene/LegacyJoints.h"
+#include "../scene/IkControls.h"
 #include "../core/Pad.h"
 #include "../scene/Serializer.h"
 #include "../scripting/LuaApi.h"   // SignalKind (tool events)
@@ -516,6 +517,8 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     m_scene->animator().update(dt, *m_scene);
     // Weld / Motor6D: parts follow the part they're joined to (and scripts posing limbs).
     LegacyJoints::update(*m_scene, dt);
+    // IKControls: limbs reach for things and heads look at them, on top of the animation.
+    IkControls::apply(*m_scene, dt);
     if (!client) m_scripts.fireAnimationEvents();
     else m_scene->animator().events.clear();
 

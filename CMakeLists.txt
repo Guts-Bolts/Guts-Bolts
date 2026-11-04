@@ -451,6 +451,7 @@ add_library(gb_engine STATIC
     src/scene/Particles.cpp
     src/scene/Weather.cpp
     src/scene/Vehicles.cpp
+    src/scene/IkControls.cpp
     src/scene/LinkedModels.cpp
     src/scene/MaterialGraph.cpp
     src/scene/Animation.cpp
@@ -1108,6 +1109,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(VehiclesTests tests/VehiclesTests.cpp)
     target_link_libraries(VehiclesTests PRIVATE gb_engine)
     add_test(NAME VehiclesTests COMMAND VehiclesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # IKControl: the normal character's arms reach for things and its head looks at them.
+    add_executable(IkControlTests tests/IkControlTests.cpp)
+    target_link_libraries(IkControlTests PRIVATE gb_engine)
+    add_test(NAME IkControlTests COMMAND IkControlTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Loading big maps in pieces (StreamingEnabled): which pieces a joined player gets.

@@ -507,6 +507,7 @@ std::string className(const SceneNode& n) {
         case NodeKind::Remote:     return n.remoteFunction ? "RemoteFunction" : "RemoteEvent";
         case NodeKind::Prompt:     return "ProximityPrompt";
         case NodeKind::Highlight:  return "Highlight";
+        case NodeKind::IKControl:  return "IKControl";
         case NodeKind::PostEffect: return kPostEffectClassNames[(int)n.post.type];
         case NodeKind::Sky:        return "Sky";
         case NodeKind::MaterialVariant: return "MaterialVariant";

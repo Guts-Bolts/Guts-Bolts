@@ -56,7 +56,7 @@ enum class PrimitiveType { None, Cube, Sphere, Plane, Cylinder, Mesh };   // Mes
 //                Attachment): little pictures that fly out of it (see ParticleProps)
 enum class NodeKind { Part, Model, Script, Light, ForceField, Sound, Attachment, Constraint, Tool, Value, Decal, Animation, Gui,
                       FluidSystem, FluidEmitter, Mover, Remote, Prompt, Highlight, Trail, Beam, ClickDetector, Particles, Camera,
-                      PostEffect, Sky, SoundGroup, SoundEffect, MaterialVariant };
+                      PostEffect, Sky, SoundGroup, SoundEffect, MaterialVariant, IKControl };
 
 // A sound effect's settings (kind == SoundEffect; `enabled` is Enabled). Which numbers mean
 // what depends on the type: SoundFx::params(type) names them (DecayTime, Delay, Level...).
@@ -190,6 +190,21 @@ struct HighlightProps {
     float     outlineTransparency = 0.0f;  // OutlineTransparency (1 = no outline)
     bool      onTop = true;                // DepthMode: AlwaysOnTop (seen through walls), else Occluded
     uint64_t  adornee = 0;                 // Adornee: what it highlights (0 = what it's in)
+};
+
+// An IKControl's settings (kind == IKControl), like Roblox's: put one in a character and
+// a limb reaches for (or the head looks at) its Target every frame, on top of the
+// animation. See scene/IkControls.h.
+enum class IkType { Transform, Position, Rotation, LookAt };
+struct IkProps {
+    IkType   type = IkType::Transform;   // Type
+    uint64_t chainRoot = 0;              // ChainRoot: where the bending starts (a part or bone)
+    uint64_t endEffector = 0;            // EndEffector: what reaches (a part, attachment or bone)
+    uint64_t target = 0;                 // Target: what it reaches for (a part, attachment or bone)
+    uint64_t pole = 0;                   // Pole: which way an elbow / knee points (rigs with them)
+    float    weight = 1.0f;              // Weight: 0 = the animation only, 1 = all the way to the target
+    float    smoothTime = 0.05f;         // SmoothTime: seconds to catch up with a moving target
+    int      priority = 0;               // Priority: higher ones are applied last (they win)
 };
 
 // Game UI (kind == Gui), like Roblox's: a ScreenGui holds Frames, labels,
@@ -704,6 +719,7 @@ public:
     PromptProps prompt;                   // (kind == Prompt)
     ClickProps  click;                    // (kind == ClickDetector)
     HighlightProps highlight;             // (kind == Highlight)
+    IkProps     ik;                       // (kind == IKControl)
     EffectProps effect;                   // (kind == Trail / Beam)
     PostEffectProps post;                 // (kind == PostEffect)
     SkyProps    sky;                      // (kind == Sky)
@@ -886,6 +902,7 @@ public:
     bool isRemote() const { return kind == NodeKind::Remote; }
     bool isPrompt() const { return kind == NodeKind::Prompt; }
     bool isHighlight() const { return kind == NodeKind::Highlight; }
+    bool isIkControl() const { return kind == NodeKind::IKControl; }
     bool isClickDetector() const { return kind == NodeKind::ClickDetector; }
     bool isEffect() const { return kind == NodeKind::Trail || kind == NodeKind::Beam; }
     bool isPostEffect() const { return kind == NodeKind::PostEffect; }
