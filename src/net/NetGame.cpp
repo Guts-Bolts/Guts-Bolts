@@ -203,6 +203,7 @@ std::string nodeState(const SceneNode* n) {
         std::snprintf(more, sizeof(more), "|%.3f %.3f %.3f %.3f %.3f", n->density, n->friction, n->elasticity,
                       n->frictionWeight, n->elasticityWeight);
         extra += more;
+        if (!n->texture.empty() || !n->tshirt.empty()) extra += "|tx:" + n->texture + "|ts:" + n->tshirt;   // (clothing on an NPC...)
         if (n->isSpawnLocation()) {
             std::snprintf(more, sizeof(more), "|%d%d %.3f %.3f %.3f", (int)n->spawnNeutral, (int)n->allowTeamChange,
                           n->teamColor.r, n->teamColor.g, n->teamColor.b);
@@ -246,6 +247,7 @@ json nodeUpdate(const SceneNode* n) {
     if (n->isMaterialVariant()) u["var"] = Serializer::variantToJson(n->variant);
     if (n->isConstraint() && usesJointProps(n->constraintType)) u["jt"] = Serializer::jointToJson(n->joint);
     if (n->isBone()) u["bn"] = Serializer::boneRigToJson(n->rig);
+    if (n->isPart()) { u["tx"] = n->texture; u["ts"] = n->tshirt; }   // its picture (a script put a shirt on an NPC...)
     u.update(nodeExtras(n));
     if (n->isParticles()) u["px"] = Serializer::particleToJson(n->particle, n->enabled);
     return u;
@@ -258,6 +260,8 @@ void applyUpdate(SceneNode* n, const json& u) {
     n->visible      = u.value("v", true);
     n->canCollide   = u.value("cc", true);
     n->collisionGroup = u.value("cg", std::string(CollisionGroups::kDefault)).substr(0, CollisionGroups::kMaxNameLength);
+    if (u.contains("tx") && u["tx"].is_string()) n->texture = u["tx"].get<std::string>().substr(0, 512);
+    if (u.contains("ts") && u["ts"].is_string()) n->tshirt = u["ts"].get<std::string>().substr(0, 512);
     n->enabled      = u.value("e", true);
     n->material     = (Material)std::clamp(u.value("m", 0), 0, kMaterialCount - 1);
     n->materialVariant = u.value("mv", std::string()).substr(0, 100);
@@ -605,6 +609,7 @@ struct NetServer::Client {
     bool        verified = false;
     bool        guest = false;       // no account: can play but not chat
     std::set<uint64_t> knownChars;   // rigs this client already has
+    std::map<uint64_t, int> lookSent;  // each character's look version (Scene::looks) they have
     bool        owner = false;       // owns the game: sees the server's dev console
     unsigned long long logSent = 0;  // Log::count() already sent to them
     std::string toolsSent;           // the tools they carry, as last sent to them
@@ -1020,51 +1025,8 @@ void NetServer::handle(Client& c, const std::string& text) {
 
         // Build their character here, dressed in their avatar.
         SceneNode* rig = Player::buildRig(*m_scene, name, spawnPoint(*m_scene));
-        if (m.contains("avatar")) {
-            const json& a = m["avatar"];
-            BodyColors col{vec3(a.value("head", json())), vec3(a.value("torso", json())),
-                           vec3(a.value("leftArm", json())), vec3(a.value("rightArm", json())),
-                           vec3(a.value("leftLeg", json())), vec3(a.value("rightLeg", json()))};
-            Player::applyColors(rig, col);
-            glm::vec3 tint = a.contains("hatColor") ? vec3(a["hatColor"]) : glm::vec3(-1.0f);
-            Player::applyHat(*m_scene, rig, (HatStyle)std::clamp(a.value("hat", 0), 0, kHatStyleCount - 1), tint);
-            auto cloth = [&](const char* k) {   // only server clothing pictures ("gb:<id>")
-                std::string s = a.value(k, std::string());
-                return s.rfind("gb:", 0) == 0 && s.size() < 64 ? s : std::string();
-            };
-            Player::applyClothing(rig, cloth("shirtImage"), cloth("pantsImage"), cloth("tshirtImage"));
-            Player::applyHeadless(rig, a.value("headless", false) == true);   // (a Headless Head bundle)
-            Online::fetchSounds(*m_scene);   // download their clothing pictures
-            // Their accessories and face: download them, then dress the rig (if they're still here).
-            Player::Accessories acc;
-            if (a.contains("accessories") && a["accessories"].is_object())
-                for (auto& [k, v] : a["accessories"].items())
-                    if (v.is_string() && v.get<std::string>().rfind("gb:", 0) == 0 && v.get<std::string>().size() < 64)
-                        acc[k] = v.get<std::string>();
-            const std::string face = cloth("faceImage");
-            const std::string body = cloth("body");   // a bundle's new body
-            std::map<std::string, std::string> parts;   // single body parts (a slot each), over the bundle's body
-            if (a.contains("bodyParts") && a["bodyParts"].is_object())
-                for (auto& [k, v] : a["bodyParts"].items())
-                    if (v.is_string() && v.get<std::string>().rfind("gb:", 0) == 0 && v.get<std::string>().size() < 64)
-                        parts[k] = v.get<std::string>();
-            const uint64_t rigId = rig->id;
-            auto dress = [this, rigId, acc, face, body, parts]() {
-                if (SceneNode* r = m_scene->findById(rigId)) {
-                    Player::applyBody(*m_scene, r, body, parts);
-                    Player::applyAccessories(*m_scene, r, acc);
-                    Player::applyFace(*m_scene, r, face);
-                }
-            };
-            dress();
-            std::vector<std::string> ids;
-            for (auto& [k, v] : acc) ids.push_back(v.substr(3));
-            if (!face.empty()) ids.push_back(face.substr(3));
-            if (!body.empty()) ids.push_back(body.substr(3));
-            for (auto& [k, v] : parts) ids.push_back(v.substr(3));
-            for (const std::string& id : ids)
-                if (Paths::downloaded(id).empty()) Online::download(id, [dress](bool ok, const std::filesystem::path&, const json&) { if (ok) dress(); });
-        }
+        if (m.contains("avatar")) Player::dressRig(*m_scene, rig, m["avatar"]);   // (downloads what's missing)
+        c.lookSent[rig->id] = m_scene->looks()[rig->id].version;   // (they have their own look already)
         c.rootId = rig->id;
         RemoteCharacter rc;
         rc.clientId = c.id;
@@ -1468,9 +1430,16 @@ void NetServer::sendTick() {
             if (const std::string& g = Physics::characterGroup(ch.root); g != CollisionGroups::kDefault) entry["cg"] = g;
             if (auto st = m_session->scripts().leaderstats(ch.name); !st.empty()) entry["s"] = statsJson(st);
             teamJson(entry, "tm", "tc", m_session->scripts(), ch.name);
+            const int lookNow = m_scene->looks().count(ch.id) ? m_scene->looks()[ch.id].version : 0;
             if (!c->knownChars.count(ch.id)) {                   // first time: send the whole model
                 entry["rig"] = Serializer::nodeToString(*ch.root);
                 c->knownChars.insert(ch.id);
+                c->lookSent[ch.id] = lookNow;
+            } else if (int& had = c->lookSent[ch.id]; had != lookNow) {   // a script changed their outfit
+                entry["rig"] = Serializer::nodeToString(*ch.root);  // (the whole model again, dressed)
+                had = lookNow;
+                c->heldSent.erase(ch.id);   // (the new model comes without these: send them again)
+                c->fxSent.erase(ch.id);
             }
             entry["ti"] = ch.held;
             if (std::string& was = c->heldSent[ch.id]; was != ch.heldNode) { entry["tn"] = ch.heldNode; was = ch.heldNode; }
@@ -1478,6 +1447,11 @@ void NetServer::sendTick() {
         }
         msg["chars"] = list;
         msg["ts"] = clockNow();
+        if (auto look = m_scene->looks().find(c->rootId); look != m_scene->looks().end())   // a script dressed them
+            if (int& had = c->lookSent[c->rootId]; had != look->second.version) {
+                msg["mylk"] = look->second.look;
+                had = look->second.version;
+            }
         if (SceneNode* mine = m_scene->findById(c->rootId))
             if (const std::string& g = Physics::characterGroup(mine); g != CollisionGroups::kDefault) msg["mycg"] = g;
         if (auto mine = m_session->scripts().leaderstats(c->name); !mine.empty()) msg["mys"] = statsJson(mine);
@@ -1876,10 +1850,17 @@ void NetClient::handle(const std::string& text) {
                 SceneNode* parent = m_scene->findById(a.value("parent", (uint64_t)0));
                 scripts.runScriptsIn(m_scene->insert(std::move(node), parent ? parent : m_scene->root()));
             }
-        if (m.contains("upd"))
+        if (m.contains("upd")) {
+            bool newPicture = false;
             for (const auto& u : m["upd"])
                 if (SceneNode* n = m_scene->findById(u.value("i", (uint64_t)0)))
-                    if (!m_scene->isCharacterPart(n)) applyUpdate(n, u);
+                    if (!m_scene->isCharacterPart(n)) {
+                        const std::string had = n->texture;
+                        applyUpdate(n, u);
+                        newPicture = newPicture || n->texture != had;
+                    }
+            if (newPicture) Online::fetchSounds(*m_scene);   // (download a picture we don't have yet)
+        }
         if (m.contains("del"))
             for (const auto& d : m["del"])
                 if (SceneNode* n = m_scene->findById(d.get<uint64_t>()))
@@ -1903,7 +1884,9 @@ void NetClient::handle(const std::string& text) {
             g.messageTime = m["gui"].value("time", 0.0f);
         }
         if (m.contains("fx")) replayFx(*m_scene, m["fx"]);
+        if (m.contains("mylk") && me) me->wear(m["mylk"]);   // a script on the host dressed us
         if (m.contains("chars")) {
+            bool newRigs = false;
             m_players.clear();
             m_players.push_back({me && me->root() ? me->root()->name : Online::playerName(), Account::iAmStaff(),
                                  Badges::iHave(Badges::Id::Verified), statsFrom(m.value("mys", json::array())), m_devOwner});
@@ -1919,9 +1902,13 @@ void NetClient::handle(const std::string& text) {
                 teamFrom(m_players.back(), ch, "tm", "tc");
                 if (id == m_myServerRoot) continue;
                 SceneNode* root = m_scene->findById(id);
+                if (root && ch.contains("rig")) {   // dressed again by a script: swap in the new model
+                    m_scene->removeNode(root);
+                    root = nullptr;
+                }
                 if (!root && ch.contains("rig")) {
                     auto rig = Serializer::nodeFromString(ch["rig"].get<std::string>(), false);
-                    if (rig) root = m_scene->insert(std::move(rig));
+                    if (rig) { root = m_scene->insert(std::move(rig)); newRigs = true; }
                     // Their backpack stays with the host (only what they hold shows).
                     if (SceneNode* bag = root ? root->findChild("Backpack") : nullptr) m_scene->removeNode(bag);
                 }
@@ -1938,6 +1925,7 @@ void NetClient::handle(const std::string& text) {
                 if (m.contains("ts")) m_poses[id].push(m.value("ts", 0.0), clockNow(), poseFrom(ch.value("pose", json())));
                 else Player::applyPose(root, poseFrom(ch.value("pose", json())));
             }
+            if (newRigs) Online::fetchSounds(*m_scene);   // their clothing pictures
         }
         return;
     }
