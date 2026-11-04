@@ -13,4 +13,5 @@ struct PlayerEntry {
     int         voice = 0;         // voice chat: 0 quiet, 1 talking right now, 2 muted by you
     std::string team;              // their team's name ("" = no team / Neutral)
     float       teamColor[3] = {1.0f, 1.0f, 1.0f};
+    int         club = 0;          // Boltworks Club tier: 0 none, 1 BWC, 2 TBC, 3 OBC (a little icon by the name)
 };

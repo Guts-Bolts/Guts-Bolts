@@ -362,6 +362,7 @@ private:
     bool      isStaff(const User& u) const;         // official, or has the Staff badge
     bool      isVerified(const User& u) const;      // staff always are
     bool      isPartner(const User& u) const;       // has the Partner badge (a friend of Guts&Bolts)
+    std::string clubOf(const User& u) const;        // Boltworks Club tier: "obc", "tbc", "bwc" or ""
 
     // Files
     void load();

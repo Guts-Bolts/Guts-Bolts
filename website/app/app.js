@@ -81,6 +81,27 @@ const bolts = (n) => html`<span class="price">${boltIcon}${Number(n).toLocaleStr
 const verified = (v) => (v ? checkIcon : '');
 // The Partner badge next to a name: friends of Guts&Bolts (like the people who make Lyreto). Staff give it out.
 const partner = (u) => (u && u.partner ? html` <span class="badge-pill partner-pill" title="Official Guts&amp;Bolts partner">&#129309; Partner</span>` : '');
+// Boltworks Club: a little hex bolt-head next to a member's name, with 1, 2 or 3 slanted
+// stripes for the tier (Boltworks Club, Turbo, Overclocked). Staff hand tiers out for now.
+const CLUB = {
+  bwc: { short: 'BWC', name: 'Boltworks Club', n: 1, top: '#8ccbff', fill: '#2478e6', rim: '#0a2550' },
+  tbc: { short: 'TBC', name: 'Turbo Boltworks Club', n: 2, top: '#ffe98c', fill: '#f5a300', rim: '#4d3000' },
+  obc: { short: 'OBC', name: 'Overclocked Boltworks Club', n: 3, top: '#ff8a73', fill: '#d9161c', rim: '#3d0306' },
+};
+function clubSvg(tier, size = 16) {
+  const c = CLUB[tier];
+  if (!c) return '';
+  const w = c.n === 3 ? 2.5 : 2.8, gap = 1.15, h = 9.4, slant = 1.9, total = c.n * w + (c.n - 1) * gap + slant;
+  let x = 10 - total / 2, stripes = '';
+  for (let i = 0; i < c.n; i++, x += w + gap)
+    stripes += `M${(x + slant).toFixed(2)} ${10 - h / 2}h${w}L${(x + w).toFixed(2)} ${10 + h / 2}h-${w}Z`;
+  return `<svg class="club-icon" viewBox="0 0 20 20" width="${size}" height="${size}" role="img" aria-label="${c.name}"><title>${c.name}</title>`
+    + `<path d="M10 .9 18 5.45v9.1L10 19.1 2 14.55v-9.1Z" fill="${c.fill}"/>`
+    + `<path d="M10 .9 18 5.45V10H2V5.45Z" fill="${c.top}" opacity=".55"/>`
+    + `<path d="M10 .9 18 5.45v9.1L10 19.1 2 14.55v-9.1Z" fill="none" stroke="${c.rim}" stroke-width="1.5" stroke-linejoin="round"/>`
+    + `<path d="${stripes}" fill="#fff" stroke="${c.rim}" stroke-width=".5" stroke-linejoin="round"/></svg>`;
+}
+const club = (u) => (u && CLUB[u.club] ? raw(' ' + clubSvg(u.club, 15)) : '');
 const signedIn = () => me && me.userId > 0;
 
 // A game's picture: a colourful gradient made from its id (like the Player).
@@ -457,7 +478,7 @@ function setMe(m) {
   if (signedIn()) {
     const notes = me.unreadNotes || 0;
     box.innerHTML = html`<a class="bell" href="#/notifications" title="Notifications" aria-label="Notifications">${raw(BELL_SVG)}${notes ? html`<span class="unread">${notes > 99 ? '99+' : notes}</span>` : ''}</a>
-      Hi, <a href="#/user/${me.userId}">${me.username}</a>${verified(me.verified)}
+      Hi, <a href="#/user/${me.userId}">${me.username}</a>${verified(me.verified)}${club(me)}
       | <a href="#/bolts">${bolts(me.bolts)}</a> | <a href="#/settings">Settings</a> | <button class="btn small logout-button" type="button" data-act="logout">Log out</button>`.s;
   } else {
     box.innerHTML = html`<a href="#/signup">Sign Up</a> | <a href="#/login">Login</a>`.s;
@@ -710,7 +731,7 @@ function feedList(feedR) {
   };
   return html`<div class="feed-list">${feedR.feed.map((p) => p.kind === 'gamelog' ? gameLogFeedItem(p) : html`<div class="feed-item">
       <a href="#/user/${p.user.userId}" class="feed-pic" data-feed-avatar="${p.user.id}">${avatarSvg(p.user.avatar, 40)}</a>
-      <div><a class="link" href="#/user/${p.user.userId}">${p.user.name}</a>${verified(p.user.verified)}
+      <div><a class="link" href="#/user/${p.user.userId}">${p.user.name}</a>${verified(p.user.verified)}${club(p.user)}
         <div>${p.activity ? did(p.activity) : html`"${p.text}"`}</div><div class="small muted">${ago(p.at)}</div></div></div>`)}</div>`;
 }
 // Each person's character next to what they said or did.
@@ -801,7 +822,7 @@ const forumPager = (base, page, pages) => pages <= 1 ? '' : html`<p class="pager
   ${page > 0 ? html`<a class="btn small" href="${base}/${page}">&lt; Back</a>` : ''}
   <span class="muted small">Page ${page + 1} of ${pages}</span>
   ${page + 1 < pages ? html`<a class="btn small" href="${base}/${page + 2}">Next &gt;</a>` : ''}</p>`;
-const forumWho = (u) => html`<a href="#/user/${u.userId || u.id}"><b>${u.name}</b></a>${verified(u.verified)}${u.staff ? html` <span class="badge-pill staff">Staff</span>` : ''}${partner(u)}`;
+const forumWho = (u) => html`<a href="#/user/${u.userId || u.id}"><b>${u.name}</b></a>${verified(u.verified)}${club(u)}${u.staff ? html` <span class="badge-pill staff">Staff</span>` : ''}${partner(u)}`;
 // Use the same rendered 2D PNG as the avatar page's 2D mode, with SVG as a fast fallback.
 const forumAvatarUsers = new Map();
 const forumAvatar = (u, size) => {
@@ -1509,7 +1530,7 @@ pages.game = async (id) => {
 // Comments under a game, newest first, 20 at a time.
 const commentRow = (g, c) => html`<div class="comment" data-comment="${c.id}">
     <a class="face" href="#/user/${c.by.userId || c.by.id}">${c.by.name.slice(0, 1).toUpperCase()}</a>
-    <div class="grow"><p class="comment-head"><a href="#/user/${c.by.userId || c.by.id}"><b>${c.by.name}</b></a>${verified(c.by.verified)}${partner(c.by)}
+    <div class="grow"><p class="comment-head"><a href="#/user/${c.by.userId || c.by.id}"><b>${c.by.name}</b></a>${verified(c.by.verified)}${club(c.by)}${partner(c.by)}
         ${c.creator ? html` <span class="badge-pill" title="Made this game">Creator</span>` : ''}
         <span class="small muted">${ago(c.at)}</span></p>
       <p class="comment-text">${c.text}</p>
@@ -2405,7 +2426,7 @@ pages.people = async () => {
   show(html`<h1>People</h1>
     <form class="row" data-form="peopleSearch"><input type="search" name="q" placeholder="Search by username or #number" value="${query}" style="max-width:280px">
       <button class="btn blue">Search</button></form>
-    <div class="list">${r.ok ? r.users.map((u) => html`<div><a class="grow" href="#/user/${u.userId}"><b>${u.username}</b></a>${verified(u.verified)}${partner(u)}
+    <div class="list">${r.ok ? r.users.map((u) => html`<div><a class="grow" href="#/user/${u.userId}"><b>${u.username}</b></a>${verified(u.verified)}${club(u)}${partner(u)}
       <span class="muted small">#${u.userId}${u.official ? ' · Guts&Bolts staff' : ''}</span></div>`) : html`<p class="error">${r.error}</p>`}</div>`);
 };
 
@@ -2492,7 +2513,7 @@ pages.user = async (id, tab, page, more) => {
   const badgeNames = { admin: 'Administrator', verified: 'Verified', staff: 'Staff', tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator', partner: 'Partner' };
   const online = r.online === undefined ? null : r.online;
   show(html`<div class="profile-head">
-      <h1>${u.username}${verified(u.verified)}${partner(u)}</h1><span class="small muted user-number">#${u.userId}</span>
+      <h1>${u.username}${verified(u.verified)}${CLUB[u.club] ? raw(' ' + clubSvg(u.club, 26)) : ''}${partner(u)}</h1><span class="small muted user-number">#${u.userId}</span>
       ${online === null ? '' : html`<span class="presence ${online ? 'on' : ''}">${online ? '[ Online ]' : '[ Offline ]'}</span>`}
       ${r.playing ? html`<span class="small playing-now">Playing <a href="#/game/${r.playing.game}">${r.playing.title}</a></span>
         ${r.playing.session && f !== 'self' ? html` <button class="btn green small" data-act="joinServer" data-id="${r.playing.game}"
@@ -2520,9 +2541,12 @@ pages.user = async (id, tab, page, more) => {
             ${r.placeVisits !== undefined ? html`<tr><td>Place visits</td><td>${r.placeVisits}</td></tr>` : ''}
             <tr><td>Games made</td><td>${games.length}</td></tr></table>
           ${u.official ? html`<p><b>Guts&amp;Bolts staff</b></p>` : ''}${u.banned ? html`<p class="error">Banned${u.banReason ? ': ' + (BAN_REASONS.find((r) => r[0] === u.banReason) || ['', ''])[1] : ''}</p>` : ''}</div>
-        ${(u.badges || []).length ? html`<div class="box"><h2 class="boxhead">Guts&amp;Bolts Badges</h2>
+        ${CLUB[u.club] ? html`<div class="box club-box club-${u.club}">${raw(clubSvg(u.club, 56))}<div>
+          <div class="club-short">${CLUB[u.club].short}</div><b>${CLUB[u.club].name}</b>
+          <div class="small muted">A member of the Boltworks Club.</div></div></div>` : ''}
+        ${(u.badges || []).filter((b) => !CLUB[b]).length ? html`<div class="box"><h2 class="boxhead">Guts&amp;Bolts Badges</h2>
           <p class="small muted">Given by Guts&amp;Bolts staff.</p><div class="row">
-          ${u.badges.map((b) => html`<span class="badge-pill">${badgeNames[b] || b}</span>`)}</div></div>` : ''}
+          ${u.badges.filter((b) => !CLUB[b]).map((b) => html`<span class="badge-pill">${badgeNames[b] || b}</span>`)}</div></div>` : ''}
         ${r.allPlayerBadges ? html`<div class="box"><h2 class="boxhead">Player Badges (${(r.playerBadges || []).length})</h2>
           <div class="badge-grid">${r.allPlayerBadges.map((b) => {
             const got = (r.playerBadges || []).some((x) => x.key === b.key);
@@ -3142,7 +3166,8 @@ function loadReviewPreviews() {
 // things are waiting in each; Overview has them all at a glance.
 // The badges the official account can hand out (Verified, Partner and Staff also have their own buttons).
 const GIVE_BADGES = [['tester', 'Tester'], ['bughunter', 'Bug Hunter'], ['featured', 'Featured Creator'], ['verified', 'Verified'],
-  ['partner', 'Partner'], ['staff', 'Staff']];
+  ['partner', 'Partner'], ['staff', 'Staff'], ['bwc', 'Boltworks Club (BWC)'], ['tbc', 'Turbo Boltworks Club (TBC)'],
+  ['obc', 'Overclocked Boltworks Club (OBC)']];
 const OTHER_BADGES = { tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
 const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
   ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['database', 'Database']];
@@ -3215,7 +3240,7 @@ pages.staff = async () => {
     <form class="row" data-form="staffSearch"><input type="search" name="q" placeholder="Search by name or user number (#5)" value="${query}" style="max-width:320px">
       <button class="btn blue">Search</button></form>
     <div class="list">${r.ok ? r.users.map((u) => html`<div>
-      <a class="grow" href="#/user/${u.id}"><b>${u.username || u.name}</b></a>${verified(u.verified)}${partner(u)}
+      <a class="grow" href="#/user/${u.id}"><b>${u.username || u.name}</b></a>${verified(u.verified)}${club(u)}${partner(u)}
       <span class="small muted">${u.userId ? '#' + u.userId : 'not signed up'}${u.staff ? ' · staff' : ''}${u.banned ? ' · banned' : ''}</span>
       ${(u.badges || []).filter((b) => OTHER_BADGES[b]).map((b) => html`<span class="badge-pill">${OTHER_BADGES[b]}${me.official
         ? html` <button class="btn small" data-act="staff" data-op="revoke" data-key="${b}" data-id="${u.id}" title="Take the ${OTHER_BADGES[b]} badge away">x</button>` : ''}</span>`)}
@@ -3229,6 +3254,8 @@ pages.staff = async () => {
           ${u.staff ? html`<button class="btn small" data-act="staff" data-op="revoke" data-key="staff" data-id="${u.id}">Remove staff</button>`
             : html`<button class="btn small" data-act="staff" data-op="grant" data-key="staff" data-id="${u.id}">Make staff</button>`}
           <button class="btn small" data-act="staff" data-op="bolts" data-id="${u.id}" data-name="${u.username || u.name}">Give Bolts</button>
+          ${u.userId ? html`<select class="club-pick" data-id="${u.id}" data-was="${u.club || ''}" title="Boltworks Club tier">
+            <option value="">No club</option>${Object.entries(CLUB).map(([k, c]) => html`<option value="${k}"${u.club === k ? raw(' selected') : ''}>${c.short}</option>`)}</select>` : ''}
           <button class="btn small" data-act="staff" data-op="warn" data-id="${u.id}">Warn</button>
           <button class="btn small red" data-act="staff" data-op="ban" data-on="${u.banned ? '' : '1'}" data-id="${u.id}">${u.banned ? 'Unban' : 'Ban'}</button>` : ''}`}
         <a class="btn small" href="#/staff?log=${u.userId || u.id}" title="What staff did to or by them">Log</a>
@@ -3360,7 +3387,7 @@ pages.bolts = async () => {
       <div class="boltworks-content"><div class="boltworks-emblem" aria-hidden="true"><span>✦</span><b>B</b><i></i></div><div class="boltworks-copy">
         <p class="boltworks-kicker">THE NEXT LEVEL OF GUTS &amp; BOLTS</p><h2>Boltworks Club</h2><p class="boltworks-lede">For the builders, collectors, and absolute agents of chaos.</p>
         <p>Boltworks Club is a future paid membership with multiple tiers, exclusive perks, and a little extra status around the platform. The tiers, benefits, and prices will be revealed closer to launch.</p>
-        <div class="boltworks-tier-preview" aria-label="Membership tiers coming soon"><div><span>01</span><strong>FOUNDATION</strong><small>First details soon</small></div><div><span>02</span><strong>WORKSHOP</strong><small>First details soon</small></div><div><span>03</span><strong>MASTERWORK</strong><small>First details soon</small></div></div>
+        <div class="boltworks-tier-preview" aria-label="Membership tiers coming soon">${Object.values(CLUB).map((c, i) => html`<div>${raw(clubSvg(Object.keys(CLUB)[i], 30))}<strong>${c.short}</strong><small>${c.name}</small></div>`)}</div>
         <div class="boltworks-cta">${!signedIn() ? html`<a class="btn gold big" href="#/signup">Sign up for early access</a>` : club.registered ? html`<span class="boltworks-registered"><b>✓</b> You're on the early list</span>` : html`<button class="btn gold big" data-act="boltworksRegister">Register for the launch discount</button>`}
           <span class="boltworks-note">${signedIn() ? 'Register now to qualify for a discount when memberships launch. No payment today.' : 'Create a free account to reserve your early-registration discount. No payment today.'}</span></div>
       </div></div><div class="boltworks-footer"><span>NOT AVAILABLE YET</span><span>EARLY REGISTRATION = FUTURE DISCOUNT ELIGIBILITY</span></div>
@@ -5038,6 +5065,14 @@ const forms = {
 
 // Drop-downs that go somewhere when you pick (like the catalog's "Sort by").
 document.addEventListener('change', (e) => { if (e.target.matches && e.target.matches('select[data-go]')) location.hash = e.target.value; });
+// Staff > People: pick someone's Boltworks Club tier (giving one takes the old one away on the server).
+document.addEventListener('change', async (e) => {
+  const sel = e.target;
+  if (!sel.matches || !sel.matches('select.club-pick')) return;
+  const d = sel.dataset;
+  if (sel.value) await actions.staff({ op: 'grant', key: sel.value, id: d.id });
+  else if (d.was) await actions.staff({ op: 'revoke', key: d.was, id: d.id });
+});
 
 document.addEventListener('click', async (e) => {
   const el = e.target.closest('[data-act]');

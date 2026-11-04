@@ -229,6 +229,16 @@ bool GbServer::isPartner(const User& u) const {
     return it != u.grants.end() && Online::grantValid(Account::officialId(), "partner", u.id, it->second);
 }
 
+// Boltworks Club tier shown next to their name: "obc", "tbc", "bwc" or "" (the best one they have).
+// Only the official account gives tiers out for now (free, no payments). Same as clubOf in worker/server.js.
+std::string GbServer::clubOf(const User& u) const {
+    for (const char* k : {"obc", "tbc", "bwc"}) {
+        auto it = u.grants.find(k);
+        if (it != u.grants.end() && Online::grantValid(Account::officialId(), k, u.id, it->second)) return k;
+    }
+    return "";
+}
+
 bool GbServer::isVerified(const User& u) const {
     if (isOfficial(u)) return true;
     auto it = u.grants.find("verified");
@@ -238,7 +248,7 @@ bool GbServer::isVerified(const User& u) const {
 json GbServer::publicUser(const User& u) const {
     return {{"id", u.id}, {"name", u.name}, {"username", u.username}, {"userId", u.userId},
             {"verified", isVerified(u)}, {"staff", isStaff(u)}, {"partner", isPartner(u)},
-            {"official", isOfficial(u)}, {"created", u.created}, {"banned", u.banned},
+            {"club", clubOf(u)}, {"official", isOfficial(u)}, {"created", u.created}, {"banned", u.banned},
             {"pastNames", u.pastNames},
             {"banReason", u.banned ? u.banReason : std::string()}};
 }
@@ -926,6 +936,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             // The signed badge comes from the app (made with the staff member's own key).
             std::string key = str("key"), sig = str("sig");
             if (!Online::grantValid(Account::officialId(), key, to->id, sig)) return fail("That badge signature isn't valid.");
+            if (key == "bwc" || key == "tbc" || key == "obc")   // one Boltworks Club tier at a time
+                for (const char* k : {"bwc", "tbc", "obc"}) to->grants.erase(k);
             to->grants[key] = sig;
             saveUsers();
             staffDid(me, "badge", "Gave " + to->name + " the " + key + " badge", to->id);

@@ -244,6 +244,7 @@ private:
     uint64_t     m_hostRoot = 0;
     bool         m_hostAdmin = false;
     bool         m_hostVerified = false;
+    int          m_hostClub = 0;       // the host's Boltworks Club tier (from its signed grants)
     ChatLog      m_chat;
     float        m_tick = 0.0f;
     bool         m_wasDead = false;

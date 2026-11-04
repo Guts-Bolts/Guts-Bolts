@@ -700,6 +700,8 @@ function canon(v) {
 }
 const requestText = (op, account, time, nonce, args) => 'gb-req:' + op + '\n' + account + '\n' + time + '\n' + nonce + '\n' + canon(args);
 const grantMessage = (key, accountId) => 'gb-badge:' + key + ':' + accountId;
+// Boltworks Club tiers, best first: Overclocked, Turbo, then plain Boltworks Club.
+const CLUB_TIERS = ['obc', 'tbc', 'bwc'];
 
 function grantValid(official, key, accountId, sig) {
   if (!official || typeof sig !== 'string') return false;
@@ -1168,7 +1170,7 @@ export class GbServerObject extends DurableObject {
           if (!a || a.review || (a.access || 'public') !== 'public' || !this.canPlay(a, me)) continue;
           items.push({ activity: { kind: row.kind, id: a.id, num: a.num || 0, assetKind: a.kind, name: a.name, detail: row.detail || '' },
             at: Math.floor(Date.parse(row.created_at) / 1000) || 0,
-            user: { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), avatar: u.avatar || null } });
+            user: { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), club: this.clubOf(u), avatar: u.avatar || null } });
         }
         answer.feed = [...answer.feed, ...items].sort((x, y) => y.at - x.at).slice(0, 40);
       } catch { /* the posts alone still make a feed */ }
@@ -1294,6 +1296,13 @@ export class GbServerObject extends DurableObject {
   isStaff(u) { return this.isOfficial(u) || grantValid(this.official, 'staff', u.id, (u.grants || {}).staff); }
   isVerified(u) { return this.isOfficial(u) || grantValid(this.official, 'verified', u.id, (u.grants || {}).verified); }
   isPartner(u) { return grantValid(this.official, 'partner', u.id, (u.grants || {}).partner); }
+  // Boltworks Club tier shown next to their name: 'obc', 'tbc', 'bwc' or '' (the best one they have).
+  // A tier is a signed badge like the others; only the official account gives them out (for now: free, no payments).
+  clubOf(u) {
+    const g = u.grants || {};
+    for (const k of CLUB_TIERS) if (g[k] && grantValid(this.official, k, u.id, g[k])) return k;
+    return '';
+  }
   claimOfficial(u) {
     if (!this.isOfficial(u) || u.userId === 1) return;
     u.userId = 1; u.username = kStaffName;
@@ -1675,7 +1684,7 @@ export class GbServerObject extends DurableObject {
 
   publicUser(u) {
     return { id: u.id, name: u.name, username: u.username, userId: u.userId, verified: this.isVerified(u),
-      staff: this.isStaff(u), partner: this.isPartner(u), official: this.isOfficial(u), created: u.created, banned: u.banned,
+      staff: this.isStaff(u), partner: this.isPartner(u), club: this.clubOf(u), official: this.isOfficial(u), created: u.created, banned: u.banned,
       pastNames: u.pastNames || [],
       banReason: u.banned ? (u.banReason || '') : undefined };
   }
@@ -2737,7 +2746,7 @@ export class GbServerObject extends DurableObject {
         const u = this.users.get(id);
         if (!u || u.banned || this.blocks(me, u)) continue;
         for (const post of (u.posts || []).slice(0, 5))
-          feed.push({ text: post.text, at: post.at, user: { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), avatar: u.avatar || null } });
+          feed.push({ text: post.text, at: post.at, user: { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), club: this.clubOf(u), avatar: u.avatar || null } });
       }
       // What's new in the games you favourited (their creators' update notes).
       const faved = (me.favorites || []).map((id) => this.assets.get(id)).filter((a) => a && a.kind === 'game' && this.canPlay(a, me));
@@ -2834,7 +2843,7 @@ export class GbServerObject extends DurableObject {
       if (me.userId === 0) return fail('Sign up first.');
       me.chats = Array.isArray(me.chats) ? me.chats : [];
       me.partyInvites = Array.isArray(me.partyInvites) ? me.partyInvites : [];
-      const person = (u) => ({ id: u.id, userId: u.userId, name: u.username || u.name, verified: this.isVerified(u) });
+      const person = (u) => ({ id: u.id, userId: u.userId, name: u.username || u.name, verified: this.isVerified(u), club: this.clubOf(u) });
       const findChat = (u, id) => (u.chats || []).find((x) => x.id === id) || null;
       const syncChat = (chat) => {
         for (const member of chat.members || []) {
@@ -2988,7 +2997,7 @@ export class GbServerObject extends DurableObject {
     if (name === 'message.list') {   // box: "inbox" or "sent"
       if (me.userId === 0) return okay({ messages: [], me: this.meJson(me) });
       const sent = str(args, 'box') === 'sent';
-      const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u) } : { id, userId: 0, name: '?' }; };
+      const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), club: this.clubOf(u) } : { id, userId: 0, name: '?' }; };
       const messages = (sent ? (me.sent || []) : (me.inbox || [])).map((m) => ({ id: m.id, subject: m.subject, body: m.body, at: m.at,
         read: sent ? true : !!m.read, from: sent ? who(me.id) : who(m.from), to: sent ? who(m.to) : who(me.id) }));
       return okay({ messages, me: this.meJson(me) });
@@ -3069,7 +3078,7 @@ export class GbServerObject extends DurableObject {
       // A page of comments: "before" is the id of the last one you already have.
       const before = str(args, 'before'), from = before ? list.findIndex((c) => c.id === before) + 1 : 0;
       const shown = list.slice(from, from + kCommentsPage).filter((c) => !this.blocks(me, this.users.get(c.by)));
-      const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), staff: this.isStaff(u), partner: this.isPartner(u) } : { id, userId: 0, name: '?' }; };
+      const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), club: this.clubOf(u), staff: this.isStaff(u), partner: this.isPartner(u) } : { id, userId: 0, name: '?' }; };
       return okay({ comments: shown.map((c) => ({ id: c.id, text: c.text, at: c.at, by: who(c.by), creator: c.by === a.creator,
         canDelete: me.userId !== 0 && (c.by === me.id || mod) })), more: from + kCommentsPage < list.length, off: !!a.commentsOff, count: list.length });
     }
@@ -3222,6 +3231,7 @@ export class GbServerObject extends DurableObject {
       if (name === 'admin.grant') {
         const key = str(args, 'key'), sig = str(args, 'sig');
         if (!grantValid(this.official, key, to.id, sig)) return fail('That badge signature isn\'t valid.');
+        if (CLUB_TIERS.includes(key)) for (const k of CLUB_TIERS) delete to.grants[k];   // one Boltworks Club tier at a time
         to.grants[key] = sig;
         this.staffDid(me, 'badge', 'Gave ' + to.name + ' the ' + key + ' badge', to.id);
         this.saveUser(to);
@@ -4439,7 +4449,7 @@ export class GbServerObject extends DurableObject {
     this.staffDid({ id: 'system' }, 'account', 'Account #' + number + ' was deleted by its owner');
   }
   friendOp(name, me, args) {
-    const person = (u) => ({ id: u.id, userId: u.userId, username: u.username, name: u.name, verified: this.isVerified(u) });
+    const person = (u) => ({ id: u.id, userId: u.userId, username: u.username, name: u.name, verified: this.isVerified(u), club: this.clubOf(u) });
     if (name === 'friends.list') {
       const friends = [];
       for (const id of me.friends) {
@@ -4958,7 +4968,7 @@ export class GbServerObject extends DurableObject {
   forumOp(name, me, args) {
     const t = now();
     const staff = this.isStaff(me);
-    const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), staff: this.isStaff(u), partner: this.isPartner(u) } : { id, userId: 0, name: '?' }; };
+    const who = (id) => { const u = this.users.get(id); return u ? { id: u.id, userId: u.userId, name: u.name, verified: this.isVerified(u), club: this.clubOf(u), staff: this.isStaff(u), partner: this.isPartner(u) } : { id, userId: 0, name: '?' }; };
     const hidden = (id) => { const u = this.users.get(id); return !!u && this.blocks(me, u); };
     const boardOf = (id) => FORUM_BOARDS.find((b) => b.id === id);
     const threadsIn = (board) => [...this.forum.values()].filter((th) => th.board === board)

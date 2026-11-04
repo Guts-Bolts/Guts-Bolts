@@ -523,6 +523,19 @@ std::string drawPlayerList(ImDrawList* dl, ImVec2 min, ImVec2 max, const std::ve
                 Badges::drawCheck(dl, ImVec2(after + 6, y + ImGui::GetFontSize() * 0.5f + 1), 13.0f);
                 after += 15;
             }
+            if (p.club > 0) {   // Boltworks Club tier: a little hex bolt head with 1-3 stripes
+                const ImVec2 c(after + 8, y + ImGui::GetFontSize() * 0.5f + 1);
+                Badges::drawClub(dl, c, 14.0f, p.club);
+                if (ImGui::IsMouseHoveringRect(ImVec2(c.x - 7, c.y - 7), ImVec2(c.x + 7, c.y + 7))) {
+                    static const char* names[] = {"Boltworks Club", "Turbo Boltworks Club", "Overclocked Boltworks Club"};
+                    const char* tip = names[p.club - 1];
+                    ImVec2 ts = ImGui::CalcTextSize(tip);
+                    ImVec2 t0(c.x - ts.x * 0.5f - 6, c.y - ts.y - 18);
+                    dl->AddRectFilled(t0, ImVec2(t0.x + ts.x + 12, t0.y + ts.y + 6), IM_COL32(20, 22, 28, 230), 4.0f);
+                    dl->AddText(ImVec2(t0.x + 6, t0.y + 3), IM_COL32(255, 255, 255, 255), tip);
+                }
+                after += 17;
+            }
             if (p.creator) {   // a little hammer: they made this game
                 const ImVec2 c(after + 8, y + ImGui::GetFontSize() * 0.5f + 1);
                 drawHammer(dl, c, 14.0f);
