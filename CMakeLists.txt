@@ -1097,6 +1097,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME CharacterTests COMMAND CharacterTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # A character's footing: speeds up to WalkSpeed, brakes on the ground, and
+    # keeps its momentum in the air, like a Roblox Humanoid.
+    add_executable(PlayerFootingTests tests/PlayerFootingTests.cpp)
+    target_link_libraries(PlayerFootingTests PRIVATE gb_engine)
+    add_test(NAME PlayerFootingTests COMMAND PlayerFootingTests)
+
     # The Material Graph: patterns tile, wires can't loop, saving and baking.
     add_executable(MaterialGraphTests tests/MaterialGraphTests.cpp)
     target_link_libraries(MaterialGraphTests PRIVATE gb_engine)
