@@ -1412,7 +1412,10 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         m_underwater = depth > 0.5f;
         m_climbPhase += dt * (moving || want != 0.0f ? 6.0f : 2.5f);
     } else {
-        if (m_grounded && jump) {
+        // (Just walked off an edge? You can still jump for a moment, so a jump
+        // pressed a hair late at the end of a platform isn't swallowed.)
+        if ((m_grounded || (m_coyote > 0.0f && m_velocity.y <= 0.0f)) && jump) {
+            m_coyote = 0.0f;
             // Jumping off something moving keeps its speed (off a train, you fly forward).
             m_velocity.x += m_platformVel.x;
             m_velocity.z += m_platformVel.z;
@@ -1461,12 +1464,13 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         const float sp = glm::length(glm::vec2(m_velocity.x, m_velocity.z));
         if (sp > 40.0f) { m_velocity.x *= 40.0f / sp; m_velocity.z *= 40.0f / sp; }
     }
-    // Walking, like a Roblox character: get up to WalkSpeed over a moment and stop
-    // just as quickly on the ground, and in the air keep the momentum you jumped
-    // with instead of snapping to the keys. Swimming, ladders, slippery surfaces
-    // and script movers (a jetpack's BodyVelocity) keep their own controls.
+    // Walking, like a Roblox character: snappy on the ground, nearly full steering
+    // in the air, and speed over WalkSpeed (a fling, a train you jumped off) is
+    // momentum that carries on (see CharacterFooting.h). Swimming, ladders,
+    // slippery surfaces and script movers (a jetpack's BodyVelocity) keep their own controls.
     glm::vec3 delta;
-    if (!m_climbing && !m_swimming && !sliding && !m_moverDriven) {
+    const bool footing = !m_climbing && !m_swimming && !sliding && !m_moverDriven;
+    if (footing) {
         const glm::vec2 v = CharacterFooting::step({m_velocity.x, m_velocity.z}, {horiz.x, horiz.z},
                                                    m_humanoid.walkSpeed, m_grounded, dt);
         m_velocity.x = v.x;
@@ -1485,6 +1489,18 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     delta.y = m_velocity.y * dt;
 
     Physics::MoveResult res = physics.moveCharacter(pos, delta, m_grounded, r->transform.rotation.y, m_rootId, physics.groupOf(r));
+    if (footing && dt > 0.0f) {
+        // Flung into a wall: the wall takes the extra speed away, instead of it
+        // being kept and shooting you off the moment you clear the wall's edge.
+        // (Up to WalkSpeed is left alone, so stairs and corners never stutter.)
+        const glm::vec2 moved = glm::vec2(res.position.x - pos.x, res.position.z - pos.z) / dt;
+        const glm::vec2 v(m_velocity.x, m_velocity.z);
+        const float have = glm::length(v), got = glm::length(moved);
+        const float keep = std::max(got, m_humanoid.walkSpeed);
+        if (have > keep + 0.01f) { m_velocity.x *= keep / have; m_velocity.z *= keep / have; }
+    }
+    if (res.grounded) m_coyote = 0.12f;
+    else m_coyote = std::max(0.0f, m_coyote - dt);
     if (sliding && dt > 0.0f) {
         // Sliding into a wall takes that speed away, so you follow the bends.
         const glm::vec3 moved = (res.position - pos) / dt - horiz * speed;
@@ -1535,6 +1551,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
             m_velocity.y = std::max(m_velocity.y, s.speed * 0.35f);
             m_grounded = false;
             m_groundId = 0;
+            m_coyote = 0.0f;
         }
         if (s.speed > 12.0f) {   // ...and a really big one knocks you flat and flings you spinning
             const float fwd = glm::dot(dir, glm::vec3(std::sin(glm::radians(r->transform.rotation.y)), 0.0f,
