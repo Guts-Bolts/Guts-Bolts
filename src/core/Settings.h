@@ -32,6 +32,9 @@ struct GraphicsSettings {
     float mouseSensitivity = 1.0f;
     bool  invertCamera  = false;
     bool  studioBlenderKeys = false;   // Studio: S scales, A picks all, Shift+D / Shift+A... (WASD flies only while right-dragging)
+    // Your own keys (KeyBinds.h): one per KeyBinds::Action, 0 = the usual key.
+    static constexpr int kKeyActions = 9;
+    int   keys[kKeyActions] = {};
 
     // Accessibility
     enum ColorBlind { SeeNormal, Protanopia, Deuteranopia, Tritanopia };

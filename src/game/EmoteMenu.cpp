@@ -1,6 +1,7 @@
 #include "EmoteMenu.h"
 #include "../scene/Scene.h"
 #include "../scene/Emotes.h"
+#include "../core/KeyBinds.h"
 
 #include <algorithm>
 #include <cmath>
@@ -42,7 +43,7 @@ void toggle(Scene& scene) {
 bool update(ImDrawList* dl, ImVec2 min, ImVec2 max, Scene& scene, bool keys, const ImVec2* tap, bool mouse) {
     CoreGuiState& g = scene.coreGui();
     if (!available(scene)) { g.emotesOpen = false; return false; }
-    if (keys && ImGui::IsKeyPressed(ImGuiKey_B, false)) toggle(scene);
+    if (keys && KeyBinds::pressed(KeyBinds::Emotes)) toggle(scene);   // (B, unless you moved it)
     if (!g.emotesOpen) return false;
 
     // The wheel: up to 8 emotes around a middle that says what this is.

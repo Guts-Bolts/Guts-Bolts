@@ -17,6 +17,7 @@
 #include "../core/Log.h"
 #include "../core/Paths.h"
 #include "../core/Settings.h"
+#include "../core/KeyBinds.h"
 #include "../game/GameSession.h"
 #include "../game/ClickDetectors.h"
 #include "../game/Hud.h"
@@ -656,7 +657,7 @@ void PlayerApp::sendChat(const std::string& text) {
             for (const Emotes::Emote& e : Emotes::builtIn()) help += " /e " + e.name + ",";
             for (const Emotes::Slot& e : Emotes::mine().slots)   // the ones you equipped from the catalog
                 if (e.clip) help += " /e " + Emotes::normalize(e.name) + ",";
-            chat().add("", help + " /e sit (stand still on the ground first). Or press B for the emote menu.", true);
+            chat().add("", help + " /e sit (stand still on the ground first). Or press " + std::string(KeyBinds::keyName(KeyBinds::key(KeyBinds::Emotes))) + " for the emote menu.", true);
         }
         return;
     }
@@ -1649,7 +1650,7 @@ void PlayerApp::drawGame(float dt) {
         m_photo = false;
     else if (!m_photo && !io.WantTextInput && !m_chatOpen && ImGui::IsKeyPressed(ImGuiKey_F2, false))
         startPhoto();
-    else if (!m_photo && !io.WantTextInput && !m_chatOpen && (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+    else if (!m_photo && !io.WantTextInput && !m_chatOpen && !KeyBinds::waiting() && (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
                                              ImGui::IsKeyPressed(ImGuiKey_GamepadStart, false) ||
                                              (m_paused && ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)))) {
         if (m_menuConfirm) m_menuConfirm = 0;   // Esc (or B) backs out of "Are you sure?"
@@ -1824,7 +1825,7 @@ void PlayerApp::drawGame(float dt) {
     const bool typing = io.WantTextInput || m_chatOpen;
     if (!GraphicsSettings::get().shiftLockSwitch || touch) m_shiftLock = false;
     else if (acceptInput && !typing && !firstPerson &&
-             (ImGui::IsKeyPressed(ImGuiKey_LeftShift, false) || ImGui::IsKeyPressed(ImGuiKey_RightShift, false)))
+             KeyBinds::shiftLockPressed())
         m_shiftLock = !m_shiftLock;
     if (acceptInput && hovered && !vr) {   // (in VR your head turns the camera)
         const bool locked = (firstPerson || (m_shiftLock && !m_camera.noInput)) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);
@@ -2358,7 +2359,7 @@ void PlayerApp::updateVoice(bool acceptInput) {
     if (here) askForMicrophone();
     Voice::setActive(here);
     if (!here) m_talkOn = false;
-    const bool held = here && (m_talkOn || (acceptInput && ImGui::IsKeyDown(ImGuiKey_V)));
+    const bool held = here && (m_talkOn || (acceptInput && KeyBinds::down(KeyBinds::Talk)));
     Voice::setTalking(held, here && gs.voiceOpenMic);
     Voice::setVolume(gs.voiceVolume);
     Voice::update(ImGui::GetIO().DeltaTime);
@@ -2418,7 +2419,7 @@ void PlayerApp::drawPauseMenu() {
         ImVec2(vp->WorkPos.x + vp->WorkSize.x, vp->WorkPos.y + vp->WorkSize.y), IM_COL32(0, 0, 0, 150));
 
     // Keys, like Roblox: R resets, L leaves (both ask first), Esc resumes.
-    if (!io.WantTextInput) {
+    if (!io.WantTextInput && !KeyBinds::waiting()) {   // (not while Settings > Keys waits for a new key)
         if (ImGui::IsKeyPressed(ImGuiKey_R, false)) m_menuConfirm = 1;
         if (ImGui::IsKeyPressed(ImGuiKey_L, false)) m_menuConfirm = 2;
     }
@@ -2560,6 +2561,12 @@ void PlayerApp::drawPauseMenu() {
         row("Camera Sensitivity");
         changed |= ImGui::SliderFloat("##sens", &gs.mouseSensitivity, 0.1f, 4.0f, "%.1f");
         onOff("Invert Camera", gs.invertCamera);
+        ImGui::SeparatorText("Keys");
+        // Your own keys (core/KeyBinds.h): click one, press the new key.
+        ImGui::PushTextWrapPos(0);
+        ImGui::TextDisabled("Click a key and press the one you'd like instead. The arrow keys always walk too.");
+        ImGui::PopTextWrapPos();
+        KeyBinds::drawEditor(labelW);
         ImGui::SeparatorText("Sound and screen");
         row("Volume");
         int vol = (int)std::lround(gs.volume * 10.0f);
@@ -2654,7 +2661,8 @@ void PlayerApp::drawPauseMenu() {
             if (gs.voiceChat) {
                 onOff("Open Mic", gs.voiceOpenMic);
                 ImGui::SetCursorPosX(labelW);
-                ImGui::TextDisabled(gs.voiceOpenMic ? "Sends whenever you make a sound." : "Off: hold V (or tap the mic) to talk.");
+                if (gs.voiceOpenMic) ImGui::TextDisabled("Sends whenever you make a sound.");
+                else ImGui::TextDisabled("Off: hold %s (or tap the mic) to talk.", KeyBinds::keyName(KeyBinds::key(KeyBinds::Talk)));
                 row("Voice Volume");
                 int vv = (int)std::lround(gs.voiceVolume * 10.0f);
                 if (ImGui::SliderInt("##voicevol", &vv, 0, 20)) { gs.voiceVolume = vv / 10.0f; changed = true; }
@@ -2698,12 +2706,17 @@ void PlayerApp::drawPauseMenu() {
             ImGui::SameLine(130);
             ImGui::TextUnformatted(what);
         };
+        // (Your own keys, if you changed them in Settings > Keys.)
+        auto k = [](KeyBinds::Action a) { return std::string(KeyBinds::keyName(KeyBinds::key(a))); };
+        const std::string walk = k(KeyBinds::Forward) + " " + k(KeyBinds::Left) + " " + k(KeyBinds::Back) + " " + k(KeyBinds::Right);
+        const std::string jump = k(KeyBinds::Jump);
         ImGui::SeparatorText("Moving");
-        key("W A S D", "Walk");
-        key("Space", "Jump (again in the air to double-jump, if the game allows it)");
-        key("Shift", "Shift Lock: camera over your shoulder (turn on in Settings)");
-        key("C / Ctrl", "Swimming: dive (or swim forward looking down; Space goes up)");
-        key("V", "Hold to talk (voice chat, once it's on in Settings)");
+        key(walk.c_str(), "Walk (the arrow keys too)");
+        key(jump.c_str(), "Jump (again in the air to double-jump, if the game allows it)");
+        key(k(KeyBinds::ShiftLock).c_str(), "Shift Lock: camera over your shoulder (turn on in Settings)");
+        key((k(KeyBinds::Dive) + " / Ctrl").c_str(), ("Swimming: dive (or swim forward looking down; " + jump + " goes up)").c_str());
+        key(k(KeyBinds::Talk).c_str(), "Hold to talk (voice chat, once it's on in Settings)");
+        key(k(KeyBinds::Emotes).c_str(), "Emote menu");
         ImGui::SeparatorText("Camera");
         key("Right mouse", "Hold and drag to look around");
         key("Mouse wheel", "Zoom in and out; all the way in is first person");

@@ -15,6 +15,7 @@
 #include "../core/Pad.h"
 #include "../core/Paths.h"
 #include "../core/Settings.h"
+#include "../core/KeyBinds.h"
 #include "../game/PlayCamera.h"
 #include "../scene/Player.h"
 #include "../scene/Scene.h"
@@ -87,12 +88,13 @@ void PlayerApp::photoCamera(float dt, bool hovered) {
     // Fly.
     float f = m_photoMove.x, r = m_photoMove.y, u = m_photoMove.z;   // (the on-screen arrows)
     if (!io.WantTextInput) {
-        if (ImGui::IsKeyDown(ImGuiKey_W) || ImGui::IsKeyDown(ImGuiKey_UpArrow)) f += 1;
-        if (ImGui::IsKeyDown(ImGuiKey_S) || ImGui::IsKeyDown(ImGuiKey_DownArrow)) f -= 1;
-        if (ImGui::IsKeyDown(ImGuiKey_D) || ImGui::IsKeyDown(ImGuiKey_RightArrow)) r += 1;
-        if (ImGui::IsKeyDown(ImGuiKey_A) || ImGui::IsKeyDown(ImGuiKey_LeftArrow)) r -= 1;
-        if (ImGui::IsKeyDown(ImGuiKey_E) || ImGui::IsKeyDown(ImGuiKey_Space)) u += 1;
-        if (ImGui::IsKeyDown(ImGuiKey_Q)) u -= 1;
+        if (KeyBinds::down(KeyBinds::Forward) || ImGui::IsKeyDown(ImGuiKey_UpArrow)) f += 1;
+        if (KeyBinds::down(KeyBinds::Back) || ImGui::IsKeyDown(ImGuiKey_DownArrow)) f -= 1;
+        if (KeyBinds::down(KeyBinds::Right) || ImGui::IsKeyDown(ImGuiKey_RightArrow)) r += 1;
+        if (KeyBinds::down(KeyBinds::Left) || ImGui::IsKeyDown(ImGuiKey_LeftArrow)) r -= 1;
+        if (ImGui::IsKeyDown(ImGuiKey_E) || KeyBinds::down(KeyBinds::Jump)) u += 1;
+        // (Q goes down, unless your walk keys use it: AZERTY's Q walks left. Then the dive key does.)
+        if (KeyBinds::used(ImGuiKey_Q) ? KeyBinds::down(KeyBinds::Dive) : ImGui::IsKeyDown(ImGuiKey_Q)) u -= 1;
     }
     if (Pad::connected()) {
         const glm::vec2 ls = Pad::leftStick();

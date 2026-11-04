@@ -419,6 +419,7 @@ add_library(gb_engine STATIC
     src/core/CrashHandler.cpp
     src/core/Log.cpp
     src/core/Settings.cpp
+    src/core/KeyBinds.cpp
     src/core/I18n.cpp
     src/core/Pad.cpp
     src/core/Vr.cpp
@@ -1018,6 +1019,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(GraphicsQualityTests tests/GraphicsQualityTests.cpp)
     target_link_libraries(GraphicsQualityTests PRIVATE gb_engine)
     add_test(NAME GraphicsQualityTests COMMAND GraphicsQualityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Your own keys (Settings > Keys): moving, swapping, AZERTY, saving.
+    add_executable(KeyBindsTests tests/KeyBindsTests.cpp)
+    target_link_libraries(KeyBindsTests PRIVATE gb_engine)
+    add_test(NAME KeyBindsTests COMMAND KeyBindsTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Outfits from scripts: HumanoidDescription, ApplyDescription, GetAppliedDescription.
     add_executable(OutfitsTests tests/OutfitsTests.cpp)

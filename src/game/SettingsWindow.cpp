@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "SettingsWindow.h"
 #include "../core/Settings.h"
+#include "../core/KeyBinds.h"
 #include "../core/UpdateChecker.h"
 #include "../core/I18n.h"
 
@@ -96,6 +97,10 @@ void draw(bool* open) {
     ImGui::BeginDisabled(!s.touchEnabled());
     ImGui::SliderFloat("Button size", &s.touchSize, 0.7f, 1.6f, "%.1fx");
     ImGui::EndDisabled();
+    if (ImGui::TreeNode("Change keys")) {   // (core/KeyBinds.h: walking, jumping... on other keys)
+        KeyBinds::drawEditor(170.0f);
+        ImGui::TreePop();
+    }
 
     ImGui::SeparatorText("Graphics");
     int qi = GraphicsSettings::menuIndexOf(s.quality);
