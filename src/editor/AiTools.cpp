@@ -426,6 +426,84 @@ const std::vector<Tool>& tools() {
          schema({{"format", {{"type", "string"}, {"enum", {"obj", "fbx", "glb", "gltf", "mesh", "stl", "ply", "dae", "rbxmx", "rbxlx"}}}},
                  {"objects", {{"type", "array"}, {"items", kObject}}}, {"name", {{"type", "string"}}},
                  {"folder", {{"type", "string"}}}}, {"format"})},
+        // ------------------------------------------------------------- MODELING
+        {"edit_mesh", "Shape a part's mesh (model it, like Modeling mode)", "MODELING", false, false, false, Risk::Low,
+         {"Reshapes a part's own mesh step by step with Studio's Modeling mode tools, so you can MAKE 3D things: hats, "
+          "helmets, crowns, props. The part becomes a MeshPart. Works in studs from the part's middle (Y up, front = -Z). "
+          "Every call is one undo step, and a call that fails changes nothing.",
+          "\"Make me a top hat\", \"model a cowboy hat\", \"turn this cube into a crown\", \"make the top rounder\", \"pull "
+          "the top out\", \"add a brim\", \"make a beanie with a pom-pom\".",
+          "To move or resize the whole part, set_property Position / Size. To paint it, texture_mesh. To wear it, make_accessory.",
+          "object: a Part or MeshPart. steps: a list, done in order. Each step is {op, select?, ...}:\n"
+          "- start {shape: cube|cylinder|sphere|icosphere|cone|torus|capsule|plane|circle|grid, size?: [x,y,z] studs}: a fresh shape (throws the old mesh away).\n"
+          "- add_shape {shape, position, size, rotation}: another shape joined into the same mesh (a pom-pom, a band, horns).\n"
+          "- move {by: [x,y,z]}, scale {by: number or [x,y,z], pivot?: center|bottom|top|origin|[x,y,z]}, rotate {degrees: [x,y,z], pivot?}: the picked corners.\n"
+          "- extrude {distance}: pull the picked faces out along their normal, building walls (distance 0 = a copy in place, ready to scale: that's how a brim is made).\n"
+          "- inset {amount: 0-1}: a smaller face inside each picked face.\n"
+          "- subdivide {times: 1-3}, smooth_subdivide {times: 1-3}: more faces (smooth_subdivide also rounds it off).\n"
+          "- smooth {amount: 0-1, times}: round off the picked corners. delete: remove the picked faces. flip, fix_normals, merge_close {distance}.\n"
+          "- shading {shading: smooth|flat}.\n"
+          "select picks what a step changes: \"all\" (default), a side (\"top\", \"bottom\", \"left\", \"right\", \"front\", \"back\": "
+          "faces facing that way), or {side?, spread? (degrees, default 45), faces?: [i], vertices?: [i], axis?: x|y|z (default y), "
+          "from/to (0 = the mesh's lowest point, 1 = its highest; e.g. {from: 0.9, to: 1} = the top tenth) or min/max (studs)}. "
+          "Everything given must match. extrude, inset and delete need whole faces picked.",
+          "{object_id, vertices, faces, Size, Position, bounds_min, bounds_max, steps: [{op, picked_corners, picked_faces, vertices, faces}]}.",
+          "A part that isn't part of the character; not during a playtest.",
+          "The part's mesh and Size change (its box always wraps the new shape). Its texture keeps fitting the faces that stayed the same.",
+          "insert_object Part -> edit_mesh (start, then shape it) -> screenshot -> edit_mesh to fix -> texture_mesh -> make_accessory.",
+          "Sizes: the mannequin's head is about 0.6 studs wide and 0.6 tall, so a hat's crown is about 0.7-0.8 across (make_accessory says head_size). "
+          "Top hat: [{op: \"start\", shape: \"cylinder\", size: [0.8, 0.75, 0.8]}, {op: \"extrude\", select: \"bottom\", distance: 0}, "
+          "{op: \"scale\", select: \"bottom\", by: [1.7, 1, 1.7]}, {op: \"extrude\", select: \"bottom\", distance: 0.05}]. "
+          "Cowboy hat: start cylinder, scale {select: {from: 0.95, to: 1}, by: [0.8, 1, 0.8]} (a narrower top), the same brim, then "
+          "move {select: {axis: \"x\", min: 0.55}, by: [0, 0.12, 0]} and {select: {axis: \"x\", max: -0.55}, by: [0, 0.12, 0]} (the brim curls up at the sides). "
+          "Beanie: start sphere, delete {select: {from: 0, to: 0.4}}, add_shape sphere for the pom-pom."},
+         schema({{"object", kObject},
+                 {"steps", {{"type", "array"}, {"maxItems", 64},
+                            {"items", {{"type", "object"}, {"properties", {{"op", {{"type", "string"}, {"enum", {"start", "add_shape", "move", "scale",
+                                       "rotate", "extrude", "inset", "subdivide", "smooth_subdivide", "smooth", "delete", "flip", "fix_normals",
+                                       "merge_close", "shading"}}}}}}, {"required", {"op"}}}}}}}, {"object", "steps"})},
+        {"texture_mesh", "Paint a texture for a mesh", "MODELING", false, false, false, Risk::Low,
+         {"Makes a picture (texture) for a part and wraps it on: lays the mesh out flat (UV unwrap, like the UV Editor), "
+          "paints a base colour, then layers of colours and patterns on the parts you pick, and saves it as a PNG in the "
+          "games folder's textures folder. Patterns are worked out on the real 3D surface, so stripes go round a hat "
+          "without breaking at the seams.",
+          "\"Paint the hat black with a red band\", \"give it a checker pattern\", \"make it look like fabric / felt\", "
+          "\"texture it\", \"make the brim a different colour\".",
+          "For one plain colour on an ordinary part, set_property Color is enough. To change the shape, edit_mesh.",
+          "object. color: the base ([r,g,b] 0-1, \"#rrggbb\" or a name like \"navy\"). layers: up to 16, painted in order, each "
+          "{select (the same as edit_mesh's: a side, or {axis, from, to} for a band), color, pattern: solid|stripes|checker|dots|noise|gradient, "
+          "color2 (the stripes' / dots' / noise's other colour, the gradient's end), scale (studs: one stripe + gap, one square...), "
+          "axis (stripes and gradient, default y), amount (noise, 0-1)}. unwrap: auto (default: keep a good layout, else smart), "
+          "smart, cube, cylinder, sphere, unwrap or keep. size: the picture's width in pixels (64-2048, default 512).",
+          "{object_id, Texture, path, size, unwrap, faces, layers: [{layer, pattern, pixels}], warnings?}. A layer with 0 pixels picked nothing.",
+          "A part (a plain one becomes a MeshPart first); not during a playtest.",
+          "The part's Texture is the new picture (and its Color the base colour). Calling it again paints a new picture over the old one.",
+          "edit_mesh -> texture_mesh -> screenshot -> texture_mesh again to adjust -> make_accessory.",
+          "Top hat with a band: {color: \"black\", layers: [{select: {axis: \"y\", from: 0.15, to: 0.3}, color: \"dark red\"}]}. "
+          "Felt: {color: \"brown\", layers: [{pattern: \"noise\", color: \"brown\", color2: \"tan\", scale: 0.2, amount: 0.3}]}."},
+         schema({{"object", kObject}, {"color", {{"description", "[r, g, b] 0-1, \"#rrggbb\" or a colour name"}}},
+                 {"layers", {{"type", "array"}, {"maxItems", 16}, {"items", {{"type", "object"}}}}},
+                 {"unwrap", {{"type", "string"}, {"enum", {"auto", "keep", "smart", "cube", "cylinder", "sphere", "unwrap"}}}},
+                 {"size", {{"type", "integer"}, {"minimum", 64}, {"maximum", 2048}}}}, {"object"})},
+        {"make_accessory", "Make a part or model a hat (or other accessory)", "MODELING", false, false, false, Risk::Low,
+         {"Turns what you made into an avatar accessory, the same as AVATAR > Accessories: puts it in a Model (if it's one part), "
+          "adds the Accessory Mannequin if there isn't one, sits it on the mannequin (a hat comes down over the top of the head), "
+          "saves that position on the Model and opens the Accessories window on it. Uploading it to the catalog stays the person's "
+          "job: they press Upload there (it needs a signed-in Verified creator).",
+          "\"Make it a hat\", \"save it as a hat\", \"put it on the mannequin\", \"turn this into hair / a face accessory\", "
+          "\"move the hat down a bit\" (call it again with offset).",
+          "Don't use it for gear (things held in the hand): that's a Tool. Never try to upload or sell it yourself.",
+          "object: the part or Model. kind: hat (default), hair, faceacc, neck, shoulder, waist. name: the accessory's name. "
+          "offset: [x, y, z] studs from the spot it picks (a hat: [0, -0.1, 0] sits it lower).",
+          "{object_id, name, kind, placement, mannequin_id, head_size (the mannequin's head: compare it with bounds and "
+          "edit_mesh scale the hat if it's far too big or small), bounds_min, bounds_max, next, warnings?}.",
+          "Not during a playtest; not the character's own parts.",
+          "The Model sits on the mannequin and has an AccessoryPlacement attribute (its saved position). The Accessories window is open on it.",
+          "edit_mesh -> texture_mesh -> make_accessory -> screenshot -> make_accessory {offset} if it floats or sinks -> tell the person to press Upload.",
+          "\"Make a red top hat\" -> insert_object Part -> edit_mesh (top hat steps) -> texture_mesh -> make_accessory {kind: \"hat\", name: \"Red Top Hat\"}."},
+         schema({{"object", kObject}, {"kind", {{"type", "string"}, {"enum", {"hat", "hair", "faceacc", "neck", "shoulder", "waist"}}}},
+                 {"name", {{"type", "string"}}},
+                 {"offset", {{"type", "array"}, {"items", {{"type", "number"}}}, {"minItems", 3}, {"maxItems", 3}}}}, {"object"})},
         {"physics_replay", "Record the physics, look at any moment, save physics tests", "DEBUG", false, false, false, Risk::Low,
          {"Studio's Physics Replay: runs only the physics (no scripts, no players) on a copy of the scene as it is now, "
           "60 steps a second, and remembers where every loose (unanchored) part was each step. Studio shows any frame of "
@@ -775,6 +853,9 @@ json workflowOf(const std::string& name) {
         {"physics_replay", {{"get_game_tree"}, {"screenshot", "playtest"}}},
         {"compare_scenes", {{"checkpoint"}, {"get_game_tree", "undo"}}},
         {"export_model", {{"get_game_tree"}, {}}},
+        {"edit_mesh", {{"insert_object"}, {"screenshot", "texture_mesh", "make_accessory"}}},
+        {"texture_mesh", {{"edit_mesh"}, {"screenshot", "make_accessory"}}},
+        {"make_accessory", {{"edit_mesh", "texture_mesh"}, {"screenshot"}}},
         {"get_errors", {{"playtest"}, {"read_script", "edit_script"}}},
         {"diagnose_object", {{"find_objects"}, {"set_property", "edit_script"}}},
         {"validate_scene", {{}, {"diagnose_object", "playtest"}}},
@@ -929,6 +1010,7 @@ What the tools give you:
 - Change: insert_object, set_property, delete_object, create_script, edit_script, run_lua (any Lua, like the Command Bar).
 - Run and check: playtest (play, simulate, pause, step), multiplayer_test (a local server and 2-4 player windows), get_runtime_state, diagnose_object, validate_scene.
 - Physics and navigation: create_physical_object, spawn_explosion, bake_navmesh, find_path, walk_character_to.
+- Model and paint 3D things (hats!): edit_mesh (shape a part's mesh), texture_mesh (paint a picture for it), make_accessory (wear it as a hat).
 - Stay safe: undo / redo, and checkpoint (save points to try things and roll back).
 - Share: publish_game (File > Publish, as the signed-in account; only when asked).
 - Learn: get_engine_info (this text, capabilities, concepts, coordinates, workflows, examples, classes).
@@ -1117,6 +1199,7 @@ json capabilities() {
             {"runtime", true},                        // playtest start / stop
             {"runtime_inspection", true},             // get_runtime_state, get_object runtime values, errors
             {"physics", "via properties (Anchored, CanCollide, Density...), movers, constraints and scripts; simulates during playtests"},
+            {"modeling", "edit_mesh: shape a part's own mesh (extrude, inset, scale...); texture_mesh: paint a picture for it; make_accessory: make it a hat on the mannequin (the person uploads it)"},
             {"navigation", true},                     // bake_navmesh, find_path, walk_character_to; PathfindingService in scripts
             {"explosions", true},                     // spawn_explosion (playtest); Explosion objects in scripts
             {"rendering", "partial: part colour, material, transparency, lights, decals, particles (ParticleEmitter, Fire, Smoke, Sparkles); no shader or post-processing tools"},
