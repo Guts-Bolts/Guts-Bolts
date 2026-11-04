@@ -318,6 +318,13 @@ what it needs, what it gives back and how risky it is):
 - Scene: `get_game_tree`, `find_objects`, `insert_object`, `delete_object`
 - Objects: `get_object`, `set_property`, `find_and_change` (many objects at once), `select`
 - Scripting: `create_script`, `read_script`, `edit_script`, `run_lua`
+- Making whole games: `build` (up to 500 parts in one call, grouped in a Model,
+  with `repeat` for stairs and rows), `terrain` (hills, flat ground, fill and dig,
+  brushes along a line, water, ground height at points), `create_ui` (a whole
+  screen UI tree in one call), `add_game_system` (tested leaderboard, teams,
+  rounds, collectibles, checkpoints and shop systems, with their settings at the
+  top of each script) and `set_atmosphere` (day, sunset, night, foggy, spooky,
+  rainy, snowy, or exact values)
 - Runtime: `playtest` (start, simulate, stop, pause, resume, step), `get_runtime_state`,
   `multiplayer_test` (start a test with 2-4 players, `add_player`, `status`,
   `output` to read what the server and each player printed, `stop`)

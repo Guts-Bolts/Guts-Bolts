@@ -304,6 +304,8 @@ SceneNode* Editor::aiFind(const std::string& ref, bool create) {
 
 AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
     if (name == "edit_mesh" || name == "texture_mesh" || name == "make_accessory") return runMeshAiTool(name, args);   // (AiMeshTools.cpp)
+    if (name == "build" || name == "terrain" || name == "create_ui" || name == "add_game_system" || name == "set_atmosphere")
+        return runGameAiTool(name, args);   // (AiGameTools.cpp)
     SceneNode* const root = m_scene->root();
     auto str = [&](const char* k) { return args.contains(k) && args[k].is_string() ? args[k].get<std::string>() : std::string(); };
     auto label = [&](const SceneNode* n) { return n->name + " (" + classOf(n, root) + ") " + idOf(n); };
