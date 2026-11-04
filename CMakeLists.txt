@@ -615,7 +615,7 @@ endif()
 if(GB_MOBILE)
     # Phones and tablets get the Player only. On Android it's a library that
     # SDL's Java activity loads (it must be called "main").
-    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerPhoto.cpp src/player/PlayerSpectate.cpp src/player/PlayerClips.cpp src/player/WebKeyboard.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/PlayerVr.cpp src/player/LaunchLink.cpp)
+    set(PLAYER_SOURCES src/player/main.cpp src/player/PlayerApp.cpp src/player/PlayerOnline.cpp src/player/PlayerSocial.cpp src/player/PlayerForum.cpp src/player/ItemRenders.cpp src/player/PlayerMail.cpp src/player/PlayerLibrary.cpp src/player/PlayerDevConsole.cpp src/player/PlayerPasses.cpp src/player/PlayerPhoto.cpp src/player/PlayerBreak.cpp src/player/PlayerSpectate.cpp src/player/PlayerClips.cpp src/player/WebKeyboard.cpp src/player/PlayerFriends.cpp src/player/PlayerLogin.cpp src/player/PlayerSafety.cpp src/player/PlayerVr.cpp src/player/LaunchLink.cpp)
     if(ANDROID)
         add_library(main SHARED ${PLAYER_SOURCES})
         target_link_libraries(main PRIVATE gb_engine)
@@ -862,6 +862,7 @@ set(PLAYER_SOURCES
     src/player/PlayerDevConsole.cpp
     src/player/PlayerPasses.cpp
     src/player/PlayerPhoto.cpp
+    src/player/PlayerBreak.cpp
     src/player/PlayerSpectate.cpp
     src/player/PlayerClips.cpp
     src/player/WebKeyboard.cpp
@@ -1018,6 +1019,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(GraphicsQualityTests tests/GraphicsQualityTests.cpp)
     target_link_libraries(GraphicsQualityTests PRIVATE gb_engine)
     add_test(NAME GraphicsQualityTests COMMAND GraphicsQualityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The take-a-break reminder's choices (Settings > Break Reminder).
+    add_executable(BreakReminderTests tests/BreakReminderTests.cpp)
+    target_link_libraries(BreakReminderTests PRIVATE gb_engine)
+    add_test(NAME BreakReminderTests COMMAND BreakReminderTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Outfits from scripts: HumanoidDescription, ApplyDescription, GetAppliedDescription.
     add_executable(OutfitsTests tests/OutfitsTests.cpp)

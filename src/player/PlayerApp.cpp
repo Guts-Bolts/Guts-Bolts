@@ -2081,6 +2081,7 @@ void PlayerApp::drawGame(float dt) {
         dl->AddText(ImVec2(a.x + 14, a.y + 7), IM_COL32(255, 230, 140, 255), note);
     }
 
+    drawBreakReminder(dt);
     if (m_paused) drawPauseMenu();
 }
 
@@ -2686,6 +2687,17 @@ void PlayerApp::drawPauseMenu() {
         ImGui::PopTextWrapPos();
         ImGui::SeparatorText("Other");
         onOff("Blood and Gore", gs.allowGore);
+        row("Break Reminder");
+        {
+            int bi = GraphicsSettings::breakChoiceOf(gs.breakMinutes);
+            if (ImGui::Combo("##break", &bi, GraphicsSettings::breakChoiceNames(), GraphicsSettings::kBreakChoices)) {
+                gs.breakMinutes = GraphicsSettings::breakChoiceMinutes(bi);
+                m_breakPlayed = 0.0f;   // (counts from now)
+                changed = true;
+            }
+            ImGui::SetCursorPosX(labelW);
+            ImGui::TextDisabled("A friendly nudge to rest after playing this long.");
+        }
         row("Touch Controls");
         static const char* tm[] = {"Automatic", "Always on", "Off"};
         changed |= ImGui::Combo("##touch", &gs.touchControls, tm, 3);
