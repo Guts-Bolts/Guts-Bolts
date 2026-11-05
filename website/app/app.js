@@ -741,7 +741,7 @@ function feedPictures(feedR, where) {
   for (const p of feedR.ok ? feedR.feed : []) {
     if (seen.has(p.user.id)) continue;
     seen.add(p.user.id);
-    avatarPicture(p.user.avatar, [], 40).then((url) => {
+    avatarPicture(p.user.avatar, p.user.wearing || [], 40).then((url) => {
       if (url) where.querySelectorAll(`[data-feed-avatar="${p.user.id}"]`).forEach((el) => { el.innerHTML = html`<img src="${url}" alt="" width="40" height="50">`.s; });
     }).catch(() => {});
   }
