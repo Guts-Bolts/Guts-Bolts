@@ -267,6 +267,54 @@ that one too. Then only the other person's changes are listed, and an object you
 changed is marked as a **Conflict** (not ticked, so you decide). The Assistant can do all
 this with the `compare_scenes` tool.
 
+### Team development workflow (merge-based)
+
+Guts&Bolts supports team development through group-owned games, saved project copies,
+Studio's Compare and Merge, named checkpoints and published game version history.
+
+1. Create a group and give each teammate the group rank and permissions they need.
+   To assign a game to the group, use its Configure page; the person doing this needs
+   the group's **Add games** permission.
+2. Have each developer work from their own saved copy. Before combining work, agree
+   on a common starting version and keep it unchanged as the merge base.
+3. In Studio, open **TEST > Compare** (or **View > Compare and Merge**), choose the
+   other developer's copy, tick **I have the version we both started from**, and
+   select the shared base. Review conflicts object by object rather than accepting
+   both sides blindly.
+4. Make a named checkpoint before applying a large merge. Run the multiplayer test
+   and scene validation, then publish through the account authorized to update the
+   group-owned game.
+5. Use the game's **Version history** on Configure to review who published a version
+   and restore a previous release if a merge causes a regression.
+
+This is a safe, explicit merge workflow, not live simultaneous editing. Real-time
+co-editing, shared cursors and edit locks require a separate shared-session protocol;
+the current editor does not claim to synchronize two people's unsaved changes.
+
+**Cloud Team Create** is available to signed-in Studio accounts from the Team
+Create dialog. The host starts a cloud session and shares a 16-character invite
+code; collaborators join with that code. The server authenticates each request
+with the normal signed Guts&Bolts account API, stores the session and ordered edit
+events in the server Durable Object's SQLite database, and limits a session to 20
+members. It does not expose the host's IP address. The host checkpoints the scene
+snapshot every 15 seconds; clients replay ordered changes and resync from the
+latest checkpoint if they fall behind. If a host disconnects without ending the
+session, it can rejoin with the same code and replay edits after its last checkpoint.
+The original direct-TCP host/join mode is still available for local networks.
+
+Team Create synchronizes selected objects and free world-space cursor positions.
+Each collaborator gets a colour-coded orb and username in the viewport; the orb
+tracks the point under their mouse, while the existing selection outline identifies
+the object they are editing. Presence expires when a collaborator stops sending
+heartbeats.
+
+A cloud Team Create session also creates a shared Guts&Bolts group chat. Studio's
+**Open team voice chat** button deep-links to that chat in the website, where the
+existing WebRTC voice-call controls are available. The microphone and WebRTC audio
+still run in the browser; the native Studio app does not yet embed the WebRTC
+client or render call controls/audio directly inside its own window. Calls without
+the configured TURN relay retain the existing friend-to-friend privacy restriction.
+
 ### Testing with more than one player
 
 Play is just you. To see how your game works with other people, use
@@ -3232,6 +3280,12 @@ split into boards:
 - Whoever started a thread gets a notification when someone replies.
 - Blocked people's posts are hidden from you, and they can't reply to your threads.
 - The code is `forum.*` in `worker/server.js` and `src/server/ServerForum.cpp`.
+
+**Code snippets:** In the website forum and chat, wrap a snippet in triple backticks
+to display it in a separate, copyable code panel. Add a language after the opening
+fence when useful (for example, `lua` or `javascript`). The panel displays code
+as text; it never runs it. Use **Insert code block** in forum composers or **Code**
+in chat to add the fence around selected text.
 
 ### Creator stats (how your stuff is doing)
 

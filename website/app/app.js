@@ -34,6 +34,46 @@ function show(content) {
   setTimeout(() => upgradeItemPictures(), 0);   // (item renders on every page)
 }
 const view = $('#view');
+// Render fenced code blocks as inert, copyable code. Never interpret code as HTML or execute it.
+function richText(value) {
+  const source = String(value ?? '');
+  const fence = /```([a-zA-Z0-9_+-]{0,24})[ \t]*\n([\s\S]*?)```/g;
+  let out = '', last = 0, match;
+  const plain = (text) => esc(text).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+  while ((match = fence.exec(source))) {
+    out += plain(source.slice(last, match.index));
+    const language = match[1].toLowerCase();
+    const code = match[2].replace(/\n$/, '');
+    out += '<div class="rich-code"><div class="rich-code-head"><span>' +
+      esc(language || 'Code') + '</span><button type="button" class="btn small" data-copy-code="' +
+      esc(code) + '">Copy code</button></div><pre><code>' + esc(code) +
+      '</code></pre></div>';
+    last = fence.lastIndex;
+  }
+  out += plain(source.slice(last));
+  return raw(out);
+}
+function insertCodeFence(textarea, language = 'lua') {
+  if (!textarea) return;
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? start;
+  const selected = textarea.value.slice(start, end);
+  const block = '```' + language + '\n' + selected + '\n```';
+  textarea.setRangeText(block, start, end, 'select');
+  const caret = start + language.length + 4;
+  if (!selected) textarea.setSelectionRange(caret, caret);
+  textarea.focus();
+}
+view.addEventListener('click', async (event) => {
+  const copy = event.target.closest('[data-copy-code]');
+  if (copy) {
+    try { await navigator.clipboard.writeText(copy.dataset.copyCode || ''); copy.textContent = 'Copied'; }
+    catch { copy.textContent = 'Copy unavailable'; }
+    return;
+  }
+  const insert = event.target.closest('[data-code-insert]');
+  if (insert) insertCodeFence(insert.closest('form')?.querySelector('textarea[name="text"]'), insert.dataset.codeInsert || 'lua');
+});
 const KINDS = { hat: 'Hat', shirt: 'Shirt', pants: 'Pants', audio: 'Audio', plugin: 'Plugin', game: 'Game', decal: 'Decal', model: 'Model',
   hair: 'Hair', faceacc: 'Face Accessory', neck: 'Neck Accessory', shoulder: 'Shoulder Accessory', waist: 'Waist Accessory', face: 'Face',
   tshirt: 'T-Shirt', gear: 'Gear', animation: 'Animation', emote: 'Emote', animpack: 'Animation Pack', bundle: 'Bundle', bodypart: 'Body Part' };
@@ -639,8 +679,12 @@ async function fetchPublicActivity(path) {
 }
 pages.home = async () => {
   // Everything the page needs is asked for at once, so it waits for one round trip, not four.
-  const [games, items, fr, recent, favs, featured, , feedR, upd, mine, auctions, auctionEvents] = await Promise.all([
+  const [games, newest, updatedGames, playingGames, recommendPool, items, fr, recent, favs, featured, , feedR, upd, mine, auctions, auctionEvents] = await Promise.all([
     pageCall('list', { kind: 'game', sort: 'popular', limit: 8 }),
+    pageCall('list', { kind: 'game', sort: 'new', limit: 8 }),
+    pageCall('list', { kind: 'game', sort: 'updated', limit: 8 }),
+    pageCall('list', { kind: 'game', sort: 'playing', limit: 8 }),
+    signedIn() ? pageCall('list', { kind: 'game', sort: 'popular', limit: 100 }) : Promise.resolve({ ok: false }),
     pageCall('list', { kind: 'clothing', limit: 6 }),
     signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
     signedIn() ? pageCall('games.mine', { which: 'recent', limit: 8 }) : Promise.resolve({ ok: false }),
@@ -666,6 +710,33 @@ pages.home = async () => {
       <a href="${more}" style="float:right">See more &raquo;</a></h2>
     ${r.ok && r.assets.length ? html`<div class="grid">${r.assets.map(gameCard)}</div>`
       : html`<p class="muted small">${r.ok ? 'No games published yet. Publish one from Studio!' : r.error}</p>`}</div>`;
+  // Discovery shelves use the same server-side sort rules as the Games page. Empty or
+  // temporarily unavailable shelves are omitted rather than replacing useful homepage content.
+  const discoveryBox = (title, r, sort) => r.ok && r.assets.length ? html`<div class="box discovery-box">
+      <h2 class="boxhead">${title}<a href="#/games?sort=${sort}" style="float:right">See all &raquo;</a></h2>
+      <div class="grid">${r.assets.map(gameCard)}</div></div>` : '';
+  // A transparent genre-based recommendation pass: favourites weigh more than recent plays,
+  // and games already shown in those lists or the popular shelf are left out.
+  const genreWeights = new Map();
+  for (const game of favs.ok ? favs.assets : []) for (const genre of new Set(game.genres || []))
+    genreWeights.set(genre, (genreWeights.get(genre) || 0) + 2);
+  for (const game of recent.ok ? recent.assets : []) for (const genre of new Set(game.genres || []))
+    genreWeights.set(genre, (genreWeights.get(genre) || 0) + 1);
+  const alreadyShown = new Set([...(games.ok ? games.assets : []), ...(favs.ok ? favs.assets : []), ...(recent.ok ? recent.assets : [])].map((game) => game.id));
+  const recommendedGames = recommendPool.ok && genreWeights.size ? recommendPool.assets
+    .filter((game) => !alreadyShown.has(game.id) && game.creator !== me.id)
+    .map((game) => {
+      const genreFit = (game.genres || []).reduce((score, genre) => score + (genreWeights.get(genre) || 0), 0);
+      const votes = (game.likes || 0) + (game.dislikes || 0);
+      const rating = votes ? (game.likes || 0) / votes : 0.5;
+      return { game, genreFit, score: genreFit * 10 + Math.min(game.playing || 0, 20) + rating * 3 };
+    }).filter((entry) => entry.genreFit > 0)
+    .sort((a, b) => b.score - a.score || (b.game.playing || 0) - (a.game.playing || 0) || (b.game.plays || 0) - (a.game.plays || 0))
+    .slice(0, 8).map((entry) => entry.game) : [];
+  const recommendedBox = signedIn() && recommendedGames.length ? html`<div class="box discovery-box">
+      <h2 class="boxhead">Recommended for you<a href="#/games?sort=popular" style="float:right">See all &raquo;</a></h2>
+      <p class="small muted">Based on the genres of games you favorite and play.</p>
+      <div class="grid">${recommendedGames.map(gameCard)}</div></div>` : '';
   // Featured: games staff picked (only shown when there are some).
   const featuredBox = featured.ok && featured.assets.length ? html`<div class="box featured-box"><h2 class="boxhead">&#11088; Featured Games
       <a href="#/games?sort=featured" style="float:right">See all &raquo;</a></h2><div class="grid">${featured.assets.map(gameCard)}</div></div>` : '';
@@ -689,7 +760,7 @@ pages.home = async () => {
           <p><a class="btn green big" href="#/signup">Sign Up and Play</a>
             <a class="btn" href="#/login">Login</a></p></div>
         <div class="welcome-guy" id="homeAvatar">${avatarSvg(defaultAvatar(), 150)}</div></div>
-      ${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
+      ${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
     tickCountdowns();
     mountAvatar($('#homeAvatar'), defaultAvatar(), [], { width: 170 }).catch(() => {});
     return;
@@ -711,7 +782,7 @@ pages.home = async () => {
               <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
-      <div class="home-right">${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
+      <div class="home-right">${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${recommendedBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
     </div>`);
   tickCountdowns();
   // Dressed in what you're wearing (the server says which items those are).
@@ -953,7 +1024,7 @@ pages.forum = async (board, a, b) => {
     ${r.board.staffOnly && !r.canPost ? html`<p class="muted">Only Guts&amp;Bolts staff post here.</p>`
       : signedIn() ? html`<form class="form" data-form="forumPost"><input type="hidden" name="board" value="${r.board.id}">
         <label>Title</label><input type="text" name="title" maxlength="80" required>
-        <label>Message</label><textarea name="text" maxlength="3000" rows="7" required></textarea>
+        <label>Message</label><textarea name="text" maxlength="3000" rows="7" required></textarea><p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <span class="small muted">Wrap Lua or other code in a copyable block.</span></p>
         <p><button class="btn green">Post thread</button> <span class="small muted">Be kind, and don't share personal info.</span></p></form>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to post.</p>`}`);
   loadForumAvatars();
@@ -965,7 +1036,7 @@ async function forumThread(id, page) {
   const post = (p) => html`<div class="forum-post" data-post="${p.id}">
     <div class="forum-author"><a class="forum-player-avatar" href="#/user/${p.by.userId || p.by.id}" title="View ${p.by.name}’s profile">${forumAvatar(p.by, 72)}</a>${forumWho(p.by)}<span class="forum-player-number">PLAYER #${p.by.userId || p.by.id}</span></div>
     <div class="grow"><p class="small muted">${ago(p.at)}</p>
-      <div class="forum-text">${p.text}</div>
+      <div class="forum-text">${richText(p.text)}</div>
       <p class="small">${p.canDelete ? html`<a href="#" data-act="forumDelete" data-thread="${t.id}" data-post="${p.id}" data-first="${p.first ? 1 : ''}" data-page="${r.page}">${p.first ? 'Delete thread' : 'Delete'}</a> ` : ''}
         ${signedIn() && p.by.id !== me.id ? reportLink('forum', t.id + ':' + p.id, p.by.name) : ''}</p></div></div>`;
   show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; <a href="#/forum/${t.board}">${t.boardName}</a></p>
@@ -977,7 +1048,7 @@ async function forumThread(id, page) {
     ${forumPager(base, r.page, r.pages)}
     ${r.canReply ? html`<h2>Reply</h2><form class="form" data-form="forumReply"><input type="hidden" name="thread" value="${t.id}">
         <textarea name="text" maxlength="3000" rows="5" required></textarea>
-        <p><button class="btn blue">Post reply</button></p></form>`
+        <p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <button class="btn blue">Post reply</button></p></form>`
       : t.locked ? html`<p class="muted">This thread is locked, so nobody can reply.</p>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to reply.</p>`}`);
   loadForumAvatars();
@@ -1466,8 +1537,18 @@ pages.game = async (id) => {
     pageCall('game.leaderboards', { id: g.id }), pageCall('gamelog.list', { id: g.id })]);
   const passes = pr.ok ? pr.passes.filter((p) => !p.offsale || p.owned) : [];
   const mine = signedIn() && (g.creator === me.id || me.staff);
-  const servers = s.ok ? s.servers : [];
-  const shared = new URLSearchParams(location.hash.split('?')[1] || '').get('server') || '';
+  const serverParams = new URLSearchParams(location.hash.split('?')[1] || '');
+  const shared = serverParams.get('server') || '';
+  const serverSort = serverParams.get('serverSort') || 'friends';
+  const servers = s.ok ? [...s.servers] : [];
+  // Server discovery can only sort on fields the relay actually reports. It does not invent
+  // ping or region data: friends, current occupancy and available slots are authoritative.
+  const serverSorters = {
+    friends: (a, b) => (b.friends || 0) - (a.friends || 0) || (b.players || 0) - (a.players || 0),
+    players: (a, b) => (b.players || 0) - (a.players || 0) || (b.friends || 0) - (a.friends || 0),
+    space: (a, b) => ((b.max || 12) - (b.players || 0)) - ((a.max || 12) - (a.players || 0)),
+  };
+  servers.sort(serverSorters[serverSort] || serverSorters.friends);
   // Roblox-style server cards: faces of who's in it, how full it is, Join and Share. 8 a page.
   const perPage = 8, pages = Math.max(1, Math.ceil(servers.length / perPage));
   serverPage = Math.min(Math.max(1, serverPage), pages);
@@ -1522,7 +1603,16 @@ pages.game = async (id) => {
     ${leaderboardsBlock(lb)}
     ${passes.length ? html`<h2>Passes</h2><div class="pass-grid">${passes.map(passCard)}</div>` : ''}
     ${privateServerBox(g, s)}
-    <h2>Servers</h2>
+    <div class="row server-toolbar"><h2 class="grow">Servers (${servers.length})</h2>
+      <div class="row"><label class="small" for="serverSort">Sort</label>
+        <select id="serverSort" style="width:auto">
+          <option value="friends" ${serverSort === 'friends' ? 'selected' : ''}>Friends first</option>
+          <option value="players" ${serverSort === 'players' ? 'selected' : ''}>Most players</option>
+          <option value="space" ${serverSort === 'space' ? 'selected' : ''}>Most open slots</option>
+        </select>
+        <button type="button" class="btn small" data-act="serverSort" data-id="${g.id}">Apply</button>
+        <button type="button" class="btn small" data-act="refreshServers">Refresh</button>
+      </div></div>
     ${servers.length ? html`<div class="server-grid">${shown.map(card)}</div>${pager}`
       : html`<p class="muted">Nobody's playing right now. Be the first!</p>`}
     ${commentsBlock(g, cr)}`);
@@ -1687,7 +1777,8 @@ pages.item = async (id) => {
             ${giftButton}
             <div class="item-sold">( ${a.sales || 0} Sold )</div>
             <button class="btn small item-fav ${a.myFavorite ? 'on' : ''}" data-act="itemFavorite" data-id="${a.id}" data-on="${a.myFavorite ? '' : '1'}"
-              title="${a.myFavorite ? 'Take it out of your favourites' : 'Add it to your favourites (Catalog > My Favorites)'}">${a.myFavorite ? '\u2665' : '\u2661'} <span>${a.myFavorite ? 'Favorited' : 'Favorite'}</span> (${(a.favorites || 0).toLocaleString()})</button>
+              title="${a.myFavorite ? 'Remove from your saved items' : (auOpen ? 'Save this auction to Catalog > My Favorites' : 'Add it to your favourites (Catalog > My Favorites)')}">${a.myFavorite ? '\u2665' : '\u2661'} <span>${a.myFavorite ? (auOpen ? 'Watching' : 'Favorited') : (auOpen ? 'Watch auction' : 'Favorite')}</span> (${(a.favorites || 0).toLocaleString()})</button>
+            ${auOpen ? html`<p class="small muted">Saved auctions appear in Catalog &gt; My Favorites. If you place a bid, you'll receive a notification if someone outbids you.</p>` : ''}
             ${L && L.resellers ? html`<div class="small">${L.resellers} for resale from ${bolts(L.lowest)}</div>` : ''}
           </div>
           ${canEdit ? html`<p><button class="btn" data-act="toggle" data-target="#itemEdit">Edit item</button></p>` : ''}
@@ -2147,7 +2238,7 @@ const statBars = (vals, days, unit, span = 'in the last 30 days') => {
 };
 // When people play your games (from Supabase): busiest hours in your own time, new and
 // returning players, and plays a day for 90 days.
-function playtimesBlock(pt) {
+function playtimesBlock(pt, scope = 'all your games') {
   const p = pt && pt.ok && pt.playtimes;
   if (!p || !Array.isArray(p.hours) || !Array.isArray(p.days)) return '';
   // The hours come in UTC: turn them round to the visitor's own clock.
@@ -2159,28 +2250,34 @@ function playtimesBlock(pt) {
   const pct = (n) => who ? Math.round((n / who) * 100) + '%' : '0%';
   const days = p.days.map((d) => d.plays || 0), dayNames = p.days.map((d) => d.day);
   return html`<h2>When people play</h2><div class="statcard playtimes">
-    ${total ? html`<p class="small muted">Busiest hour (your time): <b>${label(busiest)}</b>. Last 30 days, all your games.</p>
+    ${total ? html`<p class="small muted">Busiest hour (your time): <b>${label(busiest)}</b>. Last 30 days, ${scope}.</p>
       <div><span class="small muted">Plays by hour of the day</span>${statBars(hours, hours.map((_, h) => label(h)), 'plays', 'by hour of the day')}
         <div class="hour-axis small muted"><span>${label(0)}</span><span>${label(6)}</span><span>${label(12)}</span><span>${label(18)}</span><span>${label(23)}</span></div></div>
       <div class="who-played">
         <span><b>${(p.new || 0).toLocaleString()}</b> new players (${pct(p.new || 0)})</span>
         <span><b>${(p.returning || 0).toLocaleString()}</b> came back (${pct(p.returning || 0)})</span>
         <span><b>${(p.guests || 0).toLocaleString()}</b> guests (${pct(p.guests || 0)})</span></div>`
-      : html`<p class="small muted">Nobody else has played your games in the last 30 days yet. Charts show up here once they do.</p>`}
+      : html`<p class="small muted">Nobody else has played ${scope} in the last 30 days yet. Charts show up here once they do.</p>`}
     <div><span class="small muted">Plays a day, last 90 days: ${days.reduce((a, b) => a + b, 0).toLocaleString()}</span>${statBars(days, dayNames, 'plays', 'in the last 90 days')}</div>
   </div>`;
 }
 const statsPage = async (head) => {
   if (!signedIn()) { show(html`${head}${needSignIn('see how your games are doing')}`); return; }
-  const [r, pt] = await Promise.all([pageCall('creator.stats', {}), pageCall('creator.playtimes', {})]);
+  const selectedGameId = hashParams().get('game') || '';
+  const [r, pt] = await Promise.all([
+    pageCall('creator.stats', {}),
+    pageCall('creator.playtimes', selectedGameId ? { game: selectedGameId } : {}),
+  ]);
   if (!r.ok) { show(html`${head}<p class="error">${r.error}</p>`); return; }
   const sum = (a) => a.reduce((x, y) => x + y, 0);
   const games = r.items.filter((a) => a.kind === 'game'), sold = r.items.filter((a) => a.kind !== 'game' && (a.price > 0 || a.sales > 0));
+  const selectedGame = games.find((a) => a.id === selectedGameId) || null;
   const all = (f) => sum(r.items.filter((a) => a.kind === 'game' || !a.kind.match(/gamepass|devproduct/)).map((a) => sum(a[f])));
   const tile = (n, label) => html`<div class="stat"><b>${n.toLocaleString()}</b><span class="small muted">${label}</span></div>`;
   const card = (a) => html`<div class="statcard">
       <div class="row"><b class="grow">${a.kind === 'game' ? html`<a href="#/game/${a.id}">${a.name}</a>` : a.name}</b>
-        <span class="small muted">${KINDS[a.kind] || a.kind}</span></div>
+        <span class="small muted">${KINDS[a.kind] || a.kind}</span>
+        ${a.kind === 'game' ? html`<a class="btn small" href="#/create/stats?game=${encodeURIComponent(a.id)}">Detailed analytics</a>` : ''}</div>
       <div class="small muted">${a.kind === 'game'
         ? html`${a.plays.toLocaleString()} plays · ${a.playing} playing now · ${a.favorites} favorites · 👍 ${a.likes} 👎 ${a.dislikes}`
         : html`${a.sales.toLocaleString()} sold · ${a.price > 0 ? bolts(a.price) + ' each' : 'free'}`}
@@ -2191,10 +2288,13 @@ const statsPage = async (head) => {
         <div><span class="small muted">Bolts earned, last 30 days: ${sum(a.bolts30)}</span>${statBars(a.bolts30, r.days, 'Bolts')}</div>
       </div></div>`;
   show(html`${head}
+    ${selectedGame ? html`<div class="box"><h2 class="boxhead">Detailed analytics: ${selectedGame.name}</h2>
+      <p class="small muted">This view isolates player activity for this game. Sales and Bolts totals remain in the creator overview below.</p>
+      <a href="#/create/stats">Back to all creator stats</a></div>` : ''}
     <div class="stats-tiles">${tile(all('plays30'), 'plays in 30 days')}${tile(all('sales30'), 'sales in 30 days')}${tile(all('bolts30'), 'Bolts earned in 30 days')}</div>
     <p class="small muted">Plays count when someone else opens your game. Passes and products bought inside a game count on that game too.
       Days are in UTC; hover a bar to see its day.</p>
-    ${playtimesBlock(pt)}
+    ${playtimesBlock(pt, selectedGame ? 'this game' : 'all your games')}
     <h2>Games</h2>${games.length ? games.map(card) : html`<p class="muted">You haven't published a game yet.</p>`}
     <h2>Things you sell</h2>${sold.length ? sold.map(card) : html`<p class="muted">Nothing sold yet.</p>`}`);
 };
@@ -2414,7 +2514,8 @@ pages.trade = async (id) => {
   if (!theirs.ok) { show(html`<h1>Trade</h1><p class="error">${theirs.error}</p>`); return; }
   if (theirs.hidden) { show(html`<h1>Trade</h1><p class="muted">${theirs.user.name} keeps their inventory private, so you can't trade with them.</p>`); return; }
   const pickList = (items, side) => items.length ? html`<div class="trade-pick">${items.map((i) => html`<label class="choice">
-      <input type="checkbox" name="${side}" value="${i.id}|${i.serial}"> ${i.name} <b>#${i.serial}</b></label>`)}</div>`
+      <input type="checkbox" name="${side}" value="${i.id}|${i.serial}"> ${i.name} <b>#${i.serial}</b>
+      <span class="small muted">${i.price > 0 ? 'Listed for ' + Number(i.price).toLocaleString() + ' Bolts' : 'Not currently listed for resale'}</span></label>`)}</div>`
     : html`<p class="muted">No tradable Limited U items.</p>`;
   show(html`<p><a href="#/user/${theirs.user.userId}">&lt; ${theirs.user.name}</a></p><h1>Trade with ${theirs.user.name}</h1>
     <form class="trade" data-form="tradeSend"><input type="hidden" name="to" value="${theirs.user.id}">
@@ -4087,6 +4188,15 @@ const actions = {
     catch { prompt('Copy this link:', link); }
   },
   serverPage(d) { serverPage = Number(d.to) || 1; render(); },
+  refreshServers() { serverPage = 1; render(); },
+  serverSort(d) {
+    const select = $('#serverSort');
+    if (!select) return;
+    serverPage = 1;
+    const params = new URLSearchParams(location.hash.split('?')[1] || '');
+    params.set('serverSort', select.value);
+    location.hash = '#/game/' + encodeURIComponent(d.id) + '?' + params.toString();
+  },
   toggle(d) { const el = $(d.target); if (el) el.hidden = !el.hidden; },
   async modelAccess(d) {
     const r = await call('model.access', { id: d.id, access: d.access });
@@ -5034,7 +5144,12 @@ const forms = {
   },
   async tradeSend(f) {
     const pick = (side) => [...f.querySelectorAll('input[name=' + side + ']:checked')].map((x) => { const [id, serial] = x.value.split('|'); return { id, serial: Number(serial) }; });
-    const r = await call('trade.send', { to: f.to.value, give: pick('give'), get: pick('get') });
+    const give = pick('give'), get = pick('get');
+    if (!give.length || !get.length) { toast('Pick at least one item on each side.'); return; }
+    const names = (side) => [...f.querySelectorAll('input[name=' + side + ']:checked')].map((x) => x.closest('label')?.textContent.replace(/\s+/g, ' ').trim() || 'Selected item').join(', ');
+    if (!confirm('Send this trade offer?\n\nYou give: ' + names('give') + '\n\nYou get: ' + names('get') +
+      '\n\nListed prices are asking prices, not appraisals. Check each item and serial number before sending.')) return;
+    const r = await call('trade.send', { to: f.to.value, give, get });
     if (!r.ok) { const m = $('#tradeMsg'); m.className = 'error'; m.textContent = ' ' + r.error; return; }
     toast('Trade offer sent!');
     location.hash = '#/trades';

@@ -395,6 +395,11 @@ const COSTLY = {
   'party.create':        [10, 30, 600],
   'party.invite':        [30, 90, 600],
   'party.send':          [60, 180, 600],
+  'team.create':         [5, 15, 600],
+  'team.join':           [20, 60, 600],
+  'team.poll':           [1500, 3000, 600],
+  'team.push':           [600, 1200, 600],
+  'team.snapshot':       [60, 180, 600],
   'party.game':          [20, 60, 600],
   'comments.post':       [30, 90, 600],
   'forum.post':          [10, 30, 600],
@@ -2558,7 +2563,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
     if (name.startsWith('mem.')) return this.memOp(name, me, args);
     if (name === 'http.request') return this.webOp(name, me, args);
-    if (name.startsWith('call.') || name === 'chat.inbox' || name === 'chat.bridge' || name === 'chat.unbridge' || name === 'presence.set') return this.chatOp(name, me, args);   // HttpService (game-web.js)
+    if (name.startsWith('call.') || name.startsWith('team.') || name === 'chat.inbox' || name === 'chat.bridge' || name === 'chat.unbridge' || name === 'presence.set') return this.chatOp(name, me, args);   // HttpService (game-web.js)
     if (name === 'game.secrets' || name === 'game.secretSet' || name === 'game.secretRemove') return this.secretOp(name, me, args);
     if (name.startsWith('learn.')) return this.learnOp(name, me, args);
     if (name.startsWith('roadmap.')) return this.roadmapOp(name, me, args);

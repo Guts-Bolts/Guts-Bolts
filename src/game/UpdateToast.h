@@ -1,3 +1,5 @@
+#include <string>
+
 #pragma once
 
 // Updates. On launch, if a newer version is out and this copy can update itself
@@ -10,4 +12,6 @@ namespace UpdateToast {
 // `canForce`: false while forcing would lose something (Studio with unsaved work, a
 // game being played) - then it waits. Returns true if the app should close to update.
 bool draw(const char* appName, bool canForce = true);
+// Open a URL using the current platform's normal browser handler.
+void openUrl(const std::string& url);
 }
