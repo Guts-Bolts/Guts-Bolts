@@ -151,6 +151,7 @@ void TeamCreate::cloudMembers(const json& members) {
         Member member;
         member.id = id;
         member.name = cleanText(m.value("name", std::string("Builder")), 20);
+        member.account = m.value("account", std::string());
         member.color = colorFor(m.value("color", id));
         member.selected = m.value("selected", (uint64_t)0);
         if (m.contains("cursor") && m["cursor"].is_object()) {
@@ -203,7 +204,7 @@ void TeamCreate::updateCloud(bool canApply) {
                     if (kind == "ops") m_pending.push_back(payload);
                     else if (kind == "chat") {
                         std::string from = "Builder";
-                        for (const auto& mem : m_members) if (mem.id == e.value("member", -1)) from = mem.name;
+                        for (const auto& mem : m_members) if (mem.account == e.value("account", std::string())) from = mem.name;
                         m_chat.push_back({from, cleanText(payload, 300), false});
                     }
                 }
@@ -231,6 +232,12 @@ void TeamCreate::updateCloud(bool canApply) {
 }
 
 void TeamCreate::leave() {
+    if (m_cloud && m_cloudReady && !m_cloudSession.empty())
+        Online::request("team.leave", {{"session", m_cloudSession}});
+    m_cloud = m_cloudReady = m_cloudOwner = false;
+    m_cloudPollPending = m_cloudPushPending = m_cloudPresencePending = false;
+    m_cloudSession.clear(); m_cloudCode.clear(); m_cloudChat.clear(); m_cloudAccount.clear();
+    m_cloudPushQueue.clear(); m_cloudSeq = 0;
     if (m_hosting) {
         for (auto& c : m_clients) {
             c->conn->send(json{{"t", "bye"}}.dump());
@@ -363,14 +370,21 @@ void TeamCreate::localChanged() {
     if (!active() || waiting()) return;
     std::string ops = diffLocal();
     if (ops.empty()) return;
-    send(json{{"t", "ops"}, {"ops", ops}}.dump());
+    if (m_cloud) cloudPush("ops", ops);
+    else send(json{{"t", "ops"}, {"ops", ops}}.dump());
 }
 
 void TeamCreate::setSelection(uint64_t id) { m_selection = id; }
+void TeamCreate::setCursor(const glm::vec3& world, bool active) { m_cursor = world; m_cursorActive = active; }
 
 void TeamCreate::say(const std::string& text) {
     std::string t = cleanText(text, 300);
     if (t.empty() || !active()) return;
+    if (m_cloud) {
+        m_chat.push_back({Profile::get().name, t});
+        cloudPush("chat", t);
+        return;
+    }
     if (m_hosting) {
         m_chat.push_back({Profile::get().name, t});
         send(json{{"t", "chat"}, {"from", Profile::get().name}, {"text", t}}.dump());
@@ -461,6 +475,7 @@ void TeamCreate::handle(const std::string& text, Client* from) {
 }
 
 void TeamCreate::update(bool canApply) {
+    if (m_cloud) { updateCloud(canApply); return; }
     if (m_hosting) {
         while (auto conn = m_listener.accept()) {
             auto c = std::make_unique<Client>();
