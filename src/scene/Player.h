@@ -195,7 +195,7 @@ public:
     static float strideRate(float speed)  { return speed * 1.8f; }                        // radians of the cycle per second
     static float strideSwing(float speed) { return speed < 0.05f ? 0.0f : std::min(62.0f, 18.0f + speed * 4.4f); }   // degrees
     glm::vec3 velocity() const { return m_velocity; }
-    void      launch(const glm::vec3& v) { m_velocity = v; m_grounded = false; }   // jump pads etc.
+    void      launch(const glm::vec3& v) { m_velocity = v; m_grounded = false; m_coyote = 0.0f; }   // jump pads etc.
 
     // --- Appearance ----------------------------------------------------------
     BodyColors bodyColors() const;
@@ -402,6 +402,8 @@ private:
     glm::vec3 m_sitSpot{0.0f};       // where our feet were when we sat down
     // BodyVelocity, BodyGyro... inside the character (flying, jetpacks).
     void  characterMovers(float dt);
+    float m_coyote = 0.0f;           // seconds left to still jump after walking off an edge
+    bool  m_moverDriven = false;     // a BodyVelocity / AlignPosition... drives us this frame (jetpacks, boards)
     bool  m_gyro = false;            // a BodyGyro / AlignOrientation holds our tilt
     float m_gyroTilt = 0.0f;         // ...at this (degrees, + = leaning forward)
     float m_wet = 0.0f;              // seconds you stay slippery after leaving a stream of liquid (a wet slide)
