@@ -695,7 +695,7 @@ pages.home = async () => {
     .slice(0, 8).map((entry) => entry.game) : [];
   const recommendedBox = signedIn() && recommendedGames.length ? html`<div class="box discovery-box">
       <h2 class="boxhead">Recommended for you<a href="#/games?sort=popular" style="float:right">See all &raquo;</a></h2>
-      <p class="small muted">Based on the genres of games you favourite and play.</p>
+      <p class="small muted">Based on the genres of games you favorite and play.</p>
       <div class="grid">${recommendedGames.map(gameCard)}</div></div>` : '';
   // Featured: games staff picked (only shown when there are some).
   const featuredBox = featured.ok && featured.assets.length ? html`<div class="box featured-box"><h2 class="boxhead">&#11088; Featured Games
