@@ -86,14 +86,15 @@ bool TeamCreate::hostCloud(std::string& error) {
     if (!Online::online() || Online::isGuest()) { error = "Sign in to Guts&Bolts first to host cloud Team Create."; return false; }
     leave();
     m_cloud = true; m_cloudOwner = true; m_cloudReady = false;
+    const uint64_t generation = ++m_cloudGeneration;
     m_cloudAccount = Online::me().value("id", std::string());
     if (m_cloudAccount.empty()) { m_cloud = false; error = "Your account session isn't ready."; return false; }
     m_cloudNextPoll = cloudNow();
     const std::string snapshot = Serializer::saveScene(*m_scene);
     std::weak_ptr<bool> alive = m_alive;
     Online::request("team.create", {{"title", m_scene->info().title}, {"snapshot", snapshot}},
-        [this, alive](const json& r) {
-            auto keep = alive.lock(); if (!keep || !*keep) return;
+        [this, alive, generation](const json& r) {
+            auto keep = alive.lock(); if (!keep || !*keep || generation != m_cloudGeneration || !m_cloud) return;
             if (!r.value("ok", false)) { m_error = r.value("error", std::string("Couldn't start cloud Team Create.")); m_cloud = false; return; }
             m_cloudSession = r.value("session", std::string());
             m_cloudCode = r.value("code", std::string());
@@ -111,15 +112,16 @@ bool TeamCreate::hostCloud(std::string& error) {
 bool TeamCreate::joinCloud(const std::string& code, std::string& error) {
     if (!Online::online() || Online::isGuest()) { error = "Sign in to Guts&Bolts first to join cloud Team Create."; return false; }
     const std::string invite = cleanText(code, 16);
-    if (invite.size() != 8) { error = "Enter the eight-character invite code."; return false; }
+    if (invite.size() != 16) { error = "Enter the 16-character invite code."; return false; }
     leave();
     m_cloud = true; m_cloudOwner = false; m_cloudReady = false;
+    const uint64_t generation = ++m_cloudGeneration;
     m_cloudAccount = Online::me().value("id", std::string());
     if (m_cloudAccount.empty()) { m_cloud = false; error = "Your account session isn't ready."; return false; }
     std::weak_ptr<bool> alive = m_alive;
     Online::request("team.join", {{"code", invite}},
-        [this, alive](const json& r) {
-            auto keep = alive.lock(); if (!keep || !*keep) return;
+        [this, alive, generation](const json& r) {
+            auto keep = alive.lock(); if (!keep || !*keep || generation != m_cloudGeneration || !m_cloud) return;
             if (!r.value("ok", false)) { m_error = r.value("error", std::string("Couldn't join cloud Team Create.")); m_cloud = false; return; }
             std::string loadError;
             if (!Serializer::loadScene(*m_scene, r.value("snapshot", std::string()), &loadError)) {
@@ -172,8 +174,8 @@ void TeamCreate::cloudPush(const std::string& kind, const std::string& payload) 
     m_cloudPushPending = true;
     std::weak_ptr<bool> alive = m_alive;
     Online::request("team.push", {{"session", m_cloudSession}, {"kind", item.first}, {"payload", item.second}},
-        [this, alive](const json& r) {
-            auto keep = alive.lock(); if (!keep || !*keep) return;
+        [this, alive, generation](const json& r) {
+            auto keep = alive.lock(); if (!keep || !*keep || generation != m_cloudGeneration) return;
             m_cloudPushPending = false;
             if (!r.value("ok", false)) m_error = r.value("error", std::string("A Team Create update couldn't be sent."));
             cloudPush("", "");
@@ -191,8 +193,8 @@ void TeamCreate::updateCloud(bool canApply) {
         json cursor = nullptr;
         if (m_cursorActive) cursor = {{"x", m_cursor.x}, {"y", m_cursor.y}, {"z", m_cursor.z}};
         Online::request("team.poll", {{"session", m_cloudSession}, {"after", after}, {"selected", m_selection}, {"cursor", cursor}},
-            [this, alive](const json& r) {
-                auto keep = alive.lock(); if (!keep || !*keep) return;
+            [this, alive, generation](const json& r) {
+                auto keep = alive.lock(); if (!keep || !*keep || generation != m_cloudGeneration) return;
                 m_cloudPollPending = false;
                 if (!r.value("ok", false)) { m_error = r.value("error", std::string("Lost the cloud Team Create session.")); return; }
                 if (r.contains("members")) cloudMembers(r["members"]);
@@ -232,8 +234,8 @@ void TeamCreate::updateCloud(bool canApply) {
         std::weak_ptr<bool> alive = m_alive;
         const std::string snapshot = Serializer::saveScene(*m_scene);
         Online::request("team.snapshot", {{"session", m_cloudSession}, {"snapshot", snapshot}, {"upto", m_cloudSeq}},
-            [this, alive](const json& r) {
-                auto keep = alive.lock(); if (!keep || !*keep) return;
+            [this, alive, generation](const json& r) {
+                auto keep = alive.lock(); if (!keep || !*keep || generation != m_cloudGeneration) return;
                 m_cloudSnapshotPending = false;
                 if (!r.value("ok", false)) m_error = r.value("error", std::string("Couldn't checkpoint the shared scene."));
             }, 20);
@@ -241,12 +243,13 @@ void TeamCreate::updateCloud(bool canApply) {
 }
 
 void TeamCreate::leave() {
+    ++m_cloudGeneration;
     if (m_cloud && m_cloudReady && !m_cloudSession.empty())
         Online::request("team.leave", {{"session", m_cloudSession}});
     m_cloud = m_cloudReady = m_cloudOwner = false;
-    m_cloudPollPending = m_cloudPushPending = m_cloudPresencePending = false;
+    m_cloudPollPending = m_cloudPushPending = m_cloudSnapshotPending = false;
     m_cloudSession.clear(); m_cloudCode.clear(); m_cloudChat.clear(); m_cloudAccount.clear();
-    m_cloudPushQueue.clear(); m_cloudSeq = 0;
+    m_cloudPushQueue.clear(); m_cloudSeq = 0; m_cloudNextPoll = m_cloudNextSnapshot = 0.0;
     if (m_hosting) {
         for (auto& c : m_clients) {
             c->conn->send(json{{"t", "bye"}}.dump());
