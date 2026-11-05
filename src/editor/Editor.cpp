@@ -61,8 +61,6 @@
 #include <filesystem>
 #include <vector>
 
-void openUrl(const std::string& url);
-
 namespace {
 const char* kNewScript =
 R"(-- A new script! It runs when you press Play (F5).
@@ -4157,7 +4155,7 @@ void Editor::renderTeamPanel() {
                 glfwSetClipboardString(m_window, m_team->inviteCode().c_str());
             ImGui::SameLine();
             if (ImGui::Button("Open team voice chat"))
-                openUrl("https://gutsandbolts.net/app/#/chat/" + m_team->chatId());
+                UpdateToast::openUrl("https://gutsandbolts.net/app/#/chat/" + m_team->chatId());
             ImGui::TextDisabled("Voice calls use the existing Guts&Bolts chat call system. Open Chat in the website to call this team.");
         }
         if (!m_team->error().empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", m_team->error().c_str());
