@@ -4154,9 +4154,9 @@ void Editor::renderTeamPanel() {
             if (m_team->hosting() && ImGui::Button("Copy invite code"))
                 glfwSetClipboardString(m_window, m_team->inviteCode().c_str());
             ImGui::SameLine();
-            if (ImGui::Button("Open team voice chat"))
+            if (ImGui::Button("Start or join team voice call"))
                 UpdateToast::openUrl("https://gutsandbolts.net/app/#/chat/" + m_team->chatId() + "?call=1");
-            ImGui::TextDisabled("Voice calls use the existing Guts&Bolts chat call system. Open Chat in the website to call this team.");
+            ImGui::TextDisabled("Opens the team chat in your browser and starts or joins its existing voice call.");
         }
         if (!m_team->error().empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", m_team->error().c_str());
         for (const auto& mem : m_team->members()) {
