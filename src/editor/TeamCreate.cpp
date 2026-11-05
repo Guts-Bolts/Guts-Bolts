@@ -135,6 +135,7 @@ bool TeamCreate::joinCloud(const std::string& code, std::string& error) {
             m_cloudChat = r.value("chat", std::string());
             m_myId = r.value("member", 1);
             m_cloudSeq = r.value("seq", (uint64_t)0);
+            m_cloudReplayOwnUntil = r.value("latestSeq", m_cloudSeq);
             SceneNode::reserveId(kIdSpacing * (uint64_t)m_myId);
             cloudMembers(r.value("members", json::array()));
             m_cloudReady = !m_cloudSession.empty();
@@ -218,7 +219,7 @@ void TeamCreate::updateCloud(bool canApply) {
                     const uint64_t seq = e.value("seq", (uint64_t)0);
                     if (seq <= m_cloudSeq) continue;
                     m_cloudSeq = seq;
-                    if (e.value("account", std::string()) == m_cloudAccount) continue;
+                    if (e.value("account", std::string()) == m_cloudAccount && seq > m_cloudReplayOwnUntil) continue;
                     const std::string kind = e.value("kind", std::string());
                     const std::string payload = e.value("payload", std::string());
                     if (kind == "ops") m_pending.push_back(payload);
@@ -228,6 +229,7 @@ void TeamCreate::updateCloud(bool canApply) {
                         m_chat.push_back({from, cleanText(payload, 300), false});
                     }
                 }
+                if (m_cloudReplayOwnUntil && m_cloudSeq >= m_cloudReplayOwnUntil) m_cloudReplayOwnUntil = 0;
             }, 10);
     }
     if (canApply && !m_pending.empty()) {
@@ -258,7 +260,7 @@ void TeamCreate::leave() {
     m_cloud = m_cloudReady = m_cloudOwner = false;
     m_cloudPollPending = m_cloudPushPending = m_cloudSnapshotPending = false;
     m_cloudSession.clear(); m_cloudCode.clear(); m_cloudChat.clear(); m_cloudAccount.clear();
-    m_cloudPushQueue.clear(); m_cloudSeq = 0; m_cloudNextPoll = m_cloudNextSnapshot = 0.0;
+    m_cloudPushQueue.clear(); m_cloudSeq = m_cloudReplayOwnUntil = 0; m_cloudNextPoll = m_cloudNextSnapshot = 0.0;
     if (m_hosting) {
         for (auto& c : m_clients) {
             c->conn->send(json{{"t", "bye"}}.dump());
