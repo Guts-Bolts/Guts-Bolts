@@ -61,6 +61,8 @@
 #include <filesystem>
 #include <vector>
 
+void openUrl(const std::string& url);
+
 namespace {
 const char* kNewScript =
 R"(-- A new script! It runs when you press Play (F5).
@@ -3990,19 +3992,33 @@ void Editor::renderDialogs() {
             ImGui::SameLine();
             if (ImGui::Button("Close", ImVec2(100, 0))) ImGui::CloseCurrentPopup();
         } else {
-            ImGui::TextWrapped("Build a game together! Everyone sees everyone else's changes as they happen.");
-            ImGui::SeparatorText("Host");
-            ImGui::TextWrapped("Share the game that's open right now. Friends join with your address.");
-            if (ImGui::Button("Start Team Create", ImVec2(200, 0))) {
+            ImGui::TextWrapped("Build a game together. Cloud sessions let signed-in Studio users join over the internet without exposing a host computer's IP address.");
+            ImGui::SeparatorText("Cloud session");
+            if (!Online::online() || Online::isGuest()) ImGui::TextDisabled("Sign in to Guts&Bolts to host or join a cloud session.");
+            ImGui::BeginDisabled(!Online::online() || Online::isGuest());
+            if (ImGui::Button("Host cloud Team Create", ImVec2(220, 0))) {
+                std::string err;
+                if (m_team->hostCloud(err)) ImGui::CloseCurrentPopup();
+                else m_teamError = err;
+            }
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##tccloudcode", "8-character invite code", &m_teamAddress);
+            if (ImGui::Button("Join cloud session", ImVec2(180, 0))) {
+                std::string err;
+                if (m_team->joinCloud(m_teamAddress, err)) ImGui::CloseCurrentPopup();
+                else m_teamError = err;
+            }
+            ImGui::EndDisabled();
+            ImGui::SeparatorText("Local network (same LAN)");
+            ImGui::TextWrapped("The original direct TCP host/join mode remains available for local networks.");
+            if (ImGui::Button("Start local Team Create", ImVec2(220, 0))) {
                 std::string err;
                 if (m_team->host(kTeamCreatePort, err)) ImGui::CloseCurrentPopup();
                 else m_teamError = err;
             }
-            ImGui::SeparatorText("Join");
-            ImGui::TextWrapped("Joining replaces what you have open with the host's game (save first!).");
             ImGui::SetNextItemWidth(-1);
-            ImGui::InputTextWithHint("##tcaddr", "host address, e.g. 192.168.1.20", &m_teamAddress);
-            if (ImGui::Button("Join", ImVec2(120, 0))) {
+            ImGui::InputTextWithHint("##tcaddr", "local host address, e.g. 192.168.1.20", &m_teamAddress);
+            if (ImGui::Button("Join local session", ImVec2(180, 0))) {
                 std::string err;
                 if (m_team->join(m_teamAddress, err)) ImGui::CloseCurrentPopup();
                 else m_teamError = err;
@@ -4132,7 +4148,18 @@ void Editor::renderTeamPanel() {
             if (ImGui::Button("Start or join Team Create...")) m_openTeam = true;
         }
     } else {
-        ImGui::TextDisabled(m_team->hosting() ? "Hosting Team Create" : "In Team Create");
+        ImGui::TextDisabled(m_team->cloud() ? (m_team->hosting() ? "Hosting cloud Team Create" : "In cloud Team Create")
+                                             : (m_team->hosting() ? "Hosting local Team Create" : "In local Team Create"));
+        if (m_team->cloud()) {
+            ImGui::Text("Invite code: %s", m_team->inviteCode().c_str());
+            if (m_team->hosting() && ImGui::Button("Copy invite code"))
+                glfwSetClipboardString(m_window, m_team->inviteCode().c_str());
+            ImGui::SameLine();
+            if (ImGui::Button("Open team voice chat"))
+                openUrl("https://gutsandbolts.net/app/");
+            ImGui::TextDisabled("Voice calls use the existing Guts&Bolts chat call system. Open Chat in the website to call this team.");
+        }
+        if (!m_team->error().empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", m_team->error().c_str());
         for (const auto& mem : m_team->members()) {
             ImVec2 p = ImGui::GetCursorScreenPos();
             float h = ImGui::GetTextLineHeight();
