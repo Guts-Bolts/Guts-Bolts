@@ -5,6 +5,7 @@
 #include <fstream>
 #include <string>
 #include "Paths.h"
+#include "KeyBinds.h"
 
 namespace {
 std::string settingsFile() { return Paths::file("settings.json").string(); }
@@ -83,6 +84,7 @@ void GraphicsSettings::load() {
     rd("voiceChat", voiceChat); rd("voiceOpenMic", voiceOpenMic); rd("voiceVolume", voiceVolume);
     rd("translateChat", translateChat);
     rd("studioBlenderKeys", studioBlenderKeys);
+    if (j.contains("keys")) KeyBinds::fromJson(j["keys"], keys);
     rd("colorBlind", colorBlind); rd("textSize", textSize); rd("captions", captions); rd("clipRecorder", clipRecorder);
     colorBlind = std::clamp(colorBlind, 0, 3);
     textSize = std::clamp(textSize, 1.0f, 2.0f);
@@ -220,6 +222,7 @@ void GraphicsSettings::save() const {
         {"waterQuality", waterQuality}, {"graphicsApi", graphicsApi}, {"renderDistance", renderDistance},
         {"studioBlenderKeys", studioBlenderKeys},
     };
+    if (nlohmann::json k = KeyBinds::toJson(keys); !k.empty()) j["keys"] = k;
     std::ofstream f(settingsFile());
     if (f) f << j.dump(2);
 }

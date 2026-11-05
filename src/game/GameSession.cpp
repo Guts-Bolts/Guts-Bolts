@@ -4,6 +4,7 @@
 #include "../scene/LegacyJoints.h"
 #include "../scene/IkControls.h"
 #include "../core/Pad.h"
+#include "../core/KeyBinds.h"
 #include "../scene/Serializer.h"
 #include "../scripting/LuaApi.h"   // SignalKind (tool events)
 #include "../scene/Scene.h"
@@ -398,12 +399,12 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
             float yaw = glm::radians(cameraYaw);
             glm::vec3 fwd   = glm::normalize(glm::vec3(-std::cos(yaw), 0.0f, -std::sin(yaw)));
             glm::vec3 right = glm::vec3(-fwd.z, 0.0f, fwd.x);
-            if (down(ImGuiKey_W) || down(ImGuiKey_UpArrow))    move += fwd;
-            if (down(ImGuiKey_S) || down(ImGuiKey_DownArrow))  move -= fwd;
-            if (down(ImGuiKey_D) || down(ImGuiKey_RightArrow)) move += right;
-            if (down(ImGuiKey_A) || down(ImGuiKey_LeftArrow))  move -= right;
-            jump = down(ImGuiKey_Space);
-            dive = down(ImGuiKey_C) || down(ImGuiKey_LeftCtrl);
+            if (down(KeyBinds::key(KeyBinds::Forward)) || down(ImGuiKey_UpArrow))  move += fwd;
+            if (down(KeyBinds::key(KeyBinds::Back)) || down(ImGuiKey_DownArrow))   move -= fwd;
+            if (down(KeyBinds::key(KeyBinds::Right)) || down(ImGuiKey_RightArrow)) move += right;
+            if (down(KeyBinds::key(KeyBinds::Left)) || down(ImGuiKey_LeftArrow))   move -= right;
+            jump = down(KeyBinds::key(KeyBinds::Jump));   // (Settings > Change keys can move these)
+            dive = down(KeyBinds::key(KeyBinds::Dive)) || down(ImGuiKey_LeftCtrl);
             // Touch thumbstick: partly pushed = walk slower.
             move += right * m_touchMove.x + fwd * m_touchMove.y;
             jump = jump || m_touchJump;
@@ -419,8 +420,8 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         // (Not listening to keys, e.g. typing in chat: the keys lapse and it slows down.)
         SceneNode* seat = p->seatId() ? m_scene->findById(p->seatId()) : nullptr;
         if (seat && Vehicles::isVehicleSeat(seat) && acceptInput && !ImGui::GetIO().WantTextInput) {
-            float throttle = (down(ImGuiKey_W) || down(ImGuiKey_UpArrow) ? 1.0f : 0.0f) - (down(ImGuiKey_S) || down(ImGuiKey_DownArrow) ? 1.0f : 0.0f);
-            float steer = (down(ImGuiKey_D) || down(ImGuiKey_RightArrow) ? 1.0f : 0.0f) - (down(ImGuiKey_A) || down(ImGuiKey_LeftArrow) ? 1.0f : 0.0f);
+            float throttle = (down(KeyBinds::key(KeyBinds::Forward)) || down(ImGuiKey_UpArrow) ? 1.0f : 0.0f) - (down(KeyBinds::key(KeyBinds::Back)) || down(ImGuiKey_DownArrow) ? 1.0f : 0.0f);
+            float steer = (down(KeyBinds::key(KeyBinds::Right)) || down(ImGuiKey_RightArrow) ? 1.0f : 0.0f) - (down(KeyBinds::key(KeyBinds::Left)) || down(ImGuiKey_LeftArrow) ? 1.0f : 0.0f);
             throttle += m_touchMove.y;
             steer += m_touchMove.x;
             if (Pad::connected()) { throttle += Pad::leftStick().y; steer += Pad::leftStick().x; }

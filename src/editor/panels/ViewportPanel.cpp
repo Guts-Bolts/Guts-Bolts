@@ -1,6 +1,7 @@
 #include "ViewportPanel.h"
 #include "../../core/Pad.h"
 #include "../../core/Settings.h"
+#include "../../core/KeyBinds.h"
 #include "../../game/GameGui.h"
 #include <stb_image_write.h>   // (its code is in renderer/Textures.cpp)
 #include <string>
@@ -203,7 +204,7 @@ void ViewportPanel::handleInput(float dt) {
         // Shift toggles Shift Lock, same as in the Player app.
         if (!GraphicsSettings::get().shiftLockSwitch) m_shiftLock = false;
         else if (!io.WantTextInput && !firstPerson &&
-                 (ImGui::IsKeyPressed(ImGuiKey_LeftShift, false) || ImGui::IsKeyPressed(ImGuiKey_RightShift, false)))
+                 KeyBinds::shiftLockPressed())
             m_shiftLock = !m_shiftLock;
         if ((firstPerson || (m_shiftLock && !m_camera.noInput)) && !io.WantTextInput && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
             // First person / Shift Lock: the hidden mouse looks around (Esc / F5 stops playing as usual).
