@@ -203,7 +203,7 @@ export function installChats(Cls) {
       } else {
         this.sql.exec('UPDATE teammembers SET seen = ? WHERE session = ? AND account = ?', now(), row.id, me.id);
       }
-      return okay({ session: row.id, code, chat: row.chat, member: memberId, seq: row.snapshot_seq, snapshotSeq: row.snapshot_seq, snapshot: row.snapshot, members: this.teamMembers(row.id) });
+      return okay({ session: row.id, code, chat: row.chat, member: memberId, owner: row.owner === me.id, seq: row.snapshot_seq, snapshotSeq: row.snapshot_seq, snapshot: row.snapshot, members: this.teamMembers(row.id) });
     }
     const session = clean(args.session, 40);
     const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq, snapshot_seq FROM teamsessions WHERE id = ?', session)][0];
