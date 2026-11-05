@@ -267,6 +267,30 @@ that one too. Then only the other person's changes are listed, and an object you
 changed is marked as a **Conflict** (not ticked, so you decide). The Assistant can do all
 this with the `compare_scenes` tool.
 
+### Team development workflow (merge-based)
+
+Guts&Bolts supports team development through group-owned games, saved project copies,
+Studio's Compare and Merge, named checkpoints and published game version history.
+
+1. Create a group and give each teammate the group rank and permissions they need.
+   To assign a game to the group, use its Configure page; the person doing this needs
+   the group's **Add games** permission.
+2. Have each developer work from their own saved copy. Before combining work, agree
+   on a common starting version and keep it unchanged as the merge base.
+3. In Studio, open **TEST > Compare** (or **View > Compare and Merge**), choose the
+   other developer's copy, tick **I have the version we both started from**, and
+   select the shared base. Review conflicts object by object rather than accepting
+   both sides blindly.
+4. Make a named checkpoint before applying a large merge. Run the multiplayer test
+   and scene validation, then publish through the account authorized to update the
+   group-owned game.
+5. Use the game's **Version history** on Configure to review who published a version
+   and restore a previous release if a merge causes a regression.
+
+This is a safe, explicit merge workflow, not live simultaneous editing. Real-time
+co-editing, shared cursors and edit locks require a separate shared-session protocol;
+the current editor does not claim to synchronize two people's unsaved changes.
+
 ### Testing with more than one player
 
 Play is just you. To see how your game works with other people, use
