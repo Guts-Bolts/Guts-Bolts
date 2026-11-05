@@ -98,7 +98,7 @@ private:
     bool          m_cloud = false, m_cloudReady = false, m_cloudOwner = false;
     bool          m_cloudPollPending = false, m_cloudPushPending = false, m_cloudSnapshotPending = false;
     std::string   m_cloudSession, m_cloudCode, m_cloudChat, m_cloudAccount;
-    uint64_t      m_cloudSeq = 0, m_cloudGeneration = 0;
+    uint64_t      m_cloudSeq = 0, m_cloudGeneration = 0, m_cloudReplayOwnUntil = 0;
     glm::vec3     m_cursor{0.0f};
     bool          m_cursorActive = false;
     double        m_cloudNextPoll = 0.0, m_cloudNextSnapshot = 0.0;
