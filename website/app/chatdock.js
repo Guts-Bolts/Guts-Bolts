@@ -367,7 +367,15 @@ export function mountChatPage(root, chatId = '') {
   if (pagePanel) pagePanel.destroy();
   root.classList.add('cd-panel', 'cd-page');
   pagePanel = new Panel(root, { page: true, chat: chatId });
-  refresh();
+  const autoCall = new URLSearchParams((location.hash.split('?')[1] || '')).get('call') === '1';
+  refresh().then(() => {
+    // Studio can deep-link into a team's existing chat and start/join its call.
+    // Keep this opt-in to an explicit call=1 link and ignore navigation races.
+    const target = '#/chat/' + encodeURIComponent(chatId) + '?call=1';
+    if (!autoCall || !chatId || location.hash !== target) return;
+    const row = inbox.chats.find((x) => x.id === chatId);
+    if (row) startCall(chatId, titleOf(row));
+  });
   updateDock();
 }
 
