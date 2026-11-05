@@ -56,7 +56,7 @@ bool TeamCreate::host(int port, std::string& error) {
     m_hosting = true;
     m_myId = 0;
     m_nextId = 1;
-    m_members = {{0, Profile::get().name, colorFor(0), 0}};
+    m_members = {{0, Profile::get().name, "", colorFor(0), 0, {}, false}};
     snapshotSynced();
     std::string ips = Net::localAddresses();
     addSystem("Team Create started on port " + std::to_string(port) + ". Others can join with " +
@@ -427,7 +427,7 @@ void TeamCreate::handle(const std::string& text, Client* from) {
         if (t == "hello" && !from->joined) {
             from->name = cleanText(m.value("name", std::string("Builder")), 20);
             from->joined = true;
-            m_members.push_back({from->id, from->name, colorFor(from->id), 0});
+            m_members.push_back({from->id, from->name, "", colorFor(from->id), 0, {}, false});
             json members = json::array();
             for (auto& mm : m_members) members.push_back({{"id", mm.id}, {"name", mm.name}, {"sel", mm.selected}});
             from->conn->send(json{{"t", "welcome"}, {"id", from->id}, {"scene", Serializer::saveScene(*m_scene)},
@@ -467,9 +467,9 @@ void TeamCreate::handle(const std::string& text, Client* from) {
         m_members.clear();
         for (auto& mm : m["members"]) {
             int id = mm.value("id", 0);
-            m_members.push_back({id, mm.value("name", std::string()), colorFor(id), mm.value("sel", (uint64_t)0)});
+            m_members.push_back({id, mm.value("name", std::string()), "", colorFor(id), mm.value("sel", (uint64_t)0), {}, false});
         }
-        if (!member(m_myId)) m_members.push_back({m_myId, Profile::get().name, colorFor(m_myId), 0});
+        if (!member(m_myId)) m_members.push_back({m_myId, Profile::get().name, "", colorFor(m_myId), 0, {}, false});
         m_joined = true;
         snapshotSynced();
         m_remoteEdit = true;
@@ -478,7 +478,7 @@ void TeamCreate::handle(const std::string& text, Client* from) {
         m_pending.push_back(m.value("ops", std::string()));
     } else if (t == "joined") {
         int id = m.value("id", 0);
-        m_members.push_back({id, m.value("name", std::string()), colorFor(id), 0});
+        m_members.push_back({id, m.value("name", std::string()), "", colorFor(id), 0, {}, false});
         addSystem(m.value("name", std::string()) + " joined Team Create");
     } else if (t == "left") {
         int id = m.value("id", 0);
