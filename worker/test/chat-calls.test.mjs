@@ -175,6 +175,25 @@ test('the gateway is off until its secret is set', () => {
 });
 
 
+
+test('cloud Team Create paginates edit events into bounded poll responses', () => {
+  const { s, alice, bob } = setup();
+  const made = s.call(alice, 'team.create', { snapshot: '{"scene":"empty"}' });
+  assert.ok(made.ok, made.error);
+  assert.ok(s.call(bob, 'team.join', { code: made.code }).ok);
+  for (let i = 0; i < 15; i++) {
+    const pushed = s.call(bob, 'team.push', { session: made.session, kind: 'ops', payload: JSON.stringify({ n: i }) });
+    assert.ok(pushed.ok, pushed.error);
+  }
+  const first = s.call(alice, 'team.poll', { session: made.session, after: 0 });
+  assert.equal(first.events.length, 12);
+  const last = first.events.at(-1).seq;
+  const second = s.call(alice, 'team.poll', { session: made.session, after: last });
+  assert.equal(second.events.length, 3);
+  assert.equal(second.events.at(-1).seq, 15);
+  assert.ok(s.call(alice, 'team.leave', { session: made.session }).ok);
+});
+
 test('cloud Team Create snapshots compact acknowledged events and force stale clients to resync', () => {
   const { s, alice, bob } = setup();
   const made = s.call(alice, 'team.create', { title: 'Snapshot test', snapshot: '{"scene":"v1"}' });
