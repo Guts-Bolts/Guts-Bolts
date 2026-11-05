@@ -194,6 +194,14 @@ void TeamCreate::updateCloud(bool canApply) {
                 m_cloudPollPending = false;
                 if (!r.value("ok", false)) { m_error = r.value("error", std::string("Lost the cloud Team Create session.")); return; }
                 if (r.contains("members")) cloudMembers(r["members"]);
+                if (r.value("resync", false) && r.contains("snapshot")) {
+                    std::string loadError;
+                    if (Serializer::loadScene(*m_scene, r.value("snapshot", std::string()), &loadError)) {
+                        m_cloudSeq = r.value("snapshotSeq", (uint64_t)0);
+                        snapshotSynced();
+                        m_remoteEdit = true;
+                    } else m_error = "Couldn't resync the cloud scene: " + loadError;
+                }
                 if (r.contains("events") && r["events"].is_array()) for (const auto& e : r["events"]) {
                     const uint64_t seq = e.value("seq", (uint64_t)0);
                     if (seq <= m_cloudSeq) continue;
@@ -229,6 +237,18 @@ void TeamCreate::updateCloud(bool canApply) {
     }
     std::string ops = diffLocal();
     if (!ops.empty()) cloudPush("ops", ops);
+    if (m_cloudOwner && canApply && m_pending.empty() && t >= m_cloudNextSnapshot && !m_cloudSnapshotPending) {
+        m_cloudSnapshotPending = true;
+        m_cloudNextSnapshot = t + 15.0;
+        std::weak_ptr<bool> alive = m_alive;
+        const std::string snapshot = Serializer::saveScene(*m_scene);
+        Online::request("team.snapshot", {{"session", m_cloudSession}, {"snapshot", snapshot}, {"upto", m_cloudSeq}},
+            [this, alive](const json& r) {
+                auto keep = alive.lock(); if (!keep || !*keep) return;
+                m_cloudSnapshotPending = false;
+                if (!r.value("ok", false)) m_error = r.value("error", std::string("Couldn't checkpoint the shared scene."));
+            }, 20);
+    }
 }
 
 void TeamCreate::leave() {
