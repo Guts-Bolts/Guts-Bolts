@@ -101,9 +101,17 @@ json GbServer::socialOp(const std::string& name, User& me, const json& args) {
                 auto it = m_users.find(id);
                 if (it == m_users.end() || it->second.banned || blocks(me, it->second) || !it->second.posts.is_array()) continue;
                 const User& u = it->second;
+                // Feed avatars need the same resolved catalog items as profile/friends avatars.
+                // The avatar JSON only stores equipped item IDs; avatarPicture needs the item
+                // metadata to render clothing textures and accessories.
+                json wearing = json::array();
+                if (u.avatar.is_object() && u.avatar.contains("wearing") && u.avatar["wearing"].is_array())
+                    for (const json& id : u.avatar["wearing"])
+                        if (id.is_string())
+                            if (json w = wearableJson(id.get<std::string>()); !w.is_null()) wearing.push_back(w);
                 for (size_t k = 0; k < u.posts.size() && k < 5; ++k)
                     all.push_back({{"text", u.posts[k].value("text", std::string())}, {"at", u.posts[k].value("at", 0LL)},
-                                   {"user", {{"id", u.id}, {"userId", u.userId}, {"name", u.name}, {"verified", isVerified(u)}, {"club", clubOf(u)}, {"avatar", u.avatar}}}});
+                                   {"user", {{"id", u.id}, {"userId", u.userId}, {"name", u.name}, {"verified", isVerified(u)}, {"club", clubOf(u)}, {"avatar", u.avatar}, {"wearing", wearing}}}});
             }
             for (const json& note : gameLogFeed(me)) all.push_back(note);   // what's new in games you favourited (ServerExtras.cpp)
             std::sort(all.begin(), all.end(), [](const json& a, const json& b) { return a.value("at", 0LL) > b.value("at", 0LL); });
