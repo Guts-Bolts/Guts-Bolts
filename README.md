@@ -291,6 +291,19 @@ This is a safe, explicit merge workflow, not live simultaneous editing. Real-tim
 co-editing, shared cursors and edit locks require a separate shared-session protocol;
 the current editor does not claim to synchronize two people's unsaved changes.
 
+The existing **Team Create** mode is a separate live scene-sharing feature: the host
+sends object and settings changes to connected editors, and selected objects are
+outlined for collaborators. Collaborator orbs now mark the selected object's
+position and show the editor's name. The orb follows the selected object; it is not
+a walking avatar or a free-moving cursor.
+
+Team Create's current host/join transport is direct TCP. It is not yet the same
+authenticated, internet-routable session model as the website. Website voice calls
+use browser WebRTC and require membership in a Guts&Bolts chat. A secure Studio
+voice-call integration therefore needs authenticated Team Create membership and
+a bridge from that session to a shared chat before it can safely reuse the call
+service. The native Studio client does not yet join those browser calls.
+
 ### Testing with more than one player
 
 Play is just you. To see how your game works with other people, use
@@ -3256,6 +3269,12 @@ split into boards:
 - Whoever started a thread gets a notification when someone replies.
 - Blocked people's posts are hidden from you, and they can't reply to your threads.
 - The code is `forum.*` in `worker/server.js` and `src/server/ServerForum.cpp`.
+
+**Code snippets:** In the website forum and chat, wrap a snippet in triple backticks
+to display it in a separate, copyable code panel. Add a language after the opening
+fence when useful (for example, `lua` or `javascript`). The panel displays code
+as text; it never runs it. Use **Insert code block** in forum composers or **Code**
+in chat to add the fence around selected text.
 
 ### Creator stats (how your stuff is doing)
 
