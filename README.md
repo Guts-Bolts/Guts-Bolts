@@ -298,8 +298,9 @@ with the normal signed Guts&Bolts account API, stores the session and ordered ed
 events in the server Durable Object's SQLite database, and limits a session to 20
 members. It does not expose the host's IP address. The host checkpoints the scene
 snapshot every 15 seconds; clients replay ordered changes and resync from the
-latest checkpoint if they fall behind. The original direct-TCP host/join mode is
-still available for local networks.
+latest checkpoint if they fall behind. If a host disconnects without ending the
+session, it can rejoin with the same code and replay edits after its last checkpoint.
+The original direct-TCP host/join mode is still available for local networks.
 
 Team Create synchronizes selected objects and free world-space cursor positions.
 Each collaborator gets a colour-coded orb and username in the viewport; the orb
