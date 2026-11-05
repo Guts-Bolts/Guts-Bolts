@@ -223,7 +223,7 @@ export function installChats(Cls) {
       if (after < row.snapshot_seq)
         return okay({ session, seq: row.seq, resync: true, snapshotSeq: row.snapshot_seq, snapshot: row.snapshot,
           events: [], members: this.teamMembers(session), chat: row.chat });
-      const events = [...this.sql.exec('SELECT seq, account, kind, payload, at FROM teamevents WHERE session = ? AND seq > ? ORDER BY seq LIMIT 100', session, after)]
+      const events = [...this.sql.exec('SELECT seq, account, kind, payload, at FROM teamevents WHERE session = ? AND seq > ? ORDER BY seq LIMIT 12', session, after)]
         .map((e) => ({ seq: e.seq, account: e.account, kind: e.kind, payload: e.payload, at: e.at }));
       return okay({ session, seq: row.seq, events, members: this.teamMembers(session), chat: row.chat });
     }
