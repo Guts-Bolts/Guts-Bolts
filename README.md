@@ -291,18 +291,28 @@ This is a safe, explicit merge workflow, not live simultaneous editing. Real-tim
 co-editing, shared cursors and edit locks require a separate shared-session protocol;
 the current editor does not claim to synchronize two people's unsaved changes.
 
-The existing **Team Create** mode is a separate live scene-sharing feature: the host
-sends object and settings changes to connected editors, and selected objects are
-outlined for collaborators. Collaborator orbs now mark the selected object's
-position and show the editor's name. The orb follows the selected object; it is not
-a walking avatar or a free-moving cursor.
+**Cloud Team Create** is available to signed-in Studio accounts from the Team
+Create dialog. The host starts a cloud session and shares a 16-character invite
+code; collaborators join with that code. The server authenticates each request
+with the normal signed Guts&Bolts account API, stores the session and ordered edit
+events in the server Durable Object's SQLite database, and limits a session to 20
+members. It does not expose the host's IP address. The host checkpoints the scene
+snapshot every 15 seconds; clients replay ordered changes and resync from the
+latest checkpoint if they fall behind. The original direct-TCP host/join mode is
+still available for local networks.
 
-Team Create's current host/join transport is direct TCP. It is not yet the same
-authenticated, internet-routable session model as the website. Website voice calls
-use browser WebRTC and require membership in a Guts&Bolts chat. A secure Studio
-voice-call integration therefore needs authenticated Team Create membership and
-a bridge from that session to a shared chat before it can safely reuse the call
-service. The native Studio client does not yet join those browser calls.
+Team Create synchronizes selected objects and free world-space cursor positions.
+Each collaborator gets a colour-coded orb and username in the viewport; the orb
+tracks the point under their mouse, while the existing selection outline identifies
+the object they are editing. Presence expires when a collaborator stops sending
+heartbeats.
+
+A cloud Team Create session also creates a shared Guts&Bolts group chat. Studio's
+**Open team voice chat** button deep-links to that chat in the website, where the
+existing WebRTC voice-call controls are available. The microphone and WebRTC audio
+still run in the browser; the native Studio app does not yet embed the WebRTC
+client or render call controls/audio directly inside its own window. Calls without
+the configured TURN relay retain the existing friend-to-friend privacy restriction.
 
 ### Testing with more than one player
 
