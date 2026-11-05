@@ -21,6 +21,8 @@ public:
         std::string name;
         glm::vec3   color{1.0f};
         uint64_t    selected = 0;       // what they have selected
+        glm::vec3   cursor{0.0f};
+        bool        cursorActive = false;
     };
     struct ChatLine { std::string from, text; bool system = false; };
 
@@ -29,17 +31,23 @@ public:
 
     bool host(int port, std::string& error);
     bool join(const std::string& address, std::string& error);   // then wait for active()
+    bool hostCloud(std::string& error);                           // authenticated, internet-hosted session
+    bool joinCloud(const std::string& code, std::string& error);  // eight-character invite code
+    bool cloud() const { return m_cloud; }
+    const std::string& inviteCode() const { return m_cloudCode; }
+    const std::string& chatId() const { return m_cloudChat; }
     void leave();
 
-    bool active() const  { return m_hosting || m_joined; }
-    bool hosting() const { return m_hosting; }
-    bool waiting() const { return m_server && !m_joined; }      // connected, not yet in
+    bool active() const  { return m_hosting || m_joined || (m_cloud && m_cloudReady); }
+    bool hosting() const { return m_hosting || (m_cloud && m_cloudOwner); }
+    bool waiting() const { return (m_server && !m_joined) || (m_cloud && !m_cloudReady); } // connecting, not yet in
 
     // Every frame. While `canApply` is false (playtesting) incoming edits wait.
     void update(bool canApply);
     // After the editor records a local change: send it to the others.
     void localChanged();
     void setSelection(uint64_t id);
+    void setCursor(const glm::vec3& world, bool active);
     void say(const std::string& text);
 
     // True once after other people's edits were applied (the editor resets undo).
@@ -66,6 +74,9 @@ private:
     void addSystem(const std::string& text);
     Member* member(int id);
     static glm::vec3 colorFor(int id);
+    void updateCloud(bool canApply);
+    void cloudMembers(const nlohmann::json& members);
+    void cloudPush(const std::string& kind, const std::string& payload);
 
     Scene*        m_scene;
     Net::Listener m_listener;
@@ -81,4 +92,13 @@ private:
     uint64_t      m_selection = 0, m_sentSelection = ~0ull;
     std::vector<ChatLine> m_chat;
     std::string   m_error;
+    bool          m_cloud = false, m_cloudReady = false, m_cloudOwner = false;
+    bool          m_cloudPollPending = false, m_cloudPushPending = false, m_cloudPresencePending = false;
+    std::string   m_cloudSession, m_cloudCode, m_cloudChat, m_cloudAccount;
+    uint64_t      m_cloudSeq = 0;
+    glm::vec3     m_cursor{0.0f};
+    bool          m_cursorActive = false;
+    double        m_cloudNextPoll = 0.0, m_cloudNextPresence = 0.0;
+    std::vector<std::pair<std::string, std::string>> m_cloudPushQueue;
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 };
