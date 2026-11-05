@@ -4127,6 +4127,7 @@ const actions = {
   serverPage(d) { serverPage = Number(d.to) || 1; render(); },
   refreshServers() { serverPage = 1; render(); },
   serverSort(f) {
+    serverPage = 1;
     const params = new URLSearchParams(location.hash.split('?')[1] || '');
     params.set('serverSort', f.sort.value);
     location.hash = '#/game/' + encodeURIComponent(f.game.value) + '?' + params.toString();
