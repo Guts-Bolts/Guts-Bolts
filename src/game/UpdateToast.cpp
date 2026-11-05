@@ -38,6 +38,10 @@ void openUrl(const std::string& url) {
 }
 } // namespace
 
+namespace UpdateToast {
+void openUrl(const std::string& url) { ::openUrl(url); }
+} // namespace UpdateToast
+
 // The update screen: covers the whole app, counts down, runs the updater.
 bool drawForced(const char* appName, const UpdateChecker::Info& info) {
     ImGuiViewport* vp = ImGui::GetMainViewport();
