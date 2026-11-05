@@ -65,6 +65,20 @@ export function installChats(Cls) {
     this.bridgeOut = [];           // messages waiting to go to Lyreto
     this.bridgeSent = new Map();   // chat id -> times Lyreto sent messages (the limit)
     this.sql.exec('CREATE TABLE IF NOT EXISTS chatbridges (chat TEXT PRIMARY KEY, member TEXT NOT NULL, channel TEXT NOT NULL, name TEXT NOT NULL, at INTEGER NOT NULL)');
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS teamsessions (
+      id TEXT PRIMARY KEY, code TEXT UNIQUE NOT NULL, owner TEXT NOT NULL, title TEXT NOT NULL,
+      chat TEXT NOT NULL, snapshot TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS teammembers (
+      session TEXT NOT NULL, account TEXT NOT NULL, member_id INTEGER NOT NULL, name TEXT NOT NULL,
+      color INTEGER NOT NULL, selected TEXT NOT NULL DEFAULT '0', cursor TEXT NOT NULL DEFAULT '',
+      seen INTEGER NOT NULL, PRIMARY KEY (session, account), UNIQUE (session, member_id)
+    );
+    CREATE TABLE IF NOT EXISTS teamevents (
+      session TEXT NOT NULL, seq INTEGER NOT NULL, account TEXT NOT NULL, kind TEXT NOT NULL,
+      payload TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (session, seq)
+    );
+    CREATE INDEX IF NOT EXISTS teamevents_session_seq ON teamevents(session, seq);`);
   };
   P.turnOn = function () { return !!(this.env.CF_TURN_KEY_ID && this.env.CF_TURN_KEY_TOKEN); };
   P.bridgeOn = function () { return typeof this.env.LYRETO_BRIDGE_SECRET === 'string' && this.env.LYRETO_BRIDGE_SECRET.length >= 16; };
@@ -115,6 +129,7 @@ export function installChats(Cls) {
       for (const id of me.friends || []) this.livePing(this.users.get(id), 'friends');
       return okay({ me: this.meJson(me) });
     }
+    if (name.startsWith('team.')) return this.teamOp(name, me, args);
     if (name === 'chat.inbox') return this.chatInbox(me);
     if (name === 'call.ice') {
       if (!this.turnOn()) return okay({ relay: false, iceServers: [{ urls: 'stun:stun.cloudflare.com:3478' }] });
@@ -125,6 +140,133 @@ export function installChats(Cls) {
     if (name.startsWith('call.')) return this.callOp(name, me, args);
     if (name === 'chat.bridge' || name === 'chat.unbridge') return this.bridgeOwnerOp(name, me, args);
     return fail('Unknown request.');
+  };
+
+  // Cloud Team Create: signed account requests share a durable session and its team chat.
+  P.teamMemberRows = function (session) {
+    return [...this.sql.exec('SELECT member_id, account, name, color, selected, cursor, seen FROM teammembers WHERE session = ? ORDER BY member_id', session)];
+  };
+  P.teamMembers = function (session) {
+    const t = now();
+    return this.teamMemberRows(session).filter((m) => t - m.seen <= 45).map((m) => {
+      let cursor = null;
+      try { cursor = m.cursor ? JSON.parse(m.cursor) : null; } catch { cursor = null; }
+      return { id: m.member_id, account: m.account, name: m.name, color: m.color, selected: Number(m.selected) || 0, cursor };
+    });
+  };
+  P.teamChatSync = function (chat) {
+    this.chatSync(chat);
+    for (const m of chat.members || []) this.livePing(this.users.get(m.id), 'team');
+  };
+  P.teamChatOf = function (session, account) {
+    const row = [...this.sql.exec('SELECT chat, owner FROM teamsessions WHERE id = ?', session)][0];
+    if (!row) return null;
+    const owner = this.users.get(row.owner), chat = this.chatOf(owner, row.chat);
+    return chat && (chat.members || []).some((m) => m.id === account) ? chat : null;
+  };
+  P.teamOp = function (name, me, args) {
+    if (me.userId === 0) return fail('Sign up first to use cloud Team Create.');
+    const clean = (v, max) => say(typeof v === 'string' ? v : '', max);
+    if (name === 'team.create') {
+      const snapshot = typeof args.snapshot === 'string' ? args.snapshot : '';
+      if (!snapshot || snapshot.length > 512 * 1024) return fail('Save a smaller scene before starting cloud Team Create (512 KB session snapshot limit).');
+      const id = 'tc-' + hex(8), code = hex(4).toUpperCase(), chatId = 'tc-' + hex(8), t = now();
+      const title = clean(args.title, 60) || 'Studio Team';
+      const chat = { id: chatId, title, owner: me.id, members: [{ id: me.id, userId: me.userId, name: me.username || me.name }],
+        messages: [], readAt: { [me.id]: t }, created: t, updated: t };
+      me.chats = Array.isArray(me.chats) ? me.chats : [];
+      me.chats.unshift(chat); me.chats = me.chats.slice(0, 100); this.saveUser(me);
+      this.sql.exec('INSERT INTO teamsessions (id, code, owner, title, chat, snapshot, seq, created) VALUES (?, ?, ?, ?, ?, ?, 0, ?)',
+        id, code, me.id, title, chatId, snapshot, t);
+      this.sql.exec("INSERT INTO teammembers (session, account, member_id, name, color, selected, cursor, seen) VALUES (?, ?, 0, ?, 0, '0', '', ?)",
+        id, me.id, me.username || me.name, t);
+      return okay({ session: id, code, chat: chatId, member: 0, seq: 0, snapshot, members: this.teamMembers(id) });
+    }
+    if (name === 'team.join') {
+      const code = clean(args.code, 16).toUpperCase();
+      if (!/^[0-9A-F]{8}$/.test(code)) return fail('Enter the eight-character Team Create invite code.');
+      const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq FROM teamsessions WHERE code = ?', code)][0];
+      if (!row) return fail('That Team Create invite is invalid or has expired.');
+      const existing = [...this.sql.exec('SELECT member_id FROM teammembers WHERE session = ? AND account = ?', row.id, me.id)][0];
+      let memberId = existing ? existing.member_id : -1;
+      if (memberId < 0) {
+        const ids = this.teamMemberRows(row.id).map((m) => m.member_id);
+        if (ids.length >= 20) return fail('This Team Create session is full (20 people maximum).');
+        memberId = Math.max(0, ...ids) + 1;
+        const owner = this.users.get(row.owner), chat = this.chatOf(owner, row.chat);
+        if (!chat) return fail('The Team Create owner is no longer available.');
+        this.sql.exec("INSERT INTO teammembers (session, account, member_id, name, color, selected, cursor, seen) VALUES (?, ?, ?, ?, ?, '0', '', ?)",
+          row.id, me.id, memberId, me.username || me.name, memberId % 8, now());
+        if (!(chat.members || []).some((m) => m.id === me.id)) chat.members.push({ id: me.id, userId: me.userId, name: me.username || me.name });
+        chat.readAt = chat.readAt || {}; chat.readAt[me.id] = now(); chat.updated = now();
+        this.teamChatSync(chat);
+      } else {
+        this.sql.exec('UPDATE teammembers SET seen = ? WHERE session = ? AND account = ?', now(), row.id, me.id);
+      }
+      return okay({ session: row.id, code, chat: row.chat, member: memberId, seq: row.seq, snapshot: row.snapshot, members: this.teamMembers(row.id) });
+    }
+    const session = clean(args.session, 40);
+    const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq FROM teamsessions WHERE id = ?', session)][0];
+    if (!row) return fail('That Team Create session has ended.');
+    const member = [...this.sql.exec('SELECT member_id FROM teammembers WHERE session = ? AND account = ?', session, me.id)][0];
+    if (!member) return fail('You are not a member of that Team Create session.');
+    if (name === 'team.poll') {
+      const after = Math.max(0, Math.floor(Number(args.after) || 0));
+      const events = [...this.sql.exec('SELECT seq, account, kind, payload, at FROM teamevents WHERE session = ? AND seq > ? ORDER BY seq LIMIT 100', session, after)]
+        .map((e) => ({ seq: e.seq, account: e.account, kind: e.kind, payload: e.payload, at: e.at }));
+      this.sql.exec('UPDATE teammembers SET seen = ? WHERE session = ? AND account = ?', now(), session, me.id);
+      return okay({ session, seq: row.seq, events, members: this.teamMembers(session), chat: row.chat });
+    }
+    if (name === 'team.push') {
+      const kind = clean(args.kind, 12);
+      if (!['ops', 'chat'].includes(kind)) return fail('Unknown Team Create event.');
+      const payload = typeof args.payload === 'string' ? args.payload : '';
+      if (!payload || payload.length > (kind === 'ops' ? 64 * 1024 : 300)) return fail('That Team Create update is empty or too large.');
+      if (kind === 'chat') {
+        const chat = this.teamChatOf(session, me.id);
+        if (!chat) return fail('The Team Create chat is no longer available.');
+        const body = clean(payload, 300);
+        if (!body) return fail('Write a message first.');
+        const message = { id: hex(8), from: me.id, name: me.username || me.name, body, at: now() };
+        chat.messages = [...(chat.messages || []), message].slice(-200); chat.updated = message.at;
+        this.teamChatSync(chat); this.chatPosted(chat, message);
+      }
+      const seq = row.seq + 1, at = now();
+      this.sql.exec('INSERT INTO teamevents (session, seq, account, kind, payload, at) VALUES (?, ?, ?, ?, ?, ?)',
+        session, seq, me.id, kind, payload, at);
+      this.sql.exec('UPDATE teamsessions SET seq = ? WHERE id = ?', seq, session);
+      return okay({ seq });
+    }
+    if (name === 'team.presence') {
+      const selected = String(Math.max(0, Math.floor(Number(args.selected) || 0)));
+      let cursor = '';
+      if (args.cursor && typeof args.cursor === 'object') {
+        const x = Number(args.cursor.x), y = Number(args.cursor.y), z = Number(args.cursor.z);
+        if ([x, y, z].every(Number.isFinite) && Math.abs(x) < 100000 && Math.abs(y) < 100000 && Math.abs(z) < 100000)
+          cursor = JSON.stringify({ x, y, z });
+      }
+      this.sql.exec('UPDATE teammembers SET selected = ?, cursor = ?, seen = ? WHERE session = ? AND account = ?',
+        selected, cursor, now(), session, me.id);
+      return okay({ members: this.teamMembers(session) });
+    }
+    if (name === 'team.leave') {
+      const chat = this.teamChatOf(session, me.id);
+      this.sql.exec('DELETE FROM teammembers WHERE session = ? AND account = ?', session, me.id);
+      if (me.id === row.owner) {
+        this.sql.exec('DELETE FROM teamevents WHERE session = ?', session);
+        this.sql.exec('DELETE FROM teammembers WHERE session = ?', session);
+        this.sql.exec('DELETE FROM teamsessions WHERE id = ?', session);
+        if (chat) for (const m of chat.members || []) {
+          const u = this.users.get(m.id);
+          if (u) { u.chats = (u.chats || []).filter((c) => c.id !== chat.id); this.saveUser(u); }
+        }
+      } else if (chat) {
+        chat.members = (chat.members || []).filter((m) => m.id !== me.id);
+        chat.updated = now(); this.teamChatSync(chat);
+      }
+      return okay();
+    }
+    return fail('Unknown Team Create request.');
   };
 
   P.chatInbox = function (me) {
