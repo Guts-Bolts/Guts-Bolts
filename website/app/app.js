@@ -3372,7 +3372,7 @@ function noteLink(n) {
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;
   if (n.kind === 'sale' || n.kind === 'upload') return '#/library/' + n.about;
-  if (n.kind === 'gift' || n.kind === 'auction') return '#/item/' + n.about;
+  if (n.kind === 'gift' || n.kind === 'auction' || n.kind === 'wishlist') return '#/item/' + n.about;
   if (n.kind === 'support') return '#/support';
   if (n.kind === 'ticket') return '#/staff?tab=tickets';
   if (n.kind === 'roadmap') return '#/create/roadmap';
@@ -3383,7 +3383,7 @@ pages.notifications = async () => {
   if (!signedIn()) { show(html`<h1>Notifications</h1>${needSignIn('see your notifications')}`); return; }
   const r = await pageCall('notes.list', {});
   if (!r.ok) { show(html`<h1>Notifications</h1><p class="error">${r.error}</p>`); return; }
-  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', party: '👥', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁', roadmap: '🗺️' };
+  const icon = { friendRequest: '👋', friend: '🤝', follow: '⭐', party: '👥', trade: '🔁', sale: '💰', upload: '🖼️', group: '👥', comment: '💬', featured: '⭐', support: '🛟', ticket: '🛟', gift: '🎁', roadmap: '🗺️', wishlist: '🏷️' };
   show(html`<h1>Notifications</h1><p class="small muted">New notifications are archived securely, so your history can grow beyond the 50-entry account preview.</p>
     <div class="list notes">${r.notes.length ? r.notes.map((n) => {
       const link = noteLink(n);

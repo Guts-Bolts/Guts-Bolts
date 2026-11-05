@@ -347,6 +347,9 @@ private:
     nlohmann::json publicAsset(const Asset& a, const User* me = nullptr) const;
     // Private models and animations: only their creator (and staff) see them.
     bool canSee(const Asset& a, const User& me) const;
+    bool isOffsale(const Asset& a) const;   // staff took it off sale, or its timed sale ended
+    // Wishlist alerts: it got cheaper or came back on sale, so ring everyone who favourited it.
+    void wishlistAlert(const Asset& a, long long priceBefore, bool offsaleBefore, const User& by);
     // Paid private servers (ServerRelay.cpp; worker/server.js has the same).
     long long   privateUntil(const User& u, const std::string& gameId) const;   // 0 = they don't have one
     std::string privateBlocked(const User& u, const std::string& gameId) const; // why they can't start one ("" = they can)
@@ -355,7 +358,7 @@ private:
     // Accounts
     User&     user(const std::string& id);          // makes a new account (with the welcome gift) if needed
     User*     findUser(const std::string& id);
-    void      notify(User* u, const std::string& kind, const std::string& text, const std::string& about);   // the bell
+    void      notify(User* u, const std::string& kind, const std::string& text, const std::string& about, bool save = true);   // the bell
     long long balance(const User& u) const;
     bool      hasRef(const User& u, const std::string& ref) const;
     void      add(User& u, long long amount, const std::string& reason, const std::string& ref);

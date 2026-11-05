@@ -173,13 +173,13 @@ GbServer::User* GbServer::findUser(const std::string& id) {
 
 // The bell (worker/server.js has the same): tell someone something happened. kind says what
 // (the apps pick an icon and a page from it), about is what it's about. Saved with the account.
-void GbServer::notify(User* u, const std::string& kind, const std::string& text, const std::string& about) {
+void GbServer::notify(User* u, const std::string& kind, const std::string& text, const std::string& about, bool save) {
     if (!u || u->userId == 0) return;
     if (!u->notes.is_array()) u->notes = json::array();
     u->notes.insert(u->notes.begin(), json{{"id", Account::randomHex(5)}, {"kind", kind}, {"text", text}, {"about", about},
                                            {"at", Online::unixNow()}, {"read", false}});
     if (u->notes.size() > 50) u->notes.erase(u->notes.begin() + 50, u->notes.end());
-    saveUsers();
+    if (save) saveUsers();   // (false: the caller rings lots of people, then saves once)
 }
 
 GbServer::User& GbServer::user(const std::string& id) {

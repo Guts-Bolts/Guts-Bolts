@@ -116,6 +116,35 @@ void GbServer::syncOwned(User& u, const Asset& a) {
     saveUsers();
 }
 
+bool GbServer::isOffsale(const Asset& a) const {
+    if (!a.meta.is_object()) return false;
+    const long long off = a.meta.value("offsaleAt", 0LL);
+    return a.meta.value("staffOffsale", false) || (off > 0 && Online::unixNow() >= off);
+}
+
+// Wishlist alerts (worker/server.js wishlistAlert has the same rules): an item got cheaper,
+// or came back on sale, so everyone with it in their favourites gets a bell note. Not the
+// person who changed it, not people who already own it, only people who can still see it.
+void GbServer::wishlistAlert(const Asset& a, long long priceBefore, bool offsaleBefore, const User& by) {
+    if (isOffsale(a)) return;
+    const bool backOnSale = offsaleBefore, cheaper = a.price < priceBefore;
+    if (!backOnSale && !cheaper) return;
+    const std::string cost = a.price > 0 ? std::to_string(a.price) + " Bolts" : "free";
+    const std::string text = backOnSale ? a.name + " from your favourites is back on sale (" + cost + ")!"
+        : a.price > 0 ? a.name + " from your favourites dropped from " + std::to_string(priceBefore) + " to " + std::to_string(a.price) + " Bolts!"
+        : a.name + " from your favourites is free now!";
+    int sent = 0;
+    for (auto& [id, u] : m_users) {
+        if (sent >= 2000) break;   // (most people one change rings; the rest still see the new price)
+        if (u.id == by.id || u.owned.count(a.id)) continue;
+        if (std::find(u.itemFavorites.begin(), u.itemFavorites.end(), a.id) == u.itemFavorites.end()) continue;
+        if (!canSee(a, u)) continue;
+        notify(&u, "wishlist", text, a.id, false);
+        ++sent;
+    }
+    if (sent) saveUsers();
+}
+
 json GbServer::limitedJson(const Asset& a) const {
     if (!a.limited) return nullptr;
     long long resellers = 0, lowest = 0;
@@ -462,6 +491,8 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         if (it == m_assets.end() || !Online::isCatalogItem(it->second.kind)) return fail("That item doesn't exist (any more).");
         Asset& a = it->second;
         if (a.creator != me.id && !isStaff(me)) return fail("Only the item's creator or staff can change it.");
+        const long long priceBefore = a.price;          // (for the wishlist alert)
+        const bool offsaleBefore = isOffsale(a);
         if (args.contains("name")) {
             const std::string title = say(str("name"), 50);
             if (title.empty()) return fail("Give it a name.");
@@ -528,6 +559,7 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
         }
         a.meta["updated"] = now;
         saveAssets();
+        wishlistAlert(a, priceBefore, offsaleBefore, me);
         return assetReply(a);
     }
     if (name == "item.give") {
