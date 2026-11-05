@@ -174,6 +174,27 @@ test('the gateway is off until its secret is set', () => {
   assert.match(s.call(alice, 'chat.bridge', { id: group }).error, /isn't turned on/);
 });
 
+
+test('cloud Team Create snapshots compact acknowledged events and force stale clients to resync', () => {
+  const { s, alice, bob } = setup();
+  const made = s.call(alice, 'team.create', { title: 'Snapshot test', snapshot: '{"scene":"v1"}' });
+  assert.ok(made.ok, made.error);
+  const joined = s.call(bob, 'team.join', { code: made.code });
+  assert.ok(joined.ok, joined.error);
+  const event = s.call(bob, 'team.push', { session: made.session, kind: 'ops', payload: '{"change":1}' });
+  assert.ok(event.ok, event.error);
+  const saved = s.call(alice, 'team.snapshot', { session: made.session, snapshot: '{"scene":"v2"}', upto: event.seq });
+  assert.ok(saved.ok, saved.error);
+  assert.equal(saved.snapshotSeq, event.seq);
+  const stale = s.call(bob, 'team.poll', { session: made.session, after: 0 });
+  assert.ok(stale.ok && stale.resync);
+  assert.equal(stale.snapshot, '{"scene":"v2"}');
+  assert.equal(stale.snapshotSeq, event.seq);
+  assert.equal(stale.events.length, 0);
+  assert.match(s.call(bob, 'team.snapshot', { session: made.session, snapshot: '{"bad":true}', upto: event.seq }).error, /Only the session host/);
+  assert.ok(s.call(alice, 'team.leave', { session: made.session }).ok);
+});
+
 test('cloud Team Create: invite, authenticate, sync edits and presence, share voice chat', () => {
   const { s, alice, bob, carol } = setup();
   const made = s.call(alice, 'team.create', { title: 'Cloud build', snapshot: '{"scene":"start"}' });
