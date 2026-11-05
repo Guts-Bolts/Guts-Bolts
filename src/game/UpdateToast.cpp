@@ -24,7 +24,7 @@ float g_slide = 0.0f;       // 0 = hidden, 1 = fully in
 std::string g_error;
 std::string g_appName;
 
-void openUrl(const std::string& url) {
+void openUrlImpl(const std::string& url) {
 #if defined(GB_IOS)
     // SDL delegates URL opening to the platform; iOS forbids shell execution.
     SDL_OpenURL(url.c_str());
@@ -38,9 +38,7 @@ void openUrl(const std::string& url) {
 }
 } // namespace
 
-namespace UpdateToast {
-void openUrl(const std::string& url) { ::openUrl(url); }
-} // namespace UpdateToast
+void openUrl(const std::string& url) { openUrlImpl(url); }
 
 // The update screen: covers the whole app, counts down, runs the updater.
 bool drawForced(const char* appName, const UpdateChecker::Info& info) {
@@ -171,7 +169,7 @@ bool draw(const char* appName, bool canForce) {
     if (!UpdateChecker::canUpdate() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("The source folder isn't next to this build - download the new version from GitHub.");
     ImGui::SameLine();
-    if (ImGui::Button("What's new", ImVec2(100, 30))) openUrl(info.compareUrl);
+    if (ImGui::Button("What's new", ImVec2(100, 30))) openUrlImpl(info.compareUrl);
     ImGui::SameLine();
     if (ImGui::Button("Later", ImVec2(80, 30))) g_dismissed = true;
 
