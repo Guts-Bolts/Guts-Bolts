@@ -174,6 +174,7 @@ void TeamCreate::cloudPush(const std::string& kind, const std::string& payload) 
     m_cloudPushQueue.erase(m_cloudPushQueue.begin());
     m_cloudPushPending = true;
     std::weak_ptr<bool> alive = m_alive;
+    const uint64_t generation = m_cloudGeneration;
     Online::request("team.push", {{"session", m_cloudSession}, {"kind", item.first}, {"payload", item.second}},
         [this, alive, generation](const json& r) {
             auto keep = alive.lock(); if (!keep || !*keep || generation != m_cloudGeneration) return;
@@ -191,6 +192,7 @@ void TeamCreate::updateCloud(bool canApply) {
         m_cloudNextPoll = t + 0.5;
         const uint64_t after = m_cloudSeq;
         std::weak_ptr<bool> alive = m_alive;
+        const uint64_t generation = m_cloudGeneration;
         json cursor = nullptr;
         if (m_cursorActive) cursor = {{"x", m_cursor.x}, {"y", m_cursor.y}, {"z", m_cursor.z}};
         Online::request("team.poll", {{"session", m_cloudSession}, {"after", after}, {"selected", m_selection}, {"cursor", cursor}},
@@ -238,6 +240,7 @@ void TeamCreate::updateCloud(bool canApply) {
         m_cloudSnapshotPending = true;
         m_cloudNextSnapshot = t + 15.0;
         std::weak_ptr<bool> alive = m_alive;
+        const uint64_t generation = m_cloudGeneration;
         const std::string snapshot = Serializer::saveScene(*m_scene);
         Online::request("team.snapshot", {{"session", m_cloudSession}, {"snapshot", snapshot}, {"upto", m_cloudSeq}},
             [this, alive, generation](const json& r) {
