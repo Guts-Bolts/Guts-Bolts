@@ -185,10 +185,12 @@ void TeamCreate::updateCloud(bool canApply) {
     const double t = cloudNow();
     if (!waiting() && t >= m_cloudNextPoll && !m_cloudPollPending) {
         m_cloudPollPending = true;
-        m_cloudNextPoll = t + 0.25;
+        m_cloudNextPoll = t + 0.5;
         const uint64_t after = m_cloudSeq;
         std::weak_ptr<bool> alive = m_alive;
-        Online::request("team.poll", {{"session", m_cloudSession}, {"after", after}},
+        json cursor = nullptr;
+        if (m_cursorActive) cursor = {{"x", m_cursor.x}, {"y", m_cursor.y}, {"z", m_cursor.z}};
+        Online::request("team.poll", {{"session", m_cloudSession}, {"after", after}, {"selected", m_selection}, {"cursor", cursor}},
             [this, alive](const json& r) {
                 auto keep = alive.lock(); if (!keep || !*keep) return;
                 m_cloudPollPending = false;
@@ -216,19 +218,6 @@ void TeamCreate::updateCloud(bool canApply) {
                         m_chat.push_back({from, cleanText(payload, 300), false});
                     }
                 }
-            }, 10);
-    }
-    if (m_cloudReady && t >= m_cloudNextPresence && !m_cloudPresencePending) {
-        m_cloudPresencePending = true;
-        m_cloudNextPresence = t + 0.35;
-        json cursor = nullptr;
-        if (m_cursorActive) cursor = {{"x", m_cursor.x}, {"y", m_cursor.y}, {"z", m_cursor.z}};
-        std::weak_ptr<bool> alive = m_alive;
-        Online::request("team.presence", {{"session", m_cloudSession}, {"selected", m_selection}, {"cursor", cursor}},
-            [this, alive](const json& r) {
-                auto keep = alive.lock(); if (!keep || !*keep) return;
-                m_cloudPresencePending = false;
-                if (r.value("ok", false) && r.contains("members")) cloudMembers(r["members"]);
             }, 10);
     }
     if (canApply && !m_pending.empty()) {
