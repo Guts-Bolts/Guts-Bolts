@@ -170,7 +170,7 @@ export function installChats(Cls) {
     if (name === 'team.create') {
       const snapshot = typeof args.snapshot === 'string' ? args.snapshot : '';
       if (!snapshot || snapshot.length > 512 * 1024) return fail('Save a smaller scene before starting cloud Team Create (512 KB session snapshot limit).');
-      const id = 'tc-' + hex(8), code = hex(4).toUpperCase(), chatId = 'tc-' + hex(8), t = now();
+      const id = 'tc-' + hex(8), code = hex(8).toUpperCase(), chatId = 'tc-' + hex(8), t = now();
       const title = clean(args.title, 60) || 'Studio Team';
       const chat = { id: chatId, title, owner: me.id, members: [{ id: me.id, userId: me.userId, name: me.username || me.name }],
         messages: [], readAt: { [me.id]: t }, created: t, updated: t };
@@ -183,8 +183,8 @@ export function installChats(Cls) {
       return okay({ session: id, code, chat: chatId, member: 0, seq: 0, snapshot, members: this.teamMembers(id) });
     }
     if (name === 'team.join') {
-      const code = clean(args.code, 16).toUpperCase();
-      if (!/^[0-9A-F]{8}$/.test(code)) return fail('Enter the eight-character Team Create invite code.');
+      const code = clean(args.code, 24).toUpperCase();
+      if (!/^[0-9A-F]{16}$/.test(code)) return fail('Enter the 16-character Team Create invite code.');
       const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq, snapshot_seq FROM teamsessions WHERE code = ?', code)][0];
       if (!row) return fail('That Team Create invite is invalid or has expired.');
       const existing = [...this.sql.exec('SELECT member_id FROM teammembers WHERE session = ? AND account = ?', row.id, me.id)][0];
