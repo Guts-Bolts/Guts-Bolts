@@ -19,6 +19,7 @@ public:
     struct Member {
         int         id = 0;
         std::string name;
+        std::string account;
         glm::vec3   color{1.0f};
         uint64_t    selected = 0;       // what they have selected
         glm::vec3   cursor{0.0f};
