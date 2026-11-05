@@ -411,6 +411,7 @@ private:
     nlohmann::json m_marketPlugins = nlohmann::json::array(), m_marketAudio = nlohmann::json::array();
     bool        m_openTeam = false;
     std::string m_teamAddress;
+    std::string m_teamCloudCode;
     std::string m_teamChat;
     std::string m_teamError;
 
