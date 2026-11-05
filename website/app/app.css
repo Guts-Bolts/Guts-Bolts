@@ -1201,5 +1201,5 @@ h1 .club-icon{vertical-align:-4px}
 
 /* Discovery and server browser controls. */
 .server-toolbar { align-items: center; flex-wrap: wrap; gap: 10px; }
-.server-toolbar form { align-items: center; flex-wrap: wrap; margin-left: auto; }
+.server-toolbar > .row { align-items: center; flex-wrap: wrap; margin-left: auto; }
 .trade-pick .choice .small { display: block; margin: 2px 0 0 24px; }
