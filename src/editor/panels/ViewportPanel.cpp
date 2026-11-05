@@ -1029,9 +1029,20 @@ void ViewportPanel::render(float dt) {
                     if (behind) continue;
                     ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(mem.color.r, mem.color.g, mem.color.b, 1));
                     dl->AddRect(lo, hi, col, 3.0f, 0, 2.0f);
-                    ImVec2 ts = ImGui::CalcTextSize(mem.name.c_str());
-                    dl->AddRectFilled(ImVec2(lo.x, lo.y - ts.y - 6), ImVec2(lo.x + ts.x + 10, lo.y), col, 3.0f);
-                    dl->AddText(ImVec2(lo.x + 5, lo.y - ts.y - 3), IM_COL32(20, 20, 25, 255), mem.name.c_str());
+                    // A collaborator orb follows the object they're currently editing.
+                    // This gives the team a persistent, colour-coded presence marker in the scene.
+                    glm::vec3 orbWorld{(b.min.x + b.max.x) * 0.5f, b.max.y, (b.min.z + b.max.z) * 0.5f};
+                    glm::vec4 orbClip = proj * view * glm::vec4(orbWorld, 1.0f);
+                    if (orbClip.w > 0.05f) {
+                        ImVec2 orb(imgMin.x + (orbClip.x / orbClip.w * 0.5f + 0.5f) * imgSize.x,
+                                   imgMin.y + (0.5f - orbClip.y / orbClip.w * 0.5f) * imgSize.y);
+                        dl->AddCircleFilled(orb, 8.0f, col, 24);
+                        dl->AddCircle(orb, 10.0f, IM_COL32(255, 255, 255, 230), 24, 2.0f);
+                        ImVec2 ts = ImGui::CalcTextSize(mem.name.c_str());
+                        ImVec2 label(orb.x - ts.x * 0.5f - 6.0f, orb.y - ts.y - 17.0f);
+                        dl->AddRectFilled(label, ImVec2(label.x + ts.x + 12.0f, label.y + ts.y + 6.0f), col, 4.0f);
+                        dl->AddText(ImVec2(label.x + 6.0f, label.y + 3.0f), IM_COL32(20, 20, 25, 255), mem.name.c_str());
+                    }
                 }
             }
 
