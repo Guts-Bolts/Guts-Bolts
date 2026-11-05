@@ -67,7 +67,7 @@ export function installChats(Cls) {
     this.sql.exec('CREATE TABLE IF NOT EXISTS chatbridges (chat TEXT PRIMARY KEY, member TEXT NOT NULL, channel TEXT NOT NULL, name TEXT NOT NULL, at INTEGER NOT NULL)');
     this.sql.exec(`CREATE TABLE IF NOT EXISTS teamsessions (
       id TEXT PRIMARY KEY, code TEXT UNIQUE NOT NULL, owner TEXT NOT NULL, title TEXT NOT NULL,
-      chat TEXT NOT NULL, snapshot TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL
+      chat TEXT NOT NULL, snapshot TEXT NOT NULL, seq INTEGER NOT NULL DEFAULT 0, snapshot_seq INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS teammembers (
       session TEXT NOT NULL, account TEXT NOT NULL, member_id INTEGER NOT NULL, name TEXT NOT NULL,
@@ -185,7 +185,7 @@ export function installChats(Cls) {
     if (name === 'team.join') {
       const code = clean(args.code, 16).toUpperCase();
       if (!/^[0-9A-F]{8}$/.test(code)) return fail('Enter the eight-character Team Create invite code.');
-      const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq FROM teamsessions WHERE code = ?', code)][0];
+      const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq, snapshot_seq FROM teamsessions WHERE code = ?', code)][0];
       if (!row) return fail('That Team Create invite is invalid or has expired.');
       const existing = [...this.sql.exec('SELECT member_id FROM teammembers WHERE session = ? AND account = ?', row.id, me.id)][0];
       let memberId = existing ? existing.member_id : -1;
@@ -203,19 +203,30 @@ export function installChats(Cls) {
       } else {
         this.sql.exec('UPDATE teammembers SET seen = ? WHERE session = ? AND account = ?', now(), row.id, me.id);
       }
-      return okay({ session: row.id, code, chat: row.chat, member: memberId, seq: row.seq, snapshot: row.snapshot, members: this.teamMembers(row.id) });
+      return okay({ session: row.id, code, chat: row.chat, member: memberId, seq: row.snapshot_seq, snapshotSeq: row.snapshot_seq, snapshot: row.snapshot, members: this.teamMembers(row.id) });
     }
     const session = clean(args.session, 40);
-    const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq FROM teamsessions WHERE id = ?', session)][0];
+    const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq, snapshot_seq FROM teamsessions WHERE id = ?', session)][0];
     if (!row) return fail('That Team Create session has ended.');
     const member = [...this.sql.exec('SELECT member_id FROM teammembers WHERE session = ? AND account = ?', session, me.id)][0];
     if (!member) return fail('You are not a member of that Team Create session.');
     if (name === 'team.poll') {
       const after = Math.max(0, Math.floor(Number(args.after) || 0));
+      this.sql.exec('UPDATE teammembers SET seen = ? WHERE session = ? AND account = ?', now(), session, me.id);
+      if (after < row.snapshot_seq)
+        return okay({ session, seq: row.seq, resync: true, snapshotSeq: row.snapshot_seq, snapshot: row.snapshot,
+          events: [], members: this.teamMembers(session), chat: row.chat });
       const events = [...this.sql.exec('SELECT seq, account, kind, payload, at FROM teamevents WHERE session = ? AND seq > ? ORDER BY seq LIMIT 100', session, after)]
         .map((e) => ({ seq: e.seq, account: e.account, kind: e.kind, payload: e.payload, at: e.at }));
-      this.sql.exec('UPDATE teammembers SET seen = ? WHERE session = ? AND account = ?', now(), session, me.id);
       return okay({ session, seq: row.seq, events, members: this.teamMembers(session), chat: row.chat });
+    }
+    if (name === 'team.snapshot') {
+      if (me.id !== row.owner) return fail('Only the session host can publish a scene snapshot.');
+      const snapshot = typeof args.snapshot === 'string' ? args.snapshot : '';
+      if (!snapshot || snapshot.length > 512 * 1024) return fail('The scene snapshot is empty or exceeds 512 KB.');
+      this.sql.exec('UPDATE teamsessions SET snapshot = ?, snapshot_seq = seq WHERE id = ?', snapshot, session);
+      this.sql.exec('DELETE FROM teamevents WHERE session = ? AND seq <= ?', session, row.seq);
+      return okay({ snapshotSeq: row.seq });
     }
     if (name === 'team.push') {
       const kind = clean(args.kind, 12);
