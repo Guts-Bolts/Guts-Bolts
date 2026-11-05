@@ -1197,3 +1197,9 @@ h1 .club-icon{vertical-align:-4px}
 .list .club-pick,.club-pick{width:auto;max-width:120px;flex:none;font-size:12px;padding:2px 4px}
 .boltworks-tier-preview>div>.club-icon{margin-bottom:2px}
 .boltworks-copy h2{background:none;border:0;padding:0}
+
+
+/* Discovery and server browser controls. */
+.server-toolbar { align-items: center; flex-wrap: wrap; gap: 10px; }
+.server-toolbar form { align-items: center; flex-wrap: wrap; margin-left: auto; }
+.trade-pick .choice .small { display: block; margin: 2px 0 0 24px; }
