@@ -212,7 +212,14 @@ export function installChats(Cls) {
     if (!member) return fail('You are not a member of that Team Create session.');
     if (name === 'team.poll') {
       const after = Math.max(0, Math.floor(Number(args.after) || 0));
-      this.sql.exec('UPDATE teammembers SET seen = ? WHERE session = ? AND account = ?', now(), session, me.id);
+      let cursor = '';
+      if (args.cursor && typeof args.cursor === 'object') {
+        const x = Number(args.cursor.x), y = Number(args.cursor.y), z = Number(args.cursor.z);
+        if ([x, y, z].every(Number.isFinite) && Math.abs(x) < 100000 && Math.abs(y) < 100000 && Math.abs(z) < 100000)
+          cursor = JSON.stringify({ x, y, z });
+      }
+      this.sql.exec('UPDATE teammembers SET selected = ?, cursor = ?, seen = ? WHERE session = ? AND account = ?',
+        String(Math.max(0, Math.floor(Number(args.selected) || 0))), cursor, now(), session, me.id);
       if (after < row.snapshot_seq)
         return okay({ session, seq: row.seq, resync: true, snapshotSeq: row.snapshot_seq, snapshot: row.snapshot,
           events: [], members: this.teamMembers(session), chat: row.chat });
@@ -263,6 +270,7 @@ export function installChats(Cls) {
     }
     if (name === 'team.leave') {
       const chat = this.teamChatOf(session, me.id);
+      if (this.calls && this.calls.has(row.chat)) this.callOp('call.leave', me, { id: row.chat });
       this.sql.exec('DELETE FROM teammembers WHERE session = ? AND account = ?', session, me.id);
       if (me.id === row.owner) {
         this.sql.exec('DELETE FROM teamevents WHERE session = ?', session);
@@ -274,6 +282,8 @@ export function installChats(Cls) {
         }
       } else if (chat) {
         chat.members = (chat.members || []).filter((m) => m.id !== me.id);
+        me.chats = (me.chats || []).filter((c) => c.id !== chat.id);
+        this.saveUser(me);
         chat.updated = now(); this.teamChatSync(chat);
       }
       return okay();
