@@ -5080,9 +5080,9 @@ const forms = {
     const pick = (side) => [...f.querySelectorAll('input[name=' + side + ']:checked')].map((x) => { const [id, serial] = x.value.split('|'); return { id, serial: Number(serial) }; });
     const give = pick('give'), get = pick('get');
     if (!give.length || !get.length) { toast('Pick at least one item on each side.'); return; }
-    const names = (side) => [...f.querySelectorAll('input[name=' + side + ']:checked')].map((x) => x.closest('label')?.textContent.replace(/\\s+/g, ' ').trim() || 'Selected item').join(', ');
-    if (!confirm('Send this trade offer?\\n\\nYou give: ' + names('give') + '\\n\\nYou get: ' + names('get') +
-      '\\n\\nListed prices are asking prices, not appraisals. Check each item and serial number before sending.')) return;
+    const names = (side) => [...f.querySelectorAll('input[name=' + side + ']:checked')].map((x) => x.closest('label')?.textContent.replace(/\s+/g, ' ').trim() || 'Selected item').join(', ');
+    if (!confirm('Send this trade offer?\n\nYou give: ' + names('give') + '\n\nYou get: ' + names('get') +
+      '\n\nListed prices are asking prices, not appraisals. Check each item and serial number before sending.')) return;
     const r = await call('trade.send', { to: f.to.value, give, get });
     if (!r.ok) { const m = $('#tradeMsg'); m.className = 'error'; m.textContent = ' ' + r.error; return; }
     toast('Trade offer sent!');
