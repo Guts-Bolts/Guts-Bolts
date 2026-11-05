@@ -1203,3 +1203,12 @@ h1 .club-icon{vertical-align:-4px}
 .server-toolbar { align-items: center; flex-wrap: wrap; gap: 10px; }
 .server-toolbar > .row { align-items: center; flex-wrap: wrap; margin-left: auto; }
 .trade-pick .choice .small { display: block; margin: 2px 0 0 24px; }
+
+/* Copyable, inert code snippets in chat and forum posts. */
+.rich-code { margin: 10px 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel2); }
+.rich-code-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 9px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.rich-code pre { margin: 0; padding: 11px; overflow-x: auto; white-space: pre; tab-size: 4; }
+.rich-code code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; line-height: 1.55; white-space: pre; }
+.cd-compose-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
+.cd-bubble .rich-code { text-align: left; }
+.cd-bubble .rich-code pre { max-width: min(70vw, 680px); }
