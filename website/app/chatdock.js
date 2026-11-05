@@ -27,6 +27,30 @@ export function when(t) {
   return d.toLocaleDateString(undefined, d.getFullYear() === n.getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
 }
 const store = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch { /* private window */ } } };
+// Fenced snippets are rendered as inert text, never HTML or executable content.
+function richChatBody(value) {
+  const source = String(value ?? '');
+  const fence = /```([a-zA-Z0-9_+-]{0,24})[ \t]*\n([\s\S]*?)```/g;
+  let out = '', last = 0, match;
+  const plain = (text) => esc(text).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+  while ((match = fence.exec(source))) {
+    out += plain(source.slice(last, match.index));
+    const language = match[1].toLowerCase(), code = match[2].replace(/\n$/, '');
+    out += '<div class="rich-code"><div class="rich-code-head"><span>' + esc(language || 'Code') +
+      '</span><button type="button" class="btn small" data-copy-code="' + esc(code) +
+      '">Copy code</button></div><pre><code>' + esc(code) + '</code></pre></div>';
+    last = fence.lastIndex;
+  }
+  return out + plain(source.slice(last));
+}
+function insertChatCode(textarea, language = 'lua') {
+  if (!textarea) return;
+  const start = textarea.selectionStart ?? textarea.value.length, end = textarea.selectionEnd ?? start;
+  const selected = textarea.value.slice(start, end);
+  textarea.setRangeText('```' + language + '\n' + selected + '\n```', start, end, 'select');
+  if (!selected) { const caret = start + language.length + 4; textarea.setSelectionRange(caret, caret); }
+  textarea.focus();
+}
 
 // Everything the panel needs from the page: call(op, args), me() (your account), toast(text),
 // and onLive(fn) (live pings from the server).
@@ -192,7 +216,7 @@ class Panel {
     const c = this.chat, sum = inbox.chats.find((x) => x.id === this.chatId) || c;
     if (!c) { this.root.innerHTML = this.head('...', '<button type="button" class="cd-icon" data-back aria-label="Back">' + ICON.back + '</button>') + '<p class="cd-none">Loading...</p>'; return; }
     const meId = api.me().id;
-    const msgs = (c.messages || []).map((m) => m.system ? '<div class="cd-sys">' + esc(m.body) + ' · ' + esc(when(m.at)) + '</div>'
+    const msgs = (c.messages || []).map((m) => m.system ? '<div class="cd-sys">' + richChatBody(m.body) + ' · ' + esc(when(m.at)) + '</div>'
       : '<div class="cd-msg' + (m.from === meId ? ' mine' : '') + '"><div class="cd-meta">' + (m.from === meId ? '' : '<b>' + esc(m.name || 'Player') + '</b>') +
         (m.via === 'lyreto' ? '<span class="cd-via" title="Sent from Lyreto">Lyreto</span>' : '') + '<span>' + esc(when(m.at)) + '</span></div><div class="cd-bubble">' + esc(m.body) +
         (m.game ? ' <a class="btn small blue" href="#/game/' + encodeURIComponent(m.game) + '">View game</a>' : '') + '</div></div>').join('');
@@ -206,7 +230,7 @@ class Panel {
         '<button type="button" class="cd-icon" data-info title="Chat details" aria-label="Chat details">' + ICON.more + '</button>') + banner +
       (c.bridge ? '<div class="cd-bridge">Linked to Lyreto: messages here are shared with the channel "' + esc(c.bridge.name) + '".</div>' : '') +
       '<div class="cd-msgs">' + (msgs || '<p class="cd-none">No messages yet. Say hi!</p>') + '</div>' +
-      '<form class="cd-compose" data-send><textarea name="body" maxlength="1000" rows="1" placeholder="Message..." required></textarea><button class="btn blue">Send</button></form>';
+      '<form class="cd-compose" data-send><textarea name="body" maxlength="1000" rows="1" placeholder="Message..." required></textarea><div class="cd-compose-actions"><button type="button" class="btn small" data-code-insert="lua">Code</button><button class="btn blue">Send</button></div></form>';
     const b = this.root.querySelector('.cd-msgs');
     if (b) b.scrollTop = b.scrollHeight;
   }
@@ -233,6 +257,12 @@ class Panel {
     const el = e.target.closest('button, [data-open]');
     if (!el || !this.root.contains(el)) return;
     const d = el.dataset;
+    if ('copyCode' in d) {
+      try { await navigator.clipboard.writeText(d.copyCode || ''); el.textContent = 'Copied'; }
+      catch { api.toast('Clipboard access is unavailable in this browser.'); }
+      return;
+    }
+    if ('codeInsert' in d) { insertChatCode(this.root.querySelector('.cd-compose textarea[name="body"]'), d.codeInsert || 'lua'); return; }
     if ('collapse' in d) { setDockOpen(false); return; }
     if ('dnd' in d) { const r = await api.call('presence.set', { dnd: !inbox.dnd }); if (r.ok) { inbox.dnd = !inbox.dnd; api.toast(inbox.dnd ? 'Do Not Disturb is on: calls won\'t ring.' : 'You\'re available again.'); refresh(); } else api.toast(r.error); return; }
     if ('new' in d) { await refreshFriends(); this.view = 'new'; this.draw(); return; }
