@@ -4002,10 +4002,10 @@ void Editor::renderDialogs() {
                 else m_teamError = err;
             }
             ImGui::SetNextItemWidth(-1);
-            ImGui::InputTextWithHint("##tccloudcode", "8-character invite code", &m_teamAddress);
+            ImGui::InputTextWithHint("##tccloudcode", "8-character invite code", &m_teamCloudCode);
             if (ImGui::Button("Join cloud session", ImVec2(180, 0))) {
                 std::string err;
-                if (m_team->joinCloud(m_teamAddress, err)) ImGui::CloseCurrentPopup();
+                if (m_team->joinCloud(m_teamCloudCode, err)) ImGui::CloseCurrentPopup();
                 else m_teamError = err;
             }
             ImGui::EndDisabled();
@@ -4156,7 +4156,7 @@ void Editor::renderTeamPanel() {
                 glfwSetClipboardString(m_window, m_team->inviteCode().c_str());
             ImGui::SameLine();
             if (ImGui::Button("Open team voice chat"))
-                openUrl("https://gutsandbolts.net/app/");
+                openUrl("https://gutsandbolts.net/app/#/chat/" + m_team->chatId());
             ImGui::TextDisabled("Voice calls use the existing Guts&Bolts chat call system. Open Chat in the website to call this team.");
         }
         if (!m_team->error().empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", m_team->error().c_str());
