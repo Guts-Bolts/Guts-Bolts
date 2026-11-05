@@ -173,3 +173,51 @@ test('the gateway is off until its secret is set', () => {
   const group = chatWith(s, alice, [bob]);
   assert.match(s.call(alice, 'chat.bridge', { id: group }).error, /isn't turned on/);
 });
+
+test('cloud Team Create: invite, authenticate, sync edits and presence, share voice chat', () => {
+  const { s, alice, bob, carol } = setup();
+  const made = s.call(alice, 'team.create', { title: 'Cloud build', snapshot: '{"scene":"start"}' });
+  assert.ok(made.ok, made.error);
+  assert.match(made.code, /^[0-9A-F]{8}$/);
+  assert.equal(made.member, 0);
+  assert.equal(made.members.length, 1);
+
+  const joined = s.call(bob, 'team.join', { code: made.code });
+  assert.ok(joined.ok, joined.error);
+  assert.equal(joined.session, made.session);
+  assert.equal(joined.chat, made.chat);
+  assert.equal(joined.member, 1);
+  assert.deepEqual(joined.members.map((m) => m.name).sort(), ['Alice', 'Bob']);
+
+  const pushed = s.call(bob, 'team.push', { session: made.session, kind: 'ops', payload: '{"up":[{"id":1}]}' });
+  assert.ok(pushed.ok, pushed.error);
+  assert.equal(pushed.seq, 1);
+  const poll = s.call(alice, 'team.poll', { session: made.session, after: 0 });
+  assert.ok(poll.ok, poll.error);
+  assert.equal(poll.events.length, 1);
+  assert.equal(poll.events[0].account, bob.id);
+  assert.equal(poll.events[0].payload, '{"up":[{"id":1}]}');
+
+  const presence = s.call(bob, 'team.presence', { session: made.session, selected: 42, cursor: { x: 1.5, y: 2, z: -3 } });
+  assert.ok(presence.ok, presence.error);
+  const seen = s.call(alice, 'team.poll', { session: made.session, after: 1 });
+  const bobPresence = seen.members.find((m) => m.account === bob.id);
+  assert.equal(bobPresence.selected, 42);
+  assert.deepEqual(bobPresence.cursor, { x: 1.5, y: 2, z: -3 });
+
+  // Team sessions create a normal Guts&Bolts group chat, so the existing WebRTC call
+  // operations and the website chat dock can be reused without a second voice system.
+  const started = s.call(alice, 'call.start', { id: made.chat });
+  assert.ok(started.ok, started.error);
+  const call = s.call(bob, 'call.join', { id: made.chat });
+  assert.ok(call.ok, call.error);
+  assert.deepEqual(call.peers, [alice.id]);
+
+  assert.match(s.call(carol, 'team.poll', { session: made.session, after: 0 }).error, /not a member/);
+  assert.match(s.call(carol, 'team.join', { code: 'DEADBEEF' }).error, /invalid or has expired/);
+  assert.match(s.call(bob, 'team.push', { session: made.session, kind: 'ops', payload: 'x'.repeat(65537) }).error, /too large/);
+  assert.ok(s.call(bob, 'team.leave', { session: made.session }).ok);
+  assert.match(s.call(bob, 'team.poll', { session: made.session, after: 0 }).error, /not a member/);
+  assert.ok(s.call(alice, 'team.leave', { session: made.session }).ok);
+  assert.match(s.call(alice, 'team.poll', { session: made.session, after: 0 }).error, /ended/);
+});
