@@ -693,8 +693,10 @@ pages.home = async () => {
     }).filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score || (b.game.playing || 0) - (a.game.playing || 0) || (b.game.plays || 0) - (a.game.plays || 0))
     .slice(0, 8).map((entry) => entry.game) : [];
-  const recommendedBox = signedIn() && recommendedGames.length
-    ? discoveryBox('Recommended for you', { ok: true, assets: recommendedGames }, 'popular') : '';
+  const recommendedBox = signedIn() && recommendedGames.length ? html`<div class="box discovery-box">
+      <h2 class="boxhead">Recommended for you<a href="#/games?sort=popular" style="float:right">See all &raquo;</a></h2>
+      <p class="small muted">Based on the genres of games you favourite and play.</p>
+      <div class="grid">${recommendedGames.map(gameCard)}</div></div>` : '';
   // Featured: games staff picked (only shown when there are some).
   const featuredBox = featured.ok && featured.assets.length ? html`<div class="box featured-box"><h2 class="boxhead">&#11088; Featured Games
       <a href="#/games?sort=featured" style="float:right">See all &raquo;</a></h2><div class="grid">${featured.assets.map(gameCard)}</div></div>` : '';
