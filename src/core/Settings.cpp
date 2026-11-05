@@ -85,6 +85,8 @@ void GraphicsSettings::load() {
     rd("translateChat", translateChat);
     rd("studioBlenderKeys", studioBlenderKeys);
     if (j.contains("keys")) KeyBinds::fromJson(j["keys"], keys);
+    rd("breakMinutes", breakMinutes);
+    breakMinutes = std::clamp(breakMinutes, 0, 24 * 60);
     rd("colorBlind", colorBlind); rd("textSize", textSize); rd("captions", captions); rd("clipRecorder", clipRecorder);
     colorBlind = std::clamp(colorBlind, 0, 3);
     textSize = std::clamp(textSize, 1.0f, 2.0f);
@@ -95,6 +97,19 @@ void GraphicsSettings::load() {
     maxLights = std::clamp(maxLights, 0, 32);
     if (quality < Low || quality > VeryLow) quality = High;
     if (quality == Auto) applyPreset(Auto);   // starts again from the top: this computer may be faster today
+}
+
+const char* const* GraphicsSettings::breakChoiceNames() {
+    static const char* const names[kBreakChoices] = {"Off", "After 30 minutes", "After 45 minutes", "After 1 hour", "After 1.5 hours", "After 2 hours"};
+    return names;
+}
+int GraphicsSettings::breakChoiceMinutes(int choice) {
+    static const int minutes[kBreakChoices] = {0, 30, 45, 60, 90, 120};
+    return minutes[std::clamp(choice, 0, kBreakChoices - 1)];
+}
+int GraphicsSettings::breakChoiceOf(int minutes) {
+    for (int i = 0; i < kBreakChoices; ++i) if (breakChoiceMinutes(i) == minutes) return i;
+    return minutes <= 0 ? 0 : 3;   // (a hand-edited number shows as "1 hour"; it still uses its own)
 }
 
 const char* const* GraphicsSettings::qualityNames() {
@@ -220,7 +235,7 @@ void GraphicsSettings::save() const {
         {"voiceChat", voiceChat}, {"voiceOpenMic", voiceOpenMic}, {"voiceVolume", voiceVolume}, {"translateChat", translateChat},
         {"colorBlind", colorBlind}, {"textSize", textSize}, {"captions", captions}, {"clipRecorder", clipRecorder},
         {"waterQuality", waterQuality}, {"graphicsApi", graphicsApi}, {"renderDistance", renderDistance},
-        {"studioBlenderKeys", studioBlenderKeys},
+        {"studioBlenderKeys", studioBlenderKeys}, {"breakMinutes", breakMinutes},
     };
     if (nlohmann::json k = KeyBinds::toJson(keys); !k.empty()) j["keys"] = k;
     std::ofstream f(settingsFile());
