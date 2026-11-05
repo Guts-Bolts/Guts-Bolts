@@ -242,13 +242,10 @@ export function installChats(Cls) {
       const payload = typeof args.payload === 'string' ? args.payload : '';
       if (!payload || payload.length > (kind === 'ops' ? 64 * 1024 : 300)) return fail('That Team Create update is empty or too large.');
       if (kind === 'chat') {
-        const chat = this.teamChatOf(session, me.id);
-        if (!chat) return fail('The Team Create chat is no longer available.');
-        const body = clean(payload, 300);
-        if (!body) return fail('Write a message first.');
-        const message = { id: hex(8), from: me.id, name: me.username || me.name, body, at: now() };
-        chat.messages = [...(chat.messages || []), message].slice(-200); chat.updated = message.at;
-        this.teamChatSync(chat); this.chatPosted(chat, message);
+        // Reuse the ordinary party.send pipeline for text filtering, block checks,
+        // daily message limits, chat synchronization, notifications and live pings.
+        const posted = this.op('party.send', me, { id: row.chat, body: payload });
+        if (!posted.ok) return posted;
       }
       const seq = row.seq + 1, at = now();
       this.sql.exec('INSERT INTO teamevents (session, seq, account, kind, payload, at) VALUES (?, ?, ?, ?, ?, ?)',
