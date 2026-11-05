@@ -1564,15 +1564,15 @@ pages.game = async (id) => {
     ${passes.length ? html`<h2>Passes</h2><div class="pass-grid">${passes.map(passCard)}</div>` : ''}
     ${privateServerBox(g, s)}
     <div class="row server-toolbar"><h2 class="grow">Servers (${servers.length})</h2>
-      <form class="row" data-form="serverSort"><input type="hidden" name="game" value="${g.id}">
-        <label class="small" for="serverSort">Sort</label>
-        <select id="serverSort" name="sort" style="width:auto">
+      <div class="row"><label class="small" for="serverSort">Sort</label>
+        <select id="serverSort" style="width:auto">
           <option value="friends" ${serverSort === 'friends' ? 'selected' : ''}>Friends first</option>
           <option value="players" ${serverSort === 'players' ? 'selected' : ''}>Most players</option>
           <option value="space" ${serverSort === 'space' ? 'selected' : ''}>Most open slots</option>
-        </select><button class="btn small">Apply</button>
+        </select>
+        <button type="button" class="btn small" data-act="serverSort" data-id="${g.id}">Apply</button>
         <button type="button" class="btn small" data-act="refreshServers">Refresh</button>
-      </form></div>
+      </div></div>
     ${servers.length ? html`<div class="server-grid">${shown.map(card)}</div>${pager}`
       : html`<p class="muted">Nobody's playing right now. Be the first!</p>`}
     ${commentsBlock(g, cr)}`);
@@ -4149,11 +4149,13 @@ const actions = {
   },
   serverPage(d) { serverPage = Number(d.to) || 1; render(); },
   refreshServers() { serverPage = 1; render(); },
-  serverSort(f) {
+  serverSort(d) {
+    const select = $('#serverSort');
+    if (!select) return;
     serverPage = 1;
     const params = new URLSearchParams(location.hash.split('?')[1] || '');
-    params.set('serverSort', f.sort.value);
-    location.hash = '#/game/' + encodeURIComponent(f.game.value) + '?' + params.toString();
+    params.set('serverSort', select.value);
+    location.hash = '#/game/' + encodeURIComponent(d.id) + '?' + params.toString();
   },
   toggle(d) { const el = $(d.target); if (el) el.hidden = !el.hidden; },
   async modelAccess(d) {
