@@ -1005,6 +1005,19 @@ void ViewportPanel::render(float dt) {
             dl->AddText(ImVec2(imgPos.x + 12, imgMax.y - ImGui::GetFontSize() - 10), IM_COL32(255, 255, 255, 200), tip);
         } else {
             drawSelectionBoxes(view, proj, imgMin, imgSize);
+            // Publish the mouse's world-space hit point as a live Team Create cursor.
+            if (m_team && m_team->active()) {
+                const ImVec2 mouse = ImGui::GetMousePos();
+                if (m_hovered && ImGui::IsWindowHovered()) {
+                    glm::vec3 ro, rd;
+                    mouseRay({mouse.x, mouse.y}, {imgMin.x, imgMin.y}, {imgSize.x, imgSize.y}, view, proj, ro, rd);
+                    float dist = 0.0f;
+                    if (Physics::raycast(*m_scene, ro, rd, &dist)) m_team->setCursor(ro + rd * dist, true);
+                    else if (rd.y < -1e-3f && ro.y > 0.0f)
+                        m_team->setCursor(ro + rd * std::min(-ro.y / rd.y, 500.0f), true);
+                    else m_team->setCursor({}, false);
+                } else m_team->setCursor({}, false);
+            }
             const bool objModal = isActive() && objectModal(view, proj, imgMin, imgSize);   // G / R / S (Blender keys), in the view the mouse is in
             if (!objModal) drawGizmo(view, proj, imgMin, imgSize);
 
@@ -1043,6 +1056,24 @@ void ViewportPanel::render(float dt) {
                         dl->AddRectFilled(label, ImVec2(label.x + ts.x + 12.0f, label.y + ts.y + 6.0f), col, 4.0f);
                         dl->AddText(ImVec2(label.x + 6.0f, label.y + 3.0f), IM_COL32(20, 20, 25, 255), mem.name.c_str());
                     }
+                }
+            }
+
+            // Free-moving collaborator cursor orbs, projected from shared world coordinates.
+            if (m_team && m_team->active()) {
+                for (const auto& mem : m_team->members()) {
+                    if (mem.id == m_team->myId() || !mem.cursorActive) continue;
+                    glm::vec4 clip = proj * view * glm::vec4(mem.cursor, 1.0f);
+                    if (clip.w <= 0.05f) continue;
+                    ImVec2 at(imgMin.x + (clip.x / clip.w * 0.5f + 0.5f) * imgSize.x,
+                              imgMin.y + (0.5f - clip.y / clip.w * 0.5f) * imgSize.y);
+                    ImU32 col = ImGui::ColorConvertFloat4ToU32(ImVec4(mem.color.r, mem.color.g, mem.color.b, 1));
+                    dl->AddCircleFilled(at, 7.0f, col, 24);
+                    dl->AddCircle(at, 9.0f, IM_COL32(255, 255, 255, 235), 24, 2.0f);
+                    ImVec2 ts = ImGui::CalcTextSize(mem.name.c_str());
+                    ImVec2 label(at.x - ts.x * 0.5f - 6.0f, at.y - ts.y - 17.0f);
+                    dl->AddRectFilled(label, ImVec2(label.x + ts.x + 12.0f, label.y + ts.y + 6.0f), col, 4.0f);
+                    dl->AddText(ImVec2(label.x + 6.0f, label.y + 3.0f), IM_COL32(20, 20, 25, 255), mem.name.c_str());
                 }
             }
 
