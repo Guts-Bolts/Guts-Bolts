@@ -231,6 +231,11 @@ test('cloud Team Create: invite, authenticate, sync edits and presence, share vo
   assert.equal(bobPresence.selected, 42);
   assert.deepEqual(bobPresence.cursor, { x: 1.5, y: 2, z: -3 });
 
+  const said = s.call(bob, 'team.push', { session: made.session, kind: 'chat', payload: 'Can someone review this script?' });
+  assert.ok(said.ok, said.error);
+  const history = s.call(alice, 'party.read', { id: made.chat });
+  assert.equal(history.chat.messages.at(-1).body, 'Can someone review this script?');
+
   // Team sessions create a normal Guts&Bolts group chat, so the existing WebRTC call
   // operations and the website chat dock can be reused without a second voice system.
   const started = s.call(alice, 'call.start', { id: made.chat });
