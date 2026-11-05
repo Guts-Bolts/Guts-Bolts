@@ -241,6 +241,9 @@ export function installChats(Cls) {
       if (!['ops', 'chat'].includes(kind)) return fail('Unknown Team Create event.');
       const payload = typeof args.payload === 'string' ? args.payload : '';
       if (!payload || payload.length > (kind === 'ops' ? 64 * 1024 : 300)) return fail('That Team Create update is empty or too large.');
+      const backlog = [...this.sql.exec('SELECT COALESCE(SUM(LENGTH(payload)), 0) AS bytes FROM teamevents WHERE session = ?', session)][0];
+      if ((backlog && backlog.bytes || 0) + payload.length > 8 * 1024 * 1024)
+        return fail('This session needs a host scene checkpoint before more edits can be queued.');
       if (kind === 'chat') {
         // Reuse the ordinary party.send pipeline for text filtering, block checks,
         // daily message limits, chat synchronization, notifications and live pings.
