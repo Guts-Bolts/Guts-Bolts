@@ -224,9 +224,10 @@ export function installChats(Cls) {
       if (me.id !== row.owner) return fail('Only the session host can publish a scene snapshot.');
       const snapshot = typeof args.snapshot === 'string' ? args.snapshot : '';
       if (!snapshot || snapshot.length > 512 * 1024) return fail('The scene snapshot is empty or exceeds 512 KB.');
-      this.sql.exec('UPDATE teamsessions SET snapshot = ?, snapshot_seq = seq WHERE id = ?', snapshot, session);
-      this.sql.exec('DELETE FROM teamevents WHERE session = ? AND seq <= ?', session, row.seq);
-      return okay({ snapshotSeq: row.seq });
+      const upto = Math.max(row.snapshot_seq, Math.min(row.seq, Math.floor(Number(args.upto) || 0)));
+      this.sql.exec('UPDATE teamsessions SET snapshot = ?, snapshot_seq = ? WHERE id = ?', snapshot, upto, session);
+      this.sql.exec('DELETE FROM teamevents WHERE session = ? AND seq <= ?', session, upto);
+      return okay({ snapshotSeq: upto });
     }
     if (name === 'team.push') {
       const kind = clean(args.kind, 12);
