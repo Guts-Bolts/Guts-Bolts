@@ -639,11 +639,12 @@ async function fetchPublicActivity(path) {
 }
 pages.home = async () => {
   // Everything the page needs is asked for at once, so it waits for one round trip, not four.
-  const [games, newest, updatedGames, playingGames, items, fr, recent, favs, featured, , feedR, upd, mine, auctions, auctionEvents] = await Promise.all([
+  const [games, newest, updatedGames, playingGames, recommendPool, items, fr, recent, favs, featured, , feedR, upd, mine, auctions, auctionEvents] = await Promise.all([
     pageCall('list', { kind: 'game', sort: 'popular', limit: 8 }),
     pageCall('list', { kind: 'game', sort: 'new', limit: 8 }),
     pageCall('list', { kind: 'game', sort: 'updated', limit: 8 }),
     pageCall('list', { kind: 'game', sort: 'playing', limit: 8 }),
+    signedIn() ? pageCall('list', { kind: 'game', sort: 'popular', limit: 100 }) : Promise.resolve({ ok: false }),
     pageCall('list', { kind: 'clothing', limit: 6 }),
     signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
     signedIn() ? pageCall('games.mine', { which: 'recent', limit: 8 }) : Promise.resolve({ ok: false }),
@@ -674,6 +675,26 @@ pages.home = async () => {
   const discoveryBox = (title, r, sort) => r.ok && r.assets.length ? html`<div class="box discovery-box">
       <h2 class="boxhead">${title}<a href="#/games?sort=${sort}" style="float:right">See all &raquo;</a></h2>
       <div class="grid">${r.assets.map(gameCard)}</div></div>` : '';
+  // A transparent genre-based recommendation pass: favourites weigh more than recent plays,
+  // and games already shown in those lists or the popular shelf are left out.
+  const genreWeights = new Map();
+  for (const game of favs.ok ? favs.assets : []) for (const genre of new Set(game.genres || []))
+    genreWeights.set(genre, (genreWeights.get(genre) || 0) + 2);
+  for (const game of recent.ok ? recent.assets : []) for (const genre of new Set(game.genres || []))
+    genreWeights.set(genre, (genreWeights.get(genre) || 0) + 1);
+  const alreadyShown = new Set([...(games.ok ? games.assets : []), ...(favs.ok ? favs.assets : []), ...(recent.ok ? recent.assets : [])].map((game) => game.id));
+  const recommendedGames = recommendPool.ok && genreWeights.size ? recommendPool.assets
+    .filter((game) => !alreadyShown.has(game.id) && game.creator !== me.id)
+    .map((game) => {
+      const genreFit = (game.genres || []).reduce((score, genre) => score + (genreWeights.get(genre) || 0), 0);
+      const votes = (game.likes || 0) + (game.dislikes || 0);
+      const rating = votes ? (game.likes || 0) / votes : 0.5;
+      return { game, score: genreFit * 10 + Math.min(game.playing || 0, 20) + rating * 3 };
+    }).filter((entry) => entry.score > 0)
+    .sort((a, b) => b.score - a.score || (b.game.playing || 0) - (a.game.playing || 0) || (b.game.plays || 0) - (a.game.plays || 0))
+    .slice(0, 8).map((entry) => entry.game) : [];
+  const recommendedBox = signedIn() && recommendedGames.length
+    ? discoveryBox('Recommended for you', { ok: true, assets: recommendedGames }, 'popular') : '';
   // Featured: games staff picked (only shown when there are some).
   const featuredBox = featured.ok && featured.assets.length ? html`<div class="box featured-box"><h2 class="boxhead">&#11088; Featured Games
       <a href="#/games?sort=featured" style="float:right">See all &raquo;</a></h2><div class="grid">${featured.assets.map(gameCard)}</div></div>` : '';
@@ -719,7 +740,7 @@ pages.home = async () => {
               <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
-      <div class="home-right">${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
+      <div class="home-right">${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${recommendedBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
     </div>`);
   tickCountdowns();
   // Dressed in what you're wearing (the server says which items those are).
