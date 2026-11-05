@@ -170,7 +170,7 @@ export function installChats(Cls) {
     if (name === 'team.create') {
       const snapshot = typeof args.snapshot === 'string' ? args.snapshot : '';
       if (!snapshot || snapshot.length > 512 * 1024) return fail('Save a smaller scene before starting cloud Team Create (512 KB session snapshot limit).');
-      const id = 'tc-' + hex(8), code = hex(16).toUpperCase(), chatId = 'tc-' + hex(8), t = now();
+      const id = 'tc-' + hex(8), code = hex(8).toUpperCase(), chatId = 'tc-' + hex(8), t = now();
       const title = clean(args.title, 60) || 'Studio Team';
       const chat = { id: chatId, title, owner: me.id, members: [{ id: me.id, userId: me.userId, name: me.username || me.name }],
         messages: [], readAt: { [me.id]: t }, created: t, updated: t };
