@@ -689,8 +689,8 @@ pages.home = async () => {
       const genreFit = (game.genres || []).reduce((score, genre) => score + (genreWeights.get(genre) || 0), 0);
       const votes = (game.likes || 0) + (game.dislikes || 0);
       const rating = votes ? (game.likes || 0) / votes : 0.5;
-      return { game, score: genreFit * 10 + Math.min(game.playing || 0, 20) + rating * 3 };
-    }).filter((entry) => entry.score > 0)
+      return { game, genreFit, score: genreFit * 10 + Math.min(game.playing || 0, 20) + rating * 3 };
+    }).filter((entry) => entry.genreFit > 0)
     .sort((a, b) => b.score - a.score || (b.game.playing || 0) - (a.game.playing || 0) || (b.game.plays || 0) - (a.game.plays || 0))
     .slice(0, 8).map((entry) => entry.game) : [];
   const recommendedBox = signedIn() && recommendedGames.length ? html`<div class="box discovery-box">
