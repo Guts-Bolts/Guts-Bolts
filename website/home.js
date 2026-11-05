@@ -1,6 +1,7 @@
 // Languages (website/lang): translates this page and adds the picker to the footer.
   import { startTranslating, languagePicker } from './lang/i18n.js';
   import { call as apiCall } from './app/gb.js';
+  import { startLive, onLive } from './app/live.js';
   startTranslating();
   const foot = document.querySelector('footer');
   foot.append(document.createElement('br'), document.createElement('br'), languagePicker());
@@ -79,6 +80,7 @@
   const root = document.getElementById('auction-feature');
   if (!root) return;
   let loading = false;
+  let refreshQueued = false;
   let lastItems = [];
 
   const pad = (n) => String(n).padStart(2, '0');
@@ -187,7 +189,8 @@
     }
   }
   async function refresh() {
-    if (loading || document.visibilityState === 'hidden') return;
+    if (document.visibilityState === 'hidden') return;
+    if (loading) { refreshQueued = true; return; }
     loading = true;
     try {
       // again=false: a busy server's "are you a person?" check never pops up on the front page.
@@ -198,6 +201,10 @@
       if (!lastItems.length) root.hidden = true;
     } finally {
       loading = false;
+      if (refreshQueued && document.visibilityState !== 'hidden') {
+        refreshQueued = false;
+        refresh();
+      }
     }
   }
   function tick() {
@@ -212,6 +219,12 @@
       refresh();
     }
   }
+  // Auction events are broadcast as data-free pings. Re-fetch from the signed API so
+  // the displayed bid, auction state and end time always come from the source of truth.
+  onLive((topic, event) => {
+    if (topic === 'gb-activity' && event === 'auctions') refresh();
+  });
+  startLive();   // polling below remains the fallback when Realtime is unavailable
   refresh();
   window.setInterval(tick, 1000);
   window.setInterval(refresh, 60000);   // (the countdown ticks by itself; bids don't need a fast refresh)
