@@ -199,7 +199,7 @@ test('cloud Team Create: invite, authenticate, sync edits and presence, share vo
   const { s, alice, bob, carol } = setup();
   const made = s.call(alice, 'team.create', { title: 'Cloud build', snapshot: '{"scene":"start"}' });
   assert.ok(made.ok, made.error);
-  assert.match(made.code, /^[0-9A-F]{8}$/);
+  assert.match(made.code, /^[0-9A-F]{16}$/);
   assert.equal(made.member, 0);
   assert.equal(made.members.length, 1);
 
@@ -235,7 +235,7 @@ test('cloud Team Create: invite, authenticate, sync edits and presence, share vo
   assert.deepEqual(call.peers, [alice.id]);
 
   assert.match(s.call(carol, 'team.poll', { session: made.session, after: 0 }).error, /not a member/);
-  assert.match(s.call(carol, 'team.join', { code: 'DEADBEEF' }).error, /invalid or has expired/);
+  assert.match(s.call(carol, 'team.join', { code: 'DEADBEEFDEADBEEF' }).error, /invalid or has expired/);
   assert.match(s.call(bob, 'team.push', { session: made.session, kind: 'ops', payload: 'x'.repeat(65537) }).error, /too large/);
   assert.ok(s.call(bob, 'team.leave', { session: made.session }).ok);
   assert.match(s.call(bob, 'team.poll', { session: made.session, after: 0 }).error, /not a member/);
