@@ -130,6 +130,7 @@ bool TeamCreate::joinCloud(const std::string& code, std::string& error) {
                 m_cloud = false; return;
             }
             m_cloudSession = r.value("session", std::string());
+            m_cloudOwner = r.value("owner", false);
             m_cloudCode = r.value("code", std::string());
             m_cloudChat = r.value("chat", std::string());
             m_myId = r.value("member", 1);
@@ -196,7 +197,12 @@ void TeamCreate::updateCloud(bool canApply) {
             [this, alive, generation](const json& r) {
                 auto keep = alive.lock(); if (!keep || !*keep || generation != m_cloudGeneration) return;
                 m_cloudPollPending = false;
-                if (!r.value("ok", false)) { m_error = r.value("error", std::string("Lost the cloud Team Create session.")); return; }
+                if (!r.value("ok", false)) {
+                    m_error = r.value("error", std::string("Lost the cloud Team Create session."));
+                    if (m_error.find("session has ended") != std::string::npos || m_error.find("not a member") != std::string::npos)
+                        m_cloud = m_cloudReady = false;
+                    return;
+                }
                 if (r.contains("members")) cloudMembers(r["members"]);
                 if (r.value("resync", false) && r.contains("snapshot")) {
                     std::string loadError;
