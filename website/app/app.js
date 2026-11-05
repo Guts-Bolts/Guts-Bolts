@@ -34,6 +34,46 @@ function show(content) {
   setTimeout(() => upgradeItemPictures(), 0);   // (item renders on every page)
 }
 const view = $('#view');
+// Render fenced code blocks as inert, copyable code. Never interpret code as HTML or execute it.
+function richText(value) {
+  const source = String(value ?? '');
+  const fence = /```([a-zA-Z0-9_+-]{0,24})[ \t]*\n([\s\S]*?)```/g;
+  let out = '', last = 0, match;
+  const plain = (text) => esc(text).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
+  while ((match = fence.exec(source))) {
+    out += plain(source.slice(last, match.index));
+    const language = match[1].toLowerCase();
+    const code = match[2].replace(/\n$/, '');
+    out += '<div class="rich-code"><div class="rich-code-head"><span>' +
+      esc(language || 'Code') + '</span><button type="button" class="btn small" data-copy-code="' +
+      esc(code) + '">Copy code</button></div><pre><code>' + esc(code) +
+      '</code></pre></div>';
+    last = fence.lastIndex;
+  }
+  out += plain(source.slice(last));
+  return raw(out);
+}
+function insertCodeFence(textarea, language = 'lua') {
+  if (!textarea) return;
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? start;
+  const selected = textarea.value.slice(start, end);
+  const block = '```' + language + '\n' + selected + '\n```';
+  textarea.setRangeText(block, start, end, 'select');
+  const caret = start + language.length + 4;
+  if (!selected) textarea.setSelectionRange(caret, caret);
+  textarea.focus();
+}
+view.addEventListener('click', async (event) => {
+  const copy = event.target.closest('[data-copy-code]');
+  if (copy) {
+    try { await navigator.clipboard.writeText(copy.dataset.copyCode || ''); copy.textContent = 'Copied'; }
+    catch { copy.textContent = 'Copy unavailable'; }
+    return;
+  }
+  const insert = event.target.closest('[data-code-insert]');
+  if (insert) insertCodeFence(insert.closest('form')?.querySelector('textarea[name="text"]'), insert.dataset.codeInsert || 'lua');
+});
 const KINDS = { hat: 'Hat', shirt: 'Shirt', pants: 'Pants', audio: 'Audio', plugin: 'Plugin', game: 'Game', decal: 'Decal', model: 'Model',
   hair: 'Hair', faceacc: 'Face Accessory', neck: 'Neck Accessory', shoulder: 'Shoulder Accessory', waist: 'Waist Accessory', face: 'Face',
   tshirt: 'T-Shirt', gear: 'Gear', animation: 'Animation', emote: 'Emote', animpack: 'Animation Pack', bundle: 'Bundle', bodypart: 'Body Part' };
@@ -984,7 +1024,7 @@ pages.forum = async (board, a, b) => {
     ${r.board.staffOnly && !r.canPost ? html`<p class="muted">Only Guts&amp;Bolts staff post here.</p>`
       : signedIn() ? html`<form class="form" data-form="forumPost"><input type="hidden" name="board" value="${r.board.id}">
         <label>Title</label><input type="text" name="title" maxlength="80" required>
-        <label>Message</label><textarea name="text" maxlength="3000" rows="7" required></textarea>
+        <label>Message</label><textarea name="text" maxlength="3000" rows="7" required></textarea><p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <span class="small muted">Wrap Lua or other code in a copyable block.</span></p>
         <p><button class="btn green">Post thread</button> <span class="small muted">Be kind, and don't share personal info.</span></p></form>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to post.</p>`}`);
   loadForumAvatars();
@@ -996,7 +1036,7 @@ async function forumThread(id, page) {
   const post = (p) => html`<div class="forum-post" data-post="${p.id}">
     <div class="forum-author"><a class="forum-player-avatar" href="#/user/${p.by.userId || p.by.id}" title="View ${p.by.name}’s profile">${forumAvatar(p.by, 72)}</a>${forumWho(p.by)}<span class="forum-player-number">PLAYER #${p.by.userId || p.by.id}</span></div>
     <div class="grow"><p class="small muted">${ago(p.at)}</p>
-      <div class="forum-text">${p.text}</div>
+      <div class="forum-text">${richText(p.text)}</div>
       <p class="small">${p.canDelete ? html`<a href="#" data-act="forumDelete" data-thread="${t.id}" data-post="${p.id}" data-first="${p.first ? 1 : ''}" data-page="${r.page}">${p.first ? 'Delete thread' : 'Delete'}</a> ` : ''}
         ${signedIn() && p.by.id !== me.id ? reportLink('forum', t.id + ':' + p.id, p.by.name) : ''}</p></div></div>`;
   show(html`<p class="forum-retro-breadcrumb"><a href="#/forum">Forum index</a> &rsaquo; <a href="#/forum/${t.board}">${t.boardName}</a></p>
@@ -1008,7 +1048,7 @@ async function forumThread(id, page) {
     ${forumPager(base, r.page, r.pages)}
     ${r.canReply ? html`<h2>Reply</h2><form class="form" data-form="forumReply"><input type="hidden" name="thread" value="${t.id}">
         <textarea name="text" maxlength="3000" rows="5" required></textarea>
-        <p><button class="btn blue">Post reply</button></p></form>`
+        <p><button type="button" class="btn small" data-code-insert="lua">Insert code block</button> <button class="btn blue">Post reply</button></p></form>`
       : t.locked ? html`<p class="muted">This thread is locked, so nobody can reply.</p>`
       : html`<p class="muted"><a href="#/login">Log in</a> or <a href="#/signup">sign up</a> to reply.</p>`}`);
   loadForumAvatars();
