@@ -208,6 +208,11 @@ test('cloud Team Create: invite, authenticate, sync edits and presence, share vo
   assert.equal(joined.session, made.session);
   assert.equal(joined.chat, made.chat);
   assert.equal(joined.member, 1);
+  assert.equal(joined.owner, false);
+  const resumed = s.call(alice, 'team.join', { code: made.code });
+  assert.ok(resumed.ok, resumed.error);
+  assert.equal(resumed.owner, true);
+  assert.equal(resumed.member, 0);
   assert.deepEqual(joined.members.map((m) => m.name).sort(), ['Alice', 'Bob']);
 
   const pushed = s.call(bob, 'team.push', { session: made.session, kind: 'ops', payload: '{"up":[{"id":1}]}' });
