@@ -22,6 +22,11 @@ struct GraphicsSettings {
     bool  allowGore   = true;   // false hides blood / gore in every game
     bool  seasonTheme = true;   // the Player dresses up for the season (Gutstober in October)
     bool  checkUpdates = true;  // look for a newer version on GitHub at startup
+    int   breakMinutes = 0;     // take-a-break reminder after this many minutes of playing (0 = off)
+    static constexpr int kBreakChoices = 6;        // Off, 30 min, 45 min, 1 hour, 1.5 hours, 2 hours
+    static const char* const* breakChoiceNames();
+    static int breakChoiceMinutes(int choice);
+    static int breakChoiceOf(int minutes);          // the menu position for a saved number
     char  language[16] = "";
 
     // Controls

@@ -76,6 +76,12 @@ void draw(bool* open) {
     help("Turn off to hide blood, oil and gibs in every game.");
     ImGui::Checkbox("Gutstober theme (October)", &s.seasonTheme);
     help("In October the app dresses up for Halloween: orange and purple, a pumpkin and bats. Turn off for the usual blue.");
+    {
+        int bi = GraphicsSettings::breakChoiceOf(s.breakMinutes);
+        if (ImGui::Combo("Break reminder", &bi, GraphicsSettings::breakChoiceNames(), GraphicsSettings::kBreakChoices))
+            s.breakMinutes = GraphicsSettings::breakChoiceMinutes(bi);
+        help("In the Player, a friendly nudge to rest your eyes and stretch after playing this long.");
+    }
 
     ImGui::SeparatorText("Accessibility");
     ImGui::Combo("Colorblind mode", &s.colorBlind, GraphicsSettings::colorBlindNames(), 4);

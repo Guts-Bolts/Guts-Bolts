@@ -425,6 +425,11 @@ private:
     bool           m_teleporting = false;           // looking the game up
     void teleportMe(const std::string& place, const nlohmann::json& data, const std::string& from);
     void drawDevConsole();
+    // Take-a-break reminder (PlayerBreak.cpp): after Settings > Break Reminder minutes of
+    // playing, a friendly card suggests a rest. "Keep playing" starts the count again.
+    float m_breakPlayed = 0.0f;      // seconds played since the last reminder (all games this time the app is open)
+    bool  m_breakShowing = false;
+    void  drawBreakReminder(float dt);
     // Photo mode (PlayerPhoto.cpp): F2 or the menu's button hides the HUD and lets the
     // camera fly on its own; Enter saves the 3D view as a picture.
     bool        m_photo = false;
