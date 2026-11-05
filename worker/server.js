@@ -2558,7 +2558,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
     if (name.startsWith('mem.')) return this.memOp(name, me, args);
     if (name === 'http.request') return this.webOp(name, me, args);
-    if (name.startsWith('call.') || name === 'chat.inbox' || name === 'chat.bridge' || name === 'chat.unbridge' || name === 'presence.set') return this.chatOp(name, me, args);   // HttpService (game-web.js)
+    if (name.startsWith('call.') || name.startsWith('team.') || name === 'chat.inbox' || name === 'chat.bridge' || name === 'chat.unbridge' || name === 'presence.set') return this.chatOp(name, me, args);   // HttpService (game-web.js)
     if (name === 'game.secrets' || name === 'game.secretSet' || name === 'game.secretRemove') return this.secretOp(name, me, args);
     if (name.startsWith('learn.')) return this.learnOp(name, me, args);
     if (name.startsWith('roadmap.')) return this.roadmapOp(name, me, args);
