@@ -4002,7 +4002,7 @@ void Editor::renderDialogs() {
                 else m_teamError = err;
             }
             ImGui::SetNextItemWidth(-1);
-            ImGui::InputTextWithHint("##tccloudcode", "8-character invite code", &m_teamCloudCode);
+            ImGui::InputTextWithHint("##tccloudcode", "16-character invite code", &m_teamCloudCode);
             if (ImGui::Button("Join cloud session", ImVec2(180, 0))) {
                 std::string err;
                 if (m_team->joinCloud(m_teamCloudCode, err)) ImGui::CloseCurrentPopup();
@@ -4145,6 +4145,7 @@ void Editor::renderTeamPanel() {
         if (m_team->waiting()) ImGui::TextDisabled("Joining...");
         else {
             ImGui::TextDisabled("Not in Team Create.");
+            if (!m_team->error().empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", m_team->error().c_str());
             if (ImGui::Button("Start or join Team Create...")) m_openTeam = true;
         }
     } else {
