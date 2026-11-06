@@ -133,7 +133,7 @@ async function handleRemoteControl(request, env, url) {
   if (!action || typeof action !== 'object' || Array.isArray(action)) return reply({ ok: false, error: 'Bad action.' }, 400);
   const stub = env.REMOTE_CONTROL.getByName('home');
   try {
-    const result = await stub.control(auth.account.toLowerCase(), action);
+    const result = await stub.control(auth.account.toLowerCase(), action, request.headers.get('cf-connecting-ip') || 'unknown');
     return reply(result.body, result.status);
   } catch (error) {
     console.error(JSON.stringify({ message: 'remote control RPC failed', error: error instanceof Error ? error.message : 'unknown' }));
