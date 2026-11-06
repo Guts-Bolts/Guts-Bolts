@@ -18,6 +18,7 @@ $script:LastError = ''
 $script:CrashTimes = New-Object 'System.Collections.Generic.List[datetime]'
 $script:LastProcessId = 0
 $script:PairingCode = $null
+$script:PairingCreatedAt = $null
 $script:SeenCommands = New-Object 'System.Collections.Generic.HashSet[string]'
 
 function Ensure-Root {
@@ -308,6 +309,7 @@ function Handle-AgentMessage($Socket, $Message) {
     'pair.complete' {
       Save-DeviceToken ([string]$Message.token)
       $script:PairingCode = $null
+      $script:PairingCreatedAt = $null
       Write-Host 'Device paired successfully. The credential is encrypted for this Windows user.' -ForegroundColor Green
       Send-Json $Socket @{ t = 'status'; status = (Get-AgentStatus) }
     }
@@ -318,10 +320,12 @@ function Handle-AgentMessage($Socket, $Message) {
     'device.rejected' {
       Remove-Item -LiteralPath $TokenPath -Force -ErrorAction SilentlyContinue
       $script:PairingCode = $null
+      $script:PairingCreatedAt = $null
       throw 'The stored device credential was revoked or rejected. A new local pairing code will be generated.'
     }
     'pair.expired' {
       $script:PairingCode = $null
+      $script:PairingCreatedAt = $null
       throw 'The one-time pairing code expired. A new code will be displayed.'
     }
     'pair.rate-limited' { Write-Warning 'Pairing attempts are temporarily rate-limited. Wait one hour before restarting the agent.'; exit 3 }
@@ -349,7 +353,7 @@ function Connect-Agent {
       Send-Json $socket @{ t = 'device.auth'; token = $token }
     } else {
       $newCode = -not $script:PairingCode
-      if ($newCode) { $script:PairingCode = New-PairingCode }
+      if ($newCode) { $script:PairingCode = New-PairingCode; $script:PairingCreatedAt = [DateTime]::UtcNow }
       Send-Json $socket @{ t = 'pair.begin'; code = $script:PairingCode; device = $env:COMPUTERNAME }
       if ($newCode) {
         Write-Host ''
@@ -374,6 +378,11 @@ function Connect-Agent {
         Handle-AgentMessage $socket $message
         $receive = $socket.ReceiveAsync($segment, $cancel)
       } else {
+        if (-not $token -and $script:PairingCode -and $script:PairingCreatedAt -and ([DateTime]::UtcNow - $script:PairingCreatedAt).TotalMinutes -ge 5) {
+          $script:PairingCode = $null
+          $script:PairingCreatedAt = $null
+          throw 'The one-time pairing code expired. Reconnecting to display a new code.'
+        }
         Check-CrashRecovery $socket
         $status = Get-AgentStatus
         Send-Json $socket @{ t = 'status'; status = $status }
