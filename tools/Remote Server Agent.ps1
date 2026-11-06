@@ -119,19 +119,20 @@ function Get-ManagedProcess {
     Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
     return $null
   }
-  try {
-    $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop
-    if (-not $proc -or -not $proc.ExecutablePath) { return $null }
-    if ([string]::Compare([IO.Path]::GetFullPath($proc.ExecutablePath), [IO.Path]::GetFullPath($script:Config.ServerExe), $true) -ne 0) {
-      Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
-      return $null
-    }
-    return Get-Process -Id $pidValue -ErrorAction Stop
-  } catch {
+  try { $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop }
+  catch { throw 'Could not verify the managed game-server process. No process will be changed.' }
+  if (-not $proc) {
+    Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
     return $null
   }
+  if (-not $proc.ExecutablePath) { throw 'The managed process path is unavailable. Refusing to change an unverified process.' }
+  if ([string]::Compare([IO.Path]::GetFullPath($proc.ExecutablePath), [IO.Path]::GetFullPath($script:Config.ServerExe), $true) -ne 0) {
+    Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
+    return $null
+  }
+  try { return Get-Process -Id $pidValue -ErrorAction Stop }
+  catch { throw 'Could not access the verified game-server process. No process will be changed.' }
 }
-
 function Start-ManagedServer {
   $current = Get-ManagedProcess
   if ($current) { return 'Server is already running (PID ' + $current.Id + ').' }
