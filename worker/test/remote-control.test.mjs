@@ -149,3 +149,10 @@ test('device authentication rejects incorrect credentials and accepts the paired
   assert.equal(good.authed, true);
   assert.equal(w.object.agent, good);
 });
+
+test('only the configured official account can invoke remote-control RPC', async () => {
+  const w = world();
+  const other = 'b'.repeat(64);
+  const response = await w.object.control(other, { action: 'pair', code: randomBytes(32).toString('hex') });
+  assert.equal(response.status, 401);
+});
