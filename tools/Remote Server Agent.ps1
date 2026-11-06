@@ -157,28 +157,32 @@ function Set-ManagedPriority {
 }
 
 function Invoke-AllowedCommand($Message) {
-  if (-not $Message.id -or [string]$Message.id -notmatch '^[a-f0-9-]{16,64}
+  if (-not $Message.id -or [string]$Message.id -notmatch '^[a-f0-9-]{16,64}$') { throw 'Invalid command ID.' }
+  if (-not ($Message.expires -is [long] -or $Message.expires -is [int] -or $Message.expires -is [double])) { throw 'Command has no expiry.' }
   if ([long]$Message.expires -lt [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) { throw 'Command expired and was ignored.' }
+  if (-not $script:SeenCommands.Add([string]$Message.id)) { throw 'Duplicate command ID; replay was rejected.' }
+  if ($script:SeenCommands.Count -gt 1000) { $script:SeenCommands.Clear(); [void]$script:SeenCommands.Add([string]$Message.id) }
   $commandArgs = $Message.args
   if ($null -eq $commandArgs) { $commandArgs = [pscustomobject]@{} }
+  $argNames = @($commandArgs.PSObject.Properties.Name)
   switch ([string]$Message.command) {
     'start' {
-      if (@($commandArgs.PSObject.Properties.Name).Count -ne 0) { throw 'Unexpected start arguments.' }
+      if ($argNames.Count -ne 0) { throw 'Unexpected start arguments.' }
       return Start-ManagedServer
     }
     'stop' {
-      if ($args.PSObject.Properties.Count -ne 0) { throw 'Unexpected stop arguments.' }
+      if ($argNames.Count -ne 0) { throw 'Unexpected stop arguments.' }
       return Stop-ManagedServer
     }
     'restart' {
-      if ($args.PSObject.Properties.Count -ne 0) { throw 'Unexpected restart arguments.' }
+      if ($argNames.Count -ne 0) { throw 'Unexpected restart arguments.' }
       Stop-ManagedServer | Out-Null
       Start-Sleep -Seconds 2
       return Start-ManagedServer
     }
     'set-slots' {
-      if ((@($commandArgs.PSObject.Properties.Name).Count -ne 1 -or @($commandArgs.PSObject.Properties.Name)[0] -ne 'slots') -or [int]$commandArgs.slots -lt 1 -or [int]$args.slots -gt 50) { throw 'Slots must be an integer from 1 to 50.' }
-      $script:Config.Slots = [int]$args.slots
+      if ($argNames.Count -ne 1 -or $argNames[0] -ne 'slots' -or (($commandArgs.slots -isnot [int]) -and ($commandArgs.slots -isnot [long])) -or [int]$commandArgs.slots -lt 1 -or [int]$commandArgs.slots -gt 50) { throw 'Slots must be an integer from 1 to 50.' }
+      $script:Config.Slots = [int]$commandArgs.slots
       Save-Config
       if (Get-ManagedProcess) {
         Stop-ManagedServer | Out-Null
@@ -188,21 +192,20 @@ function Invoke-AllowedCommand($Message) {
       return 'Saved server slots: ' + $script:Config.Slots + '.'
     }
     'set-priority' {
-      if ((@($commandArgs.PSObject.Properties.Name).Count -ne 1 -or @($commandArgs.PSObject.Properties.Name)[0] -ne 'priority') -or @('Normal','AboveNormal','High') -notcontains [string]$commandArgs.priority) { throw 'Priority is not allowed.' }
-      $script:Config.Priority = [string]$args.priority
+      if ($argNames.Count -ne 1 -or $argNames[0] -ne 'priority' -or @('Normal','AboveNormal','High') -notcontains [string]$commandArgs.priority) { throw 'Priority is not allowed.' }
+      $script:Config.Priority = [string]$commandArgs.priority
       Save-Config
       return Set-ManagedPriority
     }
     'set-auto-restart' {
-      if ((@($commandArgs.PSObject.Properties.Name).Count -ne 1 -or @($commandArgs.PSObject.Properties.Name)[0] -ne 'enabled') -or $commandArgs.enabled -isnot [bool]) { throw 'Recovery setting must be true or false.' }
-      $script:Config.AutoRestart = [bool]$args.enabled
+      if ($argNames.Count -ne 1 -or $argNames[0] -ne 'enabled' -or $commandArgs.enabled -isnot [bool]) { throw 'Recovery setting must be true or false.' }
+      $script:Config.AutoRestart = [bool]$commandArgs.enabled
       Save-Config
       return 'Automatic crash recovery ' + ($(if ($script:Config.AutoRestart) { 'enabled' } else { 'disabled' })) + '.'
     }
     default { throw 'Command is not in the agent allowlist.' }
   }
 }
-
 function Get-GpuMetrics {
   $path = Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI\nvidia-smi.exe'
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @{} }
