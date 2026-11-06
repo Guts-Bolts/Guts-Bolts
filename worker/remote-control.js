@@ -58,7 +58,7 @@ const b64urlBytes = (value) => Uint8Array.from(atob(value.replace(/-/g, '+').rep
 const toB64url = (bytes) => {
   let binary = '';
   for (let i = 0; i < bytes.length; i += 0x4000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x4000));
-  return btoa(binary).replace(/=/g, '').replace(/\\+/g, '-').replace(/\\//g, '_');
+  return btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 };
 const concat = (...parts) => {
   const length = parts.reduce((sum, part) => sum + part.length, 0);
@@ -115,12 +115,12 @@ async function pushBody(subscription, payload) {
   const uaKey = await crypto.subtle.importKey('raw', uaPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
   const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, ephemeral.privateKey, 256));
   const prkKey = await hmac(authSecret, shared);
-  const keyInfo = concat(enc.encode('WebPush: info\\0'), uaPublic, asPublic);
+  const keyInfo = concat(enc.encode('WebPush: info\0'), uaPublic, asPublic);
   const ikm = await hkdfExpand(prkKey, keyInfo, 32);
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const prk = await hmac(salt, ikm);
-  const cek = await hkdfExpand(prk, enc.encode('Content-Encoding: aes128gcm\\0'), 16);
-  const nonce = await hkdfExpand(prk, enc.encode('Content-Encoding: nonce\\0'), 12);
+  const cek = await hkdfExpand(prk, enc.encode('Content-Encoding: aes128gcm\0'), 16);
+  const nonce = await hkdfExpand(prk, enc.encode('Content-Encoding: nonce\0'), 12);
   const plain = concat(enc.encode(JSON.stringify(payload)), Uint8Array.of(2));
   const aes = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
   const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, tagLength: 128 }, aes, plain));
