@@ -255,9 +255,8 @@ async function pushBody(subscription, payload) {
         jsonMessage(c.ws, { t: 'device.rejected' });
         return this.drop(c);
       }
-      c.authed = true;
       c.owner = device.owner;
-      this.attachAgent(c);
+      if (!this.attachAgent(c)) return;
       jsonMessage(c.ws, { t: 'device.ready', heartbeatSeconds: 10 });
       this.audit('agent', 'device.connected', 'Home server agent connected');
       return;
@@ -293,10 +292,20 @@ async function pushBody(subscription, payload) {
 
   attachAgent(c) {
     if (this.agent && this.agent !== c) {
-      jsonMessage(this.agent.ws, { t: 'device.replaced' });
-      try { this.agent.ws.close(4001, 'Replaced by a newer connection'); } catch { /* already closed */ }
+      const seen = [...this.sql.exec('SELECT seen FROM remote_status WHERE id = 1')][0]?.seen || 0;
+      if (now() - seen < 45) {
+        jsonMessage(c.ws, { t: 'device.busy' });
+        this.drop(c);
+        return false;
+      }
+      const previous = this.agent;
+      this.agent = null;
+      this.connections.delete(previous.id);
+      try { previous.ws.close(4001, 'stale connection replaced'); } catch {}
     }
+    c.authed = true;
     this.agent = c;
+    return true;
   }
 
   drop(c) {
@@ -430,9 +439,8 @@ async function pushBody(subscription, payload) {
         actor, tokenHash, now());
       this.sql.exec('DELETE FROM remote_pairings');
       conn.pending = false;
-      conn.authed = true;
       conn.owner = actor;
-      this.attachAgent(conn);
+      if (!this.attachAgent(conn)) return fail('An authenticated home agent is already active.', 409);
       jsonMessage(conn.ws, { t: 'pair.complete', token });
       this.audit(actor, 'device.paired', 'Home server agent paired');
       return success({ paired: true });
