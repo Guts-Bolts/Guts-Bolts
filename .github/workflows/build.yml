@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: '24'
       - name: Check every website and server script for mistakes
-        run: for f in worker/*.js website/*.js website/app/*.js; do node --check "$f" || exit 1; done
+        run: for f in worker/*.js website/*.js website/app/*.js website/server/*.js tools/generate-remote-push-keys.mjs; do node --check "$f" || exit 1; done
       - name: Gather the update log and the built-in roadmap
         run: node worker/gather-updates.mjs
       - name: Run the tests
