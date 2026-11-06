@@ -63,7 +63,7 @@ function Save-DeviceToken([string]$Token) {
   if ($Token -notmatch '^[a-f0-9]{64}$') { throw 'The server returned an invalid device credential.' }
   $secure = ConvertTo-SecureString $Token -AsPlainText -Force
   $protected = ConvertFrom-SecureString $secure
-  [IO.File]::WriteAllText($TokenPath, $protected, (New-Object System.Text.UTF8Encoding($false)))
+  [IO.File]::WriteAllText($TokenPath, $protected, ([System.Text.UTF8Encoding]::new($false)))
   $secure.Dispose()
 }
 
