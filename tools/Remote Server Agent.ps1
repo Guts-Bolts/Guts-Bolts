@@ -15,6 +15,7 @@ $TokenPath = Join-Path $Root 'device-token.dpapi'
 $PidPath = Join-Path $Root 'managed-server.pid'
 $script:Config = $null
 $script:LastError = ''
+$script:LastNetworkSample = $null
 $script:CrashTimes = New-Object 'System.Collections.Generic.List[datetime]'
 $script:LastProcessId = 0
 $script:PairingCode = $null
@@ -245,6 +246,30 @@ function Get-GpuMetrics {
       gpuMemoryTotalMB = [double]$parts[3]
     }
   } catch { return @{} }
+}
+
+function Get-NetworkMetrics {
+  try {
+    $adapters = @(Get-NetAdapter -Physical -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' })
+    if ($adapters.Count -eq 0) { return @{ networkRxMbps = $null; networkTxMbps = $null } }
+    $stats = @(Get-NetAdapterStatistics -Name $adapters.Name -ErrorAction Stop)
+    $rx = [double](($stats | Measure-Object -Property ReceivedBytes -Sum).Sum)
+    $tx = [double](($stats | Measure-Object -Property SentBytes -Sum).Sum)
+    $now = [DateTime]::UtcNow
+    $rxRate = 0.0
+    $txRate = 0.0
+    if ($script:LastNetworkSample) {
+      $elapsed = ($now - $script:LastNetworkSample.at).TotalSeconds
+      if ($elapsed -gt 0 -and $rx -ge $script:LastNetworkSample.rx -and $tx -ge $script:LastNetworkSample.tx) {
+        $rxRate = (($rx - $script:LastNetworkSample.rx) * 8 / 1MB) / $elapsed
+        $txRate = (($tx - $script:LastNetworkSample.tx) * 8 / 1MB) / $elapsed
+      }
+    }
+    $script:LastNetworkSample = @{ at = $now; rx = $rx; tx = $tx }
+    return @{ networkRxMbps = [math]::Round($rxRate, 2); networkTxMbps = [math]::Round($txRate, 2) }
+  } catch {
+    return @{ networkRxMbps = $null; networkTxMbps = $null }
+  }
 }
 
 function Get-AgentStatus {
