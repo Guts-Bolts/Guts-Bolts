@@ -161,6 +161,10 @@ async function pushBody(subscription, payload) {
       );
       CREATE INDEX IF NOT EXISTS remote_pair_control_attempts_actor_ip_at
         ON remote_pair_control_attempts(actor, ip_hash, at);
+      CREATE TABLE IF NOT EXISTS remote_agent_pair_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, ip_hash TEXT NOT NULL, at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS remote_agent_pair_attempts_ip_at ON remote_agent_pair_attempts(ip_hash, at);
       CREATE TABLE IF NOT EXISTS remote_alert_state (
         key TEXT PRIMARY KEY, started INTEGER NOT NULL, alerted INTEGER NOT NULL DEFAULT 0
       );
@@ -194,7 +198,7 @@ async function pushBody(subscription, payload) {
     const pair = new WebSocketPair();
     const ws = pair[1];
     ws.accept();
-    const c = { id: randomHex(12), ws, authed: false, attempts: 0, pending: false };
+    const c = { id: randomHex(12), ws, ip: request.headers.get('cf-connecting-ip') || 'unknown', authed: false, attempts: 0, pending: false };
     this.connections.set(c.id, c);
     let queue = Promise.resolve();
     ws.addEventListener('message', (event) => {
@@ -230,6 +234,15 @@ async function pushBody(subscription, payload) {
       }
       if (!existing) {
         this.sql.exec('DELETE FROM remote_pairings WHERE expires <= ?', now());
+        this.sql.exec('DELETE FROM remote_agent_pair_attempts WHERE at < ?', now() - 86400);
+        const ipHash = await hash(c.ip || 'unknown');
+        const attempts = [...this.sql.exec('SELECT COUNT(*) AS n FROM remote_agent_pair_attempts WHERE ip_hash = ? AND at > ?',
+          ipHash, now() - 3600)][0]?.n || 0;
+        if (attempts >= 20) {
+          jsonMessage(c.ws, { t: 'pair.rate-limited' });
+          return this.drop(c);
+        }
+        this.sql.exec('INSERT INTO remote_agent_pair_attempts (ip_hash, at) VALUES (?, ?)', ipHash, now());
         this.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id) VALUES (?, ?, ?)',
           codeHash, now() + 300, c.id);
       } else {
