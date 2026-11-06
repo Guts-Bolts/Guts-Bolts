@@ -132,7 +132,7 @@ async function pushBody(subscription, payload) {
   const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, tagLength: 128 }, aes, plain));
   return concat(salt, Uint8Array.of(0, 0, 16, 0), Uint8Array.of(asPublic.length), asPublic, encrypted);
 }
-\nexport class RemoteControlObject extends DurableObject {
+export class RemoteControlObject extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.ctx = ctx;
