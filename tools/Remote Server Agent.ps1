@@ -106,11 +106,11 @@ function Get-ManagedProcess {
     $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop
     if (-not $proc -or -not $proc.ExecutablePath) { return $null }
     if ([string]::Compare([IO.Path]::GetFullPath($proc.ExecutablePath), [IO.Path]::GetFullPath($script:Config.ServerExe), $true) -ne 0) {
-      throw 'The saved PID no longer points to the configured game server. It will not be touched.'
+      Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
+      return $null
     }
     return Get-Process -Id $pidValue -ErrorAction Stop
   } catch {
-    if ($_.Exception.Message -like '*will not be touched*') { throw }
     return $null
   }
 }
