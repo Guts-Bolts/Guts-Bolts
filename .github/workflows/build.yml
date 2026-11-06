@@ -37,6 +37,19 @@ jobs:
       - name: Run the tests
         run: node --no-warnings --import ./worker/test/register.mjs --test 'worker/test/*.test.mjs'
 
+  remote-agent-syntax:
+    name: Windows remote agent PowerShell syntax
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Parse agent without executing it
+        shell: pwsh
+        run: |
+          $source = Get-Content -LiteralPath "tools/Remote Server Agent.ps1" -Raw
+          [void][scriptblock]::Create($source)
+
   android:
     # Expensive mobile packaging is validated on main and for releases, not on every PR.
     if: github.event_name != 'pull_request'
