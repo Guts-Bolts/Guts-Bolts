@@ -22,7 +22,7 @@ function world() {
   const sql = fakeSql();
   const waits = [];
   const object = new RemoteControlObject({ storage: { sql }, waitUntil: (promise) => waits.push(promise) }, { OFFICIAL: OWNER });
-  const request = (body, actor = OWNER) => object.control(actor, body);
+  const request = (body, actor = OWNER, ip = '127.0.0.1') => object.control(actor, body, ip);
   return { object, sql, request, waits };
 }
 function pairDevice(w, token = randomBytes(32).toString('hex')) {
@@ -177,4 +177,16 @@ test('a second valid-token connection cannot replace a live authenticated agent'
   assert.equal(w.object.agent, active);
   assert.equal(second.authed, false);
   assert.equal(second.ws.sent[0].t, 'device.busy');
+});
+
+test('phone pairing submissions are rate-limited per official account and client IP', async () => {
+  const w = world();
+  for (let i = 0; i < 10; i++) {
+    const response = await w.request({ action: 'pair', code: randomBytes(32).toString('hex') }, OWNER, '192.0.2.55');
+    assert.equal(response.status, 400);
+  }
+  const limited = await w.request({ action: 'pair', code: randomBytes(32).toString('hex') }, OWNER, '192.0.2.55');
+  assert.equal(limited.status, 429);
+  const otherIp = await w.request({ action: 'pair', code: randomBytes(32).toString('hex') }, OWNER, '192.0.2.56');
+  assert.equal(otherIp.status, 400);
 });
