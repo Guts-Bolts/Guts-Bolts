@@ -198,7 +198,7 @@ async function pushBody(subscription, payload) {
     const pair = new WebSocketPair();
     const ws = pair[1];
     ws.accept();
-    const c = { id: randomHex(12), ws, ip: request.headers.get('cf-connecting-ip') || 'unknown', authed: false, attempts: 0, pending: false };
+    const c = { id: randomHex(12), ws, ip: request.headers.get('x-gb-ip') || 'unknown', authed: false, attempts: 0, pending: false };
     this.connections.set(c.id, c);
     let queue = Promise.resolve();
     ws.addEventListener('message', (event) => {
