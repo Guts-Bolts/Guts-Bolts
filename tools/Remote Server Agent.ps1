@@ -47,6 +47,7 @@ function Resolve-ServerExecutable([string]$Path) {
   return $resolved
 }
 
+function Load-Config {
   if (Test-Path -LiteralPath $ConfigPath) {
     $cfg = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
     if ($ServerExe) {
