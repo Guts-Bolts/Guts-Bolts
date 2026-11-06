@@ -122,9 +122,19 @@ $('enable-notifications').addEventListener('click', async () => {
     const config = await api({ action: 'push.config' });
     if (!config.pushPublicKey) return say('Phone push is not configured on the Guts & Bolts Worker yet. The dashboard remains usable; the operator must set the VAPID secrets.', 'error');
     const registration = await navigator.serviceWorker.register('/server/sw.js', { scope: '/server/' });
+    const key = Uint8Array.from(atob(config.pushPublicKey.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((config.pushPublicKey.length + 3) % 4)), c => c.charCodeAt(0));
     let subscription = await registration.pushManager.getSubscription();
+    if (subscription) {
+      const currentKey = subscription.options.applicationServerKey;
+      const currentBytes = currentKey ? new Uint8Array(currentKey) : new Uint8Array(0);
+      const sameKey = currentBytes.length === key.length && key.every((value, index) => value === currentBytes[index]);
+      if (!sameKey) {
+        await api({ action: 'push.remove', endpoint: subscription.endpoint });
+        await subscription.unsubscribe();
+        subscription = null;
+      }
+    }
     if (!subscription) {
-      const key = Uint8Array.from(atob(config.pushPublicKey.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((config.pushPublicKey.length + 3) % 4)), c => c.charCodeAt(0));
       subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
     }
     await api({ action: 'push.subscribe', subscription: subscription.toJSON() });
