@@ -442,6 +442,9 @@ async function pushBody(subscription, payload) {
       conn.pending = false;
       conn.owner = actor;
       if (!this.attachAgent(conn)) return fail('An authenticated home agent is already active.', 409);
+      this.sql.exec("INSERT OR REPLACE INTO remote_status (id, data, seen) VALUES (1, '{}', ?)", now());
+      if (this.ctx.storage && typeof this.ctx.storage.setAlarm === 'function')
+        await this.ctx.storage.setAlarm(Date.now() + 45000);
       jsonMessage(conn.ws, { t: 'pair.complete', token });
       this.audit(actor, 'device.paired', 'Home server agent paired');
       return success({ paired: true });
