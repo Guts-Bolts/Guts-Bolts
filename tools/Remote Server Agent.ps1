@@ -41,6 +41,8 @@ function Resolve-ServerExecutable([string]$Path) {
   if ([IO.Path]::GetFileName($resolved) -ne 'GutsAndBoltsGameServer.exe') {
     throw 'Select the official GutsAndBoltsGameServer.exe file.'
   }
+  $file = Get-Item -LiteralPath $resolved -ErrorAction Stop
+  if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'The server executable cannot be a symbolic link or reparse point.' }
   if ([IO.Path]::GetPathRoot($resolved) -notmatch '^[A-Za-z]:\\$') {
     throw 'The server executable must be on a local Windows drive, not a network share.'
   }
