@@ -255,6 +255,11 @@ async function pushBody(subscription, payload) {
       const status = safeStatus(message.status);
       if (!status) return this.drop(c);
       this.sql.exec('INSERT OR REPLACE INTO remote_status (id, data, seen) VALUES (1, ?, ?)', JSON.stringify(status), now());
+      const wasOffline = [...this.sql.exec("SELECT key FROM remote_alert_state WHERE key = 'offline'")].length > 0;
+      this.sql.exec("DELETE FROM remote_alert_state WHERE key = 'offline'");
+      if (wasOffline) this.audit('agent', 'device.reconnected', 'Home server agent resumed heartbeats');
+      if (this.ctx.storage && typeof this.ctx.storage.setAlarm === 'function')
+        await this.ctx.storage.setAlarm(Date.now() + 45000);
       await this.checkAlerts(status);
       return;
     }
@@ -287,6 +292,7 @@ async function pushBody(subscription, payload) {
     this.connections.delete(c.id);
     if (this.agent === c) {
       this.agent = null;
+      this.sql.exec("INSERT OR REPLACE INTO remote_alert_state (key, started, alerted) VALUES ('offline', ?, 1)", now());
       this.audit('agent', 'device.disconnected', 'Home server agent disconnected');
       if (this.ctx.waitUntil) this.ctx.waitUntil(this.sendPush({ title: 'Guts & Bolts server offline', body: 'The home PC agent disconnected.' }).catch(() => {}));
     }
@@ -316,6 +322,20 @@ async function pushBody(subscription, payload) {
         await this.sendPush({ title: 'Guts & Bolts server alert', body: check.label });
       }
     }
+  }
+
+  async alarm() {
+    const row = [...this.sql.exec('SELECT seen FROM remote_status WHERE id = 1')][0];
+    if (!row || now() - row.seen < 45) {
+      if (row && this.ctx.storage && typeof this.ctx.storage.setAlarm === 'function')
+        await this.ctx.storage.setAlarm((row.seen + 45) * 1000);
+      return;
+    }
+    const already = [...this.sql.exec("SELECT alerted FROM remote_alert_state WHERE key = 'offline'")][0];
+    if (already && already.alerted) return;
+    this.sql.exec("INSERT OR REPLACE INTO remote_alert_state (key, started, alerted) VALUES ('offline', ?, 1)", now());
+    this.audit('monitor', 'alert.offline', 'Home server agent missed its heartbeat for more than 45 seconds');
+    await this.sendPush({ title: 'Guts & Bolts server offline', body: 'The home PC agent has missed its heartbeat for more than 45 seconds.' });
   }
 
   async sendPush(payload) {
