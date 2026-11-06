@@ -69,7 +69,10 @@
       "/mcp", "/mcp/*", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*", "/.well-known/oauth-authorization-server"]
   },
   "durable_objects": {
-    "bindings": [\n      { "name": "GB_SERVER_OBJECT", "class_name": "GbServerObject" },\n      { "name": "REMOTE_CONTROL", "class_name": "RemoteControlObject" }\n    ]
+    "bindings": [
+      { "name": "GB_SERVER_OBJECT", "class_name": "GbServerObject" },
+      { "name": "REMOTE_CONTROL", "class_name": "RemoteControlObject" }
+    ]
   },
   // Cloudflare's translator for in-game chat (chat.translate in worker/server.js). Free up to a
   // daily amount; after that, lines just show as they were said until the next day.
@@ -89,5 +92,8 @@
     { "name": "RATE_DOUBT",    "namespace_id": "4104", "simple": { "limit": 60,   "period": 60 } },
     { "name": "RATE_WS",       "namespace_id": "4105", "simple": { "limit": 30,   "period": 60 } }
   ],
-  "migrations": [\n    { "tag": "v1", "new_sqlite_classes": ["GbServerObject"] },\n    { "tag": "v2", "new_sqlite_classes": ["RemoteControlObject"] }\n  ]
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["GbServerObject"] },
+    { "tag": "v2", "new_sqlite_classes": ["RemoteControlObject"] }
+  ]
 }
