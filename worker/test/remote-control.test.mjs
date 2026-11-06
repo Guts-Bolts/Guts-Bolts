@@ -36,8 +36,8 @@ test('pairing consumes a one-time code and stores only the hash of the device cr
   const code = randomBytes(32).toString('hex');
   const conn = { id: 'connection-1', pending: true, authed: false, ws: { sent: null, send(text) { this.sent = JSON.parse(text); }, close() {} } };
   w.object.connections.set(conn.id, conn);
-  w.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id, ip) VALUES (?, ?, ?, ?)',
-    sha256(code), Math.floor(Date.now() / 1000) + 300, conn.id, '127.0.0.1');
+  w.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id) VALUES (?, ?, ?)',
+    sha256(code), Math.floor(Date.now() / 1000) + 300, conn.id);
   const response = await w.object.control(w.request({ action: 'pair', code }));
   assert.equal(response.status, 200);
   assert.equal(conn.ws.sent.t, 'pair.complete');
@@ -54,7 +54,7 @@ test('pairing refuses expired codes and disconnected pending sockets', async () 
   const w = world();
   const code = randomBytes(32).toString('hex');
   w.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id, ip) VALUES (?, ?, ?, ?)',
-    sha256(code), Math.floor(Date.now() / 1000) - 1, 'gone', '127.0.0.1');
+    sha256(code), Math.floor(Date.now() / 1000) - 1, 'gone');
   const response = await w.object.control(w.request({ action: 'pair', code }));
   assert.equal(response.status, 400);
   assert.match(response.body.error, /invalid or expired/i);
