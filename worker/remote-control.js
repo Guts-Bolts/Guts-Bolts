@@ -221,7 +221,6 @@ async function pushBody(subscription, payload) {
   async onAgentMessage(c, message) {
     if (message.t === 'pair.begin') {
       if (c.authed || c.pending || !isHex(message.code) || typeof message.device !== 'string') return this.drop(c);
-      this.sql.exec('DELETE FROM remote_pairings WHERE expires <= ?', now());
       const codeHash = await hash(message.code.toLowerCase());
       const existing = [...this.sql.exec('SELECT expires FROM remote_pairings WHERE code_hash = ?', codeHash)][0];
       if (existing && existing.expires <= now()) {
@@ -230,7 +229,8 @@ async function pushBody(subscription, payload) {
         return this.drop(c);
       }
       if (!existing) {
-          this.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id) VALUES (?, ?, ?)',
+        this.sql.exec('DELETE FROM remote_pairings WHERE expires <= ?', now());
+        this.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id) VALUES (?, ?, ?)',
           codeHash, now() + 300, c.id);
       } else {
         this.sql.exec('UPDATE remote_pairings SET conn_id = ? WHERE code_hash = ?', c.id, codeHash);
