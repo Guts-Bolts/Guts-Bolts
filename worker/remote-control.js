@@ -390,8 +390,9 @@ async function pushBody(subscription, payload) {
       const row = [...this.sql.exec('SELECT data, seen FROM remote_status WHERE id = 1')][0];
       let status = null;
       try { status = row ? JSON.parse(row.data) : null; } catch { status = null; }
+      const entries = [...this.sql.exec('SELECT id, at, actor, action, result FROM remote_audit ORDER BY at DESC LIMIT 100')];
       return Response.json({ ok: true, online: !!(this.agent && this.agent.authed && now() - (row?.seen || 0) < 45),
-        lastSeen: row?.seen || 0, status }, { headers: { 'cache-control': 'no-store' } });
+        lastSeen: row?.seen || 0, status, entries }, { headers: { 'cache-control': 'no-store' } });
     }
     if (body.action === 'audit') {
       const rows = [...this.sql.exec('SELECT id, at, actor, action, result FROM remote_audit ORDER BY at DESC LIMIT 100')];
