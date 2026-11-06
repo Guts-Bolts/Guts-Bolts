@@ -115,10 +115,34 @@ $('revoke').addEventListener('click', async () => {
   catch (error) { say(error.message, 'error'); }
 });
 $('enable-notifications').addEventListener('click', async () => {
-  if (!('Notification' in window)) return say('This browser does not support notifications.', 'error');
-  const permission = await Notification.requestPermission();
-  notificationReady = permission === 'granted';
-  say(notificationReady ? 'Alerts enabled while this dashboard is open.' : 'Notification permission was not granted.', notificationReady ? 'good' : '');
+  if (!('Notification' in window) || !('serviceWorker' in navigator)) return say('This browser does not support background push notifications.', 'error');
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return say('Notification permission was not granted.', 'error');
+    const config = await api({ action: 'push.config' });
+    if (!config.pushPublicKey) return say('Phone push is not configured on the Guts & Bolts Worker yet. The dashboard remains usable; the operator must set the VAPID secrets.', 'error');
+    const registration = await navigator.serviceWorker.register('/server/sw.js', { scope: '/server/' });
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      const key = Uint8Array.from(atob(config.pushPublicKey.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((config.pushPublicKey.length + 3) % 4)), c => c.charCodeAt(0));
+      subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+    }
+    await api({ action: 'push.subscribe', subscription: subscription.toJSON() });
+    notificationReady = true;
+    say('Phone push alerts are enabled for this browser.', 'good');
+  } catch (error) { say(error.message, 'error'); }
+});
+$('disable-notifications').addEventListener('click', async () => {
+  try {
+    const registration = await navigator.serviceWorker.getRegistration('/server/');
+    const subscription = registration && await registration.pushManager.getSubscription();
+    if (subscription) {
+      await api({ action: 'push.remove', endpoint: subscription.endpoint });
+      await subscription.unsubscribe();
+    }
+    notificationReady = false;
+    say('Phone push alerts disabled for this browser.', 'good');
+  } catch (error) { say(error.message, 'error'); }
 });
 refresh();
 setInterval(() => { if (document.visibilityState === 'visible') refresh(); }, 10000);
