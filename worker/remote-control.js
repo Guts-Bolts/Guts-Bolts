@@ -156,10 +156,11 @@ async function pushBody(subscription, payload) {
         action TEXT NOT NULL, result TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS remote_audit_at ON remote_audit(at);
-      CREATE TABLE IF NOT EXISTS remote_attempts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, at INTEGER NOT NULL
+      CREATE TABLE IF NOT EXISTS remote_pair_control_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, ip TEXT NOT NULL, at INTEGER NOT NULL
       );
-      CREATE INDEX IF NOT EXISTS remote_attempts_ip_at ON remote_attempts(ip, at);
+      CREATE INDEX IF NOT EXISTS remote_pair_control_attempts_actor_ip_at
+        ON remote_pair_control_attempts(actor, ip, at);
       CREATE TABLE IF NOT EXISTS remote_alert_state (
         key TEXT PRIMARY KEY, started INTEGER NOT NULL, alerted INTEGER NOT NULL DEFAULT 0
       );
@@ -229,14 +230,7 @@ async function pushBody(subscription, payload) {
         return this.drop(c);
       }
       if (!existing) {
-        this.sql.exec('DELETE FROM remote_attempts WHERE at < ?', now() - 86400);
-        const count = [...this.sql.exec('SELECT COUNT(*) AS n FROM remote_attempts WHERE ip = ? AND at > ?', c.ip, now() - 3600)][0]?.n || 0;
-        if (count >= 5) {
-          jsonMessage(c.ws, { t: 'pair.rate-limited' });
-          return this.drop(c);
-        }
-        this.sql.exec('INSERT INTO remote_attempts (ip, at) VALUES (?, ?)', c.ip, now());
-        this.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id, ip) VALUES (?, ?, ?, ?)',
+          this.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id, ip) VALUES (?, ?, ?, ?)',
           codeHash, now() + 300, c.id, c.ip);
       } else {
         this.sql.exec('UPDATE remote_pairings SET conn_id = ?, ip = ? WHERE code_hash = ?', c.id, c.ip, codeHash);
@@ -398,7 +392,7 @@ async function pushBody(subscription, payload) {
     }
   }
 
-  async control(actor, body) {
+  async control(actor, body, ip = 'unknown') {
     actor = typeof actor === 'string' ? actor.toLowerCase() : '';
     if (!isHex(actor) || actor !== String(this.env.OFFICIAL || '').toLowerCase())
       return fail('Only the configured official Guts & Bolts account may manage this server.', 401);
@@ -421,6 +415,14 @@ async function pushBody(subscription, payload) {
       this.sql.exec('DELETE FROM remote_push_subscriptions WHERE id = ?', await hash(endpoint));
       this.audit(actor, 'push.unsubscribed', 'Phone push notifications disabled');
       return success({ unsubscribed: true });
+    }
+    if (body.action === 'pair') {
+      ip = typeof ip === 'string' && ip.length <= 64 ? ip : 'unknown';
+      this.sql.exec('DELETE FROM remote_pair_control_attempts WHERE at < ?', now() - 86400);
+      const attempts = [...this.sql.exec('SELECT COUNT(*) AS n FROM remote_pair_control_attempts WHERE actor = ? AND ip = ? AND at > ?',
+        actor, ip, now() - 3600)][0]?.n || 0;
+      if (attempts >= 10) return fail('Too many pairing attempts. Wait an hour before trying again.', 429);
+      this.sql.exec('INSERT INTO remote_pair_control_attempts (actor, ip, at) VALUES (?, ?, ?)', actor, ip, now());
     }
     const device = [...this.sql.exec("SELECT owner, revoked FROM remote_devices WHERE id = 'home'")][0];
     if (body.action === 'pair') {
