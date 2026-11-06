@@ -42,6 +42,11 @@ function Resolve-ServerExecutable([string]$Path) {
     throw 'Select the official GutsAndBoltsGameServer.exe file.'
   }
   if ([IO.Path]::GetPathRoot($resolved) -notmatch '^[A-Za-z]:\\$') {
+    throw 'The server executable must be on a local Windows drive, not a network share.'
+  }
+  return $resolved
+}
+
   if (Test-Path -LiteralPath $ConfigPath) {
     $cfg = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
     if ($ServerExe) {
