@@ -82,6 +82,9 @@ export class RemoteControlObject extends DurableObject {
         id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS remote_attempts_ip_at ON remote_attempts(ip, at);
+      CREATE TABLE IF NOT EXISTS remote_alert_state (
+        key TEXT PRIMARY KEY, started INTEGER NOT NULL, alerted INTEGER NOT NULL DEFAULT 0
+      );
     `);
   }
 
@@ -148,7 +151,10 @@ export class RemoteControlObject extends DurableObject {
       if (c.attempts > 5) return this.drop(c);
       const device = [...this.sql.exec("SELECT owner, token_hash, revoked FROM remote_devices WHERE id = 'home'")][0];
       const tokenHash = await hash(message.token.toLowerCase());
-      if (!device || device.revoked || !equal(tokenHash, device.token_hash)) return this.drop(c);
+      if (!device || device.revoked || !equal(tokenHash, device.token_hash)) {
+        jsonMessage(c.ws, { t: 'device.rejected' });
+        return this.drop(c);
+      }
       c.authed = true;
       c.owner = device.owner;
       this.attachAgent(c);
@@ -197,17 +203,27 @@ export class RemoteControlObject extends DurableObject {
   }
 
   checkAlerts(status) {
-    const previous = this.alertState || {};
-    const next = {
-      cpu: status.cpuPercent !== null && status.cpuPercent >= 90,
-      memory: status.memoryPercent !== null && status.memoryPercent >= 90,
-      gpu: status.gpuTemperatureC !== null && status.gpuTemperatureC >= 88,
-    };
-    const labels = { cpu: 'CPU usage reached 90%', memory: 'Memory usage reached 90%', gpu: 'GPU temperature reached 88°C' };
-    for (const key of Object.keys(next)) {
-      if (next[key] && !previous[key]) this.audit('monitor', 'alert.' + key, labels[key]);
+    const t = now();
+    const checks = [
+      { key: 'cpu', high: status.cpuPercent !== null && status.cpuPercent >= 90, seconds: 120, label: 'CPU usage stayed above 90% for two minutes' },
+      { key: 'memory', high: status.memoryPercent !== null && status.memoryPercent >= 90, seconds: 120, label: 'Memory usage stayed above 90% for two minutes' },
+      { key: 'gpu', high: status.gpuTemperatureC !== null && status.gpuTemperatureC >= 88, seconds: 60, label: 'GPU temperature stayed above 88°C for one minute' },
+    ];
+    for (const check of checks) {
+      const row = [...this.sql.exec('SELECT started, alerted FROM remote_alert_state WHERE key = ?', check.key)][0];
+      if (!check.high) {
+        if (row) this.sql.exec('DELETE FROM remote_alert_state WHERE key = ?', check.key);
+        continue;
+      }
+      if (!row) {
+        this.sql.exec('INSERT INTO remote_alert_state (key, started, alerted) VALUES (?, ?, 0)', check.key, t);
+        continue;
+      }
+      if (!row.alerted && t - row.started >= check.seconds) {
+        this.audit('monitor', 'alert.' + check.key, check.label);
+        this.sql.exec('UPDATE remote_alert_state SET alerted = 1 WHERE key = ?', check.key);
+      }
     }
-    this.alertState = next;
   }
 
   async control(request) {
