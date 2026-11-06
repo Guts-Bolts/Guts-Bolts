@@ -14,8 +14,9 @@ console.log('\nREMOTE_VAPID_PRIVATE_KEY (Cloudflare secret):');
 console.log(b64url(pkcs8Private));
 console.log('\nREMOTE_PUSH_ENCRYPTION_KEY (Cloudflare secret):');
 console.log(b64url(encryptionKey));
-console.log('\nSet the private values with:');
+console.log('\nSet each value as a Worker secret:');
 console.log('  npx wrangler secret put REMOTE_VAPID_PRIVATE_KEY');
+console.log('  npx wrangler secret put REMOTE_VAPID_PUBLIC_KEY');
 console.log('  npx wrangler secret put REMOTE_PUSH_ENCRYPTION_KEY');
-console.log('\nSet REMOTE_VAPID_PUBLIC_KEY as a Worker variable, then deploy.');
-console.log('Keep this output private. Never commit the private key or encryption key.\n');
+
+console.log('Keep this output private. Never commit any of these values.\n');
