@@ -41,7 +41,7 @@ function Resolve-ServerExecutable([string]$Path) {
   if ([IO.Path]::GetFileName($resolved) -ne 'GutsAndBoltsGameServer.exe') {
     throw 'Select the official GutsAndBoltsGameServer.exe file.'
   }
-  if ([IO.Path]::GetPathRoot($resolved) -notmatch '^[A-Za-z]:\\
+  if ([IO.Path]::GetPathRoot($resolved) -notmatch '^[A-Za-z]:\\$') {
   if (Test-Path -LiteralPath $ConfigPath) {
     $cfg = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
     if ($ServerExe) {
