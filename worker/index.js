@@ -113,9 +113,13 @@ async function handleRemoteControl(request, env, url) {
   if (text === null) return reply({ ok: false, error: 'Request is too large.' }, 413);
   let body;
   try { body = JSON.parse(text); } catch { return reply({ ok: false, error: 'Bad request.' }, 400); }
-  const auth = body && body.auth;
+  if (!body || typeof body !== 'object' || Array.isArray(body) ||
+      Object.keys(body).sort().join(',') !== 'action,auth') return reply({ ok: false, error: 'Bad request.' }, 400);
+  const auth = body.auth;
   const official = String(env.OFFICIAL || '').toLowerCase();
-  if (!auth || typeof auth !== 'object' || Array.isArray(auth) || auth.op !== 'staff.database.stats' ||
+  if (!auth || typeof auth !== 'object' || Array.isArray(auth) ||
+      Object.keys(auth).sort().join(',') !== 'account,args,nonce,op,sig,time' ||
+      auth.op !== 'staff.database.stats' ||
       typeof auth.account !== 'string' || auth.account.toLowerCase() !== official ||
       !auth.args || typeof auth.args !== 'object' || Array.isArray(auth.args) || Object.keys(auth.args).length !== 0) {
     return reply({ ok: false, error: 'Only the official Guts&Bolts account can manage the home server.' }, 401);
