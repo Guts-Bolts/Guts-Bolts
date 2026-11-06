@@ -251,7 +251,7 @@ async function pushBody(subscription, payload) {
       if (c.attempts > 5) return this.drop(c);
       const device = [...this.sql.exec("SELECT owner, token_hash, revoked FROM remote_devices WHERE id = 'home'")][0];
       const tokenHash = await hash(message.token.toLowerCase());
-      if (!device || device.revoked || !equal(tokenHash, device.token_hash)) {
+      if (!device || device.revoked || !(await equal(tokenHash, device.token_hash))) {
         jsonMessage(c.ws, { t: 'device.rejected' });
         return this.drop(c);
       }
