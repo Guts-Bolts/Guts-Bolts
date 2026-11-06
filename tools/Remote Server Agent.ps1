@@ -18,6 +18,7 @@ $script:LastError = ''
 $script:CrashTimes = New-Object 'System.Collections.Generic.List[datetime]'
 $script:LastProcessId = 0
 $script:PairingCode = $null
+$script:SeenCommands = New-Object 'System.Collections.Generic.HashSet[string]'
 
 function Ensure-Root {
   if (-not (Test-Path -LiteralPath $Root)) { New-Item -ItemType Directory -Path $Root -Force | Out-Null }
@@ -156,7 +157,228 @@ function Set-ManagedPriority {
 }
 
 function Invoke-AllowedCommand($Message) {
-  if (-not $Message.id -or [string]$Message.id -notmatch '^[a-f0-9-]{16,64}$') { throw 'Invalid command ID.' }
+  if (-not $Message.id -or [string]$Message.id -notmatch '^[a-f0-9-]{16,64}
+  if ([long]$Message.expires -lt [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) { throw 'Command expired and was ignored.' }
+  $args = $Message.args
+  if ($null -eq $args) { $args = [pscustomobject]@{} }
+  switch ([string]$Message.command) {
+    'start' {
+      if ($args.PSObject.Properties.Count -ne 0) { throw 'Unexpected start arguments.' }
+      return Start-ManagedServer
+    }
+    'stop' {
+      if ($args.PSObject.Properties.Count -ne 0) { throw 'Unexpected stop arguments.' }
+      return Stop-ManagedServer
+    }
+    'restart' {
+      if ($args.PSObject.Properties.Count -ne 0) { throw 'Unexpected restart arguments.' }
+      Stop-ManagedServer | Out-Null
+      Start-Sleep -Seconds 2
+      return Start-ManagedServer
+    }
+    'set-slots' {
+      if ($args.PSObject.Properties.Name -join ',' -ne 'slots' -or [int]$args.slots -lt 1 -or [int]$args.slots -gt 50) { throw 'Slots must be an integer from 1 to 50.' }
+      $script:Config.Slots = [int]$args.slots
+      Save-Config
+      if (Get-ManagedProcess) {
+        Stop-ManagedServer | Out-Null
+        Start-Sleep -Seconds 2
+        return Start-ManagedServer
+      }
+      return 'Saved server slots: ' + $script:Config.Slots + '.'
+    }
+    'set-priority' {
+      if ($args.PSObject.Properties.Name -join ',' -ne 'priority' -or @('Normal','AboveNormal','High') -notcontains [string]$args.priority) { throw 'Priority is not allowed.' }
+      $script:Config.Priority = [string]$args.priority
+      Save-Config
+      return Set-ManagedPriority
+    }
+    'set-auto-restart' {
+      if ($args.PSObject.Properties.Name -join ',' -ne 'enabled' -or $args.enabled -isnot [bool]) { throw 'Recovery setting must be true or false.' }
+      $script:Config.AutoRestart = [bool]$args.enabled
+      Save-Config
+      return 'Automatic crash recovery ' + ($(if ($script:Config.AutoRestart) { 'enabled' } else { 'disabled' })) + '.'
+    }
+    default { throw 'Command is not in the agent allowlist.' }
+  }
+}
+
+function Get-GpuMetrics {
+  $path = Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI\nvidia-smi.exe'
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @{} }
+  $sig = Get-AuthenticodeSignature -FilePath $path
+  if ($sig.Status -ne 'Valid') { return @{} }
+  try {
+    $line = & $path --query-gpu=utilization.gpu,temperature.gpu,memory.used,memory.total --format=csv,noheader,nounits 2>$null | Select-Object -First 1
+    $parts = @($line -split ',\s*')
+    if ($parts.Count -ne 4) { return @{} }
+    return @{
+      gpuPercent = [double]$parts[0]
+      gpuTemperatureC = [double]$parts[1]
+      gpuMemoryUsedMB = [double]$parts[2]
+      gpuMemoryTotalMB = [double]$parts[3]
+    }
+  } catch { return @{} }
+}
+
+function Get-AgentStatus {
+  $os = Get-CimInstance Win32_OperatingSystem
+  $cpu = Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentage -Average
+  $totalMb = [math]::Round(([double]$os.TotalVisibleMemorySize / 1024), 1)
+  $freeMb = [math]::Round(([double]$os.FreePhysicalMemory / 1024), 1)
+  $usedMb = [math]::Max(0, $totalMb - $freeMb)
+  $proc = Get-ManagedProcess
+  $uptime = 0
+  $pidValue = $null
+  if ($proc) {
+    $pidValue = $proc.Id
+    try { $uptime = [math]::Max(0, [math]::Floor(([DateTime]::UtcNow - $proc.StartTime.ToUniversalTime()).TotalSeconds)) } catch { }
+  }
+  $status = @{
+    cpuPercent = [math]::Round([double]$cpu.Average, 1)
+    memoryPercent = if ($totalMb -gt 0) { [math]::Round(($usedMb / $totalMb) * 100, 1) } else { 0 }
+    memoryUsedMB = $usedMb
+    memoryTotalMB = $totalMb
+    serverRunning = [bool]$proc
+    serverPid = $pidValue
+    serverUptimeSeconds = $uptime
+    slots = [int]$script:Config.Slots
+    priority = [string]$script:Config.Priority
+    autoRestart = [bool]$script:Config.AutoRestart
+    agentVersion = $AgentVersion
+    lastError = [string]$script:LastError
+  }
+  $gpu = Get-GpuMetrics
+  foreach ($key in $gpu.Keys) { $status[$key] = $gpu[$key] }
+  return $status
+}
+
+function Check-CrashRecovery($Socket) {
+  if (-not (Test-Path -LiteralPath $PidPath)) { return }
+  $pidValue = 0
+  if (-not [int]::TryParse((Get-Content -LiteralPath $PidPath -Raw).Trim(), [ref]$pidValue)) { return }
+  $stillThere = Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction SilentlyContinue
+  if ($stillThere) { return }
+  Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
+  $script:CrashTimes.Add([DateTime]::UtcNow)
+  while ($script:CrashTimes.Count -gt 0 -and ([DateTime]::UtcNow - $script:CrashTimes[0]).TotalMinutes -gt 10) { $script:CrashTimes.RemoveAt(0) }
+  Send-Json $Socket @{ t = 'agent.error'; message = 'The managed game server exited unexpectedly.' }
+  if (-not $script:Config.AutoRestart) {
+    $script:LastError = 'The managed game server exited unexpectedly. Automatic recovery is disabled.'
+    return
+  }
+  if ($script:CrashTimes.Count -ge 3) {
+    $script:Config.AutoRestart = $false
+    Save-Config
+    $script:LastError = 'Automatic restart disabled after three crashes within ten minutes.'
+    Send-Json $Socket @{ t = 'agent.error'; message = $script:LastError }
+    return
+  }
+  Start-Sleep -Seconds 5
+  try { Start-ManagedServer | Out-Null; $script:LastError = '' }
+  catch { $script:LastError = $_.Exception.Message }
+}
+
+function Handle-AgentMessage($Socket, $Message) {
+  switch ([string]$Message.t) {
+    'pair.complete' {
+      Save-DeviceToken ([string]$Message.token)
+      $script:PairingCode = $null
+      Write-Host 'Device paired successfully. The credential is encrypted for this Windows user.' -ForegroundColor Green
+      Send-Json $Socket @{ t = 'status'; status = (Get-AgentStatus) }
+    }
+    'device.ready' {
+      Write-Host 'Connected to the Guts & Bolts remote relay.' -ForegroundColor Green
+      Send-Json $Socket @{ t = 'status'; status = (Get-AgentStatus) }
+    }
+    'device.rejected' {
+      Remove-Item -LiteralPath $TokenPath -Force -ErrorAction SilentlyContinue
+      $script:PairingCode = $null
+      throw 'The stored device credential was revoked or rejected. A new local pairing code will be generated.'
+    }
+    'pair.expired' {
+      $script:PairingCode = $null
+      throw 'The one-time pairing code expired. A new code will be displayed.'
+    }
+    'pair.rate-limited' { Write-Warning 'Pairing attempts are temporarily rate-limited. Wait one hour before restarting the agent.'; exit 3 }
+    'device.replaced' { throw 'This device was replaced by a newer connection.' }
+    'command' {
+      $ok = $false
+      $result = ''
+      try { $result = Invoke-AllowedCommand $Message; $ok = $true; $script:LastError = '' }
+      catch { $result = $_.Exception.Message; $script:LastError = $result }
+      Send-Json $Socket @{ t = 'ack'; id = [string]$Message.id; ok = $ok; message = $result }
+    }
+    default { }
+  }
+}
+
+function Connect-Agent {
+  $socket = [Net.WebSockets.ClientWebSocket]::new()
+  $socket.Options.KeepAliveInterval = [TimeSpan]::FromSeconds(20)
+  $cancel = [Threading.CancellationToken]::None
+  try {
+    $socket.ConnectAsync($BaseUri, $cancel).GetAwaiter().GetResult()
+    $token = Load-DeviceToken
+    if ($token) {
+      Send-Json $socket @{ t = 'device.auth'; token = $token }
+    } else {
+      $newCode = -not $script:PairingCode
+      if ($newCode) { $script:PairingCode = New-PairingCode }
+      Send-Json $socket @{ t = 'pair.begin'; code = $script:PairingCode; device = $env:COMPUTERNAME }
+      if ($newCode) {
+        Write-Host ''
+        Write-Host 'PAIR THIS PC FROM YOUR PHONE' -ForegroundColor Yellow
+        Write-Host 'Open https://gutsandbolts.net/server/ while signed in to the official Guts & Bolts account.' -ForegroundColor Yellow
+        Write-Host 'Paste this one-time code into Device pairing (expires in five minutes):' -ForegroundColor Yellow
+        Write-Host $script:PairingCode -ForegroundColor Cyan
+        Write-Host 'Do not share this code with anyone. Press Ctrl+C to stop the agent.' -ForegroundColor Yellow
+      }
+    }
+    $buffer = New-Object byte[] 8192
+    $segment = [ArraySegment[byte]]::new($buffer)
+    $receive = $socket.ReceiveAsync($segment, $cancel)
+    while ($socket.State -eq [Net.WebSockets.WebSocketState]::Open) {
+      $completed = [Threading.Tasks.Task]::WhenAny($receive, [Threading.Tasks.Task]::Delay(10000)).GetAwaiter().GetResult()
+      if ([object]::ReferenceEquals($completed, $receive)) {
+        $frame = $receive.GetAwaiter().GetResult()
+        if ($frame.MessageType -eq [Net.WebSockets.WebSocketMessageType]::Close) { break }
+        if (-not $frame.EndOfMessage) { throw 'Unexpected fragmented relay message.' }
+        $text = [Text.Encoding]::UTF8.GetString($buffer, 0, $frame.Count)
+        $message = $text | ConvertFrom-Json
+        Handle-AgentMessage $socket $message
+        $receive = $socket.ReceiveAsync($segment, $cancel)
+      } else {
+        Check-CrashRecovery $socket
+        $status = Get-AgentStatus
+        Send-Json $socket @{ t = 'status'; status = $status }
+      }
+    }
+  } finally {
+    try { $socket.Abort() } catch { }
+    $socket.Dispose()
+  }
+}
+
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'This agent only runs on Windows.' }
+$principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+  throw 'For security, do not run the remote agent as Administrator. Start it in a normal, non-elevated PowerShell window.'
+}
+Ensure-Root
+$script:Config = Load-Config
+Save-Config
+Write-Host 'Guts & Bolts Home Server Remote Agent ' $AgentVersion
+Write-Host 'Server executable: ' $script:Config.ServerExe
+Write-Host 'The agent uses outbound TLS only. It does not open a port or run a remote shell.'
+while ($true) {
+  try { Connect-Agent }
+  catch { $script:LastError = $_.Exception.Message; Write-Warning $script:LastError }
+  Start-Sleep -Seconds 5
+}
+) { throw 'Invalid command ID.' }
+  if (-not $script:SeenCommands.Add([string]$Message.id)) { throw 'Duplicate command ID; replay was rejected.' }
+  if ($script:SeenCommands.Count -gt 1000) { $script:SeenCommands.Clear(); [void]$script:SeenCommands.Add([string]$Message.id) }
   if (-not ($Message.expires -is [long] -or $Message.expires -is [int] -or $Message.expires -is [double])) { throw 'Command has no expiry.' }
   if ([long]$Message.expires -lt [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) { throw 'Command expired and was ignored.' }
   $args = $Message.args
