@@ -317,6 +317,7 @@ function Handle-AgentMessage($Socket, $Message) {
       throw 'The one-time pairing code expired. A new code will be displayed.'
     }
     'pair.rate-limited' { Write-Warning 'Pairing attempts are temporarily rate-limited. Wait one hour before restarting the agent.'; exit 3 }
+    'device.busy' { throw 'Another authenticated agent is active. Waiting for its connection to expire before retrying.' }
     'device.replaced' { throw 'This device was replaced by a newer connection.' }
     'command' {
       $ok = $false
