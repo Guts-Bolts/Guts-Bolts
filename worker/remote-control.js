@@ -216,6 +216,7 @@ async function pushBody(subscription, payload) {
         return this.drop(c);
       }
       if (!existing) {
+        this.sql.exec('DELETE FROM remote_attempts WHERE at < ?', now() - 86400);
         const count = [...this.sql.exec('SELECT COUNT(*) AS n FROM remote_attempts WHERE ip = ? AND at > ?', c.ip, now() - 3600)][0]?.n || 0;
         if (count >= 5) {
           jsonMessage(c.ws, { t: 'pair.rate-limited' });
@@ -337,6 +338,8 @@ async function pushBody(subscription, payload) {
             urgency: 'high',
           },
           body,
+          redirect: 'manual',
+          signal: AbortSignal.timeout(10000),
         });
         if (response.status === 404 || response.status === 410) {
           this.sql.exec('DELETE FROM remote_push_subscriptions WHERE id = ?', row.id);
@@ -401,8 +404,10 @@ async function pushBody(subscription, payload) {
       const sub = body.subscription;
       if (!sub || typeof sub !== 'object' || typeof sub.endpoint !== 'string' || !sub.keys ||
           typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') return fail('Invalid push subscription.', 400);
-      if (b64urlBytes(sub.keys.p256dh).length !== 65 || b64urlBytes(sub.keys.auth).length !== 16)
-        return fail('Invalid push subscription keys.', 400);
+      try {
+        if (b64urlBytes(sub.keys.p256dh).length !== 65 || b64urlBytes(sub.keys.auth).length !== 16)
+          return fail('Invalid push subscription keys.', 400);
+      } catch { return fail('Invalid push subscription keys.', 400); }
       let endpoint;
       try { endpoint = new URL(sub.endpoint); } catch { return fail('Invalid push endpoint.', 400); }
       const host = endpoint.hostname.toLowerCase();
