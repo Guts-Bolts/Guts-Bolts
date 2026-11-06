@@ -160,6 +160,10 @@ async function pushBody(subscription, payload) {
       CREATE TABLE IF NOT EXISTS remote_push_subscriptions (
         id TEXT PRIMARY KEY, encrypted TEXT NOT NULL, created INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS remote_push_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1), last_sent INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT OR IGNORE INTO remote_push_state (id, last_sent) VALUES (1, 0);
     `);
   }
 
@@ -340,6 +344,9 @@ async function pushBody(subscription, payload) {
 
   async sendPush(payload) {
     if (!this.env.REMOTE_VAPID_PRIVATE_KEY || !this.env.REMOTE_VAPID_PUBLIC_KEY || !this.env.REMOTE_PUSH_ENCRYPTION_KEY) return;
+    const lastSent = [...this.sql.exec('SELECT last_sent FROM remote_push_state WHERE id = 1')][0]?.last_sent || 0;
+    if (now() - lastSent < 30) return;
+    this.sql.exec('UPDATE remote_push_state SET last_sent = ? WHERE id = 1', now());
     const rows = [...this.sql.exec('SELECT id, encrypted FROM remote_push_subscriptions')];
     for (const row of rows) {
       try {
@@ -436,9 +443,13 @@ async function pushBody(subscription, payload) {
       if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.port || !allowedHost)
         return fail('Unsupported push service endpoint.', 400);
       try {
+        const subscriptionId = await hash(endpoint.toString());
+        const exists = [...this.sql.exec('SELECT id FROM remote_push_subscriptions WHERE id = ?', subscriptionId)].length > 0;
+        const count = [...this.sql.exec('SELECT COUNT(*) AS n FROM remote_push_subscriptions')][0]?.n || 0;
+        if (!exists && count >= 5) return fail('A maximum of five phone/browser subscriptions is allowed.', 429);
         const encrypted = await encryptSubscription(this.env, { endpoint: endpoint.toString(), keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } });
         this.sql.exec('INSERT OR REPLACE INTO remote_push_subscriptions (id, encrypted, created) VALUES (?, ?, ?)',
-          await hash(endpoint.toString()), encrypted, now());
+          subscriptionId, encrypted, now());
         this.audit(actor, 'push.subscribed', 'Phone push notifications enabled');
         return Response.json({ ok: true, subscribed: true }, { headers: { 'cache-control': 'no-store' } });
       } catch (error) { return fail(error.message || 'Push setup failed.', 503); }
