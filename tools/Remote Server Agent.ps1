@@ -261,8 +261,8 @@ function Get-NetworkMetrics {
     if ($script:LastNetworkSample) {
       $elapsed = ($now - $script:LastNetworkSample.at).TotalSeconds
       if ($elapsed -gt 0 -and $rx -ge $script:LastNetworkSample.rx -and $tx -ge $script:LastNetworkSample.tx) {
-        $rxRate = (($rx - $script:LastNetworkSample.rx) * 8 / 1MB) / $elapsed
-        $txRate = (($tx - $script:LastNetworkSample.tx) * 8 / 1MB) / $elapsed
+        $rxRate = (($rx - $script:LastNetworkSample.rx) * 8 / 1000000) / $elapsed
+        $txRate = (($tx - $script:LastNetworkSample.tx) * 8 / 1000000) / $elapsed
       }
     }
     $script:LastNetworkSample = @{ at = $now; rx = $rx; tx = $tx }
