@@ -404,6 +404,13 @@ async function pushBody(subscription, payload) {
     }[body.action];
     if (!actionKeys || Object.keys(body).some((key) => !actionKeys.includes(key)))
       return fail('Unexpected remote-control request fields.', 400);
+    if (body.action === 'push.remove') {
+      const endpoint = typeof body.endpoint === 'string' ? body.endpoint : '';
+      if (!endpoint || endpoint.length > 2048) return fail('Invalid push endpoint.', 400);
+      this.sql.exec('DELETE FROM remote_push_subscriptions WHERE id = ?', await hash(endpoint));
+      this.audit(actor, 'push.unsubscribed', 'Phone push notifications disabled');
+      return success({ unsubscribed: true });
+    }
     const device = [...this.sql.exec("SELECT owner, revoked FROM remote_devices WHERE id = 'home'")][0];
     if (body.action === 'pair') {
       if (device && !device.revoked) return fail('A device is already paired. Revoke it before pairing another.', 409);
@@ -469,13 +476,6 @@ async function pushBody(subscription, payload) {
         this.audit(actor, 'push.subscribed', 'Phone push notifications enabled');
         return success({ subscribed: true });
       } catch (error) { return fail(error.message || 'Push setup failed.', 503); }
-    }
-    if (body.action === 'push.remove') {
-      const endpoint = typeof body.endpoint === 'string' ? body.endpoint : '';
-      if (!endpoint || endpoint.length > 2048) return fail('Invalid push endpoint.', 400);
-      this.sql.exec('DELETE FROM remote_push_subscriptions WHERE id = ?', await hash(endpoint));
-      this.audit(actor, 'push.unsubscribed', 'Phone push notifications disabled');
-      return success({ unsubscribed: true });
     }
     if (body.action === 'revoke') {
       this.sql.exec("UPDATE remote_devices SET revoked = 1 WHERE id = 'home'");
