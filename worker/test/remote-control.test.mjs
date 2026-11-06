@@ -38,7 +38,7 @@ test('pairing consumes a one-time code and stores only the hash of the device cr
   w.object.connections.set(conn.id, conn);
   w.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id) VALUES (?, ?, ?)',
     sha256(code), Math.floor(Date.now() / 1000) + 300, conn.id);
-  const response = await w.object.control(w.request({ action: 'pair', code }));
+  const response = await w.request({ action: 'pair', code });
   assert.equal(response.status, 200);
   assert.equal(conn.ws.sent.t, 'pair.complete');
   assert.match(conn.ws.sent.token, /^[a-f0-9]{64}$/);
@@ -53,9 +53,9 @@ test('pairing consumes a one-time code and stores only the hash of the device cr
 test('pairing refuses expired codes and disconnected pending sockets', async () => {
   const w = world();
   const code = randomBytes(32).toString('hex');
-  w.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id, ip) VALUES (?, ?, ?, ?)',
+  w.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id) VALUES (?, ?, ?)',
     sha256(code), Math.floor(Date.now() / 1000) - 1, 'gone');
-  const response = await w.object.control(w.request({ action: 'pair', code }));
+  const response = await w.request({ action: 'pair', code });
   assert.equal(response.status, 400);
   assert.match(response.body.error, /invalid or expired/i);
 });
@@ -66,7 +66,7 @@ test('only allowlisted commands with bounded arguments reach the paired agent', 
   const sent = [];
   w.object.agent = { authed: true, ws: { send(text) { sent.push(JSON.parse(text)); }, close() {} } };
   w.sql.exec('INSERT INTO remote_status (id, data, seen) VALUES (1, ?, ?)', JSON.stringify({ serverRunning: true }), Math.floor(Date.now() / 1000));
-  const accepted = await w.object.control(w.request({ action: 'command', command: 'set-slots', args: { slots: 12 } }));
+  const accepted = await w.request({ action: 'command', command: 'set-slots', args: { slots: 12 } });
   assert.equal(accepted.status, 202);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].command, 'set-slots');
@@ -78,7 +78,7 @@ test('only allowlisted commands with bounded arguments reach the paired agent', 
     ['set-priority', { priority: 'Realtime' }],
     ['start', { extra: true }],
   ]) {
-    const response = await w.object.control(w.request({ action: 'command', command, args }));
+    const response = await w.request({ action: 'command', command, args });
     assert.equal(response.status, 400);
   }
   assert.equal(sent.length, 1);
@@ -90,7 +90,7 @@ test('commands are not sent when the device is offline or stale', async () => {
   const sent = [];
   w.object.agent = { authed: true, ws: { send(text) { sent.push(text); }, close() {} } };
   w.sql.exec('INSERT INTO remote_status (id, data, seen) VALUES (1, ?, ?)', '{}', Math.floor(Date.now() / 1000) - 60);
-  const response = await w.object.control(w.request({ action: 'command', command: 'restart', args: {} }));
+  const response = await w.request({ action: 'command', command: 'restart', args: {} });
   assert.equal(response.status, 503);
   assert.equal(sent.length, 0);
 });
@@ -99,7 +99,7 @@ test('revoked device credentials cannot control the server', async () => {
   const w = world();
   pairDevice(w);
   w.sql.exec("UPDATE remote_devices SET revoked = 1 WHERE id = 'home'");
-  const response = await w.object.control(w.request({ action: 'status' }));
+  const response = await w.request({ action: 'status' });
   assert.equal(response.status, 403);
 });
 
@@ -110,14 +110,14 @@ test('push subscriptions are encrypted at rest and restricted to known push prov
   pairDevice(w);
   const endpoint = 'https://fcm.googleapis.com/fcm/send/fake-endpoint-token';
   const subscription = { endpoint, keys: { p256dh: randomBytes(65).toString('base64url'), auth: randomBytes(16).toString('base64url') } };
-  const response = await w.object.control(w.request({ action: 'push.subscribe', subscription }));
+  const response = await w.request({ action: 'push.subscribe', subscription });
   assert.equal(response.status, 200);
   const row = [...w.sql.exec('SELECT encrypted FROM remote_push_subscriptions')][0];
   assert.ok(row.encrypted);
   assert.equal(row.encrypted.includes(endpoint), false);
-  const bad = await w.object.control(w.request({ action: 'push.subscribe', subscription: {
+  const bad = await w.request({ action: 'push.subscribe', subscription: {
     endpoint: 'https://attacker.example/collect', keys: subscription.keys,
-  } }));
+  } });
   assert.equal(bad.status, 400);
 });
 
