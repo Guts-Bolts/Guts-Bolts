@@ -5,8 +5,8 @@ self.addEventListener('push', (event) => {
   const body = typeof data.body === 'string' ? data.body.slice(0, 180) : 'The home server needs attention.';
   event.waitUntil(self.registration.showNotification(title, {
     body,
-    icon: '/Icon.png',
-    badge: '/Icon.png',
+    icon: '/img/icon.png',
+    badge: '/img/icon.png',
     tag: 'gb-home-server-alert',
     renotify: true,
     data: { url: '/server/' },
