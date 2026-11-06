@@ -135,9 +135,15 @@ function Start-ManagedServer {
   $current = Get-ManagedProcess
   if ($current) { return 'Server is already running (PID ' + $current.Id + ').' }
   if (-not (Test-Path -LiteralPath $script:Config.ServerExe -PathType Leaf)) { throw 'The configured game server executable is missing.' }
-  $sameExe = Get-CimInstance Win32_Process -Filter "Name = 'GutsAndBoltsGameServer.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.ExecutablePath -and [string]::Compare([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($script:Config.ServerExe), $true) -eq 0 }
-  if ($sameExe) { throw 'The configured game server is already running outside this agent. It will not start a duplicate or take control of that process.' }
+  try { $existingServers = @(Get-CimInstance Win32_Process -Filter "Name = 'GutsAndBoltsGameServer.exe'" -ErrorAction Stop) }
+  catch { throw 'Could not safely inspect running game-server processes. Refusing to risk starting a duplicate.' }
+  foreach ($existing in $existingServers) {
+    if (-not $existing.ExecutablePath) { throw 'An existing game-server process could not be identified safely. Refusing to start another.' }
+    if ([string]::Compare([IO.Path]::GetFullPath($existing.ExecutablePath), [IO.Path]::GetFullPath($script:Config.ServerExe), $true) -eq 0) {
+      throw 'The configured game server is already running outside this agent. It will not start a duplicate or take control of that process.'
+    }
+    throw 'Another Guts & Bolts game-server process is already running from a different location. Stop it before starting this one.'
+  }
   $work = Split-Path -Parent $script:Config.ServerExe
   $serverArgs = @('--slots', [string]$script:Config.Slots)
   $proc = Start-Process -FilePath $script:Config.ServerExe -ArgumentList $serverArgs -WorkingDirectory $work -PassThru -WindowStyle Hidden
