@@ -40,7 +40,7 @@ function renderStatus(result) {
   $('gpu').textContent = percent(s.gpuPercent);
   $('gpu-detail').textContent = s.gpuTemperatureC != null ? Math.round(s.gpuTemperatureC) + '°C' : 'GPU telemetry unavailable';
   $('server-state').textContent = s.serverRunning ? 'Running' : 'Stopped';
-  $('server-detail').textContent = (s.serverPid ? 'PID ' + s.serverPid : 'No process') + (s.serverUptimeSeconds ? ' · ' + Math.floor(s.serverUptimeSeconds / 60) + ' min' : '');
+  $('server-detail').textContent = (s.serverPid ? 'PID ' + s.serverPid : 'No managed process') + (s.serverUptimeSeconds ? ' · ' + Math.floor(s.serverUptimeSeconds / 60) + ' min' : '') + (s.lastError ? ' · ' + s.lastError : '');
   if (s.slots) $('slots').value = s.slots;
   if (s.priority) $('priority').value = s.priority;
   $('auto-restart').checked = s.autoRestart === true;
