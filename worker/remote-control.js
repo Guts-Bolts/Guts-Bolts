@@ -146,7 +146,7 @@ async function pushBody(subscription, payload) {
         created INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0
       );
       CREATE TABLE IF NOT EXISTS remote_pairings (
-        code_hash TEXT PRIMARY KEY, expires INTEGER NOT NULL, conn_id TEXT NOT NULL, ip TEXT NOT NULL
+        code_hash TEXT PRIMARY KEY, expires INTEGER NOT NULL, conn_id TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS remote_status (
         id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL, seen INTEGER NOT NULL
@@ -157,10 +157,10 @@ async function pushBody(subscription, payload) {
       );
       CREATE INDEX IF NOT EXISTS remote_audit_at ON remote_audit(at);
       CREATE TABLE IF NOT EXISTS remote_pair_control_attempts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, ip TEXT NOT NULL, at INTEGER NOT NULL
+        id INTEGER PRIMARY KEY AUTOINCREMENT, actor TEXT NOT NULL, ip_hash TEXT NOT NULL, at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS remote_pair_control_attempts_actor_ip_at
-        ON remote_pair_control_attempts(actor, ip, at);
+        ON remote_pair_control_attempts(actor, ip_hash, at);
       CREATE TABLE IF NOT EXISTS remote_alert_state (
         key TEXT PRIMARY KEY, started INTEGER NOT NULL, alerted INTEGER NOT NULL DEFAULT 0
       );
@@ -194,7 +194,7 @@ async function pushBody(subscription, payload) {
     const pair = new WebSocketPair();
     const ws = pair[1];
     ws.accept();
-    const c = { id: randomHex(12), ws, ip: request.headers.get('cf-connecting-ip') || '', authed: false, attempts: 0, pending: false };
+    const c = { id: randomHex(12), ws, authed: false, attempts: 0, pending: false };
     this.connections.set(c.id, c);
     let queue = Promise.resolve();
     ws.addEventListener('message', (event) => {
@@ -230,10 +230,10 @@ async function pushBody(subscription, payload) {
         return this.drop(c);
       }
       if (!existing) {
-          this.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id, ip) VALUES (?, ?, ?, ?)',
-          codeHash, now() + 300, c.id, c.ip);
+          this.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id) VALUES (?, ?, ?)',
+          codeHash, now() + 300, c.id);
       } else {
-        this.sql.exec('UPDATE remote_pairings SET conn_id = ?, ip = ? WHERE code_hash = ?', c.id, c.ip, codeHash);
+        this.sql.exec('UPDATE remote_pairings SET conn_id = ? WHERE code_hash = ?', c.id, codeHash);
       }
       c.pending = true;
       c.deviceName = message.device.slice(0, 60);
@@ -419,10 +419,11 @@ async function pushBody(subscription, payload) {
     if (body.action === 'pair') {
       ip = typeof ip === 'string' && ip.length <= 64 ? ip : 'unknown';
       this.sql.exec('DELETE FROM remote_pair_control_attempts WHERE at < ?', now() - 86400);
-      const attempts = [...this.sql.exec('SELECT COUNT(*) AS n FROM remote_pair_control_attempts WHERE actor = ? AND ip = ? AND at > ?',
-        actor, ip, now() - 3600)][0]?.n || 0;
+      const ipHash = await hash(ip);
+      const attempts = [...this.sql.exec('SELECT COUNT(*) AS n FROM remote_pair_control_attempts WHERE actor = ? AND ip_hash = ? AND at > ?',
+        actor, ipHash, now() - 3600)][0]?.n || 0;
       if (attempts >= 10) return fail('Too many pairing attempts. Wait an hour before trying again.', 429);
-      this.sql.exec('INSERT INTO remote_pair_control_attempts (actor, ip, at) VALUES (?, ?, ?)', actor, ip, now());
+      this.sql.exec('INSERT INTO remote_pair_control_attempts (actor, ip_hash, at) VALUES (?, ?, ?)', actor, ipHash, now());
     }
     const device = [...this.sql.exec("SELECT owner, revoked FROM remote_devices WHERE id = 'home'")][0];
     if (body.action === 'pair') {
