@@ -17,6 +17,7 @@ $script:Config = $null
 $script:LastError = ''
 $script:CrashTimes = New-Object 'System.Collections.Generic.List[datetime]'
 $script:LastProcessId = 0
+$script:PairingCode = $null
 
 function Ensure-Root {
   if (-not (Test-Path -LiteralPath $Root)) { New-Item -ItemType Directory -Path $Root -Force | Out-Null }
@@ -273,6 +274,7 @@ function Handle-AgentMessage($Socket, $Message) {
   switch ([string]$Message.t) {
     'pair.complete' {
       Save-DeviceToken ([string]$Message.token)
+      $script:PairingCode = $null
       Write-Host 'Device paired successfully. The credential is encrypted for this Windows user.' -ForegroundColor Green
       Send-Json $Socket @{ t = 'status'; status = (Get-AgentStatus) }
     }
@@ -282,8 +284,14 @@ function Handle-AgentMessage($Socket, $Message) {
     }
     'device.rejected' {
       Remove-Item -LiteralPath $TokenPath -Force -ErrorAction SilentlyContinue
+      $script:PairingCode = $null
       throw 'The stored device credential was revoked or rejected. A new local pairing code will be generated.'
     }
+    'pair.expired' {
+      $script:PairingCode = $null
+      throw 'The one-time pairing code expired. A new code will be displayed.'
+    }
+    'pair.rate-limited' { throw 'Pairing attempts are temporarily rate-limited. Wait before trying again.' }
     'device.replaced' { throw 'This device was replaced by a newer connection.' }
     'command' {
       $ok = $false
@@ -306,14 +314,17 @@ function Connect-Agent {
     if ($token) {
       Send-Json $socket @{ t = 'device.auth'; token = $token }
     } else {
-      $pairCode = New-PairingCode
-      Send-Json $socket @{ t = 'pair.begin'; code = $pairCode; device = $env:COMPUTERNAME }
-      Write-Host ''
-      Write-Host 'PAIR THIS PC FROM YOUR PHONE' -ForegroundColor Yellow
-      Write-Host 'Open https://gutsandbolts.net/server/ while signed in to the official Guts & Bolts account.' -ForegroundColor Yellow
-      Write-Host 'Paste this one-time code into Device pairing (expires in five minutes):' -ForegroundColor Yellow
-      Write-Host $pairCode -ForegroundColor Cyan
-      Write-Host 'Do not share this code with anyone. Press Ctrl+C to stop the agent.' -ForegroundColor Yellow
+      $newCode = -not $script:PairingCode
+      if ($newCode) { $script:PairingCode = New-PairingCode }
+      Send-Json $socket @{ t = 'pair.begin'; code = $script:PairingCode; device = $env:COMPUTERNAME }
+      if ($newCode) {
+        Write-Host ''
+        Write-Host 'PAIR THIS PC FROM YOUR PHONE' -ForegroundColor Yellow
+        Write-Host 'Open https://gutsandbolts.net/server/ while signed in to the official Guts & Bolts account.' -ForegroundColor Yellow
+        Write-Host 'Paste this one-time code into Device pairing (expires in five minutes):' -ForegroundColor Yellow
+        Write-Host $script:PairingCode -ForegroundColor Cyan
+        Write-Host 'Do not share this code with anyone. Press Ctrl+C to stop the agent.' -ForegroundColor Yellow
+      }
     }
     $buffer = New-Object byte[] 8192
     $segment = [ArraySegment[byte]]::new($buffer)
