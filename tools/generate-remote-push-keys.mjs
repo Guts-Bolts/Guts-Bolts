@@ -8,7 +8,7 @@ const pkcs8Private = privateKey.export({ type: 'pkcs8', format: 'der' });
 const encryptionKey = randomBytes(32);
 
 console.log('\nGuts & Bolts remote push keys\n');
-console.log('REMOTE_VAPID_PUBLIC_KEY (Cloudflare variable, not secret):');
+console.log('REMOTE_VAPID_PUBLIC_KEY (Cloudflare secret):');
 console.log(b64url(rawPublic));
 console.log('\nREMOTE_VAPID_PRIVATE_KEY (Cloudflare secret):');
 console.log(b64url(pkcs8Private));
