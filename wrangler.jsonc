@@ -65,11 +65,11 @@
     "directory": "./website",
     "binding": "ASSETS",
     // (The pages themselves too, so the old workers.dev address can send visitors to gutsandbolts.net.)
-    "run_worker_first": ["/api", "/api/*", "/ws", "/thumb/*", "/icon/*", "/avatar/*", "/download/*", "/", "/index.html", "/app", "/app/", "/app/index.html",
+    "run_worker_first": ["/api", "/api/*", "/ws", "/ws/remote", "/thumb/*", "/icon/*", "/avatar/*", "/download/*", "/", "/index.html", "/app", "/app/", "/app/index.html",
       "/mcp", "/mcp/*", "/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/*", "/.well-known/oauth-authorization-server"]
   },
   "durable_objects": {
-    "bindings": [{ "name": "GB_SERVER_OBJECT", "class_name": "GbServerObject" }]
+    "bindings": [\n      { "name": "GB_SERVER_OBJECT", "class_name": "GbServerObject" },\n      { "name": "REMOTE_CONTROL", "class_name": "RemoteControlObject" }\n    ]
   },
   // Cloudflare's translator for in-game chat (chat.translate in worker/server.js). Free up to a
   // daily amount; after that, lines just show as they were said until the next day.
@@ -89,5 +89,5 @@
     { "name": "RATE_DOUBT",    "namespace_id": "4104", "simple": { "limit": 60,   "period": 60 } },
     { "name": "RATE_WS",       "namespace_id": "4105", "simple": { "limit": 30,   "period": 60 } }
   ],
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["GbServerObject"] }]
+  "migrations": [\n    { "tag": "v1", "new_sqlite_classes": ["GbServerObject"] },\n    { "tag": "v2", "new_sqlite_classes": ["RemoteControlObject"] }\n  ]
 }
