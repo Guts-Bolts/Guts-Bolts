@@ -282,9 +282,22 @@ function Get-AgentStatus {
 function Check-CrashRecovery($Socket) {
   if (-not (Test-Path -LiteralPath $PidPath)) { return }
   $pidValue = 0
-  if (-not [int]::TryParse((Get-Content -LiteralPath $PidPath -Raw).Trim(), [ref]$pidValue)) { return }
-  $stillThere = Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction SilentlyContinue
-  if ($stillThere) { return }
+  if (-not [int]::TryParse((Get-Content -LiteralPath $PidPath -Raw).Trim(), [ref]$pidValue)) {
+    Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
+    return
+  }
+  try { $runningProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $pidValue" -ErrorAction Stop }
+  catch {
+    $script:LastError = 'Could not verify the game-server process. Automatic recovery is paused.'
+    Send-Json $Socket @{ t = 'agent.error'; message = $script:LastError }
+    return
+  }
+  if ($runningProcess -and -not $runningProcess.ExecutablePath) {
+    $script:LastError = 'The saved process ID cannot be verified. Automatic recovery is paused.'
+    Send-Json $Socket @{ t = 'agent.error'; message = $script:LastError }
+    return
+  }
+  if ($runningProcess -and [string]::Compare([IO.Path]::GetFullPath($runningProcess.ExecutablePath), [IO.Path]::GetFullPath($script:Config.ServerExe), $true) -eq 0) { return }
   Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
   $script:CrashTimes.Add([DateTime]::UtcNow)
   while ($script:CrashTimes.Count -gt 0 -and ([DateTime]::UtcNow - $script:CrashTimes[0]).TotalMinutes -gt 10) { $script:CrashTimes.RemoveAt(0) }
@@ -302,9 +315,8 @@ function Check-CrashRecovery($Socket) {
   }
   Start-Sleep -Seconds 5
   try { Start-ManagedServer | Out-Null; $script:LastError = '' }
-  catch { $script:LastError = $_.Exception.Message }
+  catch { $script:LastError = $_.Exception.Message; Send-Json $Socket @{ t = 'agent.error'; message = $script:LastError } }
 }
-
 function Handle-AgentMessage($Socket, $Message) {
   switch ([string]$Message.t) {
     'pair.complete' {
