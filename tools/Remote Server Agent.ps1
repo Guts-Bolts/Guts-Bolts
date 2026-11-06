@@ -23,14 +23,14 @@ function Ensure-Root {
   $acl = Get-Acl -LiteralPath $Root
   $acl.SetAccessRuleProtection($true, $false)
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+  $rule = [Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
   $acl.SetAccessRule($rule)
   Set-Acl -LiteralPath $Root -AclObject $acl
 }
 
 function Save-Config {
   $json = $script:Config | ConvertTo-Json -Depth 4
-  [IO.File]::WriteAllText($ConfigPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+  [IO.File]::WriteAllText($ConfigPath, $json, ([System.Text.UTF8Encoding]::new($false)))
 }
 
 function Load-Config {
@@ -128,7 +128,7 @@ function Start-ManagedServer {
     Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
     throw 'The game server exited immediately after launch. Check its local logs.'
   }
-  try { $proc.PriorityClass = [Diagnostics.ProcessPriorityClass]::$($script:Config.Priority) } catch { }
+  try { $proc.PriorityClass = [Enum]::Parse([Diagnostics.ProcessPriorityClass], [string]$script:Config.Priority) } catch { }
   $script:LastProcessId = $proc.Id
   return 'Server started (PID ' + $proc.Id + ').'
 }
@@ -147,7 +147,7 @@ function Stop-ManagedServer {
 
 function Set-ManagedPriority {
   $proc = Get-ManagedProcess
-  if ($proc) { $proc.PriorityClass = [Diagnostics.ProcessPriorityClass]::$($script:Config.Priority) }
+  if ($proc) { $proc.PriorityClass = [Enum]::Parse([Diagnostics.ProcessPriorityClass], [string]$script:Config.Priority) }
   return 'Priority set to ' + $script:Config.Priority + '.'
 }
 
@@ -244,7 +244,8 @@ function Get-AgentStatus {
     agentVersion = $AgentVersion
     lastError = [string]$script:LastError
   }
-  foreach ($key in (Get-GpuMetrics).Keys) { $status[$key] = (Get-GpuMetrics)[$key] }
+  $gpu = Get-GpuMetrics
+  foreach ($key in $gpu.Keys) { $status[$key] = $gpu[$key] }
   return $status
 }
 
@@ -273,8 +274,16 @@ function Handle-AgentMessage($Socket, $Message) {
     'pair.complete' {
       Save-DeviceToken ([string]$Message.token)
       Write-Host 'Device paired successfully. The credential is encrypted for this Windows user.' -ForegroundColor Green
+      Send-Json $Socket @{ t = 'status'; status = (Get-AgentStatus) }
     }
-    'device.ready' { Write-Host 'Connected to the Guts & Bolts remote relay.' -ForegroundColor Green }
+    'device.ready' {
+      Write-Host 'Connected to the Guts & Bolts remote relay.' -ForegroundColor Green
+      Send-Json $Socket @{ t = 'status'; status = (Get-AgentStatus) }
+    }
+    'device.rejected' {
+      Remove-Item -LiteralPath $TokenPath -Force -ErrorAction SilentlyContinue
+      throw 'The stored device credential was revoked or rejected. A new local pairing code will be generated.'
+    }
     'device.replaced' { throw 'This device was replaced by a newer connection.' }
     'command' {
       $ok = $false
