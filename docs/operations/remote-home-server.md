@@ -8,7 +8,7 @@ This feature lets the official Guts & Bolts account monitor and control one Wind
 - Do not configure router port forwarding, Windows Remote Desktop exposure, SSH exposure, or PowerShell Remoting for this feature.
 - The Worker accepts dashboard requests only when they contain a fresh, valid Guts & Bolts signed request for `admin.numbers`, and the signing account matches the configured `OFFICIAL` account ID.
 - The relay stores only a SHA-256 hash of the PC's 256-bit device credential. The raw credential is sent once to the connected agent over TLS and stored locally using Windows DPAPI for the current Windows user.
-- Pairing uses a 256-bit one-time code, expires after five minutes, is stored as a hash, and is rate-limited.
+- Pairing uses a 256-bit one-time code, expires after five minutes, is stored as a hash, and is rate-limited to ten phone submissions per hour per account and client IP. If it expires while the agent is waiting, the PC displays a fresh code automatically.
 - The agent runs as a normal, non-elevated Windows user. It does not expose a shell, PowerShell, file browser, arbitrary executable launch, or arbitrary command interface.
 - The remote command allowlist is limited to start, stop, restart, slots (1–50), process priority (Normal/AboveNormal/High), and automatic crash recovery.
 - The agent validates commands again, checks their expiry, and only manages the exact configured `GutsAndBoltsGameServer.exe`. It will not stop an unrelated process or start a duplicate executable.
