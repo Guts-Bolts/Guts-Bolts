@@ -95,7 +95,7 @@ $('refresh').addEventListener('click', refresh);
 $('save-slots').addEventListener('click', () => {
   const slots = Number($('slots').value);
   if (!Number.isInteger(slots) || slots < 1 || slots > 50) return say('Slots must be a whole number from 1 to 50.', 'error');
-  command('set-slots', { slots });
+  command('set-slots', { slots }, 'Changing slots restarts the dedicated server and disconnects active players. Continue?');
 });
 $('save-priority').addEventListener('click', () => command('set-priority', { priority: $('priority').value }));
 $('save-auto').addEventListener('click', () => command('set-auto-restart', { enabled: $('auto-restart').checked }));
