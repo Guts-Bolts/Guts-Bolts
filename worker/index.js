@@ -126,11 +126,13 @@ async function handleRemoteControl(request, env, url) {
   const action = body.action;
   if (!action || typeof action !== 'object' || Array.isArray(action)) return reply({ ok: false, error: 'Bad action.' }, 400);
   const stub = env.REMOTE_CONTROL.get(env.REMOTE_CONTROL.idFromName('home'));
-  return stub.fetch(new Request('https://remote.internal/control', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-gb-staff-id': auth.account.toLowerCase() },
-    body: JSON.stringify(action),
-  }));
+  try {
+    const result = await stub.control(auth.account.toLowerCase(), action);
+    return reply(result.body, result.status);
+  } catch (error) {
+    console.error(JSON.stringify({ message: 'remote control RPC failed', error: error instanceof Error ? error.message : 'unknown' }));
+    return reply({ ok: false, error: 'Remote control is temporarily unavailable.' }, 503);
+  }
 }
 
 const OAUTH_STATUS = { invalid_client: 401, invalid_token: 401, temporarily_unavailable: 503 };
