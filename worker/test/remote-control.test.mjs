@@ -156,3 +156,25 @@ test('only the configured official account can invoke remote-control RPC', async
   const response = await w.object.control(other, { action: 'pair', code: randomBytes(32).toString('hex') });
   assert.equal(response.status, 401);
 });
+
+test('a second valid-token connection cannot replace a live authenticated agent', async () => {
+  const w = world();
+  const token = randomBytes(32).toString('hex');
+  pairDevice(w, token);
+  const makeConnection = (id) => ({
+    id, pending: false, authed: false, attempts: 0,
+    ws: { sent: [], send(text) { this.sent.push(JSON.parse(text)); }, close() {} },
+  });
+  const active = makeConnection('active');
+  active.authed = true;
+  active.owner = OWNER;
+  w.object.connections.set(active.id, active);
+  w.object.agent = active;
+  w.sql.exec('INSERT INTO remote_status (id, data, seen) VALUES (1, ?, ?)', '{}', Math.floor(Date.now() / 1000));
+  const second = makeConnection('second');
+  w.object.connections.set(second.id, second);
+  await w.object.onAgentMessage(second, { t: 'device.auth', token });
+  assert.equal(w.object.agent, active);
+  assert.equal(second.authed, false);
+  assert.equal(second.ws.sent[0].t, 'device.busy');
+});
