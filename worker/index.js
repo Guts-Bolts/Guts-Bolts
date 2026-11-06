@@ -115,7 +115,7 @@ async function handleRemoteControl(request, env, url) {
   try { body = JSON.parse(text); } catch { return reply({ ok: false, error: 'Bad request.' }, 400); }
   const auth = body && body.auth;
   const official = String(env.OFFICIAL || '').toLowerCase();
-  if (!auth || typeof auth !== 'object' || Array.isArray(auth) || auth.op !== 'admin.numbers' ||
+  if (!auth || typeof auth !== 'object' || Array.isArray(auth) || auth.op !== 'staff.database.stats' ||
       typeof auth.account !== 'string' || auth.account.toLowerCase() !== official ||
       !auth.args || typeof auth.args !== 'object' || Array.isArray(auth.args) || Object.keys(auth.args).length !== 0) {
     return reply({ ok: false, error: 'Only the official Guts&Bolts account can manage the home server.' }, 401);
