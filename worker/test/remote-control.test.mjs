@@ -124,3 +124,12 @@ test('push subscriptions are encrypted at rest and restricted to known push prov
   } }));
   assert.equal(bad.status, 400);
 });
+
+test('durable heartbeat alarm records a missed-agent alert only once', async () => {
+  const w = world();
+  w.sql.exec('INSERT INTO remote_status (id, data, seen) VALUES (1, ?, ?)', '{}', Math.floor(Date.now() / 1000) - 60);
+  await w.object.alarm();
+  await w.object.alarm();
+  const rows = [...w.sql.exec("SELECT action FROM remote_audit WHERE action = 'alert.offline'")];
+  assert.equal(rows.length, 1);
+});
