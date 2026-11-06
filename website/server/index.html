@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="dark">
+  <title>Home Server · Guts &amp; Bolts</title>
+  <link rel="stylesheet" href="/server/style.css">
+  <script type="module" src="/server/app.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <div><a class="back" href="/app/">Guts &amp; Bolts</a><h1>Home server</h1><p class="muted">Private remote management</p></div>
+      <span id="connection" class="pill unknown">Checking access</span>
+    </header>
+    <p id="message" class="notice" role="status">Checking your Guts &amp; Bolts account…</p>
+    <section class="panel">
+      <div class="panel-head"><div><h2>Server status</h2><p class="muted" id="last-seen">No heartbeat received</p></div><button id="refresh" class="button secondary">Refresh</button></div>
+      <div class="metrics">
+        <div class="metric"><span>CPU</span><strong id="cpu">—</strong></div>
+        <div class="metric"><span>Memory</span><strong id="memory">—</strong><small id="memory-detail"></small></div>
+        <div class="metric"><span>GPU</span><strong id="gpu">—</strong><small id="gpu-detail"></small></div>
+        <div class="metric"><span>Game server</span><strong id="server-state">—</strong><small id="server-detail"></small></div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Server controls</h2>
+      <p class="muted">Commands are allowlisted. This dashboard has no terminal or arbitrary command execution.</p>
+      <div class="actions">
+        <button class="button" data-command="start">Start</button>
+        <button class="button secondary" data-command="stop">Stop</button>
+        <button class="button secondary" data-command="restart">Restart</button>
+      </div>
+      <div class="settings">
+        <label>Server slots (1–50)<input id="slots" type="number" min="1" max="50" value="4"></label>
+        <button class="button secondary" id="save-slots">Apply slots</button>
+        <label>Process priority<select id="priority"><option>Normal</option><option>AboveNormal</option><option>High</option></select></label>
+        <button class="button secondary" id="save-priority">Apply priority</button>
+      </div>
+      <label class="toggle"><input id="auto-restart" type="checkbox"> Restart the game server automatically if it crashes</label>
+      <button class="button secondary" id="save-auto">Save recovery setting</button>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><h2>Device pairing</h2><p class="muted">Pair only while you are physically at the home PC.</p></div></div>
+      <p class="muted">The PC agent displays a one-time 256-bit code. Paste it here. The code expires after five minutes and is never stored in plaintext by the relay.</p>
+      <div class="pair-row"><input id="pair-code" autocomplete="off" spellcheck="false" placeholder="Paste the 64-character pairing code"><button class="button" id="pair">Pair PC</button></div>
+      <button class="button danger" id="revoke">Revoke device access</button>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><h2>Alerts and audit log</h2><p class="muted">Recent events and administrative actions.</p></div><button id="enable-notifications" class="button secondary">Enable alerts</button></div>
+      <ul id="audit" class="audit"><li class="muted">No events loaded.</li></ul>
+      <p class="muted small">Browser alerts are shown while this dashboard is open. Background push notifications are not enabled in this first release.</p>
+    </section>
+    <footer>Remote access is limited to the official Guts &amp; Bolts account. Keep the home PC powered on and connected to the internet. No inbound router ports are required.</footer>
+  </main>
+</body>
+</html>
