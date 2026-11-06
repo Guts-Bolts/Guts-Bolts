@@ -17,13 +17,14 @@
 // (host:port), /api is passed on to that server instead, over TCP.
 import { connect } from 'cloudflare:sockets';
 import { GbServerObject } from './server.js';
+import { RemoteControlObject } from './remote-control.js';
 import { readLimitedText } from './http.js';
 import { withSecurityHeaders } from './security.js';
 import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
 import { checkSupabaseHealth, listSupabaseActivity, supabasePublicConfig } from './supabase.js';
-export { GbServerObject };
+export { GbServerObject, RemoteControlObject };
 
 const MAX_REQUEST = 40 * 1024 * 1024;   // a whole game, base64
 const MAX_REPLY   = 48 * 1024 * 1024;
@@ -105,6 +106,33 @@ async function serverAsk(env, req) {
   }
 }
 
+async function handleRemoteControl(request, env, url) {
+  if (request.method !== 'POST') return reply({ ok: false, error: 'Use POST.' }, 405);
+  if (request.headers.get('origin') !== url.origin) return reply({ ok: false, error: 'Same-origin requests only.' }, 403);
+  const text = await readLimitedText(request, 12 * 1024);
+  if (text === null) return reply({ ok: false, error: 'Request is too large.' }, 413);
+  let body;
+  try { body = JSON.parse(text); } catch { return reply({ ok: false, error: 'Bad request.' }, 400); }
+  const auth = body && body.auth;
+  const official = String(env.OFFICIAL || '').toLowerCase();
+  if (!auth || typeof auth !== 'object' || Array.isArray(auth) || auth.op !== 'admin.numbers' ||
+      typeof auth.account !== 'string' || auth.account.toLowerCase() !== official ||
+      !auth.args || typeof auth.args !== 'object' || Array.isArray(auth.args) || Object.keys(auth.args).length !== 0) {
+    return reply({ ok: false, error: 'Only the official Guts&Bolts account can manage the home server.' }, 401);
+  }
+  // Verify the signed, nonce-protected Guts&Bolts account request on the authoritative server.
+  const verified = await serverAsk(env, auth);
+  if (!verified || !verified.ok) return reply({ ok: false, error: 'Staff authentication failed. Sign in again.' }, 401);
+  const action = body.action;
+  if (!action || typeof action !== 'object' || Array.isArray(action)) return reply({ ok: false, error: 'Bad action.' }, 400);
+  const stub = env.REMOTE_CONTROL.get(env.REMOTE_CONTROL.idFromName('home'));
+  return stub.fetch(new Request('https://remote.internal/control', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-gb-staff-id': auth.account.toLowerCase() },
+    body: JSON.stringify(action),
+  }));
+}
+
 const OAUTH_STATUS = { invalid_client: 401, invalid_token: 401, temporarily_unavailable: 503 };
 function oauthError(r) {
   const word = r.oauth || 'server_error';
@@ -184,7 +212,7 @@ async function route(request, env, ctx) {
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
     const supabaseHealthPath = url.pathname === '/api/supabase/health' || url.pathname === '/api/supabase/live';
     const supabaseActivityPath = /^\/api\/activity\/(auctions|forum)$/.test(url.pathname);
-    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath ? 'api' : mcp ? 'mcp' : '';
+    const kind = picture ? 'picture' : (url.pathname === '/ws' || url.pathname === '/ws/remote') ? 'ws' : url.pathname === '/api' || url.pathname === '/api/remote' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath ? 'api' : mcp ? 'mcp' : '';
     let info = null;
     if (kind) {
       info = await check(request, env, url, kind);
@@ -219,6 +247,8 @@ async function route(request, env, ctx) {
     }
     // The server on Cloudflare: one Durable Object holds everything.
     const builtIn = () => env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main'));
+    if (url.pathname === '/ws/remote') return env.REMOTE_CONTROL.get(env.REMOTE_CONTROL.idFromName('home')).fetch(tagged(request, info));
+    if (url.pathname === '/api/remote') return handleRemoteControl(request, env, url);
     if (url.pathname === '/ws') return builtIn().fetch(tagged(request, info));
     // Lyreto's server talking to the chat gateway (worker/chats.js checks its signature).
     if (url.pathname === '/api/bridge/lyreto') {
