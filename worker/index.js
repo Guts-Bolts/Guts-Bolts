@@ -125,7 +125,7 @@ async function handleRemoteControl(request, env, url) {
   if (!verified || !verified.ok) return reply({ ok: false, error: 'Staff authentication failed. Sign in again.' }, 401);
   const action = body.action;
   if (!action || typeof action !== 'object' || Array.isArray(action)) return reply({ ok: false, error: 'Bad action.' }, 400);
-  const stub = env.REMOTE_CONTROL.get(env.REMOTE_CONTROL.idFromName('home'));
+  const stub = env.REMOTE_CONTROL.getByName('home');
   try {
     const result = await stub.control(auth.account.toLowerCase(), action);
     return reply(result.body, result.status);
