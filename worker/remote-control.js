@@ -301,6 +301,7 @@ async function pushBody(subscription, payload) {
       const previous = this.agent;
       this.agent = null;
       this.connections.delete(previous.id);
+      jsonMessage(previous.ws, { t: 'device.replaced' });
       try { previous.ws.close(4001, 'stale connection replaced'); } catch {}
     }
     c.authed = true;
