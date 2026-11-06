@@ -208,13 +208,25 @@ async function pushBody(subscription, payload) {
   async onAgentMessage(c, message) {
     if (message.t === 'pair.begin') {
       if (c.authed || c.pending || !isHex(message.code) || typeof message.device !== 'string') return this.drop(c);
-      const count = [...this.sql.exec('SELECT COUNT(*) AS n FROM remote_attempts WHERE ip = ? AND at > ?', c.ip, now() - 3600)][0]?.n || 0;
-      if (count >= 5) return this.drop(c);
-      this.sql.exec('INSERT INTO remote_attempts (ip, at) VALUES (?, ?)', c.ip, now());
-      this.sql.exec('DELETE FROM remote_pairings WHERE expires <= ?', now());
       const codeHash = await hash(message.code.toLowerCase());
-      this.sql.exec('INSERT OR REPLACE INTO remote_pairings (code_hash, expires, conn_id, ip) VALUES (?, ?, ?, ?)',
-        codeHash, now() + 300, c.id, c.ip);
+      const existing = [...this.sql.exec('SELECT expires FROM remote_pairings WHERE code_hash = ?', codeHash)][0];
+      if (existing && existing.expires <= now()) {
+        this.sql.exec('DELETE FROM remote_pairings WHERE code_hash = ?', codeHash);
+        jsonMessage(c.ws, { t: 'pair.expired' });
+        return this.drop(c);
+      }
+      if (!existing) {
+        const count = [...this.sql.exec('SELECT COUNT(*) AS n FROM remote_attempts WHERE ip = ? AND at > ?', c.ip, now() - 3600)][0]?.n || 0;
+        if (count >= 5) {
+          jsonMessage(c.ws, { t: 'pair.rate-limited' });
+          return this.drop(c);
+        }
+        this.sql.exec('INSERT INTO remote_attempts (ip, at) VALUES (?, ?)', c.ip, now());
+        this.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id, ip) VALUES (?, ?, ?, ?)',
+          codeHash, now() + 300, c.id, c.ip);
+      } else {
+        this.sql.exec('UPDATE remote_pairings SET conn_id = ?, ip = ? WHERE code_hash = ?', c.id, c.ip, codeHash);
+      }
       c.pending = true;
       c.deviceName = message.device.slice(0, 60);
       jsonMessage(c.ws, { t: 'pair.waiting', expiresIn: 300 });
@@ -389,6 +401,8 @@ async function pushBody(subscription, payload) {
       const sub = body.subscription;
       if (!sub || typeof sub !== 'object' || typeof sub.endpoint !== 'string' || !sub.keys ||
           typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') return fail('Invalid push subscription.', 400);
+      if (b64urlBytes(sub.keys.p256dh).length !== 65 || b64urlBytes(sub.keys.auth).length !== 16)
+        return fail('Invalid push subscription keys.', 400);
       let endpoint;
       try { endpoint = new URL(sub.endpoint); } catch { return fail('Invalid push endpoint.', 400); }
       const host = endpoint.hostname.toLowerCase();
