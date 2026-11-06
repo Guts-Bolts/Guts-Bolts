@@ -22,11 +22,7 @@ function world() {
   const sql = fakeSql();
   const waits = [];
   const object = new RemoteControlObject({ storage: { sql }, waitUntil: (promise) => waits.push(promise) }, {});
-  const request = (body, actor = OWNER) => new Request('https://remote.internal/control', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-gb-staff-id': actor },
-    body: JSON.stringify(body),
-  });
+  const request = (body, actor = OWNER) => object.control(actor, body);
   return { object, sql, request, waits };
 }
 function pairDevice(w, token = randomBytes(32).toString('hex')) {
@@ -61,7 +57,7 @@ test('pairing refuses expired codes and disconnected pending sockets', async () 
     sha256(code), Math.floor(Date.now() / 1000) - 1, 'gone', '127.0.0.1');
   const response = await w.object.control(w.request({ action: 'pair', code }));
   assert.equal(response.status, 400);
-  assert.match((await response.json()).error, /invalid or expired/i);
+  assert.match(response.body.error, /invalid or expired/i);
 });
 
 test('only allowlisted commands with bounded arguments reach the paired agent', async () => {
