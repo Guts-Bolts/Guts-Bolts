@@ -129,3 +129,23 @@ test('durable heartbeat alarm records a missed-agent alert only once', async () 
   const rows = [...w.sql.exec("SELECT action FROM remote_audit WHERE action = 'alert.offline'")];
   assert.equal(rows.length, 1);
 });
+
+test('device authentication rejects incorrect credentials and accepts the paired token', async () => {
+  const w = world();
+  const token = randomBytes(32).toString('hex');
+  pairDevice(w, token);
+  const makeConnection = (id) => ({
+    id, pending: false, authed: false, attempts: 0,
+    ws: { sent: [], send(text) { this.sent.push(JSON.parse(text)); }, close() {} },
+  });
+  const bad = makeConnection('bad-connection');
+  w.object.connections.set(bad.id, bad);
+  await w.object.onAgentMessage(bad, { t: 'device.auth', token: randomBytes(32).toString('hex') });
+  assert.equal(bad.authed, false);
+  assert.equal(bad.ws.sent[0].t, 'device.rejected');
+  const good = makeConnection('good-connection');
+  w.object.connections.set(good.id, good);
+  await w.object.onAgentMessage(good, { t: 'device.auth', token });
+  assert.equal(good.authed, true);
+  assert.equal(w.object.agent, good);
+});
