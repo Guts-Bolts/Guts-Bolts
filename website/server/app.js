@@ -4,28 +4,24 @@ const $ = (id) => document.getElementById(id);
 const message = $('message');
 let lastAudit = new Set();
 let notificationReady = false;
-let busy = false;
+let auditInitialized = false;
 
 function say(text, kind = '') {
   message.textContent = text;
   message.className = 'notice' + (kind ? ' ' + kind : '');
 }
 async function api(action) {
-  if (busy) throw new Error('A request is already running.');
-  busy = true;
-  try {
-    const auth = await signedRequest('admin.numbers', {});
-    const response = await fetch('/api/remote', {
-      method: 'POST',
-      credentials: 'same-origin',
-      cache: 'no-store',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ auth, action }),
-    });
-    const result = await response.json();
-    if (!response.ok || !result.ok) throw new Error(result.error || 'Remote request failed.');
-    return result;
-  } finally { busy = false; }
+  const auth = await signedRequest('admin.numbers', {});
+  const response = await fetch('/api/remote', {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ auth, action }),
+  });
+  const result = await response.json();
+  if (!response.ok || !result.ok) throw new Error(result.error || 'Remote request failed.');
+  return result;
 }
 function timeText(seconds) {
   if (!seconds) return 'Never';
@@ -60,11 +56,12 @@ function renderAudit(entries) {
     const time = document.createElement('time'); time.textContent = timeText(entry.at);
     const detail = document.createElement('span'); detail.textContent = entry.action + ' · ' + entry.result;
     li.append(time, detail); list.append(li);
-    if (notificationReady && entry.action.startsWith('alert.') && !lastAudit.has(entry.id)) {
+    if (auditInitialized && notificationReady && entry.action.startsWith('alert.') && !lastAudit.has(entry.id)) {
       try { new Notification('Guts & Bolts server alert', { body: entry.result, tag: entry.id }); } catch { /* notifications unavailable */ }
     }
   }
   lastAudit = new Set(entries.map((x) => x.id));
+  auditInitialized = true;
 }
 async function refresh() {
   try {
