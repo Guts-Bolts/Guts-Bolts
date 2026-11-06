@@ -2,7 +2,8 @@ import { DurableObject } from 'cloudflare:workers';
 
 const enc = new TextEncoder();
 const now = () => Math.floor(Date.now() / 1000);
-const fail = (error, status = 400) => Response.json({ ok: false, error }, { status, headers: { 'cache-control': 'no-store' } });
+const fail = (error, status = 400) => ({ status, body: { ok: false, error } });
+const success = (body, status = 200) => ({ status, body: { ok: true, ...body } });
 const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 const randomHex = (n) => hex(crypto.getRandomValues(new Uint8Array(n)));
 const isHex = (value, length = 64) => typeof value === 'string' && value.length === length && /^[a-f0-9]+$/i.test(value);
@@ -10,12 +11,17 @@ const isHex = (value, length = 64) => typeof value === 'string' && value.length 
 async function hash(value) {
   return hex(new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(value))));
 }
-function equal(a, b) {
+async function equal(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const length = Math.max(a.length, b.length);
-  let diff = a.length ^ b.length;
-  for (let i = 0; i < length; i++) diff |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
-  return diff === 0;
+  const [left, right] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode(a)),
+    crypto.subtle.digest('SHA-256', enc.encode(b)),
+  ]);
+  if (typeof crypto.subtle.timingSafeEqual === 'function')
+    return crypto.subtle.timingSafeEqual(left, right);
+  const key = await crypto.subtle.importKey('raw', new Uint8Array(32), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
+  const signature = await crypto.subtle.sign('HMAC', key, left);
+  return crypto.subtle.verify('HMAC', key, signature, right);
 }
 function jsonMessage(ws, value) {
   try { ws.send(JSON.stringify(value)); } catch { /* connection already closed */ }
@@ -134,7 +140,7 @@ async function pushBody(subscription, payload) {
     this.sql = ctx.storage.sql;
     this.connections = new Map();
     this.agent = null;
-    this.sql.exec(`
+    const initialize = () => this.sql.exec(`
       CREATE TABLE IF NOT EXISTS remote_devices (
         id TEXT PRIMARY KEY, owner TEXT NOT NULL, token_hash TEXT NOT NULL,
         created INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0
@@ -165,6 +171,8 @@ async function pushBody(subscription, payload) {
       );
       INSERT OR IGNORE INTO remote_push_state (id, last_sent) VALUES (1, 0);
     `);
+    if (typeof ctx.blockConcurrencyWhile === 'function') ctx.blockConcurrencyWhile(initialize);
+    else initialize();
   }
 
   audit(actor, action, result) {
@@ -176,7 +184,7 @@ async function pushBody(subscription, payload) {
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === '/agent' || url.pathname === '/ws/remote') return this.agentSocket(request);
-    if (url.pathname === '/control' && request.method === 'POST') return this.control(request);
+    
     return new Response('Not found.', { status: 404 });
   }
 
@@ -379,12 +387,9 @@ async function pushBody(subscription, payload) {
     }
   }
 
-  async control(request) {
-    if (request.headers.get('content-type')?.split(';')[0] !== 'application/json') return fail('Expected JSON.', 415);
-    const actor = (request.headers.get('x-gb-staff-id') || '').toLowerCase();
+  async control(actor, body) {
+    actor = typeof actor === 'string' ? actor.toLowerCase() : '';
     if (!isHex(actor)) return fail('Not authorized.', 401);
-    let body;
-    try { body = await request.json(); } catch { return fail('Bad request.', 400); }
     if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.action !== 'string') return fail('Bad request.', 400);
     const device = [...this.sql.exec("SELECT owner, revoked FROM remote_devices WHERE id = 'home'")][0];
     if (body.action === 'pair') {
@@ -410,7 +415,7 @@ async function pushBody(subscription, payload) {
       this.attachAgent(conn);
       jsonMessage(conn.ws, { t: 'pair.complete', token });
       this.audit(actor, 'device.paired', 'Home server agent paired');
-      return Response.json({ ok: true, paired: true }, { headers: { 'cache-control': 'no-store' } });
+      return success({ paired: true });
     }
     if (!device || device.revoked || device.owner !== actor) return fail('This account is not the paired server owner.', 403);
     if (body.action === 'status') {
@@ -418,16 +423,14 @@ async function pushBody(subscription, payload) {
       let status = null;
       try { status = row ? JSON.parse(row.data) : null; } catch { status = null; }
       const entries = [...this.sql.exec('SELECT id, at, actor, action, result FROM remote_audit ORDER BY at DESC LIMIT 100')];
-      return Response.json({ ok: true, online: !!(this.agent && this.agent.authed && now() - (row?.seen || 0) < 45),
-        lastSeen: row?.seen || 0, status, entries }, { headers: { 'cache-control': 'no-store' } });
+      return success({ online: !!(this.agent && this.agent.authed && now() - (row?.seen || 0) < 45),
+        lastSeen: row?.seen || 0, status, entries });
     }
     if (body.action === 'audit') {
       const rows = [...this.sql.exec('SELECT id, at, actor, action, result FROM remote_audit ORDER BY at DESC LIMIT 100')];
-      return Response.json({ ok: true, entries: rows }, { headers: { 'cache-control': 'no-store' } });
+      return success({ entries: rows });
     }
-    if (body.action === 'push.config') {
-      return Response.json({ ok: true, pushPublicKey: this.env.REMOTE_VAPID_PUBLIC_KEY || '' }, { headers: { 'cache-control': 'no-store' } });
-    }
+    if (body.action === 'push.config') return success({ pushPublicKey: this.env.REMOTE_VAPID_PUBLIC_KEY || '' });
     if (body.action === 'push.subscribe') {
       const sub = body.subscription;
       if (!sub || typeof sub !== 'object' || typeof sub.endpoint !== 'string' || !sub.keys ||
@@ -451,7 +454,7 @@ async function pushBody(subscription, payload) {
         this.sql.exec('INSERT OR REPLACE INTO remote_push_subscriptions (id, encrypted, created) VALUES (?, ?, ?)',
           subscriptionId, encrypted, now());
         this.audit(actor, 'push.subscribed', 'Phone push notifications enabled');
-        return Response.json({ ok: true, subscribed: true }, { headers: { 'cache-control': 'no-store' } });
+        return success({ subscribed: true });
       } catch (error) { return fail(error.message || 'Push setup failed.', 503); }
     }
     if (body.action === 'push.remove') {
@@ -459,13 +462,13 @@ async function pushBody(subscription, payload) {
       if (!endpoint || endpoint.length > 2048) return fail('Invalid push endpoint.', 400);
       this.sql.exec('DELETE FROM remote_push_subscriptions WHERE id = ?', await hash(endpoint));
       this.audit(actor, 'push.unsubscribed', 'Phone push notifications disabled');
-      return Response.json({ ok: true, unsubscribed: true }, { headers: { 'cache-control': 'no-store' } });
+      return success({ unsubscribed: true });
     }
     if (body.action === 'revoke') {
       this.sql.exec("UPDATE remote_devices SET revoked = 1 WHERE id = 'home'");
       if (this.agent) this.drop(this.agent);
       this.audit(actor, 'device.revoked', 'Home server device credential revoked');
-      return Response.json({ ok: true, revoked: true }, { headers: { 'cache-control': 'no-store' } });
+      return success({ revoked: true });
     }
     if (body.action === 'command') {
       const command = body.command;
@@ -480,7 +483,7 @@ async function pushBody(subscription, payload) {
       const commandMessage = { t: 'command', id, command, args, expires: now() + 30 };
       jsonMessage(this.agent.ws, commandMessage);
       this.audit(actor, 'command.' + command, 'sent');
-      return Response.json({ ok: true, queued: true, id }, { status: 202, headers: { 'cache-control': 'no-store' } });
+      return success({ queued: true, id }, 202);
     }
     return fail('Unknown remote-control action.', 400);
   }
