@@ -124,8 +124,8 @@ function Start-ManagedServer {
     Where-Object { $_.ExecutablePath -and [string]::Compare([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($script:Config.ServerExe), $true) -eq 0 }
   if ($sameExe) { throw 'The configured game server is already running outside this agent. It will not start a duplicate or take control of that process.' }
   $work = Split-Path -Parent $script:Config.ServerExe
-  $args = @('--slots', [string]$script:Config.Slots)
-  $proc = Start-Process -FilePath $script:Config.ServerExe -ArgumentList $args -WorkingDirectory $work -PassThru -WindowStyle Hidden
+  $serverArgs = @('--slots', [string]$script:Config.Slots)
+  $proc = Start-Process -FilePath $script:Config.ServerExe -ArgumentList $serverArgs -WorkingDirectory $work -PassThru -WindowStyle Hidden
   Set-Content -LiteralPath $PidPath -Value $proc.Id -NoNewline
   Start-Sleep -Milliseconds 800
   $proc.Refresh()
@@ -159,11 +159,11 @@ function Set-ManagedPriority {
 function Invoke-AllowedCommand($Message) {
   if (-not $Message.id -or [string]$Message.id -notmatch '^[a-f0-9-]{16,64}
   if ([long]$Message.expires -lt [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) { throw 'Command expired and was ignored.' }
-  $args = $Message.args
-  if ($null -eq $args) { $args = [pscustomobject]@{} }
+  $commandArgs = $Message.args
+  if ($null -eq $commandArgs) { $commandArgs = [pscustomobject]@{} }
   switch ([string]$Message.command) {
     'start' {
-      if ($args.PSObject.Properties.Count -ne 0) { throw 'Unexpected start arguments.' }
+      if (@($commandArgs.PSObject.Properties.Name).Count -ne 0) { throw 'Unexpected start arguments.' }
       return Start-ManagedServer
     }
     'stop' {
@@ -177,7 +177,7 @@ function Invoke-AllowedCommand($Message) {
       return Start-ManagedServer
     }
     'set-slots' {
-      if ($args.PSObject.Properties.Name -join ',' -ne 'slots' -or [int]$args.slots -lt 1 -or [int]$args.slots -gt 50) { throw 'Slots must be an integer from 1 to 50.' }
+      if ((@($commandArgs.PSObject.Properties.Name).Count -ne 1 -or @($commandArgs.PSObject.Properties.Name)[0] -ne 'slots') -or [int]$commandArgs.slots -lt 1 -or [int]$args.slots -gt 50) { throw 'Slots must be an integer from 1 to 50.' }
       $script:Config.Slots = [int]$args.slots
       Save-Config
       if (Get-ManagedProcess) {
@@ -188,13 +188,13 @@ function Invoke-AllowedCommand($Message) {
       return 'Saved server slots: ' + $script:Config.Slots + '.'
     }
     'set-priority' {
-      if ($args.PSObject.Properties.Name -join ',' -ne 'priority' -or @('Normal','AboveNormal','High') -notcontains [string]$args.priority) { throw 'Priority is not allowed.' }
+      if ((@($commandArgs.PSObject.Properties.Name).Count -ne 1 -or @($commandArgs.PSObject.Properties.Name)[0] -ne 'priority') -or @('Normal','AboveNormal','High') -notcontains [string]$commandArgs.priority) { throw 'Priority is not allowed.' }
       $script:Config.Priority = [string]$args.priority
       Save-Config
       return Set-ManagedPriority
     }
     'set-auto-restart' {
-      if ($args.PSObject.Properties.Name -join ',' -ne 'enabled' -or $args.enabled -isnot [bool]) { throw 'Recovery setting must be true or false.' }
+      if ((@($commandArgs.PSObject.Properties.Name).Count -ne 1 -or @($commandArgs.PSObject.Properties.Name)[0] -ne 'enabled') -or $commandArgs.enabled -isnot [bool]) { throw 'Recovery setting must be true or false.' }
       $script:Config.AutoRestart = [bool]$args.enabled
       Save-Config
       return 'Automatic crash recovery ' + ($(if ($script:Config.AutoRestart) { 'enabled' } else { 'disabled' })) + '.'
@@ -366,6 +366,8 @@ if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
   throw 'For security, do not run the remote agent as Administrator. Start it in a normal, non-elevated PowerShell window.'
 }
 Ensure-Root
+$mutex = [Threading.Mutex]::new($false, 'Local\GutsBoltsRemoteAgent')
+if (-not $mutex.WaitOne(0)) { throw 'The Guts & Bolts remote agent is already running for this Windows user.' }
 $script:Config = Load-Config
 Save-Config
 Write-Host 'Guts & Bolts Home Server Remote Agent ' $AgentVersion
