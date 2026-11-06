@@ -392,6 +392,18 @@ async function pushBody(subscription, payload) {
     if (!isHex(actor) || actor !== String(this.env.OFFICIAL || '').toLowerCase())
       return fail('Only the configured official Guts & Bolts account may manage this server.', 401);
     if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.action !== 'string') return fail('Bad request.', 400);
+    const actionKeys = {
+      pair: ['action', 'code'],
+      status: ['action'],
+      audit: ['action'],
+      'push.config': ['action'],
+      'push.subscribe': ['action', 'subscription'],
+      'push.remove': ['action', 'endpoint'],
+      revoke: ['action'],
+      command: ['action', 'args', 'command'],
+    }[body.action];
+    if (!actionKeys || Object.keys(body).some((key) => !actionKeys.includes(key)))
+      return fail('Unexpected remote-control request fields.', 400);
     const device = [...this.sql.exec("SELECT owner, revoked FROM remote_devices WHERE id = 'home'")][0];
     if (body.action === 'pair') {
       if (device && !device.revoked) return fail('A device is already paired. Revoke it before pairing another.', 409);
