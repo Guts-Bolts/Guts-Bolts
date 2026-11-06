@@ -11,7 +11,7 @@ function say(text, kind = '') {
   message.className = 'notice' + (kind ? ' ' + kind : '');
 }
 async function api(action) {
-  const auth = await signedRequest('admin.numbers', {});
+  const auth = await signedRequest('staff.database.stats', {});
   const response = await fetch('/api/remote', {
     method: 'POST',
     credentials: 'same-origin',
@@ -65,9 +65,9 @@ function renderAudit(entries) {
 }
 async function refresh() {
   try {
-    const [status, audit] = await Promise.all([api({ action: 'status' }), api({ action: 'audit' })]);
+    const status = await api({ action: 'status' });
     renderStatus(status);
-    renderAudit(audit.entries || []);
+    renderAudit(status.entries || []);
     say(status.online ? 'Secure connection established. The home PC is responding.' : 'The home PC is offline or its agent has not checked in.', status.online ? 'good' : '');
   } catch (error) {
     $('connection').textContent = 'Access denied';
