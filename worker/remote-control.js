@@ -54,7 +54,79 @@ function validCommand(command, args) {
   return Object.keys(args).length === 0;
 }
 
-export class RemoteControlObject extends DurableObject {
+const b64urlBytes = (value) => Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4)), (c) => c.charCodeAt(0));
+const toB64url = (bytes) => {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x4000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x4000));
+  return btoa(binary).replace(/=/g, '').replace(/\\+/g, '-').replace(/\\//g, '_');
+};
+const concat = (...parts) => {
+  const length = parts.reduce((sum, part) => sum + part.length, 0);
+  const out = new Uint8Array(length);
+  let offset = 0;
+  for (const part of parts) { out.set(part, offset); offset += part.length; }
+  return out;
+};
+async function hmac(keyBytes, data) {
+  const key = await crypto.subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, data));
+}
+async function hkdfExpand(prk, info, length) {
+  let previous = new Uint8Array(0), output = new Uint8Array(0), counter = 1;
+  while (output.length < length) {
+    previous = await hmac(prk, concat(previous, info, Uint8Array.of(counter++)));
+    output = concat(output, previous);
+  }
+  return output.slice(0, length);
+}
+async function encryptSubscription(env, subscription) {
+  const raw = b64urlBytes(env.REMOTE_PUSH_ENCRYPTION_KEY || '');
+  if (raw.length !== 32) throw new Error('Remote push encryption key is not configured.');
+  const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(subscription))));
+  return toB64url(iv) + '.' + toB64url(cipher);
+}
+async function decryptSubscription(env, stored) {
+  const raw = b64urlBytes(env.REMOTE_PUSH_ENCRYPTION_KEY || '');
+  if (raw.length !== 32) throw new Error('Remote push encryption key is not configured.');
+  const [ivText, cipherText] = stored.split('.');
+  const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64urlBytes(ivText) }, key, b64urlBytes(cipherText));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+async function vapidToken(env, audience) {
+  const privateBytes = b64urlBytes(env.REMOTE_VAPID_PRIVATE_KEY || '');
+  if (!privateBytes.length || !env.REMOTE_VAPID_PUBLIC_KEY) throw new Error('Web Push VAPID keys are not configured.');
+  const key = await crypto.subtle.importKey('pkcs8', privateBytes, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const encode = (value) => toB64url(enc.encode(JSON.stringify(value)));
+  const head = encode({ typ: 'JWT', alg: 'ES256' });
+  const body = encode({ aud: audience, exp: now() + 3600, sub: 'mailto:security@gutsandbolts.net' });
+  const input = head + '.' + body;
+  const signature = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(input)));
+  return input + '.' + toB64url(signature);
+}
+async function pushBody(subscription, payload) {
+  const uaPublic = b64urlBytes(subscription.keys.p256dh);
+  const authSecret = b64urlBytes(subscription.keys.auth);
+  if (uaPublic.length !== 65 || authSecret.length !== 16) throw new Error('Invalid push subscription keys.');
+  const ephemeral = await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']);
+  const asPublic = new Uint8Array(await crypto.subtle.exportKey('raw', ephemeral.publicKey));
+  const uaKey = await crypto.subtle.importKey('raw', uaPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey }, ephemeral.privateKey, 256));
+  const prkKey = await hmac(authSecret, shared);
+  const keyInfo = concat(enc.encode('WebPush: info\\0'), uaPublic, asPublic);
+  const ikm = await hkdfExpand(prkKey, keyInfo, 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const prk = await hmac(salt, ikm);
+  const cek = await hkdfExpand(prk, enc.encode('Content-Encoding: aes128gcm\\0'), 16);
+  const nonce = await hkdfExpand(prk, enc.encode('Content-Encoding: nonce\\0'), 12);
+  const plain = concat(enc.encode(JSON.stringify(payload)), Uint8Array.of(2));
+  const aes = await crypto.subtle.importKey('raw', cek, 'AES-GCM', false, ['encrypt']);
+  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv: nonce, tagLength: 128 }, aes, plain));
+  return concat(salt, Uint8Array.of(0, 0, 16, 0), Uint8Array.of(asPublic.length), asPublic, encrypted);
+}
+\nexport class RemoteControlObject extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.ctx = ctx;
@@ -84,6 +156,9 @@ export class RemoteControlObject extends DurableObject {
       CREATE INDEX IF NOT EXISTS remote_attempts_ip_at ON remote_attempts(ip, at);
       CREATE TABLE IF NOT EXISTS remote_alert_state (
         key TEXT PRIMARY KEY, started INTEGER NOT NULL, alerted INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS remote_push_subscriptions (
+        id TEXT PRIMARY KEY, encrypted TEXT NOT NULL, created INTEGER NOT NULL
       );
     `);
   }
@@ -167,7 +242,7 @@ export class RemoteControlObject extends DurableObject {
       const status = safeStatus(message.status);
       if (!status) return this.drop(c);
       this.sql.exec('INSERT OR REPLACE INTO remote_status (id, data, seen) VALUES (1, ?, ?)', JSON.stringify(status), now());
-      this.checkAlerts(status);
+      await this.checkAlerts(status);
       return;
     }
     if (message.t === 'ack') {
@@ -178,7 +253,9 @@ export class RemoteControlObject extends DurableObject {
       return;
     }
     if (message.t === 'agent.error') {
-      this.audit('agent', 'agent.error', String(message.message || 'Agent reported an error').slice(0, 200));
+      const detail = String(message.message || 'Agent reported an error').slice(0, 200);
+      this.audit('agent', 'agent.error', detail);
+      if (this.ctx.waitUntil) this.ctx.waitUntil(this.sendPush({ title: 'Guts & Bolts server agent error', body: detail }).catch(() => {}));
       return;
     }
     return this.drop(c);
@@ -198,11 +275,12 @@ export class RemoteControlObject extends DurableObject {
     if (this.agent === c) {
       this.agent = null;
       this.audit('agent', 'device.disconnected', 'Home server agent disconnected');
+      if (this.ctx.waitUntil) this.ctx.waitUntil(this.sendPush({ title: 'Guts & Bolts server offline', body: 'The home PC agent disconnected.' }).catch(() => {}));
     }
     try { c.ws.close(1000, 'bye'); } catch { /* already closed */ }
   }
 
-  checkAlerts(status) {
+  async checkAlerts(status) {
     const t = now();
     const checks = [
       { key: 'cpu', high: status.cpuPercent !== null && status.cpuPercent >= 90, seconds: 120, label: 'CPU usage stayed above 90% for two minutes' },
@@ -222,6 +300,39 @@ export class RemoteControlObject extends DurableObject {
       if (!row.alerted && t - row.started >= check.seconds) {
         this.audit('monitor', 'alert.' + check.key, check.label);
         this.sql.exec('UPDATE remote_alert_state SET alerted = 1 WHERE key = ?', check.key);
+        await this.sendPush({ title: 'Guts & Bolts server alert', body: check.label });
+      }
+    }
+  }
+
+  async sendPush(payload) {
+    if (!this.env.REMOTE_VAPID_PRIVATE_KEY || !this.env.REMOTE_VAPID_PUBLIC_KEY || !this.env.REMOTE_PUSH_ENCRYPTION_KEY) return;
+    const rows = [...this.sql.exec('SELECT id, encrypted FROM remote_push_subscriptions')];
+    for (const row of rows) {
+      try {
+        const subscription = await decryptSubscription(this.env, row.encrypted);
+        const endpoint = new URL(subscription.endpoint);
+        const audience = endpoint.origin;
+        const jwt = await vapidToken(this.env, audience);
+        const body = await pushBody(subscription, payload);
+        const response = await fetch(subscription.endpoint, {
+          method: 'POST',
+          headers: {
+            authorization: 'vapid t=' + jwt + ', k=' + this.env.REMOTE_VAPID_PUBLIC_KEY,
+            'content-type': 'application/octet-stream',
+            'content-encoding': 'aes128gcm',
+            ttl: '60',
+            urgency: 'high',
+          },
+          body,
+        });
+        if (response.status === 404 || response.status === 410) {
+          this.sql.exec('DELETE FROM remote_push_subscriptions WHERE id = ?', row.id);
+        } else if (!response.ok) {
+          this.audit('push', 'push.failed', 'Push provider returned HTTP ' + response.status);
+        }
+      } catch {
+        this.audit('push', 'push.failed', 'Could not deliver a push notification');
       }
     }
   }
@@ -270,6 +381,34 @@ export class RemoteControlObject extends DurableObject {
     if (body.action === 'audit') {
       const rows = [...this.sql.exec('SELECT id, at, actor, action, result FROM remote_audit ORDER BY at DESC LIMIT 100')];
       return Response.json({ ok: true, entries: rows }, { headers: { 'cache-control': 'no-store' } });
+    }
+    if (body.action === 'push.config') {
+      return Response.json({ ok: true, pushPublicKey: this.env.REMOTE_VAPID_PUBLIC_KEY || '' }, { headers: { 'cache-control': 'no-store' } });
+    }
+    if (body.action === 'push.subscribe') {
+      const sub = body.subscription;
+      if (!sub || typeof sub !== 'object' || typeof sub.endpoint !== 'string' || !sub.keys ||
+          typeof sub.keys.p256dh !== 'string' || typeof sub.keys.auth !== 'string') return fail('Invalid push subscription.', 400);
+      let endpoint;
+      try { endpoint = new URL(sub.endpoint); } catch { return fail('Invalid push endpoint.', 400); }
+      const host = endpoint.hostname.toLowerCase();
+      const allowedHost = host === 'fcm.googleapis.com' || host === 'web.push.apple.com' || host.endsWith('.push.services.mozilla.com');
+      if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.port || !allowedHost)
+        return fail('Unsupported push service endpoint.', 400);
+      try {
+        const encrypted = await encryptSubscription(this.env, { endpoint: endpoint.toString(), keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } });
+        this.sql.exec('INSERT OR REPLACE INTO remote_push_subscriptions (id, encrypted, created) VALUES (?, ?, ?)',
+          await hash(endpoint.toString()), encrypted, now());
+        this.audit(actor, 'push.subscribed', 'Phone push notifications enabled');
+        return Response.json({ ok: true, subscribed: true }, { headers: { 'cache-control': 'no-store' } });
+      } catch (error) { return fail(error.message || 'Push setup failed.', 503); }
+    }
+    if (body.action === 'push.remove') {
+      const endpoint = typeof body.endpoint === 'string' ? body.endpoint : '';
+      if (!endpoint || endpoint.length > 2048) return fail('Invalid push endpoint.', 400);
+      this.sql.exec('DELETE FROM remote_push_subscriptions WHERE id = ?', await hash(endpoint));
+      this.audit(actor, 'push.unsubscribed', 'Phone push notifications disabled');
+      return Response.json({ ok: true, unsubscribed: true }, { headers: { 'cache-control': 'no-store' } });
     }
     if (body.action === 'revoke') {
       this.sql.exec("UPDATE remote_devices SET revoked = 1 WHERE id = 'home'");
