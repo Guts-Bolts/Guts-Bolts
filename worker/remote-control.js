@@ -389,7 +389,8 @@ async function pushBody(subscription, payload) {
 
   async control(actor, body) {
     actor = typeof actor === 'string' ? actor.toLowerCase() : '';
-    if (!isHex(actor)) return fail('Not authorized.', 401);
+    if (!isHex(actor) || actor !== String(this.env.OFFICIAL || '').toLowerCase())
+      return fail('Only the configured official Guts & Bolts account may manage this server.', 401);
     if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.action !== 'string') return fail('Bad request.', 400);
     const device = [...this.sql.exec("SELECT owner, revoked FROM remote_devices WHERE id = 'home'")][0];
     if (body.action === 'pair') {
