@@ -44,10 +44,14 @@ function Resolve-ServerExecutable([string]$Path) {
   if ([IO.Path]::GetPathRoot($resolved) -notmatch '^[A-Za-z]:\\
   if (Test-Path -LiteralPath $ConfigPath) {
     $cfg = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json
-    if (-not $cfg.ServerExe -or -not (Test-Path -LiteralPath $cfg.ServerExe -PathType Leaf)) {
-      throw 'The configured server executable is missing. Re-run the agent with -ServerExe "C:\path\GutsAndBoltsGameServer.exe".'
+    if ($ServerExe) {
+      $cfg.ServerExe = Resolve-ServerExecutable $ServerExe
+    } else {
+      if (-not $cfg.ServerExe -or -not (Test-Path -LiteralPath $cfg.ServerExe -PathType Leaf)) {
+        throw 'The configured server executable is missing. Re-run the agent with -ServerExe "C:\path\GutsAndBoltsGameServer.exe".'
+      }
+      $cfg.ServerExe = Resolve-ServerExecutable ([string]$cfg.ServerExe)
     }
-    $cfg.ServerExe = Resolve-ServerExecutable ([string]$(if ($ServerExe) { $ServerExe } else { $cfg.ServerExe }))
     if ([int]$cfg.Slots -lt 1 -or [int]$cfg.Slots -gt 50) { throw 'Saved slot count is invalid.' }
     if (@('Normal','AboveNormal','High') -notcontains [string]$cfg.Priority) { throw 'Saved process priority is invalid.' }
     return $cfg
