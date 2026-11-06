@@ -6,7 +6,7 @@ This feature lets the official Guts & Bolts account monitor and control one Wind
 
 - The home PC opens an outbound `wss://gutsandbolts.net/ws/remote` connection. It does not listen on a public port.
 - Do not configure router port forwarding, Windows Remote Desktop exposure, SSH exposure, or PowerShell Remoting for this feature.
-- The Worker accepts dashboard requests only when they contain a fresh, valid Guts & Bolts signed request for `admin.numbers`, and the signing account matches the configured `OFFICIAL` account ID.
+- The Worker accepts dashboard requests only when they contain a fresh, valid Guts & Bolts signed request for `staff.database.stats`, and the signing account matches the configured `OFFICIAL` account ID.
 - The relay stores only a SHA-256 hash of the PC's 256-bit device credential. The raw credential is sent once to the connected agent over TLS and stored locally using Windows DPAPI for the current Windows user.
 - Pairing uses a 256-bit one-time code, expires after five minutes, is stored as a hash, and is rate-limited to ten phone submissions per hour per account and client IP. If it expires while the agent is waiting, the PC displays a fresh code automatically.
 - The agent runs as a normal, non-elevated Windows user. It does not expose a shell, PowerShell, file browser, arbitrary executable launch, or arbitrary command interface.
@@ -49,7 +49,7 @@ The public VAPID key is not a password, but this project stores all three values
 4. Start the agent and select the installed server executable:
 
    ```powershell
-   .\Remote Server Agent.ps1 -ServerExe "C:\path\to\GutsAndBoltsGameServer.exe"
+   & ".\Remote Server Agent.ps1" -ServerExe "C:\path\to\GutsAndBoltsGameServer.exe"
    ```
 
    The script creates its per-user configuration under `%LOCALAPPDATA%\GutsAndBolts\RemoteAgent`. The device token is DPAPI-protected for the Windows user who runs the agent.
@@ -74,6 +74,6 @@ Android Chrome supports background Web Push. If the VAPID secrets have not been 
 - Changing slots restarts the dedicated server because `--slots` is a startup option. Active sessions may disconnect.
 - The dashboard polls metrics while it is open. Background push is used for sustained overload, agent disconnect, and agent-reported crash alerts.
 - Automatic crash recovery is off by default. Enable it from the dashboard only after testing. It disables itself after three crashes in ten minutes.
-- The current agent reports CPU and memory telemetry. NVIDIA GPU telemetry is collected only when the signed NVIDIA `nvidia-smi.exe` is present at the standard NVSMI path. Otherwise GPU values remain unavailable.
+- The current agent reports CPU, memory, and aggregate physical-network throughput. NVIDIA GPU telemetry is collected only when the signed NVIDIA `nvidia-smi.exe` is present at the standard NVSMI path. Otherwise GPU values remain unavailable.
 - The PC must stay awake, online, and running the agent for remote commands to work. The Worker and dashboard do not wake a sleeping PC.
 - This release is limited to the single configured home PC. Multi-device management, remote file access, desktop streaming, and arbitrary terminal access are intentionally out of scope.
