@@ -21,7 +21,7 @@ function fakeSql() {
 function world() {
   const sql = fakeSql();
   const waits = [];
-  const object = new RemoteControlObject({ storage: { sql }, waitUntil: (promise) => waits.push(promise) }, {});
+  const object = new RemoteControlObject({ storage: { sql }, waitUntil: (promise) => waits.push(promise) }, { OFFICIAL: OWNER });
   const request = (body, actor = OWNER) => object.control(actor, body);
   return { object, sql, request, waits };
 }
