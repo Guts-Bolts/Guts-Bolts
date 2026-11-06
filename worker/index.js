@@ -108,6 +108,8 @@ async function serverAsk(env, req) {
 
 async function handleRemoteControl(request, env, url) {
   if (request.method !== 'POST') return reply({ ok: false, error: 'Use POST.' }, 405);
+  if (request.headers.get('content-type')?.split(';')[0] !== 'application/json')
+    return reply({ ok: false, error: 'Expected JSON.' }, 415);
   if (request.headers.get('origin') !== url.origin) return reply({ ok: false, error: 'Same-origin requests only.' }, 403);
   const text = await readLimitedText(request, 12 * 1024);
   if (text === null) return reply({ ok: false, error: 'Request is too large.' }, 413);
