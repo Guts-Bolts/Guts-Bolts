@@ -119,6 +119,9 @@ function Start-ManagedServer {
   $current = Get-ManagedProcess
   if ($current) { return 'Server is already running (PID ' + $current.Id + ').' }
   if (-not (Test-Path -LiteralPath $script:Config.ServerExe -PathType Leaf)) { throw 'The configured game server executable is missing.' }
+  $sameExe = Get-CimInstance Win32_Process -Filter "Name = 'GutsAndBoltsGameServer.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and [string]::Compare([IO.Path]::GetFullPath($_.ExecutablePath), [IO.Path]::GetFullPath($script:Config.ServerExe), $true) -eq 0 }
+  if ($sameExe) { throw 'The configured game server is already running outside this agent. It will not start a duplicate or take control of that process.' }
   $work = Split-Path -Parent $script:Config.ServerExe
   $args = @('--slots', [string]$script:Config.Slots)
   $proc = Start-Process -FilePath $script:Config.ServerExe -ArgumentList $args -WorkingDirectory $work -PassThru -WindowStyle Hidden
@@ -250,7 +253,7 @@ function Get-AgentStatus {
   return $status
 }
 
-function Check-CrashRecovery {
+function Check-CrashRecovery($Socket) {
   if (-not $script:Config.AutoRestart -or -not (Test-Path -LiteralPath $PidPath)) { return }
   $pidValue = 0
   if (-not [int]::TryParse((Get-Content -LiteralPath $PidPath -Raw).Trim(), [ref]$pidValue)) { return }
@@ -259,10 +262,12 @@ function Check-CrashRecovery {
   Remove-Item -LiteralPath $PidPath -Force -ErrorAction SilentlyContinue
   $script:CrashTimes.Add([DateTime]::UtcNow)
   while ($script:CrashTimes.Count -gt 0 -and ([DateTime]::UtcNow - $script:CrashTimes[0]).TotalMinutes -gt 10) { $script:CrashTimes.RemoveAt(0) }
+  Send-Json $Socket @{ t = 'agent.error'; message = 'The managed game server exited unexpectedly.' }
   if ($script:CrashTimes.Count -ge 3) {
     $script:Config.AutoRestart = $false
     Save-Config
     $script:LastError = 'Automatic restart disabled after three crashes within ten minutes.'
+    Send-Json $Socket @{ t = 'agent.error'; message = $script:LastError }
     return
   }
   Start-Sleep -Seconds 5
@@ -340,7 +345,7 @@ function Connect-Agent {
         Handle-AgentMessage $socket $message
         $receive = $socket.ReceiveAsync($segment, $cancel)
       } else {
-        Check-CrashRecovery
+        Check-CrashRecovery $socket
         $status = Get-AgentStatus
         Send-Json $socket @{ t = 'status'; status = $status }
       }
@@ -352,7 +357,7 @@ function Connect-Agent {
 }
 
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'This agent only runs on Windows.' }
-$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+$principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
   throw 'For security, do not run the remote agent as Administrator. Start it in a normal, non-elevated PowerShell window.'
 }
