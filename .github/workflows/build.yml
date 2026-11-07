@@ -1,5 +1,6 @@
 # Builds Guts and Bolts for every platform. Pushing a tag like v0.4.0 also
 # publishes a GitHub release with the Android app and the computer versions.
+# PR #275 validation branch: exercise the existing Windows packaging job on push.
 # PR #275 validation branch: exercise the normal Windows packaging job on push.
 name: Build
 
