@@ -219,7 +219,7 @@ jobs:
           path: GutsAndBolts-Linux.tar.gz
 
   windows:
-    if: github.event_name != 'pull_request'
+    # Windows packaging is a required PR gate: catch installer and server-bundle regressions before merge.
     name: Windows
     runs-on: windows-latest
     defaults:
@@ -241,16 +241,39 @@ jobs:
           path: ~/.cache/gb-fetchcontent
           key: windows-fetchcontent-${{ hashFiles('CMakeLists.txt') }}
           restore-keys: windows-fetchcontent-
-      - name: Build
+      - name: Validate Windows installer entry point
+        shell: pwsh
+        run: |
+          py -3 -m py_compile install.py
+          & .\Install.bat --check
+      - name: Build Studio, Player and both server executables
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_BASE_DIR="$HOME/.cache/gb-fetchcontent"
-          cmake --build build
-      - name: Package
+          cmake --build build --parallel "$NUMBER_OF_PROCESSORS"
+      - name: Package and validate Windows distribution
         run: |
+          set -euo pipefail
           mkdir -p GutsAndBolts-Windows
-          cp build/*.exe build/*.dll GutsAndBolts-Windows/ 2>/dev/null || cp build/*.exe GutsAndBolts-Windows/
+          for exe in GutsAndBolts.exe GutsAndBoltsPlayer.exe GutsAndBoltsGameServer.exe GutsAndBoltsServer.exe; do
+            test -f "build/$exe" || { echo "::error::Missing required Windows executable: $exe"; exit 1; }
+            cp "build/$exe" GutsAndBolts-Windows/
+          done
+          shopt -s nullglob
+          dlls=(build/*.dll)
+          if (("${#dlls[@]}" > 0)); then cp "${dlls[@]}" GutsAndBolts-Windows/; fi
           cp -r games catalog GutsAndBolts-Windows/
+          for file in GutsAndBolts.exe GutsAndBoltsPlayer.exe GutsAndBoltsGameServer.exe GutsAndBoltsServer.exe; do
+            test -s "GutsAndBolts-Windows/$file" || { echo "::error::Packaged executable is missing or empty: $file"; exit 1; }
+          done
+          test -d GutsAndBolts-Windows/games
+          test -d GutsAndBolts-Windows/catalog
+          test -n "$(find GutsAndBolts-Windows/games -type f -print -quit)"
+          test -n "$(find GutsAndBolts-Windows/catalog -type f -print -quit)"
+          ./GutsAndBolts-Windows/GutsAndBoltsGameServer.exe --help
+          ./GutsAndBolts-Windows/GutsAndBoltsServer.exe --help
+          echo "Windows installer entry point and complete Studio/Player/server bundle validated."
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: github.event_name != 'pull_request'
         with:
           name: windows
           path: GutsAndBolts-Windows
