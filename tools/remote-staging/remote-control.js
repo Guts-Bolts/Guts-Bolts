@@ -439,6 +439,13 @@ export class RemoteControlObject extends DurableObject {
       this.sql.exec('INSERT INTO remote_pair_control_attempts (actor, ip_hash, at) VALUES (?, ?, ?)', actor, ipHash, now());
     }
     const device = [...this.sql.exec("SELECT owner, revoked FROM remote_devices WHERE id = 'home'")][0];
+    if (body.action === 'revoke') {
+      const wasActive = !!device && !device.revoked;
+      if (wasActive) this.sql.exec("UPDATE remote_devices SET revoked = 1 WHERE id = 'home'");
+      if (this.agent) this.drop(this.agent);
+      this.audit(actor, 'device.revoked', wasActive ? 'Home server device credential revoked' : 'Home server device credential already revoked or absent');
+      return success({ revoked: true, alreadyRevoked: !wasActive });
+    }
     if (body.action === 'pair') {
       if (device && !device.revoked) return fail('A device is already paired. Revoke it before pairing another.', 409);
       const code = typeof body.code === 'string' ? body.code.toLowerCase() : '';
@@ -505,12 +512,6 @@ export class RemoteControlObject extends DurableObject {
         this.audit(actor, 'push.subscribed', 'Phone push notifications enabled');
         return success({ subscribed: true });
       } catch (error) { return fail(error.message || 'Push setup failed.', 503); }
-    }
-    if (body.action === 'revoke') {
-      this.sql.exec("UPDATE remote_devices SET revoked = 1 WHERE id = 'home'");
-      if (this.agent) this.drop(this.agent);
-      this.audit(actor, 'device.revoked', 'Home server device credential revoked');
-      return success({ revoked: true });
     }
     if (body.action === 'command') {
       const command = body.command;
