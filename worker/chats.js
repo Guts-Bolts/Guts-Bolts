@@ -205,7 +205,9 @@ export function installChats(Cls) {
       }
       return okay({ session: row.id, code, chat: row.chat, member: memberId, owner: row.owner === me.id, seq: row.snapshot_seq, snapshotSeq: row.snapshot_seq, latestSeq: row.seq, snapshot: row.snapshot, members: this.teamMembers(row.id) });
     }
-    const session = clean(args.session, 40);
+    // Session IDs are opaque protocol identifiers, not user text. Running them through
+    // the chat filter can mistake a long run of hexadecimal digits for a phone number.
+    const session = typeof args.session === 'string' && /^tc-[0-9a-f]{16}$/.test(args.session) ? args.session : '';
     const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq, snapshot_seq FROM teamsessions WHERE id = ?', session)][0];
     if (!row) return fail('That Team Create session has ended.');
     const member = [...this.sql.exec('SELECT member_id FROM teammembers WHERE session = ? AND account = ?', session, me.id)][0];
