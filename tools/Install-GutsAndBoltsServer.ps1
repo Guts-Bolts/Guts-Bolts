@@ -6,7 +6,9 @@
 [CmdletBinding()]
 param(
   [ValidateRange(1,50)]
-  [int]$Slots = 8
+  [int]$Slots = 8,
+  [string]$PackagePath,
+  [string]$ChecksumPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,16 +60,33 @@ try {
   if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'This bootstrapper supports Windows only.' }
   if (-not $env:LOCALAPPDATA) { throw 'The current Windows user profile is unavailable.' }
 
+  if ([bool]$PackagePath -ne [bool]$ChecksumPath) {
+    throw 'Supply both -PackagePath and -ChecksumPath, or omit both to use the official GitHub release feed.'
+  }
+
   Write-Host 'Guts & Bolts Dedicated Server Setup'
-  Write-Host 'Checking the official release feed...'
   New-Item -ItemType Directory -Path $DownloadRoot -Force | Out-Null
-  $release = Get-ReleaseAssets
   $archivePath = Join-Path $DownloadRoot $AssetName
   $checksumPath = Join-Path $DownloadRoot $ChecksumName
 
-  Write-Host "Downloading server package $($release.Tag)..."
-  Invoke-WebRequest -Uri $release.Archive -OutFile $archivePath -UseBasicParsing -TimeoutSec 300
-  Invoke-WebRequest -Uri $release.Checksum -OutFile $checksumPath -UseBasicParsing -TimeoutSec 30
+  if ($PackagePath) {
+    $resolvedPackage = (Resolve-Path -LiteralPath $PackagePath -ErrorAction Stop).Path
+    $resolvedChecksum = (Resolve-Path -LiteralPath $ChecksumPath -ErrorAction Stop).Path
+    if (-not (Test-Path -LiteralPath $resolvedPackage -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $resolvedChecksum -PathType Leaf)) {
+      throw 'The local package and checksum must both be existing files.'
+    }
+    Copy-Item -LiteralPath $resolvedPackage -Destination $archivePath
+    Copy-Item -LiteralPath $resolvedChecksum -Destination $checksumPath
+    $release = [pscustomobject]@{ Tag = 'local validation package' }
+    Write-Host 'Using the locally supplied package and checksum.'
+  } else {
+    Write-Host 'Checking the official release feed...'
+    $release = Get-ReleaseAssets
+    Write-Host "Downloading server package $($release.Tag)..."
+    Invoke-WebRequest -Uri $release.Archive -OutFile $archivePath -UseBasicParsing -TimeoutSec 300
+    Invoke-WebRequest -Uri $release.Checksum -OutFile $checksumPath -UseBasicParsing -TimeoutSec 30
+  }
 
   $checksumText = Get-Content -LiteralPath $checksumPath -Raw
   if ($checksumText -notmatch '(?i)\b([a-f0-9]{64})\b') { throw 'The release checksum file is malformed.' }
