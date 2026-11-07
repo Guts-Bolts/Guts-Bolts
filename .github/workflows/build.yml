@@ -249,7 +249,7 @@ jobs:
       - name: Build Studio, Player and both server executables
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_BASE_DIR="$HOME/.cache/gb-fetchcontent"
-          cmake --build build --parallel "$NUMBER_OF_PROCESSORS"
+          cmake --build build
       - name: Package and validate Windows distribution
         run: |
           set -euo pipefail
