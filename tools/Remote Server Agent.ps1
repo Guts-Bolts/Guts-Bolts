@@ -201,7 +201,7 @@ function Invoke-AllowedCommand($Message) {
   if ($script:SeenCommands.Count -gt 1000) { $script:SeenCommands.Clear(); [void]$script:SeenCommands.Add([string]$Message.id) }
   $commandArgs = $Message.args
   if ($null -eq $commandArgs) { $commandArgs = [pscustomobject]@{} }
-  $argNames = @($commandArgs.PSObject.Properties.Name)
+  $argNames = @($commandArgs.PSObject.Properties | ForEach-Object { $_.Name })
   switch ([string]$Message.command) {
     'start' {
       if ($argNames.Count -ne 0) { throw 'Unexpected start arguments.' }
