@@ -23,7 +23,7 @@ small{color:#e5bd75}
 <div class="panel">
 <button data-action="status">Refresh status</button>
 <button data-command="start">Start</button><button data-command="stop" class="danger">Stop</button><button data-command="restart">Restart</button>
-<button data-command="set-priority" data-args='{"priority":"Normal"}'>Priority: Normal</button>
+<label for="priority">Process priority</label><select id="priority"><option value="Normal">Normal</option><option value="AboveNormal">Above normal</option><option value="High">High</option></select><button id="apply-priority">Apply priority</button>
 <button data-command="set-auto-restart" data-args='{"enabled":true}'>Enable auto-restart</button>
 <button data-command="set-auto-restart" data-args='{"enabled":false}'>Disable auto-restart</button>
 <button data-action="revoke" class="danger">Revoke test device</button>
@@ -41,6 +41,7 @@ async function api(action){
 $('pair').onclick=()=>api({action:'pair',code:$('code').value.trim()});
 document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>api({action:b.dataset.action}));
 document.querySelectorAll('[data-command]').forEach(b=>b.onclick=()=>api({action:'command',command:b.dataset.command,args:b.dataset.args?JSON.parse(b.dataset.args):{}}));
+$('apply-priority').onclick=()=>api({action:'command',command:'set-priority',args:{priority:$('priority').value}});
 </script></html>`;
 
 function json(value,status=200){return new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json','cache-control':'no-store'}})}
