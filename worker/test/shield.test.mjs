@@ -55,6 +55,29 @@ test('Step 2: a doubtful browser is asked for the person check once Turnstile is
   assert.equal(forged.human, false);
 });
 
+test('Turnstile rejects oversized request bodies before parsing or verification', async () => {
+  const env = { TURNSTILE_SITEKEY: 'site-key', TURNSTILE_SECRET: 'shh' };
+  const realFetch = globalThis.fetch;
+  let verified = false;
+  globalThis.fetch = async () => {
+    verified = true;
+    return new Response(JSON.stringify({ success: true, action: 'gb_check', hostname: 'gutsandbolts.net' }));
+  };
+  try {
+    const body = JSON.stringify({ token: 'tok' }) + ' '.repeat(4096);
+    const request = new Request('https://gutsandbolts.net/api/turnstile', {
+      method: 'POST',
+      headers: { 'cf-connecting-ip': '10.7.8.1' },
+      body,
+    });
+    const response = await passCheck(request, env, new URL('https://gutsandbolts.net/api/turnstile'));
+    assert.equal(response.status, 413);
+    assert.equal(verified, false, 'oversized bodies must not reach Turnstile verification');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test('Step 2: passing the check gives a pass that lets a doubtful browser through', async () => {
   const env = { TURNSTILE_SITEKEY: 'site-key', TURNSTILE_SECRET: 'shh' };
   const realFetch = globalThis.fetch;
