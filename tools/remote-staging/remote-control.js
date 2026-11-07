@@ -466,7 +466,7 @@ export class RemoteControlObject extends DurableObject {
       this.audit(actor, 'device.paired', 'Home server agent paired');
       return success({ paired: true });
     }
-    if (!device || device.revoked || device.owner !== actor) return fail('This account is not the paired server owner.', 403);
+    if (!device || device.revoked || (device.owner !== actor && body.action !== 'revoke')) return fail('This account is not the paired server owner.', 403);
     if (body.action === 'status') {
       const row = [...this.sql.exec('SELECT data, seen FROM remote_status WHERE id = 1')][0];
       let status = null;
