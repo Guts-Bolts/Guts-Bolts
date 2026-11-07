@@ -67,7 +67,7 @@ try {
   Write-Host 'Guts & Bolts Dedicated Server Setup'
   New-Item -ItemType Directory -Path $DownloadRoot -Force | Out-Null
   $archivePath = Join-Path $DownloadRoot $AssetName
-  $checksumPath = Join-Path $DownloadRoot $ChecksumName
+  $stagedChecksumPath = Join-Path $DownloadRoot $ChecksumName
 
   if ($PackagePath) {
     $resolvedPackage = (Resolve-Path -LiteralPath $PackagePath -ErrorAction Stop).Path
@@ -77,7 +77,7 @@ try {
       throw 'The local package and checksum must both be existing files.'
     }
     Copy-Item -LiteralPath $resolvedPackage -Destination $archivePath
-    Copy-Item -LiteralPath $resolvedChecksum -Destination $checksumPath
+    Copy-Item -LiteralPath $resolvedChecksum -Destination $stagedChecksumPath
     $release = [pscustomobject]@{ Tag = 'local validation package' }
     Write-Host 'Using the locally supplied package and checksum.'
   } else {
@@ -85,10 +85,10 @@ try {
     $release = Get-ReleaseAssets
     Write-Host "Downloading server package $($release.Tag)..."
     Invoke-WebRequest -Uri $release.Archive -OutFile $archivePath -UseBasicParsing -TimeoutSec 300
-    Invoke-WebRequest -Uri $release.Checksum -OutFile $checksumPath -UseBasicParsing -TimeoutSec 30
+    Invoke-WebRequest -Uri $release.Checksum -OutFile $stagedChecksumPath -UseBasicParsing -TimeoutSec 30
   }
 
-  $checksumText = Get-Content -LiteralPath $checksumPath -Raw
+  $checksumText = Get-Content -LiteralPath $stagedChecksumPath -Raw
   if ($checksumText -notmatch '(?i)\b([a-f0-9]{64})\b') { throw 'The release checksum file is malformed.' }
   $expectedHash = $Matches[1].ToLowerInvariant()
   $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
