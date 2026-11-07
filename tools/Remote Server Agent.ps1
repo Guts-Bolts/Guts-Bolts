@@ -244,8 +244,18 @@ function Invoke-AllowedCommand($Message) {
   }
 }
 function Get-GpuMetrics {
-  $path = Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI\nvidia-smi.exe'
-  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return @{} }
+  $candidates = @(
+    (Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI\nvidia-smi.exe'),
+    (Join-Path $env:WINDIR 'System32\nvidia-smi.exe')
+  )
+  try {
+    $resolved = @(where.exe nvidia-smi.exe 2>$null)
+    $candidates += $resolved
+  } catch { }
+  $path = $candidates |
+    Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
+    Select-Object -Unique -First 1
+  if (-not $path) { return @{} }
   $sig = Get-AuthenticodeSignature -FilePath $path
   if ($sig.Status -ne 'Valid') { return @{} }
   try {
