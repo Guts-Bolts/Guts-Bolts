@@ -33,13 +33,16 @@ $script:PairingCreatedAt = $null
 $script:SeenCommands = New-Object 'System.Collections.Generic.HashSet[string]'
 
 function Ensure-Root {
-  if (-not (Test-Path -LiteralPath $Root)) { New-Item -ItemType Directory -Path $Root -Force | Out-Null }
-  $acl = Get-Acl -LiteralPath $Root
-  $acl.SetAccessRuleProtection($true, $false)
-  $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-  $rule = [Security.AccessControl.FileSystemAccessRule]::new($identity, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
-  $acl.SetAccessRule($rule)
-  Set-Acl -LiteralPath $Root -AclObject $acl
+  # LocalAppData already inherits the current user's Windows profile ACL.
+  # Avoid Set-Acl here: PowerShell may attempt to write the SACL, which
+  # requires SeSecurityPrivilege and fails for standard non-elevated users.
+  if (-not (Test-Path -LiteralPath $Root)) {
+    New-Item -ItemType Directory -Path $Root -Force | Out-Null
+  }
+  $item = Get-Item -LiteralPath $Root -Force -ErrorAction Stop
+  if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw 'The agent data directory cannot be a symbolic link or reparse point.'
+  }
 }
 
 function Save-Config {
