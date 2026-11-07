@@ -17,6 +17,8 @@
 // TURNSTILE_HOSTNAMES (optional, default gutsandbolts.net) lists the sites the check may
 // come from, split by commas.
 
+import { readLimitedText } from './http.js';
+
 // Everything worth tuning. The per-minute limits are counted by Cloudflare (the
 // "ratelimits" in wrangler.jsonc, which must say the same numbers); these copies are only
 // used where those aren't there (testing on your own computer without them).
@@ -148,8 +150,10 @@ export async function passCheck(request, env, url) {
   if (!turnstileOn(env)) return json({ ok: false, error: 'The person check isn\'t turned on.' }, 404);
   const ip = clientIp(request);
   if (await over(env, 'RATE_FLOOD', ip) || await over(env, 'RATE_DOUBT', ip)) return slowDown();
+  const body = await readLimitedText(request, 4096);
+  if (body === null) return json({ ok: false, error: 'Request body is too large.' }, 413);
   let token = '';
-  try { token = (JSON.parse((await request.text()).slice(0, 4096)) || {}).token; } catch { token = ''; }
+  try { token = (JSON.parse(body) || {}).token; } catch { token = ''; }
   const hostnames = new Set(String(env.TURNSTILE_HOSTNAMES || 'gutsandbolts.net').split(',').map((h) => h.trim()).filter(Boolean));
   const no = () => json({ ok: false, error: 'The check didn\'t pass. Try again.' }, 403);
   if (typeof token !== 'string' || !token || token.length > 2048) return no();
