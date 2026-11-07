@@ -359,12 +359,14 @@ function Handle-AgentMessage($Socket, $Message) {
   switch ([string]$Message.t) {
     'pair.complete' {
       Save-DeviceToken ([string]$Message.token)
+      $script:LastError = ''
       $script:PairingCode = $null
       $script:PairingCreatedAt = $null
       Write-Host 'Device paired successfully. The credential is encrypted for this Windows user.' -ForegroundColor Green
       Send-Json $Socket @{ t = 'status'; status = (Get-AgentStatus) }
     }
     'device.ready' {
+      $script:LastError = ''
       Write-Host 'Connected to the Guts & Bolts remote relay.' -ForegroundColor Green
       Send-Json $Socket @{ t = 'status'; status = (Get-AgentStatus) }
     }
