@@ -5,7 +5,8 @@
 param(
   [string]$ServerExe = '',
   [string]$RelayUri = 'wss://gutsandbolts.net/ws/remote',
-  [string]$DashboardUri = 'https://gutsandbolts.net/server/'
+  [string]$DashboardUri = 'https://gutsandbolts.net/server/',
+  [switch]$StartServerOnLaunch
 )
 
 $ErrorActionPreference = 'Stop'
@@ -470,6 +471,10 @@ Save-Config
 Write-Host 'Guts & Bolts Home Server Remote Agent ' $AgentVersion
 Write-Host 'Server executable: ' $script:Config.ServerExe
 Write-Host 'The agent uses outbound TLS only. It does not open a port or run a remote shell.'
+if ($StartServerOnLaunch) {
+  try { Write-Host (Start-ManagedServer) }
+  catch { $script:LastError = $_.Exception.Message; Write-Warning ('Automatic server start failed: ' + $script:LastError) }
+}
 while ($true) {
   try { Connect-Agent }
   catch { $script:LastError = $_.Exception.Message; Write-Warning $script:LastError }
