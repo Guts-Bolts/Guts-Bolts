@@ -68,7 +68,7 @@ The release archive is checked against a SHA-256 file published alongside it. Th
 For pre-release testing, the installer also accepts a local package and its matching checksum without changing the normal release-feed behavior:
 
 ```powershell
-.\\Install-GutsAndBoltsServer.ps1 -PackagePath `"$env:USERPROFILE\\Downloads\\GutsAndBolts-DedicatedServer-Windows.zip`" -ChecksumPath `"$env:USERPROFILE\\Downloads\\GutsAndBolts-DedicatedServer-Windows.zip.sha256`" -Slots 8
+.\\Install-GutsAndBoltsServer.ps1 -PackagePath \`"$env:USERPROFILE\Downloads\GutsAndBolts-DedicatedServer-Windows.zip\`" -ChecksumPath \`"$env:USERPROFILE\Downloads\GutsAndBolts-DedicatedServer-Windows.zip.sha256\`" -Slots 8
 ```
 
 Use the ZIP and sidecar from the successful dedicated-server Windows build artifact. The local mode performs the same SHA-256 verification, archive-path checks, package-layout checks, installation, and scheduled-task setup. It does not establish publisher authenticity by itself: obtain both files from the trusted Guts & Bolts GitHub Actions artifact for the intended commit. Run the installer from the normal interactive Windows account, not from an elevated shell or a LocalSystem service.
