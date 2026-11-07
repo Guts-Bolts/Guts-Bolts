@@ -18,7 +18,8 @@ try { $Dashboard = [Uri]$DashboardUri } catch { throw 'DashboardUri must be a va
 if (-not $Dashboard.IsAbsoluteUri -or $Dashboard.Scheme -ne 'https' -or $Dashboard.UserInfo -or $Dashboard.Query -or $Dashboard.Fragment) {
   throw 'DashboardUri must use https:// without credentials, query parameters or a fragment.'
 }
-$Root = Join-Path $env:LOCALAPPDATA 'GutsAndBolts\RemoteAgent'
+$AgentRootName = if ($BaseUri.Host -eq 'gutsandbolts.net') { 'RemoteAgent' } else { 'RemoteAgent-' + $BaseUri.Host }
+$Root = Join-Path $env:LOCALAPPDATA ('GutsAndBolts\' + $AgentRootName)
 $ConfigPath = Join-Path $Root 'agent.json'
 $TokenPath = Join-Path $Root 'device-token.dpapi'
 $PidPath = Join-Path $Root 'managed-server.pid'
