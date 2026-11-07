@@ -6,7 +6,8 @@ param(
   [string]$ServerExe = '',
   [string]$RelayUri = 'wss://gutsandbolts.net/ws/remote',
   [string]$DashboardUri = 'https://gutsandbolts.net/server/',
-  [switch]$StartServerOnLaunch
+  [switch]$StartServerOnLaunch,
+  [ValidateRange(1,50)][int]$InitialSlots = 4
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,7 +85,7 @@ function Load-Config {
   $resolved = Resolve-ServerExecutable $ServerExe
   return [pscustomobject]@{
     ServerExe = $resolved
-    Slots = 4
+    Slots = $InitialSlots
     Priority = 'Normal'
     AutoRestart = $false
   }
