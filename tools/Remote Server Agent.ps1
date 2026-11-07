@@ -466,7 +466,23 @@ if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 }
 Ensure-Root
 $mutex = [Threading.Mutex]::new($false, 'Local\GutsBoltsRemoteAgent')
-if (-not $mutex.WaitOne(0)) { throw 'The Guts & Bolts remote agent is already running for this Windows user.' }
+$mutexAcquired = $false
+try {
+  try {
+    $mutexAcquired = $mutex.WaitOne(0)
+  } catch [Threading.AbandonedMutexException] {
+    # The previous agent exited without releasing the mutex. Windows
+    # transfers ownership to this process when it raises this exception.
+    $mutexAcquired = $true
+    Write-Warning 'Recovered the abandoned remote-agent mutex from the previous process.'
+  }
+  if (-not $mutexAcquired) {
+    throw 'The Guts & Bolts remote agent is already running for this Windows user.'
+  }
+} catch {
+  $mutex.Dispose()
+  throw
+}
 $script:Config = Load-Config
 Save-Config
 Write-Host 'Guts & Bolts Home Server Remote Agent ' $AgentVersion
