@@ -235,7 +235,9 @@ test('pairing codes cannot be reused after successful pairing', async () => {
   const first = await w.request({ action: 'pair', code });
   assert.equal(first.status, 200);
   assert.equal([...w.sql.exec('SELECT * FROM remote_pairings')].length, 0);
+  const revoked = await w.request({ action: 'revoke' });
+  assert.equal(revoked.status, 200);
   const second = await w.request({ action: 'pair', code });
-  assert.equal(second.status, 409);
-  assert.equal(second.body.paired, undefined);
+  assert.equal(second.status, 400);
+  assert.match(second.body.error, /invalid or expired/i);
 });
