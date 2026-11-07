@@ -249,7 +249,7 @@ jobs:
           msystem: MINGW64
           install: >-
             mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-glfw mingw-w64-x86_64-glew mingw-w64-x86_64-glm git
+            mingw-w64-x86_64-glfw mingw-w64-x86_64-glew mingw-w64-x86_64-glm git zip
       - name: Cache CMake FetchContent dependencies
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
