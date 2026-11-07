@@ -190,3 +190,52 @@ test('phone pairing submissions are rate-limited per official account and client
   const otherIp = await w.request({ action: 'pair', code: randomBytes(32).toString('hex') }, OWNER, '192.0.2.56');
   assert.equal(otherIp.status, 400);
 });
+
+
+test('agent pairing codes are rate-limited per client IP', async () => {
+  const w = world();
+  const makeConnection = (id, ip) => ({
+    id, ip, pending: false, authed: false,
+    ws: { sent: [], send(text) { this.sent.push(JSON.parse(text)); }, close() {} },
+  });
+  for (let i = 0; i < 20; i++) {
+    const conn = makeConnection('pair-' + i, '203.0.113.44');
+    w.object.connections.set(conn.id, conn);
+    await w.object.onAgentMessage(conn, {
+      t: 'pair.begin',
+      code: randomBytes(32).toString('hex'),
+      device: 'test-agent',
+    });
+    assert.equal(conn.pending, true);
+    assert.equal(conn.ws.sent[0].t, 'pair.waiting');
+  }
+  const limited = makeConnection('pair-limited', '203.0.113.44');
+  w.object.connections.set(limited.id, limited);
+  await w.object.onAgentMessage(limited, {
+    t: 'pair.begin',
+    code: randomBytes(32).toString('hex'),
+    device: 'test-agent',
+  });
+  assert.equal(limited.ws.sent[0].t, 'pair.rate-limited');
+  assert.equal(limited.pending, false);
+});
+
+test('pairing codes cannot be reused after successful pairing', async () => {
+  const w = world();
+  const code = randomBytes(32).toString('hex');
+  const conn = {
+    id: 'one-time-pair',
+    pending: true,
+    authed: false,
+    ws: { sent: null, send(text) { this.sent = JSON.parse(text); }, close() {} },
+  };
+  w.object.connections.set(conn.id, conn);
+  w.sql.exec('INSERT INTO remote_pairings (code_hash, expires, conn_id) VALUES (?, ?, ?)',
+    sha256(code), Math.floor(Date.now() / 1000) + 300, conn.id);
+  const first = await w.request({ action: 'pair', code });
+  assert.equal(first.status, 200);
+  assert.equal([...w.sql.exec('SELECT * FROM remote_pairings')].length, 0);
+  const second = await w.request({ action: 'pair', code });
+  assert.equal(second.status, 409);
+  assert.equal(second.body.paired, undefined);
+});
