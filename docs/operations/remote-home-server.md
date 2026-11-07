@@ -41,6 +41,30 @@ After the Worker code and Durable Object migration are deployed:
 
 The public VAPID key is not a password, but this project stores all three values as Worker secrets for simpler handling. The private VAPID key and subscription-encryption key must never be exposed to the browser.
 
+## USB dedicated-server bootstrapper (Windows first release)
+
+The repository includes `tools/Install-GutsAndBoltsServer.ps1`. Copy this single script to a USB drive. On the target Windows server, sign in as the ordinary Windows account that should own the game server, open PowerShell, change to the USB drive, and deliberately run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\Install-GutsAndBoltsServer.ps1
+```
+
+Windows intentionally does not auto-execute scripts when a USB drive is inserted. The installer therefore requires one explicit launch; it does not bypass AutoRun or other Windows protections. Do not run it as Administrator.
+
+The bootstrapper:
+1. Queries official Guts & Bolts GitHub releases for the newest release containing the Windows dedicated-server package.
+2. Downloads the versioned server archive and its SHA-256 checksum over HTTPS, verifies the checksum, and rejects unsafe archive paths.
+3. Installs the server executable, required DLLs, game/catalog data, and remote-management agent under `%LOCALAPPDATA%\GutsAndBolts\DedicatedServer`.
+4. Registers a least-privilege Scheduled Task for this Windows user's next sign-in.
+5. Starts the agent in the current console, starts the dedicated server, and displays the one-time pairing code.
+
+Pair the device at `https://gutsandbolts.net/server/` while signed into the official account. Keep the console open during first-time pairing. You can choose the initial slot count with `-Slots` (1–50), for example ` .\Install-GutsAndBoltsServer.ps1 -Slots 12`.
+
+**Important operational limit:** this first bootstrapper is Windows-only and installs a per-user logon task, not a Windows service. The Windows account must sign in after a reboot for automatic startup; the machine must remain awake and connected. A future unattended service mode requires a dedicated service-host design and explicit elevated installation, which this version does not attempt.
+
+The release archive is checked against a SHA-256 file published alongside it. This detects corruption and transfer errors; because the checksum is distributed through the same GitHub release, it is not an independent publisher signature. Do not treat it as protection against compromise of the repository or release account.
+
 ## Windows PC setup
 
 1. Keep the PC powered on and connected to the internet. Disable sleep while it is expected to host the game server.
