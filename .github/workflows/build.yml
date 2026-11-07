@@ -76,9 +76,10 @@ jobs:
         env:
           MSG: ${{ github.event.head_commit.message }}
         run: |
-          v="$(sed -n 's/^project(GutsAndBolts VERSION \\([0-9.]*\\).*/\\1/p' CMakeLists.txt)-dev"
+          # The version in CMakeLists.txt (so the app never shows an old number).
+          v="$(sed -n 's/^project(GutsAndBolts VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)-dev"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF#refs/tags/v}"; fi
-          if [[ "$MSG" =~ \\[release\\ v([0-9][0-9A-Za-z.\\-]*)\\] ]]; then v="${BASH_REMATCH[1]}"; fi
+          if [[ "$MSG" =~ \[release\ v([0-9][0-9A-Za-z.\-]*)\] ]]; then v="${BASH_REMATCH[1]}"; fi
           echo "name=$v" >> "$GITHUB_OUTPUT"
           echo "code=$(( GITHUB_RUN_NUMBER + 10 ))" >> "$GITHUB_OUTPUT"
       - name: Signing key (optional)
@@ -117,10 +118,10 @@ jobs:
           persist-credentials: false
       - name: Configure iOS simulator
         run: |
-          cmake -S . -B build-ios-sim -G Xcode \\
-            -DCMAKE_SYSTEM_NAME=iOS \\
-            -DCMAKE_OSX_SYSROOT=iphonesimulator \\
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \\
+          cmake -S . -B build-ios-sim -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphonesimulator \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=Release
       - name: Compile simulator Player
         run: cmake --build build-ios-sim --config Release --target GutsAndBoltsPlayer
@@ -134,6 +135,8 @@ jobs:
           fi
           echo "Built app bundle: $app"
           test -f "$app/Info.plist" || { echo "::error::Missing Info.plist"; exit 1; }
+          # Xcode's generated post-build script does not reliably stage these
+          # directories into the .app. Copy them explicitly before packaging.
           mkdir -p "$app/Resources"
           for resource in games catalog assets; do
             ditto "$resource" "$app/Resources/$resource"
@@ -142,6 +145,7 @@ jobs:
           for resource in games catalog assets; do
             if [ ! -d "$app/Resources/$resource" ]; then
               echo "::error::Missing packaged resource directory: $app/Resources/$resource"
+              echo "Bundle directories:"
               find "$app" -maxdepth 3 -type d -print | sort
               exit 1
             fi
@@ -155,10 +159,10 @@ jobs:
           if-no-files-found: error
       - name: Configure iOS device target (unsigned)
         run: |
-          cmake -S . -B build-ios-device -G Xcode \\
-            -DCMAKE_SYSTEM_NAME=iOS \\
-            -DCMAKE_OSX_SYSROOT=iphoneos \\
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \\
+          cmake -S . -B build-ios-device -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=Release
       - name: Compile device Player (signing not required for compile)
         run: |
@@ -302,6 +306,7 @@ jobs:
       - name: Build
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFETCHCONTENT_BASE_DIR="$HOME/.cache/gb-fetchcontent"
+          # (compile errors also show up on the pull request, not just in the log)
           set -o pipefail
           cmake --build build 2>&1 | tee build.log || { grep -E "error" build.log | head -20 | sed 's/^/::error::/'; exit 1; }
       - name: Package
@@ -317,12 +322,14 @@ jobs:
 
   release:
     name: Publish release
+    # Never publish a partial release. The test suite and every required desktop/mobile
+    # release build must finish successfully before artifacts can be uploaded.
     if: always() && needs.tests.result == 'success' && needs.android.result == 'success' && needs.linux.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' && github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || contains(github.event.head_commit.message, '[release v'))
     needs: [tests, android, linux, windows, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
+      id-token: write   # proves to gutsandbolts.net that this is our release build (see worker/downloads.js)
     steps:
       - name: Which version
         id: rel
@@ -330,11 +337,14 @@ jobs:
           MSG: ${{ github.event.head_commit.message }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then t="${GITHUB_REF#refs/tags/}";
-          elif [[ "$MSG" =~ \\[release\\ (v[0-9][0-9A-Za-z.\\-]*)\\] ]]; then t="${BASH_REMATCH[1]}"; fi
+          elif [[ "$MSG" =~ \[release\ (v[0-9][0-9A-Za-z.\-]*)\] ]]; then t="${BASH_REMATCH[1]}"; fi
           echo "tag=$t" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      # The release's name: the version plus the update's own name, from the first
+      # line of RELEASE_NOTES.md ("# Guts&Bolts 0.6.1: The Hydromania Update (date)").
+      # Its notes: that newest section only.
       - name: Release name and notes
         id: notes
         env:
@@ -344,13 +354,13 @@ jobs:
           import os, re
           text = open("RELEASE_NOTES.md", encoding="utf-8").read()
           first = text.splitlines()[0] if text else ""
-          m = re.match(r"#\\s*Guts&Bolts\\s+[^:]+:\\s*(.*?)\\s*(\\(.*\\))?\\s*$", first)
+          m = re.match(r"#\s*Guts&Bolts\s+[^:]+:\s*(.*?)\s*(\(.*\))?\s*$", first)
           title = f"Guts&Bolts {os.environ['TAG']}" + (f": {m.group(1)}" if m and m.group(1) else "")
           parts = re.split(r"(?m)^# ", text)
           newest = ("# " + parts[1]).strip() if len(parts) > 1 else text
-          open("release_notes_latest.md", "w", encoding="utf-8").write(newest + "\\n")
+          open("release_notes_latest.md", "w", encoding="utf-8").write(newest + "\n")
           with open(os.environ["GITHUB_OUTPUT"], "a") as out:
-              out.write(f"name={title}\\n")
+              out.write(f"name={title}\n")
           print(title)
           PY
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
@@ -360,6 +370,7 @@ jobs:
         run: |
           mkdir -p out
           set -euo pipefail
+          # Each required artifact must exist; a missing build output is a release failure.
           test -n "$(find dist/android -maxdepth 1 -type f -name '*.apk' -print -quit)"
           test -n "$(find dist/linux -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
           test -n "$(find dist/macos -maxdepth 1 -type f -name '*.zip' -print -quit)"
@@ -373,20 +384,42 @@ jobs:
           (cd dist && zip -qr ../out/GutsAndBolts-Windows.zip windows)
           test -n "$(find out -maxdepth 1 -type f -print -quit)"
           ls -lah out
+      # The downloads live on gutsandbolts.net (Cloudflare), the only place people get the apps.
+      # GitHub signs a short-lived token for this run; the site checks it before taking the files.
       - name: Upload to gutsandbolts.net
         env:
           TAG: ${{ steps.rel.outputs.tag }}
           NAME: ${{ steps.notes.outputs.name }}
         run: |
-          TOKEN=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=gutsandbolts.net" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
+          TOKEN=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=gutsandbolts.net" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')
           SITE=https://gutsandbolts.net/download/upload
           for f in out/*; do
             name=$(basename "$f")
+            # Dedicated server bundles are GitHub release assets, not public app downloads.
             case "$name" in GutsAndBolts-DedicatedServer-Windows.zip*) continue ;; esac
             echo "Uploading $name"
             if [ "$(stat -c %s "$f")" -le $((80 * 1024 * 1024)) ]; then
-              curl -fsS --retry 3 -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @"$f" "$SITE/$name?version=$TAG"
+              curl -fsS --retry 3 -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @"$f" \
+                "$SITE/$name?version=$TAG"
+            else
+              # Cloudflare stops requests at 100 MB, so big files go up in 80 MB pieces.
+              rm -rf pieces && mkdir pieces && split -b 80M -d -a 2 "$f" pieces/p
+              id=$(curl -fsS --retry 3 -X POST -H "Authorization: Bearer $TOKEN" "$SITE/$name/start?version=$TAG" |
+                python3 -c 'import json,sys; print(json.load(sys.stdin)["uploadId"])')
+              enc=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$id")
+              n=0; : > parts.jsonl
+              for piece in pieces/p*; do
+                n=$((n + 1))
+                curl -fsS --retry 3 -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @"$piece" \
+                  "$SITE/$name/part?version=$TAG&uploadId=$enc&n=$n" >> parts.jsonl
+                echo >> parts.jsonl
+              done
+              python3 -c 'import json; print(json.dumps({"parts": [json.loads(l)["part"] for l in open("parts.jsonl") if l.strip()]}))' > parts.json
+              curl -fsS --retry 3 -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+                --data-binary @parts.json "$SITE/$name/finish?version=$TAG&uploadId=$enc"
             fi
+            echo
           done
           python3 - <<'PY' > manifest.json
           import json, os
@@ -394,9 +427,12 @@ jobs:
           for f in os.listdir("out"):
               kind = "quest" if "Quest" in f else "android" if f.endswith(".apk") else "windows" if "Windows" in f else "mac" if "macOS" in f else "linux" if "Linux" in f else None
               if kind: files[kind] = f
-          print(json.dumps({"version": os.environ["TAG"], "name": os.environ.get("NAME", ""), "notes": open("release_notes_latest.md", encoding="utf-8").read(), "files": files}))
+          print(json.dumps({"version": os.environ["TAG"], "name": os.environ.get("NAME", ""),
+                            "notes": open("release_notes_latest.md", encoding="utf-8").read(), "files": files}))
           PY
-          curl -fsS --retry 3 -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary @manifest.json https://gutsandbolts.net/download/publish
+          curl -fsS --retry 3 -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            --data-binary @manifest.json https://gutsandbolts.net/download/publish
+      # Re-releasing the same version replaces it: the old release and its tag go first.
       - name: Replace an older release of this version
         env:
           GH_TOKEN: ${{ github.token }}
@@ -410,3 +446,28 @@ jobs:
           files: out/*
           prerelease: true
           body_path: release_notes_latest.md
+      # Tell Discord (see devlog.yml; releases made here don't start other workflows).
+      - name: Announce on Discord
+        if: success()
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          TAG: ${{ steps.rel.outputs.tag }}
+          NAME: ${{ steps.notes.outputs.name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "No DISCORD_WEBHOOK secret: skipping."; exit 0; fi
+          python3 - <<'PY'
+          import json, os, urllib.request
+          tag, repo = os.environ["TAG"], os.environ["REPO"]
+          url = f"https://github.com/{repo}/releases/tag/{tag}"
+          notes = open("release_notes_latest.md", encoding="utf-8").read()
+          notes = notes if len(notes) <= 3500 else notes[:3499] + "…"
+          url = "https://gutsandbolts.net/#download"
+          embed = {"title": f"📦 New release: {os.environ.get('NAME') or 'Guts&Bolts ' + tag}", "url": url, "color": 0x16A34A,
+                   "description": notes + f"\n\n**[Download it here]({url})** · [Website](https://gutsandbolts.net)"}
+          body = json.dumps({"username": "Guts&Bolts Dev Log", "embeds": [embed]}).encode()
+          req = urllib.request.Request(os.environ["WEBHOOK"], data=body,
+                                       headers={"Content-Type": "application/json", "User-Agent": "GutsAndBolts-DevLog"})
+          urllib.request.urlopen(req, timeout=20)
+          print("Announced", tag)
+          PY
