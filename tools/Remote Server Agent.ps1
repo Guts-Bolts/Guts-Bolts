@@ -3,12 +3,21 @@
 # The agent makes an outbound TLS WebSocket connection. It opens no listening ports.
 
 param(
-  [string]$ServerExe = ''
+  [string]$ServerExe = '',
+  [string]$RelayUri = 'wss://gutsandbolts.net/ws/remote',
+  [string]$DashboardUri = 'https://gutsandbolts.net/server/'
 )
 
 $ErrorActionPreference = 'Stop'
-$AgentVersion = '1.0.0'
-$BaseUri = [Uri]'wss://gutsandbolts.net/ws/remote'
+$AgentVersion = '1.1.0'
+try { $BaseUri = [Uri]$RelayUri } catch { throw 'RelayUri must be a valid secure WebSocket URL.' }
+if (-not $BaseUri.IsAbsoluteUri -or $BaseUri.Scheme -ne 'wss' -or $BaseUri.UserInfo -or $BaseUri.Query -or $BaseUri.Fragment -or $BaseUri.AbsolutePath.TrimEnd('/') -ne '/ws/remote') {
+  throw 'RelayUri must use wss:// and end with /ws/remote, without credentials, query parameters or a fragment.'
+}
+try { $Dashboard = [Uri]$DashboardUri } catch { throw 'DashboardUri must be a valid HTTPS URL.' }
+if (-not $Dashboard.IsAbsoluteUri -or $Dashboard.Scheme -ne 'https' -or $Dashboard.UserInfo -or $Dashboard.Query -or $Dashboard.Fragment) {
+  throw 'DashboardUri must use https:// without credentials, query parameters or a fragment.'
+}
 $Root = Join-Path $env:LOCALAPPDATA 'GutsAndBolts\RemoteAgent'
 $ConfigPath = Join-Path $Root 'agent.json'
 $TokenPath = Join-Path $Root 'device-token.dpapi'
@@ -396,7 +405,7 @@ function Connect-Agent {
       if ($newCode) {
         Write-Host ''
         Write-Host 'PAIR THIS PC FROM YOUR PHONE' -ForegroundColor Yellow
-        Write-Host 'Open https://gutsandbolts.net/server/ while signed in to the official Guts & Bolts account.' -ForegroundColor Yellow
+        Write-Host ('Open ' + $Dashboard.AbsoluteUri + ' to pair this PC.') -ForegroundColor Yellow
         Write-Host 'Paste this one-time code into Device pairing (expires in five minutes):' -ForegroundColor Yellow
         Write-Host $script:PairingCode -ForegroundColor Cyan
         Write-Host 'Do not share this code with anyone. Press Ctrl+C to stop the agent.' -ForegroundColor Yellow
