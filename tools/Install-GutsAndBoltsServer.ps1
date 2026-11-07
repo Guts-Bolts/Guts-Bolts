@@ -119,7 +119,6 @@ try {
   $principal = New-ScheduledTaskPrincipal -UserId ([Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
   $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
   Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description 'Starts the Guts & Bolts dedicated server and secure outbound remote-management agent at user logon.' -Force | Out-Null
-  Start-ScheduledTask -TaskName $TaskName
 
   Write-Host ''
   Write-Host 'Installation completed.' -ForegroundColor Green
@@ -129,6 +128,8 @@ try {
   Write-Host 'The server and remote agent are starting. The agent will display a one-time pairing code.'
   Write-Host 'Open https://gutsandbolts.net/server/ while signed into your official account and enter that code.'
   Write-Host 'Keep this Windows account signed in. This first version uses a per-user logon task, not a Windows service.'
+  Write-Host 'Starting the agent in this window so you can see and enter its one-time pairing code.'
+  & $powershell -NoProfile -ExecutionPolicy Bypass -File $agent -ServerExe $installedServer -StartServerOnLaunch -InitialSlots $Slots
 }
 catch {
   Write-Error $_
