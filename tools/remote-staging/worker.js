@@ -24,6 +24,7 @@ small{color:#e5bd75}
 <button data-action="status">Refresh status</button>
 <button data-command="start">Start</button><button data-command="stop" class="danger">Stop</button><button data-command="restart">Restart</button>
 <label for="priority">Process priority</label><select id="priority"><option value="Normal">Normal</option><option value="AboveNormal">Above normal</option><option value="High">High</option></select><button id="apply-priority">Apply priority</button>
+<label for="slots">Player slots (1–50)</label><input id="slots" type="number" min="1" max="50" step="1" value="4"><button id="apply-slots">Apply slot count</button>
 <button data-command="set-auto-restart" data-args='{"enabled":true}'>Enable auto-restart</button>
 <button data-command="set-auto-restart" data-args='{"enabled":false}'>Disable auto-restart</button>
 <button data-action="revoke" class="danger">Revoke test device</button>
@@ -42,6 +43,7 @@ $('pair').onclick=()=>api({action:'pair',code:$('code').value.trim()});
 document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>api({action:b.dataset.action}));
 document.querySelectorAll('[data-command]').forEach(b=>b.onclick=()=>api({action:'command',command:b.dataset.command,args:b.dataset.args?JSON.parse(b.dataset.args):{}}));
 $('apply-priority').onclick=()=>api({action:'command',command:'set-priority',args:{priority:$('priority').value}});
+$('apply-slots').onclick=()=>{const slots=Number($('slots').value);if(!Number.isInteger(slots)||slots<1||slots>50){out.textContent='Slots must be a whole number from 1 to 50.';return}api({action:'command',command:'set-slots',args:{slots}})};
 </script></html>`;
 
 function json(value,status=200){return new Response(JSON.stringify(value),{status,headers:{'content-type':'application/json','cache-control':'no-store'}})}
