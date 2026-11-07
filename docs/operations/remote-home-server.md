@@ -77,3 +77,24 @@ Android Chrome supports background Web Push. If the VAPID secrets have not been 
 - The current agent reports CPU, memory, and aggregate physical-network throughput. NVIDIA GPU telemetry is collected only when the signed NVIDIA `nvidia-smi.exe` is present at the standard NVSMI path. Otherwise GPU values remain unavailable.
 - The PC must stay awake, online, and running the agent for remote commands to work. The Worker and dashboard do not wake a sleeping PC.
 - This release is limited to the single configured home PC. Multi-device management, remote file access, desktop streaming, and arbitrary terminal access are intentionally out of scope.
+
+
+## Isolated staging test
+
+The repository includes a separate Worker harness under `tools/remote-staging/`. It uses its own SQLite-backed Durable Object namespace and a staging-only bearer token. It does not connect to the production Worker, production dashboard, or production device namespace.
+
+Deploy it with the staging Wrangler configuration from that directory, then set the secret:
+
+```powershell
+npx wrangler secret put STAGING_CONTROL_TOKEN --config .\wrangler.jsonc
+```
+
+Use the staging dashboard URL as `-DashboardUri` and its `wss://...workers.dev/ws/remote` endpoint as `-RelayUri`:
+
+```powershell
+& ".\Remote Server Agent.ps1" -ServerExe "C:\path\to\GutsAndBoltsGameServer.exe" -RelayUri "wss://guts-and-bolts-remote-staging.<account-subdomain>.workers.dev/ws/remote" -DashboardUri "https://guts-and-bolts-remote-staging.<account-subdomain>.workers.dev/"
+```
+
+The staging dashboard asks for the staging control token and the one-time code displayed by the agent. The token is not stored by the page. Start/stop/restart buttons operate on the configured test server executable, so only use a maintenance window and a test server instance. The production defaults remain unchanged when the two URI parameters are omitted.
+
+The staging harness intentionally has no production account authentication, push notifications, or production data bindings. Its purpose is to exercise the Windows agent's TLS WebSocket connection, pairing, heartbeat/telemetry, command delivery, acknowledgements, and revocation without touching production. Treat the staging token as a credential and rotate it after testing.
