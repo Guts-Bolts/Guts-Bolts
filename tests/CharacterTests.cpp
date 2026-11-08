@@ -8,6 +8,7 @@
 #include "scene/Player.h"
 #include "scene/Scene.h"
 #include "scene/SceneNode.h"
+#include "scene/EditMesh.h"
 #include "scene/Serializer.h"
 
 #include <imgui.h>
@@ -70,6 +71,21 @@ int main(int argc, char** argv) {
     p->root()->transform.position = glm::vec3(500.0f, 100.2f, 500.0f);
     play(session, 1.5f);
     check(upright(p->root()->findChild("Torso")) > 0.9f, "the character starts standing");
+
+    if (SceneNode* torso = p->root()->findChild("Torso"); torso && torso->editMesh && !torso->editMesh->verts.empty()) {
+        const std::vector<glm::vec3> before = torso->editMesh->verts;
+        const glm::mat4 torsoWorld = torso->worldMatrix();
+        const glm::vec3 hitPoint = glm::vec3(torsoWorld * glm::vec4(before.front(), 1.0f));
+        const glm::vec3 hitNormal = glm::normalize(glm::vec3(torsoWorld[2]));
+        p->hurtAt(torso, hitPoint, hitNormal, -hitNormal * 180.0f, 1.0f, 0.0f, glm::vec3(0.0f));
+        bool changed = false;
+        if (torso->editMesh->verts.size() == before.size())
+            for (size_t i = 0; i < before.size(); ++i)
+                if (glm::length(torso->editMesh->verts[i] - before[i]) > 1e-7f) { changed = true; break; }
+        check(changed, "a positional projectile hit changes the struck mesh");
+    } else {
+        check(false, "the player torso has an editable mesh for impact deformation");
+    }
 
     // PlatformStand: a floppy ragdoll that stays down until it's turned off.
     p->humanoid().platformStand = true;

@@ -8,6 +8,7 @@
 #include "../scene/Animation.h"
 #include "../scene/Physics.h"
 #include "../scene/Player.h"
+#include "../scene/Npc.h"
 #include "../scene/Scene.h"
 #include "../scene/SceneNode.h"
 #include "../scene/Serializer.h"
@@ -3498,10 +3499,64 @@ Humanoid& hum(lua_State* L) {
 void touched(lua_State* L) { E(L)->scene()->markHumanoidEdited(humRoot(L), E(L)->time()); }
 
 int hum_takeDamage(lua_State* L) {
+    Scene& scene = *E(L)->scene();
+    const uint64_t rootId = humRoot(L);
     Humanoid& h = hum(L);
-    // Like Roblox: TakeDamage does nothing while the character has a ForceField.
-    if (SceneNode* r = E(L)->scene()->findById(humRoot(L)); r && r->hasForceField()) return 0;
-    h.health = glm::clamp(h.health - (float)luaL_checknumber(L, 2), 0.0f, h.maxHealth);
+    if (SceneNode* r = scene.findById(rootId); r && r->hasForceField()) return 0;
+    const float damage = (float)luaL_checknumber(L, 2);
+
+    // Optional context: humanoid:TakeDamage(amount, raycastResult, projectileVelocity).
+    // One-argument calls remain fully compatible.
+    SceneNode* hitPart = nullptr;
+    glm::vec3 hitPoint(0.0f), hitNormal(0, 1, 0), projectileVelocity(0.0f);
+    bool positional = false;
+    if (lua_istable(L, 3)) {
+        lua_getfield(L, 3, "Instance");
+        const uint64_t partId = LuaApi::toInstanceId(L, -1);
+        lua_pop(L, 1);
+        lua_getfield(L, 3, "Position");
+        if (glm::vec3* v = LuaApi::toVector3(L, -1)) hitPoint = *v;
+        else { lua_pop(L, 1); return luaL_error(L, "TakeDamage hit result needs a Vector3 Position"); }
+        lua_pop(L, 1);
+        lua_getfield(L, 3, "Normal");
+        if (glm::vec3* v = LuaApi::toVector3(L, -1)) hitNormal = *v;
+        else { lua_pop(L, 1); return luaL_error(L, "TakeDamage hit result needs a Vector3 Normal"); }
+        lua_pop(L, 1);
+        if (lua_gettop(L) >= 4)
+            if (glm::vec3* v = LuaApi::toVector3(L, 4)) projectileVelocity = *v;
+        SceneNode* character = scene.findById(rootId);
+        hitPart = scene.findById(partId);
+        positional = character && hitPart && hitPart->isPart() && character->isAncestorOf(hitPart);
+    }
+
+    if (positional) {
+        const float speed = glm::length(projectileVelocity);
+        const glm::vec3 impulse = speed > 1e-4f
+            ? glm::normalize(projectileVelocity) * std::min(1.5f, speed * 0.01f)
+            : glm::vec3(0.0f);
+        if (Player* player = scene.player(); player && player->rootId() == rootId) {
+            player->hurtAt(hitPart, hitPoint, hitNormal, projectileVelocity, damage, 0.0f, impulse);
+        } else {
+            Player::deformPartAtImpact(hitPart, hitPoint, hitNormal, projectileVelocity);
+            if (scene.npcs().find(rootId)) {
+                scene.npcs().recordImpact(rootId, hitPart->id, hitPoint, hitNormal, projectileVelocity);
+            } else if (scene.goreEnabled()) {
+                glm::vec3 tangent = projectileVelocity - hitNormal * glm::dot(projectileVelocity, hitNormal);
+                if (glm::length(tangent) < 1e-3f)
+                    tangent = glm::cross(hitNormal, std::abs(hitNormal.y) < 0.9f
+                                                    ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0));
+                scene.particles().wound(scene.goreKind(), hitPart, hitPoint, hitNormal, tangent, 0.09f, 0.28f);
+                if (speed > 4.0f)
+                    scene.particles().spurt(scene.goreKind(), hitPoint, hitNormal,
+                                            projectileVelocity * 0.015f, std::clamp(speed * 0.025f, 0.15f, 1.5f));
+                else
+                    scene.particles().spray(scene.goreKind(), hitPoint, hitNormal, 5, 2.5f);
+            }
+            h.health = glm::clamp(h.health - damage, 0.0f, h.maxHealth);
+        }
+    } else {
+        h.health = glm::clamp(h.health - damage, 0.0f, h.maxHealth);
+    }
     touched(L);
     return 0;
 }

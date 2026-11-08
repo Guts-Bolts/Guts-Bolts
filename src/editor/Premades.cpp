@@ -413,7 +413,7 @@ fire.OnServerEvent:Connect(function(player, action, target)
         local victimPlayer = model and Players:GetPlayerFromCharacter(model)
         local sameTeam = victimPlayer and player.Team and victimPlayer.Team == player.Team
         if victim and victim.Health > 0 and (FRIENDLY_FIRE or not sameTeam) then
-            victim:TakeDamage(result.Instance.Name == "Head" and DAMAGE * 2 or DAMAGE)
+            victim:TakeDamage(result.Instance.Name == "Head" and DAMAGE * 2 or DAMAGE, result, aim.Unit * RANGE)
         end
     end
     tellAmmo(player)
