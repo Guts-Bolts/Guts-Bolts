@@ -15,7 +15,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
-#else
+#elif !defined(__EMSCRIPTEN__)
 #include <fcntl.h>
 #include <sys/file.h>
 #include <unistd.h>
@@ -47,6 +47,10 @@ public:
             m_handle = INVALID_HANDLE_VALUE;
             return;
         }
+#elif defined(__EMSCRIPTEN__)
+        // The browser build has no cross-process filesystem locking primitive.
+        // Its task store is serialized by the process mutex above.
+        (void)lockPath;
 #else
         m_fd = ::open(lockPath.c_str(), O_CREAT | O_RDWR, 0600);
         if (m_fd < 0) { error = "Cannot open task lock file."; return; }
@@ -65,7 +69,7 @@ public:
             if (m_locked) UnlockFileEx(m_handle, 0, MAXDWORD, MAXDWORD, &m_overlapped);
             CloseHandle(m_handle);
         }
-#else
+#elif !defined(__EMSCRIPTEN__)
         if (m_fd >= 0) {
             if (m_locked) ::flock(m_fd, LOCK_UN);
             ::close(m_fd);
