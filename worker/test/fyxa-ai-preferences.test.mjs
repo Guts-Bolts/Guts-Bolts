@@ -18,6 +18,7 @@ test('Fyxa preferences are disabled by default and require the current notice to
   assert.ok(initial.ok);
   assert.equal(initial.preferences.trainingEnabled, false);
   assert.equal(initial.preferences.referenceEnabled, false);
+  assert.equal(initial.preferences.currentNoticeVersion, NOTICE);
 
   const missingNotice = s.call(user, 'ai.preferences.update', { trainingEnabled: true, confirm: true });
   assert.equal(missingNotice.ok, false);
@@ -75,7 +76,7 @@ test('private content remains excluded even after opt-in, rights attestation, an
   assert.ok(attested.ok, attested.error);
 
   const approved = s.call(s.staff, 'ai.content.review', {
-    contentId: asset.id, rightsStatus: 'approved',
+    contentId: asset.id, rightsStatus: 'approved', reason: 'Creator rights attestation reviewed',
   });
   assert.ok(approved.ok, approved.error);
   assert.equal(approved.eligibility.privacyStatus, 'private');
@@ -93,7 +94,7 @@ test('global opt-out overrides per-content inclusion immediately and is recorded
     contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
   });
   assert.ok(content.ok, content.error);
-  const approved = s.call(s.staff, 'ai.content.review', { contentId: asset.id, rightsStatus: 'approved' });
+  const approved = s.call(s.staff, 'ai.content.review', { contentId: asset.id, rightsStatus: 'approved', reason: 'Creator rights attestation reviewed' });
   assert.ok(approved.ok, approved.error);
   assert.equal(approved.eligibility.trainingEligible, true);
 
@@ -105,6 +106,10 @@ test('global opt-out overrides per-content inclusion immediately and is recorded
   assert.ok(state.ok, state.error);
   assert.equal(state.eligibility.trainingEligible, false);
   assert.equal(state.eligibility.trainingExclusionReason, 'account_training_disabled');
+  assert.equal(Number(s.aiContentRow(asset.id).training_eligible), 0);
+  const reasserted = s.call(owner, 'ai.content.eligibility.update', { contentId: asset.id, trainingChoice: 'include' });
+  assert.ok(reasserted.ok, reasserted.error);
+  assert.equal(reasserted.eligibility.trainingEligible, false, 'per-content inclusion cannot override the account opt-out');
 
   const history = s.call(owner, 'ai.training.history');
   assert.ok(history.ok, history.error);
@@ -132,7 +137,7 @@ test('a user cannot change another account’s content eligibility or approve th
   assert.equal(attested.eligibility.trainingEligible, false);
 
   const selfApproval = s.call(owner, 'ai.content.review', {
-    contentId: asset.id, rightsStatus: 'approved',
+    contentId: asset.id, rightsStatus: 'approved', reason: 'Attempted self approval',
   });
   assert.equal(selfApproval.ok, false);
 });
