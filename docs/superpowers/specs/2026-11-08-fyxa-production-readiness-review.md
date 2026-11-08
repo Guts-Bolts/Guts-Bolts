@@ -8,7 +8,7 @@
 
 The platform-agent direction is sound, but the current branch is a development foundation, not a production-ready remote-agent release. Keep PR #283 draft and unmerged until the supported build/test matrix is green and the critical security/protocol work below is complete.
 
-The highest-priority correction is MCP protocol compatibility. The current HTTP client in AssistantPanel uses the 2025-era initialize/initialized handshake and session ID model. The MCP 2026-07-28 protocol defines a stateless lifecycle: no initialize handshake or protocol session ID; each request carries protocol version and client capabilities in `_meta`, with modern HTTP routing headers. Implement the modern protocol deliberately, and retain legacy support only as an explicit compatibility path for older servers.
+The HTTP client now negotiates the MCP 2026-07-28 stateless protocol first. It sends `server/discover`, attaches protocol metadata to each request, emits `MCP-Protocol-Version` and `Mcp-Method`, and emits `Mcp-Name` for named operations. It does not send or retain a session ID in modern mode. Legacy initialize/initialized and session handling remain as a narrow compatibility path, entered only after a structured `-32022` unsupported-version or `-32601` unknown-method response; transport, TLS, and authorization failures do not trigger downgrade. Wire-envelope unit tests have been added; the current-head CI run is still required before calling this verified.
 
 ## Findings and decisions
 
@@ -92,7 +92,7 @@ The highest-priority correction is MCP protocol compatibility. The current HTTP 
 
 ## Delivery gates
 
-- [ ] P0 modern/legacy MCP protocol tests pass.
+- [ ] P0 modern/legacy MCP protocol tests pass on current-head CI (test target added; execution pending).
 - [ ] P0 tool-definition fingerprint and approval invalidation tests pass.
 - [ ] P0 protected-remote OAuth flow and token audience/issuer tests pass before protected remote MCP is enabled for general users.
 - [ ] P0 trust-boundary tests prove external content cannot grant permissions or bypass approval.
