@@ -987,6 +987,8 @@ void AssistantPanel::refreshMcpServers() {
                                      modernVersion, &discoveryStatus, &discoveryHeaders);
                 } else {
                     result.status = server.name + ": OAuth token refresh failed: " + refreshError;
+                    server.tools = json::array();
+                    continue;
                 }
             }
             if (modern) {
@@ -1030,7 +1032,35 @@ void AssistantPanel::refreshMcpServers() {
                     {"params", {{"protocolVersion", server.protocolVersion}, {"capabilities", json::object()},
                                 {"clientInfo", {{"name", "fyxa"}, {"version", "0.1"}}}}}};
                 std::string newSession;
-                if (!mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "")) {
+                int initializeStatus = 0;
+                std::string initializeHeaders;
+                bool initializedOk = mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "",
+                                              &initializeStatus, &initializeHeaders);
+                if (!initializedOk && initializeStatus == 401 && !server.oauthRefreshToken.empty() &&
+                    !server.oauthTokenEndpoint.empty() && !server.oauthResource.empty() &&
+                    !server.oauthClientId.empty() && !server.oauthIssuer.empty()) {
+                    std::string refreshedAccess, refreshedRefresh, refreshError;
+                    if (!refreshMcpOAuthToken(server.oauthIssuer, server.oauthTokenEndpoint, server.oauthClientId,
+                                              server.oauthResource, server.oauthRefreshToken,
+                                              refreshedAccess, refreshedRefresh, refreshError)) {
+                        result.status = server.name + ": OAuth token refresh failed: " + refreshError;
+                        server.tools = json::array();
+                        continue;
+                    }
+                    server.token = std::move(refreshedAccess);
+                    server.oauthRefreshToken = std::move(refreshedRefresh);
+                    std::string vaultError;
+                    if (!CredentialStore::store(server.credentialKey, server.token, vaultError))
+                        result.status = server.name + ": refreshed access token is session-only; " + vaultError;
+                    vaultError.clear();
+                    if (!server.oauthRefreshToken.empty() &&
+                        !CredentialStore::store(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, vaultError))
+                        result.status = server.name + ": refreshed token could not be persisted; " + vaultError;
+                    response = json::object();
+                    error.clear();
+                    initializedOk = mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "");
+                }
+                if (!initializedOk) {
                     result.status = server.name + ": " + error;
                     server.tools = json::array();
                     continue;
