@@ -131,7 +131,9 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
             fd_set wr;
             FD_ZERO(&wr);
             FD_SET(s, &wr);
-            timeval tv{0, (decltype(tv.tv_usec))std::min<long long>(left, 50) * 1000};
+            timeval tv{};
+            tv.tv_sec = 0;
+            tv.tv_usec = (decltype(tv.tv_usec))std::min<long long>(left, 50) * 1000;
             const int ready = select((int)s + 1, nullptr, &wr, nullptr, &tv);
             if (ready > 0) { connected = true; break; }
             if (ready < 0) {
@@ -174,7 +176,9 @@ bool waitFor(intptr_t sock, bool write, Clock::time_point deadline, const std::a
         fd_set set;
         FD_ZERO(&set);
         FD_SET(s, &set);
-        timeval tv{0, (decltype(tv.tv_usec))std::min<long long>(left, 50) * 1000};
+        timeval tv{};
+        tv.tv_sec = 0;
+        tv.tv_usec = (decltype(tv.tv_usec))std::min<long long>(left, 50) * 1000;
         const int ready = select((int)s + 1, write ? nullptr : &set, write ? &set : nullptr, nullptr, &tv);
         if (ready > 0) return true;
         if (ready < 0) {
