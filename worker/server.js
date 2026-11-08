@@ -2644,6 +2644,23 @@ export class GbServerObject extends DurableObject {
       return okay({ eligibility: state });
     }
 
+    if (name === 'ai.content.reviewQueue') {
+      if (!this.isStaff(me)) return fail('Only staff can review AI content rights.');
+      const limit = clamp(num(args, 'limit') || 50, 1, 100);
+      const offset = Math.max(0, Math.trunc(num(args, 'offset')) || 0);
+      const items = [];
+      for (const row of this.sql.exec(\`SELECT content_id, owner_id, content_type, privacy_status, rights_attested, updated_at
+        FROM ai_content_eligibility WHERE rights_status = 'pending_review' ORDER BY updated_at ASC LIMIT ? OFFSET ?\`, limit, offset)) {
+        const asset = this.assets.get(row.content_id);
+        if (!asset || asset.creator !== row.owner_id) continue;
+        const owner = this.users.get(row.owner_id);
+        items.push({ contentId: row.content_id, contentType: row.content_type, title: String(asset.name || ''),
+          ownerId: row.owner_id, owner: owner ? this.publicUser(owner) : null, privacyStatus: row.privacy_status,
+          rightsAttested: !!row.rights_attested, updatedAt: Number(row.updated_at || 0) });
+      }
+      return okay({ items, limit, offset });
+    }
+
     if (name === 'ai.content.review') {
       if (!this.isStaff(me)) return fail('Only staff can review AI content rights.');
       const contentId = str(args, 'contentId');
