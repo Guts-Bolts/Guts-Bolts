@@ -100,6 +100,24 @@ inline std::string definitionFingerprint(const std::string& serverName,
     return result;
 }
 
+inline bool toolResultIsError(const json& result, std::string& error) {
+    error.clear();
+    if (!result.is_object()) {
+        error = "The MCP tool result is not an object.";
+        return true;
+    }
+    if (!result.contains("isError")) return false;
+    if (!result["isError"].is_boolean()) {
+        error = "The MCP tool result contains a malformed isError flag.";
+        return true;
+    }
+    if (result["isError"].get<bool>()) {
+        error = "The MCP server reported that the tool execution failed.";
+        return true;
+    }
+    return false;
+}
+
 inline bool legacyFallbackAllowed(const json& response) {
     if (!response.is_object() || !response.contains("error") || !response["error"].is_object())
         return false;
