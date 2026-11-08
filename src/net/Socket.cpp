@@ -200,10 +200,12 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
                     const std::atomic_bool* cancel) {
     if (cancel && cancel->load()) { error = "Request cancelled."; return -1; }
     if (!initSockets()) { error = "Networking isn't available on this computer."; return -1; }
+    const auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 1));
 
     ResolvedAddress resolved;
     if (!resolveHostCancellable(host, port, timeoutMs, resolved, error, cancel)) return -1;
     if (cancel && cancel->load()) { error = "Request cancelled."; return -1; }
+    if (Clock::now() >= deadline) { error = "Connection timed out during DNS lookup."; return -1; }
 
     auto s = socket(resolved.address.ss_family, SOCK_STREAM, IPPROTO_TCP);
     if ((intptr_t)s < 0) { error = "Couldn't create a network socket."; return -1; }
@@ -216,7 +218,6 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
         return -1;
     }
     if (rc != 0) {
-        const auto deadline = Clock::now() + std::chrono::milliseconds(timeoutMs);
         bool connected = false;
         while (!(cancel && cancel->load()) && Clock::now() < deadline) {
             const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
