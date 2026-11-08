@@ -64,6 +64,8 @@ int main(int argc, char** argv) {
     GameSession session(&scene);
     std::string err;
     if (!Serializer::loadGameFile(scene, argv[1], &err)) { std::cerr << "couldn't load: " << err << "\n"; return 1; }
+    // This suite exercises positional damage directly; disable the normal spawn shield so it does not correctly absorb the test hit.
+    scene.world().spawnForceField = 0.0f;
     session.start();
     Player* p = scene.player();
     if (!p || !p->root()) { std::cerr << "no player in that game\n"; return 1; }
