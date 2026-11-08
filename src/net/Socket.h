@@ -59,7 +59,7 @@ bool httpGet(const std::string& host, int port, const std::string& path, std::st
              int* status = nullptr, std::string* responseHeaders = nullptr, const std::atomic_bool* cancel = nullptr);
 bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
               std::string& reply, std::string& error, int timeoutMs = 30000,
-              const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr);
+              const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr, const std::atomic_bool* cancel = nullptr);
 bool openUrl(const std::string& url, std::string& error);
 
 // A tiny web server for this computer only (127.0.0.1): other programs on the
