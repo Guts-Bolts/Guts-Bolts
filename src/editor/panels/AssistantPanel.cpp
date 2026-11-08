@@ -99,6 +99,24 @@ json fyxaAgentTools() {
     return tools;
 }
 
+AiToolResult runFyxaStudioTool(Editor& editor, const std::string& name, const json& args) {
+    const json& exposed = AiTools::list();
+    const bool registered = exposed.is_array() && std::any_of(exposed.begin(), exposed.end(),
+        [&](const json& tool) {
+            return tool.is_object() && tool.value("name", std::string()) == name;
+        });
+    if (!registered) {
+        AiToolResult denied;
+        denied.error = true;
+        denied.data = {{"success", false}, {"error", {
+            {"code", "TOOL_NOT_EXPOSED"}, {"message", "This tool is not in Fyxa's registered Studio capability set."}
+        }}};
+        denied.text = denied.data.dump(2);
+        return denied;
+    }
+    return editor.runAiToolFrom("Fyxa", name, args);
+}
+
 AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::string& activeTaskId) {
     AiToolResult result;
     auto fail = [&](const std::string& message) {
@@ -1586,7 +1604,7 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
                 b.contains("input") && b["input"].is_object() ? b["input"] : json::object()});
             continue;
         }
-        AiToolResult r = m_editor.runAiToolFrom("Fyxa", name,
+        AiToolResult r = runFyxaStudioTool(m_editor, name,
             b.contains("input") && b["input"].is_object() ? b["input"] : json::object());
         if (!r.error) { const std::string evidence = recordToolEvidence(); if (!evidence.empty()) r.text = "Evidence ID: " + evidence + "\n" + r.text; }
         std::string shown = name;
@@ -1650,7 +1668,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
             m_externalQueue.push_back({false, name, std::string(), externalMcpFingerprint(name), args});
             continue;
         }
-        AiToolResult result = m_editor.runAiToolFrom("Fyxa", name, args);
+        AiToolResult result = runFyxaStudioTool(m_editor, name, args);
         if (!result.error) { const std::string evidence = recordToolEvidence(); if (!evidence.empty()) result.text = "Evidence ID: " + evidence + "\n" + result.text; }
         std::string shown = name;
         if (args.contains("object") && args["object"].is_string()) shown += " " + args["object"].get<std::string>();
