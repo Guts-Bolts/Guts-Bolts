@@ -1057,7 +1057,7 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(ExternalMcpOAuthTests PRIVATE nlohmann_json::nlohmann_json monocypher)
     add_test(NAME ExternalMcpOAuthTests COMMAND ExternalMcpOAuthTests)
 endif()
-if(WIN32)
+if(WIN32 AND TARGET ExternalMcpOAuthTests)
     target_link_libraries(ExternalMcpOAuthTests PRIVATE bcrypt)
 endif()
 
