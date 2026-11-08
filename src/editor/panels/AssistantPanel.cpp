@@ -78,7 +78,7 @@ std::string responseHeader(const std::string& headers, const std::string& wanted
     return value;
 }
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
-             const json& request, json& response, std::string& error, std::string* sessionOut = nullptr) {
+             const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,\n             const std::string& protocolVersion = "2025-06-18") {
     std::string headers = "MCP-Protocol-Version: 2025-06-18\r\n";
     if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
     if (!session.empty()) headers += "Mcp-Session-Id: " + session + "\r\n";
@@ -89,6 +89,18 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     if (sessionOut) *sessionOut = responseHeader(responseHeaders, "Mcp-Session-Id");
     if (status == 202 || body.empty()) { response = json::object(); return true; }
     response = json::parse(body, nullptr, false);
+    if (!response.is_object()) {
+        size_t at = 0;
+        while ((at = body.find("data:", at)) != std::string::npos) {
+            at += 5;
+            while (at < body.size() && body[at] == ' ') ++at;
+            size_t end = body.find('\\n', at);
+            json event = json::parse(body.substr(at, end == std::string::npos ? std::string::npos : end - at), nullptr, false);
+            if (event.is_object()) { response = std::move(event); break; }
+            if (end == std::string::npos) break;
+            at = end + 1;
+        }
+    }
     if (!response.is_object()) { error = "The MCP server returned an invalid JSON-RPC response."; return false; }
     if (response.contains("error")) { error = response["error"].value("message", "The MCP server returned an error."); return false; }
     return status >= 200 && status < 300;
@@ -185,15 +197,23 @@ void AssistantPanel::refreshMcpServers() {
         server.protocolVersion = response.value("result", json::object()).value("protocolVersion", "2025-06-18");
         json initialized = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
         json ignored;
-        mcpPost(endpoint, server.token, server.sessionId, initialized, ignored, error);
-        json list = {{"jsonrpc", "2.0"}, {"id", 2}, {"method", "tools/list"}, {"params", json::object()}};
-        if (!mcpPost(endpoint, server.token, server.sessionId, list, response, error)) {
-            m_mcpStatus = server.name + ": " + error;
-            server.tools = json::array();
-            continue;
+        mcpPost(endpoint, server.token, server.sessionId, initialized, ignored, error, nullptr, server.protocolVersion);
+        server.tools = json::array();
+        std::string cursor;
+        for (int page = 0; page < 20; ++page) {
+            json params = json::object();
+            if (!cursor.empty()) params["cursor"] = cursor;
+            json list = {{"jsonrpc", "2.0"}, {"id", 2 + page}, {"method", "tools/list"}, {"params", params}};
+            if (!mcpPost(endpoint, server.token, server.sessionId, list, response, error, nullptr, server.protocolVersion)) {
+                m_mcpStatus = server.name + ": " + error;
+                server.tools = json::array();
+                break;
+            }
+            const json pageTools = response.value("result", json::object()).value("tools", json::array());
+            if (pageTools.is_array()) for (const auto& tool : pageTools) server.tools.push_back(tool);
+            cursor = response.value("result", json::object()).value("nextCursor", std::string());
+            if (cursor.empty()) break;
         }
-        server.tools = response.value("result", json::object()).value("tools", json::array());
-        if (!server.tools.is_array()) server.tools = json::array();
     }
     save();
     if (m_mcpStatus.empty()) {
@@ -219,7 +239,7 @@ bool AssistantPanel::callExternalMcpTool(const std::string& qualifiedName, const
         json response;
         json request = {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "tools/call"},
                         {"params", {{"name", toolName}, {"arguments", args}}}};
-        if (!mcpPost(endpoint, server.token, server.sessionId, request, response, error)) return false;
+        if (!mcpPost(endpoint, server.token, server.sessionId, request, response, error, nullptr, server.protocolVersion)) return false;
         const json rpcResult = response.value("result", json::object());
         if (rpcResult.value("isError", false)) { error = "The MCP tool reported an error."; }
         const json content = rpcResult.value("content", json::array());
