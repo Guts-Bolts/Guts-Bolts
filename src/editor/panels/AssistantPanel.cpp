@@ -695,7 +695,7 @@ void AssistantPanel::render(bool* open) {
     if (!ImGui::Begin("Fyxa", open)) { ImGui::End(); return; }
     const bool busy = m_pending.valid() || m_externalPending.valid() || m_mcpRefreshPending.valid() || !m_externalQueue.empty() || m_externalApprovalPending || m_deferredExternalClaude || m_deferredExternalOllama;
 
-    if (ImGui::CollapsingHeader("Assistant settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader("Fyxa settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* providers[] = {"Ollama (local)", "Claude (Anthropic)"};
         int provider = m_provider == "claude" ? 1 : 0;
         if (ImGui::Combo("AI provider", &provider, providers, 2)) {
@@ -891,7 +891,7 @@ void AssistantPanel::render(bool* open) {
     const float footer = ImGui::GetFrameHeightWithSpacing() * 3.2f;
     ImGui::BeginChild("##chat", ImVec2(0, -footer), ImGuiChildFlags_Borders);
     if (m_lines.empty())
-        ImGui::TextWrapped("I'm Fyxa, your Guts&Bolts assistant. Ask me to build a level, write scripts, debug a game, or explain the engine. I can use Studio's native tools, and changes remain available in AI Activity for review and undo.");
+        ImGui::TextWrapped("I'm Fyxa, the AI agent for Guts&Bolts. I'm designed to help across the platform, including games, Studio, accounts, social features, inventory, and the marketplace. In this Studio session, I can use the native Studio tools and any connected MCP tools that you approve. Studio changes remain available in AI Activity for review and undo.");
     for (const Line& line : m_lines) {
         ImGui::PushTextWrapPos(0.0f);
         switch (line.kind) {
