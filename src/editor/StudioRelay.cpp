@@ -10,6 +10,7 @@
 #include "Version.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <filesystem>
 #include <nlohmann/json.hpp>
