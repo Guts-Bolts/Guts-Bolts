@@ -458,8 +458,10 @@ std::string AssistantPanel::externalMcpFingerprint(const std::string& qualifiedN
     for (const auto& server : m_externalMcp) {
         if (!server.enabled || mcpServerKey(server.name) != serverKey || !server.tools.is_array()) continue;
         for (const auto& tool : server.tools) {
-            if (tool.is_object() && tool.value("name", std::string()) == toolName)
-                return tool.value("fyxaFingerprint", std::string());
+            if (tool.is_object() && tool.value("name", std::string()) == toolName) {
+                const std::string pinned = tool.value("fyxaFingerprint", std::string());
+                return pinned.empty() ? mcpToolDefinitionFingerprint(server.name, server.url, tool) : pinned;
+            }
         }
     }
     return {};
@@ -514,8 +516,9 @@ void AssistantPanel::refreshMcpServers() {
                 // unsupported-version or unknown-method response proves that this
                 // endpoint does not implement server/discover. Network, TLS, and
                 // authorization failures never trigger a downgrade.
-                const json rpcError = response.value("error", json::object());
-                const int code = rpcError.value("code", 0);
+                const json rpcError = response.is_object() ? response.value("error", json::object()) : json::object();
+                const int code = rpcError.is_object() && rpcError.contains("code") && rpcError["code"].is_number_integer()
+                    ? rpcError["code"].get<int>() : 0;
                 if (code != -32022 && code != -32601) {
                     result.status = server.name + ": " + error;
                     server.tools = json::array();
