@@ -2508,7 +2508,8 @@ export class GbServerObject extends DurableObject {
     const restricted = !!(asset.review || asset.exclusive || asset.promoOnly);
     const rightsAttested = !!(row && row.rights_attested);
     const rightsStatus = row ? row.rights_status : 'unverified';
-    const baseReason = row && row.owner_id !== asset.creator ? 'owner_changed'
+    const baseReason = prefs.consentMethod === 'account_deleted' ? 'account_deleted'
+      : row && row.owner_id !== asset.creator ? 'owner_changed'
       : !isPublic ? 'not_public' : restricted ? 'content_restricted'
       : !rightsAttested ? 'rights_not_attested' : rightsStatus === 'rejected' ? 'rights_rejected'
       : rightsStatus !== 'approved' ? 'rights_pending_review' : '';
