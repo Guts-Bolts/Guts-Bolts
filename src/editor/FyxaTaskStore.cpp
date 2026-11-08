@@ -244,6 +244,15 @@ bool FyxaTaskStore::update(const std::string& id, const std::string& status,
         if (it->is_object() && it->value("id", std::string()) == id) { found = it; break; }
     }
     if (found == tasks.end()) { error = "Task not found."; return false; }
+    if (status == "in_progress") {
+        for (const auto& task : tasks) {
+            if (task.is_object() && task.value("id", std::string()) != id &&
+                task.value("status", std::string()) == "in_progress") {
+                error = "Fyxa v1 supports one active task at a time. Pause or complete the active task before starting another.";
+                return false;
+            }
+        }
+    }
 
     (*found)["status"] = status;
     (*found)["updated_at"] = now();
