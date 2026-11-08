@@ -2502,28 +2502,44 @@ export class GbServerObject extends DurableObject {
   async scanModerationSubmission(req, actor, answer) {
     if (!actor || !actor.id || !req || !req.args || !answer || !answer.ok) return;
     const args = req.args, op = String(req.op || ''), fields = [];
-    let sourceType = '', sourceId = '';
-    if (op === 'upload') {
-      sourceType = 'asset'; sourceId = String(answer.asset && answer.asset.id || '');
+    let sourceType = '', sourceId = '', manualReviewReason = '';
+    const assetWrite = op === 'upload' || op === 'update';
+    const sourceAsset = op === 'upload'
+      ? (this.assets.get(String(answer.asset && answer.asset.id || '')) || answer.asset || null)
+      : assetWrite ? this.assets.get(String(args.id || '')) : null;
+    const assetKind = String(sourceAsset && sourceAsset.kind || args.kind || '');
+    if (assetWrite) {
+      sourceType = 'asset'; sourceId = String(sourceAsset && sourceAsset.id || args.id || '');
       fields.push(['asset name', args.name], ['asset description', args.description]);
-      const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta
+        : sourceAsset && sourceAsset.meta && typeof sourceAsset.meta === 'object' ? sourceAsset.meta : {};
       for (const key of ['alt', 'caption', 'title', 'description', 'author', 'license', 'source']) fields.push([key, meta[key]]);
-      if (String(args.kind || '') === 'audio') fields.push(['audio upload', 'Audio requires a media-specific moderation pass; route to manual staff review.']);
-      if (['game', 'model', 'plugin', 'animation', 'gear', 'accessory', 'bundle', 'bodypart'].includes(String(args.kind || ''))) {
+      if (assetKind === 'audio') fields.push(['audio upload', 'Audio requires a media-specific moderation pass; route to manual staff review.']);
+      if (['game', 'model', 'plugin', 'animation', 'gear', 'accessory', 'bundle', 'bodypart'].includes(assetKind)) {
         try {
-          const bytes = b64ToBytes(str(args, 'data'));
+          const encoded = str(args, 'data').replace(/^data:[^,]+,/, '');
+          const bytes = b64ToBytes(encoded);
           const raw = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 180000));
           const parsed = JSON.parse(raw); let budget = 5000;
+          const geometryKey = /^(vertices|positions|indices|triangles|faces|normals|uvs|weights|mesh|geometry)$/i;
           const walk = (value, key = '') => {
             if (budget <= 0) return;
-            if (typeof value === 'string' && /name|title|text|message|description|caption|label|value|prompt|dialog|scriptname/i.test(key)) {
+            if (geometryKey.test(key) && (Array.isArray(value) ? value.length > 0 : !!value && typeof value === 'object')) {
+              manualReviewReason = 'This upload contains 3D mesh or geometry data that the text and image scanners cannot semantically inspect.';
+              return;
+            }
+            if (typeof value === 'string' && /name|title|text|message|description|caption|label|value|prompt|dialog|script|source|code/i.test(key)) {
               const part = value.slice(0, Math.min(500, budget));
               if (part.trim()) { fields.push([key || 'uploaded text', part]); budget -= part.length; }
             } else if (Array.isArray(value)) for (const item of value.slice(0, 100)) walk(item, key);
             else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value).slice(0, 200)) walk(v, k);
           }; walk(parsed);
-        } catch { /* Opaque binary uploads are handled by their media-specific scanner. */ }
+        } catch {
+          manualReviewReason = 'This upload is opaque or not parseable as supported text data; manual review is required.';
+        }
       }
+    } else if (op === 'game.settings') { sourceType = 'asset'; sourceId = String(args.id || ''); fields.push(['game name', args.name], ['game description', args.description]);
+    } else if (op === 'gamebadge.create') { sourceType = 'asset'; sourceId = String(args.game || ''); fields.push(['game badge name', args.name], ['game badge description', args.description]);
     } else if (op === 'comments.post') { sourceType = 'comment'; sourceId = String(args.game || ''); fields.push(['comment', args.text]);
     } else if (op === 'forum.post') { sourceType = 'forum_thread'; sourceId = String(answer.thread && answer.thread.id || ''); fields.push(['thread title', args.title], ['forum post', args.text]);
     } else if (op === 'forum.reply') { sourceType = 'forum_reply'; sourceId = String(args.thread || ''); fields.push(['forum reply', args.text]);
@@ -2553,8 +2569,9 @@ export class GbServerObject extends DurableObject {
         categories = [...new Set((response.match(/\bS(?:[1-9]|1[0-4])\b/g) || []))].slice(0, 14);
       }
     } catch (error) { scanner = 'llama-guard-3-8b-error'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
-    if (op === 'upload' && String(args.kind || '') === 'audio') {
-      const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
+    if (assetWrite && assetKind === 'audio') {
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta
+        : sourceAsset && sourceAsset.meta && typeof sourceAsset.meta === 'object' ? sourceAsset.meta : {};
       const ext = String(meta.ext || '').toLowerCase();
       const mime = ext === 'wav' ? 'audio/wav' : ext === 'ogg' ? 'audio/ogg' : ext === 'm4a' ? 'audio/mp4'
         : ext === 'mp3' ? 'audio/mpeg' : ext === 'flac' ? 'audio/flac' : '';
@@ -2590,11 +2607,11 @@ export class GbServerObject extends DurableObject {
       } else { categories.push('AUDIO_REVIEW_REQUIRED'); scanner += '+audio-manual-review'; unsafe = true; }
     }
     // Supported image uploads receive a vision-language screening pass; failures are sent to staff.
-    if (op === 'upload' && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(String(args.kind || ''))) {
+    if (assetWrite && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(assetKind)) {
       const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
       const ext = String(meta.ext || '').toLowerCase();
       const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
-      const encoded = str(args, 'data');
+      const encoded = str(args, 'data').replace(/^data:[^,]+,/, '');
       if (encoded && encoded.length <= 600000) {
         try {
           const vision = await this.env.AI.run('@cf/moondream/moondream3.1-9B-A2B', {
@@ -2626,6 +2643,12 @@ export class GbServerObject extends DurableObject {
       } else {
         categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+vision-input-unavailable'; unsafe = true;
       }
+    }
+    if (manualReviewReason) {
+      categories.push('GEOMETRY_REVIEW_REQUIRED');
+      scanner += '+manual-geometry-review';
+      unsafe = true;
+      content = (content + '\nManual review: ' + manualReviewReason).slice(0, 7000);
     }
     if (!unsafe) return;
     categories = [...new Set(categories)].slice(0, 16);
