@@ -364,6 +364,22 @@ void AssistantPanel::refreshMcpServers() {
 
 void AssistantPanel::startNextExternalCall() {
     if (m_externalPending.valid()) return;
+    if (m_stopAsked) {
+        while (!m_externalQueue.empty()) {
+            ExternalCall skipped = std::move(m_externalQueue.front());
+            m_externalQueue.pop_front();
+            if (skipped.claude) {
+                json result = {{"type", "tool_result"}, {"tool_use_id", skipped.id},
+                               {"content", "Stopped before this external tool was run."}, {"is_error", true}};
+                m_deferredClaudeResults.push_back(std::move(result));
+            } else {
+                m_deferredOllamaMessages.push_back({{"role", "tool"}, {"name", skipped.name},
+                    {"content", "Stopped before this external tool was run."}});
+            }
+        }
+        finishExternalCalls();
+        return;
+    }
     if (m_externalQueue.empty()) { finishExternalCalls(); return; }
     ExternalCall call = std::move(m_externalQueue.front());
     m_externalQueue.pop_front();
@@ -550,6 +566,7 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
     if (stop == "refusal") { m_lines.push_back({Line::Note, "The assistant declined that request."}); return; }
     if (stop == "max_tokens") { m_lines.push_back({Line::Note, "That answer hit the length limit. Say \"continue\" for more."}); return; }
     if (stop != "tool_use") return;
+    if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
 
     json results = json::array();
     for (const auto& b : j["content"]) {
@@ -604,6 +621,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
 
     const json calls = message.value("tool_calls", json::array());
     if (!calls.is_array() || calls.empty()) return;
+    if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
 
     for (const auto& call : calls) {
         const json fn = call.value("function", json::object());
