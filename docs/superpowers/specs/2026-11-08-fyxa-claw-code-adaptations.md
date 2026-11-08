@@ -13,9 +13,9 @@ This plan adapts general engineering patterns and independently implements them 
 | Global tool registry with runtime/plugin tools | A platform-wide capability registry shared by Studio, Player, website, and connected clients | P0 |
 | Permission enforcer and per-tool permission metadata | Server-authoritative read/write/destructive/financial/publishing permissions; confirmation UX based on risk | P0 |
 | MCP stdio process manager | Local stdio MCP transport alongside the existing HTTP transport | P1 |
-| Skill discovery and prompt injection | User-installed and built-in Fyxa Skills: focused, versioned instruction packs for Studio workflows, scripting, debugging, building, and platform help | P1 |
+| Skill discovery and prompt injection | User-installed and built-in Fyxa Skills: focused, versioned instruction packs for Studio workflows, scripting, debugging, building, and platform help | Implemented with bounded Markdown loading; latest-head verification pending |
 | Pre/post tool hooks | Trusted extension lifecycle events with strict timeouts, no implicit permission elevation, and auditable outcomes | P2 |
-| Task registry and task tools | Persistent, visible multi-step task plans that Fyxa can create, update, and verify | P1 |
+| Task registry and task tools | Persistent, visible multi-step task plans that Fyxa can create, update, and verify | Implemented in Studio assistant; latest-head verification pending |
 | Subagent/team orchestration | Specialized agents for bounded tasks (Studio scripting, debugging, documentation, asset planning) with scoped tools and explicit resource budgets | P2 |
 | Session compaction and memory | User-controlled, privacy-aware continuity across G&B surfaces | P2 |
 | Structured events and audit reports | Unified Fyxa activity feed across native tools and connected integrations | P1 |
