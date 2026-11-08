@@ -12,6 +12,7 @@
 #include <cctype>
 #include <chrono>
 #include <fstream>
+#include <sstream>
 
 using nlohmann::json;
 
