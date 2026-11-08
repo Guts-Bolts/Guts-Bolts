@@ -624,16 +624,17 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
         result.error = "OAuth state validation failed; the authorization response was rejected.";
         return result;
     }
-    if (callback.contains("error")) {
-        result.error = "The authorization server denied access: " + callback["error"].substr(0, 160);
-        return result;
-    }
+    // RFC 9207 issuer validation applies to success and error responses alike.
     if (metadata.issuerParameterRequired && !callback.contains("iss")) {
         result.error = "The authorization server required an issuer parameter, but the callback omitted it.";
         return result;
     }
     if (callback.contains("iss") && callback["iss"] != metadata.issuer) {
-        result.error = "OAuth authorization-server issuer mismatch; the authorization code was not redeemed.";
+        result.error = "OAuth authorization-server issuer mismatch; the authorization response was rejected.";
+        return result;
+    }
+    if (callback.contains("error")) {
+        result.error = "The authorization server denied access: " + callback["error"].substr(0, 160);
         return result;
     }
     if (!callback.contains("code") || callback["code"].empty() || callback["code"].size() > 4096) {
