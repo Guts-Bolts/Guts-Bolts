@@ -279,50 +279,65 @@ json AssistantPanel::externalMcpTools() const {
 }
 
 void AssistantPanel::refreshMcpServers() {
-    m_mcpStatus.clear();
-    for (auto& server : m_externalMcp) {
-        if (!server.enabled) { server.tools = json::array(); server.sessionId.clear(); continue; }
-        McpEndpoint endpoint;
-        std::string error;
-        if (!parseMcpEndpoint(server.url, endpoint, error)) { m_mcpStatus = server.name + ": " + error; continue; }
-        json response;
-        std::string newSession;
-        json initialize = {{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"},
-                           {"params", {{"protocolVersion", "2025-06-18"}, {"capabilities", json::object()},
-                                       {"clientInfo", {{"name", "fyxa"}, {"version", "0.1"}}}}}};
-        if (!mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "")) {
-            m_mcpStatus = server.name + ": " + error;
-            server.tools = json::array();
-            continue;
-        }
-        server.sessionId = newSession;
-        server.protocolVersion = response.value("result", json::object()).value("protocolVersion", "2025-06-18");
-        json initialized = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
-        json ignored;
-        mcpPost(endpoint, server.token, server.sessionId, initialized, ignored, error, nullptr, server.protocolVersion);
-        server.tools = json::array();
-        std::string cursor;
-        for (int page = 0; page < 20; ++page) {
-            json params = json::object();
-            if (!cursor.empty()) params["cursor"] = cursor;
-            json list = {{"jsonrpc", "2.0"}, {"id", 2 + page}, {"method", "tools/list"}, {"params", params}};
-            if (!mcpPost(endpoint, server.token, server.sessionId, list, response, error, nullptr, server.protocolVersion)) {
-                m_mcpStatus = server.name + ": " + error;
+    if (m_mcpRefreshPending.valid()) { m_mcpStatus = "MCP discovery is already running."; return; }
+    auto servers = m_externalMcp;
+    m_mcpStatus = "Discovering MCP tools in the background...";
+    m_mcpRefreshPending = std::async(std::launch::async, [servers = std::move(servers)]() mutable {
+        McpRefreshResult result;
+        result.servers = std::move(servers);
+        for (auto& server : result.servers) {
+            if (!server.enabled) { server.tools = json::array(); server.sessionId.clear(); continue; }
+            McpEndpoint endpoint;
+            std::string error;
+            if (!parseMcpEndpoint(server.url, endpoint, error)) { result.status = server.name + ": " + error; continue; }
+            json response;
+            std::string newSession;
+            json initialize = {{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"},
+                               {"params", {{"protocolVersion", "2025-06-18"}, {"capabilities", json::object()},
+                                           {"clientInfo", {{"name", "fyxa"}, {"version", "0.1"}}}}}};
+            if (!mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "")) {
+                result.status = server.name + ": " + error;
                 server.tools = json::array();
-                break;
+                continue;
             }
-            const json pageTools = response.value("result", json::object()).value("tools", json::array());
-            if (pageTools.is_array()) for (const auto& tool : pageTools) server.tools.push_back(tool);
-            cursor = response.value("result", json::object()).value("nextCursor", std::string());
-            if (cursor.empty()) break;
+            server.sessionId = newSession;
+            server.protocolVersion = response.value("result", json::object()).value("protocolVersion", "2025-06-18");
+            json initialized = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
+            json ignored;
+            if (!mcpPost(endpoint, server.token, server.sessionId, initialized, ignored, error, nullptr, server.protocolVersion)) {
+                result.status = server.name + ": " + error;
+                server.tools = json::array();
+                continue;
+            }
+            server.tools = json::array();
+            std::string cursor;
+            for (int page = 0; page < 20; ++page) {
+                json params = json::object();
+                if (!cursor.empty()) params["cursor"] = cursor;
+                json list = {{"jsonrpc", "2.0"}, {"id", 2 + page}, {"method", "tools/list"}, {"params", params}};
+                if (!mcpPost(endpoint, server.token, server.sessionId, list, response, error, nullptr, server.protocolVersion)) {
+                    result.status = server.name + ": " + error;
+                    server.tools = json::array();
+                    break;
+                }
+                const json pageTools = response.value("result", json::object()).value("tools", json::array());
+                if (pageTools.is_array()) for (const auto& tool : pageTools) {
+                    if (server.tools.size() >= 512) { result.status = server.name + ": tool limit (512) reached."; break; }
+                    if (tool.is_object() && tool.contains("name") && tool["name"].is_string() &&
+                        tool["name"].get<std::string>().size() <= 128 &&
+                        tool.value("inputSchema", json::object()).is_object()) server.tools.push_back(tool);
+                }
+                cursor = response.value("result", json::object()).value("nextCursor", std::string());
+                if (cursor.empty() || server.tools.size() >= 512) break;
+            }
         }
-    }
-    save();
-    if (m_mcpStatus.empty()) {
-        size_t count = 0;
-        for (const auto& server : m_externalMcp) if (server.enabled && server.tools.is_array()) count += server.tools.size();
-        m_mcpStatus = "MCP discovery complete. " + std::to_string(count) + " tool(s) available.";
-    }
+        if (result.status.empty()) {
+            size_t count = 0;
+            for (const auto& server : result.servers) if (server.enabled && server.tools.is_array()) count += server.tools.size();
+            result.status = "MCP discovery complete. " + std::to_string(count) + " tool(s) available.";
+        }
+        return result;
+    });
 }
 
 void AssistantPanel::startNextExternalCall() {
