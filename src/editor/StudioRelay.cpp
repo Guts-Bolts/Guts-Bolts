@@ -70,8 +70,7 @@ void appendRelayAudit(const std::string& app, const std::string& tool,
     std::ofstream file(Paths::file("assistant-mcp-activity.jsonl"), std::ios::app);
     if (file) file << json{{"timestampMs", ms}, {"server", "connected-app-relay"},
         {"app", app}, {"tool", tool}, {"toolFingerprint", fingerprint},
-        {"arguments", redactRelayArguments(arguments)}, {"outcome", outcome}}.dump() << "
-";
+        {"arguments", redactRelayArguments(arguments)}, {"outcome", outcome}}.dump() << "\n";
 }
 
 json relayRpcError(const json& id, const std::string& message) {
