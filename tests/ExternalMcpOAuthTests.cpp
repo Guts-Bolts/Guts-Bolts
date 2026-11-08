@@ -1,4 +1,5 @@
 #include "../src/editor/ExternalMcpOAuth.h"
+#include <mbedtls/sha256.h>
 #include <cstdlib>
 #include <iostream>
 #include <map>
@@ -51,7 +52,7 @@ int main() {
     CHECK(pkce.state.size() >= 40);
     CHECK(pkce.verifier.find_first_of("+/= ") == std::string::npos);
     std::uint8_t expectedDigest[32]{};
-    crypto_sha256(expectedDigest, reinterpret_cast<const std::uint8_t*>(pkce.verifier.data()), pkce.verifier.size());
+    CHECK(mbedtls_sha256(reinterpret_cast<const unsigned char*>(pkce.verifier.data()), pkce.verifier.size(), expectedDigest, 0) == 0);
     CHECK(pkce.challenge == base64Url(expectedDigest, sizeof(expectedDigest)));
     crypto_wipe(expectedDigest, sizeof(expectedDigest));
     CHECK(formEncode("a b&c") == "a%20b%26c");
