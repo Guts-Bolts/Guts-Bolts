@@ -468,7 +468,8 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
     McpOAuthMetadata metadata;
     if (!discoverMcpOAuth(resource, challenge, metadata, result.error)) return result;
     result.issuer = metadata.issuer;
-    result.tokenEndpoint = metadata.tokenEndpoint;\n    result.resource = metadata.resource;
+    result.tokenEndpoint = metadata.tokenEndpoint;
+    result.resource = metadata.resource;
 
     McpOAuth::Pkce pkce;
     if (!McpOAuth::createPkce(pkce)) {
@@ -735,7 +736,8 @@ void AssistantPanel::load() {
             if (server.credentialKey.empty()) server.credentialKey = "mcp-" + server.name;
             server.token = item.value("token", std::string());
             server.oauthClientId = item.value("oauthClientId", std::string());
-            server.oauthTokenEndpoint = item.value("oauthTokenEndpoint", std::string());\n            server.oauthResource = item.value("oauthResource", std::string());
+            server.oauthTokenEndpoint = item.value("oauthTokenEndpoint", std::string());
+            server.oauthResource = item.value("oauthResource", std::string());
             std::string refreshError;
             CredentialStore::retrieve(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, refreshError);
             if (!server.token.empty()) {
@@ -1136,7 +1138,9 @@ void AssistantPanel::update() {
         } else {
             server->token = std::move(authorized.accessToken);
             server->oauthRefreshToken = std::move(authorized.refreshToken);
-            server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);\n            server->oauthClientId = std::move(authorized.clientId);\n            server->oauthResource = std::move(authorized.resource);
+            server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);
+            server->oauthClientId = std::move(authorized.clientId);
+            server->oauthResource = std::move(authorized.resource);
             std::string credentialError;
             if (!CredentialStore::store(server->credentialKey, server->token, credentialError))
                 m_credentialStatus = credentialError + " The access token remains in memory for this session.";
