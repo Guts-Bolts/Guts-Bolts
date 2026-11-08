@@ -1307,7 +1307,27 @@ void AssistantPanel::startNextExternalCall() {
                 appendMcpAudit(serverName, toolName, done.call.args, "failed");
                 return done;
             }
-            const json rpcResult = response.value("result", json::object());
+            if (!response.is_object() || !response.contains("jsonrpc") ||
+                response.value("jsonrpc", std::string()) != "2.0") {
+                done.error = "The MCP server returned an invalid JSON-RPC response.";
+                appendMcpAudit(serverName, toolName, done.call.args, "protocol-error");
+                return done;
+            }
+            if (response.contains("error")) {
+                const json rpcError = response["error"];
+                const std::string message = rpcError.is_object()
+                    ? rpcError.value("message", std::string("Unknown JSON-RPC error"))
+                    : std::string("Malformed JSON-RPC error response");
+                done.error = "MCP JSON-RPC error: " + message;
+                appendMcpAudit(serverName, toolName, done.call.args, "rpc-error");
+                return done;
+            }
+            if (!response.contains("result") || !response["result"].is_object()) {
+                done.error = "The MCP server response did not contain a valid tool result.";
+                appendMcpAudit(serverName, toolName, done.call.args, "protocol-error");
+                return done;
+            }
+            const json rpcResult = response["result"];
             const bool toolError = rpcResult.contains("isError") && rpcResult["isError"].is_boolean() && rpcResult["isError"].get<bool>();
             const json content = rpcResult.value("content", json::array());
             if (content.is_array()) for (const auto& part : content) {
