@@ -180,7 +180,14 @@ struct Pkce {
 
 inline bool createPkce(Pkce& out) {
     std::uint8_t verifier[32]{}, state[32]{}, digest[32]{};
-    if (!secureRandom(verifier, sizeof(verifier)) || !secureRandom(state, sizeof(state))) return false;
+    const bool verifierReady = secureRandom(verifier, sizeof(verifier));
+    const bool stateReady = secureRandom(state, sizeof(state));
+    if (!verifierReady || !stateReady) {
+        crypto_wipe(verifier, sizeof(verifier));
+        crypto_wipe(state, sizeof(state));
+        crypto_wipe(digest, sizeof(digest));
+        return false;
+    }
     out.verifier = base64Url(verifier, sizeof(verifier));
     out.state = base64Url(state, sizeof(state));
     crypto_sha256(digest, reinterpret_cast<const std::uint8_t*>(out.verifier.data()), out.verifier.size());
