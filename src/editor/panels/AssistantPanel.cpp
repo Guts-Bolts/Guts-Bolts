@@ -8,6 +8,7 @@
 #include "../FyxaTaskStore.h"
 #include "../FyxaSkills.h"
 #include "../ExternalMcpProtocol.h"
+#include "../ExternalMcpOAuth.h"
 
 #include <imgui.h>
 #include <monocypher.h>
@@ -20,6 +21,7 @@
 #include <fstream>
 #include <sstream>
 #include <utility>
+#include <thread>
 
 using nlohmann::json;
 
@@ -253,7 +255,8 @@ void appendMcpAudit(const std::string& server, const std::string& tool, const js
 
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
              const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,
-             const std::string& protocolVersion = "2026-07-28") {
+             const std::string& protocolVersion = "2026-07-28", int* statusOut = nullptr,
+             std::string* responseHeadersOut = nullptr) {
     json wireRequest = request;
     std::string headers;
     if (!McpHttpProtocol::prepareRequest(wireRequest, headers, protocolVersion, session, token, error))
@@ -263,6 +266,8 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     int status = 0;
     const std::string host = endpoint.tls ? "wss://" + endpoint.host : endpoint.host;
     if (!Net::httpPost(host, endpoint.port, endpoint.path, wireRequest.dump(), body, error, 12000, headers, &status, &responseHeaders)) return false;
+    if (statusOut) *statusOut = status;
+    if (responseHeadersOut) *responseHeadersOut = responseHeaders;
     if (body.size() > 8u * 1024u * 1024u) { error = "The MCP server response exceeded 8 MiB."; return false; }
     if (sessionOut && protocolVersion != "2026-07-28")
         *sessionOut = responseHeader(responseHeaders, "Mcp-Session-Id");
@@ -328,6 +333,313 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     }
     return true;
 }
+
+struct McpOAuthMetadata {
+    std::string issuer, authorizationEndpoint, tokenEndpoint, registrationEndpoint;
+    std::string resource, scope;
+    bool issuerParameterRequired = false;
+};
+
+bool getOAuthJson(const std::string& url, json& result, std::string& error) {
+    McpOAuth::HttpsUrl parsed;
+    if (!McpOAuth::parseHttpsUrl(url, parsed)) { error = "OAuth metadata URL must be HTTPS."; return false; }
+    std::string body;
+    int status = 0;
+    const std::string host = "wss://" + parsed.host;
+    if (!Net::httpGet(host, parsed.port, parsed.path, body, error, 12000,
+                      "Accept: application/json\r\n", &status, nullptr)) return false;
+    if (status != 200 || body.size() > 256u * 1024u) {
+        error = "OAuth metadata endpoint returned HTTP " + std::to_string(status) + " or exceeded 256 KiB.";
+        return false;
+    }
+    result = json::parse(body, nullptr, false);
+    if (!result.is_object()) { error = "OAuth metadata endpoint returned invalid JSON."; return false; }
+    return true;
+}
+
+bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
+                      McpOAuthMetadata& out, std::string& error) {
+    std::string metadataUrl;
+    if (!McpOAuth::extractQuotedParameter(challenge, "resource_metadata", metadataUrl)) {
+        const auto candidates = McpOAuth::protectedResourceMetadataUrls(resource);
+        for (const auto& candidate : candidates) {
+            json candidateMetadata;
+            std::string candidateError;
+            if (getOAuthJson(candidate, candidateMetadata, candidateError)) {
+                metadataUrl = candidate;
+                break;
+            }
+        }
+    }
+    if (metadataUrl.empty()) {
+        error = "The protected MCP server did not advertise OAuth resource metadata.";
+        return false;
+    }
+    McpOAuth::HttpsUrl resourceMetadataUrl;
+    if (!McpOAuth::parseHttpsUrl(metadataUrl, resourceMetadataUrl)) {
+        error = "The MCP server advertised an invalid or non-HTTPS OAuth resource metadata URL.";
+        return false;
+    }
+    json resourceMetadata;
+    if (!getOAuthJson(metadataUrl, resourceMetadata, error)) return false;
+    if (!resourceMetadata.contains("resource") || !resourceMetadata["resource"].is_string() ||
+        resourceMetadata["resource"].get<std::string>() != resource) {
+        error = "OAuth protected-resource metadata does not identify this exact MCP endpoint.";
+        return false;
+    }
+    const json issuers = resourceMetadata.value("authorization_servers", json::array());
+    if (!issuers.is_array() || issuers.empty() || !issuers[0].is_string()) {
+        error = "OAuth resource metadata did not provide an authorization server.";
+        return false;
+    }
+    out.issuer = issuers[0].get<std::string>();
+    McpOAuth::HttpsUrl issuerUrl;
+    if (!McpOAuth::parseHttpsUrl(out.issuer, issuerUrl)) {
+        error = "The authorization-server issuer must be an HTTPS URL.";
+        return false;
+    }
+    json authorizationMetadata;
+    bool found = false;
+    for (const auto& candidate : McpOAuth::authorizationServerMetadataUrls(out.issuer)) {
+        json candidateMetadata;
+        std::string candidateError;
+        if (!getOAuthJson(candidate, candidateMetadata, candidateError)) continue;
+        if (!McpOAuth::metadataIssuerMatches(candidateMetadata, out.issuer)) {
+            error = "Authorization-server metadata issuer does not exactly match the discovered issuer.";
+            return false;
+        }
+        authorizationMetadata = std::move(candidateMetadata);
+        found = true;
+        break;
+    }
+    if (!found) {
+        if (error.empty()) error = "Could not retrieve authorization-server metadata.";
+        return false;
+    }
+    auto httpsEndpoint = [&](const char* key, std::string& value, bool required) {
+        if (!authorizationMetadata.contains(key) || !authorizationMetadata[key].is_string()) {
+            if (required) error = std::string("Authorization-server metadata is missing ") + key + ".";
+            return !required;
+        }
+        value = authorizationMetadata[key].get<std::string>();
+        McpOAuth::HttpsUrl parsed;
+        if (!McpOAuth::parseHttpsUrl(value, parsed)) {
+            error = std::string("Authorization-server ") + key + " must be HTTPS.";
+            return false;
+        }
+        return true;
+    };
+    if (!httpsEndpoint("authorization_endpoint", out.authorizationEndpoint, true) ||
+        !httpsEndpoint("token_endpoint", out.tokenEndpoint, true) ||
+        !httpsEndpoint("registration_endpoint", out.registrationEndpoint, false)) return false;
+    out.issuerParameterRequired =
+        authorizationMetadata.value("authorization_response_iss_parameter_supported", false);
+    out.resource = resource;
+    const json scopes = resourceMetadata.value("scopes_supported", json::array());
+    if (scopes.is_array()) {
+        for (const auto& scope : scopes) if (scope.is_string()) {
+            if (!out.scope.empty()) out.scope += ' ';
+            out.scope += scope.get<std::string>();
+        }
+    }
+    return true;
+}
+
+struct McpOAuthCompletionData {
+    std::string accessToken, refreshToken, issuer, error;
+};
+
+McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std::string& serverUrl,
+                                       const std::string& configuredClientId) {
+    McpOAuthCompletionData result;
+    McpEndpoint endpoint;
+    if (!parseMcpEndpoint(serverUrl, endpoint, result.error)) return result;
+    if (!endpoint.tls) { result.error = "OAuth authorization is available only for HTTPS MCP servers."; return result; }
+    std::string resource = "https://" + endpoint.host +
+        (endpoint.port == 443 ? "" : ":" + std::to_string(endpoint.port)) + endpoint.path;
+    json discover = {{"jsonrpc", "2.0"}, {"id", "oauth-discover"}, {"method", "server/discover"}};
+    json response;
+    int status = 0;
+    std::string responseHeaders, requestError;
+    mcpPost(endpoint, "", "", discover, response, requestError, nullptr, "2026-07-28", &status, &responseHeaders);
+    std::string challenge = responseHeader(responseHeaders, "WWW-Authenticate");
+    McpOAuthMetadata metadata;
+    if (!discoverMcpOAuth(resource, challenge, metadata, result.error)) return result;
+    result.issuer = metadata.issuer;
+
+    McpOAuth::Pkce pkce;
+    if (!McpOAuth::createPkce(pkce)) {
+        result.error = "A cryptographically secure random source is unavailable; OAuth was not started.";
+        return result;
+    }
+    std::uint8_t portBytes[2]{};
+    if (!McpOAuth::secureRandom(portBytes, sizeof(portBytes))) {
+        result.error = "A cryptographically secure random source is unavailable; OAuth was not started.";
+        return result;
+    }
+    Net::HttpServer callbackServer;
+    int callbackPort = 0;
+    for (int attempt = 0; attempt < 24; ++attempt) {
+        callbackPort = 49152 + ((static_cast<unsigned int>(portBytes[0]) |
+                         (static_cast<unsigned int>(portBytes[1]) << 8) |
+                         static_cast<unsigned int>(attempt * 997)) % 16384);
+        std::string listenError;
+        if (callbackServer.open(callbackPort, listenError)) break;
+        callbackPort = 0;
+    }
+    crypto_wipe(portBytes, sizeof(portBytes));
+    if (!callbackPort) {
+        result.error = "Could not open a loopback OAuth callback port.";
+        return result;
+    }
+    const std::string redirectUri = "http://127.0.0.1:" + std::to_string(callbackPort) + "/oauth/callback";
+
+    std::string clientId = configuredClientId;
+    if (clientId.empty()) {
+        if (metadata.registrationEndpoint.empty()) {
+            result.error = "This authorization server has no Dynamic Client Registration endpoint. Supply a pre-registered OAuth client ID in Fyxa settings.";
+            return result;
+        }
+        const json registration = {
+            {"client_name", "Guts & Bolts Fyxa"},
+            {"application_type", "native"},
+            {"token_endpoint_auth_method", "none"},
+            {"grant_types", json::array({"authorization_code", "refresh_token"})},
+            {"response_types", json::array({"code"})},
+            {"redirect_uris", json::array({redirectUri})}
+        };
+        McpOAuth::HttpsUrl registrationUrl;
+        if (!McpOAuth::parseHttpsUrl(metadata.registrationEndpoint, registrationUrl)) {
+            result.error = "The OAuth client-registration endpoint must be HTTPS.";
+            return result;
+        }
+        std::string body, postError;
+        int registrationStatus = 0;
+        if (!Net::httpPost("wss://" + registrationUrl.host, registrationUrl.port, registrationUrl.path,
+                           registration.dump(), body, postError, 12000, "Accept: application/json\r\n",
+                           &registrationStatus, nullptr) || registrationStatus < 200 || registrationStatus >= 300) {
+            result.error = "OAuth client registration failed: " + (postError.empty() ? "HTTP " + std::to_string(registrationStatus) : postError);
+            return result;
+        }
+        const json registrationResponse = json::parse(body, nullptr, false);
+        if (!registrationResponse.is_object() || !registrationResponse.contains("client_id") ||
+            !registrationResponse["client_id"].is_string()) {
+            result.error = "OAuth client registration returned no client_id.";
+            return result;
+        }
+        clientId = registrationResponse["client_id"].get<std::string>();
+    }
+
+    std::vector<std::pair<std::string, std::string>> authorizationParameters = {
+        {"response_type", "code"}, {"client_id", clientId}, {"redirect_uri", redirectUri},
+        {"code_challenge", pkce.challenge}, {"code_challenge_method", "S256"},
+        {"state", pkce.state}, {"resource", metadata.resource}
+    };
+    if (!metadata.scope.empty()) authorizationParameters.emplace_back("scope", metadata.scope);
+    const std::string authorizationUrl = McpOAuth::appendQuery(metadata.authorizationEndpoint, authorizationParameters);
+    std::string browserError;
+    if (!Net::openUrl(authorizationUrl, browserError)) {
+        result.error = browserError;
+        return result;
+    }
+
+    std::map<std::string, std::string> callback;
+    bool received = false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+    while (std::chrono::steady_clock::now() < deadline) {
+        callbackServer.poll();
+        Net::HttpServer::Request request{};
+        while (callbackServer.next(request)) {
+            const size_t queryAt = request.path.find('?');
+            const std::string route = request.path.substr(0, queryAt);
+            if (request.method != "GET" || route != "/oauth/callback") {
+                callbackServer.respond(request.id, 404, "text/plain", "Not found.");
+                continue;
+            }
+            if (!McpOAuth::parseQuery(request.path, callback)) {
+                callbackServer.respond(request.id, 400, "text/plain", "Invalid authorization response.");
+                continue;
+            }
+            callbackServer.respond(request.id, 200, "text/html; charset=utf-8",
+                "<!doctype html><title>Guts & Bolts</title><p>Authorization response received. You can return to Fyxa.</p>");
+            received = true;
+            break;
+        }
+        if (received) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    callbackServer.close();
+    if (!received) {
+        result.error = "OAuth authorization timed out or the browser did not return to Fyxa.";
+        return result;
+    }
+    if (!callback.contains("state") || callback["state"] != pkce.state) {
+        result.error = "OAuth state validation failed; the authorization response was rejected.";
+        return result;
+    }
+    if (callback.contains("error")) {
+        result.error = "The authorization server denied access: " + callback["error"].substr(0, 160);
+        return result;
+    }
+    if (metadata.issuerParameterRequired && !callback.contains("iss")) {
+        result.error = "The authorization server required an issuer parameter, but the callback omitted it.";
+        return result;
+    }
+    if (callback.contains("iss") && callback["iss"] != metadata.issuer) {
+        result.error = "OAuth authorization-server issuer mismatch; the authorization code was not redeemed.";
+        return result;
+    }
+    if (!callback.contains("code") || callback["code"].empty() || callback["code"].size() > 4096) {
+        result.error = "OAuth callback did not contain a valid authorization code.";
+        return result;
+    }
+
+    McpOAuth::HttpsUrl tokenUrl;
+    if (!McpOAuth::parseHttpsUrl(metadata.tokenEndpoint, tokenUrl)) {
+        result.error = "The OAuth token endpoint must be HTTPS.";
+        return result;
+    }
+    const std::vector<std::pair<std::string, std::string>> tokenParameters = {
+        {"grant_type", "authorization_code"}, {"client_id", clientId},
+        {"code", callback["code"]}, {"redirect_uri", redirectUri},
+        {"code_verifier", pkce.verifier}, {"resource", metadata.resource}
+    };
+    std::string tokenBody;
+    for (const auto& parameter : tokenParameters) {
+        if (!tokenBody.empty()) tokenBody += '&';
+        tokenBody += McpOAuth::formEncode(parameter.first) + '=' + McpOAuth::formEncode(parameter.second);
+    }
+    std::string tokenResponse, tokenError;
+    int tokenStatus = 0;
+    if (!Net::httpPost("wss://" + tokenUrl.host, tokenUrl.port, tokenUrl.path, tokenBody,
+                       tokenResponse, tokenError, 12000,
+                       "Accept: application/json\r\nContent-Type: application/x-www-form-urlencoded\r\n",
+                       &tokenStatus, nullptr) || tokenStatus < 200 || tokenStatus >= 300) {
+        result.error = "OAuth token exchange failed: " + (tokenError.empty() ? "HTTP " + std::to_string(tokenStatus) : tokenError);
+        return result;
+    }
+    const json token = json::parse(tokenResponse, nullptr, false);
+    if (!token.is_object() || !token.contains("access_token") || !token["access_token"].is_string() ||
+        token["access_token"].get<std::string>().empty() || token["access_token"].get<std::string>().size() > 16384) {
+        result.error = "OAuth token response did not contain a valid access token.";
+        return result;
+    }
+    std::string tokenType = token.value("token_type", std::string());
+    for (char& ch : tokenType) ch = (char)std::tolower((unsigned char)ch);
+    if (tokenType != "bearer") {
+        result.error = "OAuth token response did not issue a Bearer access token.";
+        return result;
+    }
+    result.accessToken = token["access_token"].get<std::string>();
+    if (token.contains("refresh_token") && token["refresh_token"].is_string())
+        result.refreshToken = token["refresh_token"].get<std::string>();
+    if (result.refreshToken.size() > 16384) {
+        result.accessToken.clear();
+        result.error = "OAuth refresh token exceeded the supported size.";
+    }
+    return result;
+}
+
 } // namespace
 
 AssistantPanel::AssistantPanel(Editor& editor) : m_editor(editor) {
