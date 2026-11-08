@@ -664,13 +664,35 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
     return result;
 }
 
-bool refreshMcpOAuthToken(const std::string& tokenEndpoint, const std::string& clientId,
+bool refreshMcpOAuthToken(const std::string& issuer, const std::string& tokenEndpoint, const std::string& clientId,
                           const std::string& resource, const std::string& refreshToken,
                           std::string& accessToken, std::string& replacementRefreshToken,
                           std::string& error) {
     McpOAuth::HttpsUrl tokenUrl;
-    if (!McpOAuth::parseHttpsUrl(tokenEndpoint, tokenUrl)) {
-        error = "Stored OAuth token endpoint is invalid; reauthorize this MCP server.";
+    McpOAuth::HttpsUrl issuerUrl;
+    if (!McpOAuth::parseHttpsUrl(issuer, issuerUrl) || !McpOAuth::parseHttpsUrl(tokenEndpoint, tokenUrl)) {
+        error = "Stored OAuth issuer or token endpoint is invalid; reauthorize this MCP server.";
+        return false;
+    }
+    bool issuerVerified = false;
+    for (const auto& metadataUrl : McpOAuth::authorizationServerMetadataUrls(issuer)) {
+        json metadata;
+        std::string metadataError;
+        if (!getOAuthJson(metadataUrl, metadata, metadataError)) continue;
+        if (!McpOAuth::metadataIssuerMatches(metadata, issuer)) {
+            error = "Stored OAuth issuer no longer matches authorization-server metadata.";
+            return false;
+        }
+        if (!metadata.contains("token_endpoint") || !metadata["token_endpoint"].is_string() ||
+            metadata["token_endpoint"].get<std::string>() != tokenEndpoint) {
+            error = "OAuth token endpoint changed; reauthorize this MCP server before sending a refresh token.";
+            return false;
+        }
+        issuerVerified = true;
+        break;
+    }
+    if (!issuerVerified) {
+        error = "Could not revalidate the OAuth issuer before refreshing the access token.";
         return false;
     }
     const std::vector<std::pair<std::string, std::string>> parameters = {
@@ -757,7 +779,7 @@ void AssistantPanel::load() {
             server.token = item.value("token", std::string());
             server.oauthClientId = item.value("oauthClientId", std::string());
             server.oauthTokenEndpoint = item.value("oauthTokenEndpoint", std::string());
-            server.oauthResource = item.value("oauthResource", std::string());
+            server.oauthResource = item.value("oauthResource", std::string());\n            server.oauthIssuer = item.value("oauthIssuer", std::string());
             std::string refreshError;
             CredentialStore::retrieve(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, refreshError);
             if (!server.token.empty()) {
@@ -788,7 +810,7 @@ void AssistantPanel::save() const {
               {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}, {"connectedApps", m_appsWanted},
               {"mcpServers", [&]() { json a = json::array(); for (const auto& s : m_externalMcp)
                   a.push_back({{"name", s.name}, {"url", s.url}, {"credentialKey", s.credentialKey}, {"enabled", s.enabled},
-                               {"protocolVersion", s.protocolVersion}, {"oauthClientId", s.oauthClientId}, {"oauthTokenEndpoint", s.oauthTokenEndpoint}, {"oauthResource", s.oauthResource}, {"tools", s.tools}}); return a; }()}}.dump(2);
+                               {"protocolVersion", s.protocolVersion}, {"oauthClientId", s.oauthClientId}, {"oauthTokenEndpoint", s.oauthTokenEndpoint}, {"oauthResource", s.oauthResource}, {"oauthIssuer", s.oauthIssuer}, {"tools", s.tools}}); return a; }()}}.dump(2);
 }
 
 json AssistantPanel::externalMcpTools() const {
@@ -884,7 +906,7 @@ void AssistantPanel::refreshMcpServers() {
             if (!modern && discoveryStatus == 401 && !server.oauthRefreshToken.empty() &&
                 !server.oauthTokenEndpoint.empty() && !server.oauthResource.empty() && !server.oauthClientId.empty()) {
                 std::string refreshedAccess, refreshedRefresh, refreshError;
-                if (refreshMcpOAuthToken(server.oauthTokenEndpoint, server.oauthClientId, server.oauthResource,
+                if (refreshMcpOAuthToken(server.oauthIssuer, server.oauthTokenEndpoint, server.oauthClientId, server.oauthResource,
                                          server.oauthRefreshToken, refreshedAccess, refreshedRefresh, refreshError)) {
                     server.token = std::move(refreshedAccess);
                     server.oauthRefreshToken = std::move(refreshedRefresh);
@@ -1162,7 +1184,7 @@ void AssistantPanel::update() {
             server->oauthRefreshToken = std::move(authorized.refreshToken);
             server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);
             server->oauthClientId = std::move(authorized.clientId);
-            server->oauthResource = std::move(authorized.resource);
+            server->oauthResource = std::move(authorized.resource);\n            server->oauthIssuer = std::move(authorized.issuer);
             std::string credentialError;
             if (!CredentialStore::store(server->credentialKey, server->token, credentialError))
                 m_credentialStatus = credentialError + " The access token remains in memory for this session.";
