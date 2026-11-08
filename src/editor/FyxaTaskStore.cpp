@@ -284,6 +284,13 @@ std::string FyxaTaskStore::issueEvidence(const std::string& taskId, std::string&
         error = "Evidence can only be issued while the task is in_progress.";
         return {};
     }
+    for (const auto& task : tasks) {
+        if (task.is_object() && task.value("id", std::string()) != taskId &&
+            task.value("status", std::string()) == "in_progress") {
+            error = "Task evidence is disabled until only one task is active.";
+            return {};
+        }
+    }
 
     std::random_device random;
     std::ostringstream token;
@@ -329,6 +336,13 @@ bool FyxaTaskStore::completeWithEvidence(const std::string& taskId, const std::s
     if (found->value("status", std::string()) != "in_progress") {
         error = "The task must still be in_progress when it is completed.";
         return false;
+    }
+    for (const auto& task : tasks) {
+        if (task.is_object() && task.value("id", std::string()) != taskId &&
+            task.value("status", std::string()) == "in_progress") {
+            error = "Task completion is disabled until only one task is active.";
+            return false;
+        }
     }
     const json pending = found->value("pending_evidence", json::array());
     bool validEvidence = false;
