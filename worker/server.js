@@ -751,6 +751,10 @@ function bytesToB64(bytes) {
 }
 const CHUNK = 1 << 20;   // files are stored in 1 MB pieces (SQLite rows are at most 2 MB)
 
+// Fyxa user-content processing is disabled until a signed-in account explicitly opts in.
+const FYXA_AI_POLICY_VERSION = '2026-11-08-v1';
+const FYXA_AI_NOTICE_VERSION = '2026-11-08-v1';
+
 // --- the server -------------------------------------------------------------------
 export class GbServerObject extends DurableObject {
   constructor(ctx, env) {
@@ -772,7 +776,22 @@ export class GbServerObject extends DurableObject {
       CREATE INDEX IF NOT EXISTS pasttrades_b ON pasttrades (b, at);
       CREATE INDEX IF NOT EXISTS pasttrades_at ON pasttrades (at);
       CREATE TABLE IF NOT EXISTS supabase_outbox (id TEXT PRIMARY KEY, table_name TEXT NOT NULL, payload TEXT NOT NULL, created INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS supabase_outbox_created ON supabase_outbox (created);`);
+      CREATE INDEX IF NOT EXISTS supabase_outbox_created ON supabase_outbox (created);
+      CREATE TABLE IF NOT EXISTS ai_training_preferences (
+        account_id TEXT PRIMARY KEY, training_enabled INTEGER NOT NULL DEFAULT 0, reference_enabled INTEGER NOT NULL DEFAULT 0,
+        policy_version TEXT NOT NULL, notice_version TEXT NOT NULL, consent_method TEXT NOT NULL,
+        updated_at INTEGER NOT NULL, effective_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS ai_content_eligibility (
+        content_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, content_type TEXT NOT NULL,
+        training_choice INTEGER NOT NULL DEFAULT 0, reference_choice INTEGER NOT NULL DEFAULT 0,
+        rights_attested INTEGER NOT NULL DEFAULT 0, rights_status TEXT NOT NULL DEFAULT 'unverified',
+        privacy_status TEXT NOT NULL, training_eligible INTEGER NOT NULL DEFAULT 0, reference_eligible INTEGER NOT NULL DEFAULT 0,
+        training_exclusion_reason TEXT NOT NULL DEFAULT 'not_configured', reference_exclusion_reason TEXT NOT NULL DEFAULT 'not_configured',
+        policy_version TEXT NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS ai_content_owner ON ai_content_eligibility (owner_id, updated_at);
+      CREATE TABLE IF NOT EXISTS ai_training_audit (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, content_id TEXT, event_type TEXT NOT NULL, details TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS ai_training_audit_account ON ai_training_audit (account_id, created_at);`);
     this.secretsInit();   // games' secrets for web requests (game-web.js)
     this.chatsInit();     // calls and the Lyreto gateway (chats.js)
     this.official = lower(env.OFFICIAL || '');
@@ -2330,7 +2349,8 @@ export class GbServerObject extends DurableObject {
 
   // Lightweight operator diagnostics. Never expose player records or raw SQL contents.
   databaseDiagnostics() {
-    const tables = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades'];
+    const tables = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit'];
     const counts = {};
     for (const table of tables) {
       const rows = this.sql.exec('SELECT COUNT(*) AS count FROM "' + table + '"').toArray?.()
@@ -2362,7 +2382,8 @@ export class GbServerObject extends DurableObject {
     if (stats.databaseSizeBytes > maxBytes)
       throw new Error('Database is larger than the configured safe backup limit; increase it only after reviewing memory headroom.');
 
-    const tableNames = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades'];
+    const tableNames = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit'];
     const snapshot = this.ctx.storage.transactionSync(() => tableNames.map((table) => {
       const schemaRows = this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table).toArray?.()
         || Array.from(this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table));
@@ -2441,6 +2462,178 @@ export class GbServerObject extends DurableObject {
     } finally {
       this.flush();
     }
+  }
+
+
+  // --- Fyxa AI data preferences and purpose-specific content eligibility -----------------
+  // All preference and eligibility writes are synchronous SQLite operations. User-supplied
+  // rights attestations are never treated as verified rights; staff review is a separate gate.
+  aiPreferencesFor(accountId) {
+    for (const r of this.sql.exec('SELECT * FROM ai_training_preferences WHERE account_id = ?', accountId)) {
+      return {
+        trainingEnabled: !!r.training_enabled, referenceEnabled: !!r.reference_enabled,
+        policyVersion: r.policy_version, noticeVersion: r.notice_version, consentMethod: r.consent_method,
+        updatedAt: Number(r.updated_at || 0), effectiveAt: Number(r.effective_at || 0),
+      };
+    }
+    return { trainingEnabled: false, referenceEnabled: false, policyVersion: FYXA_AI_POLICY_VERSION,
+      noticeVersion: '', consentMethod: 'none', updatedAt: 0, effectiveAt: 0 };
+  }
+
+  aiAudit(me, eventType, contentId, details) {
+    this.sql.exec('INSERT INTO ai_training_audit (id, account_id, content_id, event_type, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      randomHex(16), me.id, contentId || null, eventType, JSON.stringify(details || {}), now());
+  }
+
+  aiContentRow(contentId) {
+    for (const r of this.sql.exec('SELECT * FROM ai_content_eligibility WHERE content_id = ?', contentId)) return r;
+    return null;
+  }
+
+  aiContentResult(asset, row) {
+    const prefs = this.aiPreferencesFor(row ? row.owner_id : asset.creator);
+    const isPublic = (asset.access || 'public') === 'public';
+    const restricted = !!(asset.review || asset.exclusive || asset.promoOnly);
+    const rightsAttested = !!(row && row.rights_attested);
+    const rightsStatus = row ? row.rights_status : 'unverified';
+    const baseReason = !isPublic ? 'not_public' : restricted ? 'content_restricted'
+      : !rightsAttested ? 'rights_not_attested' : rightsStatus === 'rejected' ? 'rights_rejected'
+      : rightsStatus !== 'approved' ? 'rights_pending_review' : '';
+    const trainingChoice = row ? Number(row.training_choice) : 0;
+    const referenceChoice = row ? Number(row.reference_choice) : 0;
+    const trainingReason = baseReason || !prefs.trainingEnabled ? (baseReason || 'account_training_disabled')
+      : trainingChoice === -1 ? 'content_excluded' : '';
+    const referenceReason = baseReason || !prefs.referenceEnabled ? (baseReason || 'account_reference_disabled')
+      : referenceChoice === -1 ? 'content_excluded' : '';
+    return {
+      contentId: asset.id, contentType: String(asset.kind || 'unknown'),
+      trainingChoice: trainingChoice === 1 ? 'include' : trainingChoice === -1 ? 'exclude' : 'inherit',
+      referenceChoice: referenceChoice === 1 ? 'include' : referenceChoice === -1 ? 'exclude' : 'inherit',
+      rightsAttested, rightsStatus, privacyStatus: isPublic ? 'public' : 'private',
+      trainingEligible: !trainingReason, referenceEligible: !referenceReason,
+      trainingExclusionReason: trainingReason || null, referenceExclusionReason: referenceReason || null,
+      policyVersion: row ? row.policy_version : FYXA_AI_POLICY_VERSION,
+      updatedAt: Number(row && row.updated_at || 0),
+    };
+  }
+
+  aiRecomputeContentEligibility(contentId) {
+    const asset = this.assets.get(contentId);
+    const row = this.aiContentRow(contentId);
+    if (!asset || !row) return null;
+    const state = this.aiContentResult(asset, row);
+    this.sql.exec(`UPDATE ai_content_eligibility SET privacy_status = ?, training_eligible = ?, reference_eligible = ?,
+      training_exclusion_reason = ?, reference_exclusion_reason = ?, policy_version = ?, updated_at = ? WHERE content_id = ?`,
+      state.privacyStatus, state.trainingEligible ? 1 : 0, state.referenceEligible ? 1 : 0,
+      state.trainingExclusionReason || '', state.referenceExclusionReason || '', FYXA_AI_POLICY_VERSION, now(), contentId);
+    return state;
+  }
+
+  aiRecomputeAccountEligibility(accountId) {
+    const ids = [];
+    for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility WHERE owner_id = ?', accountId)) ids.push(r.content_id);
+    for (const id of ids) this.aiRecomputeContentEligibility(id);
+  }
+
+  aiOp(name, me, args) {
+    if (me.userId <= 0) return fail('Sign up or log in first.');
+    if (name === 'ai.preferences.get') return okay({ preferences: this.aiPreferencesFor(me.id) });
+
+    if (name === 'ai.preferences.update') {
+      const hasTraining = typeof args.trainingEnabled === 'boolean';
+      const hasReference = typeof args.referenceEnabled === 'boolean';
+      if (!hasTraining && !hasReference) return fail('Choose at least one AI data preference to update.');
+      const previous = this.aiPreferencesFor(me.id);
+      const trainingEnabled = hasTraining ? args.trainingEnabled : previous.trainingEnabled;
+      const referenceEnabled = hasReference ? args.referenceEnabled : previous.referenceEnabled;
+      const enabling = (trainingEnabled && !previous.trainingEnabled) || (referenceEnabled && !previous.referenceEnabled);
+      if (enabling && (args.confirm !== true || args.noticeVersion !== FYXA_AI_NOTICE_VERSION))
+        return fail('Review the current Fyxa AI data notice and confirm before enabling these uses.');
+      const t = now();
+      const noticeVersion = enabling ? FYXA_AI_NOTICE_VERSION : previous.noticeVersion;
+      const consentMethod = trainingEnabled || referenceEnabled ? 'affirmative_opt_in' : 'opt_out';
+      this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
+        (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        me.id, trainingEnabled ? 1 : 0, referenceEnabled ? 1 : 0, FYXA_AI_POLICY_VERSION,
+        noticeVersion || '', consentMethod, t, t);
+      this.aiAudit(me, 'preferences.updated', null, { trainingEnabled, referenceEnabled,
+        policyVersion: FYXA_AI_POLICY_VERSION, noticeVersion: noticeVersion || '', consentMethod });
+      this.aiRecomputeAccountEligibility(me.id);
+      return okay({ preferences: this.aiPreferencesFor(me.id) });
+    }
+
+    if (name === 'ai.content.eligibility.get') {
+      const contentId = str(args, 'contentId');
+      const asset = contentId && this.assets.get(contentId);
+      if (!asset || asset.creator !== me.id) return fail('That upload was not found.');
+      const row = this.aiContentRow(contentId);
+      return okay({ eligibility: this.aiContentResult(asset, row) });
+    }
+
+    if (name === 'ai.content.eligibility.update') {
+      const contentId = str(args, 'contentId');
+      const asset = contentId && this.assets.get(contentId);
+      if (!asset || asset.creator !== me.id) return fail('That upload was not found.');
+      const previous = this.aiContentRow(contentId);
+      const choiceValue = (value, fallback) => value === undefined ? fallback
+        : value === 'inherit' ? 0 : value === 'include' ? 1 : value === 'exclude' ? -1 : null;
+      const trainingChoice = choiceValue(args.trainingChoice, previous ? Number(previous.training_choice) : 0);
+      const referenceChoice = choiceValue(args.referenceChoice, previous ? Number(previous.reference_choice) : 0);
+      if (trainingChoice === null || referenceChoice === null)
+        return fail('Each content preference must be include, exclude, or inherit.');
+      if (args.rightsAttested !== undefined && typeof args.rightsAttested !== 'boolean')
+        return fail('The rights confirmation must be true or false.');
+      const needsAttestation = trainingChoice === 1 || referenceChoice === 1;
+      const rightsAttested = args.rightsAttested === true ? 1
+        : args.rightsAttested === false ? 0 : Number(previous && previous.rights_attested || 0);
+      if (needsAttestation && !rightsAttested)
+        return fail('Confirm that you have the rights needed for the selected AI uses.');
+      let rightsStatus = previous ? previous.rights_status : 'unverified';
+      if (args.rightsAttested === true && rightsStatus !== 'approved') rightsStatus = 'pending_review';
+      if (args.rightsAttested === false) rightsStatus = 'unverified';
+      const t = now();
+      this.sql.exec(`INSERT OR REPLACE INTO ai_content_eligibility
+        (content_id, owner_id, content_type, training_choice, reference_choice, rights_attested, rights_status,
+         privacy_status, training_eligible, reference_eligible, training_exclusion_reason, reference_exclusion_reason,
+         policy_version, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'pending_recalculation', 'pending_recalculation', ?, ?)`,
+        contentId, me.id, String(asset.kind || 'unknown'), trainingChoice, referenceChoice, rightsAttested, rightsStatus,
+        (asset.access || 'public') === 'public' ? 'public' : 'private', FYXA_AI_POLICY_VERSION, t);
+      const state = this.aiRecomputeContentEligibility(contentId);
+      this.aiAudit(me, 'content.preference.updated', contentId, { trainingChoice, referenceChoice, rightsAttested: !!rightsAttested });
+      return okay({ eligibility: state });
+    }
+
+    if (name === 'ai.content.review') {
+      if (!this.isStaff(me)) return fail('Only staff can review AI content rights.');
+      const contentId = str(args, 'contentId');
+      const row = contentId && this.aiContentRow(contentId);
+      const asset = contentId && this.assets.get(contentId);
+      if (!row || !asset || row.owner_id !== asset.creator) return fail('That upload was not found.');
+      const rightsStatus = str(args, 'rightsStatus');
+      if (!['approved', 'rejected', 'unverified'].includes(rightsStatus))
+        return fail('Choose approved, rejected, or unverified.');
+      if (rightsStatus === 'approved' && !row.rights_attested)
+        return fail('The creator must first confirm they have the necessary rights.');
+      const reason = cleanText(str(args, 'reason'), 160);
+      this.sql.exec('UPDATE ai_content_eligibility SET rights_status = ?, updated_at = ? WHERE content_id = ?',
+        rightsStatus, now(), contentId);
+      const state = this.aiRecomputeContentEligibility(contentId);
+      this.aiAudit(me, 'content.rights.reviewed', contentId, { rightsStatus, reason });
+      return okay({ eligibility: state });
+    }
+
+    if (name === 'ai.training.history') {
+      const events = [];
+      for (const r of this.sql.exec('SELECT event_type, content_id, details, created_at FROM ai_training_audit WHERE account_id = ? ORDER BY created_at DESC LIMIT 50', me.id)) {
+        let details = {};
+        try { details = JSON.parse(r.details); } catch { /* old/corrupt audit rows stay opaque */ }
+        events.push({ event: r.event_type, contentId: r.content_id || null, details, createdAt: Number(r.created_at) });
+      }
+      return okay({ events });
+    }
+    return fail('The server doesn\'t know how to do "' + name + '". It might need updating.');
   }
 
   // --- the requests (GbServer::op) ---
@@ -2554,6 +2747,7 @@ export class GbServerObject extends DurableObject {
       });
       return okay({ users: found.slice(0, 50).map((u) => this.publicUser(u)) });
     }
+    if (name.startsWith('ai.')) return this.aiOp(name, me, args);
     if (name.startsWith('account.')) return this.accountOp(name, me, args);
     if (name.startsWith('groups.')) return this.groupOp(name, me, args);
     if (name.startsWith('forum.')) return this.forumOp(name, me, args);
