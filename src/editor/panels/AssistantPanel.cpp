@@ -396,8 +396,8 @@ bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
     }
     out.issuer = issuers[0].get<std::string>();
     McpOAuth::HttpsUrl issuerUrl;
-    if (!McpOAuth::parseHttpsUrl(out.issuer, issuerUrl)) {
-        error = "The authorization-server issuer must be an HTTPS URL.";
+    if (!McpOAuth::parseHttpsUrl(out.issuer, issuerUrl) || issuerUrl.path.find('?') != std::string::npos) {
+        error = "The authorization-server issuer must be an HTTPS URL without a query or fragment.";
         return false;
     }
     json authorizationMetadata;
@@ -572,6 +572,12 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
             result.error = "The authorization server registered a client authentication method that Fyxa cannot safely use.";
             return result;
         }
+        if (!registrationResponse.contains("redirect_uris") || !registrationResponse["redirect_uris"].is_array() ||
+            std::find(registrationResponse["redirect_uris"].begin(), registrationResponse["redirect_uris"].end(),
+                      json(redirectUri)) == registrationResponse["redirect_uris"].end()) {
+            result.error = "The registered OAuth client did not retain Fyxa's exact loopback redirect URI.";
+            return result;
+        }
         clientId = registrationResponse["client_id"].get<std::string>();
     }
     if (cancel.load()) { result.error = "OAuth authorization was cancelled."; return result; }
@@ -689,8 +695,14 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
     }
     result.clientId = clientId;
     result.accessToken = token["access_token"].get<std::string>();
-    if (token.contains("refresh_token") && token["refresh_token"].is_string())
+    if (token.contains("refresh_token")) {
+        if (!token["refresh_token"].is_string()) {
+            result.accessToken.clear();
+            result.error = "OAuth token response contained a malformed refresh token.";
+            return result;
+        }
         result.refreshToken = token["refresh_token"].get<std::string>();
+    }
     if (result.refreshToken.size() > 16384) {
         result.accessToken.clear();
         result.error = "OAuth refresh token exceeded the supported size.";
@@ -764,7 +776,12 @@ bool refreshMcpOAuthToken(const std::string& issuer, const std::string& tokenEnd
     for (char& ch : type) ch = (char)std::tolower((unsigned char)ch);
     if (type != "bearer") { error = "OAuth refresh did not return a Bearer token."; return false; }
     accessToken = token["access_token"].get<std::string>();
-    replacementRefreshToken = token.contains("refresh_token") && token["refresh_token"].is_string()
+    if (token.contains("refresh_token") && !token["refresh_token"].is_string()) {
+        accessToken.clear();
+        error = "OAuth refresh response contained a malformed replacement refresh token.";
+        return false;
+    }
+    replacementRefreshToken = token.contains("refresh_token")
         ? token["refresh_token"].get<std::string>() : refreshToken;
     if (replacementRefreshToken.size() > 16384) {
         accessToken.clear();
