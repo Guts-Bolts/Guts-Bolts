@@ -62,6 +62,8 @@ struct Npc {
     glm::vec3 pendingImpulse{0.0f};
     Ragdoll   ragdoll;
     BloodyFeet feet;                    // stepped in blood: leaves footprints
+    struct Impact { uint64_t partId = 0; glm::vec3 point{0.0f}, normal{0, 1, 0}, velocity{0.0f}; };
+    std::vector<Impact> impacts;
     struct Debris { uint64_t id; glm::vec3 vel; glm::vec3 spin; };
     std::vector<Debris> debris;         // classic death: the pieces fly apart
 };
@@ -83,6 +85,8 @@ public:
     Npc* find(Scene& scene, uint64_t rootId, bool adopt = true);
     Npc* find(uint64_t rootId);
     void kill(uint64_t rootId, float force, const glm::vec3& impulse);
+    void recordImpact(uint64_t rootId, uint64_t partId, const glm::vec3& point,
+                      const glm::vec3& normal, const glm::vec3& projectileVelocity);
     const std::vector<std::unique_ptr<Npc>>& all() const { return m_npcs; }
 
     // Built like a character: a Model with HumanoidRootPart, Torso and Head,

@@ -446,6 +446,36 @@ void ParticleSystem::stain(GoreKind kind, const SceneNode* part, const glm::vec3
     add(p);
 }
 
+// Persistent wound decal in the collision surface's own frame. Unlike stain(),
+// this follows the exact hit point and normal rather than snapping to a box side.
+void ParticleSystem::wound(GoreKind kind, const SceneNode* part, const glm::vec3& at,
+                           const glm::vec3& normal, const glm::vec3& tangent,
+                           float width, float length) {
+    if (!part || width <= 0.0f || length <= 0.0f) return;
+    const glm::mat4 M = part->worldMatrix();
+    const glm::mat3 R(M);
+    if (std::abs(glm::determinant(R)) < 1e-7f) return;
+    const glm::mat3 invR = glm::inverse(R);
+    const glm::vec3 n = glm::length(normal) > 1e-5f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
+    glm::vec3 t = tangent - n * glm::dot(tangent, n);
+    if (glm::length(t) < 1e-4f)
+        t = glm::cross(n, std::abs(n.y) < 0.9f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0));
+    t = glm::normalize(t);
+    Particle p;
+    p.kind = Particle::Splat; p.look = 1; p.onPart = part->id;
+    p.localPos = glm::vec3(glm::inverse(M) * glm::vec4(at, 1.0f));
+    p.localNormal = glm::normalize(glm::transpose(R) * n);
+    glm::vec3 localTangent = invR * t;
+    localTangent -= p.localNormal * glm::dot(localTangent, p.localNormal);
+    p.localTangent = glm::length(localTangent) > 1e-5f ? glm::normalize(localTangent) : glm::vec3(1, 0, 0);
+    p.normal = n; p.tangent = t; p.pos = at + n * 0.012f;
+    p.size = glm::vec3(width, 0.012f, length);
+    p.color = kind == GoreKind::Blood ? m_bloodColor * rnd(0.52f, 0.72f) : kOil * 0.85f;
+    p.alpha = 1.0f; p.seed = rnd(0, 1); p.wet = true;
+    p.life = p.maxLife = 1e6f;
+    add(p);
+}
+
 void ParticleSystem::follow(Scene& scene) {
     for (Particle& p : m_items) {
         if (!p.onPart) continue;

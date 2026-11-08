@@ -126,6 +126,8 @@ public:
     void walk(BloodyFeet& feet, GoreKind kind, const glm::vec3& at, bool onGround);
     // Blood soaking into a body part where it was hurt (`at` is a world point near it).
     void stain(GoreKind kind, const SceneNode* part, const glm::vec3& at, float size);
+    void wound(GoreKind kind, const SceneNode* part, const glm::vec3& at,
+               const glm::vec3& normal, const glm::vec3& tangent, float width, float length);
     // Stains ride along with their parts (and go when the part does). Call once a frame.
     void follow(Scene& scene);
     // Wash a character clean (respawning): drop every stain on parts under `root`.
