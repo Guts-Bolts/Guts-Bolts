@@ -419,9 +419,13 @@ bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
         return false;
     }
     auto httpsEndpoint = [&](const char* key, std::string& value, bool required) {
-        if (!authorizationMetadata.contains(key) || !authorizationMetadata[key].is_string()) {
+        if (!authorizationMetadata.contains(key)) {
             if (required) error = std::string("Authorization-server metadata is missing ") + key + ".";
             return !required;
+        }
+        if (!authorizationMetadata[key].is_string()) {
+            error = std::string("Authorization-server metadata has an invalid ") + key + ".";
+            return false;
         }
         value = authorizationMetadata[key].get<std::string>();
         McpOAuth::HttpsUrl parsed;
@@ -434,21 +438,32 @@ bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
     if (!httpsEndpoint("authorization_endpoint", out.authorizationEndpoint, true) ||
         !httpsEndpoint("token_endpoint", out.tokenEndpoint, true) ||
         !httpsEndpoint("registration_endpoint", out.registrationEndpoint, false)) return false;
-    out.issuerParameterRequired =
-        authorizationMetadata.value("authorization_response_iss_parameter_supported", false);
+    out.issuerParameterRequired = authorizationMetadata.contains("authorization_response_iss_parameter_supported") &&
+        authorizationMetadata["authorization_response_iss_parameter_supported"].is_boolean() &&
+        authorizationMetadata["authorization_response_iss_parameter_supported"].get<bool>();
     if (authorizationMetadata.contains("code_challenge_methods_supported")) {
         const json methods = authorizationMetadata["code_challenge_methods_supported"];
         out.pkceS256Supported = methods.is_array() &&
             std::find(methods.begin(), methods.end(), json("S256")) != methods.end();
     }
     out.resource = resource;
-    if (McpOAuth::extractQuotedParameter(challenge, "scope", out.scope)) return true;
+    if (McpOAuth::extractQuotedParameter(challenge, "scope", out.scope)) {
+        if (out.scope.size() > 4096 || out.scope.find_first_of("\r\n") != std::string::npos) {
+            error = "The OAuth scope challenge is invalid or too large.";
+            return false;
+        }
+        return true;
+    }
     const json scopes = resourceMetadata.value("scopes_supported", json::array());
     if (scopes.is_array()) {
         for (const auto& scope : scopes) if (scope.is_string()) {
             if (!out.scope.empty()) out.scope += ' ';
             out.scope += scope.get<std::string>();
         }
+    }
+    if (out.scope.size() > 4096 || out.scope.find_first_of("\r\n") != std::string::npos) {
+        error = "The OAuth scope list is invalid or too large.";
+        return false;
     }
     return true;
 }
@@ -510,6 +525,10 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
     const std::string redirectUri = "http://127.0.0.1:" + std::to_string(callbackPort) + "/oauth/callback";
 
     std::string clientId = configuredClientId;
+    if (clientId.size() > 2048 || clientId.find_first_of("\r\n") != std::string::npos) {
+        result.error = "The configured OAuth client ID is invalid or too large.";
+        return result;
+    }
     if (clientId.empty()) {
         if (metadata.registrationEndpoint.empty()) {
             result.error = "This authorization server has no Dynamic Client Registration endpoint. Supply a pre-registered OAuth client ID in Fyxa settings.";
@@ -536,9 +555,15 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
             result.error = "OAuth client registration failed: " + (postError.empty() ? "HTTP " + std::to_string(registrationStatus) : postError);
             return result;
         }
+        if (body.size() > 256u * 1024u) {
+            result.error = "OAuth client registration response exceeded 256 KiB.";
+            return result;
+        }
         const json registrationResponse = json::parse(body, nullptr, false);
         if (!registrationResponse.is_object() || !registrationResponse.contains("client_id") ||
-            !registrationResponse["client_id"].is_string()) {
+            !registrationResponse["client_id"].is_string() ||
+            registrationResponse["client_id"].get<std::string>().empty() ||
+            registrationResponse["client_id"].get<std::string>().size() > 2048) {
             result.error = "OAuth client registration returned no client_id.";
             return result;
         }
@@ -641,13 +666,21 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
         result.error = "OAuth token exchange failed: " + (tokenError.empty() ? "HTTP " + std::to_string(tokenStatus) : tokenError);
         return result;
     }
+    if (tokenResponse.size() > 256u * 1024u) {
+        result.error = "OAuth token response exceeded 256 KiB.";
+        return result;
+    }
     const json token = json::parse(tokenResponse, nullptr, false);
     if (!token.is_object() || !token.contains("access_token") || !token["access_token"].is_string() ||
         token["access_token"].get<std::string>().empty() || token["access_token"].get<std::string>().size() > 16384) {
         result.error = "OAuth token response did not contain a valid access token.";
         return result;
     }
-    std::string tokenType = token.value("token_type", std::string());
+    if (!token.contains("token_type") || !token["token_type"].is_string()) {
+        result.error = "OAuth token response omitted its token type.";
+        return result;
+    }
+    std::string tokenType = token["token_type"].get<std::string>();
     for (char& ch : tokenType) ch = (char)std::tolower((unsigned char)ch);
     if (tokenType != "bearer") {
         result.error = "OAuth token response did not issue a Bearer access token.";
@@ -712,13 +745,21 @@ bool refreshMcpOAuthToken(const std::string& issuer, const std::string& tokenEnd
         if (error.empty()) error = "OAuth refresh failed with HTTP " + std::to_string(status) + ".";
         return false;
     }
+    if (response.size() > 256u * 1024u) {
+        error = "OAuth refresh response exceeded 256 KiB.";
+        return false;
+    }
     const json token = json::parse(response, nullptr, false);
     if (!token.is_object() || !token.contains("access_token") || !token["access_token"].is_string() ||
         token["access_token"].get<std::string>().empty() || token["access_token"].get<std::string>().size() > 16384) {
         error = "OAuth refresh response did not contain a valid access token.";
         return false;
     }
-    std::string type = token.value("token_type", std::string());
+    if (!token.contains("token_type") || !token["token_type"].is_string()) {
+        error = "OAuth refresh response omitted its token type.";
+        return false;
+    }
+    std::string type = token["token_type"].get<std::string>();
     for (char& ch : type) ch = (char)std::tolower((unsigned char)ch);
     if (type != "bearer") { error = "OAuth refresh did not return a Bearer token."; return false; }
     accessToken = token["access_token"].get<std::string>();
