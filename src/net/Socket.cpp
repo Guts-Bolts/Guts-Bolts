@@ -248,10 +248,10 @@ struct Connection::Web {
     int write(const char* data, size_t n);
     int read(char* data, size_t n);
     // Set up TLS and do the handshake. false + error on failure.
-    bool startTls(const std::string& hostName, std::string& error, Clock::time_point deadline);
+    bool startTls(const std::string& hostName, std::string& error, Clock::time_point deadline, const std::atomic_bool* cancel);
     // Blocking helpers for the start of a connection.
-    bool writeAll(const std::string& data, Clock::time_point deadline);
-    bool readHeaders(std::string& headers, Clock::time_point deadline);   // up to the blank line
+    bool writeAll(const std::string& data, Clock::time_point deadline, const std::atomic_bool* cancel);
+    bool readHeaders(std::string& headers, Clock::time_point deadline, const std::atomic_bool* cancel);   // up to the blank line
 };
 
 #ifdef GB_WEBSOCKETS
@@ -331,7 +331,7 @@ int Connection::Web::read(char* data, size_t n) {
     return -1;
 }
 
-bool Connection::Web::startTls(const std::string& hostName, std::string& error, Clock::time_point deadline) {
+bool Connection::Web::startTls(const std::string& hostName, std::string& error, Clock::time_point deadline, const std::atomic_bool* cancel) {
 #ifdef GB_WEBSOCKETS
     mbedtls_x509_crt* certs = trustedCerts(error);
     if (!certs) return false;
@@ -360,13 +360,14 @@ bool Connection::Web::startTls(const std::string& hostName, std::string& error, 
     mbedtls_ssl_set_bio(&ssl, &sock, bioSend, bioRecv, nullptr);
     tls = true;
     for (;;) {
+        if (cancel && cancel->load()) { error = "Request cancelled."; return false; }
         int r = mbedtls_ssl_handshake(&ssl);
         if (r == 0) return true;
         if (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE) {
             lock.unlock();   // let other connections go while this one waits
-            bool ready = waitFor(sock, r == MBEDTLS_ERR_SSL_WANT_WRITE, deadline);
+            bool ready = waitFor(sock, r == MBEDTLS_ERR_SSL_WANT_WRITE, deadline, cancel);
             lock.lock();
-            if (!ready) { error = hostName + " didn't answer in time."; return false; }
+            if (!ready) { error = cancel && cancel->load() ? "Request cancelled." : hostName + " didn't answer in time."; return false; }
             continue;
         }
         uint32_t flags = mbedtls_ssl_get_verify_result(&ssl);
@@ -383,25 +384,28 @@ bool Connection::Web::startTls(const std::string& hostName, std::string& error, 
     }
 #else
     (void)deadline;
+    (void)cancel;
     error = "This app can't connect to " + hostName + " (no secure connections in this build).";
     return false;
 #endif
 }
 
-bool Connection::Web::writeAll(const std::string& data, Clock::time_point deadline) {
+bool Connection::Web::writeAll(const std::string& data, Clock::time_point deadline, const std::atomic_bool* cancel) {
     size_t at = 0;
     while (at < data.size()) {
+        if (cancel && cancel->load()) return false;
         int n = write(data.data() + at, data.size() - at);
         if (n < 0) return false;
-        if (n == 0 && !waitFor(sock, true, deadline)) return false;
+        if (n == 0 && !waitFor(sock, true, deadline, cancel)) return false;
         at += (size_t)n;
     }
     return true;
 }
 
-bool Connection::Web::readHeaders(std::string& headers, Clock::time_point deadline) {
+bool Connection::Web::readHeaders(std::string& headers, Clock::time_point deadline, const std::atomic_bool* cancel) {
     char buf[4096];
     for (;;) {
+        if (cancel && cancel->load()) return false;
         size_t end = in.find("\r\n\r\n");
         if (end != std::string::npos) {
             headers = in.substr(0, end + 4);
@@ -411,7 +415,7 @@ bool Connection::Web::readHeaders(std::string& headers, Clock::time_point deadli
         if (in.size() > 65536) return false;
         int n = read(buf, sizeof(buf));
         if (n < 0) return false;
-        if (n == 0) { if (!waitFor(sock, false, deadline)) return false; continue; }
+        if (n == 0) { if (!waitFor(sock, false, deadline, cancel)) return false; continue; }
         in.append(buf, (size_t)n);
     }
 }
