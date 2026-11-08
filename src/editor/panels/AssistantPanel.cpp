@@ -1192,7 +1192,7 @@ void AssistantPanel::startNextExternalCall() {
             toolName = call.name.substr(split + 2);
         }
     }
-    std::string serverName, url, token, session, protocol, oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource, oauthRefreshToken, credentialKey;
+    std::string serverName, url, token, session, protocol, oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource, oauthRefreshToken;
     for (const auto& server : m_externalMcp) {
         const std::string key = mcpServerKey(server.name);
         if (key == serverKey && server.enabled) {
@@ -1200,12 +1200,12 @@ void AssistantPanel::startNextExternalCall() {
             session = server.sessionId; protocol = server.protocolVersion;
             oauthIssuer = server.oauthIssuer; oauthTokenEndpoint = server.oauthTokenEndpoint;
             oauthClientId = server.oauthClientId; oauthResource = server.oauthResource;
-            oauthRefreshToken = server.oauthRefreshToken; credentialKey = server.credentialKey;
+            oauthRefreshToken = server.oauthRefreshToken;
             break;
         }
     }
     m_externalPending = std::async(std::launch::async,
-        [call = std::move(call), serverName, url, token, session, protocol, toolName, oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource, oauthRefreshToken, credentialKey]() mutable {
+        [call = std::move(call), serverName, url, token, session, protocol, toolName, oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource, oauthRefreshToken]() mutable {
             ExternalCompletion done;
             done.call = std::move(call);
             if (serverName.empty() || toolName.empty()) {
@@ -1345,6 +1345,8 @@ void AssistantPanel::update() {
                 credentialError.clear();
                 if (!CredentialStore::store(server->credentialKey + "-oauth-refresh", server->oauthRefreshToken, credentialError))
                     m_credentialStatus = credentialError + " The refresh token remains in memory for this session.";
+            } else {
+                CredentialStore::erase(server->credentialKey + "-oauth-refresh", credentialError);
             }
             m_mcpStatus = authorized.serverName + " authorized with " + authorized.issuer + ".";
             save();
@@ -1372,9 +1374,12 @@ void AssistantPanel::update() {
                 if (!CredentialStore::store(refreshed->credentialKey, refreshed->token, vaultError))
                     m_credentialStatus = vaultError + " The refreshed access token remains in memory for this session.";
                 vaultError.clear();
-                if (!refreshed->oauthRefreshToken.empty() &&
-                    !CredentialStore::store(refreshed->credentialKey + "-oauth-refresh", refreshed->oauthRefreshToken, vaultError))
-                    m_credentialStatus = vaultError + " The refreshed token remains in memory for this session.";
+                if (!refreshed->oauthRefreshToken.empty()) {
+                    if (!CredentialStore::store(refreshed->credentialKey + "-oauth-refresh", refreshed->oauthRefreshToken, vaultError))
+                        m_credentialStatus = vaultError + " The refreshed token remains in memory for this session.";
+                } else {
+                    CredentialStore::erase(refreshed->credentialKey + "-oauth-refresh", vaultError);
+                }
                 save();
             }
         }
