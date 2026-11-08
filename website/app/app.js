@@ -3674,7 +3674,16 @@ pages.settings = async () => {
           <p><button class="btn green">Save</button></p></form></div>
       <div class="box fyxa-settings"><h2 class="boxhead">Fyxa AI data preferences</h2>
         <p>Control whether eligible public creations may be used to improve Fyxa AI or referenced by its AI features. These are separate choices and both start off.</p>
-        <div class="box gold small"><b>Important:</b> This is a permission setting, not an upload or training action. The current backend records your choice and rights-review status only. It does not send your content to an AI provider or train a model. The first version covers creator assets only, not messages, forum posts, voice, livestreams, or watch-party chat.</div>
+        <div class="box gold small"><b>Important:</b> These settings record your future-use preferences only. The current backend does not send your content to an AI provider, build a reference index, or train a model. Do not enable user-content processing until Guts&amp;Bolts publishes the final Terms and Privacy disclosures and implements the required screening and age safeguards.</div>
+        <h3>What these choices mean</h3>
+        <ul class="small">
+          <li><b>Model training:</b> permission for eligible creations to be considered for future model training or evaluation. Training can affect model parameters and cannot be reliably reversed just by switching this setting off.</li>
+          <li><b>AI reference:</b> separate permission for eligible creations to be indexed or retrieved as reference material for Fyxa AI. This is not the same as training.</li>
+          <li><b>Content covered:</b> the first backend version covers public creator assets only. It does not cover private uploads, messages, forum posts, groups, voice, livestreams, or watch-party chat.</li>
+          <li><b>Rights and eligibility:</b> you must have the necessary rights to the content. A rights attestation and separate staff review are required; private, moderated, exclusive, promo-only, deleted, or ownership-mismatched assets remain excluded.</li>
+          <li><b>Opting out:</b> you can turn either permission off independently. Account-level opt-out overrides per-asset inclusion. Opting out prevents future eligibility; it does not promise removal from a model that may already have been trained.</li>
+          <li><b>Safety limitations:</b> automated screening for secrets, sensitive personal information, and content involving minors is not yet implemented. The staff rights-review step is not a substitute for that screening.</li>
+        </ul>
         ${!fyxaPreferences ? html`<p class="error">Couldn't load Fyxa preferences: ${fyxaResult.error || 'Unknown server error'}</p>`
           : html`<form class="form" data-form="fyxaPreferences">
             <input type="hidden" name="noticeVersion" value="${fyxaPreferences.currentNoticeVersion || ''}">
