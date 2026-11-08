@@ -17,6 +17,8 @@ int main() {
     CHECK(!parseHttpsUrl("https://auth.example.com:99999", parsed));
     CHECK(!parseHttpsUrl("https://auth.example.com/%0d%0aHost", parsed));
     CHECK(!parseHttpsUrl("https://auth.example.com/%00", parsed));
+    CHECK(!parseHttpsUrl("https://auth.example.com/%01", parsed));
+    CHECK(!parseHttpsUrl("https://auth.example.com/%1f", parsed));
     CHECK(!parseHttpsUrl("https://auth.example.com/%7f", parsed));
     CHECK(!parseHttpsUrl("https://auth.example.com/%GG", parsed));
     CHECK(parseHttpsUrl("https://auth.example.com/path%20segment", parsed));
