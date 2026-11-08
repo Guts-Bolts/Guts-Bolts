@@ -448,7 +448,7 @@ bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
 }
 
 struct McpOAuthCompletionData {
-    std::string accessToken, refreshToken, issuer, error;
+    std::string accessToken, refreshToken, issuer, tokenEndpoint, resource, error;
 };
 
 McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std::string& serverUrl,
@@ -467,7 +467,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
     std::string challenge = responseHeader(responseHeaders, "WWW-Authenticate");
     McpOAuthMetadata metadata;
     if (!discoverMcpOAuth(resource, challenge, metadata, result.error)) return result;
-    result.issuer = metadata.issuer;
+    result.issuer = metadata.issuer;\n    result.tokenEndpoint = metadata.tokenEndpoint;\n    result.resource = metadata.resource;
 
     McpOAuth::Pkce pkce;
     if (!McpOAuth::createPkce(pkce)) {
@@ -686,7 +686,7 @@ void AssistantPanel::load() {
             server.credentialKey = item.value("credentialKey", "mcp-" + server.name);
             if (server.credentialKey.empty()) server.credentialKey = "mcp-" + server.name;
             server.token = item.value("token", std::string());
-            server.oauthClientId = item.value("oauthClientId", std::string());
+            server.oauthClientId = item.value("oauthClientId", std::string());\n            server.oauthTokenEndpoint = item.value("oauthTokenEndpoint", std::string());\n            server.oauthResource = item.value("oauthResource", std::string());
             std::string refreshError;
             CredentialStore::retrieve(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, refreshError);
             if (!server.token.empty()) {
@@ -717,7 +717,7 @@ void AssistantPanel::save() const {
               {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}, {"connectedApps", m_appsWanted},
               {"mcpServers", [&]() { json a = json::array(); for (const auto& s : m_externalMcp)
                   a.push_back({{"name", s.name}, {"url", s.url}, {"credentialKey", s.credentialKey}, {"enabled", s.enabled},
-                               {"protocolVersion", s.protocolVersion}, {"oauthClientId", s.oauthClientId}, {"tools", s.tools}}); return a; }()}}.dump(2);
+                               {"protocolVersion", s.protocolVersion}, {"oauthClientId", s.oauthClientId}, {"oauthTokenEndpoint", s.oauthTokenEndpoint}, {"oauthResource", s.oauthResource}, {"tools", s.tools}}); return a; }()}}.dump(2);
 }
 
 json AssistantPanel::externalMcpTools() const {
@@ -777,7 +777,7 @@ void AssistantPanel::authorizeMcpServer(const std::string& name) {
     m_mcpStatus = "Discovering protected-resource metadata and starting OAuth authorization...";
     m_oauthPending = std::async(std::launch::async, [name, serverUrl, clientId]() {
         const McpOAuthCompletionData completed = performMcpOAuth(name, serverUrl, clientId);
-        return McpOAuthResult{name, completed.accessToken, completed.refreshToken, completed.issuer, completed.error};
+        return McpOAuthResult{name, completed.accessToken, completed.refreshToken, completed.issuer, completed.tokenEndpoint, completed.resource, completed.error};
     });
 }
 
@@ -1059,7 +1059,7 @@ void AssistantPanel::update() {
             m_mcpStatus = "OAuth completed, but the MCP server configuration no longer exists.";
         } else {
             server->token = std::move(authorized.accessToken);
-            server->oauthRefreshToken = std::move(authorized.refreshToken);
+            server->oauthRefreshToken = std::move(authorized.refreshToken);\n            server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);\n            server->oauthResource = std::move(authorized.resource);
             std::string credentialError;
             if (!CredentialStore::store(server->credentialKey, server->token, credentialError))
                 m_credentialStatus = credentialError + " The access token remains in memory for this session.";
@@ -1463,7 +1463,7 @@ void AssistantPanel::render(bool* open) {
                 m_externalMcp.erase(m_externalMcp.begin() + (long)i);
                 save(); ImGui::PopID(); break;
             }
-            ImGui::TextDisabled("%s", server.url.c_str());
+            ImGui::TextDisabled("%s", server.url.c_str());\n            ImGui::SetNextItemWidth(-1);\n            if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered client ID or client metadata URL", &server.oauthClientId)) save();
             if (!server.enabled) ImGui::TextDisabled("Disabled until you explicitly allow this server's tools.");
             ImGui::TextDisabled("%d discovered tool(s)", server.tools.is_array() ? (int)server.tools.size() : 0);
             ImGui::PopID();
