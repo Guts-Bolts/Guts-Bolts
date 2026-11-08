@@ -1,5 +1,6 @@
 #pragma once
 #include <future>
+#include <deque>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
@@ -30,6 +31,10 @@ private:
     bool callExternalMcpTool(const std::string& qualifiedName, const nlohmann::json& args,
                              std::string& result, std::string& error) const;
     nlohmann::json externalMcpTools() const;
+    struct ExternalCall { bool claude = false; std::string name, id; nlohmann::json args; };
+    struct ExternalCompletion { ExternalCall call; std::string text, error; };
+    void startNextExternalCall();
+    void finishExternalCalls();
 
     Editor&     m_editor;
     StudioMcp   m_mcp;
@@ -59,6 +64,12 @@ private:
     std::vector<Line> m_lines;
     struct Reply { int status = 0; std::string body, error; };
     std::future<Reply> m_pending;
+    std::future<ExternalCompletion> m_externalPending;
+    std::deque<ExternalCall> m_externalQueue;
+    nlohmann::json m_deferredClaudeResults = nlohmann::json::array();
+    nlohmann::json m_deferredOllamaMessages = nlohmann::json::array();
+    bool m_deferredExternalClaude = false;
+    bool m_deferredExternalOllama = false;
     int         m_rounds = 0;
     bool        m_stopAsked = false;
     bool        m_scrollDown = false;
