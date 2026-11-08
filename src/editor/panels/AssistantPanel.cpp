@@ -2115,6 +2115,8 @@ void AssistantPanel::render(bool* open) {
         ImGui::EndChild();
         ImGui::TextWrapped("This action runs on the connected service. It may read, modify, or delete remote data and cannot necessarily be undone from Studio.");
         if (ImGui::Button("Approve this action")) {
+            appendMcpAudit("approval", pendingCall.name, pendingCall.args,
+                           "approved-by-user", pendingCall.idempotencyKey);
             m_externalApprovalGranted = true;
             m_externalApprovalPending = false;
             startNextExternalCall();
@@ -2123,7 +2125,7 @@ void AssistantPanel::render(bool* open) {
         if (ImGui::Button("Deny")) {
             ExternalCall denied = std::move(m_externalQueue.front());
             m_externalQueue.pop_front();
-            appendMcpAudit("approval", denied.name, denied.args, "denied-by-user");
+            appendMcpAudit("approval", denied.name, denied.args, "denied-by-user", denied.idempotencyKey);
             const std::string message = "The user denied this external MCP action.";
             m_lines.push_back({Line::Note, message});
             if (denied.claude) {
