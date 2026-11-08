@@ -69,19 +69,19 @@ std::string responseHeader(const std::string& headers, const std::string& wanted
     std::string low = headers, key = wanted;
     for (char& ch : low) ch = (char)std::tolower((unsigned char)ch);
     for (char& ch : key) ch = (char)std::tolower((unsigned char)ch);
-    size_t at = low.find("\\n" + key + ":");
+    size_t at = low.find("\n" + key + ":");
     if (at == std::string::npos) return {};
     at += key.size() + 2;
-    size_t end = headers.find("\\r", at);
+    size_t end = headers.find("\r", at);
     std::string value = headers.substr(at, end == std::string::npos ? std::string::npos : end - at);
     while (!value.empty() && value.front() == ' ') value.erase(value.begin());
     return value;
 }
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
              const json& request, json& response, std::string& error, std::string* sessionOut = nullptr) {
-    std::string headers = "MCP-Protocol-Version: 2025-06-18\\r\\n";
-    if (!token.empty()) headers += "Authorization: Bearer " + token + "\\r\\n";
-    if (!session.empty()) headers += "Mcp-Session-Id: " + session + "\\r\\n";
+    std::string headers = "MCP-Protocol-Version: 2025-06-18\r\n";
+    if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
+    if (!session.empty()) headers += "Mcp-Session-Id: " + session + "\r\n";
     std::string body, responseHeaders;
     int status = 0;
     const std::string host = endpoint.tls ? "wss://" + endpoint.host : endpoint.host;
@@ -143,6 +143,99 @@ void AssistantPanel::save() const {
               {"mcpServers", [&]() { json a = json::array(); for (const auto& s : m_externalMcp)
                   a.push_back({{"name", s.name}, {"url", s.url}, {"token", s.token}, {"enabled", s.enabled},
                                {"sessionId", s.sessionId}, {"protocolVersion", s.protocolVersion}, {"tools", s.tools}}); return a; }()}}.dump(2);
+}
+
+json AssistantPanel::externalMcpTools() const {
+    json result = json::array();
+    for (const auto& server : m_externalMcp) {
+        if (!server.enabled || !server.tools.is_array()) continue;
+        std::string prefix = server.name;
+        for (char& ch : prefix) if (!std::isalnum((unsigned char)ch)) ch = '_';
+        for (const auto& tool : server.tools) {
+            if (!tool.is_object()) continue;
+            const std::string name = tool.value("name", std::string());
+            if (name.empty()) continue;
+            json schema = tool.value("inputSchema", json::object());
+            if (!schema.is_object()) schema = json::object();
+            result.push_back({{"qualifiedName", "mcp__" + prefix + "__" + name},
+                              {"description", "[" + server.name + "] " + tool.value("description", std::string("External MCP tool"))},
+                              {"inputSchema", schema}});
+        }
+    }
+    return result;
+}
+
+void AssistantPanel::refreshMcpServers() {
+    m_mcpStatus.clear();
+    for (auto& server : m_externalMcp) {
+        McpEndpoint endpoint;
+        std::string error;
+        if (!parseMcpEndpoint(server.url, endpoint, error)) { m_mcpStatus = server.name + ": " + error; continue; }
+        json response;
+        std::string newSession;
+        json initialize = {{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"},
+                           {"params", {{"protocolVersion", "2025-06-18"}, {"capabilities", json::object()},
+                                       {"clientInfo", {{"name", "fyxa"}, {"version", "0.1"}}}}}};
+        if (!mcpPost(endpoint, server.token, "", initialize, response, error, &newSession)) {
+            m_mcpStatus = server.name + ": " + error;
+            server.tools = json::array();
+            continue;
+        }
+        server.sessionId = newSession;
+        server.protocolVersion = response.value("result", json::object()).value("protocolVersion", "2025-06-18");
+        json initialized = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
+        json ignored;
+        mcpPost(endpoint, server.token, server.sessionId, initialized, ignored, error);
+        json list = {{"jsonrpc", "2.0"}, {"id", 2}, {"method", "tools/list"}, {"params", json::object()}};
+        if (!mcpPost(endpoint, server.token, server.sessionId, list, response, error)) {
+            m_mcpStatus = server.name + ": " + error;
+            server.tools = json::array();
+            continue;
+        }
+        server.tools = response.value("result", json::object()).value("tools", json::array());
+        if (!server.tools.is_array()) server.tools = json::array();
+    }
+    save();
+    if (m_mcpStatus.empty()) {
+        size_t count = 0;
+        for (const auto& server : m_externalMcp) if (server.enabled && server.tools.is_array()) count += server.tools.size();
+        m_mcpStatus = "MCP discovery complete. " + std::to_string(count) + " tool(s) available.";
+    }
+}
+
+bool AssistantPanel::callExternalMcpTool(const std::string& qualifiedName, const json& args,
+                                         std::string& result, std::string& error) const {
+    if (qualifiedName.rfind("mcp__", 0) != 0) { error = "Unknown external MCP tool."; return false; }
+    const size_t split = qualifiedName.find("__", 5);
+    if (split == std::string::npos) { error = "The external MCP tool name is malformed."; return false; }
+    const std::string serverKey = qualifiedName.substr(5, split - 5);
+    const std::string toolName = qualifiedName.substr(split + 2);
+    for (const auto& server : m_externalMcp) {
+        std::string key = server.name;
+        for (char& ch : key) if (!std::isalnum((unsigned char)ch)) ch = '_';
+        if (key != serverKey || !server.enabled) continue;
+        McpEndpoint endpoint;
+        if (!parseMcpEndpoint(server.url, endpoint, error)) return false;
+        json response;
+        json request = {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "tools/call"},
+                        {"params", {{"name", toolName}, {"arguments", args}}}};
+        if (!mcpPost(endpoint, server.token, server.sessionId, request, response, error)) return false;
+        const json rpcResult = response.value("result", json::object());
+        if (rpcResult.value("isError", false)) { error = "The MCP tool reported an error."; }
+        const json content = rpcResult.value("content", json::array());
+        result.clear();
+        if (content.is_array()) for (const auto& part : content) {
+            if (part.value("type", std::string()) == "text") {
+                if (!result.empty()) result += "\n";
+                result += part.value("text", std::string());
+            }
+        }
+        if (result.empty() && rpcResult.contains("structuredContent")) result = rpcResult["structuredContent"].dump(2);
+        if (result.empty()) result = "The MCP tool returned no text content.";
+        return error.empty();
+    }
+    error = "The configured MCP server is disabled or no longer exists. Refresh the server list in Fyxa settings.";
+    return false;
 }
 
 void AssistantPanel::update() {
