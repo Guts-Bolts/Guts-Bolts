@@ -2531,6 +2531,7 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'groups.create') { sourceType = 'group'; sourceId = String(answer.group && answer.group.id || ''); fields.push(['group name', args.name], ['group description', args.description]);
     } else if (op === 'groups.shout' || op === 'groups.wall.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group post', args.text]);
     } else if (op === 'updates.post') { sourceType = 'platform_update'; sourceId = String(answer.update && answer.update.id || ''); fields.push(['update title', args.name], ['update summary', args.summary], ['update notes', Array.isArray(args.items) ? args.items.join('\n') : '']);
+    } else if (op === 'upload' && String(args.kind || '') === 'audio') { sourceType = 'audio_upload'; sourceId = String(answer.asset && answer.asset.id || ''); fields.push(['audio upload', 'Audio requires a media-specific moderation pass; route to manual staff review.']);
     } else return;
     const content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
     if (!content) return;
@@ -6356,6 +6357,11 @@ export class GbServerObject extends DurableObject {
     if (!c.window || t - c.window >= 10000) { c.window = t; c.sent = 0; }
     const reply = ++c.sent > kWsRequestsPer10s ? Object.assign(fail('Whoa, that\'s a lot of requests. Slow down a little.'), { slowDown: true })
       : this.handle(req, { ip: c.ip });
+    if (reply.ok && reply.moderationActor) {
+      const scan = this.scanModerationSubmission(req, reply.moderationActor, reply)
+        .catch((error) => console.log('Fyxa moderation scan failed: ' + (error && error.message || error)));
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(scan);
+    }
     if (reply.webJob || reply.iceJob) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
     if ('id' in req) reply.id = req.id;
     this.sendTo(c, reply);
