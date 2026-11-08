@@ -335,6 +335,12 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     return true;
 }
 
+bool safeOAuthValue(const std::string& value, size_t maximum) {
+    if (value.empty() || value.size() > maximum) return false;
+    for (unsigned char ch : value) if (ch < 0x21 || ch > 0x7e) return false;
+    return true;
+}
+
 struct McpOAuthMetadata {
     std::string issuer, authorizationEndpoint, tokenEndpoint, registrationEndpoint;
     std::string resource, scope;
@@ -527,7 +533,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
     const std::string redirectUri = "http://127.0.0.1:" + std::to_string(callbackPort) + "/oauth/callback";
 
     std::string clientId = configuredClientId;
-    if (clientId.size() > 2048 || clientId.find_first_of("\r\n") != std::string::npos) {
+    if (!clientId.empty() && !safeOAuthValue(clientId, 2048)) {
         result.error = "The configured OAuth client ID is invalid or too large.";
         return result;
     }
@@ -564,8 +570,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
         const json registrationResponse = json::parse(body, nullptr, false);
         if (!registrationResponse.is_object() || !registrationResponse.contains("client_id") ||
             !registrationResponse["client_id"].is_string() ||
-            registrationResponse["client_id"].get<std::string>().empty() ||
-            registrationResponse["client_id"].get<std::string>().size() > 2048) {
+            !safeOAuthValue(registrationResponse["client_id"].get<std::string>(), 2048)) {
             result.error = "OAuth client registration returned no client_id.";
             return result;
         }
@@ -692,7 +697,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
     }
     const json token = json::parse(tokenResponse, nullptr, false);
     if (!token.is_object() || !token.contains("access_token") || !token["access_token"].is_string() ||
-        token["access_token"].get<std::string>().empty() || token["access_token"].get<std::string>().size() > 16384) {
+        !safeOAuthValue(token["access_token"].get<std::string>(), 16384)) {
         result.error = "OAuth token response did not contain a valid access token.";
         return result;
     }
@@ -715,6 +720,11 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
             return result;
         }
         result.refreshToken = token["refresh_token"].get<std::string>();
+        if (!safeOAuthValue(result.refreshToken, 16384)) {
+            result.accessToken.clear();
+            result.error = "OAuth refresh token contained invalid characters or exceeded the supported size.";
+            return result;
+        }
     }
     if (result.refreshToken.size() > 16384) {
         result.accessToken.clear();
@@ -777,7 +787,7 @@ bool refreshMcpOAuthToken(const std::string& issuer, const std::string& tokenEnd
     }
     const json token = json::parse(response, nullptr, false);
     if (!token.is_object() || !token.contains("access_token") || !token["access_token"].is_string() ||
-        token["access_token"].get<std::string>().empty() || token["access_token"].get<std::string>().size() > 16384) {
+        !safeOAuthValue(token["access_token"].get<std::string>(), 16384)) {
         error = "OAuth refresh response did not contain a valid access token.";
         return false;
     }
@@ -796,7 +806,7 @@ bool refreshMcpOAuthToken(const std::string& issuer, const std::string& tokenEnd
     }
     replacementRefreshToken = token.contains("refresh_token")
         ? token["refresh_token"].get<std::string>() : refreshToken;
-    if (replacementRefreshToken.size() > 16384) {
+    if (!safeOAuthValue(replacementRefreshToken, 16384)) {
         accessToken.clear();
         error = "OAuth refresh token exceeded the supported size.";
         return false;
