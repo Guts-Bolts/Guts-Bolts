@@ -1466,7 +1466,6 @@ void AssistantPanel::update() {
         if (m_stopAsked || (m_agentCancel && m_agentCancel->load())) {
             done.error = "Cancelled locally. The MCP server may already have received and acted on the request; no task evidence was recorded.";
             done.text.clear();
-            appendMcpAudit(done.call.name, "cancelled", done.call.args, "cancelled-locally");
         }
         if (!done.refreshedAccessToken.empty() && !m_stopAsked && !(m_agentCancel && m_agentCancel->load())) {
             auto refreshed = std::find_if(m_externalMcp.begin(), m_externalMcp.end(), [&](const McpServer& server) {
