@@ -910,6 +910,7 @@ AssistantPanel::AssistantPanel(Editor& editor) : m_editor(editor) {
 }
 
 AssistantPanel::~AssistantPanel() {
+    m_relay.setEnabled(false);
     if (m_agentCancel) m_agentCancel->store(true);
     if (m_oauthCancel) m_oauthCancel->store(true);
     m_mcp.stop();
@@ -2182,6 +2183,23 @@ void AssistantPanel::render(bool* open) {
                 ImGui::TextDisabled("%d tool call(s) from apps (last: %s, by %s)", m_relay.callsServed(), m_relay.lastTool().c_str(),
                                     m_relay.lastApp().c_str());
         }
+    }
+
+    if (m_relay.approvalPending()) {
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "Connected app action requires approval");
+        ImGui::TextWrapped("App: %s", m_relay.pendingApp().c_str());
+        ImGui::TextWrapped("Tool: %s", m_relay.pendingTool().c_str());
+        ImGui::TextWrapped("Arguments (sensitive fields redacted):");
+        ImGui::BeginChild("##relayapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
+        ImGui::TextUnformatted(m_relay.pendingArguments().c_str());
+        ImGui::EndChild();
+        ImGui::TextWrapped("The connected app is requesting a Studio tool call. Review the arguments before allowing it.");
+        if (ImGui::Button("Approve connected-app action"))
+            m_relay.resolveApproval(true, m_editor, m_mcp);
+        ImGui::SameLine();
+        if (ImGui::Button("Deny connected-app action"))
+            m_relay.resolveApproval(false, m_editor, m_mcp);
     }
 
     const float footer = ImGui::GetFrameHeightWithSpacing() * 3.2f;
