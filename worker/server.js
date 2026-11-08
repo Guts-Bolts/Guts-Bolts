@@ -2573,8 +2573,10 @@ export class GbServerObject extends DurableObject {
   aiRecomputeAccountEligibility(accountId) {
     const prefs = this.aiPreferencesFor(accountId);
     if (prefs.trainingEnabled || prefs.referenceEnabled) {
-      for (const asset of this.assets.values())
-        if (asset.creator === accountId && !this.aiContentRow(asset.id)) this.aiEnsureContentEligibility(asset);
+      for (const asset of this.assets.values()) {
+        const row = this.aiContentRow(asset.id);
+        if (asset.creator === accountId && (!row || row.owner_id !== accountId)) this.aiEnsureContentEligibility(asset);
+      }
     }
     const ids = [];
     for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility WHERE owner_id = ?', accountId)) ids.push(r.content_id);
