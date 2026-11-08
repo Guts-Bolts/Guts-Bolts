@@ -1816,6 +1816,7 @@ void AssistantPanel::render(bool* open) {
                         server.name, server.oauthIssuer, server.oauthResource, previousOAuthClientId);
                     CredentialStore::erase(oauthCredentialKey, oauthCredentialError);
                     CredentialStore::erase(oauthCredentialKey + "-refresh", oauthCredentialError);
+                    CredentialStore::erase(server.credentialKey, oauthCredentialError);
                     CredentialStore::erase(server.credentialKey + "-oauth-refresh", oauthCredentialError);
                     server.token.clear();
                     server.oauthRefreshToken.clear();
