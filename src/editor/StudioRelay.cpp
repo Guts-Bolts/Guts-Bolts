@@ -40,6 +40,8 @@ void StudioRelay::setEnabled(bool on) {
 }
 
 void StudioRelay::drop(State state, const std::string& why, bool retry) {
+    if (m_dialCancel) m_dialCancel->store(true);
+    m_dialCancel.reset();
     m_conn.reset();
     m_ready = false;
     m_state = state;
@@ -56,6 +58,7 @@ void StudioRelay::update(Editor& editor, StudioMcp& mcp) {
     if (m_dialing.valid()) {
         if (m_dialing.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
         auto d = m_dialing.get();
+        m_dialCancel.reset();
         if (!d->conn) { drop(State::Failed, "Couldn't reach Guts&Bolts (" + d->error + "). Trying again soon.", true); return; }
         m_conn = std::move(d->conn);
         m_account = Account::id();
@@ -84,9 +87,11 @@ void StudioRelay::update(Editor& editor, StudioMcp& mcp) {
         }
         m_state = State::Connecting;
         m_status = "Connecting...";
-        m_dialing = std::async(std::launch::async, [host, port]() {
+        m_dialCancel = std::make_shared<std::atomic_bool>(false);
+        const auto cancel = m_dialCancel;
+        m_dialing = std::async(std::launch::async, [host, port, cancel]() {
             auto d = std::make_shared<Dialed>();
-            d->conn = Net::Connection::connectTo(host, port, d->error, 8000);
+            d->conn = Net::Connection::connectTo(host, port, d->error, 8000, cancel.get());
             return d;
         });
         return;
