@@ -213,6 +213,8 @@ void StudioRelay::onMessage(Editor& editor, StudioMcp& mcp, const std::string& t
     bool canChange = false;
     if (m.contains("scopes") && m["scopes"].is_array())
         for (const auto& scope : m["scopes"]) if (scope == "studio.write") canChange = true;
+    // Each server-delivered request carries a fresh scope snapshot for this app.
+    m_appCanChange[app] = canChange;
     const json& message = m["message"];
     const std::string method = message.value("method", std::string());
 
