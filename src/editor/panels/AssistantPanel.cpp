@@ -1792,6 +1792,7 @@ void AssistantPanel::render(bool* open) {
             if (ImGui::SmallButton("Authorize")) authorizeMcpServer(server.name);
             ImGui::EndDisabled();
             ImGui::SameLine();
+            ImGui::BeginDisabled(m_mcpRefreshPending.valid());
             if (ImGui::SmallButton("Remove")) {
                 if (m_oauthServerName == server.name && m_oauthCancel) m_oauthCancel->store(true);
                 std::string credentialError;
@@ -1806,6 +1807,7 @@ void AssistantPanel::render(bool* open) {
                 m_externalMcp.erase(m_externalMcp.begin() + (long)i);
                 save(); ImGui::PopID(); break;
             }
+            ImGui::EndDisabled();
             ImGui::TextDisabled("%s", server.url.c_str());
             ImGui::BeginDisabled(m_oauthPending.valid() || m_mcpRefreshPending.valid());
             const std::string previousOAuthClientId = server.oauthClientId;
