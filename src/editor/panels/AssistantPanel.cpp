@@ -277,7 +277,8 @@ json redactMcpArguments(const json& value) {
         const bool secret = low.find("token") != std::string::npos || low.find("secret") != std::string::npos ||
             low.find("password") != std::string::npos || low.find("authorization") != std::string::npos ||
             low.find("apikey") != std::string::npos || low.find("api_key") != std::string::npos ||
-            low.find("verifier") != std::string::npos;
+            low.find("verifier") != std::string::npos || low.find("private") != std::string::npos ||
+            low.find("credential") != std::string::npos || low.find("cookie") != std::string::npos;
         out[key] = secret ? json("[REDACTED]") : redactMcpArguments(it.value());
     }
     return out;
