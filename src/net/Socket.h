@@ -47,8 +47,8 @@ private:
 // "wss://..." or "ws://...": a server on the web (see above).
 bool isWebAddress(const std::string& host);
 
-// One HTTP(S) POST to a web server (host "wss://example.com" means https, like
-// above; port 443 usually). Fills `reply` with the answer's body.
+// One HTTP(S) GET or POST to a web server (host "wss://example.com" means https,
+// like above; port 443 usually). Fills `reply` with the answer's body.
 // `extraHeaders`: more header lines, each ending in "\r\n". `status` gets the HTTP status.
 bool httpRequest(const std::string& method, const std::string& host, int port, const std::string& path,
                  const std::string& body, std::string& reply, std::string& error, int timeoutMs = 30000,
