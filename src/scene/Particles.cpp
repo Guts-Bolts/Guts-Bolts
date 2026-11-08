@@ -11,6 +11,7 @@
 #include <cmath>
 #include <random>
 #include <unordered_map>
+#include <utility>
 
 namespace {
 std::mt19937& rng() { static std::mt19937 r{987u}; return r; }
@@ -474,7 +475,7 @@ void ParticleSystem::wound(GoreKind kind, const SceneNode* part, const glm::vec3
     if (part->editMesh && part->editMesh->skinned()) {
         float bestDistance = 1e30f;
         for (size_t i = 0; i < part->editMesh->verts.size(); ++i) {
-            const float d = glm::length2(part->editMesh->verts[i] - p.localPos);
+            const float d = glm::dot(part->editMesh->verts[i] - p.localPos, part->editMesh->verts[i] - p.localPos);
             if (d < bestDistance) { bestDistance = d; p.skinVertex = (uint32_t)i; }
         }
         if (p.skinVertex != 0xffffffffu)
