@@ -529,7 +529,7 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
 
 
 bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
-              std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* statusOut) {
+              std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* statusOut, std::string* responseHeaders) {
     bool tls = false;
     std::string name = isWebAddress(host) ? webHostName(host, tls) : host;
     auto deadline = Clock::now() + std::chrono::milliseconds(timeoutMs);
@@ -594,6 +594,7 @@ bool httpPost(const std::string& host, int port, const std::string& path, const 
     }
     int status = statusCode(headers);
     if (statusOut) *statusOut = status;
+    if (responseHeaders) *responseHeaders = headers;
     if (status != 200 && all.empty()) {
         error = "The server at " + name + " answered " + std::to_string(status) + ".";
         return false;
