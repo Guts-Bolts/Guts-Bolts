@@ -2533,7 +2533,7 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'groups.shout' || op === 'groups.wall.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group post', args.text]);
     } else if (op === 'updates.post') { sourceType = 'platform_update'; sourceId = String(answer.update && answer.update.id || ''); fields.push(['update title', args.name], ['update summary', args.summary], ['update notes', Array.isArray(args.items) ? args.items.join('\n') : '']);
     } else return;
-    const content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
+    let content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
     if (!content) return;
     let categories = [], scanner = 'llama-guard-3-8b', unsafe = false;
     if (!this.env.AI) { scanner = 'ai-binding-unavailable'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
@@ -2566,6 +2566,7 @@ export class GbServerObject extends DurableObject {
               && transcription.results.channels[0].alternatives[0].transcript) || '').slice(0, 5000);
           if (transcript) {
             fields.push(['audio transcript', transcript]);
+            content = (content + '\nAudio transcript: ' + transcript).slice(0, 7000);
             scanner += '+nova-3';
             // Re-run the safety classifier against the transcript, not the opaque audio bytes.
             const audioGuard = await this.env.AI.run('@cf/meta/llama-guard-3-8b', {
