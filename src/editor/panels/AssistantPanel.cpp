@@ -896,8 +896,8 @@ std::string AssistantPanel::externalMcpFingerprint(const std::string& qualifiedN
 }
 
 void AssistantPanel::authorizeMcpServer(const std::string& name) {
-    if (m_oauthPending.valid()) {
-        m_mcpStatus = "An OAuth authorization is already in progress.";
+    if (m_oauthPending.valid() || m_mcpRefreshPending.valid()) {
+        m_mcpStatus = "Wait for the current MCP discovery or OAuth operation to finish.";
         return;
     }
     const auto server = std::find_if(m_externalMcp.begin(), m_externalMcp.end(),
@@ -1621,7 +1621,7 @@ void AssistantPanel::render(bool* open) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Refresh tools")) refreshMcpServers();
             ImGui::SameLine();
-            ImGui::BeginDisabled(m_oauthPending.valid());
+            ImGui::BeginDisabled(m_oauthPending.valid() || m_mcpRefreshPending.valid());
             if (ImGui::SmallButton("Authorize")) authorizeMcpServer(server.name);
             ImGui::EndDisabled();
             ImGui::SameLine();
