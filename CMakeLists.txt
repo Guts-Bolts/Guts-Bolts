@@ -1039,7 +1039,7 @@ endif()
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(FyxaTaskStoreTests tests/FyxaTaskStoreTests.cpp src/editor/FyxaTaskStore.cpp)
     target_include_directories(FyxaTaskStoreTests PRIVATE src/)
-    target_link_libraries(FyxaTaskStoreTests PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(FyxaTaskStoreTests PRIVATE nlohmann_json::nlohmann_json) Threads::Threads
     add_test(NAME FyxaTaskStoreTests COMMAND FyxaTaskStoreTests)
 endif()
 
