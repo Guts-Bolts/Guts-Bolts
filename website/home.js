@@ -118,6 +118,7 @@
     const urgency = getAuctionUrgency(auction.endsAt);
     const banner = element('a', 'auction-promo-main' + (urgency.className ? ' ' + urgency.className : ''));
     banner.href = '/app/#/item/' + encodeURIComponent(item.id);
+    banner.setAttribute('aria-label', 'Auction: ' + item.name);
     banner.appendChild(makePicture(item));
 
     const copy = element('div', 'auction-promo-copy');
