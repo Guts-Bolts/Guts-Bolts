@@ -104,7 +104,8 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     }
     if (!response.is_object()) { error = "The MCP server returned an invalid JSON-RPC response."; return false; }
     if (response.contains("error")) { error = response["error"].value("message", "The MCP server returned an error."); return false; }
-    return status >= 200 && status < 300;
+    if (status < 200 || status >= 300) { error = "The MCP server answered HTTP " + std::to_string(status) + "."; return false; }
+    return true;
 }
 } // namespace
 
@@ -181,6 +182,7 @@ json AssistantPanel::externalMcpTools() const {
 void AssistantPanel::refreshMcpServers() {
     m_mcpStatus.clear();
     for (auto& server : m_externalMcp) {
+        if (!server.enabled) { server.tools = json::array(); server.sessionId.clear(); continue; }
         McpEndpoint endpoint;
         std::string error;
         if (!parseMcpEndpoint(server.url, endpoint, error)) { m_mcpStatus = server.name + ": " + error; continue; }
@@ -473,7 +475,13 @@ void AssistantPanel::render(bool* open) {
         ImGui::InputTextWithHint("##newmcptoken", "Bearer token (optional)", &m_newMcpToken, ImGuiInputTextFlags_Password);
         if (ImGui::Button("Add MCP server") && !m_newMcpName.empty() && !m_newMcpUrl.empty()) {
             bool duplicate = false;
-            for (const auto& server : m_externalMcp) if (server.name == m_newMcpName) duplicate = true;
+            std::string newKey = m_newMcpName;
+            for (char& ch : newKey) if (!std::isalnum((unsigned char)ch)) ch = '_';
+            for (const auto& server : m_externalMcp) {
+                std::string existingKey = server.name;
+                for (char& ch : existingKey) if (!std::isalnum((unsigned char)ch)) ch = '_';
+                if (existingKey == newKey) duplicate = true;
+            }
             if (duplicate) m_mcpStatus = "A server with that name already exists.";
             else {
                 McpServer server; server.name = m_newMcpName; server.url = m_newMcpUrl; server.token = m_newMcpToken;
