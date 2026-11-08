@@ -96,7 +96,14 @@ const SecretSchema kFyxaSchema = {
     { { "key", SECRET_SCHEMA_ATTRIBUTE_STRING }, { nullptr, (SecretSchemaAttributeType)0 } }
 };
 }
-bool persistentAvailable() { return true; }
+bool persistentAvailable() {
+    GError* e = nullptr;
+    SecretService* service = secret_service_get_sync(SECRET_SERVICE_OPEN_SESSION, nullptr, &e);
+    if (e) g_error_free(e);
+    if (!service) return false;
+    g_object_unref(service);
+    return true;
+}
 bool store(const std::string& key, const std::string& secret, std::string& error) {
     GError* e = nullptr;
     const gboolean ok = secret_password_store_sync(&kFyxaSchema, SECRET_COLLECTION_DEFAULT,
