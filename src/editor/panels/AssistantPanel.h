@@ -78,6 +78,5 @@ private:
     int         m_rounds = 0;
     bool        m_stopAsked = false;
     bool        m_scrollDown = false;
-    std::vector<std::pair<std::string, std::string>> m_recentEvidence;
-    unsigned long long m_evidenceSequence = 0;
+    std::string m_activeTaskId;
 };
