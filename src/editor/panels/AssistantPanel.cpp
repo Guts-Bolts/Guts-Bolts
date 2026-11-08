@@ -78,7 +78,8 @@ std::string responseHeader(const std::string& headers, const std::string& wanted
     return value;
 }
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
-             const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,\n             const std::string& protocolVersion = "2025-06-18") {
+             const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,
+             const std::string& protocolVersion = "2025-06-18") {
     std::string headers = "MCP-Protocol-Version: 2025-06-18\r\n";
     if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
     if (!session.empty()) headers += "Mcp-Session-Id: " + session + "\r\n";
