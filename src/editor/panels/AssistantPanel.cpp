@@ -7,6 +7,7 @@
 #include "../../core/CredentialStore.h"
 #include "../FyxaTaskStore.h"
 #include "../FyxaToolSelection.h"
+#include "../FyxaProviderCapabilities.h"
 #include "../FyxaSkills.h"
 #include "../ExternalMcpProtocol.h"
 #include "../ExternalMcpOAuth.h"
@@ -884,6 +885,7 @@ AssistantPanel::~AssistantPanel() {
     if (m_agentCancel) m_agentCancel->store(true);
     if (m_oauthCancel) m_oauthCancel->store(true);
     m_mcp.stop();
+    if (m_ollamaCapabilitiesPending.valid()) m_ollamaCapabilitiesPending.wait();
     if (m_pending.valid()) m_pending.wait();
     if (m_externalPending.valid()) m_externalPending.wait();
     if (m_mcpRefreshPending.valid()) m_mcpRefreshPending.wait();
@@ -1000,6 +1002,32 @@ std::string AssistantPanel::externalMcpFingerprint(const std::string& qualifiedN
         }
     }
     return {};
+}
+
+void AssistantPanel::probeOllamaCapabilities() {
+    if (m_ollamaCapabilitiesPending.valid()) return;
+    const std::string host = m_ollamaHost;
+    const int port = m_ollamaPort;
+    const std::string model = m_ollamaModel;
+    const auto cancel = m_agentCancel;
+    m_ollamaCapabilityStatus = "Checking model capabilities through Ollama /api/show...";
+    m_ollamaCapabilitiesPending = std::async(std::launch::async, [host, port, model, cancel]() {
+        OllamaCapabilityCheck checked;
+        checked.host = host;
+        checked.port = port;
+        checked.model = model;
+        std::string body, error;
+        int status = 0;
+        const std::string request = json{{"model", model}, {"verbose", false}}.dump();
+        if (!Net::httpPost(host, port, "/api/show", request, body, error, 15000, "", &status, nullptr, cancel.get()) ||
+            status != 200) {
+            checked.error = error.empty() ? "Ollama /api/show returned HTTP " + std::to_string(status) + "." : error;
+            return checked;
+        }
+        const json response = json::parse(body, nullptr, false);
+        checked.capabilities = FyxaProviderCapabilities::parseOllamaShow(response);
+        return checked;
+    });
 }
 
 json AssistantPanel::discoverFyxaTools(const std::string& query) {
@@ -1434,6 +1462,39 @@ void AssistantPanel::finishExternalCalls() {
 
 void AssistantPanel::update() {
     m_mcp.update(m_editor);
+    if (m_ollamaCapabilitiesPending.valid() &&
+        m_ollamaCapabilitiesPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        OllamaCapabilityCheck checked = m_ollamaCapabilitiesPending.get();
+        if (m_stopAsked || (m_agentCancel && m_agentCancel->load())) {
+            m_ollamaCapabilityStatus = "Model capability check cancelled.";
+            m_lines.push_back({Line::Note, "Stopped during Ollama capability negotiation."});
+        } else if (checked.host != m_ollamaHost || checked.port != m_ollamaPort || checked.model != m_ollamaModel) {
+            m_ollamaCapabilityStatus = "Ollama settings changed during capability negotiation. Send again to retry.";
+        } else {
+            m_ollamaCapabilityHost = checked.host;
+            m_ollamaCapabilityPort = checked.port;
+            m_ollamaCapabilityModel = checked.model;
+            m_ollamaCapabilitiesKnown = checked.capabilities.known;
+            m_ollamaSupportsCompletion = checked.capabilities.completion;
+            m_ollamaSupportsTools = checked.capabilities.tools;
+            m_ollamaSupportsVision = checked.capabilities.vision;
+            if (!checked.error.empty()) {
+                m_ollamaCapabilitiesKnown = false;
+                m_ollamaCapabilityStatus = checked.error;
+                m_lines.push_back({Line::Error, checked.error});
+            } else if (!m_ollamaCapabilitiesKnown) {
+                m_ollamaCapabilityStatus = checked.capabilities.error;
+                m_lines.push_back({Line::Error, m_ollamaCapabilityStatus});
+            } else if (!m_ollamaSupportsTools) {
+                m_ollamaCapabilityStatus = checked.model + " does not advertise tool-calling support. Choose a model with the tools capability.";
+                m_lines.push_back({Line::Error, m_ollamaCapabilityStatus});
+            } else {
+                m_ollamaCapabilityStatus = "Tool calling: available; vision: " +
+                    std::string(m_ollamaSupportsVision ? "available" : "not advertised") + ".";
+                requestNext();
+            }
+        }
+    }
     if (m_oauthPending.valid() && m_oauthPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         McpOAuthResult authorized = m_oauthPending.get();
         auto server = std::find_if(m_externalMcp.begin(), m_externalMcp.end(), [&](const McpServer& item) {
@@ -1586,6 +1647,19 @@ static std::string fyxaSystemGuide() {
 void AssistantPanel::requestNext() {
     if (m_stopAsked || (m_agentCancel && m_agentCancel->load())) return;
     if (!m_agentCancel) m_agentCancel = std::make_shared<std::atomic_bool>(false);
+    if (m_provider == "ollama") {
+        if (m_ollamaCapabilitiesKnown &&
+            (m_ollamaCapabilityHost != m_ollamaHost || m_ollamaCapabilityPort != m_ollamaPort ||
+             m_ollamaCapabilityModel != m_ollamaModel)) m_ollamaCapabilitiesKnown = false;
+        if (!m_ollamaCapabilitiesKnown) {
+            probeOllamaCapabilities();
+            return;
+        }
+        if (!m_ollamaSupportsCompletion || !m_ollamaSupportsTools) {
+            m_lines.push_back({Line::Error, "The selected Ollama model is not eligible for Fyxa tool use. Choose a model advertising both completion and tools capabilities."});
+            return;
+        }
+    }
     const json nativeTools = FyxaToolSelection::selectNative(AiTools::mcpTools(), m_activeRequestText, m_discoveredToolNames, 24);
     const json localTools = fyxaAgentTools();
     const json externalTools = FyxaToolSelection::selectExternal(externalMcpTools(), m_activeRequestText, m_discoveredToolNames, 12);
@@ -1795,8 +1869,9 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
 
 void AssistantPanel::render(bool* open) {
     if (!ImGui::Begin("Fyxa", open)) { ImGui::End(); return; }
-    const bool agentBusy = m_pending.valid() || m_externalPending.valid() || !m_externalQueue.empty() ||
-                           m_externalApprovalPending || m_deferredExternalClaude || m_deferredExternalOllama;
+    const bool agentBusy = m_pending.valid() || m_externalPending.valid() || m_ollamaCapabilitiesPending.valid() ||
+                           !m_externalQueue.empty() || m_externalApprovalPending ||
+                           m_deferredExternalClaude || m_deferredExternalOllama;
     const bool busy = agentBusy || m_mcpRefreshPending.valid() || m_oauthPending.valid();
 
     if (ImGui::CollapsingHeader("Fyxa settings", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1818,6 +1893,10 @@ void AssistantPanel::render(bool* open) {
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextWithHint("Model", "qwen3:8b", &m_ollamaModel)) save();
             ImGui::TextDisabled("API: http://%s:%d/api/chat", m_ollamaHost.c_str(), m_ollamaPort);
+            if (!m_ollamaCapabilityStatus.empty())
+                ImGui::TextWrapped("Model capabilities: %s", m_ollamaCapabilityStatus.c_str());
+            else
+                ImGui::TextDisabled("Fyxa checks /api/show before sending tools to each Ollama model.");
         } else {
             ImGui::TextWrapped("Use your own Anthropic API key. It is stored in the operating system credential vault when available; otherwise it remains session-only.");
             ImGui::SetNextItemWidth(-1);
