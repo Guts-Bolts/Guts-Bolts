@@ -36,6 +36,8 @@ struct Particle {
     // A stain on a body part (moves with it): which part, and where on it in its own space.
     uint64_t  onPart = 0;
     glm::vec3 localPos{0.0f}, localNormal{0.0f, 1.0f, 0.0f}, localTangent{1.0f, 0.0f, 0.0f};
+    uint32_t  skinVertex = 0xffffffffu; // nearest skinned rest-mesh vertex for wound decals
+    glm::vec3 skinOffset{0.0f};
     glm::vec3 tangent{0.0f};            // (stains: which way the part's side runs, so it turns with it)
     float     alpha = 1.0f;             // footprints and smears get fainter
     // Gibs (Chunk):

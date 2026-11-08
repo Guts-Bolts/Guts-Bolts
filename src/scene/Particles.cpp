@@ -2,12 +2,15 @@
 #include "Physics.h"
 #include "Scene.h"
 #include "SceneNode.h"
+#include "EditMesh.h"
+#include "Skin.h"
 #include "../core/Audio.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <random>
+#include <unordered_map>
 
 namespace {
 std::mt19937& rng() { static std::mt19937 r{987u}; return r; }
@@ -468,6 +471,15 @@ void ParticleSystem::wound(GoreKind kind, const SceneNode* part, const glm::vec3
     glm::vec3 localTangent = invR * t;
     localTangent -= p.localNormal * glm::dot(localTangent, p.localNormal);
     p.localTangent = glm::length(localTangent) > 1e-5f ? glm::normalize(localTangent) : glm::vec3(1, 0, 0);
+    if (part->editMesh && part->editMesh->skinned()) {
+        float bestDistance = 1e30f;
+        for (size_t i = 0; i < part->editMesh->verts.size(); ++i) {
+            const float d = glm::length2(part->editMesh->verts[i] - p.localPos);
+            if (d < bestDistance) { bestDistance = d; p.skinVertex = (uint32_t)i; }
+        }
+        if (p.skinVertex != 0xffffffffu)
+            p.skinOffset = p.localPos - part->editMesh->verts[p.skinVertex];
+    }
     p.normal = n; p.tangent = t; p.pos = at + n * 0.012f;
     p.size = glm::vec3(width, 0.012f, length);
     p.color = kind == GoreKind::Blood ? m_bloodColor * rnd(0.52f, 0.72f) : kOil * 0.85f;
@@ -477,6 +489,8 @@ void ParticleSystem::wound(GoreKind kind, const SceneNode* part, const glm::vec3
 }
 
 void ParticleSystem::follow(Scene& scene) {
+    struct SkinnedPose { std::vector<glm::vec3> vertices, normals; };
+    std::unordered_map<uint64_t, SkinnedPose> poses;
     for (Particle& p : m_items) {
         if (!p.onPart) continue;
         SceneNode* n = scene.findById(p.onPart);
@@ -486,7 +500,34 @@ void ParticleSystem::follow(Scene& scene) {
         glm::mat3 N = glm::transpose(glm::inverse(R));
         p.normal  = glm::normalize(N * p.localNormal);
         p.tangent = glm::normalize(R * p.localTangent);
-        p.pos     = glm::vec3(M * glm::vec4(p.localPos, 1.0f)) + p.normal * 0.012f;
+        glm::vec3 localPosition = p.localPos;
+        if (p.skinVertex != 0xffffffffu && n->editMesh && n->editMesh->skinned()) {
+            auto it = poses.find(n->id);
+            if (it == poses.end()) {
+                SkinnedPose pose;
+                if (Skin::deform(*n, pose.vertices)) {
+                    pose.normals.assign(pose.vertices.size(), glm::vec3(0.0f));
+                    for (const auto& face : n->editMesh->faces) {
+                        if (face.size() < 3) continue;
+                        glm::vec3 faceNormal(0.0f);
+                        const glm::vec3 a = pose.vertices[face[0]];
+                        for (size_t k = 1; k + 1 < face.size(); ++k)
+                            faceNormal += glm::cross(pose.vertices[face[k]] - a, pose.vertices[face[k + 1]] - a);
+                        for (uint32_t v : face)
+                            if (v < pose.normals.size()) pose.normals[v] += faceNormal;
+                    }
+                    for (glm::vec3& normal : pose.normals)
+                        normal = glm::length(normal) > 1e-6f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
+                }
+                it = poses.emplace(n->id, std::move(pose)).first;
+            }
+            if (p.skinVertex < it->second.vertices.size()) {
+                localPosition = it->second.vertices[p.skinVertex] + p.skinOffset;
+                if (p.skinVertex < it->second.normals.size())
+                    p.normal = glm::normalize(N * it->second.normals[p.skinVertex]);
+            }
+        }
+        p.pos = glm::vec3(M * glm::vec4(localPosition, 1.0f)) + p.normal * 0.012f;
     }
 }
 
