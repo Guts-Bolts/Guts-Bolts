@@ -1197,7 +1197,10 @@ void AssistantPanel::startNextExternalCall() {
         const std::string key = mcpServerKey(server.name);
         if (key == serverKey && server.enabled) {
             serverName = server.name; url = server.url; token = server.token;
-            session = server.sessionId; protocol = server.protocolVersion;\n            oauthIssuer = server.oauthIssuer; oauthTokenEndpoint = server.oauthTokenEndpoint;\n            oauthClientId = server.oauthClientId; oauthResource = server.oauthResource;\n            oauthRefreshToken = server.oauthRefreshToken; credentialKey = server.credentialKey;
+            session = server.sessionId; protocol = server.protocolVersion;
+            oauthIssuer = server.oauthIssuer; oauthTokenEndpoint = server.oauthTokenEndpoint;
+            oauthClientId = server.oauthClientId; oauthResource = server.oauthResource;
+            oauthRefreshToken = server.oauthRefreshToken; credentialKey = server.credentialKey;
             break;
         }
     }
