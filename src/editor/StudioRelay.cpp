@@ -1,5 +1,7 @@
 #include "StudioRelay.h"
 #include "StudioMcp.h"
+#include "StudioMcpAccess.h"
+#include "StudioRelayApproval.h"
 #include "AiTools.h"
 #include "ExternalMcpProtocol.h"
 #include "Editor.h"
@@ -114,7 +116,7 @@ void StudioRelay::drop(State state, const std::string& why, bool retry) {
 }
 
 void StudioRelay::update(Editor& editor, StudioMcp& mcp) {
-    if (m_pendingApproval && now() >= m_pendingApproval->expiresAt) {
+    if (m_pendingApproval && StudioRelayApproval::evaluate(now(), m_pendingApproval->expiresAt,\n            true, true, m_pendingApproval->fingerprint, m_pendingApproval->fingerprint, false, false)\n            == StudioRelayApproval::Decision::Expired) {
         PendingApproval expired = std::move(*m_pendingApproval);
         m_pendingApproval.reset();
         if (m_conn) {
@@ -311,24 +313,42 @@ void StudioRelay::resolveApproval(bool approve, Editor& editor, StudioMcp& mcp) 
     if (!m_pendingApproval) return;
     PendingApproval pending = std::move(*m_pendingApproval);
     m_pendingApproval.reset();
-    if (!m_conn || m_state != State::Online) return;
-
     const json params = pending.message.value("params", json::object());
     const json arguments = params.value("arguments", json::object());
-    if (!approve) {
-        const json denied = relayRpcError(pending.message.value("id", json()),
-            "The user denied this connected-app action in Studio.");
-        m_conn->send(json{{"t", "mcp.reply"}, {"id", pending.relayId}, {"reply", denied}}.dump());
-        appendRelayAudit(pending.app, pending.tool, pending.fingerprint, arguments, "denied-by-user");
-        return;
-    }
-
+    const auto permission = m_appCanChange.find(pending.app);
+    const bool currentlyHasWrite = permission != m_appCanChange.end() && permission->second;
+    const bool requiresWrite = !StudioMcpAccess::appMay(pending.tool, false);
     const std::string current = connectedToolFingerprint(pending.app, pending.tool);
-    if (current.empty() || current != pending.fingerprint) {
-        const json stale = relayRpcError(pending.message.value("id", json()),
-            "The tool definition or connected-app permission changed while approval was pending. Refresh and request approval again.");
-        m_conn->send(json{{"t", "mcp.reply"}, {"id", pending.relayId}, {"reply", stale}}.dump());
-        appendRelayAudit(pending.app, pending.tool, pending.fingerprint, arguments, "approval-invalidated");
+    const auto decision = StudioRelayApproval::evaluate(
+        now(), pending.expiresAt, m_conn && m_state == State::Online, approve,
+        pending.fingerprint, current, requiresWrite, currentlyHasWrite);
+    if (decision != StudioRelayApproval::Decision::Execute) {
+        if (!m_conn || m_state != State::Online) {
+            appendRelayAudit(pending.app, pending.tool, pending.fingerprint, arguments, "connection-dropped-before-resolution");
+            return;
+        }
+        std::string message, outcome;
+        switch (decision) {
+        case StudioRelayApproval::Decision::Denied:
+            message = "The user denied this connected-app action in Studio.";
+            outcome = "denied-by-user";
+            break;
+        case StudioRelayApproval::Decision::Expired:
+            message = "The Studio approval request expired. Ask the connected app to retry.";
+            outcome = "approval-expired";
+            break;
+        case StudioRelayApproval::Decision::PermissionRevoked:
+            message = "The connected app no longer has permission for this action. Refresh tools/list and request approval again.";
+            outcome = "permission-revoked";
+            break;
+        default:
+            message = "The tool definition or connected-app permission changed while approval was pending. Refresh and request approval again.";
+            outcome = "approval-invalidated";
+            break;
+        }
+        const json rejected = relayRpcError(pending.message.value("id", json()), message);
+        m_conn->send(json{{"t", "mcp.reply"}, {"id", pending.relayId}, {"reply", rejected}}.dump());
+        appendRelayAudit(pending.app, pending.tool, pending.fingerprint, arguments, outcome);
         return;
     }
 
