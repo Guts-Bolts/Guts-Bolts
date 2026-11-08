@@ -404,6 +404,8 @@ const COSTLY = {
   'comments.post':       [30, 90, 600],
   'forum.post':          [10, 30, 600],
   'forum.reply':         [30, 90, 600],
+  'ai.preferences.update': [10, 30, 600],
+  'ai.content.eligibility.update': [60, 180, 600],
   'chat.translate':      [400, 1200, 600],  // (a busy game's chat, read in another language)
   'groups.create':       [5, 15, 3600],
   'bolts.redeem':        [20, 60, 600],    // (so nobody can guess promo codes over and over)
