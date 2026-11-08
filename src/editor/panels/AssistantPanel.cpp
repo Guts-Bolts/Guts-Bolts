@@ -251,31 +251,6 @@ void appendMcpAudit(const std::string& server, const std::string& tool, const js
                            {"arguments", redactMcpArguments(args)}, {"outcome", outcome}}.dump() << "\n";
 }
 
-std::string mcpToolDefinitionFingerprint(const std::string& serverName,
-                                            const std::string& endpoint,
-                                            const json& tool) {
-    const json identity = {
-        {"server", serverName},
-        {"endpoint", endpoint},
-        {"name", tool.value("name", std::string())},
-        {"description", tool.value("description", std::string())},
-        {"inputSchema", tool.value("inputSchema", json::object())},
-        {"annotations", tool.value("annotations", json::object())}
-    };
-    const std::string canonical = identity.dump();
-    std::uint8_t digest[32]{};
-    crypto_blake2b(digest, sizeof(digest),
-        reinterpret_cast<const std::uint8_t*>(canonical.data()), canonical.size());
-    static constexpr char hex[] = "0123456789abcdef";
-    std::string result;
-    result.reserve(sizeof(digest) * 2);
-    for (std::uint8_t byte : digest) {
-        result.push_back(hex[byte >> 4]);
-        result.push_back(hex[byte & 0x0f]);
-    }
-    return result;
-}
-
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
              const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,
              const std::string& protocolVersion = "2026-07-28") {
@@ -460,7 +435,7 @@ std::string AssistantPanel::externalMcpFingerprint(const std::string& qualifiedN
         for (const auto& tool : server.tools) {
             if (tool.is_object() && tool.value("name", std::string()) == toolName) {
                 const std::string pinned = tool.value("fyxaFingerprint", std::string());
-                return pinned.empty() ? mcpToolDefinitionFingerprint(server.name, server.url, tool) : pinned;
+                return pinned.empty() ? McpHttpProtocol::definitionFingerprint(server.name, server.url, tool) : pinned;
             }
         }
     }
@@ -576,7 +551,7 @@ void AssistantPanel::refreshMcpServers() {
                         validMcpToolName(tool["name"].get<std::string>()) && tool.dump().size() <= 65536 &&
                         tool.value("inputSchema", json::object()).is_object()) {
                         json pinnedTool = tool;
-                        pinnedTool["fyxaFingerprint"] = mcpToolDefinitionFingerprint(server.name, server.url, tool);
+                        pinnedTool["fyxaFingerprint"] = McpHttpProtocol::definitionFingerprint(server.name, server.url, tool);
                         server.tools.push_back(std::move(pinnedTool));
                     }
                 }
@@ -671,7 +646,7 @@ void AssistantPanel::startNextExternalCall() {
                 if (listed.is_array()) for (const auto& candidate : listed) {
                     if (!candidate.is_object() || candidate.value("name", std::string()) != toolName) continue;
                     definitionFound = true;
-                    const std::string current = mcpToolDefinitionFingerprint(serverName, url, candidate);
+                    const std::string current = McpHttpProtocol::definitionFingerprint(serverName, url, candidate);
                     if (current != done.call.definitionFingerprint)
                         done.error = "The MCP tool definition changed since it was shown for approval. Refresh discovery and review the updated tool before retrying.";
                     break;
