@@ -10,16 +10,6 @@ function enableTraining(s, user, extra = {}) {
   }, extra));
 }
 
-function approveRights(s, asset) {
-  const pending = s.call(asset.creatorUser || s.staff, 'ai.content.eligibility.get', { contentId: asset.id });
-  assert.ok(pending.ok, pending.error);
-  const reviewed = s.call(s.staff, 'ai.content.review', {
-    contentId: asset.id, rightsStatus: 'approved', reason: 'Rights evidence reviewed',
-  });
-  assert.ok(reviewed.ok, reviewed.error);
-  return reviewed.eligibility;
-}
-
 test('Fyxa preferences are disabled by default and require the current notice to opt in', () => {
   const s = makeServer();
   const user = s.signUp('alice');
