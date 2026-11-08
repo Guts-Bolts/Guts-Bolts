@@ -20,7 +20,7 @@ int main() {
     grant.auditEventId = "audit-1";
 
     CHECK(grant.validAt(1500));
-    CHECK(grant.matches("github", "server-fp", "create_issue", "tool-fp", "write", 1500));
+    CHECK(grant.matches("github", "server-fp", "create_issue", "tool-fp", "write", false, 1500));
     CHECK(!grant.matches("github", "server-fp", "delete_repo", "tool-fp", "write", 1500));
     CHECK(!grant.matches("github", "changed-server", "create_issue", "tool-fp", "write", 1500));
     CHECK(!grant.matches("github", "server-fp", "create_issue", "changed-tool", "write", 1500));
@@ -29,7 +29,7 @@ int main() {
 
     FyxaApprovalRecord decoded;
     CHECK(FyxaApprovalRecord::fromJson(grant.toJson(), decoded));
-    CHECK(decoded.matches("github", "server-fp", "create_issue", "tool-fp", "write", 1500));
+    CHECK(decoded.matches("github", "server-fp", "create_issue", "tool-fp", "write", false, 1500));
     decoded.revokedAtMs = 1600;
     CHECK(!decoded.validAt(1700));
 
@@ -44,8 +44,9 @@ int main() {
     readGrant.grantedBy = "user";
     readGrant.auditEventId = "audit-2";
     CHECK(readGrant.validAt(1500));
-    CHECK(readGrant.matches("github", "server-fp", "list_repos", "any-tool-fp", "read", 1500));
-    CHECK(!readGrant.matches("github", "server-fp", "create_issue", "any-tool-fp", "write", 1500));
+    CHECK(readGrant.matches("github", "server-fp", "list_repos", "any-tool-fp", "read", true, 1500));
+    CHECK(!readGrant.matches("github", "server-fp", "list_repos", "any-tool-fp", "read", false, 1500));
+    CHECK(!readGrant.matches("github", "server-fp", "create_issue", "any-tool-fp", "write", false, 1500));
     readGrant.permission = "write";
     CHECK(!readGrant.validAt(1500));
     CHECK(!FyxaApprovalRecord::fromJson(readGrant.toJson(), decoded));
