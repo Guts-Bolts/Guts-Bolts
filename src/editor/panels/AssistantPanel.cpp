@@ -339,6 +339,7 @@ struct McpOAuthMetadata {
     std::string issuer, authorizationEndpoint, tokenEndpoint, registrationEndpoint;
     std::string resource, scope;
     bool issuerParameterRequired = false;
+    bool pkceS256Supported = true;
 };
 
 bool getOAuthJson(const std::string& url, json& result, std::string& error) {
@@ -435,6 +436,11 @@ bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
         !httpsEndpoint("registration_endpoint", out.registrationEndpoint, false)) return false;
     out.issuerParameterRequired =
         authorizationMetadata.value("authorization_response_iss_parameter_supported", false);
+    if (authorizationMetadata.contains("code_challenge_methods_supported")) {
+        const json methods = authorizationMetadata["code_challenge_methods_supported"];
+        out.pkceS256Supported = methods.is_array() &&
+            std::find(methods.begin(), methods.end(), json("S256")) != methods.end();
+    }
     out.resource = resource;
     if (McpOAuth::extractQuotedParameter(challenge, "scope", out.scope)) return true;
     const json scopes = resourceMetadata.value("scopes_supported", json::array());
@@ -472,11 +478,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
     result.tokenEndpoint = metadata.tokenEndpoint;
     result.resource = metadata.resource;
 
-    if (authorizationMetadata.contains("code_challenge_methods_supported") &&
-        authorizationMetadata["code_challenge_methods_supported"].is_array() &&
-        std::find(authorizationMetadata["code_challenge_methods_supported"].begin(),
-                  authorizationMetadata["code_challenge_methods_supported"].end(), json("S256")) ==
-                  authorizationMetadata["code_challenge_methods_supported"].end()) {
+    if (!metadata.pkceS256Supported) {
         result.error = "The authorization server does not advertise PKCE S256 support.";
         return result;
     }
