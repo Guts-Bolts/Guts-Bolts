@@ -788,6 +788,7 @@ set(EDITOR_SOURCES
     src/editor/AiToolsRun.cpp
     src/editor/AiMeshTools.cpp
     src/editor/AiGameTools.cpp
+    src/core/CredentialStore.cpp
     src/editor/StudioMcp.cpp
     src/editor/StudioRelay.cpp
     src/editor/panels/AssistantPanel.cpp
@@ -847,6 +848,11 @@ if(WIN32)
 endif()
 add_executable(GutsAndBolts ${EDITOR_SOURCES})
 target_link_libraries(GutsAndBolts PRIVATE gb_engine gb_models)
+if(WIN32)
+    target_link_libraries(GutsAndBolts PRIVATE Advapi32)
+elseif(APPLE)
+    target_link_libraries(GutsAndBolts PRIVATE "-framework Security")
+endif()
 
 # ---------------------------------------------------------------------------
 # GutsAndBoltsPlayer — the platform app for finding and playing games
@@ -1001,6 +1007,18 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_
     add_executable(LaunchLinkTests tests/LaunchLinkTests.cpp src/player/LaunchLink.cpp)
     target_include_directories(LaunchLinkTests PRIVATE src/)
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
+endif()
+
+# Fyxa credentials must live in the OS vault, or explicitly fall back to session-only storage.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
+    add_executable(CredentialStoreTests tests/CredentialStoreTests.cpp src/core/CredentialStore.cpp)
+    target_include_directories(CredentialStoreTests PRIVATE src/)
+    if(WIN32)
+        target_link_libraries(CredentialStoreTests PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(CredentialStoreTests PRIVATE "-framework Security")
+    endif()
+    add_test(NAME CredentialStoreTests COMMAND CredentialStoreTests)
 endif()
 
 # Format-level regression fixtures for Roblox's binary mesh files. These
