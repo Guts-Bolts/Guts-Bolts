@@ -6,12 +6,18 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <cstdlib>
+
+#define CHECK(condition) do { if (!(condition)) { \
+    std::cerr << "FAILED at line " << __LINE__ << ": " #condition << "\\n"; \
+    return EXIT_FAILURE; \
+} } while (false)
 
 int main() {
     Net::HttpServer server;
     std::string error;
     constexpr int port = 49381;
-    assert(server.open(port, error));
+    CHECK(server.open(port, error));
 
     std::atomic_bool serverStop{false};
     std::atomic_bool requestReceived{false};
@@ -26,7 +32,9 @@ int main() {
 
     std::atomic_bool cancelled{false};
     std::thread cancelThread([&] {
-        while (!requestReceived.load()) std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        const auto waitUntil = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!requestReceived.load() && std::chrono::steady_clock::now() < waitUntil)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         cancelled.store(true);
     });
@@ -42,10 +50,10 @@ int main() {
     serverStop.store(true);
     serverThread.join();
 
-    assert(requestReceived.load());
-    assert(!ok);
-    assert(requestError == "Request cancelled.");
-    assert(elapsed < std::chrono::seconds(1));
+    CHECK(requestReceived.load());
+    CHECK(!ok);
+    CHECK(requestError == "Request cancelled.");
+    CHECK(elapsed < std::chrono::seconds(1));
 
     std::cout << "HTTP request cancellation test passed\\n";
     return 0;
