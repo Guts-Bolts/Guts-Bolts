@@ -323,7 +323,7 @@ void StudioRelay::resolveApproval(bool approve, Editor& editor, StudioMcp& mcp) 
     }
 
     const std::string current = connectedToolFingerprint(pending.app, pending.tool);
-    if (current.empty() || current != pending.fingerprint || !appMay(pending.tool, pending.canChange)) {
+    if (current.empty() || current != pending.fingerprint) {
         const json stale = relayRpcError(pending.message.value("id", json()),
             "The tool definition or connected-app permission changed while approval was pending. Refresh and request approval again.");
         m_conn->send(json{{"t", "mcp.reply"}, {"id", pending.relayId}, {"reply", stale}}.dump());
