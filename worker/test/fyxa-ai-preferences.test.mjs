@@ -68,10 +68,10 @@ test('private content remains excluded even after opt-in, rights attestation, an
   const s = makeServer();
   const owner = s.signUp('alice');
   const asset = s.addGame(owner, 'Private game', { access: 'private' });
-  assert.ok(enableTraining(s, owner).ok);
+  assert.ok(enableTraining(s, owner, { referenceEnabled: true }).ok);
 
   const attested = s.call(owner, 'ai.content.eligibility.update', {
-    contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
+    contentId: asset.id, trainingChoice: 'include', referenceChoice: 'include', rightsAttested: true,
   });
   assert.ok(attested.ok, attested.error);
 
@@ -81,7 +81,9 @@ test('private content remains excluded even after opt-in, rights attestation, an
   assert.ok(approved.ok, approved.error);
   assert.equal(approved.eligibility.privacyStatus, 'private');
   assert.equal(approved.eligibility.trainingEligible, false);
+  assert.equal(approved.eligibility.referenceEligible, false);
   assert.equal(approved.eligibility.trainingExclusionReason, 'not_public');
+  assert.equal(approved.eligibility.referenceExclusionReason, 'not_public');
 });
 
 test('global opt-out overrides per-content inclusion immediately and is recorded', () => {
@@ -114,6 +116,7 @@ test('global opt-out overrides per-content inclusion immediately and is recorded
   const history = s.call(owner, 'ai.training.history');
   assert.ok(history.ok, history.error);
   assert.ok(history.events.some((event) => event.event === 'preferences.updated' && event.details.trainingEnabled === false));
+  assert.ok(history.events.some((event) => event.event === 'content.rights.reviewed' && event.details.rightsStatus === 'approved'));
 });
 
 test('a user cannot change another account’s content eligibility or approve their own rights', () => {
@@ -152,7 +155,7 @@ test('visibility changes and deletion revoke stored eligibility', () => {
     contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
   });
   assert.ok(content.ok, content.error);
-  const approved = s.call(s.staff, 'ai.content.review', { contentId: asset.id, rightsStatus: 'approved' });
+  const approved = s.call(s.staff, 'ai.content.review', { contentId: asset.id, rightsStatus: 'approved', reason: 'Creator rights attestation reviewed' });
   assert.ok(approved.ok, approved.error);
   assert.equal(approved.eligibility.trainingEligible, true);
 
