@@ -108,7 +108,11 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     const std::string host = endpoint.tls ? "wss://" + endpoint.host : endpoint.host;
     if (!Net::httpPost(host, endpoint.port, endpoint.path, request.dump(), body, error, 12000, headers, &status, &responseHeaders)) return false;
     if (sessionOut) *sessionOut = responseHeader(responseHeaders, "Mcp-Session-Id");
-    if (status == 202 || status == 204) { response = json::object(); return true; }
+    if ((status == 202 || status == 204) && !request.contains("id")) { response = json::object(); return true; }
+    if (status == 202 || status == 204) {
+        error = "The MCP server accepted a request but did not return its required JSON-RPC response.";
+        return false;
+    }
     if (status < 200 || status >= 300) {
         error = "The MCP server answered HTTP " + std::to_string(status) + (body.empty() ? "." : ": " + body.substr(0, 512));
         return false;
@@ -141,7 +145,15 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
         }
     }
     if (!response.is_object()) { error = "The MCP server returned an invalid JSON-RPC response."; return false; }
+    if (request.contains("id") && (!response.contains("id") || response["id"] != request["id"])) {
+        error = "The MCP server returned a response with the wrong JSON-RPC request ID.";
+        return false;
+    }
     if (response.contains("error")) { error = response["error"].value("message", "The MCP server returned an error."); return false; }
+    if (request.contains("id") && !response.contains("result")) {
+        error = "The MCP server response did not contain a JSON-RPC result.";
+        return false;
+    }
     return true;
 }
 } // namespace
