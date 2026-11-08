@@ -1043,6 +1043,13 @@ void AssistantPanel::refreshMcpServers() {
                     continue;
                 }
             }
+            if (!modern && discoveryStatus == 401 &&
+                (server.oauthRefreshToken.empty() || server.oauthIssuer.empty() ||
+                 server.oauthTokenEndpoint.empty() || server.oauthResource.empty() || server.oauthClientId.empty())) {
+                result.status = server.name + ": authentication required. Select Authorize to connect this MCP server.";
+                server.tools = json::array();
+                continue;
+            }
             if (modern) {
                 const json versions = response.value("result", json::object()).value("supportedVersions", json::array());
                 modern = versions.is_array() && std::find(versions.begin(), versions.end(), json(modernVersion)) != versions.end();
@@ -1116,7 +1123,9 @@ void AssistantPanel::refreshMcpServers() {
                     initializedOk = mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "");
                 }
                 if (!initializedOk) {
-                    result.status = server.name + ": " + error;
+                    result.status = initializeStatus == 401
+                        ? server.name + ": authentication required. Select Authorize to connect this MCP server."
+                        : server.name + ": " + error;
                     server.tools = json::array();
                     continue;
                 }
