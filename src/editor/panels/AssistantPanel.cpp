@@ -1722,8 +1722,9 @@ void AssistantPanel::render(bool* open) {
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered public-client ID or client metadata URL", &server.oauthClientId)) {
                 if (!server.oauthIssuer.empty()) {
-                    CredentialStore::erase(server.credentialKey, credentialError);
-                    CredentialStore::erase(server.credentialKey + "-oauth-refresh", credentialError);
+                    std::string oauthCredentialError;
+                    CredentialStore::erase(server.credentialKey, oauthCredentialError);
+                    CredentialStore::erase(server.credentialKey + "-oauth-refresh", oauthCredentialError);
                     server.token.clear();
                     server.oauthRefreshToken.clear();
                     server.oauthIssuer.clear();
