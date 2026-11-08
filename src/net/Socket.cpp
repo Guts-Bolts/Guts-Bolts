@@ -25,6 +25,10 @@
 #include "CaCerts.h"
 #endif
 
+#if defined(GB_MOBILE) && !defined(__EMSCRIPTEN__)
+#include <SDL.h>
+#endif
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/websocket.h>
@@ -636,6 +640,10 @@ bool openUrl(const std::string& url, std::string& error) {
     HINSTANCE result = ShellExecuteW(nullptr, L"open", wideUrl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     if ((INT_PTR)result <= 32) { error = "Windows could not open the authorization browser."; return false; }
     return true;
+#elif defined(GB_MOBILE) && !defined(__EMSCRIPTEN__)
+    if (SDL_OpenURL(url.c_str()) == 0) return true;
+    error = "The system browser could not be opened.";
+    return false;
 #elif defined(__APPLE__) && !defined(__EMSCRIPTEN__)
     pid_t child = fork();
     if (child == 0) { execlp("open", "open", url.c_str(), (char*)nullptr); _exit(127); }
