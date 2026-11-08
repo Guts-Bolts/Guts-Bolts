@@ -36,6 +36,7 @@ private:
     nlohmann::json externalMcpTools() const;
     std::string externalMcpFingerprint(const std::string& qualifiedName) const;
     nlohmann::json discoverFyxaTools(const std::string& query);
+    void probeOllamaCapabilities();
     struct ExternalCall { bool claude = false; std::string name, id, definitionFingerprint; nlohmann::json args; };
     struct ExternalCompletion { ExternalCall call; std::string text, error, refreshedServerName, refreshedAccessToken, refreshedRefreshToken; };
     void startNextExternalCall();
@@ -78,6 +79,12 @@ private:
     nlohmann::json m_messages = nlohmann::json::array();
     std::vector<Line> m_lines;
     struct Reply { int status = 0; std::string body, error; };
+    struct OllamaCapabilityCheck { std::string host, model, error; int port = 0; FyxaProviderCapabilities::OllamaModel capabilities; };
+    std::future<OllamaCapabilityCheck> m_ollamaCapabilitiesPending;
+    std::string m_ollamaCapabilityHost, m_ollamaCapabilityModel, m_ollamaCapabilityStatus;
+    int m_ollamaCapabilityPort = 0;
+    bool m_ollamaCapabilitiesKnown = false, m_ollamaSupportsCompletion = false;
+    bool m_ollamaSupportsTools = false, m_ollamaSupportsVision = false;
     std::future<Reply> m_pending;
     std::shared_ptr<std::atomic_bool> m_agentCancel;
     std::future<ExternalCompletion> m_externalPending;
