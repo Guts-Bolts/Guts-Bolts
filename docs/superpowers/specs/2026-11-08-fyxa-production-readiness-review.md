@@ -51,10 +51,12 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
    - `completeWithEvidence` validates task status and token, appends the verification note, changes status, and consumes all pending tokens in one locked atomic file replacement. Ordinary `update(..., completed, ...)` is rejected.
    - The store uses both a process mutex and an OS-level lock file (Windows `LockFileEx`, POSIX `flock`) to serialize cooperating processes. Tests cover wrong-task tokens, replay, direct-completion bypass, and concurrent completion; CI execution is pending.
 
-7. **Cancellation and bounded execution**
-   - Current MCP HTTP requests have a finite request timeout and LLM requests have a finite timeout, but an in-flight request is not cooperatively cancellable. A timeout alone is not cancellation.
-   - Add a cancellation token from the UI through the agent loop, queued calls, transport, and process manager. Ensure stop and shutdown complete within a documented bound, with no late tool result mutating a stopped task.
-   - Bound concurrency, response bytes, tool-call count, total task time, and per-provider retries.
+7. **Cancellation and bounded execution — provider/MCP HTTP cancellation implemented; full shutdown bound remains open**
+   - Fyxa's Stop action now sets a shared atomic cancellation token captured by provider and approved external-MCP workers. The HTTP client checks it before connect, during non-blocking connect waits, TLS handshake waits, request writes, response-header reads, and response-body reads. Socket readiness waits poll in 50 ms slices.
+   - Late provider responses are discarded. Late MCP completions are converted to cancellation errors and cannot issue task evidence or persist a refreshed token after Stop. Queued external calls are returned as not executed. The UI warns that an MCP server may already have received and acted on an in-flight request; cancellation is not remote rollback.
+   - A loopback HTTP regression test holds a request open, signals cancellation, and requires the client to return within one second. The test is registered in CTest; current-head execution is still pending.
+   - **Remaining bound:** synchronous system DNS resolution cannot currently be interrupted, and shutdown still waits for unrelated OAuth/discovery futures. Therefore a hard end-to-end shutdown bound is not yet established. Add a cancellable resolver or isolate DNS resolution, propagate shutdown cancellation to every background worker, and test the bound on Windows/Linux/macOS.
+   - Continue bounding concurrency, response bytes, tool-call count, total task time, and per-provider retries.
 
 8. **Dynamic capability/tool loading**
    - Do not send the entire platform registry to every model turn. Add domain/task intent selection, then expose only the small set of relevant tools; permit explicit discovery when needed.
