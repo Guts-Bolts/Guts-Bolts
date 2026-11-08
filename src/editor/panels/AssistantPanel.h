@@ -54,7 +54,9 @@ private:
         bool enabled = false;
         nlohmann::json tools = nlohmann::json::array();
     };
+    struct McpRefreshResult { std::vector<McpServer> servers; std::string status; };
     std::vector<McpServer> m_externalMcp;
+    std::future<McpRefreshResult> m_mcpRefreshPending;
     std::string m_newMcpName, m_newMcpUrl, m_newMcpToken;
     std::string m_mcpStatus;
     std::string m_input;
