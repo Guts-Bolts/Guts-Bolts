@@ -38,7 +38,7 @@ private:
     std::string externalMcpFingerprint(const std::string& qualifiedName) const;
     nlohmann::json discoverFyxaTools(const std::string& query);
     void probeOllamaCapabilities();
-    struct ExternalCall { bool claude = false; std::string name, id, definitionFingerprint; nlohmann::json args; };
+    struct ExternalCall { bool claude = false; std::string name, id, definitionFingerprint, idempotencyKey; nlohmann::json args; };
     struct ExternalCompletion { ExternalCall call; std::string text, error, refreshedServerName, refreshedAccessToken, refreshedRefreshToken; };
     void startNextExternalCall();
     void finishExternalCalls();
