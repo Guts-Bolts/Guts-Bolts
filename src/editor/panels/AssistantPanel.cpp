@@ -653,6 +653,7 @@ AssistantPanel::~AssistantPanel() {
     if (m_pending.valid()) m_pending.wait();
     if (m_externalPending.valid()) m_externalPending.wait();
     if (m_mcpRefreshPending.valid()) m_mcpRefreshPending.wait();
+    if (m_oauthPending.valid()) m_oauthPending.wait();
 }
 
 void AssistantPanel::load() {
@@ -683,6 +684,9 @@ void AssistantPanel::load() {
             server.credentialKey = item.value("credentialKey", "mcp-" + server.name);
             if (server.credentialKey.empty()) server.credentialKey = "mcp-" + server.name;
             server.token = item.value("token", std::string());
+            server.oauthClientId = item.value("oauthClientId", std::string());
+            std::string refreshError;
+            CredentialStore::retrieve(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, refreshError);
             if (!server.token.empty()) {
                 std::string credentialError;
                 if (CredentialStore::store(server.credentialKey, server.token, credentialError)) migrateCredentials = true;
@@ -711,7 +715,7 @@ void AssistantPanel::save() const {
               {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}, {"connectedApps", m_appsWanted},
               {"mcpServers", [&]() { json a = json::array(); for (const auto& s : m_externalMcp)
                   a.push_back({{"name", s.name}, {"url", s.url}, {"credentialKey", s.credentialKey}, {"enabled", s.enabled},
-                               {"protocolVersion", s.protocolVersion}, {"tools", s.tools}}); return a; }()}}.dump(2);
+                               {"protocolVersion", s.protocolVersion}, {"oauthClientId", s.oauthClientId}, {"tools", s.tools}}); return a; }()}}.dump(2);
 }
 
 json AssistantPanel::externalMcpTools() const {
@@ -752,6 +756,27 @@ std::string AssistantPanel::externalMcpFingerprint(const std::string& qualifiedN
         }
     }
     return {};
+}
+
+void AssistantPanel::authorizeMcpServer(const std::string& name) {
+    if (m_oauthPending.valid()) {
+        m_mcpStatus = "An OAuth authorization is already in progress.";
+        return;
+    }
+    const auto server = std::find_if(m_externalMcp.begin(), m_externalMcp.end(),
+        [&](const McpServer& item) { return item.name == name; });
+    if (server == m_externalMcp.end()) {
+        m_mcpStatus = "MCP server configuration was not found.";
+        return;
+    }
+    const std::string serverUrl = server->url;
+    const std::string clientId = server->oauthClientId;
+    m_oauthServerName = name;
+    m_mcpStatus = "Discovering protected-resource metadata and starting OAuth authorization...";
+    m_oauthPending = std::async(std::launch::async, [name, serverUrl, clientId]() {
+        const McpOAuthCompletionData completed = performMcpOAuth(name, serverUrl, clientId);
+        return McpOAuthResult{name, completed.accessToken, completed.refreshToken, completed.issuer, completed.error};
+    });
 }
 
 void AssistantPanel::refreshMcpServers() {
@@ -1021,6 +1046,32 @@ void AssistantPanel::finishExternalCalls() {
 
 void AssistantPanel::update() {
     m_mcp.update(m_editor);
+    if (m_oauthPending.valid() && m_oauthPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        McpOAuthResult authorized = m_oauthPending.get();
+        auto server = std::find_if(m_externalMcp.begin(), m_externalMcp.end(), [&](const McpServer& item) {
+            return item.name == authorized.serverName;
+        });
+        if (!authorized.error.empty()) {
+            m_mcpStatus = authorized.serverName + ": " + authorized.error;
+        } else if (server == m_externalMcp.end() || authorized.accessToken.empty()) {
+            m_mcpStatus = "OAuth completed, but the MCP server configuration no longer exists.";
+        } else {
+            server->token = std::move(authorized.accessToken);
+            server->oauthRefreshToken = std::move(authorized.refreshToken);
+            std::string credentialError;
+            if (!CredentialStore::store(server->credentialKey, server->token, credentialError))
+                m_credentialStatus = credentialError + " The access token remains in memory for this session.";
+            if (!server->oauthRefreshToken.empty()) {
+                credentialError.clear();
+                if (!CredentialStore::store(server->credentialKey + "-oauth-refresh", server->oauthRefreshToken, credentialError))
+                    m_credentialStatus = credentialError + " The refresh token remains in memory for this session.";
+            }
+            m_mcpStatus = authorized.serverName + " authorized with " + authorized.issuer + ".";
+            save();
+            refreshMcpServers();
+        }
+        m_oauthServerName.clear();
+    }
     m_relay.update(m_editor, m_mcp);
     if (m_mcpRefreshPending.valid() && m_mcpRefreshPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         McpRefreshResult refreshed = m_mcpRefreshPending.get();
@@ -1263,7 +1314,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
 
 void AssistantPanel::render(bool* open) {
     if (!ImGui::Begin("Fyxa", open)) { ImGui::End(); return; }
-    const bool busy = m_pending.valid() || m_externalPending.valid() || m_mcpRefreshPending.valid() || !m_externalQueue.empty() || m_externalApprovalPending || m_deferredExternalClaude || m_deferredExternalOllama;
+    const bool busy = m_pending.valid() || m_externalPending.valid() || m_mcpRefreshPending.valid() || m_oauthPending.valid() || !m_externalQueue.empty() || m_externalApprovalPending || m_deferredExternalClaude || m_deferredExternalOllama;
 
     if (ImGui::CollapsingHeader("Fyxa settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* providers[] = {"Ollama (local)", "Claude (Anthropic)"};
@@ -1353,9 +1404,11 @@ void AssistantPanel::render(bool* open) {
         ImGui::InputTextWithHint("##newmcpurl", "https://example.com/mcp or http://127.0.0.1:3000/mcp", &m_newMcpUrl);
         ImGui::SetNextItemWidth(-1);
         ImGui::InputTextWithHint("##newmcptoken", "Bearer token (optional)", &m_newMcpToken, ImGuiInputTextFlags_Password);
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##newmcpclientid", "OAuth client ID (optional; leave blank for automatic registration)", &m_newMcpClientId);
         ImGui::BeginDisabled(m_mcpRefreshPending.valid());
         if (ImGui::Button("Add MCP server") && !m_newMcpName.empty() && !m_newMcpUrl.empty()) {
-            if (m_newMcpName.size() > 64 || m_newMcpUrl.size() > 2048 || m_newMcpToken.size() > 2048) {
+            if (m_newMcpName.size() > 64 || m_newMcpUrl.size() > 2048 || m_newMcpToken.size() > 2048 || m_newMcpClientId.size() > 2048) {
                 m_mcpStatus = "Server name, endpoint, or credential exceeds the supported length.";
             } else {
             bool duplicate = false;
@@ -1368,6 +1421,7 @@ void AssistantPanel::render(bool* open) {
             else {
                 McpServer server; server.name = m_newMcpName; server.url = m_newMcpUrl;
                 server.enabled = false;
+                server.oauthClientId = m_newMcpClientId;
                 server.credentialKey = "mcp-" + newKey;
                 server.token = m_newMcpToken;
                 if (!server.token.empty()) {
@@ -1376,7 +1430,7 @@ void AssistantPanel::render(bool* open) {
                         m_credentialStatus = credentialError;
                 }
                 m_externalMcp.push_back(std::move(server)); save();
-                m_newMcpName.clear(); m_newMcpUrl.clear(); m_newMcpToken.clear();
+                m_newMcpName.clear(); m_newMcpUrl.clear(); m_newMcpToken.clear(); m_newMcpClientId.clear();
                 refreshMcpServers();
             }
             }
@@ -1396,9 +1450,14 @@ void AssistantPanel::render(bool* open) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Refresh tools")) refreshMcpServers();
             ImGui::SameLine();
+            ImGui::BeginDisabled(m_oauthPending.valid());
+            if (ImGui::SmallButton("Authorize")) authorizeMcpServer(server.name);
+            ImGui::EndDisabled();
+            ImGui::SameLine();
             if (ImGui::SmallButton("Remove")) {
                 std::string credentialError;
                 CredentialStore::erase(server.credentialKey, credentialError);
+                CredentialStore::erase(server.credentialKey + "-oauth-refresh", credentialError);
                 m_externalMcp.erase(m_externalMcp.begin() + (long)i);
                 save(); ImGui::PopID(); break;
             }
