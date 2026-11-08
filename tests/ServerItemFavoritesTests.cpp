@@ -62,6 +62,15 @@ int main() {
         check(r.value("ok", false) && r["asset"].value("favorites", 0LL) == 1, "...twice still counts once");
         r = ask(s, "list", {{"kind", "clothing"}, {"favorites", true}});
         check(r.value("ok", false) && r["assets"].size() == 1 && lists(r, kHat), "My Favorites lists it (and nothing else)");
+        r = ask(s, "item.edit", {{"id", kHat}, {"exclusive", true}});
+        check(r.value("ok", false), "mark the catalog item Exclusive for an auction");
+        r = ask(s, "auction.start", {{"id", kHat}, {"copies", 1}, {"minBid", 10}, {"hours", 24}});
+        check(r.value("ok", false), "start an auction on the watched item");
+        r = ask(s, "asset.info", {{"id", kHat}});
+        check(r.value("ok", false) && r["asset"].value("myFavorite", false) && r["asset"].value("favorites", 0LL) == 1,
+              "auction remains watchable and keeps its watcher count");
+        r = ask(s, "list", {{"kind", "clothing"}, {"favorites", true}});
+        check(r.value("ok", false) && lists(r, kHat), "My Favorites keeps an active Exclusive auction");
         r = ask(s, "list", {{"kind", "clothing"}, {"sort", "favorited"}});
         check(r.value("ok", false) && !r["assets"].empty() && r["assets"][0].value("id", std::string()) == kHat, "Most Favorited puts it first");
         check(!ask(s, "item.favorite", {{"id", "nope"}}).value("ok", false), "...an item that isn't there can't be favourited");

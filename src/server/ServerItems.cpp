@@ -464,11 +464,13 @@ json GbServer::itemOp(const std::string& name, User& me, const json& args) {
     if (name == "item.favorite") {
         if (me.userId == 0) return fail("Sign up first.");
         auto it = findAsset(str("id"));
-        if (it == m_assets.end() || !Online::isCatalogItem(it->second.kind) || !canSee(it->second, me)) return fail("That item doesn't exist (any more).");
+        if (it == m_assets.end()) return fail("That item doesn't exist (any more).");
         Asset& a = it->second;
         auto& favs = me.itemFavorites;
         const bool had = std::find(favs.begin(), favs.end(), a.id) != favs.end();
         const bool want = !(args.contains("on") && args["on"].is_boolean() && !args["on"].get<bool>());
+        if ((!Online::isCatalogItem(a.kind) && !auctionOpen(a, now) && !(had && !want)) || !canSee(a, me))
+            return fail("That item doesn't exist (any more).");
         if (!a.meta.is_object()) a.meta = json::object();
         long long count = a.meta.value("favorites", 0LL);
         if (want && !had) {

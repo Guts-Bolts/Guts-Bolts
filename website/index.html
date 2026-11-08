@@ -210,9 +210,21 @@
   .auction-promo[hidden] { display: none; }
   .auction-promo.ending-today { border-color: #b45309; }
   .auction-promo.urgent { border-color: #c81e1e; background: linear-gradient(120deg, #fff5f3, #f7d9d7 58%, #efc5c2); }
+  .auction-promo.last-five-minutes { border-color: #dc2626; background: linear-gradient(120deg, #fff1f0, #f4cecb 58%, #eeb9b5); }
+  .auction-promo.last-minute { border: 3px solid #991b1b; background: linear-gradient(120deg, #ffe9e7, #efb9b5 58%, #e99e99); }
   .auction-promo-head { display: flex; align-items: center; gap: 10px; padding: 0 10px; background: linear-gradient(#fce8e5, #eac8c5); border-bottom: 1px solid #c98c89; }
   .auction-promo-head h2 { flex: 1; margin: 0; padding: 7px 0; color: #8e1d25; background: transparent; border: 0; font-size: 14px; letter-spacing: .7px; }
   .auction-promo-head a { color: #7f1d1d; font-weight: bold; font-size: 11px; white-space: nowrap; }
+  .auction-promo-position { color: #7f1d1d; font-size: 9px; font-weight: bold; white-space: nowrap; }
+  .auction-promo-control { width: 25px; height: 25px; padding: 0; border: 1px solid #b88b88; border-radius: 3px; background: linear-gradient(#fff, #ead4d2); color: #7f1d1d; font-size: 19px; line-height: 1; cursor: pointer; }
+  .auction-promo-control:disabled { opacity: .35; cursor: default; }
+  .auction-promo-control:focus-visible { outline: 2px solid #174ea6; outline-offset: 2px; }
+  .auction-promo-feature { min-width: 0; }
+  .auction-promo-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 0 16px 12px; }
+  .auction-promo-watch { border: 1px solid #8e1d25; border-radius: 3px; padding: 6px 10px; color: #fff; background: linear-gradient(#df4545, #a71922); font: bold 11px var(--gb-font); cursor: pointer; }
+  .auction-promo-watch[aria-pressed="true"] { color: #6b1c22; background: linear-gradient(#fff, #f1dedd); }
+  .auction-promo-watch:disabled { opacity: .55; cursor: wait; }
+  .auction-promo-feedback { color: #7f1d1d; font-size: 10px; }
   .auction-promo-main { display: grid; grid-template-columns: minmax(145px, 205px) minmax(0, 1fr) minmax(150px, 190px); gap: 18px; align-items: center; padding: 16px; color: #251b1b; text-decoration: none !important; }
   .auction-promo-main:hover { background: rgba(255,255,255,.28); }
   .auction-promo-art { aspect-ratio: 1; min-width: 0; display: grid; place-items: center; background: radial-gradient(circle, #fff 0%, #eadcda 72%); border: 1px solid #b78d89; box-shadow: inset 0 1px 5px rgba(0,0,0,.12); }
@@ -224,6 +236,7 @@
   .auction-promo-bid { display: flex; flex-direction: column; gap: 2px; }
   .auction-promo-bid span, .auction-promo-clock > span { color: #6b5555; font-size: 9px; font-weight: bold; letter-spacing: .8px; }
   .auction-promo-bid strong { color: #241616; font-size: 21px; line-height: 1.15; }
+  .auction-promo-signals { display: flex; flex-wrap: wrap; gap: 5px 12px; margin-top: 7px; color: #725858; font-size: 9px; font-weight: bold; letter-spacing: .5px; }
   .auction-promo-clock { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
   .auction-promo-clock strong { color: #8e1d25; font: bold 27px/1.1 Consolas, "Courier New", monospace; white-space: nowrap; }
   .auction-promo.urgent .auction-promo-clock strong { color: #c81e1e; }
@@ -244,9 +257,11 @@
     .auction-promo-clock strong { font-size: 18px; }
     .auction-promo-cta { margin-top: 0; padding: 6px 7px; font-size: 10px; }
     .auction-promo-more { grid-template-columns: 1fr; padding: 0 12px 12px; }
-    .auction-promo-head { align-items: flex-start; }
+    .auction-promo-head { align-items: center; flex-wrap: wrap; gap: 6px; }
     .auction-promo-head h2 { font-size: 12px; }
-    .auction-promo-head a { padding-top: 8px; font-size: 9px; }
+    .auction-promo-position { margin-left: auto; }
+    .auction-promo-head a { padding-top: 0; font-size: 9px; }
+    .auction-promo-actions { padding: 0 12px 12px; }
   }
 </style>
 </head>
