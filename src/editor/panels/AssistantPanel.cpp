@@ -467,7 +467,8 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
     std::string challenge = responseHeader(responseHeaders, "WWW-Authenticate");
     McpOAuthMetadata metadata;
     if (!discoverMcpOAuth(resource, challenge, metadata, result.error)) return result;
-    result.issuer = metadata.issuer;\n    result.tokenEndpoint = metadata.tokenEndpoint;\n    result.resource = metadata.resource;
+    result.issuer = metadata.issuer;
+    result.tokenEndpoint = metadata.tokenEndpoint;\n    result.resource = metadata.resource;
 
     McpOAuth::Pkce pkce;
     if (!McpOAuth::createPkce(pkce)) {
@@ -632,7 +633,8 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
         result.error = "OAuth token response did not issue a Bearer access token.";
         return result;
     }
-    result.clientId = clientId;\n    result.accessToken = token["access_token"].get<std::string>();
+    result.clientId = clientId;
+    result.accessToken = token["access_token"].get<std::string>();
     if (token.contains("refresh_token") && token["refresh_token"].is_string())
         result.refreshToken = token["refresh_token"].get<std::string>();
     if (result.refreshToken.size() > 16384) {
@@ -732,7 +734,8 @@ void AssistantPanel::load() {
             server.credentialKey = item.value("credentialKey", "mcp-" + server.name);
             if (server.credentialKey.empty()) server.credentialKey = "mcp-" + server.name;
             server.token = item.value("token", std::string());
-            server.oauthClientId = item.value("oauthClientId", std::string());\n            server.oauthTokenEndpoint = item.value("oauthTokenEndpoint", std::string());\n            server.oauthResource = item.value("oauthResource", std::string());
+            server.oauthClientId = item.value("oauthClientId", std::string());
+            server.oauthTokenEndpoint = item.value("oauthTokenEndpoint", std::string());\n            server.oauthResource = item.value("oauthResource", std::string());
             std::string refreshError;
             CredentialStore::retrieve(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, refreshError);
             if (!server.token.empty()) {
@@ -1132,7 +1135,8 @@ void AssistantPanel::update() {
             m_mcpStatus = "OAuth completed, but the MCP server configuration no longer exists.";
         } else {
             server->token = std::move(authorized.accessToken);
-            server->oauthRefreshToken = std::move(authorized.refreshToken);\n            server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);\n            server->oauthClientId = std::move(authorized.clientId);\n            server->oauthResource = std::move(authorized.resource);
+            server->oauthRefreshToken = std::move(authorized.refreshToken);
+            server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);\n            server->oauthClientId = std::move(authorized.clientId);\n            server->oauthResource = std::move(authorized.resource);
             std::string credentialError;
             if (!CredentialStore::store(server->credentialKey, server->token, credentialError))
                 m_credentialStatus = credentialError + " The access token remains in memory for this session.";
@@ -1536,7 +1540,9 @@ void AssistantPanel::render(bool* open) {
                 m_externalMcp.erase(m_externalMcp.begin() + (long)i);
                 save(); ImGui::PopID(); break;
             }
-            ImGui::TextDisabled("%s", server.url.c_str());\n            ImGui::SetNextItemWidth(-1);\n            if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered client ID or client metadata URL", &server.oauthClientId)) save();
+            ImGui::TextDisabled("%s", server.url.c_str());
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered client ID or client metadata URL", &server.oauthClientId)) save();
             if (!server.enabled) ImGui::TextDisabled("Disabled until you explicitly allow this server's tools.");
             ImGui::TextDisabled("%d discovered tool(s)", server.tools.is_array() ? (int)server.tools.size() : 0);
             ImGui::PopID();
