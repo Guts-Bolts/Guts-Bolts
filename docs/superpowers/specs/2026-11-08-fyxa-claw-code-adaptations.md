@@ -15,7 +15,7 @@ This plan adapts general engineering patterns and independently implements them 
 | MCP stdio process manager | Local stdio MCP transport alongside the existing HTTP transport | P1 |
 | Skill discovery and prompt injection | User-installed and built-in Fyxa Skills: focused, versioned instruction packs for Studio workflows, scripting, debugging, building, and platform help | Implemented with bounded Markdown loading; latest-head verification pending |
 | Pre/post tool hooks | Trusted extension lifecycle events with strict timeouts, no implicit permission elevation, and auditable outcomes | P2 |
-| Task registry and task tools | Persistent, visible multi-step task plans that Fyxa can create, update, and verify | Implemented in Studio assistant; latest-head verification pending |
+| Task registry and task tools | Persistent, visible multi-step task plans that Fyxa can create, update, and verify | Implemented in Studio assistant; task evidence transaction hardening remains |
 | Subagent/team orchestration | Specialized agents for bounded tasks (Studio scripting, debugging, documentation, asset planning) with scoped tools and explicit resource budgets | P2 |
 | Session compaction and memory | User-controlled, privacy-aware continuity across G&B surfaces | P2 |
 | Structured events and audit reports | Unified Fyxa activity feed across native tools and connected integrations | P1 |
@@ -55,4 +55,9 @@ A capability is not exposed merely because a model asks for it. The provider mus
 
 ## Current scope and limitations
 
-This document is a porting plan, not a claim that the listed features have already been implemented. Fyxa's current branch has provider selection, native Studio tools, HTTP MCP connections, per-call external-tool approval, credential storage, and the platform-wide product definition. It does not yet have the task registry, skill loader, stdio MCP transport, hooks, or subagent orchestration described above.
+This document is a porting plan, not a claim that every listed feature has already been implemented. Fyxa's current branch has provider selection, native Studio tools, HTTP MCP connections, per-call external-tool approval, credential storage, a persistent task registry, and a bounded Markdown skill loader. It does not yet have stdio MCP transport, hooks, or subagent orchestration. Its HTTP MCP transport still uses the 2025-era initialize/session lifecycle and must be upgraded for MCP 2026-07-28 before production use. Task evidence also needs an atomic, replay-safe transaction before it is treated as a production integrity boundary.
+
+
+## Production-readiness review
+
+The prioritized security and reliability findings, implementation decisions, and release gates are tracked in `docs/superpowers/specs/2026-11-08-fyxa-production-readiness-review.md`. Keep PR #283 draft until the P0 protocol, authorization, tool-integrity, and trust-boundary gates and the current-head build/test matrix are green.
