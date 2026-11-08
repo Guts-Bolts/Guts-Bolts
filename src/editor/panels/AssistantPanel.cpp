@@ -1356,6 +1356,7 @@ void AssistantPanel::update() {
             std::string credentialError;
             if (!CredentialStore::store(oauthCredentialKey, server->token, credentialError))
                 m_credentialStatus = credentialError + " The access token remains in memory for this session.";
+            CredentialStore::erase(server->credentialKey, credentialError);
             if (!server->oauthRefreshToken.empty()) {
                 credentialError.clear();
                 if (!CredentialStore::store(oauthCredentialKey + "-refresh", server->oauthRefreshToken, credentialError))
@@ -1777,7 +1778,12 @@ void AssistantPanel::render(bool* open) {
             if (ImGui::SmallButton("Remove")) {
                 std::string credentialError;
                 CredentialStore::erase(server.credentialKey, credentialError);
-                CredentialStore::erase(server.credentialKey + "-oauth-refresh", credentialError);
+                if (!server.oauthIssuer.empty() && !server.oauthResource.empty() && !server.oauthClientId.empty()) {
+                    const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
+                        server.name, server.oauthIssuer, server.oauthResource, server.oauthClientId);
+                    CredentialStore::erase(oauthCredentialKey, credentialError);
+                    CredentialStore::erase(oauthCredentialKey + "-refresh", credentialError);
+                }
                 m_externalMcp.erase(m_externalMcp.begin() + (long)i);
                 save(); ImGui::PopID(); break;
             }
@@ -1787,8 +1793,10 @@ void AssistantPanel::render(bool* open) {
             if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered public-client ID or client metadata URL", &server.oauthClientId)) {
                 if (!server.oauthIssuer.empty()) {
                     std::string oauthCredentialError;
-                    CredentialStore::erase(server.credentialKey, oauthCredentialError);
-                    CredentialStore::erase(server.credentialKey + "-oauth-refresh", oauthCredentialError);
+                    const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
+                        server.name, server.oauthIssuer, server.oauthResource, server.oauthClientId);
+                    CredentialStore::erase(oauthCredentialKey, oauthCredentialError);
+                    CredentialStore::erase(oauthCredentialKey + "-refresh", oauthCredentialError);
                     server.token.clear();
                     server.oauthRefreshToken.clear();
                     server.oauthIssuer.clear();
