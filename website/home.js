@@ -227,7 +227,7 @@
   startLive();   // polling below remains the fallback when Realtime is unavailable
   refresh();
   window.setInterval(tick, 1000);
-  window.setInterval(refresh, 12000);   // Keep auction bids fresh when Realtime is unavailable.
+  window.setInterval(refresh, 15000);   // Match the documented fallback refresh interval.
   window.addEventListener('focus', refresh);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(); });
 })();
