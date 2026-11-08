@@ -36,7 +36,7 @@ private:
     nlohmann::json externalMcpTools() const;
     std::string externalMcpFingerprint(const std::string& qualifiedName) const;
     struct ExternalCall { bool claude = false; std::string name, id, definitionFingerprint; nlohmann::json args; };
-    struct ExternalCompletion { ExternalCall call; std::string text, error; };
+    struct ExternalCompletion { ExternalCall call; std::string text, error, refreshedServerName, refreshedAccessToken, refreshedRefreshToken; };
     void startNextExternalCall();
     void finishExternalCalls();
     std::string recordToolEvidence();
