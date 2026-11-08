@@ -201,7 +201,7 @@
     root.querySelectorAll('[data-auction-end]').forEach((node) => {
       const end = Number(node.dataset.auctionEnd);
       if (end <= Date.now() / 1000) expired = true;
-      node.textContent = countdown(end);
+      node.textContent = formatAuctionCountdown(end);
     });
     if (expired) {
       render(lastItems);   // remove an expired banner immediately, even before the next network response
