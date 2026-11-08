@@ -24,7 +24,7 @@ These tables are created additively by the existing Durable Object constructor. 
 - If a policy or notice version changes, previously enabled processing becomes ineligible until the account explicitly reconfirms the current notice.
 - Existing and new assets are not automatically eligible: the creator must attest that they have the necessary rights, and staff must approve the rights review.
 - Once rights are approved, the account-wide preference applies to assets whose per-content choice is `inherit`. An explicit per-content `exclude` overrides account-level inclusion.
-- Private assets, assets awaiting/rejected in moderation, exclusive/promo-only assets, and assets whose creator no longer matches the recorded owner remain excluded.
+- Private assets, assets awaiting/rejected in moderation, exclusive/promo-only assets, and assets whose creator no longer matches the recorded owner remain excluded. When ownership changes, the new owner must make a fresh rights attestation and obtain a new staff review; the prior owner's approval is never inherited.
 - A global account opt-out immediately recomputes stored eligibility. Per-content inclusion cannot override it.
 - Deleting an asset removes its eligibility row and leaves an audit event.
 - Deleting an account revokes both AI preferences, clears its content rights attestations, disables all retained content eligibility, and records the deletion event. Published games/items remain under the platform's existing account-deletion behavior, but they are no longer eligible for Fyxa use.
