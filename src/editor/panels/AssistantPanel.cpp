@@ -1966,6 +1966,7 @@ void AssistantPanel::render(bool* open) {
     }
 
     if (ImGui::CollapsingHeader("Fyxa task plan")) {
+        ImGui::TextDisabled("V1 supports one active task. Other independent requests stay pending until the active task is completed or paused.");
         FyxaTaskStore store(Paths::file("fyxa-tasks.json"));
         std::string taskError;
         const json tasks = store.list(taskError);
