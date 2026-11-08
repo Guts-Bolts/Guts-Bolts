@@ -183,7 +183,7 @@ export function installChats(Cls) {
       return okay({ session: id, code, chat: chatId, member: 0, seq: 0, snapshot, members: this.teamMembers(id) });
     }
     if (name === 'team.join') {
-      const code = clean(args.code, 24).toUpperCase();
+      const code = String(args.code || '').trim().toUpperCase();
       if (!/^[0-9A-F]{16}$/.test(code)) return fail('Enter the 16-character Team Create invite code.');
       const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq, snapshot_seq FROM teamsessions WHERE code = ?', code)][0];
       if (!row) return fail('That Team Create invite is invalid or has expired.');
