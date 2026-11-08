@@ -3526,7 +3526,7 @@ int hum_takeDamage(lua_State* L) {
             if (glm::vec3* v = LuaApi::toVector3(L, 4)) projectileVelocity = *v;
         SceneNode* character = scene.findById(rootId);
         hitPart = scene.findById(partId);
-        positional = character && hitPart && hitPart->isPart() && character->isAncestorOf(hitPart);
+        positional = damage > 0.0f && character && hitPart && hitPart->isPart() && character->isAncestorOf(hitPart);
     }
 
     if (positional) {
