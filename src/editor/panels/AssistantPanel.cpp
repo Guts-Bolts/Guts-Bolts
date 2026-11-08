@@ -145,6 +145,7 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     int status = 0;
     const std::string host = endpoint.tls ? "wss://" + endpoint.host : endpoint.host;
     if (!Net::httpPost(host, endpoint.port, endpoint.path, request.dump(), body, error, 12000, headers, &status, &responseHeaders)) return false;
+    if (body.size() > 8u * 1024u * 1024u) { error = "The MCP server response exceeded 8 MiB."; return false; }
     if (sessionOut) *sessionOut = responseHeader(responseHeaders, "Mcp-Session-Id");
     if ((status == 202 || status == 204) && !request.contains("id")) { response = json::object(); return true; }
     if (status == 202 || status == 204) {
@@ -280,12 +281,15 @@ json AssistantPanel::externalMcpTools() const {
         const std::string prefix = mcpServerKey(server.name);
         for (const auto& tool : server.tools) {
             if (!tool.is_object()) continue;
-            const std::string name = tool.value("name", std::string());
+            if (!tool.contains("name") || !tool["name"].is_string()) continue;
+            const std::string name = tool["name"].get<std::string>();
             if (!validMcpToolName(name) || tool.dump().size() > 65536) continue;
             json schema = tool.value("inputSchema", json::object());
             if (!schema.is_object()) continue;
+            const std::string description = tool.contains("description") && tool["description"].is_string()
+                ? tool["description"].get<std::string>().substr(0, 4096) : "External MCP tool";
             result.push_back({{"qualifiedName", "mcp__" + prefix + "__" + name},
-                              {"description", "[" + server.name + "] " + tool.value("description", std::string("External MCP tool"))},
+                              {"description", "[" + server.name + "] " + description},
                               {"inputSchema", schema}});
         }
     }
@@ -343,7 +347,9 @@ void AssistantPanel::refreshMcpServers() {
                         validMcpToolName(tool["name"].get<std::string>()) && tool.dump().size() <= 65536 &&
                         tool.value("inputSchema", json::object()).is_object()) server.tools.push_back(tool);
                 }
-                cursor = response.value("result", json::object()).value("nextCursor", std::string());
+                const json resultObject = response.value("result", json::object());
+                cursor = resultObject.contains("nextCursor") && resultObject["nextCursor"].is_string()
+                    ? resultObject["nextCursor"].get<std::string>() : std::string();
                 if (cursor.empty() || server.tools.size() >= 512) break;
             }
         }
