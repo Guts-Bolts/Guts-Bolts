@@ -28,11 +28,11 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
    - Remaining OAuth work: incremental scope/step-up authorization, explicit revocation, broader multi-authorization-server selection, and live integration tests against protected MCP servers. Static bearer credentials remain available for local-development compatibility.
    - Never expose tokens or authorization headers to model context, tool descriptions, audit logs, crash reports, or UI diagnostics.
 
-3. **Tool-definition integrity / MCPoison resistance — implementation added; tests pending CI**
+3. **Tool-definition integrity / MCPoison resistance — implementation and focused CI tests passed**
    - Fyxa computes a canonical BLAKE2b-256 fingerprint over tool name, description, input schema, annotations, server identity, and endpoint.
    - The fingerprint is pinned when the model queues a call. Immediately before execution, Fyxa fetches the live `tools/list` catalog and compares the definition; missing or changed definitions fail closed and require rediscovery/re-approval.
    - External calls still require per-call approval. Server enablement is not blanket authorization.
-   - Unit tests cover description, schema, and endpoint changes; reordered-key and full live-server integration tests remain to be added.
+   - Current-head Tests job passed with unit coverage for description, schema, and endpoint changes. Reordered-key and full live-server integration tests remain to be added.
 
 4. **Untrusted MCP metadata and results — partial defense added**
    - External tool descriptions now carry an explicit untrusted-metadata marker; tool results are wrapped as untrusted data, and the system guide tells the model not to follow embedded instructions or let them alter permissions/approval.
@@ -48,15 +48,15 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 
 ### P1 — task integrity, runtime reliability, and context
 
-6. **Task evidence transaction — implementation added; tests pending CI**
+6. **Task evidence transaction — implementation and focused CI tests passed**
    - Fyxa now tracks one explicit active task rather than choosing the first in-progress task. Successful tool results issue task-bound evidence tokens persisted in the task store.
    - `completeWithEvidence` validates task status and token, appends the verification note, changes status, and consumes all pending tokens in one locked atomic file replacement. Ordinary `update(..., completed, ...)` is rejected.
-   - The store uses both a process mutex and an OS-level lock file (Windows `LockFileEx`, POSIX `flock`) to serialize cooperating processes. Tests cover wrong-task tokens, replay, direct-completion bypass, and concurrent completion; CI execution is pending.
+   - The store uses both a process mutex and an OS-level lock file (Windows `LockFileEx`, POSIX `flock`) to serialize cooperating processes. The current-head Tests job passed coverage for wrong-task tokens, replay, direct-completion bypass, and concurrent completion.
 
 7. **Cancellation and bounded execution — cancellable DNS wait implemented; full shutdown verification pending**
    - Fyxa's Stop action now sets a shared atomic cancellation token captured by provider and approved external-MCP workers. The HTTP client checks it before connect, during non-blocking connect waits, TLS handshake waits, request writes, response-header reads, and response-body reads. Socket readiness waits poll in 50 ms slices.
    - Late provider responses are discarded. Late MCP completions are converted to cancellation errors and cannot issue task evidence or persist a refreshed token after Stop. Queued external calls are returned as not executed. The UI warns that an MCP server may already have received and acted on an in-flight request; cancellation is not remote rollback.
-   - A loopback HTTP regression test holds a request open, signals cancellation, and requires the client to return within one second. The test is registered in CTest; current-head execution is still pending.
+   - A loopback HTTP regression test holds a request open, signals cancellation, and requires the client to return within one second. A DNS deadline regression test also verifies the caller returns promptly. Both are registered in CTest; the current-head Tests job passed.
    - DNS lookup now runs behind a bounded resolver lane (maximum four outstanding system lookups). The calling worker polls cancellation while waiting and returns promptly; the resolver thread owns shared state and cannot access caller stack memory after cancellation. Outbound Connection::connectTo accepts the same cancellation token, and the connected-app relay cancels a pending dial when disabled or destroyed.
    - The OS getaddrinfo operation itself is not forcibly interrupted; a cancelled lookup may finish in the detached resolver lane. The lane is capped and new lookups fail fast when saturated. This bounds agent/relay shutdown, but platform CI and a stalled-resolver stress test are still required before claiming a hard system-wide resolver bound.
    - OAuth/discovery futures also need cancellation propagated through every metadata and token request; the implementation is partial. Continue bounding concurrency, response bytes, tool-call count, total task time, and per-provider retries.
