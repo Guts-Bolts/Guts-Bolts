@@ -1043,6 +1043,14 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME FyxaTaskStoreTests COMMAND FyxaTaskStoreTests)
 endif()
 
+# MCP HTTP wire-envelope compatibility: stateless 2026-07-28 and legacy sessions.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(ExternalMcpProtocolTests tests/ExternalMcpProtocolTests.cpp)
+    target_include_directories(ExternalMcpProtocolTests PRIVATE src/)
+    target_link_libraries(ExternalMcpProtocolTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME ExternalMcpProtocolTests COMMAND ExternalMcpProtocolTests)
+endif()
+
 # Fyxa credentials must live in the OS vault, or explicitly fall back to session-only storage.
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
     add_executable(CredentialStoreTests tests/CredentialStoreTests.cpp src/core/CredentialStore.cpp)
