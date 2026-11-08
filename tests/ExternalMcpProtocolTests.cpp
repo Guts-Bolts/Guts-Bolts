@@ -65,6 +65,44 @@ int main() {
     assert(McpHttpProtocol::toolResultIsError({{"isError", "true"}}, toolError));
     assert(!toolError.empty());
 
+    // MCP routing values must not be smuggled through comma/semicolon separators.
+    json commaName = {{ "jsonrpc", "2.0" }, { "id", 14 }, { "method", "tools/call" },
+                      { "params", {{ "name", "search,admin" }, { "arguments", json::object() }} }};
+    assert(!McpHttpProtocol::prepareRequest(commaName, headers, "2026-07-28", "", "", error));
+    json semicolonUri = {{ "jsonrpc", "2.0" }, { "id", 15 }, { "method", "resources/read" },
+                         { "params", {{ "uri", "file://host/path;admin" }} }};
+    assert(!McpHttpProtocol::prepareRequest(semicolonUri, headers, "2026-07-28", "", "", error));
+
+    // Definition fingerprints bind approval to the exact server, endpoint and schema.
+    const json definition = {
+        {"name", "write_file"},
+        {"description", "Write a project file"},
+        {"inputSchema", {{"type", "object"}, {"properties", {{"path", {{"type", "string"}}}}}}},
+        {"annotations", {{"destructiveHint", true}}}
+    };
+    const std::string fingerprint = McpHttpProtocol::definitionFingerprint("workspace", "https://mcp.example/tools", definition);
+    assert(fingerprint.size() == 64);
+    assert(fingerprint == McpHttpProtocol::definitionFingerprint("workspace", "https://mcp.example/tools", definition));
+    assert(fingerprint != McpHttpProtocol::definitionFingerprint("other-server", "https://mcp.example/tools", definition));
+    assert(fingerprint != McpHttpProtocol::definitionFingerprint("workspace", "https://other.example/tools", definition));
+    json changedDescription = definition;
+    changedDescription["description"] = "Read a project file";
+    assert(fingerprint != McpHttpProtocol::definitionFingerprint("workspace", "https://mcp.example/tools", changedDescription));
+    json changedSchema = definition;
+    changedSchema["inputSchema"]["properties"]["path"]["pattern"] = "^[a-z]+$";
+    assert(fingerprint != McpHttpProtocol::definitionFingerprint("workspace", "https://mcp.example/tools", changedSchema));
+    json changedAnnotation = definition;
+    changedAnnotation["annotations"]["destructiveHint"] = false;
+    assert(fingerprint != McpHttpProtocol::definitionFingerprint("workspace", "https://mcp.example/tools", changedAnnotation));
+
+    // A server's legacy fallback is restricted to explicit protocol errors.
+    assert(McpHttpProtocol::legacyFallbackAllowed({{"error", {{"code", -32601}}}}));
+    assert(McpHttpProtocol::legacyFallbackAllowed({{"error", {{"code", -32022}}}}));
+    assert(!McpHttpProtocol::legacyFallbackAllowed({{"error", {{"code", -32600}}}}));
+    assert(!McpHttpProtocol::legacyFallbackAllowed({{"error", {{"code", -32000}}}}));
+    assert(!McpHttpProtocol::legacyFallbackAllowed({{"error", {{"code", " -32601 "}}}}));
+    assert(!McpHttpProtocol::legacyFallbackAllowed({{"error", "not-an-object"}}));
+
     std::cout << "MCP HTTP protocol envelope tests passed\n";
     return 0;
 }
