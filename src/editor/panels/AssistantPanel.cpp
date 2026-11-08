@@ -550,6 +550,13 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
         result.error = "The configured OAuth client ID is invalid or too large.";
         return result;
     }
+    if (clientId.rfind("https://", 0) == 0) {
+        McpOAuth::HttpsUrl clientMetadataUrl;
+        if (!McpOAuth::parseHttpsUrl(clientId, clientMetadataUrl)) {
+            result.error = "A URL-form OAuth client ID must be a valid HTTPS Client ID Metadata Document URL.";
+            return result;
+        }
+    }
     if (clientId.empty()) {
         if (metadata.registrationEndpoint.empty()) {
             result.error = "This authorization server has no Dynamic Client Registration endpoint. Supply a pre-registered OAuth client ID in Fyxa settings.";
