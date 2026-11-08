@@ -26,6 +26,10 @@ private:
     void handleReply(int status, const std::string& body, const std::string& error);
     void handleClaudeReply(int status, const std::string& body, const std::string& error);
     void handleOllamaReply(int status, const std::string& body, const std::string& error);
+    void refreshMcpServers();
+    bool callExternalMcpTool(const std::string& qualifiedName, const nlohmann::json& args,
+                             std::string& result, std::string& error) const;
+    nlohmann::json externalMcpTools() const;
 
     Editor&     m_editor;
     StudioMcp   m_mcp;
@@ -41,6 +45,14 @@ private:
     std::string m_ollamaHost = "127.0.0.1";
     int         m_ollamaPort = 11434;
     std::string m_ollamaModel = "qwen3:8b";
+    struct McpServer {
+        std::string name, url, token;
+        bool enabled = true;
+        nlohmann::json tools = nlohmann::json::array();
+    };
+    std::vector<McpServer> m_externalMcp;
+    std::string m_newMcpName, m_newMcpUrl, m_newMcpToken;
+    std::string m_mcpStatus;
     std::string m_input;
     nlohmann::json m_messages = nlohmann::json::array();
     std::vector<Line> m_lines;
