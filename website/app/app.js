@@ -3618,6 +3618,10 @@ function themeBox() {
 }
 pages.settings = async () => {
   if (!signedIn()) { show(html`<h1>Account Settings</h1>${langBox()}${themeBox()}${needSignIn('change your account settings')}`); return; }
+  const fyxaResult = await pageCall('ai.preferences.get', {});
+  const fyxaPreferences = fyxaResult.ok ? fyxaResult.preferences : null;
+  const fyxaHistoryResult = await pageCall('ai.training.history', {});
+  const fyxaEvents = fyxaHistoryResult.ok && Array.isArray(fyxaHistoryResult.events) ? fyxaHistoryResult.events : [];
   const noPw = !me.hasPassword;
   show(html`<h1>Account Settings</h1>
     <div class="settings">${langBox()}${themeBox()}
@@ -3668,6 +3672,25 @@ pages.settings = async () => {
           <label>Who can see my inventory (and trade with me)</label>
           <select name="inventory">${['everyone', 'friends', 'nobody'].map((v) => html`<option value="${v}"${((me.privacy || {}).inventory || 'everyone') === v ? raw(' selected') : ''}>${{ everyone: 'Everyone', friends: 'Friends only', nobody: 'No one' }[v]}</option>`)}</select>
           <p><button class="btn green">Save</button></p></form></div>
+      <div class="box fyxa-settings"><h2 class="boxhead">Fyxa AI data preferences</h2>
+        <p>Control whether eligible public creations may be used to improve Fyxa AI or referenced by its AI features. These are separate choices and both start off.</p>
+        <div class="box gold small"><b>Important:</b> This is a permission setting, not an upload or training action. The current backend records your choice and rights-review status only. It does not send your content to an AI provider or train a model. The first version covers creator assets only, not messages, forum posts, voice, livestreams, or watch-party chat.</div>
+        ${!fyxaPreferences ? html`<p class="error">Couldn't load Fyxa preferences: ${fyxaResult.error || 'Unknown server error'}</p>`
+          : html`<form class="form" data-form="fyxaPreferences">
+            <input type="hidden" name="noticeVersion" value="${fyxaPreferences.currentNoticeVersion || ''}">
+            <p><label><input type="checkbox" name="training" ${fyxaPreferences.trainingEnabled ? 'checked' : ''}> Allow eligible public creations to be used for model training</label></p>
+            <p class="small muted">This is a separate, optional permission. Only content with a rights attestation and staff approval can become eligible.</p>
+            <p><label><input type="checkbox" name="reference" ${fyxaPreferences.referenceEnabled ? 'checked' : ''}> Allow eligible public creations to be referenced by Fyxa AI</label></p>
+            <p class="small muted">Reference use is separate from model training and can be disabled independently.</p>
+            <p><label><input type="checkbox" name="confirm"> I have read the current Fyxa AI data notice and understand these choices apply only to eligible content I have the rights to provide.</label></p>
+            <p class="small muted">Notice version: ${fyxaPreferences.currentNoticeVersion || 'Unavailable'} · Policy version: ${fyxaPreferences.currentPolicyVersion || 'Unavailable'}</p>
+            <p><button class="btn green">Save Fyxa preferences</button></p>
+          </form>` }
+        <h3>Recent AI data-control activity</h3>
+        ${!fyxaHistoryResult.ok ? html`<p class="muted small">Activity history is unavailable: ${fyxaHistoryResult.error || 'Unknown server error'}</p>`
+          : fyxaEvents.length ? html`<div class="list">${fyxaEvents.slice(0,10).map((event) => html`<div><b>${event.event}</b><span class="small muted"> ${event.createdAt ? dateText(event.createdAt) : ''}${event.contentId ? ' · Content ' + event.contentId : ''}</span></div>`)}</div>`
+          : html`<p class="muted small">No AI data-control changes have been recorded.</p>`}
+      </div>
       <div class="box"><h2 class="boxhead">Blocked people</h2>
         <p class="small muted">People you block can't message, friend, follow, trade with or join you, and you won't see each other online.
           Block someone from their profile.</p>
@@ -4715,6 +4738,19 @@ const actions = {
 };
 
 const forms = {
+  async fyxaPreferences(f) {
+    const trainingEnabled = !!f.training.checked;
+    const referenceEnabled = !!f.reference.checked;
+    const r = await call('ai.preferences.update', {
+      trainingEnabled,
+      referenceEnabled,
+      confirm: !!f.confirm.checked,
+      noticeVersion: f.noticeVersion.value,
+    });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Fyxa AI preferences saved.');
+    render();
+  },
   forumSearch(f) {
     const q = f.q.value.trim();
     if (!q) return;
