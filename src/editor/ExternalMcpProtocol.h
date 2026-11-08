@@ -1,6 +1,8 @@
 #pragma once
 
 #include <nlohmann/json.hpp>
+#include <monocypher.h>
+#include <cstdint>
 #include <string>
 
 namespace McpHttpProtocol {
@@ -70,4 +72,29 @@ inline bool prepareRequest(json& request, std::string& headers,
     if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
     return true;
 }
+inline std::string definitionFingerprint(const std::string& serverName,
+                                            const std::string& endpoint,
+                                            const json& tool) {
+    const json identity = {
+        {"server", serverName},
+        {"endpoint", endpoint},
+        {"name", tool.value("name", std::string())},
+        {"description", tool.value("description", std::string())},
+        {"inputSchema", tool.value("inputSchema", json::object())},
+        {"annotations", tool.value("annotations", json::object())}
+    };
+    const std::string canonical = identity.dump();
+    std::uint8_t digest[32]{};
+    crypto_blake2b(digest, sizeof(digest),
+        reinterpret_cast<const std::uint8_t*>(canonical.data()), canonical.size());
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string result;
+    result.reserve(sizeof(digest) * 2);
+    for (std::uint8_t byte : digest) {
+        result.push_back(hex[byte >> 4]);
+        result.push_back(hex[byte & 0x0f]);
+    }
+    return result;
+}
+
 } // namespace McpHttpProtocol
