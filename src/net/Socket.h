@@ -35,7 +35,7 @@ private:
     struct Web;                    // the WebSocket (and TLS) side, for wss:// hosts
     bool webPoll();
     friend bool httpPost(const std::string&, int, const std::string&, const std::string&, std::string&, std::string&, int,
-                         const std::string&, int*);
+                         const std::string&, int*, std::string*);
 
     intptr_t    m_sock;
     std::string m_address;
@@ -52,7 +52,7 @@ bool isWebAddress(const std::string& host);
 // `extraHeaders`: more header lines, each ending in "\r\n". `status` gets the HTTP status.
 bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
               std::string& reply, std::string& error, int timeoutMs = 30000,
-              const std::string& extraHeaders = "", int* status = nullptr);
+              const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr);
 
 // A tiny web server for this computer only (127.0.0.1): other programs on the
 // same computer can talk to us, nobody on the network can. Polled every frame,
