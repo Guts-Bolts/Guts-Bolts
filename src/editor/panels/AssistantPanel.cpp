@@ -605,6 +605,10 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
         callbackServer.poll();
         Net::HttpServer::Request request{};
         while (callbackServer.next(request)) {
+            if (request.path.size() > 8192) {
+                callbackServer.respond(request.id, 400, "text/plain", "Authorization response too large.");
+                continue;
+            }
             const size_t queryAt = request.path.find('?');
             const std::string route = request.path.substr(0, queryAt);
             if (request.method != "GET" || route != "/oauth/callback") {
@@ -613,6 +617,13 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
             }
             if (!McpOAuth::parseQuery(request.path, callback)) {
                 callbackServer.respond(request.id, 400, "text/plain", "Invalid authorization response.");
+                continue;
+            }
+            if (!callback.contains("state") || callback["state"] != pkce.state ||
+                (metadata.issuerParameterRequired && !callback.contains("iss")) ||
+                (callback.contains("iss") && callback["iss"] != metadata.issuer)) {
+                callback.clear();
+                callbackServer.respond(request.id, 400, "text/plain", "Authorization response validation failed.");
                 continue;
             }
             callbackServer.respond(request.id, 200, "text/html; charset=utf-8",
