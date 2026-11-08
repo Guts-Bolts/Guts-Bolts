@@ -1022,6 +1022,14 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
 endif()
 
+# Fyxa skills are bounded Markdown instruction packs loaded on demand.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaSkillsTests tests/FyxaSkillsTests.cpp src/editor/FyxaSkills.cpp)
+    target_include_directories(FyxaSkillsTests PRIVATE src/)
+    target_link_libraries(FyxaSkillsTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaSkillsTests COMMAND FyxaSkillsTests)
+endif()
+
 # Fyxa task tracking is a small standalone JSON store used by the assistant.
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(FyxaTaskStoreTests tests/FyxaTaskStoreTests.cpp src/editor/FyxaTaskStore.cpp)
