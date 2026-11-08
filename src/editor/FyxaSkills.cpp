@@ -76,7 +76,10 @@ void collect(const std::filesystem::path& dir, const char* source, std::map<std:
 } // namespace
 
 FyxaSkills::FyxaSkills(std::filesystem::path bundledDir, std::filesystem::path userDir)
-    : m_bundledDir(std::move(bundledDir)), m_userDir(std::move(userDir)) {}
+    : m_bundledDir(std::move(bundledDir)), m_userDir(std::move(userDir)) {
+    std::error_code ec;
+    std::filesystem::create_directories(m_userDir, ec);
+}
 
 nlohmann::json FyxaSkills::list() const {
     std::map<std::string, json> skills;
