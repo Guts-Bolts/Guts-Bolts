@@ -6,6 +6,8 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <thread>
+#include <atomic>
 
 namespace fs = std::filesystem;
 using json = nlohmann::json;
@@ -64,6 +66,56 @@ int main() {
         std::ifstream in(broken);
         std::string preserved((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         check(preserved == "{not-json", "leaves malformed task file untouched");
+    }
+    {
+        const fs::path evidenceFile = dir / "evidence.json";
+        FyxaTaskStore store(evidenceFile);
+        std::string error;
+        const json taskA = store.create("Verify build", "", error);
+        const json taskB = store.create("Verify deployment", "", error);
+        const std::string idA = taskA.value("id", "");
+        const std::string idB = taskB.value("id", "");
+        check(store.update(idA, "in_progress", "", error), "starts the evidence-bound task");
+        const std::string evidence = store.issueEvidence(idA, error);
+        check(error.empty() && !evidence.empty(), "issues evidence only for the active task");
+        check(!store.completeWithEvidence(idB, evidence, "wrong task", error),
+              "rejects evidence presented for a different task");
+        check(store.completeWithEvidence(idA, evidence, "Build verification passed", error),
+              "atomically completes a task with valid evidence and a note");
+        check(!store.completeWithEvidence(idA, evidence, "replay", error),
+              "rejects replay of consumed evidence");
+        check(!store.update(idB, "completed", "bypass", error),
+              "prevents bypassing evidence through the ordinary update API");
+        const json tasks = store.list(error);
+        bool completed = false;
+        for (const auto& task : tasks) {
+            if (task.value("id", "") == idA) {
+                completed = task.value("status", "") == "completed" &&
+                    task.value("pending_evidence", json::array()).empty() &&
+                    task.value("notes", json::array()).size() == 1;
+            }
+        }
+        check(completed, "persists completion, verification note, and token consumption together");
+    }
+    {
+        const fs::path raceFile = dir / "evidence-race.json";
+        FyxaTaskStore store(raceFile);
+        std::string error;
+        const json task = store.create("Concurrent completion", "", error);
+        const std::string id = task.value("id", "");
+        check(store.update(id, "in_progress", "", error), "starts the concurrent completion task");
+        const std::string evidence = store.issueEvidence(id, error);
+        std::atomic<int> successes{0};
+        auto complete = [&]() {
+            FyxaTaskStore contender(raceFile);
+            std::string localError;
+            if (contender.completeWithEvidence(id, evidence, "Verified once", localError))
+                ++successes;
+        };
+        std::thread first(complete), second(complete);
+        first.join();
+        second.join();
+        check(successes.load() == 1, "allows exactly one winner for concurrent evidence completion");
     }
     std::error_code ec;
     fs::remove_all(dir, ec);
