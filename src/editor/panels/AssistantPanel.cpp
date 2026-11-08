@@ -529,7 +529,7 @@ void AssistantPanel::render(bool* open) {
             if (ImGui::InputTextWithHint("Model", "qwen3:8b", &m_ollamaModel)) save();
             ImGui::TextDisabled("API: http://%s:%d/api/chat", m_ollamaHost.c_str(), m_ollamaPort);
         } else {
-            ImGui::TextWrapped("Use your own Anthropic API key. It is stored in this computer's local assistant settings.");
+            ImGui::TextWrapped("Use your own Anthropic API key. It is stored in the operating system credential vault when available; otherwise it remains session-only.");
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextWithHint("API key", "Anthropic API key (sk-ant-...)", &m_apiKey, ImGuiInputTextFlags_Password)) {
                 std::string credentialError;
@@ -547,7 +547,7 @@ void AssistantPanel::render(bool* open) {
     }
 
     if (ImGui::CollapsingHeader("Connect MCP servers to Fyxa")) {
-        ImGui::TextWrapped("Connect external MCP servers so Fyxa can discover and use their tools. Remote endpoints must use HTTPS. Bearer tokens are saved in this computer's local assistant settings.");
+        ImGui::TextWrapped("Connect external MCP servers so Fyxa can discover and use their tools. Remote endpoints must use HTTPS. Credentials use the OS vault when available and are session-only otherwise.");
         ImGui::TextWrapped("Only connect servers you trust. External tools can read or change data in the services they control.");
         ImGui::SetNextItemWidth(-1);
         ImGui::InputTextWithHint("##newmcpname", "Server name (e.g. github)", &m_newMcpName);
@@ -567,6 +567,7 @@ void AssistantPanel::render(bool* open) {
             if (duplicate) m_mcpStatus = "A server with that name already exists.";
             else {
                 McpServer server; server.name = m_newMcpName; server.url = m_newMcpUrl;
+                server.enabled = false;
                 server.credentialKey = "mcp-" + newKey;
                 server.token = m_newMcpToken;
                 if (!server.token.empty()) {
@@ -585,7 +586,12 @@ void AssistantPanel::render(bool* open) {
             ImGui::PushID((int)i);
             ImGui::Separator();
             bool enabled = server.enabled;
-            if (ImGui::Checkbox(server.name.c_str(), &enabled)) { server.enabled = enabled; save(); }
+            const std::string permissionLabel = "Allow Fyxa to use " + server.name + "'s tools";
+            if (ImGui::Checkbox(permissionLabel.c_str(), &enabled)) {
+                server.enabled = enabled;
+                if (!enabled) { server.tools = json::array(); server.sessionId.clear(); save(); }
+                else refreshMcpServers();
+            }
             ImGui::SameLine();
             if (ImGui::SmallButton("Refresh tools")) refreshMcpServers();
             ImGui::SameLine();
@@ -596,6 +602,7 @@ void AssistantPanel::render(bool* open) {
                 save(); ImGui::PopID(); break;
             }
             ImGui::TextDisabled("%s", server.url.c_str());
+            if (!server.enabled) ImGui::TextDisabled("Disabled until you explicitly allow this server's tools.");
             ImGui::TextDisabled("%d discovered tool(s)", server.tools.is_array() ? (int)server.tools.size() : 0);
             ImGui::PopID();
         }
