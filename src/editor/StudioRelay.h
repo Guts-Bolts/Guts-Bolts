@@ -41,6 +41,7 @@ private:
     std::string m_game;                // the open game's name, as last told to the server
     std::unique_ptr<Net::Connection> m_conn;
     std::future<std::shared_ptr<Dialed>> m_dialing;
+    std::shared_ptr<std::atomic_bool> m_dialCancel;
     double      m_nextTry = 0, m_backoff = 2, m_lastPing = 0, m_helloAt = 0;
     int         m_calls = 0;
     std::string m_lastTool, m_lastApp;
