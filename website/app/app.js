@@ -3226,7 +3226,7 @@ function fyxaModerationBox(result) {
   return html`<div class="box">
     <h2 class="boxhead">Fyxa moderation queue</h2>
     <p>AI-flagged submissions are prioritized here for staff review. The model provides signals, not verdicts. Review the excerpt and context before taking action.</p>
-    <p class="small muted">${items.length} open case${items.length === 1 ? '' : 's'} · Critical cases appear first · No automatic bans or deletions</p>
+    <p class="small muted">${Number(result.total || 0).toLocaleString()} open case${result.total === 1 ? '' : 's'} · Showing ${items.length ? (result.offset || 0) + 1 : 0}–${(result.offset || 0) + items.length} · Critical cases appear first · No automatic bans or deletions</p>
     ${items.length ? items.map((item) => html`<div class="box fyxa-case">
       <div class="row" style="align-items:center;justify-content:space-between;gap:10px">
         <b>${item.severity.toUpperCase()} · ${item.sourceType.replaceAll('_', ' ')}</b>
@@ -3248,7 +3248,14 @@ function fyxaModerationBox(result) {
         <textarea name="note" rows="2" maxlength="500" minlength="3" placeholder="Record what you reviewed and why" required></textarea>
         <button class="btn green">Save moderation decision</button>
       </form>
-    </div>`) : html`<p class="muted">No open Fyxa moderation cases.</p>`}
+    </div>`) : html`<p class="muted">${result.total ? 'No cases on this page.' : 'No open Fyxa moderation cases.'}</p>`}
+    ${result.total > (result.limit || 100) ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Page ${Math.floor((result.offset || 0) / (result.limit || 100)) + 1} of ${Math.ceil(result.total / (result.limit || 100))}</span>
+      <div class="row" style="gap:8px">
+        ${(result.offset || 0) > 0 ? html`<a class="btn" href="#/staff?tab=moderation&moderationOffset=${Math.max(0, (result.offset || 0) - (result.limit || 100))}">Previous</a>` : ''}
+        ${(result.offset || 0) + (result.limit || 100) < result.total ? html`<a class="btn" href="#/staff?tab=moderation&moderationOffset=${(result.offset || 0) + (result.limit || 100)}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
   </div>`;
 }
 
@@ -3450,7 +3457,7 @@ function fyxaReviewBox(r) {
   return html`<div class="box">
     <h2 class="boxhead">Fyxa AI rights review</h2>
     <p>Review creator rights attestations before any asset can become eligible. Approval is not a safety-screening result and does not start content processing.</p>
-    <p class="small muted">${items.length} pending request${items.length === 1 ? '' : 's'} · Maximum 50 shown per request.</p>
+    <p class="small muted">${Number(r.total || 0).toLocaleString()} pending request${r.total === 1 ? '' : 's'} · Showing ${items.length ? (r.offset || 0) + 1 : 0}–${(r.offset || 0) + items.length}.</p>
     ${items.length ? items.map((item) => html`<div class="box fyxa-review-item">
       <b><a href="${item.contentType === 'game' ? '#/game/' + item.contentId : isCatalogItem(item.contentType) ? '#/item/' + item.contentId : '#/library/' + item.contentId}">${item.title || item.contentId}</a></b>
       <div class="small muted">${KINDS[item.contentType] || item.contentType} · Content ID ${item.contentId} · Creator ${item.owner && (item.owner.username || item.owner.name) || item.ownerId} · ${item.privacyStatus}</div>
@@ -3462,7 +3469,14 @@ function fyxaReviewBox(r) {
         <input name="reason" maxlength="160" minlength="8" placeholder="Describe the evidence reviewed" required>
         <p><button class="btn green">Submit review</button></p>
       </form>
-    </div>`) : html`<p class="muted">No rights attestations are waiting for review.</p>`}
+    </div>`) : html`<p class="muted">${r.total ? 'No requests on this page.' : 'No rights attestations are waiting for review.'}</p>`}
+    ${r.total > (r.limit || 50) ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Page ${Math.floor((r.offset || 0) / (r.limit || 50)) + 1} of ${Math.ceil(r.total / (r.limit || 50))}</span>
+      <div class="row" style="gap:8px">
+        ${(r.offset || 0) > 0 ? html`<a class="btn" href="#/staff?tab=fyxa&rightsOffset=${Math.max(0, (r.offset || 0) - (r.limit || 50))}">Previous</a>` : ''}
+        ${(r.offset || 0) + (r.limit || 50) < r.total ? html`<a class="btn" href="#/staff?tab=fyxa&rightsOffset=${(r.offset || 0) + (r.limit || 50)}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
   </div>`;
 }
 
@@ -3474,19 +3488,21 @@ pages.staff = async () => {
   const logFor = params.get('log') || '';
   const ticketsClosed = params.get('tickets') === 'closed';
   const appealsClosed = params.get('appeals') === 'closed';
+  const rightsOffset = Math.max(0, Math.trunc(Number(params.get('rightsOffset')) || 0));
+  const moderationOffset = Math.max(0, Math.trunc(Number(params.get('moderationOffset')) || 0));
   // (older links name what they show, not the tab)
   const tab = params.get('tab') || (params.has('q') ? 'people' : params.has('log') ? 'log' : params.has('reports') ? 'reports'
     : params.has('tickets') ? 'tickets' : params.has('appeals') ? 'appeals' : 'home');
   // What's waiting, for the counts on the tabs (and the lists themselves).
   const [tk, up, rep, ap, rm, fyxaQueue, moderation] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
     pageCall('admin.reports', { status: closed ? 'closed' : 'open' }), pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }),
-    pageCall('roadmap.get', {}), tab === 'fyxa' ? pageCall('ai.content.reviewQueue', { limit: 50 }) : Promise.resolve(null),
-    pageCall('ai.moderation.queue', { limit: 100 })]);
+    pageCall('roadmap.get', {}), tab === 'fyxa' ? pageCall('ai.content.reviewQueue', { limit: 50, offset: rightsOffset }) : Promise.resolve(null),
+    tab === 'moderation' ? pageCall('ai.moderation.queue', { limit: 100, offset: moderationOffset }) : Promise.resolve(null)]);
   const waiting = {
     tickets: tk.ok && !ticketsClosed ? tk.tickets.length : null, uploads: up.ok ? up.uploads.length : null,
     reports: rep.ok && !closed ? rep.reports.length : null, appeals: ap.ok && !appealsClosed ? ap.appeals.length : null,
-    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.items.length : null,
-    moderation: moderation.ok ? moderation.items.length : null };
+    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.total : null,
+    moderation: moderation && moderation.ok ? moderation.total : null };
   const tabs = html`<div class="tabs staff-tabs">${STAFF_TABS.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/staff?tab=${k}">${l}${
     waiting[k] ? html` <span class="count">${waiting[k]}</span>` : ''}</a>`)}</div>`;
   let body;
