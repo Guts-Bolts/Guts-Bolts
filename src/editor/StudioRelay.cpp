@@ -92,6 +92,12 @@ void StudioRelay::setEnabled(bool on) {
 void StudioRelay::drop(State state, const std::string& why, bool retry) {
     if (m_dialCancel) m_dialCancel->store(true);
     m_dialCancel.reset();
+    if (m_pendingApproval) {
+        const json params = m_pendingApproval->message.value("params", json::object());
+        appendRelayAudit(m_pendingApproval->app, m_pendingApproval->tool,
+                         m_pendingApproval->fingerprint,
+                         params.value("arguments", json::object()), "connection-dropped-before-resolution");
+    }
     m_conn.reset();
     m_pendingApproval.reset();
     m_appToolFingerprints.clear();
@@ -209,13 +215,15 @@ void StudioRelay::onMessage(Editor& editor, StudioMcp& mcp, const std::string& t
             json parsed = json::parse(reply, nullptr, false);
             auto& fingerprints = m_appToolFingerprints[app];
             fingerprints.clear();
-            const json tools = parsed.is_object()
-                ? parsed.value("result", json::object()).value("tools", json::array()) : json::array();
+            json tools = json::array();
+            if (parsed.is_object() && parsed.contains("result") && parsed["result"].is_object())
+                tools = parsed["result"].value("tools", json::array());
             if (tools.is_array()) for (const auto& tool : tools) {
                 if (!tool.is_object() || !tool.contains("name") || !tool["name"].is_string()) continue;
                 const std::string name = tool["name"].get<std::string>();
-                const std::string fingerprint = tool.value("_meta", json::object())
-                    .value("io.gutsandbolts/tool-fingerprint", std::string());
+                const json meta = tool.value("_meta", json::object());
+                const std::string fingerprint = meta.is_object()
+                    ? meta.value("io.gutsandbolts/tool-fingerprint", std::string()) : std::string();
                 if (!name.empty() && !fingerprint.empty()) fingerprints[name] = fingerprint;
             }
             m_conn->send(json{{"t", "mcp.reply"}, {"id", m["id"]}, {"reply", parsed}}.dump());
@@ -227,6 +235,11 @@ void StudioRelay::onMessage(Editor& editor, StudioMcp& mcp, const std::string& t
 
     if (method == "tools/call") {
         const json params = message.value("params", json::object());
+        if (!params.is_object()) {
+            const json error = relayRpcError(message.value("id", json()), "Tool parameters must be an object.");
+            m_conn->send(json{{"t", "mcp.reply"}, {"id", m["id"]}, {"reply", error}}.dump());
+            return;
+        }
         const std::string tool = params.value("name", std::string());
         const auto appTools = m_appToolFingerprints.find(app);
         const std::string pinned = appTools == m_appToolFingerprints.end() ||
@@ -246,6 +259,11 @@ void StudioRelay::onMessage(Editor& editor, StudioMcp& mcp, const std::string& t
             return;
         }
         const json arguments = params.value("arguments", json::object());
+        if (!arguments.is_object()) {
+            const json error = relayRpcError(message.value("id", json()), "Tool arguments must be an object.");
+            m_conn->send(json{{"t", "mcp.reply"}, {"id", m["id"]}, {"reply", error}}.dump());
+            return;
+        }
         PendingApproval pending;
         pending.relayId = m["id"];
         pending.message = message;
