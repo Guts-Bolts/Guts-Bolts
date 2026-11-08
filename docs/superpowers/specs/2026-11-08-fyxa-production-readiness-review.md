@@ -15,10 +15,9 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 ### P0 — protocol, authorization, and trust
 
 1. **MCP 2026-07-28 stateless protocol**
-   - Current code performs `initialize`, sends `notifications/initialized`, persists `Mcp-Session-Id`, and sends session-bound requests.
-   - Implement 2026-07-28 requests with `io.modelcontextprotocol/protocolVersion` and `io.modelcontextprotocol/clientCapabilities` in `_meta`; send required modern HTTP headers (`MCP-Protocol-Version`, `Mcp-Method`, and applicable `Mcp-Name`); support `server/discover` and per-request protocol errors.
-   - Keep 2025-era handshake support only for servers that require it. Do not silently downgrade on arbitrary network/auth failures.
-   - Add wire-level tests for both eras, malformed metadata, header/body mismatch, and a server behind round-robin routing.
+   - Modern requests use the 2026-07-28 stateless envelope with protocol/client metadata in `_meta`, required modern HTTP headers, and no `Mcp-Session-Id` or legacy initialized notification.
+   - Legacy initialize/initialized and session handling remain a narrow compatibility path, entered only after a structured unsupported-version or unknown-method response. Transport, TLS, and authorization failures do not trigger downgrade.
+   - Wire-level tests cover modern and legacy envelopes, malformed metadata, missing routing names, and header-injection attempts. Reordered-key and live round-robin-server integration tests remain outstanding.
 
 2. **OAuth for protected remote MCP — core authorization and refresh flow implemented; step-up/revocation remain**
    - OAuth remains optional for public, unauthenticated HTTP MCP endpoints. Protected servers can now use the browser-based authorization-code flow with PKCE S256.
@@ -43,7 +42,7 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 5. **Structural capability enforcement and connected-app relay trust boundary**
    - The registry and execution dispatcher are the source of truth for callable capabilities. The UI must report unavailable domains as an application-owned state, not ask the model to self-report its limitations.
    - First-party services must independently authorize identity, ownership, scopes, and resource state on every operation.
-   - Connected-app relay calls now receive the same Studio-side boundary as external MCP: tool definitions are fingerprinted when tools/list is returned; each tools/call must match that app's cached fingerprint; every call pauses for explicit Studio approval; approval rechecks the live fingerprint and app scope immediately before dispatch.
+   - Connected-app relay calls now receive the same Studio-side boundary as external MCP: tool definitions are fingerprinted when tools/list is returned; each tools/call must match that app's cached fingerprint; every call pauses for explicit Studio approval; approval rechecks the live tool fingerprint; the Studio MCP dispatcher re-applies its connected-app tool allowlist and write-scope gate immediately before dispatch.
    - Relay tool descriptions/results carry explicit untrusted-data labels. Approval requests, denials, fingerprint mismatches, and execution outcomes are written to the redacted MCP activity audit log.
    - OAuth scopes and server-side mcp-policy.js remain necessary but are not substitutes for the Studio-side approval gate. A connected-app token is not blanket approval.
 
