@@ -7,6 +7,7 @@
 #include "../../core/CredentialStore.h"
 #include "../FyxaTaskStore.h"
 #include "../FyxaSkills.h"
+#include "../ExternalMcpProtocol.h"
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
@@ -257,54 +258,10 @@ void appendMcpAudit(const std::string& server, const std::string& tool, const js
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
              const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,
              const std::string& protocolVersion = "2026-07-28") {
-    if (token.find_first_of("\r\n") != std::string::npos || session.find_first_of("\r\n") != std::string::npos ||
-        protocolVersion.find_first_of("\r\n") != std::string::npos || protocolVersion.size() > 64) {
-        error = "The MCP credential, session identifier, or protocol version is invalid."; return false;
-    }
-
-    // 2026-07-28 is stateless: every request carries its own protocol metadata and
-    // routing headers. Older negotiated versions retain the initialize/session flow.
     json wireRequest = request;
-    std::string headers = "Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\n";
-    if (!protocolVersion.empty()) headers += "MCP-Protocol-Version: " + protocolVersion + "\r\n";
-    if (protocolVersion == "2026-07-28") {
-        if (!wireRequest.contains("method") || !wireRequest["method"].is_string()) {
-            error = "A modern MCP request must include a JSON-RPC method."; return false;
-        }
-        const std::string method = wireRequest["method"].get<std::string>();
-        if (!wireRequest.contains("params") || !wireRequest["params"].is_object())
-            wireRequest["params"] = json::object();
-        json& params = wireRequest["params"];
-        json meta = params.value("_meta", json::object());
-        if (!meta.is_object()) { error = "MCP request metadata must be an object."; return false; }
-        meta["io.modelcontextprotocol/protocolVersion"] = protocolVersion;
-        meta["io.modelcontextprotocol/clientCapabilities"] = json::object();
-        meta["io.modelcontextprotocol/clientInfo"] = {{"name", "fyxa"}, {"version", "0.1"}};
-        params["_meta"] = std::move(meta);
-        headers += "Mcp-Method: " + method + "\r\n";
-
-        std::string routeName;
-        if (params.contains("name") && params["name"].is_string()) routeName = params["name"].get<std::string>();
-        else if (params.contains("uri") && params["uri"].is_string()) routeName = params["uri"].get<std::string>();
-        const bool requiresName = method == "tools/call" || method == "prompts/get" || method == "resources/read";
-        if (requiresName && routeName.empty()) {
-            error = "This modern MCP method requires a name or URI for HTTP routing."; return false;
-        }
-        if (!routeName.empty()) {
-            // Current Fyxa tool identifiers are restricted to safe ASCII. Do not
-            // emit an ambiguous or header-injectable routing value.
-            for (unsigned char ch : routeName) {
-                if (ch < 0x21 || ch > 0x7e || ch == ',' || ch == ';') {
-                    error = "The MCP tool name or resource URI cannot be represented safely in a routing header.";
-                    return false;
-                }
-            }
-            headers += "Mcp-Name: " + routeName + "\r\n";
-        }
-    } else if (!session.empty()) {
-        headers += "Mcp-Session-Id: " + session + "\r\n";
-    }
-    if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
+    std::string headers;
+    if (!McpHttpProtocol::prepareRequest(wireRequest, headers, protocolVersion, session, token, error))
+        return false;
 
     std::string body, responseHeaders;
     int status = 0;
