@@ -3133,27 +3133,27 @@ pages.avatar = async () => {
 // Staff tools (like the Player's Staff page): verify people, give Bolts, ban.
 // The reports players sent (newest problems first in line): what was reported, why, and buttons to close them.
 function fyxaModerationBox(result) {
-  if (!result || !result.ok) return html\`<div class="box"><h2 class="boxhead">Fyxa moderation</h2><p class="error">\${result && result.error || 'The moderation queue is unavailable.'}</p></div>\`;
+  if (!result || !result.ok) return html`<div class="box"><h2 class="boxhead">Fyxa moderation</h2><p class="error">${result && result.error || 'The moderation queue is unavailable.'}</p></div>`;
   const items = result.items || [];
   const names = { S1: 'Violence', S2: 'Non-violent crime', S3: 'Sexual violence', S4: 'Child safety', S5: 'Defamation', S6: 'Specialized advice',
     S7: 'Privacy', S8: 'Intellectual property', S9: 'Weapons', S10: 'Hate', S11: 'Self-harm', S12: 'Sexual content', S13: 'Elections', S14: 'Code interpreter abuse',
     SCAN_UNAVAILABLE: 'AI scanner unavailable' };
-  const person = (u, id) => u ? html\`<a href="#/user/\${u.userId || u.id}">\${u.username || u.name}</a>\` : html\`Unknown account (\${id})\`;
-  return html\`<div class="box">
+  const person = (u, id) => u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>` : html`Unknown account (${id})`;
+  return html`<div class="box">
     <h2 class="boxhead">Fyxa moderation queue</h2>
     <p>AI-flagged submissions are prioritized here for staff review. The model provides signals, not verdicts. Review the excerpt and context before taking action.</p>
-    <p class="small muted">\${items.length} open case\${items.length === 1 ? '' : 's'} · Critical cases appear first · No automatic bans or deletions</p>
-    \${items.length ? items.map((item) => html\`<div class="box fyxa-case">
+    <p class="small muted">${items.length} open case${items.length === 1 ? '' : 's'} · Critical cases appear first · No automatic bans or deletions</p>
+    ${items.length ? items.map((item) => html`<div class="box fyxa-case">
       <div class="row" style="align-items:center;justify-content:space-between;gap:10px">
-        <b>\${item.severity.toUpperCase()} · \${item.sourceType.replaceAll('_', ' ')}</b>
-        <span class="small muted">\${dateText(item.createdAt)}</span>
+        <b>${item.severity.toUpperCase()} · ${item.sourceType.replaceAll('_', ' ')}</b>
+        <span class="small muted">${dateText(item.createdAt)}</span>
       </div>
-      <p class="small">Creator: \${person(item.author, item.authorId)} · Source ID: \${item.sourceId || 'not recorded'}</p>
-      <p class="small"><b>Signals:</b> \${item.categories.map((code) => (names[code] || code) + ' (' + code + ')').join(', ') || 'No category returned'}</p>
-      <p class="small muted">Scanner: \${item.scanner}</p>
-      <div class="report-copy"><b>Submitted content excerpt</b><div style="white-space:pre-wrap">\${item.excerpt}</div></div>
+      <p class="small">Creator: ${person(item.author, item.authorId)} · Source ID: ${item.sourceId || 'not recorded'}</p>
+      <p class="small"><b>Signals:</b> ${item.categories.map((code) => (names[code] || code) + ' (' + code + ')').join(', ') || 'No category returned'}</p>
+      <p class="small muted">Scanner: ${item.scanner}</p>
+      <div class="report-copy"><b>Submitted content excerpt</b><div style="white-space:pre-wrap">${item.excerpt}</div></div>
       <form class="form" data-form="fyxaModeration">
-        <input type="hidden" name="caseId" value="\${item.id}">
+        <input type="hidden" name="caseId" value="${item.id}">
         <label>Staff decision</label>
         <select name="outcome">
           <option value="action_taken">Action taken (recorded separately)</option>
@@ -3164,8 +3164,8 @@ function fyxaModerationBox(result) {
         <textarea name="note" rows="2" maxlength="500" minlength="3" placeholder="Record what you reviewed and why" required></textarea>
         <button class="btn green">Save moderation decision</button>
       </form>
-    </div>\`) : html\`<p class="muted">No open Fyxa moderation cases.</p>\`}
-  </div>\`;
+    </div>`) : html`<p class="muted">No open Fyxa moderation cases.</p>`}
+  </div>`;
 }
 
 function reportsBox(rep, closed) {
