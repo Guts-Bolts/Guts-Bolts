@@ -23,7 +23,8 @@ inline bool prepareRequest(json& request, std::string& headers,
         return false;
     }
 
-    headers = "Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\n";
+    // Net::httpPost supplies the single Content-Type: application/json header.
+    headers = "Accept: application/json, text/event-stream\r\n";
     if (!protocolVersion.empty()) headers += "MCP-Protocol-Version: " + protocolVersion + "\r\n";
     if (protocolVersion == "2026-07-28") {
         if (!request.contains("method") || !request["method"].is_string()) {
