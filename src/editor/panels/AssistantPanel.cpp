@@ -81,7 +81,8 @@ json fyxaAgentTools() {
     json updateProperties = {
         {"id", {{"type", "string"}}},
         {"status", {{"type", "string"}, {"enum", {"pending", "in_progress", "blocked", "completed"}}}},
-        {"note", {{"type", "string"}, {"maxLength", 4096}}}
+        {"note", {{"type", "string"}, {"maxLength", 4096}}},
+        {"evidence_id", {{"type", "string"}, {"maxLength", 96}}}
     };
     add("fyxa_task_update", "Update a task status and optionally append a progress or verification note. Completing a task requires a note and an evidence_id returned by a successful tool call in this session.",
         schema(std::move(updateProperties), json::array({"id", "status"})));
