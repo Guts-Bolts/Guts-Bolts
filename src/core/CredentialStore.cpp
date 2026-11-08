@@ -7,6 +7,8 @@
 #include <wincred.h>
 #elif defined(__APPLE__)
 #include <Security/Security.h>
+#elif defined(GB_HAVE_LIBSECRET)
+#include <libsecret/secret.h>
 #endif
 
 namespace CredentialStore {
@@ -85,6 +87,47 @@ bool erase(const std::string& key, std::string& error) {
     status = SecKeychainItemDelete(item);
     CFRelease(item);
     if (status != errSecSuccess) { error = "macOS Keychain couldn't remove this credential."; return false; }
+    return true;
+}
+#elif defined(GB_HAVE_LIBSECRET)
+namespace {
+const SecretSchema kFyxaSchema = {
+    "com.gutsandbolts.Fyxa", SECRET_SCHEMA_NONE,
+    { { "key", SECRET_SCHEMA_ATTRIBUTE_STRING }, { nullptr, (SecretSchemaAttributeType)0 } }
+};
+}
+bool persistentAvailable() { return true; }
+bool store(const std::string& key, const std::string& secret, std::string& error) {
+    GError* e = nullptr;
+    const gboolean ok = secret_password_store_sync(&kFyxaSchema, SECRET_COLLECTION_DEFAULT,
+        "Guts & Bolts Fyxa credential", secret.c_str(), nullptr, &e, "key", key.c_str(), nullptr);
+    if (!ok) {
+        error = e ? e->message : "Linux Secret Service couldn't save this credential.";
+        if (e) g_error_free(e);
+        return false;
+    }
+    return true;
+}
+bool retrieve(const std::string& key, std::string& secret, std::string& error) {
+    GError* e = nullptr;
+    gchar* value = secret_password_lookup_sync(&kFyxaSchema, nullptr, &e, "key", key.c_str(), nullptr);
+    if (!value) {
+        error = e ? e->message : "Credential isn't available in Linux Secret Service.";
+        if (e) g_error_free(e);
+        return false;
+    }
+    secret.assign(value);
+    secret_password_free(value);
+    return true;
+}
+bool erase(const std::string& key, std::string& error) {
+    GError* e = nullptr;
+    const gboolean ok = secret_password_clear_sync(&kFyxaSchema, nullptr, &e, "key", key.c_str(), nullptr);
+    if (!ok) {
+        error = e ? e->message : "Linux Secret Service couldn't remove this credential.";
+        if (e) g_error_free(e);
+        return false;
+    }
     return true;
 }
 #else
