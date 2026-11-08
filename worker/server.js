@@ -2508,6 +2508,7 @@ export class GbServerObject extends DurableObject {
       fields.push(['asset name', args.name], ['asset description', args.description]);
       const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
       for (const key of ['alt', 'caption', 'title', 'description', 'author', 'license', 'source']) fields.push([key, meta[key]]);
+      if (String(args.kind || '') === 'audio') fields.push(['audio upload', 'Audio requires a media-specific moderation pass; route to manual staff review.']);
       if (['game', 'model', 'plugin', 'animation', 'gear', 'accessory', 'bundle', 'bodypart'].includes(String(args.kind || ''))) {
         try {
           const bytes = b64ToBytes(str(args, 'data'));
@@ -2531,7 +2532,6 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'groups.create') { sourceType = 'group'; sourceId = String(answer.group && answer.group.id || ''); fields.push(['group name', args.name], ['group description', args.description]);
     } else if (op === 'groups.shout' || op === 'groups.wall.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group post', args.text]);
     } else if (op === 'updates.post') { sourceType = 'platform_update'; sourceId = String(answer.update && answer.update.id || ''); fields.push(['update title', args.name], ['update summary', args.summary], ['update notes', Array.isArray(args.items) ? args.items.join('\n') : '']);
-    } else if (op === 'upload' && String(args.kind || '') === 'audio') { sourceType = 'audio_upload'; sourceId = String(answer.asset && answer.asset.id || ''); fields.push(['audio upload', 'Audio requires a media-specific moderation pass; route to manual staff review.']);
     } else return;
     const content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
     if (!content) return;
@@ -2547,6 +2547,7 @@ export class GbServerObject extends DurableObject {
         categories = [...new Set((response.match(/\bS(?:[1-9]|1[0-4])\b/g) || []))].slice(0, 14);
       }
     } catch (error) { scanner = 'llama-guard-3-8b-error'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
+    if (op === 'upload' && String(args.kind || '') === 'audio') { categories.push('AUDIO_REVIEW_REQUIRED'); scanner = 'audio-manual-review'; unsafe = true; }
     // Image uploads get a vision pass only after the operator has explicitly accepted Meta's
     // model license and enabled FYXA_VISION_LICENSE_ACCEPTED. Until then they are routed for
     // manual review instead of being silently treated as scanned.
