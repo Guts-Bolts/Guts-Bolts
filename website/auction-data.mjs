@@ -45,3 +45,14 @@ export function formatAuctionCountdown(end, nowMs = Date.now()) {
   const pad = (value) => String(value).padStart(2, '0');
   return (days ? days + 'd ' : '') + pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
 }
+
+export function getAuctionUrgency(end, nowMs = Date.now()) {
+  const endSeconds = Number(end);
+  if (!Number.isFinite(endSeconds)) return { key: 'unknown', label: 'LIVE AUCTION', className: '' };
+  const secondsLeft = endSeconds - nowMs / 1000;
+  if (secondsLeft <= 60) return { key: 'last-minute', label: 'AUCTION · LAST MINUTE', className: 'last-minute' };
+  if (secondsLeft <= 300) return { key: 'last-five-minutes', label: 'AUCTION · 5 MINUTES LEFT', className: 'last-five-minutes' };
+  if (secondsLeft <= 3600) return { key: 'last-hour', label: 'AUCTION · ENDING SOON', className: 'urgent' };
+  if (secondsLeft <= 86400) return { key: 'ending-today', label: 'AUCTION · ENDING TODAY', className: 'ending-today' };
+  return { key: 'live', label: 'LIVE AUCTION', className: '' };
+}

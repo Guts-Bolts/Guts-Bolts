@@ -367,7 +367,7 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
     j["staffOffsale"] = a.meta.is_object() && a.meta.value("staffOffsale", false);
     if (a.limited) j["limitedType"] = a.meta.is_object() ? a.meta.value("limitedType", std::string("limited_u")) : std::string("limited_u");
     // Catalog items can be favourited too (item.favorite in ServerItems.cpp), for "Most Favorited".
-    if (Online::isCatalogItem(a.kind)) {
+    if (Online::isCatalogItem(a.kind) || auctionOpen(a, Online::unixNow())) {
         j["favorites"] = a.meta.is_object() ? a.meta.value("favorites", 0LL) : 0LL;
         if (me) j["myFavorite"] = std::find(me->itemFavorites.begin(), me->itemFavorites.end(), a.id) != me->itemFavorites.end();
     }
@@ -1452,9 +1452,9 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         std::vector<const Asset*> found;
         for (const auto& [id, a] : m_assets) {
             if (auctions && !auctionOpen(a, listNow)) continue;
-            if (!kind.empty() && a.kind != kind && !(kind == "clothing" && Online::isCatalogItem(a.kind))) continue;
+            if (!kind.empty() && a.kind != kind && !(kind == "clothing" && (Online::isCatalogItem(a.kind) || (favsOnly && auctionOpen(a, listNow))))) continue;
             if (ownedOnly && !me.owned.count(a.id)) continue;
-            if (favsOnly && (!Online::isCatalogItem(a.kind) || std::find(me.itemFavorites.begin(), me.itemFavorites.end(), a.id) == me.itemFavorites.end())) continue;
+            if (favsOnly && (!(Online::isCatalogItem(a.kind) || auctionOpen(a, listNow)) || std::find(me.itemFavorites.begin(), me.itemFavorites.end(), a.id) == me.itemFavorites.end())) continue;
             if (a.meta.is_object() && a.meta.value("promoOnly", false) && (!ownedOnly || !me.owned.count(a.id))) continue; // Promo-only items never appear in the catalog
             if (!ownedOnly && !auctions && !favsOnly && (publicView || !isStaff(me)) && a.meta.is_object() && a.meta.value("exclusive", false)) continue;
             if (sort == "featured" && a.meta.value("featured", 0LL) <= 0) continue;   // picked by staff

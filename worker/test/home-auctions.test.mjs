@@ -4,6 +4,7 @@ import {
   formatAuctionCountdown,
   getActiveAuctions,
   getAuctionBidSummary,
+  getAuctionUrgency,
   isActiveAuction,
 } from '../../website/auction-data.mjs';
 
@@ -44,4 +45,13 @@ test('countdown formats days and clock fields and clamps expired or invalid time
   assert.equal(formatAuctionCountdown(NOW / 1000 + 3723, NOW), '01:02:03');
   assert.equal(formatAuctionCountdown(NOW / 1000 - 1, NOW), '00:00:00');
   assert.equal(formatAuctionCountdown('invalid', NOW), '00:00:00');
+});
+
+test('auction urgency escalates at the 24-hour, one-hour, five-minute and one-minute marks', () => {
+  assert.equal(getAuctionUrgency(NOW / 1000 + 86400, NOW).key, 'ending-today');
+  assert.equal(getAuctionUrgency(NOW / 1000 + 3600, NOW).key, 'last-hour');
+  assert.equal(getAuctionUrgency(NOW / 1000 + 300, NOW).key, 'last-five-minutes');
+  assert.equal(getAuctionUrgency(NOW / 1000 + 60, NOW).key, 'last-minute');
+  assert.equal(getAuctionUrgency(NOW / 1000 + 86401, NOW).key, 'live');
+  assert.equal(getAuctionUrgency('invalid', NOW).key, 'unknown');
 });

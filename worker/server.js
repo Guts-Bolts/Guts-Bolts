@@ -2139,11 +2139,11 @@ export class GbServerObject extends DurableObject {
       likes: hasVotes(a.kind) ? (a.likes || 0) : undefined, dislikes: hasVotes(a.kind) ? (a.dislikes || 0) : undefined,
       updated: a.updated || a.created, playing: a.kind === 'game' ? this.playingIn(a.id) : undefined,
       myVote: me && a.votes ? (a.votes[me.id] || 0) : undefined, limited: this.limitedJson(a),
-      favorites: a.kind === 'game' || isCatalogItem(a.kind) ? (a.favorites || 0) : undefined,
+      favorites: a.kind === 'game' || isCatalogItem(a.kind) || this.auctionOpen(a, now()) ? (a.favorites || 0) : undefined,
       featured: a.kind === 'game' && a.featured > 0 ? true : undefined,
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: !me ? undefined : a.kind === 'game' ? (me.favorites || []).includes(a.id)
-        : isCatalogItem(a.kind) ? (me.itemFavorites || []).includes(a.id) : undefined,
+        : (isCatalogItem(a.kind) || this.auctionOpen(a, now())) ? (me.itemFavorites || []).includes(a.id) : undefined,
       offsaleAt: a.offsaleAt || 0, offsale: this.isOffsale(a), staffOffsale: !!(a.meta && a.meta.staffOffsale),
       limitedType: a.limited ? limitedTypeOf(a) : undefined, review: a.review || undefined, reviewNote: a.reviewNote || undefined,
       exclusive: a.exclusive ? true : undefined, gift: a.giftItem ? true : undefined, auction: this.auctionJson(a, me),
@@ -2870,9 +2870,10 @@ export class GbServerObject extends DurableObject {
     if (name === 'item.favorite') {
       if (me.userId === 0) return fail('Sign up first.');
       const a = this.assets.get(str(args, 'id'));
-      if (!a || !isCatalogItem(a.kind) || !this.canPlay(a, me)) return fail('That item doesn\'t exist (any more).');
       const favs = me.itemFavorites || (me.itemFavorites = []);
-      const had = favs.includes(a.id), want = args.on !== false;
+      const had = favs.includes(a && a.id), want = args.on !== false;
+      if (!a || (!isCatalogItem(a.kind) && !this.auctionOpen(a, t) && !(had && !want)) || !this.canPlay(a, me))
+        return fail('That item doesn\'t exist (any more).');
       if (want && !had) {
         if (favs.length >= kMaxItemFavorites) return fail('You have ' + kMaxItemFavorites + ' favourite items. Take one off first.');
         favs.unshift(a.id); a.favorites = (a.favorites || 0) + 1;
@@ -3721,9 +3722,9 @@ export class GbServerObject extends DurableObject {
         (!only || only.has(a.id)) &&
         (!auctions || this.auctionOpen(a, t)) &&
         (sort !== 'featured' || a.featured > 0) &&
-        (!kind || a.kind === kind || (kind === 'clothing' && isCatalogItem(a.kind))) &&
+        (!kind || a.kind === kind || (kind === 'clothing' && (isCatalogItem(a.kind) || (favsOnly && this.auctionOpen(a, t))))) &&
         (!ownedOnly || me.owned.includes(a.id)) &&
-        (!favsOnly || (isCatalogItem(a.kind) && (me.itemFavorites || []).includes(a.id))) &&
+        (!favsOnly || ((isCatalogItem(a.kind) || this.auctionOpen(a, t)) && (me.itemFavorites || []).includes(a.id))) &&
         (!a.exclusive || ownedOnly || auctions || favsOnly || (!publicView && this.isStaff(me))) &&
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
         (!creator || a.creator === creator) && (publicView ? !a.review : this.canPlay(a, me)) &&

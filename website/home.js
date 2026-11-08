@@ -2,7 +2,7 @@
   import { startTranslating, languagePicker } from './lang/i18n.js';
   import { call as apiCall } from './app/gb.js';
   import { startLive, onLive } from './app/live.js';
-  import { getActiveAuctions, getAuctionBidSummary, formatAuctionCountdown } from './auction-data.mjs';
+  import { getActiveAuctions, getAuctionBidSummary, formatAuctionCountdown, getAuctionUrgency } from './auction-data.mjs';
   startTranslating();
   const foot = document.querySelector('footer');
   foot.append(document.createElement('br'), document.createElement('br'), languagePicker());
@@ -83,6 +83,8 @@
   let loading = false;
   let refreshQueued = false;
   let lastItems = [];
+  let featuredId = '';
+  let rotationPaused = false;
 
   function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -113,15 +115,13 @@
   }
   function makeBanner(item) {
     const auction = item.auction;
-    const secondsLeft = Number(auction.endsAt) - Date.now() / 1000;
-    const urgent = secondsLeft <= 3600;
-    const today = secondsLeft <= 86400;
-    const banner = element('a', 'auction-promo-main' + (urgent ? ' urgent' : ''));
+    const urgency = getAuctionUrgency(auction.endsAt);
+    const banner = element('a', 'auction-promo-main' + (urgency.className ? ' ' + urgency.className : ''));
     banner.href = '/app/#/item/' + encodeURIComponent(item.id);
     banner.appendChild(makePicture(item));
 
     const copy = element('div', 'auction-promo-copy');
-    copy.appendChild(element('span', 'auction-promo-kicker', urgent ? 'AUCTION  ·  ENDING SOON' : today ? 'AUCTION  ·  ENDING TODAY' : 'LIVE AUCTION'));
+    copy.appendChild(element('span', 'auction-promo-kicker', urgency.label));
     copy.appendChild(element('h3', '', item.name));
     copy.appendChild(element('p', '', item.description || 'A limited-time chance to claim this exclusive item.'));
     const bidSummary = getAuctionBidSummary(auction);
@@ -129,6 +129,13 @@
     bidBox.appendChild(element('span', '', bidSummary.hasBids ? 'CURRENT HIGH BID' : 'STARTING BID'));
     bidBox.appendChild(element('strong', '', bidSummary.amount.toLocaleString() + ' Bolts'));
     copy.appendChild(bidBox);
+    const signals = element('div', 'auction-promo-signals');
+    const bidCount = Array.isArray(auction.bids) ? auction.bids.length : 0;
+    signals.appendChild(element('span', '', bidCount + (bidCount === 1 ? ' BID' : ' BIDS')));
+    const favorites = Number(item.favorites);
+    if (Number.isFinite(favorites) && favorites > 0)
+      signals.appendChild(element('span', '', favorites.toLocaleString() + ' WATCHING'));
+    copy.appendChild(signals);
     banner.appendChild(copy);
 
     const clock = element('div', 'auction-promo-clock');
@@ -142,27 +149,82 @@
     banner.appendChild(clock);
     return banner;
   }
+  function stepFeatured(direction) {
+    if (lastItems.length < 2) return;
+    const current = lastItems.findIndex((item) => String(item.id) === featuredId);
+    const next = (Math.max(0, current) + direction + lastItems.length) % lastItems.length;
+    featuredId = String(lastItems[next].id);
+    render(lastItems);
+  }
+  async function toggleWatch(item, button, feedback) {
+    const watching = item.myFavorite === true;
+    button.disabled = true;
+    try {
+      const response = await apiCall('item.favorite', { id: item.id, on: !watching }, false);
+      if (!response || !response.ok || !response.asset) {
+        feedback.textContent = response && response.error ? response.error : 'Could not update your watchlist.';
+        return;
+      }
+      item.myFavorite = !!response.asset.myFavorite;
+      item.favorites = Number(response.asset.favorites) || 0;
+      render(lastItems);
+    } catch {
+      feedback.textContent = 'Could not reach the auction service. Try again.';
+    } finally {
+      button.disabled = false;
+    }
+  }
   function render(items) {
     const active = getActiveAuctions(items);
     lastItems = active;
     if (!active.length) {
+      featuredId = '';
       root.hidden = true;
       root.replaceChildren();
       return;
     }
+    const selected = active.find((item) => String(item.id) === featuredId) || active[0];
+    featuredId = String(selected.id);
+    const urgency = getAuctionUrgency(selected.auction.endsAt);
     root.hidden = false;
-    root.classList.toggle('urgent', Number(active[0].auction.endsAt) - Date.now() / 1000 <= 3600);
-    root.classList.toggle('ending-today', Number(active[0].auction.endsAt) - Date.now() / 1000 <= 86400);
+    root.classList.toggle('urgent', urgency.key === 'last-hour');
+    root.classList.toggle('ending-today', urgency.key === 'ending-today');
+    root.classList.toggle('last-five-minutes', urgency.key === 'last-five-minutes');
+    root.classList.toggle('last-minute', urgency.key === 'last-minute');
     const head = element('div', 'auction-promo-head');
     head.appendChild(element('h2', '', 'LIVE AUCTIONS'));
+    head.appendChild(element('span', 'auction-promo-position',
+      (active.findIndex((item) => String(item.id) === featuredId) + 1) + ' / ' + active.length + ' FEATURED'));
+    const previous = element('button', 'auction-promo-control', '‹');
+    previous.type = 'button';
+    previous.disabled = active.length < 2;
+    previous.setAttribute('aria-label', 'Show previous featured auction');
+    previous.addEventListener('click', () => stepFeatured(-1));
+    const next = element('button', 'auction-promo-control', '›');
+    next.type = 'button';
+    next.disabled = active.length < 2;
+    next.setAttribute('aria-label', 'Show next featured auction');
+    next.addEventListener('click', () => stepFeatured(1));
+    head.append(previous, next);
     const all = element('a', '', 'VIEW ALL AUCTIONS  »');
     all.href = '/app/#/catalog?cat=auctions';
     head.appendChild(all);
-    root.replaceChildren(head, makeBanner(active[0]));
-
-    if (active.length > 1) {
+    const feature = element('div', 'auction-promo-feature');
+    feature.appendChild(makeBanner(selected));
+    const actions = element('div', 'auction-promo-actions');
+    const watch = element('button', 'auction-promo-watch', selected.myFavorite ? '★ WATCHING' : '☆ WATCH AUCTION');
+    watch.type = 'button';
+    watch.setAttribute('aria-pressed', selected.myFavorite ? 'true' : 'false');
+    watch.addEventListener('click', () => toggleWatch(selected, watch, feedback));
+    const feedback = element('span', 'auction-promo-feedback');
+    feedback.setAttribute('role', 'status');
+    actions.append(watch, feedback);
+    feature.appendChild(actions);
+    root.replaceChildren(head, feature);
+    const others = active.filter((item) => String(item.id) !== featuredId).slice(0, 3);
+    if (others.length) {
       const more = element('div', 'auction-promo-more');
-      active.slice(1, 4).forEach((item) => {
+      others.forEach((item) => {
         const link = element('a', '');
         link.href = '/app/#/item/' + encodeURIComponent(item.id);
         link.appendChild(element('span', 'auction-promo-mini-tag', 'LIVE AUCTION'));
@@ -208,6 +270,20 @@
       refresh();
     }
   }
+  // Rotate the featured auction, but pause while the visitor is interacting with the banner.
+  // Reduced-motion preferences and background tabs disable automatic rotation.
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  root.addEventListener('mouseenter', () => { rotationPaused = true; });
+  root.addEventListener('mouseleave', () => { rotationPaused = false; });
+  root.addEventListener('focusin', () => { rotationPaused = true; });
+  root.addEventListener('focusout', (event) => {
+    if (!root.contains(event.relatedTarget)) rotationPaused = false;
+  });
+  if (!reduceMotion) window.setInterval(() => {
+    if (!rotationPaused && document.visibilityState === 'visible' && !root.hidden && lastItems.length > 1)
+      stepFeatured(1);
+  }, 9000);
+
   // Auction events are broadcast as data-free pings. Re-fetch from the signed API so
   // the displayed bid, auction state and end time always come from the source of truth.
   onLive((topic, event) => {

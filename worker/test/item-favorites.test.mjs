@@ -85,3 +85,21 @@ test('deleting an account takes its hearts off the items', () => {
   s.deleteAccount(bob);
   assert.equal(cap.favorites, 0);
 });
+
+test('active Exclusive auctions can be watched and appear in My Favorites', () => {
+  const s = makeServer();
+  const bob = s.signUp('bob');
+  const crown = s.addGame(s.staff, 'Auction Crown', { kind: 'hat', exclusive: true, price: 0 });
+  assert.ok(s.call(s.staff, 'auction.start', { id: crown.id, copies: 1, minBid: 10, hours: 24 }).ok);
+  let r = s.call(bob, 'item.favorite', { id: crown.id, on: true });
+  assert.ok(r.ok, r.error);
+  assert.equal(r.asset.myFavorite, true);
+  assert.equal(r.asset.favorites, 1);
+  r = s.call(bob, 'list', { kind: 'clothing', favorites: true });
+  assert.ok(r.ok, r.error);
+  assert.ok(r.assets.some((item) => item.id === crown.id));
+  r = s.call(bob, 'item.favorite', { id: crown.id, on: false });
+  assert.ok(r.ok, r.error);
+  assert.equal(r.asset.myFavorite, false);
+  assert.equal(r.asset.favorites, 0);
+});
