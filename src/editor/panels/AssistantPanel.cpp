@@ -1805,7 +1805,7 @@ void AssistantPanel::render(bool* open) {
                     CredentialStore::erase(oauthCredentialKey + "-refresh", credentialError);
                 }
                 m_externalMcp.erase(m_externalMcp.begin() + (long)i);
-                save(); ImGui::PopID(); break;
+                save(); ImGui::EndDisabled(); ImGui::PopID(); break;
             }
             ImGui::EndDisabled();
             ImGui::TextDisabled("%s", server.url.c_str());
