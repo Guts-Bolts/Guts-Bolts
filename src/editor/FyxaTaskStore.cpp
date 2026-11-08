@@ -111,6 +111,7 @@ bool writeTasks(const std::filesystem::path& file, const json& tasks, std::strin
 FyxaTaskStore::FyxaTaskStore(std::filesystem::path file) : m_file(std::move(file)) {}
 
 nlohmann::json FyxaTaskStore::list(std::string& error) const {
+    error.clear();
     std::lock_guard lock(g_taskFileMutex);
     json tasks;
     if (!readTasks(m_file, tasks, error)) return json::array();
@@ -118,6 +119,7 @@ nlohmann::json FyxaTaskStore::list(std::string& error) const {
 }
 
 nlohmann::json FyxaTaskStore::create(const std::string& title, const std::string& description, std::string& error) {
+    error.clear();
     const std::string cleanTitle = trim(title);
     if (cleanTitle.empty() || cleanTitle.size() > kMaxTitle) {
         error = "Task title must contain 1 to 160 characters.";
@@ -147,6 +149,7 @@ nlohmann::json FyxaTaskStore::create(const std::string& title, const std::string
 
 bool FyxaTaskStore::update(const std::string& id, const std::string& status,
                           const std::string& note, std::string& error) {
+    error.clear();
     if (id.empty()) { error = "Task id is required."; return false; }
     if (!validStatus(status)) {
         error = "Status must be pending, in_progress, blocked, or completed.";
