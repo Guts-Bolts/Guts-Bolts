@@ -448,7 +448,7 @@ bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
 }
 
 struct McpOAuthCompletionData {
-    std::string accessToken, refreshToken, issuer, tokenEndpoint, resource, error;
+    std::string accessToken, refreshToken, issuer, tokenEndpoint, resource, clientId, error;
 };
 
 McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std::string& serverUrl,
@@ -632,7 +632,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
         result.error = "OAuth token response did not issue a Bearer access token.";
         return result;
     }
-    result.accessToken = token["access_token"].get<std::string>();
+    result.clientId = clientId;\n    result.accessToken = token["access_token"].get<std::string>();
     if (token.contains("refresh_token") && token["refresh_token"].is_string())
         result.refreshToken = token["refresh_token"].get<std::string>();
     if (result.refreshToken.size() > 16384) {
@@ -823,7 +823,7 @@ void AssistantPanel::authorizeMcpServer(const std::string& name) {
     m_mcpStatus = "Discovering protected-resource metadata and starting OAuth authorization...";
     m_oauthPending = std::async(std::launch::async, [name, serverUrl, clientId]() {
         const McpOAuthCompletionData completed = performMcpOAuth(name, serverUrl, clientId);
-        return McpOAuthResult{name, completed.accessToken, completed.refreshToken, completed.issuer, completed.tokenEndpoint, completed.resource, completed.error};
+        return McpOAuthResult{name, completed.accessToken, completed.refreshToken, completed.issuer, completed.tokenEndpoint, completed.resource, completed.clientId, completed.error};
     });
 }
 
@@ -1132,7 +1132,7 @@ void AssistantPanel::update() {
             m_mcpStatus = "OAuth completed, but the MCP server configuration no longer exists.";
         } else {
             server->token = std::move(authorized.accessToken);
-            server->oauthRefreshToken = std::move(authorized.refreshToken);\n            server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);\n            server->oauthResource = std::move(authorized.resource);
+            server->oauthRefreshToken = std::move(authorized.refreshToken);\n            server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);\n            server->oauthClientId = std::move(authorized.clientId);\n            server->oauthResource = std::move(authorized.resource);
             std::string credentialError;
             if (!CredentialStore::store(server->credentialKey, server->token, credentialError))
                 m_credentialStatus = credentialError + " The access token remains in memory for this session.";
