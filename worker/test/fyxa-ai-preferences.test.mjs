@@ -263,3 +263,21 @@ test('a policy or notice version change suspends eligibility until the account r
   const restored = s.call(owner, 'ai.content.eligibility.get', { contentId: asset.id });
   assert.equal(restored.eligibility.trainingEligible, true);
 });
+
+test('only staff can view the pending rights-review queue', () => {
+  const s = makeServer();
+  const owner = s.signUp('alice');
+  const asset = s.addGame(owner, 'Rights review candidate');
+  assert.ok(enableTraining(s, owner).ok);
+  const attested = s.call(owner, 'ai.content.eligibility.update', {
+    contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
+  });
+  assert.ok(attested.ok, attested.error);
+
+  const denied = s.call(owner, 'ai.content.reviewQueue');
+  assert.equal(denied.ok, false);
+
+  const queue = s.call(s.staff, 'ai.content.reviewQueue');
+  assert.ok(queue.ok, queue.error);
+  assert.ok(queue.items.some((item) => item.contentId === asset.id && item.title === asset.name));
+});
