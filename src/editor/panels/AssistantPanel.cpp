@@ -226,6 +226,7 @@ void AssistantPanel::load() {
             server.name = item.value("name", std::string());
             server.url = item.value("url", std::string());
             server.credentialKey = item.value("credentialKey", "mcp-" + server.name);
+            if (server.credentialKey.empty()) server.credentialKey = "mcp-" + server.name;
             server.token = item.value("token", std::string());
             if (!server.token.empty()) {
                 std::string credentialError;
@@ -645,9 +646,14 @@ void AssistantPanel::render(bool* open) {
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextWithHint("API key", "Anthropic API key (sk-ant-...)", &m_apiKey, ImGuiInputTextFlags_Password)) {
                 std::string credentialError;
-                if (!m_apiKey.empty() && !CredentialStore::store("anthropic-api-key", m_apiKey, credentialError))
+                if (m_apiKey.empty()) {
+                    CredentialStore::erase("anthropic-api-key", credentialError);
+                    m_credentialStatus = "API key cleared.";
+                } else if (!CredentialStore::store("anthropic-api-key", m_apiKey, credentialError)) {
                     m_credentialStatus = credentialError;
-                else m_credentialStatus = CredentialStore::persistentAvailable() ? "API key saved in the OS credential vault." : "API key is session-only on this platform.";
+                } else {
+                    m_credentialStatus = "API key saved in the OS credential vault.";
+                }
                 save();
             }
             int mi = 1;
@@ -669,6 +675,9 @@ void AssistantPanel::render(bool* open) {
         ImGui::InputTextWithHint("##newmcptoken", "Bearer token (optional)", &m_newMcpToken, ImGuiInputTextFlags_Password);
         ImGui::BeginDisabled(m_mcpRefreshPending.valid());
         if (ImGui::Button("Add MCP server") && !m_newMcpName.empty() && !m_newMcpUrl.empty()) {
+            if (m_newMcpName.size() > 64 || m_newMcpUrl.size() > 2048 || m_newMcpToken.size() > 2048) {
+                m_mcpStatus = "Server name, endpoint, or credential exceeds the supported length.";
+            } else {
             bool duplicate = false;
             std::string newKey = m_newMcpName;
             for (char& ch : newKey) if (!std::isalnum((unsigned char)ch)) ch = '_';
@@ -691,6 +700,7 @@ void AssistantPanel::render(bool* open) {
                 m_externalMcp.push_back(std::move(server)); save();
                 m_newMcpName.clear(); m_newMcpUrl.clear(); m_newMcpToken.clear();
                 refreshMcpServers();
+            }
             }
         }
         if (!m_mcpStatus.empty()) ImGui::TextWrapped("%s", m_mcpStatus.c_str());
