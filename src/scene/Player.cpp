@@ -698,23 +698,116 @@ void Player::hurt(float damage, float force, const glm::vec3& impulse) {
     if (glm::length(impulse) > 8.0f) trip(1.4f, glm::vec3(glm::length(impulse) * 30.0f * (impulse.x + impulse.z >= 0.0f ? 1.0f : -1.0f), 0, 0));
 }
 
-// Little squirts of blood / oil when the character gets hurt.
-void Player::bleed(float damage) {
-    if (!m_scene->goreEnabled()) return;
-    SceneNode* t = part("Torso");
-    if (!t) return;
-    glm::vec3 at = glm::vec3(t->worldMatrix()[3]);
-    int n = std::clamp((int)(damage * 0.5f), 3, 30);
-    m_scene->particles().spray(m_scene->goreKind(), at, glm::vec3(0, 0.5f, 0), n, 2.5f);
-    // The blood soaks into the body where it came out (bigger hits, bigger stains).
-    glm::vec3 spot = at + glm::vec3(rand01() - 0.5f, rand01() - 0.5f, rand01() - 0.5f) * 2.0f;
-    SceneNode* where = t;
-    if (rand01() < 0.35f) {
-        static const char* kOther[] = {"Left Arm", "Right Arm", "Left Leg", "Right Leg", "Head"};
-        if (SceneNode* o = part(kOther[(int)(rand01() * 4.99f)])) { where = o; spot = glm::vec3(o->worldMatrix()[3]) + (spot - at); }
+// Positional damage is used by collision-aware weapons. Keep the impact attached to
+// the struck body part so blood and deformation originate at the actual contact.
+void Player::hurtAt(SceneNode* hitPart, const glm::vec3& point, const glm::vec3& normal,
+                    const glm::vec3& projectileVelocity, float damage, float force,
+                    const glm::vec3& bodyImpulse) {
+    SceneNode* rig = root();
+    if (!hitPart || !rig || !rig->isAncestorOf(hitPart) || hasForceField() || m_dead || damage <= 0.0f) {
+        hurt(damage, force, bodyImpulse);
+        return;
     }
-    m_scene->particles().stain(m_scene->goreKind(), where, spot, std::clamp(0.3f + damage * 0.02f, 0.3f, 1.0f));
+    m_pendingImpactPart = hitPart->id;
+    m_pendingImpactPoint = point;
+    m_pendingImpactNormal = glm::length(normal) > 1e-5f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
+    m_pendingProjectileVelocity = projectileVelocity;
+    deformAtImpact(hitPart, point, m_pendingImpactNormal, projectileVelocity);
+    hurt(damage, force, bodyImpulse);
+}
+
+// A bounded, local mesh dent with a shallow raised rim. The original vertices and
+// accumulated offsets are retained so multiple hits add together and recover cleanly.
+void Player::deformAtImpact(SceneNode* hitPart, const glm::vec3& point, const glm::vec3& normal,
+                            const glm::vec3& projectileVelocity) {
+    if (!hitPart || !hitPart->editMesh || hitPart->editMesh->skinned()) return;
+    const glm::mat4 world = hitPart->worldMatrix();
+    const glm::mat3 linear(world);
+    const float determinant = glm::determinant(linear);
+    if (std::abs(determinant) < 1e-7f) return;
+    const glm::mat3 toLocal = glm::inverse(linear);
+    auto& state = m_impactDeformations[hitPart->id];
+    if (state.rest.empty()) {
+        state.rest = hitPart->editMesh->verts;
+        state.offset.assign(state.rest.size(), glm::vec3(0.0f));
+    }
+    if (state.rest.size() != hitPart->editMesh->verts.size()) return;
+
+    const float speed = glm::length(projectileVelocity);
+    const float radius = std::clamp(0.12f + speed * 0.0015f, 0.12f, 0.42f);
+    const float depth = std::clamp(0.025f + speed * 0.00018f, 0.025f, 0.18f);
+    const glm::vec3 n = glm::normalize(normal);
+    std::vector<glm::vec3> posed = state.rest;
+    for (size_t i = 0; i < state.rest.size(); ++i) {
+        const glm::vec3 worldVertex = glm::vec3(world * glm::vec4(state.rest[i], 1.0f));
+        const float distance = glm::length(worldVertex - point);
+        if (distance > radius * 1.8f) continue;
+        const float falloff = std::exp(-4.0f * distance / radius);
+        const float rim = std::exp(-std::pow((distance - radius * 0.48f) / (radius * 0.16f), 2.0f));
+        const glm::vec3 displacementWorld = -n * (depth * falloff) + n * (depth * 0.10f * rim);
+        state.offset[i] += toLocal * displacementWorld;
+        posed[i] += state.offset[i];
+    }
+    MeshEdit::refresh(*hitPart, &posed);
+}
+
+// Ease temporary impact dents back toward the original surface. Only impacted
+// body parts are touched; untouched character meshes never enter this update.
+void Player::updateImpactDeformations(float dt) {
+    if (m_impactDeformations.empty()) return;
+    const float decay = std::exp(-2.2f * std::max(0.0f, dt));
+    for (auto it = m_impactDeformations.begin(); it != m_impactDeformations.end();) {
+        SceneNode* node = m_scene->findById(it->first);
+        if (!node || !node->editMesh || node->editMesh->skinned() ||
+            it->second.rest.size() != node->editMesh->verts.size()) {
+            it = m_impactDeformations.erase(it);
+            continue;
+        }
+        bool active = false;
+        std::vector<glm::vec3> posed = it->second.rest;
+        for (size_t i = 0; i < posed.size(); ++i) {
+            it->second.offset[i] *= decay;
+            if (glm::dot(it->second.offset[i], it->second.offset[i]) > 1e-8f) {
+                posed[i] += it->second.offset[i];
+                active = true;
+            } else {
+                it->second.offset[i] = glm::vec3(0.0f);
+            }
+        }
+        if (active) {
+            MeshEdit::refresh(*node, &posed);
+            ++it;
+        } else {
+            MeshEdit::refresh(*node);
+            it = m_impactDeformations.erase(it);
+        }
+    }
+}
+
+// Blood is emitted at the collision point when one is available; legacy damage
+// (explosions, hazards and direct health changes) retains its torso fallback.
+void Player::bleed(float damage) {
+    if (!m_scene->goreEnabled()) { m_pendingImpactPart = 0; return; }
+    SceneNode* where = m_pendingImpactPart ? m_scene->findById(m_pendingImpactPart) : nullptr;
+    glm::vec3 at(0.0f), normal(0, 1, 0);
+    if (where) {
+        at = m_pendingImpactPoint;
+        normal = m_pendingImpactNormal;
+    } else {
+        where = part("Torso");
+        if (!where) { m_pendingImpactPart = 0; return; }
+        at = glm::vec3(where->worldMatrix()[3]);
+    }
+    const int n = std::clamp((int)(damage * 0.5f), 3, 30);
+    glm::vec3 sprayDir = normal * 0.45f + glm::vec3(0.0f, 0.25f, 0.0f);
+    if (glm::length(m_pendingProjectileVelocity) > 1e-4f)
+        sprayDir += glm::normalize(m_pendingProjectileVelocity) * 0.35f;
+    m_scene->particles().spray(m_scene->goreKind(), at, sprayDir, n, 2.5f);
+    m_scene->particles().stain(m_scene->goreKind(), where, at,
+                               std::clamp(0.3f + damage * 0.02f, 0.3f, 1.0f));
     if (m_scene->goreKind() == GoreKind::Oil) m_scene->particles().sparks(at, n / 2);
+    m_pendingImpactPart = 0;
+    m_pendingProjectileVelocity = glm::vec3(0.0f);
 }
 
 bool Player::consumeRespawned() {
@@ -1237,6 +1330,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
 
     if (m_dead) { updateDeath(dt, physics); return; }
     m_aliveTime += dt;
+    updateImpactDeformations(dt);
 
     if (m_spawnFF && (m_spawnFFTime -= dt) <= 0.0f) {
         if (SceneNode* ff = m_scene->findById(m_spawnFF)) m_scene->removeNode(ff);

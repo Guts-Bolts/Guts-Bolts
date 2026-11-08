@@ -158,6 +158,11 @@ public:
     void kill(float force = 0.0f, const glm::vec3& impulse = glm::vec3(0.0f));
     // Damage with a direction (used by explosions); kills if health runs out.
     void hurt(float damage, float force, const glm::vec3& impulse);
+    // Damage at a real collision point (projectiles / melee): preserves the hit part,
+    // surface normal and incoming velocity for localized deformation and bleeding.
+    void hurtAt(SceneNode* hitPart, const glm::vec3& point, const glm::vec3& normal,
+                const glm::vec3& projectileVelocity, float damage, float force,
+                const glm::vec3& bodyImpulse);
     bool isDead() const { return m_dead; }
     bool hasForceField() const;
     // player:LoadCharacter(): a fresh body at a spawn right now (dead or alive).
@@ -275,6 +280,9 @@ private:
     void syncSlots();
     void startDeath();
     void bleed(float damage);
+    void deformAtImpact(SceneNode* hitPart, const glm::vec3& point, const glm::vec3& normal,
+                        const glm::vec3& projectileVelocity);
+    void updateImpactDeformations(float dt);
     void updateDeath(float dt, Physics& physics);
     void respawn(bool firstSpawn = false);   // firstSpawn: arriving in the game (a different sound)
     void applyVrBody();               // VR: head and arms to the headset (PlayerVrBody.cpp)
@@ -434,6 +442,15 @@ private:
     void      getUp();
     float     m_pendingForce = 0.0f;
     glm::vec3 m_pendingImpulse{0.0f};
+    struct ImpactDeformation {
+        std::vector<glm::vec3> rest;
+        std::vector<glm::vec3> offset;
+    };
+    std::unordered_map<uint64_t, ImpactDeformation> m_impactDeformations;
+    uint64_t  m_pendingImpactPart = 0;
+    glm::vec3 m_pendingImpactPoint{0.0f};
+    glm::vec3 m_pendingImpactNormal{0.0f, 1.0f, 0.0f};
+    glm::vec3 m_pendingProjectileVelocity{0.0f};
     float     m_lastHealth = 100.0f;
     uint64_t  m_spawnFF = 0;          // the ForceField we gave on spawn
     float     m_spawnFFTime = 0.0f;
