@@ -848,6 +848,43 @@ void AssistantPanel::render(bool* open) {
         if (!m_credentialStatus.empty()) ImGui::TextWrapped("%s", m_credentialStatus.c_str());
     }
 
+    if (ImGui::CollapsingHeader("Fyxa task plan")) {
+        FyxaTaskStore store(Paths::file("fyxa-tasks.json"));
+        std::string taskError;
+        const json tasks = store.list(taskError);
+        if (!taskError.empty()) ImGui::TextWrapped("Task storage: %s", taskError.c_str());
+        else if (tasks.empty()) ImGui::TextDisabled("No tasks yet. Ask Fyxa to break a larger goal into tracked tasks.");
+        else for (const auto& task : tasks) {
+            const std::string title = task.value("title", std::string("Untitled task"));
+            const std::string status = task.value("status", std::string("unknown"));
+            ImGui::BulletText("%s  [%s]", title.c_str(), status.c_str());
+            const std::string description = task.value("description", std::string());
+            if (!description.empty()) ImGui::TextWrapped("  %s", description.c_str());
+            if (task.contains("notes") && task["notes"].is_array() && !task["notes"].empty()) {
+                const auto& note = task["notes"].back();
+                if (note.is_object()) {
+                    const std::string text = note.value("text", std::string());
+                    if (!text.empty()) ImGui::TextDisabled("  Latest: %s", text.c_str());
+                }
+            }
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Fyxa skills")) {
+        FyxaSkills skills(Paths::file("assets/fyxa/skills"), Paths::file("fyxa/skills"));
+        const json entries = skills.list();
+        ImGui::TextWrapped("Built-in skills ship with Guts & Bolts. User skills in %s override built-in skills with the same name.",
+                           Paths::file("fyxa/skills").string().c_str());
+        if (entries.empty()) ImGui::TextDisabled("No skills found.");
+        for (const auto& skill : entries) {
+            const std::string name = skill.value("name", std::string());
+            const std::string description = skill.value("description", std::string());
+            const std::string source = skill.value("source", std::string());
+            ImGui::BulletText("%s (%s)", name.c_str(), source.c_str());
+            if (!description.empty()) ImGui::TextWrapped("  %s", description.c_str());
+        }
+    }
+
     if (ImGui::CollapsingHeader("Connect MCP servers to Fyxa")) {
         ImGui::TextWrapped("Connect external MCP servers so Fyxa can discover and use their tools. Remote endpoints must use HTTPS. Credentials use the OS vault when available and are session-only otherwise.");
         ImGui::TextWrapped("Only connect servers you trust. External tools can read or change data in the services they control.");
