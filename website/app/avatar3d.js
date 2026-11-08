@@ -618,6 +618,7 @@ function teeTexture(id) {
 // Upload an avatar texture with the shared WebGL sampling and orientation settings.
 function uploadTextureImage(tex, img) {
   gl.bindTexture(gl.TEXTURE_2D, tex);
+  // The game's pictures are bottom row first too.
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
