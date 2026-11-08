@@ -97,4 +97,13 @@ inline std::string definitionFingerprint(const std::string& serverName,
     return result;
 }
 
+inline bool legacyFallbackAllowed(const json& response) {
+    if (!response.is_object() || !response.contains("error") || !response["error"].is_object())
+        return false;
+    const json& rpcError = response["error"];
+    if (!rpcError.contains("code") || !rpcError["code"].is_number_integer()) return false;
+    const int code = rpcError["code"].get<int>();
+    return code == -32022 || code == -32601;
+}
+
 } // namespace McpHttpProtocol
