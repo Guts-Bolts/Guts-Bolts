@@ -2609,6 +2609,8 @@ export class GbServerObject extends DurableObject {
           if (parsedVision && parsedVision.flag === true) {
             const category = String(parsedVision.category || 'content').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 32);
             categories.push('VISION_' + (category || 'REVIEW'));
+            const visualReason = cleanText(String(parsedVision.reason || ''), 300, true);
+            if (visualReason) content = (content + '\nVision review: ' + visualReason).slice(0, 7000);
             scanner += '+moondream';
             unsafe = true;
           } else if (!parsedVision || typeof parsedVision.flag !== 'boolean') {
