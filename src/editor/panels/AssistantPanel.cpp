@@ -1543,6 +1543,8 @@ static std::string fyxaSystemGuide() {
 }
 
 void AssistantPanel::requestNext() {
+    if (m_stopAsked || (m_agentCancel && m_agentCancel->load())) return;
+    if (!m_agentCancel) m_agentCancel = std::make_shared<std::atomic_bool>(false);
     const std::string payload = [&]() {
         if (m_provider == "ollama") {
             json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
@@ -1584,9 +1586,10 @@ void AssistantPanel::requestNext() {
     const std::string headers = ollama ? std::string() :
         "x-api-key: " + m_apiKey + "\r\nanthropic-version: 2023-06-01\r\n" +
         (m_model != "claude-haiku-4-5" ? "anthropic-beta: server-side-fallback-2026-07-01\r\n" : "");
-    m_pending = std::async(std::launch::async, [payload, host, port, path, headers]() {
+    const auto cancel = m_agentCancel;
+    m_pending = std::async(std::launch::async, [payload, host, port, path, headers, cancel]() {
         Reply r;
-        Net::httpPost(host, port, path, payload, r.body, r.error, 300000, headers, &r.status);
+        Net::httpPost(host, port, path, payload, r.body, r.error, 300000, headers, &r.status, nullptr, cancel.get());
         return r;
     });
     m_scrollDown = true;
@@ -1727,7 +1730,9 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
 
 void AssistantPanel::render(bool* open) {
     if (!ImGui::Begin("Fyxa", open)) { ImGui::End(); return; }
-    const bool busy = m_pending.valid() || m_externalPending.valid() || m_mcpRefreshPending.valid() || m_oauthPending.valid() || !m_externalQueue.empty() || m_externalApprovalPending || m_deferredExternalClaude || m_deferredExternalOllama;
+    const bool agentBusy = m_pending.valid() || m_externalPending.valid() || !m_externalQueue.empty() ||
+                           m_externalApprovalPending || m_deferredExternalClaude || m_deferredExternalOllama;
+    const bool busy = agentBusy || m_mcpRefreshPending.valid() || m_oauthPending.valid();
 
     if (ImGui::CollapsingHeader("Fyxa settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* providers[] = {"Ollama (local)", "Claude (Anthropic)"};
@@ -2025,7 +2030,10 @@ void AssistantPanel::render(bool* open) {
     bool enter = ImGui::InputTextMultiline("##ask", &m_input, ImVec2(-1, ImGui::GetFrameHeight() * 1.9f),
                                            ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue);
     if (busy) {
-        if (ImGui::Button("Stop")) m_stopAsked = true;
+        if (agentBusy && ImGui::Button("Stop")) {
+            m_stopAsked = true;
+            if (m_agentCancel) m_agentCancel->store(true);
+        }
     } else if ((enter || ImGui::Button("Send (Enter)")) && !m_input.empty()) {
         send(m_input);
         m_input.clear();
