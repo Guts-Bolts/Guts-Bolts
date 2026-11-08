@@ -1805,12 +1805,13 @@ void AssistantPanel::render(bool* open) {
             }
             ImGui::TextDisabled("%s", server.url.c_str());
             ImGui::BeginDisabled(m_oauthPending.valid() || m_mcpRefreshPending.valid());
+            const std::string previousOAuthClientId = server.oauthClientId;
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered public-client ID or client metadata URL", &server.oauthClientId)) {
                 if (!server.oauthIssuer.empty()) {
                     std::string oauthCredentialError;
                     const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
-                        server.name, server.oauthIssuer, server.oauthResource, server.oauthClientId);
+                        server.name, server.oauthIssuer, server.oauthResource, previousOAuthClientId);
                     CredentialStore::erase(oauthCredentialKey, oauthCredentialError);
                     CredentialStore::erase(oauthCredentialKey + "-refresh", oauthCredentialError);
                     server.token.clear();
