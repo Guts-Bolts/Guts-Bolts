@@ -41,6 +41,8 @@ int main() {
     readGrant.permission = "read";
     readGrant.issuedAtMs = 1000;
     readGrant.expiresAtMs = 2000;
+    readGrant.grantedBy = "user";
+    readGrant.auditEventId = "audit-2";
     CHECK(readGrant.validAt(1500));
     CHECK(readGrant.matches("github", "server-fp", "list_repos", "any-tool-fp", "read", 1500));
     CHECK(!readGrant.matches("github", "server-fp", "create_issue", "any-tool-fp", "write", 1500));
