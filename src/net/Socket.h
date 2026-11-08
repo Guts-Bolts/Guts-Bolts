@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -35,7 +36,7 @@ private:
     struct Web;                    // the WebSocket (and TLS) side, for wss:// hosts
     bool webPoll();
     friend bool httpRequest(const std::string&, const std::string&, int, const std::string&, const std::string&, std::string&, std::string&, int,
-                            const std::string&, int*, std::string*);
+                            const std::string&, int*, std::string*, const std::atomic_bool*);
 
     intptr_t    m_sock;
     std::string m_address;
@@ -52,7 +53,7 @@ bool isWebAddress(const std::string& host);
 // `extraHeaders`: more header lines, each ending in "\r\n". `status` gets the HTTP status.
 bool httpRequest(const std::string& method, const std::string& host, int port, const std::string& path,
                  const std::string& body, std::string& reply, std::string& error, int timeoutMs = 30000,
-                 const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr);
+                 const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr, const std::atomic_bool* cancel = nullptr);
 bool httpGet(const std::string& host, int port, const std::string& path, std::string& reply,
              std::string& error, int timeoutMs = 12000, const std::string& extraHeaders = "",
              int* status = nullptr, std::string* responseHeaders = nullptr);
