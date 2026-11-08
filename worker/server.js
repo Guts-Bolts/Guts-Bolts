@@ -2604,9 +2604,14 @@ export class GbServerObject extends DurableObject {
       ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT ?`, clamp(limit, 1, 100))) {
       const author = this.users.get(row.author_id); let categories = [];
       try { categories = JSON.parse(row.categories); } catch { categories = []; }
+      const asset = row.source_type === 'asset' ? this.assets.get(row.source_id) : null;
+      const group = row.source_type === 'group' || row.source_type === 'group_post' ? this.groups.get(row.source_id) : null;
+      const thread = row.source_type === 'forum_thread' || row.source_type === 'forum_reply' ? this.forum.get(row.source_id) : null;
       items.push({ id: row.id, sourceType: row.source_type, sourceId: row.source_id, authorId: row.author_id,
-        author: author ? this.publicUser(author) : null, categories, severity: row.severity, scanner: row.scanner,
-        excerpt: row.excerpt, status: row.status, createdAt: Number(row.created_at || 0) });
+        sourceName: asset ? asset.name : group ? group.name : thread ? thread.title : '',
+        assetKind: asset ? asset.kind : '', author: author ? this.publicUser(author) : null,
+        categories, severity: row.severity, scanner: row.scanner, excerpt: row.excerpt,
+        status: row.status, createdAt: Number(row.created_at || 0) });
     }
     return items;
   }
