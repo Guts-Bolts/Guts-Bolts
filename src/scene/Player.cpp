@@ -737,8 +737,9 @@ void Player::deformAtImpact(SceneNode* hitPart, const glm::vec3& point, const gl
     const float radius = std::clamp(0.12f + speed * 0.0015f, 0.12f, 0.42f);
     const float depth = std::clamp(0.025f + speed * 0.00018f, 0.025f, 0.18f);
     const glm::vec3 n = glm::normalize(normal);
-    std::vector<glm::vec3> posed = state.rest;
+    std::vector<glm::vec3> posed(state.rest.size());
     for (size_t i = 0; i < state.rest.size(); ++i) {
+        posed[i] = state.rest[i] + state.offset[i];
         const glm::vec3 worldVertex = glm::vec3(world * glm::vec4(state.rest[i], 1.0f));
         const float distance = glm::length(worldVertex - point);
         if (distance > radius * 1.8f) continue;
@@ -746,7 +747,7 @@ void Player::deformAtImpact(SceneNode* hitPart, const glm::vec3& point, const gl
         const float rim = std::exp(-std::pow((distance - radius * 0.48f) / (radius * 0.16f), 2.0f));
         const glm::vec3 displacementWorld = -n * (depth * falloff) + n * (depth * 0.10f * rim);
         state.offset[i] += toLocal * displacementWorld;
-        posed[i] += state.offset[i];
+        posed[i] += toLocal * displacementWorld;
     }
     MeshEdit::refresh(*hitPart, &posed);
 }
@@ -787,21 +788,38 @@ void Player::updateImpactDeformations(float dt) {
 // Blood is emitted at the collision point when one is available; legacy damage
 // (explosions, hazards and direct health changes) retains its torso fallback.
 void Player::bleed(float damage) {
-    if (!m_scene->goreEnabled()) { m_pendingImpactPart = 0; return; }
+    if (!m_scene->goreEnabled()) {
+        m_pendingImpactPart = 0;
+        m_pendingProjectileVelocity = glm::vec3(0.0f);
+        return;
+    }
     SceneNode* where = m_pendingImpactPart ? m_scene->findById(m_pendingImpactPart) : nullptr;
-    glm::vec3 at(0.0f), normal(0, 1, 0);
+    glm::vec3 at(0.0f), sprayDir(0.0f, 0.5f, 0.0f);
     if (where) {
         at = m_pendingImpactPoint;
-        normal = m_pendingImpactNormal;
+        sprayDir = m_pendingImpactNormal * 0.45f + glm::vec3(0.0f, 0.25f, 0.0f);
+        if (glm::length(m_pendingProjectileVelocity) > 1e-4f)
+            sprayDir += glm::normalize(m_pendingProjectileVelocity) * 0.35f;
     } else {
+        // Preserve the legacy distributed blood/oil response for damage without a
+        // collision point (explosions, hazards and scripts that set Health directly).
         where = part("Torso");
-        if (!where) { m_pendingImpactPart = 0; return; }
+        if (!where) {
+            m_pendingImpactPart = 0;
+            m_pendingProjectileVelocity = glm::vec3(0.0f);
+            return;
+        }
         at = glm::vec3(where->worldMatrix()[3]);
+        at += glm::vec3(rand01() - 0.5f, rand01() - 0.5f, rand01() - 0.5f) * 2.0f;
+        if (rand01() < 0.35f) {
+            static const char* kOther[] = {"Left Arm", "Right Arm", "Left Leg", "Right Leg", "Head"};
+            if (SceneNode* other = part(kOther[(int)(rand01() * 4.99f)])) {
+                where = other;
+                at = glm::vec3(other->worldMatrix()[3]) + (at - glm::vec3(part("Torso")->worldMatrix()[3]));
+            }
+        }
     }
     const int n = std::clamp((int)(damage * 0.5f), 3, 30);
-    glm::vec3 sprayDir = normal * 0.45f + glm::vec3(0.0f, 0.25f, 0.0f);
-    if (glm::length(m_pendingProjectileVelocity) > 1e-4f)
-        sprayDir += glm::normalize(m_pendingProjectileVelocity) * 0.35f;
     m_scene->particles().spray(m_scene->goreKind(), at, sprayDir, n, 2.5f);
     m_scene->particles().stain(m_scene->goreKind(), where, at,
                                std::clamp(0.3f + damage * 0.02f, 0.3f, 1.0f));
@@ -1344,6 +1362,10 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
             glm::vec3 at = r->transform.position + glm::vec3(0, 1.5f, 0);
             Audio::play("hit", 0.6f, 1.0f, false, &at);
         }
+    } else if (m_pendingImpactPart) {
+        // A sub-threshold hit must not leave stale positional data for later damage.
+        m_pendingImpactPart = 0;
+        m_pendingProjectileVelocity = glm::vec3(0.0f);
     }
     m_lastHealth = m_humanoid.health;
     if (m_humanoid.health <= 0.0f) { startDeath(); return; }
