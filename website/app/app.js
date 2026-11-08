@@ -3212,7 +3212,7 @@ function fyxaModerationBox(result) {
   const items = result.items || [];
   const names = { S1: 'Violence', S2: 'Non-violent crime', S3: 'Sexual violence', S4: 'Child safety', S5: 'Defamation', S6: 'Specialized advice',
     S7: 'Privacy', S8: 'Intellectual property', S9: 'Weapons', S10: 'Hate', S11: 'Self-harm', S12: 'Sexual content', S13: 'Elections', S14: 'Code interpreter abuse',
-    SCAN_UNAVAILABLE: 'AI scanner unavailable', VISION_NOT_ENABLED: 'Vision screening requires operator license acceptance', VISION_SCAN_UNAVAILABLE: 'Vision scan unavailable', AUDIO_REVIEW_REQUIRED: 'Audio upload requires manual review' };
+    SCAN_UNAVAILABLE: 'AI scanner unavailable', VISION_SCAN_UNAVAILABLE: 'Vision scan unavailable', AUDIO_REVIEW_REQUIRED: 'Audio upload requires manual review' };
   const person = (u, id) => u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>` : html`Unknown account (${id})`;
   const source = (item) => {
     let href = '';
@@ -4065,7 +4065,7 @@ pages.terms = async () => {
     </ul>
 
     <h2>8. Chat, safety and moderation</h2>
-    <p>We use automated safety screening, including AI-assisted classifiers, to help detect potentially harmful or rule-breaking content in public creator submissions, comments, forum posts, group posts, party chat and private messages. Screening results may be stored with a limited excerpt, category signals and review history, and shown to authorized moderators. Text submitted for these features is processed by Cloudflare Workers AI for trust-and-safety review. Open moderation cases remain available to staff until resolved; closed case evidence is retained for up to 180 days. Selected image uploads may also be screened when the image model is enabled; if it is unavailable or not enabled, those images require manual review. Audio uploads are routed for manual review until an audio-specific scanner is enabled. This processing is for moderation, not Fyxa model training or AI-reference indexing. AI flags can be wrong; staff review context and make moderation decisions. We do not use an AI flag alone to permanently ban an account.</p>
+    <p>We use automated safety screening, including AI-assisted classifiers, to help detect potentially harmful or rule-breaking content in public creator submissions, comments, forum posts, group posts, party chat and private messages. Screening results may be stored with a limited excerpt, category signals and review history, and shown to authorized moderators. Text submitted for these features is processed by Cloudflare Workers AI for trust-and-safety review. Supported image uploads are screened with a vision model; if that scan fails, the upload is routed for manual review. Supported audio uploads are transcribed by Deepgram Nova-3 through Cloudflare Workers AI and the transcript is screened; unsupported or failed audio scans are routed for manual review. Open moderation cases remain available to staff until resolved; closed case evidence is retained for up to 180 days. This processing is for moderation, not Fyxa model training or AI-reference indexing. AI flags can be wrong; staff review context and make moderation decisions. We do not use an AI flag alone to permanently ban an account.</p>
     <ul>
       <li>Swearing is allowed. The text filter still hides slurs, links to other sites and personal info (like phone
         numbers and email addresses) as "[ Content Deleted ]".</li>
