@@ -18,6 +18,17 @@ int main() {
     constexpr int port = 49381;
     CHECK(server.open(port, error));
 
+    // Preserve normal loopback connections and return immediately when
+    // cancellation is already requested before DNS resolution begins.
+    auto loopback = Net::Connection::connectTo("127.0.0.1", port, error, 1000);
+    CHECK(loopback != nullptr);
+    loopback.reset();
+    std::atomic_bool alreadyCancelled{true};
+    auto cancelledConnection = Net::Connection::connectTo(
+        "dns-cancel-test.invalid", 443, error, 1000, &alreadyCancelled);
+    CHECK(cancelledConnection == nullptr);
+    CHECK(error == "Request cancelled.");
+
     std::atomic_bool serverStop{false};
     std::atomic_bool requestReceived{false};
     std::thread serverThread([&] {
