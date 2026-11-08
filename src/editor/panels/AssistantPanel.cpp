@@ -94,7 +94,7 @@ json fyxaAgentTools() {
     return tools;
 }
 
-AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::vector<std::string>& evidenceIds) {
+AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::vector<std::pair<std::string, std::string>>& evidenceIds) {
     AiToolResult result;
     auto fail = [&](const std::string& message) {
         result.error = true;
