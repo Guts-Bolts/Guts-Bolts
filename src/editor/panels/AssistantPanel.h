@@ -53,7 +53,7 @@ private:
     int         m_ollamaPort = 11434;
     std::string m_ollamaModel = "qwen3:8b";
     struct McpServer {
-        std::string name, url, token, credentialKey, sessionId, protocolVersion = "2025-06-18";
+        std::string name, url, token, credentialKey, sessionId, protocolVersion = "2026-07-28";
         bool enabled = false;
         nlohmann::json tools = nlohmann::json::array();
     };
