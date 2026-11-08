@@ -813,11 +813,11 @@ AssistantPanel::AssistantPanel(Editor& editor) : m_editor(editor) {
 }
 
 AssistantPanel::~AssistantPanel() {
+    if (m_oauthCancel) m_oauthCancel->store(true);
     m_mcp.stop();
     if (m_pending.valid()) m_pending.wait();
     if (m_externalPending.valid()) m_externalPending.wait();
     if (m_mcpRefreshPending.valid()) m_mcpRefreshPending.wait();
-    if (m_oauthCancel) m_oauthCancel->store(true);
     if (m_oauthPending.valid()) m_oauthPending.wait();
 }
 
