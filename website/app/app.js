@@ -2148,13 +2148,13 @@ async function learnPage(head) {
 
 // Create > Fyxa AI: per-asset preferences and creator rights attestation.
 async function fyxaAssetsPage(head) {
-  if (!signedIn()) { show(html\`\${head}<div class="box"><p>Sign in to manage Fyxa AI permissions for your creations.</p></div>\`); return; }
+  if (!signedIn()) { show(html`${head}<div class="box"><p>Sign in to manage Fyxa AI permissions for your creations.</p></div>`); return; }
   const [assetsResult, prefsResult] = await Promise.all([
     pageCall('list', { creator: me.id, limit: 100 }),
     pageCall('ai.preferences.get', {}),
   ]);
-  if (!assetsResult.ok) { show(html\`\${head}<div class="box"><p class="error">\${assetsResult.error}</p></div>\`); return; }
-  if (!prefsResult.ok) { show(html\`\${head}<div class="box"><p class="error">Couldn't load Fyxa preferences: \${prefsResult.error}</p></div>\`); return; }
+  if (!assetsResult.ok) { show(html`${head}<div class="box"><p class="error">${assetsResult.error}</p></div>`); return; }
+  if (!prefsResult.ok) { show(html`${head}<div class="box"><p class="error">Couldn't load Fyxa preferences: ${prefsResult.error}</p></div>`); return; }
   const assets = assetsResult.assets || [];
   const states = await Promise.all(assets.map(async (asset) => {
     const r = await pageCall('ai.content.eligibility.get', { contentId: asset.id });
@@ -2174,50 +2174,50 @@ async function fyxaAssetsPage(head) {
     account_deleted: 'The creator account was deleted',
     owner_changed: 'Asset ownership changed; the new owner must submit a fresh attestation',
   }[reason] || (reason ? String(reason).replaceAll('_', ' ') : 'Eligible'));
-  const card = ({ asset, state, error }) => html\`<div class="box fyxa-asset">
+  const card = ({ asset, state, error }) => html`<div class="box fyxa-asset">
     <div class="row" style="align-items:center;justify-content:space-between;gap:12px">
-      <div><b><a href="\${asset.kind === 'game' ? '#/game/' + asset.id : isCatalogItem(asset.kind) ? '#/item/' + asset.id : '#/library/' + asset.id}">\${asset.name || asset.id}</a></b>
-        <div class="small muted">\${KINDS[asset.kind] || asset.kind} · ID \${assetNum(asset)} · \${(asset.access || 'public') === 'public' ? 'Public' : 'Private'}</div></div>
-      <span class="small">\${state ? 'Rights: ' + state.rightsStatus.replaceAll('_', ' ') : error ? 'Status unavailable' : 'Not configured'}</span>
+      <div><b><a href="${asset.kind === 'game' ? '#/game/' + asset.id : isCatalogItem(asset.kind) ? '#/item/' + asset.id : '#/library/' + asset.id}">${asset.name || asset.id}</a></b>
+        <div class="small muted">${KINDS[asset.kind] || asset.kind} · ID ${assetNum(asset)} · ${(asset.access || 'public') === 'public' ? 'Public' : 'Private'}</div></div>
+      <span class="small">${state ? 'Rights: ' + state.rightsStatus.replaceAll('_', ' ') : error ? 'Status unavailable' : 'Not configured'}</span>
     </div>
-    \${error ? html\`<p class="error small">\${error}</p>\` : !state ? html\`<p class="muted small">No eligibility record is available.</p>\` : html\`
+    ${error ? html`<p class="error small">${error}</p>` : !state ? html`<p class="muted small">No eligibility record is available.</p>` : html`
       <form class="form" data-form="fyxaAsset">
-        <input type="hidden" name="contentId" value="\${asset.id}">
+        <input type="hidden" name="contentId" value="${asset.id}">
         <div class="row" style="gap:16px;flex-wrap:wrap">
           <label>Model training
             <select name="trainingChoice">
-              <option value="inherit" \${state.trainingChoice === 'inherit' ? 'selected' : ''}>Use account setting</option>
-              <option value="include" \${state.trainingChoice === 'include' ? 'selected' : ''}>Request inclusion</option>
-              <option value="exclude" \${state.trainingChoice === 'exclude' ? 'selected' : ''}>Exclude this asset</option>
+              <option value="inherit" ${state.trainingChoice === 'inherit' ? 'selected' : ''}>Use account setting</option>
+              <option value="include" ${state.trainingChoice === 'include' ? 'selected' : ''}>Request inclusion</option>
+              <option value="exclude" ${state.trainingChoice === 'exclude' ? 'selected' : ''}>Exclude this asset</option>
             </select>
           </label>
           <label>AI reference
             <select name="referenceChoice">
-              <option value="inherit" \${state.referenceChoice === 'inherit' ? 'selected' : ''}>Use account setting</option>
-              <option value="include" \${state.referenceChoice === 'include' ? 'selected' : ''}>Request inclusion</option>
-              <option value="exclude" \${state.referenceChoice === 'exclude' ? 'selected' : ''}>Exclude this asset</option>
+              <option value="inherit" ${state.referenceChoice === 'inherit' ? 'selected' : ''}>Use account setting</option>
+              <option value="include" ${state.referenceChoice === 'include' ? 'selected' : ''}>Request inclusion</option>
+              <option value="exclude" ${state.referenceChoice === 'exclude' ? 'selected' : ''}>Exclude this asset</option>
             </select>
           </label>
         </div>
-        <label><input type="checkbox" name="rightsAttested" \${state.rightsAttested ? 'checked' : ''}>
+        <label><input type="checkbox" name="rightsAttested" ${state.rightsAttested ? 'checked' : ''}>
           I own or have all necessary rights and permissions for this asset to be considered for the selected Fyxa AI uses.</label>
-        <p class="small muted">Training status: \${state.trainingEligible ? 'Eligible under current controls' : reasonText(state.trainingExclusionReason)}.
-          Reference status: \${state.referenceEligible ? 'Eligible under current controls' : reasonText(state.referenceExclusionReason)}.</p>
+        <p class="small muted">Training status: ${state.trainingEligible ? 'Eligible under current controls' : reasonText(state.trainingExclusionReason)}.
+          Reference status: ${state.referenceEligible ? 'Eligible under current controls' : reasonText(state.referenceExclusionReason)}.</p>
         <p><button class="btn green">Save asset permissions</button></p>
-      </form>\`}
-  </div>\`;
-  show(html\`\${head}
+      </form>`}
+  </div>`;
+  show(html`${head}
     <div class="box">
       <h2 class="boxhead">Fyxa AI content permissions</h2>
       <p>Choose separately whether each public creation may be considered for model training and AI reference. “Use account setting” inherits your Account Settings choice; an explicit exclusion overrides it.</p>
       <p class="small muted">Requesting inclusion requires a rights attestation and staff approval. These controls only record eligibility metadata. No content is currently exported, indexed, sent to an AI provider, or used to train a model. Automated screening and age safeguards are not yet implemented, so approval here does not authorize processing.</p>
-      <p class="small">\${prefs.trainingEnabled ? 'Model training: enabled at account level.' : 'Model training: disabled at account level.'}
-        \${prefs.referenceEnabled ? ' AI reference: enabled at account level.' : ' AI reference: disabled at account level.'}
+      <p class="small">${prefs.trainingEnabled ? 'Model training: enabled at account level.' : 'Model training: disabled at account level.'}
+        ${prefs.referenceEnabled ? ' AI reference: enabled at account level.' : ' AI reference: disabled at account level.'}
         <a href="#/settings">Manage account preferences</a>.</p>
     </div>
-    \${assets.length ? states.map(card) : html\`<div class="box"><p>You have no creator assets to configure yet.</p></div>\`}
-    \${assets.length >= 100 ? html\`<p class="small muted">Showing the first 100 assets returned by the creator-assets list.</p>\` : ''}
-  \`);
+    ${assets.length ? states.map(card) : html`<div class="box"><p>You have no creator assets to configure yet.</p></div>`}
+    ${assets.length >= 100 ? html`<p class="small muted">Showing the first 100 assets returned by the creator-assets list.</p>` : ''}
+  `);
 }
 
 pages.create = async (tab = 'games') => {
@@ -3400,25 +3400,25 @@ function staffNumbersBox(r) {
         <span class="small muted">${Number(g.plays).toLocaleString()} plays</span></li>`)}</ol>` : html`<p class="muted">No plays recorded this week yet.</p>`}</div>`;
 }
 function fyxaReviewBox(r) {
-  if (!r || !r.ok) return html\`<div class="box"><h2 class="boxhead">Fyxa AI rights review</h2><p class="error">\${r && r.error || 'The review queue is unavailable.'}</p></div>\`;
+  if (!r || !r.ok) return html`<div class="box"><h2 class="boxhead">Fyxa AI rights review</h2><p class="error">${r && r.error || 'The review queue is unavailable.'}</p></div>`;
   const items = r.items || [];
-  return html\`<div class="box">
+  return html`<div class="box">
     <h2 class="boxhead">Fyxa AI rights review</h2>
     <p>Review creator rights attestations before any asset can become eligible. Approval is not a safety-screening result and does not start content processing.</p>
-    <p class="small muted">\${items.length} pending request\${items.length === 1 ? '' : 's'} · Maximum 50 shown per request.</p>
-    \${items.length ? items.map((item) => html\`<div class="box fyxa-review-item">
-      <b><a href="\${item.contentType === 'game' ? '#/game/' + item.contentId : isCatalogItem(item.contentType) ? '#/item/' + item.contentId : '#/library/' + item.contentId}">\${item.title || item.contentId}</a></b>
-      <div class="small muted">\${KINDS[item.contentType] || item.contentType} · Content ID \${item.contentId} · Creator \${item.owner && (item.owner.username || item.owner.name) || item.ownerId} · \${item.privacyStatus}</div>
-      <p class="small">\${item.rightsAttested ? 'Creator has submitted a rights attestation.' : 'No current rights attestation.'}</p>
+    <p class="small muted">${items.length} pending request${items.length === 1 ? '' : 's'} · Maximum 50 shown per request.</p>
+    ${items.length ? items.map((item) => html`<div class="box fyxa-review-item">
+      <b><a href="${item.contentType === 'game' ? '#/game/' + item.contentId : isCatalogItem(item.contentType) ? '#/item/' + item.contentId : '#/library/' + item.contentId}">${item.title || item.contentId}</a></b>
+      <div class="small muted">${KINDS[item.contentType] || item.contentType} · Content ID ${item.contentId} · Creator ${item.owner && (item.owner.username || item.owner.name) || item.ownerId} · ${item.privacyStatus}</div>
+      <p class="small">${item.rightsAttested ? 'Creator has submitted a rights attestation.' : 'No current rights attestation.'}</p>
       <form class="form" data-form="fyxaReview">
-        <input type="hidden" name="contentId" value="\${item.contentId}">
+        <input type="hidden" name="contentId" value="${item.contentId}">
         <label>Decision</label><select name="rightsStatus"><option value="approved">Approve rights</option><option value="rejected">Reject rights</option><option value="unverified">Return to unverified</option></select>
         <label>Review note <span class="small muted">(required for approval; explain the rights evidence)</span></label>
         <input name="reason" maxlength="160" minlength="8" placeholder="Describe the evidence reviewed" required>
         <p><button class="btn green">Submit review</button></p>
       </form>
-    </div>\`) : html\`<p class="muted">No rights attestations are waiting for review.</p>\`}
-  </div>\`;
+    </div>`) : html`<p class="muted">No rights attestations are waiting for review.</p>`}
+  </div>`;
 }
 
 pages.staff = async () => {
