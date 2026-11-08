@@ -2,6 +2,7 @@
 
 #include <nlohmann/json.hpp>
 #include <monocypher.h>
+#include <mbedtls/sha256.h>
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
@@ -209,7 +210,17 @@ inline bool createPkce(Pkce& out) {
     }
     out.verifier = base64Url(verifier, sizeof(verifier));
     out.state = base64Url(state, sizeof(state));
-    crypto_sha256(digest, reinterpret_cast<const std::uint8_t*>(out.verifier.data()), out.verifier.size());
+    if (mbedtls_sha256(reinterpret_cast<const unsigned char*>(out.verifier.data()),
+                       out.verifier.size(), digest, 0) != 0) {
+        crypto_wipe(verifier, sizeof(verifier));
+        crypto_wipe(state, sizeof(state));
+        crypto_wipe(digest, sizeof(digest));
+        crypto_wipe(out.verifier.data(), out.verifier.size());
+        crypto_wipe(out.state.data(), out.state.size());
+        out.verifier.clear();
+        out.state.clear();
+        return false;
+    }
     out.challenge = base64Url(digest, sizeof(digest));
     crypto_wipe(verifier, sizeof(verifier));
     crypto_wipe(state, sizeof(state));
