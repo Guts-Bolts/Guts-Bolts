@@ -1540,7 +1540,18 @@ void AssistantPanel::send(const std::string& text) {
     for (char& ch : normalized) ch = (char)std::tolower((unsigned char)ch);
     const bool continuation = normalized == "continue" || normalized == "keep going" ||
         normalized == "go ahead" || normalized == "proceed" || normalized == "yes" || normalized == "do it";
-    if (!continuation || m_activeRequestText.empty()) {
+    if (continuation) {
+        if (m_activeRequestText.empty()) {
+            for (auto it = m_messages.rbegin() + 1; it != m_messages.rend(); ++it) {
+                if (it->is_object() && it->value("role", std::string()) == "user" &&
+                    it->contains("content") && (*it)["content"].is_string()) {
+                    m_activeRequestText = (*it)["content"].get<std::string>();
+                    break;
+                }
+            }
+        }
+        if (m_activeRequestText.empty()) m_activeRequestText = text;
+    } else {
         m_activeRequestText = text;
         m_discoveredToolNames.clear();
     }
