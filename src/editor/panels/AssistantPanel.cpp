@@ -1308,7 +1308,7 @@ void AssistantPanel::startNextExternalCall() {
                 return done;
             }
             if (!response.is_object() || !response.contains("jsonrpc") ||
-                response.value("jsonrpc", std::string()) != "2.0") {
+                !response["jsonrpc"].is_string() || response["jsonrpc"].get<std::string>() != "2.0") {
                 done.error = "The MCP server returned an invalid JSON-RPC response.";
                 appendMcpAudit(serverName, toolName, done.call.args, "protocol-error");
                 return done;
