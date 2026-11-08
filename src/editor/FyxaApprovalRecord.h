@@ -24,7 +24,7 @@ struct FyxaApprovalRecord {
 
     bool validAt(std::int64_t nowMs) const {
         if (id.empty() || serverId.empty() || serverFingerprint.empty() ||
-            issuedAtMs <= 0 || expiresAtMs <= issuedAtMs ||
+            issuedAtMs <= 0 || expiresAtMs <= issuedAtMs || grantedBy.empty() || auditEventId.empty() ||
             nowMs < issuedAtMs || nowMs >= expiresAtMs || revokedAtMs != 0)
             return false;
         if (permission != "read" && permission != "write") return false;
@@ -82,7 +82,8 @@ struct FyxaApprovalRecord {
         parsed.grantedBy = value["grantedBy"].get<std::string>();
         parsed.auditEventId = value["auditEventId"].get<std::string>();
         if (parsed.id.empty() || parsed.serverId.empty() || parsed.serverFingerprint.empty() ||
-            parsed.issuedAtMs <= 0 || parsed.expiresAtMs <= parsed.issuedAtMs ||
+            parsed.issuedAtMs <= 0 || parsed.expiresAtMs <= parsed.issuedAtMs || parsed.revokedAtMs < 0 ||
+            parsed.grantedBy.empty() || parsed.auditEventId.empty() ||
             (parsed.permission != "read" && parsed.permission != "write") ||
             (parsed.scope != "tool" && parsed.scope != "server_read") ||
             (parsed.scope == "tool" && (parsed.toolName.empty() || parsed.toolFingerprint.empty())) ||
