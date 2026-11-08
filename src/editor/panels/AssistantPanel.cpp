@@ -4,6 +4,7 @@
 #include "../../net/Socket.h"
 #include "../../online/Protocol.h"   // base64
 #include "../../core/Paths.h"
+#include "../../core/CredentialStore.h"
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
@@ -173,7 +174,16 @@ void AssistantPanel::load() {
     std::ifstream f(Paths::file("assistant.json"));
     json j = json::parse(f, nullptr, false);
     if (!j.is_object()) return;
+    bool migrateCredentials = false;
     m_apiKey = j.value("apiKey", std::string());
+    if (m_apiKey.empty()) {
+        std::string credentialError;
+        CredentialStore::retrieve("anthropic-api-key", m_apiKey, credentialError);
+    } else {
+        std::string credentialError;
+        if (CredentialStore::store("anthropic-api-key", m_apiKey, credentialError)) migrateCredentials = true;
+        else m_credentialStatus = credentialError;
+    }
     m_model = j.value("model", m_model);
     m_provider = j.value("provider", m_provider);
     m_ollamaHost = j.value("ollamaHost", m_ollamaHost);
@@ -185,7 +195,16 @@ void AssistantPanel::load() {
             McpServer server;
             server.name = item.value("name", std::string());
             server.url = item.value("url", std::string());
+            server.credentialKey = item.value("credentialKey", "mcp-" + server.name);
             server.token = item.value("token", std::string());
+            if (!server.token.empty()) {
+                std::string credentialError;
+                if (CredentialStore::store(server.credentialKey, server.token, credentialError)) migrateCredentials = true;
+                else m_credentialStatus = credentialError;
+            } else {
+                std::string credentialError;
+                CredentialStore::retrieve(server.credentialKey, server.token, credentialError);
+            }
             server.enabled = item.value("enabled", true);
             server.protocolVersion = item.value("protocolVersion", std::string("2025-06-18"));
             server.tools = item.value("tools", json::array());
@@ -195,15 +214,18 @@ void AssistantPanel::load() {
     m_mcpWanted = j.value("mcp", false);
     m_mcpPort = j.value("mcpPort", (int)StudioMcp::kDefaultPort);
     m_appsWanted = j.value("connectedApps", false);
+    // Rewrite legacy plaintext credentials as vault references; unsupported platforms
+    // deliberately retain only session memory, never plaintext settings.
+    if (migrateCredentials || j.contains("apiKey") || (j.contains("mcpServers") && j["mcpServers"].is_array())) save();
 }
 
 void AssistantPanel::save() const {
     std::ofstream f(Paths::file("assistant.json"));
-    f << json{{"provider", m_provider}, {"apiKey", m_apiKey}, {"model", m_model},
+    f << json{{"provider", m_provider}, {"apiKeyCredential", m_apiKey.empty() ? std::string() : "anthropic-api-key"}, {"model", m_model},
               {"ollamaHost", m_ollamaHost}, {"ollamaPort", m_ollamaPort}, {"ollamaModel", m_ollamaModel},
               {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}, {"connectedApps", m_appsWanted},
               {"mcpServers", [&]() { json a = json::array(); for (const auto& s : m_externalMcp)
-                  a.push_back({{"name", s.name}, {"url", s.url}, {"token", s.token}, {"enabled", s.enabled},
+                  a.push_back({{"name", s.name}, {"url", s.url}, {"credentialKey", s.credentialKey}, {"enabled", s.enabled},
                                {"protocolVersion", s.protocolVersion}, {"tools", s.tools}}); return a; }()}}.dump(2);
 }
 
@@ -509,12 +531,19 @@ void AssistantPanel::render(bool* open) {
         } else {
             ImGui::TextWrapped("Use your own Anthropic API key. It is stored in this computer's local assistant settings.");
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::InputTextWithHint("API key", "Anthropic API key (sk-ant-...)", &m_apiKey, ImGuiInputTextFlags_Password)) save();
+            if (ImGui::InputTextWithHint("API key", "Anthropic API key (sk-ant-...)", &m_apiKey, ImGuiInputTextFlags_Password)) {
+                std::string credentialError;
+                if (!m_apiKey.empty() && !CredentialStore::store("anthropic-api-key", m_apiKey, credentialError))
+                    m_credentialStatus = credentialError;
+                else m_credentialStatus = CredentialStore::persistentAvailable() ? "API key saved in the OS credential vault." : "API key is session-only on this platform.";
+                save();
+            }
             int mi = 1;
             for (int i = 0; i < 3; ++i) if (m_model == kClaudeModels[i]) mi = i;
             ImGui::SetNextItemWidth(-1);
             if (ImGui::Combo("Claude model", &mi, kClaudeModelNames, 3)) { m_model = kClaudeModels[mi]; save(); }
         }
+        if (!m_credentialStatus.empty()) ImGui::TextWrapped("%s", m_credentialStatus.c_str());
     }
 
     if (ImGui::CollapsingHeader("Connect MCP servers to Fyxa")) {
@@ -537,7 +566,14 @@ void AssistantPanel::render(bool* open) {
             }
             if (duplicate) m_mcpStatus = "A server with that name already exists.";
             else {
-                McpServer server; server.name = m_newMcpName; server.url = m_newMcpUrl; server.token = m_newMcpToken;
+                McpServer server; server.name = m_newMcpName; server.url = m_newMcpUrl;
+                server.credentialKey = "mcp-" + newKey;
+                server.token = m_newMcpToken;
+                if (!server.token.empty()) {
+                    std::string credentialError;
+                    if (!CredentialStore::store(server.credentialKey, server.token, credentialError))
+                        m_credentialStatus = credentialError;
+                }
                 m_externalMcp.push_back(std::move(server)); save();
                 m_newMcpName.clear(); m_newMcpUrl.clear(); m_newMcpToken.clear();
                 refreshMcpServers();
@@ -553,7 +589,12 @@ void AssistantPanel::render(bool* open) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Refresh tools")) refreshMcpServers();
             ImGui::SameLine();
-            if (ImGui::SmallButton("Remove")) { m_externalMcp.erase(m_externalMcp.begin() + (long)i); save(); ImGui::PopID(); break; }
+            if (ImGui::SmallButton("Remove")) {
+                std::string credentialError;
+                CredentialStore::erase(server.credentialKey, credentialError);
+                m_externalMcp.erase(m_externalMcp.begin() + (long)i);
+                save(); ImGui::PopID(); break;
+            }
             ImGui::TextDisabled("%s", server.url.c_str());
             ImGui::TextDisabled("%d discovered tool(s)", server.tools.is_array() ? (int)server.tools.size() : 0);
             ImGui::PopID();
