@@ -60,6 +60,7 @@ private:
     std::shared_ptr<std::atomic_bool> m_dialCancel;
     std::optional<PendingApproval> m_pendingApproval;
     std::unordered_map<std::string, std::unordered_map<std::string, std::string>> m_appToolFingerprints;
+    std::unordered_map<std::string, bool> m_appCanChange;
     double      m_nextTry = 0, m_backoff = 2, m_lastPing = 0, m_helloAt = 0;
     int         m_calls = 0;
     std::string m_lastTool, m_lastApp;
