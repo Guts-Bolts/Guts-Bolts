@@ -10,6 +10,9 @@
 #include <mutex>
 #include <random>
 #include <vector>
+#include <condition_variable>
+#include <thread>
+#include <memory>
 
 #ifdef GB_WEBSOCKETS
 #include <mbedtls/ctr_drbg.h>
@@ -96,31 +99,103 @@ void setNonBlocking(intptr_t s) {
 // Open a TCP connection (non-blocking). Returns -1 and the reason on failure.
 using Clock = std::chrono::steady_clock;
 
+// System getaddrinfo() is synchronous on all supported desktop targets. Run it
+// on a bounded resolver lane so Stop never waits for an OS resolver that stalls.
+// Resolver state is shared with the detached worker; cancellation never leaves a
+// worker holding references to the caller's stack.
+struct ResolvedAddress {
+    sockaddr_storage address{};
+    socklen_t length = 0;
+};
+
+struct ResolveState {
+    std::mutex mutex;
+    std::condition_variable ready;
+    bool done = false;
+    int result = EAI_FAIL;
+    ResolvedAddress address;
+};
+
+bool resolveHostCancellable(const std::string& host, int port, ResolvedAddress& address,
+                            std::string& error, const std::atomic_bool* cancel) {
+    static std::atomic<unsigned int> activeResolvers{0};
+    constexpr unsigned int kMaxResolvers = 4;
+    unsigned int active = activeResolvers.load();
+    do {
+        if (active >= kMaxResolvers) {
+            error = "The DNS resolver is busy. Try again shortly.";
+            return false;
+        }
+    } while (!activeResolvers.compare_exchange_weak(active, active + 1));
+
+    auto state = std::make_shared<ResolveState>();
+    try {
+        std::thread([state, host, port, &activeResolvers]() {
+            addrinfo hints{};
+            hints.ai_family = AF_INET;
+            hints.ai_socktype = SOCK_STREAM;
+            addrinfo* results = nullptr;
+            const std::string service = std::to_string(port);
+            const int result = getaddrinfo(host.c_str(), service.c_str(), &hints, &results);
+            ResolvedAddress resolved;
+            if (result == 0 && results) {
+                const size_t length = std::min<size_t>(results->ai_addrlen, sizeof(resolved.address));
+                std::memcpy(&resolved.address, results->ai_addr, length);
+                resolved.length = static_cast<socklen_t>(length);
+            }
+            if (results) freeaddrinfo(results);
+            {
+                std::lock_guard lock(state->mutex);
+                state->result = result;
+                state->address = resolved;
+                state->done = true;
+            }
+            activeResolvers.fetch_sub(1);
+            state->ready.notify_one();
+        }).detach();
+    } catch (...) {
+        activeResolvers.fetch_sub(1);
+        error = "Couldn't start the DNS resolver.";
+        return false;
+    }
+
+    std::unique_lock lock(state->mutex);
+    while (!state->done) {
+        if (cancel && cancel->load()) {
+            error = "Request cancelled.";
+            return false;
+        }
+        state->ready.wait_for(lock, std::chrono::milliseconds(25));
+    }
+    if (cancel && cancel->load()) {
+        error = "Request cancelled.";
+        return false;
+    }
+    if (state->result != 0 || state->address.length == 0) {
+        error = "Couldn't find \"" + host + "\". Check the address.";
+        return false;
+    }
+    address = state->address;
+    return true;
+}
+
 intptr_t tcpConnect(const std::string& host, int port, std::string& error, int timeoutMs,
                     const std::atomic_bool* cancel) {
     if (cancel && cancel->load()) { error = "Request cancelled."; return -1; }
     if (!initSockets()) { error = "Networking isn't available on this computer."; return -1; }
 
-    addrinfo hints{};
-    hints.ai_family = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    addrinfo* res = nullptr;
-    const std::string portStr = std::to_string(port);
-    if (getaddrinfo(host.c_str(), portStr.c_str(), &hints, &res) != 0 || !res) {
-        error = cancel && cancel->load() ? "Request cancelled." : "Couldn't find \"" + host + "\". Check the address.";
-        return -1;
-    }
-    if (cancel && cancel->load()) { freeaddrinfo(res); error = "Request cancelled."; return -1; }
+    ResolvedAddress resolved;
+    if (!resolveHostCancellable(host, port, resolved, error, cancel)) return -1;
+    if (cancel && cancel->load()) { error = "Request cancelled."; return -1; }
 
-    auto s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if ((intptr_t)s < 0) { freeaddrinfo(res); error = "Couldn't create a network socket."; return -1; }
+    auto s = socket(resolved.address.ss_family, SOCK_STREAM, IPPROTO_TCP);
+    if ((intptr_t)s < 0) { error = "Couldn't create a network socket."; return -1; }
     setNonBlocking((intptr_t)s);
 
-    const int rc = ::connect(s, res->ai_addr, (socklen_t)res->ai_addrlen);
-    freeaddrinfo(res);
+    const int rc = ::connect(s, reinterpret_cast<const sockaddr*>(&resolved.address), resolved.length);
     if (rc != 0 && !GB_WOULDBLOCK) {
         GB_CLOSE(s);
-        error = "Couldn't connect to " + host + ":" + portStr + ".";
+        error = "Couldn't connect to " + host + ":" + std::to_string(port) + ".";
         return -1;
     }
     if (rc != 0) {
@@ -147,7 +222,7 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
         if (!connected) {
             GB_CLOSE(s);
             error = cancel && cancel->load() ? "Request cancelled." :
-                "Nobody answered at " + host + ":" + portStr + ". Is the game hosted and the port open?";
+                "Nobody answered at " + host + ":" + std::to_string(port) + ". Is the game hosted and the port open?";
             return -1;
         }
         int soErr = 0;
@@ -155,9 +230,14 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
         getsockopt(s, SOL_SOCKET, SO_ERROR, (char*)&soErr, &len);
         if (soErr != 0) {
             GB_CLOSE(s);
-            error = "The connection to " + host + ":" + portStr + " was refused.";
+            error = "The connection to " + host + ":" + std::to_string(port) + " was refused.";
             return -1;
         }
+    }
+    if (cancel && cancel->load()) {
+        GB_CLOSE(s);
+        error = "Request cancelled.";
+        return -1;
     }
     return (intptr_t)s;
 }
@@ -487,9 +567,10 @@ Connection::~Connection() {
 }
 
 std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int port,
-                                                  std::string& error, int timeoutMs) {
+                                                  std::string& error, int timeoutMs,
+                                                  const std::atomic_bool* cancel) {
     if (!isWebAddress(host)) {
-        intptr_t s = tcpConnect(host, port, error, timeoutMs, nullptr);
+        intptr_t s = tcpConnect(host, port, error, timeoutMs, cancel);
         if (s < 0) return nullptr;
         return std::make_unique<Connection>(s, host + ":" + std::to_string(port));
     }
@@ -541,13 +622,13 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
     return c;
 #else
     auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 8000));
-    intptr_t s = tcpConnect(name, port, error, timeoutMs, nullptr);
+    intptr_t s = tcpConnect(name, port, error, timeoutMs, cancel);
     if (s < 0) return nullptr;
     auto c = std::make_unique<Connection>(s, host + ":" + std::to_string(port));
     c->m_web = std::make_unique<Web>();
     Web& w = *c->m_web;
     w.sock = s;
-    if (tls && !w.startTls(name, error, deadline, nullptr)) return nullptr;
+    if (tls && !w.startTls(name, error, deadline, cancel)) return nullptr;
     unsigned char key[16];
     for (unsigned char& k : key) k = (unsigned char)(w.rng() & 0xFF);
     std::string hostHeader = name + ((tls && port == 443) || (!tls && port == 80) ? "" : ":" + std::to_string(port));
@@ -555,7 +636,7 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
                         "Sec-WebSocket-Key: " + base64(key, 16) + "\r\nSec-WebSocket-Version: 13\r\n"
                         "User-Agent: GutsAndBolts\r\n\r\n";
     std::string headers;
-    if (!w.writeAll(hello, deadline, nullptr) || !w.readHeaders(headers, deadline, nullptr)) {
+    if (!w.writeAll(hello, deadline, cancel) || !w.readHeaders(headers, deadline, cancel)) {
         error = "The server at " + name + " didn't answer.";
         return nullptr;
     }
