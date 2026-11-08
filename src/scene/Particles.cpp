@@ -516,13 +516,13 @@ void ParticleSystem::wound(GoreKind kind, const SceneNode* part, const glm::vec3
                 const glm::vec3& a = mesh.verts[ia];
                 const glm::vec3& b = mesh.verts[ib];
                 const glm::vec3& c = mesh.verts[ic];
+                glm::vec3 faceNormal = glm::cross(b - a, c - a);
+                if (glm::length(faceNormal) < 1e-6f) continue;
+                faceNormal = glm::normalize(faceNormal);
                 const glm::vec3 bary = closestTriangleBarycentric(p.localPos, a, b, c);
                 const glm::vec3 closest = a * bary.x + b * bary.y + c * bary.z;
                 const float distance = glm::dot(closest - p.localPos, closest - p.localPos);
                 if (distance >= bestDistance) continue;
-                glm::vec3 faceNormal = glm::cross(b - a, c - a);
-                if (glm::length(faceNormal) < 1e-6f) continue;
-                faceNormal = glm::normalize(faceNormal);
                 p.skinTriangle = glm::uvec3(ia, ib, ic);
                 p.skinBarycentric = bary;
                 p.skinNormalSign = glm::dot(faceNormal, p.localNormal) < 0.0f ? -1.0f : 1.0f;
