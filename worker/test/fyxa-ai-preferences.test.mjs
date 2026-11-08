@@ -175,3 +175,29 @@ test('visibility changes and deletion revoke stored eligibility', () => {
   assert.ok(deleted.ok, deleted.error);
   assert.equal(s.aiContentRow(asset.id), null);
 });
+
+test('account opt-in enrolls existing and future uploads without bypassing rights review', () => {
+  const s = makeServer();
+  const owner = s.signUp('alice');
+  const existing = s.addGame(owner, 'Existing public game');
+
+  assert.equal(s.aiContentRow(existing.id), null, 'accounts that have not opted in do not create AI records');
+  assert.ok(enableTraining(s, owner).ok);
+  assert.ok(s.aiContentRow(existing.id), 'existing owned uploads are enrolled for eligibility checks');
+
+  const newAsset = s.addGame(owner, 'New public game');
+  assert.ok(s.aiContentRow(newAsset.id), 'new uploads are enrolled automatically after opt-in');
+
+  const attested = s.call(owner, 'ai.content.eligibility.update', {
+    contentId: existing.id, rightsAttested: true,
+  });
+  assert.ok(attested.ok, attested.error);
+  assert.equal(attested.eligibility.trainingChoice, 'inherit');
+  assert.equal(attested.eligibility.trainingEligible, false);
+
+  const approved = s.call(s.staff, 'ai.content.review', {
+    contentId: existing.id, rightsStatus: 'approved', reason: 'Creator rights attestation reviewed',
+  });
+  assert.ok(approved.ok, approved.error);
+  assert.equal(approved.eligibility.trainingEligible, true, 'inherit follows the account-wide opt-in after rights approval');
+});
