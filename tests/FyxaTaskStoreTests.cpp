@@ -40,6 +40,9 @@ int main() {
         const json tasks = reopened.list(error);
         check(error.empty() && tasks.size() == 1 && tasks[0].value("status", "") == "in_progress",
               "persists tasks across store instances");
+        check(tasks[0].contains("notes") && tasks[0]["notes"].size() == 1 &&
+              tasks[0]["notes"][0].value("text", "") == "Inspected the scene",
+              "persists task progress notes");
         check(!reopened.update("missing-task", "completed", "done", error), "rejects an unknown task id");
         check(!error.empty(), "unknown task reports an error");
         check(!reopened.update(tasks[0].value("id", ""), "finished", "", error), "rejects an invalid status");
