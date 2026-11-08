@@ -15,9 +15,9 @@
 #endif
 #include <windows.h>
 #include <bcrypt.h>
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) || defined(__ANDROID__)
 #include <cstdlib>
-#elif defined(__linux__) || defined(__ANDROID__)
+#elif defined(__linux__)
 #include <sys/random.h>
 #include <cerrno>
 #endif
@@ -148,10 +148,10 @@ inline bool secureRandom(std::uint8_t* output, size_t size) {
 #ifdef _WIN32
     return size <= ULONG_MAX &&
         BCryptGenRandom(nullptr, output, static_cast<ULONG>(size), BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
-#elif defined(__APPLE__)
+#elif defined(__APPLE__) || defined(__ANDROID__)
     arc4random_buf(output, size);
     return true;
-#elif defined(__linux__) || defined(__ANDROID__)
+#elif defined(__linux__)
     size_t offset = 0;
     while (offset < size) {
         const ssize_t got = getrandom(output + offset, size - offset, 0);
