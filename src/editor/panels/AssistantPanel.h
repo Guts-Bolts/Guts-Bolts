@@ -56,12 +56,12 @@ private:
     std::string m_ollamaModel = "qwen3:8b";
     struct McpServer {
         std::string name, url, token, credentialKey, sessionId, protocolVersion = "2026-07-28";
-        std::string oauthClientId, oauthRefreshToken;
+        std::string oauthClientId, oauthRefreshToken, oauthTokenEndpoint, oauthResource;
         bool enabled = false;
         nlohmann::json tools = nlohmann::json::array();
     };
     struct McpRefreshResult { std::vector<McpServer> servers; std::string status; };
-    struct McpOAuthResult { std::string serverName, accessToken, refreshToken, issuer, error; };
+    struct McpOAuthResult { std::string serverName, accessToken, refreshToken, issuer, tokenEndpoint, resource, error; };
     std::future<McpOAuthResult> m_oauthPending;
     std::string m_oauthServerName;
     std::vector<McpServer> m_externalMcp;
