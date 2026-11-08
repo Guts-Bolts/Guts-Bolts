@@ -31,15 +31,15 @@ Make Fyxa a dependable in-Studio assistant that can use native Guts & Bolts tool
 - A worker serializes I/O and returns immutable completions; the editor applies UI changes only on its main thread.
 - Credential adapters use Windows Credential Manager, macOS Keychain, and Linux Secret Service when available. If unavailable, credentials are session-only and the UI says so.
 - OAuth uses metadata discovery, PKCE S256, browser launch, loopback callback, state validation, refresh, and secure-store persistence.
-- External actions have a separate audit record with server, tool, timestamp, redacted arguments, result, and approval. Native AI Activity remains authoritative for native Studio edits.
+- External MCP and connected-app actions have a shared redacted audit record with server/app, tool, timestamp, redacted arguments, result, approval decision, fingerprint, and idempotency key where applicable. Native AI Activity remains authoritative for native Studio edits.
 
 ## Safety
 - Remote cleartext HTTP is denied; loopback HTTP is allowed.
 - Reject URL userinfo, malformed hosts/ports, header injection, duplicate tool identifiers, invalid schemas, and oversized responses.
 - Never include credentials, authorization codes, or refresh tokens in logs, prompts, tool results, or crash messages.
-- Require approval for external write/unknown tools. Approval shows server origin and arguments with secrets redacted.
+- Require per-call user approval for every external MCP tool invocation. Approval shows server origin and arguments with secrets redacted. Connected-app relay calls must be fingerprinted at discovery and revalidated immediately before the approved call.
 - Revalidate enabled state and tool identity immediately before execution.
-- Cancellation and shutdown terminate/reap child processes and do not wait indefinitely on remote servers.
+- Cancellation and shutdown terminate/reap child processes and do not wait indefinitely on remote servers. DNS waiting is isolated behind a bounded cancellable resolver lane; see the production-readiness review for its remaining platform verification.
 - Arbitrary third-party side effects are not assumed reversible.
 
 ## Compatibility
