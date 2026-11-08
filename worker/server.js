@@ -2608,7 +2608,8 @@ export class GbServerObject extends DurableObject {
     }
     // Supported image uploads receive a vision-language screening pass; failures are sent to staff.
     if (assetWrite && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(assetKind)) {
-      const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta
+        : sourceAsset && sourceAsset.meta && typeof sourceAsset.meta === 'object' ? sourceAsset.meta : {};
       const ext = String(meta.ext || '').toLowerCase();
       const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
       const encoded = str(args, 'data').replace(/^data:[^,]+,/, '');
