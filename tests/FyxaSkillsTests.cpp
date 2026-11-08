@@ -27,6 +27,7 @@ int main() {
     put(bundled / "studio-basics.md", "# Studio Basics\nUse the editor tools.");
     put(bundled / "lua-scripting.md", "# Lua Scripting\nUse Lua 5.4.");
     put(user / "studio-basics.md", "# My Studio Rules\nPrefer small edits.");
+    put(user / "my-workflow.md", "# My Workflow\nInspect the current project first.");
     put(user / "too-large.md", std::string(65537, 'x'));
 
     FyxaSkills skills(bundled, user);
