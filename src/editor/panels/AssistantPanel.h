@@ -28,8 +28,6 @@ private:
     void handleClaudeReply(int status, const std::string& body, const std::string& error);
     void handleOllamaReply(int status, const std::string& body, const std::string& error);
     void refreshMcpServers();
-    bool callExternalMcpTool(const std::string& qualifiedName, const nlohmann::json& args,
-                             std::string& result, std::string& error) const;
     nlohmann::json externalMcpTools() const;
     struct ExternalCall { bool claude = false; std::string name, id; nlohmann::json args; };
     struct ExternalCompletion { ExternalCall call; std::string text, error; };
