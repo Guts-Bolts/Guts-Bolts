@@ -34,6 +34,7 @@ private:
     struct ExternalCompletion { ExternalCall call; std::string text, error; };
     void startNextExternalCall();
     void finishExternalCalls();
+    std::string recordToolEvidence(const std::string& toolName);
 
     Editor&     m_editor;
     StudioMcp   m_mcp;
@@ -76,4 +77,6 @@ private:
     int         m_rounds = 0;
     bool        m_stopAsked = false;
     bool        m_scrollDown = false;
+    std::vector<std::string> m_recentEvidence;
+    unsigned long long m_evidenceSequence = 0;
 };
