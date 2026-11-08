@@ -2530,7 +2530,9 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'message.send') { sourceType = 'private_message'; sourceId = String(args.to || ''); fields.push(['message subject', args.subject], ['private message', args.body]);
     } else if (op === 'party.send') { sourceType = 'party_chat'; sourceId = String(args.id || ''); fields.push(['party message', args.body]);
     } else if (op === 'groups.create') { sourceType = 'group'; sourceId = String(answer.group && answer.group.id || ''); fields.push(['group name', args.name], ['group description', args.description]);
-    } else if (op === 'groups.shout' || op === 'groups.wall.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group post', args.text]);
+    } else if (op === 'groups.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group wall post', args.text]);
+    } else if (op === 'groups.shout' || op === 'groups.wall.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group shout', args.text]);
+    } else if (op === 'groups.edit') { sourceType = 'group'; sourceId = String(args.id || ''); fields.push(['group description', args.description]);
     } else if (op === 'updates.post') { sourceType = 'platform_update'; sourceId = String(answer.update && answer.update.id || ''); fields.push(['update title', args.name], ['update summary', args.summary], ['update notes', Array.isArray(args.items) ? args.items.join('\n') : '']);
     } else if (op === 'profile.set') { sourceType = 'profile'; sourceId = actor.id; fields.push(['profile about', args.blurb], ['profile status', args.status]);
     } else if (op === 'gamelog.post') { sourceType = 'game_update'; sourceId = String(args.id || ''); fields.push(['game update title', args.title], ['game update text', args.text]);
