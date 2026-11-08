@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
-#include "FyxaProviderCapabilities.h"
+#include "../FyxaProviderCapabilities.h"
 #include "../StudioMcp.h"
 #include "../StudioRelay.h"
 
