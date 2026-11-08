@@ -1027,6 +1027,14 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
 endif()
 
+# Fyxa exposes only relevant native and external tools, with explicit discovery for omitted capabilities.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaToolSelectionTests tests/FyxaToolSelectionTests.cpp src/editor/FyxaToolSelection.cpp)
+    target_include_directories(FyxaToolSelectionTests PRIVATE src/)
+    target_link_libraries(FyxaToolSelectionTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaToolSelectionTests COMMAND FyxaToolSelectionTests)
+endif()
+
 # Fyxa's shared HTTP client must interrupt stalled requests when cancellation is signalled.
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
     add_executable(NetHttpCancellationTests tests/NetHttpCancellationTests.cpp)
