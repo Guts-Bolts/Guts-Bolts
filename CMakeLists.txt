@@ -1080,6 +1080,9 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(StudioMcpAccessTests tests/StudioMcpAccessTests.cpp)
     target_include_directories(StudioMcpAccessTests PRIVATE src/)
     add_test(NAME StudioMcpAccessTests COMMAND StudioMcpAccessTests)
+    add_executable(StudioRelayApprovalTests tests/StudioRelayApprovalTests.cpp)
+    target_include_directories(StudioRelayApprovalTests PRIVATE src/)
+    add_test(NAME StudioRelayApprovalTests COMMAND StudioRelayApprovalTests)
 endif()
 
 # MCP HTTP wire-envelope compatibility: stateless 2026-07-28 and legacy sessions.
