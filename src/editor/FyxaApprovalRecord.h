@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <nlohmann/json.hpp>
 
 // Persistable shape for a future opt-in trust-tier system. Current production
