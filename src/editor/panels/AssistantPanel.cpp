@@ -779,7 +779,8 @@ void AssistantPanel::load() {
             server.token = item.value("token", std::string());
             server.oauthClientId = item.value("oauthClientId", std::string());
             server.oauthTokenEndpoint = item.value("oauthTokenEndpoint", std::string());
-            server.oauthResource = item.value("oauthResource", std::string());\n            server.oauthIssuer = item.value("oauthIssuer", std::string());
+            server.oauthResource = item.value("oauthResource", std::string());
+            server.oauthIssuer = item.value("oauthIssuer", std::string());
             std::string refreshError;
             CredentialStore::retrieve(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, refreshError);
             if (!server.token.empty()) {
@@ -1184,7 +1185,8 @@ void AssistantPanel::update() {
             server->oauthRefreshToken = std::move(authorized.refreshToken);
             server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);
             server->oauthClientId = std::move(authorized.clientId);
-            server->oauthResource = std::move(authorized.resource);\n            server->oauthIssuer = std::move(authorized.issuer);
+            server->oauthResource = std::move(authorized.resource);
+            server->oauthIssuer = authorized.issuer;
             std::string credentialError;
             if (!CredentialStore::store(server->credentialKey, server->token, credentialError))
                 m_credentialStatus = credentialError + " The access token remains in memory for this session.";
