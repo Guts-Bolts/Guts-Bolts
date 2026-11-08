@@ -2514,10 +2514,11 @@ export class GbServerObject extends DurableObject {
       : rightsStatus !== 'approved' ? 'rights_pending_review' : '';
     const trainingChoice = row ? Number(row.training_choice) : 0;
     const referenceChoice = row ? Number(row.reference_choice) : 0;
+    const noticeCurrent = prefs.policyVersion === FYXA_AI_POLICY_VERSION && prefs.noticeVersion === FYXA_AI_NOTICE_VERSION;
     const trainingReason = baseReason || !prefs.trainingEnabled ? (baseReason || 'account_training_disabled')
-      : trainingChoice === -1 ? 'content_excluded' : '';
+      : !noticeCurrent ? 'notice_outdated' : trainingChoice === -1 ? 'content_excluded' : '';
     const referenceReason = baseReason || !prefs.referenceEnabled ? (baseReason || 'account_reference_disabled')
-      : referenceChoice === -1 ? 'content_excluded' : '';
+      : !noticeCurrent ? 'notice_outdated' : referenceChoice === -1 ? 'content_excluded' : '';
     return {
       contentId: asset.id, contentType: String(asset.kind || 'unknown'),
       trainingChoice: trainingChoice === 1 ? 'include' : trainingChoice === -1 ? 'exclude' : 'inherit',
