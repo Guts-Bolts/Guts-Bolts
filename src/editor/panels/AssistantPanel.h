@@ -34,7 +34,7 @@ private:
     struct ExternalCompletion { ExternalCall call; std::string text, error; };
     void startNextExternalCall();
     void finishExternalCalls();
-    std::string recordToolEvidence(const std::string& toolName);
+    std::string recordToolEvidence();
 
     Editor&     m_editor;
     StudioMcp   m_mcp;
