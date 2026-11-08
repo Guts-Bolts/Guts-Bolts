@@ -2914,7 +2914,7 @@ export class GbServerObject extends DurableObject {
       this.sql.exec(`UPDATE ai_moderation_cases SET status = 'closed', reviewed_by = ?, reviewed_at = ?, outcome = ?, staff_note = ? WHERE id = ? AND status = 'open'`,
         me.id, now(), outcome, note, caseId);
       this.staffDid(me, 'fyxa_moderation', 'Reviewed Fyxa moderation case (' + outcome + ') for ' + existing.source_type, existing.author_id);
-      return okay({ items: this.aiModerationQueue(100) });
+      return okay(this.aiModerationQueue(100));
     }
     if (name === 'ai.training.history') {
       const events = [];
