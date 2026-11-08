@@ -9,6 +9,7 @@
 #include "scene/Scene.h"
 #include "scene/SceneNode.h"
 #include "scene/EditMesh.h"
+#include "scene/Liquid.h"
 #include "scene/Serializer.h"
 
 #include <imgui.h>
@@ -71,6 +72,11 @@ int main(int argc, char** argv) {
     p->root()->transform.position = glm::vec3(500.0f, 100.2f, 500.0f);
     play(session, 1.5f);
     check(upright(p->root()->findChild("Torso")) > 0.9f, "the character starts standing");
+    Liquid::Fluid defaultFluid;
+    check(Liquid::kTensileCorrection >= 0.02f && Liquid::kTensileCorrection <= 0.05f,
+          "PBF uses a conservative non-zero tensile-instability correction");
+    check(defaultFluid.tension > 0.0f && defaultFluid.tension <= 0.1f,
+          "plain water starts with gentle surface cohesion");
 
     if (SceneNode* torso = p->root()->findChild("Torso"); torso && torso->editMesh && !torso->editMesh->verts.empty()) {
         const std::vector<glm::vec3> before = torso->editMesh->verts;
@@ -83,6 +89,18 @@ int main(int argc, char** argv) {
             for (size_t i = 0; i < before.size(); ++i)
                 if (glm::length(torso->editMesh->verts[i] - before[i]) > 1e-7f) { changed = true; break; }
         check(changed, "a positional projectile hit changes the struck mesh");
+        if (torso->editMesh->skinned()) {
+            scene.particles().wound(GoreKind::Blood, torso, hitPoint, hitNormal,
+                                    glm::vec3(1, 0, 0), 0.09f, 0.28f);
+            const Particle& decal = scene.particles().items().back();
+            check(decal.skinTriangle.x != 0xffffffffu &&
+                  std::abs(decal.skinBarycentric.x + decal.skinBarycentric.y + decal.skinBarycentric.z - 1.0f) < 1e-4f,
+                  "a skinned wound decal stores a barycentric triangle anchor");
+            scene.particles().follow(scene);
+            check(glm::length(decal.normal) > 0.9f && glm::length(decal.tangent) > 0.9f &&
+                  std::abs(glm::dot(decal.normal, decal.tangent)) < 0.05f,
+                  "a skinned wound decal maintains an orthogonal deformed tangent frame");
+        }
     } else {
         check(false, "the player torso has an editable mesh for impact deformation");
     }

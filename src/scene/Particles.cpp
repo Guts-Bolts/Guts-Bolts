@@ -23,6 +23,39 @@ glm::vec3 rndDir() {
 }
 
 const glm::vec3 kOil      = {0.06f, 0.06f, 0.07f};
+
+// Closest point on a triangle, returned as barycentric coordinates. This keeps
+// wound decals attached to the surface triangle rather than a single vertex.
+glm::vec3 closestTriangleBarycentric(const glm::vec3& p, const glm::vec3& a,
+                                     const glm::vec3& b, const glm::vec3& c) {
+    const glm::vec3 ab = b - a, ac = c - a, ap = p - a;
+    const float d1 = glm::dot(ab, ap), d2 = glm::dot(ac, ap);
+    if (d1 <= 0.0f && d2 <= 0.0f) return {1, 0, 0};
+    const glm::vec3 bp = p - b;
+    const float d3 = glm::dot(ab, bp), d4 = glm::dot(ac, bp);
+    if (d3 >= 0.0f && d4 <= d3) return {0, 1, 0};
+    const float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
+        const float v = d1 / (d1 - d3);
+        return {1.0f - v, v, 0.0f};
+    }
+    const glm::vec3 cp = p - c;
+    const float d5 = glm::dot(ab, cp), d6 = glm::dot(ac, cp);
+    if (d6 >= 0.0f && d5 <= d6) return {0, 0, 1};
+    const float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
+        const float w = d2 / (d2 - d6);
+        return {1.0f - w, 0.0f, w};
+    }
+    const float va = d3 * d6 - d5 * d4;
+    if (va <= 0.0f && d4 - d3 >= 0.0f && d5 - d6 >= 0.0f) {
+        const float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return {0.0f, 1.0f - w, w};
+    }
+    const float denom = 1.0f / (va + vb + vc);
+    const float v = vb * denom, w = vc * denom;
+    return {1.0f - v - w, v, w};
+}
 } // namespace
 
 void ParticleSystem::add(const Particle& p) {
@@ -473,13 +506,43 @@ void ParticleSystem::wound(GoreKind kind, const SceneNode* part, const glm::vec3
     localTangent -= p.localNormal * glm::dot(localTangent, p.localNormal);
     p.localTangent = glm::length(localTangent) > 1e-5f ? glm::normalize(localTangent) : glm::vec3(1, 0, 0);
     if (part->editMesh && part->editMesh->skinned()) {
+        const EditMesh& mesh = *part->editMesh;
         float bestDistance = 1e30f;
-        for (size_t i = 0; i < part->editMesh->verts.size(); ++i) {
-            const float d = glm::dot(part->editMesh->verts[i] - p.localPos, part->editMesh->verts[i] - p.localPos);
-            if (d < bestDistance) { bestDistance = d; p.skinVertex = (uint32_t)i; }
+        for (const auto& face : mesh.faces) {
+            if (face.size() < 3) continue;
+            for (size_t k = 1; k + 1 < face.size(); ++k) {
+                const uint32_t ia = face[0], ib = face[k], ic = face[k + 1];
+                if (ia >= mesh.verts.size() || ib >= mesh.verts.size() || ic >= mesh.verts.size()) continue;
+                const glm::vec3& a = mesh.verts[ia];
+                const glm::vec3& b = mesh.verts[ib];
+                const glm::vec3& c = mesh.verts[ic];
+                const glm::vec3 bary = closestTriangleBarycentric(p.localPos, a, b, c);
+                const glm::vec3 closest = a * bary.x + b * bary.y + c * bary.z;
+                const float distance = glm::dot(closest - p.localPos, closest - p.localPos);
+                if (distance >= bestDistance) continue;
+                glm::vec3 faceNormal = glm::cross(b - a, c - a);
+                if (glm::length(faceNormal) < 1e-6f) continue;
+                faceNormal = glm::normalize(faceNormal);
+                p.skinTriangle = glm::uvec3(ia, ib, ic);
+                p.skinBarycentric = bary;
+                p.skinNormalSign = glm::dot(faceNormal, p.localNormal) < 0.0f ? -1.0f : 1.0f;
+                faceNormal *= p.skinNormalSign;
+                glm::vec3 faceTangent = b - a;
+                faceTangent -= faceNormal * glm::dot(faceTangent, faceNormal);
+                if (glm::length(faceTangent) < 1e-5f) {
+                    faceTangent = c - a;
+                    faceTangent -= faceNormal * glm::dot(faceTangent, faceNormal);
+                }
+                if (glm::length(faceTangent) < 1e-5f) continue;
+                faceTangent = glm::normalize(faceTangent);
+                const glm::vec3 faceBitangent = glm::normalize(glm::cross(faceNormal, faceTangent));
+                const glm::vec3 offset = p.localPos - closest;
+                p.skinOffset = glm::vec3(glm::dot(offset, faceTangent),
+                                         glm::dot(offset, faceNormal),
+                                         glm::dot(offset, faceBitangent));
+                bestDistance = distance;
+            }
         }
-        if (p.skinVertex != 0xffffffffu)
-            p.skinOffset = p.localPos - part->editMesh->verts[p.skinVertex];
     }
     p.normal = n; p.tangent = t; p.pos = at + n * 0.012f;
     p.size = glm::vec3(width, 0.012f, length);
@@ -502,7 +565,7 @@ void ParticleSystem::follow(Scene& scene) {
         p.normal  = glm::normalize(N * p.localNormal);
         p.tangent = glm::normalize(R * p.localTangent);
         glm::vec3 localPosition = p.localPos;
-        if (p.skinVertex != 0xffffffffu && n->editMesh && n->editMesh->skinned()) {
+        if (p.skinTriangle.x != 0xffffffffu && n->editMesh && n->editMesh->skinned()) {
             auto it = poses.find(n->id);
             if (it == poses.end()) {
                 SkinnedPose pose;
@@ -522,10 +585,35 @@ void ParticleSystem::follow(Scene& scene) {
                 }
                 it = poses.emplace(n->id, std::move(pose)).first;
             }
-            if (p.skinVertex < it->second.vertices.size()) {
-                localPosition = it->second.vertices[p.skinVertex] + p.skinOffset;
-                if (p.skinVertex < it->second.normals.size())
-                    p.normal = glm::normalize(N * it->second.normals[p.skinVertex]);
+            const glm::uvec3 tri = p.skinTriangle;
+            if (tri.x < it->second.vertices.size() && tri.y < it->second.vertices.size() &&
+                tri.z < it->second.vertices.size()) {
+                const glm::vec3& a = it->second.vertices[tri.x];
+                const glm::vec3& b = it->second.vertices[tri.y];
+                const glm::vec3& c = it->second.vertices[tri.z];
+                glm::vec3 localNormal = glm::cross(b - a, c - a);
+                if (glm::length(localNormal) > 1e-6f) {
+                    localNormal = glm::normalize(localNormal) * p.skinNormalSign;
+                    glm::vec3 localTangent = b - a;
+                    localTangent -= localNormal * glm::dot(localTangent, localNormal);
+                    if (glm::length(localTangent) < 1e-5f) {
+                        localTangent = c - a;
+                        localTangent -= localNormal * glm::dot(localTangent, localNormal);
+                    }
+                    if (glm::length(localTangent) > 1e-5f) {
+                        localTangent = glm::normalize(localTangent);
+                        const glm::vec3 localBitangent = glm::normalize(glm::cross(localNormal, localTangent));
+                        const glm::vec3 anchor = a * p.skinBarycentric.x +
+                                                 b * p.skinBarycentric.y +
+                                                 c * p.skinBarycentric.z;
+                        localPosition = anchor + localTangent * p.skinOffset.x +
+                                        localNormal * p.skinOffset.y + localBitangent * p.skinOffset.z;
+                        p.normal = glm::normalize(N * localNormal);
+                        glm::vec3 worldTangent = R * localTangent;
+                        worldTangent -= p.normal * glm::dot(worldTangent, p.normal);
+                        if (glm::length(worldTangent) > 1e-5f) p.tangent = glm::normalize(worldTangent);
+                    }
+                }
             }
         }
         p.pos = glm::vec3(M * glm::vec4(localPosition, 1.0f)) + p.normal * 0.012f;

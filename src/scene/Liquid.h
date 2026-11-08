@@ -32,6 +32,9 @@ public:
     static constexpr float kSpacing = 0.5f;          // how far apart drops sit at rest
     static constexpr float kRadius  = 0.3f;          // a drop's size (for collisions and drawing)
     static constexpr int   kMaxDrops = 14000;       // without the graphics card
+    // PBF tensile-instability correction (Macklin & Müller): deliberately small;
+    // keep the density relaxation and rest-density terms tuned with this value.
+    static constexpr float kTensileCorrection = 0.02f;
 
     Liquid();
     ~Liquid();
