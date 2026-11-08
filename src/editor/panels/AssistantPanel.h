@@ -1,5 +1,7 @@
 #pragma once
 #include <future>
+#include <atomic>
+#include <memory>
 #include <utility>
 #include <deque>
 #include <string>
@@ -63,6 +65,7 @@ private:
     struct McpRefreshResult { std::vector<McpServer> servers; std::string status; };
     struct McpOAuthResult { std::string serverName, accessToken, refreshToken, issuer, tokenEndpoint, resource, clientId, error; };
     std::future<McpOAuthResult> m_oauthPending;
+    std::shared_ptr<std::atomic_bool> m_oauthCancel;
     std::string m_oauthServerName;
     std::vector<McpServer> m_externalMcp;
     std::future<McpRefreshResult> m_mcpRefreshPending;
