@@ -154,16 +154,6 @@ AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::st
             if (!store.completeWithEvidence(id, evidenceId, note, error)) return fail(error);
             if (activeTaskId == id) activeTaskId.clear();
         } else {
-            if (status == "in_progress") {
-                const json existingTasks = store.list(error);
-                if (!error.empty()) return fail(error);
-                for (const auto& task : existingTasks) {
-                    if (task.is_object() && task.value("id", std::string()) != id &&
-                        task.value("status", std::string()) == "in_progress") {
-                        return fail("Fyxa v1 supports one active task at a time. Keep this task pending and finish or pause the active task before starting another.");
-                    }
-                }
-            }
             if (!store.update(id, status, note, error)) return fail(error);
             if (status == "in_progress") activeTaskId = id;
             else if (activeTaskId == id) activeTaskId.clear();
