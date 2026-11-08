@@ -70,7 +70,8 @@ void appendRelayAudit(const std::string& app, const std::string& tool,
     std::ofstream file(Paths::file("assistant-mcp-activity.jsonl"), std::ios::app);
     if (file) file << json{{"timestampMs", ms}, {"server", "connected-app-relay"},
         {"app", app}, {"tool", tool}, {"toolFingerprint", fingerprint},
-        {"arguments", redactRelayArguments(arguments)}, {"outcome", outcome}}.dump() << "\n";
+        {"arguments", redactRelayArguments(arguments)}, {"outcome", outcome}}.dump() << "
+";
 }
 
 json relayRpcError(const json& id, const std::string& message) {
@@ -116,7 +117,9 @@ void StudioRelay::drop(State state, const std::string& why, bool retry) {
 }
 
 void StudioRelay::update(Editor& editor, StudioMcp& mcp) {
-    if (m_pendingApproval && StudioRelayApproval::evaluate(now(), m_pendingApproval->expiresAt,\n            true, true, m_pendingApproval->fingerprint, m_pendingApproval->fingerprint, false, false)\n            == StudioRelayApproval::Decision::Expired) {
+    if (m_pendingApproval && StudioRelayApproval::evaluate(now(), m_pendingApproval->expiresAt,
+            true, true, m_pendingApproval->fingerprint, m_pendingApproval->fingerprint, false, false)
+            == StudioRelayApproval::Decision::Expired) {
         PendingApproval expired = std::move(*m_pendingApproval);
         m_pendingApproval.reset();
         if (m_conn) {
