@@ -1075,6 +1075,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME FyxaTaskStoreTests COMMAND FyxaTaskStoreTests)
 endif()
 
+# Connected-app relay capabilities are restricted by an explicit host-side allowlist.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(StudioMcpAccessTests tests/StudioMcpAccessTests.cpp)
+    target_include_directories(StudioMcpAccessTests PRIVATE src/)
+    add_test(NAME StudioMcpAccessTests COMMAND StudioMcpAccessTests)
+endif()
+
 # MCP HTTP wire-envelope compatibility: stateless 2026-07-28 and legacy sessions.
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(ExternalMcpProtocolTests tests/ExternalMcpProtocolTests.cpp)
