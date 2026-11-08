@@ -1621,6 +1621,23 @@ void AssistantPanel::update() {
 }
 
 void AssistantPanel::send(const std::string& text) {
+    if (m_activeTaskId.empty()) {
+        FyxaTaskStore store(Paths::file("fyxa-tasks.json"));
+        std::string taskError;
+        const json tasks = store.list(taskError);
+        if (taskError.empty() && tasks.is_array()) {
+            std::string restoredTask;
+            bool multipleActive = false;
+            for (const auto& task : tasks) {
+                if (!task.is_object() || task.value("status", std::string()) != "in_progress") continue;
+                if (restoredTask.empty()) restoredTask = task.value("id", std::string());
+                else multipleActive = true;
+            }
+            if (!multipleActive) m_activeTaskId = restoredTask;
+            else m_lines.push_back({Line::Error,
+                "Multiple active tasks were found in saved data. Pause all but one task before Fyxa can continue task-bound work."});
+        }
+    }
     m_lines.push_back({Line::You, text});
     m_messages.push_back({{"role", "user"}, {"content", text}});
     std::string normalized = text;
@@ -2159,7 +2176,7 @@ void AssistantPanel::render(bool* open) {
     }
 
     if (ImGui::CollapsingHeader("Connected apps (online)")) {
-        ImGui::TextWrapped("Let apps connected to your Guts&Bolts account use Studio's tools while Studio is open. They remain subject to the permissions granted to each app.");
+        ImGui::TextWrapped("Let apps connected to your Guts&Bolts account use Studio's tools while Studio is open. Each tool call now requires approval in Studio, in addition to the app's OAuth scopes.");
         if (ImGui::Checkbox("Allow connected apps to use AI tools", &m_appsWanted)) {
             m_relay.setEnabled(m_appsWanted);
             save();
