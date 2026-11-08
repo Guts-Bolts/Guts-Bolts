@@ -39,6 +39,23 @@ struct HttpsUrl {
 inline bool parseHttpsUrl(const std::string& value, HttpsUrl& out) {
     if (value.rfind("https://", 0) != 0 || value.size() > 8192 ||
         value.find_first_of("\r\n\t #") != std::string::npos) return false;
+    // Reject malformed escapes and percent-encoded control bytes. In particular,
+    // encoded CR/LF must not survive URL parsing into HTTP request targets.
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (value[i] != '%') continue;
+        if (i + 2 >= value.size() ||
+            !std::isxdigit(static_cast<unsigned char>(value[i + 1])) ||
+            !std::isxdigit(static_cast<unsigned char>(value[i + 2]))) return false;
+        const auto hexValue = [](unsigned char c) -> unsigned int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            return c - 'A' + 10;
+        };
+        const unsigned int decoded = (hexValue(static_cast<unsigned char>(value[i + 1])) << 4) |
+                                     hexValue(static_cast<unsigned char>(value[i + 2]));
+        if (decoded <= 0x20 || decoded == 0x7f) return false;
+        i += 2;
+    }
     const size_t authorityStart = 8;
     const size_t pathStart = value.find_first_of("/?", authorityStart);
     const std::string authority = value.substr(authorityStart,
