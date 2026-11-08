@@ -2631,7 +2631,8 @@ export class GbServerObject extends DurableObject {
       this.sql.exec('UPDATE ai_content_eligibility SET rights_status = ?, updated_at = ? WHERE content_id = ?',
         rightsStatus, now(), contentId);
       const state = this.aiRecomputeContentEligibility(contentId);
-      this.aiAudit(me, 'content.rights.reviewed', contentId, { rightsStatus, reason });
+      this.sql.exec('INSERT INTO ai_training_audit (id, account_id, content_id, event_type, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        randomHex(16), row.owner_id, contentId, 'content.rights.reviewed', JSON.stringify({ actorId: me.id, rightsStatus, reason }), now());
       return okay({ eligibility: state });
     }
 
