@@ -10,6 +10,7 @@
 #include "../ExternalMcpProtocol.h"
 
 #include <imgui.h>
+#include <monocypher.h>
 #include <misc/cpp/imgui_stdlib.h>
 #include <algorithm>
 #include <charconv>
@@ -249,6 +250,31 @@ void appendMcpAudit(const std::string& server, const std::string& tool, const js
                            {"arguments", redactMcpArguments(args)}, {"outcome", outcome}}.dump() << "\n";
 }
 
+std::string mcpToolDefinitionFingerprint(const std::string& serverName,
+                                            const std::string& endpoint,
+                                            const json& tool) {
+    const json identity = {
+        {"server", serverName},
+        {"endpoint", endpoint},
+        {"name", tool.value("name", std::string())},
+        {"description", tool.value("description", std::string())},
+        {"inputSchema", tool.value("inputSchema", json::object())},
+        {"annotations", tool.value("annotations", json::object())}
+    };
+    const std::string canonical = identity.dump();
+    std::uint8_t digest[32]{};
+    crypto_blake2b(digest, sizeof(digest),
+        reinterpret_cast<const std::uint8_t*>(canonical.data()), canonical.size());
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string result;
+    result.reserve(sizeof(digest) * 2);
+    for (std::uint8_t byte : digest) {
+        result.push_back(hex[byte >> 4]);
+        result.push_back(hex[byte & 0x0f]);
+    }
+    return result;
+}
+
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
              const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,
              const std::string& protocolVersion = "2026-07-28") {
@@ -422,6 +448,22 @@ json AssistantPanel::externalMcpTools() const {
     return result;
 }
 
+std::string AssistantPanel::externalMcpFingerprint(const std::string& qualifiedName) const {
+    if (qualifiedName.rfind("mcp__", 0) != 0) return {};
+    const size_t split = qualifiedName.find("__", 5);
+    if (split == std::string::npos) return {};
+    const std::string serverKey = qualifiedName.substr(5, split - 5);
+    const std::string toolName = qualifiedName.substr(split + 2);
+    for (const auto& server : m_externalMcp) {
+        if (!server.enabled || mcpServerKey(server.name) != serverKey || !server.tools.is_array()) continue;
+        for (const auto& tool : server.tools) {
+            if (tool.is_object() && tool.value("name", std::string()) == toolName)
+                return tool.value("fyxaFingerprint", std::string());
+        }
+    }
+    return {};
+}
+
 void AssistantPanel::refreshMcpServers() {
     if (m_mcpRefreshPending.valid()) { m_mcpStatus = "MCP discovery is already running."; return; }
     auto servers = m_externalMcp;
@@ -528,7 +570,11 @@ void AssistantPanel::refreshMcpServers() {
                     if (server.tools.size() >= 512) { result.status = server.name + ": tool limit (512) reached."; break; }
                     if (tool.is_object() && tool.contains("name") && tool["name"].is_string() &&
                         validMcpToolName(tool["name"].get<std::string>()) && tool.dump().size() <= 65536 &&
-                        tool.value("inputSchema", json::object()).is_object()) server.tools.push_back(tool);
+                        tool.value("inputSchema", json::object()).is_object()) {
+                        json pinnedTool = tool;
+                        pinnedTool["fyxaFingerprint"] = mcpToolDefinitionFingerprint(server.name, server.url, tool);
+                        server.tools.push_back(std::move(pinnedTool));
+                    }
                 }
                 const json resultObject = response.value("result", json::object());
                 cursor = resultObject.contains("nextCursor") && resultObject["nextCursor"].is_string()
@@ -601,8 +647,42 @@ void AssistantPanel::startNextExternalCall() {
             }
             McpEndpoint endpoint;
             if (!parseMcpEndpoint(url, endpoint, done.error)) return done;
+            if (done.call.definitionFingerprint.empty()) {
+                done.error = "The tool definition was not pinned when the request was created. Refresh discovery and ask for approval again.";
+                return done;
+            }
             appendMcpAudit(serverName, toolName, done.call.args, "started");
             json response;
+            bool definitionFound = false;
+            std::string cursor;
+            for (int page = 0; page < 20; ++page) {
+                json params = json::object();
+                if (!cursor.empty()) params["cursor"] = cursor;
+                json list = {{"jsonrpc", "2.0"}, {"id", 700 + page}, {"method", "tools/list"}, {"params", params}};
+                if (!mcpPost(endpoint, token, session, list, response, done.error, nullptr, protocol)) {
+                    appendMcpAudit(serverName, toolName, done.call.args, "definition-check-failed");
+                    return done;
+                }
+                const json listed = response.value("result", json::object()).value("tools", json::array());
+                if (listed.is_array()) for (const auto& candidate : listed) {
+                    if (!candidate.is_object() || candidate.value("name", std::string()) != toolName) continue;
+                    definitionFound = true;
+                    const std::string current = mcpToolDefinitionFingerprint(serverName, url, candidate);
+                    if (current != done.call.definitionFingerprint)
+                        done.error = "The MCP tool definition changed since it was shown for approval. Refresh discovery and review the updated tool before retrying.";
+                    break;
+                }
+                if (definitionFound) break;
+                const json listResult = response.value("result", json::object());
+                cursor = listResult.contains("nextCursor") && listResult["nextCursor"].is_string()
+                    ? listResult["nextCursor"].get<std::string>() : std::string();
+                if (cursor.empty()) break;
+            }
+            if (!definitionFound || !done.error.empty()) {
+                if (done.error.empty()) done.error = "The approved MCP tool no longer exists on the server. Refresh discovery before retrying.";
+                appendMcpAudit(serverName, toolName, done.call.args, "definition-changed");
+                return done;
+            }
             json request = {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "tools/call"},
                             {"params", {{"name", toolName}, {"arguments", done.call.args}}}};
             if (!mcpPost(endpoint, token, session, request, response, done.error, nullptr, protocol)) {
@@ -803,6 +883,7 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
         }
         if (name.rfind("mcp__", 0) == 0) {
             m_externalQueue.push_back({true, name, b.value("id", std::string()),
+                externalMcpFingerprint(name),
                 b.contains("input") && b["input"].is_object() ? b["input"] : json::object()});
             continue;
         }
@@ -867,7 +948,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
             continue;
         }
         if (name.rfind("mcp__", 0) == 0) {
-            m_externalQueue.push_back({false, name, std::string(), args});
+            m_externalQueue.push_back({false, name, std::string(), externalMcpFingerprint(name), args});
             continue;
         }
         AiToolResult result = m_editor.runAiToolFrom("Fyxa", name, args);
