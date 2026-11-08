@@ -794,6 +794,9 @@ export class GbServerObject extends DurableObject {
       CREATE INDEX IF NOT EXISTS ai_training_audit_account ON ai_training_audit (account_id, created_at);`);
     this.aiTrackedContent = new Set();
     for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility')) this.aiTrackedContent.add(r.content_id);
+    this.aiEnabledAccounts = new Set();
+    for (const r of this.sql.exec('SELECT account_id FROM ai_training_preferences WHERE training_enabled = 1 OR reference_enabled = 1'))
+      this.aiEnabledAccounts.add(r.account_id);
     this.secretsInit();   // games' secrets for web requests (game-web.js)
     this.chatsInit();     // calls and the Lyreto gateway (chats.js)
     this.official = lower(env.OFFICIAL || '');
@@ -1262,6 +1265,7 @@ export class GbServerObject extends DurableObject {
     this.dirty.assets.add(a.id);
     this.syncSearch(a);
     if (this.aiTrackedContent && this.aiTrackedContent.has(a.id)) this.aiRecomputeContentEligibility(a.id);
+    else if (this.aiEnabledAccounts && this.aiEnabledAccounts.has(a.creator)) this.aiEnsureContentEligibility(a);
   }
   // Better search: keep each asset's searchable words in Supabase (gb_search_items). Only sent
   // when something searchable changed (a.searchSig remembers what was sent last).
@@ -2538,7 +2542,26 @@ export class GbServerObject extends DurableObject {
     return state;
   }
 
+  aiEnsureContentEligibility(asset) {
+    if (!asset || !this.aiEnabledAccounts || !this.aiEnabledAccounts.has(asset.creator)) return null;
+    const t = now();
+    this.sql.exec(`INSERT OR IGNORE INTO ai_content_eligibility
+      (content_id, owner_id, content_type, training_choice, reference_choice, rights_attested, rights_status,
+       privacy_status, training_eligible, reference_eligible, training_exclusion_reason, reference_exclusion_reason,
+       policy_version, updated_at)
+      VALUES (?, ?, ?, 0, 0, 0, 'unverified', ?, 0, 0, 'rights_not_attested', 'rights_not_attested', ?, ?)`,
+      asset.id, asset.creator, String(asset.kind || 'unknown'), (asset.access || 'public') === 'public' ? 'public' : 'private',
+      FYXA_AI_POLICY_VERSION, t);
+    this.aiTrackedContent.add(asset.id);
+    return this.aiRecomputeContentEligibility(asset.id);
+  }
+
   aiRecomputeAccountEligibility(accountId) {
+    const prefs = this.aiPreferencesFor(accountId);
+    if (prefs.trainingEnabled || prefs.referenceEnabled) {
+      for (const asset of this.assets.values())
+        if (asset.creator === accountId && !this.aiContentRow(asset.id)) this.aiEnsureContentEligibility(asset);
+    }
     const ids = [];
     for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility WHERE owner_id = ?', accountId)) ids.push(r.content_id);
     for (const id of ids) this.aiRecomputeContentEligibility(id);
@@ -2569,6 +2592,8 @@ export class GbServerObject extends DurableObject {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         me.id, trainingEnabled ? 1 : 0, referenceEnabled ? 1 : 0, FYXA_AI_POLICY_VERSION,
         noticeVersion || '', consentMethod, t, t);
+      if (trainingEnabled || referenceEnabled) this.aiEnabledAccounts.add(me.id);
+      else this.aiEnabledAccounts.delete(me.id);
       this.aiAudit(me, 'preferences.updated', null, { trainingEnabled, referenceEnabled,
         policyVersion: FYXA_AI_POLICY_VERSION, noticeVersion: noticeVersion || '', consentMethod });
       this.aiRecomputeAccountEligibility(me.id);
