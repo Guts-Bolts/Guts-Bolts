@@ -1051,7 +1051,7 @@ void AssistantPanel::refreshMcpServers() {
                 // unsupported-version or unknown-method response proves that this
                 // endpoint does not implement server/discover. Network, TLS, and
                 // authorization failures never trigger a downgrade.
-                if (!McpHttpProtocol::legacyFallbackAllowed(response)) {
+                if (discoveryStatus != 200 || !McpHttpProtocol::legacyFallbackAllowed(response)) {
                     result.status = server.name + ": " + error;
                     server.tools = json::array();
                     continue;
