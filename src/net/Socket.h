@@ -56,7 +56,7 @@ bool httpRequest(const std::string& method, const std::string& host, int port, c
                  const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr, const std::atomic_bool* cancel = nullptr);
 bool httpGet(const std::string& host, int port, const std::string& path, std::string& reply,
              std::string& error, int timeoutMs = 12000, const std::string& extraHeaders = "",
-             int* status = nullptr, std::string* responseHeaders = nullptr);
+             int* status = nullptr, std::string* responseHeaders = nullptr, const std::atomic_bool* cancel = nullptr);
 bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
               std::string& reply, std::string& error, int timeoutMs = 30000,
               const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr);
