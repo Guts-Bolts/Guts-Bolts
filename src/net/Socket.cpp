@@ -485,7 +485,7 @@ Connection::~Connection() {
 std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int port,
                                                   std::string& error, int timeoutMs) {
     if (!isWebAddress(host)) {
-        intptr_t s = tcpConnect(host, port, error, timeoutMs);
+        intptr_t s = tcpConnect(host, port, error, timeoutMs, nullptr);
         if (s < 0) return nullptr;
         return std::make_unique<Connection>(s, host + ":" + std::to_string(port));
     }
@@ -537,7 +537,7 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
     return c;
 #else
     auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 8000));
-    intptr_t s = tcpConnect(name, port, error, timeoutMs);
+    intptr_t s = tcpConnect(name, port, error, timeoutMs, nullptr);
     if (s < 0) return nullptr;
     auto c = std::make_unique<Connection>(s, host + ":" + std::to_string(port));
     c->m_web = std::make_unique<Web>();
