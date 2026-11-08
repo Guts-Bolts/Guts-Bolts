@@ -10,9 +10,6 @@
 #include <mutex>
 #include <random>
 #include <vector>
-#ifdef _WIN32
-#include <shellapi.h>
-#endif
 
 #ifdef GB_WEBSOCKETS
 #include <mbedtls/ctr_drbg.h>
@@ -43,6 +40,7 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <shellapi.h>
 using socklen_t = int;
 #define GB_CLOSE closesocket
 #define GB_WOULDBLOCK (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
