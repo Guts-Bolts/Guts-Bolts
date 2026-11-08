@@ -38,3 +38,58 @@ test('Fyxa moderation screens group wall posts and edited group descriptions', (
   assert.ok(queue.items.some((item) => item.sourceType === 'group_post' && item.sourceId === made.group.id));
   assert.ok(queue.items.some((item) => item.sourceType === 'group' && item.sourceId === made.group.id));
 });
+
+
+test('Fyxa moderation screens game-setting edits and script text in updated assets', async () => {
+  const scanned = [];
+  const AI = {
+    async run(_model, input) {
+      scanned.push(input.messages?.[0]?.content || '');
+      return { response: 'unsafe\\nS10' };
+    },
+  };
+  const s = makeServer({ AI });
+  const owner = s.signUp('Alice');
+  const game = s.addGame(owner, 'Existing game');
+  await s.scanModerationSubmission({
+    op: 'game.settings',
+    args: { id: game.id, description: 'An edited game description.' },
+  }, owner, { ok: true });
+
+  const plugin = { id: 'plugin-1', kind: 'plugin', creator: owner.id, name: 'Test plugin', meta: {} };
+  s.assets.set(plugin.id, plugin);
+  s.saveAsset(plugin);
+  const data = Buffer.from(JSON.stringify({ scripts: [{ source: "print('plugin source')" }] })).toString('base64');
+  await s.scanModerationSubmission({
+    op: 'update',
+    args: { id: plugin.id, name: 'Updated plugin', description: 'Updated description', data },
+  }, owner, { ok: true });
+
+  assert.ok(scanned.some((text) => text.includes('An edited game description.')));
+  assert.ok(scanned.some((text) => text.includes("print('plugin source')")));
+  const queue = s.call(s.staff, 'ai.moderation.queue', {});
+  assert.ok(queue.ok, queue.error);
+  assert.equal(queue.items.length, 2);
+  assert.ok(queue.items.some((item) => item.sourceId === game.id));
+  assert.ok(queue.items.some((item) => item.sourceId === plugin.id));
+});
+
+test('opaque 3D geometry is routed to manual review even when text screening is safe', async () => {
+  const AI = { async run() { return { response: 'safe' }; } };
+  const s = makeServer({ AI });
+  const owner = s.signUp('Bob');
+  const model = { id: 'model-1', kind: 'model', creator: owner.id, name: '3D model', meta: {} };
+  s.assets.set(model.id, model);
+  s.saveAsset(model);
+  const data = Buffer.from(JSON.stringify({ geometry: { vertices: [[0, 0, 0]], indices: [0] } })).toString('base64');
+
+  await s.scanModerationSubmission({
+    op: 'upload',
+    args: { kind: 'model', name: model.name, description: 'A model with geometry.', data },
+  }, owner, { ok: true, asset: model });
+
+  const queue = s.call(s.staff, 'ai.moderation.queue', {});
+  assert.ok(queue.ok, queue.error);
+  assert.ok(queue.items.some((item) => item.sourceId === model.id &&
+    item.categories.includes('GEOMETRY_REVIEW_REQUIRED')));
+});
