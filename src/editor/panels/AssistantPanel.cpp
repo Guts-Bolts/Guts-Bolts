@@ -1439,7 +1439,7 @@ void AssistantPanel::startNextExternalCall() {
             }
             if (!response.contains("result") || !response["result"].is_object()) {
                 done.error = "The MCP server response did not contain a valid tool result.";
-                appendMcpAudit(serverName, toolName, done.call.args, "protocol-error");
+                appendMcpAudit(serverName, toolName, done.call.args, "protocol-error", done.call.idempotencyKey);
                 return done;
             }
             const json rpcResult = response["result"];
@@ -1457,7 +1457,7 @@ void AssistantPanel::startNextExternalCall() {
             if (done.text.empty()) done.text = "The MCP tool returned no text content.";
             done.text = McpHttpProtocol::untrustedResultText(serverName, toolName, done.text);
             if (toolError) done.error = done.text + (toolErrorMessage.empty() ? std::string() : "\n" + toolErrorMessage);
-            appendMcpAudit(serverName, toolName, done.call.args, toolError ? "tool-error" : "succeeded");
+            appendMcpAudit(serverName, toolName, done.call.args, toolError ? "tool-error" : "succeeded", done.call.idempotencyKey);
             return done;
         });
 }
