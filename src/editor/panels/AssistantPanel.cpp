@@ -300,7 +300,7 @@ void appendMcpAudit(const std::string& server, const std::string& tool, const js
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
              const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,
              const std::string& protocolVersion = "2026-07-28", int* statusOut = nullptr,
-             std::string* responseHeadersOut = nullptr) {
+             std::string* responseHeadersOut = nullptr, const std::atomic_bool* cancel = nullptr) {
     json wireRequest = request;
     std::string headers;
     if (!McpHttpProtocol::prepareRequest(wireRequest, headers, protocolVersion, session, token, error))
@@ -309,7 +309,7 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     std::string body, responseHeaders;
     int status = 0;
     const std::string host = endpoint.tls ? "wss://" + endpoint.host : endpoint.host;
-    const bool httpOk = Net::httpPost(host, endpoint.port, endpoint.path, wireRequest.dump(), body, error, 12000, headers, &status, &responseHeaders);
+    const bool httpOk = Net::httpPost(host, endpoint.port, endpoint.path, wireRequest.dump(), body, error, 12000, headers, &status, &responseHeaders, cancel);
     if (statusOut) *statusOut = status;
     if (responseHeadersOut) *responseHeadersOut = responseHeaders;
     if (!httpOk) return false;
@@ -405,7 +405,7 @@ struct McpOAuthMetadata {
     bool pkceS256Supported = true;
 };
 
-bool getOAuthJson(const std::string& url, json& result, std::string& error) {
+bool getOAuthJson(const std::string& url, json& result, std::string& error, const std::atomic_bool* cancel = nullptr) {
     McpOAuth::HttpsUrl parsed;
     if (!McpOAuth::parseHttpsUrl(url, parsed)) { error = "OAuth metadata URL must be HTTPS."; return false; }
     std::string body;
@@ -801,7 +801,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
 bool refreshMcpOAuthToken(const std::string& issuer, const std::string& tokenEndpoint, const std::string& clientId,
                           const std::string& resource, const std::string& refreshToken,
                           std::string& accessToken, std::string& replacementRefreshToken,
-                          std::string& error) {
+                          std::string& error, const std::atomic_bool* cancel = nullptr) {
     McpOAuth::HttpsUrl tokenUrl;
     McpOAuth::HttpsUrl issuerUrl;
     if (!McpOAuth::parseHttpsUrl(issuer, issuerUrl) || !McpOAuth::parseHttpsUrl(tokenEndpoint, tokenUrl)) {
@@ -812,7 +812,7 @@ bool refreshMcpOAuthToken(const std::string& issuer, const std::string& tokenEnd
     for (const auto& metadataUrl : McpOAuth::authorizationServerMetadataUrls(issuer)) {
         json metadata;
         std::string metadataError;
-        if (!getOAuthJson(metadataUrl, metadata, metadataError)) continue;
+        if (!getOAuthJson(metadataUrl, metadata, metadataError, cancel)) { if (cancel && cancel->load()) { error = "Request cancelled."; return false; } continue; }
         if (!McpOAuth::metadataIssuerMatches(metadata, issuer)) {
             error = "Stored OAuth issuer no longer matches authorization-server metadata.";
             return false;
