@@ -1793,6 +1793,7 @@ void AssistantPanel::render(bool* open) {
             ImGui::EndDisabled();
             ImGui::SameLine();
             if (ImGui::SmallButton("Remove")) {
+                if (m_oauthServerName == server.name && m_oauthCancel) m_oauthCancel->store(true);
                 std::string credentialError;
                 CredentialStore::erase(server.credentialKey, credentialError);
                 CredentialStore::erase(server.credentialKey + "-oauth-refresh", credentialError);
