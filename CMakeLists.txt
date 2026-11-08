@@ -785,6 +785,8 @@ set(EDITOR_SOURCES
     src/editor/EditorImport.cpp
     src/editor/PictureImport.cpp
     src/editor/AiTools.cpp
+    src/editor/FyxaTaskStore.cpp
+    src/editor/FyxaSkills.cpp
     src/editor/AiToolsRun.cpp
     src/editor/AiMeshTools.cpp
     src/editor/AiGameTools.cpp
