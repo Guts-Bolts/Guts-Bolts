@@ -213,7 +213,7 @@ inline bool formDecode(const std::string& value, std::string& out) {
             const int a = hexValue(value[i + 1]), b = hexValue(value[i + 2]);
             if (a < 0 || b < 0) return false;
             const char decoded = static_cast<char>((a << 4) | b);
-            if (decoded == '\\0' || decoded == '\r' || decoded == '\n') return false;
+            if (decoded == '\0' || decoded == '\r' || decoded == '\n') return false;
             out.push_back(decoded);
             i += 2;
         } else out.push_back(value[i]);
