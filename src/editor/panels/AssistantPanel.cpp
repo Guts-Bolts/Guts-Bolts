@@ -842,7 +842,7 @@ bool refreshMcpOAuthToken(const std::string& issuer, const std::string& tokenEnd
     int status = 0;
     if (!Net::httpPost("wss://" + tokenUrl.host, tokenUrl.port, tokenUrl.path, body, response, error, 12000,
                        "Accept: application/json\r\nContent-Type: application/x-www-form-urlencoded\r\n",
-                       &status, nullptr) || status < 200 || status >= 300) {
+                       &status, nullptr, cancel) || status < 200 || status >= 300) {
         if (error.empty()) error = "OAuth refresh failed with HTTP " + std::to_string(status) + ".";
         return false;
     }
@@ -1277,8 +1277,9 @@ void AssistantPanel::startNextExternalCall() {
             break;
         }
     }
+    const auto cancel = m_agentCancel;
     m_externalPending = std::async(std::launch::async,
-        [call = std::move(call), serverName, url, token, session, protocol, toolName, oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource, oauthRefreshToken]() mutable {
+        [call = std::move(call), serverName, url, token, session, protocol, toolName, oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource, oauthRefreshToken, cancel]() mutable {
             ExternalCompletion done;
             done.call = std::move(call);
             if (serverName.empty() || toolName.empty()) {
@@ -1319,7 +1320,7 @@ void AssistantPanel::startNextExternalCall() {
                     response = json::object();
                     done.error.clear();
                     listStatus = 0;
-                    listOk = mcpPost(endpoint, token, session, list, response, done.error, nullptr, protocol, &listStatus);
+                    listOk = mcpPost(endpoint, token, session, list, response, done.error, nullptr, protocol, &listStatus, nullptr, cancel.get());
                 }
                 if (!listOk) {
                     appendMcpAudit(serverName, toolName, done.call.args, "definition-check-failed");
