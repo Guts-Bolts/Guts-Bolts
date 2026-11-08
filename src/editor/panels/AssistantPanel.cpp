@@ -16,6 +16,7 @@
 #include <chrono>
 #include <fstream>
 #include <sstream>
+#include <utility>
 
 using nlohmann::json;
 
@@ -651,6 +652,7 @@ void AssistantPanel::requestNext() {
         }
 
         json tools = AiTools::list();
+        for (const auto& local : fyxaAgentTools()) tools.push_back(local);
         for (const auto& ext : externalMcpTools())
             tools.push_back({{"name", ext.value("qualifiedName", std::string())},
                              {"description", ext.value("description", std::string())},
