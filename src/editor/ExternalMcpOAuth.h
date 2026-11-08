@@ -6,6 +6,16 @@
 #include <cctype>
 #include <cstdint>
 #include <random>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <bcrypt.h>
+#elif defined(__APPLE__)
+#include <cstdlib>
+#elif defined(__linux__) || defined(__ANDROID__)
+#include <sys/random.h>
+#include <cerrno>
+#endif
 #include <map>
 #include <string>
 #include <vector>
@@ -130,16 +140,26 @@ inline std::string base64Url(const std::uint8_t* data, size_t size) {
 }
 
 inline bool secureRandom(std::uint8_t* output, size_t size) {
-    try {
-        std::random_device random;
-        if (random.entropy() == 0.0) return false;
-        for (size_t i = 0; i < size; i += sizeof(unsigned int)) {
-            const unsigned int value = random();
-            for (size_t j = 0; j < sizeof(value) && i + j < size; ++j)
-                output[i + j] = static_cast<std::uint8_t>(value >> (j * 8));
-        }
-        return true;
-    } catch (...) { return false; }
+#ifdef _WIN32
+    return size <= ULONG_MAX &&
+        BCryptGenRandom(nullptr, output, static_cast<ULONG>(size), BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0;
+#elif defined(__APPLE__)
+    arc4random_buf(output, size);
+    return true;
+#elif defined(__linux__) || defined(__ANDROID__)
+    size_t offset = 0;
+    while (offset < size) {
+        const ssize_t got = getrandom(output + offset, size - offset, 0);
+        if (got > 0) { offset += static_cast<size_t>(got); continue; }
+        if (got < 0 && errno == EINTR) continue;
+        return false;
+    }
+    return true;
+#else
+    (void)output;
+    (void)size;
+    return false;
+#endif
 }
 
 struct Pkce {
