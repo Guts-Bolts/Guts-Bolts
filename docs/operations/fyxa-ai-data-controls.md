@@ -21,6 +21,7 @@ These tables are created additively by the existing Durable Object constructor. 
 - Enabling either setting requires the current notice version and an explicit confirmation in the signed request.
 - The current notice and policy version is `2026-11-08-v1`. The API returns `currentNoticeVersion` and `currentPolicyVersion` so clients do not need to guess.
 - When an account opts in, existing owned assets are registered for eligibility checks. New assets created while the account has either AI setting enabled are registered automatically.
+- If a policy or notice version changes, previously enabled processing becomes ineligible until the account explicitly reconfirms the current notice.
 - Existing and new assets are not automatically eligible: the creator must attest that they have the necessary rights, and staff must approve the rights review.
 - Once rights are approved, the account-wide preference applies to assets whose per-content choice is `inherit`. An explicit per-content `exclude` overrides account-level inclusion.
 - Private assets, assets awaiting/rejected in moderation, exclusive/promo-only assets, and assets whose creator no longer matches the recorded owner remain excluded.
@@ -81,6 +82,14 @@ Choices are `inherit`, `include`, or `exclude`. `inherit` follows the account-le
 
 Clients cannot set `rightsStatus`. Extra client-supplied fields such as `rightsStatus: "approved"` are ignored.
 
+### Staff rights-review queue
+
+```json
+{ "op": "ai.content.reviewQueue", "args": { "limit": 50, "offset": 0 } }
+```
+
+Only staff can retrieve the pending review queue. It returns content metadata and creator details, not raw upload bytes.
+
 ### Staff rights review
 
 ```json
@@ -116,7 +125,7 @@ A content record is eligible for a purpose only when all of these are true:
 6. The creator has recorded a rights attestation.
 7. Staff has set its rights status to `approved`.
 
-The server recalculates stored eligibility when account preferences change, when tracked assets are saved (including visibility and moderation changes), and when assets or accounts are deleted. Future dataset builders must query only eligible records and re-check current preferences and source state immediately before dataset freeze/training. Do not rely on an old eligibility snapshot.
+The server recalculates stored eligibility when account preferences change, when tracked assets are saved (including visibility and moderation changes), and when assets or accounts are deleted. If a policy/notice version is no longer current, the server marks the content ineligible until the account reconfirms. Future dataset builders must query only eligible records and re-check current preferences and source state immediately before dataset freeze/training. Do not rely on an old eligibility snapshot.
 
 ## Audit and backup
 
