@@ -375,6 +375,8 @@ void AssistantPanel::refreshMcpServers() {
 void AssistantPanel::startNextExternalCall() {
     if (m_externalPending.valid()) return;
     if (m_stopAsked) {
+        m_externalApprovalPending = false;
+        m_externalApprovalGranted = false;
         while (!m_externalQueue.empty()) {
             ExternalCall skipped = std::move(m_externalQueue.front());
             m_externalQueue.pop_front();
