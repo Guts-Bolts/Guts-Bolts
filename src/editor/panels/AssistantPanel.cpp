@@ -412,7 +412,7 @@ bool getOAuthJson(const std::string& url, json& result, std::string& error, cons
     int status = 0;
     const std::string host = "wss://" + parsed.host;
     if (!Net::httpGet(host, parsed.port, parsed.path, body, error, 12000,
-                      "Accept: application/json\r\n", &status, nullptr)) return false;
+                      "Accept: application/json\r\n", &status, nullptr, cancel)) return false;
     if (status != 200 || body.size() > 256u * 1024u) {
         error = "OAuth metadata endpoint returned HTTP " + std::to_string(status) + " or exceeded 256 KiB.";
         return false;
@@ -1300,13 +1300,13 @@ void AssistantPanel::startNextExternalCall() {
                 if (!cursor.empty()) params["cursor"] = cursor;
                 json list = {{"jsonrpc", "2.0"}, {"id", 700 + page}, {"method", "tools/list"}, {"params", params}};
                 int listStatus = 0;
-                bool listOk = mcpPost(endpoint, token, session, list, response, done.error, nullptr, protocol, &listStatus);
+                bool listOk = mcpPost(endpoint, token, session, list, response, done.error, nullptr, protocol, &listStatus, nullptr, cancel.get());
                 if (!listOk && listStatus == 401 && !oauthRefreshToken.empty() &&
                     !oauthIssuer.empty() && !oauthTokenEndpoint.empty() &&
                     !oauthClientId.empty() && !oauthResource.empty()) {
                     std::string refreshedAccess, refreshedRefresh, refreshError;
                     if (!refreshMcpOAuthToken(oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource,
-                                              oauthRefreshToken, refreshedAccess, refreshedRefresh, refreshError)) {
+                                              oauthRefreshToken, refreshedAccess, refreshedRefresh, refreshError, cancel.get())) {
                         done.error = "OAuth refresh failed before the external tool call: " + refreshError;
                         appendMcpAudit(serverName, toolName, done.call.args, "auth-refresh-failed");
                         return done;
@@ -1347,7 +1347,7 @@ void AssistantPanel::startNextExternalCall() {
             }
             json request = {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "tools/call"},
                             {"params", {{"name", toolName}, {"arguments", done.call.args}}}};
-            if (!mcpPost(endpoint, token, session, request, response, done.error, nullptr, protocol)) {
+            if (!mcpPost(endpoint, token, session, request, response, done.error, nullptr, protocol, nullptr, nullptr, cancel.get())) {
                 appendMcpAudit(serverName, toolName, done.call.args, "failed");
                 return done;
             }
