@@ -2548,35 +2548,68 @@ export class GbServerObject extends DurableObject {
         categories = [...new Set((response.match(/\bS(?:[1-9]|1[0-4])\b/g) || []))].slice(0, 14);
       }
     } catch (error) { scanner = 'llama-guard-3-8b-error'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
-    if (op === 'upload' && String(args.kind || '') === 'audio') { categories.push('AUDIO_REVIEW_REQUIRED'); scanner = 'audio-manual-review'; unsafe = true; }
-    // Image uploads get a vision pass only after the operator has explicitly accepted Meta's
-    // model license and enabled FYXA_VISION_LICENSE_ACCEPTED. Until then they are routed for
-    // manual review instead of being silently treated as scanned.
+    if (op === 'upload' && String(args.kind || '') === 'audio') {
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
+      const ext = String(meta.ext || '').toLowerCase();
+      const mime = ext === 'wav' ? 'audio/wav' : ext === 'ogg' ? 'audio/ogg' : ext === 'm4a' ? 'audio/mp4'
+        : ext === 'mp3' ? 'audio/mpeg' : ext === 'flac' ? 'audio/flac' : '';
+      const encoded = str(args, 'data').replace(/^data:[^,]+,/, '');
+      if (mime && encoded && encoded.length <= 5000000) {
+        try {
+          const bytes = b64ToBytes(encoded);
+          const transcription = await this.env.AI.run('@cf/deepgram/nova-3', {
+            audio: { body: bytes, contentType: mime }, mip_opt_out: true, detect_language: true, punctuate: true,
+          });
+          const transcript = String(transcription && (transcription.text
+            || transcription.results && transcription.results.channels && transcription.results.channels[0]
+              && transcription.results.channels[0].alternatives && transcription.results.channels[0].alternatives[0]
+              && transcription.results.channels[0].alternatives[0].transcript) || '').slice(0, 5000);
+          if (transcript) {
+            fields.push(['audio transcript', transcript]);
+            scanner += '+nova-3';
+            // Re-run the safety classifier against the transcript, not the opaque audio bytes.
+            const audioGuard = await this.env.AI.run('@cf/meta/llama-guard-3-8b', {
+              messages: [{ role: 'user', content: 'Audio transcript:\n' + transcript }], max_tokens: 128, temperature: 0,
+            });
+            const audioResponse = audioGuard && audioGuard.response;
+            if (audioResponse && typeof audioResponse === 'object' && audioResponse.safe === false) {
+              unsafe = true;
+              categories.push(...(Array.isArray(audioResponse.categories) ? audioResponse.categories.filter((x) => /^S(?:[1-9]|1[0-4])$/.test(x)) : []));
+            } else if (typeof audioResponse === 'string' && /^\s*unsafe\b/i.test(audioResponse)) {
+              unsafe = true;
+              categories.push(...new Set(audioResponse.match(/\bS(?:[1-9]|1[0-4])\b/g) || []));
+            }
+          } else { categories.push('AUDIO_SCAN_UNAVAILABLE'); scanner += '+nova-3-empty'; unsafe = true; }
+        } catch (error) { categories.push('AUDIO_SCAN_UNAVAILABLE'); scanner += '+nova-3-error'; unsafe = true; }
+      } else { categories.push('AUDIO_REVIEW_REQUIRED'); scanner += '+audio-manual-review'; unsafe = true; }
+    }
+    // Supported image uploads receive a vision-language screening pass; failures are sent to staff.
     if (op === 'upload' && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(String(args.kind || ''))) {
       const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
       const ext = String(meta.ext || '').toLowerCase();
       const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
       const encoded = str(args, 'data');
       if (encoded && encoded.length <= 600000) {
-        if (this.env.FYXA_VISION_LICENSE_ACCEPTED !== 'true') {
-          categories.push('VISION_NOT_ENABLED'); scanner += '+vision-license-required'; unsafe = true;
-        } else {
-          try {
-            const vision = await this.env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
-              prompt: 'You are a platform safety reviewer. Inspect this user-uploaded image for clearly visible policy violations: sexual content or nudity, sexualized depictions of minors, graphic violence, hateful symbols, extremist propaganda, self-harm instructions, personal information, or obvious copyrighted/trademarked material uploaded to impersonate an official Guts&Bolts asset. Do not infer age or identity from appearance. Return only JSON: {"flag":true|false,"category":"short category","reason":"brief visual evidence"}. Flag only clear evidence; otherwise flag false.',
-              image: 'data:' + mime + ';base64,' + encoded, max_tokens: 160, temperature: 0,
-            });
-            const rawVision = vision && typeof vision.response === 'string' ? vision.response : '';
-            const parsedVision = JSON.parse(rawVision);
-            if (parsedVision && parsedVision.flag === true) {
-              const category = String(parsedVision.category || 'content').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 32);
-              categories.push('VISION_' + (category || 'REVIEW'));
-              scanner += '+llama-vision';
-              unsafe = true;
-            }
-          } catch (error) {
-            categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+vision-error'; unsafe = true;
+        try {
+          const vision = await this.env.AI.run('@cf/moondream/moondream3.1-9B-A2B', {
+            task: 'query', image: 'data:' + mime + ';base64,' + encoded,
+            question: 'Review this user-uploaded image for clear Guts&Bolts platform safety violations: nudity or sexual content, sexualized depictions of minors, graphic violence, hateful or extremist symbols, self-harm instructions, personal information, or obvious impersonation of official platform branding. Do not infer a person\'s age or identity from appearance. Return only JSON with keys flag (boolean), category (short string), and reason (brief visible evidence). Flag only clear evidence; otherwise flag false.',
+            reasoning: false, temperature: 0, max_tokens: 180, stream: false,
+          });
+          const rawVision = String(vision && (vision.answer || vision.response) || '');
+          let parsedVision = null;
+          try { parsedVision = JSON.parse(rawVision); } catch {
+            const match = rawVision.match(/\{[\s\S]*\}/);
+            if (match) try { parsedVision = JSON.parse(match[0]); } catch { /* unstructured answer is not an automatic flag */ }
           }
+          if (parsedVision && parsedVision.flag === true) {
+            const category = String(parsedVision.category || 'content').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 32);
+            categories.push('VISION_' + (category || 'REVIEW'));
+            scanner += '+moondream';
+            unsafe = true;
+          }
+        } catch (error) {
+          categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+moondream-error'; unsafe = true;
         }
       } else {
         categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+vision-input-unavailable'; unsafe = true;
