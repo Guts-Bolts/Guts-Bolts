@@ -15,9 +15,11 @@ inline bool prepareRequest(json& request, std::string& headers,
                            const std::string& session,
                            const std::string& token,
                            std::string& error) {
-    if (token.find_first_of("\r\n") != std::string::npos ||
-        session.find_first_of("\r\n") != std::string::npos ||
-        protocolVersion.find_first_of("\r\n") != std::string::npos ||
+    auto safeHeaderValue = [](const std::string& value) {
+        for (unsigned char ch : value) if (ch < 0x20 || ch > 0x7e) return false;
+        return true;
+    };
+    if (!safeHeaderValue(token) || !safeHeaderValue(session) || !safeHeaderValue(protocolVersion) ||
         protocolVersion.size() > 64) {
         error = "The MCP credential, session identifier, or protocol version is invalid.";
         return false;
