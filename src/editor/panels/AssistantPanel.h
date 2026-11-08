@@ -35,6 +35,7 @@ private:
     void authorizeMcpServer(const std::string& name);
     nlohmann::json externalMcpTools() const;
     std::string externalMcpFingerprint(const std::string& qualifiedName) const;
+    nlohmann::json discoverFyxaTools(const std::string& query);
     struct ExternalCall { bool claude = false; std::string name, id, definitionFingerprint; nlohmann::json args; };
     struct ExternalCompletion { ExternalCall call; std::string text, error, refreshedServerName, refreshedAccessToken, refreshedRefreshToken; };
     void startNextExternalCall();
@@ -72,6 +73,8 @@ private:
     std::string m_newMcpName, m_newMcpUrl, m_newMcpToken, m_newMcpClientId;
     std::string m_mcpStatus;
     std::string m_input;
+    std::string m_activeRequestText;
+    std::vector<std::string> m_discoveredToolNames;
     nlohmann::json m_messages = nlohmann::json::array();
     std::vector<Line> m_lines;
     struct Reply { int status = 0; std::string body, error; };
