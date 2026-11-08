@@ -844,7 +844,7 @@ public:
     // it is and how much it sticks together. A FluidEmitter pours it out: its
     // transform's position and scale are its Position and Size; `enabled` turns it on and off.
     float       viscosity      = 0.015f;   // FluidSystem: 0 = runny like water, 1 = thick like honey
-    float       surfaceTension = 0.0f;     // FluidSystem: 0..1, how much drops pull together (beads, strands)
+    float       surfaceTension = 0.08f;    // FluidSystem: 0..1, how much drops pull together (beads, strands); gentle water cohesion by default
     float       fluidRate      = 500.0f;   // FluidEmitter: drops per second
     glm::vec3   fluidVelocity{0.0f, -10.0f, 0.0f};   // FluidEmitter: how fast (and which way) it pours
     uint64_t    fluidSystem    = 0;        // FluidEmitter: its FluidSystem (0 = plain water)
