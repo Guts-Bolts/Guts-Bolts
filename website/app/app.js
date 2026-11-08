@@ -3214,6 +3214,15 @@ function fyxaModerationBox(result) {
     S7: 'Privacy', S8: 'Intellectual property', S9: 'Weapons', S10: 'Hate', S11: 'Self-harm', S12: 'Sexual content', S13: 'Elections', S14: 'Code interpreter abuse',
     SCAN_UNAVAILABLE: 'AI scanner unavailable', VISION_NOT_ENABLED: 'Vision screening requires operator license acceptance', VISION_SCAN_UNAVAILABLE: 'Vision scan unavailable', AUDIO_REVIEW_REQUIRED: 'Audio upload requires manual review' };
   const person = (u, id) => u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>` : html`Unknown account (${id})`;
+  const source = (item) => {
+    let href = '';
+    if (item.sourceType === 'asset') href = item.assetKind === 'game' ? '#/game/' + item.sourceId
+      : isCatalogItem(item.assetKind) ? '#/item/' + item.sourceId : '#/library/' + item.sourceId;
+    else if (item.sourceType === 'comment') href = '#/game/' + item.sourceId;
+    else if (item.sourceType === 'forum_thread' || item.sourceType === 'forum_reply') href = '#/forum/t/' + item.sourceId;
+    else if (item.sourceType === 'group' || item.sourceType === 'group_post') href = '#/group/' + item.sourceId;
+    return href ? html`<a href="${href}">${item.sourceName || item.sourceId}</a>` : (item.sourceName || item.sourceId || 'not recorded');
+  };
   return html`<div class="box">
     <h2 class="boxhead">Fyxa moderation queue</h2>
     <p>AI-flagged submissions are prioritized here for staff review. The model provides signals, not verdicts. Review the excerpt and context before taking action.</p>
@@ -3223,7 +3232,7 @@ function fyxaModerationBox(result) {
         <b>${item.severity.toUpperCase()} · ${item.sourceType.replaceAll('_', ' ')}</b>
         <span class="small muted">${dateText(item.createdAt)}</span>
       </div>
-      <p class="small">Creator: ${person(item.author, item.authorId)} · Source ID: ${item.sourceId || 'not recorded'}</p>
+      <p class="small">Creator: ${person(item.author, item.authorId)} · Source: ${source(item)}</p>
       <p class="small"><b>Signals:</b> ${item.categories.map((code) => (names[code] || code) + ' (' + code + ')').join(', ') || 'No category returned'}</p>
       <p class="small muted">Scanner: ${item.scanner}</p>
       <div class="report-copy"><b>Submitted content excerpt</b><div style="white-space:pre-wrap">${item.excerpt}</div></div>
