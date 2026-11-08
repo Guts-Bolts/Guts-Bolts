@@ -194,6 +194,30 @@ test('cloud Team Create paginates edit events into bounded poll responses', () =
   assert.ok(s.call(alice, 'team.leave', { session: made.session }).ok);
 });
 
+test('cloud Team Create session IDs are not altered by the chat text filter', () => {
+  const { s, alice, bob } = setup();
+  const original = crypto.getRandomValues;
+  let generated = 0;
+  const bytes = [0x11, 0xab, 0xcd];
+  crypto.getRandomValues = (buffer) => {
+    buffer.fill(bytes[generated++] ?? 0xef);
+    return buffer;
+  };
+  let made;
+  try {
+    made = s.call(alice, 'team.create', { snapshot: '{"scene":"numeric id"}' });
+  } finally {
+    crypto.getRandomValues = original;
+  }
+  assert.ok(made.ok, made.error);
+  assert.equal(made.session, 'tc-1111111111111111');
+  const joined = s.call(bob, 'team.join', { code: made.code });
+  assert.ok(joined.ok, joined.error);
+  const event = s.call(bob, 'team.push', { session: made.session, kind: 'ops', payload: '{"change":1}' });
+  assert.ok(event.ok, event.error);
+  assert.equal(event.seq, 1);
+});
+
 test('cloud Team Create snapshots compact acknowledged events and force stale clients to resync', () => {
   const { s, alice, bob } = setup();
   const made = s.call(alice, 'team.create', { title: 'Snapshot test', snapshot: '{"scene":"v1"}' });
