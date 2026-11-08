@@ -976,6 +976,9 @@ add_custom_command(TARGET GutsAndBolts POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GutsAndBolts>/plugins"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/plugins"
             "$<TARGET_FILE_DIR:GutsAndBolts>/plugins"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GutsAndBolts>/assets/fyxa/skills"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/fyxa/skills"
+            "$<TARGET_FILE_DIR:GutsAndBolts>/assets/fyxa/skills"
     VERBATIM)
 
 # Ship the sample games and official catalog items next to the programs.
