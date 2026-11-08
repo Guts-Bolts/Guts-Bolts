@@ -612,23 +612,26 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
         if (args.is_string()) args = json::parse(args.get<std::string>(), nullptr, false);
         if (!args.is_object()) args = json::object();
         if (name.empty()) continue;
-        AiToolResult result;
         if (name.rfind("mcp__", 0) == 0) {
-            std::string externalError;
-            if (callExternalMcpTool(name, args.is_object() ? args : json::object(), result.text, externalError))
-                result.error = false;
-            else { result.error = true; result.text = externalError; }
-        } else {
-            result = m_editor.runAiToolFrom("Fyxa", name, args.is_object() ? args : json::object());
+            m_externalQueue.push_back({false, name, std::string(), args});
+            continue;
         }
+        AiToolResult result = m_editor.runAiToolFrom("Fyxa", name, args);
         std::string shown = name;
         if (args.contains("object") && args["object"].is_string()) shown += " " + args["object"].get<std::string>();
         m_lines.push_back({result.error ? Line::Error : Line::Tool, shown + (result.error ? ": " + result.text : "")});
         json toolMessage = {{"role", "tool"}, {"name", name}, {"content", result.text}};
         if (!result.png.empty()) toolMessage["images"] = json::array({Online::base64Encode(result.png)});
-        m_messages.push_back(std::move(toolMessage));
+        m_deferredOllamaMessages.push_back(std::move(toolMessage));
     }
 
+    if (!m_externalQueue.empty()) {
+        m_deferredExternalOllama = true;
+        startNextExternalCall();
+        return;
+    }
+    for (auto& toolMessage : m_deferredOllamaMessages) m_messages.push_back(std::move(toolMessage));
+    m_deferredOllamaMessages = json::array();
     if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
     if (++m_rounds >= kMaxRounds) { m_lines.push_back({Line::Note, "That's a lot of steps; paused here. Say \"continue\" to keep going."}); return; }
     requestNext();
