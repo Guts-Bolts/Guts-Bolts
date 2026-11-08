@@ -29,6 +29,15 @@ int main() {
     json metadata = {{"issuer", "https://auth.example.com/tenant"}};
     CHECK(metadataIssuerMatches(metadata, "https://auth.example.com/tenant"));
     CHECK(!metadataIssuerMatches(metadata, "https://auth.example.com/tenant/"));
+    const std::string vaultKey = credentialBindingKey("Docs", "https://auth.example.com",
+        "https://mcp.example.com/mcp", "client-123");
+    CHECK(vaultKey.rfind("mcp-oauth-", 0) == 0 && vaultKey.size() == 74);
+    CHECK(vaultKey != credentialBindingKey("Docs", "https://other.example.com",
+        "https://mcp.example.com/mcp", "client-123"));
+    CHECK(vaultKey != credentialBindingKey("Docs", "https://auth.example.com",
+        "https://other.example.com/mcp", "client-123"));
+    CHECK(vaultKey != credentialBindingKey("Docs", "https://auth.example.com",
+        "https://mcp.example.com/mcp", "other-client"));
 
     std::string resourceMetadata;
     CHECK(extractQuotedParameter("Bearer realm=\"mcp\", resource_metadata=\"https://mcp.example/.well-known/oauth-protected-resource\", scope=\"files:read\"", "resource_metadata", resourceMetadata));
