@@ -1057,6 +1057,9 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(ExternalMcpOAuthTests PRIVATE nlohmann_json::nlohmann_json monocypher)
     add_test(NAME ExternalMcpOAuthTests COMMAND ExternalMcpOAuthTests)
 endif()
+if(WIN32)
+    target_link_libraries(ExternalMcpOAuthTests PRIVATE bcrypt)
+endif()
 
 # Fyxa credentials must live in the OS vault, or explicitly fall back to session-only storage.
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
