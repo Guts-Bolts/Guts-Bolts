@@ -2649,8 +2649,8 @@ export class GbServerObject extends DurableObject {
       const limit = clamp(num(args, 'limit') || 50, 1, 100);
       const offset = Math.max(0, Math.trunc(num(args, 'offset')) || 0);
       const items = [];
-      for (const row of this.sql.exec(\`SELECT content_id, owner_id, content_type, privacy_status, rights_attested, updated_at
-        FROM ai_content_eligibility WHERE rights_status = 'pending_review' ORDER BY updated_at ASC LIMIT ? OFFSET ?\`, limit, offset)) {
+      for (const row of this.sql.exec(`SELECT content_id, owner_id, content_type, privacy_status, rights_attested, updated_at
+        FROM ai_content_eligibility WHERE rights_status = 'pending_review' ORDER BY updated_at ASC LIMIT ? OFFSET ?`, limit, offset)) {
         const asset = this.assets.get(row.content_id);
         if (!asset || asset.creator !== row.owner_id) continue;
         const owner = this.users.get(row.owner_id);
