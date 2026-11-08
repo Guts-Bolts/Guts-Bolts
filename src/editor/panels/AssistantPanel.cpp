@@ -187,9 +187,35 @@ AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::st
     return fail("Unknown Fyxa local tool.");
 }
 
-std::string mcpServerKey(std::string value) {
-    for (char& ch : value) if (!std::isalnum((unsigned char)ch)) ch = '-';
-    return value;
+std::string mcpServerKey(const std::string& value) {
+    // A readable prefix alone is ambiguous: "github.dev" and "github-dev"
+    // would otherwise route to the same external server. Add a stable digest
+    // of the exact configured name so qualified tool IDs remain unambiguous.
+    std::string prefix;
+    prefix.reserve(48);
+    for (unsigned char ch : value) {
+        const bool alpha = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+        const bool digit = ch >= '0' && ch <= '9';
+        if (alpha || digit || ch == '_') {
+            prefix.push_back((char)(ch >= 'A' && ch <= 'Z' ? ch - 'A' + 'a' : ch));
+        } else if (!prefix.empty() && prefix.back() != '-') {
+            prefix.push_back('-');
+        }
+        if (prefix.size() >= 40) break;
+    }
+    while (!prefix.empty() && prefix.back() == '-') prefix.pop_back();
+    if (prefix.empty()) prefix = "server";
+    std::uint8_t digest[8]{};
+    crypto_blake2b(digest, sizeof(digest),
+        reinterpret_cast<const std::uint8_t*>(value.data()), value.size());
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string key = prefix + "-";
+    for (std::uint8_t byte : digest) {
+        key.push_back(hex[byte >> 4]);
+        key.push_back(hex[byte & 0x0f]);
+    }
+    crypto_wipe(digest, sizeof(digest));
+    return key;
 }
 bool validMcpToolName(const std::string& name) {
     if (name.empty() || name.size() > 128) return false;
