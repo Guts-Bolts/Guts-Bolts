@@ -390,7 +390,12 @@ void AssistantPanel::startNextExternalCall() {
         finishExternalCalls();
         return;
     }
-    if (m_externalQueue.empty()) { finishExternalCalls(); return; }
+    if (m_externalQueue.empty()) { m_externalApprovalPending = false; finishExternalCalls(); return; }
+    // Every external MCP action requires a fresh, visible approval. Server-level
+    // enablement only permits discovery; it is not blanket authorization to act.
+    if (!m_externalApprovalGranted) { m_externalApprovalPending = true; return; }
+    m_externalApprovalGranted = false;
+    m_externalApprovalPending = false;
     ExternalCall call = std::move(m_externalQueue.front());
     m_externalQueue.pop_front();
 
@@ -668,7 +673,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
 
 void AssistantPanel::render(bool* open) {
     if (!ImGui::Begin("Fyxa", open)) { ImGui::End(); return; }
-    const bool busy = m_pending.valid() || m_externalPending.valid() || m_mcpRefreshPending.valid() || !m_externalQueue.empty() || m_deferredExternalClaude || m_deferredExternalOllama;
+    const bool busy = m_pending.valid() || m_externalPending.valid() || m_mcpRefreshPending.valid() || !m_externalQueue.empty() || m_externalApprovalPending || m_deferredExternalClaude || m_deferredExternalOllama;
 
     if (ImGui::CollapsingHeader("Assistant settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* providers[] = {"Ollama (local)", "Claude (Anthropic)"};
@@ -777,6 +782,42 @@ void AssistantPanel::render(bool* open) {
         }
         if (ImGui::Button("Refresh all MCP tools")) refreshMcpServers();
         ImGui::EndDisabled();
+    }
+
+    if (m_externalApprovalPending && !m_externalQueue.empty()) {
+        const ExternalCall& pendingCall = m_externalQueue.front();
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(1, 0.78f, 0.35f, 1), "External MCP action requires approval");
+        ImGui::TextWrapped("Fyxa wants to call: %s", pendingCall.name.c_str());
+        const json safeArguments = redactMcpArguments(pendingCall.args);
+        const std::string argumentText = safeArguments.dump(2);
+        ImGui::TextWrapped("Arguments:");
+        ImGui::BeginChild("##mcpapprovalargs", ImVec2(0, 110), ImGuiChildFlags_Borders);
+        ImGui::TextUnformatted(argumentText.c_str());
+        ImGui::EndChild();
+        ImGui::TextWrapped("This action runs on the connected service. It may read, modify, or delete remote data and cannot necessarily be undone from Studio.");
+        if (ImGui::Button("Approve this action")) {
+            m_externalApprovalGranted = true;
+            m_externalApprovalPending = false;
+            startNextExternalCall();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Deny")) {
+            ExternalCall denied = std::move(m_externalQueue.front());
+            m_externalQueue.pop_front();
+            appendMcpAudit("approval", denied.name, denied.args, "denied-by-user");
+            const std::string message = "The user denied this external MCP action.";
+            m_lines.push_back({Line::Note, message});
+            if (denied.claude) {
+                m_deferredClaudeResults.push_back({{"type", "tool_result"}, {"tool_use_id", denied.id},
+                    {"content", message}, {"is_error", true}});
+            } else {
+                m_deferredOllamaMessages.push_back({{"role", "tool"}, {"name", denied.name},
+                    {"content", message}});
+            }
+            m_externalApprovalPending = false;
+            startNextExternalCall();
+        }
     }
 
     if (ImGui::CollapsingHeader("Connect AI apps to Studio (MCP)")) {
