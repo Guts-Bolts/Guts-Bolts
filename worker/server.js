@@ -2479,11 +2479,13 @@ export class GbServerObject extends DurableObject {
       return {
         trainingEnabled: !!r.training_enabled, referenceEnabled: !!r.reference_enabled,
         policyVersion: r.policy_version, noticeVersion: r.notice_version, consentMethod: r.consent_method,
+        currentPolicyVersion: FYXA_AI_POLICY_VERSION, currentNoticeVersion: FYXA_AI_NOTICE_VERSION,
         updatedAt: Number(r.updated_at || 0), effectiveAt: Number(r.effective_at || 0),
       };
     }
     return { trainingEnabled: false, referenceEnabled: false, policyVersion: FYXA_AI_POLICY_VERSION,
-      noticeVersion: '', consentMethod: 'none', updatedAt: 0, effectiveAt: 0 };
+      noticeVersion: '', consentMethod: 'none', currentPolicyVersion: FYXA_AI_POLICY_VERSION,
+      currentNoticeVersion: FYXA_AI_NOTICE_VERSION, updatedAt: 0, effectiveAt: 0 };
   }
 
   aiAudit(me, eventType, contentId, details) {
@@ -2628,6 +2630,8 @@ export class GbServerObject extends DurableObject {
       if (rightsStatus === 'approved' && !row.rights_attested)
         return fail('The creator must first confirm they have the necessary rights.');
       const reason = cleanText(str(args, 'reason'), 160);
+      if (rightsStatus === 'approved' && reason.length < 8)
+        return fail('Add a review note explaining the rights evidence before approving this content.');
       this.sql.exec('UPDATE ai_content_eligibility SET rights_status = ?, updated_at = ? WHERE content_id = ?',
         rightsStatus, now(), contentId);
       const state = this.aiRecomputeContentEligibility(contentId);
