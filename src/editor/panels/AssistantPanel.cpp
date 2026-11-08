@@ -292,13 +292,31 @@ json redactMcpArguments(const json& value) {
     }
     return out;
 }
+std::string createIdempotencyKey() {
+    std::uint8_t bytes[16]{};
+    if (!McpOAuth::secureRandom(bytes, sizeof(bytes))) return {};
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string key = "fyxa-";
+    key.reserve(5 + sizeof(bytes) * 2);
+    for (std::uint8_t byte : bytes) {
+        key.push_back(hex[byte >> 4]);
+        key.push_back(hex[byte & 0x0f]);
+    }
+    crypto_wipe(bytes, sizeof(bytes));
+    return key;
+}
+
 void appendMcpAudit(const std::string& server, const std::string& tool, const json& args,
-                    const std::string& outcome) {
+                    const std::string& outcome, const std::string& idempotencyKey = {}) {
     const auto now = std::chrono::system_clock::now().time_since_epoch();
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
     std::ofstream file(Paths::file("assistant-mcp-activity.jsonl"), std::ios::app);
-    if (file) file << json{{"timestampMs", ms}, {"server", server}, {"tool", tool},
-                           {"arguments", redactMcpArguments(args)}, {"outcome", outcome}}.dump() << "\n";
+    if (file) {
+        json entry = {{"timestampMs", ms}, {"server", server}, {"tool", tool},
+                      {"arguments", redactMcpArguments(args)}, {"outcome", outcome}};
+        if (!idempotencyKey.empty()) entry["idempotencyKey"] = idempotencyKey;
+        file << entry.dump() << "\n";
+    }
 }
 
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
@@ -1347,7 +1365,7 @@ void AssistantPanel::startNextExternalCall() {
                 done.error = "The tool definition was not pinned when the request was created. Refresh discovery and ask for approval again.";
                 return done;
             }
-            appendMcpAudit(serverName, toolName, done.call.args, "started");
+            appendMcpAudit(serverName, toolName, done.call.args, "started", done.call.idempotencyKey);
             json response;
             bool definitionFound = false;
             std::string cursor;
@@ -1364,7 +1382,7 @@ void AssistantPanel::startNextExternalCall() {
                     if (!refreshMcpOAuthToken(oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource,
                                               oauthRefreshToken, refreshedAccess, refreshedRefresh, refreshError, cancel.get())) {
                         done.error = "OAuth refresh failed before the external tool call: " + refreshError;
-                        appendMcpAudit(serverName, toolName, done.call.args, "auth-refresh-failed");
+                        appendMcpAudit(serverName, toolName, done.call.args, "auth-refresh-failed", done.call.idempotencyKey);
                         return done;
                     }
                     token = std::move(refreshedAccess);
@@ -1378,7 +1396,7 @@ void AssistantPanel::startNextExternalCall() {
                     listOk = mcpPost(endpoint, token, session, list, response, done.error, nullptr, protocol, &listStatus, nullptr, cancel.get());
                 }
                 if (!listOk) {
-                    appendMcpAudit(serverName, toolName, done.call.args, "definition-check-failed");
+                    appendMcpAudit(serverName, toolName, done.call.args, "definition-check-failed", done.call.idempotencyKey);
                     return done;
                 }
                 const json listed = response.value("result", json::object()).value("tools", json::array());
@@ -1398,19 +1416,25 @@ void AssistantPanel::startNextExternalCall() {
             }
             if (!definitionFound || !done.error.empty()) {
                 if (done.error.empty()) done.error = "The approved MCP tool no longer exists on the server. Refresh discovery before retrying.";
-                appendMcpAudit(serverName, toolName, done.call.args, "definition-changed");
+                appendMcpAudit(serverName, toolName, done.call.args, "definition-changed", done.call.idempotencyKey);
+                return done;
+            }
+            if (done.call.idempotencyKey.empty()) {
+                done.error = "A cryptographically secure idempotency key could not be generated; the external action was not sent.";
+                appendMcpAudit(serverName, toolName, done.call.args, "idempotency-key-unavailable");
                 return done;
             }
             json request = {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "tools/call"},
-                            {"params", {{"name", toolName}, {"arguments", done.call.args}}}};
+                            {"params", {{"name", toolName}, {"arguments", done.call.args},
+                                        {"_meta", {{"io.gutsandbolts/idempotency-key", done.call.idempotencyKey}}}}}};
             if (!mcpPost(endpoint, token, session, request, response, done.error, nullptr, protocol, nullptr, nullptr, cancel.get())) {
-                appendMcpAudit(serverName, toolName, done.call.args, "failed");
+                appendMcpAudit(serverName, toolName, done.call.args, "failed", done.call.idempotencyKey);
                 return done;
             }
             if (!response.is_object() || !response.contains("jsonrpc") ||
                 !response["jsonrpc"].is_string() || response["jsonrpc"].get<std::string>() != "2.0") {
                 done.error = "The MCP server returned an invalid JSON-RPC response.";
-                appendMcpAudit(serverName, toolName, done.call.args, "protocol-error");
+                appendMcpAudit(serverName, toolName, done.call.args, "protocol-error", done.call.idempotencyKey);
                 return done;
             }
             if (response.contains("error")) {
@@ -1419,7 +1443,7 @@ void AssistantPanel::startNextExternalCall() {
                     ? rpcError.value("message", std::string("Unknown JSON-RPC error"))
                     : std::string("Malformed JSON-RPC error response");
                 done.error = "MCP JSON-RPC error: " + message;
-                appendMcpAudit(serverName, toolName, done.call.args, "rpc-error");
+                appendMcpAudit(serverName, toolName, done.call.args, "rpc-error", done.call.idempotencyKey);
                 return done;
             }
             if (!response.contains("result") || !response["result"].is_object()) {
@@ -1781,7 +1805,7 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
         }
         if (name.rfind("mcp__", 0) == 0) {
             m_externalQueue.push_back({true, name, b.value("id", std::string()),
-                externalMcpFingerprint(name),
+                externalMcpFingerprint(name), createIdempotencyKey(),
                 b.contains("input") && b["input"].is_object() ? b["input"] : json::object()});
             continue;
         }
@@ -1855,7 +1879,8 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
             continue;
         }
         if (name.rfind("mcp__", 0) == 0) {
-            m_externalQueue.push_back({false, name, std::string(), externalMcpFingerprint(name), args});
+            m_externalQueue.push_back({false, name, std::string(), externalMcpFingerprint(name),
+                                       createIdempotencyKey(), args});
             continue;
         }
         AiToolResult result = runFyxaStudioTool(m_editor, name, args);
