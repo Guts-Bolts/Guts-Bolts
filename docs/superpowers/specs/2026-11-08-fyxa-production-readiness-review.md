@@ -8,7 +8,7 @@
 
 The platform-agent direction is sound, but the current branch is a development foundation, not a production-ready remote-agent release. Keep PR #283 draft and unmerged until the supported build/test matrix is green and the critical security/protocol work below is complete.
 
-The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends `server/discover`, attaches protocol metadata to each request, emits `MCP-Protocol-Version` and `Mcp-Method`, and emits `Mcp-Name` for named operations. It does not send or retain a session ID in modern mode. Legacy initialize/initialized and session handling remain a narrow compatibility path, entered only after a structured `-32022` unsupported-version or `-32601` unknown-method response; transport, TLS, and authorization failures do not trigger downgrade. Wire-envelope tests are included; current-head CI is required before treating them as verified.
+The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends `server/discover`, attaches protocol metadata to each request, emits `MCP-Protocol-Version` and `Mcp-Method`, and emits `Mcp-Name` for named operations. It does not send or retain a session ID in modern mode. Legacy initialize/initialized and session handling remain a narrow compatibility path, entered only after a structured `-32022` unsupported-version or `-32601` unknown-method response; transport, TLS, and authorization failures do not trigger downgrade. Wire-envelope tests are included. Current-head CI must pass before treating them as verified; reordered-key canonicalization now has a regression test, while live round-robin-server integration remains outstanding.
 
 ## Findings and decisions
 
@@ -17,7 +17,7 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 1. **MCP 2026-07-28 stateless protocol**
    - Modern requests use the 2026-07-28 stateless envelope with protocol/client metadata in `_meta`, required modern HTTP headers, and no `Mcp-Session-Id` or legacy initialized notification.
    - Legacy initialize/initialized and session handling remain a narrow compatibility path, entered only after a structured unsupported-version or unknown-method response. Transport, TLS, and authorization failures do not trigger downgrade.
-   - Wire-level tests cover modern and legacy envelopes, malformed metadata, missing routing names, and header-injection attempts. Reordered-key and live round-robin-server integration tests remain outstanding.
+   - Wire-level tests cover modern and legacy envelopes, malformed metadata, missing routing names, and header-injection attempts. Reordered-key canonicalization is now covered. Live round-robin-server integration remains outstanding.
 
 2. **OAuth for protected remote MCP — core authorization and refresh flow implemented; step-up/revocation remain**
    - OAuth remains optional for public, unauthenticated HTTP MCP endpoints. Protected servers can now use the browser-based authorization-code flow with PKCE S256.
@@ -32,17 +32,17 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
    - Fyxa computes a canonical BLAKE2b-256 fingerprint over tool name, description, input schema, annotations, server identity, and endpoint.
    - The fingerprint is pinned when the model queues a call. Immediately before execution, Fyxa fetches the live `tools/list` catalog and compares the definition; missing or changed definitions fail closed and require rediscovery/re-approval.
    - External calls still require per-call approval. Server enablement is not blanket authorization.
-   - Current-head Tests job passed with unit coverage for description, schema, and endpoint changes. Reordered-key and full live-server integration tests remain to be added.
+   - Current-head Tests job passed with unit coverage for description, schema, and endpoint changes. Full live-server integration tests remain to be added.
 
 4. **Untrusted MCP metadata and results — partial defense added**
    - External tool descriptions now carry an explicit untrusted-metadata marker; tool results are wrapped as untrusted data, and the system guide tells the model not to follow embedded instructions or let them alter permissions/approval.
-   - This is defense in depth, not a complete prompt-injection solution. Structural host authorization remains authoritative; metadata and results never grant capabilities.
+   - This is defense in depth, not a complete prompt-injection solution. External tool descriptions and results are serialized into explicit untrusted-data JSON envelopes so marker-like text and embedded newlines remain data. Structural host authorization remains authoritative; metadata and results never grant capabilities. Regression tests cover malicious description/result payloads, but model-behavior evaluations and live adversarial integration tests remain outstanding.
    - Do not rely on regex attempts to remove executable instructions. Continue testing malicious descriptions, schemas, annotations, resource content, and tool results against the host-side permission boundary.
 
 5. **Structural capability enforcement and connected-app relay trust boundary**
    - The registry and execution dispatcher are the source of truth for callable capabilities. The UI must report unavailable domains as an application-owned state, not ask the model to self-report its limitations.
    - First-party services must independently authorize identity, ownership, scopes, and resource state on every operation.
-   - Connected-app relay calls now receive the same Studio-side boundary as external MCP: tool definitions are fingerprinted when tools/list is returned; each tools/call must match that app's cached fingerprint; every call pauses for explicit Studio approval; approval rechecks the live tool fingerprint; the Studio MCP dispatcher re-applies its connected-app tool allowlist and write-scope gate immediately before dispatch.
+   - Connected-app relay calls now receive the same Studio-side boundary as external MCP: tool definitions are fingerprinted when tools/list is returned; each tools/call must match that app's cached fingerprint; every call pauses for explicit Studio approval; approval rechecks the live tool fingerprint; the Studio MCP dispatcher re-applies its connected-app tool allowlist and write-scope gate immediately before dispatch. The allowlist is extracted into a shared host-side policy helper with regression tests for read access, write-scope gating, and denial of publish/file/sensitive unregistered capabilities.
    - Relay tool descriptions/results carry explicit untrusted-data labels. Approval requests, denials, fingerprint mismatches, and execution outcomes are written to the redacted MCP activity audit log.
    - OAuth scopes and server-side mcp-policy.js remain necessary but are not substitutes for the Studio-side approval gate. A connected-app token is not blanket approval.
 
@@ -116,16 +116,16 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 
 ## Delivery gates
 
-- [ ] P0 modern/legacy MCP protocol tests pass on current-head CI (test target added; execution pending).
+- [ ] P0 modern/legacy MCP protocol tests pass on current-head CI (test target added; latest branch changes require a fresh CI run).
 - [ ] P0 tool-definition fingerprint and approval invalidation tests pass on current-head CI (BLAKE2b pinning and live preflight implemented; focused unit tests added).
 - [ ] P0 protected-remote OAuth flow and token audience/issuer tests pass before protected remote MCP is enabled for general users.
-- [ ] P0 trust-boundary tests prove external MCP and connected-app content cannot grant permissions or bypass approval; connected-app relay calls require current tool fingerprints and per-call Studio approval.
+- [ ] P0 focused tests cover malicious external descriptions/results and connected-app allowlist/write-scope policy; live adversarial tests must still prove content cannot bypass approval or alter permissions. Connected-app relay calls require current tool fingerprints and per-call Studio approval.
 - [ ] P1 task evidence completion is atomic and replay-safe (store implementation and focused tests added; current-head CI pending).
 - [ ] P1 cancellation tests cover provider calls, MCP HTTP, queued work, cancellable DNS waits, pending relay dials, and shutdown.
 - [ ] P1 dynamic tool loading and provider capability adaptation tests pass.
 - [ ] P1 idempotency tests verify key stability across a retry of the same queued invocation and audit redaction; remote deduplication is verified per integration.
 - [ ] P1 approval-record tests cover exact server/tool fingerprints, read/write scope, expiration, revocation, and serialization.
-- [ ] Current-head Windows, Linux, and test CI jobs pass; no unverified build claims.
+- [ ] Current-head Windows, Linux, and test CI jobs pass for the latest branch commit; the previous green run predates the latest security-test changes.
 - [ ] PR stays draft until all required gates are satisfied.
 
 ## Source notes
