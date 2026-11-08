@@ -3456,7 +3456,7 @@ pages.staff = async () => {
   const waiting = {
     tickets: tk.ok && !ticketsClosed ? tk.tickets.length : null, uploads: up.ok ? up.uploads.length : null,
     reports: rep.ok && !closed ? rep.reports.length : null, appeals: ap.ok && !appealsClosed ? ap.appeals.length : null,
-    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.items.length : null };
+    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.total : null };
   const tabs = html`<div class="tabs staff-tabs">${STAFF_TABS.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/staff?tab=${k}">${l}${
     waiting[k] ? html` <span class="count">${waiting[k]}</span>` : ''}</a>`)}</div>`;
   let body;
