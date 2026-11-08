@@ -888,6 +888,7 @@ AssistantPanel::AssistantPanel(Editor& editor) : m_editor(editor) {
 }
 
 AssistantPanel::~AssistantPanel() {
+    if (m_agentCancel) m_agentCancel->store(true);
     if (m_oauthCancel) m_oauthCancel->store(true);
     m_mcp.stop();
     if (m_pending.valid()) m_pending.wait();
@@ -1499,9 +1500,16 @@ void AssistantPanel::update() {
         }
         startNextExternalCall();
     }
+    if (m_stopAsked && !m_pending.valid() && !m_externalPending.valid() && !m_externalQueue.empty()) {
+        startNextExternalCall();
+    }
     if (!m_pending.valid()) return;
     if (m_pending.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
     Reply r = m_pending.get();
+    if (m_stopAsked || (m_agentCancel && m_agentCancel->load())) {
+        m_lines.push_back({Line::Note, "Stopped. The provider response was discarded."});
+        return;
+    }
     handleReply(r.status, r.body, r.error);
 }
 
@@ -1510,6 +1518,7 @@ void AssistantPanel::send(const std::string& text) {
     m_messages.push_back({{"role", "user"}, {"content", text}});
     m_rounds = 0;
     m_stopAsked = false;
+    m_agentCancel = std::make_shared<std::atomic_bool>(false);
     requestNext();
 }
 
