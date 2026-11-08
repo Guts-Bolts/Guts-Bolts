@@ -56,7 +56,7 @@ bool parseMcpEndpoint(const std::string& url, McpEndpoint& out, std::string& err
     std::string authority = url.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
     out.path = slash == std::string::npos ? "/mcp" : url.substr(slash);
     if (authority.empty() || authority.find('@') != std::string::npos) { error = "The MCP endpoint address is invalid."; return false; }
-    if (authority.find_first_of(" \\t\\r\\n?#") != std::string::npos) { error = "The MCP endpoint address contains invalid characters."; return false; }
+    if (authority.find_first_of(" \t\r\n?#") != std::string::npos) { error = "The MCP endpoint address contains invalid characters."; return false; }
     const size_t colon = authority.rfind(':');
     if (colon != std::string::npos) {
         if (authority.find(':') != colon) { error = "IPv6 endpoints are not supported by this network layer yet."; return false; }
@@ -73,7 +73,7 @@ bool parseMcpEndpoint(const std::string& url, McpEndpoint& out, std::string& err
     for (unsigned char ch : out.host) if (!(std::isalnum(ch) || ch == '.' || ch == '-')) {
         error = "The MCP endpoint host is invalid."; return false;
     }
-    if (out.path.empty() || out.path[0] != '/' || out.path.find_first_of("\\r\\n#") != std::string::npos) {
+    if (out.path.empty() || out.path[0] != '/' || out.path.find_first_of("\r\n#") != std::string::npos) {
         error = "The MCP endpoint path is invalid."; return false;
     }
     if (!https && out.host != "localhost" && out.host != "127.0.0.1") {
@@ -127,7 +127,7 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
              const std::string& protocolVersion = "2025-06-18") {
     std::string headers = "Accept: application/json, text/event-stream\r\n";
     if (!protocolVersion.empty()) headers += "MCP-Protocol-Version: " + protocolVersion + "\r\n";
-    if (token.find_first_of("\\r\\n") != std::string::npos || session.find_first_of("\\r\\n") != std::string::npos) {
+    if (token.find_first_of("\r\n") != std::string::npos || session.find_first_of("\r\n") != std::string::npos) {
         error = "The MCP credential or session identifier contains invalid characters."; return false;
     }
     if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
