@@ -197,6 +197,7 @@ AssistantPanel::~AssistantPanel() {
     m_mcp.stop();
     if (m_pending.valid()) m_pending.wait();
     if (m_externalPending.valid()) m_externalPending.wait();
+    if (m_mcpRefreshPending.valid()) m_mcpRefreshPending.wait();
 }
 
 void AssistantPanel::load() {
@@ -418,6 +419,12 @@ void AssistantPanel::finishExternalCalls() {
 void AssistantPanel::update() {
     m_mcp.update(m_editor);
     m_relay.update(m_editor, m_mcp);
+    if (m_mcpRefreshPending.valid() && m_mcpRefreshPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        McpRefreshResult refreshed = m_mcpRefreshPending.get();
+        m_externalMcp = std::move(refreshed.servers);
+        m_mcpStatus = std::move(refreshed.status);
+        save();
+    }
     if (m_externalPending.valid() && m_externalPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         ExternalCompletion done = m_externalPending.get();
         const bool failed = !done.error.empty();
@@ -612,7 +619,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
 
 void AssistantPanel::render(bool* open) {
     if (!ImGui::Begin("Fyxa", open)) { ImGui::End(); return; }
-    const bool busy = m_pending.valid() || m_externalPending.valid() || !m_externalQueue.empty() || m_deferredExternalClaude || m_deferredExternalOllama;
+    const bool busy = m_pending.valid() || m_externalPending.valid() || m_mcpRefreshPending.valid() || !m_externalQueue.empty() || m_deferredExternalClaude || m_deferredExternalOllama;
 
     if (ImGui::CollapsingHeader("Assistant settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* providers[] = {"Ollama (local)", "Claude (Anthropic)"};
@@ -660,6 +667,7 @@ void AssistantPanel::render(bool* open) {
         ImGui::InputTextWithHint("##newmcpurl", "https://example.com/mcp or http://127.0.0.1:3000/mcp", &m_newMcpUrl);
         ImGui::SetNextItemWidth(-1);
         ImGui::InputTextWithHint("##newmcptoken", "Bearer token (optional)", &m_newMcpToken, ImGuiInputTextFlags_Password);
+        ImGui::BeginDisabled(m_mcpRefreshPending.valid());
         if (ImGui::Button("Add MCP server") && !m_newMcpName.empty() && !m_newMcpUrl.empty()) {
             bool duplicate = false;
             std::string newKey = m_newMcpName;
@@ -712,6 +720,7 @@ void AssistantPanel::render(bool* open) {
             ImGui::PopID();
         }
         if (ImGui::Button("Refresh all MCP tools")) refreshMcpServers();
+        ImGui::EndDisabled();
     }
 
     if (ImGui::CollapsingHeader("Connect AI apps to Studio (MCP)")) {
