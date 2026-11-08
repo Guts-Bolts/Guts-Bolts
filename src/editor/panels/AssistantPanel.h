@@ -61,7 +61,7 @@ private:
         nlohmann::json tools = nlohmann::json::array();
     };
     struct McpRefreshResult { std::vector<McpServer> servers; std::string status; };
-    struct McpOAuthResult { std::string serverName, accessToken, refreshToken, issuer, tokenEndpoint, resource, error; };
+    struct McpOAuthResult { std::string serverName, accessToken, refreshToken, issuer, tokenEndpoint, resource, clientId, error; };
     std::future<McpOAuthResult> m_oauthPending;
     std::string m_oauthServerName;
     std::vector<McpServer> m_externalMcp;
