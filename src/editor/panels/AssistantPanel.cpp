@@ -491,10 +491,7 @@ void AssistantPanel::refreshMcpServers() {
                 // unsupported-version or unknown-method response proves that this
                 // endpoint does not implement server/discover. Network, TLS, and
                 // authorization failures never trigger a downgrade.
-                const json rpcError = response.is_object() ? response.value("error", json::object()) : json::object();
-                const int code = rpcError.is_object() && rpcError.contains("code") && rpcError["code"].is_number_integer()
-                    ? rpcError["code"].get<int>() : 0;
-                if (code != -32022 && code != -32601) {
+                if (!McpHttpProtocol::legacyFallbackAllowed(response)) {
                     result.status = server.name + ": " + error;
                     server.tools = json::array();
                     continue;
