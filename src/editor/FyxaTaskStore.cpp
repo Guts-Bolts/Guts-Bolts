@@ -59,7 +59,8 @@ bool readTasks(const std::filesystem::path& file, json& tasks, std::string& erro
     for (const auto& task : root["tasks"]) {
         if (!task.is_object() || !task.contains("id") || !task["id"].is_string() ||
             !task.contains("title") || !task["title"].is_string() ||
-            !task.contains("status") || !task["status"].is_string()) {
+            !task.contains("status") || !task["status"].is_string() ||
+            (task.contains("notes") && !task["notes"].is_array())) {
             error = "Task file contains an invalid task. It was left untouched.";
             return false;
         }
@@ -164,6 +165,9 @@ bool FyxaTaskStore::update(const std::string& id, const std::string& status,
 
     (*found)["status"] = status;
     (*found)["updated_at"] = now();
-    if (!note.empty()) (*found)["notes"].push_back({{"text", note}, {"created_at", now()}});
+    if (!note.empty()) {
+        if (!found->contains("notes") || !(*found)["notes"].is_array()) (*found)["notes"] = json::array();
+        (*found)["notes"].push_back({{"text", note}, {"created_at", now()}});
+    }
     return writeTasks(m_file, tasks, error);
 }
