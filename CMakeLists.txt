@@ -1047,7 +1047,7 @@ endif()
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(ExternalMcpProtocolTests tests/ExternalMcpProtocolTests.cpp)
     target_include_directories(ExternalMcpProtocolTests PRIVATE src/)
-    target_link_libraries(ExternalMcpProtocolTests PRIVATE nlohmann_json::nlohmann_json)
+    target_link_libraries(ExternalMcpProtocolTests PRIVATE nlohmann_json::nlohmann_json monocypher)
     add_test(NAME ExternalMcpProtocolTests COMMAND ExternalMcpProtocolTests)
 endif()
 
