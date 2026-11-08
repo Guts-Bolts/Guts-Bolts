@@ -2148,18 +2148,29 @@ async function learnPage(head) {
 
 // Create > Fyxa AI: per-asset preferences and creator rights attestation.
 async function fyxaAssetsPage(head) {
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const offset = Math.max(0, Math.trunc(Number(params.get('offset')) || 0));
+  const limit = 100;
   if (!signedIn()) { show(html`${head}<div class="box"><p>Sign in to manage Fyxa AI permissions for your creations.</p></div>`); return; }
   const [assetsResult, prefsResult] = await Promise.all([
-    pageCall('list', { creator: me.id, limit: 100 }),
+    pageCall('list', { creator: me.id, limit, offset }),
     pageCall('ai.preferences.get', {}),
   ]);
   if (!assetsResult.ok) { show(html`${head}<div class="box"><p class="error">${assetsResult.error}</p></div>`); return; }
   if (!prefsResult.ok) { show(html`${head}<div class="box"><p class="error">Couldn't load Fyxa preferences: ${prefsResult.error}</p></div>`); return; }
   const assets = assetsResult.assets || [];
-  const states = await Promise.all(assets.map(async (asset) => {
-    const r = await pageCall('ai.content.eligibility.get', { contentId: asset.id });
-    return { asset, state: r.ok ? r.eligibility : null, error: r.ok ? '' : r.error };
-  }));
+  const total = Number(assetsResult.total) || 0;
+  const pageNumber = Math.floor(offset / limit) + 1;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const states = [];
+  // Avoid launching one hundred simultaneous signed API requests for a large creator library.
+  for (let i = 0; i < assets.length; i += 10) {
+    const batch = await Promise.all(assets.slice(i, i + 10).map(async (asset) => {
+      const r = await pageCall('ai.content.eligibility.get', { contentId: asset.id });
+      return { asset, state: r.ok ? r.eligibility : null, error: r.ok ? '' : r.error };
+    }));
+    states.push(...batch);
+  }
   const prefs = prefsResult.preferences;
   const reasonText = (reason) => ({
     account_training_disabled: 'Model-training permission is off in Account Settings',
@@ -2215,8 +2226,14 @@ async function fyxaAssetsPage(head) {
         ${prefs.referenceEnabled ? ' AI reference: enabled at account level.' : ' AI reference: disabled at account level.'}
         <a href="#/settings">Manage account preferences</a>.</p>
     </div>
-    ${assets.length ? states.map(card) : html`<div class="box"><p>You have no creator assets to configure yet.</p></div>`}
-    ${assets.length >= 100 ? html`<p class="small muted">Showing the first 100 assets returned by the creator-assets list.</p>` : ''}
+    ${assets.length ? states.map(card) : html`<div class="box"><p>${total ? 'No assets are on this page.' : 'You have no creator assets to configure yet.'}</p></div>`}
+    ${total > limit ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Showing ${offset + 1}–${Math.min(offset + assets.length, total)} of ${total} assets · Page ${pageNumber} of ${pageCount}</span>
+      <div class="row" style="gap:8px">
+        ${offset > 0 ? html`<a class="btn" href="#/create/fyxa?offset=${Math.max(0, offset - limit)}">Previous</a>` : ''}
+        ${offset + limit < total ? html`<a class="btn" href="#/create/fyxa?offset=${offset + limit}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
   `);
 }
 
