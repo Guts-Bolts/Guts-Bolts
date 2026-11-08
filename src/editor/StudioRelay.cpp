@@ -42,7 +42,9 @@ json redactRelayArguments(const json& value) {
         const bool secret = lower.find("token") != std::string::npos ||
             lower.find("secret") != std::string::npos || lower.find("password") != std::string::npos ||
             lower.find("authorization") != std::string::npos || lower.find("apikey") != std::string::npos ||
-            lower.find("api_key") != std::string::npos || lower.find("verifier") != std::string::npos;
+            lower.find("api_key") != std::string::npos || lower.find("verifier") != std::string::npos ||
+            lower.find("private") != std::string::npos || lower.find("credential") != std::string::npos ||
+            lower.find("cookie") != std::string::npos;
         out[key] = secret ? json("[REDACTED]") : redactRelayArguments(it.value());
     }
     return out;
