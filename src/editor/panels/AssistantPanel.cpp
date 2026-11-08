@@ -1718,8 +1718,21 @@ void AssistantPanel::render(bool* open) {
                 save(); ImGui::PopID(); break;
             }
             ImGui::TextDisabled("%s", server.url.c_str());
+            ImGui::BeginDisabled(m_oauthPending.valid() || m_mcpRefreshPending.valid());
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered public-client ID or client metadata URL", &server.oauthClientId)) save();
+            if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered public-client ID or client metadata URL", &server.oauthClientId)) {
+                if (!server.oauthIssuer.empty()) {
+                    CredentialStore::erase(server.credentialKey, credentialError);
+                    CredentialStore::erase(server.credentialKey + "-oauth-refresh", credentialError);
+                    server.token.clear();
+                    server.oauthRefreshToken.clear();
+                    server.oauthIssuer.clear();
+                    server.oauthTokenEndpoint.clear();
+                    server.oauthResource.clear();
+                }
+                save();
+            }
+            ImGui::EndDisabled();
             if (!server.enabled) ImGui::TextDisabled("Disabled until you explicitly allow this server's tools.");
             ImGui::TextDisabled("%d discovered tool(s)", server.tools.is_array() ? (int)server.tools.size() : 0);
             ImGui::PopID();
