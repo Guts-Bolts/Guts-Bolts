@@ -80,7 +80,7 @@ std::string responseHeader(const std::string& headers, const std::string& wanted
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
              const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,
              const std::string& protocolVersion = "2025-06-18") {
-    std::string headers = "MCP-Protocol-Version: 2025-06-18\r\n";
+    std::string headers = "Accept: application/json, text/event-stream\r\nMCP-Protocol-Version: " + protocolVersion + "\r\n";
     if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
     if (!session.empty()) headers += "Mcp-Session-Id: " + session + "\r\n";
     std::string body, responseHeaders;
@@ -95,7 +95,7 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
         while ((at = body.find("data:", at)) != std::string::npos) {
             at += 5;
             while (at < body.size() && body[at] == ' ') ++at;
-            size_t end = body.find('\\n', at);
+            size_t end = body.find('\n', at);
             json event = json::parse(body.substr(at, end == std::string::npos ? std::string::npos : end - at), nullptr, false);
             if (event.is_object()) { response = std::move(event); break; }
             if (end == std::string::npos) break;
