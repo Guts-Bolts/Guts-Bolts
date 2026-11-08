@@ -2,13 +2,13 @@
 
 **Review date:** 2026-11-08  
 **Scope:** PR #283, platform-agent architecture, task/skill implementation, and external MCP HTTP client.  
-**Status:** Findings accepted into the engineering plan; this document does not claim the fixes are implemented.
+**Status:** Findings accepted into the engineering plan. Modern MCP transport, protected-server OAuth/PKCE, tool-definition pinning, untrusted-content labeling, and atomic task evidence have implementation work on the feature branch; current-head CI and end-to-end integration tests remain required.
 
 ## Executive decision
 
 The platform-agent direction is sound, but the current branch is a development foundation, not a production-ready remote-agent release. Keep PR #283 draft and unmerged until the supported build/test matrix is green and the critical security/protocol work below is complete.
 
-The HTTP client now negotiates the MCP 2026-07-28 stateless protocol first. It sends `server/discover`, attaches protocol metadata to each request, emits `MCP-Protocol-Version` and `Mcp-Method`, and emits `Mcp-Name` for named operations. It does not send or retain a session ID in modern mode. Legacy initialize/initialized and session handling remain as a narrow compatibility path, entered only after a structured `-32022` unsupported-version or `-32601` unknown-method response; transport, TLS, and authorization failures do not trigger downgrade. Wire-envelope unit tests have been added; the current-head CI run is still required before calling this verified.
+The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends `server/discover`, attaches protocol metadata to each request, emits `MCP-Protocol-Version` and `Mcp-Method`, and emits `Mcp-Name` for named operations. It does not send or retain a session ID in modern mode. Legacy initialize/initialized and session handling remain a narrow compatibility path, entered only after a structured `-32022` unsupported-version or `-32601` unknown-method response; transport, TLS, and authorization failures do not trigger downgrade. Wire-envelope tests are included; current-head CI is required before treating them as verified.
 
 ## Findings and decisions
 
@@ -20,10 +20,13 @@ The HTTP client now negotiates the MCP 2026-07-28 stateless protocol first. It s
    - Keep 2025-era handshake support only for servers that require it. Do not silently downgrade on arbitrary network/auth failures.
    - Add wire-level tests for both eras, malformed metadata, header/body mismatch, and a server behind round-robin routing.
 
-2. **OAuth for protected remote MCP**
-   - Clarification: OAuth is not mandatory for every public, unauthenticated HTTP MCP endpoint. When a server uses the MCP authorization framework, implement the conformant OAuth 2.1 client flow rather than treating a manually pasted bearer token as the production auth solution.
-   - Required design areas include authorization-server and protected-resource metadata discovery, PKCE S256 for authorization-code flow, RFC 8707 resource binding/audience validation, issuer validation (RFC 9207), issuer-bound credential storage, scopes/step-up, refresh and revocation/error handling, and safe localhost redirect handling.
-   - Static bearer credentials may remain a clearly labelled local-development compatibility option, not the default for protected remote servers.
+2. **OAuth for protected remote MCP — core authorization and refresh flow implemented; step-up/revocation remain**
+   - OAuth remains optional for public, unauthenticated HTTP MCP endpoints. Protected servers can now use the browser-based authorization-code flow with PKCE S256.
+   - Fyxa discovers protected-resource metadata from `WWW-Authenticate` or RFC 9728 well-known URLs, validates the exact resource URI, discovers authorization-server metadata, and requires an exact issuer match.
+   - The authorization request and token exchange both include the RFC 8707 `resource` indicator. RFC 9207 `iss` is checked before processing either successful or error callbacks; missing `iss` is rejected when the server advertises it as required.
+   - Fyxa uses OS cryptographic randomness, a loopback-only callback listener, PKCE S256, and public-client (`token_endpoint_auth_method=none`) registration. It supports a user-supplied pre-registered client ID (including a client-ID metadata URL) or Dynamic Client Registration when offered. DCR is retained as a compatibility path because the current desktop client does not publish a stable Client ID Metadata Document.
+   - Access and refresh tokens are stored in the OS credential vault where available; unsupported platforms retain them only in memory. Refresh tokens are bound to the stored issuer/resource/client and the issuer metadata plus token endpoint are revalidated before a refresh grant. Expired tokens are refreshed on HTTP 401 for both modern stateless and legacy session-based MCP.
+   - Remaining OAuth work: incremental scope/step-up authorization, explicit revocation, broader multi-authorization-server selection, and live integration tests against protected MCP servers. Static bearer credentials remain available for local-development compatibility.
    - Never expose tokens or authorization headers to model context, tool descriptions, audit logs, crash reports, or UI diagnostics.
 
 3. **Tool-definition integrity / MCPoison resistance — implementation added; tests pending CI**
