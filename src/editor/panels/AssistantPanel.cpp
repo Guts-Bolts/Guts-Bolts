@@ -1826,6 +1826,8 @@ void AssistantPanel::render(bool* open) {
                 save();
             }
             ImGui::EndDisabled();
+            if (!server.oauthIssuer.empty())
+                ImGui::TextDisabled("Authorized issuer: %s", server.oauthIssuer.c_str());
             if (!server.enabled) ImGui::TextDisabled("Disabled until you explicitly allow this server's tools.");
             ImGui::TextDisabled("%d discovered tool(s)", server.tools.is_array() ? (int)server.tools.size() : 0);
             ImGui::PopID();
