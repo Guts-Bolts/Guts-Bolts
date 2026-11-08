@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <string>
 
+#undef assert
 #define assert(condition) do { if (!(condition)) { \
     std::cerr << "FAILED at line " << __LINE__ << ": " #condition << "\\n"; \
     return EXIT_FAILURE; \
