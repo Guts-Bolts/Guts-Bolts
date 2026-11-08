@@ -191,7 +191,7 @@ void AssistantPanel::refreshMcpServers() {
         json initialize = {{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"},
                            {"params", {{"protocolVersion", "2025-06-18"}, {"capabilities", json::object()},
                                        {"clientInfo", {{"name", "fyxa"}, {"version", "0.1"}}}}}};
-        if (!mcpPost(endpoint, server.token, "", initialize, response, error, &newSession)) {
+        if (!mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "")) {
             m_mcpStatus = server.name + ": " + error;
             server.tools = json::array();
             continue;
