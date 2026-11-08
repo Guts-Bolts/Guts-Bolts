@@ -1192,17 +1192,17 @@ void AssistantPanel::startNextExternalCall() {
             toolName = call.name.substr(split + 2);
         }
     }
-    std::string serverName, url, token, session, protocol;
+    std::string serverName, url, token, session, protocol, oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource, oauthRefreshToken, credentialKey;
     for (const auto& server : m_externalMcp) {
         const std::string key = mcpServerKey(server.name);
         if (key == serverKey && server.enabled) {
             serverName = server.name; url = server.url; token = server.token;
-            session = server.sessionId; protocol = server.protocolVersion;
+            session = server.sessionId; protocol = server.protocolVersion;\n            oauthIssuer = server.oauthIssuer; oauthTokenEndpoint = server.oauthTokenEndpoint;\n            oauthClientId = server.oauthClientId; oauthResource = server.oauthResource;\n            oauthRefreshToken = server.oauthRefreshToken; credentialKey = server.credentialKey;
             break;
         }
     }
     m_externalPending = std::async(std::launch::async,
-        [call = std::move(call), serverName, url, token, session, protocol, toolName]() mutable {
+        [call = std::move(call), serverName, url, token, session, protocol, toolName, oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource, oauthRefreshToken, credentialKey]() mutable {
             ExternalCompletion done;
             done.call = std::move(call);
             if (serverName.empty() || toolName.empty()) {
@@ -1223,7 +1223,29 @@ void AssistantPanel::startNextExternalCall() {
                 json params = json::object();
                 if (!cursor.empty()) params["cursor"] = cursor;
                 json list = {{"jsonrpc", "2.0"}, {"id", 700 + page}, {"method", "tools/list"}, {"params", params}};
-                if (!mcpPost(endpoint, token, session, list, response, done.error, nullptr, protocol)) {
+                int listStatus = 0;
+                bool listOk = mcpPost(endpoint, token, session, list, response, done.error, nullptr, protocol, &listStatus);
+                if (!listOk && listStatus == 401 && !oauthRefreshToken.empty() &&
+                    !oauthIssuer.empty() && !oauthTokenEndpoint.empty() &&
+                    !oauthClientId.empty() && !oauthResource.empty()) {
+                    std::string refreshedAccess, refreshedRefresh, refreshError;
+                    if (!refreshMcpOAuthToken(oauthIssuer, oauthTokenEndpoint, oauthClientId, oauthResource,
+                                              oauthRefreshToken, refreshedAccess, refreshedRefresh, refreshError)) {
+                        done.error = "OAuth refresh failed before the external tool call: " + refreshError;
+                        appendMcpAudit(serverName, toolName, done.call.args, "auth-refresh-failed");
+                        return done;
+                    }
+                    token = std::move(refreshedAccess);
+                    oauthRefreshToken = std::move(refreshedRefresh);
+                    done.refreshedServerName = serverName;
+                    done.refreshedAccessToken = token;
+                    done.refreshedRefreshToken = oauthRefreshToken;
+                    response = json::object();
+                    done.error.clear();
+                    listStatus = 0;
+                    listOk = mcpPost(endpoint, token, session, list, response, done.error, nullptr, protocol, &listStatus);
+                }
+                if (!listOk) {
                     appendMcpAudit(serverName, toolName, done.call.args, "definition-check-failed");
                     return done;
                 }
@@ -1336,6 +1358,23 @@ void AssistantPanel::update() {
     }
     if (m_externalPending.valid() && m_externalPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         ExternalCompletion done = m_externalPending.get();
+        if (!done.refreshedAccessToken.empty()) {
+            auto refreshed = std::find_if(m_externalMcp.begin(), m_externalMcp.end(), [&](const McpServer& server) {
+                return server.name == done.refreshedServerName;
+            });
+            if (refreshed != m_externalMcp.end()) {
+                refreshed->token = std::move(done.refreshedAccessToken);
+                refreshed->oauthRefreshToken = std::move(done.refreshedRefreshToken);
+                std::string vaultError;
+                if (!CredentialStore::store(refreshed->credentialKey, refreshed->token, vaultError))
+                    m_credentialStatus = vaultError + " The refreshed access token remains in memory for this session.";
+                vaultError.clear();
+                if (!refreshed->oauthRefreshToken.empty() &&
+                    !CredentialStore::store(refreshed->credentialKey + "-oauth-refresh", refreshed->oauthRefreshToken, vaultError))
+                    m_credentialStatus = vaultError + " The refreshed token remains in memory for this session.";
+                save();
+            }
+        }
         const bool failed = !done.error.empty();
         if (!failed) { const std::string evidence = recordToolEvidence(); if (!evidence.empty()) done.text = "Evidence ID: " + evidence + "\n" + done.text; }
         m_lines.push_back({failed ? Line::Error : Line::Tool,
