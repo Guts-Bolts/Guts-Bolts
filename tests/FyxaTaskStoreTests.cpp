@@ -3,6 +3,8 @@
 #include <chrono>
 #include <filesystem>
 #include <iostream>
+#include <fstream>
+#include <iterator>
 #include <string>
 
 namespace fs = std::filesystem;
@@ -47,6 +49,18 @@ int main() {
         std::string error;
         check(store.create(" ", "description", error).is_null(), "rejects an empty title");
         check(!error.empty(), "empty title reports an error");
+    }
+    {
+        const fs::path broken = dir / "broken.json";
+        { std::ofstream out(broken); out << "{not-json"; }
+        FyxaTaskStore store(broken);
+        std::string error;
+        const json tasks = store.list(error);
+        check(tasks.empty() && !error.empty(), "reports malformed task storage");
+        check(!store.create("Do not overwrite", "", error).is_object(), "does not overwrite malformed task storage");
+        std::ifstream in(broken);
+        std::string preserved((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        check(preserved == "{not-json", "leaves malformed task file untouched");
     }
     std::error_code ec;
     fs::remove_all(dir, ec);
