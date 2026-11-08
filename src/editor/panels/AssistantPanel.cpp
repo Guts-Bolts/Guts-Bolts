@@ -1372,7 +1372,7 @@ void AssistantPanel::update() {
             std::string credentialError;
             if (!CredentialStore::store(oauthCredentialKey, server->token, credentialError))
                 m_credentialStatus = credentialError + " The access token remains in memory for this session.";
-            CredentialStore::erase(server->credentialKey, credentialError);
+            CredentialStore::erase(server->credentialKey, credentialError);\n            CredentialStore::erase(server->credentialKey + "-oauth-refresh", credentialError);
             if (!server->oauthRefreshToken.empty()) {
                 credentialError.clear();
                 if (!CredentialStore::store(oauthCredentialKey + "-refresh", server->oauthRefreshToken, credentialError))
@@ -1793,7 +1793,7 @@ void AssistantPanel::render(bool* open) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Remove")) {
                 std::string credentialError;
-                CredentialStore::erase(server.credentialKey, credentialError);
+                CredentialStore::erase(server.credentialKey, credentialError);\n                CredentialStore::erase(server.credentialKey + "-oauth-refresh", credentialError);
                 if (!server.oauthIssuer.empty() && !server.oauthResource.empty() && !server.oauthClientId.empty()) {
                     const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
                         server.name, server.oauthIssuer, server.oauthResource, server.oauthClientId);
@@ -1813,7 +1813,7 @@ void AssistantPanel::render(bool* open) {
                     const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
                         server.name, server.oauthIssuer, server.oauthResource, previousOAuthClientId);
                     CredentialStore::erase(oauthCredentialKey, oauthCredentialError);
-                    CredentialStore::erase(oauthCredentialKey + "-refresh", oauthCredentialError);
+                    CredentialStore::erase(oauthCredentialKey + "-refresh", oauthCredentialError);\n                    CredentialStore::erase(server.credentialKey + "-oauth-refresh", oauthCredentialError);
                     server.token.clear();
                     server.oauthRefreshToken.clear();
                     server.oauthIssuer.clear();
