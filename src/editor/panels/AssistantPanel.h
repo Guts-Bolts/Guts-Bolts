@@ -41,12 +41,13 @@ private:
 
     std::string m_provider = "ollama";
     std::string m_apiKey;
+    std::string m_credentialStatus;
     std::string m_model = "claude-sonnet-5-5";
     std::string m_ollamaHost = "127.0.0.1";
     int         m_ollamaPort = 11434;
     std::string m_ollamaModel = "qwen3:8b";
     struct McpServer {
-        std::string name, url, token, sessionId, protocolVersion = "2025-06-18";
+        std::string name, url, token, credentialKey, sessionId, protocolVersion = "2025-06-18";
         bool enabled = true;
         nlohmann::json tools = nlohmann::json::array();
     };
