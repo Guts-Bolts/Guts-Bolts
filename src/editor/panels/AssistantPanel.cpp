@@ -642,6 +642,52 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
     return result;
 }
 
+bool refreshMcpOAuthToken(const std::string& tokenEndpoint, const std::string& clientId,
+                          const std::string& resource, const std::string& refreshToken,
+                          std::string& accessToken, std::string& replacementRefreshToken,
+                          std::string& error) {
+    McpOAuth::HttpsUrl tokenUrl;
+    if (!McpOAuth::parseHttpsUrl(tokenEndpoint, tokenUrl)) {
+        error = "Stored OAuth token endpoint is invalid; reauthorize this MCP server.";
+        return false;
+    }
+    const std::vector<std::pair<std::string, std::string>> parameters = {
+        {"grant_type", "refresh_token"}, {"client_id", clientId},
+        {"refresh_token", refreshToken}, {"resource", resource}
+    };
+    std::string body;
+    for (const auto& parameter : parameters) {
+        if (!body.empty()) body += '&';
+        body += McpOAuth::formEncode(parameter.first) + '=' + McpOAuth::formEncode(parameter.second);
+    }
+    std::string response;
+    int status = 0;
+    if (!Net::httpPost("wss://" + tokenUrl.host, tokenUrl.port, tokenUrl.path, body, response, error, 12000,
+                       "Accept: application/json\\r\\nContent-Type: application/x-www-form-urlencoded\\r\\n",
+                       &status, nullptr) || status < 200 || status >= 300) {
+        if (error.empty()) error = "OAuth refresh failed with HTTP " + std::to_string(status) + ".";
+        return false;
+    }
+    const json token = json::parse(response, nullptr, false);
+    if (!token.is_object() || !token.contains("access_token") || !token["access_token"].is_string() ||
+        token["access_token"].get<std::string>().empty() || token["access_token"].get<std::string>().size() > 16384) {
+        error = "OAuth refresh response did not contain a valid access token.";
+        return false;
+    }
+    std::string type = token.value("token_type", std::string());
+    for (char& ch : type) ch = (char)std::tolower((unsigned char)ch);
+    if (type != "bearer") { error = "OAuth refresh did not return a Bearer token."; return false; }
+    accessToken = token["access_token"].get<std::string>();
+    replacementRefreshToken = token.contains("refresh_token") && token["refresh_token"].is_string()
+        ? token["refresh_token"].get<std::string>() : refreshToken;
+    if (replacementRefreshToken.size() > 16384) {
+        accessToken.clear();
+        error = "OAuth refresh token exceeded the supported size.";
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 AssistantPanel::AssistantPanel(Editor& editor) : m_editor(editor) {
@@ -804,7 +850,34 @@ void AssistantPanel::refreshMcpServers() {
                     {"io.modelcontextprotocol/clientCapabilities", json::object()},
                     {"io.modelcontextprotocol/clientInfo", {{"name", "fyxa"}, {"version", "0.1"}}}
                 }}}}};
-            bool modern = mcpPost(endpoint, server.token, "", discover, response, error, nullptr, modernVersion);
+            int discoveryStatus = 0;
+            std::string discoveryHeaders;
+            bool modern = mcpPost(endpoint, server.token, "", discover, response, error, nullptr,
+                                  modernVersion, &discoveryStatus, &discoveryHeaders);
+            if (!modern && discoveryStatus == 401 && !server.oauthRefreshToken.empty() &&
+                !server.oauthTokenEndpoint.empty() && !server.oauthResource.empty() && !server.oauthClientId.empty()) {
+                std::string refreshedAccess, refreshedRefresh, refreshError;
+                if (refreshMcpOAuthToken(server.oauthTokenEndpoint, server.oauthClientId, server.oauthResource,
+                                         server.oauthRefreshToken, refreshedAccess, refreshedRefresh, refreshError)) {
+                    server.token = std::move(refreshedAccess);
+                    server.oauthRefreshToken = std::move(refreshedRefresh);
+                    std::string vaultError;
+                    if (!CredentialStore::store(server.credentialKey, server.token, vaultError))
+                        result.status = server.name + ": refreshed access token is session-only; " + vaultError;
+                    vaultError.clear();
+                    if (!server.oauthRefreshToken.empty() &&
+                        !CredentialStore::store(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, vaultError))
+                        result.status = server.name + ": refreshed token could not be persisted; " + vaultError;
+                    response = json::object();
+                    error.clear();
+                    discoveryStatus = 0;
+                    discoveryHeaders.clear();
+                    modern = mcpPost(endpoint, server.token, "", discover, response, error, nullptr,
+                                     modernVersion, &discoveryStatus, &discoveryHeaders);
+                } else {
+                    result.status = server.name + ": OAuth token refresh failed: " + refreshError;
+                }
+            }
             if (modern) {
                 const json versions = response.value("result", json::object()).value("supportedVersions", json::array());
                 modern = versions.is_array() && std::find(versions.begin(), versions.end(), json(modernVersion)) != versions.end();
