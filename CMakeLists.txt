@@ -788,6 +788,7 @@ set(EDITOR_SOURCES
     src/editor/FyxaTaskStore.cpp
     src/editor/FyxaSkills.cpp
     src/editor/FyxaToolSelection.cpp
+    src/editor/FyxaProviderCapabilities.cpp
     src/editor/AiToolsRun.cpp
     src/editor/AiMeshTools.cpp
     src/editor/AiGameTools.cpp
@@ -1026,6 +1027,14 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_
     add_executable(LaunchLinkTests tests/LaunchLinkTests.cpp src/player/LaunchLink.cpp)
     target_include_directories(LaunchLinkTests PRIVATE src/)
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
+endif()
+
+# Ollama capabilities are read from /api/show, never guessed from model names.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaProviderCapabilitiesTests tests/FyxaProviderCapabilitiesTests.cpp src/editor/FyxaProviderCapabilities.cpp)
+    target_include_directories(FyxaProviderCapabilitiesTests PRIVATE src/)
+    target_link_libraries(FyxaProviderCapabilitiesTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaProviderCapabilitiesTests COMMAND FyxaProviderCapabilitiesTests)
 endif()
 
 # Fyxa exposes only relevant native and external tools, with explicit discovery for omitted capabilities.
