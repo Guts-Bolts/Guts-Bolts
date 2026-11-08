@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <climits>
 #include <random>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
