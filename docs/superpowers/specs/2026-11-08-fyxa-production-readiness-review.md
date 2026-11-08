@@ -2,7 +2,7 @@
 
 **Review date:** 2026-11-08  
 **Scope:** PR #283, platform-agent architecture, task/skill implementation, and external MCP HTTP client.  
-**Status:** Findings accepted into the engineering plan. Modern MCP transport, protected-server OAuth/PKCE, tool-definition pinning, untrusted-content labeling, and atomic task evidence have implementation work on the feature branch; current-head CI and end-to-end integration tests remain required.
+**Status:** Authoritative source of truth for implementation status and release gates. Modern MCP transport, protected-server OAuth/PKCE, tool-definition pinning, untrusted-content labeling, atomic task evidence, cancellable DNS waiting, connected-app relay approval/fingerprinting, idempotency metadata, and the approval-record schema have implementation work on the feature branch; current-head CI and end-to-end integration tests remain required.
 
 ## Executive decision
 
@@ -40,9 +40,12 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
    - This is defense in depth, not a complete prompt-injection solution. Structural host authorization remains authoritative; metadata and results never grant capabilities.
    - Do not rely on regex attempts to remove executable instructions. Continue testing malicious descriptions, schemas, annotations, resource content, and tool results against the host-side permission boundary.
 
-5. **Structural capability enforcement**
+5. **Structural capability enforcement and connected-app relay trust boundary**
    - The registry and execution dispatcher are the source of truth for callable capabilities. The UI must report unavailable domains as an application-owned state, not ask the model to self-report its limitations.
    - First-party services must independently authorize identity, ownership, scopes, and resource state on every operation.
+   - Connected-app relay calls now receive the same Studio-side boundary as external MCP: tool definitions are fingerprinted when tools/list is returned; each tools/call must match that app's cached fingerprint; every call pauses for explicit Studio approval; approval rechecks the live fingerprint and app scope immediately before dispatch.
+   - Relay tool descriptions/results carry explicit untrusted-data labels. Approval requests, denials, fingerprint mismatches, and execution outcomes are written to the redacted MCP activity audit log.
+   - OAuth scopes and server-side mcp-policy.js remain necessary but are not substitutes for the Studio-side approval gate. A connected-app token is not blanket approval.
 
 ### P1 — task integrity, runtime reliability, and context
 
@@ -51,12 +54,13 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
    - `completeWithEvidence` validates task status and token, appends the verification note, changes status, and consumes all pending tokens in one locked atomic file replacement. Ordinary `update(..., completed, ...)` is rejected.
    - The store uses both a process mutex and an OS-level lock file (Windows `LockFileEx`, POSIX `flock`) to serialize cooperating processes. Tests cover wrong-task tokens, replay, direct-completion bypass, and concurrent completion; CI execution is pending.
 
-7. **Cancellation and bounded execution — provider/MCP HTTP cancellation implemented; full shutdown bound remains open**
+7. **Cancellation and bounded execution — cancellable DNS wait implemented; full shutdown verification pending**
    - Fyxa's Stop action now sets a shared atomic cancellation token captured by provider and approved external-MCP workers. The HTTP client checks it before connect, during non-blocking connect waits, TLS handshake waits, request writes, response-header reads, and response-body reads. Socket readiness waits poll in 50 ms slices.
    - Late provider responses are discarded. Late MCP completions are converted to cancellation errors and cannot issue task evidence or persist a refreshed token after Stop. Queued external calls are returned as not executed. The UI warns that an MCP server may already have received and acted on an in-flight request; cancellation is not remote rollback.
    - A loopback HTTP regression test holds a request open, signals cancellation, and requires the client to return within one second. The test is registered in CTest; current-head execution is still pending.
-   - **Remaining bound:** synchronous system DNS resolution cannot currently be interrupted, and shutdown still waits for unrelated OAuth/discovery futures. Therefore a hard end-to-end shutdown bound is not yet established. Add a cancellable resolver or isolate DNS resolution, propagate shutdown cancellation to every background worker, and test the bound on Windows/Linux/macOS.
-   - Continue bounding concurrency, response bytes, tool-call count, total task time, and per-provider retries.
+   - DNS lookup now runs behind a bounded resolver lane (maximum four outstanding system lookups). The calling worker polls cancellation while waiting and returns promptly; the resolver thread owns shared state and cannot access caller stack memory after cancellation. Outbound Connection::connectTo accepts the same cancellation token, and the connected-app relay cancels a pending dial when disabled or destroyed.
+   - The OS getaddrinfo operation itself is not forcibly interrupted; a cancelled lookup may finish in the detached resolver lane. The lane is capped and new lookups fail fast when saturated. This bounds agent/relay shutdown, but platform CI and a stalled-resolver stress test are still required before claiming a hard system-wide resolver bound.
+   - OAuth/discovery futures also need cancellation propagated through every metadata and token request; the implementation is partial. Continue bounding concurrency, response bytes, tool-call count, total task time, and per-provider retries.
 
 8. **Dynamic capability/tool loading**
    - Do not send the entire platform registry to every model turn. Add domain/task intent selection, then expose only the small set of relevant tools; permit explicit discovery when needed.
@@ -71,6 +75,22 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 10. **Conversation and task recovery**
     - Persist bounded conversation checkpoints linked to task IDs, with explicit user controls, retention limits, and secret/PII filtering.
     - On restart, resume only from a validated checkpoint and re-evaluate capabilities and permissions. Never replay side-effecting tool calls automatically.
+
+
+8. **Single-active-task v1 scope — explicitly accepted product constraint**
+   - Fyxa v1 intentionally supports one explicit active task. This is not an accidental scheduler limitation: the task-evidence model binds successful tool results to one active task and does not yet support interleaved evidence streams.
+   - When a user turn contains multiple independent goals, Fyxa must choose at most one active task, create/retain the others as pending, tell the user what is deferred, and ask which pending task to prioritize after the active task is completed or paused. It must never silently start a second task or replace the current task.
+   - The task dispatcher now rejects a second in_progress transition while another task is active. The user-facing deferral wording and multi-request behavior still need integration tests.
+
+9. **Idempotency for external side effects — metadata propagation added; remote enforcement is conditional**
+   - Every outbound external MCP tool invocation receives a cryptographically random idempotency key in params._meta[io.gutsandbolts/idempotency-key]. The key is retained with the queued call and included in the redacted activity audit record.
+   - Remote MCP servers must explicitly implement and persist deduplication for this extension. A client-generated key cannot prevent duplicate execution when a server ignores it. Do not automatically retry an ambiguous side-effecting timeout unless the same key is reused and the remote service documents deduplication behavior.
+   - First-party purchase, transfer, publish, and other side-effecting service providers must also accept a server-enforced idempotency key before they are exposed.
+
+10. **Approval record model — schema and focused tests added; current behavior remains per-call**
+   - FyxaApprovalRecord defines audit-linkable, time-boxed records bound to server identity/fingerprint, exact tool identity/fingerprint, permission tier, issue/expiry times, and revocation time.
+   - Server-wide grants are restricted to read-only scope. Write grants require exact tool binding. The current UI continues to require individual approval for every external MCP and connected-app tool call; no blanket grant is enabled.
+   - The record model is additive groundwork only. Persisting grants, revocation UI, and trust-tier evaluation remain future work and must not be described as implemented.
 
 ### P2 — operational quality
 
@@ -100,10 +120,12 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 - [ ] P0 modern/legacy MCP protocol tests pass on current-head CI (test target added; execution pending).
 - [ ] P0 tool-definition fingerprint and approval invalidation tests pass on current-head CI (BLAKE2b pinning and live preflight implemented; focused unit tests added).
 - [ ] P0 protected-remote OAuth flow and token audience/issuer tests pass before protected remote MCP is enabled for general users.
-- [ ] P0 trust-boundary tests prove external content cannot grant permissions or bypass approval.
+- [ ] P0 trust-boundary tests prove external MCP and connected-app content cannot grant permissions or bypass approval; connected-app relay calls require current tool fingerprints and per-call Studio approval.
 - [ ] P1 task evidence completion is atomic and replay-safe (store implementation and focused tests added; current-head CI pending).
-- [ ] P1 cancellation tests cover provider calls, MCP HTTP, queued work, and shutdown.
+- [ ] P1 cancellation tests cover provider calls, MCP HTTP, queued work, cancellable DNS waits, pending relay dials, and shutdown.
 - [ ] P1 dynamic tool loading and provider capability adaptation tests pass.
+- [ ] P1 idempotency tests verify key stability across a retry of the same queued invocation and audit redaction; remote deduplication is verified per integration.
+- [ ] P1 approval-record tests cover exact server/tool fingerprints, read/write scope, expiration, revocation, and serialization.
 - [ ] Current-head Windows, Linux, and test CI jobs pass; no unverified build claims.
 - [ ] PR stays draft until all required gates are satisfied.
 
