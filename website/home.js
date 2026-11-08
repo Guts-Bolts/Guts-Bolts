@@ -2,6 +2,7 @@
   import { startTranslating, languagePicker } from './lang/i18n.js';
   import { call as apiCall } from './app/gb.js';
   import { startLive, onLive } from './app/live.js';
+  import { getActiveAuctions, getAuctionBidSummary, formatAuctionCountdown } from './auction-data.mjs';
   startTranslating();
   const foot = document.querySelector('footer');
   foot.append(document.createElement('br'), document.createElement('br'), languagePicker());
@@ -83,20 +84,6 @@
   let refreshQueued = false;
   let lastItems = [];
 
-  const pad = (n) => String(n).padStart(2, '0');
-  function countdown(end) {
-    let left = Math.max(0, Math.floor(Number(end) - Date.now() / 1000));
-    const days = Math.floor(left / 86400);
-    left %= 86400;
-    const hours = Math.floor(left / 3600);
-    const minutes = Math.floor((left % 3600) / 60);
-    const seconds = left % 60;
-    return (days ? days + 'd ' : '') + pad(hours) + ':' + pad(minutes) + ':' + pad(seconds);
-  }
-  function isActive(item) {
-    const auction = item && item.auction;
-    return !!auction && !auction.done && !auction.cancelled && Number(auction.endsAt) > Date.now() / 1000;
-  }
   function element(tag, className, text) {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -131,32 +118,32 @@
     const today = secondsLeft <= 86400;
     const banner = element('a', 'auction-promo-main' + (urgent ? ' urgent' : ''));
     banner.href = '/app/#/item/' + encodeURIComponent(item.id);
-    banner.setAttribute('aria-label', 'Auction: ' + item.name);
     banner.appendChild(makePicture(item));
 
     const copy = element('div', 'auction-promo-copy');
     copy.appendChild(element('span', 'auction-promo-kicker', urgent ? 'AUCTION  ·  ENDING SOON' : today ? 'AUCTION  ·  ENDING TODAY' : 'LIVE AUCTION'));
     copy.appendChild(element('h3', '', item.name));
     copy.appendChild(element('p', '', item.description || 'A limited-time chance to claim this exclusive item.'));
-    const bids = Array.isArray(auction.bids) ? auction.bids : [];
-    const highest = bids.reduce((top, bid) => Math.max(top, Number(bid.amount) || 0), 0);
+    const bidSummary = getAuctionBidSummary(auction);
     const bidBox = element('div', 'auction-promo-bid');
-    bidBox.appendChild(element('span', '', bids.length ? 'CURRENT HIGH BID' : 'STARTING BID'));
-    bidBox.appendChild(element('strong', '', (highest || Number(auction.minBid) || 0).toLocaleString() + ' Bolts'));
+    bidBox.appendChild(element('span', '', bidSummary.hasBids ? 'CURRENT HIGH BID' : 'STARTING BID'));
+    bidBox.appendChild(element('strong', '', bidSummary.amount.toLocaleString() + ' Bolts'));
     copy.appendChild(bidBox);
     banner.appendChild(copy);
 
     const clock = element('div', 'auction-promo-clock');
     clock.appendChild(element('span', '', 'TIME REMAINING'));
-    const time = element('strong', '', countdown(auction.endsAt));
+    const time = element('strong', '', formatAuctionCountdown(auction.endsAt));
     time.dataset.auctionEnd = String(auction.endsAt);
+    time.setAttribute('role', 'timer');
+    time.setAttribute('aria-label', 'Time remaining');
     clock.appendChild(time);
     clock.appendChild(element('b', 'auction-promo-cta', 'BID NOW  →'));
     banner.appendChild(clock);
     return banner;
   }
   function render(items) {
-    const active = (items || []).filter(isActive).sort((a, b) => Number(a.auction.endsAt) - Number(b.auction.endsAt));
+    const active = getActiveAuctions(items);
     lastItems = active;
     if (!active.length) {
       root.hidden = true;
@@ -180,8 +167,10 @@
         link.href = '/app/#/item/' + encodeURIComponent(item.id);
         link.appendChild(element('span', 'auction-promo-mini-tag', 'LIVE AUCTION'));
         link.appendChild(element('b', 'auction-promo-mini-name', item.name));
-        const time = element('span', 'auction-promo-mini-time', countdown(item.auction.endsAt));
+        const time = element('span', 'auction-promo-mini-time', formatAuctionCountdown(item.auction.endsAt));
         time.dataset.auctionEnd = String(item.auction.endsAt);
+        time.setAttribute('role', 'timer');
+        time.setAttribute('aria-label', 'Time remaining');
         link.appendChild(time);
         more.appendChild(link);
       });
