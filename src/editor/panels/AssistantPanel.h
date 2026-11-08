@@ -70,6 +70,8 @@ private:
     nlohmann::json m_deferredOllamaMessages = nlohmann::json::array();
     bool m_deferredExternalClaude = false;
     bool m_deferredExternalOllama = false;
+    bool m_externalApprovalPending = false;
+    bool m_externalApprovalGranted = false;
     int         m_rounds = 0;
     bool        m_stopAsked = false;
     bool        m_scrollDown = false;
