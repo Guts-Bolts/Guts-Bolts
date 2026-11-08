@@ -281,3 +281,44 @@ test('only staff can view the pending rights-review queue', () => {
   assert.ok(queue.ok, queue.error);
   assert.ok(queue.items.some((item) => item.contentId === asset.id && item.title === asset.name));
 });
+
+test('asset ownership changes invalidate the previous creator’s rights approval', () => {
+  const s = makeServer();
+  const oldOwner = s.signUp('alice');
+  const newOwner = s.signUp('bob');
+  const asset = s.addGame(oldOwner, 'Transferred game');
+  assert.ok(enableTraining(s, oldOwner).ok);
+
+  const attested = s.call(oldOwner, 'ai.content.eligibility.update', {
+    contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
+  });
+  assert.ok(attested.ok, attested.error);
+  const approved = s.call(s.staff, 'ai.content.review', {
+    contentId: asset.id, rightsStatus: 'approved', reason: 'Original creator rights reviewed',
+  });
+  assert.ok(approved.ok, approved.error);
+  assert.equal(approved.eligibility.trainingEligible, true);
+
+  asset.creator = newOwner.id;
+  s.saveAsset(asset);
+  s.flush();
+  assert.equal(s.call(oldOwner, 'ai.content.eligibility.get', { contentId: asset.id }).ok, false);
+
+  assert.ok(enableTraining(s, newOwner).ok);
+  const reset = s.call(newOwner, 'ai.content.eligibility.get', { contentId: asset.id });
+  assert.ok(reset.ok, reset.error);
+  assert.equal(reset.eligibility.rightsAttested, false);
+  assert.equal(reset.eligibility.rightsStatus, 'unverified');
+  assert.equal(reset.eligibility.trainingEligible, false);
+
+  const cannotInherit = s.call(newOwner, 'ai.content.eligibility.update', {
+    contentId: asset.id, trainingChoice: 'include',
+  });
+  assert.equal(cannotInherit.ok, false);
+  const newAttestation = s.call(newOwner, 'ai.content.eligibility.update', {
+    contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
+  });
+  assert.ok(newAttestation.ok, newAttestation.error);
+  assert.equal(newAttestation.eligibility.rightsStatus, 'pending_review');
+  assert.equal(newAttestation.eligibility.trainingEligible, false);
+});
