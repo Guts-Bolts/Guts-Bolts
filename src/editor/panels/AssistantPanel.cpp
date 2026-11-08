@@ -196,6 +196,7 @@ AssistantPanel::AssistantPanel(Editor& editor) : m_editor(editor) {
 AssistantPanel::~AssistantPanel() {
     m_mcp.stop();
     if (m_pending.valid()) m_pending.wait();
+    if (m_externalPending.valid()) m_externalPending.wait();
 }
 
 void AssistantPanel::load() {
@@ -366,9 +367,100 @@ bool AssistantPanel::callExternalMcpTool(const std::string& qualifiedName, const
     return false;
 }
 
+void AssistantPanel::startNextExternalCall() {
+    if (m_externalPending.valid()) return;
+    if (m_externalQueue.empty()) { finishExternalCalls(); return; }
+    ExternalCall call = std::move(m_externalQueue.front());
+    m_externalQueue.pop_front();
+
+    std::string serverKey, toolName;
+    if (call.name.rfind("mcp__", 0) == 0) {
+        const size_t split = call.name.find("__", 5);
+        if (split != std::string::npos) {
+            serverKey = call.name.substr(5, split - 5);
+            toolName = call.name.substr(split + 2);
+        }
+    }
+    std::string serverName, url, token, session, protocol;
+    for (const auto& server : m_externalMcp) {
+        std::string key = server.name;
+        for (char& ch : key) if (!std::isalnum((unsigned char)ch)) ch = '_';
+        if (key == serverKey && server.enabled) {
+            serverName = server.name; url = server.url; token = server.token;
+            session = server.sessionId; protocol = server.protocolVersion;
+            break;
+        }
+    }
+    m_externalPending = std::async(std::launch::async,
+        [call = std::move(call), serverName, url, token, session, protocol, toolName]() mutable {
+            ExternalCompletion done;
+            done.call = std::move(call);
+            if (serverName.empty() || toolName.empty()) {
+                done.error = "The external MCP server is disabled, removed, or the tool identifier is invalid.";
+                return done;
+            }
+            McpEndpoint endpoint;
+            if (!parseMcpEndpoint(url, endpoint, done.error)) return done;
+            appendMcpAudit(serverName, toolName, done.call.args, "started");
+            json response;
+            json request = {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "tools/call"},
+                            {"params", {{"name", toolName}, {"arguments", done.call.args}}}};
+            if (!mcpPost(endpoint, token, session, request, response, done.error, nullptr, protocol)) {
+                appendMcpAudit(serverName, toolName, done.call.args, "failed");
+                return done;
+            }
+            const json rpcResult = response.value("result", json::object());
+            const bool toolError = rpcResult.value("isError", false);
+            const json content = rpcResult.value("content", json::array());
+            if (content.is_array()) for (const auto& part : content) {
+                if (part.is_object() && part.value("type", std::string()) == "text") {
+                    if (!done.text.empty()) done.text += "\n";
+                    done.text += part.value("text", std::string());
+                }
+            }
+            if (done.text.empty() && rpcResult.contains("structuredContent")) done.text = rpcResult["structuredContent"].dump(2);
+            if (done.text.empty()) done.text = "The MCP tool returned no text content.";
+            if (toolError) done.error = done.text;
+            appendMcpAudit(serverName, toolName, done.call.args, toolError ? "tool-error" : "succeeded");
+            return done;
+        });
+}
+
+void AssistantPanel::finishExternalCalls() {
+    if (m_deferredExternalClaude) {
+        m_messages.push_back({{"role", "user"}, {"content", m_deferredClaudeResults}});
+        m_deferredClaudeResults = json::array();
+        m_deferredExternalClaude = false;
+    }
+    if (m_deferredExternalOllama) {
+        for (auto& message : m_deferredOllamaMessages) m_messages.push_back(std::move(message));
+        m_deferredOllamaMessages = json::array();
+        m_deferredExternalOllama = false;
+    }
+    if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
+    if (++m_rounds >= kMaxRounds) { m_lines.push_back({Line::Note, "That's a lot of steps; paused here. Say \"continue\" to keep going."}); return; }
+    requestNext();
+}
+
 void AssistantPanel::update() {
     m_mcp.update(m_editor);
     m_relay.update(m_editor, m_mcp);
+    if (m_externalPending.valid() && m_externalPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        ExternalCompletion done = m_externalPending.get();
+        const bool failed = !done.error.empty();
+        m_lines.push_back({failed ? Line::Error : Line::Tool,
+            done.call.name + (failed ? ": " + done.error : "")});
+        if (done.call.claude) {
+            json content = json::array({{{"type", "text"}, {"text", failed ? done.error : done.text}}});
+            json result = {{"type", "tool_result"}, {"tool_use_id", done.call.id}, {"content", content}};
+            if (failed) result["is_error"] = true;
+            m_deferredClaudeResults.push_back(std::move(result));
+        } else {
+            m_deferredOllamaMessages.push_back({{"role", "tool"}, {"name", done.call.name},
+                                                 {"content", failed ? done.error : done.text}});
+        }
+        startNextExternalCall();
+    }
     if (!m_pending.valid()) return;
     if (m_pending.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
     Reply r = m_pending.get();
@@ -463,15 +555,13 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
     for (const auto& b : j["content"]) {
         if (b.value("type", "") != "tool_use") continue;
         std::string name = b.value("name", "");
-        AiToolResult r;
         if (name.rfind("mcp__", 0) == 0) {
-            std::string externalError;
-            if (callExternalMcpTool(name, b.contains("input") && b["input"].is_object() ? b["input"] : json::object(), r.text, externalError))
-                r.error = false;
-            else { r.error = true; r.text = externalError; }
-        } else {
-            r = m_editor.runAiToolFrom("Fyxa", name, b.contains("input") && b["input"].is_object() ? b["input"] : json::object());
+            m_externalQueue.push_back({true, name, b.value("id", std::string()),
+                b.contains("input") && b["input"].is_object() ? b["input"] : json::object()});
+            continue;
         }
+        AiToolResult r = m_editor.runAiToolFrom("Fyxa", name,
+            b.contains("input") && b["input"].is_object() ? b["input"] : json::object());
         std::string shown = name;
         if (b.contains("input") && b["input"].contains("object") && b["input"]["object"].is_string())
             shown += " " + b["input"]["object"].get<std::string>();
@@ -483,6 +573,12 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
         json result = {{"type", "tool_result"}, {"tool_use_id", b.value("id", "")}, {"content", content}};
         if (r.error) result["is_error"] = true;
         results.push_back(result);
+    }
+    if (!m_externalQueue.empty()) {
+        m_deferredClaudeResults = std::move(results);
+        m_deferredExternalClaude = true;
+        startNextExternalCall();
+        return;
     }
     m_messages.push_back({{"role", "user"}, {"content", results}});
     if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
@@ -540,7 +636,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
 
 void AssistantPanel::render(bool* open) {
     if (!ImGui::Begin("Fyxa", open)) { ImGui::End(); return; }
-    const bool busy = m_pending.valid();
+    const bool busy = m_pending.valid() || m_externalPending.valid() || !m_externalQueue.empty() || m_deferredExternalClaude || m_deferredExternalOllama;
 
     if (ImGui::CollapsingHeader("Assistant settings", ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* providers[] = {"Ollama (local)", "Claude (Anthropic)"};
