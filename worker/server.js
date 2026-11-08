@@ -2545,8 +2545,43 @@ export class GbServerObject extends DurableObject {
         categories = [...new Set((response.match(/\bS(?:[1-9]|1[0-4])\b/g) || []))].slice(0, 14);
       }
     } catch (error) { scanner = 'llama-guard-3-8b-error'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
+    // Image uploads get a vision pass only after the operator has explicitly accepted Meta's
+    // model license and enabled FYXA_VISION_LICENSE_ACCEPTED. Until then they are routed for
+    // manual review instead of being silently treated as scanned.
+    if (op === 'upload' && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(String(args.kind || ''))) {
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
+      const ext = String(meta.ext || '').toLowerCase();
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+      const encoded = str(args, 'data');
+      if (encoded && encoded.length <= 600000) {
+        if (this.env.FYXA_VISION_LICENSE_ACCEPTED !== 'true') {
+          categories.push('VISION_NOT_ENABLED'); scanner += '+vision-license-required'; unsafe = true;
+        } else {
+          try {
+            const vision = await this.env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+              prompt: 'You are a platform safety reviewer. Inspect this user-uploaded image for clearly visible policy violations: sexual content or nudity, sexualized depictions of minors, graphic violence, hateful symbols, extremist propaganda, self-harm instructions, personal information, or obvious copyrighted/trademarked material uploaded to impersonate an official Guts&Bolts asset. Do not infer age or identity from appearance. Return only JSON: {"flag":true|false,"category":"short category","reason":"brief visual evidence"}. Flag only clear evidence; otherwise flag false.',
+              image: 'data:' + mime + ';base64,' + encoded, max_tokens: 160, temperature: 0,
+            });
+            const rawVision = vision && typeof vision.response === 'string' ? vision.response : '';
+            const parsedVision = JSON.parse(rawVision);
+            if (parsedVision && parsedVision.flag === true) {
+              const category = String(parsedVision.category || 'content').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 32);
+              categories.push('VISION_' + (category || 'REVIEW'));
+              scanner += '+llama-vision';
+              unsafe = true;
+            }
+          } catch (error) {
+            categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+vision-error'; unsafe = true;
+          }
+        }
+      } else {
+        categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+vision-input-unavailable'; unsafe = true;
+      }
+    }
     if (!unsafe) return;
-    const severity = categories.includes('S4') ? 'critical' : categories.some((x) => ['S10', 'S11', 'S12'].includes(x)) ? 'high'
+    categories = [...new Set(categories)].slice(0, 16);
+    const severity = categories.includes('S4') || categories.some((x) => /VISION_.*MINOR|VISION_.*CHILD/i.test(x)) ? 'critical'
+      : categories.some((x) => ['S10', 'S11', 'S12'].includes(x)) ? 'high'
       : categories.some((x) => ['S1', 'S2', 'S3', 'S7', 'S8', 'S9'].includes(x)) ? 'medium' : 'review';
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode([sourceType, sourceId, actor.id, content].join('\n')));
     const fingerprint = hexOf(new Uint8Array(digest));
