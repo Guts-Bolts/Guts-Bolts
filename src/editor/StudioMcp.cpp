@@ -2,6 +2,7 @@
 #include "Editor.h"
 #include "AiTools.h"
 #include "ExternalMcpProtocol.h"
+#include "StudioMcpAccess.h"
 #include "../online/Protocol.h"   // base64
 #include "../core/Log.h"
 #include "Version.h"
@@ -19,17 +20,6 @@ json rpcError(const json& id, int code, const std::string& message) {
     return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", code}, {"message", message}}}};
 }
 
-// The tools apps connected through gutsandbolts.net may use (the server has the same lists:
-// worker/mcp-policy.js). Read ones need studio.read; the rest studio.write. Anything else, like
-// publish_game or compare_scenes (it opens files by path), is refused here even if the server let it by.
-const char* kAppReadTools[] = {"get_engine_info", "get_game_tree", "find_objects", "get_object", "read_script", "get_output", "get_errors", "diagnose_object", "analyze_scene_performance", "analyze_script_dependencies", "validate_scene", "find_path", "get_runtime_state", "screenshot"};
-const char* kAppWriteTools[] = {"insert_object", "delete_object", "set_property", "find_and_change", "select", "create_script", "edit_script", "visual_script", "generate_level", "run_lua", "playtest", "multiplayer_test", "physics_replay", "lua_debugger", "create_physical_object", "spawn_explosion", "bake_navmesh", "walk_character_to", "script_history", "ai_activity", "checkpoint", "undo", "redo", "build", "terrain", "create_ui", "add_game_system", "set_atmosphere"};
-
-bool appMay(const std::string& tool, bool canChange) {
-    for (const char* t : kAppReadTools) if (tool == t) return true;
-    if (canChange) for (const char* t : kAppWriteTools) if (tool == t) return true;
-    return false;
-}
 } // namespace
 
 bool StudioMcp::start(int port, std::string& error) {
@@ -98,7 +88,7 @@ std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& any
                 json kept = json::array();
                 for (const auto& original : tools) {
                     const std::string toolName = original.value("name", std::string());
-                    if (!appMay(toolName, canChange)) continue;
+                    if (!StudioMcpAccess::appMay(toolName, canChange)) continue;
                     json exposed = original;
                     const std::string fingerprint = McpHttpProtocol::definitionFingerprint(
                         "connected-app:" + app, "https://gutsandbolts.net/mcp", original);
@@ -141,7 +131,7 @@ std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& any
         if (method == "tools/call") {
             std::string name = params.value("name", "");
             json args = params.value("arguments", json::object());
-            if (fromApp && !appMay(name, canChange))
+            if (fromApp && !StudioMcpAccess::appMay(name, canChange))
                 return rpcError(id, -32003, "\"" + name + "\" can't be used by " + app + ". Publishing and files stay in Studio, done by you.");
             AiToolResult r = editor.runAiToolFrom(fromApp ? "Connected app (" + app + ")" : std::string("AI app"), name,
                                                   args.is_object() ? args : json::object());
