@@ -116,11 +116,12 @@ struct ResolveState {
     ResolvedAddress address;
 };
 
-bool resolveHostCancellable(const std::string& host, int port, ResolvedAddress& address,
+bool resolveHostCancellable(const std::string& host, int port, int timeoutMs, ResolvedAddress& address,
                             std::string& error, const std::atomic_bool* cancel) {
 #ifdef __EMSCRIPTEN__
     (void)host;
     (void)port;
+    (void)timeoutMs;
     (void)address;
     (void)cancel;
     error = "This browser build can only connect using WebSocket URLs.";
@@ -167,13 +168,20 @@ bool resolveHostCancellable(const std::string& host, int port, ResolvedAddress& 
         return false;
     }
 
+    const auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 1));
     std::unique_lock lock(state->mutex);
     while (!state->done) {
         if (cancel && cancel->load()) {
             error = "Request cancelled.";
             return false;
         }
-        state->ready.wait_for(lock, std::chrono::milliseconds(25));
+        const auto left = deadline - Clock::now();
+        if (left <= Clock::duration::zero()) {
+            error = "DNS lookup timed out.";
+            return false;
+        }
+        state->ready.wait_for(lock, std::min(std::chrono::duration_cast<std::chrono::milliseconds>(left),
+                                             std::chrono::milliseconds(25)));
     }
     if (cancel && cancel->load()) {
         error = "Request cancelled.";
@@ -194,7 +202,7 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
     if (!initSockets()) { error = "Networking isn't available on this computer."; return -1; }
 
     ResolvedAddress resolved;
-    if (!resolveHostCancellable(host, port, resolved, error, cancel)) return -1;
+    if (!resolveHostCancellable(host, port, timeoutMs, resolved, error, cancel)) return -1;
     if (cancel && cancel->load()) { error = "Request cancelled."; return -1; }
 
     auto s = socket(resolved.address.ss_family, SOCK_STREAM, IPPROTO_TCP);
