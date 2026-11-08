@@ -139,7 +139,7 @@ bool resolveHostCancellable(const std::string& host, int port, int timeoutMs, Re
 
     auto state = std::make_shared<ResolveState>();
     try {
-        std::thread([state, host, port, &activeResolvers]() {
+        std::thread([state, host, port]() {
             addrinfo hints{};
             hints.ai_family = AF_INET;
             hints.ai_socktype = SOCK_STREAM;
