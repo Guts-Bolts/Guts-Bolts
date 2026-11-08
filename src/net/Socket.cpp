@@ -112,12 +112,20 @@ struct ResolveState {
     std::mutex mutex;
     std::condition_variable ready;
     bool done = false;
-    int result = EAI_FAIL;
+    int result = -1;
     ResolvedAddress address;
 };
 
 bool resolveHostCancellable(const std::string& host, int port, ResolvedAddress& address,
                             std::string& error, const std::atomic_bool* cancel) {
+#ifdef __EMSCRIPTEN__
+    (void)host;
+    (void)port;
+    (void)address;
+    (void)cancel;
+    error = "This browser build can only connect using WebSocket URLs.";
+    return false;
+#else
     static std::atomic<unsigned int> activeResolvers{0};
     constexpr unsigned int kMaxResolvers = 4;
     unsigned int active = activeResolvers.load();
@@ -177,6 +185,7 @@ bool resolveHostCancellable(const std::string& host, int port, ResolvedAddress& 
     }
     address = state->address;
     return true;
+#endif
 }
 
 intptr_t tcpConnect(const std::string& host, int port, std::string& error, int timeoutMs,
