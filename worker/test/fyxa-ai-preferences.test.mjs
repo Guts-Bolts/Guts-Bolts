@@ -201,3 +201,34 @@ test('account opt-in enrolls existing and future uploads without bypassing right
   assert.ok(approved.ok, approved.error);
   assert.equal(approved.eligibility.trainingEligible, true, 'inherit follows the account-wide opt-in after rights approval');
 });
+
+test('account deletion revokes training preferences and all retained content eligibility', () => {
+  const s = makeServer();
+  const owner = s.signUp('alice');
+  const asset = s.addGame(owner, 'Published game');
+  assert.ok(enableTraining(s, owner).ok);
+  const attested = s.call(owner, 'ai.content.eligibility.update', {
+    contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
+  });
+  assert.ok(attested.ok, attested.error);
+  const approved = s.call(s.staff, 'ai.content.review', {
+    contentId: asset.id, rightsStatus: 'approved', reason: 'Creator rights attestation reviewed',
+  });
+  assert.ok(approved.ok, approved.error);
+  assert.equal(approved.eligibility.trainingEligible, true);
+
+  const accountId = owner.id;
+  s.deleteAccount(owner);
+  s.flush();
+
+  const prefs = s.aiPreferencesFor(accountId);
+  assert.equal(prefs.trainingEnabled, false);
+  assert.equal(prefs.referenceEnabled, false);
+  assert.equal(prefs.consentMethod, 'account_deleted');
+  const row = s.aiContentRow(asset.id);
+  assert.equal(Number(row.training_eligible), 0);
+  assert.equal(Number(row.reference_eligible), 0);
+  assert.equal(Number(row.rights_attested), 0);
+  assert.equal(row.training_exclusion_reason, 'account_deleted');
+  assert.equal(s.aiEnabledAccounts.has(accountId), false);
+});
