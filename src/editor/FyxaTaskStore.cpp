@@ -6,6 +6,7 @@
 #include <fstream>
 #include <mutex>
 #include <system_error>
+#include <utility>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
