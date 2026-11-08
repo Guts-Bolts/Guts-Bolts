@@ -9,17 +9,30 @@
 #include <misc/cpp/imgui_stdlib.h>
 #include <chrono>
 #include <fstream>
-#include <thread>
 
 using nlohmann::json;
 
 namespace {
 constexpr int kMaxRounds = 30;
-const char* kModels[] = {"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5"};
-const char* kModelNames[] = {"Claude Opus 5.5 (best)", "Claude Sonnet 5.5 (faster)", "Claude Haiku 4.5 (fastest)"};
+const char* kClaudeModels[] = {"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5"};
+const char* kClaudeModelNames[] = {"Claude Opus 5.5 (best)", "Claude Sonnet 5.5 (faster)", "Claude Haiku 4.5 (fastest)"};
 
-// Where Studio lives, for the Claude Desktop set-up snippet.
 std::string exePath() { return Paths::sibling("GutsAndBolts").string(); }
+
+json ollamaTools() {
+    json tools = json::array();
+    for (const auto& tool : AiTools::list()) {
+        tools.push_back({
+            {"type", "function"},
+            {"function", {
+                {"name", tool.value("name", std::string())},
+                {"description", tool.value("description", std::string())},
+                {"parameters", tool.value("input_schema", json::object())}
+            }}
+        });
+    }
+    return tools;
+}
 } // namespace
 
 AssistantPanel::AssistantPanel(Editor& editor) : m_editor(editor) {
@@ -39,6 +52,10 @@ void AssistantPanel::load() {
     if (!j.is_object()) return;
     m_apiKey = j.value("apiKey", std::string());
     m_model = j.value("model", m_model);
+    m_provider = j.value("provider", m_provider);
+    m_ollamaHost = j.value("ollamaHost", m_ollamaHost);
+    m_ollamaPort = j.value("ollamaPort", m_ollamaPort);
+    m_ollamaModel = j.value("ollamaModel", m_ollamaModel);
     m_mcpWanted = j.value("mcp", false);
     m_mcpPort = j.value("mcpPort", (int)StudioMcp::kDefaultPort);
     m_appsWanted = j.value("connectedApps", false);
@@ -46,8 +63,9 @@ void AssistantPanel::load() {
 
 void AssistantPanel::save() const {
     std::ofstream f(Paths::file("assistant.json"));
-    f << json{{"apiKey", m_apiKey}, {"model", m_model}, {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort},
-              {"connectedApps", m_appsWanted}}.dump(2);
+    f << json{{"provider", m_provider}, {"apiKey", m_apiKey}, {"model", m_model},
+              {"ollamaHost", m_ollamaHost}, {"ollamaPort", m_ollamaPort}, {"ollamaModel", m_ollamaModel},
+              {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}, {"connectedApps", m_appsWanted}}.dump(2);
 }
 
 void AssistantPanel::update() {
@@ -68,62 +86,85 @@ void AssistantPanel::send(const std::string& text) {
 }
 
 void AssistantPanel::requestNext() {
-    // The guide and the tool list are the same every time: let the API cache them
-    // (much cheaper and faster from the second message on).
-    json tools = AiTools::list();
-    tools.back()["cache_control"] = {{"type", "ephemeral"}};
-    json body = {
-        {"model", m_model},
-        {"max_tokens", 16000},
-        {"system", json::array({{{"type", "text"}, {"text", AiTools::guide()}, {"cache_control", {{"type", "ephemeral"}}}}})},
-        {"tools", tools},
-        {"messages", m_messages},
-    };
-    std::string headers = "x-api-key: " + m_apiKey + "\r\nanthropic-version: 2023-06-01\r\n";
-    // If a request is declined, the API retries it on another model instead of just stopping.
-    if (m_model != "claude-haiku-4-5") {
-        body["fallbacks"] = "default";
-        headers += "anthropic-beta: server-side-fallback-2026-07-01\r\n";
-    }
-    std::string payload = body.dump();
-    m_pending = std::async(std::launch::async, [payload, headers]() {
+    const std::string payload = [&]() {
+        if (m_provider == "ollama") {
+            json messages = json::array({{{"role", "system"}, {"content", AiTools::guide()}}});
+            for (const auto& message : m_messages) messages.push_back(message);
+            return json{
+                {"model", m_ollamaModel},
+                {"stream", false},
+                {"messages", messages},
+                {"tools", ollamaTools()}
+            }.dump();
+        }
+
+        json tools = AiTools::list();
+        tools.back()["cache_control"] = {{"type", "ephemeral"}};
+        json body = {
+            {"model", m_model},
+            {"max_tokens", 16000},
+            {"system", json::array({{{"type", "text"}, {"text", AiTools::guide()}, {"cache_control", {{"type", "ephemeral"}}}}})},
+            {"tools", tools},
+            {"messages", m_messages},
+        };
+        std::string headers = "x-api-key: " + m_apiKey + "\r\nanthropic-version: 2023-06-01\r\n";
+        if (m_model != "claude-haiku-4-5") {
+            body["fallbacks"] = "default";
+            headers += "anthropic-beta: server-side-fallback-2026-07-01\r\n";
+        }
+        return body.dump();
+    }();
+
+    const bool ollama = m_provider == "ollama";
+    const std::string host = ollama ? m_ollamaHost : "wss://api.anthropic.com";
+    const int port = ollama ? m_ollamaPort : 443;
+    const std::string path = ollama ? "/api/chat" : "/v1/messages";
+    const std::string headers = ollama ? std::string() :
+        "x-api-key: " + m_apiKey + "\r\nanthropic-version: 2023-06-01\r\n" +
+        (m_model != "claude-haiku-4-5" ? "anthropic-beta: server-side-fallback-2026-07-01\r\n" : "");
+    m_pending = std::async(std::launch::async, [payload, host, port, path, headers]() {
         Reply r;
-        Net::httpPost("wss://api.anthropic.com", 443, "/v1/messages", payload, r.body, r.error, 300000, headers, &r.status);
+        Net::httpPost(host, port, path, payload, r.body, r.error, 300000, headers, &r.status);
         return r;
     });
     m_scrollDown = true;
 }
 
 void AssistantPanel::handleReply(int status, const std::string& body, const std::string& error) {
+    if (m_provider == "ollama") handleOllamaReply(status, body, error);
+    else handleClaudeReply(status, body, error);
+}
+
+void AssistantPanel::handleClaudeReply(int status, const std::string& body, const std::string& error) {
     m_scrollDown = true;
     json j = json::parse(body, nullptr, false);
     if (status != 200 || !j.is_object() || !j.contains("content")) {
         std::string why = j.is_object() && j.contains("error") ? j["error"].value("message", std::string()) : error;
-        if (status == 401) why = "Your API key wasn't accepted. Check it in the settings above.";
+        if (status == 401) why = "Your Anthropic API key wasn't accepted. Check it in Fyxa settings.";
         m_lines.push_back({Line::Error, "Couldn't reach Claude" + (status ? " (" + std::to_string(status) + ")" : std::string()) +
                                             (why.empty() ? "." : ": " + why)});
-        // Take back the message it didn't answer, so the conversation stays valid.
         while (!m_messages.empty() && m_messages.back().value("role", "") == "user") m_messages.erase(m_messages.size() - 1);
         return;
     }
-    // Keep everything it said, exactly (thinking blocks included), for the next turn.
+
     m_messages.push_back({{"role", "assistant"}, {"content", j["content"]}});
     for (const auto& b : j["content"])
-        if (b.value("type", "") == "text" && !b.value("text", "").empty()) m_lines.push_back({Line::Claude, b["text"].get<std::string>()});
+        if (b.value("type", "") == "text" && !b.value("text", "").empty())
+            m_lines.push_back({Line::Assistant, b["text"].get<std::string>()});
 
     const std::string stop = j.value("stop_reason", "");
-    if (stop == "refusal") { m_lines.push_back({Line::Note, "Claude declined that request."}); return; }
+    if (stop == "refusal") { m_lines.push_back({Line::Note, "The assistant declined that request."}); return; }
     if (stop == "max_tokens") { m_lines.push_back({Line::Note, "That answer hit the length limit. Say \"continue\" for more."}); return; }
     if (stop != "tool_use") return;
 
-    // Run every tool it asked for, then send all the results back together.
     json results = json::array();
     for (const auto& b : j["content"]) {
         if (b.value("type", "") != "tool_use") continue;
         std::string name = b.value("name", "");
-        AiToolResult r = m_editor.runAiToolFrom("Assistant", name, b.contains("input") && b["input"].is_object() ? b["input"] : json::object());
+        AiToolResult r = m_editor.runAiToolFrom("Fyxa", name, b.contains("input") && b["input"].is_object() ? b["input"] : json::object());
         std::string shown = name;
-        if (b.contains("input") && b["input"].contains("object")) shown += " " + b["input"]["object"].get<std::string>();
+        if (b.contains("input") && b["input"].contains("object") && b["input"]["object"].is_string())
+            shown += " " + b["input"]["object"].get<std::string>();
         m_lines.push_back({r.error ? Line::Error : Line::Tool, shown + (r.error ? ": " + r.text : "")});
         json content = json::array({{{"type", "text"}, {"text", r.text}}});
         if (!r.png.empty())
@@ -139,14 +180,80 @@ void AssistantPanel::handleReply(int status, const std::string& body, const std:
     requestNext();
 }
 
+void AssistantPanel::handleOllamaReply(int status, const std::string& body, const std::string& error) {
+    m_scrollDown = true;
+    json j = json::parse(body, nullptr, false);
+    if (status != 200 || !j.is_object() || !j.contains("message") || !j["message"].is_object()) {
+        std::string why = j.is_object() ? j.value("error", error) : error;
+        m_lines.push_back({Line::Error, "Couldn't reach the Ollama server" +
+            (status ? " (" + std::to_string(status) + ")" : std::string()) + (why.empty() ? "." : ": " + why)});
+        while (!m_messages.empty() && m_messages.back().value("role", "") == "user") m_messages.erase(m_messages.size() - 1);
+        return;
+    }
+
+    const json message = j["message"];
+    m_messages.push_back(message);
+    const std::string answer = message.value("content", std::string());
+    if (!answer.empty()) m_lines.push_back({Line::Assistant, answer});
+
+    const json calls = message.value("tool_calls", json::array());
+    if (!calls.is_array() || calls.empty()) return;
+
+    for (const auto& call : calls) {
+        const json fn = call.value("function", json::object());
+        const std::string name = fn.value("name", std::string());
+        const json args = fn.value("arguments", json::object());
+        if (name.empty()) continue;
+        AiToolResult result = m_editor.runAiToolFrom("Fyxa", name, args.is_object() ? args : json::object());
+        std::string shown = name;
+        if (args.contains("object") && args["object"].is_string()) shown += " " + args["object"].get<std::string>();
+        m_lines.push_back({result.error ? Line::Error : Line::Tool, shown + (result.error ? ": " + result.text : "")});
+        json toolMessage = {{"role", "tool"}, {"name", name}, {"content", result.text}};
+        if (!result.png.empty()) toolMessage["images"] = json::array({Online::base64Encode(result.png)});
+        m_messages.push_back(std::move(toolMessage));
+    }
+
+    if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
+    if (++m_rounds >= kMaxRounds) { m_lines.push_back({Line::Note, "That's a lot of steps; paused here. Say \"continue\" to keep going."}); return; }
+    requestNext();
+}
+
 void AssistantPanel::render(bool* open) {
-    if (!ImGui::Begin("Assistant", open)) { ImGui::End(); return; }
+    if (!ImGui::Begin("Fyxa", open)) { ImGui::End(); return; }
     const bool busy = m_pending.valid();
 
-    // --- Connect AI apps (MCP) ---
-    if (ImGui::CollapsingHeader("Connect AI apps (MCP)")) {
-        ImGui::TextWrapped("Let AI apps on this computer (Claude Desktop, Claude Code and other MCP tools) look at and "
-                           "build your game. Only programs on this computer can connect.");
+    if (ImGui::CollapsingHeader("Assistant settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const char* providers[] = {"Ollama (local)", "Claude (Anthropic)"};
+        int provider = m_provider == "claude" ? 1 : 0;
+        if (ImGui::Combo("AI provider", &provider, providers, 2)) {
+            m_provider = provider == 0 ? "ollama" : "claude";
+            m_messages = json::array();
+            m_lines.clear();
+            save();
+        }
+
+        if (m_provider == "ollama") {
+            ImGui::TextWrapped("Fyxa connects directly to an Ollama server. The default address is local to this computer; install and start Ollama, then pull a model that supports tool calling.");
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputTextWithHint("Server host", "127.0.0.1", &m_ollamaHost)) save();
+            ImGui::SetNextItemWidth(120);
+            if (ImGui::InputInt("Server port", &m_ollamaPort)) { m_ollamaPort = std::clamp(m_ollamaPort, 1, 65535); save(); }
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputTextWithHint("Model", "qwen3:8b", &m_ollamaModel)) save();
+            ImGui::TextDisabled("API: http://%s:%d/api/chat", m_ollamaHost.c_str(), m_ollamaPort);
+        } else {
+            ImGui::TextWrapped("Use your own Anthropic API key. It is stored in this computer's local assistant settings.");
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputTextWithHint("API key", "Anthropic API key (sk-ant-...)", &m_apiKey, ImGuiInputTextFlags_Password)) save();
+            int mi = 1;
+            for (int i = 0; i < 3; ++i) if (m_model == kClaudeModels[i]) mi = i;
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::Combo("Claude model", &mi, kClaudeModelNames, 3)) { m_model = kClaudeModels[mi]; save(); }
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Connect AI apps to Studio (MCP)")) {
+        ImGui::TextWrapped("This exposes Studio's tools to other AI apps on this computer. It is an MCP server, not an outbound MCP client.");
         bool on = m_mcp.running();
         if (ImGui::Checkbox("Let AI apps use Studio (MCP)", &on)) {
             m_mcpError.clear();
@@ -174,11 +281,8 @@ void AssistantPanel::render(bool* open) {
         }
     }
 
-    // --- Connected apps (through gutsandbolts.net: no port opened here) ---
     if (ImGui::CollapsingHeader("Connected apps (online)")) {
-        ImGui::TextWrapped("Let apps you connected to your Guts&Bolts account (like Lyreto) use Studio's AI tools while Studio is "
-                           "open. They can only do what you allowed when you connected them, and they can never publish. "
-                           "Disconnect them on gutsandbolts.net in Settings > Connected apps.");
+        ImGui::TextWrapped("Let apps connected to your Guts&Bolts account use Studio's tools while Studio is open. They remain subject to the permissions granted to each app.");
         if (ImGui::Checkbox("Allow connected apps to use AI tools", &m_appsWanted)) {
             m_relay.setEnabled(m_appsWanted);
             save();
@@ -196,32 +300,18 @@ void AssistantPanel::render(bool* open) {
         }
     }
 
-    // --- Chat ---
-    if (ImGui::CollapsingHeader("Chat settings", m_apiKey.empty() ? ImGuiTreeNodeFlags_DefaultOpen : 0)) {
-        ImGui::TextWrapped("The Assistant uses Claude with your own Anthropic API key (from console.anthropic.com). "
-                           "It's kept on this computer only.");
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::InputTextWithHint("##key", "Anthropic API key (sk-ant-...)", &m_apiKey, ImGuiInputTextFlags_Password)) save();
-        int mi = 0;
-        for (int i = 0; i < 3; ++i) if (m_model == kModels[i]) mi = i;
-        ImGui::SetNextItemWidth(-1);
-        if (ImGui::Combo("##model", &mi, kModelNames, 3)) { m_model = kModels[mi]; save(); }
-    }
-
     const float footer = ImGui::GetFrameHeightWithSpacing() * 3.2f;
     ImGui::BeginChild("##chat", ImVec2(0, -footer), ImGuiChildFlags_Borders);
     if (m_lines.empty())
-        ImGui::TextWrapped("Ask for anything: \"make an obby with 10 jumps and a finish line\", \"why doesn't my door "
-                           "script work?\", \"add a zombie that chases players\". The Assistant can build, write scripts, "
-                           "playtest and look at the result. Ctrl+Z undoes anything it does.");
-    for (const Line& l : m_lines) {
+        ImGui::TextWrapped("I'm Fyxa, your Guts&Bolts assistant. Ask me to build a level, write scripts, debug a game, or explain the engine. I can use Studio's native tools, and changes remain available in AI Activity for review and undo.");
+    for (const Line& line : m_lines) {
         ImGui::PushTextWrapPos(0.0f);
-        switch (l.kind) {
-            case Line::You:    ImGui::TextColored(ImVec4(0.55f, 0.8f, 1, 1), "You:"); ImGui::TextUnformatted(l.text.c_str()); break;
-            case Line::Claude: ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.45f, 1), "Assistant:"); ImGui::TextUnformatted(l.text.c_str()); break;
-            case Line::Tool:   ImGui::TextDisabled("  > %s", l.text.c_str()); break;
-            case Line::Note:   ImGui::TextColored(ImVec4(1, 0.85f, 0.4f, 1), "%s", l.text.c_str()); break;
-            case Line::Error:  ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", l.text.c_str()); break;
+        switch (line.kind) {
+            case Line::You:       ImGui::TextColored(ImVec4(0.55f, 0.8f, 1, 1), "You:"); ImGui::TextUnformatted(line.text.c_str()); break;
+            case Line::Assistant: ImGui::TextColored(ImVec4(0.95f, 0.7f, 0.45f, 1), "Fyxa:"); ImGui::TextUnformatted(line.text.c_str()); break;
+            case Line::Tool:      ImGui::TextDisabled("  > %s", line.text.c_str()); break;
+            case Line::Note:      ImGui::TextColored(ImVec4(1, 0.85f, 0.4f, 1), "%s", line.text.c_str()); break;
+            case Line::Error:     ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", line.text.c_str()); break;
         }
         ImGui::PopTextWrapPos();
         ImGui::Spacing();
@@ -230,7 +320,9 @@ void AssistantPanel::render(bool* open) {
     if (m_scrollDown) { ImGui::SetScrollHereY(1.0f); m_scrollDown = false; }
     ImGui::EndChild();
 
-    ImGui::BeginDisabled(m_apiKey.empty());
+    const bool configured = m_provider == "ollama" ? (!m_ollamaHost.empty() && !m_ollamaModel.empty() && m_ollamaPort > 0)
+                                                    : !m_apiKey.empty();
+    ImGui::BeginDisabled(!configured);
     ImGui::SetNextItemWidth(-1);
     bool enter = ImGui::InputTextMultiline("##ask", &m_input, ImVec2(-1, ImGui::GetFrameHeight() * 1.9f),
                                            ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue);
@@ -245,7 +337,8 @@ void AssistantPanel::render(bool* open) {
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button(m_editor.aiHasChanges() ? "Review its changes" : "AI Activity")) m_editor.showAiActivity();
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everything the AI did and changed. Undo all of it in one click.");
-    if (m_apiKey.empty()) ImGui::TextDisabled("Add your API key in Chat settings to start.");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everything Fyxa did and changed. Undo all of it in one click.");
+    if (!configured) ImGui::TextDisabled(m_provider == "ollama" ? "Configure the Ollama server and model in Assistant settings." :
+                                                                  "Add your Anthropic API key in Assistant settings.");
     ImGui::End();
 }
