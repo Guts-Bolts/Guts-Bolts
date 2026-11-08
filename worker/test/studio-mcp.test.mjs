@@ -111,10 +111,10 @@ test('Studio\'s own lists match: every tool exists, read tools are Studio\'s rea
   const flags = new Map([...tools.matchAll(/\{"([a-z_]+)", "[^"]*", "[A-Z_ ]+", (true|false), (true|false)/g)].map((m) => [m[1], m[2] === 'true']));
   for (const t of READ_TOOLS) assert.equal(flags.get(t), true, t + ' should be a read-only Studio tool');
   for (const t of WRITE_TOOLS) assert.equal(flags.get(t), false, t + ' should be a Studio tool that changes things');
-  const studio = readFileSync(new URL('../../src/editor/StudioMcp.cpp', import.meta.url), 'utf8');
-  const list = (name) => [...(new RegExp(name + '\\[\\] = \\{([^}]*)\\}').exec(studio) || ['', ''])[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(list('kAppReadTools'), READ_TOOLS);
-  assert.deepEqual(list('kAppWriteTools'), WRITE_TOOLS);
+  const policy = readFileSync(new URL('../../src/editor/StudioMcpAccess.h', import.meta.url), 'utf8');
+  const list = (name) => [...(new RegExp(name + '\\\\s*\\\\[\\\\]\\\\s*=\\\\s*\\\\{([^}]*)\\\\}').exec(policy) || ['', ''])[1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(list('readTools'), READ_TOOLS);
+  assert.deepEqual(list('writeTools'), WRITE_TOOLS);
 });
 
 test('Studio offline: a clear error, but initialize still works', async () => {
