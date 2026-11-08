@@ -877,15 +877,22 @@ void AssistantPanel::load() {
             server.oauthTokenEndpoint = item.value("oauthTokenEndpoint", std::string());
             server.oauthResource = item.value("oauthResource", std::string());
             server.oauthIssuer = item.value("oauthIssuer", std::string());
-            std::string refreshError;
-            CredentialStore::retrieve(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, refreshError);
+            const bool hasOAuthBinding = !server.oauthIssuer.empty() && !server.oauthResource.empty() &&
+                !server.oauthClientId.empty();
+            const std::string accessCredentialKey = hasOAuthBinding
+                ? McpOAuth::credentialBindingKey(server.name, server.oauthIssuer, server.oauthResource, server.oauthClientId)
+                : server.credentialKey;
             if (!server.token.empty()) {
                 std::string credentialError;
-                if (CredentialStore::store(server.credentialKey, server.token, credentialError)) migrateCredentials = true;
+                if (CredentialStore::store(accessCredentialKey, server.token, credentialError)) migrateCredentials = true;
                 else m_credentialStatus = credentialError;
             } else {
                 std::string credentialError;
-                CredentialStore::retrieve(server.credentialKey, server.token, credentialError);
+                CredentialStore::retrieve(accessCredentialKey, server.token, credentialError);
+            }
+            if (hasOAuthBinding) {
+                std::string refreshError;
+                CredentialStore::retrieve(accessCredentialKey + "-refresh", server.oauthRefreshToken, refreshError);
             }
             server.enabled = item.value("enabled", true);
             server.protocolVersion = item.value("protocolVersion", std::string("2026-07-28"));
@@ -1007,13 +1014,16 @@ void AssistantPanel::refreshMcpServers() {
                                          server.oauthRefreshToken, refreshedAccess, refreshedRefresh, refreshError)) {
                     server.token = std::move(refreshedAccess);
                     server.oauthRefreshToken = std::move(refreshedRefresh);
+                    const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
+                        server.name, server.oauthIssuer, server.oauthResource, server.oauthClientId);
                     std::string vaultError;
-                    if (!CredentialStore::store(server.credentialKey, server.token, vaultError))
+                    if (!CredentialStore::store(oauthCredentialKey, server.token, vaultError))
                         result.status = server.name + ": refreshed access token is session-only; " + vaultError;
                     vaultError.clear();
-                    if (!server.oauthRefreshToken.empty() &&
-                        !CredentialStore::store(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, vaultError))
-                        result.status = server.name + ": refreshed token could not be persisted; " + vaultError;
+                    if (!server.oauthRefreshToken.empty()) {
+                        if (!CredentialStore::store(oauthCredentialKey + "-refresh", server.oauthRefreshToken, vaultError))
+                            result.status = server.name + ": refreshed token could not be persisted; " + vaultError;
+                    } else CredentialStore::erase(oauthCredentialKey + "-refresh", vaultError);
                     response = json::object();
                     error.clear();
                     discoveryStatus = 0;
@@ -1084,13 +1094,16 @@ void AssistantPanel::refreshMcpServers() {
                     }
                     server.token = std::move(refreshedAccess);
                     server.oauthRefreshToken = std::move(refreshedRefresh);
+                    const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
+                        server.name, server.oauthIssuer, server.oauthResource, server.oauthClientId);
                     std::string vaultError;
-                    if (!CredentialStore::store(server.credentialKey, server.token, vaultError))
+                    if (!CredentialStore::store(oauthCredentialKey, server.token, vaultError))
                         result.status = server.name + ": refreshed access token is session-only; " + vaultError;
                     vaultError.clear();
-                    if (!server.oauthRefreshToken.empty() &&
-                        !CredentialStore::store(server.credentialKey + "-oauth-refresh", server.oauthRefreshToken, vaultError))
-                        result.status = server.name + ": refreshed token could not be persisted; " + vaultError;
+                    if (!server.oauthRefreshToken.empty()) {
+                        if (!CredentialStore::store(oauthCredentialKey + "-refresh", server.oauthRefreshToken, vaultError))
+                            result.status = server.name + ": refreshed token could not be persisted; " + vaultError;
+                    } else CredentialStore::erase(oauthCredentialKey + "-refresh", vaultError);
                     response = json::object();
                     error.clear();
                     initializedOk = mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "");
@@ -1338,15 +1351,17 @@ void AssistantPanel::update() {
             server->oauthClientId = std::move(authorized.clientId);
             server->oauthResource = std::move(authorized.resource);
             server->oauthIssuer = authorized.issuer;
+            const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
+                server->name, server->oauthIssuer, server->oauthResource, server->oauthClientId);
             std::string credentialError;
-            if (!CredentialStore::store(server->credentialKey, server->token, credentialError))
+            if (!CredentialStore::store(oauthCredentialKey, server->token, credentialError))
                 m_credentialStatus = credentialError + " The access token remains in memory for this session.";
             if (!server->oauthRefreshToken.empty()) {
                 credentialError.clear();
-                if (!CredentialStore::store(server->credentialKey + "-oauth-refresh", server->oauthRefreshToken, credentialError))
+                if (!CredentialStore::store(oauthCredentialKey + "-refresh", server->oauthRefreshToken, credentialError))
                     m_credentialStatus = credentialError + " The refresh token remains in memory for this session.";
             } else {
-                CredentialStore::erase(server->credentialKey + "-oauth-refresh", credentialError);
+                CredentialStore::erase(oauthCredentialKey + "-refresh", credentialError);
             }
             m_mcpStatus = authorized.serverName + " authorized with " + authorized.issuer + ".";
             save();
@@ -1370,15 +1385,17 @@ void AssistantPanel::update() {
             if (refreshed != m_externalMcp.end()) {
                 refreshed->token = std::move(done.refreshedAccessToken);
                 refreshed->oauthRefreshToken = std::move(done.refreshedRefreshToken);
+                const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
+                    refreshed->name, refreshed->oauthIssuer, refreshed->oauthResource, refreshed->oauthClientId);
                 std::string vaultError;
-                if (!CredentialStore::store(refreshed->credentialKey, refreshed->token, vaultError))
+                if (!CredentialStore::store(oauthCredentialKey, refreshed->token, vaultError))
                     m_credentialStatus = vaultError + " The refreshed access token remains in memory for this session.";
                 vaultError.clear();
                 if (!refreshed->oauthRefreshToken.empty()) {
-                    if (!CredentialStore::store(refreshed->credentialKey + "-oauth-refresh", refreshed->oauthRefreshToken, vaultError))
+                    if (!CredentialStore::store(oauthCredentialKey + "-refresh", refreshed->oauthRefreshToken, vaultError))
                         m_credentialStatus = vaultError + " The refreshed token remains in memory for this session.";
                 } else {
-                    CredentialStore::erase(refreshed->credentialKey + "-oauth-refresh", vaultError);
+                    CredentialStore::erase(oauthCredentialKey + "-refresh", vaultError);
                 }
                 save();
             }
