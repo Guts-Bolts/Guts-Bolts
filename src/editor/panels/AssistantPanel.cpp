@@ -451,8 +451,8 @@ struct McpOAuthCompletionData {
     std::string accessToken, refreshToken, issuer, tokenEndpoint, resource, clientId, error;
 };
 
-McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std::string& serverUrl,
-                                       const std::string& configuredClientId) {
+McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::string& configuredClientId,
+                                       const std::atomic_bool& cancel) {
     McpOAuthCompletionData result;
     McpEndpoint endpoint;
     if (!parseMcpEndpoint(serverUrl, endpoint, result.error)) return result;
@@ -467,10 +467,19 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
     std::string challenge = responseHeader(responseHeaders, "WWW-Authenticate");
     McpOAuthMetadata metadata;
     if (!discoverMcpOAuth(resource, challenge, metadata, result.error)) return result;
+    if (cancel.load()) { result.error = "OAuth authorization was cancelled."; return result; }
     result.issuer = metadata.issuer;
     result.tokenEndpoint = metadata.tokenEndpoint;
     result.resource = metadata.resource;
 
+    if (authorizationMetadata.contains("code_challenge_methods_supported") &&
+        authorizationMetadata["code_challenge_methods_supported"].is_array() &&
+        std::find(authorizationMetadata["code_challenge_methods_supported"].begin(),
+                  authorizationMetadata["code_challenge_methods_supported"].end(), json("S256")) ==
+                  authorizationMetadata["code_challenge_methods_supported"].end()) {
+        result.error = "The authorization server does not advertise PKCE S256 support.";
+        return result;
+    }
     McpOAuth::Pkce pkce;
     if (!McpOAuth::createPkce(pkce)) {
         result.error = "A cryptographically secure random source is unavailable; OAuth was not started.";
@@ -531,8 +540,14 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
             result.error = "OAuth client registration returned no client_id.";
             return result;
         }
+        if (registrationResponse.contains("token_endpoint_auth_method") &&
+            registrationResponse["token_endpoint_auth_method"] != "none") {
+            result.error = "The authorization server registered a client authentication method that Fyxa cannot safely use.";
+            return result;
+        }
         clientId = registrationResponse["client_id"].get<std::string>();
     }
+    if (cancel.load()) { result.error = "OAuth authorization was cancelled."; return result; }
 
     std::vector<std::pair<std::string, std::string>> authorizationParameters = {
         {"response_type", "code"}, {"client_id", clientId}, {"redirect_uri", redirectUri},
@@ -542,6 +557,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
     if (!metadata.scope.empty()) authorizationParameters.emplace_back("scope", metadata.scope);
     const std::string authorizationUrl = McpOAuth::appendQuery(metadata.authorizationEndpoint, authorizationParameters);
     std::string browserError;
+    if (cancel.load()) { result.error = "OAuth authorization was cancelled."; return result; }
     if (!Net::openUrl(authorizationUrl, browserError)) {
         result.error = browserError;
         return result;
@@ -550,7 +566,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
     std::map<std::string, std::string> callback;
     bool received = false;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(5);
-    while (std::chrono::steady_clock::now() < deadline) {
+    while (std::chrono::steady_clock::now() < deadline && !cancel.load()) {
         callbackServer.poll();
         Net::HttpServer::Request request{};
         while (callbackServer.next(request)) {
@@ -574,7 +590,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
     }
     callbackServer.close();
     if (!received) {
-        result.error = "OAuth authorization timed out or the browser did not return to Fyxa.";
+        result.error = cancel.load() ? "OAuth authorization was cancelled." : "OAuth authorization timed out or the browser did not return to Fyxa.";
         return result;
     }
     if (!callback.contains("state") || callback["state"] != pkce.state) {
@@ -598,6 +614,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverName, const std:
         return result;
     }
 
+    if (cancel.load()) { result.error = "OAuth authorization was cancelled."; return result; }
     McpOAuth::HttpsUrl tokenUrl;
     if (!McpOAuth::parseHttpsUrl(metadata.tokenEndpoint, tokenUrl)) {
         result.error = "The OAuth token endpoint must be HTTPS.";
@@ -704,6 +721,7 @@ AssistantPanel::~AssistantPanel() {
     if (m_pending.valid()) m_pending.wait();
     if (m_externalPending.valid()) m_externalPending.wait();
     if (m_mcpRefreshPending.valid()) m_mcpRefreshPending.wait();
+    if (m_oauthCancel) m_oauthCancel->store(true);
     if (m_oauthPending.valid()) m_oauthPending.wait();
 }
 
@@ -825,9 +843,11 @@ void AssistantPanel::authorizeMcpServer(const std::string& name) {
     const std::string serverUrl = server->url;
     const std::string clientId = server->oauthClientId;
     m_oauthServerName = name;
+    m_oauthCancel = std::make_shared<std::atomic_bool>(false);
+    const auto cancel = m_oauthCancel;
     m_mcpStatus = "Discovering protected-resource metadata and starting OAuth authorization...";
-    m_oauthPending = std::async(std::launch::async, [name, serverUrl, clientId]() {
-        const McpOAuthCompletionData completed = performMcpOAuth(name, serverUrl, clientId);
+    m_oauthPending = std::async(std::launch::async, [name, serverUrl, clientId, cancel]() {
+        const McpOAuthCompletionData completed = performMcpOAuth(serverUrl, clientId, *cancel);
         return McpOAuthResult{name, completed.accessToken, completed.refreshToken, completed.issuer, completed.tokenEndpoint, completed.resource, completed.clientId, completed.error};
     });
 }
@@ -1154,6 +1174,7 @@ void AssistantPanel::update() {
             refreshMcpServers();
         }
         m_oauthServerName.clear();
+        m_oauthCancel.reset();
     }
     m_relay.update(m_editor, m_mcp);
     if (m_mcpRefreshPending.valid() && m_mcpRefreshPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
