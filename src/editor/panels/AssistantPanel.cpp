@@ -46,6 +46,15 @@ json ollamaTools(const json& external = json::array()) {
     return tools;
 }
 
+std::string mcpServerKey(std::string value) {
+    for (char& ch : value) if (!std::isalnum((unsigned char)ch)) ch = '-';
+    return value;
+}
+bool validMcpToolName(const std::string& name) {
+    if (name.empty() || name.size() > 128) return false;
+    for (unsigned char ch : name) if (!(std::isalnum(ch) || ch == '_' || ch == '-')) return false;
+    return true;
+}
 struct McpEndpoint { std::string host, path; int port = 443; bool tls = true; };
 bool parseMcpEndpoint(const std::string& url, McpEndpoint& out, std::string& error) {
     const bool https = url.rfind("https://", 0) == 0;
@@ -178,8 +187,12 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
         error = "The MCP server returned a response with the wrong JSON-RPC request ID.";
         return false;
     }
-    if (response.contains("error")) { error = response["error"].value("message", "The MCP server returned an error."); return false; }
-    if (request.contains("id") && !response.contains("result")) {
+    if (response.contains("error")) {
+        error = response["error"].is_object() ? response["error"].value("message", "The MCP server returned an error.")
+                                               : "The MCP server returned a malformed JSON-RPC error.";
+        return false;
+    }
+    if (request.contains("id") && (!response.contains("result") || !response["result"].is_object())) {
         error = "The MCP server response did not contain a JSON-RPC result.";
         return false;
     }
@@ -264,14 +277,13 @@ json AssistantPanel::externalMcpTools() const {
     json result = json::array();
     for (const auto& server : m_externalMcp) {
         if (!server.enabled || !server.tools.is_array()) continue;
-        std::string prefix = server.name;
-        for (char& ch : prefix) if (!std::isalnum((unsigned char)ch)) ch = '_';
+        const std::string prefix = mcpServerKey(server.name);
         for (const auto& tool : server.tools) {
             if (!tool.is_object()) continue;
             const std::string name = tool.value("name", std::string());
-            if (name.empty()) continue;
+            if (!validMcpToolName(name) || tool.dump().size() > 65536) continue;
             json schema = tool.value("inputSchema", json::object());
-            if (!schema.is_object()) schema = json::object();
+            if (!schema.is_object()) continue;
             result.push_back({{"qualifiedName", "mcp__" + prefix + "__" + name},
                               {"description", "[" + server.name + "] " + tool.value("description", std::string("External MCP tool"))},
                               {"inputSchema", schema}});
@@ -291,7 +303,9 @@ void AssistantPanel::refreshMcpServers() {
             if (!server.enabled) { server.tools = json::array(); server.sessionId.clear(); continue; }
             McpEndpoint endpoint;
             std::string error;
-            if (!parseMcpEndpoint(server.url, endpoint, error)) { result.status = server.name + ": " + error; continue; }
+            if (!parseMcpEndpoint(server.url, endpoint, error)) {
+                result.status = server.name + ": " + error; server.tools = json::array(); continue;
+            }
             json response;
             std::string newSession;
             json initialize = {{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"},
@@ -326,7 +340,7 @@ void AssistantPanel::refreshMcpServers() {
                 if (pageTools.is_array()) for (const auto& tool : pageTools) {
                     if (server.tools.size() >= 512) { result.status = server.name + ": tool limit (512) reached."; break; }
                     if (tool.is_object() && tool.contains("name") && tool["name"].is_string() &&
-                        tool["name"].get<std::string>().size() <= 128 &&
+                        validMcpToolName(tool["name"].get<std::string>()) && tool.dump().size() <= 65536 &&
                         tool.value("inputSchema", json::object()).is_object()) server.tools.push_back(tool);
                 }
                 cursor = response.value("result", json::object()).value("nextCursor", std::string());
@@ -358,8 +372,7 @@ void AssistantPanel::startNextExternalCall() {
     }
     std::string serverName, url, token, session, protocol;
     for (const auto& server : m_externalMcp) {
-        std::string key = server.name;
-        for (char& ch : key) if (!std::isalnum((unsigned char)ch)) ch = '_';
+        const std::string key = mcpServerKey(server.name);
         if (key == serverKey && server.enabled) {
             serverName = server.name; url = server.url; token = server.token;
             session = server.sessionId; protocol = server.protocolVersion;
@@ -679,11 +692,9 @@ void AssistantPanel::render(bool* open) {
                 m_mcpStatus = "Server name, endpoint, or credential exceeds the supported length.";
             } else {
             bool duplicate = false;
-            std::string newKey = m_newMcpName;
-            for (char& ch : newKey) if (!std::isalnum((unsigned char)ch)) ch = '_';
+            const std::string newKey = mcpServerKey(m_newMcpName);
             for (const auto& server : m_externalMcp) {
-                std::string existingKey = server.name;
-                for (char& ch : existingKey) if (!std::isalnum((unsigned char)ch)) ch = '_';
+                const std::string existingKey = mcpServerKey(server.name);
                 if (existingKey == newKey) duplicate = true;
             }
             if (duplicate) m_mcpStatus = "A server with that name already exists.";
