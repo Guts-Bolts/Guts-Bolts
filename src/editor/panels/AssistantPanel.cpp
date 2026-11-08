@@ -325,48 +325,6 @@ void AssistantPanel::refreshMcpServers() {
     }
 }
 
-bool AssistantPanel::callExternalMcpTool(const std::string& qualifiedName, const json& args,
-                                         std::string& result, std::string& error) const {
-    error.clear();
-    if (qualifiedName.rfind("mcp__", 0) != 0) { error = "Unknown external MCP tool."; return false; }
-    const size_t split = qualifiedName.find("__", 5);
-    if (split == std::string::npos) { error = "The external MCP tool name is malformed."; return false; }
-    const std::string serverKey = qualifiedName.substr(5, split - 5);
-    const std::string toolName = qualifiedName.substr(split + 2);
-    for (const auto& server : m_externalMcp) {
-        std::string key = server.name;
-        for (char& ch : key) if (!std::isalnum((unsigned char)ch)) ch = '_';
-        if (key != serverKey || !server.enabled) continue;
-        McpEndpoint endpoint;
-        if (!parseMcpEndpoint(server.url, endpoint, error)) return false;
-        json response;
-        json request = {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "tools/call"},
-                        {"params", {{"name", toolName}, {"arguments", args}}}};
-        appendMcpAudit(server.name, toolName, args, "started");
-        if (!mcpPost(endpoint, server.token, server.sessionId, request, response, error, nullptr, server.protocolVersion)) {
-            appendMcpAudit(server.name, toolName, args, "failed");
-            return false;
-        }
-        const json rpcResult = response.value("result", json::object());
-        const bool toolError = rpcResult.value("isError", false);
-        const json content = rpcResult.value("content", json::array());
-        result.clear();
-        if (content.is_array()) for (const auto& part : content) {
-            if (part.value("type", std::string()) == "text") {
-                if (!result.empty()) result += "\n";
-                result += part.value("text", std::string());
-            }
-        }
-        if (result.empty() && rpcResult.contains("structuredContent")) result = rpcResult["structuredContent"].dump(2);
-        if (result.empty()) result = "The MCP tool returned no text content.";
-        if (toolError) error = result;
-        appendMcpAudit(server.name, toolName, args, toolError ? "tool-error" : "succeeded");
-        return !toolError;
-    }
-    error = "The configured MCP server is disabled or no longer exists. Refresh the server list in Fyxa settings.";
-    return false;
-}
-
 void AssistantPanel::startNextExternalCall() {
     if (m_externalPending.valid()) return;
     if (m_externalQueue.empty()) { finishExternalCalls(); return; }
