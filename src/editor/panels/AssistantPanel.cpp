@@ -205,7 +205,7 @@ std::string mcpServerKey(const std::string& value) {
     }
     while (!prefix.empty() && prefix.back() == '-') prefix.pop_back();
     if (prefix.empty()) prefix = "server";
-    std::uint8_t digest[8]{};
+    std::uint8_t digest[16]{};
     crypto_blake2b(digest, sizeof(digest),
         reinterpret_cast<const std::uint8_t*>(value.data()), value.size());
     static constexpr char hex[] = "0123456789abcdef";
