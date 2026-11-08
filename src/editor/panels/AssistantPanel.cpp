@@ -341,6 +341,19 @@ bool safeOAuthValue(const std::string& value, size_t maximum) {
     return true;
 }
 
+bool safeBearerToken(const std::string& value, size_t maximum) {
+    if (!safeOAuthValue(value, maximum)) return false;
+    bool padding = false;
+    for (unsigned char ch : value) {
+        const bool payload = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+            (ch >= '0' && ch <= '9') || ch == '-' || ch == '.' || ch == '_' ||
+            ch == '~' || ch == '+' || ch == '/';
+        if (ch == '=') padding = true;
+        else if (!payload || padding) return false;
+    }
+    return true;
+}
+
 struct McpOAuthMetadata {
     std::string issuer, authorizationEndpoint, tokenEndpoint, registrationEndpoint;
     std::string resource, scope;
@@ -698,7 +711,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
     }
     const json token = json::parse(tokenResponse, nullptr, false);
     if (!token.is_object() || !token.contains("access_token") || !token["access_token"].is_string() ||
-        !safeOAuthValue(token["access_token"].get<std::string>(), 16384)) {
+        !safeBearerToken(token["access_token"].get<std::string>(), 16384)) {
         result.error = "OAuth token response did not contain a valid access token.";
         return result;
     }
