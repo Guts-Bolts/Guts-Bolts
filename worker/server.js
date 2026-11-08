@@ -2503,18 +2503,20 @@ export class GbServerObject extends DurableObject {
   }
 
   aiContentResult(asset, row) {
-    const prefs = this.aiPreferencesFor(row ? row.owner_id : asset.creator);
+    const ownerMismatch = !!(row && row.owner_id !== asset.creator);
+    const currentRow = ownerMismatch ? null : row;
+    const prefs = this.aiPreferencesFor(asset.creator);
     const isPublic = (asset.access || 'public') === 'public';
     const restricted = !!(asset.review || asset.exclusive || asset.promoOnly);
-    const rightsAttested = !!(row && row.rights_attested);
-    const rightsStatus = row ? row.rights_status : 'unverified';
+    const rightsAttested = !!(currentRow && currentRow.rights_attested);
+    const rightsStatus = currentRow ? currentRow.rights_status : 'unverified';
     const baseReason = prefs.consentMethod === 'account_deleted' ? 'account_deleted'
-      : row && row.owner_id !== asset.creator ? 'owner_changed'
+      : ownerMismatch ? 'owner_changed'
       : !isPublic ? 'not_public' : restricted ? 'content_restricted'
       : !rightsAttested ? 'rights_not_attested' : rightsStatus === 'rejected' ? 'rights_rejected'
       : rightsStatus !== 'approved' ? 'rights_pending_review' : '';
-    const trainingChoice = row ? Number(row.training_choice) : 0;
-    const referenceChoice = row ? Number(row.reference_choice) : 0;
+    const trainingChoice = currentRow ? Number(currentRow.training_choice) : 0;
+    const referenceChoice = currentRow ? Number(currentRow.reference_choice) : 0;
     const noticeCurrent = prefs.policyVersion === FYXA_AI_POLICY_VERSION && prefs.noticeVersion === FYXA_AI_NOTICE_VERSION;
     const trainingReason = baseReason || !prefs.trainingEnabled ? (baseReason || 'account_training_disabled')
       : !noticeCurrent ? 'notice_outdated' : trainingChoice === -1 ? 'content_excluded' : '';
@@ -2527,8 +2529,8 @@ export class GbServerObject extends DurableObject {
       rightsAttested, rightsStatus, privacyStatus: isPublic ? 'public' : 'private',
       trainingEligible: !trainingReason, referenceEligible: !referenceReason,
       trainingExclusionReason: trainingReason || null, referenceExclusionReason: referenceReason || null,
-      policyVersion: row ? row.policy_version : FYXA_AI_POLICY_VERSION,
-      updatedAt: Number(row && row.updated_at || 0),
+      policyVersion: currentRow ? currentRow.policy_version : FYXA_AI_POLICY_VERSION,
+      updatedAt: Number(currentRow && currentRow.updated_at || 0),
     };
   }
 
@@ -2547,13 +2549,23 @@ export class GbServerObject extends DurableObject {
   aiEnsureContentEligibility(asset) {
     if (!asset || !this.aiEnabledAccounts || !this.aiEnabledAccounts.has(asset.creator)) return null;
     const t = now();
-    this.sql.exec(`INSERT OR IGNORE INTO ai_content_eligibility
-      (content_id, owner_id, content_type, training_choice, reference_choice, rights_attested, rights_status,
-       privacy_status, training_eligible, reference_eligible, training_exclusion_reason, reference_exclusion_reason,
-       policy_version, updated_at)
-      VALUES (?, ?, ?, 0, 0, 0, 'unverified', ?, 0, 0, 'rights_not_attested', 'rights_not_attested', ?, ?)`,
-      asset.id, asset.creator, String(asset.kind || 'unknown'), (asset.access || 'public') === 'public' ? 'public' : 'private',
-      FYXA_AI_POLICY_VERSION, t);
+    const existing = this.aiContentRow(asset.id);
+    if (existing && existing.owner_id !== asset.creator) {
+      this.sql.exec(`UPDATE ai_content_eligibility SET owner_id = ?, content_type = ?, training_choice = 0, reference_choice = 0,
+        rights_attested = 0, rights_status = 'unverified', privacy_status = ?, training_eligible = 0, reference_eligible = 0,
+        training_exclusion_reason = 'rights_not_attested', reference_exclusion_reason = 'rights_not_attested',
+        policy_version = ?, updated_at = ? WHERE content_id = ?`,
+        asset.creator, String(asset.kind || 'unknown'), (asset.access || 'public') === 'public' ? 'public' : 'private',
+        FYXA_AI_POLICY_VERSION, t, asset.id);
+    } else {
+      this.sql.exec(`INSERT OR IGNORE INTO ai_content_eligibility
+        (content_id, owner_id, content_type, training_choice, reference_choice, rights_attested, rights_status,
+         privacy_status, training_eligible, reference_eligible, training_exclusion_reason, reference_exclusion_reason,
+         policy_version, updated_at)
+        VALUES (?, ?, ?, 0, 0, 0, 'unverified', ?, 0, 0, 'rights_not_attested', 'rights_not_attested', ?, ?)`,
+        asset.id, asset.creator, String(asset.kind || 'unknown'), (asset.access || 'public') === 'public' ? 'public' : 'private',
+        FYXA_AI_POLICY_VERSION, t);
+    }
     this.aiTrackedContent.add(asset.id);
     return this.aiRecomputeContentEligibility(asset.id);
   }
