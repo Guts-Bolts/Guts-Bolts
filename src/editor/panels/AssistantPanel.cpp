@@ -59,7 +59,7 @@ bool parseMcpEndpoint(const std::string& url, McpEndpoint& out, std::string& err
         try { out.port = std::stoi(authority.substr(colon + 1)); } catch (...) { error = "The MCP endpoint port is invalid."; return false; }
     } else { out.host = authority; out.port = https ? 443 : 80; }
     if (out.host.empty() || out.port < 1 || out.port > 65535) { error = "The MCP endpoint host or port is invalid."; return false; }
-    if (!https && out.host != "localhost" && out.host != "127.0.0.1" && out.host != "::1") {
+    if (!https && out.host != "localhost" && out.host != "127.0.0.1") {
         error = "For security, non-local MCP endpoints must use HTTPS."; return false;
     }
     out.tls = https;
@@ -244,7 +244,7 @@ bool AssistantPanel::callExternalMcpTool(const std::string& qualifiedName, const
                         {"params", {{"name", toolName}, {"arguments", args}}}};
         if (!mcpPost(endpoint, server.token, server.sessionId, request, response, error, nullptr, server.protocolVersion)) return false;
         const json rpcResult = response.value("result", json::object());
-        if (rpcResult.value("isError", false)) { error = "The MCP tool reported an error."; }
+        const bool toolError = rpcResult.value("isError", false);
         const json content = rpcResult.value("content", json::array());
         result.clear();
         if (content.is_array()) for (const auto& part : content) {
@@ -255,7 +255,8 @@ bool AssistantPanel::callExternalMcpTool(const std::string& qualifiedName, const
         }
         if (result.empty() && rpcResult.contains("structuredContent")) result = rpcResult["structuredContent"].dump(2);
         if (result.empty()) result = "The MCP tool returned no text content.";
-        return error.empty();
+        if (toolError) error = result;
+        return !toolError;
     }
     error = "The configured MCP server is disabled or no longer exists. Refresh the server list in Fyxa settings.";
     return false;
@@ -467,6 +468,7 @@ void AssistantPanel::render(bool* open) {
 
     if (ImGui::CollapsingHeader("Connect MCP servers to Fyxa")) {
         ImGui::TextWrapped("Connect external MCP servers so Fyxa can discover and use their tools. Remote endpoints must use HTTPS. Bearer tokens are saved in this computer's local assistant settings.");
+        ImGui::TextWrapped("Only connect servers you trust. External tools can read or change data in the services they control.");
         ImGui::SetNextItemWidth(-1);
         ImGui::InputTextWithHint("##newmcpname", "Server name (e.g. github)", &m_newMcpName);
         ImGui::SetNextItemWidth(-1);
