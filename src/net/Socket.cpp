@@ -94,24 +94,29 @@ void setNonBlocking(intptr_t s) {
 }
 
 // Open a TCP connection (non-blocking). Returns -1 and the reason on failure.
-intptr_t tcpConnect(const std::string& host, int port, std::string& error, int timeoutMs) {
+using Clock = std::chrono::steady_clock;
+
+intptr_t tcpConnect(const std::string& host, int port, std::string& error, int timeoutMs,
+                    const std::atomic_bool* cancel) {
+    if (cancel && cancel->load()) { error = "Request cancelled."; return -1; }
     if (!initSockets()) { error = "Networking isn't available on this computer."; return -1; }
 
     addrinfo hints{};
-    hints.ai_family   = AF_INET;
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     addrinfo* res = nullptr;
-    std::string portStr = std::to_string(port);
+    const std::string portStr = std::to_string(port);
     if (getaddrinfo(host.c_str(), portStr.c_str(), &hints, &res) != 0 || !res) {
-        error = "Couldn't find \"" + host + "\". Check the address.";
+        error = cancel && cancel->load() ? "Request cancelled." : "Couldn't find \"" + host + "\". Check the address.";
         return -1;
     }
+    if (cancel && cancel->load()) { freeaddrinfo(res); error = "Request cancelled."; return -1; }
 
     auto s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
     if ((intptr_t)s < 0) { freeaddrinfo(res); error = "Couldn't create a network socket."; return -1; }
     setNonBlocking((intptr_t)s);
 
-    int rc = ::connect(s, res->ai_addr, (socklen_t)res->ai_addrlen);
+    const int rc = ::connect(s, res->ai_addr, (socklen_t)res->ai_addrlen);
     freeaddrinfo(res);
     if (rc != 0 && !GB_WOULDBLOCK) {
         GB_CLOSE(s);
@@ -119,13 +124,28 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
         return -1;
     }
     if (rc != 0) {
-        fd_set wr;
-        FD_ZERO(&wr);
-        FD_SET(s, &wr);
-        timeval tv{timeoutMs / 1000, (timeoutMs % 1000) * 1000};
-        if (select((int)s + 1, nullptr, &wr, nullptr, &tv) <= 0) {
+        const auto deadline = Clock::now() + std::chrono::milliseconds(timeoutMs);
+        bool connected = false;
+        while (!(cancel && cancel->load()) && Clock::now() < deadline) {
+            const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
+            fd_set wr;
+            FD_ZERO(&wr);
+            FD_SET(s, &wr);
+            timeval tv{0, (decltype(tv.tv_usec))std::min<long long>(left, 50) * 1000};
+            const int ready = select((int)s + 1, nullptr, &wr, nullptr, &tv);
+            if (ready > 0) { connected = true; break; }
+            if (ready < 0) {
+#ifdef _WIN32
+                if (WSAGetLastError() != WSAEINTR) break;
+#else
+                if (errno != EINTR) break;
+#endif
+            }
+        }
+        if (!connected) {
             GB_CLOSE(s);
-            error = "Nobody answered at " + host + ":" + portStr + ". Is the game hosted and the port open?";
+            error = cancel && cancel->load() ? "Request cancelled." :
+                "Nobody answered at " + host + ":" + portStr + ". Is the game hosted and the port open?";
             return -1;
         }
         int soErr = 0;
@@ -145,20 +165,27 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
 // WebSockets over TLS, for Guts&Bolts servers on the web (wss://)
 // ---------------------------------------------------------------------------
 
-using Clock = std::chrono::steady_clock;
-
 // Wait until the socket can be read (or written). false = the time ran out.
-bool waitFor(intptr_t sock, bool write, Clock::time_point deadline) {
-    auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
-    if (left <= 0) return false;
-    auto s = (decltype(socket(0, 0, 0)))sock;
-    fd_set set;
-    FD_ZERO(&set);
-    FD_SET(s, &set);
-    timeval tv{};
-    tv.tv_sec  = (decltype(tv.tv_sec))(left / 1000);
-    tv.tv_usec = (decltype(tv.tv_usec))((left % 1000) * 1000);
-    return select((int)s + 1, write ? nullptr : &set, write ? &set : nullptr, nullptr, &tv) > 0;
+bool waitFor(intptr_t sock, bool write, Clock::time_point deadline, const std::atomic_bool* cancel) {
+    const auto s = (decltype(socket(0, 0, 0)))sock;
+    while (!(cancel && cancel->load())) {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
+        if (left <= 0) return false;
+        fd_set set;
+        FD_ZERO(&set);
+        FD_SET(s, &set);
+        timeval tv{0, (decltype(tv.tv_usec))std::min<long long>(left, 50) * 1000};
+        const int ready = select((int)s + 1, write ? nullptr : &set, write ? &set : nullptr, nullptr, &tv);
+        if (ready > 0) return true;
+        if (ready < 0) {
+#ifdef _WIN32
+            if (WSAGetLastError() != WSAEINTR) return false;
+#else
+            if (errno != EINTR) return false;
+#endif
+        }
+    }
+    return false;
 }
 
 // "wss://example.com" -> ("example.com", encrypted)
