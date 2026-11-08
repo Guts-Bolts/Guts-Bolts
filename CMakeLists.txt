@@ -1059,6 +1059,14 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME FyxaSkillsTests COMMAND FyxaSkillsTests)
 endif()
 
+# Approval grant schema for additive, per-tool/per-server, expiring trust tiers.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaApprovalRecordTests tests/FyxaApprovalRecordTests.cpp)
+    target_include_directories(FyxaApprovalRecordTests PRIVATE src/)
+    target_link_libraries(FyxaApprovalRecordTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaApprovalRecordTests COMMAND FyxaApprovalRecordTests)
+endif()
+
 # Fyxa task tracking is a small standalone JSON store used by the assistant.
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(FyxaTaskStoreTests tests/FyxaTaskStoreTests.cpp src/editor/FyxaTaskStore.cpp)
