@@ -57,6 +57,14 @@ int main() {
     json invalidToken = {{"jsonrpc", "2.0"}, {"id", 13}, {"method", "tools/list"}};
     assert(!McpHttpProtocol::prepareRequest(invalidToken, headers, "2025-06-18", "", "x\r\nY: z", error));
 
+    std::string toolError;
+    assert(!McpHttpProtocol::toolResultIsError(json::object(), toolError));
+    assert(!McpHttpProtocol::toolResultIsError({{"content", json::array()}, {"isError", false}}, toolError));
+    assert(McpHttpProtocol::toolResultIsError({{"content", json::array()}, {"isError", true}}, toolError));
+    assert(!toolError.empty());
+    assert(McpHttpProtocol::toolResultIsError({{"isError", "true"}}, toolError));
+    assert(!toolError.empty());
+
     std::cout << "MCP HTTP protocol envelope tests passed\n";
     return 0;
 }
