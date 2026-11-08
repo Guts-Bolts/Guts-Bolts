@@ -6,7 +6,6 @@
 #include <cctype>
 #include <cstdint>
 #include <climits>
-#include <random>
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -172,6 +171,11 @@ struct Pkce {
     std::string verifier;
     std::string challenge;
     std::string state;
+    ~Pkce() {
+        if (!verifier.empty()) crypto_wipe(verifier.data(), verifier.size());
+        if (!challenge.empty()) crypto_wipe(challenge.data(), challenge.size());
+        if (!state.empty()) crypto_wipe(state.data(), state.size());
+    }
 };
 
 inline bool createPkce(Pkce& out) {
