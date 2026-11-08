@@ -265,9 +265,10 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     std::string body, responseHeaders;
     int status = 0;
     const std::string host = endpoint.tls ? "wss://" + endpoint.host : endpoint.host;
-    if (!Net::httpPost(host, endpoint.port, endpoint.path, wireRequest.dump(), body, error, 12000, headers, &status, &responseHeaders)) return false;
+    const bool httpOk = Net::httpPost(host, endpoint.port, endpoint.path, wireRequest.dump(), body, error, 12000, headers, &status, &responseHeaders);
     if (statusOut) *statusOut = status;
     if (responseHeadersOut) *responseHeadersOut = responseHeaders;
+    if (!httpOk) return false;
     if (body.size() > 8u * 1024u * 1024u) { error = "The MCP server response exceeded 8 MiB."; return false; }
     if (sessionOut && protocolVersion != "2026-07-28")
         *sessionOut = responseHeader(responseHeaders, "Mcp-Session-Id");
@@ -435,6 +436,7 @@ bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
     out.issuerParameterRequired =
         authorizationMetadata.value("authorization_response_iss_parameter_supported", false);
     out.resource = resource;
+    if (McpOAuth::extractQuotedParameter(challenge, "scope", out.scope)) return true;
     const json scopes = resourceMetadata.value("scopes_supported", json::array());
     if (scopes.is_array()) {
         for (const auto& scope : scopes) if (scope.is_string()) {
