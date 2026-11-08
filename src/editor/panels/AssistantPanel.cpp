@@ -94,6 +94,34 @@ std::string responseHeader(const std::string& headers, const std::string& wanted
     while (!value.empty() && value.front() == ' ') value.erase(value.begin());
     return value;
 }
+json redactMcpArguments(const json& value) {
+    if (value.is_array()) {
+        json out = json::array();
+        for (const auto& item : value) out.push_back(redactMcpArguments(item));
+        return out;
+    }
+    if (!value.is_object()) return value;
+    json out = json::object();
+    for (auto it = value.begin(); it != value.end(); ++it) {
+        std::string key = it.key(), low = key;
+        for (char& ch : low) ch = (char)std::tolower((unsigned char)ch);
+        const bool secret = low.find("token") != std::string::npos || low.find("secret") != std::string::npos ||
+            low.find("password") != std::string::npos || low.find("authorization") != std::string::npos ||
+            low.find("apikey") != std::string::npos || low.find("api_key") != std::string::npos ||
+            low.find("verifier") != std::string::npos;
+        out[key] = secret ? json("[REDACTED]") : redactMcpArguments(it.value());
+    }
+    return out;
+}
+void appendMcpAudit(const std::string& server, const std::string& tool, const json& args,
+                    const std::string& outcome) {
+    const auto now = std::chrono::system_clock::now().time_since_epoch();
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+    std::ofstream file(Paths::file("assistant-mcp-activity.jsonl"), std::ios::app);
+    if (file) file << json{{"timestampMs", ms}, {"server", server}, {"tool", tool},
+                           {"arguments", redactMcpArguments(args)}, {"outcome", outcome}}.dump() << "\\n";
+}
+
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
              const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,
              const std::string& protocolVersion = "2025-06-18") {
@@ -313,7 +341,11 @@ bool AssistantPanel::callExternalMcpTool(const std::string& qualifiedName, const
         json response;
         json request = {{"jsonrpc", "2.0"}, {"id", 3}, {"method", "tools/call"},
                         {"params", {{"name", toolName}, {"arguments", args}}}};
-        if (!mcpPost(endpoint, server.token, server.sessionId, request, response, error, nullptr, server.protocolVersion)) return false;
+        appendMcpAudit(server.name, toolName, args, "started");
+        if (!mcpPost(endpoint, server.token, server.sessionId, request, response, error, nullptr, server.protocolVersion)) {
+            appendMcpAudit(server.name, toolName, args, "failed");
+            return false;
+        }
         const json rpcResult = response.value("result", json::object());
         const bool toolError = rpcResult.value("isError", false);
         const json content = rpcResult.value("content", json::array());
@@ -327,6 +359,7 @@ bool AssistantPanel::callExternalMcpTool(const std::string& qualifiedName, const
         if (result.empty() && rpcResult.contains("structuredContent")) result = rpcResult["structuredContent"].dump(2);
         if (result.empty()) result = "The MCP tool returned no text content.";
         if (toolError) error = result;
+        appendMcpAudit(server.name, toolName, args, toolError ? "tool-error" : "succeeded");
         return !toolError;
     }
     error = "The configured MCP server is disabled or no longer exists. Refresh the server list in Fyxa settings.";
