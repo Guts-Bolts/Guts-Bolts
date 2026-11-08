@@ -95,7 +95,7 @@ json fyxaAgentTools() {
     return tools;
 }
 
-AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::vector<std::pair<std::string, std::string>>& evidenceIds) {
+AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::string& activeTaskId) {
     AiToolResult result;
     auto fail = [&](const std::string& message) {
         result.error = true;
@@ -132,22 +132,16 @@ AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::ve
         if (id.empty() || status.empty()) return fail("Task id and status are required.");
         FyxaTaskStore store(Paths::file("fyxa-tasks.json"));
         std::string error;
-        auto evidence = evidenceIds.end();
         if (status == "completed") {
             if (note.empty() || evidenceId.empty())
-                return fail("Completing a task requires a verification note and an evidence_id from a successful tool result in this session.");
-            evidence = std::find_if(evidenceIds.begin(), evidenceIds.end(), [&](const auto& item) { return item.first == evidenceId && item.second == id; });
-            if (evidence == evidenceIds.end())
-                return fail("That evidence_id was not issued by a successful tool call while this task was in progress. Re-run the verification operation.");
-            const json tasks = store.list(error);
-            if (!error.empty()) return fail(error);
-            bool active = false;
-            for (const auto& task : tasks)
-                if (task.value("id", std::string()) == id && task.value("status", std::string()) == "in_progress") active = true;
-            if (!active) return fail("The task must still be in_progress when it is completed.");
+                return fail("Completing a task requires a verification note and an evidence_id issued by a successful tool result for this task.");
+            if (!store.completeWithEvidence(id, evidenceId, note, error)) return fail(error);
+            if (activeTaskId == id) activeTaskId.clear();
+        } else {
+            if (!store.update(id, status, note, error)) return fail(error);
+            if (status == "in_progress") activeTaskId = id;
+            else if (activeTaskId == id) activeTaskId.clear();
         }
-        if (!store.update(id, status, note, error)) return fail(error);
-        if (status == "completed") evidenceIds.erase(evidence);
         result.data = {{"success", true}, {"id", id}, {"status", status}};
         result.text = result.data.dump(2);
         return result;
@@ -634,20 +628,10 @@ void AssistantPanel::startNextExternalCall() {
 }
 
 std::string AssistantPanel::recordToolEvidence() {
+    if (m_activeTaskId.empty()) return {};
     FyxaTaskStore store(Paths::file("fyxa-tasks.json"));
     std::string error;
-    const json tasks = store.list(error);
-    if (!error.empty()) return {};
-    for (const auto& task : tasks) {
-        if (task.value("status", std::string()) != "in_progress") continue;
-        const std::string taskId = task.value("id", std::string());
-        if (taskId.empty()) continue;
-        const std::string id = "fyxa-evidence-" + std::to_string(++m_evidenceSequence);
-        m_recentEvidence.emplace_back(id, taskId);
-        if (m_recentEvidence.size() > 64) m_recentEvidence.erase(m_recentEvidence.begin());
-        return id;
-    }
-    return {};
+    return store.issueEvidence(m_activeTaskId, error);
 }
 
 void AssistantPanel::finishExternalCalls() {
@@ -809,7 +793,7 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
         std::string name = b.value("name", "");
         if (name.rfind("fyxa_", 0) == 0) {
             AiToolResult r = runFyxaAgentTool(name,
-                b.contains("input") && b["input"].is_object() ? b["input"] : json::object(), m_recentEvidence);
+                b.contains("input") && b["input"].is_object() ? b["input"] : json::object(), m_activeTaskId);
             m_lines.push_back({r.error ? Line::Error : Line::Tool, name + (r.error ? ": " + r.text : "")});
             json result = {{"type", "tool_result"}, {"tool_use_id", b.value("id", "")},
                            {"content", r.text}};
@@ -877,7 +861,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
         if (!args.is_object()) args = json::object();
         if (name.empty()) continue;
         if (name.rfind("fyxa_", 0) == 0) {
-            AiToolResult result = runFyxaAgentTool(name, args, m_recentEvidence);
+            AiToolResult result = runFyxaAgentTool(name, args, m_activeTaskId);
             m_lines.push_back({result.error ? Line::Error : Line::Tool, name + (result.error ? ": " + result.text : "")});
             m_deferredOllamaMessages.push_back({{"role", "tool"}, {"name", name}, {"content", result.text}});
             continue;
