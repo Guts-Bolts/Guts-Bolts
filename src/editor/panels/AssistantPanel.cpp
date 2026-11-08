@@ -574,9 +574,10 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
             result.error = "OAuth client registration returned no client_id.";
             return result;
         }
-        if (registrationResponse.contains("token_endpoint_auth_method") &&
+        if (!registrationResponse.contains("token_endpoint_auth_method") ||
+            !registrationResponse["token_endpoint_auth_method"].is_string() ||
             registrationResponse["token_endpoint_auth_method"] != "none") {
-            result.error = "The authorization server registered a client authentication method that Fyxa cannot safely use.";
+            result.error = "The authorization server did not register Fyxa as a public client using token_endpoint_auth_method=none.";
             return result;
         }
         if (!registrationResponse.contains("redirect_uris") || !registrationResponse["redirect_uris"].is_array() ||
@@ -1705,7 +1706,7 @@ void AssistantPanel::render(bool* open) {
             }
             ImGui::TextDisabled("%s", server.url.c_str());
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered client ID or client metadata URL", &server.oauthClientId)) save();
+            if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered public-client ID or client metadata URL", &server.oauthClientId)) save();
             if (!server.enabled) ImGui::TextDisabled("Disabled until you explicitly allow this server's tools.");
             ImGui::TextDisabled("%d discovered tool(s)", server.tools.is_array() ? (int)server.tools.size() : 0);
             ImGui::PopID();
