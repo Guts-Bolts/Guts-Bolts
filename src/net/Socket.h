@@ -34,8 +34,8 @@ public:
 private:
     struct Web;                    // the WebSocket (and TLS) side, for wss:// hosts
     bool webPoll();
-    friend bool httpPost(const std::string&, int, const std::string&, const std::string&, std::string&, std::string&, int,
-                         const std::string&, int*, std::string*);
+    friend bool httpRequest(const std::string&, const std::string&, int, const std::string&, const std::string&, std::string&, std::string&, int,
+                            const std::string&, int*, std::string*);
 
     intptr_t    m_sock;
     std::string m_address;
@@ -50,9 +50,16 @@ bool isWebAddress(const std::string& host);
 // One HTTP(S) POST to a web server (host "wss://example.com" means https, like
 // above; port 443 usually). Fills `reply` with the answer's body.
 // `extraHeaders`: more header lines, each ending in "\r\n". `status` gets the HTTP status.
+bool httpRequest(const std::string& method, const std::string& host, int port, const std::string& path,
+                 const std::string& body, std::string& reply, std::string& error, int timeoutMs = 30000,
+                 const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr);
+bool httpGet(const std::string& host, int port, const std::string& path, std::string& reply,
+             std::string& error, int timeoutMs = 12000, const std::string& extraHeaders = "",
+             int* status = nullptr, std::string* responseHeaders = nullptr);
 bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
               std::string& reply, std::string& error, int timeoutMs = 30000,
               const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr);
+bool openUrl(const std::string& url, std::string& error);
 
 // A tiny web server for this computer only (127.0.0.1): other programs on the
 // same computer can talk to us, nobody on the network can. Polled every frame,
