@@ -543,7 +543,7 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
     c->m_web = std::make_unique<Web>();
     Web& w = *c->m_web;
     w.sock = s;
-    if (tls && !w.startTls(name, error, deadline)) return nullptr;
+    if (tls && !w.startTls(name, error, deadline, nullptr)) return nullptr;
     unsigned char key[16];
     for (unsigned char& k : key) k = (unsigned char)(w.rng() & 0xFF);
     std::string hostHeader = name + ((tls && port == 443) || (!tls && port == 80) ? "" : ":" + std::to_string(port));
@@ -551,7 +551,7 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
                         "Sec-WebSocket-Key: " + base64(key, 16) + "\r\nSec-WebSocket-Version: 13\r\n"
                         "User-Agent: GutsAndBolts\r\n\r\n";
     std::string headers;
-    if (!w.writeAll(hello, deadline) || !w.readHeaders(headers, deadline)) {
+    if (!w.writeAll(hello, deadline, nullptr) || !w.readHeaders(headers, deadline, nullptr)) {
         error = "The server at " + name + " didn't answer.";
         return nullptr;
     }
