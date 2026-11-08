@@ -26,16 +26,16 @@ The HTTP client now negotiates the MCP 2026-07-28 stateless protocol first. It s
    - Static bearer credentials may remain a clearly labelled local-development compatibility option, not the default for protected remote servers.
    - Never expose tokens or authorization headers to model context, tool descriptions, audit logs, crash reports, or UI diagnostics.
 
-3. **Tool-definition integrity / MCPoison resistance**
-   - Compute a canonical fingerprint over each tool's name, description, input schema, and security-relevant annotations.
-   - Bind the fingerprint to the server identity and endpoint. When discovery changes a definition, invalidate prior approval and require the user to review the changed definition before any call.
-   - Do not treat server enablement or approval of a different definition as approval of the new definition.
-   - Test description-only changes, schema-only changes, reordered JSON keys, server URL changes, and unchanged definitions.
+3. **Tool-definition integrity / MCPoison resistance — implementation added; tests pending CI**
+   - Fyxa computes a canonical BLAKE2b-256 fingerprint over tool name, description, input schema, annotations, server identity, and endpoint.
+   - The fingerprint is pinned when the model queues a call. Immediately before execution, Fyxa fetches the live `tools/list` catalog and compares the definition; missing or changed definitions fail closed and require rediscovery/re-approval.
+   - External calls still require per-call approval. Server enablement is not blanket authorization.
+   - Unit tests cover description, schema, and endpoint changes; reordered-key and full live-server integration tests remain to be added.
 
-4. **Untrusted MCP metadata and results**
-   - Treat tool descriptions, annotations, resource content, and tool results as untrusted data. They may inform a task but cannot change system policy, capability grants, or confirmation requirements.
-   - Do not rely on fragile regex attempts to remove "executable instructions." Prefer bounded metadata, clear untrusted-content delimiting, conservative tool descriptions, and a hard separation between model suggestions and host authorization.
-   - Every mutating external call still passes the host's approval and permission checks. Tool results never auto-trigger an unapproved follow-up action.
+4. **Untrusted MCP metadata and results — partial defense added**
+   - External tool descriptions now carry an explicit untrusted-metadata marker; tool results are wrapped as untrusted data, and the system guide tells the model not to follow embedded instructions or let them alter permissions/approval.
+   - This is defense in depth, not a complete prompt-injection solution. Structural host authorization remains authoritative; metadata and results never grant capabilities.
+   - Do not rely on regex attempts to remove executable instructions. Continue testing malicious descriptions, schemas, annotations, resource content, and tool results against the host-side permission boundary.
 
 5. **Structural capability enforcement**
    - The registry and execution dispatcher are the source of truth for callable capabilities. The UI must report unavailable domains as an application-owned state, not ask the model to self-report its limitations.
@@ -43,10 +43,10 @@ The HTTP client now negotiates the MCP 2026-07-28 stateless protocol first. It s
 
 ### P1 — task integrity, runtime reliability, and context
 
-6. **Task evidence transaction**
-   - Current task-store file operations use a process-local mutex, but evidence lookup/issuance and task completion are separate operations. Evidence is currently associated with the first in-progress task, which is ambiguous if multiple tasks are active.
-   - Replace this with an explicit active task ID and a store operation that atomically validates status, validates a one-time evidence token, appends the completion note, changes status, and consumes the token under one lock/transaction.
-   - Reject stale, cross-task, replayed, and concurrent completions. Add multithreaded and multi-process tests before claiming cross-process safety.
+6. **Task evidence transaction — implementation added; tests pending CI**
+   - Fyxa now tracks one explicit active task rather than choosing the first in-progress task. Successful tool results issue task-bound evidence tokens persisted in the task store.
+   - `completeWithEvidence` validates task status and token, appends the verification note, changes status, and consumes all pending tokens in one locked atomic file replacement. Ordinary `update(..., completed, ...)` is rejected.
+   - The store uses both a process mutex and an OS-level lock file (Windows `LockFileEx`, POSIX `flock`) to serialize cooperating processes. Tests cover wrong-task tokens, replay, direct-completion bypass, and concurrent completion; CI execution is pending.
 
 7. **Cancellation and bounded execution**
    - Current MCP HTTP requests have a finite request timeout and LLM requests have a finite timeout, but an in-flight request is not cooperatively cancellable. A timeout alone is not cancellation.
@@ -93,10 +93,10 @@ The HTTP client now negotiates the MCP 2026-07-28 stateless protocol first. It s
 ## Delivery gates
 
 - [ ] P0 modern/legacy MCP protocol tests pass on current-head CI (test target added; execution pending).
-- [ ] P0 tool-definition fingerprint and approval invalidation tests pass.
+- [ ] P0 tool-definition fingerprint and approval invalidation tests pass on current-head CI (BLAKE2b pinning and live preflight implemented; focused unit tests added).
 - [ ] P0 protected-remote OAuth flow and token audience/issuer tests pass before protected remote MCP is enabled for general users.
 - [ ] P0 trust-boundary tests prove external content cannot grant permissions or bypass approval.
-- [ ] P1 task evidence completion is atomic and replay-safe.
+- [ ] P1 task evidence completion is atomic and replay-safe (store implementation and focused tests added; current-head CI pending).
 - [ ] P1 cancellation tests cover provider calls, MCP HTTP, queued work, and shutdown.
 - [ ] P1 dynamic tool loading and provider capability adaptation tests pass.
 - [ ] Current-head Windows, Linux, and test CI jobs pass; no unverified build claims.
