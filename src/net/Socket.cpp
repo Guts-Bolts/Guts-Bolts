@@ -565,17 +565,19 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
 
 
 bool httpRequest(const std::string& method, const std::string& host, int port, const std::string& path, const std::string& body,
-                 std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* statusOut, std::string* responseHeaders) {
+                 std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* statusOut,
+                 std::string* responseHeaders, const std::atomic_bool* cancel) {
+    if (cancel && cancel->load()) { error = "Request cancelled."; return false; }
     bool tls = false;
     std::string name = isWebAddress(host) ? webHostName(host, tls) : host;
     auto deadline = Clock::now() + std::chrono::milliseconds(timeoutMs);
-    intptr_t s = tcpConnect(name, port, error, std::min(timeoutMs, 8000));
+    intptr_t s = tcpConnect(name, port, error, std::min(timeoutMs, 8000), cancel);
     if (s < 0) return false;
     Connection c(s, name);   // (closes the socket when done)
     c.m_web = std::make_unique<Connection::Web>();
     Connection::Web& w = *c.m_web;
     w.sock = s;
-    if (tls && !w.startTls(name, error, deadline)) return false;
+    if (tls && !w.startTls(name, error, deadline, cancel)) return false;
     std::string hostHeader = name + ((tls && port == 443) || (!tls && port == 80) ? "" : ":" + std::to_string(port));
     if (method != "GET" && method != "POST") { error = "Unsupported HTTP method."; return false; }
     std::string request = method + " " + path + " HTTP/1.1\r\nHost: " + hostHeader + "\r\nUser-Agent: GutsAndBolts\r\n";
@@ -587,8 +589,10 @@ bool httpRequest(const std::string& method, const std::string& host, int port, c
     }
     request += extraHeaders + "Connection: close\r\n\r\n";
     std::string headers;
-    if (!w.writeAll(request, deadline) || (method == "POST" && !w.writeAll(body, deadline)) || !w.readHeaders(headers, deadline)) {
-        error = "The server at " + name + " didn't answer in time.";
+    if (!w.writeAll(request, deadline, cancel) ||
+        (method == "POST" && !w.writeAll(body, deadline, cancel)) ||
+        !w.readHeaders(headers, deadline, cancel)) {
+        error = cancel && cancel->load() ? "Request cancelled." : "The server at " + name + " didn't answer in time.";
         return false;
     }
     // The body: all of it, until the server closes (we asked it to).
@@ -611,13 +615,14 @@ bool httpRequest(const std::string& method, const std::string& host, int port, c
         }
     };
     for (;;) {
+        if (cancel && cancel->load()) { error = "Request cancelled."; return false; }
         if (want >= 0 && (long long)all.size() >= want) break;
         if (chunked && chunkedDone()) break;
         if (all.size() > kMaxMessage) { error = "The answer was too big."; return false; }
         int n = w.read(buf, sizeof(buf));
         if (n > 0) { all.append(buf, (size_t)n); continue; }
         if (n < 0) break;   // closed: that's everything
-        if (!waitFor(s, false, deadline)) { error = "The server at " + name + " didn't finish answering in time."; return false; }
+        if (!waitFor(s, false, deadline, cancel)) { error = cancel && cancel->load() ? "Request cancelled." : "The server at " + name + " didn't finish answering in time."; return false; }
     }
     if (chunked) {
         std::string out;
@@ -646,13 +651,15 @@ bool httpRequest(const std::string& method, const std::string& host, int port, c
 }
 
 bool httpGet(const std::string& host, int port, const std::string& path, std::string& reply,
-             std::string& error, int timeoutMs, const std::string& extraHeaders, int* status, std::string* responseHeaders) {
-    return httpRequest("GET", host, port, path, {}, reply, error, timeoutMs, extraHeaders, status, responseHeaders);
+             std::string& error, int timeoutMs, const std::string& extraHeaders, int* status, std::string* responseHeaders,
+             const std::atomic_bool* cancel) {
+    return httpRequest("GET", host, port, path, {}, reply, error, timeoutMs, extraHeaders, status, responseHeaders, cancel);
 }
 
 bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
-              std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* status, std::string* responseHeaders) {
-    return httpRequest("POST", host, port, path, body, reply, error, timeoutMs, extraHeaders, status, responseHeaders);
+              std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* status, std::string* responseHeaders,
+              const std::atomic_bool* cancel) {
+    return httpRequest("POST", host, port, path, body, reply, error, timeoutMs, extraHeaders, status, responseHeaders, cancel);
 }
 
 bool openUrl(const std::string& url, std::string& error) {
