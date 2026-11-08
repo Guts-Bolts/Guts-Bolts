@@ -106,6 +106,25 @@ inline bool metadataIssuerMatches(const json& metadata, const std::string& expec
         metadata["issuer"].is_string() && metadata["issuer"].get<std::string>() == expectedIssuer;
 }
 
+inline std::string credentialBindingKey(const std::string& serverName, const std::string& issuer,
+                                        const std::string& resource, const std::string& clientId) {
+    const json identity = {{"server", serverName}, {"issuer", issuer},
+                           {"resource", resource}, {"clientId", clientId}};
+    const std::string canonical = identity.dump();
+    std::uint8_t digest[32]{};
+    crypto_blake2b(digest, sizeof(digest),
+        reinterpret_cast<const std::uint8_t*>(canonical.data()), canonical.size());
+    static constexpr char hex[] = "0123456789abcdef";
+    std::string key = "mcp-oauth-";
+    key.reserve(key.size() + sizeof(digest) * 2);
+    for (std::uint8_t byte : digest) {
+        key.push_back(hex[byte >> 4]);
+        key.push_back(hex[byte & 0x0f]);
+    }
+    crypto_wipe(digest, sizeof(digest));
+    return key;
+}
+
 inline bool extractQuotedParameter(const std::string& header, const std::string& wanted, std::string& value) {
     std::string low = header, key = wanted;
     for (char& c : low) c = (char)std::tolower((unsigned char)c);
