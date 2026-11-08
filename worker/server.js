@@ -2596,6 +2596,8 @@ export class GbServerObject extends DurableObject {
   }
 
   aiModerationQueue(limit = 100) {
+    // Keep unresolved cases available to staff; expire reviewed evidence after 180 days.
+    this.sql.exec('DELETE FROM ai_moderation_cases WHERE status = ? AND reviewed_at < ?', 'closed', now() - 180 * 86400);
     const items = [];
     for (const row of this.sql.exec(`SELECT id, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at
       FROM ai_moderation_cases WHERE status = 'open'
