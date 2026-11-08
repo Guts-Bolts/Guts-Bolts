@@ -6,6 +6,8 @@ Fyxa is the general-purpose AI agent for Guts & Bolts. It is not a Linux helper,
 
 Studio is the first deeply integrated capability because it already has a native tool system, editor context, undo history, and an MCP server. It is a capability domain, not the product boundary.
 
+**Fyxa v1 task concurrency constraint:** only one explicit task may be active at a time. Independent requests in the same turn must be represented as one active task plus pending tasks; Fyxa must disclose the deferral and ask the user which pending task to prioritize next. Interleaving task evidence across multiple active tasks is out of scope for v1.
+
 ## Core architecture
 
 ### 1. Agent runtime
