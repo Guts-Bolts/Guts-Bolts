@@ -792,6 +792,8 @@ export class GbServerObject extends DurableObject {
       CREATE TABLE IF NOT EXISTS ai_training_audit (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, content_id TEXT, event_type TEXT NOT NULL, details TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS ai_training_audit_account ON ai_training_audit (account_id, created_at);`);
+    this.aiTrackedContent = new Set();
+    for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility')) this.aiTrackedContent.add(r.content_id);
     this.secretsInit();   // games' secrets for web requests (game-web.js)
     this.chatsInit();     // calls and the Lyreto gateway (chats.js)
     this.official = lower(env.OFFICIAL || '');
@@ -1256,7 +1258,11 @@ export class GbServerObject extends DurableObject {
     }
     return answer;
   }
-  saveAsset(a) { this.dirty.assets.add(a.id); this.syncSearch(a); }
+  saveAsset(a) {
+    this.dirty.assets.add(a.id);
+    this.syncSearch(a);
+    if (this.aiTrackedContent && this.aiTrackedContent.has(a.id)) this.aiRecomputeContentEligibility(a.id);
+  }
   // Better search: keep each asset's searchable words in Supabase (gb_search_items). Only sent
   // when something searchable changed (a.searchSig remembers what was sent last).
   syncSearch(a) {
@@ -2496,7 +2502,8 @@ export class GbServerObject extends DurableObject {
     const restricted = !!(asset.review || asset.exclusive || asset.promoOnly);
     const rightsAttested = !!(row && row.rights_attested);
     const rightsStatus = row ? row.rights_status : 'unverified';
-    const baseReason = !isPublic ? 'not_public' : restricted ? 'content_restricted'
+    const baseReason = row && row.owner_id !== asset.creator ? 'owner_changed'
+      : !isPublic ? 'not_public' : restricted ? 'content_restricted'
       : !rightsAttested ? 'rights_not_attested' : rightsStatus === 'rejected' ? 'rights_rejected'
       : rightsStatus !== 'approved' ? 'rights_pending_review' : '';
     const trainingChoice = row ? Number(row.training_choice) : 0;
@@ -2547,10 +2554,13 @@ export class GbServerObject extends DurableObject {
       const trainingEnabled = hasTraining ? args.trainingEnabled : previous.trainingEnabled;
       const referenceEnabled = hasReference ? args.referenceEnabled : previous.referenceEnabled;
       const enabling = (trainingEnabled && !previous.trainingEnabled) || (referenceEnabled && !previous.referenceEnabled);
-      if (enabling && (args.confirm !== true || args.noticeVersion !== FYXA_AI_NOTICE_VERSION))
+      const noticeChanged = (trainingEnabled || referenceEnabled) &&
+        (previous.policyVersion !== FYXA_AI_POLICY_VERSION || previous.noticeVersion !== FYXA_AI_NOTICE_VERSION);
+      const requiresNotice = enabling || noticeChanged;
+      if (requiresNotice && (args.confirm !== true || args.noticeVersion !== FYXA_AI_NOTICE_VERSION))
         return fail('Review the current Fyxa AI data notice and confirm before enabling these uses.');
       const t = now();
-      const noticeVersion = enabling ? FYXA_AI_NOTICE_VERSION : previous.noticeVersion;
+      const noticeVersion = requiresNotice ? FYXA_AI_NOTICE_VERSION : previous.noticeVersion;
       const consentMethod = trainingEnabled || referenceEnabled ? 'affirmative_opt_in' : 'opt_out';
       this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
         (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
@@ -2600,6 +2610,7 @@ export class GbServerObject extends DurableObject {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'pending_recalculation', 'pending_recalculation', ?, ?)`,
         contentId, me.id, String(asset.kind || 'unknown'), trainingChoice, referenceChoice, rightsAttested, rightsStatus,
         (asset.access || 'public') === 'public' ? 'public' : 'private', FYXA_AI_POLICY_VERSION, t);
+      this.aiTrackedContent.add(contentId);
       const state = this.aiRecomputeContentEligibility(contentId);
       this.aiAudit(me, 'content.preference.updated', contentId, { trainingChoice, referenceChoice, rightsAttested: !!rightsAttested });
       return okay({ eligibility: state });
@@ -4359,6 +4370,12 @@ export class GbServerObject extends DurableObject {
       this.sql.exec('DELETE FROM files WHERE id = ? OR id = ? OR id = ?', a.id, 'thumb:' + a.id, 'icon:' + a.id);
       for (const sh of a.shots || []) this.sql.exec('DELETE FROM files WHERE id = ?', 'shot:' + a.id + ':' + sh.id);
       for (const x of a.versions || []) this.sql.exec('DELETE FROM files WHERE id = ?', 'ver:' + a.id + ':' + x.v);   // its version history
+      if (this.aiTrackedContent && this.aiTrackedContent.has(a.id)) {
+        this.sql.exec('DELETE FROM ai_content_eligibility WHERE content_id = ?', a.id);
+        this.sql.exec('INSERT INTO ai_training_audit (id, account_id, content_id, event_type, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+          randomHex(16), a.creator, a.id, 'content.deleted', JSON.stringify({ actorId: me.id }), now());
+        this.aiTrackedContent.delete(a.id);
+      }
       this.assets.delete(a.id);
       this.dirty.assets.add(a.id);
       this.unsearch(a.id);
