@@ -90,3 +90,17 @@ The current Fyxa panel supports Ollama and Claude, native Studio AiTools, extern
 - Missing providers are reported as unavailable, not simulated.
 - Studio remains fully functional and preserves its native undo/audit behavior.
 - Each new platform domain has contract tests for authorization, ownership boundaries, malformed inputs, failure handling, and auditability before being exposed to users.
+
+
+## Production-readiness constraints
+
+The detailed review and release gates are maintained in `docs/superpowers/specs/2026-11-08-fyxa-production-readiness-review.md`. Key architecture constraints:
+
+- External MCP content and metadata are untrusted data, never policy or authorization.
+- HTTP MCP must support the stateless `2026-07-28` lifecycle and explicit compatibility with legacy peers.
+- Protected remote MCP authorization must use the MCP OAuth 2.1 authorization flow with issuer/resource binding; static bearer tokens are development compatibility only.
+- Tool approvals are bound to canonical tool-definition fingerprints; definition changes invalidate approval.
+- Task evidence validation and one-time consumption must be atomic and replay-safe.
+- Provider requests and tool execution require cooperative cancellation, bounded concurrency, and time budgets.
+- Tool schemas are selected dynamically by task/domain; the full platform registry is not injected into every prompt.
+- Conversation recovery, provider capability negotiation, structured observability, and skill versioning are required before broad non-developer rollout.
