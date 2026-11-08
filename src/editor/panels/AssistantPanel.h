@@ -31,7 +31,8 @@ private:
     void handleOllamaReply(int status, const std::string& body, const std::string& error);
     void refreshMcpServers();
     nlohmann::json externalMcpTools() const;
-    struct ExternalCall { bool claude = false; std::string name, id; nlohmann::json args; };
+    std::string externalMcpFingerprint(const std::string& qualifiedName) const;
+    struct ExternalCall { bool claude = false; std::string name, id, definitionFingerprint; nlohmann::json args; };
     struct ExternalCompletion { ExternalCall call; std::string text, error; };
     void startNextExternalCall();
     void finishExternalCalls();
