@@ -2640,13 +2640,16 @@ export class GbServerObject extends DurableObject {
       'fyxa-' + randomHex(8), fingerprint, sourceType, sourceId, actor.id, JSON.stringify(categories), severity, scanner, content.slice(0, 1200), now());
   }
 
-  aiModerationQueue(limit = 100) {
+  aiModerationQueue(limit = 100, offset = 0) {
     // Keep unresolved cases available to staff; expire reviewed evidence after 180 days.
     this.sql.exec('DELETE FROM ai_moderation_cases WHERE status = ? AND reviewed_at < ?', 'closed', now() - 180 * 86400);
+    const totalRow = [...this.sql.exec("SELECT COUNT(*) AS count FROM ai_moderation_cases WHERE status = 'open'")][0];
+    const total = Number(totalRow && totalRow.count || 0);
+    const safeLimit = clamp(limit, 1, 100), safeOffset = Math.max(0, Math.trunc(offset) || 0);
     const items = [];
     for (const row of this.sql.exec(`SELECT id, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at
       FROM ai_moderation_cases WHERE status = 'open'
-      ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT ?`, clamp(limit, 1, 100))) {
+      ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT ? OFFSET ?`, safeLimit, safeOffset)) {
       const author = this.users.get(row.author_id); let categories = [];
       try { categories = JSON.parse(row.categories); } catch { categories = []; }
       const asset = row.source_type === 'asset' ? this.assets.get(row.source_id) : null;
@@ -2658,7 +2661,7 @@ export class GbServerObject extends DurableObject {
         categories, severity: row.severity, scanner: row.scanner, excerpt: row.excerpt,
         status: row.status, createdAt: Number(row.created_at || 0) });
     }
-    return items;
+    return { items, total, limit: safeLimit, offset: safeOffset };
   }
 
   // --- Fyxa AI data preferences and purpose-specific content eligibility -----------------
@@ -2857,6 +2860,8 @@ export class GbServerObject extends DurableObject {
       if (!this.isStaff(me)) return fail('Only staff can review AI content rights.');
       const limit = clamp(num(args, 'limit') || 50, 1, 100);
       const offset = Math.max(0, Math.trunc(num(args, 'offset')) || 0);
+      const totalRow = [...this.sql.exec("SELECT COUNT(*) AS count FROM ai_content_eligibility WHERE rights_status = 'pending_review'")][0];
+      const total = Number(totalRow && totalRow.count || 0);
       const items = [];
       for (const row of this.sql.exec(`SELECT content_id, owner_id, content_type, privacy_status, rights_attested, updated_at
         FROM ai_content_eligibility WHERE rights_status = 'pending_review' ORDER BY updated_at ASC LIMIT ? OFFSET ?`, limit, offset)) {
@@ -2867,7 +2872,7 @@ export class GbServerObject extends DurableObject {
           ownerId: row.owner_id, owner: owner ? this.publicUser(owner) : null, privacyStatus: row.privacy_status,
           rightsAttested: !!row.rights_attested, updatedAt: Number(row.updated_at || 0) });
       }
-      return okay({ items, limit, offset });
+      return okay({ items, limit, offset, total });
     }
 
     if (name === 'ai.content.review') {
@@ -2894,7 +2899,9 @@ export class GbServerObject extends DurableObject {
 
     if (name === 'ai.moderation.queue') {
       if (!this.isStaff(me)) return fail('Only staff can view Fyxa moderation cases.');
-      return okay({ items: this.aiModerationQueue(clamp(num(args, 'limit') || 100, 1, 100)) });
+      const limit = clamp(num(args, 'limit') || 100, 1, 100);
+      const offset = Math.max(0, Math.trunc(num(args, 'offset')) || 0);
+      return okay(this.aiModerationQueue(limit, offset));
     }
     if (name === 'ai.moderation.review') {
       if (!this.isStaff(me)) return fail('Only staff can review Fyxa moderation cases.');
