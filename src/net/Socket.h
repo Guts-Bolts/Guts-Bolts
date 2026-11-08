@@ -23,7 +23,8 @@ public:
 
     // Connect to host:port (waits up to `timeoutMs`). Returns null + error text on failure.
     static std::unique_ptr<Connection> connectTo(const std::string& host, int port,
-                                                 std::string& error, int timeoutMs = 4000);
+                                                 std::string& error, int timeoutMs = 4000,
+                                                 const std::atomic_bool* cancel = nullptr);
 
     void send(const std::string& message);   // queued; sent by poll()
     bool poll();                              // send + receive; false once disconnected
