@@ -2626,7 +2626,8 @@ export class GbServerObject extends DurableObject {
       const contentId = str(args, 'contentId');
       const asset = contentId && this.assets.get(contentId);
       if (!asset || asset.creator !== me.id) return fail('That upload was not found.');
-      const previous = this.aiContentRow(contentId);
+      const storedPrevious = this.aiContentRow(contentId);
+      const previous = storedPrevious && storedPrevious.owner_id === me.id ? storedPrevious : null;
       const choiceValue = (value, fallback) => value === undefined ? fallback
         : value === 'inherit' ? 0 : value === 'include' ? 1 : value === 'exclude' ? -1 : null;
       const trainingChoice = choiceValue(args.trainingChoice, previous ? Number(previous.training_choice) : 0);
