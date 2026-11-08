@@ -793,7 +793,14 @@ export class GbServerObject extends DurableObject {
       CREATE INDEX IF NOT EXISTS ai_content_owner ON ai_content_eligibility (owner_id, updated_at);
       CREATE TABLE IF NOT EXISTS ai_training_audit (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, content_id TEXT, event_type TEXT NOT NULL, details TEXT NOT NULL, created_at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS ai_training_audit_account ON ai_training_audit (account_id, created_at);`);
+      CREATE INDEX IF NOT EXISTS ai_training_audit_account ON ai_training_audit (account_id, created_at);
+      CREATE TABLE IF NOT EXISTS ai_moderation_cases (
+        id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, source_type TEXT NOT NULL, source_id TEXT NOT NULL,
+        author_id TEXT NOT NULL, categories TEXT NOT NULL, severity TEXT NOT NULL, scanner TEXT NOT NULL,
+        excerpt TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', created_at INTEGER NOT NULL,
+        reviewed_by TEXT, reviewed_at INTEGER, outcome TEXT, staff_note TEXT);
+      CREATE INDEX IF NOT EXISTS ai_moderation_status_created ON ai_moderation_cases (status, created_at);
+      CREATE INDEX IF NOT EXISTS ai_moderation_author_created ON ai_moderation_cases (author_id, created_at);`);
     this.aiTrackedContent = new Set();
     for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility')) this.aiTrackedContent.add(r.content_id);
     this.aiEnabledAccounts = new Set();
@@ -2478,6 +2485,7 @@ export class GbServerObject extends DurableObject {
       this.openGiftBoxes();
       this.finishAuctions();
       const reply = this.op(c.opName, c.me, c.args);
+      if (reply && typeof reply === 'object') Object.defineProperty(reply, 'moderationActor', { value: c.me, enumerable: false });
       // (who asked, for answers finished after a Supabase lookup; not sent back)
       if (reply && reply.supabase) Object.defineProperty(reply, 'asker', { value: c.me, enumerable: false });
       if (gate.count && (reply.ok || GUESSES.has(c.opName))) gate.count();
@@ -2489,6 +2497,114 @@ export class GbServerObject extends DurableObject {
     }
   }
 
+
+  // Fyxa moderation: Llama Guard is advisory; it never bans users or removes content.
+  async scanModerationSubmission(req, actor, answer) {
+    if (!actor || !actor.id || !req || !req.args || !answer || !answer.ok || !this.env.AI) return;
+    const args = req.args, op = String(req.op || ''), fields = [];
+    let sourceType = '', sourceId = '';
+    if (op === 'upload') {
+      sourceType = 'asset'; sourceId = String(answer.asset && answer.asset.id || '');
+      fields.push(['asset name', args.name], ['asset description', args.description]);
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
+      for (const key of ['alt', 'caption', 'title', 'description', 'author', 'license', 'source']) fields.push([key, meta[key]]);
+      if (['game', 'model', 'plugin', 'animation', 'gear', 'accessory', 'bundle', 'bodypart'].includes(String(args.kind || ''))) {
+        try {
+          const bytes = b64ToBytes(str(args, 'data'));
+          const raw = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 180000));
+          const parsed = JSON.parse(raw); let budget = 5000;
+          const walk = (value, key = '') => {
+            if (budget <= 0) return;
+            if (typeof value === 'string' && /name|title|text|message|description|caption|label|value|prompt|dialog|scriptname/i.test(key)) {
+              const part = value.slice(0, Math.min(500, budget));
+              if (part.trim()) { fields.push([key || 'uploaded text', part]); budget -= part.length; }
+            } else if (Array.isArray(value)) for (const item of value.slice(0, 100)) walk(item, key);
+            else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value).slice(0, 200)) walk(v, k);
+          }; walk(parsed);
+        } catch { /* Opaque binary uploads are handled by their media-specific scanner. */ }
+      }
+    } else if (op === 'comments.post') { sourceType = 'comment'; sourceId = String(args.game || ''); fields.push(['comment', args.text]);
+    } else if (op === 'forum.post') { sourceType = 'forum_thread'; sourceId = String(answer.thread && answer.thread.id || ''); fields.push(['thread title', args.title], ['forum post', args.text]);
+    } else if (op === 'forum.reply') { sourceType = 'forum_reply'; sourceId = String(args.thread || ''); fields.push(['forum reply', args.text]);
+    } else if (op === 'message.send') { sourceType = 'private_message'; sourceId = String(args.to || ''); fields.push(['message subject', args.subject], ['private message', args.body]);
+    } else if (op === 'party.send') { sourceType = 'party_chat'; sourceId = String(args.id || ''); fields.push(['party message', args.body]);
+    } else if (op === 'groups.create') { sourceType = 'group'; sourceId = String(answer.group && answer.group.id || ''); fields.push(['group name', args.name], ['group description', args.description]);
+    } else if (op === 'groups.shout' || op === 'groups.wall.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group post', args.text]);
+    } else if (op === 'updates.post') { sourceType = 'platform_update'; sourceId = String(answer.update && answer.update.id || ''); fields.push(['update title', args.name], ['update summary', args.summary], ['update notes', Array.isArray(args.items) ? args.items.join('\n') : '']);
+    } else return;
+    const content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
+    if (!content) return;
+    let categories = [], scanner = 'llama-guard-3-8b', unsafe = false;
+    try {
+      const result = await this.env.AI.run('@cf/meta/llama-guard-3-8b', { messages: [{ role: 'user', content }], max_tokens: 128, temperature: 0 });
+      const response = result && result.response;
+      if (response && typeof response === 'object') {
+        unsafe = response.safe === false;
+        categories = Array.isArray(response.categories) ? response.categories.filter((x) => /^S(?:[1-9]|1[0-4])$/.test(x)).slice(0, 14) : [];
+      } else if (typeof response === 'string') {
+        unsafe = /^\s*unsafe\b/i.test(response);
+        categories = [...new Set((response.match(/\bS(?:[1-9]|1[0-4])\b/g) || []))].slice(0, 14);
+      }
+    } catch (error) { scanner = 'llama-guard-3-8b-error'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
+    // Image uploads get a vision pass only after the operator has explicitly accepted Meta's
+    // model license and enabled FYXA_VISION_LICENSE_ACCEPTED. Until then they are routed for
+    // manual review instead of being silently treated as scanned.
+    if (op === 'upload' && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(String(args.kind || ''))) {
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta : {};
+      const ext = String(meta.ext || '').toLowerCase();
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+      const encoded = str(args, 'data');
+      if (encoded && encoded.length <= 600000) {
+        if (this.env.FYXA_VISION_LICENSE_ACCEPTED !== 'true') {
+          categories.push('VISION_NOT_ENABLED'); scanner += '+vision-license-required'; unsafe = true;
+        } else {
+          try {
+            const vision = await this.env.AI.run('@cf/meta/llama-3.2-11b-vision-instruct', {
+              prompt: 'You are a platform safety reviewer. Inspect this user-uploaded image for clearly visible policy violations: sexual content or nudity, sexualized depictions of minors, graphic violence, hateful symbols, extremist propaganda, self-harm instructions, personal information, or obvious copyrighted/trademarked material uploaded to impersonate an official Guts&Bolts asset. Do not infer age or identity from appearance. Return only JSON: {"flag":true|false,"category":"short category","reason":"brief visual evidence"}. Flag only clear evidence; otherwise flag false.',
+              image: 'data:' + mime + ';base64,' + encoded, max_tokens: 160, temperature: 0,
+            });
+            const rawVision = vision && typeof vision.response === 'string' ? vision.response : '';
+            const parsedVision = JSON.parse(rawVision);
+            if (parsedVision && parsedVision.flag === true) {
+              const category = String(parsedVision.category || 'content').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 32);
+              categories.push('VISION_' + (category || 'REVIEW'));
+              scanner += '+llama-vision';
+              unsafe = true;
+            }
+          } catch (error) {
+            categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+vision-error'; unsafe = true;
+          }
+        }
+      } else {
+        categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+vision-input-unavailable'; unsafe = true;
+      }
+    }
+    if (!unsafe) return;
+    categories = [...new Set(categories)].slice(0, 16);
+    const severity = categories.includes('S4') || categories.some((x) => /VISION_.*MINOR|VISION_.*CHILD/i.test(x)) ? 'critical'
+      : categories.some((x) => ['S10', 'S11', 'S12'].includes(x)) ? 'high'
+      : categories.some((x) => ['S1', 'S2', 'S3', 'S7', 'S8', 'S9'].includes(x)) ? 'medium' : 'review';
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode([sourceType, sourceId, actor.id, content].join('\n')));
+    const fingerprint = hexOf(new Uint8Array(digest));
+    this.sql.exec(`INSERT OR IGNORE INTO ai_moderation_cases
+      (id, fingerprint, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`,
+      'fyxa-' + randomHex(8), fingerprint, sourceType, sourceId, actor.id, JSON.stringify(categories), severity, scanner, content.slice(0, 1200), now());
+  }
+
+  aiModerationQueue(limit = 100) {
+    const items = [];
+    for (const row of this.sql.exec(`SELECT id, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at
+      FROM ai_moderation_cases WHERE status = 'open'
+      ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT ?`, clamp(limit, 1, 100))) {
+      const author = this.users.get(row.author_id); let categories = [];
+      try { categories = JSON.parse(row.categories); } catch { categories = []; }
+      items.push({ id: row.id, sourceType: row.source_type, sourceId: row.source_id, authorId: row.author_id,
+        author: author ? this.publicUser(author) : null, categories, severity: row.severity, scanner: row.scanner,
+        excerpt: row.excerpt, status: row.status, createdAt: Number(row.created_at || 0) });
+    }
+    return items;
+  }
 
   // --- Fyxa AI data preferences and purpose-specific content eligibility -----------------
   // All preference and eligibility writes are synchronous SQLite operations. User-supplied
@@ -2721,6 +2837,23 @@ export class GbServerObject extends DurableObject {
       return okay({ eligibility: state });
     }
 
+    if (name === 'ai.moderation.queue') {
+      if (!this.isStaff(me)) return fail('Only staff can view Fyxa moderation cases.');
+      return okay({ items: this.aiModerationQueue(clamp(num(args, 'limit') || 100, 1, 100)) });
+    }
+    if (name === 'ai.moderation.review') {
+      if (!this.isStaff(me)) return fail('Only staff can review Fyxa moderation cases.');
+      const caseId = str(args, 'caseId'), outcome = str(args, 'outcome');
+      if (!['action_taken', 'dismissed', 'escalated'].includes(outcome)) return fail('Choose action_taken, dismissed, or escalated.');
+      const note = cleanText(str(args, 'note'), 500, true);
+      if (note.length < 3) return fail('Add a short staff note explaining the decision.');
+      const existing = [...this.sql.exec('SELECT id, author_id, source_type FROM ai_moderation_cases WHERE id = ? AND status = ?', caseId, 'open')][0];
+      if (!existing) return fail('That moderation case is no longer open.');
+      this.sql.exec(`UPDATE ai_moderation_cases SET status = 'closed', reviewed_by = ?, reviewed_at = ?, outcome = ?, staff_note = ? WHERE id = ? AND status = 'open'`,
+        me.id, now(), outcome, note, caseId);
+      this.staffDid(me, 'fyxa_moderation', 'Reviewed Fyxa moderation case (' + outcome + ') for ' + existing.source_type, existing.author_id);
+      return okay({ items: this.aiModerationQueue(100) });
+    }
     if (name === 'ai.training.history') {
       const events = [];
       for (const r of this.sql.exec('SELECT event_type, content_id, details, created_at FROM ai_training_audit WHERE account_id = ? ORDER BY created_at DESC LIMIT 50', me.id)) {
@@ -6358,6 +6491,10 @@ export class GbServerObject extends DurableObject {
     if (typeof req.op === 'string' && req.op.startsWith('relay.')) return json(fail('Multiplayer needs the Guts&Bolts app.'));
     const h = request.headers;   // (set by worker/shield.js, which replaces anything a visitor sent in them)
     let answer = this.handle(req, { ip: h.get('x-gb-ip') || '', web: h.get('x-gb-web') === '1', human: h.get('x-gb-human') === '1', sitekey: h.get('x-gb-sitekey') || '' });
+    if (answer.ok && answer.moderationActor) {
+      try { await this.scanModerationSubmission(req, answer.moderationActor, answer); }
+      catch (error) { console.log('Fyxa moderation scan failed: ' + (error && error.message || error)); }
+    }
     if (answer.ok && req.op === 'notes.list' && answer.me && answer.me.id) {
       try {
         if (this.hasSupabaseOutbox()) await this.flushSupabaseOutbox();
