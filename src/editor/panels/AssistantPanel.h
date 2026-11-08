@@ -9,8 +9,9 @@
 
 class Editor;
 
-// Fyxa is Studio's built-in AI assistant. It can use a cloud provider or a local
-// Ollama model, while all game changes continue through Studio's native AI tools.
+// Fyxa is the Guts & Bolts platform-wide AI agent. This panel is its Studio surface;
+// platform capabilities are added through permission-checked providers. It can use
+// a cloud provider or local Ollama while Studio edits continue through native AI tools.
 class AssistantPanel {
 public:
     explicit AssistantPanel(Editor& editor);
