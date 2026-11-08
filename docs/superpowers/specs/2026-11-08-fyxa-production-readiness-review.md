@@ -77,42 +77,42 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
     - On restart, resume only from a validated checkpoint and re-evaluate capabilities and permissions. Never replay side-effecting tool calls automatically.
 
 
-8. **Single-active-task v1 scope — explicitly accepted product constraint**
+11. **Single-active-task v1 scope — explicitly accepted product constraint**
    - Fyxa v1 intentionally supports one explicit active task. This is not an accidental scheduler limitation: the task-evidence model binds successful tool results to one active task and does not yet support interleaved evidence streams.
    - When a user turn contains multiple independent goals, Fyxa must choose at most one active task, create/retain the others as pending, tell the user what is deferred, and ask which pending task to prioritize after the active task is completed or paused. It must never silently start a second task or replace the current task.
    - The task dispatcher now rejects a second in_progress transition while another task is active. The user-facing deferral wording and multi-request behavior still need integration tests.
 
-9. **Idempotency for external side effects — metadata propagation added; remote enforcement is conditional**
+12. **Idempotency for external side effects — metadata propagation added; remote enforcement is conditional**
    - Every outbound external MCP tool invocation receives a cryptographically random idempotency key in params._meta[io.gutsandbolts/idempotency-key]. The key is retained with the queued call and included in the redacted activity audit record.
    - Remote MCP servers must explicitly implement and persist deduplication for this extension. A client-generated key cannot prevent duplicate execution when a server ignores it. Do not automatically retry an ambiguous side-effecting timeout unless the same key is reused and the remote service documents deduplication behavior.
    - First-party purchase, transfer, publish, and other side-effecting service providers must also accept a server-enforced idempotency key before they are exposed.
 
-10. **Approval record model — schema and focused tests added; current behavior remains per-call**
+13. **Approval record model — schema and focused tests added; current behavior remains per-call**
    - FyxaApprovalRecord defines audit-linkable, time-boxed records bound to server identity/fingerprint, exact tool identity/fingerprint, permission tier, issue/expiry times, and revocation time.
    - Server-wide grants are restricted to read-only scope. Write grants require exact tool binding. The current UI continues to require individual approval for every external MCP and connected-app tool call; no blanket grant is enabled.
    - The record model is additive groundwork only. Persisting grants, revocation UI, and trust-tier evaluation remain future work and must not be described as implemented.
 
 ### P2 — operational quality
 
-11. **Observability**
+14. **Observability**
     - Add structured spans/events around provider requests, MCP discovery/calls, approval decisions, tool execution, and task transitions.
     - Distinguish JSON-RPC protocol failures from tool-level failures. An MCP `tools/call` response can be a successful JSON-RPC result with `isError: true`; it must be counted as a failed tool execution.
     - Keep redacted audit records for compliance; tracing complements rather than replaces them. Make OpenTelemetry export optional and avoid leaking arguments, credentials, or private result content.
 
-12. **Skills versioning and conflict handling**
+15. **Skills versioning and conflict handling**
     - Add explicit skill metadata (stable ID, version, author/source, compatibility, changelog or digest) and show when a user skill overrides a bundled skill.
     - Skills remain inert instruction documents, never executable code or permissions. If executable extensions are added later, they require a separate sandbox design.
     - Define deterministic conflict handling for overlapping skill IDs and never let skill text register or replace tools.
 
-13. **Approval fatigue / trust policy**
+16. **Approval fatigue / trust policy**
     - Keep per-call approval as the safe baseline. Design a future opt-in trust model with explicit scope, server/tool fingerprint binding, expiration, revocation, and stronger confirmation for writes/destructive actions.
     - Do not implement blanket server-level approval.
 
-14. **Provider rate limits and graceful degradation**
+17. **Provider rate limits and graceful degradation**
     - Surface 429/rate-limit state and retry-after information. Use bounded backoff and preserve task state.
     - Offer provider switching only when the user has configured the alternate provider; do not silently send private conversation data to another provider.
 
-15. **Prompt caching**
+18. **Prompt caching**
     - Arrange stable system instructions and stable tool prefixes before variable conversation/context. Use provider-specific prompt caching only where supported and verify cache behavior; never let cache optimizations weaken tenant or user isolation.
 
 ## Delivery gates
