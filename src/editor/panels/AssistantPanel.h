@@ -30,6 +30,7 @@ private:
     void handleClaudeReply(int status, const std::string& body, const std::string& error);
     void handleOllamaReply(int status, const std::string& body, const std::string& error);
     void refreshMcpServers();
+    void authorizeMcpServer(const std::string& name);
     nlohmann::json externalMcpTools() const;
     std::string externalMcpFingerprint(const std::string& qualifiedName) const;
     struct ExternalCall { bool claude = false; std::string name, id, definitionFingerprint; nlohmann::json args; };
@@ -55,13 +56,17 @@ private:
     std::string m_ollamaModel = "qwen3:8b";
     struct McpServer {
         std::string name, url, token, credentialKey, sessionId, protocolVersion = "2026-07-28";
+        std::string oauthClientId, oauthRefreshToken;
         bool enabled = false;
         nlohmann::json tools = nlohmann::json::array();
     };
     struct McpRefreshResult { std::vector<McpServer> servers; std::string status; };
+    struct McpOAuthResult { std::string serverName, accessToken, refreshToken, issuer, error; };
+    std::future<McpOAuthResult> m_oauthPending;
+    std::string m_oauthServerName;
     std::vector<McpServer> m_externalMcp;
     std::future<McpRefreshResult> m_mcpRefreshPending;
-    std::string m_newMcpName, m_newMcpUrl, m_newMcpToken;
+    std::string m_newMcpName, m_newMcpUrl, m_newMcpToken, m_newMcpClientId;
     std::string m_mcpStatus;
     std::string m_input;
     nlohmann::json m_messages = nlohmann::json::array();
