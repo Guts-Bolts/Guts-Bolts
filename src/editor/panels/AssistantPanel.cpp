@@ -119,7 +119,7 @@ void appendMcpAudit(const std::string& server, const std::string& tool, const js
     const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
     std::ofstream file(Paths::file("assistant-mcp-activity.jsonl"), std::ios::app);
     if (file) file << json{{"timestampMs", ms}, {"server", server}, {"tool", tool},
-                           {"arguments", redactMcpArguments(args)}, {"outcome", outcome}}.dump() << "\\n";
+                           {"arguments", redactMcpArguments(args)}, {"outcome", outcome}}.dump() << "\n";
 }
 
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
