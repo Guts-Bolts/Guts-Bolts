@@ -1275,7 +1275,10 @@ export class GbServerObject extends DurableObject {
       const fingerprint = this.aiAssetFingerprint(a);
       if (this.aiEligibilityFingerprint.get(a.id) !== fingerprint) {
         this.aiEligibilityFingerprint.set(a.id, fingerprint);
-        this.aiRecomputeContentEligibility(a.id);
+        const row = this.aiContentRow(a.id);
+        if (row && row.owner_id !== a.creator && this.aiEnabledAccounts && this.aiEnabledAccounts.has(a.creator))
+          this.aiEnsureContentEligibility(a);
+        else this.aiRecomputeContentEligibility(a.id);
       }
     } else if (this.aiEnabledAccounts && this.aiEnabledAccounts.has(a.creator)) this.aiEnsureContentEligibility(a);
   }
