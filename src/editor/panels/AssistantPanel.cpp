@@ -177,8 +177,7 @@ std::string mcpServerKey(std::string value) {
 bool validMcpToolName(const std::string& name) {
     if (name.empty() || name.size() > 128) return false;
     for (unsigned char ch : name) if (!(std::isalnum(ch) || ch == '_' || ch == '-')) return false;
-    return true;
-}
+    return true;}
 struct McpEndpoint { std::string host, path; int port = 443; bool tls = true; };
 bool parseMcpEndpoint(const std::string& url, McpEndpoint& out, std::string& error) {
     const bool https = url.rfind("https://", 0) == 0;
@@ -257,31 +256,69 @@ void appendMcpAudit(const std::string& server, const std::string& tool, const js
 
 bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
              const json& request, json& response, std::string& error, std::string* sessionOut = nullptr,
-             const std::string& protocolVersion = "2025-06-18") {
-    std::string headers = "Accept: application/json, text/event-stream\r\n";
-    if (!protocolVersion.empty()) headers += "MCP-Protocol-Version: " + protocolVersion + "\r\n";
+             const std::string& protocolVersion = "2026-07-28") {
     if (token.find_first_of("\r\n") != std::string::npos || session.find_first_of("\r\n") != std::string::npos ||
         protocolVersion.find_first_of("\r\n") != std::string::npos || protocolVersion.size() > 64) {
         error = "The MCP credential, session identifier, or protocol version is invalid."; return false;
     }
+
+    // 2026-07-28 is stateless: every request carries its own protocol metadata and
+    // routing headers. Older negotiated versions retain the initialize/session flow.
+    json wireRequest = request;
+    std::string headers = "Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\n";
+    if (!protocolVersion.empty()) headers += "MCP-Protocol-Version: " + protocolVersion + "\r\n";
+    if (protocolVersion == "2026-07-28") {
+        if (!wireRequest.contains("method") || !wireRequest["method"].is_string()) {
+            error = "A modern MCP request must include a JSON-RPC method."; return false;
+        }
+        const std::string method = wireRequest["method"].get<std::string>();
+        if (!wireRequest.contains("params") || !wireRequest["params"].is_object())
+            wireRequest["params"] = json::object();
+        json& params = wireRequest["params"];
+        json meta = params.value("_meta", json::object());
+        if (!meta.is_object()) { error = "MCP request metadata must be an object."; return false; }
+        meta["io.modelcontextprotocol/protocolVersion"] = protocolVersion;
+        meta["io.modelcontextprotocol/clientCapabilities"] = json::object();
+        meta["io.modelcontextprotocol/clientInfo"] = {{"name", "fyxa"}, {"version", "0.1"}};
+        params["_meta"] = std::move(meta);
+        headers += "Mcp-Method: " + method + "\r\n";
+
+        std::string routeName;
+        if (params.contains("name") && params["name"].is_string()) routeName = params["name"].get<std::string>();
+        else if (params.contains("uri") && params["uri"].is_string()) routeName = params["uri"].get<std::string>();
+        const bool requiresName = method == "tools/call" || method == "prompts/get" || method == "resources/read";
+        if (requiresName && routeName.empty()) {
+            error = "This modern MCP method requires a name or URI for HTTP routing."; return false;
+        }
+        if (!routeName.empty()) {
+            // Current Fyxa tool identifiers are restricted to safe ASCII. Do not
+            // emit an ambiguous or header-injectable routing value.
+            for (unsigned char ch : routeName) {
+                if (ch < 0x21 || ch > 0x7e || ch == ',' || ch == ';') {
+                    error = "The MCP tool name or resource URI cannot be represented safely in a routing header.";
+                    return false;
+                }
+            }
+            headers += "Mcp-Name: " + routeName + "\r\n";
+        }
+    } else if (!session.empty()) {
+        headers += "Mcp-Session-Id: " + session + "\r\n";
+    }
     if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
-    if (!session.empty()) headers += "Mcp-Session-Id: " + session + "\r\n";
+
     std::string body, responseHeaders;
     int status = 0;
     const std::string host = endpoint.tls ? "wss://" + endpoint.host : endpoint.host;
-    if (!Net::httpPost(host, endpoint.port, endpoint.path, request.dump(), body, error, 12000, headers, &status, &responseHeaders)) return false;
+    if (!Net::httpPost(host, endpoint.port, endpoint.path, wireRequest.dump(), body, error, 12000, headers, &status, &responseHeaders)) return false;
     if (body.size() > 8u * 1024u * 1024u) { error = "The MCP server response exceeded 8 MiB."; return false; }
-    if (sessionOut) *sessionOut = responseHeader(responseHeaders, "Mcp-Session-Id");
-    if ((status == 202 || status == 204) && !request.contains("id")) { response = json::object(); return true; }
+    if (sessionOut && protocolVersion != "2026-07-28")
+        *sessionOut = responseHeader(responseHeaders, "Mcp-Session-Id");
+    if ((status == 202 || status == 204) && !wireRequest.contains("id")) { response = json::object(); return true; }
     if (status == 202 || status == 204) {
         error = "The MCP server accepted a request but did not return its required JSON-RPC response.";
         return false;
     }
-    if (status < 200 || status >= 300) {
-        error = "The MCP server answered HTTP " + std::to_string(status) + (body.empty() ? "." : ": " + body.substr(0, 512));
-        return false;
-    }
-    if (body.empty()) { error = "The MCP server returned an empty response to a request."; return false; }
+
     response = json::parse(body, nullptr, false);
     if (!response.is_object()) {
         std::istringstream stream(body);
@@ -308,8 +345,20 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
             if (event.is_object()) response = std::move(event);
         }
     }
+    if (status < 200 || status >= 300) {
+        std::string detail = "The MCP server answered HTTP " + std::to_string(status);
+        if (response.is_object() && response.contains("error") && response["error"].is_object()) {
+            const json rpcError = response["error"];
+            if (rpcError.contains("code")) detail += " (JSON-RPC " + rpcError["code"].dump() + ")";
+            if (rpcError.contains("message") && rpcError["message"].is_string())
+                detail += ": " + rpcError["message"].get<std::string>();
+        } else if (!body.empty()) detail += ": " + body.substr(0, 512);
+        error = std::move(detail);
+        return false;
+    }
+    if (body.empty()) { error = "The MCP server returned an empty response to a request."; return false; }
     if (!response.is_object()) { error = "The MCP server returned an invalid JSON-RPC response."; return false; }
-    if (request.contains("id") && (!response.contains("id") || response["id"] != request["id"])) {
+    if (wireRequest.contains("id") && (!response.contains("id") || response["id"] != wireRequest["id"])) {
         error = "The MCP server returned a response with the wrong JSON-RPC request ID.";
         return false;
     }
@@ -317,9 +366,10 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
         const json rpcError = response["error"];
         error = rpcError.is_object() && rpcError.contains("message") && rpcError["message"].is_string()
             ? rpcError["message"].get<std::string>() : "The MCP server returned a malformed JSON-RPC error.";
+        if (rpcError.is_object() && rpcError.contains("code")) error += " (JSON-RPC " + rpcError["code"].dump() + ")";
         return false;
     }
-    if (request.contains("id") && (!response.contains("result") || !response["result"].is_object())) {
+    if (wireRequest.contains("id") && (!response.contains("result") || !response["result"].is_object())) {
         error = "The MCP server response did not contain a JSON-RPC result.";
         return false;
     }
@@ -377,7 +427,7 @@ void AssistantPanel::load() {
                 CredentialStore::retrieve(server.credentialKey, server.token, credentialError);
             }
             server.enabled = item.value("enabled", true);
-            server.protocolVersion = item.value("protocolVersion", std::string("2025-06-18"));
+            server.protocolVersion = item.value("protocolVersion", std::string("2026-07-28"));
             server.tools = item.value("tools", json::array());
             if (!server.name.empty() && !server.url.empty()) m_externalMcp.push_back(std::move(server));
         }
@@ -387,8 +437,7 @@ void AssistantPanel::load() {
     m_appsWanted = j.value("connectedApps", false);
     // Rewrite legacy plaintext credentials as vault references; unsupported platforms
     // deliberately retain only session memory, never plaintext settings.
-    if (migrateCredentials || j.contains("apiKey") || (j.contains("mcpServers") && j["mcpServers"].is_array())) save();
-}
+    if (migrateCredentials || j.contains("apiKey") || (j.contains("mcpServers") && j["mcpServers"].is_array())) save();}
 
 void AssistantPanel::save() const {
     std::ofstream f(Paths::file("assistant.json"));
@@ -437,31 +486,80 @@ void AssistantPanel::refreshMcpServers() {
                 result.status = server.name + ": " + error; server.tools = json::array(); continue;
             }
             json response;
-            std::string newSession;
-            json initialize = {{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"},
-                               {"params", {{"protocolVersion", "2025-06-18"}, {"capabilities", json::object()},
-                                           {"clientInfo", {{"name", "fyxa"}, {"version", "0.1"}}}}}};
-            if (!mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "")) {
-                result.status = server.name + ": " + error;
-                server.tools = json::array();
-                continue;
+            server.sessionId.clear();
+            const std::string modernVersion = "2026-07-28";
+            json discover = {{"jsonrpc", "2.0"}, {"id", "discover-1"}, {"method", "server/discover"},
+                {"params", {{"_meta", {
+                    {"io.modelcontextprotocol/protocolVersion", modernVersion},
+                    {"io.modelcontextprotocol/clientCapabilities", json::object()},
+                    {"io.modelcontextprotocol/clientInfo", {{"name", "fyxa"}, {"version", "0.1"}}}
+                }}}}};
+            bool modern = mcpPost(endpoint, server.token, "", discover, response, error, nullptr, modernVersion);
+            if (modern) {
+                const json versions = response.value("result", json::object()).value("supportedVersions", json::array());
+                modern = versions.is_array() && std::find(versions.begin(), versions.end(), json(modernVersion)) != versions.end();
+                if (!modern) {
+                    // Discovery succeeded but this server only advertises a legacy
+                    // revision. Select the newest legacy revision supported by both.
+                    const char* candidates[] = {"2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"};
+                    server.protocolVersion.clear();
+                    for (const char* candidate : candidates) {
+                        if (std::find(versions.begin(), versions.end(), json(candidate)) != versions.end()) {
+                            server.protocolVersion = candidate;
+                            break;
+                        }
+                    }
+                    if (server.protocolVersion.empty()) {
+                        result.status = server.name + ": no mutually supported MCP protocol version.";
+                        server.tools = json::array();
+                        continue;
+                    }
+                }
+            } else {
+                // Legacy fallback is deliberately narrow. Only an explicit
+                // unsupported-version or unknown-method response proves that this
+                // endpoint does not implement server/discover. Network, TLS, and
+                // authorization failures never trigger a downgrade.
+                const json rpcError = response.value("error", json::object());
+                const int code = rpcError.value("code", 0);
+                if (code != -32022 && code != -32601) {
+                    result.status = server.name + ": " + error;
+                    server.tools = json::array();
+                    continue;
+                }
+                server.protocolVersion = "2025-06-18";
             }
-            server.sessionId = newSession;
-            const json initResult = response.value("result", json::object());
-            if (initResult.contains("protocolVersion") && initResult["protocolVersion"].is_string())
-                server.protocolVersion = initResult["protocolVersion"].get<std::string>();
-            if (server.protocolVersion.empty() || server.protocolVersion.size() > 64 ||
-                server.protocolVersion.find_first_of("\r\n") != std::string::npos) {
-                result.status = server.name + ": server returned an invalid MCP protocol version.";
-                server.tools = json::array();
-                continue;
-            }
-            json initialized = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
-            json ignored;
-            if (!mcpPost(endpoint, server.token, server.sessionId, initialized, ignored, error, nullptr, server.protocolVersion)) {
-                result.status = server.name + ": " + error;
-                server.tools = json::array();
-                continue;
+
+            if (modern) {
+                server.protocolVersion = modernVersion;
+                server.sessionId.clear();
+            } else {
+                json initialize = {{"jsonrpc", "2.0"}, {"id", 1}, {"method", "initialize"},
+                    {"params", {{"protocolVersion", server.protocolVersion}, {"capabilities", json::object()},
+                                {"clientInfo", {{"name", "fyxa"}, {"version", "0.1"}}}}}};
+                std::string newSession;
+                if (!mcpPost(endpoint, server.token, "", initialize, response, error, &newSession, "")) {
+                    result.status = server.name + ": " + error;
+                    server.tools = json::array();
+                    continue;
+                }
+                server.sessionId = newSession;
+                const json initResult = response.value("result", json::object());
+                if (initResult.contains("protocolVersion") && initResult["protocolVersion"].is_string())
+                    server.protocolVersion = initResult["protocolVersion"].get<std::string>();
+                if (server.protocolVersion.empty() || server.protocolVersion.size() > 64 ||
+                    server.protocolVersion.find_first_of("\r\n") != std::string::npos) {
+                    result.status = server.name + ": server returned an invalid MCP protocol version.";
+                    server.tools = json::array();
+                    continue;
+                }
+                json initialized = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
+                json ignored;
+                if (!mcpPost(endpoint, server.token, server.sessionId, initialized, ignored, error, nullptr, server.protocolVersion)) {
+                    result.status = server.name + ": " + error;
+                    server.tools = json::array();
+                    continue;
+                }
             }
             server.tools = json::array();
             std::string cursor;
@@ -617,8 +715,7 @@ void AssistantPanel::update() {
     if (m_mcpRefreshPending.valid() && m_mcpRefreshPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         McpRefreshResult refreshed = m_mcpRefreshPending.get();
         m_externalMcp = std::move(refreshed.servers);
-        m_mcpStatus = std::move(refreshed.status);
-        save();
+        m_mcpStatus = std::move(refreshed.status);        save();
     }
     if (m_externalPending.valid() && m_externalPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         ExternalCompletion done = m_externalPending.get();
@@ -847,8 +944,7 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
         startNextExternalCall();
         return;
     }
-    for (auto& toolMessage : m_deferredOllamaMessages) m_messages.push_back(std::move(toolMessage));
-    m_deferredOllamaMessages = json::array();
+    for (auto& toolMessage : m_deferredOllamaMessages) m_messages.push_back(std::move(toolMessage));    m_deferredOllamaMessages = json::array();
     if (m_stopAsked) { m_lines.push_back({Line::Note, "Stopped."}); return; }
     if (++m_rounds >= kMaxRounds) { m_lines.push_back({Line::Note, "That's a lot of steps; paused here. Say \"continue\" to keep going."}); return; }
     requestNext();
@@ -1047,8 +1143,7 @@ void AssistantPanel::render(bool* open) {
             m_mcpError.clear();
             if (on) { if (!m_mcp.start(m_mcpPort, m_mcpError)) on = false; }
             else m_mcp.stop();
-            m_mcpWanted = on;
-            save();
+            m_mcpWanted = on;            save();
         }
         if (!m_mcpError.empty()) ImGui::TextColored(ImVec4(1, 0.45f, 0.4f, 1), "%s", m_mcpError.c_str());
         if (m_mcp.running()) {
