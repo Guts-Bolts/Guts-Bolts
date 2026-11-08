@@ -16,6 +16,10 @@ int main() {
     CHECK(!parseHttpsUrl("https://user@auth.example.com", parsed));
     CHECK(!parseHttpsUrl("https://auth.example.com:99999", parsed));
     CHECK(!parseHttpsUrl("https://auth.example.com/%0d%0aHost", parsed));
+    CHECK(!parseHttpsUrl("https://auth.example.com/%00", parsed));
+    CHECK(!parseHttpsUrl("https://auth.example.com/%7f", parsed));
+    CHECK(!parseHttpsUrl("https://auth.example.com/%GG", parsed));
+    CHECK(parseHttpsUrl("https://auth.example.com/path%20segment", parsed));
 
     const auto resourcePaths = protectedResourceMetadataUrls("https://mcp.example.com/api/mcp");
     CHECK(resourcePaths.size() == 2);
