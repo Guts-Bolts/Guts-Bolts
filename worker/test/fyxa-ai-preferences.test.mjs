@@ -136,3 +136,34 @@ test('a user cannot change another account’s content eligibility or approve th
   });
   assert.equal(selfApproval.ok, false);
 });
+
+test('visibility changes and deletion revoke stored eligibility', () => {
+  const s = makeServer();
+  const owner = s.signUp('alice');
+  const asset = s.addGame(owner, 'Public game');
+  assert.ok(enableTraining(s, owner).ok);
+
+  const content = s.call(owner, 'ai.content.eligibility.update', {
+    contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
+  });
+  assert.ok(content.ok, content.error);
+  const approved = s.call(s.staff, 'ai.content.review', { contentId: asset.id, rightsStatus: 'approved' });
+  assert.ok(approved.ok, approved.error);
+  assert.equal(approved.eligibility.trainingEligible, true);
+
+  asset.access = 'private';
+  s.saveAsset(asset);
+  s.flush();
+  const privateState = s.call(owner, 'ai.content.eligibility.get', { contentId: asset.id });
+  assert.equal(privateState.eligibility.trainingEligible, false);
+  assert.equal(privateState.eligibility.trainingExclusionReason, 'not_public');
+
+  asset.access = 'public';
+  s.saveAsset(asset);
+  s.flush();
+  assert.equal(s.call(owner, 'ai.content.eligibility.get', { contentId: asset.id }).eligibility.trainingEligible, true);
+
+  const deleted = s.call(owner, 'delete', { id: asset.id });
+  assert.ok(deleted.ok, deleted.error);
+  assert.equal(s.aiContentRow(asset.id), null);
+});
