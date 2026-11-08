@@ -546,7 +546,12 @@ bool httpRequest(const std::string& method, const std::string& host, int port, c
     std::string hostHeader = name + ((tls && port == 443) || (!tls && port == 80) ? "" : ":" + std::to_string(port));
     if (method != "GET" && method != "POST") { error = "Unsupported HTTP method."; return false; }
     std::string request = method + " " + path + " HTTP/1.1\r\nHost: " + hostHeader + "\r\nUser-Agent: GutsAndBolts\r\n";
-    if (method == "POST") request += "Content-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) + "\r\n";
+    if (method == "POST") {
+        std::string lowerExtra = lowerCase(extraHeaders);
+        if (lowerExtra.find("content-type:") == std::string::npos)
+            request += "Content-Type: application/json\r\n";
+        request += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+    }
     request += extraHeaders + "Connection: close\r\n\r\n";
     std::string headers;
     if (!w.writeAll(request, deadline) || (method == "POST" && !w.writeAll(body, deadline)) || !w.readHeaders(headers, deadline)) {
