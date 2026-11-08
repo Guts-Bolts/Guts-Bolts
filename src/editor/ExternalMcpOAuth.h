@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstdint>
 #include <random>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -169,6 +170,59 @@ inline std::string formEncode(const std::string& value) {
         else { out.push_back('%'); out.push_back(hex[c >> 4]); out.push_back(hex[c & 15]); }
     }
     return out;
+}
+
+inline bool formDecode(const std::string& value, std::string& out) {
+    auto hexValue = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    out.clear();
+    for (size_t i = 0; i < value.size(); ++i) {
+        if (value[i] == '+') out.push_back(' ');
+        else if (value[i] == '%') {
+            if (i + 2 >= value.size()) return false;
+            const int a = hexValue(value[i + 1]), b = hexValue(value[i + 2]);
+            if (a < 0 || b < 0) return false;
+            const char decoded = static_cast<char>((a << 4) | b);
+            if (decoded == '\\0' || decoded == '\\r' || decoded == '\\n') return false;
+            out.push_back(decoded);
+            i += 2;
+        } else out.push_back(value[i]);
+    }
+    return true;
+}
+
+inline bool parseQuery(const std::string& query, std::map<std::string, std::string>& values) {
+    values.clear();
+    size_t at = query.find('?');
+    std::string source = at == std::string::npos ? query : query.substr(at + 1);
+    while (!source.empty()) {
+        const size_t amp = source.find('&');
+        const std::string pair = source.substr(0, amp);
+        const size_t eq = pair.find('=');
+        std::string key, value;
+        if (!formDecode(pair.substr(0, eq), key) ||
+            !formDecode(eq == std::string::npos ? std::string() : pair.substr(eq + 1), value) ||
+            key.empty() || values.contains(key)) return false;
+        values.emplace(std::move(key), std::move(value));
+        if (amp == std::string::npos) break;
+        source.erase(0, amp + 1);
+    }
+    return true;
+}
+
+inline std::string appendQuery(const std::string& endpoint,
+                               const std::vector<std::pair<std::string, std::string>>& parameters) {
+    std::string result = endpoint;
+    result += endpoint.find('?') == std::string::npos ? '?' : '&';
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        if (i) result += '&';
+        result += formEncode(parameters[i].first) + '=' + formEncode(parameters[i].second);
+    }
+    return result;
 }
 
 } // namespace McpOAuth
