@@ -49,10 +49,19 @@ bool readTasks(const std::filesystem::path& file, json& tasks, std::string& erro
     std::ifstream in(file, std::ios::binary);
     if (!in) { error = "Cannot open task file."; return false; }
     json root = json::parse(in, nullptr, false);
-    if (root.is_discarded() || !root.is_object() || root.value("version", 0) != 1 ||
+    if (root.is_discarded() || !root.is_object() || !root.contains("version") ||
+        !root["version"].is_number_integer() || root["version"].get<int>() != 1 ||
         !root.contains("tasks") || !root["tasks"].is_array()) {
         error = "Task file is invalid. It was left untouched.";
         return false;
+    }
+    for (const auto& task : root["tasks"]) {
+        if (!task.is_object() || !task.contains("id") || !task["id"].is_string() ||
+            !task.contains("title") || !task["title"].is_string() ||
+            !task.contains("status") || !task["status"].is_string()) {
+            error = "Task file contains an invalid task. It was left untouched.";
+            return false;
+        }
     }
     tasks = std::move(root["tasks"]);
     return true;
