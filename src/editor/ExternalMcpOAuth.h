@@ -53,7 +53,7 @@ inline bool parseHttpsUrl(const std::string& value, HttpsUrl& out) {
         };
         const unsigned int decoded = (hexValue(static_cast<unsigned char>(value[i + 1])) << 4) |
                                      hexValue(static_cast<unsigned char>(value[i + 2]));
-        if (decoded <= 0x20 || decoded == 0x7f) return false;
+        if (decoded < 0x20 || decoded == 0x7f) return false;
         i += 2;
     }
     const size_t authorityStart = 8;
