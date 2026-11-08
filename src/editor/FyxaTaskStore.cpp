@@ -51,7 +51,7 @@ bool readTasks(const std::filesystem::path& file, json& tasks, std::string& erro
     if (!in) { error = "Cannot open task file."; return false; }
     json root = json::parse(in, nullptr, false);
     if (root.is_discarded() || !root.is_object() || !root.contains("version") ||
-        !root["version"].is_number_integer() || root["version"].get<int>() != 1 ||
+        !root["version"].is_number_integer() || root["version"] != 1 ||
         !root.contains("tasks") || !root["tasks"].is_array()) {
         error = "Task file is invalid. It was left untouched.";
         return false;
@@ -74,7 +74,7 @@ bool writeTasks(const std::filesystem::path& file, const json& tasks, std::strin
     std::filesystem::create_directories(file.parent_path(), ec);
     if (ec) { error = "Cannot create task directory: " + ec.message(); return false; }
 
-    const auto suffix = std::to_string(g_taskSequence.fetch_add(1));
+    const auto suffix = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" + std::to_string(g_taskSequence.fetch_add(1));
     const std::filesystem::path temp = file.string() + ".tmp-" + suffix;
     {
         std::ofstream out(temp, std::ios::binary | std::ios::trunc);
