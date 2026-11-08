@@ -9,7 +9,7 @@ Make Fyxa a dependable in-Studio assistant that can use native Guts & Bolts tool
 - Keep secrets out of assistant.json; use OS credential storage where available and session-only credentials otherwise.
 - Run discovery and tool calls off the UI thread, with cancellation, timeouts, bounded responses, and clean shutdown.
 - Show external tool identity, arguments, result, and status in an activity log.
-- Require explicit user approval for external write/unknown tools; allow user-configured read-only trust for known safe tools.
+- Require per-call user approval for every external MCP tool invocation in the current implementation. Connected-app relay tool calls use the same Studio-side approval gate and live fingerprint check. Future opt-in trust tiers are governed by the production-readiness review; server-wide write approval is not allowed.
 - Preserve native AI Activity and undo behavior for native Studio tools.
 - Never claim arbitrary third-party side effects can be rolled back. Support undo only when a server explicitly implements a compatible compensating operation.
 
@@ -26,7 +26,7 @@ Make Fyxa a dependable in-Studio assistant that can use native Guts & Bolts tool
 
 ## Architecture
 - ExternalMcp owns server definitions, sessions, tool schemas, OAuth state, credential references, and an asynchronous operation queue.
-- HTTP uses Net::httpPost with HTTPS validation, MCP protocol negotiation, session headers, JSON/SSE parsing, pagination, and bounded responses.
+- HTTP uses Net::httpPost with HTTPS validation, stateless MCP 2026-07-28 request metadata/routing, narrow legacy session compatibility, JSON/SSE parsing, pagination, and bounded responses.
 - stdio uses a cross-platform child-process adapter with stdin/stdout pipes; stderr is captured separately and never parsed as protocol output.
 - A worker serializes I/O and returns immutable completions; the editor applies UI changes only on its main thread.
 - Credential adapters use Windows Credential Manager, macOS Keychain, and Linux Secret Service when available. If unavailable, credentials are session-only and the UI says so.
