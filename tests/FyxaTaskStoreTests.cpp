@@ -50,6 +50,23 @@ int main() {
         check(!reopened.update(tasks[0].value("id", ""), "finished", "", error), "rejects an invalid status");
     }
     {
+        FyxaTaskStore store(dir / "single-active.json");
+        std::string error;
+        const json first = store.create("Build the lobby", "", error);
+        const json second = store.create("Check the marketplace", "", error);
+        const std::string firstId = first.value("id", "");
+        const std::string secondId = second.value("id", "");
+        check(store.update(firstId, "in_progress", "", error), "starts the first active task");
+        check(!store.update(secondId, "in_progress", "", error),
+              "rejects a second concurrent active task");
+        check(error.find("one active task") != std::string::npos,
+              "explains the single-active-task v1 constraint");
+        check(store.update(firstId, "blocked", "Deferred for now", error),
+              "allows the active task to be paused");
+        check(store.update(secondId, "in_progress", "", error),
+              "allows a pending task to start after the active task is paused");
+    }
+    {
         FyxaTaskStore store(dir / "invalid.json");
         std::string error;
         check(store.create(" ", "description", error).is_null(), "rejects an empty title");
