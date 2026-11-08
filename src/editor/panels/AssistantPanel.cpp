@@ -115,15 +115,28 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     if (body.empty()) { error = "The MCP server returned an empty response to a request."; return false; }
     response = json::parse(body, nullptr, false);
     if (!response.is_object()) {
-        size_t at = 0;
-        while ((at = body.find("data:", at)) != std::string::npos) {
-            at += 5;
-            while (at < body.size() && body[at] == ' ') ++at;
-            size_t end = body.find('\n', at);
-            json event = json::parse(body.substr(at, end == std::string::npos ? std::string::npos : end - at), nullptr, false);
-            if (event.is_object()) { response = std::move(event); break; }
-            if (end == std::string::npos) break;
-            at = end + 1;
+        std::istringstream stream(body);
+        std::string line, eventData;
+        while (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.empty()) {
+                if (!eventData.empty()) {
+                    json event = json::parse(eventData, nullptr, false);
+                    if (event.is_object()) { response = std::move(event); break; }
+                    eventData.clear();
+                }
+                continue;
+            }
+            if (line.rfind("data:", 0) == 0) {
+                if (!eventData.empty()) eventData += "\n";
+                std::string data = line.substr(5);
+                if (!data.empty() && data.front() == ' ') data.erase(data.begin());
+                eventData += data;
+            }
+        }
+        if (!response.is_object() && !eventData.empty()) {
+            json event = json::parse(eventData, nullptr, false);
+            if (event.is_object()) response = std::move(event);
         }
     }
     if (!response.is_object()) { error = "The MCP server returned an invalid JSON-RPC response."; return false; }
@@ -161,7 +174,6 @@ void AssistantPanel::load() {
             server.url = item.value("url", std::string());
             server.token = item.value("token", std::string());
             server.enabled = item.value("enabled", true);
-            server.sessionId = item.value("sessionId", std::string());
             server.protocolVersion = item.value("protocolVersion", std::string("2025-06-18"));
             server.tools = item.value("tools", json::array());
             if (!server.name.empty() && !server.url.empty()) m_externalMcp.push_back(std::move(server));
@@ -179,7 +191,7 @@ void AssistantPanel::save() const {
               {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}, {"connectedApps", m_appsWanted},
               {"mcpServers", [&]() { json a = json::array(); for (const auto& s : m_externalMcp)
                   a.push_back({{"name", s.name}, {"url", s.url}, {"token", s.token}, {"enabled", s.enabled},
-                               {"sessionId", s.sessionId}, {"protocolVersion", s.protocolVersion}, {"tools", s.tools}}); return a; }()}}.dump(2);
+                               {"protocolVersion", s.protocolVersion}, {"tools", s.tools}}); return a; }()}}.dump(2);
 }
 
 json AssistantPanel::externalMcpTools() const {
@@ -251,6 +263,7 @@ void AssistantPanel::refreshMcpServers() {
 
 bool AssistantPanel::callExternalMcpTool(const std::string& qualifiedName, const json& args,
                                          std::string& result, std::string& error) const {
+    error.clear();
     if (qualifiedName.rfind("mcp__", 0) != 0) { error = "Unknown external MCP tool."; return false; }
     const size_t split = qualifiedName.find("__", 5);
     if (split == std::string::npos) { error = "The external MCP tool name is malformed."; return false; }
@@ -431,7 +444,9 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
     for (const auto& call : calls) {
         const json fn = call.value("function", json::object());
         const std::string name = fn.value("name", std::string());
-        const json args = fn.value("arguments", json::object());
+        json args = fn.value("arguments", json::object());
+        if (args.is_string()) args = json::parse(args.get<std::string>(), nullptr, false);
+        if (!args.is_object()) args = json::object();
         if (name.empty()) continue;
         AiToolResult result;
         if (name.rfind("mcp__", 0) == 0) {
