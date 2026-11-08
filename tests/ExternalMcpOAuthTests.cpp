@@ -41,6 +41,10 @@ int main() {
     CHECK(pkce.challenge.size() == 43);
     CHECK(pkce.state.size() >= 40);
     CHECK(pkce.verifier.find_first_of("+/= ") == std::string::npos);
+    std::uint8_t expectedDigest[32]{};
+    crypto_sha256(expectedDigest, reinterpret_cast<const std::uint8_t*>(pkce.verifier.data()), pkce.verifier.size());
+    CHECK(pkce.challenge == base64Url(expectedDigest, sizeof(expectedDigest)));
+    crypto_wipe(expectedDigest, sizeof(expectedDigest));
     CHECK(formEncode("a b&c") == "a%20b%26c");
     std::map<std::string, std::string> callback;
     CHECK(parseQuery("/oauth/callback?code=abc%2B123&state=s%20t", callback));
