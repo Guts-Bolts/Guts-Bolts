@@ -10,6 +10,9 @@
 #include <mutex>
 #include <random>
 #include <vector>
+#ifdef _WIN32
+#include <shellapi.h>
+#endif
 
 #ifdef GB_WEBSOCKETS
 #include <mbedtls/ctr_drbg.h>
@@ -528,8 +531,8 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
 }
 
 
-bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
-              std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* statusOut, std::string* responseHeaders) {
+bool httpRequest(const std::string& method, const std::string& host, int port, const std::string& path, const std::string& body,
+                 std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* statusOut, std::string* responseHeaders) {
     bool tls = false;
     std::string name = isWebAddress(host) ? webHostName(host, tls) : host;
     auto deadline = Clock::now() + std::chrono::milliseconds(timeoutMs);
@@ -541,11 +544,12 @@ bool httpPost(const std::string& host, int port, const std::string& path, const 
     w.sock = s;
     if (tls && !w.startTls(name, error, deadline)) return false;
     std::string hostHeader = name + ((tls && port == 443) || (!tls && port == 80) ? "" : ":" + std::to_string(port));
-    std::string request = "POST " + path + " HTTP/1.1\r\nHost: " + hostHeader + "\r\nUser-Agent: GutsAndBolts\r\n"
-                          "Content-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) +
-                          "\r\n" + extraHeaders + "Connection: close\r\n\r\n";
+    if (method != "GET" && method != "POST") { error = "Unsupported HTTP method."; return false; }
+    std::string request = method + " " + path + " HTTP/1.1\r\nHost: " + hostHeader + "\r\nUser-Agent: GutsAndBolts\r\n";
+    if (method == "POST") request += "Content-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) + "\r\n";
+    request += extraHeaders + "Connection: close\r\n\r\n";
     std::string headers;
-    if (!w.writeAll(request, deadline) || !w.writeAll(body, deadline) || !w.readHeaders(headers, deadline)) {
+    if (!w.writeAll(request, deadline) || (method == "POST" && !w.writeAll(body, deadline)) || !w.readHeaders(headers, deadline)) {
         error = "The server at " + name + " didn't answer in time.";
         return false;
     }
@@ -601,6 +605,46 @@ bool httpPost(const std::string& host, int port, const std::string& path, const 
     }
     reply = std::move(all);
     return true;
+}
+
+bool httpGet(const std::string& host, int port, const std::string& path, std::string& reply,
+             std::string& error, int timeoutMs, const std::string& extraHeaders, int* status, std::string* responseHeaders) {
+    return httpRequest("GET", host, port, path, {}, reply, error, timeoutMs, extraHeaders, status, responseHeaders);
+}
+
+bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
+              std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* status, std::string* responseHeaders) {
+    return httpRequest("POST", host, port, path, body, reply, error, timeoutMs, extraHeaders, status, responseHeaders);
+}
+
+bool openUrl(const std::string& url, std::string& error) {
+    if (url.rfind("https://", 0) != 0 || url.size() > 8192 ||
+        url.find_first_of("\r\n\t ") != std::string::npos) {
+        error = "Only a valid HTTPS URL can be opened for authorization.";
+        return false;
+    }
+#ifdef _WIN32
+    int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, url.data(), (int)url.size(), nullptr, 0);
+    if (n <= 0) { error = "The authorization URL is not valid UTF-8."; return false; }
+    std::wstring wideUrl((size_t)n, L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, url.data(), (int)url.size(), wideUrl.data(), n);
+    HINSTANCE result = ShellExecuteW(nullptr, L"open", wideUrl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if ((INT_PTR)result <= 32) { error = "Windows could not open the authorization browser."; return false; }
+    return true;
+#elif defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    pid_t child = fork();
+    if (child == 0) { execlp("open", "open", url.c_str(), (char*)nullptr); _exit(127); }
+    if (child < 0) { error = "Could not launch the authorization browser."; return false; }
+    return true;
+#elif !defined(__EMSCRIPTEN__)
+    pid_t child = fork();
+    if (child == 0) { execlp("xdg-open", "xdg-open", url.c_str(), (char*)nullptr); _exit(127); }
+    if (child < 0) { error = "Could not launch the authorization browser."; return false; }
+    return true;
+#else
+    error = "Browser-based MCP authorization is not available in this build.";
+    return false;
+#endif
 }
 
 void Connection::send(const std::string& message) {
