@@ -4703,6 +4703,18 @@ export class GbServerObject extends DurableObject {
   // reach a deleted account), so they're out of circulation for good.
   deleteAccount(u) {
     const t = now(), number = u.userId;
+    // Account deletion leaves published games/items online, but it revokes all Fyxa permissions
+    // and rights attestations attached to that account before its personal account data is erased.
+    if (this.aiEnabledAccounts) this.aiEnabledAccounts.delete(u.id);
+    this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
+      (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
+      VALUES (?, 0, 0, ?, ?, 'account_deleted', ?, ?)`, u.id, FYXA_AI_POLICY_VERSION, FYXA_AI_NOTICE_VERSION, t, t);
+    this.sql.exec(`UPDATE ai_content_eligibility SET training_choice = -1, reference_choice = -1,
+      rights_attested = 0, rights_status = 'unverified', training_eligible = 0, reference_eligible = 0,
+      training_exclusion_reason = 'account_deleted', reference_exclusion_reason = 'account_deleted', updated_at = ?
+      WHERE owner_id = ?`, t, u.id);
+    this.sql.exec('INSERT INTO ai_training_audit (id, account_id, content_id, event_type, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      randomHex(16), u.id, null, 'account.deleted', JSON.stringify({ accountId: u.id }), t);
     for (const n of [u.username, ...(u.pastNames || [])]) if (n) this.takenNames.add(lower(n));
     this.dirty.ids = true;
     for (const v of this.users.values()) {
