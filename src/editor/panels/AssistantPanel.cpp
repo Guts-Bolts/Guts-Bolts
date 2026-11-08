@@ -8,6 +8,7 @@
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <fstream>
 
@@ -20,7 +21,7 @@ const char* kClaudeModelNames[] = {"Claude Opus 5.5 (best)", "Claude Sonnet 5.5 
 
 std::string exePath() { return Paths::sibling("GutsAndBolts").string(); }
 
-json ollamaTools() {
+json ollamaTools(const json& external = json::array()) {
     json tools = json::array();
     for (const auto& tool : AiTools::list()) {
         tools.push_back({
@@ -32,7 +33,65 @@ json ollamaTools() {
             }}
         });
     }
+    for (const auto& tool : external) {
+        tools.push_back({{"type", "function"}, {"function", {
+            {"name", tool.value("qualifiedName", std::string())},
+            {"description", tool.value("description", std::string())},
+            {"parameters", tool.value("inputSchema", json::object())}
+        }}});
+    }
     return tools;
+}
+
+struct McpEndpoint { std::string host, path; int port = 443; bool tls = true; };
+bool parseMcpEndpoint(const std::string& url, McpEndpoint& out, std::string& error) {
+    const bool https = url.rfind("https://", 0) == 0;
+    const bool http = url.rfind("http://", 0) == 0;
+    if (!https && !http) { error = "Use an http:// or https:// MCP endpoint."; return false; }
+    const size_t start = https ? 8 : 7;
+    const size_t slash = url.find('/', start);
+    std::string authority = url.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+    out.path = slash == std::string::npos ? "/mcp" : url.substr(slash);
+    if (authority.empty() || authority.find('@') != std::string::npos) { error = "The MCP endpoint address is invalid."; return false; }
+    const size_t colon = authority.rfind(':');
+    if (colon != std::string::npos) {
+        out.host = authority.substr(0, colon);
+        try { out.port = std::stoi(authority.substr(colon + 1)); } catch (...) { error = "The MCP endpoint port is invalid."; return false; }
+    } else { out.host = authority; out.port = https ? 443 : 80; }
+    if (out.host.empty() || out.port < 1 || out.port > 65535) { error = "The MCP endpoint host or port is invalid."; return false; }
+    if (!https && out.host != "localhost" && out.host != "127.0.0.1" && out.host != "::1") {
+        error = "For security, non-local MCP endpoints must use HTTPS."; return false;
+    }
+    out.tls = https;
+    return true;
+}
+std::string responseHeader(const std::string& headers, const std::string& wanted) {
+    std::string low = headers, key = wanted;
+    for (char& ch : low) ch = (char)std::tolower((unsigned char)ch);
+    for (char& ch : key) ch = (char)std::tolower((unsigned char)ch);
+    size_t at = low.find("\\n" + key + ":");
+    if (at == std::string::npos) return {};
+    at += key.size() + 2;
+    size_t end = headers.find("\\r", at);
+    std::string value = headers.substr(at, end == std::string::npos ? std::string::npos : end - at);
+    while (!value.empty() && value.front() == ' ') value.erase(value.begin());
+    return value;
+}
+bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::string& session,
+             const json& request, json& response, std::string& error, std::string* sessionOut = nullptr) {
+    std::string headers = "MCP-Protocol-Version: 2025-06-18\\r\\n";
+    if (!token.empty()) headers += "Authorization: Bearer " + token + "\\r\\n";
+    if (!session.empty()) headers += "Mcp-Session-Id: " + session + "\\r\\n";
+    std::string body, responseHeaders;
+    int status = 0;
+    const std::string host = endpoint.tls ? "wss://" + endpoint.host : endpoint.host;
+    if (!Net::httpPost(host, endpoint.port, endpoint.path, request.dump(), body, error, 12000, headers, &status, &responseHeaders)) return false;
+    if (sessionOut) *sessionOut = responseHeader(responseHeaders, "Mcp-Session-Id");
+    if (status == 202 || body.empty()) { response = json::object(); return true; }
+    response = json::parse(body, nullptr, false);
+    if (!response.is_object()) { error = "The MCP server returned an invalid JSON-RPC response."; return false; }
+    if (response.contains("error")) { error = response["error"].value("message", "The MCP server returned an error."); return false; }
+    return status >= 200 && status < 300;
 }
 } // namespace
 
@@ -57,6 +116,20 @@ void AssistantPanel::load() {
     m_ollamaHost = j.value("ollamaHost", m_ollamaHost);
     m_ollamaPort = j.value("ollamaPort", m_ollamaPort);
     m_ollamaModel = j.value("ollamaModel", m_ollamaModel);
+    if (j.contains("mcpServers") && j["mcpServers"].is_array()) {
+        for (const auto& item : j["mcpServers"]) {
+            if (!item.is_object()) continue;
+            McpServer server;
+            server.name = item.value("name", std::string());
+            server.url = item.value("url", std::string());
+            server.token = item.value("token", std::string());
+            server.enabled = item.value("enabled", true);
+            server.sessionId = item.value("sessionId", std::string());
+            server.protocolVersion = item.value("protocolVersion", std::string("2025-06-18"));
+            server.tools = item.value("tools", json::array());
+            if (!server.name.empty() && !server.url.empty()) m_externalMcp.push_back(std::move(server));
+        }
+    }
     m_mcpWanted = j.value("mcp", false);
     m_mcpPort = j.value("mcpPort", (int)StudioMcp::kDefaultPort);
     m_appsWanted = j.value("connectedApps", false);
@@ -66,7 +139,10 @@ void AssistantPanel::save() const {
     std::ofstream f(Paths::file("assistant.json"));
     f << json{{"provider", m_provider}, {"apiKey", m_apiKey}, {"model", m_model},
               {"ollamaHost", m_ollamaHost}, {"ollamaPort", m_ollamaPort}, {"ollamaModel", m_ollamaModel},
-              {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}, {"connectedApps", m_appsWanted}}.dump(2);
+              {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}, {"connectedApps", m_appsWanted},
+              {"mcpServers", [&]() { json a = json::array(); for (const auto& s : m_externalMcp)
+                  a.push_back({{"name", s.name}, {"url", s.url}, {"token", s.token}, {"enabled", s.enabled},
+                               {"sessionId", s.sessionId}, {"protocolVersion", s.protocolVersion}, {"tools", s.tools}}); return a; }()}}.dump(2);
 }
 
 void AssistantPanel::update() {
@@ -95,11 +171,15 @@ void AssistantPanel::requestNext() {
                 {"model", m_ollamaModel},
                 {"stream", false},
                 {"messages", messages},
-                {"tools", ollamaTools()}
+                {"tools", ollamaTools(externalMcpTools())}
             }.dump();
         }
 
         json tools = AiTools::list();
+        for (const auto& ext : externalMcpTools())
+            tools.push_back({{"name", ext.value("qualifiedName", std::string())},
+                             {"description", ext.value("description", std::string())},
+                             {"input_schema", ext.value("inputSchema", json::object())}});
         tools.back()["cache_control"] = {{"type", "ephemeral"}};
         json body = {
             {"model", m_model},
@@ -162,7 +242,15 @@ void AssistantPanel::handleClaudeReply(int status, const std::string& body, cons
     for (const auto& b : j["content"]) {
         if (b.value("type", "") != "tool_use") continue;
         std::string name = b.value("name", "");
-        AiToolResult r = m_editor.runAiToolFrom("Fyxa", name, b.contains("input") && b["input"].is_object() ? b["input"] : json::object());
+        AiToolResult r;
+        if (name.rfind("mcp__", 0) == 0) {
+            std::string externalError;
+            if (callExternalMcpTool(name, b.contains("input") && b["input"].is_object() ? b["input"] : json::object(), r.text, externalError))
+                r.error = false;
+            else { r.error = true; r.text = externalError; }
+        } else {
+            r = m_editor.runAiToolFrom("Fyxa", name, b.contains("input") && b["input"].is_object() ? b["input"] : json::object());
+        }
         std::string shown = name;
         if (b.contains("input") && b["input"].contains("object") && b["input"]["object"].is_string())
             shown += " " + b["input"]["object"].get<std::string>();
@@ -205,7 +293,15 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
         const std::string name = fn.value("name", std::string());
         const json args = fn.value("arguments", json::object());
         if (name.empty()) continue;
-        AiToolResult result = m_editor.runAiToolFrom("Fyxa", name, args.is_object() ? args : json::object());
+        AiToolResult result;
+        if (name.rfind("mcp__", 0) == 0) {
+            std::string externalError;
+            if (callExternalMcpTool(name, args.is_object() ? args : json::object(), result.text, externalError))
+                result.error = false;
+            else { result.error = true; result.text = externalError; }
+        } else {
+            result = m_editor.runAiToolFrom("Fyxa", name, args.is_object() ? args : json::object());
+        }
         std::string shown = name;
         if (args.contains("object") && args["object"].is_string()) shown += " " + args["object"].get<std::string>();
         m_lines.push_back({result.error ? Line::Error : Line::Tool, shown + (result.error ? ": " + result.text : "")});
@@ -251,6 +347,43 @@ void AssistantPanel::render(bool* open) {
             ImGui::SetNextItemWidth(-1);
             if (ImGui::Combo("Claude model", &mi, kClaudeModelNames, 3)) { m_model = kClaudeModels[mi]; save(); }
         }
+    }
+
+    if (ImGui::CollapsingHeader("Connect MCP servers to Fyxa")) {
+        ImGui::TextWrapped("Connect external MCP servers so Fyxa can discover and use their tools. Remote endpoints must use HTTPS. Bearer tokens are saved in this computer's local assistant settings.");
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##newmcpname", "Server name (e.g. github)", &m_newMcpName);
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##newmcpurl", "https://example.com/mcp or http://127.0.0.1:3000/mcp", &m_newMcpUrl);
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##newmcptoken", "Bearer token (optional)", &m_newMcpToken, ImGuiInputTextFlags_Password);
+        if (ImGui::Button("Add MCP server") && !m_newMcpName.empty() && !m_newMcpUrl.empty()) {
+            bool duplicate = false;
+            for (const auto& server : m_externalMcp) if (server.name == m_newMcpName) duplicate = true;
+            if (duplicate) m_mcpStatus = "A server with that name already exists.";
+            else {
+                McpServer server; server.name = m_newMcpName; server.url = m_newMcpUrl; server.token = m_newMcpToken;
+                m_externalMcp.push_back(std::move(server)); save();
+                m_newMcpName.clear(); m_newMcpUrl.clear(); m_newMcpToken.clear();
+                refreshMcpServers();
+            }
+        }
+        if (!m_mcpStatus.empty()) ImGui::TextWrapped("%s", m_mcpStatus.c_str());
+        for (size_t i = 0; i < m_externalMcp.size(); ++i) {
+            auto& server = m_externalMcp[i];
+            ImGui::PushID((int)i);
+            ImGui::Separator();
+            bool enabled = server.enabled;
+            if (ImGui::Checkbox(server.name.c_str(), &enabled)) { server.enabled = enabled; save(); }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Refresh tools")) refreshMcpServers();
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Remove")) { m_externalMcp.erase(m_externalMcp.begin() + (long)i); save(); ImGui::PopID(); break; }
+            ImGui::TextDisabled("%s", server.url.c_str());
+            ImGui::TextDisabled("%d discovered tool(s)", server.tools.is_array() ? (int)server.tools.size() : 0);
+            ImGui::PopID();
+        }
+        if (ImGui::Button("Refresh all MCP tools")) refreshMcpServers();
     }
 
     if (ImGui::CollapsingHeader("Connect AI apps to Studio (MCP)")) {
