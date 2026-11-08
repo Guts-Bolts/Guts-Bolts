@@ -41,6 +41,7 @@ private:
         nlohmann::json relayId;
         nlohmann::json message;
         std::string app, tool, fingerprint, arguments;
+        double expiresAt = 0;
         bool canChange = false;
     };
     void drop(State state, const std::string& why, bool retry);
