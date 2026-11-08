@@ -2608,6 +2608,10 @@ export class GbServerObject extends DurableObject {
             categories.push('VISION_' + (category || 'REVIEW'));
             scanner += '+moondream';
             unsafe = true;
+          } else if (!parsedVision || typeof parsedVision.flag !== 'boolean') {
+            categories.push('VISION_SCAN_UNAVAILABLE');
+            scanner += '+moondream-unstructured';
+            unsafe = true;
           }
         } catch (error) {
           categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+moondream-error'; unsafe = true;
