@@ -129,16 +129,22 @@ AiToolResult runFyxaAgentTool(const std::string& name, const json& args, std::ve
         const std::string id = stringArg("id"), status = stringArg("status"), note = stringArg("note");
         const std::string evidenceId = stringArg("evidence_id");
         if (id.empty() || status.empty()) return fail("Task id and status are required.");
+        FyxaTaskStore store(Paths::file("fyxa-tasks.json"));
+        std::string error;
         auto evidence = evidenceIds.end();
         if (status == "completed") {
             if (note.empty() || evidenceId.empty())
                 return fail("Completing a task requires a verification note and an evidence_id from a successful tool result in this session.");
             evidence = std::find_if(evidenceIds.begin(), evidenceIds.end(), [&](const auto& item) { return item.first == evidenceId && item.second == id; });
             if (evidence == evidenceIds.end())
-                return fail("That evidence_id was not issued by a successful tool call in this session. Re-run the verification operation.");
+                return fail("That evidence_id was not issued by a successful tool call while this task was in progress. Re-run the verification operation.");
+            const json tasks = store.list(error);
+            if (!error.empty()) return fail(error);
+            bool active = false;
+            for (const auto& task : tasks)
+                if (task.value("id", std::string()) == id && task.value("status", std::string()) == "in_progress") active = true;
+            if (!active) return fail("The task must still be in_progress when it is completed.");
         }
-        FyxaTaskStore store(Paths::file("fyxa-tasks.json"));
-        std::string error;
         if (!store.update(id, status, note, error)) return fail(error);
         if (status == "completed") evidenceIds.erase(evidence);
         result.data = {{"success", true}, {"id", id}, {"status", status}};
