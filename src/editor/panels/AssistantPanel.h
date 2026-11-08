@@ -76,6 +76,7 @@ private:
     std::vector<Line> m_lines;
     struct Reply { int status = 0; std::string body, error; };
     std::future<Reply> m_pending;
+    std::shared_ptr<std::atomic_bool> m_agentCancel;
     std::future<ExternalCompletion> m_externalPending;
     std::deque<ExternalCall> m_externalQueue;
     nlohmann::json m_deferredClaudeResults = nlohmann::json::array();
