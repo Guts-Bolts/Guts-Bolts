@@ -59,7 +59,7 @@ json ollamaTools(const json& external = json::array()) {
 
 
 json fyxaAgentTools() {
-    auto schema = [](json properties, json required = json::array()) {
+    auto schema = [](json properties, json required) {
         return json{{"type", "object"}, {"properties", std::move(properties)},
                     {"required", std::move(required)}, {"additionalProperties", false}};
     };
@@ -67,7 +67,7 @@ json fyxaAgentTools() {
     auto add = [&](const char* name, const char* description, const json& input) {
         tools.push_back({{"name", name}, {"description", description}, {"input_schema", input}});
     };
-    const json empty = schema(json::object());
+    const json empty = schema(json::object(), json::array());
     add("fyxa_task_list", "List the user's persistent Fyxa tasks and their current status.", empty);
 
     json createProperties = {
