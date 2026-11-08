@@ -1027,7 +1027,7 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
 endif()
 
-# Fyxa skills are bounded Markdown instruction packs loaded on demand.
+# Fyxa's shared HTTP client must interrupt stalled requests when cancellation is signalled.
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
     add_executable(NetHttpCancellationTests tests/NetHttpCancellationTests.cpp)
     target_link_libraries(NetHttpCancellationTests PRIVATE gb_engine)
