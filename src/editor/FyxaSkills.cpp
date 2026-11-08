@@ -95,6 +95,7 @@ nlohmann::json FyxaSkills::list() const {
 
 bool FyxaSkills::load(const std::string& name, std::string& content, std::string& error) const {
     content.clear();
+    error.clear();
     if (!validName(name)) {
         error = "Skill name must contain only lowercase letters, digits, and hyphens.";
         return false;
