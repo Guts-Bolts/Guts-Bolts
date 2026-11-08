@@ -105,6 +105,18 @@ void StudioRelay::drop(State state, const std::string& why, bool retry) {
 }
 
 void StudioRelay::update(Editor& editor, StudioMcp& mcp) {
+    if (m_pendingApproval && now() >= m_pendingApproval->expiresAt) {
+        PendingApproval expired = std::move(*m_pendingApproval);
+        m_pendingApproval.reset();
+        if (m_conn) {
+            const json timeout = relayRpcError(expired.message.value("id", json()),
+                "The Studio approval request expired. Ask the connected app to retry.");
+            m_conn->send(json{{"t", "mcp.reply"}, {"id", expired.relayId}, {"reply", timeout}}.dump());
+        }
+        const json params = expired.message.value("params", json::object());
+        appendRelayAudit(expired.app, expired.tool, expired.fingerprint,
+                         params.value("arguments", json::object()), "approval-expired");
+    }
     if (!m_enabled || m_replaced) return;
     // A dial in progress (connectTo waits, so it runs off the main thread).
     if (m_dialing.valid()) {
@@ -241,6 +253,7 @@ void StudioRelay::onMessage(Editor& editor, StudioMcp& mcp, const std::string& t
         pending.tool = tool;
         pending.fingerprint = pinned;
         pending.arguments = redactRelayArguments(arguments).dump(2);
+        pending.expiresAt = now() + 110.0;
         pending.canChange = canChange;
         m_pendingApproval = std::move(pending);
         appendRelayAudit(app, tool, pinned, arguments, "approval-requested");
