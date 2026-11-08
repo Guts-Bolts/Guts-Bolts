@@ -6502,8 +6502,10 @@ export class GbServerObject extends DurableObject {
     const h = request.headers;   // (set by worker/shield.js, which replaces anything a visitor sent in them)
     let answer = this.handle(req, { ip: h.get('x-gb-ip') || '', web: h.get('x-gb-web') === '1', human: h.get('x-gb-human') === '1', sitekey: h.get('x-gb-sitekey') || '' });
     if (answer.ok && answer.moderationActor) {
-      try { await this.scanModerationSubmission(req, answer.moderationActor, answer); }
-      catch (error) { console.log('Fyxa moderation scan failed: ' + (error && error.message || error)); }
+      const scan = this.scanModerationSubmission(req, answer.moderationActor, answer)
+        .catch((error) => console.log('Fyxa moderation scan failed: ' + (error && error.message || error)));
+      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(scan);
+      else await scan;
     }
     if (answer.ok && req.op === 'notes.list' && answer.me && answer.me.id) {
       try {
