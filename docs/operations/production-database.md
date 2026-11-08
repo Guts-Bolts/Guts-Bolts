@@ -7,8 +7,9 @@ This runbook describes the production Guts & Bolts database and the recovery wor
 - The production Worker is `project-guts-and-bolts`.
 - The Worker routes `/api` and `/ws` to the `GbServerObject` Durable Object named `main`.
 - `GbServerObject` uses the SQLite storage API through `ctx.storage.sql`.
-- Application records are stored in SQLite tables including `users`, `assets`, `groups`, `forum`, `meta`, `files`, `nonces`, `gamedata`, and `pasttrades`.
+- Application records are stored in SQLite tables including `users`, `assets`, `groups`, `forum`, `meta`, `files`, `nonces`, `gamedata`, and `pasttrades`. Fyxa's account preferences, per-content eligibility decisions, and audit events are stored in the additive `ai_training_preferences`, `ai_content_eligibility`, and `ai_training_audit` tables.
 - Large file data is stored in `files` in 1 MiB pieces.
+- Fyxa eligibility and preference records are compact SQLite metadata, not media blobs or model-training datasets. The eligibility tables are included in the logical R2 backup export; training itself is not implemented by these tables.
 - The application currently loads users, assets, groups, and forum records into in-memory Maps when the Durable Object starts. Most application lookups then operate on those Maps; this is not a conventional SQL-per-request/N+1 architecture.
 
 ## Current consistency and scale characteristics
