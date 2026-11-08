@@ -21,10 +21,10 @@ int main() {
 
     CHECK(grant.validAt(1500));
     CHECK(grant.matches("github", "server-fp", "create_issue", "tool-fp", "write", false, 1500));
-    CHECK(!grant.matches("github", "server-fp", "delete_repo", "tool-fp", "write", 1500));
-    CHECK(!grant.matches("github", "changed-server", "create_issue", "tool-fp", "write", 1500));
-    CHECK(!grant.matches("github", "server-fp", "create_issue", "changed-tool", "write", 1500));
-    CHECK(!grant.matches("github", "server-fp", "create_issue", "tool-fp", "read", 1500));
+    CHECK(!grant.matches("github", "server-fp", "delete_repo", "tool-fp", "write", false, 1500));
+    CHECK(!grant.matches("github", "changed-server", "create_issue", "tool-fp", "write", false, 1500));
+    CHECK(!grant.matches("github", "server-fp", "create_issue", "changed-tool", "write", false, 1500));
+    CHECK(!grant.matches("github", "server-fp", "create_issue", "tool-fp", "read", false, 1500));
     CHECK(!grant.validAt(2000));
 
     FyxaApprovalRecord decoded;
