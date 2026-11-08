@@ -1,15 +1,19 @@
 #include "StudioRelay.h"
 #include "StudioMcp.h"
+#include "AiTools.h"
+#include "ExternalMcpProtocol.h"
 #include "Editor.h"
 #include "../online/OnlineClient.h"
 #include "../core/Account.h"
 #include "../core/Log.h"
+#include "../core/Paths.h"
 #include "Version.h"
 
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <fstream>
 
 using nlohmann::json;
 
@@ -23,6 +27,51 @@ constexpr int    kHelloId = 1;
 std::string gameName(const Editor& editor) {
     return editor.filePath().empty() ? std::string() : std::filesystem::path(editor.filePath()).stem().string();
 }
+json redactRelayArguments(const json& value) {
+    if (value.is_array()) {
+        json out = json::array();
+        for (const auto& item : value) out.push_back(redactRelayArguments(item));
+        return out;
+    }
+    if (!value.is_object()) return value;
+    json out = json::object();
+    for (auto it = value.begin(); it != value.end(); ++it) {
+        std::string key = it.key(), lower = key;
+        for (char& ch : lower) ch = (char)std::tolower((unsigned char)ch);
+        const bool secret = lower.find("token") != std::string::npos ||
+            lower.find("secret") != std::string::npos || lower.find("password") != std::string::npos ||
+            lower.find("authorization") != std::string::npos || lower.find("apikey") != std::string::npos ||
+            lower.find("api_key") != std::string::npos || lower.find("verifier") != std::string::npos;
+        out[key] = secret ? json("[REDACTED]") : redactRelayArguments(it.value());
+    }
+    return out;
+}
+
+std::string connectedToolFingerprint(const std::string& app, const std::string& toolName) {
+    for (const auto& tool : AiTools::mcpTools()) {
+        if (tool.is_object() && tool.value("name", std::string()) == toolName)
+            return McpHttpProtocol::definitionFingerprint(
+                "connected-app:" + app, "https://gutsandbolts.net/mcp", tool);
+    }
+    return {};
+}
+
+void appendRelayAudit(const std::string& app, const std::string& tool,
+                      const std::string& fingerprint, const json& arguments,
+                      const std::string& outcome) {
+    const auto now = std::chrono::system_clock::now().time_since_epoch();
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+    std::ofstream file(Paths::file("assistant-mcp-activity.jsonl"), std::ios::app);
+    if (file) file << json{{"timestampMs", ms}, {"server", "connected-app-relay"},
+        {"app", app}, {"tool", tool}, {"toolFingerprint", fingerprint},
+        {"arguments", redactRelayArguments(arguments)}, {"outcome", outcome}}.dump() << "\n";
+}
+
+json relayRpcError(const json& id, const std::string& message) {
+    return {{"jsonrpc", "2.0"}, {"id", id},
+            {"error", {{"code", -32003}, {"message", message}}}};
+}
+
 } // namespace
 
 double StudioRelay::now() {
@@ -43,6 +92,8 @@ void StudioRelay::drop(State state, const std::string& why, bool retry) {
     if (m_dialCancel) m_dialCancel->store(true);
     m_dialCancel.reset();
     m_conn.reset();
+    m_pendingApproval.reset();
+    m_appToolFingerprints.clear();
     m_ready = false;
     m_state = state;
     m_status = why;
@@ -134,20 +185,133 @@ void StudioRelay::onMessage(Editor& editor, StudioMcp& mcp, const std::string& t
     const std::string app = m.contains("app") && m["app"].is_string() ? m["app"].get<std::string>() : std::string("App");
     bool canChange = false;
     if (m.contains("scopes") && m["scopes"].is_array())
-        for (const auto& s : m["scopes"]) if (s == "studio.write") canChange = true;
-    bool anyReply = false;
-    // The same handler as http://127.0.0.1:44755/mcp, in "app" mode: only the app tools, never publishing.
-    const std::string reply = mcp.handleApp(editor, m["message"].dump(), anyReply, app, canChange);
-    json out = {{"t", "mcp.reply"}, {"id", m.contains("id") ? m["id"] : json()}, {"reply", nullptr}};
-    if (anyReply) {
-        json r = json::parse(reply, nullptr, false);
-        if (!r.is_discarded()) out["reply"] = r;
-    }
+        for (const auto& scope : m["scopes"]) if (scope == "studio.write") canChange = true;
     const json& message = m["message"];
-    if (message.value("method", std::string()) == "tools/call" && message.contains("params") && message["params"].is_object()) {
-        ++m_calls;
-        m_lastTool = message["params"].value("name", std::string());
-        m_lastApp = app;
+    const std::string method = message.value("method", std::string());
+
+    if (method == "tools/list") {
+        bool anyReply = false;
+        const std::string reply = mcp.handleApp(editor, message.dump(), anyReply, app, canChange);
+        if (anyReply) {
+            json parsed = json::parse(reply, nullptr, false);
+            auto& fingerprints = m_appToolFingerprints[app];
+            fingerprints.clear();
+            const json tools = parsed.is_object()
+                ? parsed.value("result", json::object()).value("tools", json::array()) : json::array();
+            if (tools.is_array()) for (const auto& tool : tools) {
+                if (!tool.is_object() || !tool.contains("name") || !tool["name"].is_string()) continue;
+                const std::string name = tool["name"].get<std::string>();
+                const std::string fingerprint = tool.value("_meta", json::object())
+                    .value("io.gutsandbolts/tool-fingerprint", std::string());
+                if (!name.empty() && !fingerprint.empty()) fingerprints[name] = fingerprint;
+            }
+            m_conn->send(json{{"t", "mcp.reply"}, {"id", m["id"]}, {"reply", parsed}}.dump());
+        } else {
+            m_conn->send(json{{"t", "mcp.reply"}, {"id", m["id"]}, {"reply", nullptr}}.dump());
+        }
+        return;
     }
-    m_conn->send(out.dump());
+
+    if (method == "tools/call") {
+        const json params = message.value("params", json::object());
+        const std::string tool = params.value("name", std::string());
+        const auto appTools = m_appToolFingerprints.find(app);
+        const std::string pinned = appTools == m_appToolFingerprints.end() ||
+            !appTools->second.contains(tool) ? std::string() : appTools->second.at(tool);
+        const std::string current = connectedToolFingerprint(app, tool);
+        if (tool.empty() || pinned.empty() || current.empty() || current != pinned) {
+            const json error = relayRpcError(message.value("id", json()),
+                "The connected-app tool definition is missing or changed. Refresh tools/list before retrying.");
+            m_conn->send(json{{"t", "mcp.reply"}, {"id", m["id"]}, {"reply", error}}.dump());
+            appendRelayAudit(app, tool, current, params.value("arguments", json::object()), "definition-mismatch");
+            return;
+        }
+        if (m_pendingApproval) {
+            const json error = relayRpcError(message.value("id", json()),
+                "Studio already has a connected-app action awaiting user approval.");
+            m_conn->send(json{{"t", "mcp.reply"}, {"id", m["id"]}, {"reply", error}}.dump());
+            return;
+        }
+        const json arguments = params.value("arguments", json::object());
+        PendingApproval pending;
+        pending.relayId = m["id"];
+        pending.message = message;
+        pending.app = app;
+        pending.tool = tool;
+        pending.fingerprint = pinned;
+        pending.arguments = redactRelayArguments(arguments).dump(2);
+        pending.canChange = canChange;
+        m_pendingApproval = std::move(pending);
+        appendRelayAudit(app, tool, pinned, arguments, "approval-requested");
+        return;
+    }
+
+    // Discovery methods remain scope-checked by StudioMcp; tools/call is always
+    // gated by a fresh Studio-side approval above.
+    bool anyReply = false;
+    const std::string reply = mcp.handleApp(editor, message.dump(), anyReply, app, canChange);
+    json parsed = anyReply ? json::parse(reply, nullptr, false) : json();
+    if (!parsed.is_discarded() && parsed.is_object())
+        m_conn->send(json{{"t", "mcp.reply"}, {"id", m["id"]}, {"reply", parsed}}.dump());
+    else
+        m_conn->send(json{{"t", "mcp.reply"}, {"id", m["id"]}, {"reply", nullptr}}.dump());
 }
+
+const std::string& StudioRelay::pendingApp() const {
+    static const std::string empty;
+    return m_pendingApproval ? m_pendingApproval->app : empty;
+}
+
+const std::string& StudioRelay::pendingTool() const {
+    static const std::string empty;
+    return m_pendingApproval ? m_pendingApproval->tool : empty;
+}
+
+const std::string& StudioRelay::pendingArguments() const {
+    static const std::string empty;
+    return m_pendingApproval ? m_pendingApproval->arguments : empty;
+}
+
+void StudioRelay::resolveApproval(bool approve, Editor& editor, StudioMcp& mcp) {
+    if (!m_pendingApproval) return;
+    PendingApproval pending = std::move(*m_pendingApproval);
+    m_pendingApproval.reset();
+    if (!m_conn || m_state != State::Online) return;
+
+    const json params = pending.message.value("params", json::object());
+    const json arguments = params.value("arguments", json::object());
+    if (!approve) {
+        const json denied = relayRpcError(pending.message.value("id", json()),
+            "The user denied this connected-app action in Studio.");
+        m_conn->send(json{{"t", "mcp.reply"}, {"id", pending.relayId}, {"reply", denied}}.dump());
+        appendRelayAudit(pending.app, pending.tool, pending.fingerprint, arguments, "denied-by-user");
+        return;
+    }
+
+    const std::string current = connectedToolFingerprint(pending.app, pending.tool);
+    if (current.empty() || current != pending.fingerprint || !appMay(pending.tool, pending.canChange)) {
+        const json stale = relayRpcError(pending.message.value("id", json()),
+            "The tool definition or connected-app permission changed while approval was pending. Refresh and request approval again.");
+        m_conn->send(json{{"t", "mcp.reply"}, {"id", pending.relayId}, {"reply", stale}}.dump());
+        appendRelayAudit(pending.app, pending.tool, pending.fingerprint, arguments, "approval-invalidated");
+        return;
+    }
+
+    bool anyReply = false;
+    const std::string reply = mcp.handleApp(editor, pending.message.dump(), anyReply,
+                                             pending.app, pending.canChange);
+    json parsed = anyReply ? json::parse(reply, nullptr, false) : json();
+    if (!parsed.is_discarded() && parsed.is_object()) {
+        m_conn->send(json{{"t", "mcp.reply"}, {"id", pending.relayId}, {"reply", parsed}}.dump());
+        ++m_calls;
+        m_lastTool = pending.tool;
+        m_lastApp = pending.app;
+        appendRelayAudit(pending.app, pending.tool, pending.fingerprint, arguments, "approved-and-executed");
+    } else {
+        const json failed = relayRpcError(pending.message.value("id", json()),
+            "Studio could not produce a valid response for the approved action.");
+        m_conn->send(json{{"t", "mcp.reply"}, {"id", pending.relayId}, {"reply", failed}}.dump());
+        appendRelayAudit(pending.app, pending.tool, pending.fingerprint, arguments, "approved-execution-error");
+    }
+}
+
