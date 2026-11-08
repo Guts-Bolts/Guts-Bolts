@@ -3207,6 +3207,42 @@ pages.avatar = async () => {
 
 // Staff tools (like the Player's Staff page): verify people, give Bolts, ban.
 // The reports players sent (newest problems first in line): what was reported, why, and buttons to close them.
+function fyxaModerationBox(result) {
+  if (!result || !result.ok) return html`<div class="box"><h2 class="boxhead">Fyxa moderation</h2><p class="error">${result && result.error || 'The moderation queue is unavailable.'}</p></div>`;
+  const items = result.items || [];
+  const names = { S1: 'Violence', S2: 'Non-violent crime', S3: 'Sexual violence', S4: 'Child safety', S5: 'Defamation', S6: 'Specialized advice',
+    S7: 'Privacy', S8: 'Intellectual property', S9: 'Weapons', S10: 'Hate', S11: 'Self-harm', S12: 'Sexual content', S13: 'Elections', S14: 'Code interpreter abuse',
+    SCAN_UNAVAILABLE: 'AI scanner unavailable', VISION_NOT_ENABLED: 'Vision screening requires operator license acceptance', VISION_SCAN_UNAVAILABLE: 'Vision scan unavailable' };
+  const person = (u, id) => u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>` : html`Unknown account (${id})`;
+  return html`<div class="box">
+    <h2 class="boxhead">Fyxa moderation queue</h2>
+    <p>AI-flagged submissions are prioritized here for staff review. The model provides signals, not verdicts. Review the excerpt and context before taking action.</p>
+    <p class="small muted">${items.length} open case${items.length === 1 ? '' : 's'} · Critical cases appear first · No automatic bans or deletions</p>
+    ${items.length ? items.map((item) => html`<div class="box fyxa-case">
+      <div class="row" style="align-items:center;justify-content:space-between;gap:10px">
+        <b>${item.severity.toUpperCase()} · ${item.sourceType.replaceAll('_', ' ')}</b>
+        <span class="small muted">${dateText(item.createdAt)}</span>
+      </div>
+      <p class="small">Creator: ${person(item.author, item.authorId)} · Source ID: ${item.sourceId || 'not recorded'}</p>
+      <p class="small"><b>Signals:</b> ${item.categories.map((code) => (names[code] || code) + ' (' + code + ')').join(', ') || 'No category returned'}</p>
+      <p class="small muted">Scanner: ${item.scanner}</p>
+      <div class="report-copy"><b>Submitted content excerpt</b><div style="white-space:pre-wrap">${item.excerpt}</div></div>
+      <form class="form" data-form="fyxaModeration">
+        <input type="hidden" name="caseId" value="${item.id}">
+        <label>Staff decision</label>
+        <select name="outcome">
+          <option value="action_taken">Action taken (recorded separately)</option>
+          <option value="dismissed">Dismiss as safe / false positive</option>
+          <option value="escalated">Escalate for specialist review</option>
+        </select>
+        <label>Review note</label>
+        <textarea name="note" rows="2" maxlength="500" minlength="3" placeholder="Record what you reviewed and why" required></textarea>
+        <button class="btn green">Save moderation decision</button>
+      </form>
+    </div>`) : html`<p class="muted">No open Fyxa moderation cases.</p>`}
+  </div>`;
+}
+
 function reportsBox(rep, closed) {
   const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff?tab=reports">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?reports=closed">Closed</a>`;
   if (!rep.ok) return html`<div class="box"><h2 class="boxhead">Reports</h2><p class="error">${rep.error}</p></div>`;
@@ -3371,7 +3407,7 @@ const GIVE_BADGES = [['tester', 'Tester'], ['bughunter', 'Bug Hunter'], ['featur
   ['obc', 'Overclocked Boltworks Club (OBC)']];
 const OTHER_BADGES = { tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
 const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
-  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['fyxa', 'Fyxa AI'], ['database', 'Database']];
+  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['fyxa', 'Fyxa AI'], ['moderation', 'Fyxa moderation'], ['database', 'Database']];
 // Staff > Numbers: how the site is doing. Now from the server; history (a reading every few
 // minutes, kept by day) and the week's top games from Supabase.
 function staffNumbersBox(r) {
@@ -3433,13 +3469,15 @@ pages.staff = async () => {
   const tab = params.get('tab') || (params.has('q') ? 'people' : params.has('log') ? 'log' : params.has('reports') ? 'reports'
     : params.has('tickets') ? 'tickets' : params.has('appeals') ? 'appeals' : 'home');
   // What's waiting, for the counts on the tabs (and the lists themselves).
-  const [tk, up, rep, ap, rm, fyxaQueue] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
+  const [tk, up, rep, ap, rm, fyxaQueue, moderation] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
     pageCall('admin.reports', { status: closed ? 'closed' : 'open' }), pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }),
-    pageCall('roadmap.get', {}), tab === 'fyxa' ? pageCall('ai.content.reviewQueue', { limit: 50 }) : Promise.resolve(null)]);
+    pageCall('roadmap.get', {}), tab === 'fyxa' ? pageCall('ai.content.reviewQueue', { limit: 50 }) : Promise.resolve(null),
+    pageCall('ai.moderation.queue', { limit: 100 })]);
   const waiting = {
     tickets: tk.ok && !ticketsClosed ? tk.tickets.length : null, uploads: up.ok ? up.uploads.length : null,
     reports: rep.ok && !closed ? rep.reports.length : null, appeals: ap.ok && !appealsClosed ? ap.appeals.length : null,
-    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.items.length : null };
+    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.items.length : null,
+    moderation: moderation.ok ? moderation.items.length : null };
   const tabs = html`<div class="tabs staff-tabs">${STAFF_TABS.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/staff?tab=${k}">${l}${
     waiting[k] ? html` <span class="count">${waiting[k]}</span>` : ''}</a>`)}</div>`;
   let body;
@@ -3448,6 +3486,7 @@ pages.staff = async () => {
   else if (tab === 'reports') body = reportsBox(rep, closed);
   else if (tab === 'appeals') body = appealsBox(ap, appealsClosed);
   else if (tab === 'ideas') body = staffIdeasBox(rm);
+  else if (tab === 'moderation') body = fyxaModerationBox(moderation);
   else if (tab === 'fyxa') body = fyxaReviewBox(fyxaQueue);
   else if (tab === 'people') {
     const r = await pageCall('admin.find', { query });
@@ -4017,6 +4056,7 @@ pages.terms = async () => {
     </ul>
 
     <h2>8. Chat, safety and moderation</h2>
+    <p>We use automated safety screening, including AI-assisted classifiers, to help detect potentially harmful or rule-breaking content in public creator submissions, comments, forum posts, group posts, party chat and private messages. Screening results may be stored with a limited excerpt, category signals and review history, and shown to authorized moderators. Text submitted for these features is processed by our AI moderation provider for trust-and-safety review. Selected image uploads may also be screened when the image model is enabled; if it is unavailable or not enabled, those images require manual review. This processing is for moderation, not Fyxa model training or AI-reference indexing. AI flags can be wrong; staff review context and make moderation decisions. We do not use an AI flag alone to permanently ban an account.</p>
     <ul>
       <li>Swearing is allowed. The text filter still hides slurs, links to other sites and personal info (like phone
         numbers and email addresses) as "[ Content Deleted ]".</li>
@@ -4813,6 +4853,12 @@ const actions = {
 };
 
 const forms = {
+  async fyxaModeration(f) {
+    const r = await call('ai.moderation.review', { caseId: f.caseId.value, outcome: f.outcome.value, note: f.note.value.trim() });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Fyxa moderation decision recorded.');
+    render();
+  },
   async fyxaAsset(f) {
     const r = await call('ai.content.eligibility.update', {
       contentId: f.contentId.value,
