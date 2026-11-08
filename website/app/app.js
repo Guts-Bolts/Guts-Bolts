@@ -3137,7 +3137,7 @@ function fyxaModerationBox(result) {
   const items = result.items || [];
   const names = { S1: 'Violence', S2: 'Non-violent crime', S3: 'Sexual violence', S4: 'Child safety', S5: 'Defamation', S6: 'Specialized advice',
     S7: 'Privacy', S8: 'Intellectual property', S9: 'Weapons', S10: 'Hate', S11: 'Self-harm', S12: 'Sexual content', S13: 'Elections', S14: 'Code interpreter abuse',
-    SCAN_UNAVAILABLE: 'AI scanner unavailable' };
+    SCAN_UNAVAILABLE: 'AI scanner unavailable', VISION_NOT_ENABLED: 'Vision screening requires operator license acceptance', VISION_SCAN_UNAVAILABLE: 'Vision scan unavailable' };
   const person = (u, id) => u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>` : html`Unknown account (${id})`;
   return html`<div class="box">
     <h2 class="boxhead">Fyxa moderation queue</h2>
@@ -3956,7 +3956,7 @@ pages.terms = async () => {
     </ul>
 
     <h2>8. Chat, safety and moderation</h2>
-    <p>We use automated safety screening, including AI-assisted classifiers, to help detect potentially harmful or rule-breaking content in submitted text and supported uploads. Screening results may be stored with a limited excerpt, category signals and review history, and shown to authorized moderators. Our AI moderation provider processes the submitted material for this safety purpose. This is separate from Fyxa model training and AI-reference preferences. AI flags can be wrong; staff review context and make moderation decisions. We do not use an AI flag alone to permanently ban an account.</p>
+    <p>We use automated safety screening, including AI-assisted classifiers, to help detect potentially harmful or rule-breaking content in public creator submissions, comments, forum posts, group posts, party chat and private messages. Screening results may be stored with a limited excerpt, category signals and review history, and shown to authorized moderators. Text submitted for these features is processed by our AI moderation provider for trust-and-safety review. Selected image uploads may also be screened when the image model is enabled; if it is unavailable or not enabled, those images require manual review. This processing is for moderation, not Fyxa model training or AI-reference indexing. AI flags can be wrong; staff review context and make moderation decisions. We do not use an AI flag alone to permanently ban an account.</p>
     <ul>
       <li>Swearing is allowed. The text filter still hides slurs, links to other sites and personal info (like phone
         numbers and email addresses) as "[ Content Deleted ]".</li>
