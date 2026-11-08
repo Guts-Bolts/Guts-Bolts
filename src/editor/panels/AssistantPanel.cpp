@@ -136,8 +136,9 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
              const std::string& protocolVersion = "2025-06-18") {
     std::string headers = "Accept: application/json, text/event-stream\r\n";
     if (!protocolVersion.empty()) headers += "MCP-Protocol-Version: " + protocolVersion + "\r\n";
-    if (token.find_first_of("\r\n") != std::string::npos || session.find_first_of("\r\n") != std::string::npos) {
-        error = "The MCP credential or session identifier contains invalid characters."; return false;
+    if (token.find_first_of("\r\n") != std::string::npos || session.find_first_of("\r\n") != std::string::npos ||
+        protocolVersion.find_first_of("\r\n") != std::string::npos || protocolVersion.size() > 64) {
+        error = "The MCP credential, session identifier, or protocol version is invalid."; return false;
     }
     if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
     if (!session.empty()) headers += "Mcp-Session-Id: " + session + "\r\n";
@@ -189,8 +190,9 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
         return false;
     }
     if (response.contains("error")) {
-        error = response["error"].is_object() ? response["error"].value("message", "The MCP server returned an error.")
-                                               : "The MCP server returned a malformed JSON-RPC error.";
+        const json rpcError = response["error"];
+        error = rpcError.is_object() && rpcError.contains("message") && rpcError["message"].is_string()
+            ? rpcError["message"].get<std::string>() : "The MCP server returned a malformed JSON-RPC error.";
         return false;
     }
     if (request.contains("id") && (!response.contains("result") || !response["result"].is_object())) {
@@ -321,7 +323,15 @@ void AssistantPanel::refreshMcpServers() {
                 continue;
             }
             server.sessionId = newSession;
-            server.protocolVersion = response.value("result", json::object()).value("protocolVersion", "2025-06-18");
+            const json initResult = response.value("result", json::object());
+            if (initResult.contains("protocolVersion") && initResult["protocolVersion"].is_string())
+                server.protocolVersion = initResult["protocolVersion"].get<std::string>();
+            if (server.protocolVersion.empty() || server.protocolVersion.size() > 64 ||
+                server.protocolVersion.find_first_of("\r\n") != std::string::npos) {
+                result.status = server.name + ": server returned an invalid MCP protocol version.";
+                server.tools = json::array();
+                continue;
+            }
             json initialized = {{"jsonrpc", "2.0"}, {"method", "notifications/initialized"}};
             json ignored;
             if (!mcpPost(endpoint, server.token, server.sessionId, initialized, ignored, error, nullptr, server.protocolVersion)) {
@@ -420,12 +430,13 @@ void AssistantPanel::startNextExternalCall() {
                 return done;
             }
             const json rpcResult = response.value("result", json::object());
-            const bool toolError = rpcResult.value("isError", false);
+            const bool toolError = rpcResult.contains("isError") && rpcResult["isError"].is_boolean() && rpcResult["isError"].get<bool>();
             const json content = rpcResult.value("content", json::array());
             if (content.is_array()) for (const auto& part : content) {
-                if (part.is_object() && part.value("type", std::string()) == "text") {
+                if (part.is_object() && part.contains("type") && part["type"].is_string() &&
+                    part["type"] == "text" && part.contains("text") && part["text"].is_string()) {
                     if (!done.text.empty()) done.text += "\n";
-                    done.text += part.value("text", std::string());
+                    done.text += part["text"].get<std::string>();
                 }
             }
             if (done.text.empty() && rpcResult.contains("structuredContent")) done.text = rpcResult["structuredContent"].dump(2);
