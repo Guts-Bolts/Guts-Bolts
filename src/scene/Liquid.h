@@ -83,7 +83,7 @@ public:
 
     // Kinds of liquid (FluidSystem objects; number 0 is plain water). Each drop
     // belongs to one: its colour, how thick it is and how much it sticks together.
-    struct Fluid { uint64_t id = 0; glm::vec3 color{0.12f, 0.42f, 0.62f}; float viscosity = 0.015f, tension = 0.0f; };
+    struct Fluid { uint64_t id = 0; glm::vec3 color{0.12f, 0.42f, 0.62f}; float viscosity = 0.015f, tension = 0.08f; };
     static constexpr int kMaxFluids = 16;
     const std::vector<Fluid>& fluids() const { return m_fluids; }
     // The most drops there can be right now (workspace.MaxFluidParticles, and what
