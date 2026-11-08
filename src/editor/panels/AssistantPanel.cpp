@@ -8,6 +8,7 @@
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
 #include <algorithm>
+#include <charconv>
 #include <cctype>
 #include <chrono>
 #include <fstream>
@@ -53,12 +54,26 @@ bool parseMcpEndpoint(const std::string& url, McpEndpoint& out, std::string& err
     std::string authority = url.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
     out.path = slash == std::string::npos ? "/mcp" : url.substr(slash);
     if (authority.empty() || authority.find('@') != std::string::npos) { error = "The MCP endpoint address is invalid."; return false; }
+    if (authority.find_first_of(" \\t\\r\\n?#") != std::string::npos) { error = "The MCP endpoint address contains invalid characters."; return false; }
     const size_t colon = authority.rfind(':');
     if (colon != std::string::npos) {
+        if (authority.find(':') != colon) { error = "IPv6 endpoints are not supported by this network layer yet."; return false; }
         out.host = authority.substr(0, colon);
-        try { out.port = std::stoi(authority.substr(colon + 1)); } catch (...) { error = "The MCP endpoint port is invalid."; return false; }
+        const std::string portText = authority.substr(colon + 1);
+        int parsedPort = 0;
+        const auto parsed = std::from_chars(portText.data(), portText.data() + portText.size(), parsedPort);
+        if (portText.empty() || parsed.ec != std::errc() || parsed.ptr != portText.data() + portText.size()) {
+            error = "The MCP endpoint port is invalid."; return false;
+        }
+        out.port = parsedPort;
     } else { out.host = authority; out.port = https ? 443 : 80; }
     if (out.host.empty() || out.port < 1 || out.port > 65535) { error = "The MCP endpoint host or port is invalid."; return false; }
+    for (unsigned char ch : out.host) if (!(std::isalnum(ch) || ch == '.' || ch == '-')) {
+        error = "The MCP endpoint host is invalid."; return false;
+    }
+    if (out.path.empty() || out.path[0] != '/' || out.path.find_first_of("\\r\\n#") != std::string::npos) {
+        error = "The MCP endpoint path is invalid."; return false;
+    }
     if (!https && out.host != "localhost" && out.host != "127.0.0.1") {
         error = "For security, non-local MCP endpoints must use HTTPS."; return false;
     }
@@ -82,6 +97,9 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
              const std::string& protocolVersion = "2025-06-18") {
     std::string headers = "Accept: application/json, text/event-stream\r\n";
     if (!protocolVersion.empty()) headers += "MCP-Protocol-Version: " + protocolVersion + "\r\n";
+    if (token.find_first_of("\\r\\n") != std::string::npos || session.find_first_of("\\r\\n") != std::string::npos) {
+        error = "The MCP credential or session identifier contains invalid characters."; return false;
+    }
     if (!token.empty()) headers += "Authorization: Bearer " + token + "\r\n";
     if (!session.empty()) headers += "Mcp-Session-Id: " + session + "\r\n";
     std::string body, responseHeaders;
@@ -89,7 +107,12 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     const std::string host = endpoint.tls ? "wss://" + endpoint.host : endpoint.host;
     if (!Net::httpPost(host, endpoint.port, endpoint.path, request.dump(), body, error, 12000, headers, &status, &responseHeaders)) return false;
     if (sessionOut) *sessionOut = responseHeader(responseHeaders, "Mcp-Session-Id");
-    if (status == 202 || body.empty()) { response = json::object(); return true; }
+    if (status == 202 || status == 204) { response = json::object(); return true; }
+    if (status < 200 || status >= 300) {
+        error = "The MCP server answered HTTP " + std::to_string(status) + (body.empty() ? "." : ": " + body.substr(0, 512));
+        return false;
+    }
+    if (body.empty()) { error = "The MCP server returned an empty response to a request."; return false; }
     response = json::parse(body, nullptr, false);
     if (!response.is_object()) {
         size_t at = 0;
@@ -105,7 +128,6 @@ bool mcpPost(const McpEndpoint& endpoint, const std::string& token, const std::s
     }
     if (!response.is_object()) { error = "The MCP server returned an invalid JSON-RPC response."; return false; }
     if (response.contains("error")) { error = response["error"].value("message", "The MCP server returned an error."); return false; }
-    if (status < 200 || status >= 300) { error = "The MCP server answered HTTP " + std::to_string(status) + "."; return false; }
     return true;
 }
 } // namespace
