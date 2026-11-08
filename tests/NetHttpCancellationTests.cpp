@@ -29,6 +29,12 @@ int main() {
     CHECK(cancelledConnection == nullptr);
     CHECK(error == "Request cancelled.");
 
+    const auto dnsStarted = std::chrono::steady_clock::now();
+    auto dnsTimeout = Net::Connection::connectTo("dns-timeout-test.invalid", 443, error, 10);
+    const auto dnsElapsed = std::chrono::steady_clock::now() - dnsStarted;
+    CHECK(dnsTimeout == nullptr);
+    CHECK(dnsElapsed < std::chrono::seconds(1));
+
     std::atomic_bool serverStop{false};
     std::atomic_bool requestReceived{false};
     std::thread serverThread([&] {
