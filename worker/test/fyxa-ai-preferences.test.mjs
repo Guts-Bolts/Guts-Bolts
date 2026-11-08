@@ -232,3 +232,34 @@ test('account deletion revokes training preferences and all retained content eli
   assert.equal(row.training_exclusion_reason, 'account_deleted');
   assert.equal(s.aiEnabledAccounts.has(accountId), false);
 });
+
+test('a policy or notice version change suspends eligibility until the account reconfirms', () => {
+  const s = makeServer();
+  const owner = s.signUp('alice');
+  const asset = s.addGame(owner, 'Public game');
+  assert.ok(enableTraining(s, owner).ok);
+
+  const attested = s.call(owner, 'ai.content.eligibility.update', {
+    contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
+  });
+  assert.ok(attested.ok, attested.error);
+  const approved = s.call(s.staff, 'ai.content.review', {
+    contentId: asset.id, rightsStatus: 'approved', reason: 'Creator rights attestation reviewed',
+  });
+  assert.ok(approved.ok, approved.error);
+  assert.equal(approved.eligibility.trainingEligible, true);
+
+  s.sql.exec('UPDATE ai_training_preferences SET policy_version = ?, notice_version = ? WHERE account_id = ?',
+    'older-policy', 'older-notice', owner.id);
+  const suspended = s.call(owner, 'ai.content.eligibility.get', { contentId: asset.id });
+  assert.equal(suspended.eligibility.trainingEligible, false);
+  assert.equal(suspended.eligibility.trainingExclusionReason, 'notice_outdated');
+
+  const reconfirmed = s.call(owner, 'ai.preferences.update', {
+    trainingEnabled: true, confirm: true, noticeVersion: NOTICE,
+  });
+  assert.ok(reconfirmed.ok, reconfirmed.error);
+  assert.equal(reconfirmed.preferences.noticeVersion, NOTICE);
+  const restored = s.call(owner, 'ai.content.eligibility.get', { contentId: asset.id });
+  assert.equal(restored.eligibility.trainingEligible, true);
+});
