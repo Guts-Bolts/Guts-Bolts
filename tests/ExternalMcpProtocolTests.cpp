@@ -16,7 +16,7 @@ int main() {
     std::string headers, error;
 
     json modern = {{"jsonrpc", "2.0"}, {"id", 7}, {"method", "tools/call"},
-                   {"params", {{"name", "search"}, {"arguments", {{"q", "otters"}}}}}};
+                   {"params", {{"name", "search"}, {"arguments", {{"q", "otters"}}}, {"_meta", {{"io.gutsandbolts/idempotency-key", "fyxa-test-key"}}}}}};
     assert(McpHttpProtocol::prepareRequest(modern, headers, "2026-07-28", "ignored-session", "token", error));
     assert(headers.find("Content-Type:") == std::string::npos); // Net::httpPost adds it exactly once.
     assert(headers.find("MCP-Protocol-Version: 2026-07-28\r\n") != std::string::npos);
@@ -28,6 +28,7 @@ int main() {
     assert(meta["io.modelcontextprotocol/protocolVersion"] == "2026-07-28");
     assert(meta["io.modelcontextprotocol/clientCapabilities"].is_object());
     assert(meta["io.modelcontextprotocol/clientInfo"]["name"] == "fyxa");
+    assert(modern["params"]["_meta"]["io.gutsandbolts/idempotency-key"] == "fyxa-test-key");
 
     json list = {{"jsonrpc", "2.0"}, {"id", 8}, {"method", "tools/list"}};
     assert(McpHttpProtocol::prepareRequest(list, headers, "2026-07-28", "", "", error));
