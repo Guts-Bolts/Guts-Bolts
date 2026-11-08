@@ -2500,7 +2500,7 @@ export class GbServerObject extends DurableObject {
 
   // Fyxa moderation: Llama Guard is advisory; it never bans users or removes content.
   async scanModerationSubmission(req, actor, answer) {
-    if (!actor || !actor.id || !req || !req.args || !answer || !answer.ok || !this.env.AI) return;
+    if (!actor || !actor.id || !req || !req.args || !answer || !answer.ok) return;
     const args = req.args, op = String(req.op || ''), fields = [];
     let sourceType = '', sourceId = '';
     if (op === 'upload') {
@@ -2536,7 +2536,8 @@ export class GbServerObject extends DurableObject {
     const content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
     if (!content) return;
     let categories = [], scanner = 'llama-guard-3-8b', unsafe = false;
-    try {
+    if (!this.env.AI) { scanner = 'ai-binding-unavailable'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
+    else try {
       const result = await this.env.AI.run('@cf/meta/llama-guard-3-8b', { messages: [{ role: 'user', content }], max_tokens: 128, temperature: 0 });
       const response = result && result.response;
       if (response && typeof response === 'object') {
