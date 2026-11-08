@@ -1,7 +1,6 @@
 #include "../src/net/Socket.h"
 
 #include <atomic>
-#include <cassert>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -9,7 +8,7 @@
 #include <cstdlib>
 
 #define CHECK(condition) do { if (!(condition)) { \
-    std::cerr << "FAILED at line " << __LINE__ << ": " #condition << "\\n"; \
+    std::cerr << "FAILED at line " << __LINE__ << ": " #condition << "\n"; \
     return EXIT_FAILURE; \
 } } while (false)
 
@@ -55,6 +54,6 @@ int main() {
     CHECK(requestError == "Request cancelled.");
     CHECK(elapsed < std::chrono::seconds(1));
 
-    std::cout << "HTTP request cancellation test passed\\n";
+    std::cout << "HTTP request cancellation test passed\n";
     return 0;
 }
