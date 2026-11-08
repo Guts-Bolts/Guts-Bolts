@@ -478,7 +478,9 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
     McpEndpoint endpoint;
     if (!parseMcpEndpoint(serverUrl, endpoint, result.error)) return result;
     if (!endpoint.tls) { result.error = "OAuth authorization is available only for HTTPS MCP servers."; return result; }
-    std::string resource = "https://" + endpoint.host +
+    std::string canonicalHost = endpoint.host;
+    for (char& ch : canonicalHost) ch = (char)std::tolower((unsigned char)ch);
+    std::string resource = "https://" + canonicalHost +
         (endpoint.port == 443 ? "" : ":" + std::to_string(endpoint.port)) + endpoint.path;
     json discover = {{"jsonrpc", "2.0"}, {"id", "oauth-discover"}, {"method", "server/discover"}};
     json response;
