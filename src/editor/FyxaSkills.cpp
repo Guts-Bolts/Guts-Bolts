@@ -4,6 +4,8 @@
 #include <fstream>
 #include <map>
 #include <sstream>
+#include <iterator>
+#include <utility>
 
 namespace {
 using json = nlohmann::json;
