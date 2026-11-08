@@ -810,6 +810,11 @@ export class GbServerObject extends DurableObject {
       if (alwaysFree(a.kind)) a.price = 0;   // decals and audio are always free now
       this.assets.set(r.id, a);
     }
+    this.aiEligibilityFingerprint = new Map();
+    for (const id of this.aiTrackedContent) {
+      const asset = this.assets.get(id);
+      if (asset) this.aiEligibilityFingerprint.set(id, this.aiAssetFingerprint(asset));
+    }
     for (const r of this.sql.exec('SELECT id, data FROM groups')) this.groups.set(r.id, JSON.parse(r.data));
     for (const r of this.sql.exec('SELECT id, data FROM forum')) this.forum.set(r.id, JSON.parse(r.data));
     this.trades = this.getMeta('trades', []);   // trade offers between players (limited items)
@@ -1264,8 +1269,13 @@ export class GbServerObject extends DurableObject {
   saveAsset(a) {
     this.dirty.assets.add(a.id);
     this.syncSearch(a);
-    if (this.aiTrackedContent && this.aiTrackedContent.has(a.id)) this.aiRecomputeContentEligibility(a.id);
-    else if (this.aiEnabledAccounts && this.aiEnabledAccounts.has(a.creator)) this.aiEnsureContentEligibility(a);
+    if (this.aiTrackedContent && this.aiTrackedContent.has(a.id)) {
+      const fingerprint = this.aiAssetFingerprint(a);
+      if (this.aiEligibilityFingerprint.get(a.id) !== fingerprint) {
+        this.aiEligibilityFingerprint.set(a.id, fingerprint);
+        this.aiRecomputeContentEligibility(a.id);
+      }
+    } else if (this.aiEnabledAccounts && this.aiEnabledAccounts.has(a.creator)) this.aiEnsureContentEligibility(a);
   }
   // Better search: keep each asset's searchable words in Supabase (gb_search_items). Only sent
   // when something searchable changed (a.searchSig remembers what was sent last).
@@ -2497,6 +2507,11 @@ export class GbServerObject extends DurableObject {
       randomHex(16), me.id, contentId || null, eventType, JSON.stringify(details || {}), now());
   }
 
+  aiAssetFingerprint(asset) {
+    return JSON.stringify([asset.creator, asset.kind, asset.access || 'public', asset.review || '',
+      !!asset.exclusive, !!asset.promoOnly]);
+  }
+
   aiContentRow(contentId) {
     for (const r of this.sql.exec('SELECT * FROM ai_content_eligibility WHERE content_id = ?', contentId)) return r;
     return null;
@@ -2567,6 +2582,7 @@ export class GbServerObject extends DurableObject {
         FYXA_AI_POLICY_VERSION, t);
     }
     this.aiTrackedContent.add(asset.id);
+    this.aiEligibilityFingerprint.set(asset.id, this.aiAssetFingerprint(asset));
     return this.aiRecomputeContentEligibility(asset.id);
   }
 
@@ -2655,6 +2671,7 @@ export class GbServerObject extends DurableObject {
         contentId, me.id, String(asset.kind || 'unknown'), trainingChoice, referenceChoice, rightsAttested, rightsStatus,
         (asset.access || 'public') === 'public' ? 'public' : 'private', FYXA_AI_POLICY_VERSION, t);
       this.aiTrackedContent.add(contentId);
+      this.aiEligibilityFingerprint.set(contentId, this.aiAssetFingerprint(asset));
       const state = this.aiRecomputeContentEligibility(contentId);
       this.aiAudit(me, 'content.preference.updated', contentId, { trainingChoice, referenceChoice, rightsAttested: !!rightsAttested });
       return okay({ eligibility: state });
@@ -4439,6 +4456,7 @@ export class GbServerObject extends DurableObject {
         this.sql.exec('INSERT INTO ai_training_audit (id, account_id, content_id, event_type, details, created_at) VALUES (?, ?, ?, ?, ?, ?)',
           randomHex(16), a.creator, a.id, 'content.deleted', JSON.stringify({ actorId: me.id }), now());
         this.aiTrackedContent.delete(a.id);
+        this.aiEligibilityFingerprint.delete(a.id);
       }
       this.assets.delete(a.id);
       this.dirty.assets.add(a.id);
