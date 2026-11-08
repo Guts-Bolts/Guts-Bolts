@@ -3,7 +3,7 @@
 #include <iostream>
 #include <map>
 
-#define CHECK(condition) do { if (!(condition)) { std::cerr << "FAILED line " << __LINE__ << ": " #condition << "\\n"; return EXIT_FAILURE; } } while (false)
+#define CHECK(condition) do { if (!(condition)) { std::cerr << "FAILED line " << __LINE__ << ": " #condition << "\n"; return EXIT_FAILURE; } } while (false)
 
 int main() {
     using namespace McpOAuth;
@@ -47,6 +47,6 @@ int main() {
     CHECK(callback["code"] == "abc+123" && callback["state"] == "s t");
     CHECK(!parseQuery("/oauth/callback?state=one&state=two", callback));
     CHECK(!parseQuery("/oauth/callback?code=%0d%0a", callback));
-    std::cout << "MCP OAuth discovery and PKCE tests passed\\n";
+    std::cout << "MCP OAuth discovery and PKCE tests passed\n";
     return EXIT_SUCCESS;
 }
