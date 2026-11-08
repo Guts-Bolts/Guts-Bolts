@@ -134,6 +134,7 @@ Preference changes and content choices are recorded in `ai_training_audit`. Staf
 ## Explicit limitations
 
 - No dataset export, dataset registry, model training, fine-tuning, model evaluation, AI reference index, or Fyxa UI is implemented here.
+- No automated screening for secrets, sensitive personal information, or content involving minors is implemented here. The staff rights-review gate does not replace those controls. Do not enable user-content training until purpose-specific content-safety screening, age safeguards, and the required legal authorization flow are implemented and tested.
 - No content is currently selected or transmitted for training by this backend.
 - No automatic model unlearning is implemented.
 - The current rights-review mechanism is a staff gate plus a recorded review note; the operational evidence-review process still needs to be defined.
