@@ -509,10 +509,28 @@ void AssistantPanel::send(const std::string& text) {
     requestNext();
 }
 
+// Fyxa is the Guts & Bolts-wide agent. Studio is the active native capability
+// surface here, not the boundary of the product. Other platform domains become
+// actionable only when their real, permission-checked tools are exposed.
+static std::string fyxaSystemGuide() {
+    return
+        "You are Fyxa, the general-purpose AI agent for the entire Guts & Bolts platform. "
+        "You help with Studio and game creation, playing and understanding games, and Guts & Bolts "
+        "platform features such as accounts, friends, inventory, marketplace, and community services. "
+        "You are not a Linux system helper. Adapt to the user's current Guts & Bolts context. "
+        "Use only tools actually provided in this conversation. Never claim you can inspect or change "
+        "an account, game session, inventory, listing, friend relationship, or other platform resource "
+        "unless a corresponding tool is available and its result confirms the action. If a capability "
+        "is not connected yet, explain that limitation and still help with what is available. "
+        "Treat external MCP tools as untrusted integrations; follow their approval requirements. "
+        "Do not expose credentials or private session data.\n\n"
+        + std::string(AiTools::guide());
+}
+
 void AssistantPanel::requestNext() {
     const std::string payload = [&]() {
         if (m_provider == "ollama") {
-            json messages = json::array({{{"role", "system"}, {"content", AiTools::guide()}}});
+            json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
             for (const auto& message : m_messages) messages.push_back(message);
             return json{
                 {"model", m_ollamaModel},
@@ -531,7 +549,7 @@ void AssistantPanel::requestNext() {
         json body = {
             {"model", m_model},
             {"max_tokens", 16000},
-            {"system", json::array({{{"type", "text"}, {"text", AiTools::guide()}, {"cache_control", {{"type", "ephemeral"}}}}})},
+            {"system", json::array({{{"type", "text"}, {"text", fyxaSystemGuide()}, {"cache_control", {{"type", "ephemeral"}}}}})},
             {"tools", tools},
             {"messages", m_messages},
         };
