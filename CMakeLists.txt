@@ -1022,6 +1022,14 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
 endif()
 
+# Fyxa task tracking is a small standalone JSON store used by the assistant.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaTaskStoreTests tests/FyxaTaskStoreTests.cpp src/editor/FyxaTaskStore.cpp)
+    target_include_directories(FyxaTaskStoreTests PRIVATE src/)
+    target_link_libraries(FyxaTaskStoreTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaTaskStoreTests COMMAND FyxaTaskStoreTests)
+endif()
+
 # Fyxa credentials must live in the OS vault, or explicitly fall back to session-only storage.
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
     add_executable(CredentialStoreTests tests/CredentialStoreTests.cpp src/core/CredentialStore.cpp)
