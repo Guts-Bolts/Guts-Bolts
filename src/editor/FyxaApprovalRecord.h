@@ -38,12 +38,12 @@ struct FyxaApprovalRecord {
                  const std::string& requestedToolName,
                  const std::string& requestedToolFingerprint,
                  const std::string& requestedPermission,
-                 std::int64_t nowMs) const {
+                 bool requestedToolReadOnly, std::int64_t nowMs) const {
         if (!validAt(nowMs) || serverId != requestedServerId ||
             serverFingerprint != requestedServerFingerprint ||
             permission != requestedPermission)
             return false;
-        if (scope == "server_read") return requestedPermission == "read";
+        if (scope == "server_read") return requestedPermission == "read" && requestedToolReadOnly;
         return toolName == requestedToolName && toolFingerprint == requestedToolFingerprint;
     }
 
