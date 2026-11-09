@@ -2521,11 +2521,16 @@ export class GbServerObject extends DurableObject {
           const bytes = b64ToBytes(encoded);
           const raw = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 180000));
           const parsed = JSON.parse(raw); let budget = 5000;
-          const geometryKey = /^(vertices|positions|indices|triangles|faces|normals|uvs|weights|mesh|geometry)$/i;
+          const geometryKey = /^(vertices|positions|indices|triangles|faces|normals|uvs|weights|mesh|geometry|meshdata|geometrydata|vertexbuffer|texturedata|imagedata)$/i;
           const walk = (value, key = '') => {
             if (budget <= 0) return;
-            if (geometryKey.test(key) && (Array.isArray(value) ? value.length > 0 : !!value && typeof value === 'object')) {
-              manualReviewReason = 'This upload contains 3D mesh or geometry data that the text and image scanners cannot semantically inspect.';
+            const opaqueGeometry = geometryKey.test(key) && (
+              Array.isArray(value) ? value.length > 0
+                : !!value && typeof value === 'object'
+                  ? true : typeof value === 'string' && value.length > 64
+            );
+            if (opaqueGeometry) {
+              manualReviewReason = 'This upload contains 3D mesh, geometry, or embedded media data that the text and image scanners cannot semantically inspect.';
               return;
             }
             if (typeof value === 'string' && /name|title|text|message|description|caption|label|value|prompt|dialog|script|source|code/i.test(key)) {
