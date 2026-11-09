@@ -8,6 +8,7 @@
 #include "EmotePictures.h"   // assets/emotes/pictures.gbemotes (their pictures)
 
 #include <algorithm>
+#include <limits>
 #include <cctype>
 #include <cstdlib>
 #include <iterator>
@@ -1470,6 +1471,16 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
                 const long long fx = x->meta.is_object() ? x->meta.value("favorites", 0LL) : 0LL, fy = y->meta.is_object() ? y->meta.value("favorites", 0LL) : 0LL;
                 if (fx != fy) return fx > fy;
                 return x->plays + x->sales > y->plays + y->sales;
+            }
+            if (sort == "ending") {
+                const auto endOf = [](const Asset* a) {
+                    if (!a->meta.is_object() || !a->meta.contains("auction") || !a->meta["auction"].is_object())
+                        return std::numeric_limits<long long>::max();
+                    return a->meta["auction"].value("endsAt", std::numeric_limits<long long>::max());
+                };
+                const long long ex = endOf(x), ey = endOf(y);
+                if (ex != ey) return ex < ey;
+                return x->created > y->created;
             }
             if (sort == "rated") {   // models: the Wilson score, then the most votes; games: likes pulled towards 50%
                 const bool models = x->kind == "model" && y->kind == "model";

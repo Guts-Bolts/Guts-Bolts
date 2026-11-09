@@ -694,7 +694,7 @@ pages.home = async () => {
     signedIn() ? pageCall('feed.list', {}) : Promise.resolve({ ok: false }),
     pageCall('updates.list', { limit: 1 }),
     signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
-    pageCall('list', { kind: 'clothing', auctions: true, limit: 12 }),
+    pageCall('list', { kind: 'clothing', auctions: true, sort: 'ending', limit: 12 }),
     fetchPublicActivity('/api/activity/auctions?limit=6'),
   ]);
   // "Continue playing" and your favourites (only when there's something in them).
@@ -1165,6 +1165,7 @@ function browseSort(list, sort) {
       || voteCount(y) - voteCount(x) || (y.sales || 0) - (x.sales || 0),
     popular: (x, y) => (y.sales + y.plays) - (x.sales + x.plays),
     favorited: (x, y) => (y.favorites || 0) - (x.favorites || 0) || (y.sales + y.plays) - (x.sales + x.plays),
+    ending: (x, y) => Number(x.auction?.endsAt || Number.MAX_SAFE_INTEGER) - Number(y.auction?.endsAt || Number.MAX_SAFE_INTEGER),
     new: (x, y) => (y.updated || y.created) - (x.updated || x.created),
     low: (x, y) => (x.price || 0) - (y.price || 0),
     high: (x, y) => (y.price || 0) - (x.price || 0),
@@ -1667,8 +1668,9 @@ pages.catalog = async () => {
   if (!r.ok) { show(html`<h1>Catalog</h1><p class="error">${r.error}</p>`); return; }
   const pick = CATALOG_PICK[cat] || ((a) => a.kind === cat);
   const price = PRICES[q.get('price')];
+  const defaultSort = cat === 'auctions' ? 'ending' : cat === 'favorited' ? 'favorited' : '';
   const list = browseSort(r.assets.filter((a) => pick(a) && creatorMatch(a, q.get('creator')) &&
-    (!price || ((a.price || 0) >= price[0] && (a.price || 0) <= price[1]))), q.get('sort') || (cat === 'favorited' ? 'favorited' : ''));
+    (!price || ((a.price || 0) >= price[0] && (a.price || 0) <= price[1]))), q.get('sort') || defaultSort);
   const priceOf = (a) => auctionOpen(a) ? html`bid ${bolts(a.auction.need)}`
     : a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
     : a.offsale ? raw('<span class="muted">Off sale</span>') : a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>');
@@ -5261,7 +5263,7 @@ async function refreshLiveAuctions() {
   auctionRefreshBusy = true;
   try {
     if (path[0] === 'home') {
-      const r = await pageCall('list', { kind: 'clothing', auctions: true, limit: 12 });
+      const r = await pageCall('list', { kind: 'clothing', auctions: true, sort: 'ending', limit: 12 });
       const section = $('#liveAuctions');
       if (!r.ok || !section || (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home') !== 'home') return;
       section.innerHTML = renderAuctionHomeSection(r.assets).s;
