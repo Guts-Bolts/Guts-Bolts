@@ -850,7 +850,7 @@ bool revokeMcpOAuthToken(const std::string& issuer, const std::string& revocatio
     std::string response;
     int status = 0;
     if (!Net::httpPost("wss://" + revokeUrl.host, revokeUrl.port, revokeUrl.path, body, response, error, 12000,
-                       "Accept: application/json\\r\\nContent-Type: application/x-www-form-urlencoded\\r\\n",
+                       "Accept: application/json\r\nContent-Type: application/x-www-form-urlencoded\r\n",
                        &status, nullptr) || status < 200 || status >= 300 || response.size() > 256u * 1024u) {
         if (error.empty()) error = "OAuth token revocation failed with HTTP " + std::to_string(status) + ".";
         return false;
