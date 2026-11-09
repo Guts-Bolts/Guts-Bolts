@@ -116,7 +116,7 @@ test('embedded texture payloads are routed to manual review', async () => {
   const model = { id: 'model-texture-1', kind: 'model', creator: owner.id, name: 'Textured model', meta: {} };
   s.assets.set(model.id, model);
   s.saveAsset(model);
-  const data = Buffer.from(JSON.stringify({ textureData: 'A'.repeat(256) })).toString('base64');
+  const data = Buffer.from(JSON.stringify({ normalTextureMap: 'A'.repeat(256) })).toString('base64');
 
   await s.scanModerationSubmission({
     op: 'upload',
