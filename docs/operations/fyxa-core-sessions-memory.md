@@ -59,7 +59,7 @@ Create a memory:
 
 Supported memory types: `user`, `feedback`, `project`, `reference`, and `preference`.
 
-Content is limited to 4,000 characters. Tags are deduplicated and limited to ten entries of 32 characters each. Importance is clamped to 1–5.
+Content is limited to 4,000 UTF-8 bytes. Tags are deduplicated and limited to ten entries of 32 UTF-8 bytes each. Session titles are limited to 120 UTF-8 bytes; project namespace IDs are limited to 128 UTF-8 bytes. Importance is clamped to 1–5.
 
 List, update, and delete:
 
@@ -90,7 +90,7 @@ Indexes support account-scoped recency listing and project/type filtering. No me
 5. Add retrieval with source-level permission checks and citations. Do not retrieve private content merely because an account has enabled reference indexing.
 6. Add memory retrieval/ranking and a retention policy. The current CRUD layer does not automatically infer, summarize, or retrieve memories.
 7. Add tests for provider failures, authorization, prompt injection boundaries, deletion propagation, and concurrency.
-8. Keep model training as a separate pipeline with its existing explicit eligibility and rights-review gates.
+8. Purge sessions, memories, and memory audit rows when an account is deleted.\n9. Keep model training as a separate pipeline with its existing explicit eligibility and rights-review gates.
 
 ## Test coverage
 
