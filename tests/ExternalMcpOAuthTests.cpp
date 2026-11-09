@@ -62,6 +62,8 @@ int main() {
     CHECK(pkce.challenge == base64Url(expectedDigest, sizeof(expectedDigest)));
     crypto_wipe(expectedDigest, sizeof(expectedDigest));
     CHECK(formEncode("a b&c") == "a%20b%26c");
+    CHECK(revocationFormBody("refresh + token", "refresh_token", "client id") ==
+        "token=refresh%20%2B%20token&token_type_hint=refresh_token&client_id=client%20id");
     std::map<std::string, std::string> callback;
     CHECK(parseQuery("/oauth/callback?code=abc%2B123&state=s%20t", callback));
     CHECK(callback["code"] == "abc+123" && callback["state"] == "s t");
