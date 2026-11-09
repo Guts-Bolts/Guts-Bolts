@@ -1,10 +1,12 @@
 #include "StudioMcp.h"
+#include "McpServerProtocol.h"
 #include "Editor.h"
 #include "AiTools.h"
 #include "../online/Protocol.h"   // base64
 #include "../core/Log.h"
 #include "Version.h"
 
+#include <cctype>
 #include <cstdio>
 #include <iostream>
 #include <nlohmann/json.hpp>
@@ -12,7 +14,38 @@
 using nlohmann::json;
 
 namespace {
+// The versions that start with `initialize` (2026-07-28 has no handshake: McpServerProtocol.h).
 const char* kProtocolVersions[] = {"2025-06-18", "2025-03-26", "2024-11-05"};
+
+json serverInfo() { return {{"name", "guts-and-bolts-studio"}, {"version", GB_VERSION}}; }
+json serverCapabilities() {
+    return {{"tools", {{"listChanged", false}}}, {"resources", {{"listChanged", false}}}, {"prompts", {{"listChanged", false}}}};
+}
+
+// One header from the request as it was sent (name in any case), for McpServerProtocol::checkRequest.
+std::string headerValue(const std::string& raw, const std::string& lowerName, bool& present) {
+    present = false;
+    size_t at = 0;
+    while (at < raw.size()) {
+        size_t end = raw.find("\r\n", at);
+        if (end == std::string::npos) end = raw.size();
+        const std::string line = raw.substr(at, end - at);
+        size_t colon = line.find(':');
+        if (colon != std::string::npos && colon == lowerName.size()) {
+            bool same = true;
+            for (size_t i = 0; i < colon && same; ++i) same = (char)std::tolower((unsigned char)line[i]) == lowerName[i];
+            if (same) {
+                size_t b = colon + 1, e = line.size();
+                while (b < e && (line[b] == ' ' || line[b] == '\t')) ++b;
+                while (e > b && (line[e - 1] == ' ' || line[e - 1] == '\t')) --e;
+                present = true;
+                return line.substr(b, e - b);
+            }
+        }
+        at = end + 2;
+    }
+    return std::string();
+}
 
 json rpcError(const json& id, int code, const std::string& message) {
     return {{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", code}, {"message", message}}}};
@@ -61,16 +94,34 @@ void StudioMcp::update(Editor& editor) {
         if (req.method == "GET") { m_http.respond(req.id, 405, "text/plain", "Send JSON-RPC with POST."); continue; }
         if (req.method == "DELETE") { m_http.respond(req.id, 200, "", ""); continue; }
         if (req.method != "POST") { m_http.respond(req.id, 405, "text/plain", ""); continue; }
+        // Which MCP rules is the app using? (2026-07-28 ones: check the headers match the body.)
+        json parsed = json::parse(req.body, nullptr, false);
+        bool modern = false;
+        if (!parsed.is_discarded()) {
+            const std::string raw = req.rawHeaders;
+            auto check = McpServerProtocol::checkRequest(
+                [&raw](const std::string& name, bool& present) { return headerValue(raw, name, present); }, parsed);
+            if (!check.ok) {
+                json id = parsed.is_object() && parsed.contains("id") ? parsed["id"] : json();
+                m_http.respond(req.id, check.status, "application/json",
+                               json({{"jsonrpc", "2.0"}, {"id", id}, {"error", check.error}}).dump());
+                continue;
+            }
+            modern = check.modern;
+        }
         bool anyReply = false;
-        std::string reply = handle(editor, req.body, anyReply);
-        if (anyReply) m_http.respond(req.id, 200, "application/json", reply);
+        int status = 200;
+        std::string reply = handle(editor, req.body, anyReply, "", false, modern, &status);
+        if (anyReply) m_http.respond(req.id, status, "application/json", reply);
         else m_http.respond(req.id, 202, "", "");
     }
     m_http.poll();   // start sending the answers now
 }
 
-std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& anyReply, const std::string& app, bool canChange) {
+std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& anyReply, const std::string& app, bool canChange,
+                              bool modern, int* status) {
     const bool fromApp = !app.empty();
+    if (status) *status = 200;
     json in = json::parse(body, nullptr, false);
     if (in.is_discarded()) { anyReply = true; return rpcError(nullptr, -32700, "That wasn't valid JSON.").dump(); }
     auto one = [&](const json& m) -> json {
@@ -80,14 +131,16 @@ std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& any
         const json id = notification ? json() : m["id"];
         if (notification) return json();   // notifications/initialized etc.: nothing to say
         const json params = m.value("params", json::object());
+        if (modern && method == "server/discover")
+            return {{"jsonrpc", "2.0"}, {"id", id}, {"result", McpServerProtocol::discoverResult(serverCapabilities(), AiTools::guide(), serverInfo())}};
         if (method == "initialize") {
             std::string want = params.value("protocolVersion", std::string(kProtocolVersions[0]));
             std::string use = kProtocolVersions[0];
             for (const char* v : kProtocolVersions) if (want == v) use = v;
             return {{"jsonrpc", "2.0"}, {"id", id}, {"result", {
                 {"protocolVersion", use},
-                {"capabilities", {{"tools", {{"listChanged", false}}}, {"resources", {{"listChanged", false}}}, {"prompts", {{"listChanged", false}}}}},
-                {"serverInfo", {{"name", "guts-and-bolts-studio"}, {"version", GB_VERSION}}},
+                {"capabilities", serverCapabilities()},
+                {"serverInfo", serverInfo()},
                 {"instructions", AiTools::guide()}}}};
         }
         if (method == "ping") return {{"jsonrpc", "2.0"}, {"id", id}, {"result", json::object()}};
@@ -146,8 +199,14 @@ std::string StudioMcp::handle(Editor& editor, const std::string& body, bool& any
     };
     // (A message with the wrong types, like a number for a tool's name, gets an error, not a crash.)
     auto safe = [&](const json& m) -> json {
-        try { return one(m); }
-        catch (const std::exception&) { return rpcError(m.is_object() && m.contains("id") ? m["id"] : json(), -32602, "Bad parameters."); }
+        json r;
+        try { r = one(m); }
+        catch (const std::exception&) { r = rpcError(m.is_object() && m.contains("id") ? m["id"] : json(), -32602, "Bad parameters."); }
+        if (modern && !r.is_null()) {
+            McpServerProtocol::modernize(r, serverInfo());
+            if (status && r.contains("error") && r["error"].value("code", 0) == -32601) *status = 404;   // unknown method
+        }
+        return r;
     };
     if (in.is_array()) {
         json out = json::array();
@@ -167,7 +226,9 @@ int StudioMcp::runStdioBridge(int port) {
         if (line.empty() || line == "\r") continue;
         std::string reply, error;
         int status = 0;
-        bool ok = Net::httpPost("127.0.0.1", port, "/mcp", line, reply, error, 300000, "", &status);
+        // A 2026-07-28 message: add the headers that repeat its version, method and name.
+        const std::string headers = McpServerProtocol::headersFor(json::parse(line, nullptr, false));
+        bool ok = Net::httpPost("127.0.0.1", port, "/mcp", line, reply, error, 300000, headers, &status);
         if (!ok && status == 0) {
             json m = json::parse(line, nullptr, false);
             if (m.is_object() && m.contains("id"))

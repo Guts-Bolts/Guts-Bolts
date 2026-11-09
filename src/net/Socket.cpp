@@ -882,6 +882,7 @@ bool HttpServer::next(Request& out) {
         out.method = first.substr(0, sp1);
         out.path = sp1 == std::string::npos ? "/" : first.substr(sp1 + 1, sp2 - sp1 - 1);
         out.headers = head;
+        out.rawHeaders = c.in.substr(0, end + 2);
         out.body = c.in.substr(end + 4, len);
         c.handed = true;
         return true;

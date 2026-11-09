@@ -1003,6 +1003,15 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
 endif()
 
+# Studio's MCP server follows the MCP 2026-07-28 rules (headers match the body, server/discover,
+# resultType) and still answers 2025 clients the old way.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(McpServerProtocolTests tests/McpServerProtocolTests.cpp)
+    target_include_directories(McpServerProtocolTests PRIVATE src/)
+    target_link_libraries(McpServerProtocolTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME McpServerProtocolTests COMMAND McpServerProtocolTests)
+endif()
+
 # Format-level regression fixtures for Roblox's binary mesh files. These
 # tests build tiny v1-v7 payloads in memory, including a generated Draco stream,
 # so no proprietary user assets are needed.
