@@ -2561,12 +2561,19 @@ export class GbServerObject extends DurableObject {
     else try {
       const result = await this.env.AI.run('@cf/meta/llama-guard-3-8b', { messages: [{ role: 'user', content }], max_tokens: 128, temperature: 0 });
       const response = result && result.response;
-      if (response && typeof response === 'object') {
+      if (response && typeof response === 'object' && typeof response.safe === 'boolean') {
         unsafe = response.safe === false;
         categories = Array.isArray(response.categories) ? response.categories.filter((x) => /^S(?:[1-9]|1[0-4])$/.test(x)).slice(0, 14) : [];
-      } else if (typeof response === 'string') {
-        unsafe = /^\s*unsafe\b/i.test(response);
+      } else if (typeof response === 'string' && /^\s*unsafe\b/i.test(response)) {
+        unsafe = true;
         categories = [...new Set((response.match(/\bS(?:[1-9]|1[0-4])\b/g) || []))].slice(0, 14);
+      } else if (typeof response === 'string' && /^\s*safe\b/i.test(response)) {
+        unsafe = false;
+        categories = [];
+      } else {
+        scanner = 'llama-guard-3-8b-unstructured';
+        categories = ['SCAN_UNAVAILABLE'];
+        unsafe = true;
       }
     } catch (error) { scanner = 'llama-guard-3-8b-error'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
     if (assetWrite && assetKind === 'audio') {
@@ -2595,12 +2602,18 @@ export class GbServerObject extends DurableObject {
               messages: [{ role: 'user', content: 'Audio transcript:\n' + transcript }], max_tokens: 128, temperature: 0,
             });
             const audioResponse = audioGuard && audioGuard.response;
-            if (audioResponse && typeof audioResponse === 'object' && audioResponse.safe === false) {
-              unsafe = true;
-              categories.push(...(Array.isArray(audioResponse.categories) ? audioResponse.categories.filter((x) => /^S(?:[1-9]|1[0-4])$/.test(x)) : []));
+            if (audioResponse && typeof audioResponse === 'object' && typeof audioResponse.safe === 'boolean') {
+              if (audioResponse.safe === false) {
+                unsafe = true;
+                categories.push(...(Array.isArray(audioResponse.categories) ? audioResponse.categories.filter((x) => /^S(?:[1-9]|1[0-4])$/.test(x)) : []));
+              }
             } else if (typeof audioResponse === 'string' && /^\s*unsafe\b/i.test(audioResponse)) {
               unsafe = true;
               categories.push(...new Set(audioResponse.match(/\bS(?:[1-9]|1[0-4])\b/g) || []));
+            } else if (!(typeof audioResponse === 'string' && /^\s*safe\b/i.test(audioResponse))) {
+              categories.push('AUDIO_SCAN_UNAVAILABLE');
+              scanner += '+audio-guard-unstructured';
+              unsafe = true;
             }
           } else { categories.push('AUDIO_SCAN_UNAVAILABLE'); scanner += '+nova-3-empty'; unsafe = true; }
         } catch (error) { categories.push('AUDIO_SCAN_UNAVAILABLE'); scanner += '+nova-3-error'; unsafe = true; }
@@ -2653,9 +2666,9 @@ export class GbServerObject extends DurableObject {
     }
     if (!unsafe) return;
     categories = [...new Set(categories)].slice(0, 16);
-    const severity = categories.includes('S4') || categories.some((x) => /VISION_.*MINOR|VISION_.*CHILD/i.test(x)) ? 'critical'
-      : categories.some((x) => ['S10', 'S11', 'S12'].includes(x)) ? 'high'
-      : categories.some((x) => ['S1', 'S2', 'S3', 'S7', 'S8', 'S9'].includes(x)) ? 'medium' : 'review';
+    const severity = categories.includes('S4') || categories.some((x) => /VISION_.*(?:S4|MINOR|CHILD)/i.test(x)) ? 'critical'
+      : categories.some((x) => ['S10', 'S11', 'S12'].includes(x) || /VISION_.*(?:SEXUAL|NUDITY|SELF_HARM|HATE|EXTREMIST)/i.test(x)) ? 'high'
+      : categories.some((x) => ['S1', 'S2', 'S3', 'S7', 'S8', 'S9'].includes(x) || /VISION_.*(?:VIOLENCE|CRIME|PRIVACY|PERSONAL|WEAPON)/i.test(x)) ? 'medium' : 'review';
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode([sourceType, sourceId, actor.id, content].join('\n')));
     const fingerprint = hexOf(new Uint8Array(digest));
     this.sql.exec(`INSERT OR IGNORE INTO ai_moderation_cases
