@@ -164,11 +164,19 @@ static void drawTermsWindow(bool& open) {
                                "once per ban.");
         head("What you make");
         ImGui::TextUnformatted("Stays yours. Uploading lets Guts&Bolts store and show it (and others use it, if you make it public).");
+        head("Chat, safety and moderation");
+        ImGui::TextUnformatted("Automated safety screening may review public creator submissions, profile text, game updates, "
+                               "comments, forums, group posts, translated in-game chat, party chat, private messages and supported "
+                               "image or audio uploads. Limited excerpts and review records may be shown to authorized moderators. "
+                               "Text is processed by Cloudflare Workers AI; supported audio is transcribed by Deepgram Nova-3 "
+                               "through Workers AI. AI flags are signals, not verdicts; staff make moderation decisions. See the "
+                               "full website Terms for details.");
         head("No guarantees");
         ImGui::TextUnformatted("Provided \"as is\", with no warranty. Things may break, change, lose data or shut down; as far "
                                "as the law allows, the makers aren't liable for any loss.");
         head("Privacy, in short");
-        ImGui::TextUnformatted("We keep what's needed to run your account and never sell anything to anyone.");
+        ImGui::TextUnformatted("We keep what's needed to run your account and never sell anything to anyone. Moderation screening "
+                               "may process submitted text and supported media as explained above.");
         ImGui::Spacing();
         ImGui::TextDisabled("The full version is on the website (Terms, at the bottom of every page).");
         ImGui::PopTextWrapPos();
