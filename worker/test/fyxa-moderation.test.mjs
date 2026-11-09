@@ -91,3 +91,19 @@ test('opaque 3D geometry is routed to manual review even when text screening is 
   assert.ok(queue.items.some((item) => item.sourceId === model.id &&
     item.categories.includes('GEOMETRY_REVIEW_REQUIRED')));
 });
+
+
+test('Fyxa moderation fails closed when the text scanner returns an unstructured response', async () => {
+  const AI = { async run() { return {}; } };
+  const s = makeServer({ AI });
+  const owner = s.signUp('Carol');
+  await s.scanModerationSubmission({
+    op: 'profile.set',
+    args: { blurb: 'A profile update that requires screening.' },
+  }, owner, { ok: true });
+
+  const queue = s.call(s.staff, 'ai.moderation.queue', {});
+  assert.ok(queue.ok, queue.error);
+  assert.ok(queue.items.some((item) => item.sourceId === owner.id &&
+    item.categories.includes('SCAN_UNAVAILABLE')));
+});
