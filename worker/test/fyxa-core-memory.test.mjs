@@ -76,3 +76,17 @@ test('Fyxa memory audit records metadata without storing memory content', () => 
   assert.ok(rows.some((r) => r.event_type === 'memory.created'));
   assert.equal(rows.some((r) => r.details.includes(secretText)), false);
 });
+
+test('account deletion purges Fyxa sessions, memories, and memory audit', () => {
+  const s = makeServer();
+  const alice = s.signUp('alice');
+  const session = s.call(alice, 'ai.sessions.create').session;
+  assert.ok(s.call(alice, 'ai.memory.create', {
+    content: 'Private retained context.', sourceSessionId: session.id,
+  }).ok);
+  assert.equal(s.sql.exec('SELECT COUNT(*) AS n FROM ai_memories WHERE account_id = ?', alice.id)[0].n, 1);
+  s.deleteAccount(alice);
+  assert.equal(s.sql.exec('SELECT COUNT(*) AS n FROM ai_memories WHERE account_id = ?', alice.id)[0].n, 0);
+  assert.equal(s.sql.exec('SELECT COUNT(*) AS n FROM ai_sessions WHERE account_id = ?', alice.id)[0].n, 0);
+  assert.equal(s.sql.exec('SELECT COUNT(*) AS n FROM ai_memory_audit WHERE account_id = ?', alice.id)[0].n, 0);
+});
