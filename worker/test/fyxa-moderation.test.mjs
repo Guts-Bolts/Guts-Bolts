@@ -180,3 +180,52 @@ test('repeated identical moderation submissions increment occurrence counts and 
   assert.ok(queue.items[0].categories.includes('S1'));
   assert.ok(queue.items[0].categories.includes('S4'));
 });
+
+
+test('accepted HTTP and WebSocket submissions both schedule tracked moderation scans', async () => {
+  const AI = { async run() { return { response: 'unsafe\\nS10' }; } };
+  const s = makeServer({ AI });
+  const d = device(s, 31);
+  const owner = signUp(s, 'Transport sender', d.account);
+  const group = s.call(owner, 'groups.create', {
+    name: 'Transport moderation group',
+    description: 'A group for testing moderation dispatch.',
+  });
+  assert.ok(group.ok, group.error);
+
+  const httpReq = d.request('groups.post', {
+    id: group.group.id,
+    text: 'HTTP route moderation integration test content.',
+  });
+  const httpResponse = await s.fetch(new Request('https://gb.test/api', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(httpReq),
+  }));
+  const httpAnswer = await httpResponse.json();
+  assert.ok(httpAnswer.ok, httpAnswer.error);
+  await Promise.all([...s.backgroundTasks]);
+
+  const sent = [];
+  const connection = {
+    id: 'moderation-integration-ws',
+    mode: 'request',
+    ip: '127.0.0.1',
+    window: 0,
+    sent: 0,
+    ws: { send(data) { sent.push(JSON.parse(data)); } },
+  };
+  s.conns.set(connection.id, connection);
+  const wsReq = d.request('groups.post', {
+    id: group.group.id,
+    text: 'WebSocket route moderation integration test content.',
+  });
+  s.onMessage(connection, JSON.stringify(wsReq));
+  await Promise.all([...s.backgroundTasks]);
+  assert.ok(sent[0] && sent[0].ok, sent[0] && sent[0].error);
+
+  const queue = s.call(s.staff, 'ai.moderation.queue', {});
+  assert.ok(queue.ok, queue.error);
+  assert.ok(queue.items.some((item) => item.excerpt.includes('HTTP route moderation integration test content.')));
+  assert.ok(queue.items.some((item) => item.excerpt.includes('WebSocket route moderation integration test content.')));
+});
