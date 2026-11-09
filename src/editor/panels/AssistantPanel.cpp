@@ -844,9 +844,7 @@ bool revokeMcpOAuthToken(const std::string& issuer, const std::string& revocatio
         error = "Could not revalidate the OAuth issuer before revoking credentials.";
         return false;
     }
-    std::string body = "token=" + McpOAuth::formEncode(token) +
-        "&token_type_hint=" + McpOAuth::formEncode(tokenTypeHint) +
-        "&client_id=" + McpOAuth::formEncode(clientId);
+    const std::string body = McpOAuth::revocationFormBody(token, tokenTypeHint, clientId);
     std::string response;
     int status = 0;
     if (!Net::httpPost("wss://" + revokeUrl.host, revokeUrl.port, revokeUrl.path, body, response, error, 12000,
