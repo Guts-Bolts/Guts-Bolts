@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   formatAuctionCountdown,
   getActiveAuctions,
@@ -54,4 +55,12 @@ test('auction urgency escalates at the 24-hour, one-hour, five-minute and one-mi
   assert.equal(getAuctionUrgency(NOW / 1000 + 60, NOW).key, 'last-minute');
   assert.equal(getAuctionUrgency(NOW / 1000 + 86401, NOW).key, 'live');
   assert.equal(getAuctionUrgency('invalid', NOW).key, 'unknown');
+});
+
+const appSource = readFileSync(new URL('../../website/app/app.js', import.meta.url), 'utf8');
+
+test('in-app auction banner shows the starting bid until the first bid is placed', () => {
+  assert.ok(appSource.includes('const bidSummary = getAuctionBidSummary(au);'));
+  assert.ok(appSource.includes("bidSummary.hasBids ? 'CURRENT HIGH BID' : 'STARTING BID'"));
+  assert.ok(appSource.includes('bolts(bidSummary.amount)'));
 });
