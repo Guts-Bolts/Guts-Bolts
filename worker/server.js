@@ -406,6 +406,11 @@ const COSTLY = {
   'forum.reply':         [30, 90, 600],
   'ai.preferences.update': [10, 30, 600],
   'ai.content.eligibility.update': [60, 180, 600],
+  'ai.sessions.create': [20, 40, 600],
+  'ai.sessions.delete': [30, 60, 600],
+  'ai.memory.create': [30, 60, 600],
+  'ai.memory.update': [60, 120, 600],
+  'ai.memory.delete': [60, 120, 600],
   'chat.translate':      [400, 1200, 600],  // (a busy game's chat, read in another language)
   'groups.create':       [5, 15, 3600],
   'bolts.redeem':        [20, 60, 600],    // (so nobody can guess promo codes over and over)
@@ -2622,6 +2627,8 @@ export class GbServerObject extends DurableObject {
   aiMemoryAudit(me, eventType, resourceType, resourceId, details = {}) {
     this.sql.exec('INSERT INTO ai_memory_audit (id, account_id, event_type, resource_type, resource_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       randomHex(16), me.id, eventType, resourceType, resourceId, JSON.stringify(details), now());
+    this.sql.exec('DELETE FROM ai_memory_audit WHERE account_id = ? AND id NOT IN (SELECT id FROM ai_memory_audit WHERE account_id = ? ORDER BY created_at DESC LIMIT 1000)',
+      me.id, me.id);
   }
 
   aiOp(name, me, args) {
@@ -2630,6 +2637,8 @@ export class GbServerObject extends DurableObject {
     // Conversation metadata and user-controlled memory are operational data, not model-training consent.
     // Every lookup is scoped to the authenticated account; project IDs are opaque namespace labels.
     if (name === 'ai.sessions.create') {
+      const count = Array.from(this.sql.exec('SELECT COUNT(*) AS count FROM ai_sessions WHERE account_id = ?', me.id));
+      if (Number(count[0]?.count || 0) >= 200) return fail('You have reached the conversation limit. Delete an older conversation first.');
       const title = cleanText(str(args, 'title'), 120) || 'New conversation';
       const projectId = cleanText(str(args, 'projectId'), 128) || null;
       const id = randomHex(16), t = now();
@@ -2666,6 +2675,8 @@ export class GbServerObject extends DurableObject {
       return okay({ deleted: true });
     }
     if (name === 'ai.memory.create') {
+      const count = Array.from(this.sql.exec('SELECT COUNT(*) AS count FROM ai_memories WHERE account_id = ?', me.id));
+      if (Number(count[0]?.count || 0) >= 500) return fail('You have reached the memory limit. Delete an older memory first.');
       const content = cleanText(str(args, 'content'), 4000);
       if (!content) return fail('Memory content is required.');
       const types = ['user', 'feedback', 'project', 'reference', 'preference'];
