@@ -2713,7 +2713,7 @@ export class GbServerObject extends DurableObject {
     const items = [];
     for (const row of this.sql.exec(`SELECT id, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at, occurrences, last_seen_at
       FROM ai_moderation_cases WHERE status = 'open'
-      ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT ? OFFSET ?`, safeLimit, safeOffset)) {
+      ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, last_seen_at DESC, created_at DESC LIMIT ? OFFSET ?`, safeLimit, safeOffset)) {
       const author = this.users.get(row.author_id); let categories = [];
       try { categories = JSON.parse(row.categories); } catch { categories = []; }
       const asset = row.source_type === 'asset' ? this.assets.get(row.source_id) : null;
