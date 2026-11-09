@@ -298,6 +298,13 @@ inline bool parseQuery(const std::string& query, std::map<std::string, std::stri
     return true;
 }
 
+inline std::string revocationFormBody(const std::string& token, const std::string& tokenTypeHint,
+                                          const std::string& clientId) {
+    return "token=" + formEncode(token) +
+        "&token_type_hint=" + formEncode(tokenTypeHint) +
+        "&client_id=" + formEncode(clientId);
+}
+
 inline std::string appendQuery(const std::string& endpoint,
                                const std::vector<std::pair<std::string, std::string>>& parameters) {
     std::string result = endpoint;
