@@ -62,13 +62,15 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
    - The OS getaddrinfo operation itself is not forcibly interrupted; a cancelled lookup may finish in the detached resolver lane. The lane is capped and new lookups fail fast when saturated. This bounds agent/relay shutdown, but platform CI and a stalled-resolver stress test are still required before claiming a hard system-wide resolver bound.
    - OAuth/discovery futures also need cancellation propagated through every metadata and token request; the implementation is partial. Continue bounding concurrency, response bytes, tool-call count, total task time, and per-provider retries.
 
-8. **Dynamic capability/tool loading**
-   - Do not send the entire platform registry to every model turn. Add domain/task intent selection, then expose only the small set of relevant tools; permit explicit discovery when needed.
-   - Keep authorization independent of tool visibility. A hidden tool is not an authorization mechanism.
-   - Cache deterministic tool catalogs where supported and invalidate on capability/version changes.
+8. **Dynamic capability/tool loading — first-stage implementation present**
+   - Each turn now selects a bounded set of native tools (up to 24) and external tools (up to 12) from the active request text plus explicitly discovered tool names. The complete platform registry is not sent on every turn.
+   - Explicit discovery searches native and connected external catalogs and returns up to 20 matching tools. Authorization remains independent of tool visibility; a hidden tool is not an authorization mechanism.
+   - Unit tests cover domain selection, relevance ranking, discovered-tool inclusion, and result bounds.
+   - Remaining: integration tests for multi-domain requests and recall/false-negative behavior, pagination for catalogs larger than the discovery result limit, and deterministic catalog cache invalidation on capability/version changes.
 
-9. **Provider capability negotiation**
-   - Define adapter capabilities for parallel tool calls, maximum tool count/schema size, structured output, streaming, cancellation, context budget, and retry behavior.
+9. **Provider capability negotiation — partial implementation present**
+   - Ollama model selection calls `/api/show` and checks advertised completion, tool-calling, and vision capabilities before allowing Fyxa tool use.
+   - Claude and Ollama currently use separate request/response paths, but there is not yet a complete shared adapter contract for parallel tool calls, maximum tool/schema budgets, structured output, streaming, context limits, cancellation, and retry behavior.
    - The orchestrator must adapt concurrency and prompt construction to the active model; do not assume Ollama and Claude behave identically.
    - Model allowlisting/trust labels are a useful policy layer, but credentials and secrets must never enter model context regardless of trust level.
 
@@ -123,7 +125,7 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 - [ ] P0 focused tests cover malicious external descriptions/results and connected-app allowlist/write-scope policy; live adversarial tests must still prove content cannot bypass approval or alter permissions. Connected-app relay calls require current tool fingerprints and per-call Studio approval.
 - [ ] P1 task evidence completion is atomic and replay-safe (store implementation and focused tests added; current-head CI pending).
 - [ ] P1 cancellation tests cover provider calls, MCP HTTP, queued work, cancellable DNS waits, pending relay dials, and shutdown.
-- [ ] P1 dynamic tool loading and provider capability adaptation tests pass.
+- [ ] P1 dynamic tool selection unit tests pass; multi-domain recall and provider-specific capability adaptation integration tests remain required.
 - [ ] P1 idempotency tests verify key stability across a retry of the same queued invocation and audit redaction; remote deduplication is verified per integration.
 - [ ] P1 approval-record tests cover exact server/tool fingerprints, read/write scope, expiration, revocation, and serialization.
 - [ ] Current-head Windows, Linux, and test CI jobs pass for the latest branch commit; the previous green run predates the latest security-test changes.
