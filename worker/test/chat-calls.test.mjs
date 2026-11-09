@@ -271,3 +271,14 @@ test('cloud Team Create: invite, authenticate, sync edits and presence, share vo
   assert.ok(s.call(alice, 'team.leave', { session: made.session }).ok);
   assert.match(s.call(alice, 'team.poll', { session: made.session, after: 0 }).error, /ended/);
 });
+
+test('cloud Team Create invite codes that look like phone numbers still join', () => {
+  const { s, alice, bob } = setup();
+  const made = s.call(alice, 'team.create', { title: 'Digits', snapshot: '{"scene":"v1"}' });
+  assert.ok(made.ok, made.error);
+  // (A code like this used to be deleted by the chat filter, so ~3% of invites failed.)
+  const forced = '0438723973EA3F9C';
+  s.sql.exec('UPDATE teamsessions SET code = ? WHERE id = ?', forced, made.session);
+  const joined = s.call(bob, 'team.join', { code: forced.toLowerCase() });
+  assert.ok(joined.ok, joined.error);
+});
