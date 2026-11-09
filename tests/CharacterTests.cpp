@@ -10,6 +10,9 @@
 #include "scene/SceneNode.h"
 #include "scene/EditMesh.h"
 #include "scene/Liquid.h"
+#include "scene/Skin.h"
+
+#include <glm/gtx/quaternion.hpp>
 #include "scene/Serializer.h"
 
 #include <imgui.h>
@@ -92,16 +95,57 @@ int main(int argc, char** argv) {
                 if (glm::length(torso->editMesh->verts[i] - before[i]) > 1e-7f) { changed = true; break; }
         check(changed, "a positional projectile hit changes the struck mesh");
         if (torso->editMesh->skinned()) {
-            scene.particles().wound(GoreKind::Blood, torso, hitPoint, hitNormal,
-                                    glm::vec3(1, 0, 0), 0.09f, 0.28f);
-            const Particle& decal = scene.particles().items().back();
-            check(decal.skinTriangle.x != 0xffffffffu &&
-                  std::abs(decal.skinBarycentric.x + decal.skinBarycentric.y + decal.skinBarycentric.z - 1.0f) < 1e-4f,
-                  "a skinned wound decal stores a barycentric triangle anchor");
-            scene.particles().follow(scene);
-            check(glm::length(decal.normal) > 0.9f && glm::length(decal.tangent) > 0.9f &&
-                  std::abs(glm::dot(decal.normal, decal.tangent)) < 0.05f,
-                  "a skinned wound decal maintains an orthogonal deformed tangent frame");
+            // Rotate the live rig so the posed surface differs from its rest mesh.
+            const auto bones = Skin::bones(torso);
+            std::vector<glm::quat> originalPose;
+            originalPose.reserve(bones.size());
+            for (SceneNode* bone : bones) {
+                originalPose.push_back(bone->rig.live);
+                bone->rig.live = glm::angleAxis(glm::radians(42.0f), glm::vec3(0, 0, 1));
+            }
+            std::vector<glm::vec3> posed;
+            const bool hasPose = Skin::deform(*torso, posed) && posed.size() == torso->editMesh->verts.size();
+            size_t bestA = 0, bestB = 0, bestC = 0;
+            float bestMovement = 0.0f;
+            if (hasPose) {
+                for (const auto& face : torso->editMesh->faces) {
+                    if (face.size() < 3) continue;
+                    for (size_t k = 1; k + 1 < face.size(); ++k) {
+                        const uint32_t ia = face[0], ib = face[k], ic = face[k + 1];
+                        if (ia >= posed.size() || ib >= posed.size() || ic >= posed.size()) continue;
+                        const float movement = (glm::length(posed[ia] - torso->editMesh->verts[ia]) +
+                                                glm::length(posed[ib] - torso->editMesh->verts[ib]) +
+                                                glm::length(posed[ic] - torso->editMesh->verts[ic])) / 3.0f;
+                        if (movement > bestMovement && glm::length(glm::cross(posed[ib] - posed[ia], posed[ic] - posed[ia])) > 1e-5f) {
+                            bestMovement = movement;
+                            bestA = ia; bestB = ib; bestC = ic;
+                        }
+                    }
+                }
+            }
+            check(hasPose && bestMovement > 1e-3f, "the skinned test rig produces a distinct posed surface");
+            if (hasPose && bestMovement > 1e-3f) {
+                const glm::vec3 localHit = (posed[bestA] + posed[bestB] + posed[bestC]) / 3.0f;
+                const glm::vec3 localNormal = glm::normalize(glm::cross(posed[bestB] - posed[bestA], posed[bestC] - posed[bestA]));
+                const glm::mat4 world = torso->worldMatrix();
+                const glm::mat3 linear(world);
+                const glm::vec3 worldHit = glm::vec3(world * glm::vec4(localHit, 1.0f));
+                const glm::vec3 worldNormal = glm::normalize(glm::transpose(glm::inverse(linear)) * localNormal);
+                const glm::vec3 worldTangent = glm::normalize(linear * (posed[bestB] - posed[bestA]));
+                scene.particles().wound(GoreKind::Blood, torso, worldHit, worldNormal,
+                                        worldTangent, 0.09f, 0.28f);
+                const Particle& decal = scene.particles().items().back();
+                check(decal.skinTriangle.x != 0xffffffffu &&
+                      std::abs(decal.skinBarycentric.x + decal.skinBarycentric.y + decal.skinBarycentric.z - 1.0f) < 1e-4f,
+                      "a skinned wound decal stores a barycentric triangle anchor");
+                scene.particles().follow(scene);
+                check(glm::length(decal.pos - worldHit) < 0.03f,
+                      "a skinned wound decal stays on the live posed surface when first attached");
+                check(glm::length(decal.normal) > 0.9f && glm::length(decal.tangent) > 0.9f &&
+                      std::abs(glm::dot(decal.normal, decal.tangent)) < 0.05f,
+                      "a skinned wound decal maintains an orthogonal deformed tangent frame");
+            }
+            for (size_t i = 0; i < bones.size(); ++i) bones[i]->rig.live = originalPose[i];
         }
     } else {
         check(false, "the player torso has an editable mesh for impact deformation");
