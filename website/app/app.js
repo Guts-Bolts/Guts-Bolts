@@ -3230,7 +3230,10 @@ function fyxaModerationBox(result) {
   const names = { S1: 'Violence', S2: 'Non-violent crime', S3: 'Sexual violence', S4: 'Child safety', S5: 'Defamation', S6: 'Specialized advice',
     S7: 'Privacy', S8: 'Intellectual property', S9: 'Weapons', S10: 'Hate', S11: 'Self-harm', S12: 'Sexual content', S13: 'Elections', S14: 'Code interpreter abuse',
     SCAN_UNAVAILABLE: 'AI scanner unavailable', VISION_SCAN_UNAVAILABLE: 'Vision scan unavailable', AUDIO_REVIEW_REQUIRED: 'Audio upload requires manual review',
-    AUDIO_SCAN_UNAVAILABLE: 'Audio scan unavailable', GEOMETRY_REVIEW_REQUIRED: '3D geometry requires manual review' };
+    AUDIO_SCAN_UNAVAILABLE: 'Audio scan unavailable', GEOMETRY_REVIEW_REQUIRED: '3D geometry requires manual review',
+    VISION_CHILD_SAFETY: 'Image child-safety review', VISION_SEXUAL_CONTENT: 'Image sexual-content review',
+    VISION_NUDITY: 'Image nudity review', VISION_VIOLENCE: 'Image violence review', VISION_HATE: 'Image hate-content review',
+    VISION_PERSONAL_INFORMATION: 'Image personal-information review' };
   const person = (u, id) => u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>` : html`Unknown account (${id})`;
   const source = (item) => {
     let href = '';
