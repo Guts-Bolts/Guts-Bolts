@@ -1004,6 +1004,7 @@ void AssistantPanel::load() {
             server.token = item.value("token", std::string());
             server.oauthClientId = item.value("oauthClientId", std::string());
             server.oauthTokenEndpoint = item.value("oauthTokenEndpoint", std::string());
+            server.oauthRevocationEndpoint = item.value("oauthRevocationEndpoint", std::string());
             server.oauthResource = item.value("oauthResource", std::string());
             server.oauthIssuer = item.value("oauthIssuer", std::string());
             const bool hasOAuthBinding = !server.oauthIssuer.empty() && !server.oauthResource.empty() &&
@@ -1043,7 +1044,7 @@ void AssistantPanel::save() const {
               {"mcp", m_mcpWanted}, {"mcpPort", m_mcpPort}, {"connectedApps", m_appsWanted},
               {"mcpServers", [&]() { json a = json::array(); for (const auto& s : m_externalMcp)
                   a.push_back({{"name", s.name}, {"url", s.url}, {"credentialKey", s.credentialKey}, {"enabled", s.enabled},
-                               {"protocolVersion", s.protocolVersion}, {"oauthClientId", s.oauthClientId}, {"oauthTokenEndpoint", s.oauthTokenEndpoint}, {"oauthResource", s.oauthResource}, {"oauthIssuer", s.oauthIssuer}, {"tools", s.tools}}); return a; }()}}.dump(2);
+                               {"protocolVersion", s.protocolVersion}, {"oauthClientId", s.oauthClientId}, {"oauthTokenEndpoint", s.oauthTokenEndpoint}, {"oauthRevocationEndpoint", s.oauthRevocationEndpoint}, {"oauthResource", s.oauthResource}, {"oauthIssuer", s.oauthIssuer}, {"tools", s.tools}}); return a; }()}}.dump(2);
 }
 
 json AssistantPanel::externalMcpTools() const {
@@ -1154,7 +1155,7 @@ void AssistantPanel::authorizeMcpServer(const std::string& name) {
     m_mcpStatus = "Discovering protected-resource metadata and starting OAuth authorization...";
     m_oauthPending = std::async(std::launch::async, [name, serverUrl, clientId, cancel]() {
         const McpOAuthCompletionData completed = performMcpOAuth(serverUrl, clientId, *cancel);
-        return McpOAuthResult{name, completed.accessToken, completed.refreshToken, completed.issuer, completed.tokenEndpoint, completed.resource, completed.clientId, completed.error};
+        return McpOAuthResult{name, completed.accessToken, completed.refreshToken, completed.issuer, completed.tokenEndpoint, completed.revocationEndpoint, completed.resource, completed.clientId, completed.error};
     });
 }
 
@@ -1597,6 +1598,7 @@ void AssistantPanel::update() {
             server->token = std::move(authorized.accessToken);
             server->oauthRefreshToken = std::move(authorized.refreshToken);
             server->oauthTokenEndpoint = std::move(authorized.tokenEndpoint);
+            server->oauthRevocationEndpoint = std::move(authorized.revocationEndpoint);
             server->oauthClientId = std::move(authorized.clientId);
             server->oauthResource = std::move(authorized.resource);
             server->oauthIssuer = authorized.issuer;
