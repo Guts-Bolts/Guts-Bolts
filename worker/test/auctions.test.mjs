@@ -113,3 +113,23 @@ test('items up for auction show in the catalog\'s auction list, Exclusive or not
   // Buying it is still not possible.
   assert.match(s.call(ann, 'buy', { id: crown.id }).error, /Exclusive/);
 });
+
+
+test('auction catalog can sort every active item by soonest ending', () => {
+  const s = makeServer();
+  const items = [
+    s.addGame(s.staff, 'Ending later', { kind: 'hat', exclusive: true }),
+    s.addGame(s.staff, 'Ending first', { kind: 'hat', exclusive: true }),
+    s.addGame(s.staff, 'Ending middle', { kind: 'hat', exclusive: true }),
+  ];
+  for (const item of items)
+    assert.ok(s.call(s.staff, 'auction.start', { id: item.id, copies: 1, minBid: 10, hours: 24 }).ok);
+  const now = Math.floor(Date.now() / 1000);
+  items[0].auction.endsAt = now + 900;
+  items[1].auction.endsAt = now + 60;
+  items[2].auction.endsAt = now + 300;
+  const viewer = s.signUp('Viewer');
+  const list = s.call(viewer, 'list', { kind: 'clothing', auctions: true, sort: 'ending', limit: 100 });
+  assert.ok(list.ok, list.error);
+  assert.deepEqual(list.assets.map((item) => item.id), [items[1].id, items[2].id, items[0].id]);
+});
