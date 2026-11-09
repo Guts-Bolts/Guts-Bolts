@@ -107,3 +107,24 @@ test('Fyxa moderation fails closed when the text scanner returns an unstructured
   assert.ok(queue.items.some((item) => item.sourceId === owner.id &&
     item.categories.includes('SCAN_UNAVAILABLE')));
 });
+
+
+test('embedded texture payloads are routed to manual review', async () => {
+  const AI = { async run() { return { response: 'safe' }; } };
+  const s = makeServer({ AI });
+  const owner = s.signUp('Drew');
+  const model = { id: 'model-texture-1', kind: 'model', creator: owner.id, name: 'Textured model', meta: {} };
+  s.assets.set(model.id, model);
+  s.saveAsset(model);
+  const data = Buffer.from(JSON.stringify({ textureData: 'A'.repeat(256) })).toString('base64');
+
+  await s.scanModerationSubmission({
+    op: 'upload',
+    args: { kind: 'model', name: model.name, description: 'A textured model.', data },
+  }, owner, { ok: true, asset: model });
+
+  const queue = s.call(s.staff, 'ai.moderation.queue', {});
+  assert.ok(queue.ok, queue.error);
+  assert.ok(queue.items.some((item) => item.sourceId === model.id &&
+    item.categories.includes('GEOMETRY_REVIEW_REQUIRED')));
+});
