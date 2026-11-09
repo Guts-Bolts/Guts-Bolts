@@ -2,13 +2,13 @@
 
 **Review date:** 2026-11-08  
 **Scope:** PR #283, platform-agent architecture, task/skill implementation, and external MCP HTTP client.  
-**Status:** Authoritative source of truth for implementation status and release gates. Modern MCP transport, protected-server OAuth/PKCE, tool-definition pinning, untrusted-content labeling, atomic task evidence, cancellable DNS waiting, connected-app relay approval/fingerprinting, idempotency metadata, and the approval-record schema have implementation work on the feature branch; current-head CI and end-to-end integration tests remain required.
+**Status:** Authoritative source of truth for implementation status and release gates. On the current head, Tests, Windows, Linux, and secret-scan CI jobs pass. Modern MCP transport, protected-server OAuth/PKCE, tool-definition pinning, untrusted-content labeling, atomic task evidence, cancellable DNS waiting, connected-app relay approval/fingerprinting, idempotency metadata, and the approval-record schema have implementation work on the feature branch; live end-to-end integration tests and the explicit release gates below remain outstanding.
 
 ## Executive decision
 
 The platform-agent direction is sound, but the current branch is a development foundation, not a production-ready remote-agent release. Keep PR #283 draft and unmerged until the supported build/test matrix is green and the critical security/protocol work below is complete.
 
-The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends `server/discover`, attaches protocol metadata to each request, emits `MCP-Protocol-Version` and `Mcp-Method`, and emits `Mcp-Name` for named operations. It does not send or retain a session ID in modern mode. Legacy initialize/initialized and session handling remain a narrow compatibility path, entered only after a structured `-32022` unsupported-version or `-32601` unknown-method response; transport, TLS, and authorization failures do not trigger downgrade. Wire-envelope tests are included. Current-head CI must pass before treating them as verified; reordered-key canonicalization now has a regression test, while live round-robin-server integration remains outstanding.
+The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends `server/discover`, attaches protocol metadata to each request, emits `MCP-Protocol-Version` and `Mcp-Method`, and emits `Mcp-Name` for named operations. It does not send or retain a session ID in modern mode. Legacy initialize/initialized and session handling remain a narrow compatibility path, entered only after a structured `-32022` unsupported-version or `-32601` unknown-method response; transport, TLS, and authorization failures do not trigger downgrade. Wire-envelope and reordered-key canonicalization tests pass on current-head CI; live round-robin-server integration remains outstanding.
 
 ## Findings and decisions
 
@@ -120,16 +120,16 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 
 ## Delivery gates
 
-- [ ] P0 modern/legacy MCP protocol tests pass on current-head CI (test target added; latest branch changes require a fresh CI run).
-- [ ] P0 tool-definition fingerprint and approval invalidation tests pass on current-head CI (BLAKE2b pinning and live preflight implemented; focused unit tests added).
+- [x] P0 modern/legacy MCP wire-envelope unit tests pass on current-head CI; live round-robin-server integration remains outstanding.
+- [x] P0 tool-definition fingerprint and approval invalidation unit tests pass on current-head CI (BLAKE2b pinning and live preflight implemented); live-server integration remains outstanding.
 - [ ] P0 protected-remote OAuth flow, token audience/issuer validation, and best-effort RFC 7009 revocation tests pass before protected remote MCP is enabled for general users.
 - [ ] P0 focused tests cover malicious external descriptions/results and connected-app allowlist/write-scope policy; live adversarial tests must still prove content cannot bypass approval or alter permissions. Connected-app relay calls require current tool fingerprints and per-call Studio approval.
-- [ ] P1 task evidence completion is atomic and replay-safe (store implementation and focused tests added; current-head CI pending).
+- [x] P1 task evidence completion is atomic and replay-safe (store implementation and focused tests pass on current-head CI).
 - [ ] P1 cancellation tests cover provider calls, MCP HTTP, queued work, cancellable DNS waits, pending relay dials, and shutdown.
 - [ ] P1 dynamic tool selection unit tests pass; multi-domain recall and provider-specific capability adaptation integration tests remain required.
 - [ ] P1 idempotency tests verify key stability across a retry of the same queued invocation and audit redaction; remote deduplication is verified per integration.
 - [ ] P1 approval-record tests cover exact server/tool fingerprints, read/write scope, expiration, revocation, and serialization.
-- [ ] Current-head Windows, Linux, and test CI jobs pass for the latest branch commit; the previous green run predates the latest security-test changes.
+- [x] Current-head Windows, Linux, Tests, and secret-scan CI jobs pass for the latest branch commit.
 - [ ] PR stays draft until all required gates are satisfied.
 
 ## Source notes
