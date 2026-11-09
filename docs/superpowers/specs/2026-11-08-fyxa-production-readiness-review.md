@@ -25,7 +25,8 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
    - The authorization request and token exchange both include the RFC 8707 `resource` indicator. RFC 9207 `iss` is checked before processing either successful or error callbacks; missing `iss` is rejected when the server advertises it as required.
    - Fyxa uses OS cryptographic randomness, a loopback-only callback listener, PKCE S256, and public-client (`token_endpoint_auth_method=none`) registration. It supports a user-supplied pre-registered client ID (including a client-ID metadata URL) or Dynamic Client Registration when offered. DCR is retained as a compatibility path because the current desktop client does not publish a stable Client ID Metadata Document.
    - Access and refresh tokens are stored in the OS credential vault where available; unsupported platforms retain them only in memory. Refresh tokens are bound to the stored issuer/resource/client and the issuer metadata plus token endpoint are revalidated before a refresh grant. Expired tokens are refreshed on HTTP 401 for both modern stateless and legacy session-based MCP.
-   - Remaining OAuth work: incremental scope/step-up authorization, explicit revocation, broader multi-authorization-server selection, and live integration tests against protected MCP servers. Static bearer credentials remain available for local-development compatibility.
+   - Removing an OAuth-connected server now attempts RFC 7009 revocation for its refresh and access tokens when the authorization server advertises a revocation endpoint. Fyxa revalidates the exact issuer and endpoint before sending either token; local credentials are deleted regardless. If revocation is unsupported or cannot be confirmed, the UI reports that remote access may remain until token expiry. Changing the configured client ID also triggers best-effort revocation of the previous grant.
+   - Remaining OAuth work: incremental scope/step-up authorization, broader multi-authorization-server selection, and live integration tests covering authorization, refresh, revocation, issuer changes, and cancellation. Static bearer credentials remain available for local-development compatibility.
    - Never expose tokens or authorization headers to model context, tool descriptions, audit logs, crash reports, or UI diagnostics.
 
 3. **Tool-definition integrity / MCPoison resistance — implementation and focused CI tests passed**
@@ -121,7 +122,7 @@ The HTTP client negotiates the MCP 2026-07-28 stateless protocol first. It sends
 
 - [ ] P0 modern/legacy MCP protocol tests pass on current-head CI (test target added; latest branch changes require a fresh CI run).
 - [ ] P0 tool-definition fingerprint and approval invalidation tests pass on current-head CI (BLAKE2b pinning and live preflight implemented; focused unit tests added).
-- [ ] P0 protected-remote OAuth flow and token audience/issuer tests pass before protected remote MCP is enabled for general users.
+- [ ] P0 protected-remote OAuth flow, token audience/issuer validation, and best-effort RFC 7009 revocation tests pass before protected remote MCP is enabled for general users.
 - [ ] P0 focused tests cover malicious external descriptions/results and connected-app allowlist/write-scope policy; live adversarial tests must still prove content cannot bypass approval or alter permissions. Connected-app relay calls require current tool fingerprints and per-call Studio approval.
 - [ ] P1 task evidence completion is atomic and replay-safe (store implementation and focused tests added; current-head CI pending).
 - [ ] P1 cancellation tests cover provider calls, MCP HTTP, queued work, cancellable DNS waits, pending relay dials, and shutdown.
