@@ -186,7 +186,7 @@ test('accepted HTTP and WebSocket submissions both schedule tracked moderation s
   const AI = { async run() { return { response: { safe: false, categories: ['S10'] } }; } };
   const s = makeServer({ AI });
   const httpDevice = device(s, 31);
-  const httpOwner = signUp(s, 'HTTP moderation sender', httpDevice.account);
+  signUp(s, 'HTTP moderation sender', httpDevice.account);
   const wsDevice = device(s, 32);
   signUp(s, 'WebSocket moderation sender', wsDevice.account);
 
