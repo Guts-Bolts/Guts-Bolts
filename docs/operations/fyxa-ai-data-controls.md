@@ -1,6 +1,6 @@
 # Fyxa AI data controls (initial backend)
 
-**Implementation status:** Backend preferences and eligibility metadata are implemented in the Worker. This is not a training pipeline and does not send user content to an AI provider.
+**Implementation status:** Backend preferences, eligibility metadata and the Settings switch are implemented in the Worker and website. This is not a training pipeline and does not send user content to an AI provider.
 
 ## Current scope
 
@@ -16,11 +16,14 @@ These tables are created additively by the existing Durable Object constructor. 
 
 ## Default behavior
 
-- Training is disabled for every account until an explicit opt-in.
-- AI reference indexing is disabled independently until an explicit opt-in.
-- Enabling either setting requires the current notice version and an explicit confirmation in the signed request.
-- The current notice and policy version is `2026-11-08-v1`. The API returns `currentNoticeVersion` and `currentPolicyVersion` so clients do not need to guess.
-- When an account opts in, existing owned assets are registered for eligibility checks. New assets created while the account has either AI setting enabled are registered automatically.
+Changed 2026-11-09 (Script chose opt-out for training):
+
+- **Training is ON by default** for every signed-up account, and the account can turn it off in Settings ("Fyxa and your uploads"). Turning it off needs no confirmation; turning it back on needs none either. Guest (not signed-up) accounts are never included.
+- **AI reference indexing stays OFF** until an explicit opt-in, which requires the current notice version and `confirm: true`.
+- The current notice and policy version is `2026-11-09-v2`. The API returns `currentNoticeVersion` and `currentPolicyVersion` so clients do not need to guess. `consentMethod` (about training) is `default_opt_out` (never changed), `chose_on`, `opt_out`, or `account_deleted`.
+- A policy or notice version change suspends **reference** use until the account reconfirms. Training (opt-out) is not suspended by a version change.
+- The Terms of Service (website `#/terms`, sections 6 and 11, and the Player's short version) describe this. Keep them in step with this file.
+- Assets of accounts that have training (or reference) on are registered for eligibility checks when they are saved, and all of an account's existing assets are registered when it changes its preferences. After an account turns both off, new assets are not registered.
 - If a policy or notice version changes, previously enabled processing becomes ineligible until the account explicitly reconfirms the current notice.
 - Existing and new assets are not automatically eligible: the creator must attest that they have the necessary rights, and staff must approve the rights review.
 - Once rights are approved, the account-wide preference applies to assets whose per-content choice is `inherit`. An explicit per-content `exclude` overrides account-level inclusion.
@@ -120,7 +123,7 @@ A content record is eligible for a purpose only when all of these are true:
 1. The current asset exists and its recorded owner still matches the asset creator.
 2. Its visibility is public.
 3. It is not awaiting or rejected by G&B moderation and is not exclusive or promo-only.
-4. The owner has explicitly enabled the corresponding account-level purpose.
+4. The owner's account-level purpose is on (training: on unless opted out; reference: explicitly enabled).
 5. The content's per-asset choice is not `exclude`.
 6. The creator has recorded a rights attestation.
 7. Staff has set its rights status to `approved`.
@@ -133,7 +136,7 @@ Preference changes and content choices are recorded in `ai_training_audit`. Staf
 
 ## Explicit limitations
 
-- No dataset export, dataset registry, model training, fine-tuning, model evaluation, AI reference index, or Fyxa UI is implemented here.
+- No dataset export, dataset registry, model training, fine-tuning, model evaluation or AI reference index is implemented here.
 - No automated screening for secrets, sensitive personal information, or content involving minors is implemented here. The staff rights-review gate does not replace those controls. Do not enable user-content training until purpose-specific content-safety screening, age safeguards, and the required legal authorization flow are implemented and tested.
 - No content is currently selected or transmitted for training by this backend.
 - No automatic model unlearning is implemented.

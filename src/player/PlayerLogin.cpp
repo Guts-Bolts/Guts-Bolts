@@ -164,6 +164,8 @@ static void drawTermsWindow(bool& open) {
                                "once per ban.");
         head("What you make");
         ImGui::TextUnformatted("Stays yours. Uploading lets Guts&Bolts store and show it (and others use it, if you make it public).");
+        ImGui::TextUnformatted("Unless you turn it off in Settings on the website, your public uploads may also help train Fyxa, "
+                               "the Guts&Bolts AI (not yet: nothing is trained today). Private things, messages and chat never are.");
         head("No guarantees");
         ImGui::TextUnformatted("Provided \"as is\", with no warranty. Things may break, change, lose data or shut down; as far "
                                "as the law allows, the makers aren't liable for any loss.");
