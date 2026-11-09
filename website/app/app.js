@@ -3252,7 +3252,7 @@ function fyxaModerationBox(result) {
     ${items.length ? items.map((item) => html`<div class="box fyxa-case">
       <div class="row" style="align-items:center;justify-content:space-between;gap:10px">
         <b>${item.severity.toUpperCase()} · ${item.sourceType.replaceAll('_', ' ')}</b>
-        <span class="small muted">${dateText(item.createdAt)}</span>
+        <span class="small muted">${dateText(item.createdAt)}${item.occurrences > 1 ? " · " + item.occurrences + " occurrences · last seen " + dateText(item.lastSeenAt) : ""}</span>
       </div>
       <p class="small">Creator: ${person(item.author, item.authorId)} · Source: ${source(item)}</p>
       <p class="small"><b>Signals:</b> ${item.categories.map((code) => (names[code] || code) + ' (' + code + ')').join(', ') || 'No category returned'}</p>
