@@ -210,7 +210,8 @@ local up = down + Vector3.new(0, 1, 0)
 spikes.Touched:Connect(function(hit)
     local humanoid = hit.Parent:FindFirstChild("Humanoid")
     if humanoid and spikes.Position.Y > down.Y + 0.5 then
-        humanoid:TakeDamage(45)
+        local impactNormal = Vector3.new(0, 1, 0)
+        humanoid:TakeDamage(45, { Instance = hit, Position = spikes.Position, Normal = impactNormal }, impactNormal * 24)
     end
 end)
 
@@ -270,7 +271,9 @@ local function slash(hit)
     -- Not yourself, and only once per slash.
     if not humanoid or character == tool.Parent or hitThisSlash[character] then return end
     hitThisSlash[character] = true
-    humanoid:TakeDamage(25)
+    local impactDirection = hit.Position - blade.Position
+    if impactDirection.Magnitude < 0.001 then impactDirection = Vector3.new(0, 0, 1) else impactDirection = impactDirection.Unit end
+    humanoid:TakeDamage(25, { Instance = hit, Position = hit.Position, Normal = impactDirection }, impactDirection * 18)
 end
 
 blade.Touched:Connect(slash)
@@ -690,7 +693,11 @@ while humanoid.Health > 0 do
         humanoid:MoveTo(target.Position)
         if time() - lastBite > BITE_TIME then
             lastBite = time()
-            target.Parent.Humanoid:TakeDamage(DAMAGE)
+            local impactDirection = target.Position - zombie.Position
+            if impactDirection.Magnitude < 0.001 then impactDirection = Vector3.new(0, 0, 1) else impactDirection = impactDirection.Unit end
+            target.Parent.Humanoid:TakeDamage(DAMAGE, {
+                Instance = target, Position = target.Position, Normal = -impactDirection,
+            }, impactDirection * 8)
         end
         wait(0.1)
     else
