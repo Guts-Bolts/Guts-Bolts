@@ -412,7 +412,7 @@ bool safeBearerToken(const std::string& value, size_t maximum) {
 }
 
 struct McpOAuthMetadata {
-    std::string issuer, authorizationEndpoint, tokenEndpoint, registrationEndpoint;
+    std::string issuer, authorizationEndpoint, tokenEndpoint, registrationEndpoint, revocationEndpoint;
     std::string resource, scope;
     bool issuerParameterRequired = false;
     bool pkceS256Supported = true;
@@ -513,7 +513,8 @@ bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
     };
     if (!httpsEndpoint("authorization_endpoint", out.authorizationEndpoint, true) ||
         !httpsEndpoint("token_endpoint", out.tokenEndpoint, true) ||
-        !httpsEndpoint("registration_endpoint", out.registrationEndpoint, false)) return false;
+        !httpsEndpoint("registration_endpoint", out.registrationEndpoint, false) ||
+        !httpsEndpoint("revocation_endpoint", out.revocationEndpoint, false)) return false;
     out.issuerParameterRequired = authorizationMetadata.contains("authorization_response_iss_parameter_supported") &&
         authorizationMetadata["authorization_response_iss_parameter_supported"].is_boolean() &&
         authorizationMetadata["authorization_response_iss_parameter_supported"].get<bool>();
@@ -545,7 +546,7 @@ bool discoverMcpOAuth(const std::string& resource, const std::string& challenge,
 }
 
 struct McpOAuthCompletionData {
-    std::string accessToken, refreshToken, issuer, tokenEndpoint, resource, clientId, error;
+    std::string accessToken, refreshToken, issuer, tokenEndpoint, revocationEndpoint, resource, clientId, error;
 };
 
 McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::string& configuredClientId,
@@ -569,6 +570,7 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
     if (cancel.load()) { result.error = "OAuth authorization was cancelled."; return result; }
     result.issuer = metadata.issuer;
     result.tokenEndpoint = metadata.tokenEndpoint;
+    result.revocationEndpoint = metadata.revocationEndpoint;
     result.resource = metadata.resource;
 
     if (!metadata.pkceS256Supported) {
@@ -809,6 +811,66 @@ McpOAuthCompletionData performMcpOAuth(const std::string& serverUrl, const std::
         result.error = "OAuth refresh token exceeded the supported size.";
     }
     return result;
+}
+
+bool revokeMcpOAuthToken(const std::string& issuer, const std::string& revocationEndpoint,
+                        const std::string& clientId, const std::string& token,
+                        const std::string& tokenTypeHint, std::string& error) {
+    if (token.empty()) return true;
+    McpOAuth::HttpsUrl issuerUrl, revokeUrl;
+    if (!McpOAuth::parseHttpsUrl(issuer, issuerUrl) ||
+        !McpOAuth::parseHttpsUrl(revocationEndpoint, revokeUrl)) {
+        error = "Stored OAuth issuer or revocation endpoint is invalid.";
+        return false;
+    }
+    bool issuerVerified = false;
+    for (const auto& metadataUrl : McpOAuth::authorizationServerMetadataUrls(issuer)) {
+        json metadata;
+        std::string metadataError;
+        if (!getOAuthJson(metadataUrl, metadata, metadataError)) continue;
+        if (!McpOAuth::metadataIssuerMatches(metadata, issuer)) {
+            error = "OAuth issuer no longer matches authorization-server metadata; token was not sent for revocation.";
+            return false;
+        }
+        if (!metadata.contains("revocation_endpoint") || !metadata["revocation_endpoint"].is_string() ||
+            metadata["revocation_endpoint"].get<std::string>() != revocationEndpoint) {
+            error = "OAuth revocation endpoint changed; token was not sent to the unverified endpoint.";
+            return false;
+        }
+        issuerVerified = true;
+        break;
+    }
+    if (!issuerVerified) {
+        error = "Could not revalidate the OAuth issuer before revoking credentials.";
+        return false;
+    }
+    std::string body = "token=" + McpOAuth::formEncode(token) +
+        "&token_type_hint=" + McpOAuth::formEncode(tokenTypeHint) +
+        "&client_id=" + McpOAuth::formEncode(clientId);
+    std::string response;
+    int status = 0;
+    if (!Net::httpPost("wss://" + revokeUrl.host, revokeUrl.port, revokeUrl.path, body, response, error, 12000,
+                       "Accept: application/json\\r\\nContent-Type: application/x-www-form-urlencoded\\r\\n",
+                       &status, nullptr) || status < 200 || status >= 300 || response.size() > 256u * 1024u) {
+        if (error.empty()) error = "OAuth token revocation failed with HTTP " + std::to_string(status) + ".";
+        return false;
+    }
+    return true;
+}
+
+std::string revokeMcpOAuthTokens(const std::string& issuer, const std::string& revocationEndpoint,
+                                const std::string& clientId, const std::string& accessToken,
+                                const std::string& refreshToken) {
+    if (revocationEndpoint.empty())
+        return "The authorization server has no advertised revocation endpoint. Local credentials were removed, but remote access may remain until token expiry.";
+    std::string refreshError, accessError;
+    const bool refreshOk = revokeMcpOAuthToken(issuer, revocationEndpoint, clientId, refreshToken, "refresh_token", refreshError);
+    const bool accessOk = revokeMcpOAuthToken(issuer, revocationEndpoint, clientId, accessToken, "access_token", accessError);
+    if (!refreshOk || !accessOk) {
+        const std::string detail = !refreshError.empty() ? refreshError : accessError;
+        return "Local credentials were removed, but remote OAuth revocation could not be confirmed: " + detail;
+    }
+    return "Remote OAuth access and refresh tokens were revoked; local credentials were removed.";
 }
 
 bool refreshMcpOAuthToken(const std::string& issuer, const std::string& tokenEndpoint, const std::string& clientId,
