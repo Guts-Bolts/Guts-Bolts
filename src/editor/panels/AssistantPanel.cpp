@@ -2126,7 +2126,7 @@ void AssistantPanel::render(bool* open) {
             ImGui::SameLine();
             if (ImGui::SmallButton("Refresh tools")) refreshMcpServers();
             ImGui::SameLine();
-            ImGui::BeginDisabled(m_oauthPending.valid() || m_mcpRefreshPending.valid());
+            ImGui::BeginDisabled(m_oauthPending.valid() || m_mcpRefreshPending.valid() || m_oauthRevocationPending.valid());
             if (ImGui::SmallButton("Authorize")) authorizeMcpServer(server.name);
             ImGui::EndDisabled();
             ImGui::SameLine();
