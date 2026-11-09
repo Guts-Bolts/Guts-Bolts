@@ -4031,6 +4031,8 @@ export class GbServerObject extends DurableObject {
         updated: (x, y) => (y.updated || y.created) - (x.updated || x.created),
         featured: (x, y) => y.featured - x.featured,   // picked by staff, newest pick first
         favorited: (x, y) => (y.favorites || 0) - (x.favorites || 0) || (y.plays + y.sales) - (x.plays + x.sales),
+        ending: (x, y) => Number(x.auction && x.auction.endsAt || Number.MAX_SAFE_INTEGER) -
+          Number(y.auction && y.auction.endsAt || Number.MAX_SAFE_INTEGER) || y.created - x.created,
       }[sort] || ((x, y) => y.created - x.created);
       found.sort(by);
       const offset = Math.max(0, num(args, 'offset'));
