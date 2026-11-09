@@ -156,7 +156,7 @@ test('repeated identical moderation submissions increment occurrence counts and 
   const AI = {
     async run() {
       scans += 1;
-      return { response: scans === 1 ? 'unsafe\\nS1' : 'unsafe\\nS4' };
+      return { response: { safe: false, categories: scans === 1 ? ['S1'] : ['S4'] } };
     },
   };
   const s = makeServer({ AI });
@@ -183,19 +183,15 @@ test('repeated identical moderation submissions increment occurrence counts and 
 
 
 test('accepted HTTP and WebSocket submissions both schedule tracked moderation scans', async () => {
-  const AI = { async run() { return { response: 'unsafe\\nS10' }; } };
+  const AI = { async run() { return { response: { safe: false, categories: ['S10'] } }; } };
   const s = makeServer({ AI });
-  const d = device(s, 31);
-  const owner = signUp(s, 'Transport sender', d.account);
-  const group = s.call(owner, 'groups.create', {
-    name: 'Transport moderation group',
-    description: 'A group for testing moderation dispatch.',
-  });
-  assert.ok(group.ok, group.error);
+  const httpDevice = device(s, 31);
+  const httpOwner = signUp(s, 'HTTP moderation sender', httpDevice.account);
+  const wsDevice = device(s, 32);
+  signUp(s, 'WebSocket moderation sender', wsDevice.account);
 
-  const httpReq = d.request('groups.post', {
-    id: group.group.id,
-    text: 'HTTP route moderation integration test content.',
+  const httpReq = httpDevice.request('profile.set', {
+    blurb: 'HTTP route moderation integration test content.',
   });
   const httpResponse = await s.fetch(new Request('https://gb.test/api', {
     method: 'POST',
@@ -216,9 +212,8 @@ test('accepted HTTP and WebSocket submissions both schedule tracked moderation s
     ws: { send(data) { sent.push(JSON.parse(data)); } },
   };
   s.conns.set(connection.id, connection);
-  const wsReq = d.request('groups.post', {
-    id: group.group.id,
-    text: 'WebSocket route moderation integration test content.',
+  const wsReq = wsDevice.request('profile.set', {
+    blurb: 'WebSocket route moderation integration test content.',
   });
   s.onMessage(connection, JSON.stringify(wsReq));
   await Promise.all([...s.backgroundTasks]);
