@@ -149,3 +149,28 @@ test('payload-only model updates still create manual-review cases without text f
   assert.ok(queue.items.some((item) => item.sourceId === model.id &&
     item.categories.includes('GEOMETRY_REVIEW_REQUIRED')));
 });
+
+
+test('repeated identical moderation submissions increment occurrence counts and retain strongest signals', async () => {
+  let scans = 0;
+  const AI = {
+    async run() {
+      scans += 1;
+      return { response: scans === 1 ? 'unsafe\\nS1' : 'unsafe\\nS4' };
+    },
+  };
+  const s = makeServer({ AI });
+  const owner = s.signUp('Repeat reporter');
+  const request = { op: 'profile.set', args: { blurb: 'The same flagged profile text.' } };
+  await s.scanModerationSubmission(request, owner, { ok: true });
+  await s.scanModerationSubmission(request, owner, { ok: true });
+
+  const queue = s.call(s.staff, 'ai.moderation.queue', {});
+  assert.ok(queue.ok, queue.error);
+  assert.equal(queue.items.length, 1, 'identical submissions remain grouped into one case');
+  assert.equal(queue.items[0].occurrences, 2);
+  assert.ok(queue.items[0].lastSeenAt >= queue.items[0].createdAt);
+  assert.equal(queue.items[0].severity, 'critical', 'a later higher-severity signal is retained');
+  assert.ok(queue.items[0].categories.includes('S1'));
+  assert.ok(queue.items[0].categories.includes('S4'));
+});
