@@ -507,15 +507,21 @@ void ParticleSystem::wound(GoreKind kind, const SceneNode* part, const glm::vec3
     p.localTangent = glm::length(localTangent) > 1e-5f ? glm::normalize(localTangent) : glm::vec3(1, 0, 0);
     if (part->editMesh && part->editMesh->skinned()) {
         const EditMesh& mesh = *part->editMesh;
+        // The raycast hit is in the currently posed surface, not the mesh's rest
+        // pose. Anchor the decal to the same deformed vertices that follow() uses,
+        // otherwise an animated limb can select a neighbouring rest-pose triangle.
+        std::vector<glm::vec3> posedVertices;
+        const bool hasPose = Skin::deform(*part, posedVertices) && posedVertices.size() == mesh.verts.size();
+        const std::vector<glm::vec3>& anchorVertices = hasPose ? posedVertices : mesh.verts;
         float bestDistance = 1e30f;
         for (const auto& face : mesh.faces) {
             if (face.size() < 3) continue;
             for (size_t k = 1; k + 1 < face.size(); ++k) {
                 const uint32_t ia = face[0], ib = face[k], ic = face[k + 1];
-                if (ia >= mesh.verts.size() || ib >= mesh.verts.size() || ic >= mesh.verts.size()) continue;
-                const glm::vec3& a = mesh.verts[ia];
-                const glm::vec3& b = mesh.verts[ib];
-                const glm::vec3& c = mesh.verts[ic];
+                if (ia >= anchorVertices.size() || ib >= anchorVertices.size() || ic >= anchorVertices.size()) continue;
+                const glm::vec3& a = anchorVertices[ia];
+                const glm::vec3& b = anchorVertices[ib];
+                const glm::vec3& c = anchorVertices[ic];
                 glm::vec3 faceNormal = glm::cross(b - a, c - a);
                 if (glm::length(faceNormal) < 1e-6f) continue;
                 faceNormal = glm::normalize(faceNormal);
