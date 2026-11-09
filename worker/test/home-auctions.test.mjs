@@ -60,7 +60,7 @@ test('auction urgency escalates at the 24-hour, one-hour, five-minute and one-mi
 const appSource = readFileSync(new URL('../../website/app/app.js', import.meta.url), 'utf8');
 
 test('in-app auction banner shows the starting bid until the first bid is placed', () => {
-  assert.match(appSource, /const bidSummary = getAuctionBidSummary\\(au\\)/);
-  assert.match(appSource, /bidSummary\\.hasBids \\? 'CURRENT HIGH BID' : 'STARTING BID'/);
-  assert.match(appSource, /bolts\\(bidSummary\\.amount\\)/);
+  assert.ok(appSource.includes('const bidSummary = getAuctionBidSummary(au);'));
+  assert.ok(appSource.includes("bidSummary.hasBids ? 'CURRENT HIGH BID' : 'STARTING BID'"));
+  assert.ok(appSource.includes('bolts(bidSummary.amount)'));
 });
