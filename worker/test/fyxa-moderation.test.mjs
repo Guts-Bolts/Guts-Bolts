@@ -163,6 +163,12 @@ test('repeated identical moderation submissions increment occurrence counts and 
   const owner = s.signUp('Repeat reporter');
   const request = { op: 'profile.set', args: { blurb: 'The same flagged profile text.' } };
   await s.scanModerationSubmission(request, owner, { ok: true });
+  const firstQueue = s.call(s.staff, 'ai.moderation.queue', {});
+  assert.ok(firstQueue.ok && firstQueue.items.length === 1);
+  const dismissed = s.call(s.staff, 'ai.moderation.review', {
+    caseId: firstQueue.items[0].id, outcome: 'dismissed', note: 'Reviewed as allowed in context.',
+  });
+  assert.ok(dismissed.ok, dismissed.error);
   await s.scanModerationSubmission(request, owner, { ok: true });
 
   const queue = s.call(s.staff, 'ai.moderation.queue', {});
