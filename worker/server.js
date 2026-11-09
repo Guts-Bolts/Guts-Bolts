@@ -4889,6 +4889,12 @@ export class GbServerObject extends DurableObject {
     // Account deletion leaves published games/items online, but it revokes all Fyxa permissions
     // and rights attestations attached to that account before its personal account data is erased.
     if (this.aiEnabledAccounts) this.aiEnabledAccounts.delete(u.id);
+    // Conversation sessions and user-authored memories are personal account data and must not
+    // survive account deletion. The memory audit is also removed; training-rights audit follows
+    // the existing retention behavior below.
+    this.sql.exec('DELETE FROM ai_memories WHERE account_id = ?', u.id);
+    this.sql.exec('DELETE FROM ai_sessions WHERE account_id = ?', u.id);
+    this.sql.exec('DELETE FROM ai_memory_audit WHERE account_id = ?', u.id);
     this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
       (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
       VALUES (?, 0, 0, ?, ?, 'account_deleted', ?, ?)`, u.id, FYXA_AI_POLICY_VERSION, FYXA_AI_NOTICE_VERSION, t, t);
