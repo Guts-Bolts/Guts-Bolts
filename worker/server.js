@@ -2683,7 +2683,7 @@ export class GbServerObject extends DurableObject {
       : categories.some((x) => ['S1', 'S2', 'S3', 'S7', 'S8', 'S9'].includes(x) || /VISION_.*(?:VIOLENCE|CRIME|PRIVACY|PERSONAL|WEAPON)/i.test(x)) ? 'medium' : 'review';
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode([sourceType, sourceId, actor.id, content].join('\n')));
     const fingerprint = hexOf(new Uint8Array(digest));
-    const existing = [...this.sql.exec('SELECT id, categories, severity FROM ai_moderation_cases WHERE fingerprint = ?', fingerprint)][0];
+    const existing = [...this.sql.exec('SELECT id, categories, severity, status FROM ai_moderation_cases WHERE fingerprint = ?', fingerprint)][0];
     const createdAt = now();
     if (existing) {
       let previousCategories = [];
@@ -2692,7 +2692,8 @@ export class GbServerObject extends DurableObject {
       const rank = { critical: 0, high: 1, medium: 2, review: 3 };
       const strongestSeverity = (rank[existing.severity] ?? 3) <= (rank[severity] ?? 3) ? existing.severity : severity;
       this.sql.exec(`UPDATE ai_moderation_cases SET categories = ?, severity = ?, scanner = ?, excerpt = ?,
-        occurrences = occurrences + 1, last_seen_at = ? WHERE id = ?`,
+        occurrences = occurrences + 1, last_seen_at = ?, status = 'open',
+        reviewed_by = NULL, reviewed_at = NULL, outcome = NULL, staff_note = NULL WHERE id = ?`,
         JSON.stringify(mergedCategories), strongestSeverity, scanner, content.slice(0, 1200), createdAt, existing.id);
     } else {
       this.sql.exec(`INSERT INTO ai_moderation_cases
