@@ -2510,7 +2510,7 @@ export class GbServerObject extends DurableObject {
     const assetKind = String(sourceAsset && sourceAsset.kind || args.kind || '');
     if (assetWrite) {
       sourceType = 'asset'; sourceId = String(sourceAsset && sourceAsset.id || args.id || '');
-      fields.push(['asset name', args.name], ['asset description', args.description]);
+      fields.push(['asset name', args.name || sourceAsset && sourceAsset.name], ['asset description', args.description || sourceAsset && sourceAsset.description]);
       const meta = args.meta && typeof args.meta === 'object' ? args.meta
         : sourceAsset && sourceAsset.meta && typeof sourceAsset.meta === 'object' ? sourceAsset.meta : {};
       for (const key of ['alt', 'caption', 'title', 'description', 'author', 'license', 'source']) fields.push([key, meta[key]]);
@@ -2560,6 +2560,8 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'chat.translate') { sourceType = 'game_chat'; sourceId = String(args.game || ''); fields.push(['game chat line', args.text]);
     } else return;
     let content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
+    // A payload-only update can still require manual review even when it has no text fields.
+    if (!content && manualReviewReason) content = '[Uninspected asset payload requires manual review]';
     if (!content) return;
     let categories = [], scanner = 'llama-guard-3-8b', unsafe = false;
     if (!this.env.AI) { scanner = 'ai-binding-unavailable'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
