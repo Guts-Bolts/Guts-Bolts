@@ -59,7 +59,7 @@ Create a memory:
 
 Supported memory types: `user`, `feedback`, `project`, `reference`, and `preference`.
 
-Content is limited to 4,000 UTF-8 bytes. Tags are deduplicated and limited to ten entries of 32 UTF-8 bytes each. Session titles are limited to 120 UTF-8 bytes; project namespace IDs are limited to 128 UTF-8 bytes. Importance is clamped to 1–5.
+Content is limited to 4,000 UTF-8 bytes. Tags are deduplicated and limited to ten entries of 32 UTF-8 bytes each. Session titles are limited to 120 UTF-8 bytes; project namespace IDs are limited to 128 UTF-8 bytes. Each account is limited to 200 sessions and 500 memories. Memory audit history is capped at the latest 1,000 events per account. Create, update, and delete operations have server-side rate limits. Importance is clamped to 1–5.
 
 List, update, and delete:
 
