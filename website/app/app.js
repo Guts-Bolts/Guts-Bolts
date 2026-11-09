@@ -5263,7 +5263,7 @@ async function refreshLiveAuctions() {
   auctionRefreshBusy = true;
   try {
     if (path[0] === 'home') {
-      const r = await pageCall('list', { kind: 'clothing', auctions: true, limit: 12 });
+      const r = await pageCall('list', { kind: 'clothing', auctions: true, sort: 'ending', limit: 12 });
       const section = $('#liveAuctions');
       if (!r.ok || !section || (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home') !== 'home') return;
       section.innerHTML = renderAuctionHomeSection(r.assets).s;
