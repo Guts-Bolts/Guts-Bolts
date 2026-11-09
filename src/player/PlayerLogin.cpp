@@ -267,7 +267,7 @@ void PlayerApp::drawLogin() {
             ImGui::TextColored(ImVec4(0.35f, 0.25f, 0.0f, 1), "Heads up: Guts&Bolts is for adults (18+).");
             ImGui::TextColored(ImVec4(0.3f, 0.23f, 0.02f, 1),
                                "It's the uncensored, R-rated cousin of the blocky-game genre: games can have strong "
-                               "language, crude humour, cartoon gore and violence, and chat isn't filtered. It's a free "
+                               "language, crude humour, cartoon gore and violence, and chat may be screened by automated safety systems. It's a free "
                                "hobby project, not Roblox and not connected to Roblox.");
             ImGui::Unindent(6);
             ImGui::Dummy(ImVec2(0, 2));
