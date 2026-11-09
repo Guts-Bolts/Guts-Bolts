@@ -119,7 +119,7 @@ void EnvironmentPanel::render() {
     }
 
     if (ImGui::CollapsingHeader("World")) {
-        ImGui::SliderFloat("Gravity", &m_scene->world().gravity, 0.0f, 100.0f);
+        ImGui::SliderFloat("Gravity", &m_scene->world().gravity, 0.0f, 300.0f);
         ImGui::SliderFloat("Fall Limit", &m_scene->world().fallenPartsHeight, -500.0f, 0.0f, "%.0f");
         help("Players die and parts disappear below this height");
     }

@@ -1426,7 +1426,7 @@ json settingsJson(Scene& scene) {
     j["environment"] = envToJson(scene.environment());
     if (!scene.terrain().empty()) j["terrain"] = scene.terrain().toJson();
     const WorldSettings& ws = scene.world();
-    j["world"] = {{"gravity", ws.gravity}, {"fallenPartsHeight", ws.fallenPartsHeight},
+    j["world"] = {{"gravity", ws.gravity}, {"gravityVersion", 2}, {"fallenPartsHeight", ws.fallenPartsHeight},
                   {"deathStyle", (int)ws.deathStyle}, {"gore", (int)ws.gore},
                   {"dismemberment", ws.dismemberment}, {"knockdowns", ws.knockdowns}, {"fallDamage", ws.fallDamage},
                   {"fallDamageSpeed", ws.fallDamageSpeed}, {"spawnForceField", ws.spawnForceField},
@@ -1498,6 +1498,15 @@ void applySettings(Scene& scene, const json& j) {
         w.bloodColor        = vec(j["world"], "bloodColor", w.bloodColor);
         w.bloodAmount       = get<float>(j["world"], "bloodAmount", w.bloodAmount);
         w.bloodStay         = get<float>(j["world"], "bloodStay", w.bloodStay);
+        // Saved before Roblox-strength gravity (0.7.10): scale its gravity up the
+        // same way (the old default 22 becomes 98.1, a moon game stays as light
+        // compared), and the fall damage speed with it, so the same height of fall
+        // still hurts.
+        if (get<int>(j["world"], "gravityVersion", 1) < 2) {
+            w.gravity = get<float>(j["world"], "gravity", kClassicGravity) * (kDefaultGravity / kClassicGravity);
+            if (j["world"].contains("fallDamageSpeed"))
+                w.fallDamageSpeed *= std::sqrt(kDefaultGravity / kClassicGravity);
+        }
         if (j["world"].contains("collisionGroups")) w.collisionGroups = Serializer::collisionGroupsFromJson(j["world"]["collisionGroups"]);
         if (j["world"].contains("playerCamera") && j["world"]["playerCamera"].is_object()) {
             const json& pc = j["world"]["playerCamera"];

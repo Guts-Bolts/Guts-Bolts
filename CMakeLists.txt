@@ -1123,6 +1123,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(PlayerFootingTests PRIVATE gb_engine)
     add_test(NAME PlayerFootingTests COMMAND PlayerFootingTests)
 
+    # Roblox-strength gravity: new games, and old saves scaled up when they load.
+    add_executable(RobloxGravityTests tests/RobloxGravityTests.cpp)
+    target_link_libraries(RobloxGravityTests PRIVATE gb_engine)
+    add_test(NAME RobloxGravityTests COMMAND RobloxGravityTests)
+
     # The Material Graph: patterns tile, wires can't loop, saving and baking.
     add_executable(MaterialGraphTests tests/MaterialGraphTests.cpp)
     target_link_libraries(MaterialGraphTests PRIVATE gb_engine)

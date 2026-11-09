@@ -1347,7 +1347,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     if (node == m_scene->root()) {
         ImGui::Separator();
         ImGui::TextDisabled("The Workspace holds everything in your game.");
-        ImGui::DragFloat("Gravity", &m_scene->world().gravity, 0.1f, 0.0f, 200.0f);
+        ImGui::DragFloat("Gravity", &m_scene->world().gravity, 0.5f, 0.0f, 400.0f);
         WorldSettings& w = m_scene->world();
         ImGui::Checkbox("Load Map In Pieces", &w.streaming);
         if (ImGui::IsItemHovered())
