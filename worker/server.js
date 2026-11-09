@@ -809,6 +809,7 @@ export class GbServerObject extends DurableObject {
     this.aiTrackedContent = new Set();
     for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility')) this.aiTrackedContent.add(r.content_id);
     this.aiEnabledAccounts = new Set();
+    this.backgroundTasks = new Set();
     for (const r of this.sql.exec('SELECT account_id FROM ai_training_preferences WHERE training_enabled = 1 OR reference_enabled = 1'))
       this.aiEnabledAccounts.add(r.account_id);
     this.secretsInit();   // games' secrets for web requests (game-web.js)
@@ -2502,6 +2503,17 @@ export class GbServerObject extends DurableObject {
     }
   }
 
+
+  // Durable Objects do not need waitUntil: pending I/O keeps the instance active.
+  // Retain background moderation promises so they are observable and awaitable in tests.
+  trackBackgroundTask(task, label = 'background task') {
+    let tracked;
+    tracked = Promise.resolve(task)
+      .catch((error) => console.log(label + ' failed: ' + (error && error.message || error)))
+      .finally(() => this.backgroundTasks.delete(tracked));
+    this.backgroundTasks.add(tracked);
+    return tracked;
+  }
 
   // Fyxa moderation: Llama Guard is advisory; it never bans users or removes content.
   async scanModerationSubmission(req, actor, answer) {
@@ -6484,9 +6496,9 @@ export class GbServerObject extends DurableObject {
     const reply = ++c.sent > kWsRequestsPer10s ? Object.assign(fail('Whoa, that\'s a lot of requests. Slow down a little.'), { slowDown: true })
       : this.handle(req, { ip: c.ip });
     if (reply.ok && reply.moderationActor) {
-      const scan = this.scanModerationSubmission(req, reply.moderationActor, reply)
-        .catch((error) => console.log('Fyxa moderation scan failed: ' + (error && error.message || error)));
-      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(scan);
+      this.trackBackgroundTask(
+        this.scanModerationSubmission(req, reply.moderationActor, reply),
+        'Fyxa WebSocket moderation scan');
     }
     if (reply.webJob || reply.iceJob) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
     if ('id' in req) reply.id = req.id;
@@ -6624,10 +6636,9 @@ export class GbServerObject extends DurableObject {
     const h = request.headers;   // (set by worker/shield.js, which replaces anything a visitor sent in them)
     let answer = this.handle(req, { ip: h.get('x-gb-ip') || '', web: h.get('x-gb-web') === '1', human: h.get('x-gb-human') === '1', sitekey: h.get('x-gb-sitekey') || '' });
     if (answer.ok && answer.moderationActor) {
-      const scan = this.scanModerationSubmission(req, answer.moderationActor, answer)
-        .catch((error) => console.log('Fyxa moderation scan failed: ' + (error && error.message || error)));
-      if (typeof this.ctx.waitUntil === 'function') this.ctx.waitUntil(scan);
-      else await scan;
+      this.trackBackgroundTask(
+        this.scanModerationSubmission(req, answer.moderationActor, answer),
+        'Fyxa HTTP moderation scan');
     }
     if (answer.ok && req.op === 'notes.list' && answer.me && answer.me.id) {
       try {
