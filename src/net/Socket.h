@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -22,7 +23,8 @@ public:
 
     // Connect to host:port (waits up to `timeoutMs`). Returns null + error text on failure.
     static std::unique_ptr<Connection> connectTo(const std::string& host, int port,
-                                                 std::string& error, int timeoutMs = 4000);
+                                                 std::string& error, int timeoutMs = 4000,
+                                                 const std::atomic_bool* cancel = nullptr);
 
     void send(const std::string& message);   // queued; sent by poll()
     bool poll();                              // send + receive; false once disconnected
@@ -34,8 +36,8 @@ public:
 private:
     struct Web;                    // the WebSocket (and TLS) side, for wss:// hosts
     bool webPoll();
-    friend bool httpPost(const std::string&, int, const std::string&, const std::string&, std::string&, std::string&, int,
-                         const std::string&, int*);
+    friend bool httpRequest(const std::string&, const std::string&, int, const std::string&, const std::string&, std::string&, std::string&, int,
+                            const std::string&, int*, std::string*, const std::atomic_bool*);
 
     intptr_t    m_sock;
     std::string m_address;
@@ -47,12 +49,19 @@ private:
 // "wss://..." or "ws://...": a server on the web (see above).
 bool isWebAddress(const std::string& host);
 
-// One HTTP(S) POST to a web server (host "wss://example.com" means https, like
-// above; port 443 usually). Fills `reply` with the answer's body.
+// One HTTP(S) GET or POST to a web server (host "wss://example.com" means https,
+// like above; port 443 usually). Fills `reply` with the answer's body.
 // `extraHeaders`: more header lines, each ending in "\r\n". `status` gets the HTTP status.
+bool httpRequest(const std::string& method, const std::string& host, int port, const std::string& path,
+                 const std::string& body, std::string& reply, std::string& error, int timeoutMs = 30000,
+                 const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr, const std::atomic_bool* cancel = nullptr);
+bool httpGet(const std::string& host, int port, const std::string& path, std::string& reply,
+             std::string& error, int timeoutMs = 12000, const std::string& extraHeaders = "",
+             int* status = nullptr, std::string* responseHeaders = nullptr, const std::atomic_bool* cancel = nullptr);
 bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
               std::string& reply, std::string& error, int timeoutMs = 30000,
-              const std::string& extraHeaders = "", int* status = nullptr);
+              const std::string& extraHeaders = "", int* status = nullptr, std::string* responseHeaders = nullptr, const std::atomic_bool* cancel = nullptr);
+bool openUrl(const std::string& url, std::string& error);
 
 // A tiny web server for this computer only (127.0.0.1): other programs on the
 // same computer can talk to us, nobody on the network can. Polled every frame,

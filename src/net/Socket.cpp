@@ -10,6 +10,9 @@
 #include <mutex>
 #include <random>
 #include <vector>
+#include <condition_variable>
+#include <thread>
+#include <memory>
 
 #ifdef GB_WEBSOCKETS
 #include <mbedtls/ctr_drbg.h>
@@ -20,6 +23,10 @@
 #include <mbedtls/x509_crt.h>
 #include <psa/crypto.h>
 #include "CaCerts.h"
+#endif
+
+#if defined(GB_MOBILE) && !defined(__EMSCRIPTEN__)
+#include <SDL.h>
 #endif
 
 #ifdef __EMSCRIPTEN__
@@ -36,6 +43,7 @@
 #endif
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <shellapi.h>
 using socklen_t = int;
 #define GB_CLOSE closesocket
 #define GB_WOULDBLOCK (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
@@ -89,38 +97,150 @@ void setNonBlocking(intptr_t s) {
 }
 
 // Open a TCP connection (non-blocking). Returns -1 and the reason on failure.
-intptr_t tcpConnect(const std::string& host, int port, std::string& error, int timeoutMs) {
-    if (!initSockets()) { error = "Networking isn't available on this computer."; return -1; }
+using Clock = std::chrono::steady_clock;
 
-    addrinfo hints{};
-    hints.ai_family   = AF_INET;
-    hints.ai_socktype = SOCK_STREAM;
-    addrinfo* res = nullptr;
-    std::string portStr = std::to_string(port);
-    if (getaddrinfo(host.c_str(), portStr.c_str(), &hints, &res) != 0 || !res) {
-        error = "Couldn't find \"" + host + "\". Check the address.";
-        return -1;
+// System getaddrinfo() is synchronous on all supported desktop targets. Run it
+// on a bounded resolver lane so Stop never waits for an OS resolver that stalls.
+// Resolver state is shared with the detached worker; cancellation never leaves a
+// worker holding references to the caller's stack.
+struct ResolvedAddress {
+    sockaddr_storage address{};
+    socklen_t length = 0;
+};
+
+struct ResolveState {
+    std::mutex mutex;
+    std::condition_variable ready;
+    bool done = false;
+    int result = -1;
+    ResolvedAddress address;
+};
+
+bool resolveHostCancellable(const std::string& host, int port, int timeoutMs, ResolvedAddress& address,
+                            std::string& error, const std::atomic_bool* cancel) {
+#ifdef __EMSCRIPTEN__
+    (void)host;
+    (void)port;
+    (void)timeoutMs;
+    (void)address;
+    (void)cancel;
+    error = "This browser build can only connect using WebSocket URLs.";
+    return false;
+#else
+    static std::atomic<unsigned int> activeResolvers{0};
+    constexpr unsigned int kMaxResolvers = 4;
+    unsigned int active = activeResolvers.load();
+    do {
+        if (active >= kMaxResolvers) {
+            error = "The DNS resolver is busy. Try again shortly.";
+            return false;
+        }
+    } while (!activeResolvers.compare_exchange_weak(active, active + 1));
+
+    auto state = std::make_shared<ResolveState>();
+    try {
+        std::thread([state, host, port]() {
+            addrinfo hints{};
+            hints.ai_family = AF_INET;
+            hints.ai_socktype = SOCK_STREAM;
+            addrinfo* results = nullptr;
+            const std::string service = std::to_string(port);
+            const int result = getaddrinfo(host.c_str(), service.c_str(), &hints, &results);
+            ResolvedAddress resolved;
+            if (result == 0 && results) {
+                const size_t length = std::min<size_t>(results->ai_addrlen, sizeof(resolved.address));
+                std::memcpy(&resolved.address, results->ai_addr, length);
+                resolved.length = static_cast<socklen_t>(length);
+            }
+            if (results) freeaddrinfo(results);
+            {
+                std::lock_guard lock(state->mutex);
+                state->result = result;
+                state->address = resolved;
+                state->done = true;
+            }
+            activeResolvers.fetch_sub(1);
+            state->ready.notify_one();
+        }).detach();
+    } catch (...) {
+        activeResolvers.fetch_sub(1);
+        error = "Couldn't start the DNS resolver.";
+        return false;
     }
 
-    auto s = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
-    if ((intptr_t)s < 0) { freeaddrinfo(res); error = "Couldn't create a network socket."; return -1; }
+    const auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 1));
+    std::unique_lock lock(state->mutex);
+    while (!state->done) {
+        if (cancel && cancel->load()) {
+            error = "Request cancelled.";
+            return false;
+        }
+        const auto left = deadline - Clock::now();
+        if (left <= Clock::duration::zero()) {
+            error = "DNS lookup timed out.";
+            return false;
+        }
+        state->ready.wait_for(lock, std::min(std::chrono::duration_cast<std::chrono::milliseconds>(left),
+                                             std::chrono::milliseconds(25)));
+    }
+    if (cancel && cancel->load()) {
+        error = "Request cancelled.";
+        return false;
+    }
+    if (state->result != 0 || state->address.length == 0) {
+        error = "Couldn't find \"" + host + "\". Check the address.";
+        return false;
+    }
+    address = state->address;
+    return true;
+#endif
+}
+
+intptr_t tcpConnect(const std::string& host, int port, std::string& error, int timeoutMs,
+                    const std::atomic_bool* cancel) {
+    if (cancel && cancel->load()) { error = "Request cancelled."; return -1; }
+    if (!initSockets()) { error = "Networking isn't available on this computer."; return -1; }
+    const auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 1));
+
+    ResolvedAddress resolved;
+    if (!resolveHostCancellable(host, port, timeoutMs, resolved, error, cancel)) return -1;
+    if (cancel && cancel->load()) { error = "Request cancelled."; return -1; }
+    if (Clock::now() >= deadline) { error = "Connection timed out during DNS lookup."; return -1; }
+
+    auto s = socket(resolved.address.ss_family, SOCK_STREAM, IPPROTO_TCP);
+    if ((intptr_t)s < 0) { error = "Couldn't create a network socket."; return -1; }
     setNonBlocking((intptr_t)s);
 
-    int rc = ::connect(s, res->ai_addr, (socklen_t)res->ai_addrlen);
-    freeaddrinfo(res);
+    const int rc = ::connect(s, reinterpret_cast<const sockaddr*>(&resolved.address), resolved.length);
     if (rc != 0 && !GB_WOULDBLOCK) {
         GB_CLOSE(s);
-        error = "Couldn't connect to " + host + ":" + portStr + ".";
+        error = "Couldn't connect to " + host + ":" + std::to_string(port) + ".";
         return -1;
     }
     if (rc != 0) {
-        fd_set wr;
-        FD_ZERO(&wr);
-        FD_SET(s, &wr);
-        timeval tv{timeoutMs / 1000, (timeoutMs % 1000) * 1000};
-        if (select((int)s + 1, nullptr, &wr, nullptr, &tv) <= 0) {
+        bool connected = false;
+        while (!(cancel && cancel->load()) && Clock::now() < deadline) {
+            const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
+            fd_set wr;
+            FD_ZERO(&wr);
+            FD_SET(s, &wr);
+            timeval tv{};
+            tv.tv_sec = 0;
+            tv.tv_usec = (decltype(tv.tv_usec))std::min<long long>(left, 50) * 1000;
+            const int ready = select((int)s + 1, nullptr, &wr, nullptr, &tv);
+            if (ready > 0) { connected = true; break; }
+            if (ready < 0) {
+#ifdef _WIN32
+                if (WSAGetLastError() != WSAEINTR) break;
+#else
+                if (errno != EINTR) break;
+#endif
+            }
+        }
+        if (!connected) {
             GB_CLOSE(s);
-            error = "Nobody answered at " + host + ":" + portStr + ". Is the game hosted and the port open?";
+            error = cancel && cancel->load() ? "Request cancelled." :
+                "Nobody answered at " + host + ":" + std::to_string(port) + ". Is the game hosted and the port open?";
             return -1;
         }
         int soErr = 0;
@@ -128,9 +248,14 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
         getsockopt(s, SOL_SOCKET, SO_ERROR, (char*)&soErr, &len);
         if (soErr != 0) {
             GB_CLOSE(s);
-            error = "The connection to " + host + ":" + portStr + " was refused.";
+            error = "The connection to " + host + ":" + std::to_string(port) + " was refused.";
             return -1;
         }
+    }
+    if (cancel && cancel->load()) {
+        GB_CLOSE(s);
+        error = "Request cancelled.";
+        return -1;
     }
     return (intptr_t)s;
 }
@@ -140,20 +265,29 @@ intptr_t tcpConnect(const std::string& host, int port, std::string& error, int t
 // WebSockets over TLS, for Guts&Bolts servers on the web (wss://)
 // ---------------------------------------------------------------------------
 
-using Clock = std::chrono::steady_clock;
-
 // Wait until the socket can be read (or written). false = the time ran out.
-bool waitFor(intptr_t sock, bool write, Clock::time_point deadline) {
-    auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
-    if (left <= 0) return false;
-    auto s = (decltype(socket(0, 0, 0)))sock;
-    fd_set set;
-    FD_ZERO(&set);
-    FD_SET(s, &set);
-    timeval tv{};
-    tv.tv_sec  = (decltype(tv.tv_sec))(left / 1000);
-    tv.tv_usec = (decltype(tv.tv_usec))((left % 1000) * 1000);
-    return select((int)s + 1, write ? nullptr : &set, write ? &set : nullptr, nullptr, &tv) > 0;
+bool waitFor(intptr_t sock, bool write, Clock::time_point deadline, const std::atomic_bool* cancel) {
+    const auto s = (decltype(socket(0, 0, 0)))sock;
+    while (!(cancel && cancel->load())) {
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
+        if (left <= 0) return false;
+        fd_set set;
+        FD_ZERO(&set);
+        FD_SET(s, &set);
+        timeval tv{};
+        tv.tv_sec = 0;
+        tv.tv_usec = (decltype(tv.tv_usec))std::min<long long>(left, 50) * 1000;
+        const int ready = select((int)s + 1, write ? nullptr : &set, write ? &set : nullptr, nullptr, &tv);
+        if (ready > 0) return true;
+        if (ready < 0) {
+#ifdef _WIN32
+            if (WSAGetLastError() != WSAEINTR) return false;
+#else
+            if (errno != EINTR) return false;
+#endif
+        }
+    }
+    return false;
 }
 
 // "wss://example.com" -> ("example.com", encrypted)
@@ -216,10 +350,10 @@ struct Connection::Web {
     int write(const char* data, size_t n);
     int read(char* data, size_t n);
     // Set up TLS and do the handshake. false + error on failure.
-    bool startTls(const std::string& hostName, std::string& error, Clock::time_point deadline);
+    bool startTls(const std::string& hostName, std::string& error, Clock::time_point deadline, const std::atomic_bool* cancel);
     // Blocking helpers for the start of a connection.
-    bool writeAll(const std::string& data, Clock::time_point deadline);
-    bool readHeaders(std::string& headers, Clock::time_point deadline);   // up to the blank line
+    bool writeAll(const std::string& data, Clock::time_point deadline, const std::atomic_bool* cancel);
+    bool readHeaders(std::string& headers, Clock::time_point deadline, const std::atomic_bool* cancel);   // up to the blank line
 };
 
 #ifdef GB_WEBSOCKETS
@@ -299,7 +433,7 @@ int Connection::Web::read(char* data, size_t n) {
     return -1;
 }
 
-bool Connection::Web::startTls(const std::string& hostName, std::string& error, Clock::time_point deadline) {
+bool Connection::Web::startTls(const std::string& hostName, std::string& error, Clock::time_point deadline, const std::atomic_bool* cancel) {
 #ifdef GB_WEBSOCKETS
     mbedtls_x509_crt* certs = trustedCerts(error);
     if (!certs) return false;
@@ -328,13 +462,14 @@ bool Connection::Web::startTls(const std::string& hostName, std::string& error, 
     mbedtls_ssl_set_bio(&ssl, &sock, bioSend, bioRecv, nullptr);
     tls = true;
     for (;;) {
+        if (cancel && cancel->load()) { error = "Request cancelled."; return false; }
         int r = mbedtls_ssl_handshake(&ssl);
         if (r == 0) return true;
         if (r == MBEDTLS_ERR_SSL_WANT_READ || r == MBEDTLS_ERR_SSL_WANT_WRITE) {
             lock.unlock();   // let other connections go while this one waits
-            bool ready = waitFor(sock, r == MBEDTLS_ERR_SSL_WANT_WRITE, deadline);
+            bool ready = waitFor(sock, r == MBEDTLS_ERR_SSL_WANT_WRITE, deadline, cancel);
             lock.lock();
-            if (!ready) { error = hostName + " didn't answer in time."; return false; }
+            if (!ready) { error = cancel && cancel->load() ? "Request cancelled." : hostName + " didn't answer in time."; return false; }
             continue;
         }
         uint32_t flags = mbedtls_ssl_get_verify_result(&ssl);
@@ -351,25 +486,28 @@ bool Connection::Web::startTls(const std::string& hostName, std::string& error, 
     }
 #else
     (void)deadline;
+    (void)cancel;
     error = "This app can't connect to " + hostName + " (no secure connections in this build).";
     return false;
 #endif
 }
 
-bool Connection::Web::writeAll(const std::string& data, Clock::time_point deadline) {
+bool Connection::Web::writeAll(const std::string& data, Clock::time_point deadline, const std::atomic_bool* cancel) {
     size_t at = 0;
     while (at < data.size()) {
+        if (cancel && cancel->load()) return false;
         int n = write(data.data() + at, data.size() - at);
         if (n < 0) return false;
-        if (n == 0 && !waitFor(sock, true, deadline)) return false;
+        if (n == 0 && !waitFor(sock, true, deadline, cancel)) return false;
         at += (size_t)n;
     }
     return true;
 }
 
-bool Connection::Web::readHeaders(std::string& headers, Clock::time_point deadline) {
+bool Connection::Web::readHeaders(std::string& headers, Clock::time_point deadline, const std::atomic_bool* cancel) {
     char buf[4096];
     for (;;) {
+        if (cancel && cancel->load()) return false;
         size_t end = in.find("\r\n\r\n");
         if (end != std::string::npos) {
             headers = in.substr(0, end + 4);
@@ -379,7 +517,7 @@ bool Connection::Web::readHeaders(std::string& headers, Clock::time_point deadli
         if (in.size() > 65536) return false;
         int n = read(buf, sizeof(buf));
         if (n < 0) return false;
-        if (n == 0) { if (!waitFor(sock, false, deadline)) return false; continue; }
+        if (n == 0) { if (!waitFor(sock, false, deadline, cancel)) return false; continue; }
         in.append(buf, (size_t)n);
     }
 }
@@ -447,9 +585,10 @@ Connection::~Connection() {
 }
 
 std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int port,
-                                                  std::string& error, int timeoutMs) {
+                                                  std::string& error, int timeoutMs,
+                                                  const std::atomic_bool* cancel) {
     if (!isWebAddress(host)) {
-        intptr_t s = tcpConnect(host, port, error, timeoutMs);
+        intptr_t s = tcpConnect(host, port, error, timeoutMs, cancel);
         if (s < 0) return nullptr;
         return std::make_unique<Connection>(s, host + ":" + std::to_string(port));
     }
@@ -501,13 +640,13 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
     return c;
 #else
     auto deadline = Clock::now() + std::chrono::milliseconds(std::max(timeoutMs, 8000));
-    intptr_t s = tcpConnect(name, port, error, timeoutMs);
+    intptr_t s = tcpConnect(name, port, error, timeoutMs, cancel);
     if (s < 0) return nullptr;
     auto c = std::make_unique<Connection>(s, host + ":" + std::to_string(port));
     c->m_web = std::make_unique<Web>();
     Web& w = *c->m_web;
     w.sock = s;
-    if (tls && !w.startTls(name, error, deadline)) return nullptr;
+    if (tls && !w.startTls(name, error, deadline, cancel)) return nullptr;
     unsigned char key[16];
     for (unsigned char& k : key) k = (unsigned char)(w.rng() & 0xFF);
     std::string hostHeader = name + ((tls && port == 443) || (!tls && port == 80) ? "" : ":" + std::to_string(port));
@@ -515,7 +654,7 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
                         "Sec-WebSocket-Key: " + base64(key, 16) + "\r\nSec-WebSocket-Version: 13\r\n"
                         "User-Agent: GutsAndBolts\r\n\r\n";
     std::string headers;
-    if (!w.writeAll(hello, deadline) || !w.readHeaders(headers, deadline)) {
+    if (!w.writeAll(hello, deadline, cancel) || !w.readHeaders(headers, deadline, cancel)) {
         error = "The server at " + name + " didn't answer.";
         return nullptr;
     }
@@ -528,25 +667,35 @@ std::unique_ptr<Connection> Connection::connectTo(const std::string& host, int p
 }
 
 
-bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
-              std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* statusOut) {
+bool httpRequest(const std::string& method, const std::string& host, int port, const std::string& path, const std::string& body,
+                 std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* statusOut,
+                 std::string* responseHeaders, const std::atomic_bool* cancel) {
+    if (cancel && cancel->load()) { error = "Request cancelled."; return false; }
     bool tls = false;
     std::string name = isWebAddress(host) ? webHostName(host, tls) : host;
     auto deadline = Clock::now() + std::chrono::milliseconds(timeoutMs);
-    intptr_t s = tcpConnect(name, port, error, std::min(timeoutMs, 8000));
+    intptr_t s = tcpConnect(name, port, error, std::min(timeoutMs, 8000), cancel);
     if (s < 0) return false;
     Connection c(s, name);   // (closes the socket when done)
     c.m_web = std::make_unique<Connection::Web>();
     Connection::Web& w = *c.m_web;
     w.sock = s;
-    if (tls && !w.startTls(name, error, deadline)) return false;
+    if (tls && !w.startTls(name, error, deadline, cancel)) return false;
     std::string hostHeader = name + ((tls && port == 443) || (!tls && port == 80) ? "" : ":" + std::to_string(port));
-    std::string request = "POST " + path + " HTTP/1.1\r\nHost: " + hostHeader + "\r\nUser-Agent: GutsAndBolts\r\n"
-                          "Content-Type: application/json\r\nContent-Length: " + std::to_string(body.size()) +
-                          "\r\n" + extraHeaders + "Connection: close\r\n\r\n";
+    if (method != "GET" && method != "POST") { error = "Unsupported HTTP method."; return false; }
+    std::string request = method + " " + path + " HTTP/1.1\r\nHost: " + hostHeader + "\r\nUser-Agent: GutsAndBolts\r\n";
+    if (method == "POST") {
+        std::string lowerExtra = lowerCase(extraHeaders);
+        if (lowerExtra.find("content-type:") == std::string::npos)
+            request += "Content-Type: application/json\r\n";
+        request += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+    }
+    request += extraHeaders + "Connection: close\r\n\r\n";
     std::string headers;
-    if (!w.writeAll(request, deadline) || !w.writeAll(body, deadline) || !w.readHeaders(headers, deadline)) {
-        error = "The server at " + name + " didn't answer in time.";
+    if (!w.writeAll(request, deadline, cancel) ||
+        (method == "POST" && !w.writeAll(body, deadline, cancel)) ||
+        !w.readHeaders(headers, deadline, cancel)) {
+        error = cancel && cancel->load() ? "Request cancelled." : "The server at " + name + " didn't answer in time.";
         return false;
     }
     // The body: all of it, until the server closes (we asked it to).
@@ -569,13 +718,14 @@ bool httpPost(const std::string& host, int port, const std::string& path, const 
         }
     };
     for (;;) {
+        if (cancel && cancel->load()) { error = "Request cancelled."; return false; }
         if (want >= 0 && (long long)all.size() >= want) break;
         if (chunked && chunkedDone()) break;
         if (all.size() > kMaxMessage) { error = "The answer was too big."; return false; }
         int n = w.read(buf, sizeof(buf));
         if (n > 0) { all.append(buf, (size_t)n); continue; }
         if (n < 0) break;   // closed: that's everything
-        if (!waitFor(s, false, deadline)) { error = "The server at " + name + " didn't finish answering in time."; return false; }
+        if (!waitFor(s, false, deadline, cancel)) { error = cancel && cancel->load() ? "Request cancelled." : "The server at " + name + " didn't finish answering in time."; return false; }
     }
     if (chunked) {
         std::string out;
@@ -594,12 +744,59 @@ bool httpPost(const std::string& host, int port, const std::string& path, const 
     }
     int status = statusCode(headers);
     if (statusOut) *statusOut = status;
-    if (status != 200 && all.empty()) {
+    if (responseHeaders) *responseHeaders = headers;
+    if (status != 200 && status != 202 && status != 204 && all.empty()) {
         error = "The server at " + name + " answered " + std::to_string(status) + ".";
         return false;
     }
     reply = std::move(all);
     return true;
+}
+
+bool httpGet(const std::string& host, int port, const std::string& path, std::string& reply,
+             std::string& error, int timeoutMs, const std::string& extraHeaders, int* status, std::string* responseHeaders,
+             const std::atomic_bool* cancel) {
+    return httpRequest("GET", host, port, path, {}, reply, error, timeoutMs, extraHeaders, status, responseHeaders, cancel);
+}
+
+bool httpPost(const std::string& host, int port, const std::string& path, const std::string& body,
+              std::string& reply, std::string& error, int timeoutMs, const std::string& extraHeaders, int* status, std::string* responseHeaders,
+              const std::atomic_bool* cancel) {
+    return httpRequest("POST", host, port, path, body, reply, error, timeoutMs, extraHeaders, status, responseHeaders, cancel);
+}
+
+bool openUrl(const std::string& url, std::string& error) {
+    if (url.rfind("https://", 0) != 0 || url.size() > 8192 ||
+        url.find_first_of("\r\n\t ") != std::string::npos) {
+        error = "Only a valid HTTPS URL can be opened for authorization.";
+        return false;
+    }
+#ifdef _WIN32
+    int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, url.data(), (int)url.size(), nullptr, 0);
+    if (n <= 0) { error = "The authorization URL is not valid UTF-8."; return false; }
+    std::wstring wideUrl((size_t)n, L'\0');
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, url.data(), (int)url.size(), wideUrl.data(), n);
+    HINSTANCE result = ShellExecuteW(nullptr, L"open", wideUrl.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if ((INT_PTR)result <= 32) { error = "Windows could not open the authorization browser."; return false; }
+    return true;
+#elif defined(GB_MOBILE) && !defined(__EMSCRIPTEN__)
+    if (SDL_OpenURL(url.c_str()) == 0) return true;
+    error = "The system browser could not be opened.";
+    return false;
+#elif defined(__APPLE__) && !defined(__EMSCRIPTEN__)
+    pid_t child = fork();
+    if (child == 0) { execlp("open", "open", url.c_str(), (char*)nullptr); _exit(127); }
+    if (child < 0) { error = "Could not launch the authorization browser."; return false; }
+    return true;
+#elif !defined(__EMSCRIPTEN__)
+    pid_t child = fork();
+    if (child == 0) { execlp("xdg-open", "xdg-open", url.c_str(), (char*)nullptr); _exit(127); }
+    if (child < 0) { error = "Could not launch the authorization browser."; return false; }
+    return true;
+#else
+    error = "Browser-based MCP authorization is not available in this build.";
+    return false;
+#endif
 }
 
 void Connection::send(const std::string& message) {
