@@ -3239,7 +3239,8 @@ function fyxaModerationBox(result) {
     let href = '';
     if (item.sourceType === 'asset') href = item.assetKind === 'game' ? '#/game/' + item.sourceId
       : isCatalogItem(item.assetKind) ? '#/item/' + item.sourceId : '#/library/' + item.sourceId;
-    else if (item.sourceType === 'comment') href = '#/game/' + item.sourceId;
+    else if (item.sourceType === 'comment' || item.sourceType === 'game_update' || item.sourceType === 'game_chat') href = '#/game/' + item.sourceId;
+    else if (item.sourceType === 'profile') href = '#/user/' + item.sourceId;
     else if (item.sourceType === 'forum_thread' || item.sourceType === 'forum_reply') href = '#/forum/t/' + item.sourceId;
     else if (item.sourceType === 'group' || item.sourceType === 'group_post') href = '#/group/' + item.sourceId;
     return href ? html`<a href="${href}">${item.sourceName || item.sourceId}</a>` : (item.sourceName || item.sourceId || 'not recorded');
