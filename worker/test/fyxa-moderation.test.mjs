@@ -128,3 +128,24 @@ test('embedded texture payloads are routed to manual review', async () => {
   assert.ok(queue.items.some((item) => item.sourceId === model.id &&
     item.categories.includes('GEOMETRY_REVIEW_REQUIRED')));
 });
+
+
+test('payload-only model updates still create manual-review cases without text fields', async () => {
+  const AI = { async run() { return { response: 'safe' }; } };
+  const s = makeServer({ AI });
+  const owner = s.signUp('Payload reviewer');
+  const model = { id: 'model-payload-only', kind: 'model', creator: owner.id, name: '', meta: {} };
+  s.assets.set(model.id, model);
+  s.saveAsset(model);
+  const data = Buffer.from(JSON.stringify({ geometry: { vertices: [[0, 0, 0]], indices: [0] } })).toString('base64');
+
+  await s.scanModerationSubmission({
+    op: 'update',
+    args: { id: model.id, data },
+  }, owner, { ok: true });
+
+  const queue = s.call(s.staff, 'ai.moderation.queue', {});
+  assert.ok(queue.ok, queue.error);
+  assert.ok(queue.items.some((item) => item.sourceId === model.id &&
+    item.categories.includes('GEOMETRY_REVIEW_REQUIRED')));
+});
