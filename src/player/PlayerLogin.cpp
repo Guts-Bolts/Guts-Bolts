@@ -168,7 +168,7 @@ static void drawTermsWindow(bool& open) {
         ImGui::TextUnformatted("Automated safety screening may review public creator submissions, profile text, game updates, "
                                "comments, forums, group posts, translated in-game chat, party chat, private messages and supported "
                                "image or audio uploads. Limited excerpts and review records may be shown to authorized moderators. "
-                               "Text is processed by Cloudflare Workers AI; supported audio is transcribed by Deepgram Nova-3 "
+                               "Text and supported images are processed by Cloudflare Workers AI; supported audio is transcribed by Deepgram Nova-3 "
                                "through Workers AI. AI flags are signals, not verdicts; staff make moderation decisions. See the "
                                "full website Terms for details.");
         head("No guarantees");
