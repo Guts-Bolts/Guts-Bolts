@@ -183,8 +183,7 @@ export function installChats(Cls) {
       return okay({ session: id, code, chat: chatId, member: 0, seq: 0, snapshot, members: this.teamMembers(id) });
     }
     if (name === 'team.join') {
-      // (Not through the chat filter: it reads digit runs in a random code as a phone number and deletes it.)
-      const code = (typeof args.code === 'string' ? args.code : '').trim().slice(0, 24).toUpperCase();
+      const code = String(args.code || '').trim().toUpperCase();
       if (!/^[0-9A-F]{16}$/.test(code)) return fail('Enter the 16-character Team Create invite code.');
       const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq, snapshot_seq FROM teamsessions WHERE code = ?', code)][0];
       if (!row) return fail('That Team Create invite is invalid or has expired.');
@@ -206,7 +205,8 @@ export function installChats(Cls) {
       }
       return okay({ session: row.id, code, chat: row.chat, member: memberId, owner: row.owner === me.id, seq: row.snapshot_seq, snapshotSeq: row.snapshot_seq, latestSeq: row.seq, snapshot: row.snapshot, members: this.teamMembers(row.id) });
     }
-    const session = clean(args.session, 40);
+    // Session IDs are opaque protocol identifiers, not user text. The chat filter can reject valid IDs.
+    const session = typeof args.session === 'string' && /^tc-[0-9a-f]{16}$/.test(args.session) ? args.session : '';
     const row = [...this.sql.exec('SELECT id, owner, title, chat, snapshot, seq, snapshot_seq FROM teamsessions WHERE id = ?', session)][0];
     if (!row) return fail('That Team Create session has ended.');
     const member = [...this.sql.exec('SELECT member_id FROM teammembers WHERE session = ? AND account = ?', session, me.id)][0];
