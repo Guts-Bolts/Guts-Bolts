@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeServer, signUp, device } from './helpers.mjs';
 
-test('Fyxa moderation screens group wall posts and edited group descriptions', () => {
+test('Fyxa moderation screens group wall posts and edited group descriptions', async () => {
   const AI = {
     async run() {
       return { response: 'unsafe\nS10' };
@@ -17,17 +17,15 @@ test('Fyxa moderation screens group wall posts and edited group descriptions', (
   });
   assert.ok(made.ok, made.error);
 
-  const posted = d.call('groups.post', {
-    id: made.group.id,
-    text: 'A wall post that the moderation scanner should inspect.',
-  });
+  const postArgs = { id: made.group.id, text: 'A wall post that the moderation scanner should inspect.' };
+  const posted = d.call('groups.post', postArgs);
   assert.ok(posted.ok, posted.error);
+  await s.scanModerationSubmission({ op: 'groups.post', args: postArgs }, posted.moderationActor, posted);
 
-  const edited = d.call('groups.edit', {
-    id: made.group.id,
-    description: 'An updated group description that must also be screened.',
-  });
+  const editArgs = { id: made.group.id, description: 'An updated group description that must also be screened.' };
+  const edited = d.call('groups.edit', editArgs);
   assert.ok(edited.ok, edited.error);
+  await s.scanModerationSubmission({ op: 'groups.edit', args: editArgs }, edited.moderationActor, edited);
 
   const denied = s.call(owner, 'ai.moderation.queue', {});
   assert.equal(denied.ok, false, 'ordinary users cannot inspect moderation cases');
