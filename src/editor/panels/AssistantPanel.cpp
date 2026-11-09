@@ -2161,11 +2161,23 @@ void AssistantPanel::render(bool* open) {
             }
             ImGui::EndDisabled();
             ImGui::TextDisabled("%s", server.url.c_str());
-            ImGui::BeginDisabled(m_oauthPending.valid() || m_mcpRefreshPending.valid());
+            ImGui::BeginDisabled(m_oauthPending.valid() || m_mcpRefreshPending.valid() || m_oauthRevocationPending.valid());
             const std::string previousOAuthClientId = server.oauthClientId;
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextWithHint("OAuth client ID", "Optional pre-registered public-client ID or client metadata URL", &server.oauthClientId)) {
                 if (!server.oauthIssuer.empty()) {
+                    if (!previousOAuthClientId.empty() &&
+                        (!server.token.empty() || !server.oauthRefreshToken.empty())) {
+                        const std::string issuer = server.oauthIssuer;
+                        const std::string revocationEndpoint = server.oauthRevocationEndpoint;
+                        const std::string clientId = previousOAuthClientId;
+                        const std::string accessToken = server.token;
+                        const std::string refreshToken = server.oauthRefreshToken;
+                        m_oauthRevocationPending = std::async(std::launch::async,
+                            [issuer, revocationEndpoint, clientId, accessToken, refreshToken]() {
+                                return revokeMcpOAuthTokens(issuer, revocationEndpoint, clientId, accessToken, refreshToken);
+                            });
+                    }
                     std::string oauthCredentialError;
                     const std::string oauthCredentialKey = McpOAuth::credentialBindingKey(
                         server.name, server.oauthIssuer, server.oauthResource, previousOAuthClientId);
@@ -2177,6 +2189,7 @@ void AssistantPanel::render(bool* open) {
                     server.oauthRefreshToken.clear();
                     server.oauthIssuer.clear();
                     server.oauthTokenEndpoint.clear();
+                    server.oauthRevocationEndpoint.clear();
                     server.oauthResource.clear();
                 }
                 save();
