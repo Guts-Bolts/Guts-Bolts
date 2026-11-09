@@ -798,9 +798,14 @@ export class GbServerObject extends DurableObject {
         id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, source_type TEXT NOT NULL, source_id TEXT NOT NULL,
         author_id TEXT NOT NULL, categories TEXT NOT NULL, severity TEXT NOT NULL, scanner TEXT NOT NULL,
         excerpt TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', created_at INTEGER NOT NULL,
-        reviewed_by TEXT, reviewed_at INTEGER, outcome TEXT, staff_note TEXT);
+        reviewed_by TEXT, reviewed_at INTEGER, outcome TEXT, staff_note TEXT,
+        occurrences INTEGER NOT NULL DEFAULT 1, last_seen_at INTEGER NOT NULL DEFAULT 0);
       CREATE INDEX IF NOT EXISTS ai_moderation_status_created ON ai_moderation_cases (status, created_at);
       CREATE INDEX IF NOT EXISTS ai_moderation_author_created ON ai_moderation_cases (author_id, created_at);`);
+    // Upgrade Durable Object databases created before repeat-occurrence tracking.
+    try { this.sql.exec('ALTER TABLE ai_moderation_cases ADD COLUMN occurrences INTEGER NOT NULL DEFAULT 1'); } catch { /* already present */ }
+    try { this.sql.exec('ALTER TABLE ai_moderation_cases ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT 0'); } catch { /* already present */ }
+    this.sql.exec('UPDATE ai_moderation_cases SET last_seen_at = created_at WHERE last_seen_at = 0');
     this.aiTrackedContent = new Set();
     for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility')) this.aiTrackedContent.add(r.content_id);
     this.aiEnabledAccounts = new Set();
@@ -2678,10 +2683,24 @@ export class GbServerObject extends DurableObject {
       : categories.some((x) => ['S1', 'S2', 'S3', 'S7', 'S8', 'S9'].includes(x) || /VISION_.*(?:VIOLENCE|CRIME|PRIVACY|PERSONAL|WEAPON)/i.test(x)) ? 'medium' : 'review';
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode([sourceType, sourceId, actor.id, content].join('\n')));
     const fingerprint = hexOf(new Uint8Array(digest));
-    this.sql.exec(`INSERT OR IGNORE INTO ai_moderation_cases
-      (id, fingerprint, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?)`,
-      'fyxa-' + randomHex(8), fingerprint, sourceType, sourceId, actor.id, JSON.stringify(categories), severity, scanner, content.slice(0, 1200), now());
+    const existing = [...this.sql.exec('SELECT id, categories, severity FROM ai_moderation_cases WHERE fingerprint = ?', fingerprint)][0];
+    const createdAt = now();
+    if (existing) {
+      let previousCategories = [];
+      try { previousCategories = JSON.parse(existing.categories); } catch { /* keep the new model signals */ }
+      const mergedCategories = [...new Set([...previousCategories, ...categories])].slice(0, 16);
+      const rank = { critical: 0, high: 1, medium: 2, review: 3 };
+      const strongestSeverity = (rank[existing.severity] ?? 3) <= (rank[severity] ?? 3) ? existing.severity : severity;
+      this.sql.exec(`UPDATE ai_moderation_cases SET categories = ?, severity = ?, scanner = ?, excerpt = ?,
+        occurrences = occurrences + 1, last_seen_at = ? WHERE id = ?`,
+        JSON.stringify(mergedCategories), strongestSeverity, scanner, content.slice(0, 1200), createdAt, existing.id);
+    } else {
+      this.sql.exec(`INSERT INTO ai_moderation_cases
+        (id, fingerprint, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at, occurrences, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 1, ?)`,
+        'fyxa-' + randomHex(8), fingerprint, sourceType, sourceId, actor.id, JSON.stringify(categories), severity, scanner,
+        content.slice(0, 1200), createdAt, createdAt);
+    }
   }
 
   aiModerationQueue(limit = 100, offset = 0) {
@@ -2691,7 +2710,7 @@ export class GbServerObject extends DurableObject {
     const total = Number(totalRow && totalRow.count || 0);
     const safeLimit = clamp(limit, 1, 100), safeOffset = Math.max(0, Math.trunc(offset) || 0);
     const items = [];
-    for (const row of this.sql.exec(`SELECT id, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at
+    for (const row of this.sql.exec(`SELECT id, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at, occurrences, last_seen_at
       FROM ai_moderation_cases WHERE status = 'open'
       ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT ? OFFSET ?`, safeLimit, safeOffset)) {
       const author = this.users.get(row.author_id); let categories = [];
@@ -2703,7 +2722,8 @@ export class GbServerObject extends DurableObject {
         sourceName: asset ? asset.name : group ? group.name : thread ? thread.title : '',
         assetKind: asset ? asset.kind : '', author: author ? this.publicUser(author) : null,
         categories, severity: row.severity, scanner: row.scanner, excerpt: row.excerpt,
-        status: row.status, createdAt: Number(row.created_at || 0) });
+        status: row.status, createdAt: Number(row.created_at || 0),
+        occurrences: Number(row.occurrences || 1), lastSeenAt: Number(row.last_seen_at || row.created_at || 0) });
     }
     return { items, total, limit: safeLimit, offset: safeOffset };
   }
