@@ -2687,7 +2687,7 @@ export class GbServerObject extends DurableObject {
     const createdAt = now();
     if (existing) {
       let previousCategories = [];
-      try { previousCategories = JSON.parse(existing.categories); } catch { /* keep the new model signals */ }
+      try { const parsed = JSON.parse(existing.categories); previousCategories = Array.isArray(parsed) ? parsed : []; } catch { /* keep the new model signals */ }
       const mergedCategories = [...new Set([...previousCategories, ...categories])].slice(0, 16);
       const rank = { critical: 0, high: 1, medium: 2, review: 3 };
       const strongestSeverity = (rank[existing.severity] ?? 3) <= (rank[severity] ?? 3) ? existing.severity : severity;
