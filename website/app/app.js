@@ -3995,7 +3995,7 @@ let authSetup = null;   // Settings: an authenticator app being set up ({secret,
 pages.terms = async () => {
   show(html`<div class="terms">
     <h1>Guts&amp;Bolts Terms of Service</h1>
-    <p class="muted small">Last updated October 2026. By making an account, playing or using Studio, you agree to these
+    <p class="muted small">Last updated November 2026. By making an account, playing or using Studio, you agree to these
       terms. If you don't agree, please don't use Guts&amp;Bolts.</p>
     <p>"Guts&amp;Bolts", "we" and "us" mean the people who make and run Guts&amp;Bolts. "You" means you, the person
       using it. These terms cover the website, Studio, the Player and our game servers.</p>
