@@ -7,6 +7,7 @@ import { startTranslating, languagePicker } from '../lang/i18n.js';
 import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
+import { getAuctionBidSummary } from '../auction-data.mjs';
 
 // --- small helpers ------------------------------------------------------------
 
@@ -639,11 +640,12 @@ function auctionBanner(a) {
   if (!auctionOpen(a)) return '';
   items3d.set(a.id, a);
   const urgent = au.endsAt - Date.now() / 1000 <= 3600;
+  const bidSummary = getAuctionBidSummary(au);
   return html`<a class="auction-home-banner${urgent ? ' urgent' : ''}" href="#/item/${a.id}" aria-label="Auction: ${a.name}">
     <div class="auction-home-ribbon"><span>AUCTION</span><b>${urgent ? 'ENDING SOON' : 'LIVE BIDDING'}</b></div>
     <div class="auction-home-picture"><div class="pic">${itemIcon(a)}</div></div>
     <div class="auction-home-copy"><span class="auction-home-kicker">THE CLOCK IS TICKING</span><h2>${a.name}</h2><p>${a.description || 'A limited-time chance to claim this exclusive item.'}</p>
-      <div class="auction-home-bid"><span>CURRENT HIGH BID</span><strong>${bolts(au.bids.length ? Math.max(...au.bids.map((b) => b.amount)) : 0)}</strong></div></div>
+      <div class="auction-home-bid"><span>${bidSummary.hasBids ? 'CURRENT HIGH BID' : 'STARTING BID'}</span><strong>${bolts(bidSummary.amount)}</strong></div></div>
     <div class="auction-home-clock"><span>TIME REMAINING</span><strong data-countdown="${au.endsAt}">${countdown(au.endsAt)}</strong><b class="auction-home-cta">BID NOW <span aria-hidden="true">&rarr;</span></b></div>
   </a>`;
 }
