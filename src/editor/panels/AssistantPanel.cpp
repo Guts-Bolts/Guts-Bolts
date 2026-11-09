@@ -1137,7 +1137,7 @@ json AssistantPanel::discoverFyxaTools(const std::string& query) {
 }
 
 void AssistantPanel::authorizeMcpServer(const std::string& name) {
-    if (m_oauthPending.valid() || m_mcpRefreshPending.valid()) {
+    if (m_oauthPending.valid() || m_mcpRefreshPending.valid() || m_oauthRevocationPending.valid()) {
         m_mcpStatus = "Wait for the current MCP discovery or OAuth operation to finish.";
         return;
     }
@@ -1584,6 +1584,10 @@ void AssistantPanel::update() {
                 requestNext();
             }
         }
+    }
+    if (m_oauthRevocationPending.valid() && m_oauthRevocationPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        const std::string revocationStatus = m_oauthRevocationPending.get();
+        if (!revocationStatus.empty()) m_credentialStatus = revocationStatus;
     }
     if (m_oauthPending.valid() && m_oauthPending.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         McpOAuthResult authorized = m_oauthPending.get();
@@ -2128,9 +2132,21 @@ void AssistantPanel::render(bool* open) {
             if (ImGui::SmallButton("Authorize")) authorizeMcpServer(server.name);
             ImGui::EndDisabled();
             ImGui::SameLine();
-            ImGui::BeginDisabled(m_mcpRefreshPending.valid());
+            ImGui::BeginDisabled(m_mcpRefreshPending.valid() || m_oauthRevocationPending.valid());
             if (ImGui::SmallButton("Remove")) {
                 if (m_oauthServerName == server.name && m_oauthCancel) m_oauthCancel->store(true);
+                if (!server.oauthIssuer.empty() && !server.oauthClientId.empty() &&
+                    (!server.token.empty() || !server.oauthRefreshToken.empty())) {
+                    const std::string issuer = server.oauthIssuer;
+                    const std::string revocationEndpoint = server.oauthRevocationEndpoint;
+                    const std::string clientId = server.oauthClientId;
+                    const std::string accessToken = server.token;
+                    const std::string refreshToken = server.oauthRefreshToken;
+                    m_oauthRevocationPending = std::async(std::launch::async,
+                        [issuer, revocationEndpoint, clientId, accessToken, refreshToken]() {
+                            return revokeMcpOAuthTokens(issuer, revocationEndpoint, clientId, accessToken, refreshToken);
+                        });
+                }
                 std::string credentialError;
                 CredentialStore::erase(server.credentialKey, credentialError);
                 CredentialStore::erase(server.credentialKey + "-oauth-refresh", credentialError);
