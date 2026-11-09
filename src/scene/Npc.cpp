@@ -164,7 +164,8 @@ void NpcSystem::update(float dt, Scene& scene, Physics& physics) {
 
 void NpcSystem::step(Npc& n, SceneNode* r, float dt, Scene& scene, Physics& physics) {
     Humanoid& h = n.humanoid;
-    if (h.health < n.lastHealth - 0.5f) {
+    // A recorded positional hit must be consumed even when its damage is below the legacy 0.5 threshold.
+    if (h.health < n.lastHealth - 0.5f || !n.impacts.empty()) {
         glm::vec3 at = r->transform.position + glm::vec3(0, 1.5f, 0);
         if (h.health > 0.0f) Audio::play("hit", 0.5f, 0.9f, false, &at);
         if (n.impacts.empty() && scene.goreEnabled()) {
