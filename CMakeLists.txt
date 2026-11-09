@@ -78,7 +78,7 @@ if(GB_SERVER_ONLY)
     add_dependencies(GutsAndBoltsServer gb_version)
     target_link_libraries(GutsAndBoltsServer PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     if(WIN32)
-        target_link_libraries(GutsAndBoltsServer PRIVATE ws2_32 bcrypt)
+        target_link_libraries(GutsAndBoltsServer PRIVATE ws2_32 bcrypt shell32)
     endif()
     return()
 endif()
@@ -785,9 +785,14 @@ set(EDITOR_SOURCES
     src/editor/EditorImport.cpp
     src/editor/PictureImport.cpp
     src/editor/AiTools.cpp
+    src/editor/FyxaTaskStore.cpp
+    src/editor/FyxaSkills.cpp
+    src/editor/FyxaToolSelection.cpp
+    src/editor/FyxaProviderCapabilities.cpp
     src/editor/AiToolsRun.cpp
     src/editor/AiMeshTools.cpp
     src/editor/AiGameTools.cpp
+    src/core/CredentialStore.cpp
     src/editor/StudioMcp.cpp
     src/editor/StudioRelay.cpp
     src/editor/panels/AssistantPanel.cpp
@@ -847,6 +852,24 @@ if(WIN32)
 endif()
 add_executable(GutsAndBolts ${EDITOR_SOURCES})
 target_link_libraries(GutsAndBolts PRIVATE gb_engine gb_models)
+# Linux desktops may provide Secret Service through libsecret (GNOME Keyring,
+# KWallet's Secret Service compatibility, etc.). Keep it optional for minimal
+# distributions and headless builds; those retain session-only credentials.
+if(UNIX AND NOT APPLE AND NOT EMSCRIPTEN AND NOT GB_MOBILE)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(LIBSECRET QUIET IMPORTED_TARGET libsecret-1)
+        if(TARGET PkgConfig::LIBSECRET)
+            target_compile_definitions(GutsAndBolts PRIVATE GB_HAVE_LIBSECRET=1)
+            target_link_libraries(GutsAndBolts PRIVATE PkgConfig::LIBSECRET)
+        endif()
+    endif()
+endif()
+if(WIN32)
+    target_link_libraries(GutsAndBolts PRIVATE Advapi32 shell32)
+elseif(APPLE)
+    target_link_libraries(GutsAndBolts PRIVATE "-framework Security")
+endif()
 
 # ---------------------------------------------------------------------------
 # GutsAndBoltsPlayer — the platform app for finding and playing games
@@ -900,7 +923,7 @@ target_include_directories(GutsAndBoltsServer PRIVATE src/ ${GB_GENERATED})
 add_dependencies(GutsAndBoltsServer gb_version)
 target_link_libraries(GutsAndBoltsServer PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
 if(WIN32)
-    target_link_libraries(GutsAndBoltsServer PRIVATE ws2_32 bcrypt)
+    target_link_libraries(GutsAndBoltsServer PRIVATE ws2_32 bcrypt shell32)
 endif()
 
 # The server's public roadmap, with signed requests like the apps send.
@@ -957,6 +980,9 @@ add_custom_command(TARGET GutsAndBolts POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GutsAndBolts>/plugins"
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/plugins"
             "$<TARGET_FILE_DIR:GutsAndBolts>/plugins"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:GutsAndBolts>/assets/fyxa/skills"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/fyxa/skills"
+            "$<TARGET_FILE_DIR:GutsAndBolts>/assets/fyxa/skills"
     VERBATIM)
 
 # Ship the sample games and official catalog items next to the programs.
@@ -1001,6 +1027,97 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_
     add_executable(LaunchLinkTests tests/LaunchLinkTests.cpp src/player/LaunchLink.cpp)
     target_include_directories(LaunchLinkTests PRIVATE src/)
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
+endif()
+
+# Ollama capabilities are read from /api/show, never guessed from model names.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaProviderCapabilitiesTests tests/FyxaProviderCapabilitiesTests.cpp src/editor/FyxaProviderCapabilities.cpp)
+    target_include_directories(FyxaProviderCapabilitiesTests PRIVATE src/)
+    target_link_libraries(FyxaProviderCapabilitiesTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaProviderCapabilitiesTests COMMAND FyxaProviderCapabilitiesTests)
+endif()
+
+# Fyxa exposes only relevant native and external tools, with explicit discovery for omitted capabilities.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaToolSelectionTests tests/FyxaToolSelectionTests.cpp src/editor/FyxaToolSelection.cpp)
+    target_include_directories(FyxaToolSelectionTests PRIVATE src/)
+    target_link_libraries(FyxaToolSelectionTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaToolSelectionTests COMMAND FyxaToolSelectionTests)
+endif()
+
+# Fyxa's shared HTTP client must interrupt stalled requests when cancellation is signalled.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
+    add_executable(NetHttpCancellationTests tests/NetHttpCancellationTests.cpp)
+    target_link_libraries(NetHttpCancellationTests PRIVATE gb_engine)
+    add_test(NAME NetHttpCancellationTests COMMAND NetHttpCancellationTests)
+endif()
+
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaSkillsTests tests/FyxaSkillsTests.cpp src/editor/FyxaSkills.cpp)
+    target_include_directories(FyxaSkillsTests PRIVATE src/)
+    target_link_libraries(FyxaSkillsTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaSkillsTests COMMAND FyxaSkillsTests)
+endif()
+
+# Approval grant schema for additive, per-tool/per-server, expiring trust tiers.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaApprovalRecordTests tests/FyxaApprovalRecordTests.cpp)
+    target_include_directories(FyxaApprovalRecordTests PRIVATE src/)
+    target_link_libraries(FyxaApprovalRecordTests PRIVATE nlohmann_json::nlohmann_json)
+    add_test(NAME FyxaApprovalRecordTests COMMAND FyxaApprovalRecordTests)
+endif()
+
+# Fyxa task tracking is a small standalone JSON store used by the assistant.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(FyxaTaskStoreTests tests/FyxaTaskStoreTests.cpp src/editor/FyxaTaskStore.cpp)
+    target_include_directories(FyxaTaskStoreTests PRIVATE src/)
+    target_link_libraries(FyxaTaskStoreTests PRIVATE nlohmann_json::nlohmann_json Threads::Threads)
+    add_test(NAME FyxaTaskStoreTests COMMAND FyxaTaskStoreTests)
+endif()
+
+# Connected-app relay capabilities are restricted by an explicit host-side allowlist.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(StudioMcpAccessTests tests/StudioMcpAccessTests.cpp)
+    target_include_directories(StudioMcpAccessTests PRIVATE src/)
+    add_test(NAME StudioMcpAccessTests COMMAND StudioMcpAccessTests)
+    add_executable(StudioRelayApprovalTests tests/StudioRelayApprovalTests.cpp)
+    target_include_directories(StudioRelayApprovalTests PRIVATE src/)
+    add_test(NAME StudioRelayApprovalTests COMMAND StudioRelayApprovalTests)
+endif()
+
+# MCP HTTP wire-envelope compatibility: stateless 2026-07-28 and legacy sessions.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(ExternalMcpProtocolTests tests/ExternalMcpProtocolTests.cpp)
+    target_include_directories(ExternalMcpProtocolTests PRIVATE src/)
+    target_link_libraries(ExternalMcpProtocolTests PRIVATE nlohmann_json::nlohmann_json monocypher)
+    add_test(NAME ExternalMcpProtocolTests COMMAND ExternalMcpProtocolTests)
+endif()
+
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(ExternalMcpOAuthTests tests/ExternalMcpOAuthTests.cpp)
+    target_include_directories(ExternalMcpOAuthTests PRIVATE src/)
+    target_link_libraries(ExternalMcpOAuthTests PRIVATE nlohmann_json::nlohmann_json monocypher mbedcrypto)
+    add_test(NAME ExternalMcpOAuthTests COMMAND ExternalMcpOAuthTests)
+endif()
+if(WIN32 AND TARGET ExternalMcpOAuthTests)
+    target_link_libraries(ExternalMcpOAuthTests PRIVATE bcrypt)
+endif()
+
+# Fyxa credentials must live in the OS vault, or explicitly fall back to session-only storage.
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
+    add_executable(CredentialStoreTests tests/CredentialStoreTests.cpp src/core/CredentialStore.cpp)
+    target_include_directories(CredentialStoreTests PRIVATE src/)
+    if(WIN32)
+        target_link_libraries(CredentialStoreTests PRIVATE Advapi32)
+    elseif(APPLE)
+        target_link_libraries(CredentialStoreTests PRIVATE "-framework Security")
+    elseif(UNIX AND NOT EMSCRIPTEN AND NOT GB_MOBILE)
+        if(PkgConfig_FOUND AND TARGET PkgConfig::LIBSECRET)
+            target_compile_definitions(CredentialStoreTests PRIVATE GB_HAVE_LIBSECRET=1)
+            target_link_libraries(CredentialStoreTests PRIVATE PkgConfig::LIBSECRET)
+        endif()
+    endif()
+    add_test(NAME CredentialStoreTests COMMAND CredentialStoreTests)
 endif()
 
 # Format-level regression fixtures for Roblox's binary mesh files. These
