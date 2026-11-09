@@ -210,8 +210,8 @@ local up = down + Vector3.new(0, 1, 0)
 spikes.Touched:Connect(function(hit)
     local humanoid = hit.Parent:FindFirstChild("Humanoid")
     if humanoid and spikes.Position.Y > down.Y + 0.5 then
-        local impactNormal = Vector3.new(0, 1, 0)
-        humanoid:TakeDamage(45, { Instance = hit, Position = spikes.Position, Normal = impactNormal }, impactNormal * 24)
+        local impactNormal = Vector3.new(0, -1, 0)
+        humanoid:TakeDamage(45, { Instance = hit, Position = spikes.Position, Normal = impactNormal }, -impactNormal * 24)
     end
 end)
 
@@ -273,7 +273,7 @@ local function slash(hit)
     hitThisSlash[character] = true
     local impactDirection = hit.Position - blade.Position
     if impactDirection.Magnitude < 0.001 then impactDirection = Vector3.new(0, 0, 1) else impactDirection = impactDirection.Unit end
-    humanoid:TakeDamage(25, { Instance = hit, Position = hit.Position, Normal = impactDirection }, impactDirection * 18)
+    humanoid:TakeDamage(25, { Instance = hit, Position = hit.Position, Normal = -impactDirection }, impactDirection * 18)
 end
 
 blade.Touched:Connect(slash)
