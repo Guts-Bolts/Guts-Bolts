@@ -2521,7 +2521,7 @@ export class GbServerObject extends DurableObject {
           const bytes = b64ToBytes(encoded);
           const raw = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 180000));
           const parsed = JSON.parse(raw); let budget = 5000;
-          const geometryKey = /^(vertices|positions|indices|triangles|faces|normals|uvs|weights|mesh|geometry|meshdata|geometrydata|vertexdata|indexdata|vertexbuffer|indexbuffer|meshvertices|meshindices|submeshes|morphtargets|morphs|skeleton|bonedata|boneweights|skinweights|skinning|texture|textures|texturedata|imagedata|image|images|bitmap|pixels|rgba|binary|blob|buffer|buffers|filedata|base64)$/i;
+          const geometryKey = /(vertices|positions|indices|triangles|faces|normals|uvs|weights|mesh|geometry|vertexdata|indexdata|vertexbuffer|indexbuffer|submesh|morphtarget|morph|skeleton|bonedata|boneweights|skinweights|skinning|texture|imagedata|image|bitmap|pixels|rgba|binary|blob|buffer|filedata|base64)/i;
           const walk = (value, key = '') => {
             if (budget <= 0) return;
             const opaqueGeometry = geometryKey.test(key) && (
