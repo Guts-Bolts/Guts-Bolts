@@ -2067,7 +2067,7 @@ export class GbServerObject extends DurableObject {
     return { copies: au.copies, minBid: au.minBid, startedAt: au.startedAt, endsAt: au.endsAt, done: !!au.done, cancelled: au.cancelled ? true : undefined,
       bids, need: au.bids.length < au.copies ? au.minBid : au.bids[au.bids.length - 1].amount + 1, myBid: mine ? mine.amount : 0 };
   }
-  auctionOpen(a, t = now()) { return !!a.auction && !a.auction.done && t < a.auction.endsAt; }
+  auctionOpen(a, t = now()) { return !!a.auction && !a.auction.done && !a.auction.cancelled && t < a.auction.endsAt; }
 
   giveVerifiedHat(u) {
     const a = this.assets.get(VERIFIED_HAT_ID);
