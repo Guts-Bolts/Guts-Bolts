@@ -2642,15 +2642,15 @@ export class GbServerObject extends DurableObject {
       const projectId = cleanText(str(args, 'projectId'), 128);
       const limit = clamp(num(args, 'limit') || 30, 1, 50);
       const offset = Math.max(0, Math.min(10000, num(args, 'offset')));
-      const rows = projectId
+      const rows = Array.from(projectId
         ? this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE account_id = ? AND project_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?', me.id, projectId, limit, offset)
-        : this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE account_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?', me.id, limit, offset);
+        : this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE account_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?', me.id, limit, offset));
       return okay({ sessions: rows.map((r) => ({ id: r.id, projectId: r.project_id, title: r.title, status: r.status,
         createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) })) });
     }
     if (name === 'ai.sessions.get') {
       const id = str(args, 'sessionId');
-      const rows = id ? this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id) : [];
+      const rows = id ? Array.from(this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id)) : [];
       if (!rows.length) return fail('That conversation was not found.');
       const r = rows[0];
       return okay({ session: { id: r.id, projectId: r.project_id, title: r.title, status: r.status,
@@ -2658,7 +2658,7 @@ export class GbServerObject extends DurableObject {
     }
     if (name === 'ai.sessions.delete') {
       const id = str(args, 'sessionId');
-      const rows = id ? this.sql.exec('SELECT id FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id) : [];
+      const rows = id ? Array.from(this.sql.exec('SELECT id FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id)) : [];
       if (!rows.length) return fail('That conversation was not found.');
       this.sql.exec('DELETE FROM ai_memories WHERE account_id = ? AND source_session_id = ?', me.id, id);
       this.sql.exec('DELETE FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id);
@@ -2673,7 +2673,7 @@ export class GbServerObject extends DurableObject {
       if (!types.includes(memoryType)) return fail('Choose a supported memory type.');
       const projectId = cleanText(str(args, 'projectId'), 128) || null;
       const sourceSessionId = str(args, 'sourceSessionId') || null;
-      if (sourceSessionId && !this.sql.exec('SELECT id FROM ai_sessions WHERE id = ? AND account_id = ?', sourceSessionId, me.id).length)
+      if (sourceSessionId && !Array.from(this.sql.exec('SELECT id FROM ai_sessions WHERE id = ? AND account_id = ?', sourceSessionId, me.id)).length)
         return fail('That conversation was not found.');
       const tags = Array.isArray(args.tags) ? [...new Set(args.tags.filter((x) => typeof x === 'string')
         .map((x) => cleanText(x, 32)).filter(Boolean))].slice(0, 10) : [];
@@ -2695,8 +2695,8 @@ export class GbServerObject extends DurableObject {
       if (projectId) { where.push('project_id = ?'); bind.push(projectId); }
       if (memoryType) { where.push('memory_type = ?'); bind.push(memoryType); }
       bind.push(limit, offset);
-      const rows = this.sql.exec('SELECT id, project_id, memory_type, content, tags, importance, source_session_id, created_at, updated_at FROM ai_memories WHERE ' +
-        where.join(' AND ') + ' ORDER BY importance DESC, updated_at DESC LIMIT ? OFFSET ?', ...bind);
+      const rows = Array.from(this.sql.exec('SELECT id, project_id, memory_type, content, tags, importance, source_session_id, created_at, updated_at FROM ai_memories WHERE ' +
+        where.join(' AND ') + ' ORDER BY importance DESC, updated_at DESC LIMIT ? OFFSET ?', ...bind));
       return okay({ memories: rows.map((r) => {
         let tags = []; try { tags = JSON.parse(r.tags); } catch { /* keep corrupt legacy tags empty */ }
         return { id: r.id, projectId: r.project_id, memoryType: r.memory_type, content: r.content, tags,
@@ -2706,7 +2706,7 @@ export class GbServerObject extends DurableObject {
     }
     if (name === 'ai.memory.update') {
       const id = str(args, 'memoryId');
-      const rows = id ? this.sql.exec('SELECT id, content, tags, importance FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id) : [];
+      const rows = id ? Array.from(this.sql.exec('SELECT id, content, tags, importance FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id)) : [];
       if (!rows.length) return fail('That memory was not found.');
       const previous = rows[0];
       const content = args.content === undefined ? previous.content : cleanText(str(args, 'content'), 4000);
@@ -2724,7 +2724,7 @@ export class GbServerObject extends DurableObject {
     }
     if (name === 'ai.memory.delete') {
       const id = str(args, 'memoryId');
-      const rows = id ? this.sql.exec('SELECT id FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id) : [];
+      const rows = id ? Array.from(this.sql.exec('SELECT id FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id)) : [];
       if (!rows.length) return fail('That memory was not found.');
       this.sql.exec('DELETE FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id);
       this.aiMemoryAudit(me, 'memory.deleted', 'memory', id);
