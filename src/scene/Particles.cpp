@@ -397,7 +397,7 @@ float ParticleSystem::wetBloodAt(const glm::vec3& pos, float radius, float take)
     const float fresh = dryTime() * 0.6f;   // blood older than this has gone tacky: it doesn't stick to you
     float best = 0.0f;
     for (Particle& q : m_items) {
-        if (q.kind != Particle::Splat || q.onPart || q.normal.y < 0.9f || q.look == 2) continue;
+        if (q.kind != Particle::Splat || q.onPart || q.normal.y < 0.9f || q.look == 2 || q.mark) continue;
         if (q.age > fresh || q.life < 1.0f) continue;
         if (std::abs(q.pos.y - pos.y) > 0.35f) continue;
         glm::vec2 d(q.pos.x - pos.x, q.pos.z - pos.z);
@@ -431,6 +431,50 @@ void ParticleSystem::footprint(GoreKind kind, const glm::vec3& pos, const glm::v
     p.wet    = true;
     p.life   = p.maxLife = m_bloodStay * rnd(0.8f, 1.2f);
     add(p);
+}
+
+void ParticleSystem::mark(const glm::vec3& pos, const glm::vec3& normal, const glm::vec3& dir, const glm::vec3& size,
+                          const glm::vec3& color, int look, float alpha, float life, bool wet) {
+    if (alpha <= 0.02f || life <= 0.0f) return;
+    Particle p;
+    p.kind   = Particle::Splat;
+    p.look   = look;
+    p.mark   = wet ? 2 : 1;
+    p.normal = glm::length(normal) > 1e-4f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
+    p.pos    = pos + p.normal * 0.012f;
+    glm::vec3 d = dir - p.normal * glm::dot(dir, p.normal);
+    p.rot    = glm::vec3(0, glm::length(d) > 1e-4f ? turnAlong(p.normal, d) : rnd(0.0f, 360.0f), 0);
+    p.size   = size;
+    p.color  = color;
+    p.alpha  = std::clamp(alpha, 0.0f, 0.95f);
+    p.seed   = rnd(0, 1);
+    p.life   = p.maxLife = life;
+    add(p);
+}
+
+void ParticleSystem::bruise(const SceneNode* part, const glm::vec3& at, float size, float life) {
+    if (!part) return;
+    const size_t before = m_items.size();
+    stain(GoreKind::Blood, part, at, size);
+    if (m_items.size() == before) return;   // (an old stain just grew)
+    Particle& p = m_items.back();
+    p.mark  = 1;
+    p.wet   = false;
+    p.color = glm::vec3(0.30f, 0.16f, 0.30f) * rnd(0.85f, 1.1f);   // purple-blue under the skin
+    p.alpha = 0.55f;
+    p.life  = p.maxLife = life;
+}
+
+void ParticleSystem::soak(float dt, const std::function<bool(uint64_t part)>& clothed) {
+    for (Particle& q : m_items) {
+        if (q.kind != Particle::Splat || !q.onPart || q.mark || q.look != 0 || q.age > 25.0f) continue;
+        if (!clothed(q.onPart)) continue;
+        // Cloth wicks blood outward: the stain keeps growing (to about twice its size).
+        if (q.maxLife < 1e5f) continue;
+        const float cap = std::max(q.spread, 0.2f) * 2.0f;
+        q.size.x = std::min(cap, q.size.x + dt * 0.02f);
+        q.size.z = std::min(cap * 1.2f, q.size.z + dt * 0.026f);   // a little more downward
+    }
 }
 
 void ParticleSystem::walk(BloodyFeet& feet, GoreKind kind, const glm::vec3& at, bool onGround) {
@@ -473,7 +517,7 @@ void ParticleSystem::stain(GoreKind kind, const SceneNode* part, const glm::vec3
     lt[(axis + 1) % 3] = 1.0f;
     // A stain already there just gets bigger.
     for (Particle& q : m_items) {
-        if (q.onPart != part->id || glm::dot(q.localNormal, ln) < 0.9f) continue;
+        if (q.onPart != part->id || q.mark || glm::dot(q.localNormal, ln) < 0.9f) continue;
         if (glm::length(q.localPos - lp) < 0.25f) { q.spread = std::min(1.1f, q.spread + size * 0.5f); q.age *= 0.3f; return; }
     }
     Particle p;

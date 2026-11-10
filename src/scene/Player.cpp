@@ -7,6 +7,8 @@
 #include "Scene.h"
 #include "SceneNode.h"
 #include "Physics.h"
+#include "Npc.h"
+#include "Terrain.h"
 #include "PlayerModel.h"
 #include "../renderer/MeshLibrary.h"
 #include "../renderer/Textures.h"
@@ -634,6 +636,8 @@ void Player::respawn(bool firstSpawn) {
     SceneNode* r = root();
     if (!r) return;
     m_scene->particles().wipe(*m_scene, r);   // a clean body (no blood stains from the last life)
+    m_injuries.clear();
+    m_stamina.reset();
     m_feet.reset();
     for (auto& c : r->children) {
         auto it = m_rest.find(c->id);
@@ -717,6 +721,10 @@ void Player::hurtAt(SceneNode* hitPart, const glm::vec3& point, const glm::vec3&
     const glm::vec3 hitNormal = glm::length(normal) > 1e-5f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
     if (m_pendingImpacts.size() < 16) m_pendingImpacts.push_back({hitPart->id, point, hitNormal, projectileVelocity});
     deformPartAtImpact(hitPart, point, hitNormal, projectileVelocity, m_scene);
+    if (m_scene->world().injuries) m_injuries.add(Realism::limbOf(hitPart->name), damage);
+    // A blunt hit (a bat, a fall, a thrown brick) leaves a bruise rather than a wound.
+    if (glm::length(projectileVelocity) < 40.0f && m_scene->goreEnabled())
+        m_scene->particles().bruise(hitPart, point, std::clamp(0.25f + damage * 0.015f, 0.25f, 0.7f));
     hurt(damage, force, bodyImpulse);
     bleed(damage);  // also runs for lethal impacts, before the death update returns
     m_lastHealth = m_humanoid.health;
@@ -1416,6 +1424,9 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         if ((m_dripTimer -= dt) <= 0.0f) { m_dripTimer = 0.3f; waves.addWetSpot(pos, 0.7f + m_drip * 0.5f); }
     }
     float speed = m_humanoid.walkSpeed * (m_swimming ? 0.75f : 1.0f);
+    // Hurt legs and tired legs are slower (Realism.h).
+    if (m_scene->world().injuries) speed *= m_injuries.speedScale();
+    if (m_scene->world().stamina) speed *= m_stamina.speedScale();
 
     // Gravity + jumping.
     if (m_climbing) {
@@ -1465,8 +1476,10 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
             // Jumping off something moving keeps its speed (off a train, you fly forward).
             m_velocity.x += m_platformVel.x;
             m_velocity.z += m_platformVel.z;
-            m_velocity.y = m_humanoid.launchSpeed(m_scene->world().gravity) + std::max(0.0f, m_platformVel.y);
+            m_velocity.y = m_humanoid.launchSpeed(m_scene->world().gravity) * (m_scene->world().stamina ? m_stamina.jumpScale() : 1.0f) +
+                           std::max(0.0f, m_platformVel.y);
             m_grounded = false;
+            m_jumpedNow = true;
             glm::vec3 at = pos + glm::vec3(0, 1, 0);
             Audio::play("jump", 0.35f, 1.0f, false, &at);
         }
@@ -1518,7 +1531,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     const bool footing = !m_climbing && !m_swimming && !sliding && !m_moverDriven;
     if (footing) {
         const glm::vec2 v = CharacterFooting::step({m_velocity.x, m_velocity.z}, {horiz.x, horiz.z},
-                                                   m_humanoid.walkSpeed, m_grounded, dt);
+                                                   speed, m_grounded, dt);   // (WalkSpeed, less for a limp)
         m_velocity.x = v.x;
         m_velocity.z = v.y;
         delta = {m_velocity.x * dt, 0.0f, m_velocity.z * dt};
@@ -1568,6 +1581,11 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         float over = impact - world.fallDamageSpeed;
         float damage = over * 7.0f * world.fallDamageScale;
         m_humanoid.health = std::max(0.0f, m_humanoid.health - damage);
+        // A hard landing hurts the legs: a limp for a while, and bruises.
+        if (world.injuries) { m_injuries.add(Realism::LeftLeg, damage * 0.6f); m_injuries.add(Realism::RightLeg, damage * 0.6f); }
+        if (m_scene->goreEnabled() && m_humanoid.health > 0.0f)
+            for (const char* leg : {"Left Leg", "Right Leg"})
+                if (SceneNode* l = part(leg)) m_scene->particles().bruise(l, glm::vec3(l->worldMatrix()[3]) - glm::vec3(0, 0.6f, 0), 0.35f);
         if (m_humanoid.health <= 0.0f)
             kill(std::clamp(over / 15.0f, 0.0f, 1.0f), glm::vec3(m_velocity.x, 2.0f, m_velocity.z));
     }
@@ -1706,26 +1724,143 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     }
     m_wasTripped = knocked;
 
+    realismStep(dt);
     animate(dt, m_groundSpeed, m_grounded);
     footsteps(m_groundSpeed > 0.5f && m_grounded && !m_swimming && !m_climbing, res.position);
     if (m_scene->goreEnabled()) m_scene->particles().walk(m_feet, m_scene->goreKind(), res.position, m_grounded && !m_swimming);
     updateGrip();
 }
 
+// One real footstep sound for each step (Realism.h), in time with the legs: what it
+// sounds like depends on what's underfoot (wood, metal, sand, snow, mud...), and soft
+// ground keeps the print.
 void Player::footsteps(bool running, const glm::vec3& at) {
-    if (!running) {
-        if (m_stepSound) Audio::stop(m_stepSound);
-        m_stepSound = 0;
-        return;
+    if (m_stepSound) { Audio::stop(m_stepSound); m_stepSound = 0; }   // (the old looping sound)
+    const int n = (int)std::floor(m_walkPhase / 3.14159265f);        // a foot lands every half stride
+    if (!running) { m_stepCount = n; return; }
+    if (n == m_stepCount) return;
+    m_stepCount = n;
+    stepSound(at);
+}
+
+void Player::stepSound(const glm::vec3& at) {
+    SceneNode* r = root();
+    float dist = 0.0f;
+    SceneNode* under = Physics::raycast(*m_scene, at + glm::vec3(0.0f, 0.6f, 0.0f), glm::vec3(0, -1, 0), &dist, r);
+    const char* sound = "step_stone";
+    bool soft = false;
+    glm::vec3 printCol(0.0f), normal(0, 1, 0);
+    if (under && dist < 2.0f) {
+        if (under->id == Scene::kTerrainId) {
+            const TerrainMaterial tm = m_scene->terrain().materialAt(at.x, at.z);
+            sound = Realism::stepSound(tm);
+            soft = Realism::takesPrints(tm);
+            printCol = Realism::printColor(tm);
+            normal = m_scene->terrain().normalAt(at.x, at.z);
+        } else {
+            sound = Realism::stepSound(under->material);
+            soft = Realism::takesPrints(under->material) && under->anchored;
+            printCol = Realism::printColor(under->material, under->color);
+        }
     }
-    glm::vec3 feet = at + glm::vec3(0.0f, 0.5f, 0.0f);
-    float pitch = std::clamp(m_humanoid.walkSpeed / 6.0f, 0.6f, 1.6f);   // faster walkers step faster (6 = normal)
-    if (m_stepSound && Audio::isPlaying(m_stepSound)) {
-        Audio::setPosition(m_stepSound, feet);
-        Audio::setPitch(m_stepSound, pitch);
-        return;
+    if (m_drip > 0.3f) sound = "step_wet";
+    std::uniform_real_distribution<float> wobble(0.94f, 1.06f);
+    const float pitch = std::clamp(m_humanoid.walkSpeed / 16.0f, 0.85f, 1.25f) * wobble(rng());
+    const glm::vec3 feet = at + glm::vec3(0.0f, 0.2f, 0.0f);
+    Audio::play(sound, 0.32f, pitch, false, &feet);
+    // The print: left foot, right foot, under the hip on that side.
+    if (!r || !under || dist >= 2.0f) return;
+    glm::vec3 fwd = -glm::vec3(r->worldMatrix()[2]);
+    fwd.y = 0.0f;
+    if (glm::length(fwd) < 1e-3f) return;
+    fwd = glm::normalize(fwd);
+    const glm::vec3 side = glm::cross(fwd, glm::vec3(0, 1, 0)) * ((m_stepCount & 1) ? 0.24f : -0.24f);
+    const glm::vec3 ground = at + side + glm::vec3(0.0f, 0.6f - dist, 0.0f);
+    if (soft)
+        m_scene->particles().mark(ground, normal, fwd, glm::vec3(0.36f, 0.02f, 0.78f), printCol, 2, 0.8f, 60.0f);
+    else if (m_drip > 0.15f)   // wet feet: a damp print that dries away
+        m_scene->particles().mark(ground, normal, fwd, glm::vec3(0.36f, 0.02f, 0.78f), glm::vec3(0.05f, 0.06f, 0.07f), 2,
+                                  0.15f + 0.3f * m_drip, 12.0f, true);
+}
+
+// Each frame: injuries heal, stamina is used and comes back, rain soaks you and you drip,
+// and the head looks at whoever is near.
+void Player::realismStep(float dt) {
+    const WorldSettings& w = m_scene->world();
+    SceneNode* r = root();
+    if (!r) return;
+    if (w.injuries) m_injuries.heal(dt);
+    else m_injuries.clear();
+    if (w.stamina && !m_dead) {
+        const float effort = m_grounded || m_swimming ? m_groundSpeed / 16.0f : 0.3f;
+        m_stamina.step(dt, effort, m_jumpedNow, m_swimming && m_groundSpeed > 1.0f);
+    } else {
+        m_stamina.reset();
     }
-    m_stepSound = Audio::play("footsteps", 0.35f, pitch, true, &feet);
+    m_jumpedNow = false;
+
+    SceneNode* headPart = part("Head");
+    const glm::vec3 head = headPart ? glm::vec3(headPart->worldMatrix()[3]) : glm::vec3(r->worldMatrix()[3]) + glm::vec3(0, 4.5f, 0);
+    // Worn out: panting (louder the more tired).
+    const float puff = w.stamina && !m_dead ? m_stamina.breathless() : 0.0f;
+    if (puff > 0.35f && !m_underwater) {
+        if (!m_breathSound || !Audio::isPlaying(m_breathSound)) m_breathSound = Audio::play("breath_tired", 0.0f, 1.0f, true, &head);
+        Audio::setVolume(m_breathSound, 0.12f + 0.4f * puff);
+        Audio::setPosition(m_breathSound, head);
+    } else if (m_breathSound && (puff < 0.2f || m_underwater)) {
+        Audio::stop(m_breathSound);
+        m_breathSound = 0;
+    }
+
+    // Rain soaks you when nothing is over your head; a soaked body drips.
+    const Environment& env = m_scene->environment();
+    if (env.weather == (int)Weather::Rain && !m_swimming && !m_dead) {
+        float up = 0.0f;
+        if (!Physics::raycast(*m_scene, head + glm::vec3(0, 1.0f, 0), glm::vec3(0, 1, 0), &up, r) || up > 300.0f)
+            m_drip = std::min(1.0f, m_drip + dt * (1.0f / 20.0f + std::clamp(env.weatherAmount, 0.0f, 1.0f) / 25.0f));
+    }
+    if (m_drip > 0.25f && !m_swimming && !m_dead) {
+        m_dropTimer -= dt;
+        if (m_dropTimer <= 0.0f) {
+            m_dropTimer = 0.28f - 0.2f * m_drip;
+            static const char* const from[] = {"Left Arm", "Right Arm", "Torso", "Left Leg", "Right Leg", "Head"};
+            std::uniform_int_distribution<int> pick(0, 5);
+            if (SceneNode* p = part(from[pick(rng())])) {
+                const glm::mat4 M = p->worldMatrix();
+                const glm::vec3 low = glm::vec3(M * glm::vec4(0.0f, -0.5f, 0.0f, 1.0f));   // the bottom of it
+                m_scene->particles().waterSpray(low, 1, 0.2f, glm::vec3(0.62f, 0.72f, 0.82f), 0.2f);
+            }
+        }
+    }
+
+    // Blood on clothes soaks further into the cloth (bare skin doesn't).
+    m_scene->particles().soak(dt, [&](uint64_t id) {
+        const SceneNode* p = m_scene->findById(id);
+        return p && !p->texture.empty() && p->name != "Head" && r->isAncestorOf(p);
+    });
+
+    // Glance at the nearest other character in front of you.
+    m_gazeTimer -= dt;
+    if (m_gazeTimer <= 0.0f) {
+        m_gazeTimer = 0.4f;
+        glm::vec3 fwd = -glm::vec3(r->worldMatrix()[2]);
+        glm::vec3 best(0.0f);
+        float bestD = 22.0f;
+        auto consider = [&](uint64_t id) {
+            if (id == r->id) return;
+            SceneNode* other = m_scene->findById(id);
+            SceneNode* h = other ? other->findChild("Head") : nullptr;
+            if (!h) return;
+            const glm::vec3 p(h->worldMatrix()[3]);
+            const glm::vec3 d = p - head;
+            const float dist = glm::length(d);
+            if (dist < bestD && glm::dot(glm::normalize(glm::vec3(d.x, 0.0f, d.z) + glm::vec3(1e-4f)), fwd) > -0.2f) { bestD = dist; best = p; }
+        };
+        for (const RemoteCharacter& rc : m_scene->remotes()) consider(rc.rootId);
+        for (const auto& npc : m_scene->npcs().all()) if (npc) consider(npc->rootId);
+        m_gaze.aim(head, fwd, best, bestD < 22.0f && !m_dead && !tripped());
+    }
+    m_gaze.step(dt);
 }
 
 bool Player::isLimb(const SceneNode* p) {
@@ -2046,6 +2181,29 @@ void Player::animate(float dt, float groundSpeed, bool grounded) {
         const BodyPose stiff = {{{-10.0f, 25.0f}, {-10.0f, 25.0f}, {0.0f, 6.0f}, {0.0f, 6.0f}}};
         pose = mix(pose, stiff, down);
     }
+    // Realism: a hurt leg drags (a short, stiff step); a hand holds a hurt arm or side;
+    // worn out, the arms swing heavily with the panting.
+    if (m_injuries.any() && down < 0.5f && m_climbBlend + m_swimBlend < 0.5f) {
+        for (int leg = 2; leg < 4; ++leg) {
+            const float l = m_injuries.limp((Realism::Limb)leg);
+            pose[leg].pitch *= 1.0f - 0.65f * l;
+            pose[leg].out += 4.0f * l;
+        }
+        float hold = 0.0f;
+        const Realism::Limb arm = m_injuries.holdingArm(&hold);
+        if (arm != Realism::None && !(arm == Realism::RightArm && m_holdBlend > 0.5f)) {
+            const float k = hold * (1.0f - 0.5f * m_sitBlend);
+            pose[arm].pitch = pose[arm].pitch * (1.0f - k) - 35.0f * k;
+            pose[arm].out = pose[arm].out * (1.0f - k) - 28.0f * k;   // across the body
+        }
+    }
+    if (m_scene->world().stamina) {
+        const float puff = m_stamina.breathless();
+        if (puff > 0.05f) {
+            const float heave = std::sin(m_aliveTime * 7.0f) * 3.0f * puff;
+            for (int i = 0; i < 2; ++i) { pose[i].pitch += heave; pose[i].out += 2.0f * puff; }
+        }
+    }
 
     for (int i = 0; i < 4; ++i) {
         SceneNode* limb = part(kLimbs[i]);
@@ -2063,9 +2221,9 @@ void Player::animate(float dt, float groundSpeed, bool grounded) {
         limb->transform.position = pivot + drop;
         limb->transform.rotation = rest.rotation + glm::vec3(pose[i].pitch, 0.0f, pose[i].out * side);
     }
-    if (SceneNode* head = part("Head")) {
+    if (SceneNode* head = part("Head")) {   // (turned to look at whoever is near: Realism::Gaze)
         auto it = m_rest.find(head->id);
-        if (it != m_rest.end()) head->transform.rotation = it->second.rotation;
+        if (it != m_rest.end()) head->transform.rotation = it->second.rotation + glm::vec3(m_gaze.pitch, m_gaze.yaw, 0.0f);
     }
     animationPack(m_emote.empty() ? state : "idle", dt, groundSpeed);
     applyVrBody();

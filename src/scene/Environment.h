@@ -65,6 +65,10 @@ struct Environment {
     float     saturation     = 1.1f;
     float     vignette       = 0.25f;
     glm::vec3 tint           = {1.0f, 1.0f, 1.0f};
+    // Realism (camera):
+    float     lightRays      = 0.35f;   // light shafts from the sun through haze and gaps (0 = off)
+    bool      autoExposure   = true;    // eyes adjust: dark places brighten slowly, bright ones dim
+    float     motionBlur     = 0.0f;    // 0 off .. 1 a lot (the camera turning fast smears)
 
     // Unit vector pointing from a surface toward the sun.
     glm::vec3 sunDirection() const {

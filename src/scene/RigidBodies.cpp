@@ -1022,6 +1022,7 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     const float h = dt / substeps;
 
     smashes.clear();
+    knocks.clear();
     std::vector<char> breakableBody(bodies.size(), 0);
     for (size_t i = 0; i < bodies.size(); ++i) breakableBody[i] = bodies[i].node && Shatter::breakable(*bodies[i].node);
     BroadPhase broad;
@@ -1128,6 +1129,13 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                     if (std::none_of(smashes.begin(), smashes.end(), [&](const Smash& x) { return x.id == bn->id; }))
                         smashes.push_back({bn->id, c.p, hitSpeed});
                 }
+            }
+            // A new knock (they weren't touching a moment ago): something to hear.
+            if (A.node && knocks.size() < 64) {
+                const float hitSpeed = -glm::dot(A.velocityAt(c.p) - B.velocityAt(c.p), c.n);
+                if (hitSpeed > 3.0f && !m_contactMemory.count(pairKey(A, B)) &&
+                    std::none_of(knocks.begin(), knocks.end(), [&](const Knock& k) { return k.a == A.node->id && k.b == (B.node ? B.node->id : 0); }))
+                    knocks.push_back({A.node->id, B.node ? B.node->id : 0, c.p, hitSpeed, A.invMass > 0.0f ? 1.0f / A.invMass : 0.0f});
             }
             if (B.dynamic && !B.awake && A.awake) B.awake = true;   // bumped: wake up
             if (A.dynamic && !A.awake && B.awake && B.dynamic) A.awake = true;

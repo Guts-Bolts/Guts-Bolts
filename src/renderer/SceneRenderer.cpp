@@ -16,6 +16,7 @@
 #include "../scene/Cloth.h"
 #include "../scene/BounceLight.h"
 #include "../scene/LipSync.h"
+#include "../scene/Realism.h"
 #include "../core/Settings.h"
 #include "../core/FrameProfile.h"
 #include "MeshLibrary.h"
@@ -756,6 +757,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lit->bind();
     m_lit->setBool("uClothing", false);
     m_lit->setBool("uFace", false);
+    m_lit->setFloat("uBlink", 0.0f);
     m_lit->setMat4("uView", view);
     m_lit->setMat4("uProj", proj);
     m_lit->setVec3("uViewPos", camera.position());
@@ -1534,6 +1536,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 m_lit->setInt("uDecal", 5);
                 m_lit->setBool(face ? "uFace" : "uClothing", true);
                 if (face) m_lit->setFloat("uMouthOpen", LipSync::mouth(node->id));   // lip sync (LipSync.h)
+                if (face) m_lit->setFloat("uBlink", Realism::blinkAt(now() - m_startTime, node->id));   // blinking (Realism.h)
             }
             // A T-shirt: a picture on the front of the torso.
             unsigned tee = !node->tshirt.empty() ? Textures::get(node->tshirt) : 0;
@@ -1663,6 +1666,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 m_lit->setInt("uSplatLook", p.look);
                 m_lit->setFloat("uSplatSeed", p.seed);
                 m_lit->setFloat("uSplatDry", std::clamp(p.age / dryTime, 0.0f, 1.0f));
+                m_lit->setInt("uSplatMark", p.mark);
             }
             m_lit->setInt("uMaterial", mat);
             m_lit->setFloat("uAlpha", alpha);

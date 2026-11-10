@@ -2514,6 +2514,11 @@ int inst_index(lua_State* L) {
         if (is(k, "LiquidBlood")) { lua_pushboolean(L, w.liquidBlood); return 1; }
         if (is(k, "SoftTissue"))  { lua_pushboolean(L, w.softTissue); return 1; }
         if (is(k, "GlobalWind"))  { LuaApi::pushVector3(L, w.globalWind); return 1; }
+        if (is(k, "Injuries"))    { lua_pushboolean(L, w.injuries); return 1; }
+        if (is(k, "Stamina"))     { lua_pushboolean(L, w.stamina); return 1; }
+        if (is(k, "FireSpread"))  { lua_pushboolean(L, w.fireSpread); return 1; }
+        if (is(k, "Acoustics"))   { lua_pushboolean(L, w.acoustics); return 1; }
+        if (is(k, "ImpactSounds")) { lua_pushboolean(L, w.impactSounds); return 1; }
         if (is(k, "BloodAmount")) { lua_pushnumber(L, w.bloodAmount); return 1; }
         if (is(k, "MaxFluidParticles")) { lua_pushinteger(L, w.maxFluidParticles); return 1; }
     }
@@ -3076,6 +3081,11 @@ int inst_set(lua_State* L) {
         if (is(k, "LiquidBlood")) { w.liquidBlood = lua_toboolean(L, 3); return 0; }
         if (is(k, "SoftTissue"))  { w.softTissue = lua_toboolean(L, 3); return 0; }
         if (is(k, "GlobalWind"))  { w.globalWind = glm::clamp(LuaApi::checkVector3(L, 3), glm::vec3(-500.0f), glm::vec3(500.0f)); return 0; }
+        if (is(k, "Injuries"))    { w.injuries = lua_toboolean(L, 3); return 0; }
+        if (is(k, "Stamina"))     { w.stamina = lua_toboolean(L, 3); return 0; }
+        if (is(k, "FireSpread"))  { w.fireSpread = lua_toboolean(L, 3); return 0; }
+        if (is(k, "Acoustics"))   { w.acoustics = lua_toboolean(L, 3); return 0; }
+        if (is(k, "ImpactSounds")) { w.impactSounds = lua_toboolean(L, 3); return 0; }
         if (is(k, "MaxFluidParticles")) { w.maxFluidParticles = std::clamp((int)luaL_checkinteger(L, 3), 0, 1 << 20); return 0; }
     }
     // A property kept as an attribute (see inst_index): set it the same way.
@@ -3972,6 +3982,21 @@ int hum_index(lua_State* L) {
     }
     if (is(k, "GetPlayingAnimationTracks")) { lua_pushcfunction(L, hum_playing); return 1; }
     if (is(k, "Animator"))   { pushAnimator(L, humRoot(L)); return 1; }
+    // Realism: how much puff is left (workspace.Stamina), and how hurt a limb is (Injuries).
+    if (is(k, "Stamina")) {
+        Player* p = E(L)->scene()->player();
+        lua_pushnumber(L, p && p->rootId() == humRoot(L) ? p->stamina().value : 1.0f);
+        return 1;
+    }
+    if (is(k, "GetInjury")) {
+        lua_pushcfunction(L, [](lua_State* L) -> int {
+            const Realism::Limb limb = Realism::limbOf(luaL_checkstring(L, 2));
+            Player* p = E(L)->scene()->player();
+            lua_pushnumber(L, p && p->rootId() == humRoot(L) && limb != Realism::None ? p->injuries().hurt[limb] : 0.0f);
+            return 1;
+        });
+        return 1;
+    }
     if (is(k, "FindFirstChild") || is(k, "FindFirstChildOfClass") || is(k, "WaitForChild"))
         { lua_pushcfunction(L, hum_findChild); return 1; }
     return luaL_error(L, "'%s' is not a valid member of Humanoid", k);
@@ -3981,6 +4006,10 @@ int hum_newindex(lua_State* L) {
     const char* k = luaL_checkstring(L, 2);
     Humanoid& h = hum(L);
     if (is(k, "Health"))     h.health = glm::clamp((float)luaL_checknumber(L, 3), 0.0f, h.maxHealth);
+    else if (is(k, "Stamina")) {
+        if (Player* p = E(L)->scene()->player(); p && p->rootId() == humRoot(L))
+            p->stamina().value = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f);
+    }
     else if (is(k, "MaxHealth")) { h.maxHealth = std::max(1.0f, (float)luaL_checknumber(L, 3));
                                    h.health = std::min(h.health, h.maxHealth); }
     else if (is(k, "WalkSpeed"))  h.walkSpeed = std::max(0.0f, (float)luaL_checknumber(L, 3));
@@ -4220,6 +4249,9 @@ int light_index(lua_State* L) {
     if (is(k, "Weather"))       { lua_pushstring(L, kWeatherNames[std::clamp(e.weather, 0, kWeatherCount - 1)]); return 1; }
     if (is(k, "WeatherIntensity")) { lua_pushnumber(L, e.weatherAmount); return 1; }
     if (is(k, "BounceLight"))   { lua_pushnumber(L, e.bounceLight);     return 1; }
+    if (is(k, "LightRays"))     { lua_pushnumber(L, e.lightRays);       return 1; }
+    if (is(k, "AutoExposure"))  { lua_pushboolean(L, e.autoExposure);   return 1; }
+    if (is(k, "MotionBlur"))    { lua_pushnumber(L, e.motionBlur);      return 1; }
     if (is(k, "Name") || is(k, "ClassName")) { lua_pushstring(L, "Lighting"); return 1; }
     if (is(k, "Parent")) { lua_pushnil(L); return 1; }
     if (is(k, "IsA")) { lua_pushcfunction(L, light_isA); return 1; }
@@ -4256,6 +4288,9 @@ int light_newindex(lua_State* L) {
     }
     if (is(k, "WeatherIntensity")) { e.weatherAmount = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     if (is(k, "BounceLight"))   { e.bounceLight = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 2.0f); return 0; }
+    if (is(k, "LightRays"))     { e.lightRays = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+    if (is(k, "AutoExposure"))  { e.autoExposure = lua_toboolean(L, 3); return 0; }
+    if (is(k, "MotionBlur"))    { e.motionBlur = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     return luaL_error(L, "'%s' can't be set on Lighting", k);
 }
 

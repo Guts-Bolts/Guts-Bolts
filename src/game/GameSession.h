@@ -8,6 +8,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "../scene/Physics.h"
+#include "../scene/Acoustics.h"
+#include "../scene/FireSpread.h"
+#include "../scene/Tracks.h"
 #include "DragDetectors.h"
 #include "../scripting/ScriptEngine.h"
 #include "GameGui.h"
@@ -111,6 +114,9 @@ public:
     GuiState&     gui()     { return m_scripts.gui(); }
 
 private:
+    Acoustics::Listener m_acoustics;   // walls muffle, rooms echo (Acoustics.h)
+    FireSpread::System  m_fire;        // fires crackle and spread (FireSpread.h)
+    Tracks::System      m_tracks;      // tyre tracks and skid marks (Tracks.h)
     Scene*       m_scene;
     Physics      m_physics;
     ScriptEngine m_scripts;

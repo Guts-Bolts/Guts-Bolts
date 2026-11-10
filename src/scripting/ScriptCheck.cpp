@@ -69,7 +69,7 @@ const std::set<std::string>& colonMethods() {
         "IsAncestorOf", "SetAttribute", "GetAttribute", "GetAttributes", "GetPropertyChangedSignal",
         "ClearAllChildren", "TakeDamage", "LoadAnimation", "GetPlayers", "GetPlayerFromCharacter",
         "FireServer", "FireClient", "FireAllClients", "InvokeServer", "InvokeClient", "SetPrimaryPartCFrame",
-        "GetPivot", "PivotTo", "GetFullName", "ApplyImpulse", "ApplyAngularImpulse", "GetMass"};
+        "GetPivot", "PivotTo", "GetFullName", "ApplyImpulse", "ApplyAngularImpulse", "GetMass", "FireBullet", "GetInjury"};
     return m;
 }
 

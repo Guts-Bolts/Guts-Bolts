@@ -104,6 +104,7 @@ in vec4 vTangent;
 uniform bool      uUseDecal;   // drawing a Decal: its picture colours the surface
 uniform bool      uFace;       // a head: its face picture (uDecal) is painted onto the front of it
 uniform float     uMouthOpen;  // lip sync: 0 = the face as drawn, 1 = mouth wide open (talking)
+uniform float     uBlink;      // 0 eyes open .. 1 shut (the eyes squash flat to a line)
 uniform bool      uClothing;   // a shirt / pants picture (uDecal) painted over the part's colour
 uniform bool      uHasTShirt;  // a torso with a T-shirt: its picture flat on the front
 uniform sampler2D uTShirt;
@@ -155,6 +156,7 @@ uniform float uGibSeed;       // 0..1: every chunk looks a bit different
 uniform int   uSplatLook;     // landed blood (uMaterial 30): 0 pool / splash / stain, 1 smear, 2 footprint
 uniform float uSplatSeed;     // 0..1: every splat gets its own wobbly edge
 uniform float uSplatDry;      // 0 fresh and wet .. 1 dried dark and dull
+uniform int   uSplatMark;     // not blood: 1 a dry mark (footprint in snow, tyre track, bullet hole, bruise), 2 a wet one
 uniform float uFogSunGlow;
 // Drawing many copies at once (uInstanced): each copy's colour, material... come from
 // the vertex shader instead of the uniforms.
@@ -399,7 +401,17 @@ void main() {
         // Like Roblox: the face picture is flat, seen straight on from the front, and
         // painted onto the head's own (round) surface, so it hugs the head exactly.
         // The picture covers the whole front of the head; only the front gets it.
-        vec4 px = texture(uDecal, vLocalPos.xy + 0.5);
+        vec2 fuv = vLocalPos.xy + 0.5;
+        // Blinking: the eye band (a strip across the upper face) squashes toward its
+        // middle line, so the eyes close to a line and the skin shows above and below.
+        const float eyeMid = 0.62, eyeHalf = 0.13;
+        bool shut = false;
+        if (uBlink > 0.01 && abs(fuv.y - eyeMid) < eyeHalf) {
+            float s = max(1.0 - uBlink, 0.06);
+            fuv.y = eyeMid + (fuv.y - eyeMid) / s;
+            shut = abs(fuv.y - eyeMid) > eyeHalf;
+        }
+        vec4 px = shut ? vec4(0.0) : texture(uDecal, fuv);
         albedo = mix(albedo, lin(px.rgb), px.a * smoothstep(0.0, 0.3, normalize(vLocalNormal).z));
         if (uMouthOpen > 0.01) {
             // Talking: an open mouth (dark inside, a hint of tongue) over the face's own.
@@ -623,6 +635,11 @@ void main() {
             inside = (edge - r) / edge;
         }
         float rim = 1.0 - smoothstep(0.0, 0.2, inside);           // the edge, where it's thickest and clots first
+        if (uSplatMark > 0) {                                     // a mark: soft-edged, no drying or cracking
+            albedo *= 0.88 + 0.12 * vnoise(vLocalPos.xz * 24.0 + sd);
+            rough = uSplatMark == 2 ? 0.12 : 0.95;
+            splatWet = uSplatMark == 2 ? 0.6 : 0.0;
+        } else {
         float dry = clamp(uSplatDry * 1.5 - inside * 0.6, 0.0, 1.0);   // dries from the edge in
         albedo *= mix(1.0, 0.7, rim) * (0.85 + 0.15 * vnoise(vLocalPos.xz * 30.0 + sd));
         albedo = mix(albedo, albedo * vec3(0.32, 0.2, 0.17), dry);      // dried: dark brown
@@ -634,6 +651,7 @@ void main() {
         splatWet = 1.0 - dry;
         // A domed surface (surface tension) catches the light along the rim.
         N = bump(N, smoothstep(0.0, 0.3, inside) * 0.008 * splatWet);
+        }
     }
     else if (gMaterial == 7) {                                    // water: little moving ripples on top
         rough = 0.02;

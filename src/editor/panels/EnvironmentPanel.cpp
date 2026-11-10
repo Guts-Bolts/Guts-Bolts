@@ -69,6 +69,10 @@ void EnvironmentPanel::render() {
         ImGui::SliderFloat("Reflections", &e.reflections, 0.0f, 2.0f);
         help("How much shiny materials (Metal, Glass, Ice) reflect the sky");
         ImGui::SliderFloat("Bouncy Light", &e.bounceLight, 0.0f, 2.0f);
+        ImGui::SliderFloat("Light Rays", &e.lightRays, 0.0f, 1.0f);
+        ImGui::Checkbox("Eyes Adjust", &e.autoExposure);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Auto exposure: walk into a dark room and it slowly brightens; step out and it dims.");
+        ImGui::SliderFloat("Motion Blur", &e.motionBlur, 0.0f, 1.0f);
         help("Sun and lamp light bounces off coloured things onto what's next to them (0 = off)");
     }
 

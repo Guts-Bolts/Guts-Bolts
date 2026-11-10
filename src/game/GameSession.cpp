@@ -5,6 +5,7 @@
 #include "../scene/SoftTissue.h"
 #include "../scene/Cloth.h"
 #include "../scene/Shatter.h"
+#include "../scene/Impacts.h"
 #include "../scene/LipSync.h"
 #include "../core/Voice.h"
 #include "../core/FrameProfile.h"
@@ -334,6 +335,9 @@ void GameSession::stop() {
     m_starterPack.clear();
     m_gear.clear();
     Audio::stopAll();
+    m_acoustics.reset();
+    m_fire.clear();
+    m_tracks.clear();
     if (Player* p = m_scene->player()) p->endPlay();
     m_physics.reset();
     m_scene->particles().clear();
@@ -400,6 +404,9 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         if (!client)   // (a joined player's computer never deletes things; the host does)
             for (uint64_t id : fallen)
                 if (SceneNode* n = m_scene->findById(id)) m_scene->removeNode(n);
+        // Knocks and crashes: the sound of what hit what (every computer plays its own).
+        Impacts::play(*m_scene, m_physics.knocks, m_physics.smashes);
+        m_tracks.update(*m_scene, dt);   // tyre tracks and skid marks (Tracks.h)
         // Breakable things hit hard enough break into pieces (the host does it; the
         // pieces are ordinary parts everyone gets).
         if (!client && !m_physics.smashes.empty()) {
@@ -570,6 +577,10 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         });
         // SoundGroup volumes and sound effects (scripts may have changed them).
         SoundMix::update(*m_scene);
+        // Walls muffle, rooms echo, fast things bend in pitch (Acoustics.h).
+        m_acoustics.update(*m_scene, dt, Audio::listenerPosition());
+        // Fires crackle, and (workspace.FireSpread) spread to wood and cloth (FireSpread.h).
+        m_fire.update(*m_scene, dt, !client, Audio::listenerPosition());
     }
 
     // Blood, oil, sparks, smoke...
