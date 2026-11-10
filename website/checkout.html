@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Join Boltworks Club - Guts&amp;Bolts</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="img/icon.png">
+<link rel="stylesheet" href="fonts/font.css">
+<!-- Stripe.js always loads straight from Stripe (their rule for card safety). -->
+<script src="https://js.stripe.com/dahlia/stripe.js"></script>
+<style>
+  :root { --red: #c81e1e; --text: #222; --muted: #666; --panel: #fff; --bg: #eee; --line: #d6d6d6; }
+  @media (prefers-color-scheme: dark) { :root { --text: #e8ecf2; --muted: #9aa5b5; --panel: #1b212b; --bg: #0e131b; --line: #334052; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--gb-font); font-size: 14px; line-height: 1.5; color: var(--text); background: var(--bg); }
+  header { background: var(--red); border-bottom: 3px solid #861616; }
+  header .wrap { max-width: 640px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 14px; }
+  header img { height: 42px; width: auto; display: block; }
+  header a.back { margin-left: auto; color: #fff; font-weight: bold; text-decoration: none; }
+  main { max-width: 640px; margin: 14px auto; background: var(--panel); border: 1px solid var(--line); padding: 8px 22px 22px; }
+  h1 { color: var(--red); margin-bottom: 4px; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .error { color: var(--red); font-weight: bold; }
+  #checkout-form { margin-top: 16px; min-height: 120px; background: #fff; border-radius: 4px; padding: 8px; }
+  @media (max-width: 500px) { main { margin: 0; border-left: 0; border-right: 0; padding: 4px 16px 16px; } }
+</style>
+</head>
+<body>
+<header><div class="wrap"><a href="app/"><img src="img/logo.png" alt="Guts &amp; Bolts" width="720" height="242"></a><a class="back" href="app/#/bolts">Back</a></div></header>
+<main>
+  <h1>Join Boltworks Club</h1>
+  <p>A monthly membership: no ads, a club badge next to your name, and more perks. Cancel any time.</p>
+  <p id="checkout-status" class="muted">Loading the payment form...</p>
+  <div id="checkout-form"></div>
+  <p class="muted">Payments are handled by Stripe. Guts&amp;Bolts never sees your card number.
+    See our <a href="privacy">Privacy Policy</a> and <a href="app/#/terms">Terms</a>.</p>
+</main>
+<script type="module" src="/checkout.js"></script>
+</body>
+</html>
