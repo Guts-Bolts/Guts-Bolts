@@ -948,6 +948,35 @@ const std::vector<Tool>& tools() {
                  {"name", {{"type", "string"}}}, {"description", {{"type", "string"}}},
                  {"mode", {{"type", "string"}, {"enum", {"auto", "new", "update"}}}}}, {})},
 
+        // ------------------------------------------------------------- PLATFORM
+        {"manage_game", "Look after the published game on Guts&Bolts", "PLATFORM", false, false, false, Risk::High,
+         {"Looks after the game's page on the Guts&Bolts website, as the account Studio is signed in with: read its info, "
+          "stats (plays, sales, Bolts, the last 30 days), passes, developer products, running servers and update notes; and "
+          "ask to change its settings (name, description, access, genres, max players, gear, comments, private server price), "
+          "make or change a game pass or developer product (and its price), or post an update note. Reading happens straight "
+          "away. Every CHANGE waits until the person presses Allow in Studio (a window shows exactly what you asked); you "
+          "can't approve it yourself. The server's own rules apply (only the game's creator; selling needs Verified).",
+          "\"How is my game doing?\" \"Make a VIP pass for 100 Bolts.\" \"Change the description.\" \"Set max players to 20.\" "
+          "\"Tell players about the update.\" \"What passes does it have?\"",
+          "Not for changing the game itself (objects, scripts): those are the other tools. Not for publishing a new version: "
+          "publish_game. Don't ask for changes the person didn't want, and never to make money for anyone else.",
+          "action (info, stats, passes, products, servers, updates; or settings, post_update, make_pass, make_product, "
+          "edit_pass; or result); game (optional: id or number, default the open game's published id); fields (for changes: "
+          "settings {name, description, access public|friends|private, genres [up to 3], maxPlayers, allowGear, comments, "
+          "privatePrice}; post_update {title, text}; make_pass / make_product {name, description, price}; edit_pass {name, "
+          "description, price, offsale}); pass (edit_pass: the pass or product id from passes / products); job (result).",
+          "{job, state}. state: sending -> done (with result) or failed (with error); a change starts as waiting_for_person, "
+          "then done, failed or denied. Get it with {action: \"result\", job}.",
+          "Signed in (not a guest). The game is published (except stats) and the account made it.",
+          "Read actions change nothing. Allowed changes are live on the website at once; Undo can't take them back.",
+          "manage_game {action: info} -> manage_game {action: result, job} -> (tell the person) -> manage_game {action: "
+          "make_pass, fields} -> tell the person to press Allow -> manage_game {action: result, job}.",
+          "\"How many people played my game this week?\" \"Add a 50 Bolts double-jump pass.\""},
+         schema({{"action", {{"type", "string"}, {"enum", {"info", "stats", "passes", "products", "servers", "updates", "settings",
+                                                          "post_update", "make_pass", "make_product", "edit_pass", "result"}}}},
+                 {"game", {{"type", "string"}}}, {"pass", {{"type", "string"}}}, {"job", {{"type", "string"}}},
+                 {"fields", {{"type", "object"}}}}, {"action"})},
+
         // -------------------------------------------------------------- HISTORY
         {"undo", "Undo the last change", "HISTORY", false, false, false, Risk::Low,
          {"Undoes the last change to the game (like Ctrl+Z): a tool call, a script edit, a run_lua build...",
@@ -1010,6 +1039,7 @@ json workflowOf(const std::string& name) {
         {"get_runtime_state", {{"playtest"}, {"get_object", "playtest"}}},
         {"checkpoint", {{}, {"playtest", "checkpoint"}}},
         {"publish_game", {{"validate_scene"}, {"publish_game"}}},
+        {"manage_game", {{"publish_game"}, {"manage_game"}}},
     };
     auto it = flows.find(name);
     if (it == flows.end()) return {{"before", json::array()}, {"after", json::array()}};

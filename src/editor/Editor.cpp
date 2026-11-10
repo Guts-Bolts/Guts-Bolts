@@ -467,6 +467,7 @@ void Editor::render(float dt) {
     renderMaterialEditor();
     renderMaterialGraph();
     renderAiActivity();
+    renderPlatformApprovals();   // manage_game changes waiting for Allow (EditorPlatform.cpp)
     renderScriptHistory();
     renderLevelGenerator();
     renderTemplates();

@@ -520,6 +520,11 @@ private:
     std::map<std::string, std::string> m_aiCheckpoints;
     std::unique_ptr<Physics>           m_aiNav;
     nlohmann::json                     m_aiPublish;   // the publish_game tool's last publish: {state, name, ...}
+    // manage_game (EditorPlatform.cpp): its jobs (number -> {action, state, result/error...}) and the
+    // changes waiting for the person's Allow, oldest first.
+    nlohmann::json                     m_platformJobs = nlohmann::json::object();
+    std::vector<std::string>           m_platformWaiting;
+    int                                m_platformNext = 1;
     // AI Activity (EditorAiActivity.cpp): every AI tool call, and what the AI changed since
     // the person last pressed Keep / Undo all (the game before its first change).
     struct AiLogEntry {
@@ -542,6 +547,9 @@ private:
     bool        aiUndoChanges();                  // false = nothing to undo / playtesting
     nlohmann::json aiChangeReport();
     void        renderAiActivity();
+    AiToolResult runPlatformTool(const nlohmann::json& args);   // EditorPlatform.cpp: the manage_game tool
+    void        sendPlatformJob(const std::string& job, const std::string& op, const nlohmann::json& req);
+    void        renderPlatformApprovals();
     std::vector<std::string> m_undo, m_redo;
     std::string              m_committed;      // last known scene state
     LinkedModels::Tracker    m_links;          // linked models: what each copy held at the last edit
