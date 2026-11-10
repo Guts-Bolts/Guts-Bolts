@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Guts&amp;Bolts</title>
-<meta name="description" content="Games, catalog, friends and groups on Guts&amp;Bolts.">
+<meta name="description" content="Games, communities, chat and more on Guts&amp;Bolts.">
 <link rel="icon" href="../img/icon.png">
 <link rel="stylesheet" href="../fonts/font.css">
 <link rel="stylesheet" href="app.css">
 <link rel="stylesheet" href="chatdock.css">
+<link rel="stylesheet" href="platform.css">
 <link rel="stylesheet" href="ads.css">
 </head>
 <body>
@@ -26,17 +27,18 @@
   <nav class="nav">
     <div class="wrap">
       <a href="#/" data-page="home">Home</a>
-      <a href="#/games" data-page="games">Games</a>
-      <a href="#/catalog" data-page="catalog">Catalog</a>
-      <a href="#/people" data-page="people">People</a>
-      <a href="#/forum" data-page="forum">Forum</a>
-      <a href="#/create" data-page="create">Create</a>
+      <a href="#/games" data-product="games">Games</a>
+      <a href="#/soon/videos" data-product="videos">Videos <span class="soon-tag">Soon</span></a>
+      <a href="#/soon/live" data-product="live">Live <span class="soon-tag">Soon</span></a>
+      <a href="#/forum" data-product="communities">Communities</a>
+      <a href="#/chat" data-page="chat" data-product="chat" class="nav-chat">Chat</a>
+      <a href="#/soon/fyxa" data-product="fyxa">Fyxa</a>
       <a href="#/updates" data-page="updates">Updates</a>
-      <a href="#/events" data-page="events">Events</a>
-      <a href="#/chat" data-page="chat" class="nav-chat">Chat</a>
-      <a href="../#download">Download</a>
       <span class="status" id="status"><i></i><b>Connecting...</b></span>
     </div>
+  </nav>
+  <nav class="section-bar" id="sectionBar" hidden>
+    <div class="wrap"></div>
   </nav>
   <nav class="subnav">
     <div class="wrap">
@@ -61,7 +63,7 @@
     <a href="#/create">Create</a> | <a href="../#download">Download</a> | <a href="../">About</a> |
     <a href="#/support">Support</a> | <a href="#/terms">Terms</a> | <a href="../privacy">Privacy</a> |
     <a href="https://lyreto.com/" target="_blank" rel="noopener">Chat on Lyreto</a></div>
-  <p>Guts&amp;Bolts is an independent, free, hobby game platform for adults (18+). It is not
+  <p>Guts&amp;Bolts is an independent, free, hobby platform for games, communities and more, for adults (18+). It is not
     affiliated with, endorsed by, or connected to Roblox Corporation.</p>
 </footer>
 <div class="toast" id="toast" hidden></div>
