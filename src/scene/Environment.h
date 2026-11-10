@@ -26,6 +26,10 @@ struct Environment {
     glm::vec3 groundAmbient     = {0.30f, 0.27f, 0.22f};   // light bouncing off the ground
     float     ambientIntensity  = 0.42f;
     float     reflections       = 1.0f;                    // sky reflections on shiny parts
+    // Bouncy light (Lighting.BounceLight): sunlight and lamplight that land on a
+    // coloured surface light up what's near it a little, in that colour (a red
+    // floor gives the wall next to it a red glow). 0 = off, 1 = normal, 2 = strong.
+    float     bounceLight       = 0.0f;
 
     // Procedural sky ----------------------------------------------------------
     bool      showSky    = true;

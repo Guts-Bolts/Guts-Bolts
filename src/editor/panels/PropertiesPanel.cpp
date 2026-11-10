@@ -1334,6 +1334,10 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         StudioLearnHighlight::mark("properties.Brightness");
         ImGui::SliderFloat("Range", &node->range, 1.0f, 100.0f);
         StudioLearnHighlight::mark("properties.Range");
+        ImGui::Checkbox("Shadows", &node->lightShadows);
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Parts block this light and cast shadows from it.\n"
+                              "Only the few nearest lamps with Shadows on cast them at once.");
         if (node->lightType == LightType::Spot) {
             ImGui::SliderFloat("Angle", &node->spotAngle, 5.0f, 170.0f, "%.0f\xc2\xb0");
             ImGui::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);

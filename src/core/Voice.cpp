@@ -108,6 +108,7 @@ struct Speaker {
     bool         ready = false;
     double       heardAt = -100.0;
     glm::vec3    pos{0.0f};
+    float        level = 0.0f;            // how loud the last bit they said was (0..1, for lip sync)
     ~Speaker() {
         if (ready) { ma_sound_uninit(&sound); ma_pcm_rb_uninit(&rb); }
         if (dec) opus_decoder_destroy(dec);
@@ -237,11 +238,18 @@ void receive(const std::string& speaker, const std::string& bytes, const glm::ve
     // Starting to talk again: a little silence first, so a late packet doesn't cut them up.
     if (queued < (ma_uint32)kFrame) writeSamples(&s->rb, nullptr, kFrame * 3);
     float pcm[kFrame * 6];
+    float loud = 0.0f;
     for (int i = 0; i < count; ++i) {
         const int n = opus_decode_float(s->dec, (const unsigned char*)frames[i].data(), (opus_int32)frames[i].size(),
                                         pcm, kFrame * 6, 0);
-        if (n > 0) writeSamples(&s->rb, pcm, (ma_uint32)n);
+        if (n > 0) {
+            writeSamples(&s->rb, pcm, (ma_uint32)n);
+            double sum = 0.0;
+            for (int k = 0; k < n; ++k) sum += (double)pcm[k] * pcm[k];
+            loud = std::max(loud, (float)std::sqrt(sum / n));
+        }
     }
+    s->level = std::min(1.0f, loud * 6.0f);
     s->heardAt = clockNow();
 }
 
@@ -261,6 +269,14 @@ void eachSpeaking(const std::function<void(const std::string&, const glm::vec3&)
     const double now = clockNow();
     for (auto& [name, s] : g_speakers)
         if (isSpeaking(*s, now)) fn(name, s->pos);
+}
+
+float level(const std::string& speaker) {
+    auto it = g_speakers.find(speaker);
+    if (it == g_speakers.end()) return 0.0f;
+    // Fades out quickly once their packets stop (so the mouth closes).
+    const double quiet = clockNow() - it->second->heardAt;
+    return quiet > 0.25 ? 0.0f : it->second->level * (float)(1.0 - quiet / 0.25);
 }
 
 void forget(const std::string& speaker) { g_speakers.erase(speaker); }

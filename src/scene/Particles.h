@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 class Physics;
 class SceneNode;
@@ -94,6 +95,22 @@ public:
     void update(float dt, float gravity, const Physics& physics);
     // The game's blood (Game Settings > Damage & Blood).
     void setBlood(const glm::vec3& color, float amount, float stay) { m_bloodColor = color; m_bloodAmount = amount; m_bloodStay = stay; }
+    const glm::vec3& bloodColor() const { return m_bloodColor; }
+    float bloodAmount() const { return m_bloodAmount; }
+    // Liquid blood (workspace.LiquidBlood): some of every spurt and spray also goes into
+    // the real liquid simulation as thick drops (position, velocity, kind). Scene sets it.
+    using LiquidSink = std::function<void(GoreKind, const glm::vec3&, const glm::vec3&)>;
+    void setLiquidSink(LiquidSink sink) { m_liquidSink = std::move(sink); }
+    int  liquidSent() const { return m_liquidSent; }   // (drops handed to the liquid, for tests)
+    // One character's own blood (Humanoid.BloodColor / BloodAmount): while a Look is
+    // alive, everything sprayed uses it, then the game's blood comes back.
+    struct Look {
+        ParticleSystem& ps; glm::vec3 color; float amount;
+        Look(ParticleSystem& p, const glm::vec3& c, float a) : ps(p), color(p.m_bloodColor), amount(p.m_bloodAmount) {
+            p.m_bloodColor = c; p.m_bloodAmount = a;
+        }
+        ~Look() { ps.m_bloodColor = color; ps.m_bloodAmount = amount; }
+    };
     void clear() { m_items.clear(); m_sprites.clear(); m_spawnDebt.clear(); }
     const std::vector<Particle>& items() const { return m_items; }
 
@@ -156,4 +173,7 @@ private:
     float     m_bloodAmount = 1.0f, m_bloodStay = 30.0f;
     int m_splats = 0;
     float m_splatSound = 0.0f;
+    LiquidSink m_liquidSink;
+    int   m_liquidSent = 0;
+    void  toLiquid(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel);
 };

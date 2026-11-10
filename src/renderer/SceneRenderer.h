@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include "ShadowMap.h"
 #include "../scene/Weather.h"
+#include "../scene/BounceLight.h"
 
 class Scene;
 class SceneNode;
@@ -47,6 +48,14 @@ public:
 
 private:
     void renderShadowPass(Scene& scene, const glm::mat4& lightSpace, ShadowMap& target);
+    // Lamp shadows: the nearest few lights with Shadows on, six sides each, into
+    // m_lampShadows. Fills m_lampShadowNodes (slot -> light).
+    void renderLampShadows(Scene& scene, const glm::vec3& camPos, int most);
+public:
+    // One side of a lamp's shadow cube: which way it looks (0 +X, 1 -X, 2 +Y, 3 -Y,
+    // 4 +Z, 5 -Z). The lit shader works out the same thing by itself (lampVisibility).
+    static glm::mat4 lampFaceView(const glm::vec3& lampPos, int face);
+private:
     void drawGeometry(Scene& scene, const Camera& camera, bool editing);
 public:
     // How many groups of copies were drawn in one go last frame (Instancing.h; for tests).
@@ -120,6 +129,12 @@ private:
     Target m_fDepth, m_fTmp, m_fThick, m_fColor, m_sceneCopy;   // liquid: depth, blur scratch, thickness, the scene behind
     unsigned int m_fluidVao = 0, m_fluidVbo = 0;
     ShadowMap               m_shadow, m_shadowNear;   // wide, and sharp close to the camera
+    ShadowMap               m_lampShadows;            // 6 x 4 tiles: up to 4 lamps, 6 sides each
+    int                     m_lampTile = 0;           // pixels across one tile
+    std::vector<const SceneNode*> m_lampShadowNodes;  // which lamp has which slot this frame
+    std::vector<BounceLight::Point> m_bounce;         // bouncy light (redone ~4 times a second)
+    double                  m_bounceAt = 0.0;
+    glm::vec3               m_bounceAround{0.0f};
     int                     m_shadowRes = 0;
     glm::mat4               m_lightSpace{1.0f};       // (the wide shadow map's, for the water)
     bool                    m_shadowsOn = false;

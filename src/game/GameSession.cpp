@@ -1,5 +1,12 @@
 #include "Videos.h"
 #include "GameSession.h"
+#include "../scene/Water.h"
+#include "../scene/Liquid.h"
+#include "../scene/SoftTissue.h"
+#include "../scene/Cloth.h"
+#include "../scene/Shatter.h"
+#include "../scene/LipSync.h"
+#include "../core/Voice.h"
 #include "../core/FrameProfile.h"
 #include "../scene/LegacyJoints.h"
 #include "../scene/IkControls.h"
@@ -54,6 +61,10 @@ void GameSession::start() {
     m_physics.reset();
     m_scene->particles().clear();
     m_scene->blasts().clear();
+    SoftTissue::clear();   // (dents, cloth and broken pieces only live while playing)
+    Cloth::clearAll();
+    Shatter::clear();
+    LipSync::clear();
     m_scene->vehicles().clear();
     m_scene->camera() = ScriptCamera{};   // workspace.CurrentCamera starts fresh: Custom, following you
     m_scene->coreGui() = CoreGuiState{};  // the emote menu and the rest are back on
@@ -327,6 +338,10 @@ void GameSession::stop() {
     m_physics.reset();
     m_scene->particles().clear();
     m_scene->blasts().clear();
+    SoftTissue::clear();   // (dents, cloth and broken pieces only live while playing)
+    Cloth::clearAll();
+    Shatter::clear();
+    LipSync::clear();
     m_scene->camera() = ScriptCamera{};
     if (m_inputTrace.is_open()) {
         m_inputTrace.flush();
@@ -385,6 +400,15 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         if (!client)   // (a joined player's computer never deletes things; the host does)
             for (uint64_t id : fallen)
                 if (SceneNode* n = m_scene->findById(id)) m_scene->removeNode(n);
+        // Breakable things hit hard enough break into pieces (the host does it; the
+        // pieces are ordinary parts everyone gets).
+        if (!client && !m_physics.smashes.empty()) {
+            for (const Physics::Smash& x : m_physics.smashes)
+                if (SceneNode* n = m_scene->findById(x.id))
+                    Shatter::breakPart(*m_scene, n, x.at, std::clamp(x.speed / std::max(1.0f, Shatter::breakSpeed(*n)) * 0.5f, 0.2f, 1.5f));
+            m_physics.smashes.clear();
+            fallen.push_back(0);   // (re-gather below: the pieces are new bodies)
+        }
         if (!fallen.empty() && !client) m_physics.gather(*m_scene);
     }
 
@@ -551,8 +575,23 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     // Blood, oil, sparks, smoke...
     const WorldSettings& ws = m_scene->world();
     m_scene->particles().setBlood(ws.bloodColor, ws.bloodAmount, ws.bloodStay);
+    // Liquid blood: part of every spurt also runs as real (thick) liquid.
+    if (ws.liquidBlood) {
+        Scene* scene = m_scene;
+        m_scene->particles().setLiquidSink([scene](GoreKind kind, const glm::vec3& p, const glm::vec3& v) {
+            Liquid& liquid = scene->water().liquid();
+            const int fluid = liquid.goreFluid(kind == GoreKind::Oil);
+            if (fluid > 0) liquid.spray(p, v, fluid);
+        });
+    } else {
+        m_scene->particles().setLiquidSink(nullptr);
+    }
     { FrameProfile::Scope prof("game: particles"); m_scene->particles().update(dt, m_scene->world().fluidGravity(), m_physics); }
     m_scene->particles().follow(*m_scene);   // blood stains move with the bodies they're on
+    SoftTissue::update(*m_scene, dt);         // dents spring back out
+    Shatter::update(*m_scene, dt);            // broken pieces fade away after a while
+    // Mouths move with what characters say (sounds in them, voice chat, or MouthOpen).
+    if (!Mesh::headless) LipSync::update(*m_scene, dt, [](const std::string& name) { return Voice::level(name); });
     // ParticleEmitters, Fire, Smoke, Sparkles: every screen makes its own (a game server
     // with no screen doesn't bother).
     if (!Mesh::headless) { FrameProfile::Scope prof("game: particle emitters"); m_scene->particles().runEmitters(*m_scene, dt); }

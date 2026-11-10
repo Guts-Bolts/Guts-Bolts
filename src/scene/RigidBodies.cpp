@@ -10,6 +10,7 @@
 //  * movers (BodyVelocity, AlignPosition...) push whole welded assemblies
 //  * finally positions and rotations move by the velocities
 #include "Physics.h"
+#include "Shatter.h"
 #include "Scene.h"
 #include "SceneNode.h"
 #include "Water.h"
@@ -84,6 +85,77 @@ float effMass(const Body& a, const Body& b, const glm::vec3& ra, const glm::vec3
 
 // Contacts are found afresh every step; this names a pair of touching parts, so
 // how hard their contacts pushed last step can be found again.
+// The broad phase: which bodies are near enough to maybe touch. With only a few bodies
+// every pair is checked; with many, each body goes into the grid cells its box covers
+// and only bodies sharing a cell are checked (huge ones, like a baseplate, are checked
+// with everything). Either way the candidates come out in the same order, so the
+// physics does exactly the same thing, just faster with lots of parts.
+struct BroadPhase {
+    static constexpr float kCell = 4.0f;
+    static constexpr int   kGridFrom = 48;      // fewer bodies than this: check every pair
+    static constexpr long long kMostCells = 64; // a body covering more cells than this is "huge"
+    std::vector<std::pair<uint64_t, int>> entries;   // (cell, body), sorted by cell
+    std::vector<int> huge;
+    std::vector<int> stamp;
+    int stampNow = 0;
+    bool grid = false;
+    static uint64_t key(long long x, long long y, long long z) {
+        auto c = [](long long v) { return (uint64_t)(std::clamp(v, -(1LL << 20), (1LL << 20) - 1) + (1LL << 20)); };
+        return (c(x) << 42) | (c(y) << 21) | c(z);
+    }
+    static void span(const Body& b, long long lo[3], long long hi[3]) {
+        for (int a = 0; a < 3; ++a) {
+            lo[a] = (long long)std::floor(std::clamp(b.aabbMin[a], -4e6f, 4e6f) / kCell);
+            hi[a] = (long long)std::floor(std::clamp(b.aabbMax[a], -4e6f, 4e6f) / kCell);
+        }
+    }
+    void build(const std::vector<Body>& bodies) {
+        grid = bodies.size() >= (size_t)kGridFrom;
+        entries.clear();
+        huge.clear();
+        if (!grid) return;
+        for (int i = 0; i < (int)bodies.size(); ++i) {
+            const Body& b = bodies[(size_t)i];
+            if (!b.solid) continue;
+            long long lo[3], hi[3];
+            span(b, lo, hi);
+            const long long cells = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1);
+            if (cells > kMostCells || cells <= 0) { huge.push_back(i); continue; }
+            for (long long x = lo[0]; x <= hi[0]; ++x)
+                for (long long y = lo[1]; y <= hi[1]; ++y)
+                    for (long long z = lo[2]; z <= hi[2]; ++z) entries.push_back({key(x, y, z), i});
+        }
+        std::sort(entries.begin(), entries.end());
+        stamp.assign(bodies.size(), -1);
+    }
+    // The bodies that might touch body i, smallest number first.
+    void near(const std::vector<Body>& bodies, int i, std::vector<int>& out) {
+        out.clear();
+        if (!grid) {
+            for (int k = 0; k < (int)bodies.size(); ++k) out.push_back(k);
+            return;
+        }
+        ++stampNow;
+        auto add = [&](int k) { if (stamp[(size_t)k] != stampNow) { stamp[(size_t)k] = stampNow; out.push_back(k); } };
+        for (int k : huge) add(k);
+        long long lo[3], hi[3];
+        span(bodies[(size_t)i], lo, hi);
+        const long long cells = (hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) * (hi[2] - lo[2] + 1);
+        if (cells > kMostCells || cells <= 0) {   // (itself huge: everything)
+            for (int k = 0; k < (int)bodies.size(); ++k) add(k);
+        } else {
+            for (long long x = lo[0]; x <= hi[0]; ++x)
+                for (long long y = lo[1]; y <= hi[1]; ++y)
+                    for (long long z = lo[2]; z <= hi[2]; ++z) {
+                        const uint64_t c = key(x, y, z);
+                        auto it = std::lower_bound(entries.begin(), entries.end(), std::make_pair(c, -1));
+                        for (; it != entries.end() && it->first == c; ++it) add(it->second);
+                    }
+        }
+        std::sort(out.begin(), out.end());
+    }
+};
+
 uint64_t pairKey(const Body& A, const Body& B) {
     const uint64_t a = A.node ? A.node->id : 0, b = B.node ? B.node->id : 0;
     uint64_t k = a * 0x9E3779B97F4A7C15ull;
@@ -949,6 +1021,11 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     const int   substeps = std::clamp((int)std::ceil(dt * 240.0f - 0.01f), 2, 12);
     const float h = dt / substeps;
 
+    smashes.clear();
+    std::vector<char> breakableBody(bodies.size(), 0);
+    for (size_t i = 0; i < bodies.size(); ++i) breakableBody[i] = bodies[i].node && Shatter::breakable(*bodies[i].node);
+    BroadPhase broad;
+
     for (int step = 0; step < substeps; ++step) {
         // ---- 3. Gravity + springs ----------------------------------------------
         // Water first: it wakes up what's in it, so gravity below pulls those too.
@@ -987,9 +1064,14 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
 
         // ---- 4. Contacts ----------------------------------------------------------
         std::vector<Contact> contacts;
+        // Which bodies might touch (only those near each other: see BroadPhase), then
+        // the same checks in the same order as checking every pair.
+        broad.build(bodies);
+        std::vector<int> near;
         for (int i = 0; i < (int)bodies.size(); ++i) {
             if (!bodies[i].dynamic || !bodies[i].solid) continue;
-            for (int k = 0; k < (int)bodies.size(); ++k) {
+            broad.near(bodies, i, near);
+            for (int k : near) {
                 if (k == i || !bodies[k].solid) continue;
                 if (bodies[k].dynamic && k < i) continue;              // each dynamic pair once
                 const Body &A = bodies[i], &B = bodies[k];
@@ -1035,6 +1117,18 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
 
         for (auto& c : contacts) {
             Body &A = bodies[c.a], &B = bodies[c.b];
+            // Hit hard enough to break (Breakable parts, Shatter.h)?
+            if (A.node && B.node && (breakableBody[c.a] || breakableBody[c.b])) {
+                const float hitSpeed = -glm::dot(A.velocityAt(c.p) - B.velocityAt(c.p), c.n);
+                for (int side = 0; side < 2; ++side) {
+                    const int bi = side == 0 ? c.a : c.b;
+                    if (!breakableBody[bi]) continue;
+                    SceneNode* bn = bodies[bi].node;
+                    if (hitSpeed < Shatter::breakSpeed(*bn)) continue;
+                    if (std::none_of(smashes.begin(), smashes.end(), [&](const Smash& x) { return x.id == bn->id; }))
+                        smashes.push_back({bn->id, c.p, hitSpeed});
+                }
+            }
             if (B.dynamic && !B.awake && A.awake) B.awake = true;   // bumped: wake up
             if (A.dynamic && !A.awake && B.awake && B.dynamic) A.awake = true;
             c.ra = c.p - A.pos;

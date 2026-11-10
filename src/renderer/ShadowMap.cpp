@@ -5,15 +5,18 @@ ShadowMap::~ShadowMap() {
     if (m_fbo)   glDeleteFramebuffers(1, &m_fbo);
 }
 
-void ShadowMap::init(int size) {
+void ShadowMap::init(int size) { init(size, size); }
+
+void ShadowMap::init(int size, int height) {
     // Safe to call again (e.g. when the shadow quality setting changes).
     if (m_depth) { glDeleteTextures(1, &m_depth); m_depth = 0; }
     if (m_fbo)   { glDeleteFramebuffers(1, &m_fbo); m_fbo = 0; }
     m_size = size;
+    m_height = height;
 
     glGenTextures(1, &m_depth);
     glBindTexture(GL_TEXTURE_2D, m_depth);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size, size, 0,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, size, height, 0,
                  GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -40,7 +43,7 @@ void ShadowMap::init(int size) {
 
 void ShadowMap::bindForWrite() const {
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-    glViewport(0, 0, m_size, m_size);
+    glViewport(0, 0, m_size, m_height);
     glClear(GL_DEPTH_BUFFER_BIT);
 }
 

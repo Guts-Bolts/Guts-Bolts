@@ -1,4 +1,5 @@
 #include "Particles.h"
+#include "Gore.h"
 #include "Physics.h"
 #include "Scene.h"
 #include "SceneNode.h"
@@ -89,7 +90,14 @@ void ParticleSystem::spray(GoreKind kind, const glm::vec3& pos, const glm::vec3&
         p.life   = p.maxLife = rnd(1.5f, 3.0f);
         p.wet    = true;
         add(p);
+        if (i % 3 == 0) toLiquid(kind, p.pos, p.vel);
     }
+}
+
+void ParticleSystem::toLiquid(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel) {
+    if (!m_liquidSink) return;
+    m_liquidSink(kind, pos, vel);
+    ++m_liquidSent;
 }
 
 void ParticleSystem::waterSpray(const glm::vec3& pos, int count, float speed, const glm::vec3& color, float radius) {
@@ -175,8 +183,8 @@ void ParticleSystem::burst(GoreKind kind, const SceneNode* part, const glm::vec3
     const float speed = 4.0f + violence * 10.0f;
     for (int i = 0; i < pieces; ++i) {
         Particle p;
-        glm::vec3 local(rnd(-0.4f, 0.4f), rnd(-0.4f, 0.4f), rnd(-0.4f, 0.4f));
-        p.pos  = glm::vec3(M * glm::vec4(local, 1.0f));
+        // From inside its real shape (a bundle's curvy body part isn't a box).
+        p.pos  = Gore::insidePoint(*part, rnd(0.0f, 1.0f), rnd(0.0f, 1.0f), rnd(0.0f, 1.0f));
         glm::vec3 out = p.pos - c;
         out = glm::length(out) > 1e-3f ? glm::normalize(out) : rndDir();
         p.vel  = vel + (out + rndDir() * 0.5f) * speed * rnd(0.4f, 1.0f) + glm::vec3(0, rnd(1.0f, 4.0f), 0);
@@ -347,6 +355,7 @@ void ParticleSystem::spurt(GoreKind kind, const glm::vec3& pos, const glm::vec3&
         p.life  = p.maxLife = rnd(2.0f, 3.0f);
         p.wet   = true;
         add(p);
+        if (i % 2 == 0) toLiquid(kind, p.pos, p.vel);   // a stream: a real trickle runs from it
     }
 }
 
@@ -361,6 +370,7 @@ void ParticleSystem::ooze(GoreKind kind, const glm::vec3& pos, const glm::vec3& 
     p.life  = p.maxLife = rnd(2.0f, 3.0f);
     p.wet   = true;
     add(p);
+    if (rnd(0, 1) < 0.5f) toLiquid(kind, p.pos, p.vel);
 }
 
 void ParticleSystem::smear(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel, const glm::vec3& normal, float width, float wet) {
