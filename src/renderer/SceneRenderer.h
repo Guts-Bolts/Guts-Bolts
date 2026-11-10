@@ -80,7 +80,7 @@ private:
         float     blur = 0.0f;                     // BlurEffect sizes, together (pixels)
         bool      dof = false;
         float     focus = 0.0f, inFocus = 0.0f, nearAmt = 0.0f, farAmt = 0.0f;
-        float     rays = 0.0f, raysSpread = 0.0f;  // SunRaysEffect
+        float     rays = 0.0f, raysSpread = 0.0f;  // SunRaysEffect (or Lighting.LightRays)
         const SceneNode* sky = nullptr;            // the Sky in Lighting (the first one)
     };
     ScreenFx m_fx;
@@ -108,6 +108,12 @@ private:
     Target m_hlTarget;                        // a Highlight's shape on screen
     std::unique_ptr<Shader> m_ribbon;         // Trails and Beams
     std::unique_ptr<Shader> m_sunRays;        // SunRaysEffect
+    // Realism: eyes adjusting (auto exposure) and motion blur.
+    std::unique_ptr<Shader> m_lumShader, m_motionBlur;
+    Target       m_lum, m_blurred;
+    glm::mat4    m_prevViewProj{1.0f};
+    bool         m_hasPrev = false, m_lumFresh = true;
+    double       m_lumClock = 0.0;
     static constexpr int kBlurLevels = 5;
     Target m_blurDown[kBlurLevels], m_blurUp[kBlurLevels - 1], m_rays;   // BlurEffect / DepthOfFieldEffect, SunRaysEffect
     unsigned int m_ribbonVao = 0, m_ribbonVbo = 0;

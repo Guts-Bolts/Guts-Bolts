@@ -183,10 +183,10 @@ Result fire(Scene& scene, const Shot& shot, const std::vector<const SceneNode*>&
         const SceneNode* part = h.terrain ? nullptr : scene.findById(h.part);
         if (h.terrain || (part && part->anchored)) {
             const bool glass = feel == Realism::Feel::Glass;
-            const glm::vec3 col = glass ? glm::vec3(0.85f, 0.9f, 0.95f) : glm::vec3(0.06f, 0.05f, 0.045f);
+            const glm::vec3 col = glass ? glm::vec3(0.3f, 0.33f, 0.37f) : glm::vec3(0.06f, 0.05f, 0.045f);
             const float size = glass ? 0.55f : 0.16f;
             fx.mark(h.point, h.normal, h.velocity, glm::vec3(size, 0.02f, size), col, glass ? 3 : 0,
-                    glass ? 0.7f : 0.92f, 60.0f);
+                    1.0f, 60.0f);
         }
     }
     // A near miss: the crack of it going past your head.

@@ -158,6 +158,8 @@ SceneRenderer::SceneRenderer() {
     m_hl          = std::make_unique<Shader>(fullscreenVert, highlightFrag);
     m_ribbon      = std::make_unique<Shader>(ribbonVert, ribbonFrag);
     m_sunRays     = std::make_unique<Shader>(fullscreenVert, sunRaysFrag);
+    m_lumShader   = std::make_unique<Shader>(fullscreenVert, lumFrag);
+    m_motionBlur  = std::make_unique<Shader>(fullscreenVert, motionBlurFrag);
     m_sprite      = std::make_unique<Shader>(spriteVert, spriteFrag);
     m_fluidDepth  = std::make_unique<Shader>(fluidVert, fluidDepthFrag);
     m_fluidThick  = std::make_unique<Shader>(fluidVert, fluidThickFrag);
@@ -197,6 +199,8 @@ SceneRenderer::~SceneRenderer() {
     for (auto& b : m_blurDown) destroyTarget(b);
     for (auto& b : m_blurUp) destroyTarget(b);
     destroyTarget(m_rays);
+    destroyTarget(m_lum);
+    destroyTarget(m_blurred);
 }
 
 void SceneRenderer::gatherScreenFx(Scene& scene) {
@@ -240,6 +244,13 @@ void SceneRenderer::gatherScreenFx(Scene& scene) {
     for (const auto& c : scene.root()->children)
         if (c->name == "Lighting" && scene.isServiceFolder(c.get())) take(c.get(), true);
     take(scene.cameraNode(), false);
+    // Light rays without a SunRaysEffect (Lighting.LightRays): shafts of sunlight through
+    // gaps, stronger in haze and fog.
+    if (f.rays <= 0.0f && scene.environment().lightRays > 0.0f) {
+        const Environment& e = scene.environment();
+        f.rays = e.lightRays * (0.3f + std::clamp(e.fogEnabled ? e.fogDensity * 30.0f : 0.0f, 0.0f, 0.7f));
+        f.raysSpread = std::max(f.raysSpread, 0.6f);
+    }
     f.rays = std::min(f.rays, 1.0f);
     f.bloomIntensity = std::min(f.bloomIntensity, 2.0f);
     if (f.dof && f.nearAmt <= 0.0f && f.farAmt <= 0.0f) f.dof = false;
@@ -1536,7 +1547,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 m_lit->setInt("uDecal", 5);
                 m_lit->setBool(face ? "uFace" : "uClothing", true);
                 if (face) m_lit->setFloat("uMouthOpen", LipSync::mouth(node->id));   // lip sync (LipSync.h)
-                if (face) m_lit->setFloat("uBlink", Realism::blinkAt(now() - m_startTime, node->id));   // blinking (Realism.h)
+                if (face) m_lit->setFloat("uBlink", Realism::blinkAt(now() - m_startTime, node->id));   // blinking (Realism.h)   // blinking (Realism.h)
             }
             // A T-shirt: a picture on the front of the torso.
             unsigned tee = !node->tshirt.empty() ? Textures::get(node->tshirt) : 0;
@@ -2306,6 +2317,10 @@ void SceneRenderer::renderLiquid(Scene& scene, const Camera& camera) {
     glBindVertexArray(0);
 }
 
+// Eyes adjusting: the average brightness a normal sunny scene has (the composite brightens
+// pictures darker than this and dims brighter ones, gently).
+constexpr float kLumKey = 0.42f;
+
 void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer& target) {
     GraphicsSettings& gs = GraphicsSettings::get();
     const Environment& env = scene.environment();
@@ -2444,12 +2459,55 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
         }
     }
 
+    // --- Motion blur (Lighting.MotionBlur): smear along how far each pixel moved since
+    //     last frame. Skipped on Low graphics and in orthographic views. ---
+    const glm::mat4 viewProj = camera.projection() * camera.view();
+    unsigned sceneColor = m_hdr.color;
+    if (env.motionBlur > 0.0f && m_hasPrev && !lowEnd && !camera.orthographic) {
+        if (m_blurred.w != m_hdr.w || m_blurred.h != m_hdr.h || !m_blurred.fbo) createTarget(m_blurred, m_hdr.w, m_hdr.h, hdrFormat(), false);
+        bindTarget(m_blurred);
+        m_motionBlur->bind();
+        bindTex(0, m_hdr.color);
+        bindTex(1, m_hdr.depth);
+        m_motionBlur->setInt("uHdr", 0);
+        m_motionBlur->setInt("uDepth", 1);
+        m_motionBlur->setMat4("uInvViewProj", glm::inverse(viewProj));
+        m_motionBlur->setMat4("uPrevViewProj", m_prevViewProj);
+        m_motionBlur->setFloat("uAmount", env.motionBlur);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        sceneColor = m_blurred.color;
+    }
+    m_prevViewProj = viewProj;
+    m_hasPrev = true;
+
+    // --- Eyes adjusting (Lighting.AutoExposure): the average brightness, eased toward over
+    //     a couple of seconds into a 1x1 picture the composite reads. No reading back. ---
+    const bool autoExp = env.autoExposure && gs.postFx;
+    if (autoExp) {
+        if (!m_lum.fbo) { createTarget(m_lum, 1, 1, GL_RGBA16F, false); m_lumFresh = true; }
+        const double t = now();
+        const float ldt = m_lumClock > 0.0 ? (float)std::min(0.5, t - m_lumClock) : 0.0f;
+        m_lumClock = t;
+        bindTarget(m_lum);
+        m_lumShader->bind();
+        bindTex(0, m_hdr.color);
+        m_lumShader->setInt("uHdr", 0);
+        m_lumShader->setFloat("uRate", m_lumFresh ? 1.0f : 1.0f - std::exp(-ldt * 1.2f));
+        m_lumFresh = false;
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDisable(GL_BLEND);
+    } else {
+        m_lumFresh = true;
+    }
+
     // --- Composite: tone mapping + grading, then optional FXAA ---
     bool useFxaa = gs.fxaa;
     if (useFxaa) bindTarget(m_ldr);
     else         target.bind();
     m_composite->bind();
-    bindTex(0, m_hdr.color);
+    bindTex(0, sceneColor);
     bindTex(1, m_bloom[0].color);
     bindTex(2, m_ao.color);
     m_composite->setInt("uHdr", 0);
@@ -2461,6 +2519,12 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     m_composite->setBool("uLumaAlpha", useFxaa);
     m_composite->setVec2("uAOTexel", glm::vec2(1.0f / m_ao.w, 1.0f / m_ao.h));
     m_composite->setFloat("uExposure", env.exposure);
+    m_composite->setBool("uAutoExp", autoExp);
+    if (autoExp) {
+        bindTex(9, m_lum.color);
+        m_composite->setInt("uLum", 9);
+        m_composite->setFloat("uLumKey", kLumKey);
+    }
     m_composite->setFloat("uBloomIntensity", bloomIntensity);
     m_composite->setFloat("uAOIntensity", env.aoIntensity);
     m_composite->setFloat("uContrast", env.contrast);

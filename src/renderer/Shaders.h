@@ -1370,6 +1370,53 @@ void main() {
 }
 )";
 
+// Eyes adjusting (Lighting.AutoExposure): how bright the picture is on average (the log
+// average of a grid over the middle of the screen), blended into the 1x1 target a bit
+// each frame (the alpha), so the eyes take a few seconds to get used to it.
+inline const char* lumFrag = R"(#version 410 core
+in vec2 vUV;
+uniform sampler2D uHdr;
+uniform float uRate;
+out vec4 FragColor;
+void main() {
+    float s = 0.0;
+    for (int y = 0; y < 12; ++y)
+        for (int x = 0; x < 12; ++x) {
+            vec2 uv = 0.1 + (vec2(float(x), float(y)) + 0.5) / 12.0 * 0.8;
+            vec3 c = texture(uHdr, uv).rgb;
+            s += log(max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
+        }
+    FragColor = vec4(exp(s / 144.0), 0.0, 0.0, uRate);
+}
+)";
+
+// Motion blur (Lighting.MotionBlur): where each pixel was on screen last frame (from its
+// depth and last frame's camera), smeared along the way it moved. Turning the camera fast
+// blurs; standing still is sharp.
+inline const char* motionBlurFrag = R"(#version 410 core
+in vec2 vUV;
+uniform sampler2D uHdr;
+uniform sampler2D uDepth;
+uniform mat4  uInvViewProj;
+uniform mat4  uPrevViewProj;
+uniform float uAmount;
+out vec4 FragColor;
+void main() {
+    float d = texture(uDepth, vUV).r;
+    vec4 world = uInvViewProj * vec4(vUV * 2.0 - 1.0, min(d, 0.9999) * 2.0 - 1.0, 1.0);
+    world /= world.w;
+    vec4 prev = uPrevViewProj * world;
+    vec2 was = prev.xy / max(prev.w, 1e-4) * 0.5 + 0.5;
+    vec2 vel = (vUV - was) * uAmount;
+    float len = length(vel);
+    if (len > 0.04) vel *= 0.04 / len;
+    if (len < 0.0008) { FragColor = vec4(texture(uHdr, vUV).rgb, 1.0); return; }
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < 10; ++i) c += texture(uHdr, vUV + vel * (float(i) / 9.0 - 0.5)).rgb;
+    FragColor = vec4(c / 10.0, 1.0);
+}
+)";
+
 // Final image: AO, bloom, exposure, filmic tone mapping, colour grading.
 inline const char* compositeFrag = R"(#version 410 core
 in vec2 vUV;
@@ -1381,6 +1428,9 @@ uniform bool  uUseAO;
 uniform bool  uPost;
 uniform vec2  uAOTexel;
 uniform float uExposure;
+uniform bool  uAutoExp;      // eyes adjusting: how bright it's been lately (uLum) sets the exposure
+uniform sampler2D uLum;
+uniform float uLumKey;
 uniform float uBloomIntensity;
 uniform float uAOIntensity;
 uniform float uContrast;
@@ -1531,6 +1581,10 @@ void main() {
     }
     if (uUseBloom) c += texture(uBloom, vUV).rgb * uBloomIntensity * 0.15;
     c *= uExposure;
+    if (uAutoExp) {   // gently (night stays night): dark places brighten up to 1.3x, glare dims to 0.75x
+        float lum = max(texture(uLum, vec2(0.5)).r, 1e-4);
+        c *= clamp(pow(uLumKey / lum, 0.5), 0.75, 1.3);
+    }
 
     if (uPost) {
         c = aces(c);

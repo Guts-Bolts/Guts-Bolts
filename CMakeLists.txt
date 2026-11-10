@@ -1346,6 +1346,9 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     # Jiggle, LookAt and IK bones, saving them, scripts, and the weight brush.
     # Bones in bundles, jiggle and cloth, gore upgrades, breaking things, a faster
     # broadphase, lamp shadows, bouncy light and lip sync.
+    add_executable(RealismTests tests/RealismTests.cpp)
+    target_link_libraries(RealismTests PRIVATE gb_engine)
+    add_test(NAME RealismTests COMMAND RealismTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
     add_executable(BodiesGoreLightTests tests/BodiesGoreLightTests.cpp)
     target_link_libraries(BodiesGoreLightTests PRIVATE gb_engine)
     add_test(NAME BodiesGoreLightTests COMMAND BodiesGoreLightTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"

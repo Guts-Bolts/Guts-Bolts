@@ -446,7 +446,7 @@ void ParticleSystem::mark(const glm::vec3& pos, const glm::vec3& normal, const g
     p.rot    = glm::vec3(0, glm::length(d) > 1e-4f ? turnAlong(p.normal, d) : rnd(0.0f, 360.0f), 0);
     p.size   = size;
     p.color  = color;
-    p.alpha  = std::clamp(alpha, 0.0f, 0.95f);
+    p.alpha  = std::clamp(alpha, 0.0f, 1.0f);   // (1 = drawn solid: shows on glass too)
     p.seed   = rnd(0, 1);
     p.life   = p.maxLife = life;
     add(p);
