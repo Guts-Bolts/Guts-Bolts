@@ -2202,10 +2202,102 @@ async function learnPage(head) {
   draw();
 }
 
+// Create > Fyxa AI: per-asset preferences and creator rights attestation.
+async function fyxaAssetsPage(head) {
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const offset = Math.max(0, Math.trunc(Number(params.get('offset')) || 0));
+  const limit = 100;
+  if (!signedIn()) { show(html`${head}<div class="box"><p>Sign in to manage Fyxa AI permissions for your creations.</p></div>`); return; }
+  const [assetsResult, prefsResult] = await Promise.all([
+    pageCall('list', { creator: me.id, limit, offset }),
+    pageCall('ai.preferences.get', {}),
+  ]);
+  if (!assetsResult.ok) { show(html`${head}<div class="box"><p class="error">${assetsResult.error}</p></div>`); return; }
+  if (!prefsResult.ok) { show(html`${head}<div class="box"><p class="error">Couldn't load Fyxa preferences: ${prefsResult.error}</p></div>`); return; }
+  const assets = assetsResult.assets || [];
+  const total = Number(assetsResult.total) || 0;
+  const pageNumber = Math.floor(offset / limit) + 1;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const states = [];
+  // Avoid launching one hundred simultaneous signed API requests for a large creator library.
+  for (let i = 0; i < assets.length; i += 10) {
+    const batch = await Promise.all(assets.slice(i, i + 10).map(async (asset) => {
+      const r = await pageCall('ai.content.eligibility.get', { contentId: asset.id });
+      return { asset, state: r.ok ? r.eligibility : null, error: r.ok ? '' : r.error };
+    }));
+    states.push(...batch);
+  }
+  const prefs = prefsResult.preferences;
+  const reasonText = (reason) => ({
+    account_training_disabled: 'Model-training permission is off in Account Settings',
+    account_reference_disabled: 'AI-reference permission is off in Account Settings',
+    rights_not_attested: 'Creator rights confirmation is required',
+    rights_pending_review: 'Waiting for staff rights review',
+    rights_rejected: 'Staff rejected the rights submission',
+    not_public: 'Only public assets can be eligible',
+    content_restricted: 'This asset is restricted, exclusive, promotional, or awaiting moderation',
+    content_excluded: 'You excluded this asset',
+    notice_outdated: 'Review and reconfirm the current Fyxa notice in Account Settings',
+    account_deleted: 'The creator account was deleted',
+    owner_changed: 'Asset ownership changed; the new owner must submit a fresh attestation',
+  }[reason] || (reason ? String(reason).replaceAll('_', ' ') : 'Eligible'));
+  const card = ({ asset, state, error }) => html`<div class="box fyxa-asset">
+    <div class="row" style="align-items:center;justify-content:space-between;gap:12px">
+      <div><b><a href="${asset.kind === 'game' ? '#/game/' + asset.id : isCatalogItem(asset.kind) ? '#/item/' + asset.id : '#/library/' + asset.id}">${asset.name || asset.id}</a></b>
+        <div class="small muted">${KINDS[asset.kind] || asset.kind} · ID ${assetNum(asset)} · ${(asset.access || 'public') === 'public' ? 'Public' : 'Private'}</div></div>
+      <span class="small">${state ? 'Rights: ' + state.rightsStatus.replaceAll('_', ' ') : error ? 'Status unavailable' : 'Not configured'}</span>
+    </div>
+    ${error ? html`<p class="error small">${error}</p>` : !state ? html`<p class="muted small">No eligibility record is available.</p>` : html`
+      <form class="form" data-form="fyxaAsset">
+        <input type="hidden" name="contentId" value="${asset.id}">
+        <div class="row" style="gap:16px;flex-wrap:wrap">
+          <label>Model training
+            <select name="trainingChoice">
+              <option value="inherit" ${state.trainingChoice === 'inherit' ? 'selected' : ''}>Use account setting</option>
+              <option value="include" ${state.trainingChoice === 'include' ? 'selected' : ''}>Request inclusion</option>
+              <option value="exclude" ${state.trainingChoice === 'exclude' ? 'selected' : ''}>Exclude this asset</option>
+            </select>
+          </label>
+          <label>AI reference
+            <select name="referenceChoice">
+              <option value="inherit" ${state.referenceChoice === 'inherit' ? 'selected' : ''}>Use account setting</option>
+              <option value="include" ${state.referenceChoice === 'include' ? 'selected' : ''}>Request inclusion</option>
+              <option value="exclude" ${state.referenceChoice === 'exclude' ? 'selected' : ''}>Exclude this asset</option>
+            </select>
+          </label>
+        </div>
+        <label><input type="checkbox" name="rightsAttested" ${state.rightsAttested ? 'checked' : ''}>
+          I own or have all necessary rights and permissions for this asset to be considered for the selected Fyxa AI uses.</label>
+        <p class="small muted">Training status: ${state.trainingEligible ? 'Eligible under current controls' : reasonText(state.trainingExclusionReason)}.
+          Reference status: ${state.referenceEligible ? 'Eligible under current controls' : reasonText(state.referenceExclusionReason)}.</p>
+        <p><button class="btn green">Save asset permissions</button></p>
+      </form>`}
+  </div>`;
+  show(html`${head}
+    <div class="box">
+      <h2 class="boxhead">Fyxa AI content permissions</h2>
+      <p>Choose separately whether each public creation may be considered for model training and AI reference. “Use account setting” inherits your Account Settings choice; an explicit exclusion overrides it.</p>
+      <p class="small muted">Requesting inclusion requires a rights attestation and staff approval. These controls only record eligibility metadata. No content is currently exported, indexed, sent to an AI provider, or used to train a model. Automated screening and age safeguards are not yet implemented, so approval here does not authorize processing.</p>
+      <p class="small">${prefs.trainingEnabled ? 'Model training: enabled at account level.' : 'Model training: disabled at account level.'}
+        ${prefs.referenceEnabled ? ' AI reference: enabled at account level.' : ' AI reference: disabled at account level.'}
+        <a href="#/settings">Manage account preferences</a>.</p>
+    </div>
+    ${assets.length ? states.map(card) : html`<div class="box"><p>${total ? 'No assets are on this page.' : 'You have no creator assets to configure yet.'}</p></div>`}
+    ${total > limit ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Showing ${offset + 1}–${Math.min(offset + assets.length, total)} of ${total} assets · Page ${pageNumber} of ${pageCount}</span>
+      <div class="row" style="gap:8px">
+        ${offset > 0 ? html`<a class="btn" href="#/create/fyxa?offset=${Math.max(0, offset - limit)}">Previous</a>` : ''}
+        ${offset + limit < total ? html`<a class="btn" href="#/create/fyxa?offset=${offset + limit}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
+  `);
+}
+
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['fyxa', 'Fyxa AI'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
+  if (tab === 'fyxa') { await fyxaAssetsPage(head); return; }
   if (tab === 'learn') { await learnPage(head); return; }
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
@@ -3188,6 +3280,63 @@ pages.avatar = async () => {
 
 // Staff tools (like the Player's Staff page): verify people, give Bolts, ban.
 // The reports players sent (newest problems first in line): what was reported, why, and buttons to close them.
+function fyxaModerationBox(result) {
+  if (!result || !result.ok) return html`<div class="box"><h2 class="boxhead">Fyxa moderation</h2><p class="error">${result && result.error || 'The moderation queue is unavailable.'}</p></div>`;
+  const items = result.items || [];
+  const names = { S1: 'Violence', S2: 'Non-violent crime', S3: 'Sexual violence', S4: 'Child safety', S5: 'Defamation', S6: 'Specialized advice',
+    S7: 'Privacy', S8: 'Intellectual property', S9: 'Weapons', S10: 'Hate', S11: 'Self-harm', S12: 'Sexual content', S13: 'Elections', S14: 'Code interpreter abuse',
+    SCAN_UNAVAILABLE: 'AI scanner unavailable', VISION_SCAN_UNAVAILABLE: 'Vision scan unavailable', AUDIO_REVIEW_REQUIRED: 'Audio upload requires manual review',
+    AUDIO_SCAN_UNAVAILABLE: 'Audio scan unavailable', GEOMETRY_REVIEW_REQUIRED: '3D geometry or embedded media requires manual review',
+    VISION_CHILD_SAFETY: 'Image child-safety review', VISION_SEXUAL_CONTENT: 'Image sexual-content review',
+    VISION_NUDITY: 'Image nudity review', VISION_VIOLENCE: 'Image violence review', VISION_HATE: 'Image hate-content review',
+    VISION_PERSONAL_INFORMATION: 'Image personal-information review' };
+  const person = (u, id) => u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>` : html`Unknown account (${id})`;
+  const source = (item) => {
+    let href = '';
+    if (item.sourceType === 'asset') href = item.assetKind === 'game' ? '#/game/' + item.sourceId
+      : isCatalogItem(item.assetKind) ? '#/item/' + item.sourceId : '#/library/' + item.sourceId;
+    else if (item.sourceType === 'comment' || item.sourceType === 'game_update' || item.sourceType === 'game_chat') href = '#/game/' + item.sourceId;
+    else if (item.sourceType === 'profile') href = '#/user/' + item.sourceId;
+    else if (item.sourceType === 'forum_thread' || item.sourceType === 'forum_reply') href = '#/forum/t/' + item.sourceId;
+    else if (item.sourceType === 'group' || item.sourceType === 'group_post') href = '#/group/' + item.sourceId;
+    return href ? html`<a href="${href}">${item.sourceName || item.sourceId}</a>` : (item.sourceName || item.sourceId || 'not recorded');
+  };
+  return html`<div class="box">
+    <h2 class="boxhead">Fyxa moderation queue</h2>
+    <p>AI-flagged submissions are prioritized here for staff review. The model provides signals, not verdicts. Review the excerpt and context before taking action.</p>
+    <p class="small muted">${Number(result.total || 0).toLocaleString()} open case${result.total === 1 ? '' : 's'} · Showing ${items.length ? (result.offset || 0) + 1 : 0}–${(result.offset || 0) + items.length} · Critical cases appear first · No automatic bans or deletions</p>
+    ${items.length ? items.map((item) => html`<div class="box fyxa-case">
+      <div class="row" style="align-items:center;justify-content:space-between;gap:10px">
+        <b>${item.severity.toUpperCase()} · ${item.sourceType.replaceAll('_', ' ')}</b>
+        <span class="small muted">${dateText(item.createdAt)}${item.occurrences > 1 ? " · " + item.occurrences + " occurrences · last seen " + dateText(item.lastSeenAt) : ""}</span>
+      </div>
+      <p class="small">Creator: ${person(item.author, item.authorId)} · Source: ${source(item)}</p>
+      <p class="small"><b>Signals:</b> ${item.categories.map((code) => (names[code] || code) + ' (' + code + ')').join(', ') || 'No category returned'}</p>
+      <p class="small muted">Scanner: ${item.scanner}</p>
+      <div class="report-copy"><b>Submitted content excerpt</b><div style="white-space:pre-wrap">${item.excerpt}</div></div>
+      <form class="form" data-form="fyxaModeration">
+        <input type="hidden" name="caseId" value="${item.id}">
+        <label>Staff decision</label>
+        <select name="outcome">
+          <option value="action_taken">Action taken (recorded separately)</option>
+          <option value="dismissed">Dismiss as safe / false positive</option>
+          <option value="escalated">Escalate for specialist review</option>
+        </select>
+        <label>Review note</label>
+        <textarea name="note" rows="2" maxlength="500" minlength="3" placeholder="Record what you reviewed and why" required></textarea>
+        <button class="btn green">Save moderation decision</button>
+      </form>
+    </div>`) : html`<p class="muted">${result.total ? 'No cases on this page.' : 'No open Fyxa moderation cases.'}</p>`}
+    ${result.total > (result.limit || 100) ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Page ${Math.floor((result.offset || 0) / (result.limit || 100)) + 1} of ${Math.ceil(result.total / (result.limit || 100))}</span>
+      <div class="row" style="gap:8px">
+        ${(result.offset || 0) > 0 ? html`<a class="btn" href="#/staff?tab=moderation&moderationOffset=${Math.max(0, (result.offset || 0) - (result.limit || 100))}">Previous</a>` : ''}
+        ${(result.offset || 0) + (result.limit || 100) < result.total ? html`<a class="btn" href="#/staff?tab=moderation&moderationOffset=${(result.offset || 0) + (result.limit || 100)}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
 function reportsBox(rep, closed) {
   const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff?tab=reports">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?reports=closed">Closed</a>`;
   if (!rep.ok) return html`<div class="box"><h2 class="boxhead">Reports</h2><p class="error">${rep.error}</p></div>`;
@@ -3352,7 +3501,7 @@ const GIVE_BADGES = [['tester', 'Tester'], ['bughunter', 'Bug Hunter'], ['featur
   ['obc', 'Overclocked Boltworks Club (OBC)']];
 const OTHER_BADGES = { tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
 const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
-  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['database', 'Database']];
+  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['fyxa', 'Fyxa AI'], ['moderation', 'Fyxa moderation'], ['database', 'Database']];
 // Staff > Numbers: how the site is doing. Now from the server; history (a reading every few
 // minutes, kept by day) and the week's top games from Supabase.
 function staffNumbersBox(r) {
@@ -3380,6 +3529,35 @@ function staffNumbersBox(r) {
     ${(r.topGames || []).length ? html`<ol class="top-games">${r.topGames.map((g) => html`<li><a class="link" href="#/game/${g.id}">${g.name}</a>
         <span class="small muted">${Number(g.plays).toLocaleString()} plays</span></li>`)}</ol>` : html`<p class="muted">No plays recorded this week yet.</p>`}</div>`;
 }
+function fyxaReviewBox(r) {
+  if (!r || !r.ok) return html`<div class="box"><h2 class="boxhead">Fyxa AI rights review</h2><p class="error">${r && r.error || 'The review queue is unavailable.'}</p></div>`;
+  const items = r.items || [];
+  return html`<div class="box">
+    <h2 class="boxhead">Fyxa AI rights review</h2>
+    <p>Review creator rights attestations before any asset can become eligible. Approval is not a safety-screening result and does not start content processing.</p>
+    <p class="small muted">${Number(r.total || 0).toLocaleString()} pending request${r.total === 1 ? '' : 's'} · Showing ${items.length ? (r.offset || 0) + 1 : 0}–${(r.offset || 0) + items.length}.</p>
+    ${items.length ? items.map((item) => html`<div class="box fyxa-review-item">
+      <b><a href="${item.contentType === 'game' ? '#/game/' + item.contentId : isCatalogItem(item.contentType) ? '#/item/' + item.contentId : '#/library/' + item.contentId}">${item.title || item.contentId}</a></b>
+      <div class="small muted">${KINDS[item.contentType] || item.contentType} · Content ID ${item.contentId} · Creator ${item.owner && (item.owner.username || item.owner.name) || item.ownerId} · ${item.privacyStatus}</div>
+      <p class="small">${item.rightsAttested ? 'Creator has submitted a rights attestation.' : 'No current rights attestation.'}</p>
+      <form class="form" data-form="fyxaReview">
+        <input type="hidden" name="contentId" value="${item.contentId}">
+        <label>Decision</label><select name="rightsStatus"><option value="approved">Approve rights</option><option value="rejected">Reject rights</option><option value="unverified">Return to unverified</option></select>
+        <label>Review note <span class="small muted">(required for approval; explain the rights evidence)</span></label>
+        <input name="reason" maxlength="160" minlength="8" placeholder="Describe the evidence reviewed" required>
+        <p><button class="btn green">Submit review</button></p>
+      </form>
+    </div>`) : html`<p class="muted">${r.total ? 'No requests on this page.' : 'No rights attestations are waiting for review.'}</p>`}
+    ${r.total > (r.limit || 50) ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Page ${Math.floor((r.offset || 0) / (r.limit || 50)) + 1} of ${Math.ceil(r.total / (r.limit || 50))}</span>
+      <div class="row" style="gap:8px">
+        ${(r.offset || 0) > 0 ? html`<a class="btn" href="#/staff?tab=fyxa&rightsOffset=${Math.max(0, (r.offset || 0) - (r.limit || 50))}">Previous</a>` : ''}
+        ${(r.offset || 0) + (r.limit || 50) < r.total ? html`<a class="btn" href="#/staff?tab=fyxa&rightsOffset=${(r.offset || 0) + (r.limit || 50)}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
 pages.staff = async () => {
   if (!signedIn() || !me.staff) { show(html`<h1>Staff</h1><p class="muted">Only Guts&amp;Bolts staff can see this page.</p>`); return; }
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
@@ -3388,17 +3566,21 @@ pages.staff = async () => {
   const logFor = params.get('log') || '';
   const ticketsClosed = params.get('tickets') === 'closed';
   const appealsClosed = params.get('appeals') === 'closed';
+  const rightsOffset = Math.max(0, Math.trunc(Number(params.get('rightsOffset')) || 0));
+  const moderationOffset = Math.max(0, Math.trunc(Number(params.get('moderationOffset')) || 0));
   // (older links name what they show, not the tab)
   const tab = params.get('tab') || (params.has('q') ? 'people' : params.has('log') ? 'log' : params.has('reports') ? 'reports'
     : params.has('tickets') ? 'tickets' : params.has('appeals') ? 'appeals' : 'home');
   // What's waiting, for the counts on the tabs (and the lists themselves).
-  const [tk, up, rep, ap, rm] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
+  const [tk, up, rep, ap, rm, fyxaQueue, moderation] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
     pageCall('admin.reports', { status: closed ? 'closed' : 'open' }), pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }),
-    pageCall('roadmap.get', {})]);
+    pageCall('roadmap.get', {}), tab === 'fyxa' ? pageCall('ai.content.reviewQueue', { limit: 50, offset: rightsOffset }) : Promise.resolve(null),
+    tab === 'moderation' ? pageCall('ai.moderation.queue', { limit: 100, offset: moderationOffset }) : Promise.resolve(null)]);
   const waiting = {
     tickets: tk.ok && !ticketsClosed ? tk.tickets.length : null, uploads: up.ok ? up.uploads.length : null,
     reports: rep.ok && !closed ? rep.reports.length : null, appeals: ap.ok && !appealsClosed ? ap.appeals.length : null,
-    ideas: rm.ok ? rm.openIdeas : null };
+    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.total : null,
+    moderation: moderation && moderation.ok ? moderation.total : null };
   const tabs = html`<div class="tabs staff-tabs">${STAFF_TABS.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/staff?tab=${k}">${l}${
     waiting[k] ? html` <span class="count">${waiting[k]}</span>` : ''}</a>`)}</div>`;
   let body;
@@ -3407,6 +3589,8 @@ pages.staff = async () => {
   else if (tab === 'reports') body = reportsBox(rep, closed);
   else if (tab === 'appeals') body = appealsBox(ap, appealsClosed);
   else if (tab === 'ideas') body = staffIdeasBox(rm);
+  else if (tab === 'moderation') body = fyxaModerationBox(moderation);
+  else if (tab === 'fyxa') body = fyxaReviewBox(fyxaQueue);
   else if (tab === 'people') {
     const r = await pageCall('admin.find', { query });
     // Give a badge by the user ID on their profile (#5). Staff can only give Verified and Partner.
@@ -3867,7 +4051,7 @@ let authSetup = null;   // Settings: an authenticator app being set up ({secret,
 pages.terms = async () => {
   show(html`<div class="terms">
     <h1>Guts&amp;Bolts Terms of Service</h1>
-    <p class="muted small">Last updated October 2026. By making an account, playing or using Studio, you agree to these
+    <p class="muted small">Last updated November 2026. By making an account, playing or using Studio, you agree to these
       terms. If you don't agree, please don't use Guts&amp;Bolts.</p>
     <p>"Guts&amp;Bolts", "we" and "us" mean the people who make and run Guts&amp;Bolts. "You" means you, the person
       using it. These terms cover the website, Studio, the Player and our game servers.</p>
@@ -3975,6 +4159,7 @@ pages.terms = async () => {
     </ul>
 
     <h2>8. Chat, safety and moderation</h2>
+    <p>We use automated safety screening, including AI-assisted classifiers, to help detect potentially harmful or rule-breaking content in public creator submissions, profile text, game update notes, comments, forum posts, group posts, translated in-game chat, party chat and private messages. Screening results may be stored with a limited excerpt, category signals and review history, and shown to authorized moderators. Text submitted for these features is processed by Cloudflare Workers AI for trust-and-safety review. Supported image uploads are screened with Moondream 3.1 through Cloudflare Workers AI; if that scan fails, the upload is routed for manual review. Supported audio uploads are transcribed by Deepgram Nova-3 through Cloudflare Workers AI and the transcript is screened; unsupported or failed audio scans are routed for manual review. Open moderation cases remain available to staff until resolved; closed case evidence is retained for up to 180 days. This processing is for moderation, not Fyxa model training or AI-reference indexing. AI flags can be wrong; staff review context and make moderation decisions. We do not use an AI flag alone to permanently ban an account.</p>
     <ul>
       <li>Swearing is allowed. The text filter still hides slurs, links to other sites and personal info (like phone
         numbers and email addresses) as "[ Content Deleted ]".</li>
@@ -4771,6 +4956,34 @@ const actions = {
 };
 
 const forms = {
+  async fyxaModeration(f) {
+    const r = await call('ai.moderation.review', { caseId: f.caseId.value, outcome: f.outcome.value, note: f.note.value.trim() });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Fyxa moderation decision recorded.');
+    render();
+  },
+  async fyxaAsset(f) {
+    const r = await call('ai.content.eligibility.update', {
+      contentId: f.contentId.value,
+      trainingChoice: f.trainingChoice.value,
+      referenceChoice: f.referenceChoice.value,
+      rightsAttested: !!f.rightsAttested.checked,
+    });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Fyxa asset permissions saved. Rights submissions remain pending staff review.');
+    render();
+  },
+  async fyxaReview(f) {
+    const r = await call('ai.content.review', {
+      contentId: f.contentId.value,
+      rightsStatus: f.rightsStatus.value,
+      reason: f.reason.value.trim(),
+    });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Fyxa rights review recorded.');
+    render();
+  },
+
   forumSearch(f) {
     const q = f.q.value.trim();
     if (!q) return;
