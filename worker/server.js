@@ -20,6 +20,7 @@ import { MemoryStore } from './memorystore.js';
 import { installMcpRelay } from './mcp-relay.js';
 import { installGameWeb } from './game-web.js';
 import { installBanLists } from './banlists.js';   // creators' ban lists, used across their games
+import { installFyxaCloud } from './fyxa-cloud.js';   // Fyxa answered by Cloudflare's AI, with daily limits
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
   kLogTitle, kLogText, kEventName, kEventText } from './extras.js';   // achievements, game update logs, events
@@ -3320,6 +3321,7 @@ export class GbServerObject extends DurableObject {
       });
       return okay({ users: found.slice(0, 50).map((u) => this.publicUser(u)) });
     }
+    if (name.startsWith('fyxacloud.') || name === 'admin.fyxaCloud') return this.fyxaCloudOp(name, me, args);   // fyxa-cloud.js
     if (name.startsWith('ai.')) return this.aiOp(name, me, args);
     if (name.startsWith('account.')) return this.accountOp(name, me, args);
     if (name.startsWith('groups.')) return this.groupOp(name, me, args);
@@ -6718,7 +6720,7 @@ export class GbServerObject extends DurableObject {
         this.scanModerationSubmission(req, reply.moderationActor, reply),
         'Fyxa WebSocket moderation scan');
     }
-    if (reply.webJob || reply.iceJob) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
+    if (reply.webJob || reply.iceJob || reply.fyxaCloud) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
     if ('id' in req) reply.id = req.id;
     this.sendTo(c, reply);
   }
@@ -6885,6 +6887,7 @@ export class GbServerObject extends DurableObject {
     }
     if (answer.ok && answer.supabase) answer = await this.supabaseFollowUp(answer);
     if (answer.ok && answer.translate) answer = await this.translate(answer);
+    if (answer.ok && answer.fyxaCloud) answer = await this.fyxaCloudAnswer(answer);
     if (answer.ok && answer.webJob) answer = await this.webFetch(answer);
     if (answer.ok && answer.iceJob) answer = await this.iceFetch(answer);
     if (this.bridgeOut && this.bridgeOut.length) {
@@ -6920,3 +6923,4 @@ installMcpRelay(GbServerObject);
 installGameWeb(GbServerObject);
 installChats(GbServerObject);
 installBanLists(GbServerObject);
+installFyxaCloud(GbServerObject);

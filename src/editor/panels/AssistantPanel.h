@@ -53,6 +53,8 @@ private:
     bool        m_appsWanted = false;
 
     std::string m_provider = "ollama";
+    nlohmann::json m_cloudUsage;   // "Guts&Bolts cloud": today's steps (refreshCloudUsage)
+    void refreshCloudUsage();
     std::string m_apiKey;
     std::string m_credentialStatus;
     std::string m_model = "claude-sonnet-5-5";

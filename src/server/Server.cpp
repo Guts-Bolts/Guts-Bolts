@@ -685,6 +685,10 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
     if (name.rfind("banlist.", 0) == 0 || name == "game.banLists" || name == "game.ban") return banListOp(name, me, args);   // ServerBanLists.cpp
+    // Fyxa in the cloud (worker/fyxa-cloud.js) needs Cloudflare's AI, which this server doesn't have.
+    // Its daily limits only matter where there's an AI to answer, so here it just says so.
+    if (name.rfind("fyxacloud.", 0) == 0 || name == "admin.fyxaCloud")
+        return fail("Fyxa in the cloud isn't set up on this server. Fyxa on your own computer (Ollama) works.");
     if (name.rfind("gamelog.", 0) == 0) return gameLogOp(name, me, args);   // ServerExtras.cpp
     if (name.rfind("events.", 0) == 0) return eventsOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);

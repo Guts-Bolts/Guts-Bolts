@@ -3,6 +3,7 @@
 #include "../AiTools.h"
 #include "../../net/Socket.h"
 #include "../../online/Protocol.h"   // base64
+#include "../../online/OnlineClient.h"   // Guts&Bolts cloud provider
 #include "../../core/Paths.h"
 #include "../../core/CredentialStore.h"
 #include "../FyxaTaskStore.h"
@@ -1778,7 +1779,14 @@ void AssistantPanel::requestNext() {
     const json nativeTools = FyxaToolSelection::selectNative(AiTools::mcpTools(), m_activeRequestText, m_discoveredToolNames, 24);
     const json localTools = fyxaAgentTools();
     const json externalTools = FyxaToolSelection::selectExternal(externalMcpTools(), m_activeRequestText, m_discoveredToolNames, 12);
+    const bool cloud = m_provider == "cloud";   // Guts&Bolts cloud (worker/fyxa-cloud.js): Ollama's shape, sent to our server
     const std::string payload = [&]() {
+        if (cloud) {
+            json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
+            for (const auto& message : m_messages) messages.push_back(message);
+            return Online::signedRequest("fyxacloud.chat", {{"messages", messages},
+                                         {"tools", ollamaTools(nativeTools, localTools, externalTools)}}).dump();
+        }
         if (m_provider == "ollama") {
             json messages = json::array({{{"role", "system"}, {"content", fyxaSystemGuide()}}});
             for (const auto& message : m_messages) messages.push_back(message);
@@ -1813,10 +1821,14 @@ void AssistantPanel::requestNext() {
     }();
 
     const bool ollama = m_provider == "ollama";
-    const std::string host = ollama ? m_ollamaHost : "wss://api.anthropic.com";
-    const int port = ollama ? m_ollamaPort : 443;
-    const std::string path = ollama ? "/api/chat" : "/v1/messages";
-    const std::string headers = ollama ? std::string() :
+    std::string host = ollama ? m_ollamaHost : "wss://api.anthropic.com";
+    int port = ollama ? m_ollamaPort : 443;
+    if (cloud && (!Online::serverHostPort(host, port) || !Net::isWebAddress(host))) {
+        m_lines.push_back({Line::Error, "Fyxa's cloud only works with the gutsandbolts.net server. Fyxa on your own computer (Ollama) works anywhere."});
+        return;
+    }
+    const std::string path = ollama ? "/api/chat" : cloud ? "/api" : "/v1/messages";
+    const std::string headers = ollama || cloud ? std::string() :
         "x-api-key: " + m_apiKey + "\r\nanthropic-version: 2023-06-01\r\n" +
         (m_model != "claude-haiku-4-5" ? "anthropic-beta: server-side-fallback-2026-07-01\r\n" : "");
     const auto cancel = m_agentCancel;
@@ -1829,7 +1841,7 @@ void AssistantPanel::requestNext() {
 }
 
 void AssistantPanel::handleReply(int status, const std::string& body, const std::string& error) {
-    if (m_provider == "ollama") handleOllamaReply(status, body, error);
+    if (m_provider == "ollama" || m_provider == "cloud") handleOllamaReply(status, body, error);
     else handleClaudeReply(status, body, error);
 }
 
@@ -1920,8 +1932,11 @@ void AssistantPanel::handleOllamaReply(int status, const std::string& body, cons
     json j = json::parse(body, nullptr, false);
     if (status != 200 || !j.is_object() || !j.contains("message") || !j["message"].is_object()) {
         std::string why = j.is_object() ? j.value("error", error) : error;
-        m_lines.push_back({Line::Error, "Couldn't reach the Ollama server" +
-            (status ? " (" + std::to_string(status) + ")" : std::string()) + (why.empty() ? "." : ": " + why)});
+        if (m_provider == "cloud")   // the server's own words (daily limit, switched off...)
+            m_lines.push_back({Line::Error, "Fyxa's cloud: " + (why.empty() ? std::string("no answer") + (status ? " (" + std::to_string(status) + ")" : std::string()) + "." : why)});
+        else
+            m_lines.push_back({Line::Error, "Couldn't reach the Ollama server" +
+                (status ? " (" + std::to_string(status) + ")" : std::string()) + (why.empty() ? "." : ": " + why)});
         while (!m_messages.empty() && m_messages.back().value("role", "") == "user") m_messages.erase(m_messages.size() - 1);
         return;
     }
@@ -2025,16 +2040,26 @@ void AssistantPanel::render(bool* open) {
             ImGui::EndPopup();
         }
         ImGui::Separator();
-        const char* providers[] = {"Ollama (local)", "Claude (Anthropic)"};
-        int provider = m_provider == "claude" ? 1 : 0;
-        if (ImGui::Combo("AI provider", &provider, providers, 2)) {
-            m_provider = provider == 0 ? "ollama" : "claude";
+        const char* providers[] = {"Ollama (your own GPU, free)", "Claude (Anthropic)", "Guts&Bolts cloud (daily limit)"};
+        int provider = m_provider == "claude" ? 1 : m_provider == "cloud" ? 2 : 0;
+        if (ImGui::Combo("AI provider", &provider, providers, 3)) {
+            m_provider = provider == 0 ? "ollama" : provider == 1 ? "claude" : "cloud";
+            if (m_provider == "cloud") refreshCloudUsage();
             m_messages = json::array();
             m_lines.clear();
             save();
         }
 
-        if (m_provider == "ollama") {
+        if (m_provider == "cloud") {
+            ImGui::TextWrapped("Fyxa runs on Guts&Bolts' servers, as the account you're signed in with. It has a daily limit "
+                               "(Boltworks Club members get more). Running Fyxa on your own GPU with Ollama is free and has no limit.");
+            if (m_cloudUsage.is_object() && m_cloudUsage.value("ok", false))
+                ImGui::Text("Today: %lld of %lld steps used", m_cloudUsage.value("used", 0LL), m_cloudUsage.value("limit", 0LL));
+            else if (m_cloudUsage.is_object())
+                ImGui::TextWrapped("%s", m_cloudUsage.value("error", std::string("Couldn't check your daily limit.")).c_str());
+            if (ImGui::SmallButton("Check my daily limit")) refreshCloudUsage();
+            ImGui::TextDisabled("One step = one answer from the AI. A task that uses tools takes a few.");
+        } else if (m_provider == "ollama") {
             ImGui::TextWrapped("Fyxa connects directly to an Ollama server. The default address is local to this computer; install and start Ollama, then pull a model that supports tool calling.");
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputTextWithHint("Server host", "127.0.0.1", &m_ollamaHost)) save();
@@ -2362,7 +2387,8 @@ void AssistantPanel::render(bool* open) {
     if (m_scrollDown) { ImGui::SetScrollHereY(1.0f); m_scrollDown = false; }
     ImGui::EndChild();
 
-    const bool configured = m_provider == "ollama" ? (!m_ollamaHost.empty() && !m_ollamaModel.empty() && m_ollamaPort > 0)
+    const bool configured = m_provider == "cloud" ? Online::configured()
+                          : m_provider == "ollama" ? (!m_ollamaHost.empty() && !m_ollamaModel.empty() && m_ollamaPort > 0)
                                                     : !m_apiKey.empty();
     ImGui::BeginDisabled(!configured);
     ImGui::SetNextItemWidth(-1);
@@ -2383,7 +2409,13 @@ void AssistantPanel::render(bool* open) {
     ImGui::SameLine();
     if (ImGui::Button(m_editor.aiHasChanges() ? "Review its changes" : "AI Activity")) m_editor.showAiActivity();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everything Fyxa did and changed. Undo all of it in one click.");
-    if (!configured) ImGui::TextDisabled(m_provider == "ollama" ? "Configure the Ollama server and model in Assistant settings." :
+    if (!configured) ImGui::TextDisabled(m_provider == "cloud" ? "Sign in to a Guts&Bolts server to use Fyxa's cloud." :
+                                         m_provider == "ollama" ? "Configure the Ollama server and model in Assistant settings." :
                                                                   "Add your Anthropic API key in Assistant settings.");
     ImGui::End();
+}
+// How many cloud steps are left today (worker/fyxa-cloud.js fyxacloud.usage).
+void AssistantPanel::refreshCloudUsage() {
+    if (!Online::configured()) { m_cloudUsage = {{"ok", false}, {"error", "Not connected to a Guts&Bolts server."}}; return; }
+    Online::request("fyxacloud.usage", json::object(), [this](const json& r) { m_cloudUsage = r; });
 }
