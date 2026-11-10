@@ -22,6 +22,7 @@ import { withSecurityHeaders } from './security.js';
 import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
 import { handleAds, withAdsMeta } from './ads.js';
+import { handleStripe } from './stripe.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
 import { checkSupabaseHealth, listSupabaseActivity, supabasePublicConfig } from './supabase.js';
 export { GbServerObject };
@@ -183,11 +184,14 @@ async function route(request, env, ctx) {
     const ads = handleAds(request, env, url);   // /ads.txt and /ads-config (ads.js)
     if (ads) return ads;
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
+    // Stripe's own servers call this (signature-checked in stripe.js), so it skips the bot check.
+    if (url.pathname === '/api/stripe/webhook') return handleStripe(request, env, url);
+    const stripePath = url.pathname === '/api/stripe/checkout' || url.pathname === '/api/stripe/config';
     const picture = /^\/(thumb|icon|shot|wear|decal|avatar)\//.test(url.pathname);
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
     const supabaseHealthPath = url.pathname === '/api/supabase/health' || url.pathname === '/api/supabase/live';
     const supabaseActivityPath = /^\/api\/activity\/(auctions|forum)$/.test(url.pathname);
-    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath ? 'api' : mcp ? 'mcp' : '';
+    const kind = picture ? 'picture' : url.pathname === '/ws' ? 'ws' : url.pathname === '/api' || url.pathname.startsWith('/api/oauth/') || supabaseHealthPath || supabaseActivityPath || stripePath ? 'api' : mcp ? 'mcp' : '';
     let info = null;
     if (kind) {
       info = await check(request, env, url, kind);
@@ -195,6 +199,7 @@ async function route(request, env, ctx) {
     }
     if (picture) return cachedPicture(request, ctx, () => pictureFor(request, env, url));
     if (url.pathname.startsWith('/api/oauth/')) return handleOauth(request, env, url);
+    if (stripePath) return handleStripe(request, env, url);   // Boltworks Club payments (stripe.js)
     if (mcp) return handleMcp(request, env, url, serverAsk);
     if (url.pathname === '/api/info') {
       return reply({ ok: true, server: env.GB_SERVER || 'cloudflare', time: Math.floor(Date.now() / 1000) });

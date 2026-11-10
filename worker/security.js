@@ -4,19 +4,22 @@
 const GOOGLE_ADS = 'https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.doubleclick.net ' +
   'https://*.google.com https://*.googletagservices.com https://*.gstatic.com https://*.adtrafficquality.google';
 
+// Stripe's payment form (worker/stripe.js, website/checkout.html): Stripe.js and its frames.
+const STRIPE = 'https://js.stripe.com https://*.stripe.com';
+
 const CSP = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self' https://challenges.cloudflare.com 'wasm-unsafe-eval' " + GOOGLE_ADS,
+  "script-src 'self' https://challenges.cloudflare.com 'wasm-unsafe-eval' " + GOOGLE_ADS + ' ' + STRIPE,
   "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net wss://pfpzmmsosyetkcoymoct.supabase.co " + GOOGLE_ADS,
-  "frame-src https://challenges.cloudflare.com " + GOOGLE_ADS,
+  "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net wss://pfpzmmsosyetkcoymoct.supabase.co " + GOOGLE_ADS + ' ' + STRIPE,
+  "frame-src https://challenges.cloudflare.com " + GOOGLE_ADS + ' ' + STRIPE,
   "media-src 'self' blob: https:",
   "worker-src 'self' blob:",
   "manifest-src 'self'",
