@@ -36,6 +36,10 @@ struct Particle {
     // A stain on a body part (moves with it): which part, and where on it in its own space.
     uint64_t  onPart = 0;
     glm::vec3 localPos{0.0f}, localNormal{0.0f, 1.0f, 0.0f}, localTangent{1.0f, 0.0f, 0.0f};
+    glm::uvec3 skinTriangle{0xffffffffu}; // triangle carrying a skinned wound decal
+    glm::vec3 skinBarycentric{1.0f, 0.0f, 0.0f};
+    glm::vec3 skinOffset{0.0f};           // offset in the deformed tangent / normal / bitangent frame
+    float     skinNormalSign = 1.0f;
     glm::vec3 tangent{0.0f};            // (stains: which way the part's side runs, so it turns with it)
     float     alpha = 1.0f;             // footprints and smears get fainter
     // Gibs (Chunk):
@@ -126,6 +130,8 @@ public:
     void walk(BloodyFeet& feet, GoreKind kind, const glm::vec3& at, bool onGround);
     // Blood soaking into a body part where it was hurt (`at` is a world point near it).
     void stain(GoreKind kind, const SceneNode* part, const glm::vec3& at, float size);
+    void wound(GoreKind kind, const SceneNode* part, const glm::vec3& at,
+               const glm::vec3& normal, const glm::vec3& tangent, float width, float length);
     // Stains ride along with their parts (and go when the part does). Call once a frame.
     void follow(Scene& scene);
     // Wash a character clean (respawning): drop every stain on parts under `root`.

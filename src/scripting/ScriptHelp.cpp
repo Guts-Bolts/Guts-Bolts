@@ -119,7 +119,7 @@ const std::vector<Entry>& all() {
         {"Wait", "event:Wait() -> ...", "Pauses until it happens", false},
         {"Disconnect", "connection:Disconnect()", "Stops a :Connect", false},
         {"ApplyImpulse", "part:ApplyImpulse(force)", "A push (a Vector3)", false},
-        {"TakeDamage", "humanoid:TakeDamage(amount)", "Takes away health (not through a ForceField)", false},
+        {"TakeDamage", "humanoid:TakeDamage(amount [, raycastResult, projectileVelocity])", "Takes away health; collision context adds a wound and localized mesh deformation", false},
         {"MoveTo", "humanoid:MoveTo(position)", "Walks the character to a Vector3", false},
         {"Raycast", "workspace:Raycast(origin, direction, params?) -> RaycastResult?",
          "Shoots a line; result.Instance, .Position, .Normal (nil if it hits nothing)", false},
