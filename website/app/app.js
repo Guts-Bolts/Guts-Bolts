@@ -9,6 +9,7 @@ import { mountGameWeb } from './gameweb.js';
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
 import { PRODUCTS, productOf, productById, activeLink } from './products.js';
+import { placeAds } from './ads.js';
 
 // --- small helpers ------------------------------------------------------------
 
@@ -4234,6 +4235,7 @@ pages.terms = async () => {
       not straight to other players. Staff can see what's needed to keep Guts&amp;Bolts safe, like reports.</p>
     <p>Your public uploads may be used to train Fyxa, our AI helper, unless you turn that off in Settings. Section 6
       says exactly what counts and what never does. We keep a record of when you change that setting.</p>
+    <p>The full version, including the ads and cookies, is our <a href="../privacy">Privacy Policy</a>.</p>
 
     <h2>12. No guarantees</h2>
     <p>Guts&amp;Bolts is provided <b>"as is" and "as available"</b>, with no warranty of any kind. It's a hobby
@@ -5771,6 +5773,7 @@ async function render() {
   if (banned()) { banPage(); return; }
   try {
     await pages[name](...path.slice(1).map(decodeURIComponent));
+    if (token === pageToken) placeAds(name, me);   // banner ads on clean pages, never for Boltworks Club (ads.js)
   } catch (err) {
     if (err instanceof Stale || token !== pageToken) return;   // the visitor moved on: the new page draws itself
     show(html`<h1>Something went wrong</h1><p class="error">${String(err && err.message || err)}</p>`);
