@@ -1110,7 +1110,7 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
     if(WIN32)
         target_link_libraries(CredentialStoreTests PRIVATE Advapi32)
     elseif(APPLE)
-        target_link_libraries(CredentialStoreTests PRIVATE "-framework Security" "-framework CoreFoundation")
+        target_link_libraries(CredentialStoreTests PRIVATE "-framework Security" "-framework CoreFoundation")   # (CFRelease)
     elseif(UNIX AND NOT EMSCRIPTEN AND NOT GB_MOBILE)
         if(PkgConfig_FOUND AND TARGET PkgConfig::LIBSECRET)
             target_compile_definitions(CredentialStoreTests PRIVATE GB_HAVE_LIBSECRET=1)
@@ -1239,6 +1239,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(PlayerFootingTests tests/PlayerFootingTests.cpp)
     target_link_libraries(PlayerFootingTests PRIVATE gb_engine)
     add_test(NAME PlayerFootingTests COMMAND PlayerFootingTests)
+
+    # Roblox-strength gravity: new games, and old saves scaled up when they load.
+    add_executable(RobloxGravityTests tests/RobloxGravityTests.cpp)
+    target_link_libraries(RobloxGravityTests PRIVATE gb_engine)
+    add_test(NAME RobloxGravityTests COMMAND RobloxGravityTests)
 
     # The Material Graph: patterns tile, wires can't loop, saving and baking.
     add_executable(MaterialGraphTests tests/MaterialGraphTests.cpp)

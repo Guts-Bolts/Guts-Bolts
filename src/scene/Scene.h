@@ -89,9 +89,16 @@ struct CoreGuiState {
     }
 };
 
+// Gravity, like Roblox: its 196.2 studs/s² at our half size. That's much stronger
+// than real life, which is what makes jumps quick and snappy instead of floaty.
+constexpr float kDefaultGravity = 98.1f;
+// What gravity used to be (before 0.7.10). Games saved back then are scaled up
+// from it when they load, and things thrown "as high as before" use it.
+constexpr float kClassicGravity = 22.0f;
+
 // Rules and physics for the whole place (like Roblox's Workspace properties).
 struct WorldSettings {
-    float      gravity           = 22.0f;   // units / second²
+    float      gravity           = kDefaultGravity;   // units / second²
     float      fallenPartsHeight = -50.0f;  // below this, parts are destroyed and players die
 
     DeathStyle deathStyle      = DeathStyle::Ragdoll;
@@ -99,8 +106,15 @@ struct WorldSettings {
     bool       dismemberment   = true;      // big hits can knock limbs off
     bool       knockdowns      = true;      // Ragdoll style: big hits knock you over as a ragdoll, then you get back up
     bool       fallDamage      = true;
-    float      fallDamageSpeed = 20.0f;     // landing faster than this hurts
+    float      fallDamageSpeed = 42.0f;     // landing faster than this hurts (a fall of about 9 units)
     float      fallDamageScale = 1.0f;      // how much it hurts (2 = twice as much)
+
+    // How much harder something has to be thrown to fly as high as it did under
+    // the old gravity (about 2.1 with the default): knockbacks, explosions, waves.
+    float launchScale() const { return std::sqrt(std::max(0.0f, gravity) / kClassicGravity); }
+    // Water, floods and blood drops keep real-world gravity (the old 22, scaled
+    // with the game's gravity), so they look real and the liquid stays stable.
+    float fluidGravity() const { return gravity * (kClassicGravity / kDefaultGravity); }
 
     // What blood looks like (games can make it green slime, blue alien blood...).
     glm::vec3  bloodColor  = {0.50f, 0.02f, 0.03f};

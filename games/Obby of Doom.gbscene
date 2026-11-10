@@ -683,7 +683,7 @@
               1,
               1
             ],
-            "source": "-- Jump Pad: launches the player high into the air.\nlocal pad = script.Parent\nlocal launchSpeed = 20   -- bigger number = higher jump\n\npad.Touched:Connect(function(hit)\n    local character = hit.Parent\n    local root = character:FindFirstChild(\"HumanoidRootPart\")\n    if root and character:FindFirstChild(\"Humanoid\") then\n        root.AssemblyLinearVelocity = Vector3.new(0, launchSpeed, 0)\n        Sounds.Play(\"boing\", pad.Position)\n    end\nend)\n",
+            "source": "-- Jump Pad: launches the player high into the air.\nlocal pad = script.Parent\nlocal launchSpeed = 42   -- bigger number = higher jump\n\npad.Touched:Connect(function(hit)\n    local character = hit.Parent\n    local root = character:FindFirstChild(\"HumanoidRootPart\")\n    if root and character:FindFirstChild(\"Humanoid\") then\n        root.AssemblyLinearVelocity = Vector3.new(0, launchSpeed, 0)\n        Sounds.Play(\"boing\", pad.Position)\n    end\nend)\n",
             "enabled": true
           }
         ]
