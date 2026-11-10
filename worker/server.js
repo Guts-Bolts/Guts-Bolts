@@ -406,6 +406,11 @@ const COSTLY = {
   'forum.reply':         [30, 90, 600],
   'ai.preferences.update': [10, 30, 600],
   'ai.content.eligibility.update': [60, 180, 600],
+  'ai.sessions.create': [20, 40, 600],
+  'ai.sessions.delete': [30, 60, 600],
+  'ai.memory.create': [30, 60, 600],
+  'ai.memory.update': [60, 120, 600],
+  'ai.memory.delete': [60, 120, 600],
   'chat.translate':      [400, 1200, 600],  // (a busy game's chat, read in another language)
   'groups.create':       [5, 15, 3600],
   'bolts.redeem':        [20, 60, 600],    // (so nobody can guess promo codes over and over)
@@ -794,6 +799,21 @@ export class GbServerObject extends DurableObject {
       CREATE TABLE IF NOT EXISTS ai_training_audit (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, content_id TEXT, event_type TEXT NOT NULL, details TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS ai_training_audit_account ON ai_training_audit (account_id, created_at);
+      CREATE TABLE IF NOT EXISTS ai_sessions (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, project_id TEXT, title TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS ai_sessions_account_updated ON ai_sessions (account_id, updated_at);
+      CREATE INDEX IF NOT EXISTS ai_sessions_project ON ai_sessions (account_id, project_id, updated_at);
+      CREATE TABLE IF NOT EXISTS ai_memories (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, project_id TEXT, memory_type TEXT NOT NULL,
+        content TEXT NOT NULL, tags TEXT NOT NULL DEFAULT '[]', importance INTEGER NOT NULL DEFAULT 3,
+        source_session_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS ai_memories_account_updated ON ai_memories (account_id, updated_at);
+      CREATE INDEX IF NOT EXISTS ai_memories_project_type ON ai_memories (account_id, project_id, memory_type, importance);
+      CREATE TABLE IF NOT EXISTS ai_memory_audit (
+        id TEXT PRIMARY KEY, account_id TEXT NOT NULL, event_type TEXT NOT NULL,
+        resource_type TEXT NOT NULL, resource_id TEXT NOT NULL, details TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS ai_memory_audit_account ON ai_memory_audit (account_id, created_at);
       CREATE TABLE IF NOT EXISTS ai_moderation_cases (
         id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, source_type TEXT NOT NULL, source_id TEXT NOT NULL,
         author_id TEXT NOT NULL, categories TEXT NOT NULL, severity TEXT NOT NULL, scanner TEXT NOT NULL,
@@ -2388,7 +2408,7 @@ export class GbServerObject extends DurableObject {
   // Lightweight operator diagnostics. Never expose player records or raw SQL contents.
   databaseDiagnostics() {
     const tables = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
-      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_moderation_cases'];
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_sessions', 'ai_memories', 'ai_memory_audit', 'ai_moderation_cases'];
     const counts = {};
     for (const table of tables) {
       const rows = this.sql.exec('SELECT COUNT(*) AS count FROM "' + table + '"').toArray?.()
@@ -2421,7 +2441,7 @@ export class GbServerObject extends DurableObject {
       throw new Error('Database is larger than the configured safe backup limit; increase it only after reviewing memory headroom.');
 
     const tableNames = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
-      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_moderation_cases'];
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_sessions', 'ai_memories', 'ai_memory_audit', 'ai_moderation_cases'];
     const snapshot = this.ctx.storage.transactionSync(() => tableNames.map((table) => {
       const schemaRows = this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table).toArray?.()
         || Array.from(this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table));
@@ -2855,8 +2875,124 @@ export class GbServerObject extends DurableObject {
     for (const id of ids) this.aiRecomputeContentEligibility(id);
   }
 
+  aiMemoryAudit(me, eventType, resourceType, resourceId, details = {}) {
+    this.sql.exec('INSERT INTO ai_memory_audit (id, account_id, event_type, resource_type, resource_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      randomHex(16), me.id, eventType, resourceType, resourceId, JSON.stringify(details), now());
+    this.sql.exec('DELETE FROM ai_memory_audit WHERE account_id = ? AND id NOT IN (SELECT id FROM ai_memory_audit WHERE account_id = ? ORDER BY created_at DESC LIMIT 1000)',
+      me.id, me.id);
+  }
+
   aiOp(name, me, args) {
     if (me.userId <= 0) return fail('Sign up or log in first.');
+
+    // Conversation metadata and user-controlled memory are operational data, not model-training consent.
+    // Every lookup is scoped to the authenticated account; project IDs are opaque namespace labels.
+    if (name === 'ai.sessions.create') {
+      const count = Array.from(this.sql.exec('SELECT COUNT(*) AS count FROM ai_sessions WHERE account_id = ?', me.id));
+      if (Number(count[0]?.count || 0) >= 200) return fail('You have reached the conversation limit. Delete an older conversation first.');
+      const title = cleanText(str(args, 'title'), 120) || 'New conversation';
+      const projectId = cleanText(str(args, 'projectId'), 128) || null;
+      const id = randomHex(16), t = now();
+      this.sql.exec('INSERT INTO ai_sessions (id, account_id, project_id, title, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        id, me.id, projectId, title, 'active', t, t);
+      this.aiMemoryAudit(me, 'session.created', 'session', id, { projectId });
+      return okay({ session: { id, projectId, title, status: 'active', createdAt: t, updatedAt: t } });
+    }
+    if (name === 'ai.sessions.list') {
+      const projectId = cleanText(str(args, 'projectId'), 128);
+      const limit = clamp(num(args, 'limit') || 30, 1, 50);
+      const offset = Math.max(0, Math.min(10000, num(args, 'offset')));
+      const rows = Array.from(projectId
+        ? this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE account_id = ? AND project_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?', me.id, projectId, limit, offset)
+        : this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE account_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?', me.id, limit, offset));
+      return okay({ sessions: rows.map((r) => ({ id: r.id, projectId: r.project_id, title: r.title, status: r.status,
+        createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) })) });
+    }
+    if (name === 'ai.sessions.get') {
+      const id = str(args, 'sessionId');
+      const rows = id ? Array.from(this.sql.exec('SELECT id, project_id, title, status, created_at, updated_at FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id)) : [];
+      if (!rows.length) return fail('That conversation was not found.');
+      const r = rows[0];
+      return okay({ session: { id: r.id, projectId: r.project_id, title: r.title, status: r.status,
+        createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) } });
+    }
+    if (name === 'ai.sessions.delete') {
+      const id = str(args, 'sessionId');
+      const rows = id ? Array.from(this.sql.exec('SELECT id FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id)) : [];
+      if (!rows.length) return fail('That conversation was not found.');
+      this.sql.exec('DELETE FROM ai_memories WHERE account_id = ? AND source_session_id = ?', me.id, id);
+      this.sql.exec('DELETE FROM ai_sessions WHERE id = ? AND account_id = ?', id, me.id);
+      this.aiMemoryAudit(me, 'session.deleted', 'session', id);
+      return okay({ deleted: true });
+    }
+    if (name === 'ai.memory.create') {
+      const count = Array.from(this.sql.exec('SELECT COUNT(*) AS count FROM ai_memories WHERE account_id = ?', me.id));
+      if (Number(count[0]?.count || 0) >= 500) return fail('You have reached the memory limit. Delete an older memory first.');
+      const content = cleanText(str(args, 'content'), 4000);
+      if (!content) return fail('Memory content is required.');
+      const types = ['user', 'feedback', 'project', 'reference', 'preference'];
+      const memoryType = str(args, 'memoryType') || 'project';
+      if (!types.includes(memoryType)) return fail('Choose a supported memory type.');
+      const projectId = cleanText(str(args, 'projectId'), 128) || null;
+      const sourceSessionId = str(args, 'sourceSessionId') || null;
+      if (sourceSessionId && !Array.from(this.sql.exec('SELECT id FROM ai_sessions WHERE id = ? AND account_id = ?', sourceSessionId, me.id)).length)
+        return fail('That conversation was not found.');
+      const tags = Array.isArray(args.tags) ? [...new Set(args.tags.filter((x) => typeof x === 'string')
+        .map((x) => cleanText(x, 32)).filter(Boolean))].slice(0, 10) : [];
+      const importance = clamp(Number.isFinite(args.importance) ? Math.round(args.importance) : 3, 1, 5);
+      const id = randomHex(16), t = now();
+      this.sql.exec('INSERT INTO ai_memories (id, account_id, project_id, memory_type, content, tags, importance, source_session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        id, me.id, projectId, memoryType, content, JSON.stringify(tags), importance, sourceSessionId, t, t);
+      this.aiMemoryAudit(me, 'memory.created', 'memory', id, { memoryType, projectId });
+      return okay({ memory: { id, projectId, memoryType, content, tags, importance, sourceSessionId, createdAt: t, updatedAt: t } });
+    }
+    if (name === 'ai.memory.list') {
+      const projectId = cleanText(str(args, 'projectId'), 128);
+      const memoryType = str(args, 'memoryType');
+      if (memoryType && !['user', 'feedback', 'project', 'reference', 'preference'].includes(memoryType))
+        return fail('Choose a supported memory type.');
+      const limit = clamp(num(args, 'limit') || 50, 1, 100);
+      const offset = Math.max(0, Math.min(10000, num(args, 'offset')));
+      const where = ['account_id = ?'], bind = [me.id];
+      if (projectId) { where.push('project_id = ?'); bind.push(projectId); }
+      if (memoryType) { where.push('memory_type = ?'); bind.push(memoryType); }
+      bind.push(limit, offset);
+      const rows = Array.from(this.sql.exec('SELECT id, project_id, memory_type, content, tags, importance, source_session_id, created_at, updated_at FROM ai_memories WHERE ' +
+        where.join(' AND ') + ' ORDER BY importance DESC, updated_at DESC LIMIT ? OFFSET ?', ...bind));
+      return okay({ memories: rows.map((r) => {
+        let tags = []; try { tags = JSON.parse(r.tags); } catch { /* keep corrupt legacy tags empty */ }
+        return { id: r.id, projectId: r.project_id, memoryType: r.memory_type, content: r.content, tags,
+          importance: Number(r.importance), sourceSessionId: r.source_session_id,
+          createdAt: Number(r.created_at), updatedAt: Number(r.updated_at) };
+      }) });
+    }
+    if (name === 'ai.memory.update') {
+      const id = str(args, 'memoryId');
+      const rows = id ? Array.from(this.sql.exec('SELECT id, content, tags, importance FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id)) : [];
+      if (!rows.length) return fail('That memory was not found.');
+      const previous = rows[0];
+      const content = args.content === undefined ? previous.content : cleanText(str(args, 'content'), 4000);
+      if (!content) return fail('Memory content is required.');
+      let tags = []; try { tags = JSON.parse(previous.tags); } catch { tags = []; }
+      if (Array.isArray(args.tags)) tags = [...new Set(args.tags.filter((x) => typeof x === 'string')
+        .map((x) => cleanText(x, 32)).filter(Boolean))].slice(0, 10);
+      const importance = args.importance === undefined ? Number(previous.importance)
+        : clamp(Number.isFinite(args.importance) ? Math.round(args.importance) : 3, 1, 5);
+      const t = now();
+      this.sql.exec('UPDATE ai_memories SET content = ?, tags = ?, importance = ?, updated_at = ? WHERE id = ? AND account_id = ?',
+        content, JSON.stringify(tags), importance, t, id, me.id);
+      this.aiMemoryAudit(me, 'memory.updated', 'memory', id);
+      return okay({ memory: { id, content, tags, importance, updatedAt: t } });
+    }
+    if (name === 'ai.memory.delete') {
+      const id = str(args, 'memoryId');
+      const rows = id ? Array.from(this.sql.exec('SELECT id FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id)) : [];
+      if (!rows.length) return fail('That memory was not found.');
+      this.sql.exec('DELETE FROM ai_memories WHERE id = ? AND account_id = ?', id, me.id);
+      this.aiMemoryAudit(me, 'memory.deleted', 'memory', id);
+      return okay({ deleted: true });
+    }
+
     if (name === 'ai.preferences.get') return okay({ preferences: this.aiPreferencesFor(me.id) });
 
     if (name === 'ai.preferences.update') {
@@ -5036,6 +5172,12 @@ export class GbServerObject extends DurableObject {
     // Account deletion leaves published games/items online, but it revokes all Fyxa permissions
     // and rights attestations attached to that account before its personal account data is erased.
     if (this.aiEnabledAccounts) this.aiEnabledAccounts.delete(u.id);
+    // Conversation sessions and user-authored memories are personal account data and must not
+    // survive account deletion. The memory audit is also removed; training-rights audit follows
+    // the existing retention behavior below.
+    this.sql.exec('DELETE FROM ai_memories WHERE account_id = ?', u.id);
+    this.sql.exec('DELETE FROM ai_sessions WHERE account_id = ?', u.id);
+    this.sql.exec('DELETE FROM ai_memory_audit WHERE account_id = ?', u.id);
     this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
       (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
       VALUES (?, 0, 0, ?, ?, 'account_deleted', ?, ?)`, u.id, FYXA_AI_POLICY_VERSION, FYXA_AI_NOTICE_VERSION, t, t);
