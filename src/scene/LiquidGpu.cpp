@@ -1,5 +1,6 @@
 // The liquid's physics as compute shaders (see LiquidGpu.h for the big picture).
 #include "LiquidGpu.h"
+#include "Liquid.h"
 #include "../renderer/GL.h"
 #include "../core/Settings.h"
 
@@ -420,7 +421,7 @@ layout(std430, binding = 0) readonly buffer BX { vec4 X[]; };
 layout(std430, binding = 2) readonly buffer BP { vec4 P[]; };
 layout(std430, binding = 4) writeonly buffer BP2 { vec4 P2[]; };
 layout(std430, binding = 5) readonly buffer BL { float L[]; };
-uniform float uInvRest; uniform float uWq;
+uniform float uInvRest; uniform float uWq; uniform float uScorr;
 void main() {
     uint i = gl_GlobalInvocationID.x;
     if (i >= g[0]) return;
@@ -434,7 +435,7 @@ void main() {
         if (r2 >= kH * kH) continue;
         float len = sqrt(r2);
         float corr = poly6(r2) / uWq;
-        corr = -0.002 * corr * corr * corr * corr;           // stops drops clumping at the surface
+        corr = -uScorr * corr * corr * corr * corr;          // PBF tensile-instability correction
         d += (li + L[j] + corr) * spikyGrad(r, len);
     })
     d *= uInvRest;
@@ -1006,6 +1007,7 @@ void LiquidGpu::step(float dt, const glm::vec3& gravity, const std::vector<glm::
             bind(0, m_x[m_cur]); bind(2, m_p[m_pcur]); bind(4, m_p[1 - m_pcur]); bind(5, m_lambda);
             glUniform1f(U(m_prog[DELTA], "uInvRest"), 1.0f / rest);
             glUniform1f(U(m_prog[DELTA], "uWq"), wq);
+            glUniform1f(U(m_prog[DELTA], "uScorr"), Liquid::kTensileCorrection);
             dispatchDrops();
             barrier();
             m_pcur = 1 - m_pcur;

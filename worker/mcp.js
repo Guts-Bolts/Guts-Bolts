@@ -1,4 +1,6 @@
 // The online MCP endpoint: https://gutsandbolts.net/mcp (MCP "Streamable HTTP", JSON answers, no SSE stream).
+// Speaks MCP 2026-07-28 (no handshake: server/discover, per-request _meta and headers; see
+// worker/mcp-protocol.js) and the older versions with `initialize`.
 // Based on the plan the Lyreto team sent (MIT).
 //
 // A connected app (like Lyreto) calls it with the access token it got from "Log in with Guts&Bolts":
@@ -18,9 +20,10 @@
 
 import { canCall, canUseMethod, filterTools, hasStudio } from './mcp-policy.js';
 import { readLimitedText } from './http.js';
+import { checkRequest, discoverResult, modernReply, modernStatus, LEGACY } from './mcp-protocol.js';
 
 const kMaxBody = 1 << 20, kMaxBatch = 10;
-const PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05'];
+const PROTOCOLS = LEGACY;   // the versions that start with `initialize`
 // How long Studio gets per tool, in seconds (others: 30; methods that aren't tools: 15).
 const TOOL_TIMEOUTS = { playtest: 120, multiplayer_test: 120, physics_replay: 90, generate_level: 90, bake_navmesh: 90, run_lua: 60, screenshot: 45 };
 export const ERR = { offline: -32010, timeout: -32011, busy: -32012, denied: -32003 };
@@ -72,6 +75,14 @@ export async function handleMcp(request, env, url, serverAsk) {
   if (text === null) return json(rpcError(null, -32600, 'That request is too big.'), 413);
   let body;
   try { body = JSON.parse(text); } catch { return json(rpcError(null, -32700, 'That wasn\'t valid JSON.'), 400); }
+  // Which MCP rules is the app using? (2026-07-28 ones: check the headers match the body.)
+  const era = checkRequest((name) => request.headers.get(name), body);
+  if (!era.ok) return json(rpcError(body && typeof body === 'object' && !Array.isArray(body) ? body.id : null, era.error.code, era.error.message, era.error.data), era.status);
+  if (era.modern) {
+    const a = await one(env, token, scopes, body, true);
+    if (!a) return new Response(null, { status: 202 });   // a notification
+    return json(a, modernStatus(a));
+  }
   const batch = Array.isArray(body), messages = batch ? body : [body];
   if (!messages.length || messages.length > kMaxBatch) return json(rpcError(null, -32600, 'Send 1 to ' + kMaxBatch + ' messages at once.'), 400);
   const answers = [];
@@ -83,13 +94,36 @@ export async function handleMcp(request, env, url, serverAsk) {
   return json(batch ? answers : answers[0]);
 }
 
-async function one(env, token, scopes, m) {
+const SERVER_INFO = { name: 'guts-and-bolts-studio', title: 'Guts&Bolts Studio', version: '1' };
+const CAPABILITIES = { tools: { listChanged: false }, resources: { listChanged: false }, prompts: { listChanged: false } };
+const OFFLINE_GUIDE = 'These are the AI tools of the person\'s own Guts&Bolts Studio. Studio is offline right now: the tools work while '
+  + 'Studio is open and "Allow connected apps to use AI tools" is ticked in its Assistant tab. Publishing is never available here.';
+
+// One message. `modern`: it follows the 2026-07-28 rules (already checked by checkRequest).
+async function one(env, token, scopes, m, modern = false) {
+  const reply = await answer(env, token, scopes, m, modern);
+  return modern && reply ? modernReply(reply, SERVER_INFO) : reply;
+}
+
+async function answer(env, token, scopes, m, modern) {
   if (!m || typeof m !== 'object' || Array.isArray(m) || m.jsonrpc !== '2.0' || typeof m.method !== 'string')
     return rpcError(m && typeof m === 'object' ? m.id : null, -32600, 'Not a JSON-RPC 2.0 request.');
   if (!('id' in m)) return null;   // notifications (notifications/initialized ...): nothing to pass on
   const { id, method } = m;
-  const params = m.params && typeof m.params === 'object' && !Array.isArray(m.params) ? m.params : {};
+  let params = m.params && typeof m.params === 'object' && !Array.isArray(m.params) ? m.params : {};
+  if (modern && '_meta' in params) {   // (checked already; Studio gets the message without it)
+    params = Object.assign({}, params);
+    delete params._meta;
+  }
   if (method === 'ping') return { jsonrpc: '2.0', id, result: {} };
+  if (modern && method === 'server/discover') {
+    // Studio's own guide when it's online (asked the old way: every Studio knows `initialize`).
+    const r = await relay(env, { token, message: { jsonrpc: '2.0', id, method: 'initialize', params: { protocolVersion: PROTOCOLS[0], capabilities: {}, clientInfo: { name: 'gutsandbolts.net', version: '1' } } }, timeoutMs: 8000 });
+    const studio = r.ok && r.reply && r.reply.result ? r.reply.result : null;
+    return { jsonrpc: '2.0', id, result: discoverResult({ capabilities: CAPABILITIES, serverInfo: SERVER_INFO,
+      instructions: studio && typeof studio.instructions === 'string' ? studio.instructions : OFFLINE_GUIDE,
+      ttlMs: studio ? 3600000 : 60000 }) };   // offline: ask again soon
+  }
   if (method === 'initialize') {
     // Studio's own answer (with its guide) when it's online; else ours, so the app can still connect.
     const r = await relay(env, { token, message: { jsonrpc: '2.0', id, method, params }, timeoutMs: 8000 });
@@ -97,10 +131,7 @@ async function one(env, token, scopes, m) {
     const want = typeof params.protocolVersion === 'string' ? params.protocolVersion : PROTOCOLS[0];
     return { jsonrpc: '2.0', id, result: {
       protocolVersion: PROTOCOLS.includes(want) ? want : PROTOCOLS[0],
-      capabilities: { tools: { listChanged: false }, resources: { listChanged: false }, prompts: { listChanged: false } },
-      serverInfo: { name: 'guts-and-bolts-studio', title: 'Guts&Bolts Studio', version: '1' },
-      instructions: 'These are the AI tools of the person\'s own Guts&Bolts Studio. Studio is offline right now: the tools work while '
-        + 'Studio is open and "Allow connected apps to use AI tools" is ticked in its Assistant tab. Publishing is never available here.',
+      capabilities: CAPABILITIES, serverInfo: SERVER_INFO, instructions: OFFLINE_GUIDE,
     } };
   }
   if (method === 'tools/call') {

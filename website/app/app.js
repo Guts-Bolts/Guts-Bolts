@@ -3929,6 +3929,8 @@ pages.settings = async () => {
         <p class="small muted">Apps you linked your account to with "Log in with Guts&amp;Bolts" (like Lyreto). They can see your
           username, user number and a picture of your avatar. If you allowed it, they can also use Studio's AI tools while Studio is open.</p>
         <div class="list" id="appsList"><p class="muted small">Loading...</p></div></div>
+      <div class="box" id="fyxaBox"><h2 class="boxhead">Fyxa and your uploads</h2>
+        <p class="small muted">Loading...</p></div>
       <div class="box"><h2 class="boxhead">Authenticator app</h2>
         ${me.authApp ? html`<p><b class="ok">On.</b> Logging in on a new device needs your password <i>and</i> the 6-digit code
             from your authenticator app (Google Authenticator, Authy, 2FAS, Aegis, Microsoft Authenticator...).</p>
@@ -3979,7 +3981,34 @@ pages.settings = async () => {
           : (a.scopes || []).includes('studio.read') ? ' · can look at your Studio game' : ''}</span></span>
         <button class="btn small" data-act="connectRemove" data-id="${a.id}" data-name="${a.name}">Disconnect</button></div>`)}`
       : html`<p class="muted small">You haven't connected any apps.</p>`).s;
+  fyxaSettingsBox();
 };
+
+// Settings > "Fyxa and your uploads": the AI training switch (on unless you turn it off) and the
+// separate "let Fyxa look things up in my uploads" one (off unless you turn it on). The Terms of
+// Service (section 6) say the same thing.
+async function fyxaSettingsBox() {
+  const box = $('#fyxaBox');
+  if (!box) return;
+  const r = await pageCall('ai.preferences.get', {});
+  if (!$('#fyxaBox')) return;   // moved on to another page
+  const p = r.ok ? r.preferences : null;
+  box.innerHTML = html`<h2 class="boxhead">Fyxa and your uploads</h2>
+    ${!p ? html`<p class="error">${r.error || 'Couldn\'t load this.'}</p>` : html`
+    <p class="small">Fyxa is the Guts&amp;Bolts AI helper. To make it better, public things you make may be used to
+      train it, <b>unless you turn that off here</b>. Only public uploads that passed moderation count, and only after
+      you've said you own them and staff have checked. Private uploads, messages, chat, forum posts and voice are
+      never used. <b>Nothing is being trained yet.</b> See the <a href="#/terms">Terms</a> (section 6).</p>
+    <form class="form" data-form="fyxaPrefs">
+      <input type="hidden" name="noticeVersion" value="${p.currentNoticeVersion || ''}">
+      <p><label><input type="checkbox" name="training"${p.trainingEnabled ? raw(' checked') : ''}> Let my public uploads help train Fyxa</label></p>
+      <p class="small muted">Turning this off stops your uploads being used from now on. It can't take back what an AI has already learned.</p>
+      <p><label><input type="checkbox" name="reference"${p.referenceEnabled ? raw(' checked') : ''}> Let Fyxa look things up in my public uploads when it helps people</label></p>
+      <p class="small muted">This one is off unless you turn it on. To turn it on, tick the box below too.</p>
+      <p><label><input type="checkbox" name="confirm"> I've read what this means (version ${p.currentNoticeVersion || '?'})</label></p>
+      <p><button class="btn green">Save</button></p>
+    </form>`}`.s;
+}
 
 // --- "Log in with Guts&Bolts" ---------------------------------------------------------
 // A partner app (like Lyreto) sent you here to link your account (worker/index.js
@@ -4146,6 +4175,13 @@ pages.terms = async () => {
         (thumbnails), show it to other players, and run it in games, for as long as it's on Guts&amp;Bolts. If you make
         a model or other item public in the Library, you also let other players use it in their own games.</li>
       <li>You promise you have the right to upload it: you made it yourself, or the person who did said you could.</li>
+      <li><b>Fyxa, our AI helper.</b> Unless you turn it off in <a href="#/settings">Settings</a> ("Fyxa and your
+        uploads"), you also let us use the public things you make to train and improve Fyxa. Only public uploads that
+        passed moderation count, and only once you've told us you own them and staff have checked. We never use private
+        uploads, messages, chat, forum posts or voice for this. Turning it off stops your uploads being used from then
+        on, but it can't take back what an AI has already learned from them. Letting Fyxa look things up in your
+        uploads is a separate choice, and it's off unless you turn it on. <b>Right now Fyxa isn't trained on anyone's
+        uploads</b>; this is so we can start later. If what we do changes, we'll update these terms first.</li>
       <li>Uploads can be checked by staff before anyone else sees them, and staff can turn down or remove anything that
         breaks the rules.</li>
       <li>You can delete what you upload. Copies other people already bought or used in their games may stay.</li>
@@ -4211,6 +4247,8 @@ pages.terms = async () => {
       your Bolts history, what you post and send, and an email address if you add one (only used for account emails,
       like codes and resetting your password). We don't sell anything to anyone. Online play goes through our servers,
       not straight to other players. Staff can see what's needed to keep Guts&amp;Bolts safe, like reports.</p>
+    <p>Your public uploads may be used to train Fyxa, our AI helper, unless you turn that off in Settings. Section 6
+      says exactly what counts and what never does. We keep a record of when you change that setting.</p>
     <p>The full version, including the ads and cookies, is our <a href="../privacy">Privacy Policy</a>.</p>
 
     <h2>12. No guarantees</h2>
@@ -5113,6 +5151,13 @@ const forms = {
     setMe(r.me);
     toast('Message sent!');
     location.hash = '#/messages/sent';
+  },
+  async fyxaPrefs(f) {
+    const r = await call('ai.preferences.update', { trainingEnabled: !!f.training.checked, referenceEnabled: !!f.reference.checked,
+      confirm: !!f.confirm.checked, noticeVersion: f.noticeVersion.value });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Saved.');
+    fyxaSettingsBox();
   },
   async privacy(f) {
     const r = await call('account.privacy', { status: f.status.value, join: f.join.value, messages: f.messages.value, inventory: f.inventory.value });

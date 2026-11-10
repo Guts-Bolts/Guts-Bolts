@@ -579,7 +579,7 @@ What you can use:
   `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, `player.CharacterAdded` / `CharacterRemoving`
   (fired on every spawn and respawn), each with `:Connect`, `:Once` and `:Wait`
 - **Players:** `game.Players.LocalPlayer.Character`, `Players:GetPlayers()`, `humanoid.Health` / `WalkSpeed` /
-  `JumpPower` / `:TakeDamage(n)`, `character:BreakJoints()`
+  `JumpPower` / `:TakeDamage(n)` or `:TakeDamage(n, raycastResult, projectileVelocity)` for impact-local wounds, `character:BreakJoints()`
 - **Teams:** `player.Team`, `player.TeamColor`, `player.Neutral` (setting one keeps the others right),
   `Teams:GetTeams()`. A **SpawnLocation** has `Neutral`, `TeamColor` and `AllowTeamChangeOnTouch`: players
   spawn on their team's SpawnLocations (or Neutral ones), and touching one with `AllowTeamChangeOnTouch`

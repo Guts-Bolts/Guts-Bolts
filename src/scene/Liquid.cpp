@@ -663,7 +663,7 @@ void Liquid::step(float dt, Scene& scene) {
                     const glm::vec3 r = pi - m_p[j];
                     const float len = glm::length(r);
                     float corr = poly6(len * len) / wq;
-                    corr = -0.002f * corr * corr * corr * corr;
+                    corr = -kTensileCorrection * corr * corr * corr * corr;
                     d += (m_lambda[i] + m_lambda[j] + corr) * spikyGrad(r, len);
                 }
                 m_dp[i] = d * invRest;

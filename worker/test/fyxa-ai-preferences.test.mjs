@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeServer } from './helpers.mjs';
 
-const NOTICE = '2026-11-08-v1';
+const NOTICE = '2026-11-09-v2';
 
 function enableTraining(s, user, extra = {}) {
   return s.call(user, 'ai.preferences.update', Object.assign({
@@ -10,30 +10,48 @@ function enableTraining(s, user, extra = {}) {
   }, extra));
 }
 
-test('Fyxa preferences are disabled by default and require the current notice to opt in', () => {
+test('training is on by default (opt-out), reference is off until you confirm the notice (opt-in)', () => {
   const s = makeServer();
   const user = s.signUp('alice');
 
   const initial = s.call(user, 'ai.preferences.get');
   assert.ok(initial.ok);
-  assert.equal(initial.preferences.trainingEnabled, false);
-  assert.equal(initial.preferences.referenceEnabled, false);
+  assert.equal(initial.preferences.trainingEnabled, true, 'training starts on');
+  assert.equal(initial.preferences.consentMethod, 'default_opt_out');
+  assert.equal(initial.preferences.referenceEnabled, false, 'reference starts off');
   assert.equal(initial.preferences.currentNoticeVersion, NOTICE);
 
-  const missingNotice = s.call(user, 'ai.preferences.update', { trainingEnabled: true, confirm: true });
+  const off = s.call(user, 'ai.preferences.update', { trainingEnabled: false });
+  assert.ok(off.ok, off.error);
+  assert.equal(off.preferences.trainingEnabled, false);
+  assert.equal(off.preferences.consentMethod, 'opt_out');
+  assert.equal(s.call(user, 'ai.preferences.get').preferences.trainingEnabled, false, 'the opt-out sticks');
+
+  const backOn = s.call(user, 'ai.preferences.update', { trainingEnabled: true });
+  assert.ok(backOn.ok, backOn.error);
+  assert.equal(backOn.preferences.trainingEnabled, true);
+  assert.equal(backOn.preferences.consentMethod, 'chose_on');
+
+  const missingNotice = s.call(user, 'ai.preferences.update', { referenceEnabled: true, confirm: true });
   assert.equal(missingNotice.ok, false);
-
-  const missingConfirmation = s.call(user, 'ai.preferences.update', {
-    trainingEnabled: true, noticeVersion: NOTICE,
-  });
+  const missingConfirmation = s.call(user, 'ai.preferences.update', { referenceEnabled: true, noticeVersion: NOTICE });
   assert.equal(missingConfirmation.ok, false);
+  const reference = s.call(user, 'ai.preferences.update', { referenceEnabled: true, confirm: true, noticeVersion: NOTICE });
+  assert.ok(reference.ok, reference.error);
+  assert.equal(reference.preferences.referenceEnabled, true);
+  assert.equal(reference.preferences.noticeVersion, NOTICE);
+});
 
-  const enabled = enableTraining(s, user);
-  assert.ok(enabled.ok, enabled.error);
-  assert.equal(enabled.preferences.trainingEnabled, true);
-  assert.equal(enabled.preferences.referenceEnabled, false);
-  assert.equal(enabled.preferences.consentMethod, 'affirmative_opt_in');
-  assert.equal(enabled.preferences.noticeVersion, NOTICE);
+test('guests are never included, and their uploads aren\'t tracked', () => {
+  const s = makeServer();
+  const guest = s.user('c'.repeat(63) + 'd');   // never signed up: userId stays 0
+  assert.equal(guest.userId, 0);
+  s.saveUser(guest);
+  s.flush();
+  assert.equal(s.aiPreferencesFor(guest.id).trainingEnabled, false);
+  assert.equal(s.aiAccountUsesAi(guest.id), false);
+  const game = s.addGame(guest, 'Guest game');
+  assert.equal(s.aiContentRow(game.id), null);
 });
 
 test('content cannot become training eligible until the owner opts in, attests rights, and staff approves', () => {
@@ -176,30 +194,28 @@ test('visibility changes and deletion revoke stored eligibility', () => {
   assert.equal(s.aiContentRow(asset.id), null);
 });
 
-test('account opt-in enrolls existing and future uploads without bypassing rights review', () => {
+test('uploads are tracked by default but need rights review; opting out stops new tracking', () => {
   const s = makeServer();
   const owner = s.signUp('alice');
   const existing = s.addGame(owner, 'Existing public game');
+  assert.ok(s.aiContentRow(existing.id), 'uploads are tracked for eligibility checks by default');
+  assert.equal(s.call(owner, 'ai.content.eligibility.get', { contentId: existing.id }).eligibility.trainingEligible, false,
+    'tracked is not the same as eligible: rights review still applies');
 
-  assert.equal(s.aiContentRow(existing.id), null, 'accounts that have not opted in do not create AI records');
-  assert.ok(enableTraining(s, owner).ok);
-  assert.ok(s.aiContentRow(existing.id), 'existing owned uploads are enrolled for eligibility checks');
-
-  const newAsset = s.addGame(owner, 'New public game');
-  assert.ok(s.aiContentRow(newAsset.id), 'new uploads are enrolled automatically after opt-in');
-
-  const attested = s.call(owner, 'ai.content.eligibility.update', {
-    contentId: existing.id, rightsAttested: true,
-  });
+  const attested = s.call(owner, 'ai.content.eligibility.update', { contentId: existing.id, rightsAttested: true });
   assert.ok(attested.ok, attested.error);
   assert.equal(attested.eligibility.trainingChoice, 'inherit');
   assert.equal(attested.eligibility.trainingEligible, false);
-
   const approved = s.call(s.staff, 'ai.content.review', {
     contentId: existing.id, rightsStatus: 'approved', reason: 'Creator rights attestation reviewed',
   });
   assert.ok(approved.ok, approved.error);
-  assert.equal(approved.eligibility.trainingEligible, true, 'inherit follows the account-wide opt-in after rights approval');
+  assert.equal(approved.eligibility.trainingEligible, true, 'inherit follows the default-on account setting after rights approval');
+
+  assert.ok(s.call(owner, 'ai.preferences.update', { trainingEnabled: false }).ok);
+  const later = s.addGame(owner, 'Made after opting out');
+  assert.equal(s.aiContentRow(later.id), null, 'nothing new is tracked after opting out');
+  assert.equal(s.call(owner, 'ai.content.eligibility.get', { contentId: existing.id }).eligibility.trainingEligible, false);
 });
 
 test('account deletion revokes training preferences and all retained content eligibility', () => {
@@ -230,17 +246,17 @@ test('account deletion revokes training preferences and all retained content eli
   assert.equal(Number(row.reference_eligible), 0);
   assert.equal(Number(row.rights_attested), 0);
   assert.equal(row.training_exclusion_reason, 'account_deleted');
-  assert.equal(s.aiEnabledAccounts.has(accountId), false);
+  assert.equal(s.aiAccountUsesAi(accountId), false);
 });
 
-test('a policy or notice version change suspends eligibility until the account reconfirms', () => {
+test('a policy or notice version change suspends reference (opt-in) until reconfirmed, but not training (opt-out)', () => {
   const s = makeServer();
   const owner = s.signUp('alice');
   const asset = s.addGame(owner, 'Public game');
-  assert.ok(enableTraining(s, owner).ok);
+  assert.ok(enableTraining(s, owner, { referenceEnabled: true }).ok);
 
   const attested = s.call(owner, 'ai.content.eligibility.update', {
-    contentId: asset.id, trainingChoice: 'include', rightsAttested: true,
+    contentId: asset.id, trainingChoice: 'include', referenceChoice: 'include', rightsAttested: true,
   });
   assert.ok(attested.ok, attested.error);
   const approved = s.call(s.staff, 'ai.content.review', {
@@ -248,20 +264,19 @@ test('a policy or notice version change suspends eligibility until the account r
   });
   assert.ok(approved.ok, approved.error);
   assert.equal(approved.eligibility.trainingEligible, true);
+  assert.equal(approved.eligibility.referenceEligible, true);
 
   s.sql.exec('UPDATE ai_training_preferences SET policy_version = ?, notice_version = ? WHERE account_id = ?',
     'older-policy', 'older-notice', owner.id);
   const suspended = s.call(owner, 'ai.content.eligibility.get', { contentId: asset.id });
-  assert.equal(suspended.eligibility.trainingEligible, false);
-  assert.equal(suspended.eligibility.trainingExclusionReason, 'notice_outdated');
+  assert.equal(suspended.eligibility.trainingEligible, true);
+  assert.equal(suspended.eligibility.referenceEligible, false);
+  assert.equal(suspended.eligibility.referenceExclusionReason, 'notice_outdated');
 
-  const reconfirmed = s.call(owner, 'ai.preferences.update', {
-    trainingEnabled: true, confirm: true, noticeVersion: NOTICE,
-  });
+  const reconfirmed = s.call(owner, 'ai.preferences.update', { referenceEnabled: true, confirm: true, noticeVersion: NOTICE });
   assert.ok(reconfirmed.ok, reconfirmed.error);
   assert.equal(reconfirmed.preferences.noticeVersion, NOTICE);
-  const restored = s.call(owner, 'ai.content.eligibility.get', { contentId: asset.id });
-  assert.equal(restored.eligibility.trainingEligible, true);
+  assert.equal(s.call(owner, 'ai.content.eligibility.get', { contentId: asset.id }).eligibility.referenceEligible, true);
 });
 
 test('only staff can view the pending rights-review queue', () => {

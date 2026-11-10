@@ -759,9 +759,14 @@ function bytesToB64(bytes) {
 }
 const CHUNK = 1 << 20;   // files are stored in 1 MB pieces (SQLite rows are at most 2 MB)
 
-// Fyxa user-content processing is disabled until a signed-in account explicitly opts in.
-const FYXA_AI_POLICY_VERSION = '2026-11-08-v1';
-const FYXA_AI_NOTICE_VERSION = '2026-11-08-v1';
+// Fyxa and your uploads (the Terms of Service, section 6 and 11, say the same):
+//   * training: ON for signed-up accounts unless they turn it off in Settings (opt-out, Script's
+//     choice on 2026-11-09). Guests are never included.
+//   * reference (Fyxa looking things up in your uploads): OFF until you turn it on (opt-in).
+// Either way an upload only counts once it's public, passed moderation, its creator said they own the
+// rights, and staff approved that. Nothing is trained yet: there's no training pipeline.
+const FYXA_AI_POLICY_VERSION = '2026-11-09-v2';
+const FYXA_AI_NOTICE_VERSION = '2026-11-09-v2';
 
 // --- the server -------------------------------------------------------------------
 export class GbServerObject extends DurableObject {
@@ -829,10 +834,7 @@ export class GbServerObject extends DurableObject {
     this.sql.exec('UPDATE ai_moderation_cases SET last_seen_at = created_at WHERE last_seen_at = 0');
     this.aiTrackedContent = new Set();
     for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility')) this.aiTrackedContent.add(r.content_id);
-    this.aiEnabledAccounts = new Set();
     this.backgroundTasks = new Set();
-    for (const r of this.sql.exec('SELECT account_id FROM ai_training_preferences WHERE training_enabled = 1 OR reference_enabled = 1'))
-      this.aiEnabledAccounts.add(r.account_id);
     this.secretsInit();   // games' secrets for web requests (game-web.js)
     this.chatsInit();     // calls and the Lyreto gateway (chats.js)
     this.official = lower(env.OFFICIAL || '');
@@ -1310,11 +1312,11 @@ export class GbServerObject extends DurableObject {
       if (this.aiEligibilityFingerprint.get(a.id) !== fingerprint) {
         this.aiEligibilityFingerprint.set(a.id, fingerprint);
         const row = this.aiContentRow(a.id);
-        if (row && row.owner_id !== a.creator && this.aiEnabledAccounts && this.aiEnabledAccounts.has(a.creator))
+        if (row && row.owner_id !== a.creator && this.aiAccountUsesAi(a.creator))
           this.aiEnsureContentEligibility(a);
         else this.aiRecomputeContentEligibility(a.id);
       }
-    } else if (this.aiEnabledAccounts && this.aiEnabledAccounts.has(a.creator)) this.aiEnsureContentEligibility(a);
+    } else if (this.aiAccountUsesAi(a.creator)) this.aiEnsureContentEligibility(a);
   }
   // Better search: keep each asset's searchable words in Supabase (gb_search_items). Only sent
   // when something searchable changed (a.searchSig remembers what was sent last).
@@ -2774,9 +2776,20 @@ export class GbServerObject extends DurableObject {
         updatedAt: Number(r.updated_at || 0), effectiveAt: Number(r.effective_at || 0),
       };
     }
-    return { trainingEnabled: false, referenceEnabled: false, policyVersion: FYXA_AI_POLICY_VERSION,
-      noticeVersion: '', consentMethod: 'none', currentPolicyVersion: FYXA_AI_POLICY_VERSION,
-      currentNoticeVersion: FYXA_AI_NOTICE_VERSION, updatedAt: 0, effectiveAt: 0 };
+    // Nothing chosen yet: training is on (opt-out) for signed-up accounts, reference is off (opt-in).
+    const u = this.users.get(accountId);
+    const signedUp = !!(u && u.userId > 0);
+    return { trainingEnabled: signedUp, referenceEnabled: false, policyVersion: FYXA_AI_POLICY_VERSION,
+      noticeVersion: '', consentMethod: signedUp ? 'default_opt_out' : 'none', currentPolicyVersion: FYXA_AI_POLICY_VERSION,
+      currentNoticeVersion: FYXA_AI_NOTICE_VERSION, updatedAt: 0, effectiveAt: 0, trainingDefault: true };
+  }
+
+  // Should this account's uploads be tracked for Fyxa at all? (Guests never.)
+  aiAccountUsesAi(accountId) {
+    const u = this.users.get(accountId);
+    if (!u || u.userId <= 0) return false;
+    const prefs = this.aiPreferencesFor(accountId);
+    return prefs.trainingEnabled || prefs.referenceEnabled;
   }
 
   aiAudit(me, eventType, contentId, details) {
@@ -2802,7 +2815,9 @@ export class GbServerObject extends DurableObject {
     const restricted = !!(asset.review || asset.exclusive || asset.promoOnly);
     const rightsAttested = !!(currentRow && currentRow.rights_attested);
     const rightsStatus = currentRow ? currentRow.rights_status : 'unverified';
+    const owner = this.users.get(asset.creator);
     const baseReason = prefs.consentMethod === 'account_deleted' ? 'account_deleted'
+      : !owner || owner.userId <= 0 ? 'not_signed_up'
       : ownerMismatch ? 'owner_changed'
       : !isPublic ? 'not_public' : restricted ? 'content_restricted'
       : !rightsAttested ? 'rights_not_attested' : rightsStatus === 'rejected' ? 'rights_rejected'
@@ -2810,8 +2825,9 @@ export class GbServerObject extends DurableObject {
     const trainingChoice = currentRow ? Number(currentRow.training_choice) : 0;
     const referenceChoice = currentRow ? Number(currentRow.reference_choice) : 0;
     const noticeCurrent = prefs.policyVersion === FYXA_AI_POLICY_VERSION && prefs.noticeVersion === FYXA_AI_NOTICE_VERSION;
+    // Training is opt-out, so it doesn't wait for a notice to be accepted; reference (opt-in) does.
     const trainingReason = baseReason || !prefs.trainingEnabled ? (baseReason || 'account_training_disabled')
-      : !noticeCurrent ? 'notice_outdated' : trainingChoice === -1 ? 'content_excluded' : '';
+      : trainingChoice === -1 ? 'content_excluded' : '';
     const referenceReason = baseReason || !prefs.referenceEnabled ? (baseReason || 'account_reference_disabled')
       : !noticeCurrent ? 'notice_outdated' : referenceChoice === -1 ? 'content_excluded' : '';
     return {
@@ -2839,7 +2855,7 @@ export class GbServerObject extends DurableObject {
   }
 
   aiEnsureContentEligibility(asset) {
-    if (!asset || !this.aiEnabledAccounts || !this.aiEnabledAccounts.has(asset.creator)) return null;
+    if (!asset || !this.aiAccountUsesAi(asset.creator)) return null;
     const t = now();
     const existing = this.aiContentRow(asset.id);
     if (existing && existing.owner_id !== asset.creator) {
@@ -3003,22 +3019,23 @@ export class GbServerObject extends DurableObject {
       const previous = this.aiPreferencesFor(me.id);
       const trainingEnabled = hasTraining ? args.trainingEnabled : previous.trainingEnabled;
       const referenceEnabled = hasReference ? args.referenceEnabled : previous.referenceEnabled;
-      const enabling = (trainingEnabled && !previous.trainingEnabled) || (referenceEnabled && !previous.referenceEnabled);
-      const noticeChanged = (trainingEnabled || referenceEnabled) &&
+      // Only reference (opt-in) needs the notice confirmed. Training is on by default; turning it
+      // back on after turning it off needs no extra step.
+      const enabling = referenceEnabled && !previous.referenceEnabled;
+      const noticeChanged = referenceEnabled &&
         (previous.policyVersion !== FYXA_AI_POLICY_VERSION || previous.noticeVersion !== FYXA_AI_NOTICE_VERSION);
       const requiresNotice = enabling || noticeChanged;
       if (requiresNotice && (args.confirm !== true || args.noticeVersion !== FYXA_AI_NOTICE_VERSION))
         return fail('Review the current Fyxa AI data notice and confirm before enabling these uses.');
       const t = now();
       const noticeVersion = requiresNotice ? FYXA_AI_NOTICE_VERSION : previous.noticeVersion;
-      const consentMethod = trainingEnabled || referenceEnabled ? 'affirmative_opt_in' : 'opt_out';
+      // (about training: on because the person left it on / chose it, or off because they opted out)
+      const consentMethod = trainingEnabled ? (previous.trainingEnabled && previous.trainingDefault ? 'default_opt_out' : 'chose_on') : 'opt_out';
       this.sql.exec(`INSERT OR REPLACE INTO ai_training_preferences
         (account_id, training_enabled, reference_enabled, policy_version, notice_version, consent_method, updated_at, effective_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         me.id, trainingEnabled ? 1 : 0, referenceEnabled ? 1 : 0, FYXA_AI_POLICY_VERSION,
         noticeVersion || '', consentMethod, t, t);
-      if (trainingEnabled || referenceEnabled) this.aiEnabledAccounts.add(me.id);
-      else this.aiEnabledAccounts.delete(me.id);
       this.aiAudit(me, 'preferences.updated', null, { trainingEnabled, referenceEnabled,
         policyVersion: FYXA_AI_POLICY_VERSION, noticeVersion: noticeVersion || '', consentMethod });
       this.aiRecomputeAccountEligibility(me.id);
@@ -5175,7 +5192,6 @@ export class GbServerObject extends DurableObject {
     const t = now(), number = u.userId;
     // Account deletion leaves published games/items online, but it revokes all Fyxa permissions
     // and rights attestations attached to that account before its personal account data is erased.
-    if (this.aiEnabledAccounts) this.aiEnabledAccounts.delete(u.id);
     // Conversation sessions and user-authored memories are personal account data and must not
     // survive account deletion. The memory audit is also removed; training-rights audit follows
     // the existing retention behavior below.
