@@ -184,7 +184,7 @@ void drawGameRules(WorldSettings& w) {
     ImGui::Checkbox("Fall Damage", &w.fallDamage);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Turn off and players can fall from any height unhurt.");
     ImGui::BeginDisabled(!w.fallDamage);
-    ImGui::SliderFloat("Safe Fall Speed", &w.fallDamageSpeed, 5.0f, 60.0f, "%.0f");
+    ImGui::SliderFloat("Safe Fall Speed", &w.fallDamageSpeed, 5.0f, 150.0f, "%.0f");
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Landing slower than this doesn't hurt. Higher = safer falls.");
     ImGui::SliderFloat("Fall Damage Strength", &w.fallDamageScale, 0.1f, 5.0f, "x%.1f");
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much a hard landing hurts. 2 = twice as much, 0.5 = half.");

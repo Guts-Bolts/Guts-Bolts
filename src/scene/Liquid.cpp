@@ -597,7 +597,7 @@ void Liquid::emit(float dt, size_t room, std::vector<glm::vec4>* out) {
 void Liquid::step(float dt, Scene& scene) {
     const size_t n = m_x.size();
     if (!n) return;
-    const glm::vec3 g(0.0f, -scene.world().gravity, 0.0f);
+    const glm::vec3 g(0.0f, -scene.world().fluidGravity(), 0.0f);   // (real-world strength: see WorldSettings)
     using clk = std::chrono::steady_clock;
     auto tick = clk::now();
     auto lap = [&](int k) { auto t = clk::now(); m_prof[k] += std::chrono::duration<float, std::milli>(t - tick).count(); tick = t; };
@@ -931,7 +931,7 @@ void Liquid::updateGpu(float dt, Scene& scene) {
         dt = std::min(dt, 1.0f / 30.0f);
         const int steps = std::clamp((int)std::ceil(dt * 90.0f), 1, 3);
         const float h = dt / steps;
-        const glm::vec3 g(0.0f, -scene.world().gravity, 0.0f);
+        const glm::vec3 g(0.0f, -scene.world().fluidGravity(), 0.0f);   // (real-world strength: see WorldSettings)
         for (int s = 0; s < steps; ++s) {
             m_incoming.clear();
             const size_t known = m_gpu->results().count;
