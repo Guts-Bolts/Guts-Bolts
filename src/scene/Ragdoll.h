@@ -110,5 +110,5 @@ private:
     float     m_accum = 0.0f;               // time not yet stepped
     int       m_onGround = 0;               // how many points are resting on something
     GoreKind  m_goreKind = GoreKind::Blood;
-    float     m_gravity = 22.0f;
+    float     m_gravity = 98.1f;   // (set from the world's gravity when it starts)
 };

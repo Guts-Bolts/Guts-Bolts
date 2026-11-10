@@ -1105,7 +1105,7 @@ bool Player::knockedOffSeat(Physics& physics) {
         if (l < 1e-3f || s.speed < 6.0f) continue;
         dir /= l;
         standUp(false);
-        m_velocity = dir * s.speed + glm::vec3(0.0f, s.speed * 0.35f, 0.0f);
+        m_velocity = dir * s.speed + glm::vec3(0.0f, s.speed * 0.35f * m_scene->world().launchScale(), 0.0f);
         m_grounded = false;
         m_groundId = 0;
         const float fwd = glm::dot(dir, glm::vec3(std::sin(glm::radians(r->transform.rotation.y)), 0.0f,
@@ -1599,7 +1599,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
     }
     // Landing really hard (and living): you trip and go down for a moment.
     if (res.grounded && !m_grounded && !m_swimming && m_humanoid.health > 0.0f &&
-        impact > std::max(45.0f, world.fallDamageSpeed * 1.6f))
+        impact > std::max(45.0f * world.launchScale(), world.fallDamageSpeed * 1.6f))
         trip(1.0f, glm::vec3((m_velocity.x + m_velocity.z >= 0.0f ? 1.0f : -1.0f) * impact * 3.0f, 0, 0));
     m_grounded = res.grounded;
     if (res.grounded && m_velocity.y < 0.0f) m_velocity.y = 0.0f;
@@ -1620,7 +1620,7 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         float have = glm::dot(glm::vec3(m_velocity.x, 0.0f, m_velocity.z), dir);
         if (s.speed > have) m_velocity += dir * (s.speed - have);
         if (s.speed > 6.0f && !m_climbing) {   // a big hit throws you off your feet
-            m_velocity.y = std::max(m_velocity.y, s.speed * 0.35f);
+            m_velocity.y = std::max(m_velocity.y, s.speed * 0.35f * m_scene->world().launchScale());
             m_grounded = false;
             m_groundId = 0;
             m_coyote = 0.0f;

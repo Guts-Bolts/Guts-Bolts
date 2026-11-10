@@ -1,49 +1,104 @@
 #pragma once
 #include <future>
+#include <atomic>
+#include <memory>
+#include <utility>
+#include <deque>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+#include "../FyxaProviderCapabilities.h"
 #include "../StudioMcp.h"
 #include "../StudioRelay.h"
 
 class Editor;
 
-// Studio's Assistant tab (like Roblox Studio's Assistant). Two things:
-//  * Chat with Claude, using your own Anthropic API key. It can see and change
-//    your game with Studio's AI tools (AiTools.h): build, script, playtest,
-//    take screenshots. Everything it does can be undone.
-//  * Switch on MCP so AI apps on this computer (Claude Desktop, Claude Code,
-//    other MCP tools) can use the same tools, and/or let apps you connected
-//    to your account (like Lyreto) use them online (StudioRelay).
+// Fyxa is the Guts & Bolts platform-wide AI agent. This panel is its Studio surface;
+// platform capabilities are added through permission-checked providers. It can use
+// a cloud provider or local Ollama while Studio edits continue through native AI tools.
 class AssistantPanel {
 public:
     explicit AssistantPanel(Editor& editor);
     ~AssistantPanel();
-    void update();                   // every frame (MCP requests, the chat's replies)
+    void update();
     void render(bool* open);
 
 private:
-    struct Line { enum Kind { You, Claude, Tool, Note, Error } kind; std::string text; };
+    struct Line { enum Kind { You, Assistant, Tool, Note, Error } kind; std::string text; };
     void load();
     void save() const;
     void send(const std::string& text);
-    void requestNext();              // ask Claude to carry on with the conversation so far
+    void requestNext();
     void handleReply(int status, const std::string& body, const std::string& error);
+    void handleClaudeReply(int status, const std::string& body, const std::string& error);
+    void handleOllamaReply(int status, const std::string& body, const std::string& error);
+    void refreshMcpServers();
+    void authorizeMcpServer(const std::string& name);
+    nlohmann::json externalMcpTools() const;
+    std::string externalMcpFingerprint(const std::string& qualifiedName) const;
+    nlohmann::json discoverFyxaTools(const std::string& query);
+    void probeOllamaCapabilities();
+    struct ExternalCall { bool claude = false; std::string name, id, definitionFingerprint, idempotencyKey; nlohmann::json args; };
+    struct ExternalCompletion { ExternalCall call; std::string text, error, refreshedServerName, refreshedAccessToken, refreshedRefreshToken; };
+    void startNextExternalCall();
+    void finishExternalCalls();
+    std::string recordToolEvidence();
 
     Editor&     m_editor;
     StudioMcp   m_mcp;
     bool        m_mcpWanted = false;
     int         m_mcpPort = StudioMcp::kDefaultPort;
     std::string m_mcpError;
-    StudioRelay m_relay;             // "Allow connected apps to use AI tools" (gutsandbolts.net/mcp)
-    bool        m_appsWanted = false;   // saved as "connectedApps" in assistant.json
+    StudioRelay m_relay;
+    bool        m_appsWanted = false;
 
-    std::string m_apiKey, m_model = "claude-opus-5-5", m_input;
-    nlohmann::json m_messages = nlohmann::json::array();   // the conversation, as Claude sees it
-    std::vector<Line> m_lines;       // the conversation, as shown
+    std::string m_provider = "ollama";
+    std::string m_apiKey;
+    std::string m_credentialStatus;
+    std::string m_model = "claude-sonnet-5-5";
+    std::string m_ollamaHost = "127.0.0.1";
+    int         m_ollamaPort = 11434;
+    std::string m_ollamaModel = "qwen3:8b";
+    struct McpServer {
+        std::string name, url, token, credentialKey, sessionId, protocolVersion = "2026-07-28";
+        std::string oauthClientId, oauthRefreshToken, oauthTokenEndpoint, oauthRevocationEndpoint, oauthResource, oauthIssuer;
+        bool enabled = false;
+        nlohmann::json tools = nlohmann::json::array();
+    };
+    struct McpRefreshResult { std::vector<McpServer> servers; std::string status; };
+    struct McpOAuthResult { std::string serverName, accessToken, refreshToken, issuer, tokenEndpoint, revocationEndpoint, resource, clientId, error; };
+    std::future<McpOAuthResult> m_oauthPending;
+    std::future<std::string> m_oauthRevocationPending;
+    std::shared_ptr<std::atomic_bool> m_oauthCancel;
+    std::string m_oauthServerName;
+    std::vector<McpServer> m_externalMcp;
+    std::future<McpRefreshResult> m_mcpRefreshPending;
+    std::string m_newMcpName, m_newMcpUrl, m_newMcpToken, m_newMcpClientId;
+    std::string m_mcpStatus;
+    std::string m_input;
+    std::string m_activeRequestText;
+    std::vector<std::string> m_discoveredToolNames;
+    nlohmann::json m_messages = nlohmann::json::array();
+    std::vector<Line> m_lines;
     struct Reply { int status = 0; std::string body, error; };
+    struct OllamaCapabilityCheck { std::string host, model, error; int port = 0; FyxaProviderCapabilities::OllamaModel capabilities; };
+    std::future<OllamaCapabilityCheck> m_ollamaCapabilitiesPending;
+    std::string m_ollamaCapabilityHost, m_ollamaCapabilityModel, m_ollamaCapabilityStatus;
+    int m_ollamaCapabilityPort = 0;
+    bool m_ollamaCapabilitiesKnown = false, m_ollamaSupportsCompletion = false;
+    bool m_ollamaSupportsTools = false, m_ollamaSupportsVision = false;
     std::future<Reply> m_pending;
-    int         m_rounds = 0;        // tool rounds in this answer (stops runaway loops)
+    std::shared_ptr<std::atomic_bool> m_agentCancel;
+    std::future<ExternalCompletion> m_externalPending;
+    std::deque<ExternalCall> m_externalQueue;
+    nlohmann::json m_deferredClaudeResults = nlohmann::json::array();
+    nlohmann::json m_deferredOllamaMessages = nlohmann::json::array();
+    bool m_deferredExternalClaude = false;
+    bool m_deferredExternalOllama = false;
+    bool m_externalApprovalPending = false;
+    bool m_externalApprovalGranted = false;
+    int         m_rounds = 0;
     bool        m_stopAsked = false;
     bool        m_scrollDown = false;
+    std::string m_activeTaskId;
 };

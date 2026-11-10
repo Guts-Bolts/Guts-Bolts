@@ -38,7 +38,7 @@ end)
 
 const char* kJumpPad = R"(-- Jump Pad: launches the player high into the air.
 local pad = script.Parent
-local launchSpeed = 20   -- bigger number = higher jump
+local launchSpeed = 42   -- bigger number = higher jump
 
 pad.Touched:Connect(function(hit)
     local character = hit.Parent
@@ -612,7 +612,7 @@ end
 barrel.Clicked:Connect(boom)
 barrel.Touched:Connect(function(hit)
     -- Blow up if something slams into it fast.
-    if hit.AssemblyLinearVelocity.Magnitude > 12 then boom() end
+    if hit.AssemblyLinearVelocity.Magnitude > 25 then boom() end
 end)
 )";
 
@@ -640,10 +640,10 @@ pad.Touched:Connect(function(hit)
     local character = hit.Parent
     local root = character:FindFirstChild("HumanoidRootPart")
     if root and character:FindFirstChild("Humanoid") then
-        root.AssemblyLinearVelocity = Vector3.new(0, 26, 0)
+        root.AssemblyLinearVelocity = Vector3.new(0, 55, 0)
         Sounds.Play("boing", pad.Position)
     elseif not hit.Anchored then
-        hit.AssemblyLinearVelocity = hit.AssemblyLinearVelocity + Vector3.new(0, 30, 0)
+        hit.AssemblyLinearVelocity = hit.AssemblyLinearVelocity + Vector3.new(0, 63, 0)
     end
 end)
 )";

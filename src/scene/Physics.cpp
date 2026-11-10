@@ -498,11 +498,18 @@ Physics::MoveResult Physics::moveCharacter(const glm::vec3& feet, const glm::vec
         if (useTerrain) onTerrain(before);
     }
 
-    // Fall / jump.
-    pos.y += delta.y;
+    // Fall / jump, in small steps too: with Roblox-strength gravity a long fall
+    // moves several units a frame, which could skip right through a thin floor.
     bool wasGround = r.grounded;
     r.grounded = false;
-    resolve(false, true);
+    {
+        const int vsteps = std::max(1, (int)std::ceil(std::abs(delta.y) / 0.4f));
+        for (int s = 0; s < vsteps; ++s) {
+            pos.y += delta.y / vsteps;
+            resolve(false, true);
+            if ((delta.y < 0.0f && r.grounded) || (delta.y > 0.0f && r.hitCeiling)) break;   // landed / bumped our head
+        }
+    }
     if (useTerrain) {
         float g;
         if (terrainGround(pos, yaw, g) && g >= pos.y) { pos.y = g; r.grounded = true; r.groundId = 0; }

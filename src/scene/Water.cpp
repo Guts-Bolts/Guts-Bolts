@@ -341,7 +341,7 @@ void WaterSystem::stepSurges(float dt, Scene& scene) {
             glm::vec3 dir; float k;
             if (inPath(pl->position(), dir, k) && std::find(s.swept.begin(), s.swept.end(), pl->rootId()) == s.swept.end() && amp > 0.4f) {
                 s.swept.push_back(pl->rootId());
-                pl->launch(dir * s.speed * 0.55f * k + glm::vec3(0.0f, std::min(30.0f, amp * 5.0f) * k, 0.0f));
+                pl->launch(dir * s.speed * 0.55f * k + glm::vec3(0.0f, std::min(30.0f, amp * 5.0f) * k * scene.world().launchScale(), 0.0f));
             }
         }
         // Loose parts (boats, crates, debris) ride the front.
