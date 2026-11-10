@@ -1,4 +1,5 @@
 #include "Blast.h"
+#include "Shatter.h"
 #include "Scene.h"
 #include "SceneNode.h"
 #include "Player.h"
@@ -232,6 +233,8 @@ std::vector<BlastSystem::Hit> BlastSystem::start(Scene& scene, const glm::vec3& 
 // The shockwave reached from `from` to `to` this frame: push what's in that shell.
 void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physics&) {
     const float R = b.opts.radius, P = b.opts.power;
+    struct Break { SceneNode* part; glm::vec3 at; float force; };
+    std::vector<Break> shatter;
     std::vector<SceneNode*> stack{scene.root()}, joints;
     while (!stack.empty()) {
         SceneNode* n = stack.back();
@@ -246,6 +249,8 @@ void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physic
         b.done.insert(n->id);
         const float k = std::pow(1.0f - d / R, 1.5f);
         const glm::vec3 dir = d > 1e-3f ? (p - b.center) / d : glm::vec3(0, 1, 0);
+        // Breakable things shatter (the side facing the blast gets the small pieces).
+        if (Shatter::breakable(*n) && k > 0.08f) { shatter.push_back({n, b.center, std::min(1.5f, P * k * 1.5f)}); continue; }
         // Craters: big "destroy" blasts tear anchored things loose near the middle.
         if (n->anchored) {
             if (!b.opts.destroy || d > R * 0.4f) continue;
@@ -258,6 +263,13 @@ void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physic
         n->velocity += (dir + glm::vec3(0, 0.45f, 0)) * 48.0f * P * k / heft * scene.world().launchScale();
         n->angularVelocity += glm::cross(glm::vec3(0, 1, 0), dir) * 10.0f * P * k / heft + rndDir() * 3.0f * k;
         Physics::wake(n);
+    }
+    for (const Break& x : shatter) {
+        const glm::mat4 m = x.part->worldMatrix();
+        // Where the blast hits it: its side nearest the middle of the blast.
+        const glm::vec3 local = glm::clamp(glm::vec3(glm::inverse(m) * glm::vec4(x.at, 1.0f)), glm::vec3(-0.5f), glm::vec3(0.5f));
+        for (SceneNode* piece : Shatter::breakPart(scene, x.part, glm::vec3(m * glm::vec4(local, 1.0f)), x.force))
+            b.done.insert(piece->id);
     }
     // Joints in the blast come apart (welds, hinges, ropes...).
     std::vector<SceneNode*> broken;

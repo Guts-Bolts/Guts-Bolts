@@ -226,6 +226,7 @@ std::string nodeState(const SceneNode* n) {
     if (n->isEffect()) return std::string(buf) + Serializer::effectToJson(n->effect, n->enabled, n->kind == NodeKind::Beam).dump();
     if (n->isSound() || n->isSoundGroup() || n->isSoundEffect()) return std::string(buf) + Serializer::soundToJson(*n).dump();
     if (n->isPostEffect()) return std::string(buf) + Serializer::postEffectToJson(n->post, n->enabled).dump();
+    if (n->isLight() && n->lightShadows) return std::string(buf) + "|lsh";   // a lamp's Shadows switched on
     if (n->isSky()) return std::string(buf) + Serializer::skyToJson(n->sky).dump();
     if (n->isMaterialVariant()) return std::string(buf) + Serializer::variantToJson(n->variant).dump();
     if (n->isConstraint() && usesJointProps(n->constraintType)) return std::string(buf) + Serializer::jointToJson(n->joint).dump();
@@ -237,7 +238,7 @@ json nodeUpdate(const SceneNode* n) {
     json u = {{"i", n->id}, {"t", transformJson(n->transform)}, {"c", vec3(n->color)},
             {"a", n->transparency}, {"v", n->visible}, {"cc", n->canCollide}, {"e", n->enabled},
             {"m", (int)n->material}, {"sh", (int)n->primitiveType}, {"b", n->brightness},
-            {"rg", n->range}, {"sa", n->spotAngle}};
+            {"rg", n->range}, {"sa", n->spotAngle}, {"lsh", n->lightShadows}};
     if (n->collisionGroup != CollisionGroups::kDefault) u["cg"] = n->collisionGroup;
     if (!n->materialVariant.empty()) u["mv"] = n->materialVariant;
     if (n->isGui()) u["gui"] = Serializer::guiToJson(n->gui);
@@ -277,6 +278,7 @@ void applyUpdate(SceneNode* n, const json& u) {
     n->brightness   = u.value("b", n->brightness);
     n->range        = u.value("rg", n->range);
     n->spotAngle    = u.value("sa", n->spotAngle);
+    n->lightShadows = u.value("lsh", n->lightShadows);
     if (n->isGui() && u.contains("gui") && u["gui"].is_object()) {
         const glm::vec2 absPos = n->gui.absPos, absSize = n->gui.absSize;   // (worked out here, not sent)
         Serializer::guiFromJson(n->gui, u["gui"]);

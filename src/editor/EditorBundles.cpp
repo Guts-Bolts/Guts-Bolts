@@ -24,6 +24,7 @@ const char* const kMannequin = "Bundle Mannequin";
 // Is this part still the normal body part (same shape, size and spot)?
 bool standard(const SceneNode& part) {
     glm::vec3 pos, size;
+    for (const auto& c : part.children) if (c->isBone()) return false;   // bones added (jiggly hair, a tail...)
     if (part.primitiveType != PrimitiveType::Mesh || !PlayerModel::nameOf(part.editMesh.get())) return false;
     if (!PlayerModel::placement(part.name, pos, size)) return true;
     return glm::length(part.transform.position - pos) < 1e-3f && glm::length(part.transform.scale - size) < 1e-3f;
@@ -201,6 +202,16 @@ void Editor::renderBundleWindow() {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Put the blank clothing template on the mannequin to check each side lands in the right spot");
 
+    // Bones: jiggly parts come from bones the creator adds (Armature window), and the
+    // limbs can bend softly in the middle.
+    ImGui::SeparatorText("Bones and bending");
+    ImGui::Checkbox("Arms and legs bend at the elbows and knees", &m_bundleBend);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Each arm and leg gets a soft joint in the middle, so it bends a little as it swings\n"
+                          "instead of moving like one stiff block.");
+    ImGui::TextDisabled("Jiggly hair, tails or bellies: add Bones to a body part (Model > Armature),");
+    ImGui::TextDisabled("set them to Jiggle, and they wobble for everyone who wears the bundle.");
+
     // 3. What else comes with it.
     ImGui::SeparatorText("In the bundle");
     ImGui::Checkbox("Headless (hides the head and face)", &m_bundleHeadless);
@@ -216,16 +227,21 @@ void Editor::renderBundleWindow() {
     ImGui::SetNextItemWidth(140);
     if (ImGui::InputInt("Price (Bolts)", &m_bundlePrice, 5, 50)) m_bundlePrice = std::clamp(m_bundlePrice, 0, 1000000);
     const std::vector<std::string> items = itemIds(m_bundleItems);
-    const bool something = changed > 0 || m_bundleHeadless || !items.empty();
+    const bool something = changed > 0 || m_bundleHeadless || !items.empty() || m_bundleBend;
     ImGui::BeginDisabled(m_onlineBusy || !something || m_bundleName.empty() || !canPublishBundle);
     if (ImGui::Button("Upload", ImVec2(140, 30))) {
         json body = json::object();
-        for (const char* name : Online::kBodyParts)
-            if (SceneNode* part = mannequin->findChild(name); part && !standard(*part)) {
-                if (m_bundleAutoUV) clothingUVs(*part);
-                MeshEdit::fit(*part);   // corners inside -0.5..0.5, like every saved mesh
-                body[name] = Player::bodyPartJson(*part);
-            }
+        for (const char* name : Online::kBodyParts) {
+            SceneNode* part = mannequin->findChild(name);
+            const bool limb = std::string(name) != "Head" && std::string(name) != "Torso";
+            if (!part || (standard(*part) && !(m_bundleBend && limb))) continue;
+            if (!part->editMesh && part->primitiveType != PrimitiveType::None)   // a plain block: give it a mesh
+                MeshEdit::attach(*part, MeshEdit::fromPrimitive(part->primitiveType));
+            if (m_bundleAutoUV) clothingUVs(*part);
+            MeshEdit::fit(*part);   // corners inside -0.5..0.5, like every saved mesh
+            body[name] = Player::bodyPartJson(*part);
+            if (m_bundleBend && limb && !body[name].contains("bones")) body[name]["bend"] = true;
+        }
         json tidy;
         std::string problem = body.empty() ? std::string() : Online::bundleBody(body, tidy);
         if (!problem.empty()) {

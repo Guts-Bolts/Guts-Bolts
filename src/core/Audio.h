@@ -39,7 +39,12 @@ void resume();                                     // restore the user's previou
 // A sound's own effects run first, then it goes through its group's "bus" (the group's
 // effects, on everything in the group mixed together), then the parent group's, and so on.
 void setEffects(int handle, const std::vector<SoundFx::Settings>& fx);   // in this order
-void setRoute(int handle, uint64_t bus);                                  // 0 = straight out
+void setRoute(int handle, uint64_t bus);
+// How loud a playing sound is right now (RMS of what comes out of it, 0..1; 0 if it
+// isn't playing). The first ask starts listening, so it reads 0 that once.
+// (Sound.PlaybackLoudness is this * 1000; lip sync uses it.)
+float loudness(int handle);
+float loudnessOf(const float* samples, size_t count);   // the same sum, for tests                                  // 0 = straight out
 // A SoundGroup's bus: `parent` = the group it's inside (0 = none), its effects in order.
 void setBus(uint64_t bus, uint64_t parent, const std::vector<SoundFx::Settings>& fx);
 void keepBuses(const std::set<uint64_t>& used);                           // drop the rest

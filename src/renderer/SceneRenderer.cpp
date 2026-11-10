@@ -13,6 +13,9 @@
 #include "../scene/Liquid.h"
 #include "../scene/Gerstner.h"
 #include "../scene/Skin.h"
+#include "../scene/Cloth.h"
+#include "../scene/BounceLight.h"
+#include "../scene/LipSync.h"
 #include "../core/Settings.h"
 #include "../core/FrameProfile.h"
 #include "MeshLibrary.h"
@@ -504,6 +507,87 @@ void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, 
     glEnable(GL_BLEND);
 }
 
+glm::mat4 SceneRenderer::lampFaceView(const glm::vec3& lampPos, int face) {
+    static const glm::vec3 kForward[6] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    const glm::vec3 F = kForward[std::clamp(face, 0, 5)];
+    const glm::vec3 U = (face == 2 || face == 3) ? glm::vec3(0, 0, 1) : glm::vec3(0, 1, 0);
+    const glm::vec3 B = -F;
+    const glm::vec3 R = glm::cross(U, B);
+    // Rows R, U, B (a camera looks down its -Z), moved to the lamp.
+    glm::mat4 v(1.0f);
+    for (int c = 0; c < 3; ++c) { v[c][0] = R[c]; v[c][1] = U[c]; v[c][2] = B[c]; }
+    v[3][0] = -glm::dot(R, lampPos);
+    v[3][1] = -glm::dot(U, lampPos);
+    v[3][2] = -glm::dot(B, lampPos);
+    return v;
+}
+
+void SceneRenderer::renderLampShadows(Scene& scene, const glm::vec3& camPos, int most) {
+    m_lampShadowNodes.clear();
+    if (most <= 0) return;
+    struct Lamp { const SceneNode* n; glm::vec3 pos; float range, dist; };
+    std::vector<Lamp> lamps;
+    scene.forEach([&](SceneNode* n) {
+        if (!n->isLight() || !n->lightShadows || !n->enabled || n->brightness <= 0.0f) return;
+        for (SceneNode* p = n; p; p = p->parent) if (!p->shown()) return;
+        const glm::vec3 pos(n->worldMatrix()[3]);
+        if (tooFar(pos, n->range)) return;
+        lamps.push_back({n, pos, std::max(0.2f, n->range), glm::length(pos - camPos)});
+    });
+    if (lamps.empty()) return;
+    std::sort(lamps.begin(), lamps.end(), [](const Lamp& a, const Lamp& b) { return a.dist < b.dist; });
+    if ((int)lamps.size() > most) lamps.resize((size_t)most);
+
+    const int tile = std::clamp(GraphicsSettings::get().shadowRes / 4, 128, 1024);
+    if (tile != m_lampTile) { m_lampShadows.init(tile * 6, tile * 4); m_lampTile = tile; }
+    m_lampShadows.bindForWrite();
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(1.5f, 3.0f);
+    glEnable(GL_SCISSOR_TEST);
+    m_depth->bind();
+    // What could cast a shadow from these lamps (worked out once, not 6 times a lamp).
+    struct Caster { SceneNode* n; glm::mat4 m; glm::vec3 c; float r; };
+    std::vector<Caster> casters;
+    scene.forEach([&](SceneNode* node) {
+        if (!node->mesh || !node->shown() || !node->castShadow) return;
+        if (node->kind != NodeKind::Part || node->transparency > 0.5f) return;
+        for (SceneNode* p = node->parent; p; p = p->parent)
+            if (!p->shown() || p->isViewportFrame()) return;
+        const glm::mat4 m = node->worldMatrix();
+        const glm::vec3 c(m[3]);
+        const float r = partRadius(m);
+        for (const Lamp& l : lamps)
+            if (glm::length(c - l.pos) < l.range + r) { casters.push_back({node, m, c, r}); return; }
+    });
+    for (int s = 0; s < (int)lamps.size(); ++s) {
+        const Lamp& l = lamps[(size_t)s];
+        m_lampShadowNodes.push_back(l.n);
+        const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, l.range);
+        for (int f = 0; f < 6; ++f) {
+            const int tx = (s % 2) * 3 + f % 3, ty = (s / 2) * 2 + f / 3;
+            glViewport(tx * tile, ty * tile, tile, tile);
+            glScissor(tx * tile, ty * tile, tile, tile);
+            m_depth->setMat4("uLightSpace", proj * lampFaceView(l.pos, f));
+            for (const Caster& c : casters) {
+                if (glm::length(c.c - l.pos) > l.range + c.r) continue;
+                m_depth->setMat4("uModel", c.m);
+                c.n->mesh->draw();
+            }
+            if (Mesh* tm = terrainMesh(scene)) {
+                m_depth->setMat4("uModel", glm::mat4(1.0f));
+                tm->draw();
+            }
+        }
+    }
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(0.0f, 0.0f);
+    glEnable(GL_BLEND);
+}
+
 void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& target, bool showGrid) {
     GraphicsSettings& gs = GraphicsSettings::get();
     // Weather: drops fall on, and while drawing the sky, sun and fog look stormy
@@ -522,6 +606,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     const Environment& env = scene.environment();
     glm::vec3 sunDir = env.sunDirection();
     gatherScreenFx(scene);
+    Cloth::update(scene);         // capes and flags flap; Jiggle accessories get their springy bones
     Skin::update(scene.root());   // meshes bent by their bones (armatures)
 
     // Render distance (10 = no limit). Water and liquid out there rest too (less lag).
@@ -569,6 +654,13 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
                                     -c.z - sunDist, -c.z + sunDist) * lightView0;
         FrameProfile::Scope prof("draw: shadows near", true);
         renderShadowPass(scene, lightSpaceNear, m_shadowNear);
+    }
+
+    // Lamps with Shadows on (4 nearest; 2 on low shadow quality).
+    m_lampShadowNodes.clear();
+    if (gs.shadows && shading == Shading::Material) {
+        FrameProfile::Scope prof("draw: lamp shadows", true);
+        renderLampShadows(scene, camera.position(), gs.shadowQuality > 0 ? 4 : 2);
     }
 
     // --- Main HDR pass ---
@@ -724,7 +816,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lit->setInt("uShadowMapNear", 6);
 
     // Collect point / spot lights; keep the ones closest to the camera.
-    struct LightItem { glm::vec4 pos, col, dir; float dist; };
+    struct LightItem { glm::vec4 pos, col, dir; float dist; const SceneNode* node; };
     std::vector<LightItem> lights;
     glm::vec3 camPos = camera.position();
     scene.forEach([&](SceneNode* n) {
@@ -737,16 +829,46 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         float cosHalf = std::cos(glm::radians(std::clamp(n->spotAngle, 1.0f, 179.0f) * 0.5f));
         glm::vec3 col = glm::pow(n->color, glm::vec3(2.2f)) * n->brightness;
         lights.push_back({glm::vec4(pos, n->range), glm::vec4(col, n->lightType == LightType::Spot ? 1.0f : 0.0f),
-                          glm::vec4(dir, cosHalf), glm::length(pos - camPos)});
+                          glm::vec4(dir, cosHalf), glm::length(pos - camPos), n});
     });
     std::sort(lights.begin(), lights.end(), [](auto& a, auto& b) { return a.dist < b.dist; });
-    int count = std::min<int>((int)lights.size(), std::min(kMaxLights, gs.maxLights));
+    const int most = std::min(kMaxLights, gs.maxLights);
+    // Bouncy light: soft coloured lights where sun and lamp light land (BounceLight.h),
+    // worked out about 4 times a second, after the real lamps (if there's room).
+    if (env.bounceLight > 0.0f && shading == Shading::Material) {
+        const double t = now();
+        if (t - m_bounceAt > 0.25 || t < m_bounceAt || glm::length(camera.pivot - m_bounceAround) > BounceLight::kSpacing) {
+            m_bounceAt = t;
+            m_bounceAround = camera.pivot;
+            std::vector<BounceLight::Lamp> near;
+            for (const LightItem& l : lights)
+                if (near.size() < (size_t)BounceLight::kMostLamps)
+                    near.push_back({glm::vec3(l.pos), glm::vec3(l.col), l.pos.w});
+            m_bounce = BounceLight::gather(scene, env, camera.pivot, near);
+        }
+        if ((int)lights.size() > most) lights.resize((size_t)most);
+        for (const BounceLight::Point& b : m_bounce)
+            if ((int)lights.size() < most) lights.push_back({glm::vec4(b.pos, b.range), glm::vec4(b.color, 2.0f), glm::vec4(b.normal, 0.0f), 0.0f, nullptr});
+    } else {
+        m_bounce.clear();
+    }
+    int count = std::min<int>((int)lights.size(), most);
     glm::vec4 lp[kMaxLights], lc[kMaxLights], ld[kMaxLights];
     for (int i = 0; i < count; ++i) { lp[i] = lights[i].pos; lc[i] = lights[i].col; ld[i] = lights[i].dir; }
     m_lit->setInt("uLightCount", count);
     m_lit->setVec4Array("uLightPosRange", lp, count);
     m_lit->setVec4Array("uLightColor", lc, count);
     m_lit->setVec4Array("uLightDir", ld, count);
+    float slots[kMaxLights];
+    for (int i = 0; i < count; ++i) {
+        slots[i] = -1.0f;
+        for (size_t k = 0; k < m_lampShadowNodes.size(); ++k)
+            if (m_lampShadowNodes[k] == lights[i].node) slots[i] = (float)k;
+    }
+    m_lit->setFloatArray("uLampShadowSlot", slots, count);
+    m_lampShadows.bindForRead(10);
+    m_lit->setInt("uLampShadows", 10);
+    m_lit->setFloat("uLampTileTexel", m_lampTile > 0 ? 1.0f / (float)m_lampTile : 0.01f);
 
     { FrameProfile::Scope prof("draw: parts and water", true); drawGeometry(scene, camera, showGrid); }
     drawOverlay(view, proj);
@@ -1411,6 +1533,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 bindTex(5, cloth);
                 m_lit->setInt("uDecal", 5);
                 m_lit->setBool(face ? "uFace" : "uClothing", true);
+                if (face) m_lit->setFloat("uMouthOpen", LipSync::mouth(node->id));   // lip sync (LipSync.h)
             }
             // A T-shirt: a picture on the front of the torso.
             unsigned tee = !node->tshirt.empty() ? Textures::get(node->tshirt) : 0;

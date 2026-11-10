@@ -103,6 +103,7 @@ in vec4 vTangent;
 
 uniform bool      uUseDecal;   // drawing a Decal: its picture colours the surface
 uniform bool      uFace;       // a head: its face picture (uDecal) is painted onto the front of it
+uniform float     uMouthOpen;  // lip sync: 0 = the face as drawn, 1 = mouth wide open (talking)
 uniform bool      uClothing;   // a shirt / pants picture (uDecal) painted over the part's colour
 uniform bool      uHasTShirt;  // a torso with a T-shirt: its picture flat on the front
 uniform sampler2D uTShirt;
@@ -183,8 +184,14 @@ uniform float     uShadowTexelNear;
 #define MAX_LIGHTS 32
 uniform int  uLightCount;
 uniform vec4 uLightPosRange[MAX_LIGHTS];   // xyz position, w range
-uniform vec4 uLightColor[MAX_LIGHTS];      // rgb colour * brightness, w: 0 point 1 spot
+uniform vec4 uLightColor[MAX_LIGHTS];      // rgb colour * brightness, w: 0 point 1 spot 2 bounce
 uniform vec4 uLightDir[MAX_LIGHTS];        // xyz direction, w cos(half angle)
+// Lamp shadows: a few lamps with Shadows on get six little depth pictures each (one
+// per side, like a cube), packed in one texture: slot s, side f is tile
+// ((s%2)*3 + f%3, (s/2)*2 + f/3) of a 6 x 4 grid. -1 = this light has none.
+uniform float     uLampShadowSlot[MAX_LIGHTS];
+uniform sampler2D uLampShadows;
+uniform float     uLampTileTexel;    // 1 / pixels across one tile
 
 out vec4 FragColor;
 #pragma gb_common
@@ -242,6 +249,42 @@ float shadowFrom(sampler2D map, mat4 lightSpace, float texelWorld, vec3 N, vec3 
         lit += (p.z - bias > d) ? 0.0 : 1.0;
     }
     return lit / 16.0;
+}
+
+// How much of lamp i reaches this spot (0 = blocked, 1 = lit). Works out which side
+// of the lamp the spot is on, and reads that side's depth picture (soft 3x3 edges).
+float lampVisibility(int i, vec3 N) {
+    float slot = uLampShadowSlot[i];
+    if (slot < 0.0) return 1.0;
+    vec3  lp  = uLightPosRange[i].xyz;
+    float far = max(uLightPosRange[i].w, 0.2);
+    float near = 0.1;
+    vec3 v = vWorldPos + N * 0.05 - lp;
+    vec3 a = abs(v);
+    int f;
+    vec3 F;
+    if (a.x >= a.y && a.x >= a.z)  { f = v.x > 0.0 ? 0 : 1; F = vec3(sign(v.x), 0.0, 0.0); }
+    else if (a.y >= a.z)           { f = v.y > 0.0 ? 2 : 3; F = vec3(0.0, sign(v.y), 0.0); }
+    else                           { f = v.z > 0.0 ? 4 : 5; F = vec3(0.0, 0.0, sign(v.z)); }
+    vec3 U = (f == 2 || f == 3) ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+    vec3 R = cross(U, -F);
+    float dd = dot(v, F);
+    if (dd < near || dd > far) return 1.0;
+    vec2 uv = vec2(dot(v, R), dot(v, U)) / dd * 0.5 + 0.5;
+    int s = int(slot + 0.5);
+    vec2 tile = vec2(float((s % 2) * 3 + f % 3), float((s / 2) * 2 + f / 3));
+    float lit = 0.0;
+    for (int y = -1; y <= 1; ++y)
+        for (int x = -1; x <= 1; ++x) {
+            vec2 t = clamp(uv + vec2(float(x), float(y)) * uLampTileTexel * 1.5,
+                           vec2(uLampTileTexel), vec2(1.0 - uLampTileTexel));
+            float d = texture(uLampShadows, (tile + t) / vec2(6.0, 4.0)).r;
+            // Back to studs from the lamp, and compare there (even bias near and far).
+            float ndc = d * 2.0 - 1.0;
+            float stored = 2.0 * far * near / ((far + near) - ndc * (far - near));
+            lit += (dd * 0.985 - 0.04 > stored) ? 0.0 : 1.0;
+        }
+    return lit / 9.0;
 }
 
 float sunVisibility(vec3 N, vec3 L) {
@@ -358,6 +401,14 @@ void main() {
         // The picture covers the whole front of the head; only the front gets it.
         vec4 px = texture(uDecal, vLocalPos.xy + 0.5);
         albedo = mix(albedo, lin(px.rgb), px.a * smoothstep(0.0, 0.3, normalize(vLocalNormal).z));
+        if (uMouthOpen > 0.01) {
+            // Talking: an open mouth (dark inside, a hint of tongue) over the face's own.
+            vec2 m = (vLocalPos.xy - vec2(0.0, -0.2)) / vec2(0.15, 0.015 + 0.075 * uMouthOpen);
+            float d = length(m);
+            float inside = 1.0 - smoothstep(0.85, 1.0, d);
+            vec3 mouthCol = mix(vec3(0.08, 0.01, 0.015), vec3(0.45, 0.08, 0.1), smoothstep(0.2, 0.9, -m.y) * 0.6);
+            albedo = mix(albedo, mouthCol, inside * smoothstep(0.1, 0.35, normalize(vLocalNormal).z));
+        }
     }
 
     // --- Material look ---
@@ -641,11 +692,19 @@ void main() {
             if (dist > range) continue;
             vec3  Ld   = toL / max(dist, 1e-4);
             float fall = pow(clamp(1.0 - pow(dist / range, 4.0), 0.0, 1.0), 2.0) / (dist * dist + 1.0);
-            if (uLightColor[i].w > 0.5) {
+            if (uLightColor[i].w > 0.5 && uLightColor[i].w < 1.5) {
                 float cd = dot(-Ld, uLightDir[i].xyz);
                 float c0 = uLightDir[i].w;
                 fall *= smoothstep(c0, mix(c0, 1.0, 0.25), cd);
             }
+            if (uLightColor[i].w > 1.5) {
+                // Bouncy light (BounceLight.h): soft, no shiny spot. It shines out of the
+                // surface it came from (uLightDir = that surface's way out), not back onto it.
+                float lobe = clamp(dot(-Ld, uLightDir[i].xyz) + 0.3, 0.0, 1.0);
+                color += albedo * (1.0 - metal) * uLightColor[i].rgb * fall * 6.0 * lobe * (max(dot(N, Ld), 0.0) * 0.7 + 0.3);
+                continue;
+            }
+            if (uLampShadowSlot[i] >= 0.0) fall *= lampVisibility(i, N);
             color += shade(N, V, Ld, albedo, rough, metal, uLightColor[i].rgb * fall * 6.0);
         }
 

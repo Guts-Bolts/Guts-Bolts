@@ -476,6 +476,13 @@ add_library(gb_engine STATIC
     src/scene/EditMesh.cpp
     src/scene/MeshTools.cpp
     src/scene/Skin.cpp
+    src/scene/BundleRig.cpp
+    src/scene/Cloth.cpp
+    src/scene/Gore.cpp
+    src/scene/SoftTissue.cpp
+    src/scene/Shatter.cpp
+    src/scene/BounceLight.cpp
+    src/scene/LipSync.cpp
     src/scene/MeshUV.cpp
     src/scene/Csg.cpp
     src/scripting/Luau.cpp
@@ -1310,6 +1317,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME ClothingUVTests COMMAND ClothingUVTests)
 
     # Jiggle, LookAt and IK bones, saving them, scripts, and the weight brush.
+    # Bones in bundles, jiggle and cloth, gore upgrades, breaking things, a faster
+    # broadphase, lamp shadows, bouncy light and lip sync.
+    add_executable(BodiesGoreLightTests tests/BodiesGoreLightTests.cpp)
+    target_link_libraries(BodiesGoreLightTests PRIVATE gb_engine)
+    add_test(NAME BodiesGoreLightTests COMMAND BodiesGoreLightTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     add_executable(BoneRigTests tests/BoneRigTests.cpp)
     target_link_libraries(BoneRigTests PRIVATE gb_engine)
     add_test(NAME BoneRigTests COMMAND BoneRigTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"

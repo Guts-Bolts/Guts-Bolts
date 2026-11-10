@@ -114,6 +114,54 @@ const kBodyMostCorners = 20000;
 // anyone who owns the bundle can wear it. (src/server and the apps know these ids too.)
 const PIECE_PARTS = { head: 'Head', torso: 'Torso', leftarm: 'Left Arm', rightarm: 'Right Arm', leftleg: 'Left Leg', rightleg: 'Right Leg' };
 const pieceIdOf = (bundleId, part) => bundleId + '-' + part.replace(' ', '').toLowerCase();
+// A body part's bones and weights (jiggly hair, tails, soft elbows). Same rules as
+// src/online/Protocol.cpp bundleRig. Copies the tidy ones into `part`; '' if fine.
+const kBodyMostBones = 32;
+function bundleRig(name, p, corners, part) {
+  const bad = name + '\'s bones look wrong.';
+  const num = (x, lo, hi) => typeof x === 'number' && x >= lo && x <= hi;
+  const vec3 = (a, lim) => Array.isArray(a) && a.length === 3 && a.every((x) => num(x, -lim, lim));
+  if ('bend' in p) {
+    if (typeof p.bend !== 'boolean') return bad;
+    if (p.bend) {
+      if (name === 'Head' || name === 'Torso') return 'Only arms and legs can bend in the middle.';
+      part.bend = true;
+    }
+  }
+  if (!('bones' in p)) return 'w' in p ? bad : '';
+  if (!Array.isArray(p.bones) || p.bones.length > kBodyMostBones) return name + ' has too many bones (' + kBodyMostBones + ' at most).';
+  const tidy = [];
+  for (let i = 0; i < p.bones.length; i++) {
+    const b = p.bones[i];
+    if (!b || typeof b !== 'object' || Array.isArray(b) || typeof b.name !== 'string') return bad;
+    if (!b.name.length || new TextEncoder().encode(b.name).length > 32) return bad;
+    const parent = Number.isInteger(b.parent) ? b.parent : -2;
+    if (parent < -1 || parent >= i) return bad;
+    if (!vec3(b.pos, 16) || !vec3(b.rot, 360)) return bad;
+    const type = b.type === undefined ? 'Normal' : b.type;
+    if (type !== 'Normal' && type !== 'Jiggle') return 'Bones in a bundle can be Normal or Jiggle.';
+    const one = { name: b.name, parent, pos: b.pos, rot: b.rot, type };
+    for (const k of ['stiffness', 'damping']) {
+      if (!(k in b)) continue;
+      if (!num(b[k], 0, 1)) return bad;
+      one[k] = b[k];
+    }
+    if ('gravity' in b) { if (!num(b.gravity, -200, 200)) return bad; one.gravity = b.gravity; }
+    if ('length' in b) { if (!num(b.length, 0, 16)) return bad; one.length = b.length; }
+    tidy.push(one);
+  }
+  if (!tidy.length) return '';
+  part.bones = tidy;
+  if (!('w' in p)) return '';
+  if (!Array.isArray(p.w) || p.w.length !== corners) return bad;
+  for (const one of p.w) {
+    if (!Array.isArray(one) || one.length % 2 || one.length > 8) return bad;
+    for (let k = 0; k < one.length; k += 2)
+      if (!Number.isInteger(one[k]) || one[k] < 0 || one[k] >= p.bones.length || !num(one[k + 1], 0, 1)) return bad;
+  }
+  part.w = p.w;
+  return '';
+}
 function bundleBody(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length) return 'That bundle\'s body looks wrong.';
   const numbers = (a, n, lo, hi) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === 'number' && x >= lo && x <= hi);
@@ -136,6 +184,8 @@ function bundleBody(body) {
       for (let i = 0; i < p.uv.length; i++) if (!numbers(p.uv[i], p.f[i].length * 2, -1000, 1000)) return bad;
       part.uv = p.uv;
     }
+    const rigProblem = bundleRig(name, p, corners, part);
+    if (rigProblem) return rigProblem;
     out[name] = part;
   }
   return out;
