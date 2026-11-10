@@ -164,11 +164,19 @@ static void drawTermsWindow(bool& open) {
                                "once per ban.");
         head("What you make");
         ImGui::TextUnformatted("Stays yours. Uploading lets Guts&Bolts store and show it (and others use it, if you make it public).");
+        head("Chat, safety and moderation");
+        ImGui::TextUnformatted("Automated safety screening may review public creator submissions, profile text, game updates, "
+                               "comments, forums, group posts, translated in-game chat, party chat, private messages and supported "
+                               "image or audio uploads. Limited excerpts and review records may be shown to authorized moderators. "
+                               "Text and supported images are processed by Cloudflare Workers AI; supported audio is transcribed by Deepgram Nova-3 "
+                               "through Workers AI. AI flags are signals, not verdicts; staff make moderation decisions. See the "
+                               "full website Terms for details.");
         head("No guarantees");
         ImGui::TextUnformatted("Provided \"as is\", with no warranty. Things may break, change, lose data or shut down; as far "
                                "as the law allows, the makers aren't liable for any loss.");
         head("Privacy, in short");
-        ImGui::TextUnformatted("We keep what's needed to run your account and never sell anything to anyone.");
+        ImGui::TextUnformatted("We keep what's needed to run your account and never sell anything to anyone. Moderation screening "
+                               "may process submitted text and supported media as explained above.");
         ImGui::Spacing();
         ImGui::TextDisabled("The full version is on the website (Terms, at the bottom of every page).");
         ImGui::PopTextWrapPos();
@@ -259,7 +267,7 @@ void PlayerApp::drawLogin() {
             ImGui::TextColored(ImVec4(0.35f, 0.25f, 0.0f, 1), "Heads up: Guts&Bolts is for adults (18+).");
             ImGui::TextColored(ImVec4(0.3f, 0.23f, 0.02f, 1),
                                "It's the uncensored, R-rated cousin of the blocky-game genre: games can have strong "
-                               "language, crude humour, cartoon gore and violence, and chat isn't filtered. It's a free "
+                               "language, crude humour, cartoon gore and violence, and chat may be screened by automated safety systems. It's a free "
                                "hobby project, not Roblox and not connected to Roblox.");
             ImGui::Unindent(6);
             ImGui::Dummy(ImVec2(0, 2));

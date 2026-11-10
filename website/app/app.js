@@ -3278,6 +3278,63 @@ pages.avatar = async () => {
 
 // Staff tools (like the Player's Staff page): verify people, give Bolts, ban.
 // The reports players sent (newest problems first in line): what was reported, why, and buttons to close them.
+function fyxaModerationBox(result) {
+  if (!result || !result.ok) return html`<div class="box"><h2 class="boxhead">Fyxa moderation</h2><p class="error">${result && result.error || 'The moderation queue is unavailable.'}</p></div>`;
+  const items = result.items || [];
+  const names = { S1: 'Violence', S2: 'Non-violent crime', S3: 'Sexual violence', S4: 'Child safety', S5: 'Defamation', S6: 'Specialized advice',
+    S7: 'Privacy', S8: 'Intellectual property', S9: 'Weapons', S10: 'Hate', S11: 'Self-harm', S12: 'Sexual content', S13: 'Elections', S14: 'Code interpreter abuse',
+    SCAN_UNAVAILABLE: 'AI scanner unavailable', VISION_SCAN_UNAVAILABLE: 'Vision scan unavailable', AUDIO_REVIEW_REQUIRED: 'Audio upload requires manual review',
+    AUDIO_SCAN_UNAVAILABLE: 'Audio scan unavailable', GEOMETRY_REVIEW_REQUIRED: '3D geometry or embedded media requires manual review',
+    VISION_CHILD_SAFETY: 'Image child-safety review', VISION_SEXUAL_CONTENT: 'Image sexual-content review',
+    VISION_NUDITY: 'Image nudity review', VISION_VIOLENCE: 'Image violence review', VISION_HATE: 'Image hate-content review',
+    VISION_PERSONAL_INFORMATION: 'Image personal-information review' };
+  const person = (u, id) => u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>` : html`Unknown account (${id})`;
+  const source = (item) => {
+    let href = '';
+    if (item.sourceType === 'asset') href = item.assetKind === 'game' ? '#/game/' + item.sourceId
+      : isCatalogItem(item.assetKind) ? '#/item/' + item.sourceId : '#/library/' + item.sourceId;
+    else if (item.sourceType === 'comment' || item.sourceType === 'game_update' || item.sourceType === 'game_chat') href = '#/game/' + item.sourceId;
+    else if (item.sourceType === 'profile') href = '#/user/' + item.sourceId;
+    else if (item.sourceType === 'forum_thread' || item.sourceType === 'forum_reply') href = '#/forum/t/' + item.sourceId;
+    else if (item.sourceType === 'group' || item.sourceType === 'group_post') href = '#/group/' + item.sourceId;
+    return href ? html`<a href="${href}">${item.sourceName || item.sourceId}</a>` : (item.sourceName || item.sourceId || 'not recorded');
+  };
+  return html`<div class="box">
+    <h2 class="boxhead">Fyxa moderation queue</h2>
+    <p>AI-flagged submissions are prioritized here for staff review. The model provides signals, not verdicts. Review the excerpt and context before taking action.</p>
+    <p class="small muted">${Number(result.total || 0).toLocaleString()} open case${result.total === 1 ? '' : 's'} · Showing ${items.length ? (result.offset || 0) + 1 : 0}–${(result.offset || 0) + items.length} · Critical cases appear first · No automatic bans or deletions</p>
+    ${items.length ? items.map((item) => html`<div class="box fyxa-case">
+      <div class="row" style="align-items:center;justify-content:space-between;gap:10px">
+        <b>${item.severity.toUpperCase()} · ${item.sourceType.replaceAll('_', ' ')}</b>
+        <span class="small muted">${dateText(item.createdAt)}${item.occurrences > 1 ? " · " + item.occurrences + " occurrences · last seen " + dateText(item.lastSeenAt) : ""}</span>
+      </div>
+      <p class="small">Creator: ${person(item.author, item.authorId)} · Source: ${source(item)}</p>
+      <p class="small"><b>Signals:</b> ${item.categories.map((code) => (names[code] || code) + ' (' + code + ')').join(', ') || 'No category returned'}</p>
+      <p class="small muted">Scanner: ${item.scanner}</p>
+      <div class="report-copy"><b>Submitted content excerpt</b><div style="white-space:pre-wrap">${item.excerpt}</div></div>
+      <form class="form" data-form="fyxaModeration">
+        <input type="hidden" name="caseId" value="${item.id}">
+        <label>Staff decision</label>
+        <select name="outcome">
+          <option value="action_taken">Action taken (recorded separately)</option>
+          <option value="dismissed">Dismiss as safe / false positive</option>
+          <option value="escalated">Escalate for specialist review</option>
+        </select>
+        <label>Review note</label>
+        <textarea name="note" rows="2" maxlength="500" minlength="3" placeholder="Record what you reviewed and why" required></textarea>
+        <button class="btn green">Save moderation decision</button>
+      </form>
+    </div>`) : html`<p class="muted">${result.total ? 'No cases on this page.' : 'No open Fyxa moderation cases.'}</p>`}
+    ${result.total > (result.limit || 100) ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Page ${Math.floor((result.offset || 0) / (result.limit || 100)) + 1} of ${Math.ceil(result.total / (result.limit || 100))}</span>
+      <div class="row" style="gap:8px">
+        ${(result.offset || 0) > 0 ? html`<a class="btn" href="#/staff?tab=moderation&moderationOffset=${Math.max(0, (result.offset || 0) - (result.limit || 100))}">Previous</a>` : ''}
+        ${(result.offset || 0) + (result.limit || 100) < result.total ? html`<a class="btn" href="#/staff?tab=moderation&moderationOffset=${(result.offset || 0) + (result.limit || 100)}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
 function reportsBox(rep, closed) {
   const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff?tab=reports">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?reports=closed">Closed</a>`;
   if (!rep.ok) return html`<div class="box"><h2 class="boxhead">Reports</h2><p class="error">${rep.error}</p></div>`;
@@ -3442,7 +3499,7 @@ const GIVE_BADGES = [['tester', 'Tester'], ['bughunter', 'Bug Hunter'], ['featur
   ['obc', 'Overclocked Boltworks Club (OBC)']];
 const OTHER_BADGES = { tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
 const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
-  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['fyxa', 'Fyxa AI'], ['database', 'Database']];
+  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['fyxa', 'Fyxa AI'], ['moderation', 'Fyxa moderation'], ['database', 'Database']];
 // Staff > Numbers: how the site is doing. Now from the server; history (a reading every few
 // minutes, kept by day) and the week's top games from Supabase.
 function staffNumbersBox(r) {
@@ -3476,7 +3533,7 @@ function fyxaReviewBox(r) {
   return html`<div class="box">
     <h2 class="boxhead">Fyxa AI rights review</h2>
     <p>Review creator rights attestations before any asset can become eligible. Approval is not a safety-screening result and does not start content processing.</p>
-    <p class="small muted">${items.length} pending request${items.length === 1 ? '' : 's'} · Maximum 50 shown per request.</p>
+    <p class="small muted">${Number(r.total || 0).toLocaleString()} pending request${r.total === 1 ? '' : 's'} · Showing ${items.length ? (r.offset || 0) + 1 : 0}–${(r.offset || 0) + items.length}.</p>
     ${items.length ? items.map((item) => html`<div class="box fyxa-review-item">
       <b><a href="${item.contentType === 'game' ? '#/game/' + item.contentId : isCatalogItem(item.contentType) ? '#/item/' + item.contentId : '#/library/' + item.contentId}">${item.title || item.contentId}</a></b>
       <div class="small muted">${KINDS[item.contentType] || item.contentType} · Content ID ${item.contentId} · Creator ${item.owner && (item.owner.username || item.owner.name) || item.ownerId} · ${item.privacyStatus}</div>
@@ -3488,7 +3545,14 @@ function fyxaReviewBox(r) {
         <input name="reason" maxlength="160" minlength="8" placeholder="Describe the evidence reviewed" required>
         <p><button class="btn green">Submit review</button></p>
       </form>
-    </div>`) : html`<p class="muted">No rights attestations are waiting for review.</p>`}
+    </div>`) : html`<p class="muted">${r.total ? 'No requests on this page.' : 'No rights attestations are waiting for review.'}</p>`}
+    ${r.total > (r.limit || 50) ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Page ${Math.floor((r.offset || 0) / (r.limit || 50)) + 1} of ${Math.ceil(r.total / (r.limit || 50))}</span>
+      <div class="row" style="gap:8px">
+        ${(r.offset || 0) > 0 ? html`<a class="btn" href="#/staff?tab=fyxa&rightsOffset=${Math.max(0, (r.offset || 0) - (r.limit || 50))}">Previous</a>` : ''}
+        ${(r.offset || 0) + (r.limit || 50) < r.total ? html`<a class="btn" href="#/staff?tab=fyxa&rightsOffset=${(r.offset || 0) + (r.limit || 50)}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
   </div>`;
 }
 
@@ -3500,17 +3564,21 @@ pages.staff = async () => {
   const logFor = params.get('log') || '';
   const ticketsClosed = params.get('tickets') === 'closed';
   const appealsClosed = params.get('appeals') === 'closed';
+  const rightsOffset = Math.max(0, Math.trunc(Number(params.get('rightsOffset')) || 0));
+  const moderationOffset = Math.max(0, Math.trunc(Number(params.get('moderationOffset')) || 0));
   // (older links name what they show, not the tab)
   const tab = params.get('tab') || (params.has('q') ? 'people' : params.has('log') ? 'log' : params.has('reports') ? 'reports'
     : params.has('tickets') ? 'tickets' : params.has('appeals') ? 'appeals' : 'home');
   // What's waiting, for the counts on the tabs (and the lists themselves).
-  const [tk, up, rep, ap, rm, fyxaQueue] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
+  const [tk, up, rep, ap, rm, fyxaQueue, moderation] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
     pageCall('admin.reports', { status: closed ? 'closed' : 'open' }), pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }),
-    pageCall('roadmap.get', {}), tab === 'fyxa' ? pageCall('ai.content.reviewQueue', { limit: 50 }) : Promise.resolve(null)]);
+    pageCall('roadmap.get', {}), tab === 'fyxa' ? pageCall('ai.content.reviewQueue', { limit: 50, offset: rightsOffset }) : Promise.resolve(null),
+    tab === 'moderation' ? pageCall('ai.moderation.queue', { limit: 100, offset: moderationOffset }) : Promise.resolve(null)]);
   const waiting = {
     tickets: tk.ok && !ticketsClosed ? tk.tickets.length : null, uploads: up.ok ? up.uploads.length : null,
     reports: rep.ok && !closed ? rep.reports.length : null, appeals: ap.ok && !appealsClosed ? ap.appeals.length : null,
-    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.total : null };
+    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.total : null,
+    moderation: moderation && moderation.ok ? moderation.total : null };
   const tabs = html`<div class="tabs staff-tabs">${STAFF_TABS.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/staff?tab=${k}">${l}${
     waiting[k] ? html` <span class="count">${waiting[k]}</span>` : ''}</a>`)}</div>`;
   let body;
@@ -3519,6 +3587,7 @@ pages.staff = async () => {
   else if (tab === 'reports') body = reportsBox(rep, closed);
   else if (tab === 'appeals') body = appealsBox(ap, appealsClosed);
   else if (tab === 'ideas') body = staffIdeasBox(rm);
+  else if (tab === 'moderation') body = fyxaModerationBox(moderation);
   else if (tab === 'fyxa') body = fyxaReviewBox(fyxaQueue);
   else if (tab === 'people') {
     const r = await pageCall('admin.find', { query });
@@ -3980,7 +4049,7 @@ let authSetup = null;   // Settings: an authenticator app being set up ({secret,
 pages.terms = async () => {
   show(html`<div class="terms">
     <h1>Guts&amp;Bolts Terms of Service</h1>
-    <p class="muted small">Last updated October 2026. By making an account, playing or using Studio, you agree to these
+    <p class="muted small">Last updated November 2026. By making an account, playing or using Studio, you agree to these
       terms. If you don't agree, please don't use Guts&amp;Bolts.</p>
     <p>"Guts&amp;Bolts", "we" and "us" mean the people who make and run Guts&amp;Bolts. "You" means you, the person
       using it. These terms cover the website, Studio, the Player and our game servers.</p>
@@ -4088,6 +4157,7 @@ pages.terms = async () => {
     </ul>
 
     <h2>8. Chat, safety and moderation</h2>
+    <p>We use automated safety screening, including AI-assisted classifiers, to help detect potentially harmful or rule-breaking content in public creator submissions, profile text, game update notes, comments, forum posts, group posts, translated in-game chat, party chat and private messages. Screening results may be stored with a limited excerpt, category signals and review history, and shown to authorized moderators. Text submitted for these features is processed by Cloudflare Workers AI for trust-and-safety review. Supported image uploads are screened with Moondream 3.1 through Cloudflare Workers AI; if that scan fails, the upload is routed for manual review. Supported audio uploads are transcribed by Deepgram Nova-3 through Cloudflare Workers AI and the transcript is screened; unsupported or failed audio scans are routed for manual review. Open moderation cases remain available to staff until resolved; closed case evidence is retained for up to 180 days. This processing is for moderation, not Fyxa model training or AI-reference indexing. AI flags can be wrong; staff review context and make moderation decisions. We do not use an AI flag alone to permanently ban an account.</p>
     <ul>
       <li>Swearing is allowed. The text filter still hides slurs, links to other sites and personal info (like phone
         numbers and email addresses) as "[ Content Deleted ]".</li>
@@ -4884,6 +4954,12 @@ const actions = {
 };
 
 const forms = {
+  async fyxaModeration(f) {
+    const r = await call('ai.moderation.review', { caseId: f.caseId.value, outcome: f.outcome.value, note: f.note.value.trim() });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Fyxa moderation decision recorded.');
+    render();
+  },
   async fyxaAsset(f) {
     const r = await call('ai.content.eligibility.update', {
       contentId: f.contentId.value,

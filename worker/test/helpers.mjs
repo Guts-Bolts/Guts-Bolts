@@ -78,17 +78,19 @@ export function device(s, n) {
   wasm.keyPair();
   const secret = io().slice(32, 96), account = hexOf(io().slice(96, 128));
   let nonce = 0;
+  const request = (op, args = {}) => {
+    const time = Math.floor(Date.now() / 1000), nn = (++nonce).toString(16).padStart(16, '0');
+    const msg = new TextEncoder().encode('gb-req:' + op + '\n' + account + '\n' + time + '\n' + nn + '\n' + canon(args));
+    io().set(secret, 0);
+    io().set(msg, 128);
+    wasm.sign(msg.length);
+    const sig = hexOf(io().slice(64, 128));
+    return { op, account, time, nonce: nn, args, sig };
+  };
   return {
     account,
-    call(op, args = {}) {
-      const time = Math.floor(Date.now() / 1000), nn = (++nonce).toString(16).padStart(16, '0');
-      const msg = new TextEncoder().encode('gb-req:' + op + '\n' + account + '\n' + time + '\n' + nn + '\n' + canon(args));
-      io().set(secret, 0);
-      io().set(msg, 128);
-      wasm.sign(msg.length);
-      const sig = hexOf(io().slice(64, 128));
-      return s.handle({ op, account, time, nonce: nn, args, sig });
-    },
+    request,
+    call(op, args = {}) { return s.handle(request(op, args)); },
   };
 }
 
