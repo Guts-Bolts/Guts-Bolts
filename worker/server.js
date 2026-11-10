@@ -2100,7 +2100,7 @@ export class GbServerObject extends DurableObject {
     return { copies: au.copies, minBid: au.minBid, startedAt: au.startedAt, endsAt: au.endsAt, done: !!au.done, cancelled: au.cancelled ? true : undefined,
       bids, need: au.bids.length < au.copies ? au.minBid : au.bids[au.bids.length - 1].amount + 1, myBid: mine ? mine.amount : 0 };
   }
-  auctionOpen(a, t = now()) { return !!a.auction && !a.auction.done && t < a.auction.endsAt; }
+  auctionOpen(a, t = now()) { return !!a.auction && !a.auction.done && !a.auction.cancelled && t < a.auction.endsAt; }
 
   giveVerifiedHat(u) {
     const a = this.assets.get(VERIFIED_HAT_ID);
@@ -4439,6 +4439,8 @@ export class GbServerObject extends DurableObject {
         updated: (x, y) => (y.updated || y.created) - (x.updated || x.created),
         featured: (x, y) => y.featured - x.featured,   // picked by staff, newest pick first
         favorited: (x, y) => (y.favorites || 0) - (x.favorites || 0) || (y.plays + y.sales) - (x.plays + x.sales),
+        ending: (x, y) => Number(x.auction && x.auction.endsAt || Number.MAX_SAFE_INTEGER) -
+          Number(y.auction && y.auction.endsAt || Number.MAX_SAFE_INTEGER) || y.created - x.created,
       }[sort] || ((x, y) => y.created - x.created);
       found.sort(by);
       const offset = Math.max(0, num(args, 'offset'));
