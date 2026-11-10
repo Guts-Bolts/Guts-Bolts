@@ -108,7 +108,7 @@ void WaterSystem::stepFlood(float dt, Scene& scene) {
     Flood& f = m_flood;
     if (!f.n) return;
     if ((f.groundTimer -= dt) <= 0.0f) { f.groundTimer = 1.0f; buildGround(scene); }   // parts can move
-    const float L = f.cell, area = L * L, g = scene.world().gravity;
+    const float L = f.cell, area = L * L, g = scene.world().fluidGravity();   // (real-world strength: see WorldSettings)
     const int n = f.n;
     const int steps = std::clamp((int)std::ceil(dt / kStep), 1, 8);
     const float h = dt / steps;

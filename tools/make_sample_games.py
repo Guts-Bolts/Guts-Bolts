@@ -160,7 +160,7 @@ def demolition():
                            color=(0.3, 0.05, 0.05), material="Neon", collide=False,
                            children=[b.script(premade_script("kLandmine"))]))
     kids.append(b.node("JumpPad", shape="Cylinder", pos=(8, 0.1, 8), size=(2.5, 0.2, 2.5), color=(0.2, 0.9, 0.3),
-                       material="Neon", children=[b.script(premade_script("kJumpPad").replace("launchSpeed = 20", "launchSpeed = 34"))]))
+                       material="Neon", children=[b.script(premade_script("kJumpPad").replace("launchSpeed = 42", "launchSpeed = 72"))]))
     kids.append(b.node("Tower", pos=(-14, 6, 6), size=(4, 12, 4), color=(0.4, 0.4, 0.45), material="Concrete"))
     kids.append(b.node("TowerStairs1", pos=(-11.5, 0.5, 6), size=(1, 1, 2), color=(0.4, 0.4, 0.45)))
 
