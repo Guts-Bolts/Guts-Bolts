@@ -133,6 +133,8 @@ private:
         // Games: the creator's update notes, {id, title, text, at}, newest first (ServerExtras.cpp).
         nlohmann::json updateLog = nlohmann::json::array();
         std::string updateLogDay; int updateLogToday = 0;
+        // Games: the ban lists it uses (ServerBanLists.cpp; worker/banlists.js a.banLists).
+        std::vector<std::string> banLists;
     };
 
     struct Post { std::string by, text; long long time = 0; };
@@ -274,6 +276,18 @@ private:
     void eventsPlayed(User& me);
     void saveEvents();
     void loadEvents();
+    // ServerBanLists.cpp: creators' ban lists, used across their games (banlists.json).
+    nlohmann::json banListOp(const std::string& name, User& me, const nlohmann::json& args);
+    std::string banMessageFor(const std::string& gameId, const User& me) const;   // "" = not banned
+    const nlohmann::json* banFor(const Asset& a, const User& me, const nlohmann::json** entry) const;
+    std::string banListRole(const nlohmann::json& l, const User& me) const;
+    nlohmann::json banListPerson(const std::string& id) const;
+    nlohmann::json banListSummary(const nlohmann::json& l, const User& me) const;
+    nlohmann::json banListFull(const nlohmann::json& l, const User& me) const;
+    std::string banListMake(const User& me, const std::string& name, std::string& error);
+    std::string banListAdd(nlohmann::json& l, const User& me, const nlohmann::json& args);
+    void saveBanLists();
+    void loadBanLists();
     // The staff action log (stafflog.json): what staff did, newest last. about: who it was done to.
     void staffDid(const User& staff, const std::string& action, const std::string& text, const std::string& about = "");
     nlohmann::json staffLogJson(const std::string& who) const;
@@ -428,6 +442,7 @@ private:
     // The public roadmap (ServerRoadmap.cpp): {items: [{id, title, text, status, version, at}], ideas: [{id, title, text, by, at, votes, status, note}]}.
     nlohmann::json m_roadmap = {{"items", nlohmann::json::array()}, {"ideas", nlohmann::json::array()}};
     nlohmann::json m_events = nlohmann::json::array();   // ServerExtras.cpp
+    nlohmann::json m_banLists = nlohmann::json::object();   // ServerBanLists.cpp: list id -> list
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.
