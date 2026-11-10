@@ -8,6 +8,7 @@ import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
+import { placeAds } from './ads.js';
 
 // --- small helpers ------------------------------------------------------------
 
@@ -3959,6 +3960,7 @@ pages.terms = async () => {
       your Bolts history, what you post and send, and an email address if you add one (only used for account emails,
       like codes and resetting your password). We don't sell anything to anyone. Online play goes through our servers,
       not straight to other players. Staff can see what's needed to keep Guts&amp;Bolts safe, like reports.</p>
+    <p>The full version, including the ads and cookies, is our <a href="../privacy">Privacy Policy</a>.</p>
 
     <h2>12. No guarantees</h2>
     <p>Guts&amp;Bolts is provided <b>"as is" and "as available"</b>, with no warranty of any kind. It's a hobby
@@ -5445,6 +5447,7 @@ async function render() {
   if (banned()) { banPage(); return; }
   try {
     await pages[name](...path.slice(1).map(decodeURIComponent));
+    if (token === pageToken) placeAds(name, me);   // banner ads on clean pages, never for Boltworks Club (ads.js)
   } catch (err) {
     if (err instanceof Stale || token !== pageToken) return;   // the visitor moved on: the new page draws itself
     show(html`<h1>Something went wrong</h1><p class="error">${String(err && err.message || err)}</p>`);

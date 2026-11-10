@@ -21,6 +21,7 @@ import { readLimitedText } from './http.js';
 import { withSecurityHeaders } from './security.js';
 import { handleDownload } from './downloads.js';
 import { handleMcp } from './mcp.js';
+import { handleAds, withAdsMeta } from './ads.js';
 import { check, passCheck, tagged, cachedPicture } from './shield.js';
 import { checkSupabaseHealth, listSupabaseActivity, supabasePublicConfig } from './supabase.js';
 export { GbServerObject };
@@ -179,6 +180,8 @@ async function route(request, env, ctx) {
     if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|download|avatar)(\/|$)/.test(url.pathname))
       return Response.redirect('https://gutsandbolts.net' + url.pathname + url.search, 301);
     if (url.pathname.startsWith('/download/')) return handleDownload(request, env, url);
+    const ads = handleAds(request, env, url);   // /ads.txt and /ads-config (ads.js)
+    if (ads) return ads;
     if (url.pathname === '/api/turnstile') return passCheck(request, env, url);
     const picture = /^\/(thumb|icon|shot|wear|decal|avatar)\//.test(url.pathname);
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
@@ -253,7 +256,7 @@ async function route(request, env, ctx) {
         return reply({ ok: false, error: 'Couldn\'t reach the Guts&Bolts server (' + (e && e.message || 'error') + '). Is it running?' });
       }
     }
-    return env.ASSETS.fetch(request);
+    return withAdsMeta(await env.ASSETS.fetch(request), env);
 }
 
 // A picture: /thumb, /icon, /shot, /wear and /decal from the server on Cloudflare, /avatar from either.

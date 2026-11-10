@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy Policy - Guts&amp;Bolts</title>
+<meta name="description" content="What Guts&amp;Bolts keeps about you, the ads and cookies, and how to get your data removed.">
+<link rel="icon" href="img/icon.png">
+<link rel="stylesheet" href="fonts/font.css">
+<style>
+  :root { --red: #c81e1e; --text: #222; --muted: #666; --panel: #fff; --bg: #eee; --line: #d6d6d6; }
+  @media (prefers-color-scheme: dark) { :root { --text: #e8ecf2; --muted: #9aa5b5; --panel: #1b212b; --bg: #0e131b; --line: #334052; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--gb-font); font-size: 14px; line-height: 1.6; color: var(--text); background: var(--bg); }
+  header { background: var(--red); border-bottom: 3px solid #861616; }
+  header .wrap { max-width: 860px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 14px; }
+  header img { height: 42px; width: auto; display: block; }
+  header a.back { margin-left: auto; color: #fff; font-weight: bold; text-decoration: none; }
+  main { max-width: 860px; margin: 14px auto; background: var(--panel); border: 1px solid var(--line); padding: 8px 22px 18px; }
+  h1 { color: var(--red); margin-bottom: 4px; }
+  h2 { font-size: 18px; margin: 22px 0 6px; border-bottom: 1px solid var(--line); padding-bottom: 3px; }
+  a { color: var(--red); }
+  @media (prefers-color-scheme: dark) { a { color: #ff7a6e; } }
+  .muted { color: var(--muted); font-size: 12px; }
+  button { font: inherit; padding: 6px 14px; cursor: pointer; border: 1px solid #861616; background: var(--red); color: #fff; border-radius: 3px; }
+  footer { text-align: center; font-size: 11px; color: var(--muted); padding: 0 16px 30px; }
+  @media (max-width: 500px) { main { margin: 0; border-left: 0; border-right: 0; padding: 4px 16px 16px; } }
+</style>
+</head>
+<body>
+<header><div class="wrap"><a href="app/"><img src="img/logo.png" alt="Guts &amp; Bolts" width="720" height="242"></a><a class="back" href="app/">Back to the site</a></div></header>
+<main>
+<h1>Privacy Policy</h1>
+<p class="muted">Last updated November 2026. This covers the website (gutsandbolts.net), Studio, the Player and our game servers.</p>
+
+<p>Guts&amp;Bolts is a free hobby game platform for adults (18+). This page says, in plain words, what we keep about
+  you, why, who else sees it, and how to get it removed. The short version: we keep what's needed to run your
+  account, we don't sell your data, and we show ads (from Google) to help pay for the servers.</p>
+
+<h2>1. What we keep</h2>
+<ul>
+  <li><b>Your account:</b> username, user number, your public signing key (your password never leaves your device
+    in a readable form), avatar, friends, groups, what you own and make, and your Bolts history.</li>
+  <li><b>An email address, only if you add one.</b> It's used for account emails, like login codes and resetting
+    your password, and for answers to support tickets.</li>
+  <li><b>What you post and send:</b> forum posts, comments, messages, chats, games and uploads.</li>
+  <li><b>Safety records:</b> reports, warnings and bans, so staff can keep the platform safe.</li>
+  <li><b>Technical info:</b> like your IP address and browser, which our host (Cloudflare) uses to keep the site
+    running and to stop attacks and bots. We keep short logs with web addresses cleaned of private parts.</li>
+</ul>
+
+<h2>2. Why we keep it</h2>
+<p>To run your account and the games, to keep everyone safe (moderation and stopping abuse), to fix problems, and
+  to show ads that pay for the servers. Where the law asks for a reason (like the GDPR in Europe): running the service
+  you signed up for, keeping it safe (our legitimate interest), and your consent for ad cookies.</p>
+
+<h2>3. Ads and cookies</h2>
+<p>Guts&amp;Bolts shows banner ads from <b>Google AdSense</b> on a few pages (like Home, Games and the Catalog). Ads
+  are never shown to Boltworks Club members.</p>
+<ul>
+  <li>Google and its partners use cookies to show ads, measure them, and stop ad fraud. Some ads may be picked
+    based on your past visits to this and other websites.</li>
+  <li>How Google uses information from sites that show its ads:
+    <a href="https://policies.google.com/technologies/partner-sites" rel="noopener">policies.google.com/technologies/partner-sites</a>.</li>
+  <li>You can turn off personalized ads from Google at <a href="https://adssettings.google.com" rel="noopener">adssettings.google.com</a>,
+    and learn about opting out of other ad companies at <a href="https://www.aboutads.info/choices/" rel="noopener">aboutads.info</a>.</li>
+  <li><b>In the EU, EEA, UK and Switzerland</b> we ask before any ad cookies are used. If you pick "Only necessary",
+    you won't see ads at all.</li>
+</ul>
+<p>Our own site only stores what it needs to work: your login key (encrypted, in your browser), your language, a few
+  display choices, and your cookie answer. Those don't track you anywhere else.</p>
+<p><button type="button" id="cookie-reset">Change my cookie answer</button> <span id="cookie-reset-done" class="muted" hidden>Done. You'll be asked again on the next page with ads.</span></p>
+
+<h2>4. Who else handles your data</h2>
+<p>We don't sell your data to anyone. These services help run Guts&amp;Bolts and only get what they need:</p>
+<ul>
+  <li><b>Cloudflare</b> hosts the website and servers, and runs the "are you a person?" check.</li>
+  <li><b>Supabase</b> stores some of the site's data (like leaderboards and activity feeds).</li>
+  <li><b>Brevo</b> sends account emails, if you added an email address.</li>
+  <li><b>Google AdSense</b> shows the ads (section 3).</li>
+</ul>
+<p>If your uploads are used to help train Fyxa, our built-in AI helper, there's a switch in Settings to turn that
+  off.</p>
+
+<h2>5. How long we keep it</h2>
+<p>For as long as your account is open. If you delete your account (Settings &gt; Delete account), what's personal in
+  it is removed: password, email, avatar, posts, messages and friends. Games and items you made stay up as made by
+  "Deleted user", so people who bought them keep them. Safety records (like bans) can be kept longer to stop people
+  coming back after a ban. Backups roll over and old ones are deleted.</p>
+
+<h2>6. Your rights</h2>
+<p>Depending on where you live (for example under the GDPR, the UK GDPR or California law), you can ask to see the
+  data we have about you, fix it, delete it, or take a copy. You can also object to how we use it, or take back your
+  consent for ad cookies (button above). Ask on the <a href="app/#/support">Support page</a>, and we'll answer as soon
+  as we can. If you're unhappy with our answer, you can complain to your local data protection authority.</p>
+
+<h2>7. Adults only</h2>
+<p>Guts&amp;Bolts is for people 18 and older. We don't knowingly collect data from anyone under 18. If we find an
+  account belongs to someone under 18, we close it and remove what's personal in it. Parents can ask us on the
+  Support page.</p>
+
+<h2>8. Changes</h2>
+<p>If this policy changes, we'll update the date at the top. Big changes will also show up on the
+  <a href="app/#/updates">Updates</a> page.</p>
+
+<p>See also our <a href="app/#/terms">Terms of Service</a>.</p>
+</main>
+<footer>Guts&amp;Bolts is an independent, free hobby game platform for adults (18+). Not affiliated with, endorsed by, or connected to Roblox Corporation.</footer>
+<script type="module" src="/privacy.js"></script>
+</body>
+</html>

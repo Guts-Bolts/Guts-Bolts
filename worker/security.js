@@ -1,17 +1,22 @@
 // Shared response hardening for every HTTP route and static asset.
+// Google AdSense (worker/ads.js, website/app/ads.js): its script, the ad frames, and the
+// consent message Google can show in Europe. Ads themselves draw inside Google's own frames.
+const GOOGLE_ADS = 'https://pagead2.googlesyndication.com https://*.googlesyndication.com https://*.doubleclick.net ' +
+  'https://*.google.com https://*.googletagservices.com https://*.gstatic.com https://*.adtrafficquality.google';
+
 const CSP = [
   "default-src 'self'",
   "base-uri 'self'",
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self' https://challenges.cloudflare.com 'wasm-unsafe-eval'",
+  "script-src 'self' https://challenges.cloudflare.com 'wasm-unsafe-eval' " + GOOGLE_ADS,
   "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net wss://pfpzmmsosyetkcoymoct.supabase.co",
-  "frame-src https://challenges.cloudflare.com",
+  "connect-src 'self' https://challenges.cloudflare.com wss://gutsandbolts.net wss://www.gutsandbolts.net wss://pfpzmmsosyetkcoymoct.supabase.co " + GOOGLE_ADS,
+  "frame-src https://challenges.cloudflare.com " + GOOGLE_ADS,
   "media-src 'self' blob: https:",
   "worker-src 'self' blob:",
   "manifest-src 'self'",
