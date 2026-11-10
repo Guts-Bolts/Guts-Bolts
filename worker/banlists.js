@@ -190,10 +190,10 @@ export function installBanLists(Cls) {
       if (mine) return fail('You already appealed this ban. Wait for an answer.');
       const ap = { id: 'ap' + hex(5), who: me.id, game: a.id, text, at: t, status: 'open', banAt: b.entry.at };
       b.list.appeals.push(ap);
-      this.banListLog(b.list, me, 'appeal', me.id, '');
+      this.banListLog(b.list, me, 'appeal', '', a.name);
       this.banListSave(b.list);
       for (const id of [b.list.owner, ...b.list.editors])
-        this.notify(this.users.get(id), 'banappeal', me.name + ' appealed their ban from ' + a.name + ' (list "' + b.list.name + '").', b.list.id);
+        this.notify(this.users.get(id), 'banlist', me.name + ' appealed their ban from ' + a.name + ' (list "' + b.list.name + '").', b.list.id);
       return okay({ ban: { status: 'open', at: t } });
     }
 

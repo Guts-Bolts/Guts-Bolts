@@ -89,7 +89,7 @@ test('appeal once per ban; accepting lets them back in, and the log says who did
   assert.match(s.call(bob, 'banlist.appeal', { game: obby.id, text: 'pls' }).error, /Write a little more/);
   assert.ok(s.call(bob, 'banlist.appeal', { game: obby.id, text: 'Sorry, it was an accident with the tool.' }).ok);
   assert.match(s.call(bob, 'banlist.appeal', { game: obby.id, text: 'Sorry again, please unban me.' }).error, /already appealed/);
-  assert.ok(ann.notes.some((n) => n.kind === 'banappeal'), 'the list\'s team hears about it');
+  assert.ok(ann.notes.some((n) => n.kind === 'banlist' && n.about === id), 'the list\'s team hears about it');
   const list = s.call(ann, 'banlist.get', { id }).list;
   assert.equal(list.openAppeals, 1);
   const r = s.call(ann, 'banlist.answer', { id, appeal: list.appeals[0].id, accept: true, note: 'OK, be nice' });

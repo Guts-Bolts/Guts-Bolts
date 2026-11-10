@@ -6,6 +6,7 @@ import { mountAvatar, avatarPicture, itemPicture, itemCamera } from './avatar3d.
 import { startTranslating, languagePicker } from '../lang/i18n.js';
 import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
+import { mountBanLists, mountGameBans, mountBanNotice } from './banlists.js';
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
 import { PRODUCTS, productOf, productById, activeLink } from './products.js';
@@ -1649,7 +1650,8 @@ pages.game = async (id) => {
           <button class="btn" data-act="editInStudio" data-id="${g.id}" data-name="${g.name}">Edit in Studio</button>` : ''}
         ${signedIn() && me.staff ? html`<p><button class="btn small ${g.featured ? '' : 'gold'}" data-act="featureGame" data-id="${g.id}" data-on="${g.featured ? '' : '1'}">
           ${g.featured ? 'Stop featuring' : 'Feature this game'}</button> <span class="small muted">(staff)</span></p>` : ''}
-        <p class="small muted">Games run in the Guts&amp;Bolts app (Windows, Mac, Linux and Android).${mine ? '' : html` ${reportLink('game', g.id, g.name)}`}</p></div></div>
+        <p class="small muted">Games run in the Guts&amp;Bolts app (Windows, Mac, Linux and Android).${mine ? '' : html` ${reportLink('game', g.id, g.name)}`}</p>
+        <div id="banNotice"></div></div></div>
     <h2>Description</h2><p style="white-space:pre-wrap">${g.description || 'No description yet.'}</p>
     ${gameLogBlock(g, lr, mine)}
     ${g.lyreto ? html`<h2>Community</h2>${lyretoCard(g.lyreto, 'the players')}` : ''}
@@ -1672,6 +1674,7 @@ pages.game = async (id) => {
     ${servers.length ? html`<div class="server-grid">${shown.map(card)}</div>${pager}`
       : html`<p class="muted">Nobody's playing right now. Be the first!</p>`}
     ${commentsBlock(g, cr)}`);
+  if (signedIn() && !mine) mountBanNotice($('#banNotice'), g.id, call, toast);   // banned? why, and an appeal box (banlists.js)
 };
 
 // Comments under a game, newest first, 20 at a time.
@@ -2296,9 +2299,14 @@ async function fyxaAssetsPage(head) {
 
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['fyxa', 'Fyxa AI'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['bans', 'Ban lists'], ['fyxa', 'Fyxa AI'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
   if (tab === 'fyxa') { await fyxaAssetsPage(head); return; }
+  if (tab === 'bans') {   // banlists.js
+    show(signedIn() ? html`${head}<div class="box" id="banLists"></div>` : html`${head}<div class="box"><p>Sign in to use ban lists.</p></div>`);
+    if (signedIn()) mountBanLists($('#banLists'), call, toast);
+    return;
+  }
   if (tab === 'learn') { await learnPage(head); return; }
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
@@ -2512,6 +2520,7 @@ pages.configure = async (id) => {
         <span id="configMsg"></span></p>
     </form>
     <div class="box" id="gameWeb"></div>
+    <div class="box" id="gameBans"></div>
     <div class="box" id="screenshots"><h2 class="boxhead">Screenshots</h2>
       <p class="small muted">Up to ${SHOT_MOST} pictures of your game, shown after the thumbnail on its page (people can click them to see them bigger).
         .png, .jpg or .webp, up to ${SHOT_MB} MB each. Pictures from your game in the Player or Studio work best.</p>
@@ -2588,6 +2597,7 @@ pages.configure = async (id) => {
         <p><button class="btn green">Make product</button></p></form></div>`);
   loadThumbs();
   mountGameWeb($('#gameWeb'), g.id, call, toast);   // web requests and secrets (gameweb.js)
+  mountGameBans($('#gameBans'), g.id, call, toast);   // ban lists (banlists.js)
   // Show a picked picture straight away.
   view.querySelectorAll('input[data-preview]').forEach((inp) => inp.addEventListener('change', () => {
     const file = inp.files[0];
@@ -3710,6 +3720,8 @@ function noteLink(n) {
   if (n.kind === 'party') return '#/chat';
   if (n.kind === 'friend' || n.kind === 'follow') return '#/user/' + n.about;
   if (n.kind === 'trade') return '#/trades';
+  if (n.kind === 'banlist') return '#/create/bans?list=' + n.about;   // banlists.js
+  if (n.kind === 'banappeal') return '#/game/' + n.about;
   if (n.kind === 'group') return '#/group/' + n.about;
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;

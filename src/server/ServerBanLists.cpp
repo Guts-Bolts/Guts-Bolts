@@ -198,12 +198,12 @@ json GbServer::banListOp(const std::string& name, User& me, const json& args) {
             if (sv(x, "who") == me.id && nv(x, "banAt") == banAt && sv(x, "status") == "open") return fail("You already appealed this ban. Wait for an answer.");
         l["appeals"].push_back({{"id", "ap" + Account::randomHex(5)}, {"who", me.id}, {"game", it->first}, {"text", text}, {"at", t},
                                 {"status", "open"}, {"banAt", banAt}});
-        logIt(l, me.id, "appeal", me.id);
+        logIt(l, me.id, "appeal", "", it->second.name);
         saveBanLists();
         std::vector<std::string> team = {sv(l, "owner")};
         for (const json& x : l["editors"]) team.push_back(x.get<std::string>());
         for (const std::string& id : team)
-            notify(findUser(id), "banappeal", me.name + " appealed their ban from " + it->second.name + " (list \"" + sv(l, "name") + "\").", sv(l, "id"));
+            notify(findUser(id), "banlist", me.name + " appealed their ban from " + it->second.name + " (list \"" + sv(l, "name") + "\").", sv(l, "id"));
         json r = okay(); r["ban"] = {{"status", "open"}, {"at", t}}; return r;
     }
 
