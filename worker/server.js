@@ -798,9 +798,22 @@ export class GbServerObject extends DurableObject {
       CREATE INDEX IF NOT EXISTS ai_content_owner ON ai_content_eligibility (owner_id, updated_at);
       CREATE TABLE IF NOT EXISTS ai_training_audit (
         id TEXT PRIMARY KEY, account_id TEXT NOT NULL, content_id TEXT, event_type TEXT NOT NULL, details TEXT NOT NULL, created_at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS ai_training_audit_account ON ai_training_audit (account_id, created_at);`);
+      CREATE INDEX IF NOT EXISTS ai_training_audit_account ON ai_training_audit (account_id, created_at);
+      CREATE TABLE IF NOT EXISTS ai_moderation_cases (
+        id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL UNIQUE, source_type TEXT NOT NULL, source_id TEXT NOT NULL,
+        author_id TEXT NOT NULL, categories TEXT NOT NULL, severity TEXT NOT NULL, scanner TEXT NOT NULL,
+        excerpt TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open', created_at INTEGER NOT NULL,
+        reviewed_by TEXT, reviewed_at INTEGER, outcome TEXT, staff_note TEXT,
+        occurrences INTEGER NOT NULL DEFAULT 1, last_seen_at INTEGER NOT NULL DEFAULT 0);
+      CREATE INDEX IF NOT EXISTS ai_moderation_status_created ON ai_moderation_cases (status, created_at);
+      CREATE INDEX IF NOT EXISTS ai_moderation_author_created ON ai_moderation_cases (author_id, created_at);`);
+    // Upgrade Durable Object databases created before repeat-occurrence tracking.
+    try { this.sql.exec('ALTER TABLE ai_moderation_cases ADD COLUMN occurrences INTEGER NOT NULL DEFAULT 1'); } catch { /* already present */ }
+    try { this.sql.exec('ALTER TABLE ai_moderation_cases ADD COLUMN last_seen_at INTEGER NOT NULL DEFAULT 0'); } catch { /* already present */ }
+    this.sql.exec('UPDATE ai_moderation_cases SET last_seen_at = created_at WHERE last_seen_at = 0');
     this.aiTrackedContent = new Set();
     for (const r of this.sql.exec('SELECT content_id FROM ai_content_eligibility')) this.aiTrackedContent.add(r.content_id);
+    this.backgroundTasks = new Set();
     this.secretsInit();   // games' secrets for web requests (game-web.js)
     this.chatsInit();     // calls and the Lyreto gateway (chats.js)
     this.official = lower(env.OFFICIAL || '');
@@ -2377,7 +2390,7 @@ export class GbServerObject extends DurableObject {
   // Lightweight operator diagnostics. Never expose player records or raw SQL contents.
   databaseDiagnostics() {
     const tables = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
-      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit'];
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_moderation_cases'];
     const counts = {};
     for (const table of tables) {
       const rows = this.sql.exec('SELECT COUNT(*) AS count FROM "' + table + '"').toArray?.()
@@ -2410,7 +2423,7 @@ export class GbServerObject extends DurableObject {
       throw new Error('Database is larger than the configured safe backup limit; increase it only after reviewing memory headroom.');
 
     const tableNames = ['users', 'assets', 'groups', 'forum', 'meta', 'files', 'nonces', 'gamedata', 'pasttrades',
-      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit'];
+      'ai_training_preferences', 'ai_content_eligibility', 'ai_training_audit', 'ai_moderation_cases'];
     const snapshot = this.ctx.storage.transactionSync(() => tableNames.map((table) => {
       const schemaRows = this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table).toArray?.()
         || Array.from(this.sql.exec('SELECT sql FROM sqlite_master WHERE type = ? AND name = ?', 'table', table));
@@ -2480,6 +2493,7 @@ export class GbServerObject extends DurableObject {
       this.openGiftBoxes();
       this.finishAuctions();
       const reply = this.op(c.opName, c.me, c.args);
+      if (reply && typeof reply === 'object') Object.defineProperty(reply, 'moderationActor', { value: c.me, enumerable: false });
       // (who asked, for answers finished after a Supabase lookup; not sent back)
       if (reply && reply.supabase) Object.defineProperty(reply, 'asker', { value: c.me, enumerable: false });
       if (gate.count && (reply.ok || GUESSES.has(c.opName))) gate.count();
@@ -2491,6 +2505,243 @@ export class GbServerObject extends DurableObject {
     }
   }
 
+
+  // Durable Objects do not need waitUntil: pending I/O keeps the instance active.
+  // Retain background moderation promises so they are observable and awaitable in tests.
+  trackBackgroundTask(task, label = 'background task') {
+    let tracked;
+    tracked = Promise.resolve(task)
+      .catch((error) => console.log(label + ' failed: ' + (error && error.message || error)))
+      .finally(() => this.backgroundTasks.delete(tracked));
+    this.backgroundTasks.add(tracked);
+    return tracked;
+  }
+
+  // Fyxa moderation: Llama Guard is advisory; it never bans users or removes content.
+  async scanModerationSubmission(req, actor, answer) {
+    if (!actor || !actor.id || !req || !req.args || !answer || !answer.ok) return;
+    const args = req.args, op = String(req.op || ''), fields = [];
+    let sourceType = '', sourceId = '', manualReviewReason = '';
+    const assetWrite = op === 'upload' || op === 'update';
+    const sourceAsset = op === 'upload'
+      ? (this.assets.get(String(answer.asset && answer.asset.id || '')) || answer.asset || null)
+      : assetWrite ? this.assets.get(String(args.id || '')) : null;
+    const assetKind = String(sourceAsset && sourceAsset.kind || args.kind || '');
+    if (assetWrite) {
+      sourceType = 'asset'; sourceId = String(sourceAsset && sourceAsset.id || args.id || '');
+      fields.push(['asset name', args.name || sourceAsset && sourceAsset.name], ['asset description', args.description || sourceAsset && sourceAsset.description]);
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta
+        : sourceAsset && sourceAsset.meta && typeof sourceAsset.meta === 'object' ? sourceAsset.meta : {};
+      for (const key of ['alt', 'caption', 'title', 'description', 'author', 'license', 'source']) fields.push([key, meta[key]]);
+      if (assetKind === 'audio') fields.push(['audio upload', 'Audio requires a media-specific moderation pass; route to manual staff review.']);
+      if (['game', 'model', 'plugin', 'animation', 'gear', 'accessory', 'bundle', 'bodypart'].includes(assetKind)) {
+        try {
+          const encoded = str(args, 'data').replace(/^data:[^,]+,/, '');
+          const bytes = b64ToBytes(encoded);
+          const raw = new TextDecoder('utf-8', { fatal: false }).decode(bytes.slice(0, 180000));
+          const parsed = JSON.parse(raw); let budget = 5000;
+          const geometryKey = /(vertices|positions|indices|triangles|faces|normals|uvs|weights|mesh|geometry|vertexdata|indexdata|vertexbuffer|indexbuffer|submesh|morphtarget|morph|skeleton|bonedata|boneweights|skinweights|skinning|texture|imagedata|image|bitmap|pixels|rgba|binary|blob|buffer|filedata|base64)/i;
+          const walk = (value, key = '') => {
+            if (budget <= 0) return;
+            const opaqueGeometry = geometryKey.test(key) && (
+              Array.isArray(value) ? value.length > 0
+                : !!value && typeof value === 'object'
+                  ? true : typeof value === 'string' && value.length > 64
+            );
+            if (opaqueGeometry) {
+              manualReviewReason = 'This upload contains 3D mesh, geometry, or embedded media data that the text and image scanners cannot semantically inspect.';
+              return;
+            }
+            if (typeof value === 'string' && /name|title|text|message|description|caption|label|value|prompt|dialog|script|source|code/i.test(key)) {
+              const part = value.slice(0, Math.min(500, budget));
+              if (part.trim()) { fields.push([key || 'uploaded text', part]); budget -= part.length; }
+            } else if (Array.isArray(value)) for (const item of value.slice(0, 100)) walk(item, key);
+            else if (value && typeof value === 'object') for (const [k, v] of Object.entries(value).slice(0, 200)) walk(v, k);
+          }; walk(parsed);
+        } catch {
+          manualReviewReason = 'This upload is opaque or not parseable as supported text data; manual review is required.';
+        }
+      }
+    } else if (op === 'game.settings') { sourceType = 'asset'; sourceId = String(args.id || ''); fields.push(['game name', args.name], ['game description', args.description]);
+    } else if (op === 'gamebadge.create') { sourceType = 'asset'; sourceId = String(args.game || ''); fields.push(['game badge name', args.name], ['game badge description', args.description]);
+    } else if (op === 'comments.post') { sourceType = 'comment'; sourceId = String(args.game || ''); fields.push(['comment', args.text]);
+    } else if (op === 'forum.post') { sourceType = 'forum_thread'; sourceId = String(answer.thread && answer.thread.id || ''); fields.push(['thread title', args.title], ['forum post', args.text]);
+    } else if (op === 'forum.reply') { sourceType = 'forum_reply'; sourceId = String(args.thread || ''); fields.push(['forum reply', args.text]);
+    } else if (op === 'message.send') { sourceType = 'private_message'; sourceId = String(args.to || ''); fields.push(['message subject', args.subject], ['private message', args.body]);
+    } else if (op === 'party.send') { sourceType = 'party_chat'; sourceId = String(args.id || ''); fields.push(['party message', args.body]);
+    } else if (op === 'groups.create') { sourceType = 'group'; sourceId = String(answer.group && answer.group.id || ''); fields.push(['group name', args.name], ['group description', args.description]);
+    } else if (op === 'groups.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group wall post', args.text]);
+    } else if (op === 'groups.shout' || op === 'groups.wall.post') { sourceType = 'group_post'; sourceId = String(args.id || ''); fields.push(['group shout', args.text]);
+    } else if (op === 'groups.edit') { sourceType = 'group'; sourceId = String(args.id || ''); fields.push(['group description', args.description]);
+    } else if (op === 'updates.post') { sourceType = 'platform_update'; sourceId = String(answer.update && answer.update.id || ''); fields.push(['update title', args.name], ['update summary', args.summary], ['update notes', Array.isArray(args.items) ? args.items.join('\n') : '']);
+    } else if (op === 'profile.set') { sourceType = 'profile'; sourceId = actor.id; fields.push(['profile about', args.blurb], ['profile status', args.status]);
+    } else if (op === 'gamelog.post') { sourceType = 'game_update'; sourceId = String(args.id || ''); fields.push(['game update title', args.title], ['game update text', args.text]);
+    } else if (op === 'chat.translate') { sourceType = 'game_chat'; sourceId = String(args.game || ''); fields.push(['game chat line', args.text]);
+    } else return;
+    let content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
+    // A payload-only update can still require manual review even when it has no text fields.
+    if (!content && manualReviewReason) content = '[Uninspected asset payload requires manual review]';
+    if (!content) return;
+    let categories = [], scanner = 'llama-guard-3-8b', unsafe = false;
+    if (!this.env.AI) { scanner = 'ai-binding-unavailable'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
+    else try {
+      const result = await this.env.AI.run('@cf/meta/llama-guard-3-8b', { messages: [{ role: 'user', content }], max_tokens: 128, temperature: 0 });
+      const response = result && result.response;
+      if (response && typeof response === 'object' && typeof response.safe === 'boolean') {
+        unsafe = response.safe === false;
+        categories = Array.isArray(response.categories) ? response.categories.filter((x) => /^S(?:[1-9]|1[0-4])$/.test(x)).slice(0, 14) : [];
+      } else if (typeof response === 'string' && /^\s*unsafe\b/i.test(response)) {
+        unsafe = true;
+        categories = [...new Set((response.match(/\bS(?:[1-9]|1[0-4])\b/g) || []))].slice(0, 14);
+      } else if (typeof response === 'string' && /^\s*safe\b/i.test(response)) {
+        unsafe = false;
+        categories = [];
+      } else {
+        scanner = 'llama-guard-3-8b-unstructured';
+        categories = ['SCAN_UNAVAILABLE'];
+        unsafe = true;
+      }
+    } catch (error) { scanner = 'llama-guard-3-8b-error'; categories = ['SCAN_UNAVAILABLE']; unsafe = true; }
+    if (assetWrite && assetKind === 'audio') {
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta
+        : sourceAsset && sourceAsset.meta && typeof sourceAsset.meta === 'object' ? sourceAsset.meta : {};
+      const ext = String(meta.ext || '').toLowerCase();
+      const mime = ext === 'wav' ? 'audio/wav' : ext === 'ogg' ? 'audio/ogg' : ext === 'm4a' ? 'audio/mp4'
+        : ext === 'mp3' ? 'audio/mpeg' : ext === 'flac' ? 'audio/flac' : '';
+      const encoded = str(args, 'data').replace(/^data:[^,]+,/, '');
+      if (mime && encoded && encoded.length <= 5000000) {
+        try {
+          const bytes = b64ToBytes(encoded);
+          const transcription = await this.env.AI.run('@cf/deepgram/nova-3', {
+            audio: { body: bytes, contentType: mime }, mip_opt_out: true, detect_language: true, punctuate: true,
+          });
+          const transcript = String(transcription && (transcription.text
+            || transcription.results && transcription.results.channels && transcription.results.channels[0]
+              && transcription.results.channels[0].alternatives && transcription.results.channels[0].alternatives[0]
+              && transcription.results.channels[0].alternatives[0].transcript) || '').slice(0, 5000);
+          if (transcript) {
+            fields.push(['audio transcript', transcript]);
+            content = (content + '\nAudio transcript: ' + transcript).slice(0, 7000);
+            scanner += '+nova-3';
+            // Re-run the safety classifier against the transcript, not the opaque audio bytes.
+            const audioGuard = await this.env.AI.run('@cf/meta/llama-guard-3-8b', {
+              messages: [{ role: 'user', content: 'Audio transcript:\n' + transcript }], max_tokens: 128, temperature: 0,
+            });
+            const audioResponse = audioGuard && audioGuard.response;
+            if (audioResponse && typeof audioResponse === 'object' && typeof audioResponse.safe === 'boolean') {
+              if (audioResponse.safe === false) {
+                unsafe = true;
+                categories.push(...(Array.isArray(audioResponse.categories) ? audioResponse.categories.filter((x) => /^S(?:[1-9]|1[0-4])$/.test(x)) : []));
+              }
+            } else if (typeof audioResponse === 'string' && /^\s*unsafe\b/i.test(audioResponse)) {
+              unsafe = true;
+              categories.push(...new Set(audioResponse.match(/\bS(?:[1-9]|1[0-4])\b/g) || []));
+            } else if (!(typeof audioResponse === 'string' && /^\s*safe\b/i.test(audioResponse))) {
+              categories.push('AUDIO_SCAN_UNAVAILABLE');
+              scanner += '+audio-guard-unstructured';
+              unsafe = true;
+            }
+          } else { categories.push('AUDIO_SCAN_UNAVAILABLE'); scanner += '+nova-3-empty'; unsafe = true; }
+        } catch (error) { categories.push('AUDIO_SCAN_UNAVAILABLE'); scanner += '+nova-3-error'; unsafe = true; }
+      } else { categories.push('AUDIO_REVIEW_REQUIRED'); scanner += '+audio-manual-review'; unsafe = true; }
+    }
+    // Supported image uploads receive a vision-language screening pass; failures are sent to staff.
+    if (assetWrite && ['decal', 'face', 'tshirt', 'shirt', 'pants'].includes(assetKind)) {
+      const meta = args.meta && typeof args.meta === 'object' ? args.meta
+        : sourceAsset && sourceAsset.meta && typeof sourceAsset.meta === 'object' ? sourceAsset.meta : {};
+      const ext = String(meta.ext || '').toLowerCase();
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : ext === 'webp' ? 'image/webp' : 'image/png';
+      const encoded = str(args, 'data').replace(/^data:[^,]+,/, '');
+      if (encoded && encoded.length <= 600000) {
+        try {
+          const vision = await this.env.AI.run('@cf/moondream/moondream3.1-9B-A2B', {
+            task: 'query', image: 'data:' + mime + ';base64,' + encoded,
+            question: 'Review this user-uploaded image for clear Guts&Bolts platform safety violations: nudity or sexual content, sexualized depictions of minors, graphic violence, hateful or extremist symbols, self-harm instructions, personal information, or obvious impersonation of official platform branding. Do not infer a person\'s age or identity from appearance. Return only JSON with keys flag (boolean), category (short string), and reason (brief visible evidence). Flag only clear evidence; otherwise flag false.',
+            reasoning: false, temperature: 0, max_tokens: 180, stream: false,
+          });
+          const rawVision = String(vision && (vision.answer || vision.response) || '');
+          let parsedVision = null;
+          try { parsedVision = JSON.parse(rawVision); } catch {
+            const match = rawVision.match(/\{[\s\S]*\}/);
+            if (match) try { parsedVision = JSON.parse(match[0]); } catch { /* unstructured answer is not an automatic flag */ }
+          }
+          if (parsedVision && parsedVision.flag === true) {
+            const category = String(parsedVision.category || 'content').toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 32);
+            categories.push('VISION_' + (category || 'REVIEW'));
+            const visualReason = cleanText(String(parsedVision.reason || ''), 300, true);
+            if (visualReason) content = (content + '\nVision review: ' + visualReason).slice(0, 7000);
+            scanner += '+moondream';
+            unsafe = true;
+          } else if (!parsedVision || typeof parsedVision.flag !== 'boolean') {
+            categories.push('VISION_SCAN_UNAVAILABLE');
+            scanner += '+moondream-unstructured';
+            unsafe = true;
+          }
+        } catch (error) {
+          categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+moondream-error'; unsafe = true;
+        }
+      } else {
+        categories.push('VISION_SCAN_UNAVAILABLE'); scanner += '+vision-input-unavailable'; unsafe = true;
+      }
+    }
+    if (manualReviewReason) {
+      categories.push('GEOMETRY_REVIEW_REQUIRED');
+      scanner += '+manual-geometry-review';
+      unsafe = true;
+      content = (content + '\nManual review: ' + manualReviewReason).slice(0, 7000);
+    }
+    if (!unsafe) return;
+    categories = [...new Set(categories)].slice(0, 16);
+    const severity = categories.includes('S4') || categories.some((x) => /VISION_.*(?:S4|MINOR|CHILD)/i.test(x)) ? 'critical'
+      : categories.some((x) => ['S10', 'S11', 'S12'].includes(x) || /VISION_.*(?:SEXUAL|NUDITY|SELF_HARM|HATE|EXTREMIST)/i.test(x)) ? 'high'
+      : categories.some((x) => ['S1', 'S2', 'S3', 'S7', 'S8', 'S9'].includes(x) || /VISION_.*(?:VIOLENCE|CRIME|PRIVACY|PERSONAL|WEAPON)/i.test(x)) ? 'medium' : 'review';
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode([sourceType, sourceId, actor.id, content].join('\n')));
+    const fingerprint = hexOf(new Uint8Array(digest));
+    const existing = [...this.sql.exec('SELECT id, categories, severity, status FROM ai_moderation_cases WHERE fingerprint = ?', fingerprint)][0];
+    const createdAt = now();
+    if (existing) {
+      let previousCategories = [];
+      try { const parsed = JSON.parse(existing.categories); previousCategories = Array.isArray(parsed) ? parsed : []; } catch { /* keep the new model signals */ }
+      const mergedCategories = [...new Set([...previousCategories, ...categories])].slice(0, 16);
+      const rank = { critical: 0, high: 1, medium: 2, review: 3 };
+      const strongestSeverity = (rank[existing.severity] ?? 3) <= (rank[severity] ?? 3) ? existing.severity : severity;
+      this.sql.exec(`UPDATE ai_moderation_cases SET categories = ?, severity = ?, scanner = ?, excerpt = ?,
+        occurrences = occurrences + 1, last_seen_at = ?, status = 'open',
+        reviewed_by = NULL, reviewed_at = NULL, outcome = NULL, staff_note = NULL WHERE id = ?`,
+        JSON.stringify(mergedCategories), strongestSeverity, scanner, content.slice(0, 1200), createdAt, existing.id);
+    } else {
+      this.sql.exec(`INSERT INTO ai_moderation_cases
+        (id, fingerprint, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at, occurrences, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 1, ?)`,
+        'fyxa-' + randomHex(8), fingerprint, sourceType, sourceId, actor.id, JSON.stringify(categories), severity, scanner,
+        content.slice(0, 1200), createdAt, createdAt);
+    }
+  }
+
+  aiModerationQueue(limit = 100, offset = 0) {
+    // Keep unresolved cases available to staff; expire reviewed evidence after 180 days.
+    this.sql.exec('DELETE FROM ai_moderation_cases WHERE status = ? AND reviewed_at < ?', 'closed', now() - 180 * 86400);
+    const totalRow = [...this.sql.exec("SELECT COUNT(*) AS count FROM ai_moderation_cases WHERE status = 'open'")][0];
+    const total = Number(totalRow && totalRow.count || 0);
+    const safeLimit = clamp(limit, 1, 100), safeOffset = Math.max(0, Math.trunc(offset) || 0);
+    const items = [];
+    for (const row of this.sql.exec(`SELECT id, source_type, source_id, author_id, categories, severity, scanner, excerpt, status, created_at, occurrences, last_seen_at
+      FROM ai_moderation_cases WHERE status = 'open'
+      ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, last_seen_at DESC, created_at DESC LIMIT ? OFFSET ?`, safeLimit, safeOffset)) {
+      const author = this.users.get(row.author_id); let categories = [];
+      try { categories = JSON.parse(row.categories); } catch { categories = []; }
+      const asset = row.source_type === 'asset' ? this.assets.get(row.source_id) : null;
+      const group = row.source_type === 'group' || row.source_type === 'group_post' ? this.groups.get(row.source_id) : null;
+      const thread = row.source_type === 'forum_thread' || row.source_type === 'forum_reply' ? this.forum.get(row.source_id) : null;
+      items.push({ id: row.id, sourceType: row.source_type, sourceId: row.source_id, authorId: row.author_id,
+        sourceName: asset ? asset.name : group ? group.name : thread ? thread.title : '',
+        assetKind: asset ? asset.kind : '', author: author ? this.publicUser(author) : null,
+        categories, severity: row.severity, scanner: row.scanner, excerpt: row.excerpt,
+        status: row.status, createdAt: Number(row.created_at || 0),
+        occurrences: Number(row.occurrences || 1), lastSeenAt: Number(row.last_seen_at || row.created_at || 0) });
+    }
+    return { items, total, limit: safeLimit, offset: safeOffset };
+  }
 
   // --- Fyxa AI data preferences and purpose-specific content eligibility -----------------
   // All preference and eligibility writes are synchronous SQLite operations. User-supplied
@@ -2703,6 +2954,8 @@ export class GbServerObject extends DurableObject {
       if (!this.isStaff(me)) return fail('Only staff can review AI content rights.');
       const limit = clamp(num(args, 'limit') || 50, 1, 100);
       const offset = Math.max(0, Math.trunc(num(args, 'offset')) || 0);
+      const totalRow = [...this.sql.exec("SELECT COUNT(*) AS count FROM ai_content_eligibility WHERE rights_status = 'pending_review'")][0];
+      const total = Number(totalRow && totalRow.count || 0);
       const items = [];
       for (const row of this.sql.exec(`SELECT content_id, owner_id, content_type, privacy_status, rights_attested, updated_at
         FROM ai_content_eligibility WHERE rights_status = 'pending_review' ORDER BY updated_at ASC LIMIT ? OFFSET ?`, limit, offset)) {
@@ -2713,7 +2966,7 @@ export class GbServerObject extends DurableObject {
           ownerId: row.owner_id, owner: owner ? this.publicUser(owner) : null, privacyStatus: row.privacy_status,
           rightsAttested: !!row.rights_attested, updatedAt: Number(row.updated_at || 0) });
       }
-      return okay({ items, limit, offset });
+      return okay({ items, limit, offset, total });
     }
 
     if (name === 'ai.content.review') {
@@ -2738,6 +2991,25 @@ export class GbServerObject extends DurableObject {
       return okay({ eligibility: state });
     }
 
+    if (name === 'ai.moderation.queue') {
+      if (!this.isStaff(me)) return fail('Only staff can view Fyxa moderation cases.');
+      const limit = clamp(num(args, 'limit') || 100, 1, 100);
+      const offset = Math.max(0, Math.trunc(num(args, 'offset')) || 0);
+      return okay(this.aiModerationQueue(limit, offset));
+    }
+    if (name === 'ai.moderation.review') {
+      if (!this.isStaff(me)) return fail('Only staff can review Fyxa moderation cases.');
+      const caseId = str(args, 'caseId'), outcome = str(args, 'outcome');
+      if (!['action_taken', 'dismissed', 'escalated'].includes(outcome)) return fail('Choose action_taken, dismissed, or escalated.');
+      const note = cleanText(str(args, 'note'), 500, true);
+      if (note.length < 3) return fail('Add a short staff note explaining the decision.');
+      const existing = [...this.sql.exec('SELECT id, author_id, source_type FROM ai_moderation_cases WHERE id = ? AND status = ?', caseId, 'open')][0];
+      if (!existing) return fail('That moderation case is no longer open.');
+      this.sql.exec(`UPDATE ai_moderation_cases SET status = 'closed', reviewed_by = ?, reviewed_at = ?, outcome = ?, staff_note = ? WHERE id = ? AND status = 'open'`,
+        me.id, now(), outcome, note, caseId);
+      this.staffDid(me, 'fyxa_moderation', 'Reviewed Fyxa moderation case (' + outcome + ') for ' + existing.source_type, existing.author_id);
+      return okay(this.aiModerationQueue(100));
+    }
     if (name === 'ai.training.history') {
       const events = [];
       for (const r of this.sql.exec('SELECT event_type, content_id, details, created_at FROM ai_training_audit WHERE account_id = ? ORDER BY created_at DESC LIMIT 50', me.id)) {
@@ -6239,6 +6511,11 @@ export class GbServerObject extends DurableObject {
     if (!c.window || t - c.window >= 10000) { c.window = t; c.sent = 0; }
     const reply = ++c.sent > kWsRequestsPer10s ? Object.assign(fail('Whoa, that\'s a lot of requests. Slow down a little.'), { slowDown: true })
       : this.handle(req, { ip: c.ip });
+    if (reply.ok && reply.moderationActor) {
+      this.trackBackgroundTask(
+        this.scanModerationSubmission(req, reply.moderationActor, reply),
+        'Fyxa WebSocket moderation scan');
+    }
     if (reply.webJob || reply.iceJob) { this.sendTo(c, Object.assign(fail('Web requests go through /api.'), 'id' in req ? { id: req.id } : {})); return; }
     if ('id' in req) reply.id = req.id;
     this.sendTo(c, reply);
@@ -6374,6 +6651,11 @@ export class GbServerObject extends DurableObject {
     if (typeof req.op === 'string' && req.op.startsWith('relay.')) return json(fail('Multiplayer needs the Guts&Bolts app.'));
     const h = request.headers;   // (set by worker/shield.js, which replaces anything a visitor sent in them)
     let answer = this.handle(req, { ip: h.get('x-gb-ip') || '', web: h.get('x-gb-web') === '1', human: h.get('x-gb-human') === '1', sitekey: h.get('x-gb-sitekey') || '' });
+    if (answer.ok && answer.moderationActor) {
+      this.trackBackgroundTask(
+        this.scanModerationSubmission(req, answer.moderationActor, answer),
+        'Fyxa HTTP moderation scan');
+    }
     if (answer.ok && req.op === 'notes.list' && answer.me && answer.me.id) {
       try {
         if (this.hasSupabaseOutbox()) await this.flushSupabaseOutbox();
