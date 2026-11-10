@@ -272,17 +272,6 @@ test('cloud Team Create: invite, authenticate, sync edits and presence, share vo
   assert.match(s.call(alice, 'team.poll', { session: made.session, after: 0 }).error, /ended/);
 });
 
-<<<<<<< HEAD
-test('cloud Team Create invite codes that look like phone numbers still join', () => {
-  const { s, alice, bob } = setup();
-  const made = s.call(alice, 'team.create', { title: 'Digits', snapshot: '{"scene":"v1"}' });
-  assert.ok(made.ok, made.error);
-  // (A code like this used to be deleted by the chat filter, so ~3% of invites failed.)
-  const forced = '0438723973EA3F9C';
-  s.sql.exec('UPDATE teamsessions SET code = ? WHERE id = ?', forced, made.session);
-  const joined = s.call(bob, 'team.join', { code: forced.toLowerCase() });
-  assert.ok(joined.ok, joined.error);
-=======
 
 test('cloud Team Create treats invite codes and session IDs as opaque protocol tokens', () => {
   const { s, alice, bob } = setup();
@@ -302,5 +291,4 @@ test('cloud Team Create treats invite codes and session IDs as opaque protocol t
   s.sql.exec('UPDATE teammembers SET session = ? WHERE session = ?', session, made.session);
   const pushed = s.call(bob, 'team.push', { session, kind: 'ops', payload: '{"change":true}' });
   assert.ok(pushed.ok, pushed.error);
->>>>>>> origin/main
 });
