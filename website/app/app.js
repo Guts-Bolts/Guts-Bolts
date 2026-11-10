@@ -7,6 +7,8 @@ import { startTranslating, languagePicker } from '../lang/i18n.js';
 import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
+import { getAuctionBidSummary } from '../auction-data.mjs';
+import { PRODUCTS, productOf, productById, activeLink } from './products.js';
 
 // --- small helpers ------------------------------------------------------------
 
@@ -639,11 +641,12 @@ function auctionBanner(a) {
   if (!auctionOpen(a)) return '';
   items3d.set(a.id, a);
   const urgent = au.endsAt - Date.now() / 1000 <= 3600;
+  const bidSummary = getAuctionBidSummary(au);
   return html`<a class="auction-home-banner${urgent ? ' urgent' : ''}" href="#/item/${a.id}" aria-label="Auction: ${a.name}">
     <div class="auction-home-ribbon"><span>AUCTION</span><b>${urgent ? 'ENDING SOON' : 'LIVE BIDDING'}</b></div>
     <div class="auction-home-picture"><div class="pic">${itemIcon(a)}</div></div>
     <div class="auction-home-copy"><span class="auction-home-kicker">THE CLOCK IS TICKING</span><h2>${a.name}</h2><p>${a.description || 'A limited-time chance to claim this exclusive item.'}</p>
-      <div class="auction-home-bid"><span>CURRENT HIGH BID</span><strong>${bolts(au.bids.length ? Math.max(...au.bids.map((b) => b.amount)) : 0)}</strong></div></div>
+      <div class="auction-home-bid"><span>${bidSummary.hasBids ? 'CURRENT HIGH BID' : 'STARTING BID'}</span><strong>${bolts(bidSummary.amount)}</strong></div></div>
     <div class="auction-home-clock"><span>TIME REMAINING</span><strong data-countdown="${au.endsAt}">${countdown(au.endsAt)}</strong><b class="auction-home-cta">BID NOW <span aria-hidden="true">&rarr;</span></b></div>
   </a>`;
 }
@@ -677,23 +680,21 @@ async function fetchPublicActivity(path) {
     return await response.json();
   } catch { return { ok: false, events: [] }; }
 }
-pages.home = async () => {
+// The Games home (#/games with nothing after a '?'): what the whole front page used to be
+// before Guts&Bolts became more than games. The account column and feed live on Home now.
+const gamesHome = async () => {
   // Everything the page needs is asked for at once, so it waits for one round trip, not four.
-  const [games, newest, updatedGames, playingGames, recommendPool, items, fr, recent, favs, featured, , feedR, upd, mine, auctions, auctionEvents] = await Promise.all([
+  const [games, newest, updatedGames, playingGames, recommendPool, items, recent, favs, featured, , auctions, auctionEvents] = await Promise.all([
     pageCall('list', { kind: 'game', sort: 'popular', limit: 8 }),
     pageCall('list', { kind: 'game', sort: 'new', limit: 8 }),
     pageCall('list', { kind: 'game', sort: 'updated', limit: 8 }),
     pageCall('list', { kind: 'game', sort: 'playing', limit: 8 }),
     signedIn() ? pageCall('list', { kind: 'game', sort: 'popular', limit: 100 }) : Promise.resolve({ ok: false }),
     pageCall('list', { kind: 'clothing', limit: 6 }),
-    signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
     signedIn() ? pageCall('games.mine', { which: 'recent', limit: 8 }) : Promise.resolve({ ok: false }),
     signedIn() ? pageCall('games.mine', { which: 'favorites', limit: 8 }) : Promise.resolve({ ok: false }),
     pageCall('list', { kind: 'game', sort: 'featured', limit: 8 }),
     loadPlaying(),
-    signedIn() ? pageCall('feed.list', {}) : Promise.resolve({ ok: false }),
-    pageCall('updates.list', { limit: 1 }),
-    signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
     pageCall('list', { kind: 'clothing', auctions: true, limit: 12 }),
     fetchPublicActivity('/api/activity/auctions?limit=6'),
   ]);
@@ -701,10 +702,6 @@ pages.home = async () => {
   const mineBox = (title, r, more) => r.ok && r.assets.length ? html`<div class="box"><h2 class="boxhead">${title}
       <a href="${more}" style="float:right">See all &raquo;</a></h2><div class="grid">${r.assets.map(gameCard)}</div></div>` : '';
   const continueBox = mineBox('Continue Playing', recent, '#/games/mine/recent');
-  const feedBox = signedIn() ? html`<div class="box feed"><h2 class="boxhead">My Feed</h2>
-      <form class="row" data-form="statusSet"><input type="text" name="status" maxlength="140" placeholder="Right now I'm..." style="flex:1">
-        <button class="btn blue small">Share</button></form>
-      <div id="myFeed">${feedList(feedR)}</div></div>` : '';
   const favBox = mineBox('Favorites', favs, '#/games/mine/favorites');
   const gameBox = (title, r, more) => html`<div class="box"><h2 class="boxhead">${title}
       <a href="${more}" style="float:right">See more &raquo;</a></h2>
@@ -744,29 +741,71 @@ pages.home = async () => {
       <a href="#/catalog" style="float:right">See more &raquo;</a></h2>
     ${items.ok && items.assets.length ? html`<div class="grid">${items.assets.map(itemCard)}</div>`
       : html`<p class="muted small">Nothing here yet.</p>`}</div>`;
-  const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const auctionBox = html`<div id="liveAuctions">${renderAuctionHomeSection(auctions.ok ? auctions.assets : [])}</div>`;
   const auctionBroadcastBox = html`<div id="auctionBroadcasts">${renderAuctionActivity(auctionEvents.ok ? auctionEvents.events : [])}</div>`;
+  show(html`<div class="portal-hero games-hero">
+      <div><span class="portal-kicker">GUTS&amp;BOLTS GAMES</span><h1>Play it. Build it. Break it.</h1>
+        <p>Games made by people on Guts&amp;Bolts, with real physics and ragdolls that come apart. Make your own in Studio.</p>
+        <p>${signedIn() ? html`<a class="btn green big" href="#/games?sort=popular">Browse all games</a> <a class="btn" href="#/create">Create</a>`
+          : html`<a class="btn green big" href="#/signup">Sign Up and Play</a> <a class="btn" href="#/login">Login</a>`}</p></div>
+      <form class="games-hero-search" data-form="gameSearch"><input type="hidden" name="genre" value="">
+        <input type="search" name="q" placeholder="Search games, genres, descriptions" aria-label="Search games">
+        <input type="hidden" name="sort" value="popular"><button class="btn blue">Search</button></form>
+    </div>
+    <div class="genre-chips">${GENRES.map((gn) => html`<a class="chip" href="#/games?genre=${encodeURIComponent(gn)}">${gn}</a>`)}</div>
+    ${auctionBroadcastBox}${auctionBox}${featuredBox}${continueBox}${favBox}${recommendedBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games?sort=popular')}${shopBox}`);
+  tickCountdowns();
+};
+
+// Home (#/): the front door of the whole platform, not just games. Your account bits on
+// the left; on the right, a card for every product (from products.js), your feed, the
+// latest update and one small shelf from each open product.
+pages.home = async () => {
+  const [games, fr, feedR, upd, mine, recent] = await Promise.all([
+    pageCall('list', { kind: 'game', sort: 'popular', limit: 4 }),
+    signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
+    signedIn() ? pageCall('feed.list', {}) : Promise.resolve({ ok: false }),
+    pageCall('updates.list', { limit: 1 }),
+    signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
+    signedIn() ? pageCall('games.mine', { which: 'recent', limit: 4 }) : Promise.resolve({ ok: false }),
+  ]);
+  const productCard = (p) => html`<a class="product-card product-${p.id} is-${p.status}" href="${p.href}">
+      <span class="product-icon" aria-hidden="true">${p.name.slice(0, 1)}</span>
+      <span class="product-text"><b>${p.name}</b>${p.status === 'soon' ? html` <span class="soon-tag">Soon</span>` : p.status === 'studio' ? html` <span class="soon-tag">In Studio</span>` : ''}
+        <span>${p.blurb}</span></span></a>`;
+  const productsBox = html`<div class="box products-box"><h2 class="boxhead">Everything on Guts&amp;Bolts</h2>
+      <div class="product-grid">${PRODUCTS.map(productCard)}</div></div>`;
+  const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
     <p><b>${latest.name}</b>${latest.version ? html` <span class="small muted">v${latest.version}</span>` : ''}
       <span class="small muted">&middot; ${ago(latest.time)}</span></p>
     ${latest.summary ? html`<p class="small">${latest.summary}</p>` : ''}</div>` : '';
+  // One small shelf from Games: what you played last, or what's popular. The full game
+  // front page is #/games.
+  const shelf = recent.ok && recent.assets.length ? recent : games;
+  const gamesShelf = html`<div class="box shelf-box"><h2 class="boxhead">${shelf === recent ? 'Jump back in' : 'Popular in Games'}
+      <a href="#/games" style="float:right">Games home &raquo;</a></h2>
+    ${shelf.ok && shelf.assets.length ? html`<div class="grid">${shelf.assets.map(gameCard)}</div>`
+      : html`<p class="muted small">${shelf.ok ? 'No games published yet.' : shelf.error}</p>`}</div>`;
   if (!signedIn()) {
-    show(html`<div class="welcome">
-        <div><h1>Welcome to Guts&amp;Bolts!</h1>
-          <p>Build games, play them with your friends and fall apart spectacularly.
-            Sign up to get <b>100 Bolts</b>, dress up your character, make friends and upload your own stuff.</p>
-          <p><a class="btn green big" href="#/signup">Sign Up and Play</a>
+    show(html`<div class="welcome portal-hero">
+        <div><span class="portal-kicker">ONE ACCOUNT. EVERYTHING ON IT.</span><h1>Welcome to Guts&amp;Bolts!</h1>
+          <p>Play and build games, hang out in the forums and chat, and soon share videos and go live.
+            Sign up to get <b>100 Bolts</b>, dress up your character and make friends.</p>
+          <p><a class="btn green big" href="#/signup">Sign Up</a>
             <a class="btn" href="#/login">Login</a></p></div>
         <div class="welcome-guy" id="homeAvatar">${avatarSvg(defaultAvatar(), 150)}</div></div>
-      ${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
-    tickCountdowns();
+      ${productsBox}${updateBox}${gamesShelf}`);
     mountAvatar($('#homeAvatar'), defaultAvatar(), [], { width: 170 }).catch(() => {});
     return;
   }
   const friends = fr.ok ? fr.friends || [] : [];
   const onlineFriends = friends.filter((p) => p.online);
+  const feedBox = html`<div class="box feed"><h2 class="boxhead">My Feed</h2>
+      <form class="row" data-form="statusSet"><input type="text" name="status" maxlength="140" placeholder="Right now I'm..." style="flex:1">
+        <button class="btn blue small">Share</button></form>
+      <div id="myFeed">${feedList(feedR)}</div></div>`;
   show(html`<div class="home">
       <div class="home-left">
         <div class="box avatar-box"><h2 class="boxhead">Hi, ${me.username}!</h2>
@@ -782,14 +821,28 @@ pages.home = async () => {
               <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
-      <div class="home-right">${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${recommendedBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
+      <div class="home-right">${productsBox}${updateBox}${feedBox}${gamesShelf}</div>
     </div>`);
-  tickCountdowns();
   // Dressed in what you're wearing (the server says which items those are).
   const worn = mine.ok ? mine.wearing || [] : [];
   if ($('#homeAvatar')) mountAvatar($('#homeAvatar'), me.avatar || defaultAvatar(), worn, { width: 170 }).catch(() => {});
   feedPictures(feedR, view);
 };
+
+// #/soon/<product>: what's coming for a product that isn't open yet (Videos, Live), or
+// that only lives in Studio for now (Fyxa).
+pages.soon = async (id) => {
+  const p = productById(id);
+  if (!p || p.status === 'open') { location.replace(p ? p.href : '#/'); return; }
+  show(html`<div class="portal-hero soon-hero product-${p.id}">
+      <div><span class="portal-kicker">${p.status === 'studio' ? 'IN STUDIO NOW' : 'COMING TO GUTS&BOLTS'}</span><h1>${p.name}</h1>
+        <p>${p.blurb}</p></div></div>
+    <div class="box"><h2 class="boxhead">What's planned</h2>
+      <ul class="soon-plans">${(p.plans || []).map((x) => html`<li>${x}</li>`)}</ul>
+      <p class="small muted">It's its own part of Guts&amp;Bolts, with its own pages, but the same account, friends and Bolts.
+        Follow along on the <a href="#/create/roadmap">roadmap</a>.</p></div>`);
+};
+
 // My Feed: what friends and people you follow said, and what they've been up to (playing a
 // game, making something, earning a badge).
 function feedList(feedR) {
@@ -1116,6 +1169,7 @@ pages.games = async (mine, which) => {
         : html`<p class="error">${r.error}</p>`}`);
     return;
   }
+  if (!mine && !location.hash.includes('?')) { await gamesHome(); return; }
   const q = new URLSearchParams(location.hash.split('?')[1] || '');
   const sort = q.get('sort') || 'popular', query = q.get('q') || '', genre = q.get('genre') || '';
   show(html`<h1>Games</h1><p class="muted">Loading...</p>`);
@@ -1130,7 +1184,7 @@ pages.games = async (mine, which) => {
     <div class="genre-chips"><a class="chip ${genre ? '' : 'on'}" href="${link({ genre: '' })}">All</a>
       ${GENRES.map((gn) => html`<a class="chip ${genre === gn ? 'on' : ''}" href="${link({ genre: gn })}">${gn}</a>`)}</div>
     ${r.ok ? (r.assets.length ? html`<div class="grid">${r.assets.map(gameCard)}</div>`
-        : html`<p class="muted">${sort === 'featured' && !query && !genre ? 'No featured games right now.' : 'No games found' + (genre ? ' in ' + genre : '') + '.'} ${genre || query ? html`<a href="#/games">See all games</a>` : ''}</p>`)
+        : html`<p class="muted">${sort === 'featured' && !query && !genre ? 'No featured games right now.' : 'No games found' + (genre ? ' in ' + genre : '') + '.'} ${genre || query ? html`<a href="#/games?sort=popular">See all games</a>` : ''}</p>`)
       : html`<p class="error">${r.error}</p>`}`);
 };
 
@@ -2146,10 +2200,102 @@ async function learnPage(head) {
   draw();
 }
 
+// Create > Fyxa AI: per-asset preferences and creator rights attestation.
+async function fyxaAssetsPage(head) {
+  const params = new URLSearchParams(location.hash.split('?')[1] || '');
+  const offset = Math.max(0, Math.trunc(Number(params.get('offset')) || 0));
+  const limit = 100;
+  if (!signedIn()) { show(html`${head}<div class="box"><p>Sign in to manage Fyxa AI permissions for your creations.</p></div>`); return; }
+  const [assetsResult, prefsResult] = await Promise.all([
+    pageCall('list', { creator: me.id, limit, offset }),
+    pageCall('ai.preferences.get', {}),
+  ]);
+  if (!assetsResult.ok) { show(html`${head}<div class="box"><p class="error">${assetsResult.error}</p></div>`); return; }
+  if (!prefsResult.ok) { show(html`${head}<div class="box"><p class="error">Couldn't load Fyxa preferences: ${prefsResult.error}</p></div>`); return; }
+  const assets = assetsResult.assets || [];
+  const total = Number(assetsResult.total) || 0;
+  const pageNumber = Math.floor(offset / limit) + 1;
+  const pageCount = Math.max(1, Math.ceil(total / limit));
+  const states = [];
+  // Avoid launching one hundred simultaneous signed API requests for a large creator library.
+  for (let i = 0; i < assets.length; i += 10) {
+    const batch = await Promise.all(assets.slice(i, i + 10).map(async (asset) => {
+      const r = await pageCall('ai.content.eligibility.get', { contentId: asset.id });
+      return { asset, state: r.ok ? r.eligibility : null, error: r.ok ? '' : r.error };
+    }));
+    states.push(...batch);
+  }
+  const prefs = prefsResult.preferences;
+  const reasonText = (reason) => ({
+    account_training_disabled: 'Model-training permission is off in Account Settings',
+    account_reference_disabled: 'AI-reference permission is off in Account Settings',
+    rights_not_attested: 'Creator rights confirmation is required',
+    rights_pending_review: 'Waiting for staff rights review',
+    rights_rejected: 'Staff rejected the rights submission',
+    not_public: 'Only public assets can be eligible',
+    content_restricted: 'This asset is restricted, exclusive, promotional, or awaiting moderation',
+    content_excluded: 'You excluded this asset',
+    notice_outdated: 'Review and reconfirm the current Fyxa notice in Account Settings',
+    account_deleted: 'The creator account was deleted',
+    owner_changed: 'Asset ownership changed; the new owner must submit a fresh attestation',
+  }[reason] || (reason ? String(reason).replaceAll('_', ' ') : 'Eligible'));
+  const card = ({ asset, state, error }) => html`<div class="box fyxa-asset">
+    <div class="row" style="align-items:center;justify-content:space-between;gap:12px">
+      <div><b><a href="${asset.kind === 'game' ? '#/game/' + asset.id : isCatalogItem(asset.kind) ? '#/item/' + asset.id : '#/library/' + asset.id}">${asset.name || asset.id}</a></b>
+        <div class="small muted">${KINDS[asset.kind] || asset.kind} · ID ${assetNum(asset)} · ${(asset.access || 'public') === 'public' ? 'Public' : 'Private'}</div></div>
+      <span class="small">${state ? 'Rights: ' + state.rightsStatus.replaceAll('_', ' ') : error ? 'Status unavailable' : 'Not configured'}</span>
+    </div>
+    ${error ? html`<p class="error small">${error}</p>` : !state ? html`<p class="muted small">No eligibility record is available.</p>` : html`
+      <form class="form" data-form="fyxaAsset">
+        <input type="hidden" name="contentId" value="${asset.id}">
+        <div class="row" style="gap:16px;flex-wrap:wrap">
+          <label>Model training
+            <select name="trainingChoice">
+              <option value="inherit" ${state.trainingChoice === 'inherit' ? 'selected' : ''}>Use account setting</option>
+              <option value="include" ${state.trainingChoice === 'include' ? 'selected' : ''}>Request inclusion</option>
+              <option value="exclude" ${state.trainingChoice === 'exclude' ? 'selected' : ''}>Exclude this asset</option>
+            </select>
+          </label>
+          <label>AI reference
+            <select name="referenceChoice">
+              <option value="inherit" ${state.referenceChoice === 'inherit' ? 'selected' : ''}>Use account setting</option>
+              <option value="include" ${state.referenceChoice === 'include' ? 'selected' : ''}>Request inclusion</option>
+              <option value="exclude" ${state.referenceChoice === 'exclude' ? 'selected' : ''}>Exclude this asset</option>
+            </select>
+          </label>
+        </div>
+        <label><input type="checkbox" name="rightsAttested" ${state.rightsAttested ? 'checked' : ''}>
+          I own or have all necessary rights and permissions for this asset to be considered for the selected Fyxa AI uses.</label>
+        <p class="small muted">Training status: ${state.trainingEligible ? 'Eligible under current controls' : reasonText(state.trainingExclusionReason)}.
+          Reference status: ${state.referenceEligible ? 'Eligible under current controls' : reasonText(state.referenceExclusionReason)}.</p>
+        <p><button class="btn green">Save asset permissions</button></p>
+      </form>`}
+  </div>`;
+  show(html`${head}
+    <div class="box">
+      <h2 class="boxhead">Fyxa AI content permissions</h2>
+      <p>Choose separately whether each public creation may be considered for model training and AI reference. “Use account setting” inherits your Account Settings choice; an explicit exclusion overrides it.</p>
+      <p class="small muted">Requesting inclusion requires a rights attestation and staff approval. These controls only record eligibility metadata. No content is currently exported, indexed, sent to an AI provider, or used to train a model. Automated screening and age safeguards are not yet implemented, so approval here does not authorize processing.</p>
+      <p class="small">${prefs.trainingEnabled ? 'Model training: enabled at account level.' : 'Model training: disabled at account level.'}
+        ${prefs.referenceEnabled ? ' AI reference: enabled at account level.' : ' AI reference: disabled at account level.'}
+        <a href="#/settings">Manage account preferences</a>.</p>
+    </div>
+    ${assets.length ? states.map(card) : html`<div class="box"><p>${total ? 'No assets are on this page.' : 'You have no creator assets to configure yet.'}</p></div>`}
+    ${total > limit ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Showing ${offset + 1}–${Math.min(offset + assets.length, total)} of ${total} assets · Page ${pageNumber} of ${pageCount}</span>
+      <div class="row" style="gap:8px">
+        ${offset > 0 ? html`<a class="btn" href="#/create/fyxa?offset=${Math.max(0, offset - limit)}">Previous</a>` : ''}
+        ${offset + limit < total ? html`<a class="btn" href="#/create/fyxa?offset=${offset + limit}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
+  `);
+}
+
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['fyxa', 'Fyxa AI'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
+  if (tab === 'fyxa') { await fyxaAssetsPage(head); return; }
   if (tab === 'learn') { await learnPage(head); return; }
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
@@ -3132,6 +3278,63 @@ pages.avatar = async () => {
 
 // Staff tools (like the Player's Staff page): verify people, give Bolts, ban.
 // The reports players sent (newest problems first in line): what was reported, why, and buttons to close them.
+function fyxaModerationBox(result) {
+  if (!result || !result.ok) return html`<div class="box"><h2 class="boxhead">Fyxa moderation</h2><p class="error">${result && result.error || 'The moderation queue is unavailable.'}</p></div>`;
+  const items = result.items || [];
+  const names = { S1: 'Violence', S2: 'Non-violent crime', S3: 'Sexual violence', S4: 'Child safety', S5: 'Defamation', S6: 'Specialized advice',
+    S7: 'Privacy', S8: 'Intellectual property', S9: 'Weapons', S10: 'Hate', S11: 'Self-harm', S12: 'Sexual content', S13: 'Elections', S14: 'Code interpreter abuse',
+    SCAN_UNAVAILABLE: 'AI scanner unavailable', VISION_SCAN_UNAVAILABLE: 'Vision scan unavailable', AUDIO_REVIEW_REQUIRED: 'Audio upload requires manual review',
+    AUDIO_SCAN_UNAVAILABLE: 'Audio scan unavailable', GEOMETRY_REVIEW_REQUIRED: '3D geometry or embedded media requires manual review',
+    VISION_CHILD_SAFETY: 'Image child-safety review', VISION_SEXUAL_CONTENT: 'Image sexual-content review',
+    VISION_NUDITY: 'Image nudity review', VISION_VIOLENCE: 'Image violence review', VISION_HATE: 'Image hate-content review',
+    VISION_PERSONAL_INFORMATION: 'Image personal-information review' };
+  const person = (u, id) => u ? html`<a href="#/user/${u.userId || u.id}">${u.username || u.name}</a>` : html`Unknown account (${id})`;
+  const source = (item) => {
+    let href = '';
+    if (item.sourceType === 'asset') href = item.assetKind === 'game' ? '#/game/' + item.sourceId
+      : isCatalogItem(item.assetKind) ? '#/item/' + item.sourceId : '#/library/' + item.sourceId;
+    else if (item.sourceType === 'comment' || item.sourceType === 'game_update' || item.sourceType === 'game_chat') href = '#/game/' + item.sourceId;
+    else if (item.sourceType === 'profile') href = '#/user/' + item.sourceId;
+    else if (item.sourceType === 'forum_thread' || item.sourceType === 'forum_reply') href = '#/forum/t/' + item.sourceId;
+    else if (item.sourceType === 'group' || item.sourceType === 'group_post') href = '#/group/' + item.sourceId;
+    return href ? html`<a href="${href}">${item.sourceName || item.sourceId}</a>` : (item.sourceName || item.sourceId || 'not recorded');
+  };
+  return html`<div class="box">
+    <h2 class="boxhead">Fyxa moderation queue</h2>
+    <p>AI-flagged submissions are prioritized here for staff review. The model provides signals, not verdicts. Review the excerpt and context before taking action.</p>
+    <p class="small muted">${Number(result.total || 0).toLocaleString()} open case${result.total === 1 ? '' : 's'} · Showing ${items.length ? (result.offset || 0) + 1 : 0}–${(result.offset || 0) + items.length} · Critical cases appear first · No automatic bans or deletions</p>
+    ${items.length ? items.map((item) => html`<div class="box fyxa-case">
+      <div class="row" style="align-items:center;justify-content:space-between;gap:10px">
+        <b>${item.severity.toUpperCase()} · ${item.sourceType.replaceAll('_', ' ')}</b>
+        <span class="small muted">${dateText(item.createdAt)}${item.occurrences > 1 ? " · " + item.occurrences + " occurrences · last seen " + dateText(item.lastSeenAt) : ""}</span>
+      </div>
+      <p class="small">Creator: ${person(item.author, item.authorId)} · Source: ${source(item)}</p>
+      <p class="small"><b>Signals:</b> ${item.categories.map((code) => (names[code] || code) + ' (' + code + ')').join(', ') || 'No category returned'}</p>
+      <p class="small muted">Scanner: ${item.scanner}</p>
+      <div class="report-copy"><b>Submitted content excerpt</b><div style="white-space:pre-wrap">${item.excerpt}</div></div>
+      <form class="form" data-form="fyxaModeration">
+        <input type="hidden" name="caseId" value="${item.id}">
+        <label>Staff decision</label>
+        <select name="outcome">
+          <option value="action_taken">Action taken (recorded separately)</option>
+          <option value="dismissed">Dismiss as safe / false positive</option>
+          <option value="escalated">Escalate for specialist review</option>
+        </select>
+        <label>Review note</label>
+        <textarea name="note" rows="2" maxlength="500" minlength="3" placeholder="Record what you reviewed and why" required></textarea>
+        <button class="btn green">Save moderation decision</button>
+      </form>
+    </div>`) : html`<p class="muted">${result.total ? 'No cases on this page.' : 'No open Fyxa moderation cases.'}</p>`}
+    ${result.total > (result.limit || 100) ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Page ${Math.floor((result.offset || 0) / (result.limit || 100)) + 1} of ${Math.ceil(result.total / (result.limit || 100))}</span>
+      <div class="row" style="gap:8px">
+        ${(result.offset || 0) > 0 ? html`<a class="btn" href="#/staff?tab=moderation&moderationOffset=${Math.max(0, (result.offset || 0) - (result.limit || 100))}">Previous</a>` : ''}
+        ${(result.offset || 0) + (result.limit || 100) < result.total ? html`<a class="btn" href="#/staff?tab=moderation&moderationOffset=${(result.offset || 0) + (result.limit || 100)}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
 function reportsBox(rep, closed) {
   const tabs = html`<a class="btn small ${closed ? '' : 'blue'}" href="#/staff?tab=reports">Open</a> <a class="btn small ${closed ? 'blue' : ''}" href="#/staff?reports=closed">Closed</a>`;
   if (!rep.ok) return html`<div class="box"><h2 class="boxhead">Reports</h2><p class="error">${rep.error}</p></div>`;
@@ -3296,7 +3499,7 @@ const GIVE_BADGES = [['tester', 'Tester'], ['bughunter', 'Bug Hunter'], ['featur
   ['obc', 'Overclocked Boltworks Club (OBC)']];
 const OTHER_BADGES = { tester: 'Tester', bughunter: 'Bug Hunter', featured: 'Featured Creator' };
 const STAFF_TABS = [['home', 'Overview'], ['tickets', 'Tickets'], ['uploads', 'Uploads'], ['reports', 'Reports'], ['appeals', 'Appeals'],
-  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['database', 'Database']];
+  ['ideas', 'Ideas'], ['people', 'People'], ['numbers', 'Numbers'], ['log', 'Staff log'], ['tools', 'Tools'], ['fyxa', 'Fyxa AI'], ['moderation', 'Fyxa moderation'], ['database', 'Database']];
 // Staff > Numbers: how the site is doing. Now from the server; history (a reading every few
 // minutes, kept by day) and the week's top games from Supabase.
 function staffNumbersBox(r) {
@@ -3324,6 +3527,35 @@ function staffNumbersBox(r) {
     ${(r.topGames || []).length ? html`<ol class="top-games">${r.topGames.map((g) => html`<li><a class="link" href="#/game/${g.id}">${g.name}</a>
         <span class="small muted">${Number(g.plays).toLocaleString()} plays</span></li>`)}</ol>` : html`<p class="muted">No plays recorded this week yet.</p>`}</div>`;
 }
+function fyxaReviewBox(r) {
+  if (!r || !r.ok) return html`<div class="box"><h2 class="boxhead">Fyxa AI rights review</h2><p class="error">${r && r.error || 'The review queue is unavailable.'}</p></div>`;
+  const items = r.items || [];
+  return html`<div class="box">
+    <h2 class="boxhead">Fyxa AI rights review</h2>
+    <p>Review creator rights attestations before any asset can become eligible. Approval is not a safety-screening result and does not start content processing.</p>
+    <p class="small muted">${Number(r.total || 0).toLocaleString()} pending request${r.total === 1 ? '' : 's'} · Showing ${items.length ? (r.offset || 0) + 1 : 0}–${(r.offset || 0) + items.length}.</p>
+    ${items.length ? items.map((item) => html`<div class="box fyxa-review-item">
+      <b><a href="${item.contentType === 'game' ? '#/game/' + item.contentId : isCatalogItem(item.contentType) ? '#/item/' + item.contentId : '#/library/' + item.contentId}">${item.title || item.contentId}</a></b>
+      <div class="small muted">${KINDS[item.contentType] || item.contentType} · Content ID ${item.contentId} · Creator ${item.owner && (item.owner.username || item.owner.name) || item.ownerId} · ${item.privacyStatus}</div>
+      <p class="small">${item.rightsAttested ? 'Creator has submitted a rights attestation.' : 'No current rights attestation.'}</p>
+      <form class="form" data-form="fyxaReview">
+        <input type="hidden" name="contentId" value="${item.contentId}">
+        <label>Decision</label><select name="rightsStatus"><option value="approved">Approve rights</option><option value="rejected">Reject rights</option><option value="unverified">Return to unverified</option></select>
+        <label>Review note <span class="small muted">(required for approval; explain the rights evidence)</span></label>
+        <input name="reason" maxlength="160" minlength="8" placeholder="Describe the evidence reviewed" required>
+        <p><button class="btn green">Submit review</button></p>
+      </form>
+    </div>`) : html`<p class="muted">${r.total ? 'No requests on this page.' : 'No rights attestations are waiting for review.'}</p>`}
+    ${r.total > (r.limit || 50) ? html`<div class="row" style="align-items:center;justify-content:space-between;gap:12px;margin:16px 0">
+      <span class="small muted">Page ${Math.floor((r.offset || 0) / (r.limit || 50)) + 1} of ${Math.ceil(r.total / (r.limit || 50))}</span>
+      <div class="row" style="gap:8px">
+        ${(r.offset || 0) > 0 ? html`<a class="btn" href="#/staff?tab=fyxa&rightsOffset=${Math.max(0, (r.offset || 0) - (r.limit || 50))}">Previous</a>` : ''}
+        ${(r.offset || 0) + (r.limit || 50) < r.total ? html`<a class="btn" href="#/staff?tab=fyxa&rightsOffset=${(r.offset || 0) + (r.limit || 50)}">Next</a>` : ''}
+      </div>
+    </div>` : ''}
+  </div>`;
+}
+
 pages.staff = async () => {
   if (!signedIn() || !me.staff) { show(html`<h1>Staff</h1><p class="muted">Only Guts&amp;Bolts staff can see this page.</p>`); return; }
   const params = new URLSearchParams(location.hash.split('?')[1] || '');
@@ -3332,17 +3564,21 @@ pages.staff = async () => {
   const logFor = params.get('log') || '';
   const ticketsClosed = params.get('tickets') === 'closed';
   const appealsClosed = params.get('appeals') === 'closed';
+  const rightsOffset = Math.max(0, Math.trunc(Number(params.get('rightsOffset')) || 0));
+  const moderationOffset = Math.max(0, Math.trunc(Number(params.get('moderationOffset')) || 0));
   // (older links name what they show, not the tab)
   const tab = params.get('tab') || (params.has('q') ? 'people' : params.has('log') ? 'log' : params.has('reports') ? 'reports'
     : params.has('tickets') ? 'tickets' : params.has('appeals') ? 'appeals' : 'home');
   // What's waiting, for the counts on the tabs (and the lists themselves).
-  const [tk, up, rep, ap, rm] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
+  const [tk, up, rep, ap, rm, fyxaQueue, moderation] = await Promise.all([pageCall('admin.tickets', { status: ticketsClosed ? 'closed' : 'open' }), pageCall('admin.uploads', {}),
     pageCall('admin.reports', { status: closed ? 'closed' : 'open' }), pageCall('admin.appeals', { status: appealsClosed ? 'closed' : 'open' }),
-    pageCall('roadmap.get', {})]);
+    pageCall('roadmap.get', {}), tab === 'fyxa' ? pageCall('ai.content.reviewQueue', { limit: 50, offset: rightsOffset }) : Promise.resolve(null),
+    tab === 'moderation' ? pageCall('ai.moderation.queue', { limit: 100, offset: moderationOffset }) : Promise.resolve(null)]);
   const waiting = {
     tickets: tk.ok && !ticketsClosed ? tk.tickets.length : null, uploads: up.ok ? up.uploads.length : null,
     reports: rep.ok && !closed ? rep.reports.length : null, appeals: ap.ok && !appealsClosed ? ap.appeals.length : null,
-    ideas: rm.ok ? rm.openIdeas : null };
+    ideas: rm.ok ? rm.openIdeas : null, fyxa: fyxaQueue && fyxaQueue.ok ? fyxaQueue.total : null,
+    moderation: moderation && moderation.ok ? moderation.total : null };
   const tabs = html`<div class="tabs staff-tabs">${STAFF_TABS.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/staff?tab=${k}">${l}${
     waiting[k] ? html` <span class="count">${waiting[k]}</span>` : ''}</a>`)}</div>`;
   let body;
@@ -3351,6 +3587,8 @@ pages.staff = async () => {
   else if (tab === 'reports') body = reportsBox(rep, closed);
   else if (tab === 'appeals') body = appealsBox(ap, appealsClosed);
   else if (tab === 'ideas') body = staffIdeasBox(rm);
+  else if (tab === 'moderation') body = fyxaModerationBox(moderation);
+  else if (tab === 'fyxa') body = fyxaReviewBox(fyxaQueue);
   else if (tab === 'people') {
     const r = await pageCall('admin.find', { query });
     // Give a badge by the user ID on their profile (#5). Staff can only give Verified and Partner.
@@ -3811,7 +4049,7 @@ let authSetup = null;   // Settings: an authenticator app being set up ({secret,
 pages.terms = async () => {
   show(html`<div class="terms">
     <h1>Guts&amp;Bolts Terms of Service</h1>
-    <p class="muted small">Last updated October 2026. By making an account, playing or using Studio, you agree to these
+    <p class="muted small">Last updated November 2026. By making an account, playing or using Studio, you agree to these
       terms. If you don't agree, please don't use Guts&amp;Bolts.</p>
     <p>"Guts&amp;Bolts", "we" and "us" mean the people who make and run Guts&amp;Bolts. "You" means you, the person
       using it. These terms cover the website, Studio, the Player and our game servers.</p>
@@ -3919,6 +4157,7 @@ pages.terms = async () => {
     </ul>
 
     <h2>8. Chat, safety and moderation</h2>
+    <p>We use automated safety screening, including AI-assisted classifiers, to help detect potentially harmful or rule-breaking content in public creator submissions, profile text, game update notes, comments, forum posts, group posts, translated in-game chat, party chat and private messages. Screening results may be stored with a limited excerpt, category signals and review history, and shown to authorized moderators. Text submitted for these features is processed by Cloudflare Workers AI for trust-and-safety review. Supported image uploads are screened with Moondream 3.1 through Cloudflare Workers AI; if that scan fails, the upload is routed for manual review. Supported audio uploads are transcribed by Deepgram Nova-3 through Cloudflare Workers AI and the transcript is screened; unsupported or failed audio scans are routed for manual review. Open moderation cases remain available to staff until resolved; closed case evidence is retained for up to 180 days. This processing is for moderation, not Fyxa model training or AI-reference indexing. AI flags can be wrong; staff review context and make moderation decisions. We do not use an AI flag alone to permanently ban an account.</p>
     <ul>
       <li>Swearing is allowed. The text filter still hides slurs, links to other sites and personal info (like phone
         numbers and email addresses) as "[ Content Deleted ]".</li>
@@ -4715,6 +4954,34 @@ const actions = {
 };
 
 const forms = {
+  async fyxaModeration(f) {
+    const r = await call('ai.moderation.review', { caseId: f.caseId.value, outcome: f.outcome.value, note: f.note.value.trim() });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Fyxa moderation decision recorded.');
+    render();
+  },
+  async fyxaAsset(f) {
+    const r = await call('ai.content.eligibility.update', {
+      contentId: f.contentId.value,
+      trainingChoice: f.trainingChoice.value,
+      referenceChoice: f.referenceChoice.value,
+      rightsAttested: !!f.rightsAttested.checked,
+    });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Fyxa asset permissions saved. Rights submissions remain pending staff review.');
+    render();
+  },
+  async fyxaReview(f) {
+    const r = await call('ai.content.review', {
+      contentId: f.contentId.value,
+      rightsStatus: f.rightsStatus.value,
+      reason: f.reason.value.trim(),
+    });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Fyxa rights review recorded.');
+    render();
+  },
+
   forumSearch(f) {
     const q = f.q.value.trim();
     if (!q) return;
@@ -5422,6 +5689,21 @@ Object.assign(actions, {
   },
 });
 
+// The top bar lights up the product you're in (products.js says which pages belong to
+// which product), and the bar under it shows that product's own links.
+function drawSectionBar(name, path) {
+  const product = name === 'soon' ? productById(path[1]) : productOf(name);
+  document.querySelectorAll('#nav a[data-product]').forEach((a) => a.classList.toggle('on', !!product && a.dataset.product === product.id));
+  const bar = document.getElementById('sectionBar');
+  if (!bar) return;
+  const links = product ? product.links : [];
+  bar.hidden = !links.length;
+  bar.className = 'section-bar' + (product ? ' product-' + product.id : '');
+  const lit = activeLink(name, location.hash);
+  bar.querySelector('.wrap').innerHTML = links.length ? html`<b class="section-name">${product.name}</b>${links.map(([label, href, page]) =>
+    html`<a href="${href}" class="${page && page === lit ? 'on' : ''}">${label}</a>`)}`.s : '';
+}
+
 async function render() {
   const token = ++pageToken;
   const path = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/');
@@ -5433,6 +5715,7 @@ async function render() {
     a.classList.toggle('on', p === name || (p === 'games' && name === 'game') || (p === 'catalog' && name === 'item') || (p === 'create' && name === 'library') ||
       (p === 'people' && name === 'user') || (p === 'groups' && name === 'group') || (p === 'forum' && name === 'forum') || (p === 'chat' && name === 'parties'));
   });
+  drawSectionBar(name, path);
   if (name !== 'avatar') avatarDraft = null;   // leaving the avatar page drops unsaved changes
   if (!me) {
     show(html`<h1>Can't reach the Guts&amp;Bolts server</h1>

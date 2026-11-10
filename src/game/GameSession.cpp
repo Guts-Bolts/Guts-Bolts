@@ -551,7 +551,7 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     // Blood, oil, sparks, smoke...
     const WorldSettings& ws = m_scene->world();
     m_scene->particles().setBlood(ws.bloodColor, ws.bloodAmount, ws.bloodStay);
-    { FrameProfile::Scope prof("game: particles"); m_scene->particles().update(dt, m_scene->world().gravity, m_physics); }
+    { FrameProfile::Scope prof("game: particles"); m_scene->particles().update(dt, m_scene->world().fluidGravity(), m_physics); }
     m_scene->particles().follow(*m_scene);   // blood stains move with the bodies they're on
     // ParticleEmitters, Fire, Smoke, Sparkles: every screen makes its own (a game server
     // with no screen doesn't bother).

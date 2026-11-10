@@ -150,7 +150,7 @@ void BlastSystem::water(Scene& scene, const glm::vec3& c, const BlastOptions& o)
         p.alpha = rnd(0.5f, 0.75f);
         p.life = p.maxLife = rnd(2.5f, 5.0f) * std::max(1.0f, std::sqrt(R / 12.0f));
         p.drag = 0.5f;
-        p.lift = -scene.world().gravity * 0.35f;   // it falls back down
+        p.lift = -scene.world().fluidGravity() * 0.35f;   // it falls back down
         p.seed = rnd(0, 100);
         add(p);
     }
@@ -255,7 +255,7 @@ void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physic
         const glm::vec3 s = n->transform.scale;
         const float volume = std::max(0.05f, s.x * s.y * s.z);
         const float heft = std::sqrt(std::max(1.0f, volume * std::max(0.1f, n->density >= 0 ? n->density : 0.7f) / 4.0f));
-        n->velocity += (dir + glm::vec3(0, 0.45f, 0)) * 48.0f * P * k / heft;
+        n->velocity += (dir + glm::vec3(0, 0.45f, 0)) * 48.0f * P * k / heft * scene.world().launchScale();
         n->angularVelocity += glm::cross(glm::vec3(0, 1, 0), dir) * 10.0f * P * k / heft + rndDir() * 3.0f * k;
         Physics::wake(n);
     }
@@ -284,7 +284,7 @@ void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physic
             if (d < R) {
                 const float k = 1.0f - d / R;
                 const glm::vec3 dir = d > 1e-3f ? (body - b.center) / d : glm::vec3(0, 1, 0);
-                player->hurt(160.0f * P * k, std::min(1.0f, 0.4f + k * P), (dir + glm::vec3(0, 0.8f, 0)) * 22.0f * P * k);
+                player->hurt(160.0f * P * k, std::min(1.0f, 0.4f + k * P), (dir + glm::vec3(0, 0.8f, 0)) * 22.0f * P * k * scene.world().launchScale());
             }
         }
     }
@@ -298,7 +298,7 @@ void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physic
         if (d >= R) continue;
         const float k = 1.0f - d / R;
         const glm::vec3 dir = d > 1e-3f ? (body - b.center) / d : glm::vec3(0, 1, 0);
-        const glm::vec3 impulse = (dir + glm::vec3(0, 0.8f, 0)) * 22.0f * P * k;
+        const glm::vec3 impulse = (dir + glm::vec3(0, 0.8f, 0)) * 22.0f * P * k * scene.world().launchScale();
         rc.humanoid.health = std::max(0.0f, rc.humanoid.health - 160.0f * P * k);
         rc.humanoidDirty = true;
         if (rc.humanoid.health <= 0.0f) rc.kills.push_back({std::min(1.0f, 0.4f + k * P), impulse});
@@ -318,7 +318,7 @@ void BlastSystem::push(Scene& scene, Live& b, float from, float to, const Physic
         if (d >= R || root->hasForceField()) continue;
         const float k = 1.0f - d / R;
         const glm::vec3 dir = d > 1e-3f ? (body - b.center) / d : glm::vec3(0, 1, 0);
-        const glm::vec3 impulse = (dir + glm::vec3(0, 0.8f, 0)) * 22.0f * P * k;
+        const glm::vec3 impulse = (dir + glm::vec3(0, 0.8f, 0)) * 22.0f * P * k * scene.world().launchScale();
         npcPtr->humanoid.health = std::max(0.0f, npcPtr->humanoid.health - 160.0f * P * k);
         if (npcPtr->humanoid.health <= 0.0f)
             scene.npcs().kill(npcPtr->rootId, std::min(1.0f, 0.4f + k * P), impulse);
