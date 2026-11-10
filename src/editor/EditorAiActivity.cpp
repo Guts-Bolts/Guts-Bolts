@@ -2,6 +2,7 @@
 // MCP), a report of everything it changed since the person last pressed Keep, with one
 // button to undo all of it, and the person's OK before it deletes or restores things.
 #include "Editor.h"
+#include "../core/Log.h"
 #include "../core/Paths.h"
 #include "../scene/Scene.h"
 #include "../scene/Serializer.h"
@@ -155,13 +156,14 @@ AiToolResult Editor::runAiToolFrom(const std::string& source, const std::string&
 
     AiLogEntry e;
     e.time = (long long)std::time(nullptr);
-    e.source = source;
+    const bool bypass = m_fyxaBypass && source == "Fyxa";
+    e.source = bypass ? "Fyxa (bypass mode)" : source;
     e.tool = name;
     e.args = argsText(args);
 
     AiToolResult r;
     const std::string key = name + " " + args.dump();
-    if (m_aiAskFirst && needsOk(name, args) && !m_aiAllowed.count(key)) {
+    if (m_aiAskFirst && !bypass && needsOk(name, args) && !m_aiAllowed.count(key)) {
         if (m_aiRefused.erase(key)) {
             r = refusal(name, "NOT_ALLOWED", "The person said no to this in Studio.",
                         "Don't do it another way. Ask the person what they want instead.");
@@ -187,7 +189,9 @@ AiToolResult Editor::runAiToolFrom(const std::string& source, const std::string&
 
     const bool track = !m_playing;
     std::string before = track ? Serializer::saveScene(*m_scene) : std::string();
+    m_aiSource = source;
     r = runAiTool(name, args);
+    m_aiSource.clear();
     if (track && !m_playing) {
         std::string after = Serializer::saveScene(*m_scene);
         if (after != before) {
@@ -380,4 +384,11 @@ void Editor::renderAiActivity() {
     }
     ImGui::EndChild();
     ImGui::End();
+}
+
+void Editor::setFyxaBypass(bool on) {
+    if (on == m_fyxaBypass) return;
+    m_fyxaBypass = on;
+    Log::system(on ? "Fyxa bypass permissions mode is ON: Fyxa won't ask before it acts. Its changes are still in AI Activity."
+                   : "Fyxa bypass permissions mode is off: Fyxa asks again.");
 }

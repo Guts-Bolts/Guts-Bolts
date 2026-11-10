@@ -59,6 +59,11 @@ public:
     // person's OK first (EditorAiActivity.cpp).
     AiToolResult runAiToolFrom(const std::string& source, const std::string& name, const nlohmann::json& args);
     void showAiActivity() { m_showAiActivity = true; }
+    // Fyxa's "bypass permissions" mode (turned on in Fyxa settings, off again every time Studio
+    // starts): Fyxa's own calls skip the Allow steps (deleting, save points, game page changes).
+    // Other AI apps and connected apps still ask. Everything still goes in AI Activity.
+    bool fyxaBypass() const { return m_fyxaBypass; }
+    void setFyxaBypass(bool on);
     const std::string& filePath() const { return m_path; }   // the open game's file ("" = never saved)
     bool aiHasChanges() const { return !m_aiBaseline.empty(); }
     static std::vector<std::string> insertKinds();   // what insert_object / Insert Object can make
@@ -537,6 +542,8 @@ private:
     bool        m_aiLogLoaded = false;
     std::string m_aiBaseline, m_aiBaselinePath;   // the game before the AI's changes ("" = none)
     bool        m_aiAskFirst = true;              // ask before deleting / restoring
+    bool        m_fyxaBypass = false;             // Fyxa bypass permissions mode (never saved)
+    std::string m_aiSource;                       // who is calling runAiTool right now (runAiToolFrom), "" = the person
     struct AiAsk { std::string source, tool, summary; nlohmann::json args; };
     std::vector<AiAsk>    m_aiAsks;               // waiting for Allow / Don't allow
     std::set<std::string> m_aiAllowed, m_aiRefused;   // tool + args the person answered (used once)

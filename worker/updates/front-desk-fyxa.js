@@ -8,5 +8,6 @@ export default {
     'It can make a game pass or developer product, change a price, or post an update note',
     'Every change opens a window in Studio that shows exactly what it wants to do; nothing happens until you press Allow',
     'Apps connected online (like Lyreto) can\'t use it at all',
+    'New Bypass permissions switch in Fyxa settings: Fyxa stops asking first (deleting, save points, MCP tools, game page changes). It asks you to confirm, shows a red warning while it\'s on, and turns itself off when Studio closes',
   ],
 };

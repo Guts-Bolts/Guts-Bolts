@@ -134,6 +134,15 @@ AiToolResult Editor::runPlatformTool(const json& args) {
 
     const std::string job = std::to_string(m_platformNext++);
     json entry = {{"action", action}, {"game", game}};
+    if (act->changes && m_fyxaBypass && m_aiSource == "Fyxa") {   // bypass permissions mode: no Allow window
+        entry["asked"] = describeChange(action, req);
+        m_platformJobs[job] = entry;
+        Log::system("Fyxa changed your game (bypass mode, no Allow asked): " + entry["asked"].get<std::string>());
+        sendPlatformJob(job, act->op, req);
+        return done({{"job", job}, {"state", "sending"}, {"bypass", true},
+                     {"note", "Bypass permissions mode is on, so this was sent without asking. Tell the person what you changed. "
+                              "The server answers in a moment: manage_game {action: \"result\", job: \"" + job + "\"}."}});
+    }
     if (act->changes) {
         entry["state"] = "waiting_for_person";
         entry["asked"] = describeChange(action, req);

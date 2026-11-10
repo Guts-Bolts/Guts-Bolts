@@ -1377,11 +1377,14 @@ void AssistantPanel::startNextExternalCall() {
     if (m_externalQueue.empty()) { m_externalApprovalPending = false; finishExternalCalls(); return; }
     // Every external MCP action requires a fresh, visible approval. Server-level
     // enablement only permits discovery; it is not blanket authorization to act.
-    if (!m_externalApprovalGranted) { m_externalApprovalPending = true; return; }
+    // (Bypass permissions mode, which the person turned on themselves, skips that step.)
+    const bool bypassed = !m_externalApprovalGranted && m_editor.fyxaBypass();
+    if (!m_externalApprovalGranted && !bypassed) { m_externalApprovalPending = true; return; }
     m_externalApprovalGranted = false;
     m_externalApprovalPending = false;
     ExternalCall call = std::move(m_externalQueue.front());
     m_externalQueue.pop_front();
+    if (bypassed) appendMcpAudit("approval", call.name, call.args, "auto-approved-bypass-mode", call.idempotencyKey);
 
     std::string serverKey, toolName;
     if (call.name.rfind("mcp__", 0) == 0) {
@@ -1987,7 +1990,41 @@ void AssistantPanel::render(bool* open) {
                            m_deferredExternalClaude || m_deferredExternalOllama;
     const bool busy = agentBusy || m_mcpRefreshPending.valid() || m_oauthPending.valid();
 
+    if (m_editor.fyxaBypass()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.35f, 0.3f, 1));
+        ImGui::TextWrapped("Bypass permissions is ON: Fyxa acts without asking you first.");
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Turn off##bypassbanner")) m_editor.setFyxaBypass(false);
+    }
+
     if (ImGui::CollapsingHeader("Fyxa settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Bypass permissions mode: for people who want Fyxa to just get on with it. Off every time
+        // Studio starts, and turning it on asks once more, so it is never on by accident.
+        bool bypass = m_editor.fyxaBypass();
+        if (ImGui::Checkbox("Bypass permissions (Fyxa doesn't ask first)", &bypass)) {
+            if (bypass) ImGui::OpenPopup("Turn on bypass permissions?");
+            else m_editor.setFyxaBypass(false);
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Fyxa deletes things, restores save points, uses your MCP servers' tools and changes your game's page\n"
+                              "without the Allow step. It turns itself off when Studio closes.");
+        if (ImGui::BeginPopupModal("Turn on bypass permissions?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30);
+            ImGui::TextWrapped("Fyxa will stop asking you before it:");
+            ImGui::BulletText("deletes objects or restores / deletes a save point");
+            ImGui::BulletText("uses tools from MCP servers you connected");
+            ImGui::BulletText("changes your game's page: settings, passes, prices, update notes");
+            ImGui::TextWrapped("Changes to your game's page go live at once and Undo can't take them back. Text from MCP servers "
+                               "could trick an AI, and nothing will stop it. Studio changes are still listed in AI Activity and can be undone.");
+            ImGui::TextWrapped("Other AI apps and connected apps still ask. This turns itself off when Studio closes.");
+            ImGui::PopTextWrapPos();
+            if (ImGui::Button("Turn it on")) { m_editor.setFyxaBypass(true); ImGui::CloseCurrentPopup(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+        ImGui::Separator();
         const char* providers[] = {"Ollama (local)", "Claude (Anthropic)"};
         int provider = m_provider == "claude" ? 1 : 0;
         if (ImGui::Combo("AI provider", &provider, providers, 2)) {
