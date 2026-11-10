@@ -105,6 +105,8 @@ std::string GbServer::privateBlocked(const User& u, const std::string& gameId) c
 json GbServer::serverOp(const std::string& name, User& me, const json& args) {
     std::string game = Online::cleanText(args.value("game", std::string()), 80);
     if (auto f = findAsset(game); f != m_assets.end()) game = f->first;   // (its number works too)
+    // On one of the game's ban lists (ServerBanLists.cpp): no playing it.
+    if (name != "servers.list") if (const std::string banned = banMessageFor(game, me); !banned.empty()) return fail(banned);
 
     if (name == "servers.play") {
         // The fullest public server of this game that still has room, like Roblox.
@@ -290,6 +292,7 @@ void GbServer::relayRequest(Client& c, const json& req) {
             s.game = m.game; s.title = m.title; s.priv = m.priv; s.code = m.code; s.owner = m.owner; s.max = m.max;
             m.newId = s.id;
         }
+        if (!dedicated) if (const std::string banned = banMessageFor(s.game, *me); !banned.empty()) { reply(fail(banned)); c.closing = true; return; }
         if (s.priv && !dedicated && args.value("continues", std::string()).empty()) {
             if (const std::string blocked = privateBlocked(*me, s.game); !blocked.empty()) { reply(fail(blocked)); c.closing = true; return; }
         }
@@ -346,6 +349,7 @@ void GbServer::relayRequest(Client& c, const json& req) {
         }
         if (!s) { reply(fail("That server has closed.")); c.closing = true; return; }
         if (s->host == me->id && !s->dedicated) { reply(fail("That's your own server.")); c.closing = true; return; }
+        if (const std::string banned = banMessageFor(s->game, *me); !banned.empty()) { reply(fail(banned)); c.closing = true; return; }
         if (s->priv && code.empty() && !following && !me->friends.count(ownerOf(*s)) && ownerOf(*s) != me->id) {
             reply(fail("That's a private server. You need to be the host's friend, or have its code."));
             c.closing = true;

@@ -19,6 +19,7 @@ import { filterText, nameHasHateWord } from './textfilter.js';
 import { MemoryStore } from './memorystore.js';
 import { installMcpRelay } from './mcp-relay.js';
 import { installGameWeb } from './game-web.js';
+import { installBanLists } from './banlists.js';   // creators' ban lists, used across their games
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
   kLogTitle, kLogText, kEventName, kEventText } from './extras.js';   // achievements, game update logs, events
@@ -3274,6 +3275,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('groups.')) return this.groupOp(name, me, args);
     if (name.startsWith('forum.')) return this.forumOp(name, me, args);
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
+    if (name.startsWith('banlist.') || name === 'game.banLists' || name === 'game.ban') return this.banListOp(name, me, args);   // banlists.js
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
@@ -6204,6 +6206,8 @@ export class GbServerObject extends DurableObject {
     const asset = this.assets.get(game);
     const t = now();
     if (asset && !this.canPlay(asset, me)) return fail(this.noPlay(asset));
+    const banned = name !== 'servers.list' && this.banMessageFor(asset, me);   // on one of the game's ban lists (banlists.js)
+    if (banned) return fail(banned);
     if (name === 'servers.play') {
       let best = null;
       for (const s of this.sessions.values()) {
@@ -6495,6 +6499,8 @@ export class GbServerObject extends DurableObject {
         Object.assign(s, { game: old.game, title: old.title, priv: old.priv, code: old.code, owner: old.owner, max: old.max });
         old.newId = s.id;
       }
+      const banned = !dedicated && this.banMessageFor(this.assets.get(s.game), me);   // can't host a game you're banned from
+      if (banned) { reply(fail(banned)); close(); return; }
       if (s.priv && !old && !dedicated) {
         const blocked = this.privateBlocked(me, s.game);
         if (blocked) { reply(fail(blocked)); close(); return; }
@@ -6541,6 +6547,8 @@ export class GbServerObject extends DurableObject {
       }
       if (!s) { reply(fail('That server has closed.')); close(); return; }
       if (s.host === me.id && !s.dedicated) { reply(fail('That\'s your own server.')); close(); return; }
+      const banned = this.banMessageFor(this.assets.get(s.game), me);   // banlists.js
+      if (banned) { reply(fail(banned)); close(); return; }
       if (s.priv && !code && !following && !me.friends.includes(this.ownerOf(s)) && this.ownerOf(s) !== me.id) {
         reply(fail('That\'s a private server. You need to be the host\'s friend, or have its code.'));
         close();
@@ -6861,3 +6869,4 @@ export function json(obj, status = 200) {
 installMcpRelay(GbServerObject);
 installGameWeb(GbServerObject);
 installChats(GbServerObject);
+installBanLists(GbServerObject);

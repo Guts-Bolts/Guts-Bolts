@@ -684,6 +684,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         json r = okay(); r["progress"] = me.learnProgress; return r;
     }
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
+    if (name.rfind("banlist.", 0) == 0 || name == "game.banLists" || name == "game.ban") return banListOp(name, me, args);   // ServerBanLists.cpp
     if (name.rfind("gamelog.", 0) == 0) return gameLogOp(name, me, args);   // ServerExtras.cpp
     if (name.rfind("events.", 0) == 0) return eventsOp(name, me, args);
     if (name.rfind("block.", 0) == 0 || name.rfind("report.", 0) == 0) return safetyOp(name, me, args);
@@ -1918,6 +1919,7 @@ void GbServer::saveAssets() {
         if (a.limited) { all[id]["limited"] = true; all[id]["stock"] = a.stock; all[id]["copies"] = a.copies; }
         if (!a.shots.empty()) all[id]["shots"] = a.shots;
         if (!a.versions.empty()) all[id]["versions"] = a.versions;
+        if (!a.banLists.empty()) all[id]["banLists"] = a.banLists;
         if (!a.updateLog.empty()) { all[id]["updateLog"] = a.updateLog; all[id]["updateLogDay"] = a.updateLogDay; all[id]["updateLogToday"] = a.updateLogToday; }
     }
     writeFile(m_opts.data / "assets.json", all.dump(1));
@@ -2185,6 +2187,8 @@ void GbServer::load() {
                         if (x.is_object() && x.contains("v") && x["v"].is_number_integer()) a.versions.push_back(x);
                 if (j.contains("updateLog") && j["updateLog"].is_array())
                     for (const json& x : j["updateLog"]) if (x.is_object()) a.updateLog.push_back(x);
+                if (j.contains("banLists") && j["banLists"].is_array())
+                    for (const json& x : j["banLists"]) if (x.is_string()) a.banLists.push_back(x.get<std::string>());
                 a.updateLogDay = j.value("updateLogDay", std::string());
                 a.updateLogToday = j.value("updateLogToday", 0);
                 a.limited = j.value("limited", false);
@@ -2207,6 +2211,7 @@ void GbServer::load() {
     loadPromos();
     loadRoadmap();
     loadEvents();
+    loadBanLists();
     if (std::string text; readFile(m_opts.data / "boltworks.json", text)) {
         json all = json::parse(text, nullptr, false);
         if (all.is_array()) m_boltworks = all;

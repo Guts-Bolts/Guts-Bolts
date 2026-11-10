@@ -26,6 +26,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerChats.cpp
     src/server/ServerRoadmap.cpp
     src/server/ServerExtras.cpp
+    src/server/ServerBanLists.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -957,6 +958,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerExtrasTests gb_version)
     target_link_libraries(ServerExtrasTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerExtrasTests COMMAND ServerExtrasTests)
+
+    # Creators' ban lists, used across their games (ServerBanLists.cpp).
+    add_executable(ServerBanListsTests tests/ServerBanListsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerBanListsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerBanListsTests gb_version)
+    target_link_libraries(ServerBanListsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerBanListsTests COMMAND ServerBanListsTests)
 
     # Studio Learn progress: account validation, persistence across server restarts and guest denial.
     add_executable(ServerLearnProgressTests tests/ServerLearnProgressTests.cpp ${GB_SERVER_TEST_SOURCES})
