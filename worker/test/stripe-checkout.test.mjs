@@ -78,3 +78,18 @@ test('the page loads Stripe.js from Stripe, and the security headers allow it', 
     assert.match(csp.split('; ').find((x) => x.startsWith(d + ' ')), /https:\/\/js\.stripe\.com/, d);
   assert.ok(!read('worker/stripe.js').match(/sk_(test|live)_[A-Za-z0-9]{8,}/));   // no real keys in the code
 });
+
+test('a missing setting is named (never its value), and Stripe\'s own error is passed on', async () => {
+  const req = () => new Request('https://gutsandbolts.net/api/stripe/checkout', { method: 'POST', body: '{}' });
+  const u = new URL('https://gutsandbolts.net/api/stripe/checkout');
+  assert.match((await (await handleStripe(req(), { STRIPE_PRICE_ID: 'price_1' }, u)).json()).error, /STRIPE_SECRET_KEY is missing/);
+  assert.match((await (await handleStripe(req(), { STRIPE_SECRET_KEY: 'sk_test_x' }, u)).json()).error, /STRIPE_PRICE_ID is missing/);
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'No such price: \'price_1\'; a similar object exists in test mode, but a live mode key was used.' } }), { status: 400 });
+  try {
+    const r = await handleStripe(req(), { STRIPE_SECRET_KEY: 'sk_live_secret', STRIPE_PRICE_ID: 'price_1' }, u);
+    const msg = (await r.json()).error;
+    assert.match(msg, /Stripe says: No such price/);
+    assert.doesNotMatch(msg, /sk_live_secret/);
+  } finally { globalThis.fetch = real; }
+});

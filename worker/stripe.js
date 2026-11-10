@@ -60,7 +60,9 @@ async function createSession(request, env, url) {
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
   const key = String(env.STRIPE_SECRET_KEY || '').trim();
   const price = String(env.STRIPE_PRICE_ID || '').trim();
-  if (!key || !/^price_\w+$/.test(price)) return json({ error: 'Payments aren\'t set up yet.' }, 503);
+  // Says which setting is missing (never its value), so whoever sets it up can see what to fix.
+  if (!key) return json({ error: 'Payments aren\'t set up yet (STRIPE_SECRET_KEY is missing).' }, 503);
+  if (!/^price_\w+$/.test(price)) return json({ error: 'Payments aren\'t set up yet (STRIPE_PRICE_ID is missing).' }, 503);
   let body = {};
   try { body = JSON.parse(await request.text() || '{}') || {}; } catch { body = {}; }
   const userId = /^\d{1,12}$/.test(String(body.userId || '')) ? String(body.userId) : '';
@@ -72,7 +74,9 @@ async function createSession(request, env, url) {
   const session = await r.json().catch(() => ({}));
   if (!r.ok || !session.client_secret) {
     console.error('Stripe checkout failed:', session.error && session.error.message || r.status);
-    return json({ error: 'Couldn\'t start the payment. Try again in a bit.' }, 502);
+    // Stripe's own message (like "No such price ... exists in test mode") never holds the key.
+    const why = session.error && typeof session.error.message === 'string' ? session.error.message.slice(0, 300) : '';
+    return json({ error: 'Couldn\'t start the payment.' + (why ? ' Stripe says: ' + why : ' Try again in a bit.') }, 502);
   }
   return json({ client_secret: session.client_secret });
 }
