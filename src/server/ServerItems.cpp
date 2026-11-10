@@ -227,7 +227,7 @@ static constexpr long long kAuctionExtend = 300;   // seconds: a late bid makes 
 bool GbServer::auctionOpen(const Asset& a, long long now) {
     if (!a.meta.is_object() || !a.meta.contains("auction") || !a.meta["auction"].is_object()) return false;
     const json& au = a.meta["auction"];
-    return !au.value("done", false) && now < au.value("endsAt", 0LL);
+    return !au.value("done", false) && !au.value("cancelled", false) && now < au.value("endsAt", 0LL);
 }
 
 json GbServer::auctionJson(const Asset& a, const User* me) const {
