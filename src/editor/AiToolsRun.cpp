@@ -2088,5 +2088,7 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                      {"note", "Sent to the server; its checks decide. Check the result with publish_game {action: \"status\"}."}});
     }
 
+    if (name == "manage_game") return runPlatformTool(args);   // EditorPlatform.cpp
+
     return fail("UNKNOWN_TOOL", "There's no tool called " + name + ".", "Use one of the tools from tools/list. Don't invent tools.", false);
 }

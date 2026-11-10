@@ -25,7 +25,7 @@ export const WRITE_TOOLS = [
 // Never, whatever the token says. publish_game puts a game online as you; compare_scenes opens and
 // saves game files by path on your computer. Names like these are refused too, even if someone adds
 // one to a list above by mistake.
-export const DENIED_TOOLS = ['publish_game', 'compare_scenes'];
+export const DENIED_TOOLS = ['publish_game', 'compare_scenes', 'manage_game'];
 const DENIED_PATTERN = /publish|upload|release|sell|price|purchase|payout|bolts/i;
 
 // MCP methods other than tools/call, and the scope each needs (initialize and ping need just a Studio scope).

@@ -59,6 +59,11 @@ public:
     // person's OK first (EditorAiActivity.cpp).
     AiToolResult runAiToolFrom(const std::string& source, const std::string& name, const nlohmann::json& args);
     void showAiActivity() { m_showAiActivity = true; }
+    // Fyxa's "bypass permissions" mode (turned on in Fyxa settings, off again every time Studio
+    // starts): Fyxa's own calls skip the Allow steps (deleting, save points, game page changes).
+    // Other AI apps and connected apps still ask. Everything still goes in AI Activity.
+    bool fyxaBypass() const { return m_fyxaBypass; }
+    void setFyxaBypass(bool on);
     const std::string& filePath() const { return m_path; }   // the open game's file ("" = never saved)
     bool aiHasChanges() const { return !m_aiBaseline.empty(); }
     static std::vector<std::string> insertKinds();   // what insert_object / Insert Object can make
@@ -521,6 +526,11 @@ private:
     std::map<std::string, std::string> m_aiCheckpoints;
     std::unique_ptr<Physics>           m_aiNav;
     nlohmann::json                     m_aiPublish;   // the publish_game tool's last publish: {state, name, ...}
+    // manage_game (EditorPlatform.cpp): its jobs (number -> {action, state, result/error...}) and the
+    // changes waiting for the person's Allow, oldest first.
+    nlohmann::json                     m_platformJobs = nlohmann::json::object();
+    std::vector<std::string>           m_platformWaiting;
+    int                                m_platformNext = 1;
     // AI Activity (EditorAiActivity.cpp): every AI tool call, and what the AI changed since
     // the person last pressed Keep / Undo all (the game before its first change).
     struct AiLogEntry {
@@ -533,6 +543,8 @@ private:
     bool        m_aiLogLoaded = false;
     std::string m_aiBaseline, m_aiBaselinePath;   // the game before the AI's changes ("" = none)
     bool        m_aiAskFirst = true;              // ask before deleting / restoring
+    bool        m_fyxaBypass = false;             // Fyxa bypass permissions mode (never saved)
+    std::string m_aiSource;                       // who is calling runAiTool right now (runAiToolFrom), "" = the person
     struct AiAsk { std::string source, tool, summary; nlohmann::json args; };
     std::vector<AiAsk>    m_aiAsks;               // waiting for Allow / Don't allow
     std::set<std::string> m_aiAllowed, m_aiRefused;   // tool + args the person answered (used once)
@@ -543,6 +555,9 @@ private:
     bool        aiUndoChanges();                  // false = nothing to undo / playtesting
     nlohmann::json aiChangeReport();
     void        renderAiActivity();
+    AiToolResult runPlatformTool(const nlohmann::json& args);   // EditorPlatform.cpp: the manage_game tool
+    void        sendPlatformJob(const std::string& job, const std::string& op, const nlohmann::json& req);
+    void        renderPlatformApprovals();
     std::vector<std::string> m_undo, m_redo;
     std::string              m_committed;      // last known scene state
     LinkedModels::Tracker    m_links;          // linked models: what each copy held at the last edit

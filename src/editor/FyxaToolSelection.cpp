@@ -61,6 +61,9 @@ std::unordered_set<std::string> domainsFor(const std::string& prompt) {
         domains.insert("NAVIGATION");
     if (hasAny(p, {"screenshot","render","camera","picture","image of","show me what"})) domains.insert("VIEW");
     if (hasAny(p, {"publish","publishing","release my game"})) { domains.insert("PUBLISH"); domains.insert("DEBUG"); }
+    if (hasAny(p, {"game pass","gamepass","pass ","developer product","dev product","price","bolts","sales","stats","how is my game",
+                   "how many players","visits","description","max players","genre","update note","tell players","game page","settings"}))
+        domains.insert("PLATFORM");   // manage_game (EditorPlatform.cpp)
     if (hasAny(p, {"obby","tycoon","leaderboard","game system","rounds","collectible","shop","terrain","ui","make a game","build a game","create a game"}))
         domains.insert("GAME");
     if (!domains.empty() && (domains.count("SCENE") || domains.count("OBJECTS") || domains.count("GAME") ||
