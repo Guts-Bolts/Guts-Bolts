@@ -2686,6 +2686,8 @@ export class GbServerObject extends DurableObject {
       if (!this.isStaff(me)) return fail('Only staff can review AI content rights.');
       const limit = clamp(num(args, 'limit') || 50, 1, 100);
       const offset = Math.max(0, Math.trunc(num(args, 'offset')) || 0);
+      const totalRow = [...this.sql.exec("SELECT COUNT(*) AS count FROM ai_content_eligibility WHERE rights_status = 'pending_review'")][0];
+      const total = Number(totalRow && totalRow.count || 0);
       const items = [];
       for (const row of this.sql.exec(`SELECT content_id, owner_id, content_type, privacy_status, rights_attested, updated_at
         FROM ai_content_eligibility WHERE rights_status = 'pending_review' ORDER BY updated_at ASC LIMIT ? OFFSET ?`, limit, offset)) {
@@ -2696,7 +2698,7 @@ export class GbServerObject extends DurableObject {
           ownerId: row.owner_id, owner: owner ? this.publicUser(owner) : null, privacyStatus: row.privacy_status,
           rightsAttested: !!row.rights_attested, updatedAt: Number(row.updated_at || 0) });
       }
-      return okay({ items, limit, offset });
+      return okay({ items, limit, offset, total });
     }
 
     if (name === 'ai.content.review') {
