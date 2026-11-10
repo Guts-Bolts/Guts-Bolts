@@ -406,6 +406,7 @@ private:
     std::string m_accessoryName, m_accessoryDesc, m_accessoryMsg, m_accessoryEditId;
     bool        m_showBundles = false, m_bundleHeadless = false;
     bool        m_bundleAutoUV = true;    // new body parts get clothing UVs (the template layout)
+    bool        m_bundleBend = false;     // arms and legs bend softly at the elbows and knees
     int         m_bundleTryOn = 0;        // the mannequin wears: 0 nothing, 1 shirt template, 2 pants template
     int         m_bundlePrice = 0;
     std::string m_bundleName, m_bundleDesc, m_bundleItems, m_bundleMsg;

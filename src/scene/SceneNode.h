@@ -750,6 +750,7 @@ public:
     float       brightness = 2.0f;
     float       range      = 14.0f;
     float       spotAngle  = 60.0f;       // cone width in degrees (spot lights)
+    bool        lightShadows = false;     // Shadows: things block its light (a few nearest lamps at once)
 
     // Sound (kind == Sound)
     std::string soundId  = "coin";         // built-in name or a file in the games folder

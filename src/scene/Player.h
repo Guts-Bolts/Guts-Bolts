@@ -163,8 +163,10 @@ public:
     void hurtAt(SceneNode* hitPart, const glm::vec3& point, const glm::vec3& normal,
                 const glm::vec3& projectileVelocity, float damage, float force,
                 const glm::vec3& bodyImpulse);
-    static void deformPartAtImpact(SceneNode* hitPart, const glm::vec3& point,
-                                   const glm::vec3& normal, const glm::vec3& projectileVelocity);
+    // A dent where a hit landed (springs back with workspace.SoftTissue; true = it tore,
+    // and with a scene the tear's gore is made too).
+    static bool deformPartAtImpact(SceneNode* hitPart, const glm::vec3& point,
+                                   const glm::vec3& normal, const glm::vec3& projectileVelocity, Scene* scene = nullptr);
     bool isDead() const { return m_dead; }
     bool hasForceField() const;
     // player:LoadCharacter(): a fresh body at a spawn right now (dead or alive).

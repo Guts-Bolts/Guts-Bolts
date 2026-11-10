@@ -199,6 +199,16 @@ void drawGameRules(WorldSettings& w) {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Big hits (explosions, long falls, saws) knock limbs off");
     ImGui::SliderFloat("Blood Amount", &w.bloodAmount, 0.2f, 3.0f, "x%.1f");
     ImGui::SliderFloat("Pools Last", &w.bloodStay, 3.0f, 120.0f, "%.0f s");
+    ImGui::Checkbox("Liquid Blood", &w.liquidBlood);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Blood also runs as real liquid: it drips, streams downhill and pools.\n"
+                          "Uses the water simulation, so it costs more on slow computers.");
+    ImGui::Checkbox("Soft Tissue", &w.softTissue);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Dents from hits slowly spring back out, and very big hits tear.\n"
+                          "Heads are hard, bellies are soft. Off = dents stay until respawning.");
+    ImGui::TextDisabled("A character can bleed its own way: give its Model the attributes");
+    ImGui::TextDisabled("Gore (\"Blood\" / \"Oil\" / \"Off\"), BloodColor and BloodAmount.");
     ImGui::EndDisabled();
     ImGui::BeginDisabled(w.gore != GoreLevel::Blood);
     ImGui::ColorEdit3("Blood Color", &w.bloodColor.x, ImGuiColorEditFlags_NoInputs);

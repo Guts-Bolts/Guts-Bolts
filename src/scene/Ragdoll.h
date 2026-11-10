@@ -3,6 +3,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include "Particles.h"
+#include "Gore.h"
 
 class Scene;
 class SceneNode;
@@ -30,6 +31,8 @@ public:
     // character is put back together: respawning, getting up). Then stop().
     void release(Scene& scene);
     void stop() { m_active = false; m_held = false; m_points.clear(); m_sticks.clear(); m_bones.clear(); m_stumps.clear(); }
+    // The cut ends (Gore::cutEnd) put on when limbs came off: taken off by release / unhide.
+    const std::vector<uint64_t>& cutEnds() const { return m_caps; }
     bool active() const { return m_active; }
     glm::vec3 center() const;
     glm::mat3 bodyFrame() const { return torsoFrame(); }   // right, up (shoulders), front
@@ -110,5 +113,8 @@ private:
     float     m_accum = 0.0f;               // time not yet stepped
     int       m_onGround = 0;               // how many points are resting on something
     GoreKind  m_goreKind = GoreKind::Blood;
+    Gore::Look m_look;                       // this character's blood (its own colour / amount, or the game's)
+    std::vector<uint64_t> m_caps;            // cut ends on the body and the loose pieces
+    void      removeCaps(Scene& scene);
     float     m_gravity = 98.1f;   // (set from the world's gravity when it starts)
 };

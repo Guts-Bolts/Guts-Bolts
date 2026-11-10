@@ -70,15 +70,18 @@ void Ragdoll::start(Scene& scene, SceneNode* root, const glm::vec3& velocity,
     SceneNode* head  = root->findChild("Head");
     if (!torso || !head) return;
 
-    m_gore     = scene.goreEnabled() && !alive;
+    m_look     = Gore::lookFor(scene, root);   // (a robot NPC can bleed oil, aliens green...)
+    m_gore     = m_look.on && !alive;
     m_alive    = alive;
     m_time     = 0.0f;
     m_phase    = rnd(0.0f, 6.28f);
     // A violent death kills outright (limp almost at once); otherwise the body fights for a moment.
     m_throes   = force > 0.75f ? 0.4f : rnd(2.5f, 4.0f);
     m_protect  = glm::length(impulse) > 4.0f ? 0.8f : 0.0f;
-    m_goreKind = scene.goreKind();
+    m_goreKind = m_look.kind;
     m_gravity  = scene.world().gravity;
+    ParticleSystem::Look tint(scene.particles(), m_look.color, m_look.amount);
+    removeCaps(scene);
     for (bool& c : m_cut) c = false;
 
     // --- Points, from where the body parts are right now ---
@@ -172,6 +175,21 @@ void Ragdoll::start(Scene& scene, SceneNode* root, const glm::vec3& velocity,
         }
     }
 
+    // Any other part straight in the character (a tail, wings, a bundle's extra bits, an
+    // NPC built from its own shapes) rides along with the body instead of being left
+    // behind, and bursts with it.
+    for (auto& ch : root->children) {
+        if (!ch->isPart() || ch.get() == torso || ch.get() == head || ch->name == "HumanoidRootPart" ||
+            ch->name.rfind("Hat", 0) == 0 || std::find(std::begin(kLimbNames), std::end(kLimbNames), ch->name) != std::end(kLimbNames))
+            continue;
+        Bone b{ch->id, 4, 0, 0, {1, 0, 0}};
+        b.offset = glm::inverse(torsoFrame0) * ch->worldMatrix();
+        b.nested = true;   // (put back where it was when the body is put back together)
+        b.restPos = ch->transform.position;
+        b.restRot = ch->transform.rotation;
+        m_bones.push_back(b);
+    }
+
     // Where the hit landed (to clutch it): on the side it came from.
     m_hasWound = glm::length(impulse) > 0.5f;
     if (m_hasWound) m_wound = glm::transpose(torsoFrame()) * (-glm::normalize(impulse) * 0.7f);
@@ -210,6 +228,7 @@ void Ragdoll::start(Scene& scene, SceneNode* root, const glm::vec3& velocity,
 
 void Ragdoll::dismember(Scene& scene, int limb) {
     if (limb < 0 || limb > 4 || m_cut[limb]) return;
+    ParticleSystem::Look tint(scene.particles(), m_look.color, m_look.amount);
     m_cut[limb] = true;
     if (limb == 4) m_throes = 0.0f;   // no head, no fight
     for (auto& s : m_sticks)
@@ -250,7 +269,31 @@ void Ragdoll::dismember(Scene& scene, int limb) {
         scene.particles().stain(m_goreKind, piece, at, 0.9f);
         scene.particles().stain(m_goreKind, torso, at, 0.8f);
         m_points[joint].blood = 1.0f;
+        // Clean cuts: both ends show meat and bone (or metal and wires), fitted to the
+        // part's real shape. The loose piece's cut is at its top (a head's at its bottom);
+        // the body's is the shoulder, hip or neck it came off.
+        const glm::vec3 pieceEnd = limb == 4 ? glm::vec3(0.0f, -0.5f, 0.0f) : glm::vec3(0.0f, 0.5f, 0.0f);
+        const glm::vec3 bodyEnd[5] = {{-0.5f, 0.2f, 0.0f}, {0.5f, 0.2f, 0.0f}, {-0.25f, -0.5f, 0.0f},
+                                      {0.25f, -0.5f, 0.0f}, {0.0f, 0.5f, 0.0f}};
+        const float bodySize[5] = {0.55f, 0.55f, 0.5f, 0.5f, 0.45f};
+        if (SceneNode* c = Gore::cutEnd(scene, piece, pieceEnd, 1.0f, m_goreKind, m_look.color)) m_caps.push_back(c->id);
+        if (SceneNode* c = Gore::cutEnd(scene, torso, bodyEnd[limb], bodySize[limb], m_goreKind, m_look.color)) m_caps.push_back(c->id);
     }
+}
+
+void Ragdoll::removeCaps(Scene& scene) {
+    for (uint64_t id : m_caps)
+        if (SceneNode* c = scene.findById(id)) {
+            // The cap and its inner ring (bone / wires), next to it in the same part.
+            SceneNode* in = c->parent;
+            scene.removeNode(c);
+            if (in) {
+                std::vector<SceneNode*> rings;
+                for (auto& k : in->children) if (k->internal && k->name.rfind(Gore::kCutEndName, 0) == 0) rings.push_back(k.get());
+                for (SceneNode* r : rings) scene.removeNode(r);
+            }
+        }
+    m_caps.clear();
 }
 
 void Ragdoll::solve(const Physics& physics) {
@@ -303,6 +346,7 @@ void Ragdoll::update(float dt, Scene& scene, const Physics& physics) {
     while (m_accum >= kStep && steps < 8) { m_accum -= kStep; step(kStep, physics); ++steps; }
     if (steps == 8) m_accum = 0.0f;
     if (m_gore && m_hidden.empty()) {   // (blown to pieces: the chunks do the bleeding)
+        ParticleSystem::Look tint(scene.particles(), m_look.color, m_look.amount);
         bleed(scene, dt);
         smearAll(scene, dt);
     }
@@ -433,6 +477,7 @@ void Ragdoll::place(Scene& scene) {
 }
 
 void Ragdoll::explode(Scene& scene, const glm::vec3& velocity, float force) {
+    ParticleSystem::Look tint(scene.particles(), m_look.color, m_look.amount);
     for (auto& b : m_bones) {
         SceneNode* n = scene.findById(b.id);
         if (!n || !n->visible) continue;
@@ -447,12 +492,14 @@ void Ragdoll::explode(Scene& scene, const glm::vec3& velocity, float force) {
 }
 
 void Ragdoll::unhide(Scene& scene) {
+    removeCaps(scene);
     for (uint64_t id : m_hidden)
         if (SceneNode* n = scene.findById(id)) n->visible = true;
     m_hidden.clear();
 }
 
 void Ragdoll::release(Scene& scene) {
+    removeCaps(scene);
     for (auto& b : m_bones)
         if (b.nested)
             if (SceneNode* n = scene.findById(b.id)) {

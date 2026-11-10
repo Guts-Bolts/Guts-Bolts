@@ -68,6 +68,8 @@ void EnvironmentPanel::render() {
         ImGui::SliderFloat("Brightness##amb", &e.ambientIntensity, 0.0f, 2.0f);
         ImGui::SliderFloat("Reflections", &e.reflections, 0.0f, 2.0f);
         help("How much shiny materials (Metal, Glass, Ice) reflect the sky");
+        ImGui::SliderFloat("Bouncy Light", &e.bounceLight, 0.0f, 2.0f);
+        help("Sun and lamp light bounces off coloured things onto what's next to them (0 = off)");
     }
 
     if (ImGui::CollapsingHeader("Sky", open)) {

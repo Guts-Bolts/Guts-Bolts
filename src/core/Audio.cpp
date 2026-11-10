@@ -6,6 +6,7 @@
 #include <miniaudio.h>
 
 #include "Audio.h"
+#include <atomic>
 #include "Voice.h"
 #include "SoundJump.h"      // generated from assets/sounds
 #include "SoundRespawn.h"
@@ -157,6 +158,7 @@ struct FxNode {
     std::unique_ptr<SoundFx::Chain> chain;
     std::vector<SoundFx::Settings>  settings;
     bool         ready = false;
+    std::atomic<float> level{0.0f};           // how loud the last bit that went through was (RMS, 0..1)
 };
 
 void fxProcess(ma_node* node, const float** in, ma_uint32* inCount, float** out, ma_uint32* outCount) {
@@ -168,6 +170,11 @@ void fxProcess(ma_node* node, const float** in, ma_uint32* inCount, float** out,
     // Never wait in the mixer: if the settings are being changed right now, pass this bit through.
     std::unique_lock<std::mutex> hold(n->lock, std::try_to_lock);
     if (hold.owns_lock() && n->chain) n->chain->process(out[0], frames);
+    // The loudness meter (Sound.PlaybackLoudness, lip sync).
+    double sum = 0.0;
+    const ma_uint32 count = frames * ch;
+    for (ma_uint32 i = 0; i < count; ++i) sum += (double)out[0][i] * out[0][i];
+    n->level.store(count ? (float)std::sqrt(sum / count) : 0.0f, std::memory_order_relaxed);
 }
 
 // Keeps going with nothing attached, so an echo or reverb can ring on after its sounds stop.
@@ -403,6 +410,26 @@ void setEffects(int handle, const std::vector<SoundFx::Settings>& fx) {
         setChain(*in->fx, fx);
     }
     in->tail = SoundFx::tailSeconds(fx);
+}
+
+float loudness(int handle) {
+    Instance* in = find(handle);
+    if (!in || !ma_sound_is_playing(&in->sound)) return 0.0f;
+    if (!in->fx) {
+        // Nothing measures it yet: put an empty effects node after it (it just listens).
+        in->fx = std::make_unique<FxNode>();
+        if (!makeFxNode(*in->fx)) { in->fx.reset(); return 0.0f; }
+        reroute(*in);
+        return 0.0f;
+    }
+    return in->fx->level.load(std::memory_order_relaxed);
+}
+
+float loudnessOf(const float* samples, size_t count) {
+    if (!samples || !count) return 0.0f;
+    double sum = 0.0;
+    for (size_t i = 0; i < count; ++i) sum += (double)samples[i] * samples[i];
+    return (float)std::sqrt(sum / (double)count);
 }
 
 void setRoute(int handle, uint64_t bus) {

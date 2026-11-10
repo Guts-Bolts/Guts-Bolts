@@ -120,6 +120,13 @@ struct WorldSettings {
     glm::vec3  bloodColor  = {0.50f, 0.02f, 0.03f};
     float      bloodAmount = 1.0f;          // how much sprays out (0.2 = a little, 3 = buckets)
     float      bloodStay   = 30.0f;         // seconds pools and splats stay before drying up
+    // Blood runs as real liquid too (drips, streams and pools that flow downhill), using
+    // the water simulation with thick, sticky settings of its own. Follows Gore.
+    bool       liquidBlood = false;
+    // Dents from hits on bodies slowly spring back (soft tissue); very big hits tear.
+    bool       softTissue  = true;
+    // Wind for cloth, flags and capes (Roblox's Workspace.GlobalWind), studs / second.
+    glm::vec3  globalWind{0.0f};
     float      spawnForceField = 4.0f;      // seconds of ForceField after spawning (0 = none)
     bool       playerCollisions = true;     // characters bump into each other (off = walk through)
     CollisionGroups collisionGroups;        // PhysicsService's groups and which of them collide

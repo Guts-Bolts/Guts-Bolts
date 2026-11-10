@@ -1,4 +1,7 @@
 #include "Player.h"
+#include "BundleRig.h"
+#include "Gore.h"
+#include "SoftTissue.h"
 #include "CharacterFooting.h"
 #include "LegacyJoints.h"
 #include "Scene.h"
@@ -194,6 +197,7 @@ nlohmann::json Player::bodyPartJson(const SceneNode& part) {
         }
         j["uv"] = std::move(uv);
     }
+    BundleRig::toJson(part, j);   // bones inside it (jiggly hair, a tail...) and their weights
     return j;
 }
 
@@ -223,10 +227,12 @@ bool Player::setBodyPart(SceneNode& part, const nlohmann::json& j) {
     MeshEdit::attach(part, m);
     part.transform.scale = {j["size"][0].get<float>(), j["size"][1].get<float>(), j["size"][2].get<float>()};
     part.transform.position = {j["pos"][0].get<float>(), j["pos"][1].get<float>(), j["pos"][2].get<float>()};
+    BundleRig::apply(part, j);   // its bones (or none: any from the last bundle go)
     return true;
 }
 
 void Player::resetBodyPart(SceneNode& part) {
+    BundleRig::clear(part);
     glm::vec3 pos, size;
     // Only a part a body bundle changed (a mesh, but not the normal one); blocky old characters stay blocky.
     if (part.primitiveType != PrimitiveType::Mesh || PlayerModel::nameOf(part.editMesh.get())) return;
@@ -710,7 +716,7 @@ void Player::hurtAt(SceneNode* hitPart, const glm::vec3& point, const glm::vec3&
     }
     const glm::vec3 hitNormal = glm::length(normal) > 1e-5f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
     if (m_pendingImpacts.size() < 16) m_pendingImpacts.push_back({hitPart->id, point, hitNormal, projectileVelocity});
-    deformPartAtImpact(hitPart, point, hitNormal, projectileVelocity);
+    deformPartAtImpact(hitPart, point, hitNormal, projectileVelocity, m_scene);
     hurt(damage, force, bodyImpulse);
     bleed(damage);  // also runs for lethal impacts, before the death update returns
     m_lastHealth = m_humanoid.health;
@@ -719,36 +725,15 @@ void Player::hurtAt(SceneNode* hitPart, const glm::vec3& point, const glm::vec3&
 
 // Persistent localized dent in the rest mesh. Bone weights remain intact, so
 // Skin::update reapplies the live rig pose over the modified rest surface.
-void Player::deformPartAtImpact(SceneNode* hitPart, const glm::vec3& point, const glm::vec3& normal,
-                                const glm::vec3& projectileVelocity) {
-    if (!hitPart || !hitPart->isPart()) return;
-    if (!hitPart->editMesh) {
-        if (hitPart->primitiveType == PrimitiveType::None) return;
-        MeshEdit::attach(*hitPart, MeshEdit::fromPrimitive(hitPart->primitiveType));
-    }
-    if (!hitPart->editMesh || hitPart->editMesh->verts.empty()) return;
-    const glm::mat4 world = hitPart->worldMatrix();
-    const glm::mat3 linear(world);
-    if (std::abs(glm::determinant(linear)) < 1e-7f) return;
-    const glm::mat3 toLocal = glm::inverse(linear);
-    EditMesh& mesh = MeshEdit::own(*hitPart);
-    const float speed = glm::length(projectileVelocity);
-    const float radius = std::clamp(0.18f + speed * 0.0018f, 0.18f, 0.58f);
-    const float depth = std::clamp(0.025f + speed * 0.00015f, 0.025f, 0.14f);
-    const glm::vec3 n = glm::length(normal) > 1e-5f ? glm::normalize(normal) : glm::vec3(0, 1, 0);
-    bool changed = false;
-    for (glm::vec3& vertex : mesh.verts) {
-        const glm::vec3 worldVertex = glm::vec3(world * glm::vec4(vertex, 1.0f));
-        const float distance = glm::length(worldVertex - point);
-        if (distance > radius * 1.8f) continue;
-        const float falloff = std::exp(-3.2f * distance / radius);
-        const float rim = std::exp(-std::pow((distance - radius * 0.68f) / (radius * 0.22f), 2.0f));
-        vertex += toLocal * (-n * (depth * falloff) + n * (depth * 0.08f * rim));
-        changed = true;
-    }
-    if (!changed) return;
-    mesh.normals.clear();
-    MeshEdit::refresh(*hitPart);
+bool Player::deformPartAtImpact(SceneNode* hitPart, const glm::vec3& point, const glm::vec3& normal,
+                                const glm::vec3& projectileVelocity, Scene* scene) {
+    if (!hitPart || !hitPart->isPart()) return false;
+    // A dent where it landed; with soft tissue on it springs back out (SoftTissue.h),
+    // and too deep a dent tears.
+    const bool springBack = !scene || scene->world().softTissue;
+    const bool tore = SoftTissue::dent(*hitPart, point, normal, projectileVelocity, springBack);
+    if (tore && scene) Gore::tear(*scene, hitPart, point, normal, projectileVelocity);
+    return tore;
 }
 
 // Blood is emitted at the collision point when one is available; legacy damage
@@ -759,32 +744,21 @@ void Player::bleed(float damage) {
         for (const PendingImpact& impact : m_pendingImpacts) {
             SceneNode* where = m_scene->findById(impact.partId);
             if (!where || !where->isPart()) continue;
-            glm::vec3 tangent = impact.velocity - impact.normal * glm::dot(impact.velocity, impact.normal);
-            if (glm::length(tangent) < 1e-3f)
-                tangent = glm::cross(impact.normal,
-                                     std::abs(impact.normal.y) < 0.9f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0));
-            m_scene->particles().wound(m_scene->goreKind(), where, impact.point, impact.normal, tangent,
-                                       std::clamp(0.07f + damage * 0.0015f, 0.07f, 0.16f),
-                                       std::clamp(0.22f + damage * 0.003f, 0.22f, 0.48f));
-            const float speed = glm::length(impact.velocity);
-            if (speed > 4.0f)
-                m_scene->particles().spurt(m_scene->goreKind(), impact.point, impact.normal,
-                                           impact.velocity * 0.015f, std::clamp(speed * 0.025f, 0.15f, 1.5f));
-            else
-                m_scene->particles().spray(m_scene->goreKind(), impact.point, impact.normal, 5, 2.5f);
-            if (m_scene->goreKind() == GoreKind::Oil) m_scene->particles().sparks(impact.point, 3);
+            Gore::hit(*m_scene, where, impact.point, impact.normal, impact.velocity, damage);   // (and out the other side)
         }
         m_pendingImpacts.clear();
         return;
     }
     SceneNode* torso = part("Torso");
     if (!torso) return;
+    Gore::Scope look(*m_scene, torso);   // (this character's own blood, if it has one)
+    if (!look.on()) return;
     const glm::vec3 at = glm::vec3(torso->worldMatrix()[3]);
     const int count = std::clamp((int)(damage * 0.5f), 3, 30);
-    m_scene->particles().spray(m_scene->goreKind(), at, glm::vec3(0, 0.5f, 0), count, 2.5f);
-    m_scene->particles().stain(m_scene->goreKind(), torso, at,
+    m_scene->particles().spray(look.kind(), at, glm::vec3(0, 0.5f, 0), count, 2.5f);
+    m_scene->particles().stain(look.kind(), torso, at,
                                std::clamp(0.3f + damage * 0.02f, 0.3f, 1.0f));
-    if (m_scene->goreKind() == GoreKind::Oil) m_scene->particles().sparks(at, count / 2);
+    if (look.kind() == GoreKind::Oil) m_scene->particles().sparks(at, count / 2);
 }
 
 bool Player::consumeRespawned() {

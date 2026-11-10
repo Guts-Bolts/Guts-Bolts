@@ -228,6 +228,7 @@ void Liquid::end() {
     m_active = false;
     m_x.clear(); m_v.clear(); m_p.clear(); m_dp.clear(); m_lambda.clear(); m_age.clear(); m_near.clear(); m_draw.clear();
     m_kind.clear(); m_fluids.clear();
+    m_bloodFluid = m_oilFluid = -1;
     m_maxAge = 120.0f;
     m_sources.clear();
     m_colliders.clear();
@@ -256,6 +257,24 @@ void Liquid::scan(Scene& scene) {
         f.tension = glm::clamp(n->surfaceTension, 0.0f, 1.0f);
         m_fluids.push_back(f);
     });
+    // Blood (or oil) that runs like liquid: thick and sticky, its own kind.
+    m_bloodFluid = m_oilFluid = -1;
+    if (scene.world().liquidBlood && scene.goreEnabled() && (int)m_fluids.size() + 2 <= kMaxFluids) {
+        Fluid blood;
+        blood.id = ~0ull;
+        blood.color = scene.world().bloodColor;
+        blood.viscosity = 0.55f;
+        blood.tension = 0.45f;
+        m_bloodFluid = (int)m_fluids.size();
+        m_fluids.push_back(blood);
+        Fluid oil;
+        oil.id = ~0ull - 1;
+        oil.color = {0.04f, 0.04f, 0.05f};
+        oil.viscosity = 0.35f;
+        oil.tension = 0.3f;
+        m_oilFluid = (int)m_fluids.size();
+        m_fluids.push_back(oil);
+    }
     auto fluidIndex = [&](uint64_t id) {
         for (size_t i = 1; i < m_fluids.size(); ++i) if (m_fluids[i].id == id) return (int)i;
         return 0;
