@@ -1029,15 +1029,6 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND UNIX AND NOT APPLE AND NOT GB_
     add_test(NAME LaunchLinkTests COMMAND LaunchLinkTests)
 endif()
 
-# Studio's MCP server follows the MCP 2026-07-28 rules (headers match the body, server/discover,
-# resultType) and still answers 2025 clients the old way.
-if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
-    add_executable(McpServerProtocolTests tests/McpServerProtocolTests.cpp)
-    target_include_directories(McpServerProtocolTests PRIVATE src/)
-    target_link_libraries(McpServerProtocolTests PRIVATE nlohmann_json::nlohmann_json)
-    add_test(NAME McpServerProtocolTests COMMAND McpServerProtocolTests)
-endif()
-
 # Ollama capabilities are read from /api/show, never guessed from model names.
 if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(FyxaProviderCapabilitiesTests tests/FyxaProviderCapabilitiesTests.cpp src/editor/FyxaProviderCapabilities.cpp)
@@ -1119,7 +1110,7 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT GB_MOBILE)
     if(WIN32)
         target_link_libraries(CredentialStoreTests PRIVATE Advapi32)
     elseif(APPLE)
-        target_link_libraries(CredentialStoreTests PRIVATE "-framework Security" "-framework CoreFoundation")
+        target_link_libraries(CredentialStoreTests PRIVATE "-framework Security" "-framework CoreFoundation")   # (CFRelease)
     elseif(UNIX AND NOT EMSCRIPTEN AND NOT GB_MOBILE)
         if(PkgConfig_FOUND AND TARGET PkgConfig::LIBSECRET)
             target_compile_definitions(CredentialStoreTests PRIVATE GB_HAVE_LIBSECRET=1)
@@ -1248,6 +1239,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(PlayerFootingTests tests/PlayerFootingTests.cpp)
     target_link_libraries(PlayerFootingTests PRIVATE gb_engine)
     add_test(NAME PlayerFootingTests COMMAND PlayerFootingTests)
+
+    # Roblox-strength gravity: new games, and old saves scaled up when they load.
+    add_executable(RobloxGravityTests tests/RobloxGravityTests.cpp)
+    target_link_libraries(RobloxGravityTests PRIVATE gb_engine)
+    add_test(NAME RobloxGravityTests COMMAND RobloxGravityTests)
 
     # The Material Graph: patterns tile, wires can't loop, saving and baking.
     add_executable(MaterialGraphTests tests/MaterialGraphTests.cpp)

@@ -8,6 +8,7 @@ import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
+import { PRODUCTS, productOf, productById, activeLink } from './products.js';
 
 // --- small helpers ------------------------------------------------------------
 
@@ -679,23 +680,21 @@ async function fetchPublicActivity(path) {
     return await response.json();
   } catch { return { ok: false, events: [] }; }
 }
-pages.home = async () => {
+// The Games home (#/games with nothing after a '?'): what the whole front page used to be
+// before Guts&Bolts became more than games. The account column and feed live on Home now.
+const gamesHome = async () => {
   // Everything the page needs is asked for at once, so it waits for one round trip, not four.
-  const [games, newest, updatedGames, playingGames, recommendPool, items, fr, recent, favs, featured, , feedR, upd, mine, auctions, auctionEvents] = await Promise.all([
+  const [games, newest, updatedGames, playingGames, recommendPool, items, recent, favs, featured, , auctions, auctionEvents] = await Promise.all([
     pageCall('list', { kind: 'game', sort: 'popular', limit: 8 }),
     pageCall('list', { kind: 'game', sort: 'new', limit: 8 }),
     pageCall('list', { kind: 'game', sort: 'updated', limit: 8 }),
     pageCall('list', { kind: 'game', sort: 'playing', limit: 8 }),
     signedIn() ? pageCall('list', { kind: 'game', sort: 'popular', limit: 100 }) : Promise.resolve({ ok: false }),
     pageCall('list', { kind: 'clothing', limit: 6 }),
-    signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
     signedIn() ? pageCall('games.mine', { which: 'recent', limit: 8 }) : Promise.resolve({ ok: false }),
     signedIn() ? pageCall('games.mine', { which: 'favorites', limit: 8 }) : Promise.resolve({ ok: false }),
     pageCall('list', { kind: 'game', sort: 'featured', limit: 8 }),
     loadPlaying(),
-    signedIn() ? pageCall('feed.list', {}) : Promise.resolve({ ok: false }),
-    pageCall('updates.list', { limit: 1 }),
-    signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
     pageCall('list', { kind: 'clothing', auctions: true, limit: 12 }),
     fetchPublicActivity('/api/activity/auctions?limit=6'),
   ]);
@@ -703,10 +702,6 @@ pages.home = async () => {
   const mineBox = (title, r, more) => r.ok && r.assets.length ? html`<div class="box"><h2 class="boxhead">${title}
       <a href="${more}" style="float:right">See all &raquo;</a></h2><div class="grid">${r.assets.map(gameCard)}</div></div>` : '';
   const continueBox = mineBox('Continue Playing', recent, '#/games/mine/recent');
-  const feedBox = signedIn() ? html`<div class="box feed"><h2 class="boxhead">My Feed</h2>
-      <form class="row" data-form="statusSet"><input type="text" name="status" maxlength="140" placeholder="Right now I'm..." style="flex:1">
-        <button class="btn blue small">Share</button></form>
-      <div id="myFeed">${feedList(feedR)}</div></div>` : '';
   const favBox = mineBox('Favorites', favs, '#/games/mine/favorites');
   const gameBox = (title, r, more) => html`<div class="box"><h2 class="boxhead">${title}
       <a href="${more}" style="float:right">See more &raquo;</a></h2>
@@ -746,29 +741,71 @@ pages.home = async () => {
       <a href="#/catalog" style="float:right">See more &raquo;</a></h2>
     ${items.ok && items.assets.length ? html`<div class="grid">${items.assets.map(itemCard)}</div>`
       : html`<p class="muted small">Nothing here yet.</p>`}</div>`;
-  const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const auctionBox = html`<div id="liveAuctions">${renderAuctionHomeSection(auctions.ok ? auctions.assets : [])}</div>`;
   const auctionBroadcastBox = html`<div id="auctionBroadcasts">${renderAuctionActivity(auctionEvents.ok ? auctionEvents.events : [])}</div>`;
+  show(html`<div class="portal-hero games-hero">
+      <div><span class="portal-kicker">GUTS&amp;BOLTS GAMES</span><h1>Play it. Build it. Break it.</h1>
+        <p>Games made by people on Guts&amp;Bolts, with real physics and ragdolls that come apart. Make your own in Studio.</p>
+        <p>${signedIn() ? html`<a class="btn green big" href="#/games?sort=popular">Browse all games</a> <a class="btn" href="#/create">Create</a>`
+          : html`<a class="btn green big" href="#/signup">Sign Up and Play</a> <a class="btn" href="#/login">Login</a>`}</p></div>
+      <form class="games-hero-search" data-form="gameSearch"><input type="hidden" name="genre" value="">
+        <input type="search" name="q" placeholder="Search games, genres, descriptions" aria-label="Search games">
+        <input type="hidden" name="sort" value="popular"><button class="btn blue">Search</button></form>
+    </div>
+    <div class="genre-chips">${GENRES.map((gn) => html`<a class="chip" href="#/games?genre=${encodeURIComponent(gn)}">${gn}</a>`)}</div>
+    ${auctionBroadcastBox}${auctionBox}${featuredBox}${continueBox}${favBox}${recommendedBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games?sort=popular')}${shopBox}`);
+  tickCountdowns();
+};
+
+// Home (#/): the front door of the whole platform, not just games. Your account bits on
+// the left; on the right, a card for every product (from products.js), your feed, the
+// latest update and one small shelf from each open product.
+pages.home = async () => {
+  const [games, fr, feedR, upd, mine, recent] = await Promise.all([
+    pageCall('list', { kind: 'game', sort: 'popular', limit: 4 }),
+    signedIn() ? pageCall('friends.list', {}) : Promise.resolve({ ok: false }),
+    signedIn() ? pageCall('feed.list', {}) : Promise.resolve({ ok: false }),
+    pageCall('updates.list', { limit: 1 }),
+    signedIn() ? pageCall('profile', { id: me.id }) : Promise.resolve({ ok: false }),   // (what you're wearing)
+    signedIn() ? pageCall('games.mine', { which: 'recent', limit: 4 }) : Promise.resolve({ ok: false }),
+  ]);
+  const productCard = (p) => html`<a class="product-card product-${p.id} is-${p.status}" href="${p.href}">
+      <span class="product-icon" aria-hidden="true">${p.name.slice(0, 1)}</span>
+      <span class="product-text"><b>${p.name}</b>${p.status === 'soon' ? html` <span class="soon-tag">Soon</span>` : p.status === 'studio' ? html` <span class="soon-tag">In Studio</span>` : ''}
+        <span>${p.blurb}</span></span></a>`;
+  const productsBox = html`<div class="box products-box"><h2 class="boxhead">Everything on Guts&amp;Bolts</h2>
+      <div class="product-grid">${PRODUCTS.map(productCard)}</div></div>`;
+  const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
     <p><b>${latest.name}</b>${latest.version ? html` <span class="small muted">v${latest.version}</span>` : ''}
       <span class="small muted">&middot; ${ago(latest.time)}</span></p>
     ${latest.summary ? html`<p class="small">${latest.summary}</p>` : ''}</div>` : '';
+  // One small shelf from Games: what you played last, or what's popular. The full game
+  // front page is #/games.
+  const shelf = recent.ok && recent.assets.length ? recent : games;
+  const gamesShelf = html`<div class="box shelf-box"><h2 class="boxhead">${shelf === recent ? 'Jump back in' : 'Popular in Games'}
+      <a href="#/games" style="float:right">Games home &raquo;</a></h2>
+    ${shelf.ok && shelf.assets.length ? html`<div class="grid">${shelf.assets.map(gameCard)}</div>`
+      : html`<p class="muted small">${shelf.ok ? 'No games published yet.' : shelf.error}</p>`}</div>`;
   if (!signedIn()) {
-    show(html`<div class="welcome">
-        <div><h1>Welcome to Guts&amp;Bolts!</h1>
-          <p>Build games, play them with your friends and fall apart spectacularly.
-            Sign up to get <b>100 Bolts</b>, dress up your character, make friends and upload your own stuff.</p>
-          <p><a class="btn green big" href="#/signup">Sign Up and Play</a>
+    show(html`<div class="welcome portal-hero">
+        <div><span class="portal-kicker">ONE ACCOUNT. EVERYTHING ON IT.</span><h1>Welcome to Guts&amp;Bolts!</h1>
+          <p>Play and build games, hang out in the forums and chat, and soon share videos and go live.
+            Sign up to get <b>100 Bolts</b>, dress up your character and make friends.</p>
+          <p><a class="btn green big" href="#/signup">Sign Up</a>
             <a class="btn" href="#/login">Login</a></p></div>
         <div class="welcome-guy" id="homeAvatar">${avatarSvg(defaultAvatar(), 150)}</div></div>
-      ${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}`);
-    tickCountdowns();
+      ${productsBox}${updateBox}${gamesShelf}`);
     mountAvatar($('#homeAvatar'), defaultAvatar(), [], { width: 170 }).catch(() => {});
     return;
   }
   const friends = fr.ok ? fr.friends || [] : [];
   const onlineFriends = friends.filter((p) => p.online);
+  const feedBox = html`<div class="box feed"><h2 class="boxhead">My Feed</h2>
+      <form class="row" data-form="statusSet"><input type="text" name="status" maxlength="140" placeholder="Right now I'm..." style="flex:1">
+        <button class="btn blue small">Share</button></form>
+      <div id="myFeed">${feedList(feedR)}</div></div>`;
   show(html`<div class="home">
       <div class="home-left">
         <div class="box avatar-box"><h2 class="boxhead">Hi, ${me.username}!</h2>
@@ -784,14 +821,28 @@ pages.home = async () => {
               <span class="dot on"></span><a class="grow" href="#/user/${p.userId || p.id}">${p.username || p.name}</a></div>`)}</div>`
             : html`<p class="small muted">${friends.length ? 'None of your friends are on right now.' : html`No friends yet. <a href="#/people">Find some!</a>`}</p>`}</div>
       </div>
-      <div class="home-right">${updateBox}${auctionBroadcastBox}${auctionBox}${featuredBox}${feedBox}${continueBox}${favBox}${recommendedBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games')}${shopBox}</div>
+      <div class="home-right">${productsBox}${updateBox}${feedBox}${gamesShelf}</div>
     </div>`);
-  tickCountdowns();
   // Dressed in what you're wearing (the server says which items those are).
   const worn = mine.ok ? mine.wearing || [] : [];
   if ($('#homeAvatar')) mountAvatar($('#homeAvatar'), me.avatar || defaultAvatar(), worn, { width: 170 }).catch(() => {});
   feedPictures(feedR, view);
 };
+
+// #/soon/<product>: what's coming for a product that isn't open yet (Videos, Live), or
+// that only lives in Studio for now (Fyxa).
+pages.soon = async (id) => {
+  const p = productById(id);
+  if (!p || p.status === 'open') { location.replace(p ? p.href : '#/'); return; }
+  show(html`<div class="portal-hero soon-hero product-${p.id}">
+      <div><span class="portal-kicker">${p.status === 'studio' ? 'IN STUDIO NOW' : 'COMING TO GUTS&BOLTS'}</span><h1>${p.name}</h1>
+        <p>${p.blurb}</p></div></div>
+    <div class="box"><h2 class="boxhead">What's planned</h2>
+      <ul class="soon-plans">${(p.plans || []).map((x) => html`<li>${x}</li>`)}</ul>
+      <p class="small muted">It's its own part of Guts&amp;Bolts, with its own pages, but the same account, friends and Bolts.
+        Follow along on the <a href="#/create/roadmap">roadmap</a>.</p></div>`);
+};
+
 // My Feed: what friends and people you follow said, and what they've been up to (playing a
 // game, making something, earning a badge).
 function feedList(feedR) {
@@ -1118,6 +1169,7 @@ pages.games = async (mine, which) => {
         : html`<p class="error">${r.error}</p>`}`);
     return;
   }
+  if (!mine && !location.hash.includes('?')) { await gamesHome(); return; }
   const q = new URLSearchParams(location.hash.split('?')[1] || '');
   const sort = q.get('sort') || 'popular', query = q.get('q') || '', genre = q.get('genre') || '';
   show(html`<h1>Games</h1><p class="muted">Loading...</p>`);
@@ -1132,7 +1184,7 @@ pages.games = async (mine, which) => {
     <div class="genre-chips"><a class="chip ${genre ? '' : 'on'}" href="${link({ genre: '' })}">All</a>
       ${GENRES.map((gn) => html`<a class="chip ${genre === gn ? 'on' : ''}" href="${link({ genre: gn })}">${gn}</a>`)}</div>
     ${r.ok ? (r.assets.length ? html`<div class="grid">${r.assets.map(gameCard)}</div>`
-        : html`<p class="muted">${sort === 'featured' && !query && !genre ? 'No featured games right now.' : 'No games found' + (genre ? ' in ' + genre : '') + '.'} ${genre || query ? html`<a href="#/games">See all games</a>` : ''}</p>`)
+        : html`<p class="muted">${sort === 'featured' && !query && !genre ? 'No featured games right now.' : 'No games found' + (genre ? ' in ' + genre : '') + '.'} ${genre || query ? html`<a href="#/games?sort=popular">See all games</a>` : ''}</p>`)
       : html`<p class="error">${r.error}</p>`}`);
 };
 
@@ -5469,6 +5521,21 @@ Object.assign(actions, {
   },
 });
 
+// The top bar lights up the product you're in (products.js says which pages belong to
+// which product), and the bar under it shows that product's own links.
+function drawSectionBar(name, path) {
+  const product = name === 'soon' ? productById(path[1]) : productOf(name);
+  document.querySelectorAll('#nav a[data-product]').forEach((a) => a.classList.toggle('on', !!product && a.dataset.product === product.id));
+  const bar = document.getElementById('sectionBar');
+  if (!bar) return;
+  const links = product ? product.links : [];
+  bar.hidden = !links.length;
+  bar.className = 'section-bar' + (product ? ' product-' + product.id : '');
+  const lit = activeLink(name, location.hash);
+  bar.querySelector('.wrap').innerHTML = links.length ? html`<b class="section-name">${product.name}</b>${links.map(([label, href, page]) =>
+    html`<a href="${href}" class="${page && page === lit ? 'on' : ''}">${label}</a>`)}`.s : '';
+}
+
 async function render() {
   const token = ++pageToken;
   const path = (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home').split('/');
@@ -5480,6 +5547,7 @@ async function render() {
     a.classList.toggle('on', p === name || (p === 'games' && name === 'game') || (p === 'catalog' && name === 'item') || (p === 'create' && name === 'library') ||
       (p === 'people' && name === 'user') || (p === 'groups' && name === 'group') || (p === 'forum' && name === 'forum') || (p === 'chat' && name === 'parties'));
   });
+  drawSectionBar(name, path);
   if (name !== 'avatar') avatarDraft = null;   // leaving the avatar page drops unsaved changes
   if (!me) {
     show(html`<h1>Can't reach the Guts&amp;Bolts server</h1>
