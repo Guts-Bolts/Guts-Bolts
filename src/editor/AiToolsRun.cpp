@@ -2088,7 +2088,13 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
                      {"note", "Sent to the server; its checks decide. Check the result with publish_game {action: \"status\"}."}});
     }
 
-    if (name == "manage_game") return runPlatformTool(args);   // EditorPlatform.cpp
+    if (name == "manage_game") return runPlatformTool(args);
+    if (name == "phone_check") {   // EditorPhoneTest.cpp
+        const std::string device = args.is_object() ? args.value("device", std::string("cheap_phone")) : std::string("cheap_phone");
+        if (device != "cheap_phone" && device != "mid_phone" && device != "old_laptop")
+            return fail("INVALID_INPUT", "device is cheap_phone, mid_phone or old_laptop.", "Leave it out for a cheap phone.");
+        return done(phoneCheck(device == "cheap_phone" ? 0 : device == "mid_phone" ? 1 : 2));
+    }   // EditorPlatform.cpp
 
     return fail("UNKNOWN_TOOL", "There's no tool called " + name + ".", "Use one of the tools from tools/list. Don't invent tools.", false);
 }

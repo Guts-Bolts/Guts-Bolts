@@ -153,4 +153,6 @@ public:
     static GraphicsSettings& get();
     void load();
     void save() const;
+    // Studio's phone test swaps in a phone's settings for a while: they mustn't be saved.
+    static void holdSaving(bool on);
 };

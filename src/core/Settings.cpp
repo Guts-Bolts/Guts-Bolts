@@ -302,7 +302,11 @@ bool GraphicsSettings::touchEnabled() const {
 #endif
 }
 
+static bool s_holdSaving = false;
+void GraphicsSettings::holdSaving(bool on) { s_holdSaving = on; }
+
 void GraphicsSettings::save() const {
+    if (s_holdSaving) return;
     nlohmann::json j = {
         {"vsync", vsync}, {"fpsCap", fpsCap}, {"showFps", showFps},
         {"quality", quality}, {"shadows", shadows}, {"shadowRes", shadowRes}, {"shadowQuality", shadowQuality},

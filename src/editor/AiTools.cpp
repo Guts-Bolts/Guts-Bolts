@@ -700,6 +700,16 @@ const std::vector<Tool>& tools() {
           "playtest start -> get_output {run: \"latest\"}.", "\"What did the script print?\""},
          schema({{"lines", {{"type", "integer"}, {"minimum", 1}, {"maximum", 400}, {"description", "How many (default 40)"}}},
                  {"run", kRun}}, {})},
+        {"phone_check", "Check the game against a phone's limits", "DEBUG", true, false, true, Risk::None,
+         {"Counts what's in the game (parts, triangles, unanchored parts, lights, particle emitters, sounds, scripts) and "
+          "compares each with rough limits for a smooth game on a cheap phone, a mid-range phone or an old laptop. Each "
+          "check says ok, close or over, and what to do when it isn't ok.",
+          "\"Will it run on phones?\", \"why is it laggy on my phone?\", before publishing a big game.",
+          "It only counts: to feel it, the person can playtest with a phone's graphics (Test menu > Test like a phone).",
+          "device (optional: cheap_phone (default), mid_phone, old_laptop).",
+          "{device, about, over: how many checks are over, checks: [{what, count, limit, verdict, fix?}], note}.",
+          "None.", "Nothing changes.", "phone_check -> (fix the red ones) -> phone_check.", "\"Will my game run on a cheap phone?\""},
+         schema({{"device", {{"type", "string"}, {"enum", {"cheap_phone", "mid_phone", "old_laptop"}}}}}, {})},
         {"get_errors", "Read errors and warnings", "DEBUG", true, false, true, Risk::None,
          {"Only the errors (and warnings) from the Output window: script errors with their line numbers, failed loads, "
           "warn() calls.",
