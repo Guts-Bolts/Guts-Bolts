@@ -26,6 +26,11 @@ It only records while the viewer is connected, and it only accepts a viewer on t
 same computer (`TRACY_ONLY_LOCALHOST`), so a Tracy build doesn't open anything to
 the network.
 
+No screen (a server or a cloud machine)? Build Tracy's `capture` and `csvexport`
+tools from the same tag instead. `tracy-capture -o run.tracy -a 127.0.0.1 -s 8`
+records 8 seconds, and `tracy-csvexport run.tracy` lists every timed bit with how
+often it ran and how long it took.
+
 ## What you'll see
 
 - One frame mark per frame (Studio and the Player).
