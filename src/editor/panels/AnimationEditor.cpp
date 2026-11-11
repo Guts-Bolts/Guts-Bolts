@@ -1,3 +1,4 @@
+#include "../../scene/AnimFromText.h"
 #include "AnimationEditor.h"
 #include "../../core/FileDialog.h"
 #include "../../core/Paths.h"
@@ -250,6 +251,8 @@ void AnimationEditor::render(bool* open) {
         if (ImGui::SmallButton("Done")) { close(); ImGui::End(); return; }
         ImGui::TextDisabled("No animation in this rig yet.");
         if (ImGui::Button("Create New")) createAnimation("Animation", Anim::emptyClipText());
+        ImGui::SameLine();
+        if (ImGui::Button("Make from words...")) { m_openWords = true; m_wordsNote.clear(); }
         ImGui::SameLine();
         if (ImGui::Button("Import from the Library...")) { m_openImport = true; m_importLoaded = "?"; }
         ImGui::End();
@@ -789,6 +792,7 @@ void AnimationEditor::drawFileMenu(Anim::Clip& c) {
         ImGui::EndMenu();
     }
     ImGui::Separator();
+    if (ImGui::MenuItem("Make from words...")) { m_openWords = true; m_wordsNote.clear(); }
     if (ImGui::MenuItem("Create New"))
         createAnimation(anims.empty() ? "Animation" : "Animation" + std::to_string(anims.size() + 1), Anim::emptyClipText());
     if (ImGui::BeginMenu("Set Animation Priority")) {
@@ -801,7 +805,56 @@ void AnimationEditor::drawFileMenu(Anim::Clip& c) {
     ImGui::EndPopup();
 }
 
+std::string AnimationEditor::makeFromWords(const std::string& text) {
+    SceneNode* r = rig();
+    if (!r) return "Pick a rig first.";
+    std::vector<std::string> names;
+    for (SceneNode* n : Anim::rigParts(r)) names.push_back(n->name);
+    AnimText::Result made = AnimText::make(text, names);
+    if (!made.error.empty()) return made.error;
+    createAnimation(made.name, Anim::dump(made.clip));
+    m_message = "Made \"" + made.name + "\" (" + std::to_string((int)std::lround(made.clip.length() * 10) / 10) + "." +
+                std::to_string((int)std::lround(made.clip.length() * 10) % 10) + " s). Press Play to see it.";
+    if (!made.unknown.empty()) {
+        m_message += " I didn't understand: ";
+        for (size_t i = 0; i < made.unknown.size(); ++i) m_message += (i ? ", \"" : "\"") + made.unknown[i] + "\"";
+        m_message += ".";
+    }
+    if (!made.missing.empty()) m_message += " This rig has no " + made.missing[0] + (made.missing.size() > 1 ? " (and more)" : "") + ", so those moves were left out.";
+    m_messageAt = ImGui::GetCurrentContext() ? ImGui::GetTime() : 0.0;
+    return "";
+}
+
 void AnimationEditor::drawDialogs() {
+    // Make from words: "wave twice, then bow" (AnimFromText.cpp, made right here, no AI service needed).
+    if (m_openWords) { ImGui::OpenPopup("Make an Animation from Words"); m_openWords = false; }
+    ImGui::SetNextWindowSize(ImVec2(480, 0));
+    if (ImGui::BeginPopupModal("Make an Animation from Words", nullptr, ImGuiWindowFlags_NoResize)) {
+        ImGui::TextWrapped("Say what the character should do. Split the steps with \"then\" or commas.");
+        ImGui::TextDisabled("Like: wave twice, then bow   /   jump 3 times quickly   /   dance in a loop");
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+        ImGui::InputTextMultiline("##words", &m_words, ImVec2(-1, 70));
+        if (ImGui::CollapsingHeader("What words work?")) {
+            ImGui::BeginChild("##motions", ImVec2(0, 160), true);
+            for (const AnimText::Motion& m : AnimText::motions()) {
+                ImGui::TextUnformatted(m.name);
+                ImGui::SameLine(130);
+                ImGui::TextDisabled("%s", m.about);
+            }
+            ImGui::Separator();
+            ImGui::TextWrapped("And: left / right / both, once / twice / 3 times, slowly / quickly, small / big, loop / forever.");
+            ImGui::EndChild();
+        }
+        if (!m_wordsNote.empty()) ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.4f, 1.0f), "%s", m_wordsNote.c_str());
+        if (ImGui::Button("Make it", ImVec2(110, 0)) && !m_words.empty()) {
+            m_wordsNote = makeFromWords(m_words);
+            if (m_wordsNote.empty()) { m_playing = true; ImGui::CloseCurrentPopup(); }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(110, 0))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+
     // Save As: a copy under a new name (in the same rig).
     if (m_openSaveAs) { ImGui::OpenPopup("Save Animation As"); m_openSaveAs = false; }
     if (ImGui::BeginPopupModal("Save Animation As", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {

@@ -20,7 +20,7 @@ export const WRITE_TOOLS = [
   'insert_object', 'delete_object', 'set_property', 'find_and_change', 'select', 'create_script', 'edit_script',
   'visual_script', 'generate_level', 'run_lua', 'playtest', 'multiplayer_test', 'physics_replay', 'lua_debugger',
   'create_physical_object', 'spawn_explosion', 'bake_navmesh', 'walk_character_to', 'script_history', 'ai_activity',
-  'checkpoint', 'undo', 'redo', 'build', 'terrain', 'create_ui', 'add_game_system', 'set_atmosphere',
+  'checkpoint', 'undo', 'redo', 'build', 'terrain', 'create_ui', 'add_game_system', 'set_atmosphere', 'make_animation',
 ];
 // Never, whatever the token says. publish_game puts a game online as you; compare_scenes opens and
 // saves game files by path on your computer. Names like these are refused too, even if someone adds
