@@ -20,6 +20,7 @@ import { MemoryStore } from './memorystore.js';
 import { installMcpRelay } from './mcp-relay.js';
 import { installGameWeb } from './game-web.js';
 import { installBanLists } from './banlists.js';   // creators' ban lists, used across their games
+import { installTesters, isTester } from './testers.js';   // early testers: a few people play a game before it's public
 import { installFyxaCloud } from './fyxa-cloud.js';   // Fyxa answered by Cloudflare's AI, with daily limits
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
@@ -511,7 +512,7 @@ function maskEmail(e) {
 function sixDigits() { return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1000000).padStart(6, '0'); }
 
 // Who can play a game: everyone, the creator's friends, or only the creator.
-const ACCESS = ['public', 'friends', 'private'];
+const ACCESS = ['public', 'friends', 'testers', 'private'];
 // Genres a game can pick (up to 3), so people can find the kind of game they like.
 const GENRES = ['Adventure', 'Obby', 'Fighting', 'Horror', 'Roleplay', 'Simulator', 'Tycoon', 'Racing', 'Sports',
   'Shooter', 'Puzzle', 'Survival', 'Comedy', 'Building', 'Sandbox', 'Showcase', 'Town and City', 'Destruction'];
@@ -2327,6 +2328,7 @@ export class GbServerObject extends DurableObject {
     if (!hasAccess(a.kind) || !a.access || a.access === 'public') return true;
     if (a.creator === me.id || this.isStaff(me)) return true;
     if (a.access === 'friends') return me.friends.includes(a.creator);
+    if (a.access === 'testers') return isTester(a, me);   // testers.js
     return false;
   }
   noPlay(a) {
@@ -2337,6 +2339,7 @@ export class GbServerObject extends DurableObject {
     if (a.kind === 'animation') return 'This animation is private.';
     if (a.kind === 'audio') return 'This sound is private.';
     if (a.kind === 'decal') return 'This decal is private.';
+    if (a.access === 'testers') return 'This game is still being tested. Only the people ' + (c ? c.name : 'the creator') + ' picked can play it for now.';
     return a.access === 'friends' ? 'Only ' + (c ? c.name : 'the creator') + '\'s friends can play this game.' : 'This game is private.';
   }
   publicGroup(g) {
@@ -3328,6 +3331,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('forum.')) return this.forumOp(name, me, args);
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
     if (name.startsWith('banlist.') || name === 'game.banLists' || name === 'game.ban') return this.banListOp(name, me, args);   // banlists.js
+    if (['game.testers', 'game.addTester', 'game.removeTester', 'game.testerNote', 'game.amTester'].includes(name)) return this.testerOp(name, me, args);   // testers.js
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
@@ -3513,8 +3517,10 @@ export class GbServerObject extends DurableObject {
       if ('description' in args) a.description = say(str(args, 'description'), 1000, true);
       if ('access' in args) {
         const access = str(args, 'access');
-        if (!ACCESS.includes(access)) return fail('Pick public, friends or private.');
+        if (!ACCESS.includes(access)) return fail('Pick public, friends, testers or private.');
+        const was = a.access || 'public';
         a.access = access;
+        if (was === 'testers' && access === 'public') this.testersLaunched(a, me);   // testers.js
       }
       if ('genres' in args) {
         const picked = Array.isArray(args.genres) ? [...new Set(args.genres.filter((x) => GENRES.includes(x)))] : [];
@@ -6929,4 +6935,5 @@ installMcpRelay(GbServerObject);
 installGameWeb(GbServerObject);
 installChats(GbServerObject);
 installBanLists(GbServerObject);
+installTesters(GbServerObject);
 installFyxaCloud(GbServerObject);

@@ -328,7 +328,24 @@ static std::string reviewOf(const nlohmann::json& meta) { return meta.is_object(
 
 bool GbServer::canSee(const Asset& a, const User& me) const {
     if (!reviewOf(a.meta).empty() && a.creator != me.id && !isStaff(me)) return false;
-    return !Online::hasAccess(a.kind) || a.meta.value("access", std::string("public")) != "private" || a.creator == me.id || isStaff(me);
+    if (!Online::hasAccess(a.kind) && a.kind != "game") return true;   // (games: public unless the creator changed it)
+    const std::string access = a.meta.value("access", std::string("public"));
+    if (access == "public" || a.creator == me.id || isStaff(me)) return true;
+    if (access == "friends") return me.friends.count(a.creator) > 0;
+    if (access == "testers") return isTester(a, me);   // ServerTesters.cpp
+    return false;
+}
+// Why someone can't play a game (worker/server.js noPlay).
+std::string GbServer::noPlayText(const Asset& a) const {
+    const std::string review = reviewOf(a.meta);
+    if (review == "pending") return "This is waiting for a staff check.";
+    if (review == "rejected") return "This didn't pass the staff check.";
+    auto c = m_users.find(a.creator);
+    const std::string who = c != m_users.end() ? c->second.name : "the creator";
+    const std::string access = a.meta.value("access", std::string("public"));
+    if (access == "testers") return "This game is still being tested. Only the people " + who + " picked can play it for now.";
+    if (access == "friends") return "Only " + who + "'s friends can play this game.";
+    return "This game is private.";
 }
 
 json GbServer::uploadsToReview() const {
@@ -347,7 +364,7 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
               {"plays", a.plays}, {"size", a.size}, {"meta", a.meta}, {"thumb", a.thumb}, {"icon", a.icon}};
     if (json lim = limitedJson(a); !lim.is_null()) j["limited"] = lim;
     if (me && a.votes.is_object() && !a.votes.empty()) j["myVote"] = a.votes.value(me->id, 0);
-    if (Online::hasAccess(a.kind)) j["access"] = a.meta.value("access", std::string("public"));
+    if (Online::hasAccess(a.kind) || a.kind == "game") j["access"] = a.meta.value("access", std::string("public"));
     if (hasVotes(a.kind)) { j["likes"] = a.likes; j["dislikes"] = a.dislikes; }   // games and Library models
     if (a.kind == "game") {
         j["badges"] = a.badges; j["allowGear"] = a.meta.value("allowGear", false); j["favorites"] = a.meta.value("favorites", 0LL);
@@ -689,6 +706,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
     if (name.rfind("banlist.", 0) == 0 || name == "game.banLists" || name == "game.ban") return banListOp(name, me, args);   // ServerBanLists.cpp
+    if (name == "game.testers" || name == "game.addTester" || name == "game.removeTester" || name == "game.testerNote" || name == "game.amTester")
+        return testerOp(name, me, args);   // ServerTesters.cpp
     // Fyxa in the cloud (worker/fyxa-cloud.js) needs Cloudflare's AI, which this server doesn't have.
     // Its daily limits only matter where there's an AI to answer, so here it just says so.
     if (name.rfind("fyxacloud.", 0) == 0 || name == "admin.fyxaCloud")
@@ -1570,6 +1589,13 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         if (it == m_assets.end() || it->second.kind != "game") return fail("That game doesn't exist (any more).");
         Asset& a = it->second;
         if (a.creator != me.id && !isStaff(me)) return fail("You can only change your own games.");
+        if (args.contains("access")) {   // who can play it (and "testers": ServerTesters.cpp)
+            const std::string access = str("access");
+            if (access != "public" && access != "friends" && access != "testers" && access != "private") return fail("Pick public, friends, testers or private.");
+            const std::string was = a.meta.value("access", std::string("public"));
+            a.meta["access"] = access;
+            if (was == "testers" && access == "public") testersLaunched(a, me);
+        }
         if (args.contains("allowGear")) a.meta["allowGear"] = args["allowGear"] == true;
         if (args.contains("http")) a.meta["httpOn"] = args["http"] == true;   // web requests from its server scripts (ServerGameWeb.cpp)
         if (args.contains("comments")) a.meta["commentsOff"] = args["comments"] == false;
@@ -1936,6 +1962,8 @@ void GbServer::saveAssets() {
         if (!a.shots.empty()) all[id]["shots"] = a.shots;
         if (!a.versions.empty()) all[id]["versions"] = a.versions;
         if (!a.banLists.empty()) all[id]["banLists"] = a.banLists;
+        if (!a.testers.empty()) all[id]["testers"] = a.testers;
+        if (!a.testerNotes.empty()) all[id]["testerNotes"] = a.testerNotes;
         if (!a.updateLog.empty()) { all[id]["updateLog"] = a.updateLog; all[id]["updateLogDay"] = a.updateLogDay; all[id]["updateLogToday"] = a.updateLogToday; }
     }
     writeFile(m_opts.data / "assets.json", all.dump(1));
@@ -2205,6 +2233,9 @@ void GbServer::load() {
                     for (const json& x : j["updateLog"]) if (x.is_object()) a.updateLog.push_back(x);
                 if (j.contains("banLists") && j["banLists"].is_array())
                     for (const json& x : j["banLists"]) if (x.is_string()) a.banLists.push_back(x.get<std::string>());
+                if (j.contains("testers") && j["testers"].is_array())
+                    for (const json& x : j["testers"]) if (x.is_string()) a.testers.push_back(x.get<std::string>());
+                if (j.contains("testerNotes") && j["testerNotes"].is_object()) a.testerNotes = j["testerNotes"];
                 a.updateLogDay = j.value("updateLogDay", std::string());
                 a.updateLogToday = j.value("updateLogToday", 0);
                 a.limited = j.value("limited", false);
