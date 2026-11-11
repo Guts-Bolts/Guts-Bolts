@@ -27,6 +27,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerRoadmap.cpp
     src/server/ServerExtras.cpp
     src/server/ServerBanLists.cpp
+    src/server/ServerTesters.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -1009,6 +1010,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerAssetVersionsTests gb_version)
     target_link_libraries(ServerAssetVersionsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerAssetVersionsTests COMMAND ServerAssetVersionsTests)
+
+    # Early testers: a testers-only game, tester notes, going public (ServerTesters.cpp).
+    add_executable(ServerTestersTests tests/ServerTestersTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerTestersTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerTestersTests gb_version)
+    target_link_libraries(ServerTestersTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerTestersTests COMMAND ServerTestersTests)
 
     # Studio Learn progress: account validation, persistence across server restarts and guest denial.
     add_executable(ServerLearnProgressTests tests/ServerLearnProgressTests.cpp ${GB_SERVER_TEST_SOURCES})

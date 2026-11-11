@@ -7,6 +7,7 @@ import { startTranslating, languagePicker } from '../lang/i18n.js';
 import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
 import { mountBanLists, mountGameBans, mountBanNotice } from './banlists.js';
+import { mountGameTesters, mountTesterNote } from './testers.js';
 import { mountAssetVersions } from './versions.js';
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
@@ -199,7 +200,7 @@ function gameIcon(g, size = 48) {
   if (g.icon) return html`<img class="game-icon" src="/icon/${encodeURIComponent(g.id)}?v=${g.icon}" alt="" width="${size}" height="${size}">`;
   return html`<span class="game-icon" style="width:${size}px;height:${size}px;background:${raw(gameColors(g.id))}">${(g.name || '?').slice(0, 1)}</span>`;
 }
-const ACCESS_NAMES = { public: 'Public', friends: 'Friends only', private: 'Private' };
+const ACCESS_NAMES = { public: 'Public', friends: 'Friends only', testers: 'Testers only', private: 'Private' };
 
 // Shrink a picture the visitor picked to w x h (cropping to fit), as JPEG base64.
 function pictureBase64(file, w, h) {
@@ -1655,6 +1656,7 @@ pages.game = async (id) => {
           ${g.featured ? 'Stop featuring' : 'Feature this game'}</button> <span class="small muted">(staff)</span></p>` : ''}
         <p class="small muted">Games run in the Guts&amp;Bolts app (Windows, Mac, Linux and Android).${mine ? '' : html` ${reportLink('game', g.id, g.name)}`}</p>
         <div id="banNotice"></div></div></div>
+    <div class="box" id="testerNote" hidden></div>
     <h2>Description</h2><p style="white-space:pre-wrap">${g.description || 'No description yet.'}</p>
     ${gameLogBlock(g, lr, mine)}
     ${g.lyreto ? html`<h2>Community</h2>${lyretoCard(g.lyreto, 'the players')}` : ''}
@@ -1678,6 +1680,7 @@ pages.game = async (id) => {
       : html`<p class="muted">Nobody's playing right now. Be the first!</p>`}
     ${commentsBlock(g, cr)}`);
   if (signedIn() && !mine) mountBanNotice($('#banNotice'), g.id, call, toast);   // banned? why, and an appeal box (banlists.js)
+  if (signedIn() && !mine) mountTesterNote($('#testerNote'), g.id, call, toast);   // an early tester's note box (testers.js)
 };
 
 // Comments under a game, newest first, 20 at a time.
@@ -2502,6 +2505,7 @@ pages.configure = async (id) => {
       <div class="box"><h2 class="boxhead">Who can play</h2>
         ${choice('public', 'Public', 'Everyone can find and play it.')}
         ${choice('friends', 'Friends only', 'Only your friends can see and play it.')}
+        ${choice('testers', 'Testers only', 'Only the early testers you pick (below) can see and play it.')}
         ${choice('private', 'Private', 'Only you can see and play it.')}</div>
       <div class="box"><h2 class="boxhead">Pictures</h2>
         <div class="pics">
@@ -2523,6 +2527,7 @@ pages.configure = async (id) => {
         <span id="configMsg"></span></p>
     </form>
     <div class="box" id="gameWeb"></div>
+    <div class="box" id="gameTesters"></div>
     <div class="box" id="gameBans"></div>
     <div class="box" id="screenshots"><h2 class="boxhead">Screenshots</h2>
       <p class="small muted">Up to ${SHOT_MOST} pictures of your game, shown after the thumbnail on its page (people can click them to see them bigger).
@@ -2601,6 +2606,7 @@ pages.configure = async (id) => {
   loadThumbs();
   mountGameWeb($('#gameWeb'), g.id, call, toast);   // web requests and secrets (gameweb.js)
   mountGameBans($('#gameBans'), g.id, call, toast);   // ban lists (banlists.js)
+  mountGameTesters($('#gameTesters'), g.id, call, toast);   // early testers (testers.js)
   // Show a picked picture straight away.
   view.querySelectorAll('input[data-preview]').forEach((inp) => inp.addEventListener('change', () => {
     const file = inp.files[0];
@@ -3725,6 +3731,7 @@ function noteLink(n) {
   if (n.kind === 'trade') return '#/trades';
   if (n.kind === 'banlist') return '#/create/bans?list=' + n.about;   // banlists.js
   if (n.kind === 'banappeal') return '#/game/' + n.about;
+  if (n.kind === 'testers') return '#/game/' + n.about;   // testers.js
   if (n.kind === 'group') return '#/group/' + n.about;
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;

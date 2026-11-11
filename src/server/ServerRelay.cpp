@@ -105,6 +105,8 @@ std::string GbServer::privateBlocked(const User& u, const std::string& gameId) c
 json GbServer::serverOp(const std::string& name, User& me, const json& args) {
     std::string game = Online::cleanText(args.value("game", std::string()), 80);
     if (auto f = findAsset(game); f != m_assets.end()) game = f->first;   // (its number works too)
+    // A game they may not play (private, friends only, testers only: canSee) isn't for them.
+    if (auto a = m_assets.find(game); a != m_assets.end() && a->second.kind == "game" && !canSee(a->second, me)) return fail(noPlayText(a->second));
     // On one of the game's ban lists (ServerBanLists.cpp): no playing it.
     if (name != "servers.list") if (const std::string banned = banMessageFor(game, me); !banned.empty()) return fail(banned);
 

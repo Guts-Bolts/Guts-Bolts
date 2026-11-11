@@ -135,6 +135,9 @@ private:
         std::string updateLogDay; int updateLogToday = 0;
         // Games: the ban lists it uses (ServerBanLists.cpp; worker/banlists.js a.banLists).
         std::vector<std::string> banLists;
+        // Games: early testers and their notes, id -> {stars, text, at} (ServerTesters.cpp; worker/testers.js).
+        std::vector<std::string> testers;
+        nlohmann::json testerNotes = nlohmann::json::object();
     };
 
     struct Post { std::string by, text; long long time = 0; };
@@ -282,6 +285,12 @@ private:
     const nlohmann::json* banFor(const Asset& a, const User& me, const nlohmann::json** entry) const;
     std::string banListRole(const nlohmann::json& l, const User& me) const;
     nlohmann::json banListPerson(const std::string& id) const;
+    // ServerTesters.cpp: early testers play a game before it's public.
+    nlohmann::json testerOp(const std::string& name, User& me, const nlohmann::json& args);
+    bool isTester(const Asset& a, const User& me) const;
+    nlohmann::json testerPerson(const std::string& id) const;
+    void testersLaunched(const Asset& a, const User& me);
+    std::string noPlayText(const Asset& a) const;
     nlohmann::json banListSummary(const nlohmann::json& l, const User& me) const;
     nlohmann::json banListFull(const nlohmann::json& l, const User& me) const;
     std::string banListMake(const User& me, const std::string& name, std::string& error);
