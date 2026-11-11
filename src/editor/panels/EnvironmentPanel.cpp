@@ -98,6 +98,12 @@ void EnvironmentPanel::render() {
         ImGui::SliderFloat("Density",   &e.fogDensity, 0.0f, 0.1f, "%.4f");
         ImGui::SliderFloat("Sun Glow",  &e.fogSunGlow, 0.0f, 3.0f);
         help("Fog lights up when you look towards the sun");
+        ImGui::SliderFloat("Height Falloff", &e.fogFalloff, 0.0f, 0.2f, "%.3f");
+        help("Height fog: above 0 the fog lies low (thick near the ground, thin up high), like mist in a valley. 0 = the same everywhere");
+        ImGui::DragFloat  ("Fog Height", &e.fogHeight, 0.5f, -500.0f, 2000.0f, "%.1f");
+        help("The height (studs) where the fog is as thick as Density; it thins out above it");
+        ImGui::SliderFloat("Wisps", &e.fogWisps, 0.0f, 1.0f, "%.2f");
+        help("Wispy mist that drifts with the wind (World > Wind). 0 = smooth fog. Shows on High graphics and up, where the fog also takes light: sun shafts through gaps, lamps glowing in the mist");
     }
 
     if (ImGui::CollapsingHeader("Weather", open)) {
@@ -128,6 +134,10 @@ void EnvironmentPanel::render() {
         ImGui::SliderFloat("Gravity", &m_scene->world().gravity, 0.0f, 300.0f);
         ImGui::SliderFloat("Fall Limit", &m_scene->world().fallenPartsHeight, -500.0f, 0.0f, "%.0f");
         help("Players die and parts disappear below this height");
+        ImGui::DragFloat3 ("Wind", &m_scene->world().globalWind.x, 0.2f, -500.0f, 500.0f, "%.1f");
+        help("GlobalWind, studs a second: flags and capes flap in it, and light loose parts get blown along");
+        ImGui::SliderFloat("Air Density", &m_scene->world().airDensity, 0.0f, 0.05f, "%.4f");
+        help("How thick the air is (0.0012 = real air). Light, wide parts fall slowly and blow about; 0 = no air at all");
     }
 
     ImGui::End();

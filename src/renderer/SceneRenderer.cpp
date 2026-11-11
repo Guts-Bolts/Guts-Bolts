@@ -178,6 +178,7 @@ SceneRenderer::SceneRenderer() {
 SceneRenderer::~SceneRenderer() {
     Liquid::graphicsContext(-1);
     destroyTemporal();
+    destroyFog();
     if (m_gridVbo)  glDeleteBuffers(1, &m_gridVbo);
     if (m_instanceVbo) glDeleteBuffers(1, &m_instanceVbo);
     if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
@@ -188,7 +189,7 @@ SceneRenderer::~SceneRenderer() {
     if (m_emptyVao) glDeleteVertexArrays(1, &m_emptyVao);
     if (m_fluidVbo) glDeleteBuffers(1, &m_fluidVbo);
     if (m_fluidVao) glDeleteVertexArrays(1, &m_fluidVao);
-    destroyTarget(m_fDepth); destroyTarget(m_fTmp); destroyTarget(m_fThick); destroyTarget(m_fColor); destroyTarget(m_sceneCopy); destroyTarget(m_waterCopy); destroyTarget(m_hlTarget);
+    destroyTarget(m_fDepth); destroyTarget(m_fTmp); destroyTarget(m_fThick); destroyTarget(m_fColor); destroyTarget(m_sceneCopy); destroyTarget(m_waterCopy); destroyTarget(m_hlTarget); destroyTarget(m_ssrCopy);
     if (m_ribbonVbo) glDeleteBuffers(1, &m_ribbonVbo);
     if (m_ribbonVao) glDeleteVertexArrays(1, &m_ribbonVao);
     destroyTarget(m_hdr);
@@ -813,6 +814,13 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lit->setVec3("uFogColor", env.fogColor);
     m_lit->setFloat("uFogDensity", env.fogDensity);
     m_lit->setFloat("uFogSunGlow", env.fogSunGlow);
+    m_lit->setFloat("uFogHeight", env.fogHeight);
+    m_lit->setFloat("uFogFalloff", std::max(0.0f, env.fogFalloff));
+    // Volumetric fog: the solid things are drawn without fog, and get it afterwards
+    // (drawFogVolume, from drawGeometry).
+    m_fogVolOn = wantFogVolume(scene, camera);
+    m_usedFogVol = false;
+    m_lit->setBool("uFogVolumetric", m_fogVolOn);
     m_lit->setBool("uShadowsEnabled", shadows);
     // Studio's view style (Wireframe's lines are the plain colours) and X-ray.
     m_lit->setInt("uShading", shading == Shading::Wireframe ? 2 : (int)shading);
@@ -849,6 +857,15 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     });
     std::sort(lights.begin(), lights.end(), [](auto& a, auto& b) { return a.dist < b.dist; });
     const int most = std::min(kMaxLights, gs.maxLights);
+    // The nearest real lamps also glow in the volumetric fog.
+    m_fogLightCount = 0;
+    for (const LightItem& l : lights) {
+        if (m_fogLightCount >= 8) break;
+        m_fogLightPos[m_fogLightCount] = l.pos;
+        m_fogLightColor[m_fogLightCount] = l.col;
+        m_fogLightDir[m_fogLightCount] = l.dir;
+        ++m_fogLightCount;
+    }
     // Bouncy light: soft coloured lights where sun and lamp light land (BounceLight.h),
     // worked out about 4 times a second, after the real lamps (if there's room).
     if (env.bounceLight > 0.0f && shading == Shading::Material) {
@@ -886,6 +903,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lit->setInt("uLampShadows", 10);
     m_lit->setFloat("uLampTileTexel", m_lampTile > 0 ? 1.0f / (float)m_lampTile : 0.01f);
     bindBounce(*m_lit);   // last frame's traced bounce light (Medium and up)
+    bindReflections(camera);   // last frame's picture, for shiny parts to mirror (High and up)
 
     { FrameProfile::Scope prof("draw: parts and water", true); drawGeometry(scene, camera, showGrid); }
     drawOverlay(view, proj);
@@ -893,10 +911,55 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     { FrameProfile::Scope prof("draw: liquid", true); renderLiquid(scene, camera); }
 
     { FrameProfile::Scope prof("draw: bounce light", true); traceBounce(camera); }
+    { FrameProfile::Scope prof("draw: reflections", true); keepForReflections(camera); }
 
     { FrameProfile::Scope prof("draw: post effects", true); postProcess(scene, camera, target); }
     endTemporal(camera);   // (Highlights are drawn on the finished picture, without the jitter)
     drawHighlights(scene, camera, target);
+}
+
+// Shiny parts mirror the world (screen-space reflections, like Unreal's). Drawing a
+// part can't read the picture it's drawing into, so each frame ends with a copy of the
+// lit picture and its depth, and the next frame's shiny parts walk their reflected rays
+// through that copy (seen from last frame's camera, so it still lines up when you turn).
+// High and up only (GraphicsSettings::shinyReflections); the main views only.
+void SceneRenderer::bindReflections(const Camera& camera) {
+    const GraphicsSettings& gs = GraphicsSettings::get();
+    const int level = gs.shinyReflections();
+    const bool on = m_ssrReady && level >= 1 && temporal && shading == Shading::Material && !xray &&
+                    !camera.orthographic && !camera.useProjection && m_ssrCopy.w == m_hdr.w && m_ssrCopy.h == m_hdr.h &&
+                    glm::length(camera.position() - m_ssrPos) < 8.0f;   // (not across a teleport)
+    m_usedSsr = on;
+    m_lit->setBool("uSsrOn", on);
+    m_lit->setInt("uSsrColor", 13);
+    m_lit->setInt("uSsrDepth", 14);
+    if (!on) return;
+    static const int kSteps[4] = {0, 20, 32, 48};   // High, Epic, Cinematic
+    bindTex(13, m_ssrCopy.color);
+    bindTex(14, m_ssrCopy.depth);
+    glActiveTexture(GL_TEXTURE0);
+    m_lit->setMat4("uSsrViewProj", m_ssrViewProj);
+    m_lit->setVec2("uSsrNearFar", glm::vec2(0.1f, 1000.0f));   // (Camera::projection's)
+    m_lit->setInt("uSsrSteps", kSteps[std::clamp(level, 0, 3)]);
+    m_lit->setFloat("uSsrNoise", m_usedUpscaler ? 1.0f : 0.0f);   // (random starts only when frames get mixed)
+}
+
+void SceneRenderer::keepForReflections(const Camera& camera) {
+    const GraphicsSettings& gs = GraphicsSettings::get();
+    if (gs.shinyReflections() < 1 || !temporal || shading != Shading::Material || xray || camera.orthographic ||
+        camera.useProjection || Mesh::headless) {
+        m_ssrReady = false;
+        return;
+    }
+    if (m_ssrCopy.w != m_hdr.w || m_ssrCopy.h != m_hdr.h || !m_ssrCopy.fbo)
+        createTarget(m_ssrCopy, m_hdr.w, m_hdr.h, hdrFormat(), true);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, m_hdr.fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_ssrCopy.fbo);
+    glBlitFramebuffer(0, 0, m_hdr.w, m_hdr.h, 0, 0, m_hdr.w, m_hdr.h, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_hdr.fbo);
+    m_ssrViewProj = camera.projection() * camera.view();   // (with this frame's jitter: it matches the copy)
+    m_ssrPos = camera.position();
+    m_ssrReady = true;
 }
 
 // Highlights: each one's parts are drawn flat into a mask (what covers the screen,
@@ -1237,6 +1300,8 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
     w.setVec3("uFogColor", env.fogColor);
     w.setFloat("uFogDensity", env.fogDensity);
     w.setFloat("uFogSunGlow", env.fogSunGlow);
+    w.setFloat("uFogHeight", env.fogHeight);
+    w.setFloat("uFogFalloff", std::max(0.0f, env.fogFalloff));
     w.setFloat("uRenderDist", m_viewDist);
     bindTex(2, m_waterCopy.color); w.setInt("uScene", 2);
     bindTex(3, m_waterCopy.depth); w.setInt("uSceneDepth", 3);
@@ -1627,6 +1692,13 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         tm->draw();
     }
     if (shading == Shading::Wireframe) { wireframe(false); glEnable(GL_CULL_FACE); }
+    if (m_fogVolOn) {
+        // The fog over the solid things; what's drawn from here on (see-through parts,
+        // water, sparks) fogs itself the simple way.
+        { FrameProfile::Scope prof("draw: volumetric fog", true); drawFogVolume(scene, camera); }
+        m_lit->bind();
+        m_lit->setBool("uFogVolumetric", false);
+    }
     drawConstraints(scene, editing);
     if (!waters.empty()) {
         { FrameProfile::Scope prof("draw: water surfaces", true); drawWater(scene, camera, waters); }

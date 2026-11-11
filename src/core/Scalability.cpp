@@ -15,7 +15,7 @@ const char* groupHelp(int g) {
         case Shadow:             return "How sharp and soft shadows are, and how many shadow maps are used.";
         case GlobalIllumination: return "Light bouncing off walls and floors. Low only darkens corners; higher levels trace the bounced light across the screen.";
         case Reflection:         return "Reflections in water and shiny surfaces.";
-        case PostProcess:        return "Bloom, sun rays, depth of field and motion blur.";
+        case PostProcess:        return "Bloom, sun rays, depth of field and motion blur. From High up the fog takes light too: sun shafts through gaps, lamps glowing in the mist, drifting wisps.";
         case Texture:            return "How sharp pictures on parts stay when you look at them at an angle.";
         case ViewDistance:       return "How far away things are still drawn.";
         case AntiAliasing:       return "Smooths jagged edges. Higher levels use several frames together (temporal), which also lets the game draw fewer pixels and still look sharp.";
@@ -32,7 +32,7 @@ const char* levelHelp(int g, int l) {
     static const char* const help[kGroups][kLevels] = {
         {"one 1024 shadow map, hard edges", "1024 maps, near + far, soft edges", "2048 maps, soft edges that get blurrier away from what casts them", "4096 maps, the softest, most lamp shadows", "4096 maps, the softest"},
         {"ambient occlusion only (dark corners)", "screen-traced bounce light, quarter size", "screen-traced bounce light, half size, more rays", "the most rays and steps, smoothest", "full size, 16 rays, longest memory (for pictures)"},
-        {"sky only", "water reflections", "water reflections, more detail", "the most detailed water", "the most detailed water"},
+        {"sky only", "water reflections", "water, and shiny parts mirror the world", "longer, sharper mirror reflections", "the longest, cleanest reflections"},
         {"no bloom or extra effects (colours stay the same)", "bloom", "bloom, sun rays, depth of field, motion blur", "everything, more samples", "everything, the most samples"},
         {"slightly blurry far away, fastest", "2x sharp at an angle", "8x sharp at an angle", "16x sharp at an angle", "16x sharp at an angle"},
         {"short", "medium", "far", "unlimited", "unlimited"},

@@ -47,6 +47,8 @@ public:
     // What the last frame really used (for tests and the settings menu).
     bool usedUpscaler() const { return m_usedUpscaler; }
     bool usedBounce() const { return m_usedBounce; }
+    bool usedReflections() const { return m_usedSsr; }
+    bool usedVolumetricFog() const { return m_usedFogVol; }   // the fog took light this frame (shafts, glowing lamps)   // shiny parts mirrored the world this frame
 
     // Offscreen buffer with a colour texture and (optionally) a depth texture.
     struct Target {
@@ -110,6 +112,24 @@ private:
     unsigned resolveTemporal(const Camera& camera);     // the upscaled picture (0 = not upscaling)
     float upscaleSharpen() const;                       // how much the composite sharpens it
     void endTemporal(const Camera& camera);
+    // Shiny parts mirroring the world (screen-space reflections, High and up): the lit
+    // shader walks reflected rays through a copy of last frame's picture and depth.
+    Target    m_ssrCopy;
+    glm::mat4 m_ssrViewProj{1.0f};
+    glm::vec3 m_ssrPos{0.0f};
+    bool      m_ssrReady = false, m_usedSsr = false;
+    void bindReflections(const Camera& camera);   // before drawing the parts
+    void keepForReflections(const Camera& camera); // after drawing: copy this frame for the next one
+    // Volumetric fog (SceneRendererFog.cpp, High and up): fog that takes light, so the
+    // sun cuts shafts through it and lamps glow in it, and that drifts in wisps.
+    struct FogVol;
+    FogVol*   m_fog = nullptr;
+    bool      m_fogVolOn = false, m_usedFogVol = false;
+    glm::vec4 m_fogLightPos[8], m_fogLightColor[8], m_fogLightDir[8];
+    int       m_fogLightCount = 0;
+    bool wantFogVolume(Scene& scene, const Camera& camera) const;
+    void drawFogVolume(Scene& scene, const Camera& camera);   // once the solid things are drawn
+    void destroyFog();
     void buildGrid();
 public:
     // The floor grid's line spacing in studs (it follows Move snapping).
