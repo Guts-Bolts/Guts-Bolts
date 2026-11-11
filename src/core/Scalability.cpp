@@ -91,6 +91,12 @@ DeviceProfile profileFor(const std::string& gpuName, Platform platform) {
     return p;
 }
 
+bool isSoftwareGpu(const std::string& gpuName) {
+    const std::string g = lower(gpuName);
+    return has(g, "llvmpipe") || has(g, "softpipe") || has(g, "swiftshader") ||
+           has(g, "basic render") || has(g, "software rasterizer");
+}
+
 int pickLevel(float highMs, float budgetMs) {
     if (highMs <= 0.0f || budgetMs <= 0.0f) return 2;
     // Leave a little room for the game itself (scripts, physics, sounds).

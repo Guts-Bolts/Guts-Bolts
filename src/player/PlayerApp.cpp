@@ -26,6 +26,7 @@
 #include "../game/UpdateToast.h"
 #include "../renderer/SceneRenderer.h"
 #include "../renderer/Benchmark.h"
+#include "../core/Scalability.h"
 #include "../scene/Physics.h"
 #include "../scene/Serializer.h"
 #include "../net/NetGame.h"
@@ -96,7 +97,14 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
         GraphicsSettings& gs = GraphicsSettings::get();
         const std::string gpu = GraphicsBenchmark::gpuName();
         const bool force = std::getenv("GB_BENCHMARK") != nullptr;
-        if (m_opts.screenshot.empty() && (gs.needsBenchmark(gpu) || force)) {
+        // (Not in automated tests or Studio's multiplayer test: several players start at
+        // once there, and they should start the same way every time.)
+        const bool testing = !m_opts.screenshot.empty() || !m_opts.testName.empty() || testMode();
+        if (!testing && Scalability::isSoftwareGpu(gpu) && gs.needsBenchmark(gpu) && !force) {
+            // No real graphics chip (drawn by the processor): nothing to measure, it's slow.
+            gs.setBenchmark(gpu, 1000.0f, 1000.0f / 60.0f);
+            gs.save();
+        } else if (!testing && (gs.needsBenchmark(gpu) || force)) {
             const float ms = GraphicsBenchmark::run(*m_renderer, 1280, 720);
             if (ms > 0.0f) {
                 gs.setBenchmark(gpu, ms, 1000.0f / 60.0f);

@@ -75,6 +75,7 @@ int main() {
 
     // The benchmark's pick: each level costs about half the one above.
     const float budget = 1000.0f / 60.0f;
+    check(isSoftwareGpu("llvmpipe (LLVM 20.1.2, 256 bits)") && isSoftwareGpu("Google SwiftShader") && !isSoftwareGpu("NVIDIA GeForce RTX 4070"), "software graphics spotted");
     check(pickLevel(8.0f, budget) == 2, "8 ms at High: High");
     check(pickLevel(20.0f, budget) == 1, "20 ms at High: Medium");
     check(pickLevel(45.0f, budget) == 0, "45 ms at High: Low");

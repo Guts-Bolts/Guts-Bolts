@@ -64,15 +64,19 @@ float run(SceneRenderer& renderer, int w, int h, int frames) {
     Framebuffer fb;
     fb.resize(w, h);
     using clock = std::chrono::steady_clock;
-    double total = 0.0;
+    double total = 0.0, spent = 0.0;
     int counted = 0;
     for (int i = 0; i < frames; ++i) {
+        // A very slow computer has its answer after a frame or two: stop there
+        // instead of making it wait seconds for the game to open.
+        if (counted >= 1 && spent > 1500.0) break;
         cam.yaw = 30.0f + (float)i * 3.0f;   // (turning, like playing)
         const auto t0 = clock::now();
         renderer.render(scene, cam, fb, false);
         glFinish();
         const double ms = std::chrono::duration<double, std::milli>(clock::now() - t0).count();
-        if (i >= 3) { total += ms; ++counted; }   // (the first few load shaders and fill buffers)
+        spent += ms;
+        if (i >= 3 || (i >= 1 && spent > 1500.0)) { total += ms; ++counted; }   // (the first few load shaders and fill buffers)
     }
     renderer.temporal = wasTemporal;
     gs = saved;

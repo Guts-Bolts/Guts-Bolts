@@ -57,6 +57,10 @@ Platform thisPlatform();
 // versions of the costliest things.
 DeviceProfile profileFor(const std::string& gpuName, Platform platform);
 
+// True for a graphics "chip" that is really the processor drawing (llvmpipe, SwiftShader,
+// Microsoft Basic Render Driver...): always slow, so the benchmark isn't needed there.
+bool isSoftwareGpu(const std::string& gpuName);
+
 // The quick benchmark at first start: how many milliseconds a few test frames took at
 // High, and the frame-time budget (16.7 ms for 60 FPS). Each level costs roughly half
 // of the one above it, so this picks the highest that fits: 2 High, 1 Medium, 0 Low,
