@@ -1,4 +1,5 @@
 #include "../core/FrameProfile.h"
+#include <optional>
 #include "ScriptEngine.h"
 #include "ScriptHistory.h"
 #include "SpatialQueries.h"
@@ -4312,7 +4313,17 @@ void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, st
         profName = profNameOf(co, nargs);
         m_profStack.push_back({nowSeconds(), 0.0});
     }
+#ifdef GB_TRACY
+    // Tracy (engine developers' builds): each script's run, by name.
+    std::string devName;
+    if (DevProfiler::connected()) devName = profiling ? profName : profNameOf(co, nargs);
+    std::optional<DevProfiler::Zone> devZone;
+    if (!devName.empty()) devZone.emplace(devName.c_str(), devName.size(), __FILE__, __LINE__, "script");
+#endif
     int status = lua_resume(co, from ? from : m_L, nargs, &nres);
+#ifdef GB_TRACY
+    devZone.reset();
+#endif
     if (profiling && !m_profStack.empty()) {
         const ProfRun run = m_profStack.back();
         m_profStack.pop_back();

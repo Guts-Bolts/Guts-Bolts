@@ -127,6 +127,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imguizmo)
 
+# imnodes (MIT): the "blocks joined by lines" board in Studio's Visual Scripting
+# window (src/editor/EditorBlocks.cpp). Studio only, so phones and the web Player
+# never build it. Only downloaded; its own CMakeLists isn't run.
+FetchContent_Declare(
+    imnodes
+    GIT_REPOSITORY https://github.com/Nelarius/imnodes.git
+    GIT_TAG        2d0c280b07b2f62b120034811cc6e41251673961
+    SOURCE_SUBDIR  cmake-build-disabled
+)
+FetchContent_MakeAvailable(imnodes)
+
 # Lua 5.4 — the scripting language used by Script objects. The official repo
 # has no CMake build, so only download it and compile the core library below.
 FetchContent_Declare(
@@ -647,6 +658,25 @@ if((GB_VR AND NOT GB_MOBILE AND NOT APPLE) OR (GB_QUEST AND ANDROID))
         endif()
     endif()
 endif()
+# Tracy (BSD-3): a very detailed profiler for people working on the engine itself
+# (game makers use the Live Profiler instead). OFF by default, so normal builds
+# and players never have it. Turn on with -DGB_TRACY=ON, run Studio or the Player,
+# and open the Tracy viewer on the same computer. See docs/engine/tracy.md.
+option(GB_TRACY "Build with the Tracy profiler (for engine developers)" OFF)
+if(GB_TRACY)
+    # Only records while the viewer is connected, and only lets this computer connect.
+    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+    set(TRACY_ONLY_LOCALHOST ON CACHE BOOL "" FORCE)
+    set(TRACY_NO_BROADCAST ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG        05cceee0df3b8d7c6fa87e9638af311dbabc63cb   # v0.13.1
+    )
+    FetchContent_MakeAvailable(tracy)
+    target_link_libraries(gb_engine PUBLIC Tracy::TracyClient)
+    target_compile_definitions(gb_engine PUBLIC GB_TRACY)
+endif()
 target_compile_definitions(gb_engine PUBLIC GLM_ENABLE_EXPERIMENTAL)
 if(WIN32)
     target_link_libraries(gb_engine PUBLIC dbghelp ws2_32 bcrypt)
@@ -892,7 +922,10 @@ if(WIN32)
     list(APPEND EDITOR_SOURCES resources/app.rc)
 endif()
 add_executable(GutsAndBolts ${EDITOR_SOURCES})
-target_link_libraries(GutsAndBolts PRIVATE gb_engine gb_models)
+add_library(gb_imnodes STATIC ${imnodes_SOURCE_DIR}/imnodes.cpp)
+target_include_directories(gb_imnodes PUBLIC ${imnodes_SOURCE_DIR})
+target_link_libraries(gb_imnodes PUBLIC gb_imgui)
+target_link_libraries(GutsAndBolts PRIVATE gb_engine gb_models gb_imnodes)
 # Linux desktops may provide Secret Service through libsecret (GNOME Keyring,
 # KWallet's Secret Service compatibility, etc.). Keep it optional for minimal
 # distributions and headless builds; those retain session-only credentials.
