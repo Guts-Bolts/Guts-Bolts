@@ -18,6 +18,7 @@
 #include <imgui.h>
 
 struct GLFWwindow;
+struct GraphicsSettings;
 class Scene;
 class GameSession;
 class ViewportPanel;
@@ -441,6 +442,17 @@ private:
     bool m_learnBaselineReady = false;   // a practice snapshot was taken (a resumed practice takes one first)
     std::set<int> m_learnCompleted;
     bool m_showPerformanceDoctor = false;
+    // Test like a phone (EditorPhoneTest.cpp)
+    bool m_showPhoneTest = false;
+    int  m_phonePick = 0;                              // which device the window shows
+    int  m_phoneTesting = 0;                           // 1 + that device while its playtest runs, else 0
+    std::unique_ptr<GraphicsSettings> m_phoneSaved;    // Studio's own settings, back when the test stops
+    void renderPhoneTest();
+    void startPhoneTest(int profile);
+    void endPhoneTest();
+public:
+    nlohmann::json phoneCheck(int profile) const;      // the budget table (also the phone_check AI tool)
+private:
     bool m_showLuaDebugger = false;
     int m_debugLineInput = 1;
     int m_debugSeenPauses = 0;   // the Lua Debugger's pause count we've already jumped to

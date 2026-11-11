@@ -14,7 +14,7 @@
 export const READ_TOOLS = [
   'get_engine_info', 'get_game_tree', 'find_objects', 'get_object', 'read_script', 'get_output', 'get_errors',
   'diagnose_object', 'analyze_scene_performance', 'analyze_script_dependencies', 'validate_scene', 'find_path',
-  'get_runtime_state', 'screenshot',
+  'get_runtime_state', 'screenshot', 'phone_check',
 ];
 export const WRITE_TOOLS = [
   'insert_object', 'delete_object', 'set_property', 'find_and_change', 'select', 'create_script', 'edit_script',

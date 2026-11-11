@@ -173,6 +173,7 @@ Editor::~Editor() {
     m_plugins.reset();
     m_team.reset();
     if (m_session) m_session->stop();
+    endPhoneTest();   // (closed during a phone test: put the real settings back first)
     dropAutoSave();   // a normal close: nothing to recover next time
 }
 
@@ -460,6 +461,7 @@ void Editor::render(float dt) {
     LiveProfiler::draw(&m_showLiveProfiler);
     renderLearn();
     renderPerformanceDoctor();
+    renderPhoneTest();
     renderLuaDebugger();
     renderSceneValidator();
     renderProjectTimeMachine();
@@ -2216,6 +2218,7 @@ void Editor::togglePlay() {
         m_state.simPaused = false;
         Log::system("Game stopped - everything is back to how it was.");
         Log::endRun();
+        endPhoneTest();   // (a phone test: Studio's own graphics settings come back)
     }
 }
 
@@ -3918,6 +3921,7 @@ void Editor::renderMenuBar() {
         if (ImGui::MenuItem("Performance Monitor", nullptr, &m_showPerformance)) {}
         if (ImGui::MenuItem("Live Profiler", nullptr, &m_showLiveProfiler)) {}
         if (ImGui::MenuItem("Performance Doctor", nullptr, &m_showPerformanceDoctor)) {}
+        if (ImGui::MenuItem("Test like a phone...", nullptr, &m_showPhoneTest)) {}
         if (ImGui::MenuItem("Lua Debugger", nullptr, &m_showLuaDebugger)) {}
         if (ImGui::MenuItem("Scene Validator", nullptr, &m_showSceneValidator)) {}
         if (ImGui::MenuItem("Project Time Machine", nullptr, &m_showProjectTimeMachine)) {}
