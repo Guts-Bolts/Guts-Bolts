@@ -440,6 +440,7 @@ add_library(gb_engine STATIC
     src/core/CrashHandler.cpp
     src/core/Log.cpp
     src/core/Settings.cpp
+    src/core/Scalability.cpp
     src/core/KeyBinds.cpp
     src/core/I18n.cpp
     src/core/Pad.cpp
@@ -462,6 +463,8 @@ add_library(gb_engine STATIC
     src/renderer/Framebuffer.cpp
     src/renderer/ShadowMap.cpp
     src/renderer/SceneRenderer.cpp
+    src/renderer/SceneRendererTemporal.cpp
+    src/renderer/Benchmark.cpp
     src/renderer/ViewportRender.cpp
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
@@ -1192,6 +1195,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(GraphicsQualityTests tests/GraphicsQualityTests.cpp)
     target_link_libraries(GraphicsQualityTests PRIVATE gb_engine)
     add_test(NAME GraphicsQualityTests COMMAND GraphicsQualityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Scalability: quality groups Low..Epic, device caps and the startup benchmark's pick.
+    add_executable(ScalabilityTests tests/ScalabilityTests.cpp)
+    target_link_libraries(ScalabilityTests PRIVATE gb_engine)
+    add_test(NAME ScalabilityTests COMMAND ScalabilityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Your own keys (Settings > Keys): moving, swapping, AZERTY, saving.
     add_executable(KeyBindsTests tests/KeyBindsTests.cpp)

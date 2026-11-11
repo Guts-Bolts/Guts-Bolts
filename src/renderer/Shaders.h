@@ -194,6 +194,14 @@ uniform vec4 uLightDir[MAX_LIGHTS];        // xyz direction, w cos(half angle)
 uniform float     uLampShadowSlot[MAX_LIGHTS];
 uniform sampler2D uLampShadows;
 uniform float     uLampTileTexel;    // 1 / pixels across one tile
+// Bounced light traced across the screen last frame (TemporalShaders.h ssgiFrag): rgb the
+// light bouncing in from things nearby, a how much of the sky reaches here; and how far
+// each of its pixels was from its camera (to tell when it saw something else there).
+uniform bool      uBounceOn;
+uniform sampler2D uBounce;
+uniform sampler2D uBounceDist;
+uniform mat4      uBounceView;
+uniform mat4      uBounceViewProj;
 
 out vec4 FragColor;
 #pragma gb_common
@@ -726,9 +734,39 @@ void main() {
             color += shade(N, V, Ld, albedo, rough, metal, uLightColor[i].rgb * fall * 6.0);
         }
 
-        // Ambient: sky light from above, bounce light from below.
+        // Ambient: sky light from above, bounce light from below. With traced bounce light,
+        // corners and gaps get less sky and the colour of what's next to them instead.
         vec3 hemi = mix(lin(uAmbientGround), lin(uAmbientSky), N.y * 0.5 + 0.5);
-        color += albedo * (1.0 - metal) * hemi * uAmbientIntensity;
+        float skyVis = 1.0;
+        vec3 bounced = vec3(0.0);
+        if (uBounceOn) {
+            vec4 bc = uBounceViewProj * vec4(vWorldPos, 1.0);
+            vec2 bu = bc.xy / bc.w * 0.5 + 0.5;
+            if (bc.w > 0.0 && bu.x >= 0.0 && bu.y >= 0.0 && bu.x <= 1.0 && bu.y <= 1.0) {
+                // It's smaller than the screen: of its 4 nearest pixels, use the ones that saw
+                // this same spot (about as far away), so edges don't bleed or stripe.
+                float expect = -(uBounceView * vec4(vWorldPos, 1.0)).z;
+                vec2 gsz = vec2(textureSize(uBounce, 0));
+                vec2 gp = bu * gsz - 0.5;
+                vec2 gf = fract(gp);
+                ivec2 g0 = ivec2(floor(gp));
+                vec4 acc = vec4(0.0);
+                float wsum = 0.0;
+                for (int k = 0; k < 4; ++k) {
+                    ivec2 o = ivec2(k - (k / 2) * 2, k / 2);
+                    ivec2 q = clamp(g0 + o, ivec2(0), ivec2(gsz) - 1);
+                    float bw = (o.x == 1 ? gf.x : 1.0 - gf.x) * (o.y == 1 ? gf.y : 1.0 - gf.y);
+                    float w = bw * exp(-abs(texelFetch(uBounceDist, q, 0).r - expect) / max(expect * 0.05, 0.08));
+                    acc += texelFetch(uBounce, q, 0) * w;
+                    wsum += w;
+                }
+                float same = smoothstep(0.02, 0.3, wsum);
+                vec4 g = wsum > 1e-5 ? acc / wsum : vec4(0.0, 0.0, 0.0, 1.0);
+                skyVis = mix(1.0, clamp(g.a, 0.0, 1.0), same);
+                bounced = max(g.rgb, vec3(0.0)) * same;
+            }
+        }
+        color += albedo * (1.0 - metal) * (hemi * uAmbientIntensity * skyVis + bounced);
 
         // Reflections of the sky on shiny surfaces.
         vec3  f0  = mix(vec3(0.04), albedo, metal);
@@ -737,7 +775,7 @@ void main() {
         vec3  R   = reflect(-V, N);
         vec3  env = lin(skyGradient(R, uZenith, uHorizon, uGround));
         vec3  avg = lin((uZenith + uHorizon + uGround) / 3.0);
-        env = mix(env, avg, rough);
+        env = mix(env, avg, rough) * mix(1.0, skyVis, 0.75);   // (no sky reflected deep in a corner)
         color += env * F * (gMaterial == 7 ? max(uReflections, 0.8) : gMaterial == 8 ? uReflections * 0.2 : gMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : gMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
 
         // Glass & ice get more opaque at glancing angles.
@@ -1438,6 +1476,7 @@ uniform float uSaturation;
 uniform float uVignette;
 uniform vec3  uTint;
 uniform bool  uLumaAlpha;   // store luma in alpha for the FXAA pass
+uniform float uSharpen;     // after the temporal upscaler: how much to sharpen (0 = none)
 // Underwater (the camera is in water): the view wobbles, and the further away
 // something is the more the water hides it, red first (Beer's law), fading into
 // the water's own colour.
@@ -1550,6 +1589,15 @@ void main() {
         c = c * keep + uWaterFog * (1.0 - keep);
     } else {
         c = texture(uHdr, uv).rgb;
+        if (uSharpen > 0.0) {
+            // Sharpen what the upscaler made: push each pixel away from its neighbours, but
+            // never past the brightest / darkest of them (so no bright halos on edges).
+            vec2 t = 1.0 / vec2(textureSize(uHdr, 0));
+            vec3 n = texture(uHdr, uv + vec2(0.0, t.y)).rgb, s = texture(uHdr, uv - vec2(0.0, t.y)).rgb;
+            vec3 e = texture(uHdr, uv + vec2(t.x, 0.0)).rgb, w = texture(uHdr, uv - vec2(t.x, 0.0)).rgb;
+            vec3 lo = min(c, min(min(n, s), min(e, w))), hi = max(c, max(max(n, s), max(e, w)));
+            c = clamp(c + (4.0 * c - n - s - e - w) * uSharpen * 0.25, lo, hi);
+        }
     }
     if (uBlurOn) {
         float lv = uBlurLevel;

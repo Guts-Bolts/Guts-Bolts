@@ -177,6 +177,7 @@ SceneRenderer::SceneRenderer() {
 
 SceneRenderer::~SceneRenderer() {
     Liquid::graphicsContext(-1);
+    destroyTemporal();
     if (m_gridVbo)  glDeleteBuffers(1, &m_gridVbo);
     if (m_instanceVbo) glDeleteBuffers(1, &m_instanceVbo);
     if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
@@ -629,6 +630,8 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     int w = std::max(1, (int)(target.width()  * std::clamp(gs.renderScale, 0.25f, 2.0f)));
     int h = std::max(1, (int)(target.height() * std::clamp(gs.renderScale, 0.25f, 2.0f)));
     ensureTargets(w, h);
+    // The temporal upscaler (High and up): this frame is drawn moved by a fraction of a pixel.
+    beginTemporal(camera, target.width(), target.height(), w, h);
     if (m_shadowRes != gs.shadowRes) {
         m_shadow.init(gs.shadowRes);
         m_shadowNear.init(gs.shadowRes);
@@ -882,13 +885,17 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lampShadows.bindForRead(10);
     m_lit->setInt("uLampShadows", 10);
     m_lit->setFloat("uLampTileTexel", m_lampTile > 0 ? 1.0f / (float)m_lampTile : 0.01f);
+    bindBounce(*m_lit);   // last frame's traced bounce light (Medium and up)
 
     { FrameProfile::Scope prof("draw: parts and water", true); drawGeometry(scene, camera, showGrid); }
     drawOverlay(view, proj);
     glBindVertexArray(0);
     { FrameProfile::Scope prof("draw: liquid", true); renderLiquid(scene, camera); }
 
+    { FrameProfile::Scope prof("draw: bounce light", true); traceBounce(camera); }
+
     { FrameProfile::Scope prof("draw: post effects", true); postProcess(scene, camera, target); }
+    endTemporal(camera);   // (Highlights are drawn on the finished picture, without the jitter)
     drawHighlights(scene, camera, target);
 }
 
@@ -2328,8 +2335,14 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     glDisable(GL_BLEND);
     glBindVertexArray(m_emptyVao);
 
-    // --- Ambient occlusion (half resolution) ---
-    bool useAO = gs.ssao && env.aoIntensity > 0.0f;
+    // --- Temporal upscaler: this frame on top of the ones before, at the screen's size ---
+    unsigned upscaled = 0;
+    { FrameProfile::Scope prof("draw: upscaler", true); upscaled = resolveTemporal(camera); }
+    const int sceneW = upscaled ? target.width() : m_hdr.w, sceneH = upscaled ? target.height() : m_hdr.h;
+
+    // --- Ambient occlusion (half resolution). With traced bounce light the lit shader
+    //     already darkened the corners, so this is the cheap version for Low. ---
+    bool useAO = gs.giQuality >= 0 && !m_usedBounce && env.aoIntensity > 0.0f;
     if (useAO) {
         bindTarget(m_ao);
         m_ssao->bind();
@@ -2388,7 +2401,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     //     mixed in by the composite. A handful of tiny passes, so phones keep it. Depth of
     //     field is skipped on Low graphics. ---
     const bool lowEnd = gs.lowEnd();
-    const bool useDof = m_fx.dof && !lowEnd;
+    const bool useDof = m_fx.dof && !lowEnd && gs.postQuality >= 2;
     // BlurEffect.Size in pixels -> which copy: each is about twice as blurry as the last.
     const float blurLevel = m_fx.blur > 0.5f ? std::clamp(std::log2(m_fx.blur / 1.5f), 0.0f, 4.0f) * (m_fx.blur < 3.0f ? m_fx.blur / 3.0f : 1.0f) : 0.0f;
     const bool useBlur = blurLevel > 0.0f || useDof;
@@ -2429,7 +2442,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     //     take half as many steps; Low graphics skips it. ---
     glm::vec3 raysColor(0.0f);
     bool useRays = false;
-    if (m_fx.rays > 0.0f && !lowEnd && env.sunElevation > -2.0f && !camera.orthographic) {
+    if (m_fx.rays > 0.0f && !lowEnd && gs.postQuality >= 2 && env.sunElevation > -2.0f && !camera.orthographic) {
         const glm::vec4 clip = camera.projection() * camera.view() * glm::vec4(camera.position() + env.sunDirection() * 1000.0f, 1.0f);
         const float facing = glm::dot(camera.forward(), env.sunDirection());
         if (clip.w > 0.0f && facing > 0.05f) {
@@ -2449,7 +2462,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
 #ifdef GB_GLES
             m_sunRays->setInt("uSamples", 16);
 #else
-            m_sunRays->setInt("uSamples", 32);
+            m_sunRays->setInt("uSamples", gs.postQuality >= 4 ? 64 : gs.postQuality >= 3 ? 48 : 32);
 #endif
             glDrawArrays(GL_TRIANGLES, 0, 3);
             // Fades as the sun leaves the view; tinted like the sunlight.
@@ -2462,12 +2475,12 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     // --- Motion blur (Lighting.MotionBlur): smear along how far each pixel moved since
     //     last frame. Skipped on Low graphics and in orthographic views. ---
     const glm::mat4 viewProj = camera.projection() * camera.view();
-    unsigned sceneColor = m_hdr.color;
-    if (env.motionBlur > 0.0f && m_hasPrev && !lowEnd && !camera.orthographic) {
-        if (m_blurred.w != m_hdr.w || m_blurred.h != m_hdr.h || !m_blurred.fbo) createTarget(m_blurred, m_hdr.w, m_hdr.h, hdrFormat(), false);
+    unsigned sceneColor = upscaled ? upscaled : m_hdr.color;
+    if (env.motionBlur > 0.0f && m_hasPrev && gs.postQuality >= 2 && !lowEnd && !camera.orthographic) {
+        if (m_blurred.w != sceneW || m_blurred.h != sceneH || !m_blurred.fbo) createTarget(m_blurred, sceneW, sceneH, hdrFormat(), false);
         bindTarget(m_blurred);
         m_motionBlur->bind();
-        bindTex(0, m_hdr.color);
+        bindTex(0, sceneColor);
         bindTex(1, m_hdr.depth);
         m_motionBlur->setInt("uHdr", 0);
         m_motionBlur->setInt("uDepth", 1);
@@ -2503,7 +2516,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     }
 
     // --- Composite: tone mapping + grading, then optional FXAA ---
-    bool useFxaa = gs.fxaa;
+    bool useFxaa = gs.aaQuality == 0 && !upscaled;
     if (useFxaa) bindTarget(m_ldr);
     else         target.bind();
     m_composite->bind();
@@ -2517,6 +2530,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     m_composite->setBool("uUseAO", useAO);
     m_composite->setBool("uPost", gs.postFx);
     m_composite->setBool("uLumaAlpha", useFxaa);
+    m_composite->setFloat("uSharpen", upscaleSharpen());
     m_composite->setVec2("uAOTexel", glm::vec2(1.0f / m_ao.w, 1.0f / m_ao.h));
     m_composite->setFloat("uExposure", env.exposure);
     m_composite->setBool("uAutoExp", autoExp);

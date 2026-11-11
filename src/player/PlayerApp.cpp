@@ -25,6 +25,8 @@
 #include "../game/SettingsWindow.h"
 #include "../game/UpdateToast.h"
 #include "../renderer/SceneRenderer.h"
+#include "../renderer/Benchmark.h"
+#include "../core/Scalability.h"
 #include "../scene/Physics.h"
 #include "../scene/Serializer.h"
 #include "../net/NetGame.h"
@@ -90,6 +92,28 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
     m_window->setFixedTimestep(!m_opts.screenshot.empty());
     m_window->setAfterUi([this] { vrAfterUi(); });
     m_renderer = std::make_unique<SceneRenderer>();
+    {   // The first start on this graphics chip (on Auto): a quick benchmark says where Auto
+        // starts (High, Medium, Low or Very Low), so slow computers don't begin laggy.
+        GraphicsSettings& gs = GraphicsSettings::get();
+        const std::string gpu = GraphicsBenchmark::gpuName();
+        const bool force = std::getenv("GB_BENCHMARK") != nullptr;
+        // (Not in automated tests or Studio's multiplayer test: several players start at
+        // once there, and they should start the same way every time.)
+        const bool testing = !m_opts.screenshot.empty() || !m_opts.testName.empty() || testMode();
+        if (!testing && Scalability::isSoftwareGpu(gpu) && gs.needsBenchmark(gpu) && !force) {
+            // No real graphics chip (drawn by the processor): nothing to measure, it's slow.
+            gs.setBenchmark(gpu, 1000.0f, 1000.0f / 60.0f);
+            gs.save();
+        } else if (!testing && (gs.needsBenchmark(gpu) || force)) {
+            const float ms = GraphicsBenchmark::run(*m_renderer, 1280, 720);
+            if (ms > 0.0f) {
+                gs.setBenchmark(gpu, ms, 1000.0f / 60.0f);
+                gs.save();
+                Log::info("Graphics benchmark on " + gpu + ": " + std::to_string((int)(ms + 0.5f)) + " ms a frame at High, starting at " +
+                          (gs.benchLevel >= 2 ? "High" : gs.benchLevel == 1 ? "Medium" : gs.benchLevel == 0 ? "Low" : "Very Low"));
+            }
+        }
+    }
     m_scene    = std::make_unique<Scene>();
     m_session  = std::make_unique<GameSession>(m_scene.get());
     if (studioTest() && !m_opts.studioInputTrace.empty())
@@ -1880,7 +1904,9 @@ void PlayerApp::drawGame(float dt) {
         if (vrDraw) vrRender(vrEyes);   // (vrAfterUi finishes the headset's picture, once the menus are drawn)
     } else {
         m_view.resize((int)px.x, (int)px.y);
+        m_renderer->temporal = true;    // (the game view: the upscaler and bounce light build on the frames before)
         m_renderer->render(*m_scene, shownCam, m_view, false);
+        m_renderer->temporal = false;
         recordClipFrame();   // (the clip recorder: PlayerClips.cpp)
     }
     if (GameGui::needsBackdrop(*m_scene) && !vr) {   // UIBlur: the world behind the UI, blurred

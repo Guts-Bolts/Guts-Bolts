@@ -1,13 +1,14 @@
 #pragma once
 #include <string>
+#include "Scalability.h"
 
 // Per-computer settings (not saved with games): performance and graphics
 // quality. Stored in settings.json next to the program.
 struct GraphicsSettings {
     // (The numbers are saved in settings.json, so new ones go on the end.)
-    enum Quality { Low, Medium, High, Ultra, Custom, Auto, VeryLow };
-    // The Quality menu, in the order it shows: Auto, Very Low, Low, Medium, High, Ultra, Custom.
-    static constexpr int kQualityChoices = 7;
+    enum Quality { Low, Medium, High, Ultra, Custom, Auto, VeryLow, Cinematic };   // (Ultra shows as "Epic")
+    // The Quality menu, in the order it shows: Auto, Very Low, Low, Medium, High, Epic, Cinematic, Custom.
+    static constexpr int kQualityChoices = 8;
     static const char* const* qualityNames();      // kQualityChoices names, in menu order
     static int qualityAt(int menuIndex);           // menu position -> Quality
     static int menuIndexOf(int quality);           // Quality -> menu position
@@ -71,10 +72,16 @@ struct GraphicsSettings {
     bool  shadows       = true;   // false: no shadows at all (the biggest single saving on old computers)
     int   shadowRes     = 2048;
     int   shadowQuality = 2;
-    bool  ssao          = true;
+    // Light bouncing off things (Scalability::GlobalIllumination): -1 none, 0 ambient
+    // occlusion only (dark corners), 1..3 screen-traced bounce light (more rays each level).
+    int   giQuality     = 2;   // (4 = Cinematic: full size, the most rays)
     bool  bloom         = true;
-    bool  fxaa          = true;
-    bool  postFx        = true;
+    // Smoothing jagged edges: -1 off, 0 FXAA, 1 temporal anti-aliasing (TAA), 2 temporal
+    // upscaling with sharpening (TSR), 3 TSR that keeps more of the past frames.
+    int   aaQuality     = 2;   // (4 = Cinematic: keeps the most frames)
+    int   postQuality   = 2;   // effects: 0 none (bloom off), 1 bloom, 2 + sun rays, depth of field, motion blur, 3 + more samples
+    int   textureQuality = 2;  // 0 blurrier far away .. 3 16x anisotropic filtering
+    bool  postFx        = true;   // tone mapping and colour grading (the game's look: on in every preset)
     float renderScale   = 1.0f;
     int   maxLights     = 32;
     int   waterQuality  = 2;
@@ -96,6 +103,29 @@ struct GraphicsSettings {
 
     void applyPreset(int q);
 
+    // Scalability (Scalability.h): each group's level, 0 Low .. 3 Epic. A preset sets them
+    // all the same; setGroup() changes one (and makes the quality Custom). applyGroups()
+    // turns the levels into the settings above, capped by this device's profile.
+    int   sg[Scalability::kGroups] = {2, 2, 2, 2, 2, 2, 2, 2};
+    void  setGroup(int group, int level);
+    void  applyGroups();
+    int   groupLevel(int group) const;   // the level really used (after the device's cap)
+    int   groupCap(int group) const;     // the highest level this device allows
+    // This device's profile, from the graphics chip's name (called once the window is
+    // open). Re-applies the current preset so its caps take effect.
+    void  setDevice(const std::string& gpuName, Scalability::Platform platform);
+    const Scalability::DeviceProfile& device() const { return m_device; }
+    // Your own caps for this computer (saved), on top of the built-in profile: 4 = no limit.
+    int   myCaps[Scalability::kGroups] = {4, 4, 4, 4, 4, 4, 4, 4};
+
+    // The quick benchmark (PlayerApp runs it once per graphics chip, on Auto): which chip,
+    // how long a test frame took at High, and the level it picked (Scalability::pickLevel).
+    std::string benchGpu;
+    float benchMs = 0.0f;
+    int   benchLevel = 2;
+    bool  needsBenchmark(const std::string& gpuName) const { return quality == Auto && benchGpu != gpuName; }
+    void  setBenchmark(const std::string& gpuName, float highMs, float budgetMs);
+
     // Auto quality: while you play, it watches the frame rate. Too slow for a few
     // seconds and it steps the graphics down (sharpness, water, shadows...); smooth
     // for a while and it tries one step up again. Only while quality is Auto.
@@ -109,6 +139,9 @@ struct GraphicsSettings {
     float autoFps() const { return m_autoFps; }    // the frame rate it measured last
 private:
     void applyAutoLevel(int level);
+    void applyLevels(int level);                    // every group at `level` (no quality change)
+    Scalability::DeviceProfile m_device;
+    int   m_autoStart = 0;                          // where Auto starts (from the benchmark)
     int   m_autoLevel = 0;
     float m_autoClock = 0.0f, m_autoFps = 0.0f;
     int   m_autoFrames = 0, m_autoGood = 0;

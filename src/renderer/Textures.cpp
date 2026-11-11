@@ -2,6 +2,7 @@
 #include "GL.h"
 #include "../core/Log.h"
 #include "../core/Paths.h"
+#include "../core/Settings.h"
 #include "ShirtTemplate.h"   // generated: assets/templates/shirt_template.png
 #include "PantsTemplate.h"   // generated: assets/templates/pants_template.png
 #include "LogoPng.h"         // generated: assets/logo/logo.png
@@ -24,6 +25,34 @@
 #include <vector>
 
 namespace Textures {
+
+namespace {
+// Settings > Graphics > Textures (Scalability::Texture): how sharp pictures stay when
+// seen at an angle (anisotropic filtering), and on Low a little blurrier far away
+// (less for the graphics card to read). For pictures loaded from now on.
+void textureQuality() {
+    const int q = std::clamp(GraphicsSettings::get().textureQuality, 0, 3);   // (Cinematic: like Epic)
+#if !defined(GB_GLES) && !defined(__EMSCRIPTEN__)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, q == 0 ? 0.75f : 0.0f);
+#endif
+    static const bool hasAniso = [] {
+        GLint n = 0;
+        glGetIntegerv(GL_NUM_EXTENSIONS, &n);
+        for (GLint i = 0; i < n; ++i) {
+            const char* e = (const char*)glGetStringi(GL_EXTENSIONS, (GLuint)i);
+            if (e && (std::strcmp(e, "GL_EXT_texture_filter_anisotropic") == 0 || std::strcmp(e, "GL_ARB_texture_filter_anisotropic") == 0))
+                return true;
+        }
+        return false;
+    }();
+    if (!hasAniso) return;
+    constexpr GLenum kMaxAniso = 0x84FE, kMaxAnisoLimit = 0x84FF;   // GL_TEXTURE_MAX_ANISOTROPY(_EXT), and its limit
+    GLfloat most = 1.0f;
+    glGetFloatv(kMaxAnisoLimit, &most);
+    static const float kAniso[4] = {1.0f, 2.0f, 8.0f, 16.0f};
+    glTexParameterf(GL_TEXTURE_2D, kMaxAniso, std::min(kAniso[q], std::max(1.0f, most)));
+}
+} // namespace
 
 namespace {
 
@@ -89,6 +118,7 @@ void makeClassicFace(Entry& e) {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, n, n, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
     glGenerateMipmap(GL_TEXTURE_2D);
+    textureQuality();
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -123,6 +153,7 @@ void load(const std::string& id, Entry& e) {
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
     glGenerateMipmap(GL_TEXTURE_2D);
+    textureQuality();
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);

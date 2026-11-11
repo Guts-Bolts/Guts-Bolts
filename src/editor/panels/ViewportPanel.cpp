@@ -844,7 +844,9 @@ void ViewportPanel::render(float dt) {
                           (xray || (m_state->mode == StudioMode::Modeling && m_state->modeling.xray && !playing));
         m_renderer.setGridSpacing(m_state->snapEnabled && m_state->snapTranslate >= 0.25f ? m_state->snapTranslate : 1.0f);
         updateNavOverlay();
+        m_renderer.temporal = true;   // (this view's own renderer: the upscaler and bounce light can build on its frames)
         m_renderer.render(*m_scene, m_camera, m_fbo, m_state->showGrid && (!playing || m_session->runOnly()));
+        m_renderer.temporal = false;
         if (GameGui::needsBackdrop(*m_scene)) {   // UIBlur: the world behind the UI, blurred
             m_renderer.makeBackdrop(m_fbo);
             unsigned bd[SceneRenderer::kBackdropLevels];
