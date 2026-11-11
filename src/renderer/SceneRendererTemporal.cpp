@@ -170,8 +170,9 @@ unsigned SceneRenderer::resolveTemporal(const Camera&) {
     t.resolve.setVec2("uInSize", glm::vec2((float)m_hdr.w, (float)m_hdr.h));
     t.resolve.setVec2("uOutSize", glm::vec2((float)t.hw, (float)t.hh));
     t.resolve.setBool("uHistOk", t.histOk);
-    const int q = std::clamp(gs.aaQuality, 1, 3);
-    t.resolve.setFloat("uBlend", q == 1 ? 0.1f : q == 2 ? 0.08f : 0.06f);
+    const int q = std::clamp(gs.aaQuality, 1, 4);
+    // (Cinematic keeps the most: still pictures come out clean, like many samples per pixel.)
+    t.resolve.setFloat("uBlend", q == 1 ? 0.1f : q == 2 ? 0.08f : q == 3 ? 0.06f : 0.03f);
     t.resolve.setInt("uQuality", q);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glActiveTexture(GL_TEXTURE0);
@@ -185,6 +186,7 @@ float SceneRenderer::upscaleSharpen() const {
     if (q < 2) return 0.0f;
     // More sharpening the more was filled in.
     const float drawn = m_tmp->hw > 0 ? std::min(1.0f, (float)m_hdr.w / (float)m_tmp->hw) : 1.0f;
+    if (drawn >= 1.0f && q >= 4) return 0.1f;   // (Cinematic draws more pixels than the screen: hardly any needed)
     return (q >= 3 ? 0.2f : 0.3f) + 0.6f * (1.0f - drawn);
 }
 
@@ -215,7 +217,7 @@ void SceneRenderer::bindBounce(const Shader& lit) {
 void SceneRenderer::traceBounce(const Camera& camera) {
     const GraphicsSettings& gs = GraphicsSettings::get();
     m_usedBounce = false;
-    const int level = std::min(gs.giQuality, 3);
+    const int level = std::min(gs.giQuality, 4);
     const bool want = temporal && level >= 1 && shading == Shading::Material && !xray && !camera.orthographic &&
                       !camera.useProjection && floatTargets();
     if (!want) {
@@ -224,14 +226,15 @@ void SceneRenderer::traceBounce(const Camera& camera) {
     }
     if (!m_tmp) m_tmp = new Temporal();
     Temporal& t = *m_tmp;
-    // Medium works at a quarter of the size; High and Epic at half, with more rays.
-    const int div = level == 1 ? 4 : 2;
+    // Medium works at a quarter of the size; High and Epic at half, with more rays;
+    // Cinematic at full size with the most rays and the longest memory.
+    const int div = level == 1 ? 4 : level >= 4 ? 1 : 2;
     const int w = std::max(1, m_hdr.w / div), h = std::max(1, m_hdr.h / div);
     if (t.gw != w || t.gh != h) t.makeBounce(w, h);
     if (t.giLevel != level) { t.giLevel = level; t.giOk = false; }
-    static const int   kRays[4]  = {0, 4, 6, 10};
-    static const int   kSteps[4] = {0, 8, 12, 16};
-    static const float kKeep[4]  = {0.0f, 0.8f, 0.85f, 0.9f};
+    static const int   kRays[5]  = {0, 4, 6, 10, 16};
+    static const int   kSteps[5] = {0, 8, 12, 16, 24};
+    static const float kKeep[5]  = {0.0f, 0.8f, 0.85f, 0.9f, 0.95f};
 
     glDisable(GL_BLEND);
     glDisable(GL_DEPTH_TEST);

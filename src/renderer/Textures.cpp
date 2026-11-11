@@ -31,7 +31,7 @@ namespace {
 // seen at an angle (anisotropic filtering), and on Low a little blurrier far away
 // (less for the graphics card to read). For pictures loaded from now on.
 void textureQuality() {
-    const int q = std::clamp(GraphicsSettings::get().textureQuality, 0, 3);
+    const int q = std::clamp(GraphicsSettings::get().textureQuality, 0, 3);   // (Cinematic: like Epic)
 #if !defined(GB_GLES) && !defined(__EMSCRIPTEN__)
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, q == 0 ? 0.75f : 0.0f);
 #endif

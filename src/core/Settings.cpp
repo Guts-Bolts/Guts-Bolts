@@ -30,17 +30,17 @@ void GraphicsSettings::applyGroups() {
     const int sh = groupLevel(Shadow), gi = groupLevel(GlobalIllumination), rf = groupLevel(Reflection),
               pp = groupLevel(PostProcess), tx = groupLevel(Texture), vd = groupLevel(ViewDistance),
               aa = groupLevel(AntiAliasing), sp = groupLevel(ScreenPercentage);
-    static const int   kShadowRes[kLevels] = {1024, 1024, 2048, 4096};
-    static const int   kShadowStyle[kLevels] = {0, 1, 2, 2};
-    static const int   kLights[kLevels] = {6, 12, 32, 32};
-    static const int   kView[kLevels] = {3, 5, 8, kMaxRenderDistance};
-    static const float kScale[kLevels] = {0.6f, 0.75f, 1.0f, 1.0f};
+    static const int   kShadowRes[kLevels] = {1024, 1024, 2048, 4096, 4096};
+    static const int   kShadowStyle[kLevels] = {0, 1, 2, 2, 2};
+    static const int   kLights[kLevels] = {6, 12, 32, 32, 32};
+    static const int   kView[kLevels] = {3, 5, 8, kMaxRenderDistance, kMaxRenderDistance};
+    static const float kScale[kLevels] = {0.6f, 0.75f, 1.0f, 1.0f, 1.5f};
     shadows = true;
     shadowRes = kShadowRes[sh];
     shadowQuality = kShadowStyle[sh];
     giQuality = gi;
     maxLights = kLights[gi];
-    waterQuality = rf;
+    waterQuality = std::min(rf, 3);
     postQuality = pp;
     bloom = pp >= 1;
     postFx = true;
@@ -109,6 +109,7 @@ void GraphicsSettings::applyPreset(int q) {
         case Medium: applyLevels(1); break;
         case High:   applyLevels(2); break;
         case Ultra:  applyLevels(3); break;
+        case Cinematic: applyLevels(Scalability::kCinematic); break;
         default: break;
     }
 }
@@ -140,14 +141,14 @@ void GraphicsSettings::load() {
     giQuality = oldAo ? 0 : -1;
     aaQuality = oldFxaa ? 0 : -1;
     rd("giQuality", giQuality); rd("aaQuality", aaQuality); rd("postQuality", postQuality); rd("textureQuality", textureQuality);
-    giQuality = std::clamp(giQuality, -1, 3); aaQuality = std::clamp(aaQuality, -1, 3);
-    postQuality = std::clamp(postQuality, 0, 3); textureQuality = std::clamp(textureQuality, 0, 3);
+    giQuality = std::clamp(giQuality, -1, 4); aaQuality = std::clamp(aaQuality, -1, 4);
+    postQuality = std::clamp(postQuality, 0, 4); textureQuality = std::clamp(textureQuality, 0, 4);
     if (j.contains("groups") && j["groups"].is_array())
         for (int i = 0; i < Scalability::kGroups && i < (int)j["groups"].size(); ++i)
-            if (j["groups"][(size_t)i].is_number_integer()) sg[i] = std::clamp(j["groups"][(size_t)i].get<int>(), 0, 3);
+            if (j["groups"][(size_t)i].is_number_integer()) sg[i] = std::clamp(j["groups"][(size_t)i].get<int>(), 0, 4);
     if (j.contains("myCaps") && j["myCaps"].is_array())
         for (int i = 0; i < Scalability::kGroups && i < (int)j["myCaps"].size(); ++i)
-            if (j["myCaps"][(size_t)i].is_number_integer()) myCaps[i] = std::clamp(j["myCaps"][(size_t)i].get<int>(), 0, 3);
+            if (j["myCaps"][(size_t)i].is_number_integer()) myCaps[i] = std::clamp(j["myCaps"][(size_t)i].get<int>(), 0, 4);
     rd("benchGpu", benchGpu); rd("benchMs", benchMs); rd("benchLevel", benchLevel);
     benchLevel = std::clamp(benchLevel, -1, 2);
     m_autoStart = benchGpu.empty() ? 0 : autoStartFor(benchLevel);
@@ -171,7 +172,7 @@ void GraphicsSettings::load() {
     waterQuality = std::clamp(waterQuality, 0, 3);
     renderScale = std::clamp(renderScale, 0.5f, 2.0f);
     maxLights = std::clamp(maxLights, 0, 32);
-    if (quality < Low || quality > VeryLow) quality = High;
+    if (quality < Low || quality > Cinematic) quality = High;
     if (quality == Auto) applyPreset(Auto);   // starts again from the benchmark's level: this computer may be faster today
     else if (quality != Custom) applyPreset(quality);   // a preset: worked out again (newer versions add to them)
 }
@@ -190,12 +191,12 @@ int GraphicsSettings::breakChoiceOf(int minutes) {
 }
 
 const char* const* GraphicsSettings::qualityNames() {
-    static const char* const names[kQualityChoices] = {"Auto", "Very Low", "Low", "Medium", "High", "Epic", "Custom"};
+    static const char* const names[kQualityChoices] = {"Auto", "Very Low", "Low", "Medium", "High", "Epic", "Cinematic", "Custom"};
     return names;
 }
 
 int GraphicsSettings::qualityAt(int menuIndex) {
-    static const int order[kQualityChoices] = {Auto, VeryLow, Low, Medium, High, Ultra, Custom};
+    static const int order[kQualityChoices] = {Auto, VeryLow, Low, Medium, High, Ultra, Cinematic, Custom};
     return order[std::clamp(menuIndex, 0, kQualityChoices - 1)];
 }
 
@@ -212,6 +213,7 @@ const char* GraphicsSettings::qualityHelp(int q) {
         case Medium:  return "A balance of looks and speed: soft shadows, some bounced light, temporal anti-aliasing at 75% of the pixels.";
         case High:    return "Soft shadows, bounced light, temporal upscaling (TSR), full sharpness and nice water.";
         case Ultra:   return "Epic: everything turned up. The sharpest, softest shadows, the most bounced light, the most water and an unlimited view. Needs a strong graphics card.";
+        case Cinematic: return "Not for playing: for screenshots, photo mode and trailers. Draws 1.5x the pixels and shrinks them, traces many more rays and keeps far more of the past frames. Very slow; hold still a moment for the cleanest picture.";
         default:      return "Your own mix of the settings below.";
     }
 }

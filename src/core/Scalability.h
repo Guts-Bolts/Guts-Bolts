@@ -26,19 +26,23 @@ enum Group {
     ScreenPercentage,  // how many pixels are really drawn before upscaling
     kGroups
 };
-constexpr int kLevels = 4;   // 0 Low, 1 Medium, 2 High, 3 Epic
+// 0 Low, 1 Medium, 2 High, 3 Epic (the best that runs smoothly in a game), 4 Cinematic:
+// not for playing. It takes the shortcuts out (draws 1.5x the pixels and shrinks them,
+// many more rays, keeps far more of the past frames) for screenshots, photo mode and trailers.
+constexpr int kLevels = 5;
+constexpr int kCinematic = 4;
 
 const char* groupName(int group);   // "Shadows", "Lighting"...
 const char* groupHelp(int group);   // one plain sentence
-const char* levelName(int level);   // "Low", "Medium", "High", "Epic"
+const char* levelName(int level);   // "Low", "Medium", "High", "Epic", "Cinematic"
 // What one group does at one level, in a few plain words (for the settings menu).
 const char* levelHelp(int group, int level);
 
 // A device profile: which graphics chip (or platform) it matches, and the highest
-// level each group may use on it (3 = no limit).
+// level each group may use on it (4 = no limit).
 struct DeviceProfile {
     std::string name = "Any computer";   // shown in the settings menu
-    int cap[kGroups] = {3, 3, 3, 3, 3, 3, 3, 3};
+    int cap[kGroups] = {4, 4, 4, 4, 4, 4, 4, 4};
     // Settings > Graphics: the extra caps a person (or a tester) set for this computer
     // only; merged in by GraphicsSettings.
 };

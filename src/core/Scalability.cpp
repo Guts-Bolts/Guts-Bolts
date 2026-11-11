@@ -24,20 +24,20 @@ const char* groupHelp(int g) {
 }
 
 const char* levelName(int l) {
-    static const char* const names[kLevels] = {"Low", "Medium", "High", "Epic"};
+    static const char* const names[kLevels] = {"Low", "Medium", "High", "Epic", "Cinematic"};
     return names[std::clamp(l, 0, kLevels - 1)];
 }
 
 const char* levelHelp(int g, int l) {
     static const char* const help[kGroups][kLevels] = {
-        {"one 1024 shadow map, hard edges", "1024 maps, near + far, soft edges", "2048 maps, soft edges that get blurrier away from what casts them", "4096 maps, the softest, most lamp shadows"},
-        {"ambient occlusion only (dark corners)", "screen-traced bounce light, quarter size", "screen-traced bounce light, half size, more rays", "the most rays and steps, smoothest"},
-        {"sky only", "water reflections", "water reflections, more detail", "the most detailed water"},
-        {"no bloom or extra effects (colours stay the same)", "bloom", "bloom, sun rays, depth of field, motion blur", "everything, more samples"},
-        {"slightly blurry far away, fastest", "2x sharp at an angle", "8x sharp at an angle", "16x sharp at an angle"},
-        {"short", "medium", "far", "unlimited"},
-        {"FXAA (one frame)", "temporal anti-aliasing", "temporal upscaling (TSR) with sharpening", "TSR, smoothest"},
-        {"60% of the pixels", "75% of the pixels", "every pixel", "every pixel"},
+        {"one 1024 shadow map, hard edges", "1024 maps, near + far, soft edges", "2048 maps, soft edges that get blurrier away from what casts them", "4096 maps, the softest, most lamp shadows", "4096 maps, the softest"},
+        {"ambient occlusion only (dark corners)", "screen-traced bounce light, quarter size", "screen-traced bounce light, half size, more rays", "the most rays and steps, smoothest", "full size, 16 rays, longest memory (for pictures)"},
+        {"sky only", "water reflections", "water reflections, more detail", "the most detailed water", "the most detailed water"},
+        {"no bloom or extra effects (colours stay the same)", "bloom", "bloom, sun rays, depth of field, motion blur", "everything, more samples", "everything, the most samples"},
+        {"slightly blurry far away, fastest", "2x sharp at an angle", "8x sharp at an angle", "16x sharp at an angle", "16x sharp at an angle"},
+        {"short", "medium", "far", "unlimited", "unlimited"},
+        {"FXAA (one frame)", "temporal anti-aliasing", "temporal upscaling (TSR) with sharpening", "TSR, smoothest", "TSR that keeps the most frames (for pictures)"},
+        {"60% of the pixels", "75% of the pixels", "every pixel", "every pixel", "150%: drawn bigger, then shrunk"},
     };
     return help[std::clamp(g, 0, kGroups - 1)][std::clamp(l, 0, kLevels - 1)];
 }

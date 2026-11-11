@@ -34,6 +34,11 @@ int main() {
     check(s.shadowRes == 4096 && s.giQuality == 3 && s.aaQuality == 3, "Epic: biggest shadows, most bounce light, TSR Epic");
     check(std::string(GraphicsSettings::qualityNames()[GraphicsSettings::menuIndexOf(GraphicsSettings::Ultra)]) == "Epic",
           "the top preset is called Epic in the menu");
+    s.applyPreset(GraphicsSettings::Cinematic);
+    check(s.renderScale > 1.0f && s.giQuality == 4 && s.aaQuality == 4 && s.quality == GraphicsSettings::Cinematic,
+          "Cinematic: more pixels than the screen, the most rays, the longest memory");
+    check(std::string(GraphicsSettings::qualityNames()[GraphicsSettings::menuIndexOf(GraphicsSettings::Cinematic)]) == "Cinematic",
+          "Cinematic is in the menu");
     s.applyPreset(GraphicsSettings::Medium);
     check(s.renderScale < 1.0f && s.aaQuality >= 1, "Medium: fewer pixels, filled in by the temporal upscaler");
     s.applyPreset(GraphicsSettings::VeryLow);
@@ -57,12 +62,16 @@ int main() {
     pc.setDevice("NVIDIA GeForce RTX 3060", Desktop);
     pc.applyPreset(GraphicsSettings::Ultra);
     check(pc.groupLevel(GlobalIllumination) == 3, "a normal graphics card: no caps");
+    pc.applyPreset(GraphicsSettings::Cinematic);
+    check(pc.groupLevel(ScreenPercentage) == kCinematic, "a normal graphics card can use Cinematic");
+    web.applyPreset(GraphicsSettings::Cinematic);
+    check(web.renderScale <= 1.0f && web.giQuality == 0, "the web Player never draws Cinematic (capped)");
     pc.myCaps[Shadow] = 1;
     pc.applyPreset(GraphicsSettings::Ultra);
     check(pc.groupLevel(Shadow) == 1, "your own cap for this computer counts too");
     GraphicsSettings uhd;
     uhd.setDevice("Mesa Intel(R) UHD Graphics 620 (KBL GT2)", Desktop);
-    check(uhd.groupCap(Shadow) == 3, "newer Intel UHD isn't treated as an old Intel chip");
+    check(uhd.groupCap(Shadow) == kCinematic, "newer Intel UHD isn't treated as an old Intel chip");
 
     // The benchmark's pick: each level costs about half the one above.
     const float budget = 1000.0f / 60.0f;

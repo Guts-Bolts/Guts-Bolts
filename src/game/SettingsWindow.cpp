@@ -115,7 +115,7 @@ void draw(bool* open) {
         if (q != GraphicsSettings::Custom) s.applyPreset(q); else s.quality = q;
     }
     help("Auto turns the graphics down by itself when a game gets laggy, and back up when it can. "
-         "Very Low and Low are for slow computers; High and Ultra look best.");
+         "Very Low and Low are for slow computers; High and Epic look best. Cinematic is for screenshots and trailers, not for playing.");
     ImGui::PushTextWrapPos(0);
     ImGui::TextDisabled("%s", GraphicsSettings::qualityHelp(s.quality));
     if (s.quality == GraphicsSettings::Auto && s.autoFps() > 0.0f)
@@ -158,13 +158,13 @@ void draw(bool* open) {
     custom |= ImGui::Combo("Shadow Style", &s.shadowQuality, sq, 3);
     ImGui::EndDisabled();
     {
-        const char* gi[] = {"Off", "Ambient occlusion only", "Bounce light (Medium)", "Bounce light (High)", "Bounce light (Epic)"};
+        const char* gi[] = {"Off", "Ambient occlusion only", "Bounce light (Medium)", "Bounce light (High)", "Bounce light (Epic)", "Bounce light (Cinematic)"};
         int v = s.giQuality + 1;
-        if (ImGui::Combo("Lighting", &v, gi, 5)) { s.giQuality = v - 1; custom = true; }
+        if (ImGui::Combo("Lighting", &v, gi, 6)) { s.giQuality = v - 1; custom = true; }
         help("Darkens corners and contact points; the bounce light also lights things with the colour of what's next to them.");
-        const char* aa[] = {"Off", "FXAA", "Temporal (TAA)", "Temporal upscaling (TSR)", "TSR (Epic)"};
+        const char* aa[] = {"Off", "FXAA", "Temporal (TAA)", "Temporal upscaling (TSR)", "TSR (Epic)", "TSR (Cinematic)"};
         v = s.aaQuality + 1;
-        if (ImGui::Combo("Anti-aliasing", &v, aa, 5)) { s.aaQuality = v - 1; custom = true; }
+        if (ImGui::Combo("Anti-aliasing", &v, aa, 6)) { s.aaQuality = v - 1; custom = true; }
         help("Smooths jagged edges. TAA and TSR use several frames together; TSR also makes a lower Render Scale look sharp.");
     }
     custom |= ImGui::Checkbox("Bloom", &s.bloom);

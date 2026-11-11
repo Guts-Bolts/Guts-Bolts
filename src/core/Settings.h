@@ -6,9 +6,9 @@
 // quality. Stored in settings.json next to the program.
 struct GraphicsSettings {
     // (The numbers are saved in settings.json, so new ones go on the end.)
-    enum Quality { Low, Medium, High, Ultra, Custom, Auto, VeryLow };
-    // The Quality menu, in the order it shows: Auto, Very Low, Low, Medium, High, Ultra, Custom.
-    static constexpr int kQualityChoices = 7;
+    enum Quality { Low, Medium, High, Ultra, Custom, Auto, VeryLow, Cinematic };   // (Ultra shows as "Epic")
+    // The Quality menu, in the order it shows: Auto, Very Low, Low, Medium, High, Epic, Cinematic, Custom.
+    static constexpr int kQualityChoices = 8;
     static const char* const* qualityNames();      // kQualityChoices names, in menu order
     static int qualityAt(int menuIndex);           // menu position -> Quality
     static int menuIndexOf(int quality);           // Quality -> menu position
@@ -74,11 +74,11 @@ struct GraphicsSettings {
     int   shadowQuality = 2;
     // Light bouncing off things (Scalability::GlobalIllumination): -1 none, 0 ambient
     // occlusion only (dark corners), 1..3 screen-traced bounce light (more rays each level).
-    int   giQuality     = 2;
+    int   giQuality     = 2;   // (4 = Cinematic: full size, the most rays)
     bool  bloom         = true;
     // Smoothing jagged edges: -1 off, 0 FXAA, 1 temporal anti-aliasing (TAA), 2 temporal
     // upscaling with sharpening (TSR), 3 TSR that keeps more of the past frames.
-    int   aaQuality     = 2;
+    int   aaQuality     = 2;   // (4 = Cinematic: keeps the most frames)
     int   postQuality   = 2;   // effects: 0 none (bloom off), 1 bloom, 2 + sun rays, depth of field, motion blur, 3 + more samples
     int   textureQuality = 2;  // 0 blurrier far away .. 3 16x anisotropic filtering
     bool  postFx        = true;   // tone mapping and colour grading (the game's look: on in every preset)
@@ -115,8 +115,8 @@ struct GraphicsSettings {
     // open). Re-applies the current preset so its caps take effect.
     void  setDevice(const std::string& gpuName, Scalability::Platform platform);
     const Scalability::DeviceProfile& device() const { return m_device; }
-    // Your own caps for this computer (saved), on top of the built-in profile: 3 = no limit.
-    int   myCaps[Scalability::kGroups] = {3, 3, 3, 3, 3, 3, 3, 3};
+    // Your own caps for this computer (saved), on top of the built-in profile: 4 = no limit.
+    int   myCaps[Scalability::kGroups] = {4, 4, 4, 4, 4, 4, 4, 4};
 
     // The quick benchmark (PlayerApp runs it once per graphics chip, on Auto): which chip,
     // how long a test frame took at High, and the level it picked (Scalability::pickLevel).

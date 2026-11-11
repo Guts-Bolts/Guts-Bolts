@@ -2462,7 +2462,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
 #ifdef GB_GLES
             m_sunRays->setInt("uSamples", 16);
 #else
-            m_sunRays->setInt("uSamples", gs.postQuality >= 3 ? 48 : 32);
+            m_sunRays->setInt("uSamples", gs.postQuality >= 4 ? 64 : gs.postQuality >= 3 ? 48 : 32);
 #endif
             glDrawArrays(GL_TRIANGLES, 0, 3);
             // Fades as the sun leaves the view; tinted like the sunlight.
