@@ -53,6 +53,7 @@ struct Environment {
     // towers poke out of it. fogDensity is how thick it is at fogHeight (studs).
     // fogFalloff 0 = the same thickness everywhere (the old fog).
     float     fogHeight    = 0.0f;
+    float     fogWisps     = 0.5f;      // volumetric fog: 0 smooth .. 1 very wispy, drifting with the wind
     float     fogFalloff   = 0.0f;      // 0.02 a soft haze .. 0.1 a low mist that hugs the ground
 
     // Weather (Lighting.Weather / WeatherIntensity) -----------------------------

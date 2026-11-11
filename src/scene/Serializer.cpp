@@ -1384,7 +1384,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     X(ambientColor) X(groundAmbient) X(ambientIntensity) X(reflections) X(bounceLight) \
     X(showSky) X(skyZenith) X(skyHorizon) X(skyGround) X(skyBrightness)             \
     X(clouds) X(cloudCover) X(cloudSpeed) X(cloudColor) X(stars)                    \
-    X(fogEnabled) X(fogColor) X(fogDensity) X(fogSunGlow) X(fogHeight) X(fogFalloff)  \
+    X(fogEnabled) X(fogColor) X(fogDensity) X(fogSunGlow) X(fogHeight) X(fogFalloff) X(fogWisps)  \
     X(exposure) X(bloomIntensity) X(bloomThreshold) X(aoIntensity) X(contrast)      \
     X(saturation) X(vignette) X(tint) X(weather) X(weatherAmount)                   \
     X(lightRays) X(autoExposure) X(motionBlur)

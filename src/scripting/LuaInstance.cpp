@@ -4248,6 +4248,7 @@ int light_index(lua_State* L) {
     if (is(k, "FogColor"))      { LuaApi::pushColor3(L, e.fogColor);    return 1; }
     if (is(k, "FogHeight"))     { lua_pushnumber(L, e.fogHeight);       return 1; }
     if (is(k, "FogFalloff"))    { lua_pushnumber(L, e.fogFalloff);      return 1; }
+    if (is(k, "FogWisps"))      { lua_pushnumber(L, e.fogWisps);        return 1; }
     if (is(k, "Ambient"))       { LuaApi::pushColor3(L, e.ambientColor); return 1; }
     if (is(k, "SunColor"))      { LuaApi::pushColor3(L, e.sunColor);    return 1; }
     if (is(k, "Weather"))       { lua_pushstring(L, kWeatherNames[std::clamp(e.weather, 0, kWeatherCount - 1)]); return 1; }
@@ -4275,6 +4276,7 @@ int light_newindex(lua_State* L) {
     if (is(k, "FogColor"))      { e.fogColor = LuaApi::checkColor3(L, 3);     return 0; }
     if (is(k, "FogHeight"))     { e.fogHeight = std::clamp((float)luaL_checknumber(L, 3), -10000.0f, 10000.0f); return 0; }
     if (is(k, "FogFalloff"))    { e.fogFalloff = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
+    if (is(k, "FogWisps"))      { e.fogWisps = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     if (is(k, "Ambient"))       { e.ambientColor = LuaApi::checkColor3(L, 3); return 0; }
     if (is(k, "SunColor"))      { e.sunColor = LuaApi::checkColor3(L, 3);     return 0; }
     if (is(k, "Weather")) {   // "Rain", Enum-style tables print as their name too

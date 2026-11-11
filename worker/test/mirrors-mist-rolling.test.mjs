@@ -9,7 +9,7 @@ import reflections from '../roadmap/unreal-graphics-reflections.js';
 test('the update is on the Updates page', () => {
   assert.ok(BUILT_IN_UPDATES.includes(update));
   const text = [update.name, update.summary, ...update.items].join(' ');
-  for (const word of ['mirror', 'fog', 'roll', 'wind', 'AirDensity', 'FogFalloff'])
+  for (const word of ['mirror', 'fog', 'roll', 'wind', 'AirDensity', 'FogFalloff', 'shafts', 'FogWisps'])
     assert.ok(text.includes(word), `mentions ${word}`);
   assert.ok(!/marketplace/i.test(text));
 });

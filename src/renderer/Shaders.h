@@ -139,6 +139,7 @@ uniform float uReflections;
 uniform vec3  uZenith, uHorizon, uGround;
 
 uniform bool  uFogEnabled;
+uniform bool  uFogVolumetric;   // the fog is put on afterwards (volumetric fog), not here
 uniform vec3  uFogColor;
 uniform float uFogDensity;
 uniform float uRenderDist;    // render distance: things fade into the sky towards it (0 = no limit)
@@ -888,7 +889,7 @@ void main() {
         color = mix(color, vec3(2.0, 0.9, 0.2), rim * 0.8);
     }
 
-    if (uFogEnabled && uShading == 0) {
+    if (uFogEnabled && uShading == 0 && !uFogVolumetric) {
         float f = fogAmount(uViewPos, vWorldPos);
         vec3 fog = lin(uFogColor);
         float toward = pow(max(dot(-V, normalize(uSunDir)), 0.0), 8.0);

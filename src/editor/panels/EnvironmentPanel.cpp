@@ -102,6 +102,8 @@ void EnvironmentPanel::render() {
         help("Height fog: above 0 the fog lies low (thick near the ground, thin up high), like mist in a valley. 0 = the same everywhere");
         ImGui::DragFloat  ("Fog Height", &e.fogHeight, 0.5f, -500.0f, 2000.0f, "%.1f");
         help("The height (studs) where the fog is as thick as Density; it thins out above it");
+        ImGui::SliderFloat("Wisps", &e.fogWisps, 0.0f, 1.0f, "%.2f");
+        help("Wispy mist that drifts with the wind (World > Wind). 0 = smooth fog. Shows on High graphics and up, where the fog also takes light: sun shafts through gaps, lamps glowing in the mist");
     }
 
     if (ImGui::CollapsingHeader("Weather", open)) {

@@ -103,6 +103,9 @@ struct GraphicsSettings {
     // the sky: screen-space reflections, from High up (0 = sky only). Each level walks the
     // reflected ray further: High 20 steps, Epic 32, Cinematic 48.
     int   shinyReflections() const { int l = groupLevel(Scalability::Reflection); return l >= 2 ? l - 1 : 0; }
+    // Volumetric fog: fog that takes light (sun shafts, glowing lamps) and drifts in wisps,
+    // from High up (0 = the simple fog). High 20 steps a ray, Epic 32, Cinematic 56 at full size.
+    int   volumetricFog() const { int l = groupLevel(Scalability::PostProcess); return l >= 2 ? l - 1 : 0; }
     int   waterMaxDrops() const { return waterQuality <= 0 ? 5000 : waterQuality == 1 ? 20000 : waterQuality == 2 ? 60000 : 150000; }
 
     void applyPreset(int q);

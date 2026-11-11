@@ -476,6 +476,7 @@ add_library(gb_engine STATIC
     src/renderer/ShadowMap.cpp
     src/renderer/SceneRenderer.cpp
     src/renderer/SceneRendererTemporal.cpp
+    src/renderer/SceneRendererFog.cpp
     src/renderer/Benchmark.cpp
     src/renderer/ViewportRender.cpp
     src/scene/SceneNode.cpp

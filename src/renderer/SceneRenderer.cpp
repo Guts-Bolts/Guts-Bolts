@@ -178,6 +178,7 @@ SceneRenderer::SceneRenderer() {
 SceneRenderer::~SceneRenderer() {
     Liquid::graphicsContext(-1);
     destroyTemporal();
+    destroyFog();
     if (m_gridVbo)  glDeleteBuffers(1, &m_gridVbo);
     if (m_instanceVbo) glDeleteBuffers(1, &m_instanceVbo);
     if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
@@ -815,6 +816,11 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lit->setFloat("uFogSunGlow", env.fogSunGlow);
     m_lit->setFloat("uFogHeight", env.fogHeight);
     m_lit->setFloat("uFogFalloff", std::max(0.0f, env.fogFalloff));
+    // Volumetric fog: the solid things are drawn without fog, and get it afterwards
+    // (drawFogVolume, from drawGeometry).
+    m_fogVolOn = wantFogVolume(scene, camera);
+    m_usedFogVol = false;
+    m_lit->setBool("uFogVolumetric", m_fogVolOn);
     m_lit->setBool("uShadowsEnabled", shadows);
     // Studio's view style (Wireframe's lines are the plain colours) and X-ray.
     m_lit->setInt("uShading", shading == Shading::Wireframe ? 2 : (int)shading);
@@ -851,6 +857,15 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     });
     std::sort(lights.begin(), lights.end(), [](auto& a, auto& b) { return a.dist < b.dist; });
     const int most = std::min(kMaxLights, gs.maxLights);
+    // The nearest real lamps also glow in the volumetric fog.
+    m_fogLightCount = 0;
+    for (const LightItem& l : lights) {
+        if (m_fogLightCount >= 8) break;
+        m_fogLightPos[m_fogLightCount] = l.pos;
+        m_fogLightColor[m_fogLightCount] = l.col;
+        m_fogLightDir[m_fogLightCount] = l.dir;
+        ++m_fogLightCount;
+    }
     // Bouncy light: soft coloured lights where sun and lamp light land (BounceLight.h),
     // worked out about 4 times a second, after the real lamps (if there's room).
     if (env.bounceLight > 0.0f && shading == Shading::Material) {
@@ -1677,6 +1692,13 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         tm->draw();
     }
     if (shading == Shading::Wireframe) { wireframe(false); glEnable(GL_CULL_FACE); }
+    if (m_fogVolOn) {
+        // The fog over the solid things; what's drawn from here on (see-through parts,
+        // water, sparks) fogs itself the simple way.
+        { FrameProfile::Scope prof("draw: volumetric fog", true); drawFogVolume(scene, camera); }
+        m_lit->bind();
+        m_lit->setBool("uFogVolumetric", false);
+    }
     drawConstraints(scene, editing);
     if (!waters.empty()) {
         { FrameProfile::Scope prof("draw: water surfaces", true); drawWater(scene, camera, waters); }

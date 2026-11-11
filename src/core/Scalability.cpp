@@ -15,7 +15,7 @@ const char* groupHelp(int g) {
         case Shadow:             return "How sharp and soft shadows are, and how many shadow maps are used.";
         case GlobalIllumination: return "Light bouncing off walls and floors. Low only darkens corners; higher levels trace the bounced light across the screen.";
         case Reflection:         return "Reflections in water and shiny surfaces.";
-        case PostProcess:        return "Bloom, sun rays, depth of field and motion blur.";
+        case PostProcess:        return "Bloom, sun rays, depth of field and motion blur. From High up the fog takes light too: sun shafts through gaps, lamps glowing in the mist, drifting wisps.";
         case Texture:            return "How sharp pictures on parts stay when you look at them at an angle.";
         case ViewDistance:       return "How far away things are still drawn.";
         case AntiAliasing:       return "Smooths jagged edges. Higher levels use several frames together (temporal), which also lets the game draw fewer pixels and still look sharp.";

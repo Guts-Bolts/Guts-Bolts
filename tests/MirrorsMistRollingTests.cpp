@@ -7,6 +7,7 @@
 #include "core/Scalability.h"
 #include "core/Settings.h"
 #include "game/GameSession.h"
+#include "renderer/FogVolume.h"
 #include "renderer/Mesh.h"
 #include "renderer/MeshLibrary.h"
 #include "scene/Environment.h"
@@ -131,6 +132,61 @@ int main(int argc, char** argv) {
                            "assert(math.abs(game.Lighting.FogFalloff - 0.07) < 1e-5 and game.Lighting.FogHeight == 3)", err) &&
               std::abs(scene.environment().fogFalloff - 0.07f) < 1e-5f && scene.environment().fogHeight == 3.0f,
               "scripts can set Lighting.FogFalloff and FogHeight (" + err + ")");
+    }
+
+    // --- volumetric fog (the fog takes light and drifts in wisps, High and up) ---
+    {
+        GraphicsSettings s;
+        s.applyPreset(GraphicsSettings::Medium);
+        check(s.volumetricFog() == 0, "Medium keeps the simple fog");
+        s.applyPreset(GraphicsSettings::High);
+        check(s.volumetricFog() == 1, "High: volumetric fog comes on");
+        s.applyPreset(GraphicsSettings::Ultra);
+        check(s.volumetricFog() >= 2, "the top preset walks the rays in more steps");
+        check(FogVolume::stepsFor(0) == 0 && FogVolume::stepsFor(1) < FogVolume::stepsFor(2) &&
+              FogVolume::stepsFor(2) < FogVolume::stepsFor(3) && FogVolume::stepsFor(3) <= 64,
+              "more steps at each level, never more than the shader's 64");
+        GraphicsSettings phone;
+        phone.setDevice("Apple A15 GPU", Scalability::Phone);
+        phone.applyPreset(GraphicsSettings::Ultra);
+        check(phone.volumetricFog() == 0, "phones keep the simple fog");
+
+        // The wisp pattern: averages a half (so wisps don't make the fog thicker or
+        // thinner overall), really varies, and repeats without a seam.
+        const std::vector<uint8_t> n = FogVolume::noise();
+        const int N = FogVolume::kNoiseSize;
+        check((int)n.size() == N * N * N, "the wisp pattern is a 32 x 32 x 32 block");
+        double sum = 0.0, jump = 0.0, seam = 0.0;
+        int lo = 255, hi = 0;
+        for (uint8_t v : n) { sum += v; lo = std::min(lo, (int)v); hi = std::max(hi, (int)v); }
+        for (int z = 0; z < N; ++z)
+            for (int y = 0; y < N; ++y) {
+                const size_t row = ((size_t)z * N + y) * N;
+                for (int x = 0; x + 1 < N; ++x) jump += std::abs((int)n[row + x + 1] - (int)n[row + x]);
+                seam += std::abs((int)n[row] - (int)n[row + N - 1]);   // (the last one, next to the first again)
+            }
+        const double mean = sum / (double)n.size() / 255.0;
+        jump /= (double)N * N * (N - 1);
+        seam /= (double)N * N;
+        check(std::abs(mean - 0.5) < 0.02, "it averages a half (" + std::to_string(mean) + ")");
+        check(hi - lo > 150, "with thick and thin patches");
+        check(seam < jump * 2.5 + 1.0, "and it repeats without a seam (" + std::to_string(seam) + " vs " + std::to_string(jump) + ")");
+
+        check(FogVolume::densityAt(0.02f, 0, 0, 50, 0.5f, 0) == 0.02f, "no falloff, no wisps: the same fog everywhere");
+        check(FogVolume::densityAt(0.02f, 0, 0.05f, 40, 0.5f, 0) < FogVolume::densityAt(0.02f, 0, 0.05f, 2, 0.5f, 0) * 0.2f,
+              "thinner high up");
+        check(std::abs(FogVolume::densityAt(0.02f, 0, 0.05f, 0, 0.5f, 1) - 0.02f) < 1e-6f, "an average wisp leaves it alone");
+        check(FogVolume::densityAt(0.02f, 0, 0, 0, 0.9f, 1) > 0.03f && FogVolume::densityAt(0.02f, 0, 0, 0, 0.1f, 1) < 0.01f,
+              "a thick wisp is thicker, a gap between wisps thinner");
+        check(FogVolume::densityAt(0.02f, 0, 0, 0, 0.0f, 1) >= 0.0f, "never less than no fog");
+
+        Environment e, back;
+        e.fogWisps = 0.85f;
+        Serializer::environmentFromString(back, Serializer::environmentToString(e));
+        check(back.fogWisps == 0.85f, "Wisps is saved with the lighting");
+        check(run(session, "game.Lighting.FogWisps = 0.25; assert(game.Lighting.FogWisps == 0.25); "
+                           "game.Lighting.FogWisps = 7; assert(game.Lighting.FogWisps == 1)", err) &&
+              scene.environment().fogWisps == 1.0f, "scripts can set Lighting.FogWisps, 0 to 1 (" + err + ")");
     }
 
     // --- round cylinders ---
