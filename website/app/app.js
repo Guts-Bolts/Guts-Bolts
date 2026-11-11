@@ -7,6 +7,7 @@ import { startTranslating, languagePicker } from '../lang/i18n.js';
 import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
 import { mountBanLists, mountGameBans, mountBanNotice } from './banlists.js';
+import { mountAssetVersions } from './versions.js';
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
 import { PRODUCTS, productOf, productById, activeLink } from './products.js';
@@ -1402,8 +1403,10 @@ pages.library = async (id = '') => {
           ${canDelete ? html`<p><button class="btn small red" data-act="deleteAsset" data-id="${a.id}" data-name="${a.name}">Delete</button></p>` : ''}
         </div>
       </div>
+      ${signedIn() && a.creator === me.id ? html`<div class="box" id="assetVersions"></div>` : ''}
     </div>`);
   loadThumbs();
+  mountAssetVersions($('#assetVersions'), a, call, toast, (f) => gb.fileBase64(f));   // versions.js
   $('.asset-id').addEventListener('focus', (e) => e.target.select());
   if (a.kind === 'decal') {
     assetUrl(a.id).then((f) => {

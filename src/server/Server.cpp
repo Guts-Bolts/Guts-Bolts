@@ -320,6 +320,10 @@ json GbServer::meJson(const User& u) const {
 // who aren't Verified wait for staff (meta "review": "pending" or "rejected"). Until then only
 // the creator and staff can see them.
 static bool reviewedKind(const std::string& kind) { return kind == "decal" || kind == "audio" || kind == "tshirt"; }
+// Things with a version history (worker/server.js CREATION_KINDS): games and your own creations.
+static bool versionedKind(const std::string& kind) {
+    return kind == "game" || kind == "audio" || kind == "model" || kind == "decal" || kind == "plugin" || kind == "animation";
+}
 static std::string reviewOf(const nlohmann::json& meta) { return meta.is_object() ? meta.value("review", std::string()) : std::string(); }
 
 bool GbServer::canSee(const Asset& a, const User& me) const {
@@ -1389,9 +1393,10 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             if (!acc.is_object() || acc.value("format", std::string()) != "gbaccessory" || !acc.contains("node"))
                 return fail("That isn't a Guts&Bolts accessory.");
         }
-        // A game keeps its old versions (version history); publishing the same file again adds none.
+        // Games and your own creations keep their old versions (version history); the same file
+        // again adds none.
         bool newVersion = false;
-        if (a.kind == "game") {
+        if (versionedKind(a.kind)) {
             std::string old;
             const bool hadFile = readFile(blobPath(a.id), old);
             if (!hadFile || old != data) { addVersion(a, data, me.id, hadFile ? &old : nullptr); newVersion = true; }
@@ -1419,17 +1424,20 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         saveAssets();
         log(me.name + " updated " + a.kind + " \"" + a.name + "\"");
         json r = okay(); r["asset"] = publicAsset(a);
-        if (a.kind == "game") { r["version"] = versionsOf(a).back().value("v", 0LL); r["newVersion"] = newVersion; }
+        if (versionedKind(a.kind)) { r["version"] = versionsOf(a).back().value("v", 0LL); r["newVersion"] = newVersion; }
         return r;
     }
     // --- Version history: a game's creator sees its published versions and can put an old one
     // back (it's published again as the newest version). (worker/server.js has the same.)
-    if (name == "game.versions" || name == "game.restore") {
+    // (asset.* is the same for any creation; game.* is the older name, for games only.)
+    if (name == "game.versions" || name == "game.restore" || name == "asset.versions" || name == "asset.restore") {
+        const bool games = name.rfind("game.", 0) == 0;
         auto it = findAsset(str("id"));
-        if (it == m_assets.end() || it->second.kind != "game") return fail("That game doesn't exist (any more).");
+        if (it == m_assets.end() || (games ? it->second.kind != "game" : !versionedKind(it->second.kind)))
+            return fail(games ? "That game doesn't exist (any more)." : "That doesn't have a version history.");
         Asset& a = it->second;
-        if (a.creator != me.id) return fail("Only the game's creator can see its versions.");
-        if (name == "game.versions") { json r = okay(); r["versions"] = versionsJson(a); r["most"] = kMaxVersions; return r; }
+        if (a.creator != me.id) return fail("Only its creator can see its versions.");
+        if (name == "game.versions" || name == "asset.versions") { json r = okay(); r["versions"] = versionsJson(a); r["most"] = kMaxVersions; return r; }
         const long long want = num("version");
         const json list = versionsOf(a);
         bool kept = false;
@@ -1442,6 +1450,10 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         const long long v = addVersion(a, data, me.id, hadFile ? &old : nullptr, want);
         if (!writeFile(blobPath(a.id), data)) return fail("The server couldn't save that file.");
         a.size = data.size();
+        if (reviewedKind(a.kind) && !isVerified(me) && !isStaff(me)) {   // a sound or picture put back is checked again
+            a.meta["review"] = "pending";
+            a.meta.erase("reviewNote");
+        }
         saveAssets();
         log(me.name + " restored version " + std::to_string(want) + " of \"" + a.name + "\"");
         json r = okay(); r["asset"] = publicAsset(a, &me); r["version"] = v; r["versions"] = versionsJson(a); r["most"] = kMaxVersions;

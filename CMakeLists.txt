@@ -1003,6 +1003,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerBanListsTests gb_version)
     target_link_libraries(ServerBanListsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerBanListsTests COMMAND ServerBanListsTests)
+    add_executable(ServerAssetVersionsTests tests/ServerAssetVersionsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerAssetVersionsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerAssetVersionsTests gb_version)
+    target_link_libraries(ServerAssetVersionsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerAssetVersionsTests COMMAND ServerAssetVersionsTests)
 
     # Studio Learn progress: account validation, persistence across server restarts and guest denial.
     add_executable(ServerLearnProgressTests tests/ServerLearnProgressTests.cpp ${GB_SERVER_TEST_SOURCES})
