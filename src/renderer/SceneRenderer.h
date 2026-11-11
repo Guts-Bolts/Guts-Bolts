@@ -40,6 +40,14 @@ public:
     void makeBackdrop(const Framebuffer& target);
     unsigned backdrop(int level) const;
 
+    // The temporal upscaler and the traced bounce light (Scalability.h) build on the frames
+    // before, so only the main view of a window turns this on: thumbnails, the avatar
+    // preview and other one-off pictures drawn with the same renderer leave it off.
+    bool temporal = false;
+    // What the last frame really used (for tests and the settings menu).
+    bool usedUpscaler() const { return m_usedUpscaler; }
+    bool usedBounce() const { return m_usedBounce; }
+
     // Offscreen buffer with a colour texture and (optionally) a depth texture.
     struct Target {
         unsigned int fbo = 0, color = 0, depth = 0;
@@ -89,6 +97,19 @@ private:
     void drawHighlights(Scene& scene, const Camera& camera, Framebuffer& target);   // Highlight objects
     void drawRibbons(Scene& scene, const Camera& camera);   // Trails and Beams
     void ensureTargets(int w, int h);
+    // SceneRendererTemporal.cpp: the upscaler and the bounce light, kept apart from the rest.
+    struct Temporal;
+    Temporal* m_tmp = nullptr;
+    bool m_usedUpscaler = false, m_usedBounce = false;
+    void destroyTemporal();
+    // Before drawing: whether this frame goes through the upscaler; if so the camera
+    // gets this frame's jitter (put back by endTemporal).
+    bool beginTemporal(const Camera& camera, int outW, int outH, int inW, int inH);
+    void bindBounce(const Shader& lit);                 // last frame's bounce light, for the lit shader
+    void traceBounce(const Camera& camera);             // after drawing: work out the bounce light
+    unsigned resolveTemporal(const Camera& camera);     // the upscaled picture (0 = not upscaling)
+    float upscaleSharpen() const;                       // how much the composite sharpens it
+    void endTemporal(const Camera& camera);
     void buildGrid();
 public:
     // The floor grid's line spacing in studs (it follows Move snapping).

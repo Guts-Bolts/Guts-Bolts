@@ -160,6 +160,8 @@ AppWindow::AppWindow(const char* title, int width, int height, const char* layou
         const char* ver = (const char*)glGetString(GL_VERSION);
         const char* gpu = (const char*)glGetString(GL_RENDERER);
         GraphicsSettings::activeApi() = std::string(ver ? ver : "OpenGL ES ?") + " - " + (gpu ? gpu : "?");
+        // This graphics chip's profile: caps on the quality groups (Scalability.h).
+        GraphicsSettings::get().setDevice(gpu ? gpu : "", Scalability::thisPlatform());
     }
 
     glEnable(GL_DEPTH_TEST);
