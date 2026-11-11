@@ -81,6 +81,7 @@ void addScript(const std::string& name, double ms) {
 }
 
 void endFrame(double frameMs) {
+    DevProfiler::frame();           // (Tracy, in GB_TRACY builds)
     if (!live()) return;
     State& s = state();
     const size_t at = (size_t)(s.frame % kFrames);

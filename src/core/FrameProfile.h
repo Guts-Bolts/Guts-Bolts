@@ -2,6 +2,7 @@
 #include <chrono>
 #include <string>
 #include <vector>
+#include "DevProfiler.h"
 
 // A stopwatch for finding what makes a game slow.
 //
@@ -47,7 +48,12 @@ struct Scope {
     bool gpu;
     bool running = false;
     std::chrono::steady_clock::time_point t0;
+#ifdef GB_TRACY
+    DevProfiler::Zone dev;          // the same bit, in Tracy (GB_TRACY builds only)
+    explicit Scope(const char* n, bool waitForGpu = false) : name(n), gpu(waitForGpu), dev(n, __FILE__, __LINE__, "FrameProfile") {
+#else
     explicit Scope(const char* n, bool waitForGpu = false) : name(n), gpu(waitForGpu) {
+#endif
         if (!on()) return;
         running = true;
         if (gpu && exact() && finishGpu()) finishGpu()();

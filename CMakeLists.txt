@@ -654,6 +654,25 @@ if((GB_VR AND NOT GB_MOBILE AND NOT APPLE) OR (GB_QUEST AND ANDROID))
         endif()
     endif()
 endif()
+# Tracy (BSD-3): a very detailed profiler for people working on the engine itself
+# (game makers use the Live Profiler instead). OFF by default, so normal builds
+# and players never have it. Turn on with -DGB_TRACY=ON, run Studio or the Player,
+# and open the Tracy viewer on the same computer. See docs/engine/tracy.md.
+option(GB_TRACY "Build with the Tracy profiler (for engine developers)" OFF)
+if(GB_TRACY)
+    # Only records while the viewer is connected, and only lets this computer connect.
+    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+    set(TRACY_ONLY_LOCALHOST ON CACHE BOOL "" FORCE)
+    set(TRACY_NO_BROADCAST ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG        05cceee0df3b8d7c6fa87e9638af311dbabc63cb   # v0.13.1
+    )
+    FetchContent_MakeAvailable(tracy)
+    target_link_libraries(gb_engine PUBLIC Tracy::TracyClient)
+    target_compile_definitions(gb_engine PUBLIC GB_TRACY)
+endif()
 target_compile_definitions(gb_engine PUBLIC GLM_ENABLE_EXPERIMENTAL)
 if(WIN32)
     target_link_libraries(gb_engine PUBLIC dbghelp ws2_32 bcrypt)
