@@ -1421,7 +1421,7 @@ export class GbServerObject extends DurableObject {
       this.sql.exec('INSERT INTO files (id, part, data) VALUES (?, ?, ?)', id, part, bytes.subarray(i, i + CHUNK));
     return true;
   }
-  // --- Version history (games): a.versions = [{ v, at, by, size, restored? }], oldest first; the
+  // --- Version history (games and creations: CREATION_KINDS): a.versions = [{ v, at, by, size, restored? }], oldest first; the
   // last one is what's live. Each version's file is 'ver:<game>:<v>'. A game published before
   // history existed has none: its current file becomes version 1 the first time it's published
   // again (or restored), and until then the list shows it as version 1. (src/server has the same.)
@@ -4429,9 +4429,11 @@ export class GbServerObject extends DurableObject {
         try { acc = JSON.parse(new TextDecoder().decode(data)); } catch { acc = null; }
         if (!acc || acc.format !== 'gbaccessory' || !acc.node) return fail('That isn\'t a Guts&Bolts accessory.');
       }
-      // A game keeps its old versions (version history); publishing the same file again adds none.
+      // Games and your own creations (sounds, decals, models, plugins, animations) keep their old
+      // versions (version history); uploading the same file again adds none. Everything using its
+      // ID gets the new one, and a bad update can be put back with asset.restore.
       let version = 0;
-      if (a.kind === 'game') {
+      if (CREATION_KINDS.includes(a.kind)) {
         const old = this.readFile(a.id);
         if (!old || !sameBytes(old, data)) version = this.addVersion(a, data, me.id, old);
       }
@@ -4456,15 +4458,17 @@ export class GbServerObject extends DurableObject {
       this.saveAsset(a);
       if (staffAccessoryEdit)
         this.staffDid(me, 'asset-edit', 'Updated catalog accessory "' + a.name + '" (' + a.id + ')', a.creator);
-      return okay({ asset: this.publicAsset(a), version: a.kind === 'game' ? this.versionsOf(a).slice(-1)[0].v : undefined, newVersion: !!version });
+      return okay({ asset: this.publicAsset(a), version: CREATION_KINDS.includes(a.kind) ? this.versionsOf(a).slice(-1)[0].v : undefined, newVersion: !!version });
     }
-    // --- Version history: a game's creator sees its published versions and can put an old one
-    // back (it's published again as the newest version; nothing is ever lost by restoring).
-    if (name === 'game.versions' || name === 'game.restore') {
+    // --- Version history: a game's (or a sound's, decal's, model's, plugin's, animation's) creator
+    // sees its versions and can put an old one back (it's published again as the newest version;
+    // nothing is ever lost by restoring). game.* is the older name, for games only.
+    if (name === 'game.versions' || name === 'game.restore' || name === 'asset.versions' || name === 'asset.restore') {
       const a = this.assets.get(str(args, 'id'));
-      if (!a || a.kind !== 'game') return fail('That game doesn\'t exist (any more).');
-      if (a.creator !== me.id) return fail('Only the game\'s creator can see its versions.');
-      if (name === 'game.versions') return okay({ versions: this.versionsJson(a), most: kMaxVersions });
+      const games = name.startsWith('game.');
+      if (!a || (games ? a.kind !== 'game' : !CREATION_KINDS.includes(a.kind))) return fail(games ? 'That game doesn\'t exist (any more).' : 'That doesn\'t have a version history.');
+      if (a.creator !== me.id) return fail('Only its creator can see its versions.');
+      if (name.endsWith('.versions')) return okay({ versions: this.versionsJson(a), most: kMaxVersions });
       const want = num(args, 'version'), list = this.versionsOf(a);
       const entry = list.find((x) => x.v === want);
       if (!entry) return fail('That version isn\'t kept any more.');
@@ -4476,6 +4480,8 @@ export class GbServerObject extends DurableObject {
       this.writeFile(a.id, data);
       a.size = data.length;
       a.updated = t;
+      // A sound or picture put back gets checked again (like a new upload would).
+      if (REVIEWED_KINDS.includes(a.kind) && !this.isVerified(me) && !this.isStaff(me)) { a.review = 'pending'; delete a.reviewNote; }
       this.saveAsset(a);
       return okay({ asset: this.publicAsset(a, me), version, versions: this.versionsJson(a), most: kMaxVersions });
     }
