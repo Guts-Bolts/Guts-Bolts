@@ -96,6 +96,8 @@ void GbServer::step(int waitMs) {
 json GbServer::handle(const json& req) { return handle(req, From()); }
 
 json GbServer::handle(const json& req, const From& from) {
+    if (req.value("op", std::string()) == "art.picture")   // (public pictures: worker/index.js asks for /artpic/ without an account)
+        return artOp("art.picture", nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     if (isConnectOpen(req.value("op", std::string())))   // (ServerConnect.cpp: an app's server, not a person)
         return connectOpen(req.value("op", std::string()), req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     User* me = nullptr;
@@ -152,6 +154,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards", "gamelog.list", "events.list",
+                                                    "art.list", "art.get", "art.picture",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate", "http.request",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove"};   // (guests can host games too, and read chat)
@@ -706,6 +709,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
     if (name.rfind("banlist.", 0) == 0 || name == "game.banLists" || name == "game.ban") return banListOp(name, me, args);   // ServerBanLists.cpp
+    if (name.rfind("art.", 0) == 0) return artOp(name, &me, args);   // ServerArt.cpp
     if (name == "game.testers" || name == "game.addTester" || name == "game.removeTester" || name == "game.testerNote" || name == "game.amTester")
         return testerOp(name, me, args);   // ServerTesters.cpp
     // Fyxa in the cloud (worker/fyxa-cloud.js) needs Cloudflare's AI, which this server doesn't have.
@@ -2259,6 +2263,7 @@ void GbServer::load() {
     loadRoadmap();
     loadEvents();
     loadBanLists();
+    loadArt();
     if (std::string text; readFile(m_opts.data / "boltworks.json", text)) {
         json all = json::parse(text, nullptr, false);
         if (all.is_array()) m_boltworks = all;

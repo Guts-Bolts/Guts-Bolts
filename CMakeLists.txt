@@ -28,6 +28,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerExtras.cpp
     src/server/ServerBanLists.cpp
     src/server/ServerTesters.cpp
+    src/server/ServerArt.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -1045,6 +1046,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerAssetVersionsTests gb_version)
     target_link_libraries(ServerAssetVersionsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerAssetVersionsTests COMMAND ServerAssetVersionsTests)
+
+    # The Art portal: posting, staff check, faves, comments (ServerArt.cpp).
+    add_executable(ServerArtTests tests/ServerArtTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerArtTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerArtTests gb_version)
+    target_link_libraries(ServerArtTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerArtTests COMMAND ServerArtTests)
 
     # Early testers: a testers-only game, tester notes, going public (ServerTesters.cpp).
     add_executable(ServerTestersTests tests/ServerTestersTests.cpp ${GB_SERVER_TEST_SOURCES})
