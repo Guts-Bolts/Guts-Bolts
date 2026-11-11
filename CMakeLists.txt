@@ -377,6 +377,26 @@ gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/jump.wav"    kSoundJump    "${GB_GEN
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/respawn.wav" kSoundRespawn "${GB_GENERATED}/SoundRespawn.h")
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/spawn.wav"   kSoundSpawn   "${GB_GENERATED}/SoundSpawn.h")
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/footsteps.mp3" kSoundFootsteps "${GB_GENERATED}/SoundFootsteps.h")
+# Real recorded sound effects (CC0, see assets/sounds/real/CREDITS.md): one header each,
+# and RealSounds.h lists them all by name ("hit_metal_2" is the 2nd take of "hit_metal").
+file(GLOB GB_REAL_SOUNDS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/sounds/real/*.ogg")
+list(SORT GB_REAL_SOUNDS)
+set(GB_REAL_SOUND_INCLUDES "")
+set(GB_REAL_SOUND_ROWS "")
+foreach(f ${GB_REAL_SOUNDS})
+    get_filename_component(n "${f}" NAME_WE)
+    string(MAKE_C_IDENTIFIER "${n}" id)
+    gb_embed("${f}" kReal_${id} "${GB_GENERATED}/real_sounds/${n}.h")
+    string(APPEND GB_REAL_SOUND_INCLUDES "#include \"real_sounds/${n}.h\"\n")
+    string(APPEND GB_REAL_SOUND_ROWS "    {\"${n}\", kReal_${id}, kReal_${id}Size},\n")
+endforeach()
+set(GB_REAL_SOUNDS_TEXT "#pragma once\n// Made by CMakeLists.txt from assets/sounds/real. Don't edit.\n#include <cstddef>\n${GB_REAL_SOUND_INCLUDES}struct RealSound { const char* name; const unsigned char* data; std::size_t size; };\ninline const RealSound kRealSounds[] = {\n${GB_REAL_SOUND_ROWS}};\n")
+if(EXISTS "${GB_GENERATED}/RealSounds.h")
+    file(READ "${GB_GENERATED}/RealSounds.h" GB_REAL_OLD)
+endif()
+if(NOT "${GB_REAL_OLD}" STREQUAL "${GB_REAL_SOUNDS_TEXT}")
+    file(WRITE "${GB_GENERATED}/RealSounds.h" "${GB_REAL_SOUNDS_TEXT}")
+endif()
 # The emotes and animation packs that come with Guts&Bolts (tools/make_emotes.py): the
 # engine plays the built-in ones, and both servers put the starter ones in the catalog.
 gb_embed("${CMAKE_SOURCE_DIR}/assets/emotes/emotes.gbemotes" kEmotesData "${GB_GENERATED}/EmotesData.h")
@@ -481,6 +501,12 @@ add_library(gb_engine STATIC
     src/scene/Gore.cpp
     src/scene/SoftTissue.cpp
     src/scene/Shatter.cpp
+    src/scene/Realism.cpp
+    src/scene/Ballistics.cpp
+    src/scene/Acoustics.cpp
+    src/scene/Impacts.cpp
+    src/scene/FireSpread.cpp
+    src/scene/Tracks.cpp
     src/scene/BounceLight.cpp
     src/scene/LipSync.cpp
     src/scene/MeshUV.cpp
@@ -492,6 +518,7 @@ add_library(gb_engine STATIC
     src/scripting/LuaInstance.cpp
     src/scripting/ScriptRemotes.cpp
     src/scripting/SpatialQueries.cpp
+    src/scripting/LuaRealism.cpp
     src/scripting/ScriptActions.cpp
     src/scripting/ScriptHelp.cpp
     src/scripting/ScriptCheck.cpp
@@ -1320,6 +1347,9 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     # Jiggle, LookAt and IK bones, saving them, scripts, and the weight brush.
     # Bones in bundles, jiggle and cloth, gore upgrades, breaking things, a faster
     # broadphase, lamp shadows, bouncy light and lip sync.
+    add_executable(RealismTests tests/RealismTests.cpp)
+    target_link_libraries(RealismTests PRIVATE gb_engine)
+    add_test(NAME RealismTests COMMAND RealismTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
     add_executable(BodiesGoreLightTests tests/BodiesGoreLightTests.cpp)
     target_link_libraries(BodiesGoreLightTests PRIVATE gb_engine)
     add_test(NAME BodiesGoreLightTests COMMAND BodiesGoreLightTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"

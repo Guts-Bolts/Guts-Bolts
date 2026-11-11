@@ -43,6 +43,7 @@ struct Particle {
     float     skinNormalSign = 1.0f;
     glm::vec3 tangent{0.0f};            // (stains: which way the part's side runs, so it turns with it)
     float     alpha = 1.0f;             // footprints and smears get fainter
+    int       mark = 0;                 // not blood: 1 a dry mark (prints in snow, tyre tracks, bullet holes, bruises), 2 a wet one
     // Gibs (Chunk):
     int       gib = 0;                  // 0 meat, 1 bone
     glm::vec3 skin{-1.0f};              // a piece of a body part: its colour on one side (negative = plain meat)
@@ -155,6 +156,14 @@ public:
     void wipe(Scene& scene, const SceneNode* root);
     float dryTime() const { return std::max(8.0f, m_bloodStay * 0.6f); }
     void explosion(const glm::vec3& pos, float radius);
+    // A mark that isn't blood (Realism): a footprint in snow or mud, a tyre track, a bullet
+    // hole, a wet footprint. look: 0 round, 1 streak along `dir`, 2 footprint. wet: water.
+    void mark(const glm::vec3& pos, const glm::vec3& normal, const glm::vec3& dir, const glm::vec3& size,
+              const glm::vec3& color, int look, float alpha, float life, bool wet = false);
+    // A bruise on a body part (fades over `life` seconds).
+    void bruise(const SceneNode* part, const glm::vec3& at, float size, float life = 90.0f);
+    // Blood stains on clothes soak further through the cloth for a while.
+    void soak(float dt, const std::function<bool(uint64_t part)>& clothed);
     // Water thrown up by a splash (droplets that vanish when they land).
     void waterSpray(const glm::vec3& pos, int count, float speed, const glm::vec3& color, float radius = 0.3f);   // radius: a ring around what fell in
 

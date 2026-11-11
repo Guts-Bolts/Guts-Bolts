@@ -127,6 +127,15 @@ struct WorldSettings {
     bool       softTissue  = true;
     // Wind for cloth, flags and capes (Roblox's Workspace.GlobalWind), studs / second.
     glm::vec3  globalWind{0.0f};
+    // Realism (Realism.h): a hurt leg limps and a hurt arm is held; running tires you out
+    // (off to start with: it changes how a game plays); fire spreads to wood and cloth.
+    bool       injuries   = true;
+    bool       stamina    = false;
+    bool       fireSpread = false;
+    // Sound that knows the room (Acoustics.h): muffled behind walls, echoes, Doppler.
+    bool       acoustics  = true;
+    // Things knocking into each other make the sound of what they're made of.
+    bool       impactSounds = true;
     float      spawnForceField = 4.0f;      // seconds of ForceField after spawning (0 = none)
     bool       playerCollisions = true;     // characters bump into each other (off = walk through)
     CollisionGroups collisionGroups;        // PhysicsService's groups and which of them collide

@@ -1,4 +1,5 @@
 #pragma once
+#include "Realism.h"
 #include <map>
 #include <algorithm>
 #include <cmath>
@@ -448,4 +449,22 @@ private:
     float     m_lastHealth = 100.0f;
     uint64_t  m_spawnFF = 0;          // the ForceField we gave on spawn
     float     m_spawnFFTime = 0.0f;
+
+    // Realism (Realism.h): hurt limbs, stamina, glancing about, footsteps one at a time.
+    Realism::Injuries m_injuries;
+    Realism::Stamina  m_stamina;
+    Realism::Gaze     m_gaze;
+    float     m_gazeTimer = 0.0f;
+    int       m_breathSound = 0;       // panting when worn out
+    int       m_stepCount = 0;         // footsteps so far this walk (one sound each)
+    float     m_dropTimer = 0.0f;      // wet: the next drip falling off you
+    bool      m_jumpedNow = false;
+    void      realismStep(float dt);
+    void      stepSound(const glm::vec3& feet);
+public:
+    const Realism::Injuries& injuries() const { return m_injuries; }
+    Realism::Injuries&       injuries() { return m_injuries; }
+    const Realism::Stamina&  stamina() const { return m_stamina; }
+    Realism::Stamina&        stamina() { return m_stamina; }
+    const Realism::Gaze&     gaze() const { return m_gaze; }
 };

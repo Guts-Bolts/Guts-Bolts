@@ -207,6 +207,25 @@ void drawGameRules(WorldSettings& w) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Dents from hits slowly spring back out, and very big hits tear.\n"
                           "Heads are hard, bellies are soft. Off = dents stay until respawning.");
+    ImGui::Checkbox("Injuries", &w.injuries);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("A hurt leg limps (and walks slower), a hurt arm or side is held.\n"
+                          "Heals over about a minute and a half, and on respawning.");
+    ImGui::Checkbox("Stamina", &w.stamina);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Running, jumping and swimming tire you out: slower, lower jumps\n"
+                          "and panting until you get your breath back. Scripts: Humanoid.Stamina.");
+    ImGui::Checkbox("Fire Spreads", &w.fireSpread);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Fires set wood, cloth, grass and plastic touching them alight.\n"
+                          "Burning things char black and fall apart; water puts them out.");
+    ImGui::Checkbox("Impact Sounds", &w.impactSounds);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Loose parts knocking into things make the sound of what they're made of.");
+    ImGui::Checkbox("Room Acoustics", &w.acoustics);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Sounds behind walls are muffled, rooms and caves echo,\n"
+                          "and things racing past bend in pitch.");
     ImGui::TextDisabled("A character can bleed its own way: give its Model the attributes");
     ImGui::TextDisabled("Gore (\"Blood\" / \"Oil\" / \"Off\"), BloodColor and BloodAmount.");
     ImGui::EndDisabled();

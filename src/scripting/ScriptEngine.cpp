@@ -2,6 +2,7 @@
 #include "ScriptEngine.h"
 #include "ScriptHistory.h"
 #include "SpatialQueries.h"
+#include "LuaRealism.h"
 #include "../core/Pad.h"
 #include "../core/Account.h"
 #include "../online/OnlineClient.h"
@@ -3959,6 +3960,7 @@ void ScriptEngine::start(bool runScripts) {
     }
     --m_depth;
     SpatialQueries::install(L);   // workspace:GetPartsInPart, OverlapParams...
+    LuaRealism::install(L);       // workspace:FireBullet
     // For Studio's AI tools: an object by its id number (they refer to objects that way).
     lua_register(L, "__gb_byId", [](lua_State* L) -> int {
         uint64_t id = (uint64_t)luaL_checkinteger(L, 1);

@@ -104,6 +104,7 @@ in vec4 vTangent;
 uniform bool      uUseDecal;   // drawing a Decal: its picture colours the surface
 uniform bool      uFace;       // a head: its face picture (uDecal) is painted onto the front of it
 uniform float     uMouthOpen;  // lip sync: 0 = the face as drawn, 1 = mouth wide open (talking)
+uniform float     uBlink;      // 0 eyes open .. 1 shut (the eyes squash flat to a line)
 uniform bool      uClothing;   // a shirt / pants picture (uDecal) painted over the part's colour
 uniform bool      uHasTShirt;  // a torso with a T-shirt: its picture flat on the front
 uniform sampler2D uTShirt;
@@ -155,6 +156,7 @@ uniform float uGibSeed;       // 0..1: every chunk looks a bit different
 uniform int   uSplatLook;     // landed blood (uMaterial 30): 0 pool / splash / stain, 1 smear, 2 footprint
 uniform float uSplatSeed;     // 0..1: every splat gets its own wobbly edge
 uniform float uSplatDry;      // 0 fresh and wet .. 1 dried dark and dull
+uniform int   uSplatMark;     // not blood: 1 a dry mark (footprint in snow, tyre track, bullet hole, bruise), 2 a wet one
 uniform float uFogSunGlow;
 // Drawing many copies at once (uInstanced): each copy's colour, material... come from
 // the vertex shader instead of the uniforms.
@@ -399,7 +401,17 @@ void main() {
         // Like Roblox: the face picture is flat, seen straight on from the front, and
         // painted onto the head's own (round) surface, so it hugs the head exactly.
         // The picture covers the whole front of the head; only the front gets it.
-        vec4 px = texture(uDecal, vLocalPos.xy + 0.5);
+        vec2 fuv = vLocalPos.xy + 0.5;
+        // Blinking: the eye band (a strip across the upper face) squashes toward its
+        // middle line, so the eyes close to a line and the skin shows above and below.
+        const float eyeMid = 0.62, eyeHalf = 0.13;
+        bool shut = false;
+        if (uBlink > 0.01 && abs(fuv.y - eyeMid) < eyeHalf) {
+            float s = max(1.0 - uBlink, 0.06);
+            fuv.y = eyeMid + (fuv.y - eyeMid) / s;
+            shut = abs(fuv.y - eyeMid) > eyeHalf;
+        }
+        vec4 px = shut ? vec4(0.0) : texture(uDecal, fuv);
         albedo = mix(albedo, lin(px.rgb), px.a * smoothstep(0.0, 0.3, normalize(vLocalNormal).z));
         if (uMouthOpen > 0.01) {
             // Talking: an open mouth (dark inside, a hint of tongue) over the face's own.
@@ -623,6 +635,11 @@ void main() {
             inside = (edge - r) / edge;
         }
         float rim = 1.0 - smoothstep(0.0, 0.2, inside);           // the edge, where it's thickest and clots first
+        if (uSplatMark > 0) {                                     // a mark: soft-edged, no drying or cracking
+            albedo *= 0.88 + 0.12 * vnoise(vLocalPos.xz * 24.0 + sd);
+            rough = uSplatMark == 2 ? 0.12 : 0.95;
+            splatWet = uSplatMark == 2 ? 0.6 : 0.0;
+        } else {
         float dry = clamp(uSplatDry * 1.5 - inside * 0.6, 0.0, 1.0);   // dries from the edge in
         albedo *= mix(1.0, 0.7, rim) * (0.85 + 0.15 * vnoise(vLocalPos.xz * 30.0 + sd));
         albedo = mix(albedo, albedo * vec3(0.32, 0.2, 0.17), dry);      // dried: dark brown
@@ -634,6 +651,7 @@ void main() {
         splatWet = 1.0 - dry;
         // A domed surface (surface tension) catches the light along the rim.
         N = bump(N, smoothstep(0.0, 0.3, inside) * 0.008 * splatWet);
+        }
     }
     else if (gMaterial == 7) {                                    // water: little moving ripples on top
         rough = 0.02;
@@ -1352,6 +1370,53 @@ void main() {
 }
 )";
 
+// Eyes adjusting (Lighting.AutoExposure): how bright the picture is on average (the log
+// average of a grid over the middle of the screen), blended into the 1x1 target a bit
+// each frame (the alpha), so the eyes take a few seconds to get used to it.
+inline const char* lumFrag = R"(#version 410 core
+in vec2 vUV;
+uniform sampler2D uHdr;
+uniform float uRate;
+out vec4 FragColor;
+void main() {
+    float s = 0.0;
+    for (int y = 0; y < 12; ++y)
+        for (int x = 0; x < 12; ++x) {
+            vec2 uv = 0.1 + (vec2(float(x), float(y)) + 0.5) / 12.0 * 0.8;
+            vec3 c = texture(uHdr, uv).rgb;
+            s += log(max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
+        }
+    FragColor = vec4(exp(s / 144.0), 0.0, 0.0, uRate);
+}
+)";
+
+// Motion blur (Lighting.MotionBlur): where each pixel was on screen last frame (from its
+// depth and last frame's camera), smeared along the way it moved. Turning the camera fast
+// blurs; standing still is sharp.
+inline const char* motionBlurFrag = R"(#version 410 core
+in vec2 vUV;
+uniform sampler2D uHdr;
+uniform sampler2D uDepth;
+uniform mat4  uInvViewProj;
+uniform mat4  uPrevViewProj;
+uniform float uAmount;
+out vec4 FragColor;
+void main() {
+    float d = texture(uDepth, vUV).r;
+    vec4 world = uInvViewProj * vec4(vUV * 2.0 - 1.0, min(d, 0.9999) * 2.0 - 1.0, 1.0);
+    world /= world.w;
+    vec4 prev = uPrevViewProj * world;
+    vec2 was = prev.xy / max(prev.w, 1e-4) * 0.5 + 0.5;
+    vec2 vel = (vUV - was) * uAmount;
+    float len = length(vel);
+    if (len > 0.04) vel *= 0.04 / len;
+    if (len < 0.0008) { FragColor = vec4(texture(uHdr, vUV).rgb, 1.0); return; }
+    vec3 c = vec3(0.0);
+    for (int i = 0; i < 10; ++i) c += texture(uHdr, vUV + vel * (float(i) / 9.0 - 0.5)).rgb;
+    FragColor = vec4(c / 10.0, 1.0);
+}
+)";
+
 // Final image: AO, bloom, exposure, filmic tone mapping, colour grading.
 inline const char* compositeFrag = R"(#version 410 core
 in vec2 vUV;
@@ -1363,6 +1428,9 @@ uniform bool  uUseAO;
 uniform bool  uPost;
 uniform vec2  uAOTexel;
 uniform float uExposure;
+uniform bool  uAutoExp;      // eyes adjusting: how bright it's been lately (uLum) sets the exposure
+uniform sampler2D uLum;
+uniform float uLumKey;
 uniform float uBloomIntensity;
 uniform float uAOIntensity;
 uniform float uContrast;
@@ -1513,6 +1581,10 @@ void main() {
     }
     if (uUseBloom) c += texture(uBloom, vUV).rgb * uBloomIntensity * 0.15;
     c *= uExposure;
+    if (uAutoExp) {   // gently (night stays night): dark places brighten up to 1.3x, glare dims to 0.75x
+        float lum = max(texture(uLum, vec2(0.5)).r, 1e-4);
+        c *= clamp(pow(uLumKey / lum, 0.5), 0.75, 1.3);
+    }
 
     if (uPost) {
         c = aces(c);

@@ -6,6 +6,8 @@
 //   MaxSpeed  (12)  top speed, studs a second
 //   Torque    (10)  how quickly it speeds up
 //   TurnSpeed (1)   how quickly it turns
+//   Grip      (1)   how hard the tyres hold sideways before sliding (wheeled vehicles)
+//   Suspension (0.5) how much bouncing and rocking the springs soak up (wheeled vehicles)
 // While someone sits in it, W/S (or the stick) is the Throttle and A/D the Steer, -1..1.
 // Scripts can read them (seat.Throttle, seat.SteerFloat...) and set them on an empty seat
 // to drive it themselves.
@@ -49,6 +51,9 @@ public:
     // The host, once a frame before the physics step: spin the wheels / push the vehicles.
     // (Everyone else just counts the time, so a driver's keys lapse when they stop sending.)
     void update(Scene& scene, float dt, bool host);
+    // Tyre grip and suspension for a wheeled vehicle (Grip / Suspension seat attributes).
+    static void handling(const SceneNode* seat, const std::vector<SceneNode*>& parts,
+                         const std::vector<SceneNode*>& wheels, float dt);
     void clear() { m_seats.clear(); m_now = 0.0; }
 
 private:
