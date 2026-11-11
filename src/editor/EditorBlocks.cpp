@@ -17,7 +17,7 @@ using nlohmann::json;
 namespace {
 
 constexpr float kNodeW = 230.0f;               // how wide a block is (inside its edges)
-constexpr float kLabelW = 76.0f;               // a field's name...
+constexpr float kLabelW = 100.0f;              // a field's name...
 constexpr float kValueW = kNodeW - kLabelW;    // ...and the box you type in
 
 // The board's pins and lines are numbered for imnodes: block 7's "comes in" pin is
@@ -317,6 +317,7 @@ void Editor::renderBlocks() {
     ImGui::BeginChild("##board", ImVec2(boardW, 0), ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
     const ImVec2 boardMin = ImGui::GetCursorScreenPos();
+    const ImVec2 boardSize = ImGui::GetContentRegionAvail();
     board();
     ImNodes::BeginNodeEditor();
 
@@ -422,12 +423,17 @@ void Editor::renderBlocks() {
         changed = true;
     }
 
+    // (boardHovered only works inside imnodes' own child window, so ask ImGui.)
+    const ImVec2 boardMax(boardMin.x + boardSize.x, boardMin.y + boardSize.y);
+    const bool boardHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) &&
+                              ImGui::IsMouseHoveringRect(boardMin, boardMax);
+
     // What's selected (the list on the left hooks new blocks under it).
     const int selCount = ImNodes::NumSelectedNodes();
     std::vector<int> selected(selCount);
     if (selCount) ImNodes::GetSelectedNodes(selected.data());
     if (selCount == 1) m_blocksSelected = selected[0];
-    else if (selCount == 0 && ImNodes::IsEditorHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) m_blocksSelected = 0;
+    else if (selCount == 0 && boardHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) m_blocksSelected = 0;
 
     // A line was drawn: from a way out to a block's "comes in" pin (either way round).
     int a = 0, z = 0;
@@ -464,7 +470,7 @@ void Editor::renderBlocks() {
         if (const json* hn = nodeById(g, hoverNode))
             if (const auto* hb = VisualScript::find(hn->value("type", std::string())))
                 ImGui::SetTooltip("%s\n\nDrag to move. Right-click to remove.", hb->tip);
-    const bool rightClick = ImGui::IsMouseReleased(ImGuiMouseButton_Right) && ImNodes::IsEditorHovered() &&
+    const bool rightClick = ImGui::IsMouseReleased(ImGuiMouseButton_Right) && boardHovered &&
                             ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] < 16.0f;
     if (rightClick && !m_playing) {
         if (onPin && pinSlot(hoverPin) != 0 && pinName.count(hoverPin)) {
