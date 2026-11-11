@@ -459,12 +459,12 @@ private:
     bool m_showSceneValidator = false;
     bool m_showProjectTimeMachine = false;
     // Visual Scripting: the block script being shown and its blocks (EditorBlocks.cpp)
-    bool m_showBlocks = false, m_blocksEdited = false, m_blocksMoving = false, m_blocksPanned = false;
+    bool m_showBlocks = false, m_blocksEdited = false, m_blocksMoving = false;
     uint64_t m_blocksScript = 0;
     nlohmann::json m_blocksGraph;
-    std::string m_blocksWritten, m_blocksLua, m_blocksDragPin;
+    std::string m_blocksWritten, m_blocksLua;
     std::vector<std::string> m_blocksProblems;
-    int m_blocksSelected = 0, m_blocksDragFrom = 0;
+    int m_blocksSelected = 0, m_blocksSelectNext = 0, m_blocksMenuNode = 0;
     ImVec2 m_blocksPan{0, 0}, m_blocksMenuAt{0, 0};
     bool m_showMaterialEditor = false;
     uint64_t    m_materialEditing = 0;    // the MaterialVariant shown in the Material Editor

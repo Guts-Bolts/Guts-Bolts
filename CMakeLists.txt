@@ -126,6 +126,17 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(imguizmo)
 
+# imnodes (MIT): the "blocks joined by lines" board in Studio's Visual Scripting
+# window (src/editor/EditorBlocks.cpp). Studio only, so phones and the web Player
+# never build it. Only downloaded; its own CMakeLists isn't run.
+FetchContent_Declare(
+    imnodes
+    GIT_REPOSITORY https://github.com/Nelarius/imnodes.git
+    GIT_TAG        2d0c280b07b2f62b120034811cc6e41251673961
+    SOURCE_SUBDIR  cmake-build-disabled
+)
+FetchContent_MakeAvailable(imnodes)
+
 # Lua 5.4 — the scripting language used by Script objects. The official repo
 # has no CMake build, so only download it and compile the core library below.
 FetchContent_Declare(
@@ -888,7 +899,10 @@ if(WIN32)
     list(APPEND EDITOR_SOURCES resources/app.rc)
 endif()
 add_executable(GutsAndBolts ${EDITOR_SOURCES})
-target_link_libraries(GutsAndBolts PRIVATE gb_engine gb_models)
+add_library(gb_imnodes STATIC ${imnodes_SOURCE_DIR}/imnodes.cpp)
+target_include_directories(gb_imnodes PUBLIC ${imnodes_SOURCE_DIR})
+target_link_libraries(gb_imnodes PUBLIC gb_imgui)
+target_link_libraries(GutsAndBolts PRIVATE gb_engine gb_models gb_imnodes)
 # Linux desktops may provide Secret Service through libsecret (GNOME Keyring,
 # KWallet's Secret Service compatibility, etc.). Keep it optional for minimal
 # distributions and headless builds; those retain session-only credentials.

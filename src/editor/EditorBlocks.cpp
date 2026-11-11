@@ -9,14 +9,62 @@
 #include <cmath>
 #include <cstdio>
 #include <imgui.h>
-#include <imgui_internal.h>
+#include <imnodes.h>
 #include <misc/cpp/imgui_stdlib.h>
 
 using nlohmann::json;
 
 namespace {
 
-constexpr float kNodeW = 230.0f;
+constexpr float kNodeW = 230.0f;               // how wide a block is (inside its edges)
+constexpr float kLabelW = 76.0f;               // a field's name...
+constexpr float kValueW = kNodeW - kLabelW;    // ...and the box you type in
+
+// The board's pins and lines are numbered for imnodes: block 7's "comes in" pin is
+// 7*16, and its ways out ("next", "then"...) are 7*16+1, 7*16+2...
+int pinIn(int node) { return node * 16; }
+int pinOut(int node, int i) { return node * 16 + 1 + i; }
+int pinNode(int pin) { return pin / 16; }
+int pinSlot(int pin) { return pin % 16; }   // 0 = comes in, 1.. = way out number+1
+
+// imnodes keeps its state (where you've scrolled to, what's selected) here. Made the
+// first time the window shows and kept until Studio closes.
+ImNodesEditorContext* board() {
+    static ImNodesEditorContext* ctx = nullptr;
+    if (!ctx) {
+        ImNodes::CreateContext();
+        ctx = ImNodes::EditorContextCreate();
+        ImNodes::EditorContextSet(ctx);
+        ImNodes::StyleColorsDark();
+        ImNodesStyle& st = ImNodes::GetStyle();
+        st.GridSpacing = 32.0f;
+        st.NodeCornerRounding = 6.0f;
+        st.NodePadding = ImVec2(8, 6);
+        st.LinkThickness = 3.0f;
+        st.PinCircleRadius = 6.0f;
+        st.PinHoverRadius = 12.0f;
+        st.Colors[ImNodesCol_GridBackground] = IM_COL32(32, 33, 36, 255);
+        st.Colors[ImNodesCol_GridLine] = IM_COL32(44, 45, 50, 255);
+        st.Colors[ImNodesCol_NodeBackground] = IM_COL32(52, 54, 60, 245);
+        st.Colors[ImNodesCol_NodeBackgroundHovered] = IM_COL32(58, 60, 67, 245);
+        st.Colors[ImNodesCol_NodeBackgroundSelected] = IM_COL32(62, 64, 72, 245);
+        st.Colors[ImNodesCol_NodeOutline] = IM_COL32(20, 20, 22, 255);
+        st.Colors[ImNodesCol_Pin] = IM_COL32(230, 230, 235, 255);
+        st.Colors[ImNodesCol_PinHovered] = IM_COL32(255, 210, 90, 255);
+        st.Colors[ImNodesCol_Link] = IM_COL32(235, 235, 240, 255);
+        st.Colors[ImNodesCol_LinkHovered] = IM_COL32(255, 210, 90, 255);
+        st.Colors[ImNodesCol_LinkSelected] = IM_COL32(255, 210, 90, 255);
+        // Drag the board with the right (or middle) mouse button, like before.
+        ImNodes::GetIO().AltMouseButton = ImGuiMouseButton_Right;
+    }
+    ImNodes::EditorContextSet(ctx);
+    return ctx;
+}
+
+ImU32 lighter(ImU32 c, int add) {
+    auto ch = [&](int shift) { return (ImU32)std::min(255, (int)((c >> shift) & 0xFF) + add) << shift; };
+    return ch(IM_COL32_R_SHIFT) | ch(IM_COL32_G_SHIFT) | ch(IM_COL32_B_SHIFT) | (c & IM_COL32_A_MASK);
+}
 
 ImU32 categoryColor(const std::string& c) {
     if (c == "Events") return IM_COL32(196, 140, 30, 255);
@@ -56,18 +104,15 @@ void removeNode(json& g, int id) {
         return e.value("from", 0) == id || e.value("to", 0) == id; }), l.end());
 }
 
-// Shows a field and changes it; true if it changed.
-// (left / right: the block's edges on screen)
-bool fieldUi(const VisualScript::Field& f, std::string& v, float left, float right) {
+// Shows a field and changes it; true if it changed. Laid out inside a block on
+// the board: the label on the left, the box to type in on the right.
+bool fieldUi(const VisualScript::Field& f, std::string& v) {
     using VisualScript::Field;
     bool changed = false;
-    const float valueX = left + 84;
-    ImGui::SetCursorScreenPos(ImVec2(left + 8, ImGui::GetCursorScreenPos().y));
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("%s", f.label);
-    ImGui::SameLine();
-    ImGui::SetCursorScreenPos(ImVec2(valueX, ImGui::GetCursorScreenPos().y));
-    ImGui::SetNextItemWidth(right - valueX);
+    ImGui::SameLine(kLabelW);
+    ImGui::SetNextItemWidth(kValueW);
     switch (f.kind) {
     case Field::Number:
         changed = ImGui::InputText("##v", &v, ImGuiInputTextFlags_CharsDecimal);
@@ -97,10 +142,11 @@ bool fieldUi(const VisualScript::Field& f, std::string& v, float left, float rig
         }
         if (v.rfind("path:", 0) == 0) {
             std::string path = v.substr(5);
-            ImGui::SetCursorScreenPos(ImVec2(valueX, ImGui::GetCursorScreenPos().y));
-            ImGui::SetNextItemWidth(right - valueX);
+            ImGui::Indent(kLabelW);
+            ImGui::SetNextItemWidth(kValueW);
             if (ImGui::InputTextWithHint("##path", "Workspace.Door", &path)) { v = "path:" + path; changed = true; }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Where it is in the Explorer, with dots: Workspace.House.Door");
+            ImGui::Unindent(kLabelW);
         }
         break;
     }
@@ -252,7 +298,7 @@ void Editor::renderBlocks() {
                         g["nodes"].back()["y"] = sel->value("y", 0.0f) + 40.0f + 30.0f * (float)sb->fields.size() + 22.0f * (float)sb->outs.size();
                     }
                 }
-                if (!b.event) m_blocksSelected = id;
+                if (!b.event) { m_blocksSelected = id; m_blocksSelectNext = id; }
                 changed = true;
             }
             ImGui::EndDisabled();
@@ -267,36 +313,180 @@ void Editor::renderBlocks() {
     const float codeW = std::max(240.0f, ImGui::GetContentRegionAvail().x * 0.3f);
     const float boardW = ImGui::GetContentRegionAvail().x - codeW - ImGui::GetStyle().ItemSpacing.x;
 
-    // --- Middle: the board ---
+    // --- Middle: the board (imnodes) ---
     ImGui::BeginChild("##board", ImVec2(boardW, 0), ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove);
-    ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImVec2 boardMin = ImGui::GetCursorScreenPos();
-    const ImVec2 boardSize = ImGui::GetContentRegionAvail();
-    const ImVec2 origin(boardMin.x + m_blocksPan.x, boardMin.y + m_blocksPan.y);
-    dl->AddRectFilled(boardMin, ImVec2(boardMin.x + boardSize.x, boardMin.y + boardSize.y), IM_COL32(32, 33, 36, 255));
-    for (float x = std::fmod(m_blocksPan.x, 32.0f); x < boardSize.x; x += 32.0f)
-        dl->AddLine(ImVec2(boardMin.x + x, boardMin.y), ImVec2(boardMin.x + x, boardMin.y + boardSize.y), IM_COL32(44, 45, 50, 255));
-    for (float y = std::fmod(m_blocksPan.y, 32.0f); y < boardSize.y; y += 32.0f)
-        dl->AddLine(ImVec2(boardMin.x, boardMin.y + y), ImVec2(boardMin.x + boardSize.x, boardMin.y + y), IM_COL32(44, 45, 50, 255));
+    board();
+    ImNodes::BeginNodeEditor();
 
-    // Background: drag it (any mouse button but left) to look around; right-click to add.
-    ImGui::SetCursorScreenPos(boardMin);
-    ImGui::SetNextItemAllowOverlap();
-    ImGui::InvisibleButton("##boardbg", boardSize, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
-    if (ImGui::IsItemActive() && (ImGui::IsMouseDragging(ImGuiMouseButton_Right) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle))) {
-        m_blocksPan.x += ImGui::GetIO().MouseDelta.x;
-        m_blocksPan.y += ImGui::GetIO().MouseDelta.y;
-        m_blocksPanned = true;
+    // Each way out, so lines can find their pins: (block, "then") -> pin number.
+    std::map<std::pair<int, std::string>, int> outPin;
+    std::map<int, std::string> pinName;       // pin number -> "next", "then"...
+    for (auto& n : g["nodes"]) {
+        const int id = n.value("id", 0);
+        const auto* b = VisualScript::find(n.value("type", std::string()));
+        if (!b || id <= 0) continue;
+        ImGui::PushID(id);
+        // Where it is comes from the script; dragging moves it (read back below).
+        ImNodes::SetNodeGridSpacePos(id, ImVec2(n.value("x", 0.0f), n.value("y", 0.0f)));
+        ImNodes::SetNodeDraggable(id, !m_playing);
+        const ImU32 col = categoryColor(b->category);
+        ImNodes::PushColorStyle(ImNodesCol_TitleBar, col);
+        ImNodes::PushColorStyle(ImNodesCol_TitleBarHovered, lighter(col, 20));
+        ImNodes::PushColorStyle(ImNodesCol_TitleBarSelected, lighter(col, 40));
+        ImNodes::BeginNode(id);
+
+        // Title (with the "comes in" pin on its left; events start a chain, so they have none).
+        ImNodes::BeginNodeTitleBar();
+        if (!b->event) {
+            ImNodes::BeginInputAttribute(pinIn(id));
+            ImGui::TextUnformatted(b->title);
+            ImNodes::EndInputAttribute();
+        } else {
+            ImGui::Text("> %s", b->title);
+        }
+        ImNodes::EndNodeTitleBar();
+        ImGui::Dummy(ImVec2(kNodeW, 0));   // keeps every block the same width
+
+        // Fields
+        ImGui::BeginDisabled(m_playing);
+        if (!n["f"].is_object()) n["f"] = json::object();
+        for (const auto& f : b->fields) {
+            ImGui::PushID(f.key);
+            std::string v = n["f"].value(f.key, std::string(f.def));
+            if (fieldUi(f, v)) { n["f"][f.key] = v; changed = true; }
+            ImGui::PopID();
+        }
+        ImGui::EndDisabled();
+
+        // Ways out ("next", "then", "else"...), one per row on the right.
+        for (size_t i = 0; i < b->outs.size(); ++i) {
+            const int pin = pinOut(id, (int)i);
+            outPin[{id, b->outs[i]}] = pin;
+            pinName[pin] = b->outs[i];
+            ImNodes::BeginOutputAttribute(pin);
+            const char* label = pinLabel(b->outs[i]);
+            ImGui::Indent(kNodeW - ImGui::CalcTextSize(label).x);
+            ImGui::TextUnformatted(label);
+            ImGui::Unindent(kNodeW - ImGui::CalcTextSize(label).x);
+            ImNodes::EndOutputAttribute();
+        }
+        ImNodes::EndNode();
+        ImNodes::PopColorStyle();
+        ImNodes::PopColorStyle();
+        ImNodes::PopColorStyle();
+        ImGui::PopID();
     }
-    if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) m_blocksSelected = 0;
-    if (ImGui::IsItemHovered() && ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
-        if (!m_blocksPanned && !m_playing) {
-            m_blocksMenuAt = ImVec2(ImGui::GetMousePos().x - origin.x, ImGui::GetMousePos().y - origin.y);
+
+    // Lines between blocks (numbered by where they are in the script's list).
+    for (size_t i = 0; i < g["links"].size(); ++i) {
+        const auto& l = g["links"][i];
+        const int to = l.value("to", 0);
+        const std::string pin = l.value("pin", std::string("next"));
+        auto out = outPin.find({l.value("from", 0), pin});
+        const json* target = nodeById(g, to);
+        const auto* tb = target ? VisualScript::find(target->value("type", std::string())) : nullptr;
+        if (out == outPin.end() || !tb || tb->event) continue;
+        const bool no = pin == "else";
+        if (no) ImNodes::PushColorStyle(ImNodesCol_Link, IM_COL32(230, 120, 110, 255));
+        ImNodes::Link((int)i, out->second, pinIn(to));
+        if (no) ImNodes::PopColorStyle();
+    }
+
+    // A block added from the list on the left: select it on the board too.
+    if (m_blocksSelectNext && nodeById(g, m_blocksSelectNext)) {
+        ImNodes::ClearNodeSelection();
+        ImNodes::SelectNode(m_blocksSelectNext);
+    }
+    m_blocksSelectNext = 0;
+    if (!g["nodes"].empty()) ImNodes::MiniMap(0.18f, ImNodesMiniMapLocation_BottomRight);
+    ImNodes::EndNodeEditor();
+    m_blocksPan = ImNodes::EditorContextGetPanning();
+
+    // Blocks dragged around: keep the new places (written once the mouse lets go).
+    if (!m_playing)
+        for (auto& n : g["nodes"]) {
+            const int id = n.value("id", 0);
+            if (!VisualScript::find(n.value("type", std::string())) || id <= 0) continue;
+            const ImVec2 at = ImNodes::GetNodeGridSpacePos(id);
+            if (std::fabs(at.x - n.value("x", 0.0f)) > 0.01f || std::fabs(at.y - n.value("y", 0.0f)) > 0.01f) {
+                n["x"] = at.x;
+                n["y"] = at.y;
+                m_blocksMoving = true;
+            }
+        }
+    if (m_blocksMoving && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        for (auto& n : g["nodes"]) { n["x"] = std::round(n.value("x", 0.0f)); n["y"] = std::round(n.value("y", 0.0f)); }
+        m_blocksMoving = false;
+        changed = true;
+    }
+
+    // What's selected (the list on the left hooks new blocks under it).
+    const int selCount = ImNodes::NumSelectedNodes();
+    std::vector<int> selected(selCount);
+    if (selCount) ImNodes::GetSelectedNodes(selected.data());
+    if (selCount == 1) m_blocksSelected = selected[0];
+    else if (selCount == 0 && ImNodes::IsEditorHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) m_blocksSelected = 0;
+
+    // A line was drawn: from a way out to a block's "comes in" pin (either way round).
+    int a = 0, z = 0;
+    if (ImNodes::IsLinkCreated(&a, &z) && !m_playing) {
+        if (pinSlot(a) == 0) std::swap(a, z);
+        if (pinSlot(a) != 0 && pinSlot(z) == 0 && pinNode(a) != pinNode(z) && pinName.count(a)) {
+            unlinkFrom(g, pinNode(a), pinName[a]);
+            g["links"].push_back({{"from", pinNode(a)}, {"pin", pinName[a]}, {"to", pinNode(z)}});
+            changed = true;
+        }
+    }
+    // ...or let go over a block instead of its pin: connect to that block.
+    int dropped = 0, overNode = 0;
+    if (ImNodes::IsLinkDropped(&dropped, false) && !m_playing && pinSlot(dropped) != 0 && pinName.count(dropped) &&
+        ImNodes::IsNodeHovered(&overNode) && overNode != pinNode(dropped)) {
+        const json* target = nodeById(g, overNode);
+        const auto* tb = target ? VisualScript::find(target->value("type", std::string())) : nullptr;
+        if (tb && !tb->event) {
+            unlinkFrom(g, pinNode(dropped), pinName[dropped]);
+            g["links"].push_back({{"from", pinNode(dropped)}, {"pin", pinName[dropped]}, {"to", overNode}});
+            changed = true;
+        }
+    }
+
+    // Right-click: on a way out cuts its line, on a line removes it, on a block offers
+    // to remove it, and on the empty board (without dragging) adds a block there.
+    int hoverPin = 0, hoverLink = 0, hoverNode = 0;
+    const bool onPin = ImNodes::IsPinHovered(&hoverPin);
+    const bool onLink = !onPin && ImNodes::IsLinkHovered(&hoverLink);
+    const bool onNode = !onPin && !onLink && ImNodes::IsNodeHovered(&hoverNode);
+    if (onPin && pinSlot(hoverPin) != 0) ImGui::SetTooltip("Drag from here to the block that comes next.\nRight-click to cut the line.");
+    else if (onLink) ImGui::SetTooltip("Right-click to cut this line.");
+    else if (onNode && !ImGui::IsAnyItemHovered())
+        if (const json* hn = nodeById(g, hoverNode))
+            if (const auto* hb = VisualScript::find(hn->value("type", std::string())))
+                ImGui::SetTooltip("%s\n\nDrag to move. Right-click to remove.", hb->tip);
+    const bool rightClick = ImGui::IsMouseReleased(ImGuiMouseButton_Right) && ImNodes::IsEditorHovered() &&
+                            ImGui::GetIO().MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] < 16.0f;
+    if (rightClick && !m_playing) {
+        if (onPin && pinSlot(hoverPin) != 0 && pinName.count(hoverPin)) {
+            unlinkFrom(g, pinNode(hoverPin), pinName[hoverPin]);
+            changed = true;
+        } else if (onLink && hoverLink >= 0 && hoverLink < (int)g["links"].size()) {
+            g["links"].erase(g["links"].begin() + hoverLink);
+            changed = true;
+        } else if (onNode) {
+            m_blocksMenuNode = hoverNode;
+            ImGui::OpenPopup("##nodemenu");
+        } else if (!onPin) {
+            const ImVec2 m = ImGui::GetMousePos();
+            m_blocksMenuAt = ImVec2(m.x - boardMin.x - m_blocksPan.x, m.y - boardMin.y - m_blocksPan.y);
             ImGui::OpenPopup("##addblock");
         }
     }
-    if (!ImGui::IsMouseDown(ImGuiMouseButton_Right) && !ImGui::IsMouseDown(ImGuiMouseButton_Middle)) m_blocksPanned = false;
+    int remove = 0;
+    if (ImGui::BeginPopup("##nodemenu")) {
+        if (ImGui::MenuItem("Remove block")) remove = m_blocksMenuNode;
+        ImGui::EndPopup();
+    }
     if (ImGui::BeginPopup("##addblock")) {
         ImGui::TextDisabled("Add a block");
         for (const char* cat : cats)
@@ -310,147 +500,23 @@ void Editor::renderBlocks() {
             }
         ImGui::EndPopup();
     }
-
-    struct PinAt { int node; std::string pin; ImVec2 at; };
-    std::vector<PinAt> outs;
-    std::map<int, ImVec2> ins;
-    int remove = 0;
-    bool released = false;
-
-    ImDrawListSplitter split;
-    split.Split(dl, 2);
-    for (auto& n : g["nodes"]) {
-        const int id = n.value("id", 0);
-        const auto* b = VisualScript::find(n.value("type", std::string()));
-        if (!b) continue;
-        ImGui::PushID(id);
-        const ImVec2 p(origin.x + n.value("x", 0.0f), origin.y + n.value("y", 0.0f));
-        const float titleH = ImGui::GetFrameHeight() + 4;
-
-        split.SetCurrentChannel(dl, 1);
-        // Title: drag to move, right-click to remove.
-        ImGui::SetCursorScreenPos(p);
-        ImGui::InvisibleButton("##title", ImVec2(kNodeW, titleH));
-        if (ImGui::IsItemActivated()) m_blocksSelected = id;
-        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 2.0f) && !m_playing) {
-            n["x"] = n.value("x", 0.0f) + ImGui::GetIO().MouseDelta.x;
-            n["y"] = n.value("y", 0.0f) + ImGui::GetIO().MouseDelta.y;
-            m_blocksMoving = true;
-        }
-        if (ImGui::IsItemDeactivated() && m_blocksMoving) {
-            n["x"] = std::round(n.value("x", 0.0f));
-            n["y"] = std::round(n.value("y", 0.0f));
-            m_blocksMoving = false;
-            released = true;
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s\n\nDrag to move. Right-click to remove.", b->tip);
-        if (ImGui::BeginPopupContextItem("##nodemenu")) {
-            ImGui::BeginDisabled(m_playing);
-            if (ImGui::MenuItem("Remove block")) remove = id;
-            ImGui::EndDisabled();
-            ImGui::EndPopup();
-        }
-        dl->AddText(ImVec2(p.x + 22, p.y + 4), IM_COL32(255, 255, 255, 255), b->title);
-
-        // Fields
-        ImGui::SetCursorScreenPos(ImVec2(p.x + 8, p.y + titleH + 4));
-        ImGui::BeginDisabled(m_playing);
-        if (!n["f"].is_object()) n["f"] = json::object();
-        for (const auto& f : b->fields) {
-            ImGui::PushID(f.key);
-            std::string v = n["f"].value(f.key, std::string(f.def));
-            if (fieldUi(f, v, p.x, p.x + kNodeW - 8)) { n["f"][f.key] = v; changed = true; }
-            ImGui::PopID();
-        }
-        ImGui::EndDisabled();
-        float y = b->fields.empty() ? p.y + titleH + 4 : ImGui::GetCursorScreenPos().y + 2;
-
-        // Ways out ("next", "then", "else"...), one per row on the right.
-        for (const char* o : b->outs) {
-            const ImVec2 pin(p.x + kNodeW, y + 9);
-            const char* label = pinLabel(o);
-            const ImVec2 ts = ImGui::CalcTextSize(label);
-            dl->AddText(ImVec2(pin.x - 14 - ts.x, y), IM_COL32(200, 200, 205, 255), label);
-            outs.push_back({id, o, pin});
-            ImGui::SetCursorScreenPos(ImVec2(pin.x - 8, pin.y - 8));
-            ImGui::PushID(o);
-            ImGui::InvisibleButton("##out", ImVec2(16, 16));
-            if (ImGui::IsItemActivated() && !m_playing) { m_blocksDragFrom = id; m_blocksDragPin = o; }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Drag from here to the block that comes next.\nRight-click to cut the line.");
-            if (ImGui::IsItemClicked(ImGuiMouseButton_Right) && !m_playing) { unlinkFrom(g, id, o); changed = true; }
-            ImGui::PopID();
-            y += 22;
-        }
-        const float h = y - p.y + 4;
-
-        split.SetCurrentChannel(dl, 0);
-        const ImVec2 q(p.x + kNodeW, p.y + h);
-        const bool sel = m_blocksSelected == id;
-        dl->AddRectFilled(p, q, IM_COL32(52, 54, 60, 245), 6.0f);
-        dl->AddRectFilled(p, ImVec2(q.x, p.y + titleH), categoryColor(b->category), 6.0f, ImDrawFlags_RoundCornersTop);
-        dl->AddRect(p, q, sel ? IM_COL32(255, 255, 255, 230) : IM_COL32(20, 20, 22, 255), 6.0f, 0, sel ? 2.0f : 1.0f);
-        if (!b->event) {
-            const ImVec2 in(p.x, p.y + titleH * 0.5f);
-            ins[id] = in;
-            dl->AddCircleFilled(in, 6, IM_COL32(230, 230, 235, 255));
-            dl->AddCircle(in, 6, IM_COL32(20, 20, 22, 255));
-        } else {
-            dl->AddTriangleFilled(ImVec2(p.x + 8, p.y + 6), ImVec2(p.x + 8, p.y + titleH - 6), ImVec2(p.x + 16, p.y + titleH * 0.5f),
-                                  IM_COL32(255, 255, 255, 220));
-        }
-        for (const auto& o : outs)
-            if (o.node == id) {
-                dl->AddCircleFilled(o.at, 6, IM_COL32(230, 230, 235, 255));
-                dl->AddCircle(o.at, 6, IM_COL32(20, 20, 22, 255));
-            }
-        ImGui::PopID();
+    // Delete removes the selected blocks (when the board has focus and you're not typing).
+    if (!m_playing && selCount && ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows) &&
+        !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) {
+        for (int id : selected) removeNode(g, id);
+        ImNodes::ClearNodeSelection();
+        m_blocksSelected = 0;
+        changed = true;
     }
-
-    // Lines between blocks
-    split.SetCurrentChannel(dl, 1);
-    auto curve = [&](ImVec2 a, ImVec2 b, ImU32 col) {
-        const float dx = std::max(40.0f, std::fabs(b.x - a.x) * 0.5f);
-        dl->AddBezierCubic(a, ImVec2(a.x + dx, a.y), ImVec2(b.x - dx, b.y), b, col, 3.0f);
-    };
-    for (const auto& l : g["links"]) {
-        const int from = l.value("from", 0), to = l.value("to", 0);
-        const std::string pin = l.value("pin", std::string("next"));
-        auto in = ins.find(to);
-        if (in == ins.end()) continue;
-        for (const auto& o : outs)
-            if (o.node == from && o.pin == pin) curve(o.at, in->second, pin == "else" ? IM_COL32(230, 120, 110, 255) : IM_COL32(235, 235, 240, 255));
+    if (remove) {
+        removeNode(g, remove);
+        ImNodes::ClearNodeSelection();
+        if (m_blocksSelected == remove) m_blocksSelected = 0;
+        changed = true;
     }
-    if (m_blocksDragFrom) {
-        for (const auto& o : outs)
-            if (o.node == m_blocksDragFrom && o.pin == m_blocksDragPin) curve(o.at, ImGui::GetMousePos(), IM_COL32(255, 210, 90, 255));
-        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-            // Dropped on a block: connect to it (the nearest one under the mouse).
-            const ImVec2 m = ImGui::GetMousePos();
-            int best = 0;
-            float bestD = 1e9f;
-            for (auto& n : g["nodes"]) {
-                const int id = n.value("id", 0);
-                auto in = ins.find(id);
-                if (in == ins.end() || id == m_blocksDragFrom) continue;
-                const ImVec2 p(origin.x + n.value("x", 0.0f), origin.y + n.value("y", 0.0f));
-                const bool over = m.x >= p.x - 16 && m.x <= p.x + kNodeW && m.y >= p.y - 16 && m.y <= p.y + 60;
-                const float d = std::hypot(m.x - in->second.x, m.y - in->second.y);
-                if ((over || d < 24) && d < bestD) { best = id; bestD = d; }
-            }
-            if (best) {
-                unlinkFrom(g, m_blocksDragFrom, m_blocksDragPin);
-                g["links"].push_back({{"from", m_blocksDragFrom}, {"pin", m_blocksDragPin}, {"to", best}});
-                changed = true;
-            }
-            m_blocksDragFrom = 0;
-        }
-    }
-    split.Merge(dl);
-    if (remove) { removeNode(g, remove); changed = true; }
-    if (released) changed = true;
     if (g["nodes"].empty())
-        dl->AddText(ImVec2(boardMin.x + 20, boardMin.y + 20), IM_COL32(170, 170, 175, 255),
-                    "Add an event block from the left (like \"When touched\") to start.");
+        ImGui::GetWindowDrawList()->AddText(ImVec2(boardMin.x + 20, boardMin.y + 20), IM_COL32(170, 170, 175, 255),
+                                            "Add an event block from the left (like \"When touched\") to start.");
     ImGui::EndChild();
     ImGui::SameLine();
 
