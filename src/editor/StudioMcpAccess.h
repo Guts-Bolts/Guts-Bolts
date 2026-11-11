@@ -21,7 +21,8 @@ inline bool appMay(const std::string& tool, bool canChange) {
         "physics_replay", "lua_debugger", "create_physical_object",
         "spawn_explosion", "bake_navmesh", "walk_character_to",
         "script_history", "ai_activity", "checkpoint", "undo", "redo",
-        "build", "terrain", "create_ui", "add_game_system", "set_atmosphere"
+        "build", "terrain", "create_ui", "add_game_system", "set_atmosphere",
+        "make_animation"
     };
     for (const char* allowed : readTools) if (tool == allowed) return true;
     if (canChange)

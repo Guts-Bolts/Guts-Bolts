@@ -710,6 +710,28 @@ const std::vector<Tool>& tools() {
           "{device, about, over: how many checks are over, checks: [{what, count, limit, verdict, fix?}], note}.",
           "None.", "Nothing changes.", "phone_check -> (fix the red ones) -> phone_check.", "\"Will my game run on a cheap phone?\""},
          schema({{"device", {{"type", "string"}, {"enum", {"cheap_phone", "mid_phone", "old_laptop"}}}}}, {})},
+        {"make_animation", "Make an animation from words", "MODELING", false, false, false, Risk::Low,
+         {"Makes an Animation inside a rig (a character Model) from plain words like \"wave twice, then bow\" or "
+          "\"run in a loop\". It knows these motions: wave, point, cheer, clap, bow, nod, shake head, look (left / right / up / "
+          "down / around), jump, jumping jacks, crouch, sit, walk, run, march, punch, kick, spin, salute, shrug, idle, stretch, "
+          "flap, swim, climb, think, facepalm, hug, dab, dance (dance 2, dance 3), laugh. Words that change them: left / right / "
+          "both, once / twice / 3 times, slowly / quickly, small / big, loop / forever. Steps are split by \"then\", commas or "
+          "full stops. For a motion that isn't on the list, send your own `keyframes` instead.",
+          "\"make my NPC wave\", \"an animation where he bows\", \"a looping dance for the shopkeeper\", \"animate the rig doing "
+          "jumping jacks\".",
+          "To change one keyframe of an existing animation, use the Animation Editor (or set_property on its source). To play "
+          "it in the game, write a script: humanoid:LoadAnimation(anim):Play() (or Animator:LoadAnimation).",
+          "rig (required: the Model, or any part in it); prompt (the words), or keyframes ([{t: seconds, poses: {part name: "
+          "{rot: [x, y, z] degrees, pos?: [x, y, z] studs, ease?: Linear/Constant/Cubic/Elastic/Bounce}}}], part names from the "
+          "rig, classic body: arms and legs hang down, rot X -90 points one forward, Head X + looks down, Torso pos Y + lifts the "
+          "body); name (optional); loop (optional true/false).",
+          "{object_id, name, length (s), loop, keyframes, steps: [{text, motion, times, start, end}], parts, not_understood?, "
+          "missing_parts?}. With no motion found: NO_MOTION and the list of motions.",
+          "The rig exists.", "A new Animation object is inside the rig. It does not play until a script plays it.",
+          "get_game_tree -> make_animation -> create_script (LoadAnimation + Play) -> playtest.",
+          "\"Make the guard salute, then march in place\""},
+         schema({{"rig", {{"type", "string"}}}, {"prompt", {{"type", "string"}}}, {"name", {{"type", "string"}}},
+                 {"loop", {{"type", "boolean"}}}, {"keyframes", {{"type", "array"}, {"items", {{"type", "object"}}}}}}, {"rig"})},
         {"get_errors", "Read errors and warnings", "DEBUG", true, false, true, Risk::None,
          {"Only the errors (and warnings) from the Output window: script errors with their line numbers, failed loads, "
           "warn() calls.",
@@ -1014,6 +1036,7 @@ json workflowOf(const std::string& name) {
         {"select", {{"find_objects"}, {}}},
         {"find_and_change", {{"find_objects"}, {"find_and_change", "get_object"}}},
         {"create_script", {{"get_game_tree"}, {"diagnose_object", "playtest"}}},
+        {"make_animation", {{"get_game_tree"}, {"create_script", "playtest"}}},
         {"read_script", {{"find_objects"}, {"edit_script"}}},
         {"visual_script", {{"get_game_tree"}, {"playtest", "get_output"}}},
         {"generate_level", {{"get_game_tree"}, {"playtest", "screenshot"}}},

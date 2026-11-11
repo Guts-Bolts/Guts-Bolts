@@ -53,6 +53,8 @@ private:
     void       importText(const std::string& text, const std::string& fallbackName);
     void       importRoblox(const std::string& path);   // a Roblox KeyframeSequence, fitted to this rig
 public:
+    // "wave twice, then bow" -> a new Animation in the rig (AnimFromText.h). "" = done, else what went wrong.
+    std::string makeFromWords(const std::string& text);
     void       testImportRoblox(const std::string& path) { importRoblox(path); }
     const std::string& message() const { return m_message; }
 private:
@@ -81,7 +83,8 @@ private:
     std::string m_newName;
 
     // The "..." menu's windows.
-    bool        m_openSaveAs = false, m_openPublish = false, m_openImport = false;
+    bool        m_openSaveAs = false, m_openPublish = false, m_openImport = false, m_openWords = false;
+    std::string m_words, m_wordsNote;   // "Make from words..." (AnimFromText.h)
     std::string m_saveAsName, m_pubName, m_pubDesc, m_importId, m_message;
     bool        m_pubPublic = false, m_busy = false, m_doneRequested = false;
     double      m_messageAt = -100.0;

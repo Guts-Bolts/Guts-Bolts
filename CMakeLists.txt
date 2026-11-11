@@ -500,6 +500,7 @@ add_library(gb_engine STATIC
     src/scene/LinkedModels.cpp
     src/scene/MaterialGraph.cpp
     src/scene/Animation.cpp
+    src/scene/AnimFromText.cpp
     src/scene/Ragdoll.cpp
     src/scene/Effects.cpp
     src/scene/SoundMix.cpp

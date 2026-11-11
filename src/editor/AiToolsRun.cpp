@@ -2,6 +2,7 @@
 // structured JSON: what was asked, what really happened (read back from the
 // engine), ids of what was touched, and for failures an error code, whether
 // it can be fixed and what to try next.
+#include "../scene/AnimFromText.h"
 #include "AiTools.h"
 #include "VisualScript.h"
 #include "Editor.h"
@@ -2095,6 +2096,80 @@ AiToolResult Editor::runAiTool(const std::string& name, const json& args) {
             return fail("INVALID_INPUT", "device is cheap_phone, mid_phone or old_laptop.", "Leave it out for a cheap phone.");
         return done(phoneCheck(device == "cheap_phone" ? 0 : device == "mid_phone" ? 1 : 2));
     }   // EditorPlatform.cpp
+    if (name == "make_animation") {   // AnimFromText.cpp: words (or Fyxa's own keyframes) -> an Animation in the rig
+        SceneNode* picked;
+        if (!need("rig", picked)) return refErr;
+        SceneNode* rig = picked->kind == NodeKind::Model ? picked : Anim::rigOf(picked);
+        if (!rig) return fail("NOT_A_RIG", label(picked) + " isn't in a rig.", "Pick a Model with body parts, like a character or the Rig from the MODEL tab.");
+        std::vector<std::string> partNames;
+        for (SceneNode* n : Anim::rigParts(rig)) partNames.push_back(n->name);
+        if (partNames.empty()) return fail("NOT_A_RIG", label(rig) + " has no parts to move.", "Pick a Model with body parts.");
+        const bool ownKeys = args.contains("keyframes") && args["keyframes"].is_array() && !args["keyframes"].empty();
+        if (!ownKeys && str("prompt").empty())
+            return fail("INVALID_INPUT", "Give `prompt` (what the animation should do) or `keyframes`.", "Like prompt: \"wave twice, then bow\".");
+        AnimText::Result made;
+        json steps = json::array();
+        if (ownKeys) {
+            // Fyxa's own keyframes, checked: known parts only, sensible sizes.
+            const json& in = args["keyframes"];
+            if (in.size() > 200) return fail("INVALID_INPUT", "200 keyframes at most.", "Use fewer keyframes.");
+            const std::set<std::string> has(partNames.begin(), partNames.end());
+            std::set<std::string> unknownParts;
+            json keys = json::array();
+            for (const json& k : in) {
+                if (!k.is_object() || !k.contains("t") || !k["t"].is_number() || !k.contains("poses") || !k["poses"].is_object())
+                    return fail("INVALID_INPUT", "Each keyframe is {t: seconds, poses: {part name: {rot: [x, y, z], pos?: [x, y, z]}}}.", "Check the keyframes.");
+                const double t = k["t"].get<double>();
+                if (t < 0 || t > 60) return fail("INVALID_INPUT", "Keyframe times are 0 to 60 seconds.", "Check t.");
+                json poses = json::object();
+                for (auto it = k["poses"].begin(); it != k["poses"].end(); ++it) {
+                    if (!has.count(it.key())) { unknownParts.insert(it.key()); continue; }
+                    auto vec3 = [&](const char* f, float lim) {
+                        json v = json::array({0.0, 0.0, 0.0});
+                        if (it->is_object() && it->contains(f) && (*it)[f].is_array())
+                            for (size_t i = 0; i < 3 && i < (*it)[f].size(); ++i)
+                                if ((*it)[f][i].is_number()) v[i] = std::clamp((*it)[f][i].get<double>(), (double)-lim, (double)lim);
+                        return v;
+                    };
+                    json pj = {{"rot", vec3("rot", 720.0f)}, {"pos", vec3("pos", 10.0f)}, {"ease", "Cubic"}, {"dir", "InOut"}};
+                    if (it->is_object() && it->contains("ease") && (*it)["ease"].is_string()) pj["ease"] = (*it)["ease"];
+                    poses[it.key()] = pj;
+                }
+                keys.push_back({{"t", t}, {"poses", poses}});
+            }
+            made.clip = Anim::parse(json{{"loop", args.value("loop", false)}, {"priority", "Action"}, {"keys", keys}}.dump());
+            made.missing.assign(unknownParts.begin(), unknownParts.end());
+            made.name = "Animation";
+            bool any = false;
+            for (const Anim::Keyframe& k : made.clip.keys) any = any || !k.poses.empty();
+            if (!any) return fail("NO_PARTS", "None of those part names are in " + label(rig) + ".", "Use names from `parts`.", true);
+        } else {
+            made = AnimText::make(str("prompt"), partNames);
+            if (!made.error.empty()) {
+                json known = json::array();
+                for (const auto& m : AnimText::motions()) known.push_back({{"motion", m.name}, {"about", m.about}});
+                AiToolResult r = fail("NO_MOTION", made.error, "Use motions from `motions`, or send your own `keyframes`.");
+                r.data["motions"] = known;
+                r.data["parts"] = partNames;
+                r.text = r.data.dump(1);
+                return r;
+            }
+            if (args.contains("loop") && args["loop"].is_boolean()) made.clip.loop = args["loop"].get<bool>();
+            for (const auto& st : made.steps)
+                steps.push_back({{"text", st.text}, {"motion", st.motion}, {"times", st.times}, {"start", st.start}, {"end", st.end}});
+        }
+        auto anim = std::make_unique<SceneNode>(str("name").empty() ? made.name : str("name"), NodeKind::Animation);
+        anim->source = Anim::dump(made.clip);
+        SceneNode* node = m_scene->insert(std::move(anim), rig);
+        json d = {{"object_id", idOf(node)}, {"name", node->name}, {"rig_id", idOf(rig)}, {"path", pathOf(node)},
+                  {"length", made.clip.length()}, {"loop", made.clip.loop}, {"keyframes", made.clip.keys.size()}, {"steps", steps},
+                  {"parts", partNames}, {"resulting_state", state(node)}};
+        json warn = json::array();
+        if (!made.unknown.empty()) { d["not_understood"] = made.unknown; warn.push_back("Some words matched no motion (see not_understood)."); }
+        if (!made.missing.empty()) { d["missing_parts"] = made.missing; warn.push_back("The rig has no part called: see missing_parts. Those moves were left out."); }
+        if (!warn.empty()) d["warnings"] = warn;
+        return done(d);
+    }
 
     return fail("UNKNOWN_TOOL", "There's no tool called " + name + ".", "Use one of the tools from tools/list. Don't invent tools.", false);
 }
