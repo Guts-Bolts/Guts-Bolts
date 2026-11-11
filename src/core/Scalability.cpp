@@ -32,7 +32,7 @@ const char* levelHelp(int g, int l) {
     static const char* const help[kGroups][kLevels] = {
         {"one 1024 shadow map, hard edges", "1024 maps, near + far, soft edges", "2048 maps, soft edges that get blurrier away from what casts them", "4096 maps, the softest, most lamp shadows", "4096 maps, the softest"},
         {"ambient occlusion only (dark corners)", "screen-traced bounce light, quarter size", "screen-traced bounce light, half size, more rays", "the most rays and steps, smoothest", "full size, 16 rays, longest memory (for pictures)"},
-        {"sky only", "water reflections", "water reflections, more detail", "the most detailed water", "the most detailed water"},
+        {"sky only", "water reflections", "water, and shiny parts mirror the world", "longer, sharper mirror reflections", "the longest, cleanest reflections"},
         {"no bloom or extra effects (colours stay the same)", "bloom", "bloom, sun rays, depth of field, motion blur", "everything, more samples", "everything, the most samples"},
         {"slightly blurry far away, fastest", "2x sharp at an angle", "8x sharp at an angle", "16x sharp at an angle", "16x sharp at an angle"},
         {"short", "medium", "far", "unlimited", "unlimited"},

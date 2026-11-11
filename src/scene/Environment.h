@@ -48,6 +48,12 @@ struct Environment {
     glm::vec3 fogColor     = {0.66f, 0.77f, 0.90f};
     float     fogDensity   = 0.010f;
     float     fogSunGlow   = 0.6f;      // fog glows when looking toward the sun
+    // Height fog (like Unreal's exponential height fog): fogFalloff > 0 makes the fog
+    // thick down low and thinner going up, so mist fills valleys and lies on water while
+    // towers poke out of it. fogDensity is how thick it is at fogHeight (studs).
+    // fogFalloff 0 = the same thickness everywhere (the old fog).
+    float     fogHeight    = 0.0f;
+    float     fogFalloff   = 0.0f;      // 0.02 a soft haze .. 0.1 a low mist that hugs the ground
 
     // Weather (Lighting.Weather / WeatherIntensity) -----------------------------
     // Rain and snow fall around the camera (each computer draws its own), with
@@ -107,6 +113,8 @@ inline Environment withWeather(const Environment& e) {
     w.fogDensity = (e.fogEnabled ? e.fogDensity : 0.0f) + (snow ? 0.022f : 0.012f) * a;
     w.fogColor   = glm::mix(e.fogColor, grey * bright, 0.5f * a + 0.2f);
     w.fogSunGlow = e.fogSunGlow * (1.0f - 0.7f * a);
+    // Rain and snow leave a low mist lying on the ground (unless the game made its own).
+    if (e.fogFalloff <= 0.0f) { w.fogFalloff = 0.03f * a; w.fogHeight = 0.0f; }
     w.saturation = e.saturation * (1.0f - (snow ? 0.1f : 0.2f) * a);
     return w;
 }
@@ -127,6 +135,7 @@ inline Environment sunset() {
     e.skyGround  = {0.16f, 0.11f, 0.11f};
     e.cloudColor = {1.0f, 0.75f, 0.6f};
     e.fogColor = {0.95f, 0.58f, 0.36f}; e.fogDensity = 0.018f; e.fogSunGlow = 1.0f;
+    e.fogFalloff = 0.035f;   // (evening haze lying low)
     e.bloomIntensity = 0.7f; e.saturation = 1.2f; e.tint = {1.0f, 0.95f, 0.9f};
     return e;
 }
@@ -159,6 +168,7 @@ inline Environment overcast() {
     e.skyGround  = {0.30f, 0.30f, 0.31f};
     e.cloudCover = 0.9f; e.cloudColor = {0.8f, 0.82f, 0.85f};
     e.fogColor = {0.73f, 0.75f, 0.77f}; e.fogDensity = 0.028f; e.fogSunGlow = 0.1f;
+    e.fogFalloff = 0.02f;
     e.saturation = 0.85f; e.contrast = 1.0f;
     return e;
 }
@@ -175,6 +185,7 @@ inline Environment horror() {
     e.skyGround  = {0.03f, 0.01f, 0.01f};
     e.cloudCover = 0.7f; e.cloudColor = {0.35f, 0.12f, 0.1f};
     e.fogColor = {0.18f, 0.04f, 0.04f}; e.fogDensity = 0.045f; e.fogSunGlow = 0.8f;
+    e.fogFalloff = 0.08f;    // (a thick mist round your ankles)
     e.exposure = 1.3f; e.bloomIntensity = 0.9f; e.contrast = 1.2f; e.saturation = 0.8f;
     e.vignette = 0.6f; e.tint = {1.1f, 0.9f, 0.85f};
     return e;

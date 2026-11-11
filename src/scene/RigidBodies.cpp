@@ -4,7 +4,8 @@
 // How it works, in short:
 //  * every unanchored part becomes a "body" with mass, velocity and spin;
 //    anchored parts are bodies that never move
-//  * boxes and balls that overlap produce contact points
+//  * boxes, balls and cylinders that overlap produce contact points (cylinders are
+//    really round, so wheels, barrels and logs roll)
 //  * a "sequential impulse" solver nudges velocities, over and over, until
 //    contacts stop pushing into each other and constraints are satisfied
 //  * movers (BodyVelocity, AlignPosition...) push whole welded assemblies
@@ -30,6 +31,7 @@ struct Body {
     SceneNode* node = nullptr;
     bool       dynamic = false;
     bool       sphere = false;
+    bool       cylinder = false; // round around its own Y axis: radius `radius`, half as tall as 2 * half.y
     bool       solid = true;
     int        group = 0;       // collision group slot (the terrain is Default's)
     glm::vec3  pos{0.0f};
@@ -60,6 +62,7 @@ struct Body {
         return o;
     }
     glm::vec3 velocityAt(const glm::vec3& p) const { return v + glm::cross(w, p - pos); }
+    glm::vec3 axisY() const { return R()[1]; }   // a cylinder's middle line
 };
 
 struct Contact {
@@ -319,6 +322,165 @@ void sphereSphere(int ia, int ib, const Body& A, const Body& B, std::vector<Cont
     out.push_back({ia, ib, B.pos + n * B.radius, n, A.radius + B.radius - dist});
 }
 
+// --- cylinders -------------------------------------------------------------------
+// A cylinder is round all the way round its middle line (its own Y axis), with flat
+// ends. Treating it as a box (as before) made wheels square and logs that wouldn't
+// roll; these find where the real round shape touches.
+
+// How far a cylinder reaches out from its middle along the direction L (unit).
+float cylReach(const Body& C, const glm::vec3& L) {
+    const float d = std::abs(glm::dot(C.axisY(), L));
+    return C.half.y * d + C.radius * std::sqrt(std::max(0.0f, 1.0f - d * d));
+}
+
+// The point of a cylinder furthest along `dir`.
+glm::vec3 cylSupport(const Body& C, const glm::vec3& dir) {
+    const glm::vec3 a = C.axisY();
+    const float d = glm::dot(dir, a);
+    const glm::vec3 radial = dir - a * d;
+    const float l = glm::length(radial);
+    glm::vec3 p = C.pos + a * (d >= 0.0f ? C.half.y : -C.half.y);
+    if (l > 1e-6f) p += radial / l * C.radius;
+    return p;
+}
+
+bool insideCylinder(const Body& C, const glm::vec3& p, float tol) {
+    const glm::vec3 a = C.axisY(), d = p - C.pos;
+    const float t = glm::dot(d, a);
+    return std::abs(t) <= C.half.y + tol && glm::length(d - a * t) <= C.radius + tol;
+}
+
+// A cylinder against a box (or anything we treat as one). `n` points from the box to
+// the cylinder. The touching points are the cylinder's lowest line (lying on its side:
+// two ends of a line, so it rolls straight), its lowest rim (standing on an end), and
+// any corner of the box poking into the cylinder.
+void cylinderBox(int ic, int ib, const Body& C, const OBB& b, std::vector<Contact>& out, bool cylIsA) {
+    const glm::vec3 a = C.axisY();
+    const glm::vec3 rel = C.pos - b.center;
+    float best = 1e30f;
+    glm::vec3 n(0.0f, 1.0f, 0.0f);
+    bool apart = false;
+    auto test = [&](glm::vec3 L, float prefer) {
+        const float len = glm::length(L);
+        if (len < 1e-4f) return;
+        L /= len;
+        float reachB = 0.0f;
+        for (int i = 0; i < 3; ++i) reachB += b.half[i] * std::abs(glm::dot(b.axis[i], L));
+        const float dist = glm::dot(rel, L);
+        const float overlap = reachB + cylReach(C, L) - std::abs(dist);
+        if (overlap < 0.0f) { apart = true; return; }
+        if (overlap * prefer < best) { best = overlap * prefer; n = dist >= 0.0f ? L : -L; }
+    };
+    for (int i = 0; i < 3 && !apart; ++i) test(b.axis[i], 1.0f);   // the box's sides (preferred: steadiest)
+    if (!apart) test(a, 1.02f);                                    // the cylinder's flat ends
+    for (int i = 0; i < 3 && !apart; ++i) test(glm::cross(a, b.axis[i]), 1.05f);   // edge against the round side
+    if (!apart) {                                                  // the round side against the box's nearest corner or edge
+        const glm::vec3 local(glm::dot(rel, b.axis[0]), glm::dot(rel, b.axis[1]), glm::dot(rel, b.axis[2]));
+        const glm::vec3 cl = glm::clamp(local, -b.half, b.half);
+        const glm::vec3 q = b.center + b.axis[0] * cl.x + b.axis[1] * cl.y + b.axis[2] * cl.z;
+        glm::vec3 L = C.pos - q;
+        L -= a * glm::dot(L, a);
+        test(L, 1.05f);
+    }
+    if (apart) return;
+    // (best has the preference folded in; the real depth is measured per point below)
+    const float boxTop = glm::dot(support(b, n), n);
+    const float cylBottom = glm::dot(cylSupport(C, -n), n);
+    const float depth = std::max(0.0f, boxTop - cylBottom);
+    if (depth <= 0.0f) return;
+    const size_t before = out.size();
+    auto add = [&](const glm::vec3& p, float d) {
+        d = std::clamp(d, 0.0f, depth);
+        for (size_t j = before; j < out.size(); ++j)
+            if (glm::length(out[j].p - p) < 0.02f) return;
+        if (cylIsA) out.push_back({ic, ib, p, n, d});
+        else        out.push_back({ib, ic, p, -n, d});
+    };
+    // The cylinder's points that dig into the box.
+    const float dn = glm::dot(a, n);
+    glm::vec3 radial = -(n - a * dn);
+    const float rl = glm::length(radial);
+    std::vector<glm::vec3> pts;
+    if (std::abs(dn) > 0.97f || rl < 1e-4f) {
+        // Standing on an end: points round the rim of that end, and its middle.
+        const glm::vec3 end = C.pos - a * (dn > 0.0f ? C.half.y : -C.half.y);
+        glm::vec3 u = glm::normalize(glm::cross(a, std::abs(a.x) < 0.9f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0)));
+        glm::vec3 v = glm::cross(a, u);
+        pts.push_back(end);
+        for (int k = 0; k < 8; ++k) {
+            const float ang = (float)k * 0.785398f;
+            pts.push_back(end + (u * std::cos(ang) + v * std::sin(ang)) * C.radius);
+        }
+    } else {
+        // On its side (or tipped): the lowest line along it, from one end to the other.
+        radial /= rl;
+        for (int k = 0; k <= 4; ++k) {
+            const float s = -1.0f + 0.5f * (float)k;
+            pts.push_back(C.pos + a * (C.half.y * s) + radial * C.radius);
+        }
+    }
+    for (const glm::vec3& p : pts) {
+        const float d = boxTop - glm::dot(p, n);
+        if (d > 0.0f && inside(b, p, 0.02f)) add(p + n * (d * 0.5f), d);
+    }
+    // Corners of the box poking into the cylinder (a box lying on a barrel's end...).
+    glm::vec3 cb[8];
+    boxCorners(b, cb);
+    for (const glm::vec3& p : cb)
+        if (insideCylinder(C, p, 0.02f)) add(p, glm::dot(p, n) - cylBottom);
+    if (out.size() == before) {   // edge against the round side: one point between them
+        const glm::vec3 p = (cylSupport(C, -n) + support(b, n)) * 0.5f;
+        if (cylIsA) out.push_back({ic, ib, p, n, depth});
+        else        out.push_back({ib, ic, p, -n, depth});
+    }
+}
+
+// How big a part looks from `dir` (unit): the side the air hits when it moves that way.
+float airArea(const Body& b, const glm::vec3& dir) {
+    if (b.sphere) return 3.14159f * b.radius * b.radius;
+    const glm::mat3 r = b.R();
+    if (b.cylinder) {
+        const float d = std::abs(glm::dot(r[1], dir));
+        return 3.14159f * b.radius * b.radius * d + 4.0f * b.radius * b.half.y * std::sqrt(std::max(0.0f, 1.0f - d * d));
+    }
+    return 4.0f * (b.half.y * b.half.z * std::abs(glm::dot(r[0], dir)) + b.half.x * b.half.z * std::abs(glm::dot(r[1], dir)) +
+                   b.half.x * b.half.y * std::abs(glm::dot(r[2], dir)));
+}
+
+// A ball against a cylinder: the cylinder's nearest point to the ball's middle.
+void sphereCylinder(int is, int ic, const Body& S, const Body& C, std::vector<Contact>& out, bool sphereIsA) {
+    const glm::vec3 a = C.axisY(), d = S.pos - C.pos;
+    const float t = glm::dot(d, a);
+    glm::vec3 radial = d - a * t;
+    const float rl = glm::length(radial);
+    glm::vec3 n, closest;
+    float depth;
+    if (std::abs(t) <= C.half.y && rl <= C.radius) {   // its middle is inside: out the nearest way
+        const float capOut = C.half.y - std::abs(t), sideOut = C.radius - rl;
+        if (capOut < sideOut || rl < 1e-5f) {
+            n = a * (t >= 0.0f ? 1.0f : -1.0f);
+            closest = S.pos + n * capOut;
+            depth = capOut + S.radius;
+        } else {
+            n = radial / rl;
+            closest = S.pos + n * sideOut;
+            depth = sideOut + S.radius;
+        }
+    } else {
+        const float tc = std::clamp(t, -C.half.y, C.half.y);
+        if (rl > C.radius) radial *= C.radius / rl;
+        closest = C.pos + a * tc + radial;
+        const glm::vec3 diff = S.pos - closest;
+        const float dist = glm::length(diff);
+        if (dist >= S.radius || dist < 1e-6f) return;
+        n = diff / dist;
+        depth = S.radius - dist;
+    }
+    // (n points from the cylinder to the ball)
+    if (sphereIsA) out.push_back({is, ic, closest, n, depth});
+    else           out.push_back({ic, is, closest, -n, depth});
+}
+
 // --- building bodies from the scene ---------------------------------------------
 
 void localBoundsFor(PrimitiveType t, glm::vec3& mn, glm::vec3& mx) {
@@ -346,6 +508,8 @@ Body makeBody(SceneNode* n, bool dynamic) {
     b.half = b.scale * (mx - mn) * 0.5f;
     b.sphere = n->primitiveType == PrimitiveType::Sphere;
     b.radius = b.sphere ? (b.half.x + b.half.y + b.half.z) / 3.0f : 0.0f;
+    b.cylinder = n->primitiveType == PrimitiveType::Cylinder;
+    if (b.cylinder) b.radius = (b.half.x + b.half.z) * 0.5f;   // (round across X and Z, tall along Y)
 
     b.friction   = Physics::frictionOf(n);
     b.elasticity = Physics::elasticityOf(n);
@@ -358,6 +522,11 @@ Body makeBody(SceneNode* n, bool dynamic) {
         if (b.sphere) {
             mass = density * 4.18879f * b.radius * b.radius * b.radius;
             ix = iy = iz = 0.4f * mass * b.radius * b.radius;
+        } else if (b.cylinder) {   // (spins about its middle line more easily than a box would)
+            const float r2 = b.radius * b.radius, len = e.y;
+            mass = density * std::max(1e-4f, 3.14159f * r2 * len);
+            iy = 0.5f * mass * r2;
+            ix = iz = mass / 12.0f * (3.0f * r2 + len * len);
         } else {
             mass = density * std::max(1e-4f, e.x * e.y * e.z);
             ix = mass / 12.0f * (e.y * e.y + e.z * e.z);
@@ -431,11 +600,15 @@ void floatIn(Body& b, WaterSystem& water, float g, float h, Scene& scene) {
                 if (b.sphere) {
                     if (glm::length(f) > 1.0f) continue;
                     pts[count++] = f * b.radius;
+                } else if (b.cylinder) {
+                    if (glm::length(glm::vec2(f.x, f.z)) > 1.0f) continue;
+                    pts[count++] = glm::vec3(f.x * b.radius, f.y * b.half.y, f.z * b.radius);
                 } else {
                     pts[count++] = f * b.half;
                 }
             }
-    const float volume = b.sphere ? 4.18879f * b.radius * b.radius * b.radius : 8.0f * b.half.x * b.half.y * b.half.z;
+    const float volume = b.sphere ? 4.18879f * b.radius * b.radius * b.radius
+                       : b.cylinder ? 6.28318f * b.radius * b.radius * b.half.y : 8.0f * b.half.x * b.half.y * b.half.z;
     const float mass = 1.0f / b.invMass;
     const float layer = std::max(0.05f, (b.aabbMax.y - b.aabbMin.y) / N);   // how thick each point's slice is
     const glm::mat3 R = b.R();
@@ -1013,6 +1186,8 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     }
 
     const float g = scene.world().gravity;
+    const float air = std::clamp(scene.world().airDensity, 0.0f, 10.0f);
+    const glm::vec3 wind = scene.world().globalWind;
     // Keep rigid-body integration close to 240 Hz even when a frame is slow.
     // The former eight-step ceiling dropped the simulation rate below 240 Hz
     // whenever a frame took longer than 1/30 s, making fast impacts and stacked
@@ -1037,6 +1212,28 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
             if (b.dynamic && b.awake) {
                 b.v.y -= g * h;
                 b.w *= std::max(0.0f, 1.0f - 0.05f * h);        // a little rolling resistance
+            }
+        // Air (workspace.AirDensity, like Roblox's): a part moving through the air, or
+        // standing in the wind (workspace.GlobalWind), is pushed by it, more the faster
+        // it goes and the bigger its side facing the air. Real-world strength, so a
+        // brick hardly notices, but a light, wide thing (a foam sheet, a balloon, a
+        // leaf) drifts down slowly and gets blown about.
+        if (air > 0.0f)
+            for (auto& b : bodies) {
+                if (!b.dynamic || !b.solid) continue;
+                const glm::vec3 vrel = b.v - wind;
+                const float speed = glm::length(vrel);
+                if (speed < 0.5f) continue;
+                const glm::vec3 dir = vrel / speed;
+                const float area = airArea(b, dir);
+                // 0.5 x air density x drag (about 1 for a blunt shape) x area x speed²
+                const float push = 0.5f * air * area * speed * speed * h * b.invMass;
+                if (push < 1e-4f) continue;
+                if (!b.awake) {   // (only wind strong enough to really move it wakes a resting part)
+                    if (push < g * h * 0.3f) continue;
+                    b.awake = true; b.node->sleepTime = 0.0f;
+                }
+                b.v -= dir * std::min(push, speed * 0.5f);   // (never more than halves the speed in a step: no flipping back)
             }
         // Force zones: wind, push and pull on whatever loose part is inside one.
         for (const Zone& z : zones)
@@ -1083,8 +1280,12 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                 if (noCollide.count({std::min(i, k), std::max(i, k)})) continue;
                 if (useGroups && !groups.collides(A.group, B.group)) continue;   // collision groups that pass through
                 if (A.sphere && B.sphere)      sphereSphere(i, k, A, B, contacts);
+                else if (A.sphere && B.cylinder) sphereCylinder(i, k, A, B, contacts, true);
+                else if (B.sphere && A.cylinder) sphereCylinder(k, i, B, A, contacts, false);
                 else if (A.sphere)             sphereBox(i, k, A, B, contacts, true);
                 else if (B.sphere)             sphereBox(k, i, B, A, contacts, false);
+                else if (A.cylinder)           cylinderBox(i, k, A, B.obb(), contacts, true);   // (two cylinders: the other one as a box)
+                else if (B.cylinder)           cylinderBox(k, i, B, A.obb(), contacts, false);
                 else                           boxBox(i, k, A, B, contacts);
             }
         }
@@ -1109,6 +1310,24 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                     const glm::vec3 n = terrain.normalAt(A.pos.x, A.pos.z);
                     const float dist = (A.pos.y - g) * n.y;
                     if (dist < A.radius) contacts.push_back({i, terrainBody, A.pos - n * A.radius, n, A.radius - dist});
+                    continue;
+                }
+                if (A.cylinder) {
+                    // Its lowest point at each end (exactly: so it rolls smoothly downhill),
+                    // and round both rims (standing on an end).
+                    const glm::vec3 ax = A.axisY(), up = terrain.normalAt(A.pos.x, A.pos.z);
+                    glm::vec3 down = -(up - ax * glm::dot(up, ax));
+                    const float dl = glm::length(down);
+                    glm::vec3 u = glm::normalize(glm::cross(ax, std::abs(ax.x) < 0.9f ? glm::vec3(1, 0, 0) : glm::vec3(0, 1, 0)));
+                    glm::vec3 v = glm::cross(ax, u);
+                    for (float s : {-1.0f, 1.0f}) {
+                        const glm::vec3 end = A.pos + ax * (A.half.y * s);
+                        if (dl > 0.2f) touch(end + down / dl * A.radius);
+                        for (int k = 0; k < 8; ++k) {
+                            const float ang = (float)k * 0.785398f;
+                            touch(end + (u * std::cos(ang) + v * std::sin(ang)) * A.radius);
+                        }
+                    }
                     continue;
                 }
                 glm::vec3 corners[8];

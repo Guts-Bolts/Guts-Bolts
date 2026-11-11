@@ -202,10 +202,84 @@ uniform sampler2D uBounce;
 uniform sampler2D uBounceDist;
 uniform mat4      uBounceView;
 uniform mat4      uBounceViewProj;
+// Shiny parts mirror the world (screen-space reflections, like Unreal's): last frame's lit
+// picture and its depth, the camera it was seen from, and how many steps a ray may take.
+uniform bool      uSsrOn;
+uniform sampler2D uSsrColor;
+uniform sampler2D uSsrDepth;
+uniform mat4      uSsrViewProj;
+uniform vec2      uSsrNearFar;
+uniform int       uSsrSteps;
+uniform float     uSsrNoise;     // 1: each pixel starts its ray at a random spot (the upscaler smooths it out)
+// Height fog (like Unreal's exponential height fog): thick down low, thinning out higher up.
+// uFogFalloff 0 = the same everywhere (the old fog); uFogHeight = where it's as thick as uFogDensity.
+uniform float     uFogHeight;
+uniform float     uFogFalloff;
 
 out vec4 FragColor;
 #pragma gb_common
 const float PI = 3.14159265;
+
+// How much fog lies between the camera and a point: the fog's thickness added up along
+// the way. With height fog it thins out going up, so a valley fills with mist while the
+// hill tops stay clear (and looking up into the sky there's less of it).
+float fogAmount(vec3 eye, vec3 p) {
+    float dist = length(p - eye);
+    float k = uFogDensity * dist;
+    if (uFogFalloff > 0.0) {
+        float dy = p.y - eye.y;
+        float t = uFogFalloff * dy;
+        float along = abs(t) > 0.01 ? (1.0 - exp(-t)) / t : 1.0 - t * 0.5;
+        k *= exp(min(-uFogFalloff * (eye.y - uFogHeight), 8.0)) * along;
+    }
+    return 1.0 - exp(-max(k, 0.0));
+}
+
+float ssrDistance(float depth01) {   // a depth from the depth picture -> studs from the camera
+    float z = depth01 * 2.0 - 1.0;
+    float n = uSsrNearFar.x, f = uSsrNearFar.y;
+    return 2.0 * n * f / (f + n - z * (f - n));
+}
+
+// Walk along the reflected ray through last frame's picture. Where the ray goes just
+// behind something in it, that's what this spot mirrors. Returns its colour, and in a
+// how sure that is (0 = it left the screen or found nothing: use the sky instead).
+vec4 screenReflection(vec3 P, vec3 R, vec3 V) {
+    float stepLen = 0.3;
+    float jit = uSsrNoise > 0.5 ? fract(sin(dot(gl_FragCoord.xy + vec2(uTime * 37.0, uTime * 11.0), vec2(12.9898, 78.233))) * 43758.5453) : 0.5;
+    vec3 prevQ = P;
+    vec3 q = P + R * (0.05 + stepLen * jit);
+    for (int i = 0; i < 64; ++i) {
+        if (i >= uSsrSteps) break;
+        vec4 c = uSsrViewProj * vec4(q, 1.0);
+        if (c.w <= 0.1) break;                       // went behind the camera
+        vec2 uv = c.xy / c.w * 0.5 + 0.5;
+        if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break;   // left the screen
+        float behind = c.w - ssrDistance(texture(uSsrDepth, uv).r);
+        if (behind > 0.0 && behind < max(0.4, stepLen * 2.0)) {
+            // Found it somewhere between the last step and this one: halve the gap a few times.
+            vec3 a = prevQ, b = q;
+            for (int k = 0; k < 5; ++k) {
+                vec3 m = (a + b) * 0.5;
+                vec4 mc = uSsrViewProj * vec4(m, 1.0);
+                if (mc.w - ssrDistance(texture(uSsrDepth, mc.xy / mc.w * 0.5 + 0.5).r) > 0.0) b = m; else a = m;
+            }
+            vec4 bc = uSsrViewProj * vec4(b, 1.0);
+            vec2 huv = bc.xy / bc.w * 0.5 + 0.5;
+            // Less sure near the screen's edges, at the end of the walk, and for rays
+            // coming back towards the camera (it can't see what's behind itself).
+            vec2 edge = smoothstep(0.0, 0.07, huv) * smoothstep(0.0, 0.07, 1.0 - huv);
+            float fade = edge.x * edge.y;
+            fade *= 1.0 - pow(float(i) / float(uSsrSteps), 2.0);
+            fade *= 1.0 - smoothstep(0.35, 0.85, dot(R, V));
+            return vec4(max(texture(uSsrColor, huv).rgb, vec3(0.0)), clamp(fade, 0.0, 1.0));
+        }
+        prevQ = q;
+        stepLen *= 1.25;
+        q += R * stepLen;
+    }
+    return vec4(0.0);
+}
 
 const vec2 POISSON[16] = vec2[](
     vec2(-0.94201624, -0.39906216), vec2( 0.94558609, -0.76890725),
@@ -776,7 +850,20 @@ void main() {
         vec3  env = lin(skyGradient(R, uZenith, uHorizon, uGround));
         vec3  avg = lin((uZenith + uHorizon + uGround) / 3.0);
         env = mix(env, avg, rough) * mix(1.0, skyVis, 0.75);   // (no sky reflected deep in a corner)
-        color += env * F * (gMaterial == 7 ? max(uReflections, 0.8) : gMaterial == 8 ? uReflections * 0.2 : gMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : gMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
+        float shine = (gMaterial == 7 ? max(uReflections, 0.8) : gMaterial == 8 ? uReflections * 0.2 : gMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : gMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
+        // Smooth, shiny things (metal, glass, ice, polished stone, wet floors) mirror the
+        // world around them, not only the sky (High and up; see screenReflection).
+        if (uSsrOn && uShading == 0 && rough < 0.45 && shine * max(F.r, max(F.g, F.b)) > 0.004) {
+            vec3 Rs = R;
+            if (uSsrNoise > 0.5 && rough > 0.05) {   // a little blur on the less smooth ones
+                vec3 h3 = fract(sin(vec3(dot(gl_FragCoord.xy, vec2(127.1, 311.7)), dot(gl_FragCoord.xy, vec2(269.5, 183.3)),
+                                         dot(gl_FragCoord.xy, vec2(419.2, 371.9))) + uTime) * 43758.5453);
+                Rs = normalize(R + (h3 - 0.5) * rough * 0.5);
+            }
+            vec4 hit = screenReflection(vWorldPos + N * 0.03, Rs, V);
+            env = mix(env, hit.rgb, hit.a * (1.0 - smoothstep(0.2, 0.45, rough)));
+        }
+        color += env * F * shine;
 
         // Glass & ice get more opaque at glancing angles.
         if (gMaterial == 4 || gMaterial == 6 || gMaterial == 7)
@@ -802,8 +889,7 @@ void main() {
     }
 
     if (uFogEnabled && uShading == 0) {
-        float dist = length(uViewPos - vWorldPos);
-        float f = 1.0 - exp(-uFogDensity * dist);
+        float f = fogAmount(uViewPos, vWorldPos);
         vec3 fog = lin(uFogColor);
         float toward = pow(max(dot(-V, normalize(uSunDir)), 0.0), 8.0);
         fog += lin(uSunColor) * uSunIntensity * toward * uFogSunGlow * 0.6;
@@ -2174,6 +2260,8 @@ uniform bool  uFogEnabled;
 uniform vec3  uFogColor;
 uniform float uFogDensity;
 uniform float uFogSunGlow;
+uniform float uFogHeight;        // height fog (see the lit shader's fogAmount)
+uniform float uFogFalloff;
 uniform float uRenderDist;
 uniform bool  uSelected;
 // The current: a flow map (x, z speed per grid point, bent around rocks) or one
@@ -2386,7 +2474,12 @@ void main() {
     }
     if (uSelected) col = mix(col, vec3(2.0, 0.9, 0.2), pow(1.0 - cosV, 3.0) * 0.8);
     if (uFogEnabled) {
-        float f = 1.0 - exp(-uFogDensity * eyeDist);
+        float k = uFogDensity * eyeDist;
+        if (uFogFalloff > 0.0) {   // height fog: thinner higher up (same as the lit shader's fogAmount)
+            float t = uFogFalloff * (vWorldPos.y - uViewPos.y);
+            k *= exp(min(-uFogFalloff * (uViewPos.y - uFogHeight), 8.0)) * (abs(t) > 0.01 ? (1.0 - exp(-t)) / t : 1.0 - t * 0.5);
+        }
+        float f = 1.0 - exp(-max(k, 0.0));
         vec3 fog = lin(uFogColor);
         float toward = pow(max(dot(-V, normalize(uSunDir)), 0.0), 8.0);
         fog += lin(uSunColor) * uSunIntensity * toward * uFogSunGlow * 0.6;

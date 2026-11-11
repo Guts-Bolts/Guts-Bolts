@@ -99,6 +99,10 @@ struct GraphicsSettings {
     float waterScale() const  { return waterQuality <= 0 ? 0.5f : waterQuality == 1 ? 0.75f : 1.0f; }
     int   waterBlurPasses() const { return waterQuality <= 0 ? 1 : waterQuality == 1 ? 2 : waterQuality == 2 ? 3 : 4; }
     bool  waterReflections() const { return waterQuality >= 1; }
+    // Shiny parts (metal, glass, ice, wet floors...) mirror the world around them, not just
+    // the sky: screen-space reflections, from High up (0 = sky only). Each level walks the
+    // reflected ray further: High 20 steps, Epic 32, Cinematic 48.
+    int   shinyReflections() const { int l = groupLevel(Scalability::Reflection); return l >= 2 ? l - 1 : 0; }
     int   waterMaxDrops() const { return waterQuality <= 0 ? 5000 : waterQuality == 1 ? 20000 : waterQuality == 2 ? 60000 : 150000; }
 
     void applyPreset(int q);

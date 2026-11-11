@@ -127,6 +127,10 @@ struct WorldSettings {
     bool       softTissue  = true;
     // Wind for cloth, flags and capes (Roblox's Workspace.GlobalWind), studs / second.
     glm::vec3  globalWind{0.0f};
+    // The air (Roblox's Workspace.AirDensity, same units as part densities): loose parts
+    // are slowed by it and pushed by the wind. Real-world thickness by default, so only
+    // light, wide parts really feel it. 0 = no air (like before 0.8).
+    float      airDensity = 0.0012f;
     // Realism (Realism.h): a hurt leg limps and a hurt arm is held; running tires you out
     // (off to start with: it changes how a game plays); fire spreads to wood and cloth.
     bool       injuries   = true;

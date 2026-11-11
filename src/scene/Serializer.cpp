@@ -1384,7 +1384,7 @@ std::unique_ptr<SceneNode> fromJson(const json& j, bool freshIds) {
     X(ambientColor) X(groundAmbient) X(ambientIntensity) X(reflections) X(bounceLight) \
     X(showSky) X(skyZenith) X(skyHorizon) X(skyGround) X(skyBrightness)             \
     X(clouds) X(cloudCover) X(cloudSpeed) X(cloudColor) X(stars)                    \
-    X(fogEnabled) X(fogColor) X(fogDensity) X(fogSunGlow)                           \
+    X(fogEnabled) X(fogColor) X(fogDensity) X(fogSunGlow) X(fogHeight) X(fogFalloff)  \
     X(exposure) X(bloomIntensity) X(bloomThreshold) X(aoIntensity) X(contrast)      \
     X(saturation) X(vignette) X(tint) X(weather) X(weatherAmount)                   \
     X(lightRays) X(autoExposure) X(motionBlur)
@@ -1438,7 +1438,7 @@ json settingsJson(Scene& scene) {
                   {"liquidBlood", ws.liquidBlood}, {"softTissue", ws.softTissue},
                   {"injuries", ws.injuries}, {"stamina", ws.stamina}, {"fireSpread", ws.fireSpread},
                   {"acoustics", ws.acoustics}, {"impactSounds", ws.impactSounds},
-                  {"globalWind", {ws.globalWind.x, ws.globalWind.y, ws.globalWind.z}},
+                  {"globalWind", {ws.globalWind.x, ws.globalWind.y, ws.globalWind.z}}, {"airDensity", ws.airDensity},
                   {"playerCollisions", ws.playerCollisions}, {"voiceChat", ws.voiceChat}, {"maxFluidParticles", ws.maxFluidParticles},
                   {"orthographic", ws.orthographic}, {"orthographicSize", ws.orthographicSize},
                   {"streaming", ws.streaming}, {"streamRadius", ws.streamRadius}};
@@ -1512,6 +1512,7 @@ void applySettings(Scene& scene, const json& j) {
         w.fireSpread        = get<bool>(j["world"], "fireSpread", w.fireSpread);
         w.acoustics         = get<bool>(j["world"], "acoustics", w.acoustics);
         w.impactSounds      = get<bool>(j["world"], "impactSounds", w.impactSounds);
+        w.airDensity        = std::clamp(get<float>(j["world"], "airDensity", w.airDensity), 0.0f, 10.0f);
         if (auto gw = j["world"].find("globalWind"); gw != j["world"].end() && gw->is_array() && gw->size() == 3 &&
             (*gw)[0].is_number() && (*gw)[1].is_number() && (*gw)[2].is_number())
             w.globalWind = glm::clamp(glm::vec3((*gw)[0].get<float>(), (*gw)[1].get<float>(), (*gw)[2].get<float>()),

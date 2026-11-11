@@ -200,7 +200,7 @@ const char* const kLuaProperties[] = {
     "Width1", "CurveSize0", "CurveSize1", "Segments", "ZOffset", "Viscosity", "SurfaceTension", "Rate", "FluidSystem",
     "FlowVelocity", "Clarity", "Drag", "WaveScale", "Gravity", "DeathStyle", "Gore", "FallDamage", "SafeFallSpeed",
     "FallDamageScale", "PlayerCollisions", "VoiceChatEnabled", "Orthographic", "OrthographicSize", "StreamingEnabled", "StreamingTargetRadius", "BloodColor",
-    "BloodAmount", "BloodStay", "Dismemberment", "LiquidBlood", "SoftTissue", "GlobalWind", "MaxFluidParticles", "ClockTime", "GlobalShadows", "FogEnabled", "FogDensity", "FogColor",
+    "BloodAmount", "BloodStay", "Dismemberment", "LiquidBlood", "SoftTissue", "GlobalWind", "AirDensity", "MaxFluidParticles", "ClockTime", "GlobalShadows", "FogEnabled", "FogDensity", "FogColor", "FogHeight", "FogFalloff",
     "Ambient", "SunColor", "Weather", "WeatherIntensity", "BounceLight", "LightRays", "AutoExposure", "MotionBlur", "Injuries", "Stamina", "FireSpread", "Acoustics", "ImpactSounds", "Shadows", "PlaybackLoudness", "Text", "TextColor3", "TextSize", "TextScaled", "TextWrapped", "TextTransparency",
     "TextStrokeColor3", "TextStrokeTransparency", "TextXAlignment", "TextYAlignment", "TextEditable", "Font", "FontSize",
     "PlaceholderText", "PlaceholderColor3", "ClearTextOnFocus", "MultiLine", "ContentText", "BackgroundColor3",
