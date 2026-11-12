@@ -1,4 +1,4 @@
-// The C++ server's age ratings (worker/test/age-ratings.test.mjs checks the website's):
+// The C++ server's content levels (worker/test/content-levels.test.mjs checks the website's):
 // answers -> rating, its history, and players' rating limits.
 #include "core/Account.h"
 #include "online/Protocol.h"
@@ -115,33 +115,33 @@ int main() {
         check(error(ask(s, "game.rate", {{"game", "g-farm"}, {"answers", {{"violence", "none"}}}})).find("every question") != std::string::npos,
               "every question needs an answer");
         r = ask(s, "game.rate", {{"game", "g-farm"}, {"answers", noneAnswers()}});
-        check(r.value("rating", std::string()) == "all", "no to everything: All ages");
+        check(r.value("rating", std::string()) == "mild", "no to everything: Mild");
         json gore = noneAnswers(); gore["violence"] = "gore"; gore["scary"] = "mild";
         r = ask(s, "game.rate", {{"game", "g-night"}, {"answers", gore}});
-        check(r.value("rating", std::string()) == "17", "gore: 17+");
+        check(r.value("rating", std::string()) == "extreme", "gore: Extreme");
         r = askAs(s, bob, "game.rating", {{"game", "g-night"}});
-        check(r.value("rating", std::string()) == "17" && r["history"].size() == 1 && r["answers"].value("violence", std::string()) == "gore",
+        check(r.value("rating", std::string()) == "extreme" && r["history"].size() == 1 && r["answers"].value("violence", std::string()) == "gore",
               "anyone can see why: answers and history");
         r = askAs(s, bob, "asset.info", {{"id", "g-night"}});
-        check(r["asset"].value("rating", std::string()) == "17", "the rating is on the game");
+        check(r["asset"].value("rating", std::string()) == "extreme", "the rating is on the game");
         check(gameNames(s, bob).size() == 3, "no limit: every game shows");
-        check(!askAs(s, bob, "rating.limit", {{"limit", "21"}}).value("ok", true), "a made-up limit is refused");
-        check(askAs(s, bob, "rating.limit", {{"limit", "13"}}).value("limit", std::string()) == "13", "bob picks 13+");
+        check(!askAs(s, bob, "rating.limit", {{"limit", "kids"}}).value("ok", true), "a made-up limit is refused");
+        check(askAs(s, bob, "rating.limit", {{"limit", "strong"}}).value("limit", std::string()) == "strong", "bob picks Strong");
         auto names = gameNames(s, bob);
-        check(names == std::vector<std::string>({"Calm Farm", "Unrated"}), "the 17+ game leaves bob's lists");
+        check(names == std::vector<std::string>({"Calm Farm", "Unrated"}), "the Extreme game leaves bob's lists");
     }
     {
         auto server = startServer();
         if (!server) { std::cout << "FAIL  couldn't start again: " << err << "\n"; return 1; }
         GbServer& s = *server;
-        check(askAs(s, bob, "rating.limit").value("limit", std::string()) == "13", "the limit is kept after a restart");
-        check(askAs(s, bob, "game.rating", {{"game", "g-night"}}).value("rating", std::string()) == "17", "...and so is the rating");
+        check(askAs(s, bob, "rating.limit").value("limit", std::string()) == "strong", "the limit is kept after a restart");
+        check(askAs(s, bob, "game.rating", {{"game", "g-night"}}).value("rating", std::string()) == "extreme", "...and so is the rating");
         check(gameNames(s, bob).size() == 2, "...and the list still leaves it out");
         askAs(s, bob, "rating.limit", {{"limit", ""}});
         check(gameNames(s, bob).size() == 3, "no limit again: back to every game");
     }
     std::error_code ec;
     fs::remove_all(dir, ec);
-    std::cout << (failures ? "\nFAILED: " + std::to_string(failures) + "\n" : "\nAll age rating checks passed.\n");
+    std::cout << (failures ? "\nFAILED: " + std::to_string(failures) + "\n" : "\nAll content level checks passed.\n");
     return failures ? 1 : 0;
 }

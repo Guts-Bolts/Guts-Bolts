@@ -29,9 +29,9 @@ bool run(GameSession& session, const std::string& code, std::string& err) {
     return ok;
 }
 void seconds(GameSession& session, int n) {
-    for (int i = 0; i < n * 4; ++i) {
+    for (int i = 0; i < n * 30; ++i) {   // (the game steps at most 1/30 of a second a frame)
         ImGui::NewFrame();
-        session.update(0.25f, 0.0f, false);
+        session.update(1.0f / 30.0f, 0.0f, false);
         ImGui::EndFrame();
     }
 }
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
         GameSession client(&clientScene);
         Serializer::loadGameFile(clientScene, argv[1], &err);
         client.setRunOnly(true);
-        client.scripts().setRunMode(ScriptEngine::RunMode::Client);
+        client.setRole(GameSession::Role::Client);
         client.start();
         run(client, "_G.warnings = 0; game.ServerLowMemoryWarning:Connect(function() _G.warnings = _G.warnings + 1 end)", err);
         seconds(client, 70);

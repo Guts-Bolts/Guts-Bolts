@@ -21,7 +21,7 @@ import { installMcpRelay } from './mcp-relay.js';
 import { installGameWeb } from './game-web.js';
 import { installBanLists } from './banlists.js';   // creators' ban lists, used across their games
 import { installTesters, isTester } from './testers.js';   // early testers: a few people play a game before it's public
-import { installRatings, ratingAllowed } from './ratings.js';   // age ratings from a few questions
+import { installRatings, ratingAllowed } from './ratings.js';   // content levels from a few questions
 import { installLaunchpad } from './launchpad.js';   // Launchpad: staff help picked creators build big games
 import { installBackgrounds } from './backgrounds.js';   // a picture behind your avatar on your profile
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
@@ -324,7 +324,7 @@ const kDeletedName = 'Deleted user';
 // Support tickets (ServerSupport.cpp has the same): anyone, even someone who can't log in,
 // can ask staff for help. A few open at once per device, and a few a day.
 const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 1000, kResetHours = 24;
-const TICKET_TOPICS = ['password', 'account', 'other'];
+const TICKET_TOPICS = ['password', 'account', 'underage', 'other'];   // (underage: a parent or someone else says an account belongs to someone under 18)
 const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass: 'pass' })[a.kind] || a.kind;
 const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art'];   // art: "piece" or "piece:comment" (art.js)
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.
@@ -2280,7 +2280,7 @@ export class GbServerObject extends DurableObject {
       favorites: a.kind === 'game' || isCatalogItem(a.kind) || this.auctionOpen(a, now()) ? (a.favorites || 0) : undefined,
       featured: a.kind === 'game' && a.featured > 0 ? true : undefined,
       rating: a.kind === 'game' ? (a.rating || '') : undefined,
-      launchpad: a.kind === 'game' && a.launchpad ? a.launchpad.stage : undefined,   // in Launchpad (launchpad.js)   // age rating (ratings.js; '' = not rated yet)
+      launchpad: a.kind === 'game' && a.launchpad ? a.launchpad.stage : undefined,   // in Launchpad (launchpad.js)   // content level (ratings.js; '' = none yet)
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: !me ? undefined : a.kind === 'game' ? (me.favorites || []).includes(a.id)
         : (isCatalogItem(a.kind) || this.auctionOpen(a, now())) ? (me.itemFavorites || []).includes(a.id) : undefined,
@@ -4525,7 +4525,7 @@ export class GbServerObject extends DurableObject {
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
         (!creator || a.creator === creator) && (publicView ? !a.review : this.canPlay(a, me)) &&
         (!genre || (a.genres || []).includes(genre)) &&
-        (ownedOnly || ratingAllowed(a, me)) &&   // over your rating limit (ratings.js)
+        (ownedOnly || ratingAllowed(a, me)) &&   // above your content level limit (ratings.js)
         (!q || only || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
       const playing = sort === 'playing' ? new Map(found.map((a) => [a.id, this.playingIn(a.id)])) : null;
       const by = {

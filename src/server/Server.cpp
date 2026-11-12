@@ -377,7 +377,7 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
         if (auto g = m_groups.find(a.meta.value("group", std::string())); g != m_groups.end())
             j["group"] = {{"id", g->second.id}, {"name", g->second.name}, {"color", g->second.color}};
         if (a.meta.value("featured", 0LL) > 0) j["featured"] = true;
-        j["rating"] = a.meta.value("rating", std::string());   // age rating (ServerRatings.cpp; "" = not rated yet)
+        j["rating"] = a.meta.value("rating", std::string());   // content level (ServerRatings.cpp; "" = none yet)
         json shots = json::array();
         for (const json& s : a.shots) shots.push_back(s.value("id", std::string()));
         j["shots"] = shots;
@@ -1511,7 +1511,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             if (!creator.empty() && a.creator != creator) continue;
             if (!q.empty() && lower(a.name).find(q) == std::string::npos) continue;
             if (publicView ? !reviewOf(a.meta).empty() : !canSee(a, me)) continue;
-            if (!ownedOnly && !ratingAllowed(a, me)) continue;   // over their rating limit (ServerRatings.cpp)
+            if (!ownedOnly && !ratingAllowed(a, me)) continue;   // above their content level limit (ServerRatings.cpp)
             found.push_back(&a);
         }
         std::sort(found.begin(), found.end(), [&](const Asset* x, const Asset* y) {

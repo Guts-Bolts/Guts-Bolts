@@ -8,7 +8,7 @@ import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
 import { mountBanLists, mountGameBans, mountBanNotice } from './banlists.js';
 import { mountGameTesters, mountTesterNote } from './testers.js';
-import { ratingPill, mountGameRating, mountRatingWhy, mountRatingLimit } from './ratings.js';   // age ratings
+import { ratingPill, mountGameRating, mountRatingWhy, mountRatingLimit } from './ratings.js';   // content levels (how intense a game is)
 import { mountLaunchpad, mountLaunchpadShelf, launchpadPill } from './launchpad.js';   // Launchpad creator program
 import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // profile backgrounds
 import { mountAssetVersions } from './versions.js';
@@ -1698,7 +1698,7 @@ pages.game = async (id) => {
     ${commentsBlock(g, cr)}`);
   if (signedIn() && !mine) mountBanNotice($('#banNotice'), g.id, call, toast);   // banned? why, and an appeal box (banlists.js)
   if (signedIn() && !mine) mountTesterNote($('#testerNote'), g.id, call, toast);   // an early tester's note box (testers.js)
-  mountRatingWhy($('#ratingWhy'), g.id, call);   // its age rating and why (ratings.js)
+  mountRatingWhy($('#ratingWhy'), g.id, call);   // its content level and why (ratings.js)
 };
 
 // Comments under a game, newest first, 20 at a time.
@@ -2631,7 +2631,7 @@ pages.configure = async (id) => {
   mountGameWeb($('#gameWeb'), g.id, call, toast);   // web requests and secrets (gameweb.js)
   mountGameBans($('#gameBans'), g.id, call, toast);   // ban lists (banlists.js)
   mountGameTesters($('#gameTesters'), g.id, call, toast);   // early testers (testers.js)
-  mountGameRating($('#gameRating'), g.id, call, toast);   // age rating questions (ratings.js)
+  mountGameRating($('#gameRating'), g.id, call, toast);   // content level questions (ratings.js)
   // Show a picked picture straight away.
   view.querySelectorAll('input[data-preview]').forEach((inp) => inp.addEventListener('change', () => {
     const file = inp.files[0];
@@ -3854,7 +3854,7 @@ pages.forgot = async () => {
 
 // Support: ask staff for help (even when you can't log in). Tickets belong to this browser:
 // staff's answers show up here, and so does a password reset code if staff send one.
-const TICKET_TOPICS = [['password', 'I forgot my password'], ['account', 'Something else about my account'], ['other', 'Something else']];
+const TICKET_TOPICS = [['password', 'I forgot my password'], ['account', 'Something else about my account'], ['underage', 'An account belongs to someone under 18 (parents start here)'], ['other', 'Something else']];
 pages.support = async () => {
   const topic = new URLSearchParams(location.hash.split('?')[1] || '').get('topic') || (signedIn() ? 'account' : 'password');
   const r = await pageCall('support.mine', {});
@@ -4025,7 +4025,7 @@ pages.settings = async () => {
         <button class="btn small" data-act="connectRemove" data-id="${a.id}" data-name="${a.name}">Disconnect</button></div>`)}`
       : html`<p class="muted small">You haven't connected any apps.</p>`).s;
   fyxaSettingsBox();
-  mountRatingLimit($('#ratingLimit'), call, toast);   // the highest age rating to show (ratings.js)
+  mountRatingLimit($('#ratingLimit'), call, toast);   // the highest content level to show (ratings.js)
 };
 
 // Settings > "Fyxa and your uploads": the AI training switch (on unless you turn it off) and the
@@ -4154,14 +4154,27 @@ pages.terms = async () => {
     <h2>2. Adults only (18+)</h2>
     <p>This is the R-rated, non-kid version of the genre. Games and chat can contain <b>strong language, crude
       humour, cartoon violence and gore, and mature themes</b>, and swearing isn't filtered. You must be <b>18 or
-      older</b> to make an account or play. If you're under 18, please don't use Guts&amp;Bolts.</p>
+      older</b> to make an account, play, use Studio or use this website. If you're under 18, please don't use
+      Guts&amp;Bolts.</p>
     <ul>
-      <li><b>No kids, and especially no one under 13.</b> Guts&amp;Bolts isn't made for children, and we don't knowingly
-        collect personal information from anyone under 13 (or anyone under 18).</li>
-      <li>If we find out an account belongs to someone under 18, we'll close it and delete what's personal in it.</li>
-      <li>If you think someone is under 18, report them, or tell staff on the <a href="#/support">Support</a> page.
-        Parents can ask us there to close their child's account.</li>
-      <li>Ticking the "I'm 18 or older" box when you sign up is a promise. Lying about your age breaks these terms.</li>
+      <li><b>No kids, with no exceptions.</b> Not with a parent's permission, not with a parent watching, and not on a
+        parent's account. Guts&amp;Bolts is <b>not made for children and isn't aimed at them</b>.</li>
+      <li><b>We don't knowingly collect personal information from anyone under 18</b>, and especially not from anyone
+        under 13. If you're under 18, don't sign up, and don't send us anything about yourself.</li>
+      <li>We don't check IDs. Ticking the "I'm 18 or older" box when you sign up is <b>your promise that it's true</b>.
+        Lying about your age breaks these terms, and the account gets closed.</li>
+      <li>If we find out (or have good reason to think) an account belongs to someone under 18, we <b>close it and
+        delete what's personal in it</b> as soon as we can. Bolts and items on it are gone.</li>
+      <li>If you think someone is under 18, report them (pick "Someone under 18"), or tell staff on the
+        <a href="#/support">Support</a> page.</li>
+      <li><b>Parents and guardians:</b> if your child made an account, tell us on the <a href="#/support?topic=underage">Support</a>
+        page (you don't need to log in). Give their username, and we'll close the account and delete what's personal
+        in it. We'll only ask for what we need to find the account. You're responsible for what your children do on
+        your devices, so please use your device's parental controls to keep them off sites like this one.</li>
+      <li>Games can show a <b>content level</b> (Mild, Moderate, Strong or Extreme). It tells adults how intense a game
+        is. It is <b>not an age rating</b>, and a "Mild" game is still only for adults.</li>
+      <li>Making games, items, groups or posts <b>for kids</b>, or trying to get anyone under 18 to play, isn't
+        allowed (section 7).</li>
     </ul>
 
     <h2>3. Your account</h2>
@@ -4248,6 +4261,8 @@ pages.terms = async () => {
       <li>upload viruses, or games or plugins made to harm people's computers or steal from them;</li>
       <li>upload things you don't have the right to share (other people's art, music, or another platform's assets
         passed off as yours);</li>
+      <li>make games, items, groups or posts aimed at children, or try to get anyone under 18 to join, play or
+        talk to you;</li>
       <li>pretend to be staff or another player.</li>
     </ul>
 
@@ -4293,6 +4308,8 @@ pages.terms = async () => {
       not straight to other players. Staff can see what's needed to keep Guts&amp;Bolts safe, like reports.</p>
     <p>Your public uploads may be used to train Fyxa, our AI helper, unless you turn that off in Settings. Section 6
       says exactly what counts and what never does. We keep a record of when you change that setting.</p>
+    <p>Guts&amp;Bolts is for adults only. We don't knowingly collect anything from anyone under 18 (or under 13), and
+      we delete it when we find out (section 2).</p>
     <p>The full version, including the ads and cookies, is our <a href="../privacy">Privacy Policy</a>.</p>
 
     <h2>12. No guarantees</h2>
