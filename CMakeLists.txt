@@ -31,6 +31,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerRatings.cpp
     src/server/ServerBackgrounds.cpp
     src/server/ServerArt.cpp
+    src/server/ServerPaste.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -1057,6 +1058,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerArtTests gb_version)
     target_link_libraries(ServerArtTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerArtTests COMMAND ServerArtTests)
+
+    # G&B Paste: making, listing, running out, deleting, reporting (ServerPaste.cpp).
+    add_executable(ServerPasteTests tests/ServerPasteTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerPasteTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerPasteTests gb_version)
+    target_link_libraries(ServerPasteTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerPasteTests COMMAND ServerPasteTests)
 
     # Early testers: a testers-only game, tester notes, going public (ServerTesters.cpp).
     add_executable(ServerTestersTests tests/ServerTestersTests.cpp ${GB_SERVER_TEST_SOURCES})
