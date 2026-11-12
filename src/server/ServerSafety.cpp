@@ -19,7 +19,7 @@ constexpr size_t kMaxBlocked    = 200;
 constexpr int    kReportsPerDay = 20;
 constexpr size_t kMaxReports    = 3000;
 bool isReportKind(const std::string& k) {
-    return k == "user" || k == "game" || k == "item" || k == "message" || k == "group" || k == "comment" || k == "forum";
+    return k == "user" || k == "game" || k == "item" || k == "message" || k == "group" || k == "comment" || k == "forum" || k == "art";   // art: ServerArt.cpp
 }
 bool has(const std::vector<std::string>& list, const std::string& id) {
     return std::find(list.begin(), list.end(), id) != list.end();
@@ -128,6 +128,9 @@ json GbServer::safetyOp(const std::string& name, User& me, const json& args) {
             target = id;
             about = found->value("by", std::string());
             copy = {{"subject", "Forum: " + title}, {"body", found->value("text", std::string())}, {"at", found->value("at", 0LL)}};
+        } else if (kind == "art") {   // "piece" or "piece:comment" (ServerArt.cpp)
+            const std::string why = artReportTarget(id, me, target, about, copy);
+            if (!why.empty()) return fail(why);
         } else {
             auto g = m_groups.find(id);
             if (g == m_groups.end()) return fail("That group isn't there any more.");
@@ -195,6 +198,7 @@ json GbServer::reportsJson(const std::string& status) const {
             r["name"] = there ? m_forum[tid].value("title", std::string()) : "(deleted)";
             r["thread"] = there ? tid : "";
         }
+        if (kind == "art") { r["name"] = artReportName(target); r["piece"] = target.substr(0, target.find(':')); }
         if (kind == "group") {
             auto g = m_groups.find(target);
             r["name"] = g != m_groups.end() ? g->second.name : "(deleted)";

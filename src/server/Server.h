@@ -285,6 +285,14 @@ private:
     const nlohmann::json* banFor(const Asset& a, const User& me, const nlohmann::json** entry) const;
     std::string banListRole(const nlohmann::json& l, const User& me) const;
     nlohmann::json banListPerson(const std::string& id) const;
+    // ServerArt.cpp: the Art portal (art.json + files/art-<id>), same rules as worker/art.js.
+    nlohmann::json artOp(const std::string& name, User* me, const nlohmann::json& args);
+    bool artCanSee(const nlohmann::json& p, const User* me) const;
+    nlohmann::json artJson(const nlohmann::json& p, const User* me, bool full) const;
+    std::string artReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string artReportName(const std::string& target) const;
+    void saveArt();
+    void loadArt();
     // ServerTesters.cpp: early testers play a game before it's public.
     nlohmann::json testerOp(const std::string& name, User& me, const nlohmann::json& args);
     bool isTester(const Asset& a, const User& me) const;
@@ -452,6 +460,7 @@ private:
     nlohmann::json m_roadmap = {{"items", nlohmann::json::array()}, {"ideas", nlohmann::json::array()}};
     nlohmann::json m_events = nlohmann::json::array();   // ServerExtras.cpp
     nlohmann::json m_banLists = nlohmann::json::object();   // ServerBanLists.cpp: list id -> list
+    nlohmann::json m_art = {{"pieces", nlohmann::json::object()}, {"posts", nlohmann::json::object()}};   // ServerArt.cpp
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.
