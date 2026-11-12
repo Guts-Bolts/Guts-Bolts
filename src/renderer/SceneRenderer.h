@@ -70,6 +70,11 @@ private:
 public:
     // How many groups of copies were drawn in one go last frame (Instancing.h; for tests).
     int lastCopyGroups() const { return m_lastCopies; }
+    // How many triangles the last frame drew (shadows and all). Detail levels (MeshLod.h)
+    // bring it down; GB_NO_LODS=1 turns them off to compare.
+    long lastTriangles() const { return m_lastTriangles; }
+    // Which detail level a mesh at `model` gets this frame (0 = full).
+    int  lodFor(const Mesh* mesh, const glm::mat4& model) const;
 private:
     // The terrain's mesh, rebuilt when the terrain changes (null = no terrain).
     Mesh* terrainMesh(Scene& scene);
@@ -165,6 +170,7 @@ private:
     WeatherSim m_weather;
     double     m_weatherClock = 0.0;
     void drawWeather(Scene& scene, const Camera& camera);
+    void drawLightning(const Camera& camera);   // a Storm's bolt, glowing
     // Each Trail's pieces: where its two attachments were, and when.
     struct TrailPoint { glm::vec3 a, b; double time; };
     struct TrailState { std::vector<TrailPoint> points; double seen = 0.0; int clears = 0; };
@@ -202,6 +208,10 @@ private:
 
     unsigned int m_gridVao = 0, m_gridVbo = 0;
     unsigned int m_instanceVbo = 0;   // each copy's settings when many are drawn at once (Instancing.h)
+    long         m_lastTriangles = 0;
+    float        m_lodPixelsPerStud = 0.0f;   // 1 stud, 1 stud away, covers this many pixels (0 = detail levels off)
+    float        m_lodBias = 1.0f;            // from the graphics level: > 1 simpler sooner
+    bool         m_lodOrtho = false;          // orthographic: size doesn't change with distance
     int          m_lastCopies = 0;    // how many groups of copies the last frame drew in one go
     std::unique_ptr<Shader> m_overlay;
     unsigned int m_overlayVao = 0, m_overlayVbo = 0;

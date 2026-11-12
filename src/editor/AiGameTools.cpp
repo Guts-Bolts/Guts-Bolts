@@ -1069,6 +1069,7 @@ AiToolResult Editor::runGameAiTool(const std::string& name, const json& args) {
             {"foggy",   {11.0, 1.0, {0.5f, 0.5f, 0.52f}, {0.9f, 0.9f, 0.9f}, true, 0.03, {0.72f, 0.74f, 0.76f}, "Clear", 0.0}},
             {"spooky",  {23.0, 0.3, {0.18f, 0.12f, 0.22f}, {0.55f, 0.45f, 0.75f}, true, 0.025, {0.12f, 0.08f, 0.16f}, "Clear", 0.0}},
             {"rainy",   {13.0, 0.8, {0.38f, 0.4f, 0.45f}, {0.7f, 0.72f, 0.78f}, true, 0.012, {0.5f, 0.53f, 0.58f}, "Rain", 0.8}},
+            {"stormy",  {15.0, 0.6, {0.28f, 0.3f, 0.36f}, {0.6f, 0.62f, 0.7f}, true, 0.016, {0.36f, 0.38f, 0.44f}, "Storm", 1.0}},
             {"snowy",   {12.0, 1.2, {0.55f, 0.56f, 0.62f}, {0.9f, 0.92f, 1.0f}, true, 0.01, {0.85f, 0.88f, 0.93f}, "Snow", 0.7}},
             {"space",   {0.0, 1.5, {0.1f, 0.1f, 0.14f}, {1.0f, 1.0f, 1.0f}, false, 0.0, {0.0f, 0.0f, 0.02f}, "Clear", 0.0}},
         };
@@ -1117,7 +1118,7 @@ AiToolResult Editor::runGameAiTool(const std::string& name, const json& args) {
         json now;
         for (const Log::Entry& e : got) {
             if (e.level == Log::Level::Error)
-                return fail("LUA_ERROR", "Couldn't change Lighting: " + e.text, "Check the values (weather: Clear, Rain or Snow).");
+                return fail("LUA_ERROR", "Couldn't change Lighting: " + e.text, "Check the values (weather: Clear, Rain, Snow or Storm).");
             if (e.text.rfind("\1ATMO", 0) == 0) {
                 std::vector<std::string> f;
                 std::stringstream ss(e.text.substr(5));

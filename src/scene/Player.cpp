@@ -1814,7 +1814,7 @@ void Player::realismStep(float dt) {
 
     // Rain soaks you when nothing is over your head; a soaked body drips.
     const Environment& env = m_scene->environment();
-    if (env.weather == (int)Weather::Rain && !m_swimming && !m_dead) {
+    if (isRaining(env.weather) && !m_swimming && !m_dead) {
         float up = 0.0f;
         if (!Physics::raycast(*m_scene, head + glm::vec3(0, 1.0f, 0), glm::vec3(0, 1, 0), &up, r) || up > 300.0f)
             m_drip = std::min(1.0f, m_drip + dt * (1.0f / 20.0f + std::clamp(env.weatherAmount, 0.0f, 1.0f) / 25.0f));

@@ -1,4 +1,4 @@
 export default {
-  id: 'unreal-graphics-detail', title: 'Unreal-style graphics: automatic detail levels for meshes', status: 'planned', version: '', pr: 0, time: 1794358703,
-  text: 'Big meshes are split into small groups of triangles when they are uploaded, and far-away groups are drawn with fewer triangles (a simple take on Nanite). Low draws coarser groups.',
+  id: 'unreal-graphics-detail', title: 'Unreal-style graphics: automatic detail levels for meshes', status: 'working', version: '', pr: 0, time: 1794358703,
+  text: 'Big meshes get simpler copies when they are built, and a mesh that is small on the screen is drawn as one of them (a simple take on Nanite, a whole mesh at a time). Low swaps to the simpler copies sooner.',
 };

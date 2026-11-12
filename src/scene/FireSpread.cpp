@@ -80,7 +80,7 @@ void System::update(Scene& scene, float dt, bool host, const glm::vec3& ears) {
 
     if (!spread) { m_burn.clear(); return; }
     const Environment& env = scene.environment();
-    const bool raining = env.weather == (int)Weather::Rain;
+    const bool raining = isRaining(env.weather);
     std::vector<uint64_t> burntOut, putOut;
     for (const Spot& s : burning) {
         SceneNode* p = s.part;

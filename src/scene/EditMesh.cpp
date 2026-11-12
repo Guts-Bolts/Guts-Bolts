@@ -183,7 +183,7 @@ void refresh(SceneNode& node, const std::vector<glm::vec3>* posed) {
         for (uint32_t k = 1; k + 1 < (uint32_t)f.size(); ++k)
             idx.insert(idx.end(), {base, base + k, base + k + 1});
     }
-    node.mesh = verts.empty() ? MeshLibrary::get(PrimitiveType::Cube) : std::make_shared<Mesh>(verts, idx);
+    node.mesh = verts.empty() ? MeshLibrary::get(PrimitiveType::Cube) : std::make_shared<Mesh>(verts, idx, /*lods*/ bent.verts.empty());
 }
 
 void fit(SceneNode& node) {

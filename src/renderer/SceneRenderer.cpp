@@ -1,4 +1,7 @@
 #include "SceneRenderer.h"
+#include "MeshLod.h"
+#include "../core/Audio.h"
+#include "../core/Log.h"
 #include "Textures.h"
 #include "Shader.h"
 #include "Shaders.h"
@@ -44,6 +47,12 @@ static bool bentByBones(const SceneNode* n) {
 static float partRadius(const glm::mat4& m) {
     return 0.5f * std::sqrt(glm::dot(glm::vec3(m[0]), glm::vec3(m[0])) + glm::dot(glm::vec3(m[1]), glm::vec3(m[1])) +
                             glm::dot(glm::vec3(m[2]), glm::vec3(m[2])));
+}
+
+int SceneRenderer::lodFor(const Mesh* mesh, const glm::mat4& model) const {
+    if (!mesh || mesh->lodCount() == 0 || m_lodPixelsPerStud <= 0.0f) return 0;
+    const float distance = m_lodOrtho ? 1.0f : glm::length(glm::vec3(model[3]) - m_viewPos);
+    return MeshLod::pick(MeshLod::pixelsAcross(partRadius(model), distance, m_lodPixelsPerStud), m_lodBias, mesh->lodPixels());
 }
 
 namespace {
@@ -509,7 +518,9 @@ void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, 
         const glm::mat4 m = node->worldMatrix();
         if (tooFar(glm::vec3(m[3]), partRadius(m))) return;
         m_depth->setMat4("uModel", m);
+        Mesh::lod = lodFor(node->mesh.get(), m);   // (the same level the camera sees, so a shadow fits its part)
         node->mesh->draw();
+        Mesh::lod = 0;
     });
     if (Mesh* tm = terrainMesh(scene)) {
         m_depth->setMat4("uModel", glm::mat4(1.0f));
@@ -610,6 +621,9 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         const double t = now();
         const float dt = m_weatherClock > 0.0 ? (float)(t - m_weatherClock) : 0.0f;
         m_weatherClock = t;
+        // (For screenshots and checks: GB_TEST_LIGHTNING=1 keeps the bolts coming.)
+        static const bool testBolts = std::getenv("GB_TEST_LIGHTNING") != nullptr;
+        if (testBolts && m_weather.boltGlow() < 0.2f) m_weather.nextStrike = 0.0f;
         m_weather.update(scene, camera.position(), dt);
     }
     struct KeepLighting {
@@ -617,6 +631,28 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         ~KeepLighting() { scene.environment() = saved; }
     } keep{scene, scene.environment()};
     scene.environment() = withWeather(keep.saved);
+    // Lightning (a Storm): for a moment the sky, the clouds and everything under them
+    // are lit blue-white. And its thunder, when it gets here (the main view only, so
+    // a Studio with four views doesn't play it four times).
+    if (const float f = m_weather.flash(); f > 0.01f) {
+        Environment& e = scene.environment();
+        const glm::vec3 white(0.82f, 0.88f, 1.0f);
+        e.ambientColor = glm::mix(e.ambientColor, white, 0.7f * f);
+        e.groundAmbient = glm::mix(e.groundAmbient, white * 0.8f, 0.6f * f);
+        e.ambientIntensity += 1.1f * f;
+        e.skyHorizon = glm::mix(e.skyHorizon, white * 0.9f, 0.6f * f);
+        e.skyZenith = glm::mix(e.skyZenith, white * 0.65f, 0.5f * f);
+        e.cloudColor = glm::mix(e.cloudColor, white, 0.6f * f);
+        e.fogColor = glm::mix(e.fogColor, white * 0.8f, 0.5f * f);
+    }
+    {
+        float volume = 0.0f;
+        glm::vec3 from(0.0f);
+        if (m_weather.takeThunder(volume, from) && temporal && !Mesh::headless) {
+            Audio::play("thunder", volume, 0.85f + 0.3f * (float)std::fmod(now(), 1.0));
+            Audio::caption("Thunder");
+        }
+    }
     const Environment& env = scene.environment();
     glm::vec3 sunDir = env.sunDirection();
     gatherScreenFx(scene);
@@ -627,6 +663,18 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_viewPos = camera.position();
     m_viewDist = gs.renderDistance >= GraphicsSettings::kMaxRenderDistance ? 0.0f : gs.renderDistanceStuds();
     scene.water().setViewer(m_viewPos, m_viewDist);
+    // Detail levels: far (small on screen) meshes are drawn as their simpler copies.
+    m_lodOrtho = camera.orthographic;
+    m_lodBias = gs.meshDetailBias();
+    {
+        const float screenH = (float)std::max(1, target.height());
+        m_lodPixelsPerStud = camera.useProjection ? screenH * 0.5f * camera.projectionOverride[1][1]
+                           : camera.orthographic ? screenH / std::max(camera.viewHeight(), 1e-3f)
+                           : screenH * 0.5f / std::tan(glm::radians(camera.fov) * 0.5f);
+        static const bool off = std::getenv("GB_NO_LODS") != nullptr;   // (to compare)
+        if (off) m_lodPixelsPerStud = 0.0f;
+    }
+    Mesh::trianglesDrawn = 0;
 
     int w = std::max(1, (int)(target.width()  * std::clamp(gs.renderScale, 0.25f, 2.0f)));
     int h = std::max(1, (int)(target.height() * std::clamp(gs.renderScale, 0.25f, 2.0f)));
@@ -916,6 +964,12 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     { FrameProfile::Scope prof("draw: post effects", true); postProcess(scene, camera, target); }
     endTemporal(camera);   // (Highlights are drawn on the finished picture, without the jitter)
     drawHighlights(scene, camera, target);
+    m_lastTriangles = Mesh::trianglesDrawn;
+    static const bool sayTriangles = std::getenv("GB_TEST_TRIANGLES") != nullptr;   // (to measure detail levels)
+    if (sayTriangles && temporal) {
+        static int frame = 0;
+        if (++frame % 60 == 0) Log::info("triangles drawn: " + std::to_string(m_lastTriangles));
+    }
 }
 
 // Shiny parts mirror the world (screen-space reflections, like Unreal's). Drawing a
@@ -1629,7 +1683,10 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 m_lit->setBool("uHasTShirt", true);
             }
             const bool variant = useVariant(node);
-            (renderMesh ? renderMesh : node->mesh)->draw();
+            Mesh* shownMesh = (renderMesh ? renderMesh : node->mesh).get();
+            Mesh::lod = lodFor(shownMesh, model);
+            shownMesh->draw();
+            Mesh::lod = 0;
             if (variant) m_lit->setBool("uVariant", false);
             if (cloth) m_lit->setBool(face ? "uFace" : "uClothing", false);
             if (tee) m_lit->setBool("uHasTShirt", false);
@@ -1643,17 +1700,26 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
 
     // Many copies of one mesh: one draw for all of them. The rest go one by one.
     auto drawCopies = [&](std::vector<Item>& items, auto& wet, auto& one) {
-        std::unordered_map<const Mesh*, std::vector<const Item*>> groups;
+        // (One group per mesh and detail level: near copies full, far ones simpler.)
+        struct MeshLevel {
+            const Mesh* mesh; int level;
+            bool operator==(const MeshLevel& o) const { return mesh == o.mesh && level == o.level; }
+        };
+        struct MeshLevelHash {
+            size_t operator()(const MeshLevel& k) const { return std::hash<const Mesh*>()(k.mesh) * 31u + (size_t)k.level; }
+        };
+        std::unordered_map<MeshLevel, std::vector<const Item*>, MeshLevelHash> groups;
         std::vector<const Item*> single;
         static const bool off = std::getenv("GB_NO_INSTANCING") != nullptr;   // (to compare, or if a graphics card mis-draws it)
         for (const Item& it : items) {
-            if (!off && Instancing::canCopy(*it.node, it.model, Player::isWater(it.node))) groups[it.node->mesh.get()].push_back(&it);
+            if (!off && Instancing::canCopy(*it.node, it.model, Player::isWater(it.node))) groups[{it.node->mesh.get(), lodFor(it.node->mesh.get(), it.model)}].push_back(&it);
             else single.push_back(&it);
         }
         if (!Mesh::headless && !m_instanceVbo) glGenBuffers(1, &m_instanceVbo);
         std::vector<InstanceData> data;
         int batches = 0;
-        for (auto& [mesh, list] : groups) {
+        for (auto& [key, list] : groups) {
+            const Mesh* mesh = key.mesh;
             if ((int)list.size() < Instancing::kMinCopies || !m_instanceVbo) {
                 single.insert(single.end(), list.begin(), list.end());
                 continue;
@@ -1669,7 +1735,9 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
             glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(data.size() * sizeof(InstanceData)), data.data(), GL_STREAM_DRAW);
             glBindBuffer(GL_ARRAY_BUFFER, 0);
             m_lit->setBool("uInstanced", true);
+            Mesh::lod = key.level;
             mesh->drawInstanced(m_instanceVbo, (int)data.size());
+            Mesh::lod = 0;
             m_lit->setBool("uInstanced", false);
             ++batches;
         }
@@ -1876,6 +1944,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     drawRibbons(scene, camera);
     drawSprites(scene, camera);
     drawWeather(scene, camera);
+    drawLightning(camera);
     m_lit->bind();
     glDepthMask(GL_TRUE);
 }
@@ -2015,6 +2084,49 @@ void SceneRenderer::drawWeather(Scene& scene, const Camera& camera) {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(RibbonVertex)), verts.data(), GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
+}
+
+// A Storm's lightning bolt: glowing strips facing the camera, a thin white core inside
+// a wider blue glow. Gone again after a quarter of a second.
+void SceneRenderer::drawLightning(const Camera& camera) {
+    const std::vector<glm::vec3>& bolt = m_weather.bolt();
+    if (bolt.size() < 2 || !m_ribbonVao) return;   // (drawWeather made the strip buffers: a Storm always rains)
+    const glm::vec3 eye = camera.position();
+    const float glow = m_weather.boltGlow();
+    std::vector<RibbonVertex> verts;
+    verts.reserve(bolt.size() * 6);
+    auto strips = [&](float width, const glm::vec4& color) {
+        for (size_t i = 0; i + 1 < bolt.size(); i += 2) {
+            const glm::vec3 a = bolt[i], b = bolt[i + 1], mid = (a + b) * 0.5f;
+            glm::vec3 side = glm::cross(b - a, eye - mid);
+            const float len = glm::length(side);
+            if (len < 1e-6f) continue;
+            // (Wider the further away it is, so a far bolt is still more than a hair.)
+            side *= width * (1.0f + glm::length(mid - eye) / 120.0f) * 0.5f / len;
+            const RibbonVertex v0{a - side, {0, 0}, color}, v1{a + side, {1, 0}, color},
+                               v2{b + side, {1, 1}, color}, v3{b - side, {0, 1}, color};
+            verts.insert(verts.end(), {v0, v1, v2, v0, v2, v3});
+        }
+    };
+    strips(2.6f, glm::vec4(0.55f, 0.68f, 1.0f, 0.35f * glow));
+    strips(0.7f, glm::vec4(1.0f, 1.0f, 1.0f, glow));
+    if (verts.empty()) return;
+    m_ribbon->bind();
+    m_ribbon->setMat4("uViewProj", camera.projection() * camera.view());
+    m_ribbon->setVec3("uLight", glm::vec3(1.0f));
+    m_ribbon->setBool("uHasTex", false);
+    m_ribbon->setFloat("uGlow", 1.0f);
+    glBindVertexArray(m_ribbonVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_ribbonVbo);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);   // adds light
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(RibbonVertex)), verts.data(), GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
 }

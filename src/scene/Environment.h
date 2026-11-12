@@ -60,7 +60,7 @@ struct Environment {
     // Rain and snow fall around the camera (each computer draws its own), with
     // grey skies and thicker fog; rain makes things wet with puddles, snow settles
     // on tops. See withWeather() and Weather.h.
-    int       weather       = 0;        // kWeatherNames: 0 Clear, 1 Rain, 2 Snow
+    int       weather       = 0;        // kWeatherNames: 0 Clear, 1 Rain, 2 Snow, 3 Storm
     float     weatherAmount = 0.6f;     // 0 a few drops .. 1 a storm
 
     // Camera / post-processing -------------------------------------------------
@@ -88,16 +88,21 @@ struct Environment {
     }
 };
 
-enum class Weather { Clear = 0, Rain = 1, Snow = 2 };
-inline constexpr int kWeatherCount = 3;
-inline const char* const kWeatherNames[kWeatherCount] = {"Clear", "Rain", "Snow"};
+// (Storm: heavy, wind-blown rain under a dark sky, with lightning and thunder.)
+enum class Weather { Clear = 0, Rain = 1, Snow = 2, Storm = 3 };
+inline constexpr int kWeatherCount = 4;
+inline const char* const kWeatherNames[kWeatherCount] = {"Clear", "Rain", "Snow", "Storm"};
+// Is water falling from the sky? (Rain and Storm: things get wet, fires go out.)
+inline bool isRaining(int weather) { return weather == (int)Weather::Rain || weather == (int)Weather::Storm; }
 
 // How the sky, sun and fog look with the weather on top (grey clouds, less sun,
 // thicker fog). The saved Lighting stays as the game maker set it.
 inline Environment withWeather(const Environment& e) {
     if (e.weather <= 0 || e.weather >= kWeatherCount) return e;
     Environment w = e;
-    const float a = glm::clamp(e.weatherAmount, 0.0f, 1.0f);
+    const bool storm = e.weather == (int)Weather::Storm;
+    // (A storm is never a light one: its clouds are as heavy as the hardest rain.)
+    const float a = storm ? 1.0f : glm::clamp(e.weatherAmount, 0.0f, 1.0f);
     const bool snow = e.weather == (int)Weather::Snow;
     const glm::vec3 grey = snow ? glm::vec3(0.78f, 0.80f, 0.84f) : glm::vec3(0.50f, 0.53f, 0.58f);
     const float k = 0.25f + 0.5f * a;   // how much of the sky turns grey
@@ -117,6 +122,11 @@ inline Environment withWeather(const Environment& e) {
     // Rain and snow leave a low mist lying on the ground (unless the game made its own).
     if (e.fogFalloff <= 0.0f) { w.fogFalloff = 0.03f * a; w.fogHeight = 0.0f; }
     w.saturation = e.saturation * (1.0f - (snow ? 0.1f : 0.2f) * a);
+    if (storm) {   // darker still: near-black clouds, hardly any sun
+        w.skyZenith *= 0.55f; w.skyHorizon *= 0.6f; w.cloudColor *= 0.55f; w.fogColor *= 0.65f;
+        w.sunIntensity *= 0.5f; w.ambientIntensity = e.ambientIntensity * 0.75f;
+        w.cloudSpeed = glm::max(e.cloudSpeed, 1.0f) * 2.5f;
+    }
     return w;
 }
 

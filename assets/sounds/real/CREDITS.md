@@ -1,7 +1,7 @@
 # Real sound effects
 
 Recorded sounds the engine uses for hits, breaking, footsteps, fire, breathing,
-splashes and bullets going past. All of them are **CC0** (public domain: free to
+splashes, thunder and bullets going past. All of them are **CC0** (public domain: free to
 use, change and share, no credit needed). We still say where they came from,
 because it's nice. They were cut shorter, made mono and saved as Ogg.
 
@@ -18,6 +18,7 @@ because it's nice. They were cut shorter, made mono and saved as Ogg.
 | `splash_*` | 40 CC0 water / splash / slime SFX | rubberduck | https://opengameart.org/content/40-cc0-water-splash-slime-sfx |
 | `fire_loop` | Fire Crackling | AntumDeluge | https://opengameart.org/content/fire-crackling |
 | `breath_tired` | Breathing Tired | mikeask | https://opengameart.org/content/breathing-tired |
+| `thunder_*` | Rain + Long Thunder | wuxiascrub | https://opengameart.org/content/rain-long-thunder |
 | `whiz_*` | Swishes Sound Pack | artisticdude | https://opengameart.org/content/swishes-sound-pack |
 
 Adding one: drop a short mono `.ogg` named `<sound>_<n>.ogg` in this folder (all the
