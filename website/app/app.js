@@ -10,6 +10,7 @@ import { mountBanLists, mountGameBans, mountBanNotice } from './banlists.js';
 import { mountGameTesters, mountTesterNote } from './testers.js';
 import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
+import { pastePages } from './paste.js';   // G&B Paste's pages
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
 import { GROUPS, productOf, productById, activeLink } from './products.js';
@@ -857,6 +858,8 @@ pages.soon = async (id) => {
 
 // The Art portal (#/art, #/artpiece/<id>, #/artpost): its pages live in art.js.
 Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
+Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 
 // My Feed: what friends and people you follow said, and what they've been up to (playing a
 // game, making something, earning a badge).
@@ -3381,6 +3384,7 @@ function reportsBox(rep, closed) {
     if (x.kind === 'comment') return html`a comment by ${person(x.about)} on <a href="#/game/${x.game}">${x.name}</a>`;
     if (x.kind === 'forum') return html`a forum post by ${person(x.about)} in <a href="#/forum/t/${x.thread}">${x.name}</a>`;
     if (x.kind === 'art') return html`${x.target.includes(':') ? 'a comment' : 'art'} by ${person(x.about)} on <a href="#/artpiece/${x.piece}">${x.name}</a>`;
+    if (x.kind === 'paste') return html`the paste <a href="#/pasteview/${x.target}">${x.name}</a> by ${person(x.about)}`;
     const href = isCatalogItem(x.assetKind) ? '#/item/' + x.target : '#/library/' + x.target;
     return html`<a href="${href}">${x.name}</a> (${KINDS[x.assetKind] || 'item'}) by ${person(x.about)}`;
   };
