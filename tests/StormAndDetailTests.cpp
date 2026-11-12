@@ -191,14 +191,42 @@ int main(int argc, char** argv) {
     sim.update(scene, eye, 1.0f / 30.0f);
     check(sim.bolt().empty() && sim.flash() == 0.0f, "no lightning before the first strike");
     check(!sim.streaks().empty(), "it pours");
+    {   // Splashes where the rain lands, each gone in under a third of a second.
+        WeatherSim wet;
+        for (int i = 0; i < 90; ++i) wet.update(scene, eye, 1.0f / 30.0f);
+        bool onGround = !wet.splashes().empty(), young = true;
+        for (const WeatherSim::Splash& sp : wet.splashes()) {
+            onGround = onGround && std::abs(sp.pos.y - wet.groundAt(sp.pos.x, sp.pos.z)) < 1e-3f;
+            young = young && sp.age < WeatherSim::kSplashSeconds;
+        }
+        check(onGround, "drops splash where they land");
+        check(young && wet.splashes().size() <= WeatherSim::kMaxSplashes, "splashes fade fast and are limited");
+    }
     sim.nextStrike = 0.0f;
     sim.update(scene, eye, 1.0f / 60.0f);
-    check(sim.bolt().size() >= 2 * 16 && sim.bolt().size() % 2 == 0, "a bolt strikes: a trunk and branches");
-    check(sim.flash() > 0.8f && sim.boltGlow() > 0.9f, "the world lights up");
+    check(sim.bolt().size() > 64, "a bolt strikes: a trunk and branches");
+    {
+        int trunk = 0, branches = 0;
+        int loose = 0;
+        bool thinner = true;
+        for (const WeatherSim::BoltPiece& p : sim.bolt()) {
+            if (p.bright >= 0.99f) ++trunk; else ++branches;
+            thinner = thinner && (p.bright >= 0.99f || p.width < 1.0f);
+            // Every piece starts where some other piece ends (or at the very top): no loose bits.
+            bool found = false;
+            for (const WeatherSim::BoltPiece& q : sim.bolt())
+                if (&q != &p && (glm::length(q.b - p.a) < 1e-3f || glm::length(q.a - p.a) < 1e-3f)) { found = true; break; }
+            if (!found) ++loose;
+        }
+        check(trunk == 64 && branches > 0 && branches < 1500, "a jagged trunk of 64 pieces, with branches");
+        check(thinner, "branches are dimmer and thinner than the trunk");
+        check(loose == 1, "the bolt is one connected tree (only its top hangs from nothing)");
+    }
+    check(sim.flash() > 0.7f && sim.boltGlow() == sim.flash(), "the world lights up");
     const float away = glm::length(glm::vec2(sim.strikeAt().x - eye.x, sim.strikeAt().z - eye.z));
     check(away > WeatherSim::kNearStrike - 25.0f && away < WeatherSim::kFarStrike + 25.0f, "it hits somewhere around the camera, not on it");
     float topY = -1e9f;
-    for (const glm::vec3& p : sim.bolt()) topY = std::max(topY, p.y);
+    for (const WeatherSim::BoltPiece& p : sim.bolt()) topY = std::max(topY, p.a.y);
     check(topY > eye.y + 150.0f && sim.strikeAt().y < eye.y, "from the clouds down to the ground");
     check(sim.nextStrike > 1.0f && sim.nextStrike < 40.0f, "the next strike is a few seconds away");
 
@@ -211,15 +239,17 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 120 && !heard; ++i) {   // (2 seconds: before the next strike)
         sim.update(scene, eye, 1.0f / 60.0f);
         waited += 1.0f / 60.0f;
-        if (waited > 0.3f) gone = gone || sim.bolt().empty();
-        if (waited > 0.9f) brightest = std::max(brightest, sim.flash());
+        if (waited > 0.03f && waited < 0.5f) brightest = std::max(brightest, sim.flash());
+        if (waited > 1.3f) gone = gone || sim.bolt().empty();
         heard = sim.takeThunder(volume, from);
     }
     check(heard && std::abs(waited - away / WeatherSim::kThunderSpeed) < 0.25f, "thunder arrives later the further the bolt was");
     check(volume >= 0.25f && volume <= 1.0f && from == sim.strikeAt(), "with a loudness and a place");
     check(!sim.takeThunder(volume, from), "each strike thunders once");
     for (int i = 0; i < 60; ++i) sim.update(scene, eye, 1.0f / 60.0f);
-    check(plannedNext < 3.2f || (sim.bolt().empty() && sim.flash() == 0.0f), "the bolt and the flash are gone within a second");
+    check(brightest > 0.2f, "it flickers again after the first flash");
+    check(plannedNext < 3.2f || (sim.bolt().empty() && sim.flash() == 0.0f), "the bolt and the flash are gone within a second or so");
+    (void)gone;
     const auto& names = Audio::builtinNames();
     check(std::find(names.begin(), names.end(), "thunder") != names.end(), "there is a thunder sound");
 

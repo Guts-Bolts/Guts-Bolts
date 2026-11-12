@@ -621,9 +621,10 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         const double t = now();
         const float dt = m_weatherClock > 0.0 ? (float)(t - m_weatherClock) : 0.0f;
         m_weatherClock = t;
-        // (For screenshots and checks: GB_TEST_LIGHTNING=1 keeps the bolts coming.)
-        static const bool testBolts = std::getenv("GB_TEST_LIGHTNING") != nullptr;
-        if (testBolts && m_weather.boltGlow() < 0.2f) m_weather.nextStrike = 0.0f;
+        // (For screenshots and checks: GB_TEST_LIGHTNING=2 makes a bolt strike every 2 seconds.)
+        static const char* testBolts = std::getenv("GB_TEST_LIGHTNING");
+        static const float testGap = testBolts ? std::max(0.05f, (float)std::atof(testBolts)) : 0.0f;
+        if (testBolts && m_weather.nextStrike > testGap) m_weather.nextStrike = testGap;
         m_weather.update(scene, camera.position(), dt);
     }
     struct KeepLighting {
@@ -631,19 +632,31 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
         ~KeepLighting() { scene.environment() = saved; }
     } keep{scene, scene.environment()};
     scene.environment() = withWeather(keep.saved);
-    // Lightning (a Storm): for a moment the sky, the clouds and everything under them
-    // are lit blue-white. And its thunder, when it gets here (the main view only, so
-    // a Studio with four views doesn't play it four times).
+    // Lightning (a Storm): while the bolt is lit, IT is the light. The "sun" moves to the
+    // bolt, blue-white and strong, so everything is lit from that side and throws hard
+    // shadows away from it, the clouds around it glow, and the rest of the sky lifts a
+    // little. And its thunder, when it gets here (the main view only, so a Studio with
+    // four views doesn't play it four times).
     if (const float f = m_weather.flash(); f > 0.01f) {
         Environment& e = scene.environment();
-        const glm::vec3 white(0.82f, 0.88f, 1.0f);
-        e.ambientColor = glm::mix(e.ambientColor, white, 0.7f * f);
-        e.groundAmbient = glm::mix(e.groundAmbient, white * 0.8f, 0.6f * f);
-        e.ambientIntensity += 1.1f * f;
-        e.skyHorizon = glm::mix(e.skyHorizon, white * 0.9f, 0.6f * f);
-        e.skyZenith = glm::mix(e.skyZenith, white * 0.65f, 0.5f * f);
-        e.cloudColor = glm::mix(e.cloudColor, white, 0.6f * f);
-        e.fogColor = glm::mix(e.fogColor, white * 0.8f, 0.5f * f);
+        const glm::vec3 white(0.80f, 0.87f, 1.0f);
+        glm::vec3 to = m_weather.boltMiddle() - camera.position();
+        if (glm::length(to) > 1.0f && f > 0.03f) {
+            to = glm::normalize(to);
+            e.sunElevation = glm::degrees(std::asin(glm::clamp(to.y, 0.12f, 1.0f)));
+            e.sunAzimuth = glm::degrees(std::atan2(to.z, to.x));
+            e.sunColor = white;
+            e.sunIntensity = 3.4f * f;
+            e.sunSize = 0.05f;   // (no sun disc in the sky: only its light)
+            e.shadowStrength = glm::max(keep.saved.shadowStrength, 0.85f);
+        }
+        e.ambientColor = glm::mix(e.ambientColor, white, 0.6f * f);
+        e.groundAmbient = glm::mix(e.groundAmbient, white * 0.7f, 0.4f * f);
+        e.ambientIntensity += 0.35f * f;
+        e.skyHorizon = glm::mix(e.skyHorizon, white * 0.7f, 0.45f * f);
+        e.skyZenith = glm::mix(e.skyZenith, white * 0.45f, 0.4f * f);
+        e.cloudColor = glm::mix(e.cloudColor, white, 0.5f * f);
+        e.fogColor = glm::mix(e.fogColor, white * 0.7f, 0.45f * f);
     }
     {
         float volume = 0.0f;
@@ -1944,6 +1957,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     drawRibbons(scene, camera);
     drawSprites(scene, camera);
     drawWeather(scene, camera);
+    drawSplashes(scene, camera);
     drawLightning(camera);
     m_lit->bind();
     glDepthMask(GL_TRUE);
@@ -2058,7 +2072,7 @@ void SceneRenderer::drawWeather(Scene& scene, const Camera& camera) {
         side *= s.width * 0.5f / len;
         // Fade out the ones right in front of the lens and the far ones (so the box edge can't be seen).
         const float d = glm::length(mid - eye);
-        const float a = s.alpha * glm::clamp((d - 0.6f) / 1.5f, 0.0f, 1.0f) *
+        const float a = s.alpha * glm::clamp((d - 1.5f) / 3.0f, 0.0f, 1.0f) *
                         glm::clamp((WeatherSim::kHalfBox - d) / 6.0f, 0.0f, 1.0f);
         if (a <= 0.003f) continue;
         const glm::vec4 top(tint, snow ? a : a * 0.3f), bottom(tint, a);   // rain: fainter at the tail
@@ -2073,9 +2087,10 @@ void SceneRenderer::drawWeather(Scene& scene, const Camera& camera) {
     const Environment& env = scene.environment();
     m_ribbon->setVec3("uLight", glm::clamp(env.ambientColor * env.ambientIntensity * 1.4f +
                                            env.sunColor * std::max(0.0f, env.sunIntensity) * std::max(env.sunDirection().y, 0.0f) * 0.6f,
-                                           glm::vec3(0.04f), glm::vec3(1.1f)));
+                                           glm::vec3(0.04f), glm::vec3(1.6f)));
     m_ribbon->setBool("uHasTex", false);
     m_ribbon->setFloat("uGlow", 0.0f);
+    m_ribbon->setInt("uSoft", snow ? 0 : 1);   // rain: soft-edged blurred lines
     glBindVertexArray(m_ribbonVao);
     glBindBuffer(GL_ARRAY_BUFFER, m_ribbonVbo);
     glDisable(GL_CULL_FACE);
@@ -2084,48 +2099,124 @@ void SceneRenderer::drawWeather(Scene& scene, const Camera& camera) {
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(RibbonVertex)), verts.data(), GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    m_ribbon->setInt("uSoft", 0);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);
 }
 
-// A Storm's lightning bolt: glowing strips facing the camera, a thin white core inside
-// a wider blue glow. Gone again after a quarter of a second.
+// Where rain hits: a ring of water lying on the ground that spreads and fades, and a
+// short spray jumping up from the middle.
+void SceneRenderer::drawSplashes(Scene& scene, const Camera& camera) {
+    const std::vector<WeatherSim::Splash>& splashes = m_weather.splashes();
+    if (splashes.empty() || !m_ribbonVao) return;
+    const glm::vec3 eye = camera.position();
+    const glm::vec3 tint(0.82f, 0.87f, 0.94f);
+    std::vector<RibbonVertex> rings, sprays;
+    rings.reserve(splashes.size() * 6);
+    sprays.reserve(splashes.size() * 6);
+    for (const WeatherSim::Splash& sp : splashes) {
+        const float d = glm::length(sp.pos - eye);
+        if (d > WeatherSim::kHalfBox || tooFar(sp.pos, 1.0f)) continue;
+        const float t = sp.age / WeatherSim::kSplashSeconds;   // 0 just hit .. 1 gone
+        const float fade = (1.0f - t) * glm::clamp((WeatherSim::kHalfBox - d) / 6.0f, 0.0f, 1.0f);
+        const float r = (0.04f + 0.17f * std::sqrt(t)) * (0.7f + 0.6f * sp.seed);
+        const glm::vec3 c = sp.pos + glm::vec3(0.0f, 0.03f, 0.0f);
+        const glm::vec4 ringCol(tint, 0.22f * fade);
+        const RibbonVertex r0{c + glm::vec3(-r, 0, -r), {0, 0}, ringCol}, r1{c + glm::vec3(r, 0, -r), {1, 0}, ringCol},
+                           r2{c + glm::vec3(r, 0, r), {1, 1}, ringCol}, r3{c + glm::vec3(-r, 0, r), {0, 1}, ringCol};
+        rings.insert(rings.end(), {r0, r1, r2, r0, r2, r3});
+        if (t < 0.6f) {   // the spray: up fast, gone before the ring
+            const float up = 0.2f * std::sin(t / 0.6f * 3.14159f) + 0.04f;
+            glm::vec3 side = glm::cross(glm::vec3(0, 1, 0), eye - c);
+            const float len = glm::length(side);
+            if (len < 1e-6f) continue;
+            side *= 0.03f / len;
+            const glm::vec4 bottom(tint, 0.35f * (1.0f - t / 0.6f)), top(tint, 0.0f);
+            const RibbonVertex s0{c - side, {0, 0}, bottom}, s1{c + side, {1, 0}, bottom},
+                               s2{c + side + glm::vec3(0, up, 0), {1, 1}, top}, s3{c - side + glm::vec3(0, up, 0), {0, 1}, top};
+            sprays.insert(sprays.end(), {s0, s1, s2, s0, s2, s3});
+        }
+    }
+    if (rings.empty()) return;
+    const Environment& env = scene.environment();
+    m_ribbon->bind();
+    m_ribbon->setMat4("uViewProj", camera.projection() * camera.view());
+    m_ribbon->setVec3("uLight", glm::clamp(env.ambientColor * env.ambientIntensity * 1.4f +
+                                           env.sunColor * std::max(0.0f, env.sunIntensity) * std::max(env.sunDirection().y, 0.0f) * 0.6f,
+                                           glm::vec3(0.04f), glm::vec3(1.6f)));
+    m_ribbon->setBool("uHasTex", false);
+    m_ribbon->setFloat("uGlow", 0.0f);
+    glBindVertexArray(m_ribbonVao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_ribbonVbo);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glDepthMask(GL_FALSE);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    m_ribbon->setInt("uSoft", 2);
+    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(rings.size() * sizeof(RibbonVertex)), rings.data(), GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)rings.size());
+    if (!sprays.empty()) {
+        m_ribbon->setInt("uSoft", 1);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(sprays.size() * sizeof(RibbonVertex)), sprays.data(), GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)sprays.size());
+    }
+    m_ribbon->setInt("uSoft", 0);
+    glEnable(GL_CULL_FACE);
+    glBindVertexArray(0);
+}
+
+// A Storm's lightning bolt, as light: a thin white-hot core, far brighter than
+// anything else on screen (so the bloom spreads it, like a camera's glare), inside a
+// wide soft blue-violet glow of lit-up air and rain. Branches are thinner and dimmer.
+// It flickers with the flash and is gone in half a second.
 void SceneRenderer::drawLightning(const Camera& camera) {
-    const std::vector<glm::vec3>& bolt = m_weather.bolt();
-    if (bolt.size() < 2 || !m_ribbonVao) return;   // (drawWeather made the strip buffers: a Storm always rains)
+    const std::vector<WeatherSim::BoltPiece>& bolt = m_weather.bolt();
+    if (bolt.empty() || !m_ribbonVao) return;   // (drawWeather made the strip buffers: a Storm always rains)
     const glm::vec3 eye = camera.position();
     const float glow = m_weather.boltGlow();
     std::vector<RibbonVertex> verts;
     verts.reserve(bolt.size() * 6);
-    auto strips = [&](float width, const glm::vec4& color) {
-        for (size_t i = 0; i + 1 < bolt.size(); i += 2) {
-            const glm::vec3 a = bolt[i], b = bolt[i + 1], mid = (a + b) * 0.5f;
-            glm::vec3 side = glm::cross(b - a, eye - mid);
+    auto strips = [&](float width, const glm::vec3& rgb, float alpha, float branchFade) {
+        verts.clear();
+        for (const WeatherSim::BoltPiece& p : bolt) {
+            const glm::vec3 mid = (p.a + p.b) * 0.5f;
+            glm::vec3 along = p.b - p.a;
+            glm::vec3 side = glm::cross(along, eye - mid);
             const float len = glm::length(side);
             if (len < 1e-6f) continue;
             // (Wider the further away it is, so a far bolt is still more than a hair.)
-            side *= width * (1.0f + glm::length(mid - eye) / 120.0f) * 0.5f / len;
+            side *= width * p.width * (1.0f + glm::length(mid - eye) / 140.0f) * 0.5f / len;
+            // Pieces overlap a little at the bends, so the line has no gaps.
+            along *= 0.06f;
+            const glm::vec4 color(rgb, alpha * glow * std::pow(p.bright, branchFade));
+            const glm::vec3 a = p.a - along, b = p.b + along;
             const RibbonVertex v0{a - side, {0, 0}, color}, v1{a + side, {1, 0}, color},
                                v2{b + side, {1, 1}, color}, v3{b - side, {0, 1}, color};
             verts.insert(verts.end(), {v0, v1, v2, v0, v2, v3});
         }
+        if (verts.empty()) return;
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(RibbonVertex)), verts.data(), GL_STREAM_DRAW);
+        glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
     };
-    strips(2.6f, glm::vec4(0.55f, 0.68f, 1.0f, 0.35f * glow));
-    strips(0.7f, glm::vec4(1.0f, 1.0f, 1.0f, glow));
-    if (verts.empty()) return;
     m_ribbon->bind();
     m_ribbon->setMat4("uViewProj", camera.projection() * camera.view());
     m_ribbon->setVec3("uLight", glm::vec3(1.0f));
     m_ribbon->setBool("uHasTex", false);
     m_ribbon->setFloat("uGlow", 1.0f);
+    m_ribbon->setInt("uSoft", 1);
     glBindVertexArray(m_ribbonVao);
     glBindBuffer(GL_ARRAY_BUFFER, m_ribbonVbo);
     glDisable(GL_CULL_FACE);
     glEnable(GL_BLEND);
     glDepthMask(GL_FALSE);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE);   // adds light
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(verts.size() * sizeof(RibbonVertex)), verts.data(), GL_STREAM_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, (GLsizei)verts.size());
+    m_ribbon->setFloat("uExtra", 0.0f);
+    strips(14.0f, glm::vec3(0.45f, 0.5f, 1.0f), 0.10f, 1.6f);    // lit-up air, wide and faint
+    strips(4.0f, glm::vec3(0.62f, 0.7f, 1.0f), 0.35f, 1.2f);     // the glow hugging the channel
+    m_ribbon->setFloat("uExtra", 9.0f);
+    strips(0.9f, glm::vec3(1.0f, 0.97f, 1.0f), 1.0f, 0.7f);      // the white-hot core
+    m_ribbon->setFloat("uExtra", 0.0f);
+    m_ribbon->setInt("uSoft", 0);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_CULL_FACE);
     glBindVertexArray(0);

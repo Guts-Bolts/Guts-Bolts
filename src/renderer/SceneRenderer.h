@@ -170,6 +170,7 @@ private:
     WeatherSim m_weather;
     double     m_weatherClock = 0.0;
     void drawWeather(Scene& scene, const Camera& camera);
+    void drawSplashes(Scene& scene, const Camera& camera);   // rings and spray where rain hits
     void drawLightning(const Camera& camera);   // a Storm's bolt, glowing
     // Each Trail's pieces: where its two attachments were, and when.
     struct TrailPoint { glm::vec3 a, b; double time; };
