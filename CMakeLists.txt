@@ -897,6 +897,7 @@ set(EDITOR_SOURCES
     src/editor/EditorBulkEdit.cpp
     src/editor/EditorBlender.cpp
     src/editor/EditorWorkspace.cpp
+    src/editor/EditorSimple.cpp
     src/editor/EditorBlocks.cpp
     src/editor/VisualScript.cpp
     src/editor/EditorScriptHistory.cpp

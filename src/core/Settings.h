@@ -37,6 +37,7 @@ struct GraphicsSettings {
     bool  shiftLockSwitch = true;
     float mouseSensitivity = 1.0f;
     bool  invertCamera  = false;
+    bool  studioSimpleLayout = true;   // Studio: the everyday buttons and panels only (VIEW > Advanced shows them all)
     bool  studioBlenderKeys = false;   // Studio: S scales, A picks all, Shift+D / Shift+A... (WASD flies only while right-dragging)
     // Your own keys (KeyBinds.h): one per KeyBinds::Action, 0 = the usual key.
     static constexpr int kKeyActions = 9;
