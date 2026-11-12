@@ -178,7 +178,7 @@ async function route(request, env, ctx) {
     const url = new URL(request.url);
     // The site lives at gutsandbolts.net. The old workers.dev address only keeps answering
     // older apps (the server and its pictures); people opening it in a browser get moved.
-    if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|download|avatar)(\/|$)/.test(url.pathname))
+    if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|artpic|download|avatar)(\/|$)/.test(url.pathname))
       return Response.redirect('https://gutsandbolts.net' + url.pathname + url.search, 301);
     if (url.pathname.startsWith('/download/')) return handleDownload(request, env, url);
     const ads = handleAds(request, env, url);   // /ads.txt and /ads-config (ads.js)
@@ -187,7 +187,7 @@ async function route(request, env, ctx) {
     // Stripe's own servers call this (signature-checked in stripe.js), so it skips the bot check.
     if (url.pathname === '/api/stripe/webhook') return handleStripe(request, env, url);
     const stripePath = url.pathname === '/api/stripe/checkout' || url.pathname === '/api/stripe/config';
-    const picture = /^\/(thumb|icon|shot|wear|decal|avatar)\//.test(url.pathname);
+    const picture = /^\/(thumb|icon|shot|wear|decal|artpic|avatar)\//.test(url.pathname);
     const mcp = url.pathname === '/mcp' || url.pathname.startsWith('/mcp/') || url.pathname.startsWith('/.well-known/oauth-');
     const supabaseHealthPath = url.pathname === '/api/supabase/health' || url.pathname === '/api/supabase/live';
     const supabaseActivityPath = /^\/api\/activity\/(auctions|forum)$/.test(url.pathname);
@@ -267,6 +267,15 @@ async function route(request, env, ctx) {
 // A picture: /thumb, /icon, /shot, /wear and /decal from the server on Cloudflare, /avatar from either.
 async function pictureFor(request, env, url) {
   if (!env.GB_SERVER) return env.GB_SERVER_OBJECT.get(env.GB_SERVER_OBJECT.idFromName('main')).fetch(request);
+  if (url.pathname.startsWith('/artpic/')) {   // art (art.js; the C++ server answers art.picture)
+    const [id, which] = url.pathname.slice(8).split('/');
+    const r = await serverAsk(env, { op: 'art.picture', args: { id: decodeURIComponent(id || ''), thumb: which === 'thumb' } });
+    if (!r.ok || !r.data) return new Response('No picture.', { status: 404 });
+    const bin = atob(r.data), data = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
+    const type = { png: 'image/png', jpg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[r.type] || 'application/octet-stream';
+    return new Response(data, { headers: { 'content-type': type, 'cache-control': 'public, max-age=3600', 'x-content-type-options': 'nosniff' } });
+  }
   if (!url.pathname.startsWith('/avatar/')) return new Response('No picture.', { status: 404 });
   const r = await serverAsk(env, { op: 'connect.avatarPicture', args: { id: url.pathname.slice(8).replace(/\.png$/, '') } });
   if (!r.ok) return new Response('No picture.', { status: 404 });

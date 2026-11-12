@@ -12,9 +12,10 @@ import { ratingPill, mountGameRating, mountRatingWhy, mountRatingLimit } from '.
 import { mountLaunchpad, mountLaunchpadShelf, launchpadPill } from './launchpad.js';   // Launchpad creator program
 import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // profile backgrounds
 import { mountAssetVersions } from './versions.js';
+import { artPages } from './art.js';   // the Art portal's pages
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
-import { PRODUCTS, productOf, productById, activeLink } from './products.js';
+import { GROUPS, productOf, productById, activeLink } from './products.js';
 import { placeAds } from './ads.js';
 
 // --- small helpers ------------------------------------------------------------
@@ -781,8 +782,15 @@ pages.home = async () => {
       <span class="product-icon" aria-hidden="true">${p.name.slice(0, 1)}</span>
       <span class="product-text"><b>${p.name}</b>${p.status === 'soon' ? html` <span class="soon-tag">Soon</span>` : p.status === 'studio' ? html` <span class="soon-tag">In Studio</span>` : ''}
         <span>${p.blurb}</span></span></a>`;
+  // Products in their groups (products.js GROUPS); groups with nothing built yet are listed as "on the way".
+  const built = GROUPS.filter((g) => g.products.some((id) => productById(id)));
+  const coming = GROUPS.filter((g) => !g.products.some((id) => productById(id)) && g.later.length);
   const productsBox = html`<div class="box products-box"><h2 class="boxhead">Everything on Guts&amp;Bolts</h2>
-      <div class="product-grid">${PRODUCTS.map(productCard)}</div></div>`;
+      <p class="small muted">One account for all of it: your friends, Bolts and Boltworks Club work everywhere.</p>
+      ${built.map((g) => html`<h3 class="product-group">${g.name}${g.later.length ? html` <span class="small muted">· on the way: ${g.later.join(', ')}</span>` : ''}</h3>
+        <div class="product-grid">${g.products.map(productById).filter(Boolean).map(productCard)}</div>`)}
+      ${coming.length ? html`<h3 class="product-group">On the way</h3><ul class="product-later">${coming.map((g) =>
+        html`<li><b>${g.name}</b>: ${g.later.join(', ')}</li>`)}</ul>` : ''}</div>`;
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
@@ -850,6 +858,9 @@ pages.soon = async (id) => {
       <p class="small muted">It's its own part of Guts&amp;Bolts, with its own pages, but the same account, friends and Bolts.
         Follow along on the <a href="#/create/roadmap">roadmap</a>.</p></div>`);
 };
+
+// The Art portal (#/art, #/artpiece/<id>, #/artpost): its pages live in art.js.
+Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 
 // My Feed: what friends and people you follow said, and what they've been up to (playing a
 // game, making something, earning a badge).
@@ -3386,6 +3397,7 @@ function reportsBox(rep, closed) {
     if (x.kind === 'group') return html`the group <a href="#/group/${x.target}">${x.name}</a> (owner ${person(x.about)})`;
     if (x.kind === 'comment') return html`a comment by ${person(x.about)} on <a href="#/game/${x.game}">${x.name}</a>`;
     if (x.kind === 'forum') return html`a forum post by ${person(x.about)} in <a href="#/forum/t/${x.thread}">${x.name}</a>`;
+    if (x.kind === 'art') return html`${x.target.includes(':') ? 'a comment' : 'art'} by ${person(x.about)} on <a href="#/artpiece/${x.piece}">${x.name}</a>`;
     const href = isCatalogItem(x.assetKind) ? '#/item/' + x.target : '#/library/' + x.target;
     return html`<a href="${href}">${x.name}</a> (${KINDS[x.assetKind] || 'item'}) by ${person(x.about)}`;
   };
@@ -3751,6 +3763,7 @@ function noteLink(n) {
   if (n.kind === 'launchpad') return '#/create/launchpad';   // launchpad.js
   if (n.kind === 'rating') return '#/configure/' + n.about;   // ratings.js
   if (n.kind === 'testers') return '#/game/' + n.about;   // testers.js
+  if (n.kind === 'art') return '#/artpiece/' + n.about;   // art.js
   if (n.kind === 'group') return '#/group/' + n.about;
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;
