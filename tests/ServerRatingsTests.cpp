@@ -75,7 +75,11 @@ json noneAnswers() {
 std::vector<std::string> gameNames(GbServer& s, Other& who) {
     std::vector<std::string> out;
     json r = askAs(s, who, "list", {{"kind", "game"}});
-    for (const json& a : r.value("assets", json::array())) out.push_back(a.value("name", std::string()));
+    // (Only this test's three games: the server can add its own sample games too.)
+    for (const json& a : r.value("assets", json::array())) {
+        const std::string n = a.value("name", std::string());
+        if (n == "Calm Farm" || n == "Night Terror" || n == "Unrated") out.push_back(n);
+    }
     std::sort(out.begin(), out.end());
     return out;
 }
