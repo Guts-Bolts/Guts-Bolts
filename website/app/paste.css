@@ -1,0 +1,20 @@
+/* G&B Paste (paste.js). Only uses app.css's colour tokens, so dark mode and themes keep working. */
+.product-paste .product-icon { background: #2d6a4f; }
+.paste-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.paste-table th { text-align: left; font-size: 11px; color: var(--muted); border-bottom: 2px solid var(--line); padding: 4px 6px; }
+.paste-table td { padding: 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.paste-table tbody tr:nth-child(even) { background: var(--stripe); }
+.paste-flag { font-size: 11px; font-weight: bold; color: #b06a00; }
+.paste-view h1 { margin: 2px 0 4px; word-break: break-word; }
+.paste-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* The text: line numbers in their own column so copying the text doesn't copy them. */
+.paste-code { display: flex; border: 2px solid var(--line); background: #11161e; color: #e8ecf2; max-height: 75vh; overflow: auto; }
+.paste-code pre { margin: 0; padding: 8px 10px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 4; }
+.paste-nums { text-align: right; color: #6b7686; user-select: none; border-right: 1px solid #2b3442; background: #0c1016;
+  position: sticky; left: 0; }
+.paste-text { flex: 1; white-space: pre; }
+.paste-input { width: 100%; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 4; white-space: pre; }
+.paste-options { gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+@media (max-width: 700px) {
+  .paste-table th:nth-child(3), .paste-table td:nth-child(3), .paste-table th:nth-child(4), .paste-table td:nth-child(4) { display: none; }
+}

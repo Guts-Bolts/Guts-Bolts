@@ -20,7 +20,7 @@ constexpr size_t kMaxTickets    = 2000;
 constexpr int    kOpenTickets   = 3;
 constexpr int    kTicketsPerDay = 5;
 constexpr size_t kTicketLength  = 1000;
-bool isTopic(const std::string& t) { return t == "password" || t == "account" || t == "other"; }
+bool isTopic(const std::string& t) { return t == "password" || t == "account" || t == "underage" || t == "other"; }
 // Good enough to email someone back (like worker/server.js isEmail).
 bool looksLikeEmail(const std::string& e) {
     const size_t at = e.find('@');

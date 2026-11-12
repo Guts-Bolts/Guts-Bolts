@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PRODUCTS, productOf, productById, activeLink } from '../../website/app/products.js';
 
 const read = (p) => readFileSync(new URL('../../' + p, import.meta.url), 'utf8');
-const app = read('website/app/app.js') + read('website/app/art.js');   // (art.js adds the Art pages)
+const app = read('website/app/app.js') + read('website/app/art.js') + read('website/app/paste.js');   // (art.js and paste.js add their own pages)
 const page = read('website/app/index.html');
 
 test('every product has the bits the site needs', () => {

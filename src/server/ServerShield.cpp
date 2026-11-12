@@ -48,6 +48,7 @@ constexpr Rule kCostly[] = {
     {"art.post", 30, 90, 3600},   // ServerArt.cpp (worker/art.js ART_COSTLY)
     {"art.comment", 30, 90, 600},
     {"art.fave", 240, 720, 600},
+    {"paste.make", 60, 180, 3600},   // ServerPaste.cpp (worker/paste.js PASTE_COSTLY)
     {"forum.reply", 30, 90, 600},
     {"chat.translate", 400, 1200, 600},
     {"groups.create", 5, 15, 3600},
