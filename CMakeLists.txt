@@ -503,6 +503,7 @@ add_library(gb_engine STATIC
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
     src/scene/Weather.cpp
+    src/scene/Storms.cpp
     src/scene/Vehicles.cpp
     src/scene/IkControls.cpp
     src/scene/LinkedModels.cpp

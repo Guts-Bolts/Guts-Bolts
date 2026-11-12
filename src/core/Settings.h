@@ -109,6 +109,9 @@ struct GraphicsSettings {
     // Volumetric fog: fog that takes light (sun shafts, glowing lamps) and drifts in wisps,
     // from High up (0 = the simple fog). High 20 steps a ray, Epic 32, Cinematic 56 at full size.
     int   volumetricFog() const { int l = groupLevel(Scalability::PostProcess); return l >= 2 ? l - 1 : 0; }
+    // Real 3D clouds (cumulus heaps, thunderheads with anvils, the supercell), from High
+    // up (0 = the painted flat clouds). High 28 steps a ray, Epic 44, Cinematic 72.
+    int   volumetricClouds() const { int l = groupLevel(Scalability::PostProcess); return l >= 2 ? l - 1 : 0; }
     // Detail levels for meshes (MeshLod.h): far-away meshes are drawn as simpler copies.
     // How soon they swap, from the View distance group: Low 1.6x sooner, Medium 1.3x,
     // High as designed (a grid cell is about 3 pixels), Epic later, Cinematic never.

@@ -757,6 +757,18 @@ void main() {
         }
         if (wet > 0.0) {
             wet *= smoothstep(0.15, 0.55, vnoise(vWorldPos.xz * 1.3 + vWorldPos.y * 0.7) * 0.6 + wet * 0.6);
+            // Rain running down walls: thin wobbly trickles, each at its own speed.
+            if (uRainWet > 0.05 && abs(N.y) < 0.6) {
+                vec2 across = abs(N.x) > abs(N.z) ? vec2(0.0, 1.0) : vec2(1.0, 0.0);
+                float u = dot(vWorldPos.xz, across) * 2.2 + vnoise(vec2(vWorldPos.y * 0.9, dot(vWorldPos.xz, across))) * 0.5;
+                float lane = floor(u), seed = hash12(vec2(lane, 7.0));
+                float line = 1.0 - smoothstep(0.03, 0.11, abs(fract(u) - 0.5));
+                float run = fract(vWorldPos.y * (0.12 + 0.1 * seed) + uTime * (0.35 + 0.5 * seed) + seed * 9.0);
+                float trickle = line * smoothstep(0.0, 0.08, run) * (1.0 - run) * step(0.45, seed + uRainWet * 0.5);
+                trickle *= uRainWet * (1.0 - smoothstep(60.0, 110.0, length(vWorldPos - uViewPos)));
+                wet = max(wet, trickle);
+                rough = mix(rough, 0.04, trickle);
+            }
             bool soaks = gMaterial == 3 || gMaterial == 5 || (gMaterial >= 10 && gMaterial <= 14) || gMaterial == 17;
             float porous = soaks ? 0.5 : (gMaterial == 0 || gMaterial == 20 ? 0.72 : 0.88);
             albedo *= mix(1.0, porous, wet);
@@ -925,7 +937,19 @@ void main() {
 )";
 
 inline const char* skyFrag = R"(#version 410 core
+#ifdef GL_ES
+precision highp sampler3D;
+#endif
 in vec2 vNdc;
+// Real 3D clouds (High graphics and up): the ray from the eye is walked through the
+// cloud layer and the light worked out on the way.
+uniform int   uCloudShape;     // 0 the painted clouds below; 1 cumulus, 2 stratus, 3 cumulonimbus, 4 supercell
+uniform int   uCloudSteps;     // steps along the ray
+uniform vec3  uCamPos;
+uniform sampler3D uCloudNoise; // soft blobs, repeating
+uniform vec2  uCloudDrift;     // how far the wind has carried them (studs)
+uniform vec3  uStorm;          // the supercell: its middle (x, z) and how far it has turned (radians)
+uniform vec4  uWallCloud;      // the wall cloud under it: x, z, how far it hangs down, how wide
 uniform mat4  uInvViewProj;
 uniform vec3  uZenith;
 uniform vec3  uHorizon;
@@ -983,6 +1007,125 @@ vec4 bodyPicture(sampler2D tex, vec3 dir, vec3 L, float deg) {
     vec4 c = texture(tex, q * 0.5 + 0.5);
     return vec4(lin(c.rgb), c.a);
 }
+// ---- 3D clouds ----------------------------------------------------------------
+float gBase, gTop, gLow;   // the layer: flat bottoms, highest tops, and the lowest anything hangs
+float cn(vec3 p) { return texture(uCloudNoise, p).r; }
+// Big soft shapes seen from above (0..1, about 0.5 on average).
+float cloudMap(vec2 q, float size) {
+    return cn(vec3(q / size, 0.13)) * 0.62 + cn(vec3(q.yx / (size * 0.37) + 0.31, 0.57)) * 0.38;
+}
+// How much cloud there is at a place (0 none .. 1 thick). fine = with the small lumps.
+float cloudAt(vec3 p, bool fine) {
+    if (p.y < gLow || p.y > gTop) return 0.0;
+    float h = (p.y - gBase) / (gTop - gBase);
+    vec2 q = p.xz + uCloudDrift;
+    float want = mix(0.74, 0.34, clamp(uCloudCover, 0.0, 1.0));   // more cover = a lower bar
+    float d = 0.0;
+    if (uCloudShape == 1) {
+        // Cumulus: heaps with flat bottoms; the fuller a heap the higher its top.
+        float m = clamp((cloudMap(q, 2300.0) - want) * 5.0, 0.0, 1.0);
+        float top = 0.18 + 0.82 * m;
+        d = m * smoothstep(0.0, 0.07, h) * smoothstep(0.0, 0.3, top - h) * 1.4;
+    } else if (uCloudShape == 2) {
+        // Stratus: one low grey sheet, a little thinner here and there.
+        float m = 0.55 + 0.45 * smoothstep(want - 0.25, want + 0.1, cloudMap(q, 3000.0));
+        d = m * smoothstep(0.0, 0.2, h) * smoothstep(1.0, 0.55, h);
+    } else if (uCloudShape == 3) {
+        // Cumulonimbus: a dark deck, towers many times taller than wide that get
+        // thinner on the way up, then spread out flat at the top (the anvil).
+        float m = clamp((cloudMap(q, 5200.0) - want + 0.08) * 4.0, 0.0, 1.0);
+        float tower = clamp((m - 0.22 - 0.42 * h) * 4.0, 0.0, 1.0) * smoothstep(0.0, 0.03, h);
+        float anvil = clamp((m - 0.05) * 3.0, 0.0, 1.0) * smoothstep(0.76, 0.84, h) * smoothstep(1.0, 0.93, h);
+        // (The deck's underside is never flat: it sags and lifts in slow waves.)
+        float sag = (cn(vec3(q / 520.0, 0.71)) - 0.5) * 0.07;
+        float deck = (0.5 + 0.5 * cloudMap(q, 1400.0)) * smoothstep(sag, sag + 0.02, h) * smoothstep(0.1, 0.05, h);
+        d = max(max(tower, anvil * 0.5), deck);
+    } else {
+        // Supercell: one huge storm turning around its updraft. A stack of round
+        // plates at the bottom, a tower, the anvil streaming off downwind, a broken
+        // deck around it, and the wall cloud hanging underneath.
+        vec2 c = p.xz - uStorm.xy;
+        float r = length(c);
+        float turn = uStorm.z * (1.0 - clamp(r / 1500.0, 0.0, 1.0));
+        float cs = cos(turn), sn = sin(turn);
+        vec2 rq = vec2(c.x * cs - c.y * sn, c.x * sn + c.y * cs);
+        float lump = cloudMap(rq + 4000.0, 1700.0) - 0.5;
+        float hh = clamp(h, 0.0, 1.0);
+        // How wide the storm is at each height.
+        float wide = mix(560.0, 330.0, smoothstep(0.0, 0.45, hh));
+        wide += 26.0 * sin(hh * 70.0) * (1.0 - smoothstep(0.1, 0.3, hh));   // the plates
+        vec2 ac = c - vec2(650.0, 150.0) * smoothstep(0.7, 1.0, hh);        // the anvil leans downwind
+        float anvilWide = 1500.0 * smoothstep(0.72, 0.9, hh);
+        float body = clamp((wide - r + lump * 260.0) / 120.0, 0.0, 1.0) * smoothstep(0.0, 0.02, h);
+        float anvil = clamp((anvilWide - length(ac * vec2(0.6, 1.0)) + lump * 400.0) / 200.0, 0.0, 1.0) * smoothstep(1.0, 0.94, hh);
+        float deck = clamp((cloudMap(q, 1900.0) - 0.5) * 4.0, 0.0, 1.0) * smoothstep(0.0, 0.015, h) * smoothstep(0.09, 0.04, h) * 0.7;
+        d = max(max(body, anvil * 0.4), deck);
+        // The wall cloud: a lowered, slowly turning block under the rain-free base.
+        if (uWallCloud.z > 0.0 && p.y < gBase + 20.0) {
+            vec2 w = p.xz - uWallCloud.xy;
+            float rw = length(w) / uWallCloud.w;
+            float down = uWallCloud.z * (1.0 - rw * rw) * (0.75 + 0.5 * cn(vec3(w / 300.0 + uStorm.z * 0.05, 0.4)));
+            float wall = smoothstep(gBase - down, gBase - down + 26.0, p.y) * (1.0 - smoothstep(0.55, 1.0, rw));
+            d = max(d, wall * 0.85);
+        }
+    }
+    if (d <= 0.0) return 0.0;
+    if (fine) {
+        // Small lumps eat into the edges (the cauliflower look).
+        vec3 f = vec3(q.x, p.y, q.y);
+        float lumps = cn(f / 310.0) * 0.6 + cn(f.zxy / 113.0 + 0.4) * 0.4;
+        d = clamp((d - (1.0 - lumps) * (uCloudShape == 2 ? 0.25 : 0.6)) / 0.5, 0.0, 1.0);
+    }
+    return d;
+}
+// Walks the ray through the clouds. Returns the light they send (rgb) and how much of
+// what is behind still shows (a).
+vec4 clouds3D(vec3 dir, vec3 L, vec3 sunC, vec3 skyTop, vec3 haze) {
+    gBase = uCloudShape == 2 ? 200.0 : uCloudShape == 1 ? 250.0 : 230.0;
+    gTop  = uCloudShape == 2 ? 300.0 : uCloudShape == 1 ? 560.0 : uCloudShape == 3 ? 1150.0 : 1300.0;
+    gLow  = uCloudShape == 4 ? gBase - max(uWallCloud.z * 1.3, 40.0) : uCloudShape == 3 ? gBase - 40.0 : gBase;
+    if (abs(dir.y) < 1e-4) return vec4(0.0, 0.0, 0.0, 1.0);
+    float ta = (gLow - uCamPos.y) / dir.y, tb = (gTop - uCamPos.y) / dir.y;
+    float t0 = max(min(ta, tb), 0.0), t1 = min(max(ta, tb), 9000.0);
+    if (t1 <= t0) return vec4(0.0, 0.0, 0.0, 1.0);
+    int steps = max(uCloudSteps, 8);
+    float stepLen = (t1 - t0) / float(steps);
+    // (Every pixel starts a little further along, so the steps show as fine grain, not bands.)
+    float t = t0 + stepLen * fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    float thick = uCloudShape >= 3 ? 0.02 : uCloudShape == 2 ? 0.011 : 0.016;   // how fast light dies in it (per stud)
+    float toSun = dot(dir, L);
+    // Looking towards the sun the edges glow (light keeps going forwards in cloud).
+    float phase = 0.55 + 0.9 * pow(max(toSun, 0.0), 6.0) + 0.25 * (0.5 - 0.5 * toSun);
+    vec3 sum = vec3(0.0);
+    float through = 1.0;
+    for (int i = 0; i < steps; ++i) {
+        vec3 p = uCamPos + dir * t;
+        float d = cloudAt(p, true);
+        if (d > 0.01) {
+            // How much cloud is between here and the sun: two feelers that way.
+            float shade = cloudAt(p + L * 45.0, false) * 70.0 + cloudAt(p + L * 160.0, false) * 150.0;
+            float sunIn = exp(-shade * thick) * 0.85 + exp(-shade * thick * 0.2) * 0.3;   // (some always gets round)
+            sunIn *= 1.0 - exp(-d * 6.0) * 0.35 * (1.0 - clamp(toSun, 0.0, 1.0));           // darker creases
+            float hh = clamp((p.y - gBase) / (gTop - gBase), 0.0, 1.0);
+            // The sky lights the tops; under a thick storm the base is dark.
+            float open = uCloudShape >= 3 ? mix(0.34, 1.0, smoothstep(0.0, 0.5, hh)) * (p.y < gBase ? 0.85 : 1.0)
+                                          : mix(0.5, 1.0, hh);
+            vec3 light = sunC * 0.42 * sunIn * phase + skyTop * open * 0.9;
+            light += haze * 0.45 * (1.0 - smoothstep(0.0, 0.12, hh));   // the bottoms catch the glow from the horizon
+            // (A thunderhead's top is far above the gloom it makes: up there it stands in full sun.)
+            if (uCloudShape >= 3) light *= 1.0 + 1.3 * smoothstep(0.25, 0.85, hh) * (0.4 + 0.6 * sunIn);
+            vec3 col = lin(uCloudColor) * light;
+            col = mix(haze, col, exp(-t * 0.00028));          // far ones sink into the haze
+            float a = 1.0 - exp(-d * thick * stepLen);
+            sum += col * a * through;
+            through *= 1.0 - a;
+            if (through < 0.02) { through = 0.0; break; }
+        }
+        t += stepLen;
+    }
+    return vec4(sum, through);
+}
+
 void main() {
     vec4 near = uInvViewProj * vec4(vNdc, -1.0, 1.0);
     vec4 far  = uInvViewProj * vec4(vNdc,  1.0, 1.0);
@@ -1013,7 +1156,13 @@ void main() {
 
     // Clouds: animated noise on a flat layer above the world.
     float cover = 0.0;
-    if (uClouds && !uSkybox && dir.y > 0.0) {
+    if (uClouds && !uSkybox && uCloudShape > 0) {
+        vec3 haze = lin(skyGradient(normalize(vec3(dir.x, 0.04, dir.z)), uZenith, uHorizon, uGround)) * uSkyBrightness;
+        vec3 skyTop = lin(uZenith) * uSkyBrightness * 0.7 + lin(uAmbient) * 0.6;
+        vec4 c = clouds3D(dir, L, sunC, skyTop, haze);
+        sky = sky * c.a + c.rgb;
+        cover = 1.0 - c.a;
+    } else if (uClouds && !uSkybox && dir.y > 0.0) {
         vec2 uv = dir.xz / (dir.y + 0.12) * 0.7 + uTime * 0.008 * uCloudSpeed * vec2(1.0, 0.35);
         float n = fbm(uv * 1.3);
         cover = smoothstep(1.05 - uCloudCover, 1.35 - uCloudCover, n + 0.25) * smoothstep(0.0, 0.2, dir.y);
@@ -1196,9 +1345,18 @@ uniform float uGlow;          // LightEmission
 uniform vec3  uLight;         // the scene's light (unlit ribbons still dim at night)
 uniform int   uSoft;          // 0 hard edges; 1 fades out to both sides (rain, lightning); 2 a soft ring (a splash)
 uniform float uExtra;         // extra brightness on top (lightning: bright enough to bloom)
+uniform vec2  uFlow;          // uSoft 3: how far the pattern has turned and risen (a tornado, a rain shaft)
 out vec4 FragColor;
+#pragma gb_common
 void main() {
     vec4 c = vec4(pow(vColor.rgb, vec3(2.2)), vColor.a);
+    if (uSoft == 3) {
+        // A column of cloud, dust or rain: wispy bands winding round it (u = round it, v = up it).
+        float a = vUV.x * 6.2831853;
+        float n = fbm(vec2(cos(a), sin(a)) * 2.2 + vec2(vUV.y * 5.0 + uFlow.x, uFlow.x * 0.6 - vUV.y * 9.0 + uFlow.y));
+        c.a *= smoothstep(0.2, 0.75, n * 0.8 + 0.35);
+        c.rgb *= 0.6 + 0.7 * n;
+    }
     if (uSoft == 1) {
         float x = abs(vUV.x * 2.0 - 1.0);
         c.a *= (1.0 - x * x) * (1.0 - x * x);

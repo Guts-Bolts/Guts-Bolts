@@ -1,3 +1,4 @@
+#include "Storms.h"
 #include "Player.h"
 #include "BundleRig.h"
 #include "Gore.h"
@@ -1485,6 +1486,18 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         }
         m_velocity.y -= m_scene->world().gravity * dt;
     }
+    // A tornado or a downburst (Storms.h): strong wind shoves you along the ground,
+    // and the worst of it picks you up.
+    glm::vec3 stormPush(0.0f);
+    if (Storms::active(*m_scene) && !m_swimming) {
+        stormPush = Storms::characterPush(*m_scene, pos + glm::vec3(0.0f, 2.0f, 0.0f), m_velocity);
+        if (m_grounded && !m_climbing && stormPush.y > m_scene->world().gravity * 1.1f) {
+            m_grounded = false;
+            m_coyote = 0.0f;
+            m_velocity.y = std::max(m_velocity.y, 3.0f);
+        }
+        if (!m_grounded && !m_climbing) m_velocity += stormPush * dt;
+    }
     characterMovers(dt);
 
     // Wet = slippery: in a stream, or just out of one (the slide is still wet where it went).
@@ -1545,6 +1558,8 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
         delta.z += m_velocity.z * dt;
     }
     delta += current * (m_swimming ? dt : 0.0f);
+    // (On your feet you lean into the wind: it only slides you along slowly.)
+    if (m_grounded && !m_climbing) { delta.x += stormPush.x * 0.12f * dt; delta.z += stormPush.z * 0.12f * dt; }
     delta.y = m_velocity.y * dt;
 
     Physics::MoveResult res = physics.moveCharacter(pos, delta, m_grounded, r->transform.rotation.y, m_rootId, physics.groupOf(r));

@@ -62,6 +62,19 @@ struct Environment {
     // on tops. See withWeather() and Weather.h.
     int       weather       = 0;        // kWeatherNames: 0 Clear, 1 Rain, 2 Snow, 3 Storm
     float     weatherAmount = 0.6f;     // 0 a few drops .. 1 a storm
+    // The clouds' shape (kCloudTypeNames): 0 Auto (from the weather), or always one kind.
+    int       cloudType     = 0;
+    // Severe weather (Storms.h). In a Storm or Supercell, downbursts (and under a
+    // supercell, tornadoes) form by themselves unless this is off; a game can always
+    // start its own. The numbers below say what is where right now: the host sets
+    // them, every player follows them.
+    bool      severeWeather = true;
+    glm::vec3 stormCenter   = {0.0f, 0.0f, 0.0f};   // the supercell's middle (x, z)
+    float     tornado       = 0.0f;                 // its strength now on the EF scale (0 = none .. 5)
+    glm::vec3 tornadoPos    = {0.0f, 0.0f, 0.0f};   // its foot on the ground
+    glm::vec3 tornadoVel    = {0.0f, 0.0f, 0.0f};   // which way it is heading (studs / second)
+    float     downburst     = 0.0f;                 // 0 none .. 1 the strongest
+    glm::vec3 downburstPos  = {0.0f, 0.0f, 0.0f};   // where the falling air hits the ground
 
     // Camera / post-processing -------------------------------------------------
     float     exposure       = 1.0f;
@@ -89,18 +102,39 @@ struct Environment {
 };
 
 // (Storm: heavy, wind-blown rain under a dark sky, with lightning and thunder.)
-enum class Weather { Clear = 0, Rain = 1, Snow = 2, Storm = 3 };
-inline constexpr int kWeatherCount = 4;
-inline const char* const kWeatherNames[kWeatherCount] = {"Clear", "Rain", "Snow", "Storm"};
-// Is water falling from the sky? (Rain and Storm: things get wet, fires go out.)
-inline bool isRaining(int weather) { return weather == (int)Weather::Rain || weather == (int)Weather::Storm; }
+// (Supercell: a Storm whose cloud is one huge rotating thunderstorm; tornadoes form under it.)
+enum class Weather { Clear = 0, Rain = 1, Snow = 2, Storm = 3, Supercell = 4 };
+inline constexpr int kWeatherCount = 5;
+inline const char* const kWeatherNames[kWeatherCount] = {"Clear", "Rain", "Snow", "Storm", "Supercell"};
+inline bool isStorm(int weather) { return weather == (int)Weather::Storm || weather == (int)Weather::Supercell; }
+// Is water falling from the sky? (Rain and storms: things get wet, fires go out.)
+inline bool isRaining(int weather) { return weather == (int)Weather::Rain || isStorm(weather); }
+
+// Cloud shapes, as they are in the real sky (Lighting.CloudType):
+//  Cumulus       fair-weather heaps: flat bottoms, cauliflower tops, blue gaps between
+//  Stratus       a low, flat, grey sheet from edge to edge (drizzle weather)
+//  Cumulonimbus  thunderheads: a dark base, towers many times taller than they are
+//                wide, flattened at the top into an anvil
+//  Supercell     one huge rotating thunderstorm with its anvil, a rain-free base and a
+//                wall cloud hanging under it
+enum class CloudType { Auto = 0, Cumulus = 1, Stratus = 2, Cumulonimbus = 3, Supercell = 4 };
+inline constexpr int kCloudTypeCount = 5;
+inline const char* const kCloudTypeNames[kCloudTypeCount] = {"Auto", "Cumulus", "Stratus", "Cumulonimbus", "Supercell"};
+// The shape the sky really has: the chosen one, or the one that goes with the weather.
+inline int cloudShape(int cloudType, int weather, float cloudCover) {
+    if (cloudType > 0 && cloudType < kCloudTypeCount) return cloudType;
+    if (weather == (int)Weather::Supercell) return (int)CloudType::Supercell;
+    if (weather == (int)Weather::Storm) return (int)CloudType::Cumulonimbus;
+    if (weather == (int)Weather::Rain || weather == (int)Weather::Snow) return (int)CloudType::Stratus;
+    return cloudCover > 0.85f ? (int)CloudType::Stratus : (int)CloudType::Cumulus;
+}
 
 // How the sky, sun and fog look with the weather on top (grey clouds, less sun,
 // thicker fog). The saved Lighting stays as the game maker set it.
 inline Environment withWeather(const Environment& e) {
     if (e.weather <= 0 || e.weather >= kWeatherCount) return e;
     Environment w = e;
-    const bool storm = e.weather == (int)Weather::Storm;
+    const bool storm = isStorm(e.weather);
     // (A storm is never a light one: its clouds are as heavy as the hardest rain.)
     const float a = storm ? 1.0f : glm::clamp(e.weatherAmount, 0.0f, 1.0f);
     const bool snow = e.weather == (int)Weather::Snow;

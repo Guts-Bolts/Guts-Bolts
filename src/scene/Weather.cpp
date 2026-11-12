@@ -1,4 +1,5 @@
 #include "Weather.h"
+#include "Storms.h"
 #include "Environment.h"
 #include "Physics.h"
 #include "Scene.h"
@@ -145,7 +146,7 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
     m_time += dt;
 
     // Wet and snowy build up over a while, then dry off and melt more slowly.
-    const bool storm = kind == (int)Weather::Storm;
+    const bool storm = isStorm(kind);
     const float wantWet = storm ? 1.0f : kind == (int)Weather::Rain ? 0.35f + 0.65f * amount : 0.0f;
     const float wantSnow = kind == (int)Weather::Snow ? 0.4f + 0.6f * amount : 0.0f;
     auto toward = [&](float& v, float want, float up, float down) {
@@ -187,7 +188,13 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
     while (m_drops.size() < want) { Drop d; respawn(d, eye, true); m_drops.push_back(d); }
     if (m_drops.size() > want) m_drops.resize(want);
 
-    const glm::vec2 wind = snow ? glm::vec2(0.6f, 0.3f) : glm::vec2(2.5f, 1.0f) * (0.5f + amount) * (storm ? 3.0f : 1.0f);   // (a storm blows the rain sideways)
+    glm::vec2 wind = snow ? glm::vec2(0.6f, 0.3f) : glm::vec2(2.5f, 1.0f) * (0.5f + amount) * (storm ? 3.0f : 1.0f);   // (a storm blows the rain sideways)
+    if (Storms::active(scene)) {   // near a tornado or in a downburst the rain goes where that wind goes
+        const glm::vec3 gust = Storms::tornadoWind(scene.storms(), eye) + Storms::downburstWind(scene.storms(), eye);
+        glm::vec2 g = glm::vec2(gust.x, gust.z) * 0.45f;
+        if (const float len = glm::length(g); len > 38.0f) g *= 38.0f / len;
+        wind += g;
+    }
     m_streaks.reserve(m_drops.size());
     for (Drop& d : m_drops) {
         glm::vec3 vel(wind.x, -d.speed, wind.y);

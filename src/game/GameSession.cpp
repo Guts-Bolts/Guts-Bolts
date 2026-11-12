@@ -581,6 +581,9 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         m_acoustics.update(*m_scene, dt, Audio::listenerPosition());
         // Fires crackle, and (workspace.FireSpread) spread to wood and cloth (FireSpread.h).
         m_fire.update(*m_scene, dt, !client, Audio::listenerPosition());
+        // Supercells, tornadoes and downbursts: the host decides, everyone follows (Storms.h).
+        if (!client) Storms::simulate(*m_scene, dt);
+        Storms::follow(*m_scene, dt);
     }
 
     // Blood, oil, sparks, smoke...

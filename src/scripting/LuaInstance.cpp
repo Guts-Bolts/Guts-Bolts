@@ -4237,6 +4237,28 @@ int light_isA(lua_State* L) {
     return 1;
 }
 
+// Lighting:SpawnTornado(position, strength 0-5 = 2, seconds = 75)
+int light_spawnTornado(lua_State* L) {
+    const glm::vec3 at = LuaApi::checkVector3(L, 2);
+    Storms::spawnTornado(*E(L)->scene(), at, (float)luaL_optnumber(L, 3, 2.0), (float)luaL_optnumber(L, 4, 75.0));
+    return 0;
+}
+// Lighting:SpawnDownburst(position, strength 0-1 = 1, seconds = 22)
+int light_spawnDownburst(lua_State* L) {
+    const glm::vec3 at = LuaApi::checkVector3(L, 2);
+    Storms::spawnDownburst(*E(L)->scene(), at, (float)luaL_optnumber(L, 3, 1.0), (float)luaL_optnumber(L, 4, 22.0));
+    return 0;
+}
+int light_clearStorms(lua_State* L) {
+    Storms::clear(*E(L)->scene());
+    return 0;
+}
+// Lighting:GetWindAt(position): the wind there, tornadoes and downbursts included.
+int light_getWindAt(lua_State* L) {
+    LuaApi::pushVector3(L, Storms::windAt(*E(L)->scene(), LuaApi::checkVector3(L, 2)));
+    return 1;
+}
+
 int light_index(lua_State* L) {
     const char* k = luaL_checkstring(L, 2);
     Environment& e = E(L)->scene()->environment();
@@ -4253,6 +4275,17 @@ int light_index(lua_State* L) {
     if (is(k, "SunColor"))      { LuaApi::pushColor3(L, e.sunColor);    return 1; }
     if (is(k, "Weather"))       { lua_pushstring(L, kWeatherNames[std::clamp(e.weather, 0, kWeatherCount - 1)]); return 1; }
     if (is(k, "WeatherIntensity")) { lua_pushnumber(L, e.weatherAmount); return 1; }
+    if (is(k, "CloudType"))     { lua_pushstring(L, kCloudTypeNames[std::clamp(e.cloudType, 0, kCloudTypeCount - 1)]); return 1; }
+    if (is(k, "SevereWeather")) { lua_pushboolean(L, e.severeWeather);  return 1; }
+    if (is(k, "StormCenter"))   { LuaApi::pushVector3(L, e.stormCenter); return 1; }
+    if (is(k, "TornadoStrength"))   { lua_pushnumber(L, e.tornado);     return 1; }
+    if (is(k, "TornadoPosition"))   { LuaApi::pushVector3(L, e.tornadoPos); return 1; }
+    if (is(k, "DownburstStrength")) { lua_pushnumber(L, e.downburst);   return 1; }
+    if (is(k, "DownburstPosition")) { LuaApi::pushVector3(L, e.downburstPos); return 1; }
+    if (is(k, "SpawnTornado"))   { lua_pushcfunction(L, light_spawnTornado);   return 1; }
+    if (is(k, "SpawnDownburst")) { lua_pushcfunction(L, light_spawnDownburst); return 1; }
+    if (is(k, "ClearStorms"))    { lua_pushcfunction(L, light_clearStorms);    return 1; }
+    if (is(k, "GetWindAt"))      { lua_pushcfunction(L, light_getWindAt);      return 1; }
     if (is(k, "BounceLight"))   { lua_pushnumber(L, e.bounceLight);     return 1; }
     if (is(k, "LightRays"))     { lua_pushnumber(L, e.lightRays);       return 1; }
     if (is(k, "AutoExposure"))  { lua_pushboolean(L, e.autoExposure);   return 1; }
@@ -4292,8 +4325,25 @@ int light_newindex(lua_State* L) {
                 return 0;
             }
         }
-        return luaL_error(L, "'%s' isn't a kind of weather (use \"Clear\", \"Rain\" or \"Snow\")", name.c_str());
+        return luaL_error(L, "'%s' isn't a kind of weather (use \"Clear\", \"Rain\", \"Snow\", \"Storm\" or \"Supercell\")", name.c_str());
     }
+    if (is(k, "CloudType")) {
+        const char* w = luaL_tolstring(L, 3, nullptr);
+        std::string name = w ? w : "";
+        lua_pop(L, 1);
+        if (const size_t dot = name.rfind('.'); dot != std::string::npos) name = name.substr(dot + 1);
+        for (int i = 0; i < kCloudTypeCount; ++i) {
+            const std::string want = kCloudTypeNames[i];
+            if (name.size() == want.size() &&
+                std::equal(name.begin(), name.end(), want.begin(), [](char a, char b) { return std::tolower((unsigned char)a) == std::tolower((unsigned char)b); })) {
+                e.cloudType = i;
+                return 0;
+            }
+        }
+        return luaL_error(L, "'%s' isn't a kind of cloud (use \"Auto\", \"Cumulus\", \"Stratus\", \"Cumulonimbus\" or \"Supercell\")", name.c_str());
+    }
+    if (is(k, "SevereWeather")) { e.severeWeather = lua_toboolean(L, 3); return 0; }
+    if (is(k, "StormCenter"))   { e.stormCenter = LuaApi::checkVector3(L, 3); e.stormCenter.y = 0.0f; return 0; }
     if (is(k, "WeatherIntensity")) { e.weatherAmount = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }
     if (is(k, "BounceLight"))   { e.bounceLight = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 2.0f); return 0; }
     if (is(k, "LightRays"))     { e.lightRays = std::clamp((float)luaL_checknumber(L, 3), 0.0f, 1.0f); return 0; }

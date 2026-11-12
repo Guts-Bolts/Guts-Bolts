@@ -111,11 +111,24 @@ void EnvironmentPanel::render() {
 
     if (PG::CollapsingHeader("Weather", open)) {
         int w = std::clamp(e.weather, 0, kWeatherCount - 1);
-        const char* shown[kWeatherCount] = {"Clear sky", "Rain", "Snow", "Thunderstorm"};   // (Lighting.Weather: Clear, Rain, Snow, Storm)
+        const char* shown[kWeatherCount] = {"Clear sky", "Rain", "Snow", "Thunderstorm", "Supercell (tornado storm)"};   // (Lighting.Weather: Clear, Rain, Snow, Storm, Supercell)
         if (PG::Combo("Weather##kind", &w, shown, kWeatherCount)) e.weather = w;
         help("Rain makes everything wet with puddles, snow settles on tops, and a thunderstorm is heavy rain under a dark sky with lightning and thunder. Scripts can change it with Lighting.Weather");
         PG::SliderFloat("Intensity##weather", &e.weatherAmount, 0.0f, 1.0f);
         help("From a few drops (0) to a storm (1)");
+        int ct = std::clamp(e.cloudType, 0, kCloudTypeCount - 1);
+        const char* clouds[kCloudTypeCount] = {"Auto (goes with the weather)", "Cumulus (fair-weather heaps)", "Stratus (flat grey sheet)", "Cumulonimbus (thunderheads)", "Supercell (rotating storm)"};
+        if (PG::Combo("Cloud type", &ct, clouds, kCloudTypeCount)) e.cloudType = ct;
+        help("The shape of the clouds, like the real ones. Auto picks the one that belongs to the weather. The full 3D clouds show on High graphics and up. Scripts: Lighting.CloudType");
+        if (isStorm(e.weather)) {
+            ImGui::Checkbox("Severe weather", &e.severeWeather);
+            help("Storms make downbursts (a blast of wind and rain from the cloud) by themselves, and a supercell grows tornadoes that throw loose parts around. Off = only the ones a script starts with Lighting:SpawnTornado / SpawnDownburst");
+        }
+        if (e.weather == (int)Weather::Supercell) {
+            float mid[2] = {e.stormCenter.x, e.stormCenter.z};
+            if (ImGui::DragFloat2("Storm middle", mid, 1.0f)) { e.stormCenter.x = mid[0]; e.stormCenter.z = mid[1]; }
+            help("Where the middle of the supercell is on the map (X and Z). Left at 0, 0 it starts off to one side of the players and drifts over them");
+        }
     }
 
     if (PG::CollapsingHeader("Camera & Effects", open)) {
