@@ -110,11 +110,13 @@ uniform bool      uHasTShirt;  // a torso with a T-shirt: its picture flat on th
 uniform sampler2D uTShirt;
 uniform sampler2D uDecal;
 // A MaterialVariant on this part: its pictures, tiled on each face of the part from its
-// corner (uVTile world units per copy), which of them it has (colour, normal, roughness,
-// metalness), and its roughness, metalness and glow for the ones it doesn't.
+// corner (uVTile world units per copy), which of them it has, and its roughness, metalness
+// and glow for the ones it doesn't. Occlusion, roughness and metalness come packed in one
+// picture (uVOrm: red, green, blue), so one read gets all three (OrmPack.h).
 uniform bool      uVariant;
-uniform sampler2D uVColor, uVNormal, uVRough, uVMetal;
-uniform vec4      uVHas;      // (1 = has it)
+uniform sampler2D uVColor, uVNormal, uVOrm;
+uniform vec4      uVHas;      // (1 = has it): colour, normal
+uniform vec3      uVOrmHas;   // (1 = the packed picture has it): occlusion, roughness, metalness
 uniform float     uVTile;
 uniform vec3      uVParams;
 
@@ -510,6 +512,7 @@ void main() {
     // Fine surface detail fades out when it gets smaller than a pixel (no shimmering).
     float detail = clamp(1.5 - length(fwidth(vWorldPos)) * 24.0, 0.0, 1.0);
     float rough = 0.5, metal = 0.0;
+    float matAo = 1.0;        // a material's own occlusion: how much sky and bounce light gets in (1 = all)
     float splatWet = 0.0;     // landed blood: how wet and shiny it still is
     if (uVariant) {
         // A MaterialVariant: its own pictures instead of the built-in look.
@@ -518,8 +521,14 @@ void main() {
         vec2 uv = (top ? vObjPos.xz : (an.x > an.z ? vObjPos.zy : vObjPos.xy)) / max(uVTile, 0.01);
         uv.y = -uv.y;   // (pictures are upright on the sides)
         if (uVHas.x > 0.5) albedo *= lin(tiled(uVColor, uv).rgb);
-        rough = uVHas.z > 0.5 ? tiled(uVRough, uv).r : uVParams.x;
-        metal = uVHas.w > 0.5 ? tiled(uVMetal, uv).r : uVParams.y;
+        rough = uVParams.x;
+        metal = uVParams.y;
+        if (uVOrmHas.x + uVOrmHas.y + uVOrmHas.z > 0.5) {
+            vec3 orm = tiled(uVOrm, uv).rgb;
+            if (uVOrmHas.x > 0.5) matAo = orm.r;
+            if (uVOrmHas.y > 0.5) rough = orm.g;
+            if (uVOrmHas.z > 0.5) metal = orm.b;
+        }
         if (uVHas.y > 0.5) N = mapNormal(N, uv, tiled(uVNormal, uv).xyz * 2.0 - 1.0);
     }
     else if (gMaterial == 1) { rough = 0.3; metal = 1.0;
@@ -841,7 +850,7 @@ void main() {
                 bounced = max(g.rgb, vec3(0.0)) * same;
             }
         }
-        color += albedo * (1.0 - metal) * (hemi * uAmbientIntensity * skyVis + bounced);
+        color += albedo * (1.0 - metal) * (hemi * uAmbientIntensity * skyVis + bounced) * matAo;
 
         // Reflections of the sky on shiny surfaces.
         vec3  f0  = mix(vec3(0.04), albedo, metal);
@@ -851,6 +860,7 @@ void main() {
         vec3  env = lin(skyGradient(R, uZenith, uHorizon, uGround));
         vec3  avg = lin((uZenith + uHorizon + uGround) / 3.0);
         env = mix(env, avg, rough) * mix(1.0, skyVis, 0.75);   // (no sky reflected deep in a corner)
+        env *= mix(1.0, matAo, 0.75);                          // (...or down in a material's own grooves)
         float shine = (gMaterial == 7 ? max(uReflections, 0.8) : gMaterial == 8 ? uReflections * 0.2 : gMaterial == 30 ? max(uReflections, 0.5) * 0.7 * splatWet : gMaterial == 31 ? uReflections * 0.3 : uReflections) * (1.0 - rough * 0.7);
         // Smooth, shiny things (metal, glass, ice, polished stone, wet floors) mirror the
         // world around them, not only the sky (High and up; see screenReflection).

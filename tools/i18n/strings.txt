@@ -3180,6 +3180,7 @@
 "One grey all over (0 black .. 1 white)."
 "One line about it"
 "One line of Lua:"
+"One packed picture instead of the two above: red = occlusion (dark where sky light\ncan't reach, like the gaps between bricks), green = roughness, blue = metalness."
 "One person, one account is the normal way to play. Don't make accounts to dodge a ban, to farm Bolts or to vote on your own games."
 "One piece, with the colours on its corners. For MeshLab and scanning tools."
 "One step = one answer from the AI. A task that uses tools takes a few."

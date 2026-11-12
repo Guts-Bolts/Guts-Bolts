@@ -596,6 +596,10 @@ inline int materialShaderId(Material m) { return (int)m < 7 ? (int)m : (int)m + 
 struct MaterialVariantProps {
     Material    base = Material::Plastic;                       // BaseMaterial
     std::string colorMap, normalMap, roughnessMap, metalnessMap; // ColorMap, NormalMap, RoughnessMap, MetalnessMap
+    // Ours: one packed picture instead of RoughnessMap + MetalnessMap. Red = occlusion (how
+    // much sky light reaches each spot), green = roughness, blue = metalness. When set it
+    // wins over the two above. (Without it, those two are packed into one by the renderer.)
+    std::string ormMap;                                          // OrmMap
     float       studsPerTile = 10.0f;    // StudsPerTile: how big one copy of the pictures is (Roblox studs)
     // Ours, for when there's no picture for it: 0 smooth .. 1 rough, 0 not metal .. 1 metal,
     // and how much it glows (0 = not at all; the part's colour times its ColorMap).
@@ -610,7 +614,7 @@ inline void clampVariant(MaterialVariantProps& v) {
     c(v.roughness, 0.0f, 1.0f);
     c(v.metalness, 0.0f, 1.0f);
     c(v.glow, 0.0f, 10.0f);
-    for (std::string* t : {&v.colorMap, &v.normalMap, &v.roughnessMap, &v.metalnessMap})
+    for (std::string* t : {&v.colorMap, &v.normalMap, &v.roughnessMap, &v.metalnessMap, &v.ormMap})
         if (t->size() > 500) t->resize(500);
     if (v.graph.size() > 200000) v.graph.clear();
 }

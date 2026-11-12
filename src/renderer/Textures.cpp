@@ -23,6 +23,7 @@
 #include <map>
 #include <cstring>
 #include <vector>
+#include "OrmPack.h"
 
 namespace Textures {
 
@@ -65,6 +66,19 @@ struct Entry {
 
 std::map<std::string, Entry>& cache() {
     static std::map<std::string, Entry> c;
+    return c;
+}
+
+// Packed occlusion / roughness / metalness pictures (orm()), by "occlusion|roughness|metalness".
+struct Packed {
+    unsigned    tex = 0;
+    bool        has[3] = {false, false, false};
+    bool        broken = false;
+    double      retryAt = 0.0;
+    std::string from[3];
+};
+std::map<std::string, Packed>& packed() {
+    static std::map<std::string, Packed> c;
     return c;
 }
 
@@ -182,10 +196,65 @@ bool size(const std::string& id, int& w, int& h) {
 }
 
 void forget(const std::string& id) {
+    // Packed pictures made from it are stale too (they're made again when next asked for).
+    for (auto p = packed().begin(); p != packed().end();) {
+        const Packed& k = p->second;
+        if (k.from[0] == id || k.from[1] == id || k.from[2] == id) {
+            if (k.tex) glDeleteTextures(1, &k.tex);
+            p = packed().erase(p);
+        } else ++p;
+    }
     auto it = cache().find(id);
     if (it == cache().end()) return;
     if (it->second.tex) glDeleteTextures(1, &it->second.tex);
     cache().erase(it);
+}
+
+unsigned orm(const std::string& occlusion, const std::string& roughness, const std::string& metalness, bool has[3]) {
+    has[0] = has[1] = has[2] = false;
+    if (occlusion.empty() && roughness.empty() && metalness.empty()) return 0;
+    const std::string key = occlusion + "|" + roughness + "|" + metalness;
+    Packed& e = packed()[key];
+    if (!e.tex && !e.broken && now() >= e.retryAt) {
+        e.from[0] = occlusion; e.from[1] = roughness; e.from[2] = metalness;
+        // Read each one's pixels (bottom row first, like every picture here).
+        stbi_set_flip_vertically_on_load(1);
+        unsigned char* px[3] = {nullptr, nullptr, nullptr};
+        OrmPack::Source src[3];
+        bool waiting = false;
+        for (int i = 0; i < 3; ++i) {
+            if (e.from[i].empty()) continue;
+            const std::filesystem::path p = locate(e.from[i]);
+            if (p.empty()) { waiting = true; break; }   // maybe it's still downloading
+            int n = 0;
+            px[i] = stbi_load(p.string().c_str(), &src[i].w, &src[i].h, &n, 4);
+            if (px[i]) { src[i].px = px[i]; e.has[i] = true; }
+            else Log::warn("\"" + e.from[i] + "\" isn't a picture Guts and Bolts can read (use PNG or JPG).");
+        }
+        std::vector<unsigned char> out;
+        int w = 0, h = 0;
+        if (waiting) {
+            e.retryAt = now() + 1.0;
+            e.has[0] = e.has[1] = e.has[2] = false;
+        } else if (!OrmPack::pack(src[0], src[1], src[2], out, w, h)) {
+            e.broken = true;
+        } else {
+            glGenTextures(1, &e.tex);
+            glBindTexture(GL_TEXTURE_2D, e.tex);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, out.data());
+            glGenerateMipmap(GL_TEXTURE_2D);
+            textureQuality();
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+        for (unsigned char* p : px) if (p) stbi_image_free(p);
+    }
+    for (int i = 0; i < 3; ++i) has[i] = e.tex && e.has[i];
+    return e.tex;
 }
 
 unsigned put(const std::string& id, const unsigned char* rgba, int w, int h) {
@@ -212,6 +281,9 @@ unsigned put(const std::string& id, const unsigned char* rgba, int w, int h) {
 void clear() {
     for (auto& [id, e] : cache())
         if (e.tex) glDeleteTextures(1, &e.tex);
+    for (auto& [id, e] : packed())
+        if (e.tex) glDeleteTextures(1, &e.tex);
+    packed().clear();
     cache().clear();
 }
 
