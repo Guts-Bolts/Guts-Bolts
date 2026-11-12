@@ -88,7 +88,8 @@ export function installFyxaCloud(Cls) {
   P.fyxaCloudLimit = function (me) {
     const { limits } = this.fyxaCloudSettings();
     const club = this.clubOf(me);
-    return this.isStaff(me) ? Math.max(limits.obc, 500) : club ? limits[club] ?? limits.free : limits.free;
+    const base = this.isStaff(me) ? Math.max(limits.obc, 500) : club ? limits[club] ?? limits.free : limits.free;
+    return this.launchpadPerk && this.launchpadPerk(me) ? Math.max(base, limits.tbc) : base;   // Launchpad creators (launchpad.js)
   };
   P.fyxaCloudUsed = function (me, t) { return me.fyxaCloud && me.fyxaCloud.day === utcDay(t) ? me.fyxaCloud.steps : 0; };
   P.fyxaCloudUsage = function (me, t) {

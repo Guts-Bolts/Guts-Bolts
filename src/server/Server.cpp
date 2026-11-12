@@ -374,6 +374,7 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
         if (auto g = m_groups.find(a.meta.value("group", std::string())); g != m_groups.end())
             j["group"] = {{"id", g->second.id}, {"name", g->second.name}, {"color", g->second.color}};
         if (a.meta.value("featured", 0LL) > 0) j["featured"] = true;
+        j["rating"] = a.meta.value("rating", std::string());   // age rating (ServerRatings.cpp; "" = not rated yet)
         json shots = json::array();
         for (const json& s : a.shots) shots.push_back(s.value("id", std::string()));
         j["shots"] = shots;
@@ -481,6 +482,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         r["user"] = publicUser(*u);
         r["user"]["badges"] = badgesOf(*u);
         r["user"]["avatar"] = u->avatar;
+        r["background"] = backgroundOf(*u);   // ServerBackgrounds.cpp
         json made = json::array();
         for (const auto& [id, a] : m_assets) if (a.creator == u->id) made.push_back(publicAsset(a));
         r["creations"] = made;
@@ -706,6 +708,13 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
     if (name.rfind("banlist.", 0) == 0 || name == "game.banLists" || name == "game.ban") return banListOp(name, me, args);   // ServerBanLists.cpp
+    // Launchpad (worker/launchpad.js) is a staff-run program on the main website only.
+    if (name.rfind("launchpad.", 0) == 0) {
+        if (name == "launchpad.games") { json r = okay(); r["games"] = json::array(); return r; }
+        return fail("Launchpad is only on the main Guts&Bolts website.");
+    }
+    if (name == "profile.background") return backgroundOp(me, args);   // ServerBackgrounds.cpp
+    if (name == "game.rating" || name == "game.rate" || name == "rating.limit") return ratingOp(name, me, args);   // ServerRatings.cpp
     if (name == "game.testers" || name == "game.addTester" || name == "game.removeTester" || name == "game.testerNote" || name == "game.amTester")
         return testerOp(name, me, args);   // ServerTesters.cpp
     // Fyxa in the cloud (worker/fyxa-cloud.js) needs Cloudflare's AI, which this server doesn't have.
@@ -1498,6 +1507,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             if (!creator.empty() && a.creator != creator) continue;
             if (!q.empty() && lower(a.name).find(q) == std::string::npos) continue;
             if (publicView ? !reviewOf(a.meta).empty() : !canSee(a, me)) continue;
+            if (!ownedOnly && !ratingAllowed(a, me)) continue;   // over their rating limit (ServerRatings.cpp)
             found.push_back(&a);
         }
         std::sort(found.begin(), found.end(), [&](const Asset* x, const Asset* y) {
@@ -1900,6 +1910,8 @@ void GbServer::saveUsers() {
         if (!u.totpPending.empty()) all[id]["totpPending"] = u.totpPending;
         all[id]["privacy"] = {{"status", u.privacyStatus}, {"join", u.privacyJoin}, {"messages", u.privacyMessages}, {"inventory", u.privacyInventory}};
         if (u.dnd) all[id]["dnd"] = true;
+        if (!u.ratingLimit.empty()) all[id]["ratingLimit"] = u.ratingLimit;
+        if (!u.background.empty()) all[id]["background"] = u.background;
         all[id]["gear"] = u.gear;
         if (!u.emotes.empty()) all[id]["emotes"] = u.emotes;
         if (!u.animPack.empty()) all[id]["animPack"] = u.animPack;
@@ -2127,6 +2139,8 @@ void GbServer::load() {
                     u.privacyInventory = ok(inv) ? inv : "everyone";
                 }
                 u.dnd = j.value("dnd", false) == true;
+                u.background = j.contains("background") && j["background"].is_string() ? j["background"].get<std::string>() : std::string();
+                u.ratingLimit = j.contains("ratingLimit") && j["ratingLimit"].is_string() ? j["ratingLimit"].get<std::string>() : std::string();
                 if (j.contains("outfits") && j["outfits"].is_array()) u.outfits = j["outfits"];
                 if (j.contains("inbox") && j["inbox"].is_array()) u.inbox = j["inbox"];
                 if (j.contains("notes") && j["notes"].is_array()) u.notes = j["notes"];

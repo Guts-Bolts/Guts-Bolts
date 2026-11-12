@@ -21,6 +21,9 @@ import { installMcpRelay } from './mcp-relay.js';
 import { installGameWeb } from './game-web.js';
 import { installBanLists } from './banlists.js';   // creators' ban lists, used across their games
 import { installTesters, isTester } from './testers.js';   // early testers: a few people play a game before it's public
+import { installRatings, ratingAllowed } from './ratings.js';   // age ratings from a few questions
+import { installLaunchpad } from './launchpad.js';   // Launchpad: staff help picked creators build big games
+import { installBackgrounds } from './backgrounds.js';   // a picture behind your avatar on your profile
 import { installFyxaCloud } from './fyxa-cloud.js';   // Fyxa answered by Cloudflare's AI, with daily limits
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
@@ -2273,6 +2276,8 @@ export class GbServerObject extends DurableObject {
       myVote: me && a.votes ? (a.votes[me.id] || 0) : undefined, limited: this.limitedJson(a),
       favorites: a.kind === 'game' || isCatalogItem(a.kind) || this.auctionOpen(a, now()) ? (a.favorites || 0) : undefined,
       featured: a.kind === 'game' && a.featured > 0 ? true : undefined,
+      rating: a.kind === 'game' ? (a.rating || '') : undefined,
+      launchpad: a.kind === 'game' && a.launchpad ? a.launchpad.stage : undefined,   // in Launchpad (launchpad.js)   // age rating (ratings.js; '' = not rated yet)
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: !me ? undefined : a.kind === 'game' ? (me.favorites || []).includes(a.id)
         : (isCatalogItem(a.kind) || this.auctionOpen(a, now())) ? (me.itemFavorites || []).includes(a.id) : undefined,
@@ -3274,6 +3279,7 @@ export class GbServerObject extends DurableObject {
       const canSee = this.seesInventory(me, u), owns = canSee ? this.inventoryOf(u, 'all', me) : [];
       const inventory = { hidden: !canSee, total: owns.length, items: owns.slice(0, 12) };
       return okay({ user, creations, groups, friendCount: u.friends.length, friendship, wearing, friends, inventory,
+        background: this.backgroundOf(u),   // backgrounds.js
         followerCount: (u.followers || []).length, followingCount: (u.following || []).length,
         isFollowing: (me.following || []).includes(u.id), blocked: (me.blocked || []).includes(u.id),
         online: this.presence(me, u).online, playing: this.presence(me, u).playing, placeVisits, gameBadges,
@@ -3331,6 +3337,9 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('forum.')) return this.forumOp(name, me, args);
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
     if (name.startsWith('banlist.') || name === 'game.banLists' || name === 'game.ban') return this.banListOp(name, me, args);   // banlists.js
+    if (name === 'profile.background') return this.backgroundOp(name, me, args);   // backgrounds.js
+    if (name.startsWith('launchpad.')) return this.launchpadOp(name, me, args);   // launchpad.js
+    if (name === 'game.rating' || name === 'game.rate' || name === 'rating.limit') return this.ratingOp(name, me, args);   // ratings.js
     if (['game.testers', 'game.addTester', 'game.removeTester', 'game.testerNote', 'game.amTester'].includes(name)) return this.testerOp(name, me, args);   // testers.js
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
@@ -4511,6 +4520,7 @@ export class GbServerObject extends DurableObject {
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
         (!creator || a.creator === creator) && (publicView ? !a.review : this.canPlay(a, me)) &&
         (!genre || (a.genres || []).includes(genre)) &&
+        (ownedOnly || ratingAllowed(a, me)) &&   // over your rating limit (ratings.js)
         (!q || only || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
       const playing = sort === 'playing' ? new Map(found.map((a) => [a.id, this.playingIn(a.id)])) : null;
       const by = {
@@ -6937,3 +6947,6 @@ installChats(GbServerObject);
 installBanLists(GbServerObject);
 installTesters(GbServerObject);
 installFyxaCloud(GbServerObject);
+installRatings(GbServerObject);
+installLaunchpad(GbServerObject);
+installBackgrounds(GbServerObject);

@@ -28,6 +28,8 @@ set(GB_SERVER_SOURCES
     src/server/ServerExtras.cpp
     src/server/ServerBanLists.cpp
     src/server/ServerTesters.cpp
+    src/server/ServerRatings.cpp
+    src/server/ServerBackgrounds.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -536,6 +538,7 @@ add_library(gb_engine STATIC
     src/scripting/ScriptRemotes.cpp
     src/scripting/SpatialQueries.cpp
     src/scripting/LuaRealism.cpp
+    src/scripting/ServerMemory.cpp
     src/scripting/ScriptActions.cpp
     src/scripting/ScriptHelp.cpp
     src/scripting/ScriptCheck.cpp
@@ -1052,6 +1055,18 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerTestersTests gb_version)
     target_link_libraries(ServerTestersTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerTestersTests COMMAND ServerTestersTests)
+    # Age ratings: questions -> rating, history, players' rating limit (ServerRatings.cpp).
+    add_executable(ServerRatingsTests tests/ServerRatingsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerRatingsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerRatingsTests gb_version)
+    target_link_libraries(ServerRatingsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerRatingsTests COMMAND ServerRatingsTests)
+    # Profile backgrounds: a passed decal behind your avatar (ServerBackgrounds.cpp).
+    add_executable(ServerBackgroundsTests tests/ServerBackgroundsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerBackgroundsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerBackgroundsTests gb_version)
+    target_link_libraries(ServerBackgroundsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerBackgroundsTests COMMAND ServerBackgroundsTests)
 
     # Studio Learn progress: account validation, persistence across server restarts and guest denial.
     add_executable(ServerLearnProgressTests tests/ServerLearnProgressTests.cpp ${GB_SERVER_TEST_SOURCES})
@@ -1407,6 +1422,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(RealismTests tests/RealismTests.cpp)
     target_link_libraries(RealismTests PRIVATE gb_engine)
     add_test(NAME RealismTests COMMAND RealismTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
+    # game.ServerLowMemoryWarning and Stats' memory numbers (src/scripting/ServerMemory.cpp).
+    add_executable(ServerMemoryTests tests/ServerMemoryTests.cpp)
+    target_link_libraries(ServerMemoryTests PRIVATE gb_engine)
+    add_test(NAME ServerMemoryTests COMMAND ServerMemoryTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
     add_executable(BodiesGoreLightTests tests/BodiesGoreLightTests.cpp)
     target_link_libraries(BodiesGoreLightTests PRIVATE gb_engine)
     add_test(NAME BodiesGoreLightTests COMMAND BodiesGoreLightTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"

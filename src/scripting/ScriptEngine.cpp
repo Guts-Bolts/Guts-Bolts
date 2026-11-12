@@ -4,6 +4,7 @@
 #include "ScriptHistory.h"
 #include "SpatialQueries.h"
 #include "LuaRealism.h"
+#include "ServerMemory.h"
 #include "../core/Pad.h"
 #include "../core/Account.h"
 #include "../online/OnlineClient.h"
@@ -3962,6 +3963,7 @@ void ScriptEngine::start(bool runScripts) {
     --m_depth;
     SpatialQueries::install(L);   // workspace:GetPartsInPart, OverlapParams...
     LuaRealism::install(L);       // workspace:FireBullet
+    ServerMemory::install(L, m_runMode != RunMode::Client);   // game.ServerLowMemoryWarning, Stats' memory numbers
     // For Studio's AI tools: an object by its id number (they refer to objects that way).
     lua_register(L, "__gb_byId", [](lua_State* L) -> int {
         uint64_t id = (uint64_t)luaL_checkinteger(L, 1);
@@ -4561,6 +4563,7 @@ void ScriptEngine::update(float dt) {
     if (!m_L) return;
     m_time += dt;
     msgStep();   // MessagingService: messages from the game's other servers
+    if (m_runMode != RunMode::Client) ServerMemory::step(m_L, m_time);   // low on memory? tell the game's scripts
 
     // Keyboard and controller buttons: bound actions (ContextActionService) first, then
     // UserInputService.InputBegan / InputEnded.
