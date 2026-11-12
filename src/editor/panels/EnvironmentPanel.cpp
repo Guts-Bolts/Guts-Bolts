@@ -111,9 +111,9 @@ void EnvironmentPanel::render() {
 
     if (PG::CollapsingHeader("Weather", open)) {
         int w = std::clamp(e.weather, 0, kWeatherCount - 1);
-        const char* shown[kWeatherCount] = {"Clear sky", "Rain", "Snow"};   // (Lighting.Weather: Clear, Rain, Snow)
+        const char* shown[kWeatherCount] = {"Clear sky", "Rain", "Snow", "Thunderstorm"};   // (Lighting.Weather: Clear, Rain, Snow, Storm)
         if (PG::Combo("Weather##kind", &w, shown, kWeatherCount)) e.weather = w;
-        help("Rain makes everything wet with puddles, and snow settles on tops. Scripts can change it with Lighting.Weather");
+        help("Rain makes everything wet with puddles, snow settles on tops, and a thunderstorm is heavy rain under a dark sky with lightning and thunder. Scripts can change it with Lighting.Weather");
         PG::SliderFloat("Intensity##weather", &e.weatherAmount, 0.0f, 1.0f);
         help("From a few drops (0) to a storm (1)");
     }

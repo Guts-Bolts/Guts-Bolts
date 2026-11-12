@@ -475,6 +475,7 @@ add_library(gb_engine STATIC
     src/scene/PlayerModel.cpp
     src/renderer/Shader.cpp
     src/renderer/Mesh.cpp
+    src/renderer/MeshLod.cpp
     src/renderer/Textures.cpp
     src/renderer/Camera.cpp
     src/renderer/Framebuffer.cpp
@@ -1503,5 +1504,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)
     target_link_libraries(MemoryStoreTests PRIVATE gb_engine)
     add_test(NAME MemoryStoreTests COMMAND MemoryStoreTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Detail levels for far meshes (MeshLod) and thunderstorms (Lighting.Weather = "Storm").
+    add_executable(StormAndDetailTests tests/StormAndDetailTests.cpp)
+    target_link_libraries(StormAndDetailTests PRIVATE gb_engine)
+    add_test(NAME StormAndDetailTests COMMAND StormAndDetailTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()

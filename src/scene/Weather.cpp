@@ -71,6 +71,72 @@ void WeatherSim::respawn(Drop& d, const glm::vec3& eye, bool anywhere) {
     d.speed = m_kind == (int)Weather::Snow ? 2.5f + 2.0f * random() : 42.0f + 14.0f * random();
 }
 
+// How bright the lightning is right now: the brightest of its flickers, each a sudden
+// jump that dies away fast (the last one glows on a little longer).
+float WeatherSim::flash() const {
+    const float a = m_boltAge;
+    if (a > 1.2f) return 0.0f;
+    float f = 0.0f;
+    for (const Pulse& p : m_pulses)
+        if (a >= p.at) f = std::max(f, p.strength * std::exp(-(a - p.at) * p.fade));
+    return f < 0.004f ? 0.0f : std::min(f, 1.0f);
+}
+
+bool WeatherSim::takeThunder(float& volume, glm::vec3& from) {
+    if (!m_thunderNow) return false;
+    m_thunderNow = false;
+    volume = m_thunderVolume;
+    from = m_strikeAt;
+    return true;
+}
+
+// One stretch of the bolt, from a to b: bend it in the middle and do the same to both
+// halves, smaller each time, until the pieces are short. Now and then a branch forks
+// off at the bend, dimmer and thinner, heading out and down.
+void WeatherSim::grow(const glm::vec3& a, const glm::vec3& b, int depth, float bright, float width) {
+    if (depth <= 0 || m_bolt.size() > 1500) { m_bolt.push_back({a, b, bright, width}); return; }
+    const float len = glm::length(b - a);
+    glm::vec3 mid = (a + b) * 0.5f;
+    mid += glm::vec3(random() - 0.5f, (random() - 0.5f) * 0.3f, random() - 0.5f) * len * 0.26f;
+    grow(a, mid, depth - 1, bright, width);
+    grow(mid, b, depth - 1, bright, width);
+    if (depth >= 2 && bright > 0.12f && random() < 0.34f) {
+        glm::vec3 out(random() - 0.5f, 0.0f, random() - 0.5f);
+        out = glm::length(out) > 1e-4f ? glm::normalize(out) : glm::vec3(1.0f, 0.0f, 0.0f);
+        const glm::vec3 along = len > 1e-4f ? (b - a) / len : glm::vec3(0.0f, -1.0f, 0.0f);
+        glm::vec3 dir = glm::normalize(along * 0.75f + out * 0.8f + glm::vec3(0.0f, -0.25f, 0.0f));
+        grow(mid, mid + dir * len * (0.45f + 0.4f * random()), depth - 1, bright * 0.42f, width * 0.6f);
+    }
+}
+
+// A bolt from the clouds to the ground somewhere around the camera.
+void WeatherSim::strike(const glm::vec3& eye, float amount) {
+    const float angle = random() * 6.2831853f;
+    const float dist = kNearStrike + (kFarStrike - kNearStrike) * random();
+    const glm::vec3 top(eye.x + std::cos(angle) * dist, eye.y + 170.0f + 40.0f * random(), eye.z + std::sin(angle) * dist);
+    float groundY = groundAt(top.x, top.z);
+    if (!(groundY > -1e8f)) groundY = eye.y - 25.0f;   // (beyond what we measured: a bit under the camera)
+    const glm::vec3 bottom(top.x + (random() - 0.5f) * 50.0f, groundY, top.z + (random() - 0.5f) * 50.0f);
+    m_bolt.clear();
+    grow(top, bottom, 6, 1.0f, 1.0f);
+    m_boltMiddle = (top + bottom) * 0.5f;
+    m_boltAge = 0.0f;
+    m_strikeAt = bottom;
+    // The flickers: the first, brightest strike, then 2 to 4 more along the same path.
+    m_pulses.clear();
+    m_pulses.push_back({0.0f, 1.0f, 16.0f});
+    float at = 0.0f;
+    const int more = 2 + (int)(random() * 2.99f);
+    for (int i = 0; i < more; ++i) {
+        at += 0.045f + 0.09f * random();
+        m_pulses.push_back({at, 0.45f + 0.5f * random(), i == more - 1 ? 7.0f : 18.0f});
+    }
+    m_thunderIn = dist / kThunderSpeed;
+    m_thunderVolume = std::clamp(1.1f - dist / (kFarStrike * 1.2f), 0.25f, 1.0f);
+    // The next one: a few seconds to a third of a minute, sooner in a harder storm.
+    nextStrike = (4.0f + 14.0f * random()) / (0.5f + amount);
+}
+
 void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
     const Environment& env = scene.environment();
     const int kind = env.weather > 0 && env.weather < kWeatherCount ? env.weather : 0;
@@ -79,7 +145,8 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
     m_time += dt;
 
     // Wet and snowy build up over a while, then dry off and melt more slowly.
-    const float wantWet = kind == (int)Weather::Rain ? 0.35f + 0.65f * amount : 0.0f;
+    const bool storm = kind == (int)Weather::Storm;
+    const float wantWet = storm ? 1.0f : kind == (int)Weather::Rain ? 0.35f + 0.65f * amount : 0.0f;
     const float wantSnow = kind == (int)Weather::Snow ? 0.4f + 0.6f * amount : 0.0f;
     auto toward = [&](float& v, float want, float up, float down) {
         v = v < want ? std::min(want, v + dt / up) : std::max(want, v - dt / down);
@@ -87,7 +154,21 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
     toward(m_wet, wantWet, 15.0f, 45.0f);
     toward(m_snow, wantSnow, 30.0f, 40.0f);
 
+    // Lightning, and its thunder on the way.
+    m_boltAge += dt;
+    if (m_thunderIn >= 0.0f) {
+        m_thunderIn -= dt;
+        if (m_thunderIn < 0.0f) m_thunderNow = true;
+    }
+    if (storm) {
+        nextStrike -= dt;
+        if (nextStrike <= 0.0f) strike(eye, amount);
+    }
+
     m_streaks.clear();
+    for (Splash& sp : m_splashes) sp.age += dt;
+    m_splashes.erase(std::remove_if(m_splashes.begin(), m_splashes.end(),
+                                    [](const Splash& sp) { return sp.age >= kSplashSeconds; }), m_splashes.end());
     if (kind != m_kind) { m_drops.clear(); m_kind = kind; }
     if (!kind) { m_roof.clear(); return; }
 
@@ -100,11 +181,13 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
     }
 
     const bool snow = kind == (int)Weather::Snow;
-    const size_t want = (size_t)(kMaxDrops * (snow ? 0.6f : 1.0f) * (0.08f + 0.92f * amount));
+    // (A storm always pours: at least three quarters of the drops, whatever the intensity.)
+    const float pour = storm ? std::max(amount, 0.75f) : amount;
+    const size_t want = (size_t)(kMaxDrops * (snow ? 0.6f : 1.0f) * (0.08f + 0.92f * pour));
     while (m_drops.size() < want) { Drop d; respawn(d, eye, true); m_drops.push_back(d); }
     if (m_drops.size() > want) m_drops.resize(want);
 
-    const glm::vec2 wind = snow ? glm::vec2(0.6f, 0.3f) : glm::vec2(2.5f, 1.0f) * (0.5f + amount);
+    const glm::vec2 wind = snow ? glm::vec2(0.6f, 0.3f) : glm::vec2(2.5f, 1.0f) * (0.5f + amount) * (storm ? 3.0f : 1.0f);   // (a storm blows the rain sideways)
     m_streaks.reserve(m_drops.size());
     for (Drop& d : m_drops) {
         glm::vec3 vel(wind.x, -d.speed, wind.y);
@@ -119,7 +202,11 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
         if (d.pos.z < eye.z - kHalfBox) d.pos.z += 2.0f * kHalfBox;
         if (d.pos.z > eye.z + kHalfBox) d.pos.z -= 2.0f * kHalfBox;
         if (d.pos.y > eye.y + 30.0f) d.pos.y = eye.y + 18.0f;   // (the camera fell fast)
-        if (d.pos.y < groundAt(d.pos.x, d.pos.z) || d.pos.y < eye.y - kFallBelow) {
+        const float ground = groundAt(d.pos.x, d.pos.z);
+        if (d.pos.y < ground || d.pos.y < eye.y - kFallBelow) {
+            // It hit something (not just fell out of the box): a little splash there.
+            if (!snow && d.pos.y < ground && ground > kNoGround && m_splashes.size() < kMaxSplashes)
+                m_splashes.push_back({glm::vec3(d.pos.x, ground, d.pos.z), 0.0f, d.seed});
             respawn(d, eye, false);
             continue;
         }
@@ -130,11 +217,14 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
             s.bottom = d.pos - glm::vec3(0.0f, s.width * 0.5f, 0.0f);
             s.alpha = 0.85f;
         } else {
-            // A streak as long as the drop moves in a thirtieth of a second.
-            s.top = d.pos - vel * (1.0f / 30.0f);
+            // A streak as long as the drop moves while a camera's shutter is open (about a
+            // fortieth of a second): rain in a photo is blurred lines, not dots. Soft-edged,
+            // so a bit wider and each one fainter; big drops are rarer and brighter.
+            s.top = d.pos - vel * (1.0f / 40.0f) * (0.7f + 0.6f * d.seed);
             s.bottom = d.pos;
-            s.width = 0.025f + 0.015f * d.seed;
-            s.alpha = 0.18f + 0.12f * amount;
+            const float big = d.seed * d.seed;
+            s.width = 0.03f + 0.045f * big;
+            s.alpha = (0.14f + 0.2f * big) * (0.7f + 0.3f * pour);
         }
         m_streaks.push_back(s);
     }

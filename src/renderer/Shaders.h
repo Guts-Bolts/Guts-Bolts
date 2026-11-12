@@ -1194,9 +1194,19 @@ uniform sampler2D uTex;
 uniform bool  uHasTex;
 uniform float uGlow;          // LightEmission
 uniform vec3  uLight;         // the scene's light (unlit ribbons still dim at night)
+uniform int   uSoft;          // 0 hard edges; 1 fades out to both sides (rain, lightning); 2 a soft ring (a splash)
+uniform float uExtra;         // extra brightness on top (lightning: bright enough to bloom)
 out vec4 FragColor;
 void main() {
     vec4 c = vec4(pow(vColor.rgb, vec3(2.2)), vColor.a);
+    if (uSoft == 1) {
+        float x = abs(vUV.x * 2.0 - 1.0);
+        c.a *= (1.0 - x * x) * (1.0 - x * x);
+    } else if (uSoft == 2) {
+        float r = length(vUV * 2.0 - 1.0);
+        c.a *= smoothstep(0.55, 0.82, r) * (1.0 - smoothstep(0.84, 1.0, r));
+    }
+    c.rgb *= 1.0 + uExtra;
     if (uHasTex) {
         vec4 t = texture(uTex, vUV);
         c *= vec4(pow(t.rgb, vec3(2.2)), t.a);

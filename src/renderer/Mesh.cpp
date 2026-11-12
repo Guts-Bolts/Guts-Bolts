@@ -1,14 +1,21 @@
 #include "Mesh.h"
+#include "MeshLod.h"
 #include <cstddef>
 
-Mesh::Mesh(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices) {
+Mesh::Mesh(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices, bool lods) {
     upload(verts, indices);
+    if (!lods || headless) return;   // (a server draws nothing: no copies needed)
+    for (MeshLod::Level& l : MeshLod::build(verts, indices)) {
+        m_lods.emplace_back(l.verts, l.idx);
+        m_lodPixels.push_back(l.pixels);
+    }
 }
 
 Mesh::~Mesh() { release(); }
 
 Mesh::Mesh(Mesh&& o) noexcept
-    : m_vao(o.m_vao), m_vbo(o.m_vbo), m_ebo(o.m_ebo), m_extra(o.m_extra), m_indexCount(o.m_indexCount) {
+    : m_vao(o.m_vao), m_vbo(o.m_vbo), m_ebo(o.m_ebo), m_extra(o.m_extra), m_indexCount(o.m_indexCount),
+      m_lods(std::move(o.m_lods)), m_lodPixels(std::move(o.m_lodPixels)) {
     o.m_vao = o.m_vbo = o.m_ebo = o.m_extra = 0;
 }
 
@@ -17,6 +24,7 @@ Mesh& Mesh::operator=(Mesh&& o) noexcept {
         release();
         m_vao = o.m_vao; m_vbo = o.m_vbo; m_ebo = o.m_ebo; m_extra = o.m_extra;
         m_indexCount = o.m_indexCount;
+        m_lods = std::move(o.m_lods); m_lodPixels = std::move(o.m_lodPixels);
         o.m_vao = o.m_vbo = o.m_ebo = o.m_extra = 0;
     }
     return *this;
@@ -65,6 +73,7 @@ void Mesh::upload(const std::vector<Vertex>& verts, const std::vector<uint32_t>&
 }
 
 void Mesh::update(const std::vector<Vertex>& verts, const std::vector<uint32_t>& indices) {
+    m_lods.clear(); m_lodPixels.clear();   // (the copies were of the old shape)
     if (!m_vao) { upload(verts, indices); return; }   // (headless: upload just counts)
     m_indexCount = (int)indices.size();
     glBindVertexArray(m_vao);
@@ -87,14 +96,18 @@ void Mesh::setExtra(const std::vector<glm::vec4>& extra) {
 }
 
 void Mesh::draw() const {
-    glBindVertexArray(m_vao);
-    glDrawElements(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, nullptr);
+    const Mesh& m = shown();
+    trianglesDrawn += m.m_indexCount / 3;
+    glBindVertexArray(m.m_vao);
+    glDrawElements(GL_TRIANGLES, m.m_indexCount, GL_UNSIGNED_INT, nullptr);
     glBindVertexArray(0);
 }
 
 void Mesh::drawInstanced(GLuint perCopy, int count) const {
-    if (count <= 0 || !m_vao) return;
-    glBindVertexArray(m_vao);
+    const Mesh& m = shown();
+    if (count <= 0 || !m.m_vao) return;
+    trianglesDrawn += (long)(m.m_indexCount / 3) * count;
+    glBindVertexArray(m.m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, perCopy);
     const GLsizei stride = sizeof(InstanceData);
     for (int i = 0; i < 6; ++i) {   // 4 for the matrix's columns, then colour and info
@@ -104,7 +117,7 @@ void Mesh::drawInstanced(GLuint perCopy, int count) const {
         glVertexAttribPointer(8 + i, 4, GL_FLOAT, GL_FALSE, stride, (void*)at);
         glVertexAttribDivisor(8 + i, 1);
     }
-    glDrawElementsInstanced(GL_TRIANGLES, m_indexCount, GL_UNSIGNED_INT, nullptr, count);
+    glDrawElementsInstanced(GL_TRIANGLES, m.m_indexCount, GL_UNSIGNED_INT, nullptr, count);
     for (int i = 0; i < 6; ++i) {   // (so plain draws of this mesh don't read them)
         glVertexAttribDivisor(8 + i, 0);
         glDisableVertexAttribArray(8 + i);

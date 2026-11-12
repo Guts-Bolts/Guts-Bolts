@@ -109,6 +109,14 @@ struct GraphicsSettings {
     // Volumetric fog: fog that takes light (sun shafts, glowing lamps) and drifts in wisps,
     // from High up (0 = the simple fog). High 20 steps a ray, Epic 32, Cinematic 56 at full size.
     int   volumetricFog() const { int l = groupLevel(Scalability::PostProcess); return l >= 2 ? l - 1 : 0; }
+    // Detail levels for meshes (MeshLod.h): far-away meshes are drawn as simpler copies.
+    // How soon they swap, from the View distance group: Low 1.6x sooner, Medium 1.3x,
+    // High as designed (a grid cell is about 3 pixels), Epic later, Cinematic never.
+    float meshDetailBias() const {
+        static constexpr float bias[Scalability::kLevels] = {1.6f, 1.3f, 1.0f, 0.7f, 0.0f};
+        const int l = groupLevel(Scalability::ViewDistance);
+        return bias[l < 0 ? 0 : l >= Scalability::kLevels ? Scalability::kLevels - 1 : l];
+    }
     int   waterMaxDrops() const { return waterQuality <= 0 ? 5000 : waterQuality == 1 ? 20000 : waterQuality == 2 ? 60000 : 150000; }
 
     void applyPreset(int q);
