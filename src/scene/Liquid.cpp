@@ -4,6 +4,7 @@
 // spread out and splash like the real thing.
 #include "Liquid.h"
 #include "LiquidGpu.h"
+#include "../renderer/GpuCaps.h"
 #include "../core/Settings.h"
 #include "EditMesh.h"
 #include "Scene.h"
@@ -190,7 +191,10 @@ Liquid::~Liquid() {
     if (m_gpu && s_contexts <= 0) m_gpu->forget();   // the graphics context is already gone
 }
 
-void Liquid::graphicsContext(int change) { s_contexts += change; }
+void Liquid::graphicsContext(int change) {
+    s_contexts += change;
+    if (s_contexts <= 0) GpuCapsQuery::forget();   // the next context is asked afresh
+}
 
 bool Liquid::isSource(const SceneNode* n) {
     return n->isPart() && (n->name == "FluidSource" || flagged(n, "FluidSource"));

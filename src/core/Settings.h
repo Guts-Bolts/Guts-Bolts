@@ -18,6 +18,8 @@ struct GraphicsSettings {
     bool  vsync       = true;   // match the monitor's refresh rate (no tearing)
     int   fpsCap      = 0;      // 0 = unlimited (only used when VSync is off)
     bool  showFps     = true;
+    // The "this device can't run some features" notice (DeviceFeatures.h) was shown once.
+    bool  sawDeviceNotice = false;
 
     // Content
     bool  allowGore   = true;   // false hides blood / gore in every game

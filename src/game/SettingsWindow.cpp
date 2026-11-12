@@ -2,6 +2,7 @@
 #include <algorithm>
 #include "SettingsWindow.h"
 #include "../core/Settings.h"
+#include "../renderer/GpuCaps.h"
 #include "../core/KeyBinds.h"
 #include "../core/UpdateChecker.h"
 #include "../core/I18n.h"
@@ -196,6 +197,22 @@ void draw(bool* open) {
     if (!GraphicsSettings::activeApi().empty()) ImGui::TextDisabled("Using %s", GraphicsSettings::activeApi().c_str());
     if (s.graphicsApi != startedWith)
         ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Close and reopen the app to switch.");
+    {   // What this device can't do (DeviceFeatures.h): Macs, iPhones and the web Player
+        // have no compute shaders, so a few features use a simpler version there.
+        DeviceFeatures::Feature miss[DeviceFeatures::kFeatures];
+        const GpuCaps& caps = GpuCapsQuery::get();
+        if (const int n = DeviceFeatures::missing(caps, miss)) {
+            ImGui::PushTextWrapPos(0);
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", DeviceFeatures::kNotice);
+            for (int i = 0; i < n; ++i) {
+                ImGui::BulletText("%s", DeviceFeatures::info(miss[i]).name);
+                ImGui::SameLine();
+                ImGui::TextDisabled("%s", DeviceFeatures::info(miss[i]).instead);
+            }
+            ImGui::TextDisabled("%s", DeviceFeatures::reason(caps));
+            ImGui::PopTextWrapPos();
+        }
+    }
 
     ImGui::Spacing();
     if (ImGui::Button("Reset to High")) s.applyPreset(GraphicsSettings::High);

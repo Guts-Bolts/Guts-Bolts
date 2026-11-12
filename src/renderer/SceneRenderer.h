@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 #include "ShadowMap.h"
+#include "../core/FrameArena.h"
 #include "../scene/Weather.h"
 #include "../scene/BounceLight.h"
 
@@ -56,7 +57,11 @@ public:
         int w = 0, h = 0;
     };
 
+    // Memory for lists that only last one frame (FrameArena.h). For tests: how often it
+    // had to be made bigger (it should stop after the first few frames).
+    int frameMemoryGrown() const { return m_frame.timesGrown(); }
 private:
+    FrameArena m_frame;
     void renderShadowPass(Scene& scene, const glm::mat4& lightSpace, ShadowMap& target);
     // Lamp shadows: the nearest few lights with Shadows on, six sides each, into
     // m_lampShadows. Fills m_lampShadowNodes (slot -> light).

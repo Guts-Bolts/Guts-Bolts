@@ -1,6 +1,7 @@
 #include "../core/FrameProfile.h"
 #include "../game/LiveProfiler.h"
 #include "PlayerApp.h"
+#include "../renderer/GpuCaps.h"
 #include "../core/TextFilter.h"
 #include "../core/Language.h"
 #include "../core/Pad.h"
@@ -2083,6 +2084,32 @@ void PlayerApp::drawGame(float dt) {
         dl->AddText(ImVec2(x + 38, y + (34 - ts.y) * 0.5f), IM_COL32(255, 215, 90, (int)(255 * fade)), m_boltsToast.c_str());
     }
 
+    // Once, on a device that can't run every graphics feature (a Mac, an iPhone, the web
+    // Player): say so, and where to read which ones (Settings > Graphics API).
+    {
+        static double until = -1.0;
+        if (until < 0.0) {
+            until = 0.0;
+            GraphicsSettings& g = GraphicsSettings::get();
+            DeviceFeatures::Feature miss[DeviceFeatures::kFeatures];
+            if (!g.sawDeviceNotice && DeviceFeatures::missing(GpuCapsQuery::get(), miss) > 0) {
+                until = ImGui::GetTime() + 9.0;
+                g.sawDeviceNotice = true;
+                g.save();
+            }
+        }
+        if (ImGui::GetTime() < until) {
+            const char* line = "This device can't run some graphics features. See Settings for which ones.";
+            const float wrap = std::min(size.x - 60.0f, 520.0f);
+            const ImVec2 ts = ImGui::CalcTextSize(line, nullptr, false, wrap);
+            const float w = ts.x + 32, x = pos.x + (size.x - w) * 0.5f, y = pos.y + 58;
+            const float fade = (float)std::min(1.0, until - ImGui::GetTime());
+            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + ts.y + 18), IM_COL32(40, 30, 10, (int)(220 * fade)), 10.0f);
+            dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(x + 16, y + 9),
+                        IM_COL32(255, 200, 110, (int)(255 * fade)), line, nullptr, wrap);
+        }
+    }
+
     // Menu button + FPS. (Touch screens get their own buttons instead.)
     if (touch) {
         if (acceptInput) m_touch.draw(dl);
@@ -2679,6 +2706,22 @@ void PlayerApp::drawPauseMenu() {
         }
         if (gs.graphicsApi != startedApi)
             ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Close and reopen Guts&Bolts to switch.");
+        {   // What this device can't do (DeviceFeatures.h): Macs, iPhones and the web Player
+            // have no compute shaders, so a few features use a simpler version there.
+            DeviceFeatures::Feature miss[DeviceFeatures::kFeatures];
+            const GpuCaps& caps = GpuCapsQuery::get();
+            if (const int n = DeviceFeatures::missing(caps, miss)) {
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", DeviceFeatures::kNotice);
+                for (int i = 0; i < n; ++i) {
+                    ImGui::BulletText("%s", DeviceFeatures::info(miss[i]).name);
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%s", DeviceFeatures::info(miss[i]).instead);
+                }
+                ImGui::TextDisabled("%s", DeviceFeatures::reason(caps));
+                ImGui::PopTextWrapPos();
+            }
+        }
         onOff("Show FPS", gs.showFps);
         ImGui::SeparatorText("Voice chat");
         if (Online::online() && Online::isGuest()) {
