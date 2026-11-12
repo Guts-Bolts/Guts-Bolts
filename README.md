@@ -68,6 +68,15 @@ run `GB_TOUCH_SCREEN=1 GB_UI_SCALE=2 ./build-mobile/GutsAndBoltsPlayer`.
 
 ## Guts and Bolts Studio (the editor)
 
+Studio starts in the **Simple layout**: each ribbon tab shows its everyday buttons
+and keeps the rest behind a **More** button, and only the Toolbox, Explorer,
+Properties and Output are open. Nothing is gone: **VIEW > Advanced** (or the word in
+the bottom right corner) puts every button and panel back on screen. **Search Studio**
+(Ctrl+Shift+P, or the box next to the tabs) finds any tool, window or object in your
+game by name. The **Properties** window works like Roblox Studio's: names on the left,
+values on the right, numbers are boxes you type in, and **Filter Properties** narrows
+the list as you type.
+
 Studio is laid out like Roblox Studio, with the same dark theme and a
 **ribbon** across the top:
 

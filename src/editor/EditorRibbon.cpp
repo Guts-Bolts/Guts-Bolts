@@ -73,16 +73,39 @@ bool smallButton(const char* label, Icons::Id icon, bool active = false, bool en
 }
 
 // Groups: a column of buttons with a caption under it and a divider after.
+//
+// Simple layout (EditorSimple.cpp): each tab shows its everyday groups, and the rest
+// wait behind the tab's "More" button. `where` says which a group is.
+enum GroupWhere {
+    kEveryday   = 0,   // always on the tab
+    kMore       = 1,   // Simple layout: behind "More". Advanced: on the tab
+    kSimpleOnly = 2,   // only in the Simple layout, on the tab (a short version of a kMore group)
+    kSimpleMore = 3,   // only in the Simple layout, behind "More"
+};
+bool g_simple = false;     // this frame: the Simple layout is on
+bool g_morePass = false;   // this frame: drawing the "More" window's groups
+int  g_moreGroups = 0;     // how many groups "More" holds for the tab just drawn
+
 struct Group {
     ImVec2 start;
-    float  top;
+    float  top = 0;
     const char* name;
-    Group(const char* n) : name(n) {
+    bool show = true;
+    explicit operator bool() const { return show; }
+    Group(const char* n, GroupWhere where = kEveryday) : name(n) {
+        if (!g_simple) show = where == kEveryday || where == kMore;
+        else if (g_morePass) show = where == kMore || where == kSimpleMore;
+        else {
+            show = where == kEveryday || where == kSimpleOnly;
+            if (!show) ++g_moreGroups;
+        }
+        if (!show) return;
         start = ImGui::GetCursorScreenPos();
         top = start.y;
         ImGui::BeginGroup();
     }
     ~Group() {
+        if (!show) return;
         ImGui::EndGroup();
         ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
         ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -186,6 +209,23 @@ void Editor::renderToolbar() {
 
     // Quick buttons on the right of the tab row (like Roblox's undo / redo).
     {
+        // Search Studio: every tool, window and object by name (EditorSimple.cpp).
+        {
+            const char* hint = "Search Studio";
+            const float sw = 190, sx = origin.x + width - 70 - sw - 12;
+            if (sx > x + 20) {
+                ImGui::SetCursorScreenPos(ImVec2(sx, origin.y + 3));
+                if (ImGui::InvisibleButton("##searchstudio", ImVec2(sw, 20))) openSearch();
+                StudioLearnHighlight::mark("ribbon.search");
+                const bool hov = ImGui::IsItemHovered();
+                if (hov) ImGui::SetTooltip("Find any tool, window or object by name (Ctrl+Shift+P)");
+                ImVec2 a(sx, origin.y + 3), b(sx + sw, origin.y + 23);
+                bg->AddRectFilled(a, b, hov ? IM_COL32(64, 64, 64, 255) : IM_COL32(50, 50, 50, 255), 3.0f);
+                bg->AddCircle(ImVec2(a.x + 11, a.y + 9), 4.0f, IM_COL32(170, 170, 170, 255), 12, 1.5f);
+                bg->AddLine(ImVec2(a.x + 14, a.y + 12), ImVec2(a.x + 17, a.y + 15), IM_COL32(170, 170, 170, 255), 1.5f);
+                bg->AddText(ImVec2(a.x + 24, a.y + (20 - ImGui::GetFontSize()) * 0.5f), IM_COL32(150, 150, 150, 255), hint);
+            }
+        }
         float qx = origin.x + width - 70;
         ImGui::SetCursorScreenPos(ImVec2(qx, origin.y + 3));
         ImGui::PushID("quick");
@@ -216,18 +256,21 @@ void Editor::renderToolbar() {
     };
     auto tools = [&] {
         Group g("Tools");
+        if (!g) return;
         tool("Select", Icons::Id::Select, GizmoTool::Select, "Select (Ctrl+1)");
         tool("Move", Icons::Id::Move, GizmoTool::Translate, "Move (Ctrl+2)");
         tool("Scale", Icons::Id::Scale, GizmoTool::Scale, "Scale (Ctrl+3)");
         tool("Rotate", Icons::Id::Rotate, GizmoTool::Rotate, "Rotate (Ctrl+4)");
     };
-    auto test = [&](bool pauseButtons, bool stepButton) {
+    auto test = [&](bool pauseButtons, bool stepButton, bool brief = false) {
         Group g("Test");
+        if (!g) return;
         if (bigButton("Play", Icons::Id::Play, m_playing && m_playMode == 0, !m_playing, "Play mode: playtest with your character (F5)"))
             startPlay(0);
-        if (bigButton("Play Here", Icons::Id::PlayHere, m_playing && m_playMode == 1, !m_playing,
+        // (Simple layout's HOME: just Play and Stop; the TEST tab has every way to test.)
+        if (!brief && bigButton("Play Here", Icons::Id::PlayHere, m_playing && m_playMode == 1, !m_playing,
                       "Play, starting where the camera is looking")) startPlay(1);
-        if (bigButton("Simulate", Icons::Id::Simulate, m_playing && m_playMode == 2, !m_playing,
+        if (!brief && bigButton("Simulate", Icons::Id::Simulate, m_playing && m_playMode == 2, !m_playing,
                       "Simulate mode: physics and scripts run live, no character.\n"
                       "Fly around, click things to inspect them and drag them with the gizmo (F8)")) startPlay(2);
         if (pauseButtons && bigButton(m_state.simPaused ? "Resume" : "Pause", m_state.simPaused ? Icons::Id::Play : Icons::Id::Pause,
@@ -238,10 +281,14 @@ void Editor::renderToolbar() {
         if (bigButton("Stop", Icons::Id::Stop, false, m_playing, "Stop and go back to Build mode (Shift+F5)")) togglePlay();
     };
 
+    g_simple = simpleLayout();
+    g_morePass = false;
+    g_moreGroups = 0;
+    // (Drawn once for the tab, and once more for the "More" window in the Simple layout.)
+    auto drawTab = [&] {
     switch (m_ribbonTab) {
     case 0: {   // HOME
-        {
-            Group g("Clipboard");
+        if (Group g("Clipboard", kMore); g) {
             if (bigButton("Paste", Icons::Id::Paste, false, !m_clipboard.empty() && !m_playing, "Paste (Ctrl+V)")) paste();
             Stack st;
             if (smallButton("Copy", Icons::Id::Copy, false, editable, "Copy (Ctrl+C)")) copySelected();
@@ -249,8 +296,7 @@ void Editor::renderToolbar() {
             if (smallButton("Duplicate", Icons::Id::Duplicate, false, editable, "Duplicate (Ctrl+D)")) duplicateSelected();
         }
         tools();
-        {
-            Group g("Insert");
+        if (Group g("Insert"); g) {
             if (bigButton("Part", Icons::Id::Part, false, !m_playing, "Insert a block (Ctrl+Shift+P for more shapes in the MODEL tab)"))
                 spawnPrimitive(PrimitiveType::Cube);
             if (bigButton("Object", Icons::Id::Insert, false, !m_playing, "Insert Object... (Ctrl+I)")) m_openInsert = true;
@@ -259,8 +305,17 @@ void Editor::renderToolbar() {
                           "Or just drag files from your computer onto Studio.\n(Roblox files: File > Import Roblox File)"))
                 importDialog();
         }
-        {
-            Group g("Edit");
+        if (Group g("Edit", kSimpleOnly); g) {
+            // The four everyone uses; snapping, the grid and the rest are behind More.
+            if (bigButton("Duplicate", Icons::Id::Duplicate, false, editable, "A copy of what's selected (Ctrl+D)")) duplicateSelected();
+            if (bigButton("Group", Icons::Id::Group, false, editable, "Group as Model (Ctrl+G)")) groupSelected();
+            if (bigButton("Anchor", Icons::Id::Anchor, sel && sel->anchored && sel->isPart(), editable,
+                          "Anchor: stays put instead of falling (Alt+A)"))
+                toggleAnchored();
+            if (bigButton("Lock", Icons::Id::Lock, sel && sel->locked, editable, "Lock: can't be clicked in the Viewport (Alt+L)"))
+                toggleLocked();
+        }
+        if (Group g("Edit", kMore); g) {
             {
                 Stack st;
                 if (smallButton("Group", Icons::Id::Group, false, editable, "Group as Model (Ctrl+G)")) groupSelected();
@@ -296,11 +351,10 @@ void Editor::renderToolbar() {
                     m_state.orthographic = !m_state.orthographic;
             }
         }
-        {
+        if (Group g("Increments", kMore); g) {
             // Like modern Roblox Studio: the step sizes right on the Home tab. Ticked =
             // moves / sizes / turns in steps; unticked = free (Blender style). While you
             // drag, how far shows next to the mouse.
-            Group g("Increments");
             // Line the boxes up after the longer word (measured from the group's left
             // edge), sized to fit: the heavy font is wide.
             const float labelEnd = ImGui::GetFrameHeight() + 2 +
@@ -329,11 +383,13 @@ void Editor::renderToolbar() {
             ImGui::EndGroup();
             ImGui::SameLine(0, 4);
         }
-        test(m_playing, false);   // Pause only while testing (Pause and Step are always on the TEST tab)
-        {
-            Group g("Settings");
-            if (bigButton("Game Settings", Icons::Id::Settings, false, !m_playing, "Title, description and more")) m_openInfo = true;
+        test(m_playing, false, g_simple);   // Pause only while testing (Pause and Step are always on the TEST tab)
+        if (Group g("Team", kSimpleMore); g) {
             if (bigButton("Team Create", Icons::Id::Team, false, true, "Edit together with friends")) m_openTeam = true;
+        }
+        if (Group g("Settings"); g) {
+            if (bigButton("Game Settings", Icons::Id::Settings, false, !m_playing, "Title, description and more")) m_openInfo = true;
+            if (!g_simple && bigButton("Team Create", Icons::Id::Team, false, true, "Edit together with friends")) m_openTeam = true;
             if (bigButton("Assistant", Icons::Id::CommandBar, m_showPanel[kPanelAssistant], true,
                           "AI help: chat with Claude, or let AI apps (MCP) build with you"))
                 m_showPanel[kPanelAssistant] = true;
@@ -342,8 +398,7 @@ void Editor::renderToolbar() {
     }
     case 1: {   // MODEL
         tools();
-        {
-            Group g("Snap to Grid");
+        if (Group g("Snap to Grid", kMore); g) {
             ImGui::BeginGroup();
             ImGui::Checkbox("Move##snapmv", &m_state.snapEnabled);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Move (and resize) in steps of this many studs; the grid follows");
@@ -366,23 +421,20 @@ void Editor::renderToolbar() {
             ImGui::EndGroup();
             ImGui::SameLine(0, 4);
         }
-        {
-            Group g("Parts");
+        if (Group g("Parts"); g) {
             if (bigButton("Block", Icons::Id::Part, false, !m_playing)) spawnPrimitive(PrimitiveType::Cube);
             if (bigButton("Sphere", Icons::Id::Sphere, false, !m_playing)) spawnPrimitive(PrimitiveType::Sphere);
             if (bigButton("Cylinder", Icons::Id::Cylinder, false, !m_playing)) spawnPrimitive(PrimitiveType::Cylinder);
             if (bigButton("Plane", Icons::Id::Plane, false, !m_playing)) spawnPrimitive(PrimitiveType::Plane);
         }
-        {
-            Group g("Mesh");
+        if (Group g("Mesh"); g) {
             if (bigButton("MeshPart", Icons::Id::Mesh, false, !m_playing, "A new part you shape yourself (starts as a cube)"))
                 addMeshPart();
             if (bigButton("Edit Mesh", Icons::Id::Extrude, false, editable && sel->isPart() && !m_scene->isCharacterPart(sel),
                           "Modeling mode: reshape the selected part's corners, edges and faces (Tab)"))
                 setMode(StudioMode::Modeling);
         }
-        {
-            Group g("Solid Modeling");   // like Roblox's: join parts, cut holes, keep the overlap
+        if (Group g("Solid Modeling"); g) {
             const bool parts = !m_playing && m_scene->selectionRoots().size() >= 2;
             if (bigButton("Union", Icons::Id::Union, false, parts, "Join the selected parts into one (Ctrl+Shift+G). "
                           "Negated parts in the selection get cut out."))
@@ -399,8 +451,7 @@ void Editor::renderToolbar() {
                     separateSelected();
             }
         }
-        {
-            Group g("Navigation");
+        if (Group g("Navigation", kMore); g) {
             if (bigButton("Navmesh", Icons::Id::NavMesh, m_state.showNavMesh, true,
                           "Show the navigation mesh: the blue floor is where characters can walk; yellow arcs are "
                           "jumps, orange lines are drops. PathfindingService uses it."))
@@ -412,13 +463,11 @@ void Editor::renderToolbar() {
                 m_state.showNavMesh = true;
             }
         }
-        {
-            Group g("Levels");
+        if (Group g("Levels", kMore); g) {
             if (bigButton("Generate", Icons::Id::Terrain, m_showLevelGen, true, "Level Generator: make a dungeon or an obby from a seed"))
                 m_showLevelGen = !m_showLevelGen;
         }
-        {
-            Group g("Constraints");
+        if (Group g("Constraints"); g) {
             const char* names[] = {"Rope", "Rod", "Spring", "Weld", "Hinge", "Motor", "Ball Socket", "Prismatic", "Cylindrical"};
             for (int col = 0; col < 3; ++col) {
                 Stack st;
@@ -432,8 +481,7 @@ void Editor::renderToolbar() {
                 }
             }
         }
-        {
-            Group g("Advanced");
+        if (Group g("Advanced", kMore); g) {
             {
                 Stack st;
                 if (smallButton("Script", Icons::Id::Script, false, !m_playing, "Add a Script (Ctrl+I for more)")) addScript(sel);
@@ -449,8 +497,7 @@ void Editor::renderToolbar() {
                 if (smallButton("Export", Icons::Id::Export, false, !m_playing, "Export As: Roblox, .obj, .fbx, .glb, .mesh, .stl...")) openExportAs(m_scene->selected() != nullptr);
             }
         }
-        {
-            Group g("Physics");
+        if (Group g("Physics", kMore); g) {
             if (bigButton("Collision Groups", Icons::Id::Collide, m_showCollisionGroups, true,
                           "Which groups of parts bump into each other (players walking through each other, team doors...)"))
                 m_showCollisionGroups = !m_showCollisionGroups;
@@ -461,8 +508,7 @@ void Editor::renderToolbar() {
                           "Record the physics, watch it again frame by frame, and save it as a test"))
                 m_showReplay = !m_showReplay;
         }
-        {
-            Group g("Align");
+        if (Group g("Align", kMore); g) {
             ImGui::BeginGroup();
             static int axis = 0;
             ImGui::RadioButton("X", &axis, 0); ImGui::SameLine(); ImGui::RadioButton("Y", &axis, 1); ImGui::SameLine();
@@ -482,9 +528,8 @@ void Editor::renderToolbar() {
     }
     case 2: {   // TEST
         test(true, true);
-        {
+        if (Group g("Multiplayer"); g) {
             // Test with 2-4 players: a local test server and that many Player windows on this computer.
-            Group g("Multiplayer");
             MultiTest& mt = multiTest();
             const bool on = mt.running();
             if (bigButton("Players", Icons::Id::Team, on, true,
@@ -508,30 +553,26 @@ void Editor::renderToolbar() {
                 ImGui::EndPopup();
             }
         }
-        {
-            Group g("Versions");
+        if (Group g("Versions", kMore); g) {
             if (bigButton("Compare", Icons::Id::Merge, m_showCompare, true,
                           "Compare and Merge: see what's different from another saved version of this game, and bring changes in"))
                 m_showCompare = !m_showCompare;
         }
-        {
-            Group g("Settings");
+        if (Group g("Settings"); g) {
             if (bigButton("Player", Icons::Id::Player, false, true, "Walk speed, jump, death and gore")) m_showPanel[kPanelPlayer] = true;
             if (bigButton("Lighting", Icons::Id::Lighting, false, true)) m_showPanel[kPanelLighting] = true;
         }
         break;
     }
     case 6: {   // AVATAR
-        {
-            Group g("Rig");
+        if (Group g("Rig"); g) {
             if (bigButton("Rig Builder", Icons::Id::Rig, false, !m_playing, "Insert a dummy character to animate (or use as an NPC)"))
                 insertObject("Rig", nullptr);
             if (bigButton("Armature", Icons::Id::Rig, m_showArmature, !m_playing,
                           "Bones inside a MeshPart that bend it, posed and animated like a rig's parts"))
                 m_showArmature = !m_showArmature;
         }
-        {
-            Group g("Catalog");
+        if (Group g("Catalog"); g) {
             if (bigButton("Accessories", Icons::Id::Rig, m_showAccessory, !m_playing,
                           "Verified creators: put a hat or accessory on a mannequin, save where it sits, and upload it"))
                 m_showAccessory = !m_showAccessory;
@@ -540,8 +581,7 @@ void Editor::renderToolbar() {
                           "Staff: give the mannequin a new body (and items) and upload it as a bundle"))
                 m_showBundles = !m_showBundles;
         }
-        {
-            Group g("Animation");
+        if (Group g("Animation"); g) {
             if (bigButton("Animation Editor", Icons::Id::Animation, m_showPanel[kPanelAnimation], !m_playing,
                           "Make animations for a rig: pose its parts on a timeline"))
                 openAnimationEditor();
@@ -558,8 +598,7 @@ void Editor::renderToolbar() {
     case 7: {   // TERRAIN
         Terrain& terrain = m_scene->terrain();
         const bool can = !m_playing;
-        {
-            Group g("Create");
+        if (Group g("Create"); g) {
             static const int kSizes[] = {256, 512, 1024};
             const int size = kSizes[std::clamp(m_state.terrainGenSize, 0, 2)];
             if (bigButton("Generate", Icons::Id::Terrain, false, can,
@@ -581,8 +620,7 @@ void Editor::renderToolbar() {
             ImGui::Combo("##tsize", &m_state.terrainGenSize, kSizeNames, 3);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("How big Generate makes it (across)");
         }
-        {
-            Group g("Sculpt");
+        if (Group g("Sculpt"); g) {
             struct B { const char* label; Icons::Id icon; const char* tip; };
             const B brushes[] = {{"Raise", Icons::Id::TerrainRaise, "Drag to pull the ground up"},
                                  {"Lower", Icons::Id::TerrainLower, "Drag to push the ground down"},
@@ -595,8 +633,7 @@ void Editor::renderToolbar() {
                     m_state.connectTool = -1;
                 }
         }
-        {
-            Group g("Brush");
+        if (Group g("Brush"); g) {
             Stack st;
             ImGui::SetNextItemWidth(130);
             ImGui::SliderFloat("##bsize", &m_state.terrainSize, 2.0f, 64.0f, "Size %.0f");
@@ -615,8 +652,7 @@ void Editor::renderToolbar() {
     }
     case 5: {   // MESH (Modeling mode)
         ModelingState& ms = m_state.modeling;
-        {
-            Group g("Pick");
+        if (Group g("Pick"); g) {
             if (bigButton("Vertex", Icons::Id::Vertex, ms.selectMode == 0, true, "Pick corners (1)")) ms.selectMode = 0;
             if (bigButton("Edge", Icons::Id::Edge, ms.selectMode == 1, true, "Pick edges (2)")) ms.selectMode = 1;
             if (bigButton("Face", Icons::Id::Face, ms.selectMode == 2, true, "Pick faces (3)")) ms.selectMode = 2;
@@ -626,8 +662,7 @@ void Editor::renderToolbar() {
             if (smallButton("X-Ray", Icons::Id::XRay, ms.xray, true, "See and pick through the mesh (Alt+Z)")) ms.xray = !ms.xray;
         }
         tools();
-        {
-            Group g("Shape");
+        if (Group g("Shape"); g) {
             if (bigButton("Extrude", Icons::Id::Extrude, false, true, "Pull the picked faces (or edges) out into new ones (E)"))
                 meshOp(MeshOp::Extrude);
             if (bigButton("Inset", Icons::Id::Inset, false, true, "A smaller face inside each picked face (I)")) meshOp(MeshOp::Inset);
@@ -638,8 +673,7 @@ void Editor::renderToolbar() {
             if (smallButton("Fill", Icons::Id::Fill, false, true, "Make a face between the picked corners (F)")) meshOp(MeshOp::Fill);
             if (smallButton("Delete", Icons::Id::Delete, false, true, "Delete what's picked (Del; X for the Delete menu)")) meshOp(MeshOp::Delete);
         }
-        {
-            Group g("Cut");
+        if (Group g("Cut"); g) {
             Stack st;
             if (smallButton("Loop Cut", Icons::Id::Subdivide, false, true, "Cut a new loop of edges round the mesh: point at an edge, click (Ctrl+R)"))
                 meshOp(MeshOp::LoopCut);
@@ -647,17 +681,15 @@ void Editor::renderToolbar() {
             if (smallButton("Smooth Sub.", Icons::Id::Smooth, false, true, "Subdivide smooth: smaller AND rounder faces (Ctrl+1)"))
                 meshOp(MeshOp::SubdivideSmooth);
         }
-        {
+        if (Group g("Menus"); g) {
             // Blender's header menus; each opens at the mouse (the same ones the keys open).
-            Group g("Menus");
             Stack st;
             if (smallButton("Select", Icons::Id::Select, false, true, "Pick more, less, linked, loops...")) m_meshMenu = "Select";
             if (smallButton("Add", Icons::Id::Part, false, true, "Add a shape into this mesh (Shift+A)")) m_meshMenu = "Add";
             if (smallButton("Mesh", Icons::Id::Mesh, false, true, "Move, mirror, hide, separate... (right-click and F3 have the rest)"))
                 m_meshMenu = "Mesh";
         }
-        {
-            Group g("Surface");
+        if (Group g("Surface"); g) {
             SceneNode* mn = m_scene->findById(ms.node);
             bool smooth = mn && mn->editMesh && mn->editMesh->smooth;
             if (bigButton(smooth ? "Smooth" : "Flat", Icons::Id::Smooth, smooth, true, "Smooth or flat shading"))
@@ -669,8 +701,7 @@ void Editor::renderToolbar() {
                             "Moving corners drags nearby ones along, fading out (O; mouse wheel while moving = how far)"))
                 meshOp(MeshOp::Proportional);
         }
-        {
-            Group g("UV");
+        if (Group g("UV"); g) {
             // One button with a menu, so the tab still fits a small window.
             if (bigButton("UV", Icons::Id::GuiImage, m_uv.show, true, "Lay the mesh out flat for a picture: UV Editor, Unwrap, seams"))
                 ImGui::OpenPopup("##uvmenu");
@@ -683,15 +714,13 @@ void Editor::renderToolbar() {
                 ImGui::EndPopup();
             }
         }
-        {
-            Group g("Mode");
+        if (Group g("Mode"); g) {
             if (bigButton("Done", Icons::Id::Done, false, true, "Back to Build mode (Tab)")) setMode(StudioMode::Build);
         }
         break;
     }
     case 3: {   // VIEW
-        {
-            Group g("Show");
+        if (Group g("Show"); g) {
             struct P { const char* label; Icons::Id icon; int panel; };
             const P panels[] = {{"Explorer", Icons::Id::Explorer, kPanelExplorer}, {"Properties", Icons::Id::Properties, kPanelProperties},
                                 {"Toolbox", Icons::Id::Toolbox, kPanelToolbox}, {"Output", Icons::Id::Output, kPanelOutput},
@@ -699,11 +728,31 @@ void Editor::renderToolbar() {
                                 {"Lighting", Icons::Id::Lighting, kPanelLighting}, {"Player", Icons::Id::Player, kPanelPlayer},
                                 {"Team Chat", Icons::Id::Team, kPanelTeam}, {"Animation", Icons::Id::Animation, kPanelAnimation},
                                 {"Assistant", Icons::Id::CommandBar, kPanelAssistant}};
+            // (Simple layout: the four main panels here, the others behind More.)
+            const int count = g_simple ? 4 : (int)(sizeof(panels) / sizeof(panels[0]));
+            for (int i = 0; i < count; ++i) {
+                const P& p = panels[i];
+                if (bigButton(p.label, p.icon, m_showPanel[p.panel], true, "Show / hide")) m_showPanel[p.panel] = !m_showPanel[p.panel];
+            }
+        }
+        if (Group g("More Panels", kSimpleMore); g) {
+            struct P { const char* label; Icons::Id icon; int panel; };
+            const P panels[] = {{"Command Bar", Icons::Id::CommandBar, kPanelCommandBar}, {"Script Editor", Icons::Id::Script, kPanelScript},
+                                {"Lighting", Icons::Id::Lighting, kPanelLighting}, {"Player", Icons::Id::Player, kPanelPlayer},
+                                {"Team Chat", Icons::Id::Team, kPanelTeam}, {"Animation", Icons::Id::Animation, kPanelAnimation},
+                                {"Assistant", Icons::Id::CommandBar, kPanelAssistant}};
             for (const P& p : panels)
                 if (bigButton(p.label, p.icon, m_showPanel[p.panel], true, "Show / hide")) m_showPanel[p.panel] = !m_showPanel[p.panel];
         }
-        {
-            Group g("3D View");   // EditorWorkspace.cpp
+        if (Group g("Layout"); g) {
+            if (bigButton("Simple", Icons::Id::Build, g_simple, true,
+                          "Simple layout: only the everyday buttons and panels. Everything else is behind More,\n"
+                          "in the menus, and in Search (Ctrl+Shift+P)."))
+                m_deferred = [this] { setSimpleLayout(true); };
+            if (bigButton("Advanced", Icons::Id::Settings, !g_simple, true, "Advanced layout: every button and panel on screen"))
+                m_deferred = [this] { setSimpleLayout(false); };
+        }
+        if (Group g("3D View"); g) {
             ViewportPanel* v = activeView();
             if (bigButton("X-Ray", Icons::Id::XRay, v->xray, true, "See through everything in the 3D view, and box-select what's behind (Alt+Z)"))
                 v->xray = !v->xray;
@@ -718,8 +767,7 @@ void Editor::renderToolbar() {
             if (bigButton("Reset Workspace", Icons::Id::Workspace, false, true, "Put every panel back where it started and close the extra views"))
                 resetWorkspace();
         }
-        {
-            Group g("Other");
+        if (Group g("Other", kMore); g) {
             if (bigButton("Script Analysis", Icons::Id::Script, m_scriptEditor->analysisShown(), true,
                           "Find mistakes in every script without pressing Play"))
                 m_scriptEditor->showAnalysis();
@@ -742,6 +790,28 @@ void Editor::renderToolbar() {
         break;
     }
     }
+    };
+    drawTab();
+    // Simple layout: what the tab left out waits behind one "More" button.
+    if (g_simple && g_moreGroups > 0) {
+        if (bigButton("More", Icons::Id::More, ImGui::IsPopupOpen("##ribbonmore"), true,
+                      "The rest of this tab's buttons.\n(VIEW > Advanced puts every button back on the tab.)"))
+            ImGui::OpenPopup("##ribbonmore");
+        if (m_openRibbonMore) { m_openRibbonMore = false; ImGui::OpenPopup("##ribbonmore"); }
+        // Under the ribbon, its right edge at the window's (it can be wide).
+        ImGui::SetNextWindowPos(ImVec2(origin.x + width - 6, origin.y + tabsH + ribbonH), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 6));
+        ImGui::PushStyleColor(ImGuiCol_PopupBg, ImGui::ColorConvertU32ToFloat4(kRibbonBg));
+        if (ImGui::BeginPopup("##ribbonmore")) {
+            g_morePass = true;
+            drawTab();
+            g_morePass = false;
+            ImGui::Dummy(ImVec2(1, 82));
+            ImGui::EndPopup();
+        }
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+    }
     ImGui::PopStyleVar();
     ImGui::SetCursorScreenPos(ImVec2(origin.x, origin.y + tabsH + ribbonH));
     ImGui::Dummy(ImVec2(0, 0));
@@ -749,6 +819,7 @@ void Editor::renderToolbar() {
 
 // The PLUGINS tab: every plugin's buttons, plus the plugin and audio Library.
 void Editor::renderPluginsTab() {
+    if (g_morePass) return;   // (nothing of this tab is behind More)
     auto& list = m_plugins->list();
     for (size_t i = 0; i < list.size(); ++i) {
         Plugins::Plugin& p = *list[i];
@@ -765,8 +836,7 @@ void Editor::renderPluginsTab() {
             ImGui::PopID();
         }
     }
-    {
-        Group g("Make");
+    if (Group g("Make"); g) {
         if (bigButton("New", Icons::Id::Script, false, !m_playing, "Make a new plugin: a Script you change right here in Studio"))
             newPluginScript();
         if (bigButton("Publish", Icons::Id::Export, m_showPublishPlugin, true, "Share a plugin in the Library, or update one you shared")) {

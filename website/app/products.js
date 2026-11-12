@@ -58,6 +58,16 @@ export const PRODUCTS = [
     ],
   },
   {
+    id: 'paste', name: 'Paste', status: 'open', href: '#/paste',
+    blurb: 'Share code, crash logs and settings with one link.',
+    pages: ['paste', 'pasteview', 'pastenew'],
+    links: [
+      ['Recent', '#/paste', 'paste'],
+      ['My pastes', '#/paste?by=me', 'paste-mine'],
+      ['New paste', '#/pastenew', 'pastenew'],
+    ],
+  },
+  {
     id: 'live', name: 'Live', status: 'soon', href: '#/soon/live',
     blurb: 'Go live and hang out in chat: games, art, talk shows, anything allowed.',
     pages: [],
@@ -111,7 +121,7 @@ export const GROUPS = [
   { id: 'community', name: 'Community', products: ['communities', 'chat'], later: ['Press'] },
   { id: 'ai', name: 'AI', products: ['fyxa'], later: ['Fyxa Desktop', 'AI Lab'] },
   { id: 'learning', name: 'Learning', products: [], later: ['Academy'] },
-  { id: 'development', name: 'Development', products: [], later: ['Paste', 'Links', 'Code'] },
+  { id: 'development', name: 'Development', products: ['paste'], later: ['Links', 'Code'] },
   { id: 'commerce', name: 'Commerce', products: [], later: ['Services', 'Storefronts'] },
   { id: 'productivity', name: 'Productivity', products: [], later: ['Drive', 'Projects', 'Boards'] },
 ];
@@ -136,6 +146,8 @@ export function activeLink(page, hash) {
     return /[?&]sort=week/.test(h) ? 'art-week' : /[?&]sort=top/.test(h) ? 'art-top' : /[?&]by=me/.test(h) ? 'art-mine' : 'art';
   }
   if (page === 'artpiece') return 'art';
+  if (page === 'paste') return /[?&]by=me/.test(String(hash || '')) ? 'paste-mine' : 'paste';
+  if (page === 'pasteview') return 'paste';
   if (page === 'item') return 'catalog';
   if (page === 'trade') return 'trades';
   if (page === 'forumsearch') return 'forum';
