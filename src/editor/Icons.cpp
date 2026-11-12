@@ -591,6 +591,9 @@ void draw(ImDrawList* dl, ImVec2 c, float s, Id id, ImU32 tint) {
         dl->AddRect(ImVec2(c.x - s * 0.36f, c.y - s * 0.36f), ImVec2(c.x + s * 0.2f, c.y + s * 0.2f), tint, 0, 0, th * 0.8f);
         dl->AddRectFilled(ImVec2(c.x - s * 0.2f, c.y - s * 0.2f), ImVec2(c.x + s * 0.36f, c.y + s * 0.36f), rgb(120, 170, 240, 130));
         break;
+    case Id::More:
+        for (int i = -1; i <= 1; ++i) dl->AddCircleFilled(ImVec2(c.x + i * s * 0.3f, c.y), s * 0.09f, tint, 12);
+        break;
     case Id::Done:
         dl->AddLine(ImVec2(c.x - s * 0.34f, c.y), ImVec2(c.x - s * 0.08f, c.y + s * 0.28f), rgb(90, 200, 120), th * 1.5f);
         dl->AddLine(ImVec2(c.x - s * 0.08f, c.y + s * 0.28f), ImVec2(c.x + s * 0.38f, c.y - s * 0.3f), rgb(90, 200, 120), th * 1.5f);

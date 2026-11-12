@@ -1,6 +1,7 @@
 #include "OutputPanel.h"
 #include "../LearnHighlight.h"
 #include "../../core/Log.h"
+#include "../../core/Settings.h"
 
 #include <imgui.h>
 
@@ -9,11 +10,30 @@ void OutputPanel::render() {
 
     if (ImGui::Button("Clear")) Log::clear();
     ImGui::SameLine();
-    ImGui::Checkbox("Messages", &m_showInfo);   ImGui::SameLine();
-    ImGui::Checkbox("Warnings", &m_showWarn);   ImGui::SameLine();
-    ImGui::Checkbox("Errors",   &m_showError);  ImGui::SameLine();
-    ImGui::Checkbox("Editor",   &m_showSystem); ImGui::SameLine();
-    ImGui::Checkbox("Auto-scroll", &m_autoScroll);
+    if (GraphicsSettings::get().studioSimpleLayout) {
+        // Simple layout: what to show sits in one small menu instead of five tick boxes.
+        if (ImGui::Button("Filter")) ImGui::OpenPopup("##outputfilter");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pick which kinds of lines Output shows");
+        if (ImGui::BeginPopup("##outputfilter")) {
+            ImGui::Checkbox("Messages", &m_showInfo);
+            ImGui::Checkbox("Warnings", &m_showWarn);
+            ImGui::Checkbox("Errors",   &m_showError);
+            ImGui::Checkbox("Editor",   &m_showSystem);
+            ImGui::Separator();
+            ImGui::Checkbox("Auto-scroll", &m_autoScroll);
+            ImGui::EndPopup();
+        }
+        if (!(m_showInfo && m_showWarn && m_showError && m_showSystem)) {
+            ImGui::SameLine();
+            ImGui::TextDisabled("(some lines are hidden)");
+        }
+    } else {
+        ImGui::Checkbox("Messages", &m_showInfo);   ImGui::SameLine();
+        ImGui::Checkbox("Warnings", &m_showWarn);   ImGui::SameLine();
+        ImGui::Checkbox("Errors",   &m_showError);  ImGui::SameLine();
+        ImGui::Checkbox("Editor",   &m_showSystem); ImGui::SameLine();
+        ImGui::Checkbox("Auto-scroll", &m_autoScroll);
+    }
     ImGui::Separator();
 
     ImGui::BeginChild("##log", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar);

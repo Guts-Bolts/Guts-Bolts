@@ -160,7 +160,7 @@ void GraphicsSettings::load() {
     rd("volume", volume); rd("fullscreen", fullscreen);
     rd("voiceChat", voiceChat); rd("voiceOpenMic", voiceOpenMic); rd("voiceVolume", voiceVolume);
     rd("translateChat", translateChat);
-    rd("studioBlenderKeys", studioBlenderKeys);
+    rd("studioBlenderKeys", studioBlenderKeys); rd("studioSimpleLayout", studioSimpleLayout);
     if (j.contains("keys")) KeyBinds::fromJson(j["keys"], keys);
     rd("breakMinutes", breakMinutes);
     breakMinutes = std::clamp(breakMinutes, 0, 24 * 60);
@@ -321,7 +321,7 @@ void GraphicsSettings::save() const {
         {"voiceChat", voiceChat}, {"voiceOpenMic", voiceOpenMic}, {"voiceVolume", voiceVolume}, {"translateChat", translateChat},
         {"colorBlind", colorBlind}, {"textSize", textSize}, {"captions", captions}, {"clipRecorder", clipRecorder},
         {"waterQuality", waterQuality}, {"graphicsApi", graphicsApi}, {"renderDistance", renderDistance},
-        {"studioBlenderKeys", studioBlenderKeys}, {"breakMinutes", breakMinutes},
+        {"studioBlenderKeys", studioBlenderKeys}, {"studioSimpleLayout", studioSimpleLayout}, {"breakMinutes", breakMinutes},
     };
     if (nlohmann::json k = KeyBinds::toJson(keys); !k.empty()) j["keys"] = k;
     std::ofstream f(settingsFile());
