@@ -90,6 +90,8 @@ private:
         std::string messageDay; int messagesToday = 0;
         std::string privacyMessages = "everyone";            // who can send you messages
         bool        dnd = false;                             // Do Not Disturb: calls don't ring (ServerChats.cpp)
+        std::string background;                              // a decal behind their avatar on their profile (ServerBackgrounds.cpp)
+        std::string ratingLimit;                             // the highest content level they want to see, '' = all (ServerRatings.cpp)
         std::string privacyInventory = "everyone";           // who can see what you own (and trade with you)
         std::string blurb;                                   // "About me"
         nlohmann::json posts = nlohmann::json::array();     // "Right now I'm..." {text, at}, newest first
@@ -285,6 +287,12 @@ private:
     const nlohmann::json* banFor(const Asset& a, const User& me, const nlohmann::json** entry) const;
     std::string banListRole(const nlohmann::json& l, const User& me) const;
     nlohmann::json banListPerson(const std::string& id) const;
+    // ServerBackgrounds.cpp: a picture behind your avatar on your profile (worker/backgrounds.js).
+    nlohmann::json backgroundOp(User& me, const nlohmann::json& args);
+    nlohmann::json backgroundOf(const User& u) const;
+    // ServerRatings.cpp: content levels from a few questions (worker/ratings.js).
+    nlohmann::json ratingOp(const std::string& name, User& me, const nlohmann::json& args);
+    bool ratingAllowed(const Asset& a, const User& me) const;
     // ServerArt.cpp: the Art portal (art.json + files/art-<id>), same rules as worker/art.js.
     nlohmann::json artOp(const std::string& name, User* me, const nlohmann::json& args);
     bool artCanSee(const nlohmann::json& p, const User* me) const;
