@@ -21,7 +21,11 @@ import { installMcpRelay } from './mcp-relay.js';
 import { installGameWeb } from './game-web.js';
 import { installBanLists } from './banlists.js';   // creators' ban lists, used across their games
 import { installTesters, isTester } from './testers.js';   // early testers: a few people play a game before it's public
+import { installRatings, ratingAllowed } from './ratings.js';   // content levels from a few questions
+import { installLaunchpad } from './launchpad.js';   // Launchpad: staff help picked creators build big games
+import { installBackgrounds } from './backgrounds.js';   // a picture behind your avatar on your profile
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
+import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
 import { installFyxaCloud } from './fyxa-cloud.js';   // Fyxa answered by Cloudflare's AI, with daily limits
 import { installChats } from './chats.js';   // chat panel inbox, Do Not Disturb, voice calls, Lyreto gateway   // HttpService web requests and game secrets   // Studio's AI tools for connected apps (worker/mcp.js)
 import { Events, achievementsOf, achievementStats, gameLogView, gameLogPost, gameLogDelete, gameLogFeed,
@@ -321,9 +325,9 @@ const kDeletedName = 'Deleted user';
 // Support tickets (ServerSupport.cpp has the same): anyone, even someone who can't log in,
 // can ask staff for help. A few open at once per device, and a few a day.
 const kMaxTickets = 2000, kOpenTickets = 3, kTicketsPerDay = 5, kTicketLength = 1000, kResetHours = 24;
-const TICKET_TOPICS = ['password', 'account', 'other'];
+const TICKET_TOPICS = ['password', 'account', 'underage', 'other'];   // (underage: a parent or someone else says an account belongs to someone under 18)
 const KIND_TITLE = (a) => ({ tshirt: 'T-shirt', devproduct: 'product', gamepass: 'pass' })[a.kind] || a.kind;
-const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art'];   // art: "piece" or "piece:comment" (art.js)
+const REPORT_KINDS = ['user', 'game', 'item', 'message', 'group', 'comment', 'forum', 'art', 'paste'];   // art: "piece" or "piece:comment" (art.js)
 // Comments under games (ServerSocial.cpp has the same): the newest kMaxComments are kept.
 const kMaxComments = 500, kCommentLength = 200, kCommentCooldown = 15, kCommentsPage = 20;
 // Trades (ServerItems.cpp has the same): a trade nobody answers expires after kTradeExpiry.
@@ -501,6 +505,7 @@ const kMsgPerPoll = 200;         // handed out per msg.poll
 const kMsgBase = 150, kMsgPerPlayer = 60;   // sends a minute per server: 150 + 60 for each player in it
 const kStaffName = 'Guts';
 Object.assign(COSTLY, ART_COSTLY);   // art.js
+Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
 const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'game.leaderboards', 'gamelog.list', 'events.list']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
@@ -544,7 +549,7 @@ const kAuctionExtend = 300;   // seconds: a late bid makes sure at least this mu
 export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.mine', 'servers.play', 'servers.private', 'relay.host', 'relay.join', 'product.pending', 'product.grant',
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
-for (const op of ART_LOOK_ONLY) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
 
 // In-game chat translation: each player's app asks for the lines that were said in another
 // language, and Cloudflare's translator (Workers AI, the "AI" binding) turns them into theirs.
@@ -2276,6 +2281,8 @@ export class GbServerObject extends DurableObject {
       myVote: me && a.votes ? (a.votes[me.id] || 0) : undefined, limited: this.limitedJson(a),
       favorites: a.kind === 'game' || isCatalogItem(a.kind) || this.auctionOpen(a, now()) ? (a.favorites || 0) : undefined,
       featured: a.kind === 'game' && a.featured > 0 ? true : undefined,
+      rating: a.kind === 'game' ? (a.rating || '') : undefined,
+      launchpad: a.kind === 'game' && a.launchpad ? a.launchpad.stage : undefined,   // in Launchpad (launchpad.js)   // content level (ratings.js; '' = none yet)
       comments: a.kind === 'game' ? !a.commentsOff : undefined, commentCount: a.kind === 'game' ? (a.comments || []).length : undefined,
       myFavorite: !me ? undefined : a.kind === 'game' ? (me.favorites || []).includes(a.id)
         : (isCatalogItem(a.kind) || this.auctionOpen(a, now())) ? (me.itemFavorites || []).includes(a.id) : undefined,
@@ -2655,6 +2662,7 @@ export class GbServerObject extends DurableObject {
     } else if (op === 'profile.set') { sourceType = 'profile'; sourceId = actor.id; fields.push(['profile about', args.blurb], ['profile status', args.status]);
     } else if (op === 'gamelog.post') { sourceType = 'game_update'; sourceId = String(args.id || ''); fields.push(['game update title', args.title], ['game update text', args.text]);
     } else if (op === 'art.post') { sourceType = 'art'; sourceId = String(answer.piece && answer.piece.id || ''); fields.push(['art title', args.title], ['art description', args.text], ['art tags', Array.isArray(args.tags) ? args.tags.join(' ') : args.tags]);
+    } else if (op === 'paste.make') { sourceType = 'paste'; sourceId = String(answer.paste && answer.paste.id || ''); fields.push(['paste title', args.title], ['paste text', typeof args.text === 'string' ? args.text.slice(0, 6000) : '']);
     } else if (op === 'chat.translate') { sourceType = 'game_chat'; sourceId = String(args.game || ''); fields.push(['game chat line', args.text]);
     } else return;
     let content = fields.map(([label, value]) => typeof value === 'string' && value.trim() ? label + ': ' + value.trim() : '').filter(Boolean).join('\n').slice(0, 7000);
@@ -3278,6 +3286,7 @@ export class GbServerObject extends DurableObject {
       const canSee = this.seesInventory(me, u), owns = canSee ? this.inventoryOf(u, 'all', me) : [];
       const inventory = { hidden: !canSee, total: owns.length, items: owns.slice(0, 12) };
       return okay({ user, creations, groups, friendCount: u.friends.length, friendship, wearing, friends, inventory,
+        background: this.backgroundOf(u),   // backgrounds.js
         followerCount: (u.followers || []).length, followingCount: (u.following || []).length,
         isFollowing: (me.following || []).includes(u.id), blocked: (me.blocked || []).includes(u.id),
         online: this.presence(me, u).online, playing: this.presence(me, u).playing, placeVisits, gameBadges,
@@ -3335,8 +3344,12 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('forum.')) return this.forumOp(name, me, args);
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
     if (name.startsWith('banlist.') || name === 'game.banLists' || name === 'game.ban') return this.banListOp(name, me, args);   // banlists.js
+    if (name === 'profile.background') return this.backgroundOp(name, me, args);   // backgrounds.js
+    if (name.startsWith('launchpad.')) return this.launchpadOp(name, me, args);   // launchpad.js
+    if (name === 'game.rating' || name === 'game.rate' || name === 'rating.limit') return this.ratingOp(name, me, args);   // ratings.js
     if (['game.testers', 'game.addTester', 'game.removeTester', 'game.testerNote', 'game.amTester'].includes(name)) return this.testerOp(name, me, args);   // testers.js
     if (name.startsWith('art.')) return this.artOp(name, me, args);   // art.js
+    if (name.startsWith('paste.')) return this.pasteOp(name, me, args);   // paste.js
     if (name.startsWith('servers.')) return this.serverOp(name, me, args);
     if (name.startsWith('data.')) return this.dataOp(name, me, args);
     if (name.startsWith('msg.')) return this.msgOp(name, me, args);
@@ -4516,6 +4529,7 @@ export class GbServerObject extends DurableObject {
         (!a.promoOnly || (ownedOnly && me.owned.includes(a.id))) &&   // Promo-only rewards never appear in catalog or auctions
         (!creator || a.creator === creator) && (publicView ? !a.review : this.canPlay(a, me)) &&
         (!genre || (a.genres || []).includes(genre)) &&
+        (ownedOnly || ratingAllowed(a, me)) &&   // above your content level limit (ratings.js)
         (!q || only || lower(a.name).includes(q) || lower(a.description || '').includes(q) || (a.genres || []).some((g) => lower(g) === q)));
       const playing = sort === 'playing' ? new Map(found.map((a) => [a.id, this.playingIn(a.id)])) : null;
       const by = {
@@ -5462,8 +5476,8 @@ export class GbServerObject extends DurableObject {
         if (!p) return fail('That post isn\'t there any more.');
         if (p.by === me.id) return fail('You can\'t report yourself.');
         target = id; about = p.by; copy = { subject: 'Forum: ' + th.title, body: p.text, at: p.at };
-      } else if (kind === 'art') {
-        const r = this.artReportTarget(id, me);   // art.js
+      } else if (kind === 'art' || kind === 'paste') {
+        const r = kind === 'art' ? this.artReportTarget(id, me) : this.pasteReportTarget(id, me);   // art.js, paste.js
         if (typeof r === 'string') return fail(r);
         target = r.target; about = r.about; copy = r.copy;
       } else {
@@ -5829,6 +5843,7 @@ export class GbServerObject extends DurableObject {
       if (x.kind === 'comment') { const a = this.assets.get(x.target.split(':')[0]); r.name = a ? a.name : '(deleted)'; r.game = a ? a.id : ''; }
       if (x.kind === 'forum') { const th = this.forum.get(x.target.split(':')[0]); r.name = th ? th.title : '(deleted)'; r.thread = th ? th.id : ''; }
       if (x.kind === 'art') { r.name = this.artReportName(x.target); r.piece = x.target.split(':')[0]; }   // art.js
+      if (x.kind === 'paste') r.name = this.pasteReportName(x.target);   // paste.js
       if (x.status === 'closed') { r.outcome = x.outcome; r.closedBy = who(x.closedBy); r.closedAt = x.closedAt; }
       return r;
     });
@@ -6820,6 +6835,8 @@ export class GbServerObject extends DurableObject {
     }
     // GET /artpic/<piece>[/thumb]: a piece of art's picture (art.js).
     if (url.pathname.startsWith('/artpic/')) return this.artPictureResponse(url.pathname.slice(8));
+    // GET /pasteraw/<id>: a paste's text alone (paste.js).
+    if (url.pathname.startsWith('/pasteraw/')) return this.pasteRawResponse(url.pathname.slice(10));
     // GET /decal/<asset id or number>: a decal's picture (decals are always free and public), e.g. a hat's texture.
     if (url.pathname.startsWith('/decal/')) {
       const a = this.assets.get(decodeURIComponent(url.pathname.slice(7)).replace(/^gb:/, ''));
@@ -6949,4 +6966,8 @@ installChats(GbServerObject);
 installBanLists(GbServerObject);
 installTesters(GbServerObject);
 installFyxaCloud(GbServerObject);
+installRatings(GbServerObject);
+installLaunchpad(GbServerObject);
+installBackgrounds(GbServerObject);
 installArt(GbServerObject);
+installPaste(GbServerObject);

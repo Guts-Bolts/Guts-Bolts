@@ -2,6 +2,7 @@
 #include "PropertiesPanel.h"
 #include "../LearnHighlight.h"
 #include "../MaterialUi.h"
+#include "../PropGrid.h"
 #include "../BoneUi.h"
 #include "../../core/I18n.h"
 #include "../../online/Protocol.h"
@@ -63,9 +64,9 @@ const char* PropertiesPanel::className(const SceneNode* node) const {
 void PropertiesPanel::render() {
     ImGui::Begin("Properties");
     ImGui::SetNextItemWidth(-1.0f);
-    ImGui::InputTextWithHint("##propertyFilter", "Search properties...", &m_propertyFilter);
+    ImGui::InputTextWithHint("##propertyFilter", "Filter Properties", &m_propertyFilter);
     StudioLearnHighlight::mark("properties.search");
-    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Search common properties by name, like Position, Anchored, Color or Transparency.");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Type part of a property's name, like Position, Anchored, Color or Transparency.");
 
     SceneNode* node = m_scene->selected();
     if (!node) {
@@ -92,73 +93,29 @@ void PropertiesPanel::render() {
     }
     // Properties keep the names scripts use (part.Transparency), in every language.
     I18n::Pause keep;
-    ImGui::Separator();
-    ImGui::Text("%s", node->name.c_str());
+    // Like Roblox Studio's title: the class, then the name.
+    ImGui::TextDisabled("%s", cls);
     ImGui::SameLine();
-    ImGui::TextDisabled("(%s)", cls);
+    ImGui::Text("\"%s\"", node->name.c_str());
 
-    // Searching switches to a compact two-column inspector, similar to Roblox Studio's
-    // Properties panel. Normal browsing keeps the complete class-specific property editor.
-    if (!m_propertyFilter.empty()) {
-        auto lower = [](std::string s) {
-            std::transform(s.begin(), s.end(), s.begin(),
-                           [](unsigned char ch) { return (char)std::tolower(ch); });
-            return s;
-        };
-        const std::string query = lower(m_propertyFilter);
-        auto matches = [&](const char* label) { return lower(label).find(query) != std::string::npos; };
-        bool any = false;
-        if (ImGui::BeginTable("##filteredProperties", 2,
-                              ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_BordersInnerV |
-                              ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("Property", ImGuiTableColumnFlags_WidthFixed, 112.0f);
-            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableHeadersRow();
-            auto row = [&](const char* label, auto&& draw) {
-                if (!matches(label)) return;
-                any = true;
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::AlignTextToFramePadding();
-                ImGui::TextUnformatted(label);
-                ImGui::TableNextColumn();
-                ImGui::SetNextItemWidth(-1.0f);
-                draw();
-                StudioLearnHighlight::mark(std::string("properties.") + label);
-            };
-            row("Name", [&] {
-                ImGui::BeginDisabled(m_scene->isProtected(node));
-                ImGui::InputText("##Name", &node->name);
-                ImGui::EndDisabled();
-            });
-            row("ClassName", [&] { ImGui::TextUnformatted(cls); });
-            row("Position", [&] { ImGui::DragFloat3("##Position", &node->transform.position.x, 0.05f, 0.0f, 0.0f, "%.3f"); });
-            row("Rotation", [&] { ImGui::DragFloat3("##Rotation", &node->transform.rotation.x, 0.5f, 0.0f, 0.0f, "%.2f"); });
-            row("Size", [&] { ImGui::DragFloat3("##Size", &node->transform.scale.x, 0.05f, 0.001f, 1000.0f, "%.3f"); });
-            row("Visible", [&] { ImGui::Checkbox("##Visible", &node->visible); });
-            row("Enabled", [&] { ImGui::Checkbox("##Enabled", &node->enabled); });
-            if (node->isPart()) {
-                row("Anchored", [&] { ImGui::Checkbox("##Anchored", &node->anchored); });
-                row("CanCollide", [&] { ImGui::Checkbox("##CanCollide", &node->canCollide); });
-                row("CastShadow", [&] { ImGui::Checkbox("##CastShadow", &node->castShadow); });
-                row("Color", [&] { ImGui::ColorEdit3("##Color", &node->color.x, ImGuiColorEditFlags_NoLabel); });
-                row("Transparency", [&] { ImGui::SliderFloat("##Transparency", &node->transparency, 0.0f, 1.0f, "%.2f"); });
-                row("Texture", [&] { ImGui::InputText("##Texture", &node->texture); });
-            }
-            ImGui::EndTable();
-        }
-        if (!any) {
-            ImGui::Spacing();
-            ImGui::TextDisabled("No quick-search match. Clear the search to browse every property.");
-        }
+    // The grid (PropGrid.h): name on the left, value on the right, grouped under
+    // headings. Typing in the filter leaves just the rows whose name matches.
+    {
+        PG::Style grid;
+        std::string query = m_propertyFilter;
+        std::transform(query.begin(), query.end(), query.begin(), [](unsigned char ch) { return (char)std::tolower(ch); });
+        while (!query.empty() && query.back() == ' ') query.pop_back();
+        PG::filter() = query;
+        ImGui::BeginChild("##grid", ImVec2(0, 0), ImGuiChildFlags_None);
+        renderProperties(node);
         if (node != m_scene->root()) renderAttributes(node);
-        if (!before.empty() && m_scene->selected() == node) copyToSelection(node, before);
-        ImGui::End();
-        return;
+        if (PG::filtering() && ImGui::GetCursorPosY() < ImGui::GetFrameHeight()) {
+            PG::filter().clear();
+            ImGui::TextDisabled("Nothing here is called that.");
+        }
+        ImGui::EndChild();
+        PG::filter().clear();
     }
-
-    renderProperties(node);
-    if (node != m_scene->root()) renderAttributes(node);
     if (!before.empty() && m_scene->selected() == node) copyToSelection(node, before);   // (a button may have swapped it)
     ImGui::End();
 }
@@ -197,9 +154,9 @@ bool editUDim2(const char* label, UDim2& u, float scaleStep = 0.005f) {
     ImGui::PushID(label);
     ImGui::TextUnformatted(label);
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-    changed |= ImGui::DragFloat2("X (scale, pixels)", &u.xs, 1.0f, 0, 0, "%.3f");
+    changed |= PG::DragFloat2("X (scale, pixels)", &u.xs, 1.0f, 0, 0, "%.3f");
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-    changed |= ImGui::DragFloat2("Y (scale, pixels)", &u.ys, 1.0f, 0, 0, "%.3f");
+    changed |= PG::DragFloat2("Y (scale, pixels)", &u.ys, 1.0f, 0, 0, "%.3f");
     (void)scaleStep;
     ImGui::PopID();
     return changed;
@@ -212,68 +169,68 @@ void PropertiesPanel::renderGui(SceneNode* node) {
                           g.type == GuiType::UIScale || g.type == GuiType::UIAspectRatioConstraint;   // (always on)
     const bool hasEnabled = isGuiLayer(g.type) || (isGuiModifier(g.type) && !noSwitch);
     if (!noSwitch)
-        ImGui::Checkbox(hasEnabled ? "Enabled" : "Visible", hasEnabled ? &node->enabled : &node->visible);
+        PG::Checkbox(hasEnabled ? "Enabled" : "Visible", hasEnabled ? &node->enabled : &node->visible);
     static const char* const kH[] = {"Left", "Center", "Right"};
     static const char* const kV[] = {"Top", "Center", "Bottom"};
     if (isGuiLayout(g.type)) {
         const bool grid = g.type == GuiType::UIGridLayout;
-        ImGui::SeparatorText(grid ? "UIGridLayout" : "UIListLayout");
+        PG::SeparatorText(grid ? "UIGridLayout" : "UIListLayout");
         const char* dirs[] = {"Vertical", "Horizontal"};
-        ImGui::Combo("FillDirection", &g.fill, dirs, 2);
-        ImGui::Combo("HorizontalAlignment", &g.hAlign, kH, 3);
-        ImGui::Combo("VerticalAlignment", &g.vAlign, kV, 3);
+        PG::Combo("FillDirection", &g.fill, dirs, 2);
+        PG::Combo("HorizontalAlignment", &g.hAlign, kH, 3);
+        PG::Combo("VerticalAlignment", &g.vAlign, kV, 3);
         int sort = g.sortByName ? 1 : 0;
         const char* sorts[] = {"LayoutOrder", "Name"};
-        if (ImGui::Combo("SortOrder", &sort, sorts, 2)) g.sortByName = sort == 1;
+        if (PG::Combo("SortOrder", &sort, sorts, 2)) g.sortByName = sort == 1;
         if (grid) {
             editUDim2("CellSize", g.cellSize);
             editUDim2("CellPadding", g.padding);
-            ImGui::InputInt("FillDirectionMaxCells", &g.maxCells);
+            PG::InputInt("FillDirectionMaxCells", &g.maxCells);
             if (g.maxCells < 0) g.maxCells = 0;
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("How many in a row (0 = as many as fit).");
         } else {
-            ImGui::DragFloat2("Padding (scale, pixels)", &g.padding.xs, 0.5f, 0.0f, 0.0f, "%.2f");
+            PG::DragFloat2("Padding (scale, pixels)", &g.padding.xs, 0.5f, 0.0f, 0.0f, "%.2f");
             g.padding.ys = g.padding.xs; g.padding.yo = g.padding.xo;
         }
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled(grid ? "Puts everything next to it in a grid of same-size cells (their Position and Size are ignored)."
+        PG::TextDisabled(grid ? "Puts everything next to it in a grid of same-size cells (their Position and Size are ignored)."
                                  : "Lines up everything next to it, one after another (their Position is ignored). "
                                    "Lower LayoutOrder comes first.");
         ImGui::PopTextWrapPos();
         return;
     }
     if (g.type == GuiType::UIPadding) {
-        ImGui::SeparatorText("UIPadding");
+        PG::SeparatorText("UIPadding");
         static const char* const kSides[4] = {"PaddingLeft", "PaddingTop", "PaddingRight", "PaddingBottom"};
         for (int i = 0; i < 4; ++i) {
             float v[2] = {g.padScale[i], g.padPx[i]};
-            if (ImGui::DragFloat2(kSides[i], v, 0.5f, 0.0f, 0.0f, "%.2f")) { g.padScale[i] = v[0]; g.padPx[i] = v[1]; }
+            if (PG::DragFloat2(kSides[i], v, 0.5f, 0.0f, 0.0f, "%.2f")) { g.padScale[i] = v[0]; g.padPx[i] = v[1]; }
         }
-        ImGui::TextDisabled("Keeps what's inside away from the edges (scale, pixels).");
+        PG::TextDisabled("Keeps what's inside away from the edges (scale, pixels).");
         return;
     }
     if (g.type == GuiType::BillboardGui || g.type == GuiType::SurfaceGui) {
         const bool bb = g.type == GuiType::BillboardGui;
-        ImGui::SeparatorText(bb ? "BillboardGui" : "SurfaceGui");
+        PG::SeparatorText(bb ? "BillboardGui" : "SurfaceGui");
         if (bb) {
             editUDim2("Size", g.size);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pixels stay the same size on screen; scale is studs (grows as you get closer).");
-            ImGui::DragFloat3("StudsOffset", &g.studsOffset.x, 0.1f, -100.0f, 100.0f, "%.1f");
+            PG::DragFloat3("StudsOffset", &g.studsOffset.x, 0.1f, -100.0f, 100.0f, "%.1f");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Moves it from the part's middle: right, up, towards the camera.");
-            ImGui::DragFloat3("StudsOffsetWorldSpace", &g.worldOffset.x, 0.1f, -100.0f, 100.0f, "%.1f");
+            PG::DragFloat3("StudsOffsetWorldSpace", &g.worldOffset.x, 0.1f, -100.0f, 100.0f, "%.1f");
         } else {
-            ImGui::Combo("Face", &g.face, kFaceNames, 6);
+            PG::Combo("Face", &g.face, kFaceNames, 6);
             int mode = g.perStud ? 1 : 0;
             const char* modes[] = {"FixedSize", "PixelsPerStud"};
-            if (ImGui::Combo("SizingMode", &mode, modes, 2)) g.perStud = mode == 1;
-            if (g.perStud) ImGui::DragFloat("PixelsPerStud", &g.pixelsPerStud, 0.5f, 1.0f, 1000.0f, "%.0f");
-            else ImGui::DragFloat2("CanvasSize", &g.surfaceCanvas.x, 1.0f, 1.0f, 10000.0f, "%.0f");
+            if (PG::Combo("SizingMode", &mode, modes, 2)) g.perStud = mode == 1;
+            if (g.perStud) PG::DragFloat("PixelsPerStud", &g.pixelsPerStud, 0.5f, 1.0f, 1000.0f, "%.0f");
+            else PG::DragFloat2("CanvasSize", &g.surfaceCanvas.x, 1.0f, 1.0f, 10000.0f, "%.0f");
         }
-        ImGui::Checkbox("AlwaysOnTop", &g.alwaysOnTop);
+        PG::Checkbox("AlwaysOnTop", &g.alwaysOnTop);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show it even when something's in front of it.");
-        ImGui::DragFloat("MaxDistance", &g.maxDistance, 1.0f, 0.0f, 100000.0f, g.maxDistance > 0 ? "%.0f" : "no limit");
+        PG::DragFloat("MaxDistance", &g.maxDistance, 1.0f, 0.0f, 100000.0f, g.maxDistance > 0 ? "%.0f" : "no limit");
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled(bb ? "Put it inside a part (or set Adornee in a script) and it floats over it, facing you: "
+        PG::TextDisabled(bb ? "Put it inside a part (or set Adornee in a script) and it floats over it, facing you: "
                                  "great for name signs and health bars. Insert labels and buttons into it."
                                : "Put it inside a part and it's painted on one side of it (Face): signs, screens and "
                                  "buttons on walls. Insert labels and buttons into it.");
@@ -281,27 +238,27 @@ void PropertiesPanel::renderGui(SceneNode* node) {
         return;
     }
     if (g.type == GuiType::ScreenGui) {
-        ImGui::InputInt("DisplayOrder", &g.displayOrder);
+        PG::InputInt("DisplayOrder", &g.displayOrder);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("ScreenGuis with a higher number are drawn on top.");
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("A ScreenGui is a layer of UI over the game. Insert Frames, TextLabels, TextButtons and "
+        PG::TextDisabled("A ScreenGui is a layer of UI over the game. Insert Frames, TextLabels, TextButtons and "
                             "ImageLabels inside it. Click them in the viewport to pick them, drag to move, drag the "
                             "blue corner to resize.");
         ImGui::PopTextWrapPos();
         return;
     }
     if (g.type == GuiType::UICorner) {
-        ImGui::SeparatorText("UICorner");
-        ImGui::DragFloat2("CornerRadius (scale, pixels)", &g.corner.xs, 0.5f, 0.0f, 500.0f, "%.2f");
-        ImGui::TextDisabled("Rounds the corners of the object it's in.");
+        PG::SeparatorText("UICorner");
+        PG::DragFloat2("CornerRadius (scale, pixels)", &g.corner.xs, 0.5f, 0.0f, 500.0f, "%.2f");
+        PG::TextDisabled("Rounds the corners of the object it's in.");
         // Each corner on its own: tick one to give it its own roundness (0 = a sharp corner).
         static const char* const kNames[4] = {"TopLeft", "TopRight", "BottomRight", "BottomLeft"};
-        ImGui::SeparatorText("Corners");
+        PG::SeparatorText("Corners");
         for (int i = 0; i < 4; ++i) {
             ImGui::PushID(i);
             bool own = g.corners[i] >= 0;
-            if (ImGui::Checkbox("##own", &own)) {
+            if (PG::Checkbox("##own", &own)) {
                 g.corners[i] = own ? g.corner.xo : -1.0f;
                 g.cornerScales[i] = own ? g.corner.xs : 0.0f;
             }
@@ -310,7 +267,7 @@ void PropertiesPanel::renderGui(SceneNode* node) {
             ImGui::BeginDisabled(!own);
             float v[2] = {own ? g.cornerScales[i] : g.corner.xs, own ? g.corners[i] : g.corner.xo};
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
-            if (ImGui::DragFloat2(kNames[i], v, 0.5f, 0.0f, 500.0f, "%.2f") && own) {
+            if (PG::DragFloat2(kNames[i], v, 0.5f, 0.0f, 500.0f, "%.2f") && own) {
                 g.cornerScales[i] = std::max(0.0f, v[0]);
                 g.corners[i] = std::max(0.0f, v[1]);
             }
@@ -320,216 +277,209 @@ void PropertiesPanel::renderGui(SceneNode* node) {
         return;
     }
     if (g.type == GuiType::UIShadow) {
-        ImGui::SeparatorText("UIShadow");
-        ImGui::ColorEdit3("Color", &g.bg.x);
-        ImGui::SliderFloat("Transparency", &g.bgTransparency, 0.0f, 1.0f);
-        ImGui::DragFloat2("Offset", &g.shadowOffset.x, 0.5f, -200.0f, 200.0f, "%.1f");
-        ImGui::DragFloat("Blur", &g.shadowBlur, 0.5f, 0.0f, 100.0f, "%.1f");
-        ImGui::DragFloat("Spread", &g.shadowSpread, 0.5f, -100.0f, 100.0f, "%.1f");
-        ImGui::TextDisabled("A soft drop shadow under the object it's in.");
+        PG::SeparatorText("UIShadow");
+        PG::ColorEdit3("Color", &g.bg.x);
+        PG::SliderFloat("Transparency", &g.bgTransparency, 0.0f, 1.0f);
+        PG::DragFloat2("Offset", &g.shadowOffset.x, 0.5f, -200.0f, 200.0f, "%.1f");
+        PG::DragFloat("Blur", &g.shadowBlur, 0.5f, 0.0f, 100.0f, "%.1f");
+        PG::DragFloat("Spread", &g.shadowSpread, 0.5f, -100.0f, 100.0f, "%.1f");
+        PG::TextDisabled("A soft drop shadow under the object it's in.");
         return;
     }
     if (g.type == GuiType::UIBlur) {
-        ImGui::SeparatorText("UIBlur");
-        ImGui::DragFloat("Size", &g.blurSize, 0.5f, 0.0f, 100.0f, "%.1f");
+        PG::SeparatorText("UIBlur");
+        PG::DragFloat("Size", &g.blurSize, 0.5f, 0.0f, 100.0f, "%.1f");
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Blurs the world behind the object it's in (frosted glass). Make its "
+        PG::TextDisabled("Blurs the world behind the object it's in (frosted glass). Make its "
                             "BackgroundTransparency 0.3 - 0.7 to tint the glass.");
         ImGui::PopTextWrapPos();
         return;
     }
     if (g.type == GuiType::UIGradient) {
-        ImGui::SeparatorText("UIGradient");
+        PG::SeparatorText("UIGradient");
         // Color / Transparency: the two ends here (scripts can give it more keypoints).
         const bool many = g.gradColor.size() > 2 || g.gradTransparency.size() > 2;
         glm::vec3 c0 = g.gradColor.front().c, c1 = g.gradColor.back().c;
-        bool cEdit = ImGui::ColorEdit3("Color (start)", &c0.x);
-        cEdit |= ImGui::ColorEdit3("Color (end)", &c1.x);
+        bool cEdit = PG::ColorEdit3("Color (start)", &c0.x);
+        cEdit |= PG::ColorEdit3("Color (end)", &c1.x);
         if (cEdit) g.gradColor = {{0.0f, c0}, {1.0f, c1}};
         float t0 = g.gradTransparency.front().v, t1 = g.gradTransparency.back().v;
-        bool tEdit = ImGui::SliderFloat("Transparency (start)", &t0, 0.0f, 1.0f);
-        tEdit |= ImGui::SliderFloat("Transparency (end)", &t1, 0.0f, 1.0f);
+        bool tEdit = PG::SliderFloat("Transparency (start)", &t0, 0.0f, 1.0f);
+        tEdit |= PG::SliderFloat("Transparency (end)", &t1, 0.0f, 1.0f);
         if (tEdit) g.gradTransparency = {{0.0f, t0}, {1.0f, t1}};
-        if (many) ImGui::TextDisabled("(it has more colours, set by a script: editing here keeps just the two ends)");
-        ImGui::DragFloat("Rotation", &g.gradRotation, 1.0f, -360.0f, 360.0f, "%.0f deg");
+        if (many) PG::TextDisabled("(it has more colours, set by a script: editing here keeps just the two ends)");
+        PG::DragFloat("Rotation", &g.gradRotation, 1.0f, -360.0f, 360.0f, "%.0f deg");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = left to right, 90 = top to bottom.");
-        ImGui::DragFloat2("Offset", &g.gradOffset.x, 0.01f, -2.0f, 2.0f, "%.2f");
+        PG::DragFloat2("Offset", &g.gradOffset.x, 0.01f, -2.0f, 2.0f, "%.2f");
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Colours the object it's in (its background, text and picture) with a fade "
+        PG::TextDisabled("Colours the object it's in (its background, text and picture) with a fade "
                             "from one colour to the next.");
         ImGui::PopTextWrapPos();
         return;
     }
     if (g.type == GuiType::UIScale) {
-        ImGui::SeparatorText("UIScale");
-        ImGui::DragFloat("Scale", &g.scale, 0.01f, 0.0f, 10.0f, "%.2f");
+        PG::SeparatorText("UIScale");
+        PG::DragFloat("Scale", &g.scale, 0.01f, 0.0f, 10.0f, "%.2f");
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Makes the object it's in, and everything inside it, bigger (2 = twice as big) or smaller. "
+        PG::TextDisabled("Makes the object it's in, and everything inside it, bigger (2 = twice as big) or smaller. "
                             "It grows around its AnchorPoint.");
         ImGui::PopTextWrapPos();
         return;
     }
     if (g.type == GuiType::UIAspectRatioConstraint) {
-        ImGui::SeparatorText("UIAspectRatioConstraint");
-        if (ImGui::DragFloat("AspectRatio", &g.aspectRatio, 0.01f, 0.01f, 100.0f, "%.2f")) g.aspectRatio = std::max(0.01f, g.aspectRatio);
+        PG::SeparatorText("UIAspectRatioConstraint");
+        if (PG::DragFloat("AspectRatio", &g.aspectRatio, 0.01f, 0.01f, 100.0f, "%.2f")) g.aspectRatio = std::max(0.01f, g.aspectRatio);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Width / height: 1 = square, 2 = twice as wide as tall.");
         const char* types[] = {"FitWithinMaxSize", "ScaleWithParentSize"};
-        ImGui::Combo("AspectType", &g.aspectType, types, 2);
+        PG::Combo("AspectType", &g.aspectType, types, 2);
         const char* axes[] = {"Width", "Height"};
         ImGui::BeginDisabled(g.aspectType == 0);
-        ImGui::Combo("DominantAxis", &g.dominantAxis, axes, 2);
+        PG::Combo("DominantAxis", &g.dominantAxis, axes, 2);
         ImGui::EndDisabled();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Keeps the object it's in the same shape on every screen. FitWithinMaxSize: as big as fits "
+        PG::TextDisabled("Keeps the object it's in the same shape on every screen. FitWithinMaxSize: as big as fits "
                             "in its Size. ScaleWithParentSize: DominantAxis keeps its size and the other side follows.");
         ImGui::PopTextWrapPos();
         return;
     }
     if (g.type == GuiType::UIStroke) {
-        ImGui::SeparatorText("UIStroke");
-        ImGui::ColorEdit3("Color", &g.borderColor.x);
-        ImGui::DragFloat("Thickness", &g.thickness, 0.1f, 0.0f, 50.0f, "%.1f");
-        ImGui::SliderFloat("Transparency", &g.bgTransparency, 0.0f, 1.0f);
-        ImGui::TextDisabled("An outline around the object it's in.");
+        PG::SeparatorText("UIStroke");
+        PG::ColorEdit3("Color", &g.borderColor.x);
+        PG::DragFloat("Thickness", &g.thickness, 0.1f, 0.0f, 50.0f, "%.1f");
+        PG::SliderFloat("Transparency", &g.bgTransparency, 0.0f, 1.0f);
+        PG::TextDisabled("An outline around the object it's in.");
         return;
     }
 
-    ImGui::SeparatorText("Layout");
+    PG::SeparatorText("Layout");
     editUDim2("Position", g.pos);
     editUDim2("Size", g.size);
-    ImGui::DragFloat2("AnchorPoint", &g.anchor.x, 0.01f, 0.0f, 1.0f, "%.2f");
+    PG::DragFloat2("AnchorPoint", &g.anchor.x, 0.01f, 0.0f, 1.0f, "%.2f");
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Which point of it sits at Position: 0,0 = top-left, 0.5,0.5 = middle.");
-    ImGui::InputInt("ZIndex", &g.zIndex);
-    ImGui::InputInt("LayoutOrder", &g.layoutOrder);
+    PG::InputInt("ZIndex", &g.zIndex);
+    PG::InputInt("LayoutOrder", &g.layoutOrder);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("With a UIListLayout or UIGridLayout: lower numbers come first.");
-    ImGui::Checkbox("ClipsDescendants", &g.clips);
+    PG::Checkbox("ClipsDescendants", &g.clips);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Hide the parts of things inside it that stick out.");
-    ImGui::TextDisabled("Scale 1 = the whole of the parent; pixels are added on top.");
+    PG::TextDisabled("Scale 1 = the whole of the parent; pixels are added on top.");
 
-    ImGui::SeparatorText("Background");
-    ImGui::ColorEdit3("BackgroundColor3", &g.bg.x);
-    ImGui::SliderFloat("BackgroundTransparency", &g.bgTransparency, 0.0f, 1.0f);
-    ImGui::ColorEdit3("BorderColor3", &g.borderColor.x);
-    ImGui::SliderInt("BorderSizePixel", &g.border, 0, 10);
+    PG::SeparatorText("Background");
+    PG::ColorEdit3("BackgroundColor3", &g.bg.x);
+    PG::SliderFloat("BackgroundTransparency", &g.bgTransparency, 0.0f, 1.0f);
+    PG::ColorEdit3("BorderColor3", &g.borderColor.x);
+    PG::SliderInt("BorderSizePixel", &g.border, 0, 10);
 
     if (g.type == GuiType::ScrollingFrame) {
-        ImGui::SeparatorText("Scrolling");
+        PG::SeparatorText("Scrolling");
         editUDim2("CanvasSize", g.canvasSize);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How big the inside is. Scale 2 on Y = twice as tall as the frame.");
         const char* axes[] = {"None", "X", "Y", "XY"};
-        ImGui::Combo("AutomaticCanvasSize", &g.autoCanvas, axes, 4);
+        PG::Combo("AutomaticCanvasSize", &g.autoCanvas, axes, 4);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Grow the canvas to fit what's inside.");
         int dir = g.scrollDir - 1;
-        if (ImGui::Combo("ScrollingDirection", &dir, axes + 1, 3)) g.scrollDir = dir + 1;
-        ImGui::DragFloat2("CanvasPosition", &g.canvasPos.x, 1.0f, 0.0f, 100000.0f, "%.0f");
-        ImGui::SliderInt("ScrollBarThickness", &g.scrollBar, 0, 30);
-        ImGui::ColorEdit3("ScrollBarImageColor3", &g.scrollColor.x);
-        ImGui::Checkbox("ScrollingEnabled", &g.scrolling);
+        if (PG::Combo("ScrollingDirection", &dir, axes + 1, 3)) g.scrollDir = dir + 1;
+        PG::DragFloat2("CanvasPosition", &g.canvasPos.x, 1.0f, 0.0f, 100000.0f, "%.0f");
+        PG::SliderInt("ScrollBarThickness", &g.scrollBar, 0, 30);
+        PG::ColorEdit3("ScrollBarImageColor3", &g.scrollColor.x);
+        PG::Checkbox("ScrollingEnabled", &g.scrolling);
     }
     if (guiHasText(g.type)) {
-        ImGui::SeparatorText("Text");
+        PG::SeparatorText("Text");
         ImGui::InputTextMultiline("Text", &g.text, ImVec2(-1, ImGui::GetTextLineHeight() * 3));
         StudioLearnHighlight::mark("properties.Text");
-        ImGui::ColorEdit3("TextColor3", &g.textColor.x);
-        ImGui::DragFloat("TextSize", &g.textSize, 0.5f, 4.0f, 200.0f, "%.0f");
-        ImGui::Checkbox("TextScaled", &g.textScaled);
+        PG::ColorEdit3("TextColor3", &g.textColor.x);
+        PG::DragFloat("TextSize", &g.textSize, 0.5f, 4.0f, 200.0f, "%.0f");
+        PG::Checkbox("TextScaled", &g.textScaled);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Make the text as big as fits in the box.");
-        ImGui::SameLine();
-        ImGui::Checkbox("TextWrapped", &g.textWrapped);
-        ImGui::SameLine();
-        ImGui::Checkbox("Bold", &g.bold);
-        ImGui::SameLine();
-        ImGui::Checkbox("RichText", &g.richText);
+        PG::Checkbox("TextWrapped", &g.textWrapped);
+        PG::Checkbox("Bold", &g.bold);
+        PG::Checkbox("RichText", &g.richText);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tags in the text: <b>bold</b>, <font color=\"#ff0000\">red</font>, <font size=\"30\">big</font>, <u>, <s>, <br />");
         const char* xs[] = {"Left", "Center", "Right"};
         const char* ys[] = {"Top", "Center", "Bottom"};
-        ImGui::Combo("TextXAlignment", &g.xAlign, xs, 3);
-        ImGui::Combo("TextYAlignment", &g.yAlign, ys, 3);
-        ImGui::SliderFloat("TextTransparency", &g.textTransparency, 0.0f, 1.0f);
-        ImGui::ColorEdit3("TextStrokeColor3", &g.strokeColor.x);
-        ImGui::SliderFloat("TextStrokeTransparency", &g.strokeTransparency, 0.0f, 1.0f);
+        PG::Combo("TextXAlignment", &g.xAlign, xs, 3);
+        PG::Combo("TextYAlignment", &g.yAlign, ys, 3);
+        PG::SliderFloat("TextTransparency", &g.textTransparency, 0.0f, 1.0f);
+        PG::ColorEdit3("TextStrokeColor3", &g.strokeColor.x);
+        PG::SliderFloat("TextStrokeTransparency", &g.strokeTransparency, 0.0f, 1.0f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = a solid outline around the letters, 1 = none.");
     }
     if (g.type == GuiType::TextBox) {
-        ImGui::SeparatorText("TextBox");
-        ImGui::InputText("PlaceholderText", &g.placeholder);
+        PG::SeparatorText("TextBox");
+        PG::InputText("PlaceholderText", &g.placeholder);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Shown greyed out while nothing's typed.");
-        ImGui::ColorEdit3("PlaceholderColor3", &g.placeholderColor.x);
-        ImGui::Checkbox("ClearTextOnFocus", &g.clearOnFocus);
-        ImGui::SameLine();
-        ImGui::Checkbox("TextEditable", &g.editable);
-        ImGui::SameLine();
-        ImGui::Checkbox("MultiLine", &g.multiLine);
+        PG::ColorEdit3("PlaceholderColor3", &g.placeholderColor.x);
+        PG::Checkbox("ClearTextOnFocus", &g.clearOnFocus);
+        PG::Checkbox("TextEditable", &g.editable);
+        PG::Checkbox("MultiLine", &g.multiLine);
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("In a script: box.FocusLost:Connect(function(enterPressed) print(box.Text) end)");
+        PG::TextDisabled("In a script: box.FocusLost:Connect(function(enterPressed) print(box.Text) end)");
         ImGui::PopTextWrapPos();
     }
     if (g.type == GuiType::ImageLabel || g.type == GuiType::ImageButton) {
-        ImGui::SeparatorText("Image");
-        ImGui::InputText("Image", &g.image);
+        PG::SeparatorText("Image");
+        PG::InputText("Image", &g.image);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("A picture: a .png / .jpg in the games folder, a full path,\nor gb:<id> for one uploaded on the Create page.");
         if (FileDialog::available()) {
-            ImGui::SameLine();
-            if (ImGui::Button("Browse...")) {
+            if (PG::Button("Browse...")) {
                 std::string path = FileDialog::openImage("Pick a picture");
                 if (!path.empty()) { g.image = Paths::relativeToGames(path); m_scene->markDirty(); }
             }
         }
-        ImGui::ColorEdit3("ImageColor3", &g.imageColor.x);
-        ImGui::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
+        PG::ColorEdit3("ImageColor3", &g.imageColor.x);
+        PG::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
     }
     if (g.type == GuiType::VideoFrame) {
-        ImGui::SeparatorText("VideoFrame");
-        ImGui::InputTextWithHint("Video", "an .mpg file in the games folder", &g.video);
+        PG::SeparatorText("VideoFrame");
+        PG::InputTextWithHint("Video", "an .mpg file in the games folder", &g.video);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("An MPEG-1 video (.mpg). Any free video converter can make one:\n"
                               "pick \"MPEG-1\" (or \"VCD\") as the format.");
-        ImGui::Checkbox("Playing", &g.playing);
-        ImGui::SameLine();
-        ImGui::Checkbox("Looped", &g.looped);
-        ImGui::SliderFloat("Volume", &g.volume, 0.0f, 3.0f);
-        ImGui::ColorEdit3("ImageColor3", &g.imageColor.x);
-        ImGui::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
+        PG::Checkbox("Playing", &g.playing);
+        PG::Checkbox("Looped", &g.looped);
+        PG::SliderFloat("Volume", &g.volume, 0.0f, 3.0f);
+        PG::ColorEdit3("ImageColor3", &g.imageColor.x);
+        PG::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
         if (!g.video.empty()) {
             if (Videos::loaded(*node)) {
                 const glm::ivec2 r = Videos::resolution(*node);
-                ImGui::TextDisabled("%d x %d, %.1f seconds long", r.x, r.y, Videos::length(*node));
+                PG::TextDisabled("%d x %d, %.1f seconds long", r.x, r.y, Videos::length(*node));
             } else {
                 ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1), "Can't play this file (it needs to be an MPEG-1 .mpg)");
             }
         }
     }
     if (g.type == GuiType::ViewportFrame) {
-        ImGui::SeparatorText("ViewportFrame");
+        PG::SeparatorText("ViewportFrame");
         // CurrentCamera: one of the Cameras inside it (or none: it frames what's inside by itself).
         std::vector<SceneNode*> cams;
         for (auto& c : node->children) if (c->isCamera()) cams.push_back(c.get());
         SceneNode* cur = g.camera ? m_scene->findById(g.camera) : nullptr;
-        if (ImGui::BeginCombo("CurrentCamera", cur ? cur->name.c_str() : "(none: fit what's inside)")) {
+        if (PG::BeginCombo("CurrentCamera", cur ? cur->name.c_str() : "(none: fit what's inside)")) {
             if (ImGui::Selectable("(none: fit what's inside)", !cur)) g.camera = 0;
             for (SceneNode* c : cams)
                 if (ImGui::Selectable((c->name + "##" + std::to_string(c->id)).c_str(), c == cur)) g.camera = c->id;
             ImGui::EndCombo();
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Insert a Camera into the frame to pick it here.");
-        ImGui::ColorEdit3("Ambient", &g.ambient.x);
-        ImGui::ColorEdit3("LightColor", &g.lightColor.x);
-        ImGui::DragFloat3("LightDirection", &g.lightDir.x, 0.02f, -1.0f, 1.0f, "%.2f");
+        PG::ColorEdit3("Ambient", &g.ambient.x);
+        PG::ColorEdit3("LightColor", &g.lightColor.x);
+        PG::DragFloat3("LightDirection", &g.lightDir.x, 0.02f, -1.0f, 1.0f, "%.2f");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("The way the light shines: -1, -1, -1 = down from the top right.");
-        ImGui::ColorEdit3("ImageColor3", &g.imageColor.x);
-        ImGui::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
+        PG::ColorEdit3("ImageColor3", &g.imageColor.x);
+        PG::SliderFloat("ImageTransparency", &g.imageTransparency, 0.0f, 1.0f);
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Shows the parts and models inside it as a little 3D picture (an item in a shop, a "
+        PG::TextDisabled("Shows the parts and models inside it as a little 3D picture (an item in a shop, a "
                             "character preview). They aren't in the world: no physics, nobody bumps into them.");
         ImGui::PopTextWrapPos();
     }
     if (node->isGuiButton()) {
-        ImGui::SeparatorText("Button");
-        ImGui::Checkbox("AutoButtonColor", &g.autoButtonColor);
+        PG::SeparatorText("Button");
+        PG::Checkbox("AutoButtonColor", &g.autoButtonColor);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Get darker when the mouse is over it or presses it.");
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("In a script: button.MouseButton1Click:Connect(function() ... end)");
+        PG::TextDisabled("In a script: button.MouseButton1Click:Connect(function() ... end)");
         ImGui::PopTextWrapPos();
     }
 }
@@ -537,48 +487,48 @@ void PropertiesPanel::renderGui(SceneNode* node) {
 void PropertiesPanel::renderProperties(SceneNode* node) {
     // --- Name ---
     ImGui::BeginDisabled(m_scene->isProtected(node));
-    ImGui::InputText("Name", &node->name);
+    PG::InputText("Name", &node->name);
     ImGui::EndDisabled();
 
     // --- Scripts: just the code ---
     if (node->isScript()) {
-        ImGui::Checkbox("Enabled", &node->enabled);
-        ImGui::Spacing();
-        if (ImGui::Button("Edit Script", ImVec2(-1, 36)) && m_openScript) m_openScript(node);
-        ImGui::Spacing();
-        ImGui::TextDisabled("Runs when you press Play.");
-        ImGui::TextDisabled("Inside the code, 'script.Parent' is the");
-        ImGui::TextDisabled("object this script is inside of.");
+        PG::Checkbox("Enabled", &node->enabled);
+        PG::Spacing();
+        if (PG::Button("Edit Script", ImVec2(-1, 36)) && m_openScript) m_openScript(node);
+        PG::Spacing();
+        PG::TextDisabled("Runs when you press Play.");
+        PG::TextDisabled("Inside the code, 'script.Parent' is the");
+        PG::TextDisabled("object this script is inside of.");
         return;
     }
 
     if (node->isValue()) {
-        ImGui::SeparatorText("Value");
+        PG::SeparatorText("Value");
         switch (node->value.type) {
-            case Attribute::Bool:   ImGui::Checkbox("Value", &node->value.b); break;
-            case Attribute::String: ImGui::InputText("Value", &node->value.s); break;
-            case Attribute::Vector3: ImGui::DragFloat3("Value", &node->value.v.x, 0.1f); break;
-            case Attribute::Color3: ImGui::ColorEdit3("Value", &node->value.v.x); break;
+            case Attribute::Bool:   PG::Checkbox("Value", &node->value.b); break;
+            case Attribute::String: PG::InputText("Value", &node->value.s); break;
+            case Attribute::Vector3: PG::DragFloat3("Value", &node->value.v.x, 0.1f); break;
+            case Attribute::Color3: PG::ColorEdit3("Value", &node->value.v.x); break;
             default:
                 if (node->intValue) {
                     long long v = (long long)node->value.n;
-                    if (ImGui::InputScalar("Value", ImGuiDataType_S64, &v)) node->value.n = (double)v;
+                    if (PG::InputScalar("Value", ImGuiDataType_S64, &v)) node->value.n = (double)v;
                 } else {
-                    ImGui::InputDouble("Value", &node->value.n);
+                    PG::InputDouble("Value", &node->value.n);
                 }
         }
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Scripts read and change it with .Value (and hear about changes with .Changed). "
+        PG::TextDisabled("Scripts read and change it with .Value (and hear about changes with .Changed). "
                             "Put IntValues in a folder called leaderstats inside a player to show them on the leaderboard.");
         ImGui::PopTextWrapPos();
         return;
     }
 
     if (node->isRemote()) {
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled(node->remoteFunction
+        PG::TextDisabled(node->remoteFunction
             ? "A LocalScript asks the server with :InvokeServer(...), and the server's OnServerInvoke function answers."
             : "LocalScripts call :FireServer(...) and the server hears it on OnServerEvent; "
               "the server calls :FireClient(player, ...) or :FireAllClients(...) and players hear it on OnClientEvent.");
@@ -588,23 +538,23 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
 
     if (node->isPrompt()) {
         PromptProps& p = node->prompt;
-        ImGui::SeparatorText("ProximityPrompt");
-        ImGui::Checkbox("Enabled", &node->enabled);
-        ImGui::InputText("ActionText", &p.action);
-        ImGui::InputText("ObjectText", &p.object);
+        PG::SeparatorText("ProximityPrompt");
+        PG::Checkbox("Enabled", &node->enabled);
+        PG::InputText("ActionText", &p.action);
+        PG::InputText("ObjectText", &p.object);
         static const char* keys[] = {"E", "F", "Q", "R", "G", "T", "X", "Z", "C", "V", "B", "One", "Two", "Three", "Space", "Return"};
-        if (ImGui::BeginCombo("Key", p.key.c_str())) {
+        if (PG::BeginCombo("Key", p.key.c_str())) {
             for (const char* k : keys)
                 if (ImGui::Selectable(k, p.key == k)) p.key = k;
             ImGui::EndCombo();
         }
-        ImGui::DragFloat("HoldDuration", &p.hold, 0.05f, 0.0f, 60.0f, "%.2f s");
-        ImGui::DragFloat("MaxActivationDistance", &p.range, 0.1f, 0.0f, 500.0f, "%.1f");
-        ImGui::Checkbox("RequiresLineOfSight", &p.lineOfSight);
-        ImGui::Checkbox("ClickablePrompt", &p.clickable);
-        ImGui::Spacing();
+        PG::DragFloat("HoldDuration", &p.hold, 0.05f, 0.0f, 60.0f, "%.2f s");
+        PG::DragFloat("MaxActivationDistance", &p.range, 0.1f, 0.0f, 500.0f, "%.1f");
+        PG::Checkbox("RequiresLineOfSight", &p.lineOfSight);
+        PG::Checkbox("ClickablePrompt", &p.clickable);
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Shows when a player walks up to the part it's in. Pressing the key (or clicking it) "
+        PG::TextDisabled("Shows when a player walks up to the part it's in. Pressing the key (or clicking it) "
                             "fires its Triggered event, with the player who pressed it.");
         ImGui::PopTextWrapPos();
         return;
@@ -612,32 +562,32 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
 
     if (node->isClickDetector()) {
         ClickProps& c = node->click;
-        ImGui::SeparatorText(c.drag ? "DragDetector" : "ClickDetector");
-        ImGui::DragFloat("MaxActivationDistance", &c.range, 0.1f, 0.0f, 500.0f, "%.1f");
-        ImGui::InputText("CursorIcon", &c.cursor);
+        PG::SeparatorText(c.drag ? "DragDetector" : "ClickDetector");
+        PG::DragFloat("MaxActivationDistance", &c.range, 0.1f, 0.0f, 500.0f, "%.1f");
+        PG::InputText("CursorIcon", &c.cursor);
         if (c.drag) {
-            ImGui::Checkbox("Enabled", &node->enabled);
-            ImGui::Combo("DragStyle", &c.dragStyle, "TranslatePlane\0TranslateLine\0TranslateViewPlane\0RotateAxis\0");
-            if (ImGui::DragFloat3("Axis", &c.axis.x, 0.05f, -1.0f, 1.0f) && !(glm::length(c.axis) > 1e-4f)) c.axis = {0, 1, 0};
+            PG::Checkbox("Enabled", &node->enabled);
+            PG::Combo("DragStyle", &c.dragStyle, "TranslatePlane\0TranslateLine\0TranslateViewPlane\0RotateAxis\0");
+            if (PG::DragFloat3("Axis", &c.axis.x, 0.05f, -1.0f, 1.0f) && !(glm::length(c.axis) > 1e-4f)) c.axis = {0, 1, 0};
             if (c.dragStyle == 1) {
-                ImGui::DragFloat("MinDragTranslation", &c.minMove, 0.1f, -1e6f, 0.0f, "%.1f");
-                ImGui::DragFloat("MaxDragTranslation", &c.maxMove, 0.1f, 0.0f, 1e6f, "%.1f");
+                PG::DragFloat("MinDragTranslation", &c.minMove, 0.1f, -1e6f, 0.0f, "%.1f");
+                PG::DragFloat("MaxDragTranslation", &c.maxMove, 0.1f, 0.0f, 1e6f, "%.1f");
             }
             if (c.dragStyle == 3) {
-                ImGui::DragFloat("MinDragAngle", &c.minAngle, 1.0f, -1e6f, 0.0f, "%.0f");
-                ImGui::DragFloat("MaxDragAngle", &c.maxAngle, 1.0f, 0.0f, 1e6f, "%.0f");
+                PG::DragFloat("MinDragAngle", &c.minAngle, 1.0f, -1e6f, 0.0f, "%.0f");
+                PG::DragFloat("MaxDragAngle", &c.maxAngle, 1.0f, 0.0f, 1e6f, "%.0f");
             }
-            ImGui::Spacing();
+            PG::Spacing();
             ImGui::PushTextWrapPos(0);
-            ImGui::TextDisabled("Players can grab the part or model it's in and drag it: across the floor (TranslatePlane), "
+            PG::TextDisabled("Players can grab the part or model it's in and drag it: across the floor (TranslatePlane), "
                                 "along a line (TranslateLine), across the screen (TranslateViewPlane) or spin it (RotateAxis). "
                                 "Fires DragStart, DragContinue and DragEnd, with the player.");
             ImGui::PopTextWrapPos();
             return;
         }
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Players can click (or tap) the part or model it's in when they're this close. "
+        PG::TextDisabled("Players can click (or tap) the part or model it's in when they're this close. "
                             "Fires MouseClick, RightMouseClick, MouseHoverEnter and MouseHoverLeave, with the player.");
         ImGui::PopTextWrapPos();
         return;
@@ -645,17 +595,17 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
 
     if (node->isHighlight()) {
         HighlightProps& h = node->highlight;
-        ImGui::SeparatorText("Highlight");
-        ImGui::Checkbox("Enabled", &node->enabled);
-        ImGui::ColorEdit3("FillColor", &h.fill.x);
-        ImGui::SliderFloat("FillTransparency", &h.fillTransparency, 0.0f, 1.0f, "%.2f");
-        ImGui::ColorEdit3("OutlineColor", &h.outline.x);
-        ImGui::SliderFloat("OutlineTransparency", &h.outlineTransparency, 0.0f, 1.0f, "%.2f");
+        PG::SeparatorText("Highlight");
+        PG::Checkbox("Enabled", &node->enabled);
+        PG::ColorEdit3("FillColor", &h.fill.x);
+        PG::SliderFloat("FillTransparency", &h.fillTransparency, 0.0f, 1.0f, "%.2f");
+        PG::ColorEdit3("OutlineColor", &h.outline.x);
+        PG::SliderFloat("OutlineTransparency", &h.outlineTransparency, 0.0f, 1.0f, "%.2f");
         int mode = h.onTop ? 0 : 1;
-        if (ImGui::Combo("DepthMode", &mode, "AlwaysOnTop\0Occluded\0")) h.onTop = mode == 0;
-        ImGui::Spacing();
+        if (PG::Combo("DepthMode", &mode, "AlwaysOnTop\0Occluded\0")) h.onTop = mode == 0;
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled(h.onTop ? "Colours the part or model it's in, with an outline round it, seen even through walls."
+        PG::TextDisabled(h.onTop ? "Colours the part or model it's in, with an outline round it, seen even through walls."
                                     : "Colours the part or model it's in, with an outline round it, only where you can see it.");
         ImGui::PopTextWrapPos();
         return;
@@ -663,18 +613,18 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
 
     if (node->isIkControl()) {
         IkProps& k = node->ik;
-        ImGui::SeparatorText("IKControl");
-        ImGui::Checkbox("Enabled", &node->enabled);
+        PG::SeparatorText("IKControl");
+        PG::Checkbox("Enabled", &node->enabled);
         int type = (int)k.type;
-        if (ImGui::Combo("Type", &type, "Transform\0Position\0Rotation\0LookAt\0")) k.type = (IkType)type;
-        ImGui::SliderFloat("Weight", &k.weight, 0.0f, 1.0f, "%.2f");
-        ImGui::DragFloat("SmoothTime", &k.smoothTime, 0.01f, 0.0f, 10.0f, "%.2f s");
+        if (PG::Combo("Type", &type, "Transform\0Position\0Rotation\0LookAt\0")) k.type = (IkType)type;
+        PG::SliderFloat("Weight", &k.weight, 0.0f, 1.0f, "%.2f");
+        PG::DragFloat("SmoothTime", &k.smoothTime, 0.01f, 0.0f, 10.0f, "%.2f s");
         auto name = [&](uint64_t id) { SceneNode* n = id ? m_scene->findById(id) : nullptr; return n ? n->name : std::string("(none)"); };
         ImGui::Text("EndEffector: %s", name(k.endEffector).c_str());
         ImGui::Text("Target: %s", name(k.target).c_str());
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Put it in a character: its arm or leg reaches for the Target (Position), or its head looks at it "
+        PG::TextDisabled("Put it in a character: its arm or leg reaches for the Target (Position), or its head looks at it "
                             "(LookAt). Set EndEffector and Target from a script, e.g. ik.Target = workspace.Ball");
         ImGui::PopTextWrapPos();
         return;
@@ -682,74 +632,74 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
 
     if (node->isPostEffect()) {
         PostEffectProps& p = node->post;
-        ImGui::SeparatorText(kPostEffectClassNames[(int)p.type]);
-        ImGui::Checkbox("Enabled", &node->enabled);
+        PG::SeparatorText(kPostEffectClassNames[(int)p.type]);
+        PG::Checkbox("Enabled", &node->enabled);
         const char* about = "";
         switch (p.type) {
             case PostEffectType::ColorCorrection:
-                ImGui::SliderFloat("Brightness", &p.brightness, -1.0f, 1.0f, "%.2f");
-                ImGui::SliderFloat("Contrast", &p.contrast, -1.0f, 1.0f, "%.2f");
-                ImGui::SliderFloat("Saturation", &p.saturation, -1.0f, 1.0f, "%.2f");
-                ImGui::ColorEdit3("TintColor", &p.tint.x);
+                PG::SliderFloat("Brightness", &p.brightness, -1.0f, 1.0f, "%.2f");
+                PG::SliderFloat("Contrast", &p.contrast, -1.0f, 1.0f, "%.2f");
+                PG::SliderFloat("Saturation", &p.saturation, -1.0f, 1.0f, "%.2f");
+                PG::ColorEdit3("TintColor", &p.tint.x);
                 about = "Changes the colours of everything on screen. Saturation -1 = black and white.";
                 break;
             case PostEffectType::SunRays:
-                ImGui::SliderFloat("Intensity", &p.intensity, 0.0f, 1.0f, "%.2f");
-                ImGui::SliderFloat("Spread", &p.spread, 0.0f, 1.0f, "%.2f");
+                PG::SliderFloat("Intensity", &p.intensity, 0.0f, 1.0f, "%.2f");
+                PG::SliderFloat("Spread", &p.spread, 0.0f, 1.0f, "%.2f");
                 about = "Rays of light from the sun, past whatever is in front of it. Off on Low graphics.";
                 break;
             case PostEffectType::DepthOfField:
-                ImGui::SliderFloat("FarIntensity", &p.farIntensity, 0.0f, 1.0f, "%.2f");
-                ImGui::SliderFloat("FocusDistance", &p.focusDistance, 0.0f, 200.0f, "%.1f studs");
-                ImGui::SliderFloat("InFocusRadius", &p.inFocusRadius, 0.0f, 50.0f, "%.1f studs");
-                ImGui::SliderFloat("NearIntensity", &p.nearIntensity, 0.0f, 1.0f, "%.2f");
+                PG::SliderFloat("FarIntensity", &p.farIntensity, 0.0f, 1.0f, "%.2f");
+                PG::SliderFloat("FocusDistance", &p.focusDistance, 0.0f, 200.0f, "%.1f studs");
+                PG::SliderFloat("InFocusRadius", &p.inFocusRadius, 0.0f, 50.0f, "%.1f studs");
+                PG::SliderFloat("NearIntensity", &p.nearIntensity, 0.0f, 1.0f, "%.2f");
                 about = "Blurs things nearer and further than FocusDistance, like a camera lens. Off on Low graphics.";
                 break;
             case PostEffectType::Bloom:
-                ImGui::SliderFloat("Intensity", &p.intensity, 0.0f, 1.0f, "%.2f");
-                ImGui::SliderFloat("Size", &p.size, 0.0f, 56.0f, "%.0f");
-                ImGui::SliderFloat("Threshold", &p.threshold, 0.0f, 4.0f, "%.2f");
+                PG::SliderFloat("Intensity", &p.intensity, 0.0f, 1.0f, "%.2f");
+                PG::SliderFloat("Size", &p.size, 0.0f, 56.0f, "%.0f");
+                PG::SliderFloat("Threshold", &p.threshold, 0.0f, 4.0f, "%.2f");
                 about = "Bright things glow. Takes over from the bloom in the Lighting settings.";
                 break;
             case PostEffectType::Blur:
-                ImGui::SliderFloat("Size", &p.size, 0.0f, 56.0f, "%.0f");
+                PG::SliderFloat("Size", &p.size, 0.0f, 56.0f, "%.0f");
                 about = "Blurs the whole screen (menus, being dizzy...).";
                 break;
         }
         clampPostEffect(p);
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("%s Works right inside Lighting (or the Camera, from a script). Several add up.", about);
+        PG::TextDisabled("%s Works right inside Lighting (or the Camera, from a script). Several add up.", about);
         ImGui::PopTextWrapPos();
         return;
     }
 
     if (node->isMaterialVariant()) {
-        ImGui::SeparatorText("MaterialVariant");
+        PG::SeparatorText("MaterialVariant");
         MaterialUi::edit(node->variant);
-        if (ImGui::Button("Open in the Material Editor", ImVec2(-1, 0)) && m_openMaterials) m_openMaterials(node->id);
-        ImGui::Spacing();
+        if (PG::Button("Open in the Material Editor", ImVec2(-1, 0)) && m_openMaterials) m_openMaterials(node->id);
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Put it in MaterialService. A part shows it when its Material is the BaseMaterial and its MaterialVariant is this one's name.");
+        PG::TextDisabled("Put it in MaterialService. A part shows it when its Material is the BaseMaterial and its MaterialVariant is this one's name.");
         ImGui::PopTextWrapPos();
         return;
     }
 
     if (node->isSky()) {
         SkyProps& k = node->sky;
-        ImGui::SeparatorText("Sky");
+        PG::SeparatorText("Sky");
         const std::pair<const char*, std::string*> pics[] = {
             {"SkyboxBk", &k.bk}, {"SkyboxDn", &k.dn}, {"SkyboxFt", &k.ft}, {"SkyboxLf", &k.lf},
             {"SkyboxRt", &k.rt}, {"SkyboxUp", &k.up}, {"SunTextureId", &k.sun}, {"MoonTextureId", &k.moon}};
-        for (auto& [label, value] : pics) ImGui::InputTextWithHint(label, "(the engine's own)", value);
-        ImGui::Checkbox("CelestialBodiesShown", &k.celestial);
-        ImGui::SliderInt("StarCount", &k.starCount, 0, 5000);
-        ImGui::SliderFloat("SunAngularSize", &k.sunSize, 0.0f, 60.0f, "%.1f");
-        ImGui::SliderFloat("MoonAngularSize", &k.moonSize, 0.0f, 60.0f, "%.1f");
+        for (auto& [label, value] : pics) PG::InputTextWithHint(label, "(the engine's own)", value);
+        PG::Checkbox("CelestialBodiesShown", &k.celestial);
+        PG::SliderInt("StarCount", &k.starCount, 0, 5000);
+        PG::SliderFloat("SunAngularSize", &k.sunSize, 0.0f, 60.0f, "%.1f");
+        PG::SliderFloat("MoonAngularSize", &k.moonSize, 0.0f, 60.0f, "%.1f");
         clampSky(k);
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Put it right inside Lighting. Pictures are like a Decal's (an uploaded picture or a file in the games "
+        PG::TextDisabled("Put it right inside Lighting. Pictures are like a Decal's (an uploaded picture or a file in the games "
                             "folder); the skybox shows when all six load, else the Lighting settings' sky stays.");
         ImGui::PopTextWrapPos();
         return;
@@ -758,15 +708,15 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     if (node->isEffect()) {
         EffectProps& e = node->effect;
         const bool beam = node->kind == NodeKind::Beam;
-        ImGui::SeparatorText(beam ? "Beam" : "Trail");
-        ImGui::Checkbox("Enabled", &node->enabled);
+        PG::SeparatorText(beam ? "Beam" : "Trail");
+        PG::Checkbox("Enabled", &node->enabled);
         // Its two Attachments: pick from every Attachment in the game.
         std::vector<SceneNode*> atts;
         m_scene->forEach([&](SceneNode* n) { if (n->isAttachment()) atts.push_back(n); });
         auto label = [](const SceneNode* a) { return a ? (a->parent ? a->parent->name + "." + a->name : a->name) : std::string("(none)"); };
         auto pick = [&](const char* name, uint64_t& id) {
             SceneNode* cur = id ? m_scene->findById(id) : nullptr;
-            if (ImGui::BeginCombo(name, label(cur).c_str())) {
+            if (PG::BeginCombo(name, label(cur).c_str())) {
                 if (ImGui::Selectable("(none)", !cur)) id = 0;
                 for (SceneNode* a : atts) {
                     ImGui::PushID(a);
@@ -780,38 +730,38 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         pick("Attachment1", e.a1);
         // Colour and see-through at each end (scripts can use more keypoints).
         glm::vec3 c0 = e.color.front().c, c1 = e.color.back().c;
-        bool colEdit = ImGui::ColorEdit3("Color (start)", &c0.x);
-        colEdit |= ImGui::ColorEdit3("Color (end)", &c1.x);
+        bool colEdit = PG::ColorEdit3("Color (start)", &c0.x);
+        colEdit |= PG::ColorEdit3("Color (end)", &c1.x);
         if (colEdit) e.color = {{0.0f, c0}, {1.0f, c1}};
         float t0 = e.transparency.front().v, t1 = e.transparency.back().v;
-        bool trEdit = ImGui::SliderFloat("Transparency (start)", &t0, 0.0f, 1.0f, "%.2f");
-        trEdit |= ImGui::SliderFloat("Transparency (end)", &t1, 0.0f, 1.0f, "%.2f");
+        bool trEdit = PG::SliderFloat("Transparency (start)", &t0, 0.0f, 1.0f, "%.2f");
+        trEdit |= PG::SliderFloat("Transparency (end)", &t1, 0.0f, 1.0f, "%.2f");
         if (trEdit) e.transparency = {{0.0f, t0}, {1.0f, t1}};
-        ImGui::SliderFloat("LightEmission", &e.lightEmission, 0.0f, 1.0f, "%.2f");
-        ImGui::Checkbox("FaceCamera", &e.faceCamera);
-        ImGui::InputText("Texture", &e.texture);
+        PG::SliderFloat("LightEmission", &e.lightEmission, 0.0f, 1.0f, "%.2f");
+        PG::Checkbox("FaceCamera", &e.faceCamera);
+        PG::InputText("Texture", &e.texture);
         if (beam) {
-            ImGui::DragFloat("Width0", &e.width0, 0.02f, 0.0f, 1000.0f, "%.2f");
-            ImGui::DragFloat("Width1", &e.width1, 0.02f, 0.0f, 1000.0f, "%.2f");
-            ImGui::DragFloat("CurveSize0", &e.curve0, 0.05f, -1000.0f, 1000.0f, "%.2f");
-            ImGui::DragFloat("CurveSize1", &e.curve1, 0.05f, -1000.0f, 1000.0f, "%.2f");
-            ImGui::DragInt("Segments", &e.segments, 0.2f, 1, 1000);
+            PG::DragFloat("Width0", &e.width0, 0.02f, 0.0f, 1000.0f, "%.2f");
+            PG::DragFloat("Width1", &e.width1, 0.02f, 0.0f, 1000.0f, "%.2f");
+            PG::DragFloat("CurveSize0", &e.curve0, 0.05f, -1000.0f, 1000.0f, "%.2f");
+            PG::DragFloat("CurveSize1", &e.curve1, 0.05f, -1000.0f, 1000.0f, "%.2f");
+            PG::DragInt("Segments", &e.segments, 0.2f, 1, 1000);
             int mode = e.textureWrap ? 1 : 0;
-            if (ImGui::Combo("TextureMode", &mode, "Stretch\0Wrap\0")) e.textureWrap = mode == 1;
-            ImGui::DragFloat("TextureLength", &e.textureLength, 0.02f, 0.001f, 10000.0f, "%.2f");
-            ImGui::DragFloat("TextureSpeed", &e.textureSpeed, 0.02f, -1000.0f, 1000.0f, "%.2f");
+            if (PG::Combo("TextureMode", &mode, "Stretch\0Wrap\0")) e.textureWrap = mode == 1;
+            PG::DragFloat("TextureLength", &e.textureLength, 0.02f, 0.001f, 10000.0f, "%.2f");
+            PG::DragFloat("TextureSpeed", &e.textureSpeed, 0.02f, -1000.0f, 1000.0f, "%.2f");
         } else {
-            ImGui::DragFloat("Lifetime", &e.lifetime, 0.02f, 0.0f, 20.0f, "%.2f s");
-            ImGui::DragFloat("MinLength", &e.minLength, 0.01f, 0.0f, 1000.0f, "%.2f");
-            ImGui::DragFloat("MaxLength", &e.maxLength, 0.1f, 0.0f, 10000.0f, e.maxLength > 0.0f ? "%.1f" : "no limit");
+            PG::DragFloat("Lifetime", &e.lifetime, 0.02f, 0.0f, 20.0f, "%.2f s");
+            PG::DragFloat("MinLength", &e.minLength, 0.01f, 0.0f, 1000.0f, "%.2f");
+            PG::DragFloat("MaxLength", &e.maxLength, 0.1f, 0.0f, 10000.0f, e.maxLength > 0.0f ? "%.1f" : "no limit");
             float w0 = e.widthScale.front().v, w1 = e.widthScale.back().v;
-            bool wEdit = ImGui::DragFloat("WidthScale (new)", &w0, 0.01f, 0.0f, 100.0f, "%.2f");
-            wEdit |= ImGui::DragFloat("WidthScale (old)", &w1, 0.01f, 0.0f, 100.0f, "%.2f");
+            bool wEdit = PG::DragFloat("WidthScale (new)", &w0, 0.01f, 0.0f, 100.0f, "%.2f");
+            wEdit |= PG::DragFloat("WidthScale (old)", &w1, 0.01f, 0.0f, 100.0f, "%.2f");
             if (wEdit) e.widthScale = {{0.0f, w0}, {1.0f, w1}};
         }
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled(beam ? "A ribbon between its two Attachments. CurveSize bends it along each Attachment's X axis."
+        PG::TextDisabled(beam ? "A ribbon between its two Attachments. CurveSize bends it along each Attachment's X axis."
                                  : "Leaves a ribbon behind between its two Attachments as they move, fading over Lifetime seconds.");
         ImGui::PopTextWrapPos();
         return;
@@ -819,84 +769,84 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
 
     if (node->isParticles()) {
         ParticleProps& p = node->particle;
-        ImGui::SeparatorText(node->particleClass());
-        ImGui::Checkbox("Enabled", &node->enabled);
+        PG::SeparatorText(node->particleClass());
+        PG::Checkbox("Enabled", &node->enabled);
         auto note = [](const char* text) {
-            ImGui::Spacing();
+            PG::Spacing();
             ImGui::PushTextWrapPos(0);
-            ImGui::TextDisabled("%s", text);
+            PG::TextDisabled("%s", text);
             ImGui::PopTextWrapPos();
         };
         switch (p.type) {
             case ParticleType::Fire:
-                ImGui::ColorEdit3("Color", &p.color1.x);
-                ImGui::ColorEdit3("SecondaryColor", &p.color2.x);
-                ImGui::SliderFloat("Size", &p.fxSize, 2.0f, 30.0f, "%.1f");
-                ImGui::SliderFloat("Heat", &p.rise, -25.0f, 25.0f, "%.1f");
+                PG::ColorEdit3("Color", &p.color1.x);
+                PG::ColorEdit3("SecondaryColor", &p.color2.x);
+                PG::SliderFloat("Size", &p.fxSize, 2.0f, 30.0f, "%.1f");
+                PG::SliderFloat("Heat", &p.rise, -25.0f, 25.0f, "%.1f");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("How fast the flames rise (below 0: they fall).");
                 note("Flames rising from the middle of the part it's in. They fade from Color to SecondaryColor.");
                 return;
             case ParticleType::Smoke:
-                ImGui::ColorEdit3("Color", &p.color1.x);
-                ImGui::SliderFloat("Opacity", &p.opacity, 0.0f, 1.0f, "%.2f");
-                ImGui::SliderFloat("RiseVelocity", &p.rise, -25.0f, 25.0f, "%.1f");
-                ImGui::SliderFloat("Size", &p.fxSize, 0.1f, 100.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+                PG::ColorEdit3("Color", &p.color1.x);
+                PG::SliderFloat("Opacity", &p.opacity, 0.0f, 1.0f, "%.2f");
+                PG::SliderFloat("RiseVelocity", &p.rise, -25.0f, 25.0f, "%.1f");
+                PG::SliderFloat("Size", &p.fxSize, 0.1f, 100.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
                 note("Puffs of smoke drifting up from the part it's in, growing as they go.");
                 return;
             case ParticleType::Sparkles:
-                ImGui::ColorEdit3("SparkleColor", &p.color1.x);
+                PG::ColorEdit3("SparkleColor", &p.color1.x);
                 note("Twinkling sparkles all round the part it's in.");
                 return;
             default: break;
         }
         auto range = [](const char* name, glm::vec2& r, float speed, float lo, float hi, const char* fmt) {
-            if (ImGui::DragFloat2(name, &r.x, speed, lo, hi, fmt)) { r = glm::clamp(r, lo, hi); if (r.y < r.x) r.y = r.x; }
+            if (PG::DragFloat2(name, &r.x, speed, lo, hi, fmt)) { r = glm::clamp(r, lo, hi); if (r.y < r.x) r.y = r.x; }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Min, Max: each particle gets a random value between them.");
         };
-        ImGui::DragFloat("Rate", &p.rate, 0.5f, 0.0f, 100000.0f, "%.1f / s");
+        PG::DragFloat("Rate", &p.rate, 0.5f, 0.0f, 100000.0f, "%.1f / s");
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Particles a second. At most %d from one emitter are out at once.", kMaxSpritesPerEmitter);
         range("Lifetime", p.lifetime, 0.05f, 0.0f, 1000.0f, "%.2f s");
         range("Speed", p.speed, 0.1f, -10000.0f, 10000.0f, "%.1f");
-        ImGui::DragFloat2("SpreadAngle", &p.spread.x, 0.5f, -360.0f, 360.0f, "%.0f deg");
+        PG::DragFloat2("SpreadAngle", &p.spread.x, 0.5f, -360.0f, 360.0f, "%.0f deg");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far (degrees) they can veer from EmissionDirection, each way.");
         int dir = (int)p.direction;
-        if (ImGui::Combo("EmissionDirection", &dir, kFaceNames, 6)) p.direction = (Face)dir;
+        if (PG::Combo("EmissionDirection", &dir, kFaceNames, 6)) p.direction = (Face)dir;
         // Over each particle's life: start and end (scripts can use more keypoints).
         glm::vec3 c0 = p.color.front().c, c1 = p.color.back().c;
-        bool edit = ImGui::ColorEdit3("Color (start)", &c0.x);
-        edit |= ImGui::ColorEdit3("Color (end)", &c1.x);
+        bool edit = PG::ColorEdit3("Color (start)", &c0.x);
+        edit |= PG::ColorEdit3("Color (end)", &c1.x);
         if (edit) p.color = {{0.0f, c0}, {1.0f, c1}};
         float s0 = p.size.front().v, s1 = p.size.back().v;
-        edit = ImGui::DragFloat("Size (start)", &s0, 0.02f, 0.0f, 1000.0f, "%.2f");
-        edit |= ImGui::DragFloat("Size (end)", &s1, 0.02f, 0.0f, 1000.0f, "%.2f");
+        edit = PG::DragFloat("Size (start)", &s0, 0.02f, 0.0f, 1000.0f, "%.2f");
+        edit |= PG::DragFloat("Size (end)", &s1, 0.02f, 0.0f, 1000.0f, "%.2f");
         if (edit) p.size = {{0.0f, std::max(0.0f, s0)}, {1.0f, std::max(0.0f, s1)}};
         float t0 = p.transparency.front().v, t1 = p.transparency.back().v;
-        edit = ImGui::SliderFloat("Transparency (start)", &t0, 0.0f, 1.0f, "%.2f");
-        edit |= ImGui::SliderFloat("Transparency (end)", &t1, 0.0f, 1.0f, "%.2f");
+        edit = PG::SliderFloat("Transparency (start)", &t0, 0.0f, 1.0f, "%.2f");
+        edit |= PG::SliderFloat("Transparency (end)", &t1, 0.0f, 1.0f, "%.2f");
         if (edit) p.transparency = {{0.0f, t0}, {1.0f, t1}};
-        ImGui::SliderFloat("LightEmission", &p.lightEmission, 0.0f, 1.0f, "%.2f");
-        ImGui::DragFloat3("Acceleration", &p.acceleration.x, 0.1f, -10000.0f, 10000.0f, "%.1f");
-        ImGui::DragFloat("Drag", &p.drag, 0.02f, -100.0f, 100.0f, "%.2f");
+        PG::SliderFloat("LightEmission", &p.lightEmission, 0.0f, 1.0f, "%.2f");
+        PG::DragFloat3("Acceleration", &p.acceleration.x, 0.1f, -10000.0f, 10000.0f, "%.1f");
+        PG::DragFloat("Drag", &p.drag, 0.02f, -100.0f, 100.0f, "%.2f");
         range("Rotation", p.rotation, 1.0f, -36000.0f, 36000.0f, "%.0f deg");
         range("RotSpeed", p.rotSpeed, 1.0f, -36000.0f, 36000.0f, "%.0f deg/s");
-        ImGui::Checkbox("LockedToPart", &p.locked);
+        PG::Checkbox("LockedToPart", &p.locked);
         // The picture: a built-in one, or your own.
         static const char* looks[] = {"Glow", "Smoke", "Fire", "Sparkle"};
         int look = -1;
         for (int i = 0; i < kParticleLookCount; ++i) if (p.texture == kParticleLooks[i]) look = i;
-        if (ImGui::BeginCombo("Texture", look >= 0 ? looks[look] : "(a picture)")) {
+        if (PG::BeginCombo("Texture", look >= 0 ? looks[look] : "(a picture)")) {
             for (int i = 0; i < kParticleLookCount; ++i)
                 if (ImGui::Selectable(looks[i], look == i)) p.texture = kParticleLooks[i];
             ImGui::EndCombo();
         }
-        ImGui::InputText("Texture picture", &p.texture);
+        PG::InputText("Texture picture", &p.texture);
         if (ImGui::IsItemDeactivatedAfterEdit()) p.texture = particleTexture(Online::assetRef(p.texture));
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Your own picture: a .png in the games folder, a full path, or gb:<id>.\nEmpty = the soft glow.");
-        if (ImGui::Button("Emit 20")) { p.pendingEmit += 20; }
+        if (PG::Button("Emit 20")) { p.pendingEmit += 20; }
         ImGui::SameLine();
-        if (ImGui::Button("Clear")) p.pendingClear = true;
+        if (PG::Button("Clear")) p.pendingClear = true;
         note("Particles fly out of the part it's in (from anywhere inside it), or from an Attachment's point. "
              "Scripts: emitter:Emit(n) sends out n at once, emitter:Clear() removes them.");
         return;
@@ -905,35 +855,34 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     if (node->isGui()) { renderGui(node); return; }
 
     if (node->isCamera()) {
-        ImGui::SeparatorText("Camera");
-        ImGui::DragFloat3("Position", &node->transform.position.x, 0.05f);
-        ImGui::DragFloat3("Orientation", &node->transform.rotation.x, 0.5f, -360.0f, 360.0f, "%.1f");
-        ImGui::SliderFloat("FieldOfView", &node->fieldOfView, 1.0f, 120.0f, "%.0f deg");
+        PG::SeparatorText("Camera");
+        PG::DragFloat3("Position", &node->transform.position.x, 0.05f);
+        PG::DragFloat3("Orientation", &node->transform.rotation.x, 0.5f, -360.0f, 360.0f, "%.1f");
+        PG::SliderFloat("FieldOfView", &node->fieldOfView, 1.0f, 120.0f, "%.0f deg");
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("A camera for a ViewportFrame (its CurrentCamera): it looks along its front (-Z). "
+        PG::TextDisabled("A camera for a ViewportFrame (its CurrentCamera): it looks along its front (-Z). "
                             "Turn it with Orientation, or set its CFrame in a script.");
         ImGui::PopTextWrapPos();
         return;
     }
 
     if (node->isDecal()) {
-        ImGui::SeparatorText("Decal");
-        ImGui::InputText("Texture", &node->texture);
+        PG::SeparatorText("Decal");
+        PG::InputText("Texture", &node->texture);
         if (ImGui::IsItemDeactivatedAfterEdit()) node->texture = Online::assetRef(node->texture);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("A picture: a .png / .jpg in the games folder, a full path,\nor gb:<id> for one uploaded on the Create page.");
         if (FileDialog::available()) {
-            ImGui::SameLine();
-            if (ImGui::Button("Browse...")) {
+            if (PG::Button("Browse...")) {
                 std::string path = FileDialog::openImage("Pick a picture for the decal");
                 if (!path.empty()) { node->texture = Paths::relativeToGames(path); m_scene->markDirty(); }
             }
         }
         int face = (int)node->face;
-        if (ImGui::Combo("Face", &face, kFaceNames, 6)) node->face = (Face)face;
-        ImGui::ColorEdit3("Color3", &node->color.x);
+        if (PG::Combo("Face", &face, kFaceNames, 6)) node->face = (Face)face;
+        PG::ColorEdit3("Color3", &node->color.x);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tints the picture. White shows it as it is.");
-        ImGui::SliderFloat("Transparency", &node->transparency, 0.0f, 1.0f);
+        PG::SliderFloat("Transparency", &node->transparency, 0.0f, 1.0f);
         StudioLearnHighlight::mark("properties.Transparency");
         if (unsigned tex = Textures::get(node->texture)) {
             int w = 0, h = 0;
@@ -944,35 +893,35 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         } else if (!node->texture.empty()) {
             ImGui::TextColored(ImVec4(0.9f, 0.5f, 0.3f, 1), "Can't find that picture yet.");
         }
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Put a Decal inside a part: the picture is stuck on the side you pick in Face, "
+        PG::TextDisabled("Put a Decal inside a part: the picture is stuck on the side you pick in Face, "
                             "stretched to fill it.");
         ImGui::PopTextWrapPos();
         return;
     }
 
     if (node->isTool()) {
-        ImGui::SeparatorText("Tool");
-        ImGui::Checkbox("Enabled", &node->enabled);
-        ImGui::InputText("ToolTip", &node->toolTip);
-        ImGui::Checkbox("CanBeDropped", &node->canBeDropped);
-        ImGui::Checkbox("In StarterPack", &node->starterTool);
+        PG::SeparatorText("Tool");
+        PG::Checkbox("Enabled", &node->enabled);
+        PG::InputText("ToolTip", &node->toolTip);
+        PG::Checkbox("CanBeDropped", &node->canBeDropped);
+        PG::Checkbox("In StarterPack", &node->starterTool);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Everyone gets this tool in their backpack when they spawn.");
-        ImGui::DragFloat3("GripPos", &node->gripPos.x, 0.02f);
+        PG::DragFloat3("GripPos", &node->gripPos.x, 0.02f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Where on the Handle the hand holds it (in the Handle's own space).");
         {   // Grip's turn, shown as its three axes like Roblox's GripForward / GripRight / GripUp
             glm::vec3 axes[3] = {node->gripRot[2], node->gripRot[0], node->gripRot[1]};
             const char* names[3] = {"GripForward", "GripRight", "GripUp"};
             for (int i = 0; i < 3; ++i)
-                if (ImGui::DragFloat3(names[i], &axes[i].x, 0.01f, -1.0f, 1.0f) && glm::length(axes[i]) > 1e-4f)
+                if (PG::DragFloat3(names[i], &axes[i].x, 0.01f, -1.0f, 1.0f) && glm::length(axes[i]) > 1e-4f)
                     node->gripRot[i == 0 ? 2 : i == 1 ? 0 : 1] = glm::normalize(axes[i]);
             if (ImGui::SmallButton("Reset grip turn")) node->gripRot = kDefaultGripRot;
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Back to holding the Handle's long side (Y) straight out of the fist.");
         }
-        ImGui::Spacing();
+        PG::Spacing();
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Put a part called Handle inside: that's what the character holds (its long side, Y, "
+        PG::TextDisabled("Put a part called Handle inside: that's what the character holds (its long side, Y, "
                             "points forward out of the hand). Players pick tools up by touching them, and press "
                             "1-9 to equip. Scripts inside get tool.Activated when the player clicks.");
         ImGui::PopTextWrapPos();
@@ -981,28 +930,28 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
 
     // --- Real liquid ---
     if (node->kind == NodeKind::FluidSystem) {
-        ImGui::ColorEdit3("Color", &node->color.x);
+        PG::ColorEdit3("Color", &node->color.x);
         StudioLearnHighlight::mark("properties.Color");
-        ImGui::SliderFloat("Viscosity", &node->viscosity, 0.0f, 1.0f);
+        PG::SliderFloat("Viscosity", &node->viscosity, 0.0f, 1.0f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How thick it is: 0 runs like water, 1 oozes like honey.");
-        ImGui::SliderFloat("SurfaceTension", &node->surfaceTension, 0.0f, 1.0f);
+        PG::SliderFloat("SurfaceTension", &node->surfaceTension, 0.0f, 1.0f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much it sticks to itself: higher makes beads and strands.");
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("A kind of liquid. FluidEmitters pour it out (set their FluidSystem to this).");
+        PG::TextDisabled("A kind of liquid. FluidEmitters pour it out (set their FluidSystem to this).");
         ImGui::PopTextWrapPos();
         return;
     }
     if (node->kind == NodeKind::FluidEmitter) {
-        ImGui::Checkbox("Enabled", &node->enabled);
-        ImGui::DragFloat3("Position", &node->transform.position.x, 0.1f);
-        ImGui::DragFloat3("Size", &node->transform.scale.x, 0.05f, 0.1f, 100.0f);
-        ImGui::DragFloat("Rate", &node->fluidRate, 5.0f, 0.0f, 100000.0f, "%.0f drops/s");
-        ImGui::DragFloat3("Velocity", &node->fluidVelocity.x, 0.1f);
+        PG::Checkbox("Enabled", &node->enabled);
+        PG::DragFloat3("Position", &node->transform.position.x, 0.1f);
+        PG::DragFloat3("Size", &node->transform.scale.x, 0.05f, 0.1f, 100.0f);
+        PG::DragFloat("Rate", &node->fluidRate, 5.0f, 0.0f, 100000.0f, "%.0f drops/s");
+        PG::DragFloat3("Velocity", &node->fluidVelocity.x, 0.1f);
         std::string current = "Water (default)";
         std::vector<SceneNode*> systems;
         m_scene->forEach([&](SceneNode* n) { if (n->kind == NodeKind::FluidSystem) systems.push_back(n); });
         for (SceneNode* sys : systems) if (sys->id == node->fluidSystem) current = sys->name;
-        if (ImGui::BeginCombo("FluidSystem", current.c_str())) {
+        if (PG::BeginCombo("FluidSystem", current.c_str())) {
             if (ImGui::Selectable("Water (default)", node->fluidSystem == 0)) node->fluidSystem = 0;
             for (SceneNode* sys : systems) {
                 ImGui::PushID((int)sys->id);
@@ -1012,37 +961,36 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
             ImGui::EndCombo();
         }
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("Pours real liquid while the game runs: Rate drops a second, out of a box "
+        PG::TextDisabled("Pours real liquid while the game runs: Rate drops a second, out of a box "
                             "Size big, moving at Velocity.");
         ImGui::PopTextWrapPos();
         return;
     }
 
     if (node->isSound()) {
-        if (ImGui::BeginCombo("Sound", node->soundId.c_str())) {
+        if (PG::BeginCombo("Sound", node->soundId.c_str())) {
             for (const auto& name : Audio::builtinNames())
                 if (ImGui::Selectable(name.c_str(), node->soundId == name)) node->soundId = name;
             ImGui::EndCombo();
         }
         StudioLearnHighlight::mark("properties.Sound");
-        ImGui::InputText("File", &node->soundId);
+        PG::InputText("File", &node->soundId);
         StudioLearnHighlight::mark("properties.Sound");
         if (ImGui::IsItemDeactivatedAfterEdit()) node->soundId = Online::assetRef(node->soundId);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("A built-in name, or a .wav / .mp3 / .ogg / .flac file in the games folder\n(e.g. music/theme.mp3)");
-        ImGui::SliderFloat("Volume", &node->volume, 0.0f, 2.0f);
+        PG::SliderFloat("Volume", &node->volume, 0.0f, 2.0f);
         StudioLearnHighlight::mark("properties.Volume");
-        ImGui::SliderFloat("Pitch", &node->pitch, 0.25f, 3.0f);
-        ImGui::Checkbox("Looped", &node->looped);
-        ImGui::SameLine();
-        ImGui::Checkbox("Autoplay", &node->autoplay);
+        PG::SliderFloat("Pitch", &node->pitch, 0.25f, 3.0f);
+        PG::Checkbox("Looped", &node->looped);
+        PG::Checkbox("Autoplay", &node->autoplay);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Starts playing when the game starts (great for music)");
         // SoundGroup: pick from every SoundGroup in the game (usually in SoundService).
         {
             std::vector<SceneNode*> groups;
             m_scene->forEach([&](SceneNode* n) { if (n->isSoundGroup()) groups.push_back(n); });
             SceneNode* now = SoundMix::groupOf(*m_scene, node);
-            if (ImGui::BeginCombo("SoundGroup", now ? now->name.c_str() : "(none)")) {
+            if (PG::BeginCombo("SoundGroup", now ? now->name.c_str() : "(none)")) {
                 if (ImGui::Selectable("(none)", !now)) node->soundGroup = 0;
                 for (SceneNode* g : groups) {
                     ImGui::PushID((int)g->id);
@@ -1053,29 +1001,29 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
             }
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("Plays through this group: its Volume multiplies this sound's, and its effects change it too.");
-            if (now) ImGui::TextDisabled("Plays at %.2f (Volume x the groups' Volume)", SoundMix::volume(*m_scene, node));
+            if (now) PG::TextDisabled("Plays at %.2f (Volume x the groups' Volume)", SoundMix::volume(*m_scene, node));
         }
         static int preview = 0;
-        if (ImGui::Button(Audio::isPlaying(preview) ? "Stop preview" : "Preview")) {
+        if (PG::Button(Audio::isPlaying(preview) ? "Stop preview" : "Preview")) {
             if (Audio::isPlaying(preview)) Audio::stop(preview);
             else {
                 preview = Audio::play(node->soundId, SoundMix::volume(*m_scene, node), node->pitch, false);
                 SoundMix::apply(*m_scene, node, preview);   // with its effects (and its group's)
             }
         }
-        ImGui::TextDisabled("Scripts: script.Parent:Play()  /  Sounds.Play(\"coin\")");
+        PG::TextDisabled("Scripts: script.Parent:Play()  /  Sounds.Play(\"coin\")");
         return;
     }
 
     if (node->isSoundGroup()) {
-        ImGui::SeparatorText("SoundGroup");
-        ImGui::SliderFloat("Volume", &node->volume, 0.0f, 2.0f, "%.2f");
+        PG::SeparatorText("SoundGroup");
+        PG::SliderFloat("Volume", &node->volume, 0.0f, 2.0f, "%.2f");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Every sound in the group plays at its own Volume times this (0-10; Ctrl+click to type)");
         node->volume = std::clamp(node->volume, 0.0f, 10.0f);
         int sounds = 0;
         m_scene->forEach([&](SceneNode* n) { if (n->isSound() && n->soundGroup == node->id) ++sounds; });
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled("%d sound%s use%s this group. Set a Sound's SoundGroup in its Properties; put sound effects "
+        PG::TextDisabled("%d sound%s use%s this group. Set a Sound's SoundGroup in its Properties; put sound effects "
                             "(Insert Object > Sound) inside the group to change all of them together. A SoundGroup inside "
                             "another one is part of it (the Volumes multiply).", sounds, sounds == 1 ? "" : "s", sounds == 1 ? "s" : "");
         ImGui::PopTextWrapPos();
@@ -1083,14 +1031,14 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     }
     if (node->isSoundEffect()) {
         SoundFxProps& f = node->soundFx;
-        ImGui::SeparatorText(SoundFx::kClassNames[(int)f.type]);
-        ImGui::Checkbox("Enabled", &node->enabled);
-        ImGui::InputInt("Priority", &f.priority);
+        PG::SeparatorText(SoundFx::kClassNames[(int)f.type]);
+        PG::Checkbox("Enabled", &node->enabled);
+        PG::InputInt("Priority", &f.priority);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Effects with a higher Priority are applied first");
         const auto& params = SoundFx::params(f.type);
         for (size_t i = 0; i < params.size(); ++i) {
             const SoundFx::Param& p = params[i];
-            ImGui::SliderFloat(p.name, &f.v[i], p.lo, p.hi, "%.3g");
+            PG::SliderFloat(p.name, &f.v[i], p.lo, p.hi, "%.3g");
             f.v[i] = std::clamp(f.v[i], p.lo, p.hi);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.tip);
         }
@@ -1099,116 +1047,115 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         if (!in || (!in->isSound() && !in->isSoundGroup()))
             ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Put it inside a Sound or SoundGroup: that's what it changes.");
         else
-            ImGui::TextDisabled(in->isSound() ? "Changes the sound it's in." : "Changes every sound in the group it's in, mixed together.");
+            PG::TextDisabled(in->isSound() ? "Changes the sound it's in." : "Changes every sound in the group it's in, mixed together.");
         ImGui::PopTextWrapPos();
         return;
     }
 
     if (node->isBone()) {   // a joint of an armature (see the Armature window)
-        ImGui::DragFloat3("Position", &node->transform.position.x, 0.01f);
+        PG::DragFloat3("Position", &node->transform.position.x, 0.01f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Studs from the part's middle (or from the bone it's in)");
-        ImGui::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
+        PG::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
         BoneUi::edit(*m_scene, *node);
         return;
     }
     if (node->isAttachment()) {
-        ImGui::DragFloat3("Offset", &node->transform.position.x, 0.01f);
+        PG::DragFloat3("Offset", &node->transform.position.x, 0.01f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Where on the part (in the part's own space)");
-        ImGui::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
-        ImGui::TextDisabled("Its red (X) direction is the hinge axis.");
+        PG::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
+        PG::TextDisabled("Its red (X) direction is the hinge axis.");
         return;
     }
     if (node->isMover()) {
         MoverProps& m = node->mover;
         const MoverType t = m.type;
         const bool classic = isBodyMover(t);
-        ImGui::Checkbox("Enabled", &node->enabled);
+        PG::Checkbox("Enabled", &node->enabled);
         if (!classic) {
             SceneNode* a0 = m_scene->findById(node->ref0);
             SceneNode* a1 = m_scene->findById(node->ref1);
             auto owner = [](SceneNode* r) { return r ? (r->parent ? r->parent->name + "." + r->name : r->name) : std::string("(none)"); };
-            ImGui::TextDisabled("Attachment0: %s", owner(a0).c_str());
+            PG::TextDisabled("Attachment0: %s", owner(a0).c_str());
             if (t == MoverType::AlignPosition || t == MoverType::AlignOrientation)
-                ImGui::TextDisabled("Attachment1: %s", owner(a1).c_str());
+                PG::TextDisabled("Attachment1: %s", owner(a1).c_str());
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Set these from a script: mover.Attachment0 = part.Attachment");
         }
         auto huge = [](float& v, const char* label) {   // (0 = no limit: shown as "huge")
-            ImGui::DragFloat(label, &v, 10.0f, 0.0f, 1e30f, v >= 1e29f ? "huge" : "%.0f", ImGuiSliderFlags_Logarithmic);
+            PG::DragFloat(label, &v, 10.0f, 0.0f, 1e30f, v >= 1e29f ? "huge" : "%.0f", ImGuiSliderFlags_Logarithmic);
         };
         switch (t) {
             case MoverType::BodyVelocity:
-                ImGui::DragFloat3("Velocity", &m.value.x, 0.1f);
-                ImGui::DragFloat3("MaxForce", &m.maxAxes.x, 10.0f, 0.0f, 1e30f, "%.0f");
+                PG::DragFloat3("Velocity", &m.value.x, 0.1f);
+                PG::DragFloat3("MaxForce", &m.maxAxes.x, 10.0f, 0.0f, 1e30f, "%.0f");
                 break;
             case MoverType::BodyPosition:
-                ImGui::DragFloat3("Position", &m.value.x, 0.1f);
-                ImGui::DragFloat3("MaxForce", &m.maxAxes.x, 10.0f, 0.0f, 1e30f, "%.0f");
-                ImGui::DragFloat("P", &m.p, 10.0f, 0.0f, 1e7f);
-                ImGui::DragFloat("D", &m.d, 5.0f, 0.0f, 1e7f);
+                PG::DragFloat3("Position", &m.value.x, 0.1f);
+                PG::DragFloat3("MaxForce", &m.maxAxes.x, 10.0f, 0.0f, 1e30f, "%.0f");
+                PG::DragFloat("P", &m.p, 10.0f, 0.0f, 1e7f);
+                PG::DragFloat("D", &m.d, 5.0f, 0.0f, 1e7f);
                 break;
             case MoverType::BodyGyro:
-                ImGui::DragFloat3("Facing (rotation)", &m.rotation.x, 0.5f);
-                ImGui::DragFloat3("MaxTorque", &m.maxAxes.x, 100.0f, 0.0f, 1e30f, "%.0f");
-                ImGui::DragFloat("P", &m.p, 10.0f, 0.0f, 1e7f);
-                ImGui::DragFloat("D", &m.d, 5.0f, 0.0f, 1e7f);
+                PG::DragFloat3("Facing (rotation)", &m.rotation.x, 0.5f);
+                PG::DragFloat3("MaxTorque", &m.maxAxes.x, 100.0f, 0.0f, 1e30f, "%.0f");
+                PG::DragFloat("P", &m.p, 10.0f, 0.0f, 1e7f);
+                PG::DragFloat("D", &m.d, 5.0f, 0.0f, 1e7f);
                 break;
             case MoverType::BodyAngularVelocity:
-                ImGui::DragFloat3("AngularVelocity", &m.value.x, 0.05f);
-                ImGui::DragFloat3("MaxTorque", &m.maxAxes.x, 10.0f, 0.0f, 1e30f, "%.0f");
+                PG::DragFloat3("AngularVelocity", &m.value.x, 0.05f);
+                PG::DragFloat3("MaxTorque", &m.maxAxes.x, 10.0f, 0.0f, 1e30f, "%.0f");
                 break;
             case MoverType::BodyThrust:
-                ImGui::DragFloat3("Force", &m.value.x, 1.0f);
-                ImGui::DragFloat3("Location", &m.location.x, 0.05f);
+                PG::DragFloat3("Force", &m.value.x, 1.0f);
+                PG::DragFloat3("Location", &m.location.x, 0.05f);
                 break;
             case MoverType::BodyForce:
             case MoverType::VectorForce:
-                ImGui::DragFloat3("Force", &m.value.x, 1.0f);
-                if (t == MoverType::VectorForce) ImGui::Checkbox("ApplyAtCenterOfMass", &m.atCenterOfMass);
+                PG::DragFloat3("Force", &m.value.x, 1.0f);
+                if (t == MoverType::VectorForce) PG::Checkbox("ApplyAtCenterOfMass", &m.atCenterOfMass);
                 break;
             case MoverType::Torque:
-                ImGui::DragFloat3("Torque", &m.value.x, 1.0f);
+                PG::DragFloat3("Torque", &m.value.x, 1.0f);
                 break;
             case MoverType::LinearVelocity:
-                ImGui::DragFloat3("VectorVelocity", &m.value.x, 0.1f);
+                PG::DragFloat3("VectorVelocity", &m.value.x, 0.1f);
                 huge(m.maxForce, "MaxForce");
                 break;
             case MoverType::AngularVelocity:
-                ImGui::DragFloat3("AngularVelocity", &m.value.x, 0.05f);
+                PG::DragFloat3("AngularVelocity", &m.value.x, 0.05f);
                 huge(m.maxForce, "MaxTorque");
                 break;
             case MoverType::AlignPosition:
             case MoverType::AlignOrientation:
-                if (t == MoverType::AlignPosition) ImGui::DragFloat3("Position", &m.value.x, 0.1f);
-                else ImGui::DragFloat3("Facing (rotation)", &m.rotation.x, 0.5f);
+                if (t == MoverType::AlignPosition) PG::DragFloat3("Position", &m.value.x, 0.1f);
+                else PG::DragFloat3("Facing (rotation)", &m.rotation.x, 0.5f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Used when there's no Attachment1");
                 huge(m.maxForce, t == MoverType::AlignPosition ? "MaxForce" : "MaxTorque");
-                ImGui::DragFloat("Responsiveness", &m.responsiveness, 0.5f, 0.0f, 200.0f);
-                ImGui::DragFloat(t == MoverType::AlignPosition ? "MaxVelocity" : "MaxAngularVelocity", &m.maxVelocity, 0.5f, 0.0f, 1e6f,
+                PG::DragFloat("Responsiveness", &m.responsiveness, 0.5f, 0.0f, 200.0f);
+                PG::DragFloat(t == MoverType::AlignPosition ? "MaxVelocity" : "MaxAngularVelocity", &m.maxVelocity, 0.5f, 0.0f, 1e6f,
                                  m.maxVelocity <= 0 ? "no limit" : "%.1f");
-                ImGui::Checkbox("RigidityEnabled", &m.rigid);
+                PG::Checkbox("RigidityEnabled", &m.rigid);
                 break;
         }
         if (t == MoverType::LinearVelocity || t == MoverType::AngularVelocity || t == MoverType::VectorForce || t == MoverType::Torque) {
             int rel = m.relativeToAttachment ? 1 : 0;
             const char* items[] = {"World", "Attachment0"};
-            if (ImGui::Combo("RelativeTo", &rel, items, 2)) m.relativeToAttachment = rel == 1;
+            if (PG::Combo("RelativeTo", &rel, items, 2)) m.relativeToAttachment = rel == 1;
         }
         ImGui::PushTextWrapPos(0);
-        ImGui::TextDisabled(classic ? "A classic BodyMover: it pushes the part it's inside (and anything welded to it)."
+        PG::TextDisabled(classic ? "A classic BodyMover: it pushes the part it's inside (and anything welded to it)."
                                     : "A mover constraint: it pushes the part its Attachment0 is in (and anything welded to it).");
         ImGui::PopTextWrapPos();
         return;
     }
     if (node->isConstraint()) {
         int t = (int)node->constraintType;
-        if (ImGui::Combo("Type", &t, kConstraintNames, kConstraintTypeCount)) { node->constraintType = (ConstraintType)t; node->jointReady = false; }
-        ImGui::Checkbox("Enabled", &node->enabled);
-        ImGui::SameLine();
-        ImGui::Checkbox("Visible", &node->visible);
+        if (PG::Combo("Type", &t, kConstraintNames, kConstraintTypeCount)) { node->constraintType = (ConstraintType)t; node->jointReady = false; }
+        PG::Checkbox("Enabled", &node->enabled);
+        PG::Checkbox("Visible", &node->visible);
         SceneNode* r0 = m_scene->findById(node->ref0);
         SceneNode* r1 = m_scene->findById(node->ref1);
         auto owner = [](SceneNode* r) { return r ? (r->isAttachment() && r->parent ? r->parent->name : r->name) : std::string("(missing)"); };
-        ImGui::TextDisabled("Connects %s  <->  %s", owner(r0).c_str(), owner(r1).c_str());
+        PG::TextDisabled("Connects %s  <->  %s", owner(r0).c_str(), owner(r1).c_str());
         ConstraintType ct = node->constraintType;
         if (ct != ConstraintType::Weld) {
             // Its two Attachments: pick from every Attachment in the game.
@@ -1217,7 +1164,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
             auto label = [](const SceneNode* a) { return a ? (a->parent ? a->parent->name + "." + a->name : a->name) : std::string("(none)"); };
             auto pick = [&](const char* name, uint64_t& id) {
                 SceneNode* cur = id ? m_scene->findById(id) : nullptr;
-                if (ImGui::BeginCombo(name, label(cur).c_str())) {
+                if (PG::BeginCombo(name, label(cur).c_str())) {
                     if (ImGui::Selectable("(none)", !cur)) { id = 0; node->jointReady = false; }
                     for (SceneNode* a : atts) {
                         ImGui::PushID(a);
@@ -1234,150 +1181,150 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         }
         if (ct == ConstraintType::Rope || ct == ConstraintType::Rod || ct == ConstraintType::Spring) {
             bool autoLen = node->length < 0.0f;
-            if (ImGui::Checkbox("Length as placed", &autoLen)) node->length = autoLen ? -1.0f : 4.0f;
-            if (!autoLen) ImGui::DragFloat("Length", &node->length, 0.05f, 0.0f, 500.0f);
+            if (PG::Checkbox("Length as placed", &autoLen)) node->length = autoLen ? -1.0f : 4.0f;
+            if (!autoLen) PG::DragFloat("Length", &node->length, 0.05f, 0.0f, 500.0f);
         }
         if (ct == ConstraintType::Spring) {
-            ImGui::DragFloat("Stiffness", &node->stiffness, 1.0f, 0.0f, 100000.0f);
-            ImGui::DragFloat("Damping", &node->damping, 0.1f, 0.0f, 10000.0f);
+            PG::DragFloat("Stiffness", &node->stiffness, 1.0f, 0.0f, 100000.0f);
+            PG::DragFloat("Damping", &node->damping, 0.1f, 0.0f, 10000.0f);
         }
         if (ct == ConstraintType::Hinge) {
             bool motor = node->motorTorque > 0.0f;
-            if (ImGui::Checkbox("Motor", &motor)) node->motorTorque = motor ? 3000.0f : 0.0f;
+            if (PG::Checkbox("Motor", &motor)) node->motorTorque = motor ? 3000.0f : 0.0f;
             if (motor) {
-                ImGui::DragFloat("Speed", &node->motorSpeed, 0.05f, -100.0f, 100.0f, "%.2f rad/s");
-                ImGui::DragFloat("Strength", &node->motorTorque, 10.0f, 0.0f, 1e7f);
+                PG::DragFloat("Speed", &node->motorSpeed, 0.05f, -100.0f, 100.0f, "%.2f rad/s");
+                PG::DragFloat("Strength", &node->motorTorque, 10.0f, 0.0f, 1e7f);
             }
         }
         if (usesJointProps(ct)) {
             JointProps& p = node->joint;
             auto actuator = [](const char* label, Actuator& a) {
                 int v = (int)a;
-                if (ImGui::Combo(label, &v, kActuatorNames, 3)) a = (Actuator)v;
+                if (PG::Combo(label, &v, kActuatorNames, 3)) a = (Actuator)v;
             };
             ImGui::PushTextWrapPos(0);
             if (ct == ConstraintType::BallSocket) {
-                ImGui::TextDisabled("Holds the two attachments together and lets them turn any way, like a shoulder.");
-                ImGui::Checkbox("LimitsEnabled", &p.limitsEnabled);
-                if (p.limitsEnabled) ImGui::DragFloat("UpperAngle", &p.upperAngle, 0.5f, 0.0f, 180.0f, "%.1f deg");
-                ImGui::Checkbox("TwistLimitsEnabled", &p.twistLimitsEnabled);
+                PG::TextDisabled("Holds the two attachments together and lets them turn any way, like a shoulder.");
+                PG::Checkbox("LimitsEnabled", &p.limitsEnabled);
+                if (p.limitsEnabled) PG::DragFloat("UpperAngle", &p.upperAngle, 0.5f, 0.0f, 180.0f, "%.1f deg");
+                PG::Checkbox("TwistLimitsEnabled", &p.twistLimitsEnabled);
                 if (p.twistLimitsEnabled) {
-                    ImGui::DragFloat("TwistLowerAngle", &p.twistLowerAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
-                    ImGui::DragFloat("TwistUpperAngle", &p.twistUpperAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                    PG::DragFloat("TwistLowerAngle", &p.twistLowerAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                    PG::DragFloat("TwistUpperAngle", &p.twistUpperAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
                 }
-                if (p.limitsEnabled || p.twistLimitsEnabled) ImGui::SliderFloat("Restitution", &p.restitution, 0.0f, 1.0f);
+                if (p.limitsEnabled || p.twistLimitsEnabled) PG::SliderFloat("Restitution", &p.restitution, 0.0f, 1.0f);
             } else {
-                ImGui::TextDisabled(ct == ConstraintType::Prismatic
+                PG::TextDisabled(ct == ConstraintType::Prismatic
                     ? "Lets Attachment1 slide along Attachment0's axis (its X), like a drawer or a lift. It can't turn."
                     : "Lets Attachment1 slide along Attachment0's axis and spin around it, like a piston or a drill.");
-                ImGui::Checkbox("LimitsEnabled", &p.limitsEnabled);
+                PG::Checkbox("LimitsEnabled", &p.limitsEnabled);
                 if (p.limitsEnabled) {
-                    ImGui::DragFloat("LowerLimit", &p.lowerLimit, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
-                    ImGui::DragFloat("UpperLimit", &p.upperLimit, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
-                    ImGui::SliderFloat("Restitution", &p.restitution, 0.0f, 1.0f);
+                    PG::DragFloat("LowerLimit", &p.lowerLimit, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
+                    PG::DragFloat("UpperLimit", &p.upperLimit, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
+                    PG::SliderFloat("Restitution", &p.restitution, 0.0f, 1.0f);
                 }
                 actuator("ActuatorType", p.actuator);
                 if (p.actuator == Actuator::Motor) {
-                    ImGui::DragFloat("Velocity", &p.velocity, 0.05f, -1000.0f, 1000.0f, "%.2f studs/s");
-                    ImGui::DragFloat("MotorMaxForce", &p.motorMaxForce, 10.0f, 0.0f, 1e9f);
+                    PG::DragFloat("Velocity", &p.velocity, 0.05f, -1000.0f, 1000.0f, "%.2f studs/s");
+                    PG::DragFloat("MotorMaxForce", &p.motorMaxForce, 10.0f, 0.0f, 1e9f);
                 } else if (p.actuator == Actuator::Servo) {
-                    ImGui::DragFloat("TargetPosition", &p.targetPosition, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
-                    ImGui::DragFloat("Speed", &p.speed, 0.05f, 0.0f, 1000.0f, "%.2f studs/s");
-                    ImGui::DragFloat("ServoMaxForce", &p.servoMaxForce, 10.0f, 0.0f, 1e9f);
+                    PG::DragFloat("TargetPosition", &p.targetPosition, 0.05f, -1000.0f, 1000.0f, "%.2f studs");
+                    PG::DragFloat("Speed", &p.speed, 0.05f, 0.0f, 1000.0f, "%.2f studs/s");
+                    PG::DragFloat("ServoMaxForce", &p.servoMaxForce, 10.0f, 0.0f, 1e9f);
                 }
                 if (ct == ConstraintType::Cylindrical) {
-                    ImGui::SeparatorText("Spinning");
-                    ImGui::DragFloat("InclinationAngle", &p.inclinationAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
-                    ImGui::Checkbox("AngularLimitsEnabled", &p.angularLimitsEnabled);
+                    PG::SeparatorText("Spinning");
+                    PG::DragFloat("InclinationAngle", &p.inclinationAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                    PG::Checkbox("AngularLimitsEnabled", &p.angularLimitsEnabled);
                     if (p.angularLimitsEnabled) {
-                        ImGui::DragFloat("LowerAngle", &p.lowerAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
-                        ImGui::DragFloat("UpperAngle", &p.upperAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                        PG::DragFloat("LowerAngle", &p.lowerAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                        PG::DragFloat("UpperAngle", &p.upperAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
                     }
                     actuator("AngularActuatorType", p.angularActuator);
                     if (p.angularActuator == Actuator::Motor) {
-                        ImGui::DragFloat("AngularVelocity", &p.angularVelocity, 0.05f, -100.0f, 100.0f, "%.2f rad/s");
-                        ImGui::DragFloat("MotorMaxTorque", &p.motorMaxTorque, 10.0f, 0.0f, 1e9f);
+                        PG::DragFloat("AngularVelocity", &p.angularVelocity, 0.05f, -100.0f, 100.0f, "%.2f rad/s");
+                        PG::DragFloat("MotorMaxTorque", &p.motorMaxTorque, 10.0f, 0.0f, 1e9f);
                     } else if (p.angularActuator == Actuator::Servo) {
-                        ImGui::DragFloat("TargetAngle", &p.targetAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
-                        ImGui::DragFloat("AngularSpeed", &p.angularSpeed, 0.05f, 0.0f, 100.0f, "%.2f rad/s");
-                        ImGui::DragFloat("ServoMaxTorque", &p.servoMaxTorque, 10.0f, 0.0f, 1e9f);
+                        PG::DragFloat("TargetAngle", &p.targetAngle, 0.5f, -180.0f, 180.0f, "%.1f deg");
+                        PG::DragFloat("AngularSpeed", &p.angularSpeed, 0.05f, 0.0f, 100.0f, "%.2f rad/s");
+                        PG::DragFloat("ServoMaxTorque", &p.servoMaxTorque, 10.0f, 0.0f, 1e9f);
                     }
                 }
             }
             ImGui::PopTextWrapPos();
         }
         if (ct != ConstraintType::Weld) {
-            ImGui::ColorEdit3("Color", &node->color.x);
-            ImGui::SliderFloat("Thickness", &node->thickness, 0.02f, 1.0f);
+            PG::ColorEdit3("Color", &node->color.x);
+            PG::SliderFloat("Thickness", &node->thickness, 0.02f, 1.0f);
         }
         // Breakable joints: pulled harder than BreakForce, it snaps and switches itself off.
         bool breakable = node->breakForce > 0.0f;
-        if (ImGui::Checkbox("Breakable", &breakable)) node->breakForce = breakable ? 2000.0f : 0.0f;
+        if (PG::Checkbox("Breakable", &breakable)) node->breakForce = breakable ? 2000.0f : 0.0f;
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", I18n::tr("Snaps when it's pulled too hard (BreakForce). Turn on Physics View (MODEL tab) "
                                              "while testing to see how hard each joint is pulled."));
         if (breakable) {
-            ImGui::DragFloat("BreakForce", &node->breakForce, 10.0f, 1.0f, 1e9f, "%.0f");
-            if (node->jointForce > 0.0f) ImGui::TextDisabled("%s %.0f", I18n::tr("Pulled now:"), node->jointForce);
+            PG::DragFloat("BreakForce", &node->breakForce, 10.0f, 1.0f, 1e9f, "%.0f");
+            if (node->jointForce > 0.0f) PG::TextDisabled("%s %.0f", I18n::tr("Pulled now:"), node->jointForce);
         }
         if (node->broken && !node->enabled) ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "%s", I18n::tr("Broken"));
         return;
     }
 
     if (node->isLight()) {
-        ImGui::Checkbox("Enabled", &node->enabled);
+        PG::Checkbox("Enabled", &node->enabled);
         int t = (int)node->lightType;
         const char* types[] = {"Point", "Spot"};
-        if (ImGui::Combo("Type", &t, types, 2)) node->lightType = (LightType)t;
-        ImGui::ColorEdit3("Color", &node->color.x);
-        ImGui::SliderFloat("Brightness", &node->brightness, 0.0f, 20.0f);
+        if (PG::Combo("Type", &t, types, 2)) node->lightType = (LightType)t;
+        PG::ColorEdit3("Color", &node->color.x);
+        PG::SliderFloat("Brightness", &node->brightness, 0.0f, 20.0f);
         StudioLearnHighlight::mark("properties.Brightness");
-        ImGui::SliderFloat("Range", &node->range, 1.0f, 100.0f);
+        PG::SliderFloat("Range", &node->range, 1.0f, 100.0f);
         StudioLearnHighlight::mark("properties.Range");
-        ImGui::Checkbox("Shadows", &node->lightShadows);
+        PG::Checkbox("Shadows", &node->lightShadows);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Parts block this light and cast shadows from it.\n"
                               "Only the few nearest lamps with Shadows on cast them at once.");
         if (node->lightType == LightType::Spot) {
-            ImGui::SliderFloat("Angle", &node->spotAngle, 5.0f, 170.0f, "%.0f\xc2\xb0");
-            ImGui::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
-            ImGui::TextDisabled("Spot lights point down; rotate to aim.");
+            PG::SliderFloat("Angle", &node->spotAngle, 5.0f, 170.0f, "%.0f\xc2\xb0");
+            PG::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
+            PG::TextDisabled("Spot lights point down; rotate to aim.");
         }
-        ImGui::DragFloat3("Offset", &node->transform.position.x, 0.05f);
+        PG::DragFloat3("Offset", &node->transform.position.x, 0.05f);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Position relative to the part it's inside");
         return;
     }
 
     if (node == m_scene->root()) {
-        ImGui::Separator();
-        ImGui::TextDisabled("The Workspace holds everything in your game.");
-        ImGui::DragFloat("Gravity", &m_scene->world().gravity, 0.5f, 0.0f, 400.0f);
+        PG::Separator();
+        PG::TextDisabled("The Workspace holds everything in your game.");
+        PG::DragFloat("Gravity", &m_scene->world().gravity, 0.5f, 0.0f, 400.0f);
         WorldSettings& w = m_scene->world();
-        ImGui::Checkbox("Load Map In Pieces", &w.streaming);
+        PG::Checkbox("Load Map In Pieces", &w.streaming);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("StreamingEnabled: players who join only get the part of the map near them;\n"
                               "the rest loads in as they walk towards it. Good for big maps.\n"
                               "Scripts on players' computers should use WaitForChild for far-away things.");
         if (w.streaming) {
-            ImGui::DragFloat("Streaming Radius", &w.streamRadius, 4.0f, 32.0f, 5000.0f, "%.0f studs");
+            PG::DragFloat("Streaming Radius", &w.streamRadius, 4.0f, 32.0f, 5000.0f, "%.0f studs");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("StreamingTargetRadius: how far around each player the map is loaded.");
         }
         return;
     }
 
-    ImGui::Checkbox("Visible", &node->visible);
-    ImGui::Separator();
+    PG::Checkbox("Visible", &node->visible);
+    PG::Separator();
 
     // --- Transform ---
-    if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::DragFloat3("Position", &node->transform.position.x, 0.05f);
+    if (PG::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+        PG::DragFloat3("Position", &node->transform.position.x, 0.05f);
         StudioLearnHighlight::mark("properties.Position");
-        ImGui::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
+        PG::DragFloat3("Rotation", &node->transform.rotation.x, 0.5f);
         StudioLearnHighlight::mark("properties.Rotation");
-        ImGui::DragFloat3("Size",     &node->transform.scale.x,    0.05f, 0.001f, 1000.0f);
+        PG::DragFloat3("Size",     &node->transform.scale.x,    0.05f, 0.001f, 1000.0f);
         StudioLearnHighlight::mark("properties.Size");
 
-        if (ImGui::Button("Reset Transform")) {
+        if (PG::Button("Reset Transform")) {
             node->transform.position = {0, 0, 0};
             node->transform.rotation = {0, 0, 0};
             node->transform.scale    = {1, 1, 1};
@@ -1400,7 +1347,7 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         if (!parts.empty()) {
             SceneNode* cur = node->primaryPart ? m_scene->findById(node->primaryPart) : nullptr;
             if (cur && !node->isAncestorOf(cur)) cur = nullptr;
-            if (ImGui::BeginCombo("PrimaryPart", cur ? cur->name.c_str() : "(none)")) {
+            if (PG::BeginCombo("PrimaryPart", cur ? cur->name.c_str() : "(none)")) {
                 if (ImGui::Selectable("(none)", !cur)) node->primaryPart = 0;
                 for (SceneNode* p : parts) {
                     ImGui::PushID((void*)p);
@@ -1418,43 +1365,42 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     }
 
     // --- Appearance ---
-    if (ImGui::CollapsingHeader("Appearance", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::ColorEdit3("Color", &node->color.x);
+    if (PG::CollapsingHeader("Appearance", ImGuiTreeNodeFlags_DefaultOpen)) {
+        PG::ColorEdit3("Color", &node->color.x);
 
         if (node->primitiveType == PrimitiveType::Mesh && node->editMesh) {
             // A MeshPart: its shape was built in Modeling mode.
-            ImGui::TextDisabled("Custom mesh: %d corners, %d faces", (int)node->editMesh->verts.size(),
+            PG::TextDisabled("Custom mesh: %d corners, %d faces", (int)node->editMesh->verts.size(),
                                 (int)node->editMesh->faces.size());
             bool smooth = node->editMesh->smooth;
-            if (ImGui::Checkbox("Smooth shading", &smooth)) { MeshEdit::own(*node).smooth = smooth; MeshEdit::refresh(*node); }
-            if (ImGui::Button("Edit Mesh (Tab)", ImVec2(-1, 0)) && m_editMesh) m_editMesh(node);
+            if (PG::Checkbox("Smooth shading", &smooth)) { MeshEdit::own(*node).smooth = smooth; MeshEdit::refresh(*node); }
+            if (PG::Button("Edit Mesh (Tab)", ImVec2(-1, 0)) && m_editMesh) m_editMesh(node);
             // A picture wrapped onto it by its UV layout (the UV Editor shows where each face sits).
-            ImGui::InputText("Texture", &node->texture);
+            PG::InputText("Texture", &node->texture);
             if (ImGui::IsItemDeactivatedAfterEdit()) node->texture = Online::assetRef(node->texture);
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("A picture wrapped onto the mesh: a .png / .jpg in the games folder, a full path,\n"
                                   "or gb:<id> for one uploaded on the Create page. The UV Editor shows how it wraps.");
             if (FileDialog::available()) {
-                ImGui::SameLine();
-                if (ImGui::Button("Browse...##meshtex")) {
+                if (PG::Button("Browse...##meshtex")) {
                     std::string path = FileDialog::openImage("Pick a picture to wrap onto the mesh");
                     if (!path.empty()) { node->texture = Paths::relativeToGames(path); m_scene->markDirty(); }
                 }
             }
-            if (ImGui::Button("UV Editor", ImVec2(-1, 0)) && m_openUVEditor) m_openUVEditor();
+            if (PG::Button("UV Editor", ImVec2(-1, 0)) && m_openUVEditor) m_openUVEditor();
         } else {
             const char* shapes[] = { "Cube", "Sphere", "Plane", "Cylinder" };
             int shape = (int)node->primitiveType - 1;
-            if (ImGui::Combo("Shape", &shape, shapes, IM_ARRAYSIZE(shapes))) {
+            if (PG::Combo("Shape", &shape, shapes, IM_ARRAYSIZE(shapes))) {
                 node->primitiveType = (PrimitiveType)(shape + 1);
                 node->mesh = MeshLibrary::get(node->primitiveType);
             }
-            if (ImGui::Button("Reshape in Modeling mode (Tab)", ImVec2(-1, 0)) && m_editMesh) m_editMesh(node);
+            if (PG::Button("Reshape in Modeling mode (Tab)", ImVec2(-1, 0)) && m_editMesh) m_editMesh(node);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Turns this part into a MeshPart you can reshape");
         }
 
         int mat = (int)node->material;
-        if (ImGui::Combo("Material", &mat, kMaterialNames, kMaterialCount))
+        if (PG::Combo("Material", &mat, kMaterialNames, kMaterialCount))
             node->material = (Material)mat;
         StudioLearnHighlight::mark("properties.Material");
         // MaterialVariant: one of the game's own materials (MaterialService). Picking one
@@ -1469,37 +1415,37 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
                               : !on ? node->materialVariant + " (not in MaterialService)"
                               : on->variant.base != node->material ? node->materialVariant + " (needs Material " + kMaterialNames[(int)on->variant.base] + ")"
                               : node->materialVariant;
-            if (ImGui::BeginCombo("MaterialVariant", shown.c_str())) {
+            if (PG::BeginCombo("MaterialVariant", shown.c_str())) {
                 if (ImGui::Selectable("(none)", node->materialVariant.empty())) node->materialVariant.clear();
                 for (SceneNode* v : vars) {
                     ImGui::PushID(v);
                     if (ImGui::Selectable(v->name.c_str(), v == on)) { node->materialVariant = v->name; node->material = v->variant.base; }
                     ImGui::PopID();
                 }
-                ImGui::Separator();
+                PG::Separator();
                 if (ImGui::Selectable("Material Editor...") && m_openMaterials) m_openMaterials(on ? on->id : 0);
                 ImGui::EndCombo();
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Your own materials, made in the Material Editor (VIEW > Materials)");
         }
 
-        ImGui::SliderFloat("Transparency", &node->transparency, 0.0f, 1.0f);
+        PG::SliderFloat("Transparency", &node->transparency, 0.0f, 1.0f);
     }
 
     // --- Behavior ---
-    if (ImGui::CollapsingHeader("Behavior", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Checkbox("Anchored",    &node->anchored);
+    if (PG::CollapsingHeader("Behavior", ImGuiTreeNodeFlags_DefaultOpen)) {
+        PG::Checkbox("Anchored",    &node->anchored);
         StudioLearnHighlight::mark("properties.Anchored");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Unanchored parts fall with gravity in Play mode");
-        ImGui::Checkbox("Can Collide", &node->canCollide);
+        PG::Checkbox("Can Collide", &node->canCollide);
         StudioLearnHighlight::mark("properties.Can Collide");
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Turn off to let things pass through");
-        ImGui::Checkbox("Cast Shadow", &node->castShadow);
+        PG::Checkbox("Cast Shadow", &node->castShadow);
         // Collision Group (PhysicsService): which registered group it's in.
         const CollisionGroups& groups = m_scene->world().collisionGroups;
         const bool known = groups.find(node->collisionGroup) >= 0;
         std::string shown = known ? node->collisionGroup : node->collisionGroup + " (not registered: acts as Default)";
-        if (ImGui::BeginCombo("Collision Group", shown.c_str())) {
+        if (PG::BeginCombo("Collision Group", shown.c_str())) {
             for (int i : groups.slots()) {
                 const bool on = groups.names[i] == node->collisionGroup;
                 if (ImGui::Selectable(groups.names[i].c_str(), on)) {
@@ -1519,16 +1465,16 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
     }
 
     // --- Physics (how it behaves when unanchored) ---
-    if (ImGui::CollapsingHeader("Physics")) {
+    if (PG::CollapsingHeader("Physics")) {
         auto prop = [&](const char* label, float& v, float def, float mn, float mx, const char* tip) {
             bool custom = v >= 0.0f;
             ImGui::PushID(label);
-            if (ImGui::Checkbox("##custom", &custom)) v = custom ? def : -1.0f;
+            if (PG::Checkbox("##custom", &custom)) v = custom ? def : -1.0f;
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tick to override the material's value");
             ImGui::SameLine();
             ImGui::BeginDisabled(!custom);
             float shown = custom ? v : def;
-            if (ImGui::SliderFloat(label, &shown, mn, mx) && custom) v = shown;
+            if (PG::SliderFloat(label, &shown, mn, mx) && custom) v = shown;
             ImGui::EndDisabled();
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", tip);
             ImGui::PopID();
@@ -1537,28 +1483,28 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
         prop("Friction", node->friction, 0.5f, 0.0f, 2.0f, "0 = slides like ice");
         prop("Bounciness", node->elasticity, 0.3f, 0.0f, 1.0f, "1 = bounces like a rubber ball");
         if (node->hasCustomPhysics()) {   // (CustomPhysicalProperties' FrictionWeight / ElasticityWeight)
-            ImGui::SliderFloat("Friction weight", &node->frictionWeight, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+            PG::SliderFloat("Friction weight", &node->frictionWeight, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much this part's friction counts when it touches another part (1 = an even mix)");
-            ImGui::SliderFloat("Bounciness weight", &node->elasticityWeight, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+            PG::SliderFloat("Bounciness weight", &node->elasticityWeight, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much this part's bounciness counts when it touches another part (1 = the usual)");
         }
     }
 
     // --- SpawnLocation: who spawns here ---
-    if (node->isSpawnLocation() && ImGui::CollapsingHeader("Spawn", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Checkbox("Neutral", &node->spawnNeutral);
+    if (node->isSpawnLocation() && PG::CollapsingHeader("Spawn", ImGuiTreeNodeFlags_DefaultOpen)) {
+        PG::Checkbox("Neutral", &node->spawnNeutral);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Anybody can spawn here. Untick to make it one team's spawn (by TeamColor)");
         ImGui::BeginDisabled(node->spawnNeutral);
-        ImGui::ColorEdit3("TeamColor", &node->teamColor.x);
+        PG::ColorEdit3("TeamColor", &node->teamColor.x);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Players on the Team with this TeamColor spawn here");
-        ImGui::Checkbox("AllowTeamChangeOnTouch", &node->allowTeamChange);
+        PG::Checkbox("AllowTeamChangeOnTouch", &node->allowTeamChange);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Touching it puts you on its team");
         ImGui::EndDisabled();
     }
 
     if (!m_scene->isCharacterPart(node)) {
-        ImGui::Spacing();
-        if (ImGui::Button("Add Script inside", ImVec2(-1, 0))) {
+        PG::Spacing();
+        if (PG::Button("Add Script inside", ImVec2(-1, 0))) {
             auto s = std::make_unique<SceneNode>("Script", NodeKind::Script);
             s->source = "local part = script.Parent\n\nprint(\"Hello from \" .. part.Name)\n";
             SceneNode* raw = m_scene->insert(std::move(s), node);
@@ -1570,8 +1516,8 @@ void PropertiesPanel::renderProperties(SceneNode* node) {
 
 // Roblox-style Attributes (your own named values) and Tags, for any object.
 void PropertiesPanel::renderAttributes(SceneNode* node) {
-    ImGui::Spacing();
-    if (ImGui::CollapsingHeader("Attributes", ImGuiTreeNodeFlags_DefaultOpen)) {
+    PG::Spacing();
+    if (PG::CollapsingHeader("Attributes", ImGuiTreeNodeFlags_DefaultOpen)) {
         int remove = -1;
         for (size_t i = 0; i < node->attributes.size(); ++i) {
             Attribute& a = node->attributes[i];
@@ -1580,18 +1526,18 @@ void PropertiesPanel::renderAttributes(SceneNode* node) {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Delete this attribute");
             ImGui::SameLine();
             switch (a.type) {
-                case Attribute::Bool:    ImGui::Checkbox(a.name.c_str(), &a.b); break;
-                case Attribute::Number:  ImGui::InputDouble(a.name.c_str(), &a.n, 1.0, 10.0, "%g"); break;
-                case Attribute::String:  ImGui::InputText(a.name.c_str(), &a.s); break;
-                case Attribute::Vector3: ImGui::DragFloat3(a.name.c_str(), &a.v.x, 0.05f); break;
-                case Attribute::Color3:  ImGui::ColorEdit3(a.name.c_str(), &a.v.x); break;
+                case Attribute::Bool:    PG::Checkbox(a.name.c_str(), &a.b); break;
+                case Attribute::Number:  PG::InputDouble(a.name.c_str(), &a.n, 1.0, 10.0, "%g"); break;
+                case Attribute::String:  PG::InputText(a.name.c_str(), &a.s); break;
+                case Attribute::Vector3: PG::DragFloat3(a.name.c_str(), &a.v.x, 0.05f); break;
+                case Attribute::Color3:  PG::ColorEdit3(a.name.c_str(), &a.v.x); break;
             }
             ImGui::PopID();
         }
         if (remove >= 0) node->attributes.erase(node->attributes.begin() + remove);
-        if (node->attributes.empty()) ImGui::TextDisabled("Scripts read these with obj:GetAttribute(\"Name\").");
+        if (node->attributes.empty()) PG::TextDisabled("Scripts read these with obj:GetAttribute(\"Name\").");
 
-        if (ImGui::Button("+ Add Attribute", ImVec2(-1, 0))) {
+        if (PG::Button("+ Add Attribute", ImVec2(-1, 0))) {
             m_newAttrName.clear();
             m_newAttrError.clear();
             ImGui::OpenPopup("Add Attribute");
@@ -1599,11 +1545,11 @@ void PropertiesPanel::renderAttributes(SceneNode* node) {
         if (ImGui::BeginPopup("Add Attribute")) {
             static const char* kTypes[] = {"Boolean", "Number", "String", "Vector3", "Color3"};
             if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
-            bool enter = ImGui::InputTextWithHint("Name", "e.g. Damage", &m_newAttrName,
+            bool enter = PG::InputTextWithHint("Name", "e.g. Damage", &m_newAttrName,
                                                   ImGuiInputTextFlags_EnterReturnsTrue);
-            ImGui::Combo("Type", &m_newAttrType, kTypes, 5);
+            PG::Combo("Type", &m_newAttrType, kTypes, 5);
             if (!m_newAttrError.empty()) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", m_newAttrError.c_str());
-            if (ImGui::Button("Add") || enter) {
+            if (PG::Button("Add") || enter) {
                 bool ok = !m_newAttrName.empty() && m_newAttrName.size() <= 100 && m_newAttrName.rfind("RBX", 0) != 0;
                 for (char c : m_newAttrName) if (!std::isalnum((unsigned char)c) && c != '_') ok = false;
                 if (!ok) m_newAttrError = "Use letters, numbers and _ only.";
@@ -1618,12 +1564,12 @@ void PropertiesPanel::renderAttributes(SceneNode* node) {
                 }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+            if (PG::Button("Cancel")) ImGui::CloseCurrentPopup();
             ImGui::EndPopup();
         }
     }
 
-    if (ImGui::CollapsingHeader("Tags", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (PG::CollapsingHeader("Tags", ImGuiTreeNodeFlags_DefaultOpen)) {
         int remove = -1;
         float right = ImGui::GetWindowPos().x + ImGui::GetWindowContentRegionMax().x;
         for (size_t i = 0; i < node->tags.size(); ++i) {
@@ -1642,12 +1588,12 @@ void PropertiesPanel::renderAttributes(SceneNode* node) {
         }
         if (remove >= 0) node->tags.erase(node->tags.begin() + remove);
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::InputTextWithHint("##newtag", "+ Add tag (press Enter)", &m_newTag, ImGuiInputTextFlags_EnterReturnsTrue)) {
+        if (PG::InputTextWithHint("##newtag", "+ Add tag (press Enter)", &m_newTag, ImGuiInputTextFlags_EnterReturnsTrue)) {
             if (!m_newTag.empty() && std::find(node->tags.begin(), node->tags.end(), m_newTag) == node->tags.end())
                 node->tags.push_back(m_newTag);
             m_newTag.clear();
             ImGui::SetKeyboardFocusHere(-1);
         }
-        if (node->tags.empty()) ImGui::TextDisabled("Find tagged things with CollectionService:GetTagged(\"Tag\").");
+        if (node->tags.empty()) PG::TextDisabled("Find tagged things with CollectionService:GetTagged(\"Tag\").");
     }
 }

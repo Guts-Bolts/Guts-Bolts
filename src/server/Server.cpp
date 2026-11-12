@@ -98,6 +98,8 @@ json GbServer::handle(const json& req) { return handle(req, From()); }
 json GbServer::handle(const json& req, const From& from) {
     if (req.value("op", std::string()) == "art.picture")   // (public pictures: worker/index.js asks for /artpic/ without an account)
         return artOp("art.picture", nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
+    if (req.value("op", std::string()) == "paste.raw")   // (a paste's text alone: worker/index.js asks for /pasteraw/ without an account)
+        return pasteOp("paste.raw", nullptr, req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     if (isConnectOpen(req.value("op", std::string())))   // (ServerConnect.cpp: an app's server, not a person)
         return connectOpen(req.value("op", std::string()), req.contains("args") && req["args"].is_object() ? req["args"] : json::object());
     User* me = nullptr;
@@ -154,7 +156,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
     // Guests can also play: download games, find and join servers (they can't chat in games).
     static const std::set<std::string> kLookOnly = {"forum.boards", "forum.list", "forum.thread", "forum.search", "pass.list", "pass.owned", "list", "asset.info", "profile", "profile.inventory", "people.list", "users.search", "groups.list", "groups.get",
                                                     "servers.list", "stats", "thumb.get", "icon.get", "updates.list", "comments.list", "item.copies", "shots.get", "roadmap.get", "game.leaderboards", "gamelog.list", "events.list",
-                                                    "art.list", "art.get", "art.picture",
+                                                    "art.list", "art.get", "art.picture", "paste.list", "paste.get",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate", "http.request",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove"};   // (guests can host games too, and read chat)
@@ -377,6 +379,7 @@ json GbServer::publicAsset(const Asset& a, const User* me) const {
         if (auto g = m_groups.find(a.meta.value("group", std::string())); g != m_groups.end())
             j["group"] = {{"id", g->second.id}, {"name", g->second.name}, {"color", g->second.color}};
         if (a.meta.value("featured", 0LL) > 0) j["featured"] = true;
+        j["rating"] = a.meta.value("rating", std::string());   // content level (ServerRatings.cpp; "" = none yet)
         json shots = json::array();
         for (const json& s : a.shots) shots.push_back(s.value("id", std::string()));
         j["shots"] = shots;
@@ -484,6 +487,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         r["user"] = publicUser(*u);
         r["user"]["badges"] = badgesOf(*u);
         r["user"]["avatar"] = u->avatar;
+        r["background"] = backgroundOf(*u);   // ServerBackgrounds.cpp
         json made = json::array();
         for (const auto& [id, a] : m_assets) if (a.creator == u->id) made.push_back(publicAsset(a));
         r["creations"] = made;
@@ -709,7 +713,15 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
     if (name.rfind("roadmap.", 0) == 0) return roadmapOp(name, me, args);
     if (name.rfind("banlist.", 0) == 0 || name == "game.banLists" || name == "game.ban") return banListOp(name, me, args);   // ServerBanLists.cpp
+    // Launchpad (worker/launchpad.js) is a staff-run program on the main website only.
+    if (name.rfind("launchpad.", 0) == 0) {
+        if (name == "launchpad.games") { json r = okay(); r["games"] = json::array(); return r; }
+        return fail("Launchpad is only on the main Guts&Bolts website.");
+    }
+    if (name == "profile.background") return backgroundOp(me, args);   // ServerBackgrounds.cpp
+    if (name == "game.rating" || name == "game.rate" || name == "rating.limit") return ratingOp(name, me, args);   // ServerRatings.cpp
     if (name.rfind("art.", 0) == 0) return artOp(name, &me, args);   // ServerArt.cpp
+    if (name.rfind("paste.", 0) == 0) return pasteOp(name, &me, args);   // ServerPaste.cpp
     if (name == "game.testers" || name == "game.addTester" || name == "game.removeTester" || name == "game.testerNote" || name == "game.amTester")
         return testerOp(name, me, args);   // ServerTesters.cpp
     // Fyxa in the cloud (worker/fyxa-cloud.js) needs Cloudflare's AI, which this server doesn't have.
@@ -1502,6 +1514,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
             if (!creator.empty() && a.creator != creator) continue;
             if (!q.empty() && lower(a.name).find(q) == std::string::npos) continue;
             if (publicView ? !reviewOf(a.meta).empty() : !canSee(a, me)) continue;
+            if (!ownedOnly && !ratingAllowed(a, me)) continue;   // above their content level limit (ServerRatings.cpp)
             found.push_back(&a);
         }
         std::sort(found.begin(), found.end(), [&](const Asset* x, const Asset* y) {
@@ -1904,6 +1917,8 @@ void GbServer::saveUsers() {
         if (!u.totpPending.empty()) all[id]["totpPending"] = u.totpPending;
         all[id]["privacy"] = {{"status", u.privacyStatus}, {"join", u.privacyJoin}, {"messages", u.privacyMessages}, {"inventory", u.privacyInventory}};
         if (u.dnd) all[id]["dnd"] = true;
+        if (!u.ratingLimit.empty()) all[id]["ratingLimit"] = u.ratingLimit;
+        if (!u.background.empty()) all[id]["background"] = u.background;
         all[id]["gear"] = u.gear;
         if (!u.emotes.empty()) all[id]["emotes"] = u.emotes;
         if (!u.animPack.empty()) all[id]["animPack"] = u.animPack;
@@ -2131,6 +2146,8 @@ void GbServer::load() {
                     u.privacyInventory = ok(inv) ? inv : "everyone";
                 }
                 u.dnd = j.value("dnd", false) == true;
+                u.background = j.contains("background") && j["background"].is_string() ? j["background"].get<std::string>() : std::string();
+                u.ratingLimit = j.contains("ratingLimit") && j["ratingLimit"].is_string() ? j["ratingLimit"].get<std::string>() : std::string();
                 if (j.contains("outfits") && j["outfits"].is_array()) u.outfits = j["outfits"];
                 if (j.contains("inbox") && j["inbox"].is_array()) u.inbox = j["inbox"];
                 if (j.contains("notes") && j["notes"].is_array()) u.notes = j["notes"];
@@ -2264,6 +2281,7 @@ void GbServer::load() {
     loadEvents();
     loadBanLists();
     loadArt();
+    loadPastes();
     if (std::string text; readFile(m_opts.data / "boltworks.json", text)) {
         json all = json::parse(text, nullptr, false);
         if (all.is_array()) m_boltworks = all;

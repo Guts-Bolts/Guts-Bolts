@@ -289,6 +289,17 @@ private:
     void       registerWorkspaceSettings();
     bool       handleViewKeys();                // Z, Shift+Z, Alt+Z
     void       testWorkspace(const std::string& step);   // --test-mesh "workspace:..." steps
+    // The Simple layout and Search Studio (EditorSimple.cpp).
+    bool       simpleLayout() const;            // fewer buttons and panels (the rest behind More); off = Advanced
+    void       setSimpleLayout(bool simple);
+    void       applyLayoutPanels();             // the panels a fresh workspace shows in this layout
+    void       openSearch();                    // Ctrl+Shift+P: find any tool, window or object by name
+    void       renderSearch();
+    void       testSimple(const std::string& step);   // --test-mesh "simple:..." steps
+    bool        m_searchOpen = false, m_searchFocus = false;
+    std::string m_searchText;
+    int         m_searchPick = 0;
+    bool        m_openRibbonMore = false;       // (tests: open the ribbon's More window)
     std::vector<std::unique_ptr<ViewportPanel>> m_moreViews;
     std::vector<std::pair<int, unsigned>> m_dockNewView;   // a new view (its number) -> the dock to open in
     bool        m_wantQuadView = false;

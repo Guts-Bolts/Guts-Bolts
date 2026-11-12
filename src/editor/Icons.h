@@ -19,6 +19,7 @@ enum class Id {
     // Studio modes and Modeling-mode tools
     Build, Mesh, Simulate, Pause, Step,
     Vertex, Edge, Face, Extrude, Inset, Subdivide, Merge, Fill, Flip, Smooth, XRay, Done,
+    More,   // three dots: the ribbon's "More" button (Simple layout)
     NavMesh, Bake,
     Union, Negate, Intersect, Separate,   // solid modeling
     Terrain, TerrainRaise, TerrainLower, TerrainSmooth, TerrainFlatten, TerrainPaint, TerrainClear,   // the TERRAIN tab
