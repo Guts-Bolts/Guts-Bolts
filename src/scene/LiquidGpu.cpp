@@ -2,6 +2,7 @@
 #include "LiquidGpu.h"
 #include "Liquid.h"
 #include "../renderer/GL.h"
+#include "../renderer/GpuCaps.h"
 #include "../core/Settings.h"
 
 #include <algorithm>
@@ -697,21 +698,11 @@ void LiquidGpu::forget() {
 bool LiquidGpu::supported(std::string* why) {
     auto no = [&](const char* w) { if (why) *why = w; return false; };
     if (const char* e = std::getenv("GB_LIQUID_CPU"); e && *e && *e != '0') return no("GB_LIQUID_CPU is set");
-    if (GraphicsSettings::get().graphicsApi == GraphicsSettings::ApiSafe) return no("the graphics API is in safe mode");
-    GLint major = 0, minor = 0;
-    glGetIntegerv(GL_MAJOR_VERSION, &major);
-    glGetIntegerv(GL_MINOR_VERSION, &minor);
-#ifdef GB_GLES
-    if (major * 10 + minor < 31) return no("needs OpenGL ES 3.1");
-#else
-    if (major * 10 + minor < 43) return no("needs OpenGL 4.3");
-    if (!glDispatchCompute || !glDispatchComputeIndirect || !glMemoryBarrier || !glDrawArraysIndirect)
-        return no("compute shaders not loaded");
-#endif
-    GLint blocks = 0, bindings = 0;
-    glGetIntegerv(GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &blocks);
-    glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &bindings);
-    if (blocks < 8 || bindings < 8) return no("not enough storage buffers");
+    // One place decides what a device can do (DeviceFeatures.h).
+    const GpuCaps& caps = GpuCapsQuery::get();
+    if (caps.safeMode) return no("the graphics API is in safe mode");
+    if (caps.version < (caps.es ? 31 : 43)) return no(caps.es ? "needs OpenGL ES 3.1" : "needs OpenGL 4.3");
+    if (!DeviceFeatures::can(caps, DeviceFeatures::GpuLiquid)) return no("compute shaders or storage buffers missing");
     return true;
 }
 

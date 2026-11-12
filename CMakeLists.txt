@@ -457,6 +457,7 @@ add_library(gb_engine STATIC
     src/core/Log.cpp
     src/core/Settings.cpp
     src/core/Scalability.cpp
+    src/core/DeviceFeatures.cpp
     src/core/KeyBinds.cpp
     src/core/I18n.cpp
     src/core/Pad.cpp
@@ -482,6 +483,7 @@ add_library(gb_engine STATIC
     src/renderer/SceneRendererTemporal.cpp
     src/renderer/SceneRendererFog.cpp
     src/renderer/Benchmark.cpp
+    src/renderer/GpuCaps.cpp
     src/renderer/ViewportRender.cpp
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
@@ -1296,6 +1298,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(InstancingTests tests/InstancingTests.cpp)
     target_link_libraries(InstancingTests PRIVATE gb_engine)
     add_test(NAME InstancingTests COMMAND InstancingTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
+    add_executable(GroundworkTests tests/GroundworkTests.cpp)
+    target_link_libraries(GroundworkTests PRIVATE gb_engine)
+    add_test(NAME GroundworkTests COMMAND GroundworkTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Only drawing what the camera can see.
     add_executable(FrustumTests tests/FrustumTests.cpp)

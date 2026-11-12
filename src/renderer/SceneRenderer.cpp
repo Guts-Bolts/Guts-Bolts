@@ -604,6 +604,7 @@ void SceneRenderer::renderLampShadows(Scene& scene, const glm::vec3& camPos, int
 
 void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& target, bool showGrid) {
     GraphicsSettings& gs = GraphicsSettings::get();
+    m_frame.reset();   // last frame's lists are free again (FrameArena.h)
     // Weather: drops fall on, and while drawing the sky, sun and fog look stormy
     // (put back as the game set them when this frame is done).
     {
@@ -841,7 +842,7 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
 
     // Collect point / spot lights; keep the ones closest to the camera.
     struct LightItem { glm::vec4 pos, col, dir; float dist; const SceneNode* node; };
-    std::vector<LightItem> lights;
+    FrameList<LightItem> lights(m_frame, 32);   // (frame memory: nothing asked from the system here)
     glm::vec3 camPos = camera.position();
     scene.forEach([&](SceneNode* n) {
         if (!n->isLight() || !n->enabled || n->brightness <= 0.0f) return;
@@ -967,7 +968,7 @@ void SceneRenderer::keepForReflections(const Camera& camera) {
 // outline drawn round it, on top of the finished picture (so lighting, fog and
 // bloom don't change the colours). Like Roblox, at most 31 show at once.
 void SceneRenderer::drawHighlights(Scene& scene, const Camera& camera, Framebuffer& target) {
-    std::vector<SceneNode*> lights;
+    FrameList<SceneNode*> lights(m_frame, 32);
     scene.forEach([&](SceneNode* n) {
         if (lights.size() >= 31 || !n->isHighlight() || !n->enabled) return;
         const HighlightProps& h = n->highlight;

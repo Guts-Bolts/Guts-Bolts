@@ -132,7 +132,7 @@ void GraphicsSettings::load() {
     auto rd = [&](const char* k, auto& v) {
         if (j.contains(k)) try { v = j[k].get<std::decay_t<decltype(v)>>(); } catch (...) {}
     };
-    rd("vsync", vsync); rd("fpsCap", fpsCap); rd("showFps", showFps);
+    rd("vsync", vsync); rd("fpsCap", fpsCap); rd("showFps", showFps); rd("sawDeviceNotice", sawDeviceNotice);
     rd("quality", quality); rd("shadows", shadows); rd("shadowRes", shadowRes); rd("shadowQuality", shadowQuality);
     rd("bloom", bloom); rd("postFx", postFx);
     // (Before scalability: an on/off for ambient occlusion and for FXAA.)
@@ -308,7 +308,7 @@ void GraphicsSettings::holdSaving(bool on) { s_holdSaving = on; }
 void GraphicsSettings::save() const {
     if (s_holdSaving) return;
     nlohmann::json j = {
-        {"vsync", vsync}, {"fpsCap", fpsCap}, {"showFps", showFps},
+        {"vsync", vsync}, {"fpsCap", fpsCap}, {"showFps", showFps}, {"sawDeviceNotice", sawDeviceNotice},
         {"quality", quality}, {"shadows", shadows}, {"shadowRes", shadowRes}, {"shadowQuality", shadowQuality},
         {"bloom", bloom}, {"postFx", postFx},
         {"giQuality", giQuality}, {"aaQuality", aaQuality}, {"postQuality", postQuality}, {"textureQuality", textureQuality},
