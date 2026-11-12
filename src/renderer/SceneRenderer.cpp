@@ -1605,10 +1605,10 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         auto v = variants.find(node->materialVariant);
         if (v == variants.end() || v->second->variant.base != node->material) return false;
         const MaterialVariantProps& p = v->second->variant;
-        const std::string* pics[] = {&p.colorMap, &p.normalMap, &p.roughnessMap, &p.metalnessMap};
-        const char* names[] = {"uVColor", "uVNormal", "uVRough", "uVMetal"};
+        const std::string* pics[] = {&p.colorMap, &p.normalMap};
+        const char* names[] = {"uVColor", "uVNormal"};
         glm::vec4 has(0.0f);
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < 2; ++i) {
             unsigned tex = pics[i]->empty() ? 0 : Textures::get(*pics[i]);
             if (!tex) continue;
             bindTex(9 + i, tex);
@@ -1616,6 +1616,23 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
             has[i] = 1.0f;
         }
         m_lit->setVec4("uVHas", has);
+        // Occlusion, roughness and metalness: one packed picture (the OrmMap, or the
+        // RoughnessMap and MetalnessMap packed together the first time they're used).
+        glm::vec3 ormHas(0.0f);
+        unsigned orm = 0;
+        if (!p.ormMap.empty()) {
+            orm = Textures::get(p.ormMap);
+            if (orm) ormHas = glm::vec3(1.0f);
+        } else if (!p.roughnessMap.empty() || !p.metalnessMap.empty()) {
+            bool got[3] = {false, false, false};
+            orm = Textures::orm("", p.roughnessMap, p.metalnessMap, got);
+            if (orm) ormHas = glm::vec3(got[0] ? 1.0f : 0.0f, got[1] ? 1.0f : 0.0f, got[2] ? 1.0f : 0.0f);
+        }
+        if (orm) {
+            bindTex(11, orm);
+            m_lit->setInt("uVOrm", 11);
+        }
+        m_lit->setVec3("uVOrmHas", ormHas);
         m_lit->setFloat("uVTile", p.studsPerTile * 0.5f);   // (a Roblox stud is half a unit)
         m_lit->setVec3("uVParams", glm::vec3(p.roughness, p.metalness, p.glow));
         m_lit->setBool("uVariant", true);

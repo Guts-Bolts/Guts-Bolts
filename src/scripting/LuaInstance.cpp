@@ -1370,6 +1370,7 @@ std::string* variantPicture(MaterialVariantProps& v, const char* k) {
     if (is(k, "NormalMap"))    return &v.normalMap;
     if (is(k, "RoughnessMap")) return &v.roughnessMap;
     if (is(k, "MetalnessMap")) return &v.metalnessMap;
+    if (is(k, "OrmMap"))       return &v.ormMap;
     return nullptr;
 }
 
