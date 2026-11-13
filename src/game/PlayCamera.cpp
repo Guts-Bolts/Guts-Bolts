@@ -1,3 +1,4 @@
+#include "../scene/Storms.h"
 #include "PlayCamera.h"
 #include "../renderer/Camera.h"
 #include "../scene/Player.h"
@@ -205,7 +206,7 @@ void follow(Camera& cam, Player& player, float dt, bool shiftLock) {
     keepOutOfWalls(cam, player, dt, subject);
     // Explosions shake the camera as their shockwave rolls past (Blast.h).
     if (scene) {
-        const float shake = scene->blasts().shake(cam.pivot);
+        const float shake = scene->blasts().shake(cam.pivot) + Storms::cameraShake(*scene, cam.pivot);
         if (shake > 0.001f) {
             static float t = 0.0f;
             t += dt * 37.0f;

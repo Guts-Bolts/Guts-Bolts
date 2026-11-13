@@ -503,6 +503,7 @@ add_library(gb_engine STATIC
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
     src/scene/Weather.cpp
+    src/scene/Storms.cpp
     src/scene/Vehicles.cpp
     src/scene/IkControls.cpp
     src/scene/LinkedModels.cpp
@@ -1520,5 +1521,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(StormAndDetailTests tests/StormAndDetailTests.cpp)
     target_link_libraries(StormAndDetailTests PRIVATE gb_engine)
     add_test(NAME StormAndDetailTests COMMAND StormAndDetailTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Severe weather: supercells, tornadoes, downbursts and the real cloud types (Storms.h).
+    add_executable(SevereWeatherTests tests/SevereWeatherTests.cpp)
+    target_link_libraries(SevereWeatherTests PRIVATE gb_engine)
+    add_test(NAME SevereWeatherTests COMMAND SevereWeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()

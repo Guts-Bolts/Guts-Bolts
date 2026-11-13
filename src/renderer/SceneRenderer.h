@@ -178,6 +178,9 @@ private:
     WeatherSim m_weather;
     double     m_weatherClock = 0.0;
     void drawWeather(Scene& scene, const Camera& camera);
+    void drawStorms(Scene& scene, const Camera& camera);     // a tornado's funnel and dust, a downburst's rain shaft
+    void ribbonBuffers();                                    // (makes the strip buffers the first time)
+    unsigned int m_cloudNoise = 0;                           // the 3D clouds' lumps (a repeating block)
     void drawSplashes(Scene& scene, const Camera& camera);   // rings and spray where rain hits
     void drawLightning(const Camera& camera);   // a Storm's bolt, glowing
     // Each Trail's pieces: where its two attachments were, and when.

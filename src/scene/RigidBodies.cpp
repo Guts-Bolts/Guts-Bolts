@@ -10,6 +10,7 @@
 //    contacts stop pushing into each other and constraints are satisfied
 //  * movers (BodyVelocity, AlignPosition...) push whole welded assemblies
 //  * finally positions and rotations move by the velocities
+#include "Storms.h"
 #include "Physics.h"
 #include "Shatter.h"
 #include "Scene.h"
@@ -1188,6 +1189,10 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
     const float g = scene.world().gravity;
     const float air = std::clamp(scene.world().airDensity, 0.0f, 10.0f);
     const glm::vec3 wind = scene.world().globalWind;
+    // A tornado or a downburst (Storms.h): the wind is different at every spot, and
+    // the air in it (thick with rain, dust and flying bits) hits much harder.
+    const bool storm = Storms::active(scene);
+    const float stormAir = storm ? std::max(air, 0.0012f) : air;
     // Keep rigid-body integration close to 240 Hz even when a frame is slow.
     // The former eight-step ceiling dropped the simulation rate below 240 Hz
     // whenever a frame took longer than 1/30 s, making fast impacts and stacked
@@ -1218,16 +1223,16 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
         // it goes and the bigger its side facing the air. Real-world strength, so a
         // brick hardly notices, but a light, wide thing (a foam sheet, a balloon, a
         // leaf) drifts down slowly and gets blown about.
-        if (air > 0.0f)
+        if (stormAir > 0.0f)
             for (auto& b : bodies) {
                 if (!b.dynamic || !b.solid) continue;
-                const glm::vec3 vrel = b.v - wind;
+                const glm::vec3 vrel = b.v - (storm ? Storms::windAt(scene, b.pos) : wind);
                 const float speed = glm::length(vrel);
                 if (speed < 0.5f) continue;
                 const glm::vec3 dir = vrel / speed;
                 const float area = airArea(b, dir);
                 // 0.5 x air density x drag (about 1 for a blunt shape) x area x speed²
-                const float push = 0.5f * air * area * speed * speed * h * b.invMass;
+                const float push = 0.5f * (storm ? stormAir * Storms::airBoost(scene, b.pos) : air) * area * speed * speed * h * b.invMass;
                 if (push < 1e-4f) continue;
                 if (!b.awake) {   // (only wind strong enough to really move it wakes a resting part)
                     if (push < g * h * 0.3f) continue;
@@ -1235,6 +1240,20 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                 }
                 b.v -= dir * std::min(push, speed * 0.5f);   // (never more than halves the speed in a step: no flipping back)
             }
+        // An earthquake (Storms.h): the ground is thrown about under everything loose.
+        // Seen from the ground, that is everything being pushed the other way.
+        if (storm && scene.storms().quake > 0.0f) {
+            const glm::vec3 jolt = -Storms::quakeAccel(scene.storms());
+            const bool strong = glm::length(jolt) > g * 0.25f;
+            for (auto& b : bodies) {
+                if (!b.dynamic || glm::length(b.v) > 30.0f) continue;   // (things flying through the air don't feel the ground)
+                if (!b.awake) {
+                    if (!strong) continue;
+                    b.awake = true; b.node->sleepTime = 0.0f;
+                }
+                b.v += jolt * h;
+            }
+        }
         // Force zones: wind, push and pull on whatever loose part is inside one.
         for (const Zone& z : zones)
             for (auto& b : bodies) {
