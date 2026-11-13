@@ -115,6 +115,7 @@ public:
 
 private:
     Acoustics::Listener m_acoustics;   // walls muffle, rooms echo (Acoustics.h)
+    int                 m_tornadoSound = 0, m_downburstSound = 0;   // the roar of the wind (a real recording, looping)
     FireSpread::System  m_fire;        // fires crackle and spread (FireSpread.h)
     Tracks::System      m_tracks;      // tyre tracks and skid marks (Tracks.h)
     Scene*       m_scene;

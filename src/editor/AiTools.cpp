@@ -213,7 +213,7 @@ const std::vector<Tool>& tools() {
           "\"Brick\", \"Cobblestone\", \"Slate\", \"Granite\", \"Marble\", \"Sand\", \"Grass\", \"Fabric\"; Enum.Material.Neon "
           "works too), Name, Parent (an object or a service like \"StarterPack\"), Enabled, Brightness, Range, Text, "
           "Visible... object \"Lighting\" changes the Lighting service (ClockTime, Brightness, FogEnabled, FogDensity, "
-          "FogColor, Ambient, SunColor, GlobalShadows, Weather \"Clear\"/\"Rain\"/\"Snow\"/\"Storm\", WeatherIntensity 0-1). Setting a script's Source is passed on to edit_script.",
+          "FogColor, Ambient, SunColor, GlobalShadows, Weather \"Clear\"/\"Rain\"/\"Snow\"/\"Storm\"/\"Supercell\", WeatherIntensity 0-1, CloudType \"Auto\"/\"Cumulus\"/\"Stratus\"/\"Cumulonimbus\"/\"Supercell\", SevereWeather). Setting a script's Source is passed on to edit_script.",
           "\"Move/resize/recolour/rename X\", \"make it red/glow/see-through\", \"make it fall\" (Anchored false), "
           "\"make it solid / walk-through\" (CanCollide), \"put X inside Y\" (Parent).",
           "To create something new use insert_object. To change a script's code use edit_script. To change many objects "
@@ -630,14 +630,14 @@ const std::vector<Tool>& tools() {
           "\"Make it night\", \"a spooky atmosphere\", \"sunset\", \"add fog\", \"make it rain / snow\", \"brighter\".",
           "For lamps and glowing things use insert_object PointLight / SpotLight inside parts, or material Neon.",
           "preset (optional, see above); clock_time (0-24); brightness; ambient [r, g, b]; sun_color; fog (true/false); "
-          "fog_density (0-1); fog_color; weather (Clear, Rain, Snow, Storm = thunderstorm with lightning); weather_intensity (0-1). Values you give win over the preset's.",
+          "fog_density (0-1); fog_color; weather (Clear, Rain, Snow, Storm = thunderstorm with lightning, Supercell = a rotating storm that grows tornadoes); weather_intensity (0-1). Values you give win over the preset's.",
           "{lighting: every Lighting setting now}.", "None.", "Lighting changed (undoable outside a playtest).",
           "set_atmosphere -> screenshot.", "\"Make it a spooky night\" -> set_atmosphere {preset: \"spooky\"}."},
          schema({{"preset", {{"type", "string"}, {"enum", {"day", "morning", "sunset", "night", "foggy", "spooky", "rainy", "stormy", "snowy", "space"}}}},
                  {"clock_time", {{"type", "number"}, {"minimum", 0}, {"maximum", 24}}}, {"brightness", {{"type", "number"}}},
                  {"ambient", {{"type", {"array", "string"}}}}, {"sun_color", {{"type", {"array", "string"}}}},
                  {"fog", {{"type", "boolean"}}}, {"fog_density", {{"type", "number"}}}, {"fog_color", {{"type", {"array", "string"}}}},
-                 {"weather", {{"type", "string"}, {"enum", {"Clear", "Rain", "Snow", "Storm"}}}},
+                 {"weather", {{"type", "string"}, {"enum", {"Clear", "Rain", "Snow", "Storm", "Supercell"}}}},
                  {"weather_intensity", {{"type", "number"}, {"minimum", 0}, {"maximum", 1}}}}, {})},
         {"physics_replay", "Record the physics, look at any moment, save physics tests", "DEBUG", false, false, false, Risk::Low,
          {"Studio's Physics Replay: runs only the physics (no scripts, no players) on a copy of the scene as it is now, "

@@ -19,6 +19,7 @@ because it's nice. They were cut shorter, made mono and saved as Ogg.
 | `fire_loop` | Fire Crackling | AntumDeluge | https://opengameart.org/content/fire-crackling |
 | `breath_tired` | Breathing Tired | mikeask | https://opengameart.org/content/breathing-tired |
 | `thunder_*` | Rain + Long Thunder | wuxiascrub | https://opengameart.org/content/rain-long-thunder |
+| `storm_wind` | Wind Whoosh Loop | SketchMan3 | https://opengameart.org/content/wind-whoosh-loop |
 | `whiz_*` | Swishes Sound Pack | artisticdude | https://opengameart.org/content/swishes-sound-pack |
 
 Adding one: drop a short mono `.ogg` named `<sound>_<n>.ogg` in this folder (all the

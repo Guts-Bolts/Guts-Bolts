@@ -337,6 +337,10 @@ void GameSession::stop() {
     Audio::stopAll();
     m_acoustics.reset();
     m_fire.clear();
+    if (m_tornadoSound) Audio::stop(m_tornadoSound);
+    if (m_downburstSound) Audio::stop(m_downburstSound);
+    m_tornadoSound = m_downburstSound = 0;
+    m_scene->storms() = Storms::State{};   // (no tornado left standing when the game stops)
     m_tracks.clear();
     if (Player* p = m_scene->player()) p->endPlay();
     m_physics.reset();
@@ -584,6 +588,19 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
         // Supercells, tornadoes and downbursts: the host decides, everyone follows (Storms.h).
         if (!client) Storms::simulate(*m_scene, dt);
         Storms::follow(*m_scene, dt);
+        // Their roar: louder the stronger it is, coming from where it is.
+        auto roar = [&](int& handle, float amount, const glm::vec3& at, float pitch) {
+            if (amount <= 0.02f) {
+                if (handle) { Audio::stop(handle); handle = 0; }
+                return;
+            }
+            const float volume = std::clamp(amount, 0.0f, 1.0f);
+            if (!handle || !Audio::isPlaying(handle)) handle = Audio::play("storm_wind", volume, pitch, true, &at);
+            else { Audio::setVolume(handle, volume); Audio::setPosition(handle, at); }
+        };
+        const Storms::State& storm = m_scene->storms();
+        roar(m_tornadoSound, storm.tornado / 3.0f + (storm.tornado > 0.0f ? 0.25f : 0.0f), storm.tornadoPos + glm::vec3(0.0f, 12.0f, 0.0f), 0.62f);
+        roar(m_downburstSound, storm.downburst * 0.8f, storm.downburstPos + glm::vec3(0.0f, 8.0f, 0.0f), 0.85f);
     }
 
     // Blood, oil, sparks, smoke...
