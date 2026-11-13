@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PRODUCTS, productOf, productById, activeLink } from '../../website/app/products.js';
 
 const read = (p) => readFileSync(new URL('../../' + p, import.meta.url), 'utf8');
-const app = read('website/app/app.js');
+const app = read('website/app/app.js') + read('website/app/art.js') + read('website/app/paste.js') + read('website/app/academy.js');   // (art.js, paste.js and academy.js add their own pages)
 const page = read('website/app/index.html');
 
 test('every product has the bits the site needs', () => {
@@ -62,7 +62,7 @@ test('Home is the platform home; the old game front page is the Games home', () 
   assert.match(app, /const gamesHome = async \(\) =>/);
   assert.match(app, /if \(!mine && !location\.hash\.includes\('\?'\)\) \{ await gamesHome\(\); return; \}/);
   const home = app.slice(app.indexOf('pages.home = async'), app.indexOf('pages.soon = async'));
-  assert.match(home, /PRODUCTS\.map\(productCard\)/);
+  assert.match(home, /GROUPS\.filter/, 'Home shows the products in their groups (products.js GROUPS)');
   assert.ok(!home.includes('auction'), 'auctions are on the Games home, not Home');
   const games = app.slice(app.indexOf('const gamesHome'), app.indexOf('pages.home = async'));
   assert.match(games, /<div id="liveAuctions">/);

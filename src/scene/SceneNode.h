@@ -596,6 +596,10 @@ inline int materialShaderId(Material m) { return (int)m < 7 ? (int)m : (int)m + 
 struct MaterialVariantProps {
     Material    base = Material::Plastic;                       // BaseMaterial
     std::string colorMap, normalMap, roughnessMap, metalnessMap; // ColorMap, NormalMap, RoughnessMap, MetalnessMap
+    // Ours: one packed picture instead of RoughnessMap + MetalnessMap. Red = occlusion (how
+    // much sky light reaches each spot), green = roughness, blue = metalness. When set it
+    // wins over the two above. (Without it, those two are packed into one by the renderer.)
+    std::string ormMap;                                          // OrmMap
     float       studsPerTile = 10.0f;    // StudsPerTile: how big one copy of the pictures is (Roblox studs)
     // Ours, for when there's no picture for it: 0 smooth .. 1 rough, 0 not metal .. 1 metal,
     // and how much it glows (0 = not at all; the part's colour times its ColorMap).
@@ -610,7 +614,7 @@ inline void clampVariant(MaterialVariantProps& v) {
     c(v.roughness, 0.0f, 1.0f);
     c(v.metalness, 0.0f, 1.0f);
     c(v.glow, 0.0f, 10.0f);
-    for (std::string* t : {&v.colorMap, &v.normalMap, &v.roughnessMap, &v.metalnessMap})
+    for (std::string* t : {&v.colorMap, &v.normalMap, &v.roughnessMap, &v.metalnessMap, &v.ormMap})
         if (t->size() > 500) t->resize(500);
     if (v.graph.size() > 200000) v.graph.clear();
 }
@@ -750,6 +754,7 @@ public:
     float       brightness = 2.0f;
     float       range      = 14.0f;
     float       spotAngle  = 60.0f;       // cone width in degrees (spot lights)
+    bool        lightShadows = false;     // Shadows: things block its light (a few nearest lamps at once)
 
     // Sound (kind == Sound)
     std::string soundId  = "coin";         // built-in name or a file in the games folder
@@ -844,7 +849,7 @@ public:
     // it is and how much it sticks together. A FluidEmitter pours it out: its
     // transform's position and scale are its Position and Size; `enabled` turns it on and off.
     float       viscosity      = 0.015f;   // FluidSystem: 0 = runny like water, 1 = thick like honey
-    float       surfaceTension = 0.0f;     // FluidSystem: 0..1, how much drops pull together (beads, strands)
+    float       surfaceTension = 0.08f;    // FluidSystem: 0..1, how much drops pull together (beads, strands); gentle water cohesion by default
     float       fluidRate      = 500.0f;   // FluidEmitter: drops per second
     glm::vec3   fluidVelocity{0.0f, -10.0f, 0.0f};   // FluidEmitter: how fast (and which way) it pours
     uint64_t    fluidSystem    = 0;        // FluidEmitter: its FluidSystem (0 = plain water)

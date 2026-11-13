@@ -5,6 +5,15 @@
 //   GET  /download/<file>              the newest copy of that file
 //   PUT  /download/upload/<file>?version=X   (the release workflow, with its GitHub token)
 //   POST /download/publish             (the release workflow) {version, name, notes, files}
+//
+// Nightly test builds (the Player's opt-in "Nightly" channel) live apart from the
+// releases, so a test build can never replace or block the normal download:
+//   GET  /download/nightly.json                 the newest main build {version, commit, commitTime, date, files}
+//   GET  /download/nightly/<commit>/<file>      its files
+//   PUT  /download/upload/<file>?channel=nightly&commit=<sha>    (build.yml's nightly job, main only)
+//   POST /download/publish?channel=nightly      {version, commit, commitTime, files}
+// Only the newest two nightly builds are kept (older ones are deleted when a new one
+// comes out), so they take a fixed, small amount of the free R2 space.
 import { readLimitedText } from './http.js';
 
 const FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$/;
@@ -86,7 +95,69 @@ export function normalizeReleaseManifest(m) {
   if (!Object.keys(files).length || Object.keys(files).length > allowed.size) return null;
   if (m.name !== undefined && (typeof m.name !== 'string' || m.name.length > 160)) return null;
   if (m.notes !== undefined && (typeof m.notes !== 'string' || m.notes.length > 20000)) return null;
-  return { version, name: m.name || '', notes: m.notes || '', files };
+  if (m.commit !== undefined && (typeof m.commit !== 'string' || !COMMIT.test(m.commit))) return null;
+  const out = { version, name: m.name || '', notes: m.notes || '', files };
+  if (m.commit) out.commit = m.commit;   // lets the Player tell a release from a nightly of the same version
+  return out;
+}
+
+// ---- Nightly test builds ----
+const COMMIT = /^[0-9a-f]{40}$/;
+const NIGHTLY_KINDS = new Set(['windows', 'mac', 'linux']);   // phones update from the stores/APK instead
+export const NIGHTLY_KEEP = 2;
+export const nightlyKey = (commit, name) => 'nightly/' + commit + '/' + name;
+
+export function normalizeNightlyManifest(m) {
+  if (!m || typeof m !== 'object' || Array.isArray(m) || typeof m.version !== 'string' ||
+      typeof m.commit !== 'string' || !COMMIT.test(m.commit) ||
+      !Number.isSafeInteger(m.commitTime) || m.commitTime <= 0 ||
+      typeof m.files !== 'object' || !m.files || Array.isArray(m.files)) return null;
+  const version = m.version.replace(/^v/, '');
+  if (!/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version)) return null;
+  const files = {};
+  for (const [kind, name] of Object.entries(m.files)) {
+    if (!NIGHTLY_KINDS.has(kind) || typeof name !== 'string' || !FILE.test(name)) return null;
+    files[kind] = name;
+  }
+  if (!Object.keys(files).length) return null;
+  const date = new Date(m.commitTime * 1000).toISOString().slice(0, 10);
+  return { version, commit: m.commit, commitTime: m.commitTime, date, files };
+}
+
+// Publishing a nightly: every file must already be uploaded, and an older build
+// (a slow run finishing after a newer one) never replaces a newer one.
+export async function publishNightly(env, safe) {
+  for (const name of Object.values(safe.files)) {
+    if (!(await env.DOWNLOADS.head(nightlyKey(safe.commit, name)))) return json({ ok: false, error: 'Missing file: ' + name }, 400);
+  }
+  let prev = null;
+  const old = await env.DOWNLOADS.get('nightly.json');
+  if (old) { try { prev = JSON.parse(await old.text()); } catch { prev = null; } }
+  if (prev && prev.commit !== safe.commit && Number(prev.commitTime) > safe.commitTime) {
+    return json({ ok: false, error: 'A newer nightly is already out.', current: prev.commit }, 409);
+  }
+  const manifest = { ...safe, channel: 'nightly', published: Math.floor(Date.now() / 1000) };
+  await env.DOWNLOADS.put('nightly.json', JSON.stringify(manifest), { httpMetadata: { contentType: 'application/json' } });
+  const keep = new Set([safe.commit]);
+  if (prev && typeof prev.commit === 'string' && COMMIT.test(prev.commit)) keep.add(prev.commit);
+  await pruneNightlies(env, keep);
+  return json({ ok: true, manifest });
+}
+
+// Deletes every nightly file whose build isn't in `keep`.
+export async function pruneNightlies(env, keep) {
+  let cursor;
+  const gone = [];
+  do {
+    const page = await env.DOWNLOADS.list({ prefix: 'nightly/', cursor });
+    for (const o of page.objects || []) {
+      const commit = o.key.split('/')[1];
+      if (!keep.has(commit)) gone.push(o.key);
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  for (let i = 0; i < gone.length; i += 1000) await env.DOWNLOADS.delete(gone.slice(i, i + 1000));
+  return gone.length;
 }
 
 let jwksCache = null, jwksAt = 0;
@@ -125,11 +196,13 @@ async function verifyGithubToken(token) {
   return claims;
 }
 
+// The checked token's claims, or null. Nightly builds may only come from main.
 async function allowed(request) {
   const got = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
-  if (!got) return false;
-  try { return !!(await verifyGithubToken(got)); } catch { return false; }
+  if (!got) return null;
+  try { return await verifyGithubToken(got); } catch { return null; }
 }
+export const mayPublishNightly = (claims) => !!claims && isTrustedReleaseClaims(claims) && claims.ref === 'refs/heads/main';
 
 // The size of one upload request, which must be sent and fit under the limit.
 function uploadLength(request) {
@@ -142,9 +215,10 @@ function uploadLength(request) {
 }
 
 // After a version's file is saved, it also becomes the newest copy people download.
-async function copyToLatest(env, versionKey, name, meta) {
+async function copyToLatest(env, versionKey, name, meta, toLatest = true) {
   const stored = await env.DOWNLOADS.get(versionKey);
   if (!stored) return json({ ok: false, error: 'The release upload could not be verified.' }, 500);
+  if (!toLatest) return json({ ok: true, size: stored.size });   // nightly files stay in nightly/
   await env.DOWNLOADS.put('latest/' + name, knownLength(stored.body, stored.size), meta);
   return json({ ok: true, size: stored.size });
 }
@@ -156,7 +230,7 @@ async function copyToLatest(env, versionKey, name, meta) {
 //   POST upload/<file>/finish?version=X&uploadId=U       { parts: [...] } -> { ok, size }
 // Every piece but the last must be the same size (split -b does that).
 export const MAX_RELEASE_PARTS = 40;
-export async function handleMultipartStep(request, env, url, step, name, versionKey, meta) {
+export async function handleMultipartStep(request, env, url, step, name, versionKey, meta, toLatest = true) {
   if (step === 'start' && request.method === 'POST') {
     const upload = await env.DOWNLOADS.createMultipartUpload(versionKey, meta);
     return json({ ok: true, uploadId: upload.uploadId });
@@ -181,7 +255,7 @@ export async function handleMultipartStep(request, env, url, step, name, version
       return json({ ok: false, error: 'Bad part list.' }, 400);
     }
     await upload.complete(parts.map((p) => ({ partNumber: p.partNumber, etag: p.etag })));
-    return copyToLatest(env, versionKey, name, meta);
+    return copyToLatest(env, versionKey, name, meta, toLatest);
   }
   return json({ ok: false, error: 'Bad upload.' }, 400);
 }
@@ -190,7 +264,19 @@ export async function handleDownload(request, env, url) {
   if (!env.DOWNLOADS) return json({ ok: false, error: 'Downloads aren\'t set up yet.' }, 503);
   const rest = url.pathname.slice('/download/'.length);
   if (rest.startsWith('upload/') || rest === 'publish') {
-    if (!(await allowed(request))) return json({ ok: false, error: 'Not allowed.' }, 403);
+    const claims = await allowed(request);
+    if (!claims) return json({ ok: false, error: 'Not allowed.' }, 403);
+    const nightly = url.searchParams.get('channel') === 'nightly';
+    if (nightly && !mayPublishNightly(claims)) return json({ ok: false, error: 'Nightly builds only come from main.' }, 403);
+    if (nightly && rest === 'publish' && request.method === 'POST') {
+      const text = await readLimitedText(request, MAX_MANIFEST);
+      if (text === null) return json({ ok: false, error: 'Manifest is too large.' }, 413);
+      let m;
+      try { m = JSON.parse(text); } catch { return json({ ok: false, error: 'Bad manifest.' }, 400); }
+      const safe = normalizeNightlyManifest(m);
+      if (!safe) return json({ ok: false, error: 'Bad manifest.' }, 400);
+      return publishNightly(env, safe);
+    }
     if (rest === 'publish' && request.method === 'POST') {
       const text = await readLimitedText(request, MAX_MANIFEST);
       if (text === null) return json({ ok: false, error: 'Manifest is too large.' }, 413);
@@ -204,10 +290,11 @@ export async function handleDownload(request, env, url) {
     }
     const [name, step = ''] = rest.slice('upload/'.length).split('/');
     const version = (url.searchParams.get('version') || '').replace(/^v/, '');
-    if (!FILE.test(name) || !/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version)) return json({ ok: false, error: 'Bad upload.' }, 400);
+    const commit = url.searchParams.get('commit') || '';
+    if (!FILE.test(name) || (nightly ? !COMMIT.test(commit) : !/^[0-9][0-9A-Za-z.-]{0,30}$/.test(version))) return json({ ok: false, error: 'Bad upload.' }, 400);
     const meta = { httpMetadata: { contentType: 'application/octet-stream', contentDisposition: 'attachment; filename="' + name + '"' } };
-    const versionKey = version + '/' + name;
-    if (step) return handleMultipartStep(request, env, url, step, name, versionKey, meta);
+    const versionKey = nightly ? nightlyKey(commit, name) : version + '/' + name;
+    if (step) return handleMultipartStep(request, env, url, step, name, versionKey, meta, !nightly);
     if (request.method !== 'PUT') return json({ ok: false, error: 'Bad upload.' }, 400);
     const length = uploadLength(request);
     if (length.error) return length.error;
@@ -218,7 +305,7 @@ export async function handleDownload(request, env, url) {
       if (error && error.code === 'EMPTY_UPLOAD') return json({ ok: false, error: 'Empty file.' }, 400);
       throw error;
     }
-    return copyToLatest(env, versionKey, name, meta);
+    return copyToLatest(env, versionKey, name, meta, !nightly);
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') return json({ ok: false, error: 'Use GET.' }, 405);
   if (rest === 'latest.json') {
@@ -226,8 +313,15 @@ export async function handleDownload(request, env, url) {
     if (!obj) return json({ ok: false, error: 'No release yet.' }, 404);
     return new Response(obj.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } });
   }
-  if (!FILE.test(rest)) return new Response('Not found.', { status: 404 });
-  const obj = await env.DOWNLOADS.get('latest/' + rest);
+  if (rest === 'nightly.json') {
+    const obj = await env.DOWNLOADS.get('nightly.json');
+    if (!obj) return json({ ok: false, error: 'No nightly build yet.' }, 404);
+    return new Response(obj.body, { headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=60' } });
+  }
+  const nightlyFile = /^nightly\/([0-9a-f]{40})\/([^/]+)$/.exec(rest);
+  if (nightlyFile && !FILE.test(nightlyFile[2])) return new Response('Not found.', { status: 404 });
+  if (!nightlyFile && !FILE.test(rest)) return new Response('Not found.', { status: 404 });
+  const obj = await env.DOWNLOADS.get(nightlyFile ? rest : 'latest/' + rest);
   if (!obj) return new Response('That download isn\'t there yet.', { status: 404 });
   const headers = new Headers();
   obj.writeHttpMetadata(headers);

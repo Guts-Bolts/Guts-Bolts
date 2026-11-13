@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
+#include <functional>
 
 class Physics;
 class SceneNode;
@@ -36,8 +37,13 @@ struct Particle {
     // A stain on a body part (moves with it): which part, and where on it in its own space.
     uint64_t  onPart = 0;
     glm::vec3 localPos{0.0f}, localNormal{0.0f, 1.0f, 0.0f}, localTangent{1.0f, 0.0f, 0.0f};
+    glm::uvec3 skinTriangle{0xffffffffu}; // triangle carrying a skinned wound decal
+    glm::vec3 skinBarycentric{1.0f, 0.0f, 0.0f};
+    glm::vec3 skinOffset{0.0f};           // offset in the deformed tangent / normal / bitangent frame
+    float     skinNormalSign = 1.0f;
     glm::vec3 tangent{0.0f};            // (stains: which way the part's side runs, so it turns with it)
     float     alpha = 1.0f;             // footprints and smears get fainter
+    int       mark = 0;                 // not blood: 1 a dry mark (prints in snow, tyre tracks, bullet holes, bruises), 2 a wet one
     // Gibs (Chunk):
     int       gib = 0;                  // 0 meat, 1 bone
     glm::vec3 skin{-1.0f};              // a piece of a body part: its colour on one side (negative = plain meat)
@@ -90,6 +96,30 @@ public:
     void update(float dt, float gravity, const Physics& physics);
     // The game's blood (Game Settings > Damage & Blood).
     void setBlood(const glm::vec3& color, float amount, float stay) { m_bloodColor = color; m_bloodAmount = amount; m_bloodStay = stay; }
+    const glm::vec3& bloodColor() const { return m_bloodColor; }
+    float bloodAmount() const { return m_bloodAmount; }
+    // Liquid blood (workspace.LiquidBlood): some of every spurt and spray also goes into
+    // the real liquid simulation as thick drops (position, velocity, kind). Scene sets it.
+    using LiquidSink = std::function<void(GoreKind, const glm::vec3&, const glm::vec3&)>;
+    void setLiquidSink(LiquidSink sink) { m_liquidSink = std::move(sink); }
+    int  liquidSent() const { return m_liquidSent; }   // (drops handed to the liquid, for tests)
+    // Blood in the water: a drop of blood or oil that is in a pool (it fell in, or came
+    // out of a wound under the surface) is handed over (where, colour, how much) and, if
+    // the answer is yes, becomes a cloud of colour in the water instead (WaterDye).
+    using WaterSink = std::function<bool(const glm::vec3&, const glm::vec3&, float)>;
+    void setWaterSink(WaterSink sink) { m_waterSink = std::move(sink); }
+    int  waterSent() const { return m_waterSent; }     // (drops that became colour in water, for tests)
+    // How much colour a drop this big puts in the water.
+    static float dyeAmount(float size) { return std::clamp(size * 5.0f, 0.15f, 1.2f); }
+    // One character's own blood (Humanoid.BloodColor / BloodAmount): while a Look is
+    // alive, everything sprayed uses it, then the game's blood comes back.
+    struct Look {
+        ParticleSystem& ps; glm::vec3 color; float amount;
+        Look(ParticleSystem& p, const glm::vec3& c, float a) : ps(p), color(p.m_bloodColor), amount(p.m_bloodAmount) {
+            p.m_bloodColor = c; p.m_bloodAmount = a;
+        }
+        ~Look() { ps.m_bloodColor = color; ps.m_bloodAmount = amount; }
+    };
     void clear() { m_items.clear(); m_sprites.clear(); m_spawnDebt.clear(); }
     const std::vector<Particle>& items() const { return m_items; }
 
@@ -126,12 +156,22 @@ public:
     void walk(BloodyFeet& feet, GoreKind kind, const glm::vec3& at, bool onGround);
     // Blood soaking into a body part where it was hurt (`at` is a world point near it).
     void stain(GoreKind kind, const SceneNode* part, const glm::vec3& at, float size);
+    void wound(GoreKind kind, const SceneNode* part, const glm::vec3& at,
+               const glm::vec3& normal, const glm::vec3& tangent, float width, float length);
     // Stains ride along with their parts (and go when the part does). Call once a frame.
     void follow(Scene& scene);
     // Wash a character clean (respawning): drop every stain on parts under `root`.
     void wipe(Scene& scene, const SceneNode* root);
     float dryTime() const { return std::max(8.0f, m_bloodStay * 0.6f); }
     void explosion(const glm::vec3& pos, float radius);
+    // A mark that isn't blood (Realism): a footprint in snow or mud, a tyre track, a bullet
+    // hole, a wet footprint. look: 0 round, 1 streak along `dir`, 2 footprint. wet: water.
+    void mark(const glm::vec3& pos, const glm::vec3& normal, const glm::vec3& dir, const glm::vec3& size,
+              const glm::vec3& color, int look, float alpha, float life, bool wet = false);
+    // A bruise on a body part (fades over `life` seconds).
+    void bruise(const SceneNode* part, const glm::vec3& at, float size, float life = 90.0f);
+    // Blood stains on clothes soak further through the cloth for a while.
+    void soak(float dt, const std::function<bool(uint64_t part)>& clothed);
     // Water thrown up by a splash (droplets that vanish when they land).
     void waterSpray(const glm::vec3& pos, int count, float speed, const glm::vec3& color, float radius = 0.3f);   // radius: a ring around what fell in
 
@@ -150,4 +190,9 @@ private:
     float     m_bloodAmount = 1.0f, m_bloodStay = 30.0f;
     int m_splats = 0;
     float m_splatSound = 0.0f;
+    LiquidSink m_liquidSink;
+    int   m_liquidSent = 0;
+    WaterSink m_waterSink;
+    int   m_waterSent = 0;
+    void  toLiquid(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel);
 };

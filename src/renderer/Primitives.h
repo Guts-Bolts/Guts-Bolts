@@ -52,7 +52,7 @@ inline std::shared_ptr<Mesh> createSphere(int stacks = 16, int slices = 32) {
             auto a = (uint32_t)(i*(slices+1)+j), b = a+slices+1;
             idx.insert(idx.end(), {a,b,a+1, b,b+1,a+1});
         }
-    return std::make_shared<Mesh>(v, idx);
+    return std::make_shared<Mesh>(v, idx, /*lods*/ true);   // (1,024 triangles: far balls get simpler copies)
 }
 
 inline std::shared_ptr<Mesh> createPlane(int divs = 1) {

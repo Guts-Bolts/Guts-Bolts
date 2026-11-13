@@ -1,6 +1,8 @@
 // The liquid's physics as compute shaders (see LiquidGpu.h for the big picture).
 #include "LiquidGpu.h"
+#include "Liquid.h"
 #include "../renderer/GL.h"
+#include "../renderer/GpuCaps.h"
 #include "../core/Settings.h"
 
 #include <algorithm>
@@ -18,7 +20,7 @@ namespace {
 //   [4..7]   draw command for the renderer (count, 1, 0, 0)
 //   [8]      how many drops fell into pools this frame
 //   [16..22] lowest x y z, highest x y z (sortable float bits), fastest (x1000)
-//   [32..]   splashes: x y z speed (float bits), kMaxSplashes of them
+//   [32..]   splashes: x y z, speed + 1024 x kind of liquid (float bits), kMaxSplashes of them
 //   [288..]  probes: count, vx vy vz (x256), top (sortable float bits)
 //   [640..]  drops per grid cell (table + 1 for "dead"), then where each cell
 //            starts in the sorted list, then per-block sums for the prefix sum
@@ -262,7 +264,9 @@ void main() {
         if (s < 64u) {
             uint o = 32u + s * 4u;
             g[o] = floatBitsToUint(x.x); g[o + 1u] = floatBitsToUint(hi.y);
-            g[o + 2u] = floatBitsToUint(x.z); g[o + 3u] = floatBitsToUint(length(v));
+            g[o + 2u] = floatBitsToUint(x.z);
+            // (the speed, and which kind of liquid: coloured ones cloud the pool)
+            g[o + 3u] = floatBitsToUint(min(length(v), 1000.0) + 1024.0 * floor(X[i].w / 4096.0));
         }
     }
     if (dead) { K[i] = uvec2(uT, 0u); return; }
@@ -420,7 +424,7 @@ layout(std430, binding = 0) readonly buffer BX { vec4 X[]; };
 layout(std430, binding = 2) readonly buffer BP { vec4 P[]; };
 layout(std430, binding = 4) writeonly buffer BP2 { vec4 P2[]; };
 layout(std430, binding = 5) readonly buffer BL { float L[]; };
-uniform float uInvRest; uniform float uWq;
+uniform float uInvRest; uniform float uWq; uniform float uScorr;
 void main() {
     uint i = gl_GlobalInvocationID.x;
     if (i >= g[0]) return;
@@ -434,7 +438,7 @@ void main() {
         if (r2 >= kH * kH) continue;
         float len = sqrt(r2);
         float corr = poly6(r2) / uWq;
-        corr = -0.002 * corr * corr * corr * corr;           // stops drops clumping at the surface
+        corr = -uScorr * corr * corr * corr * corr;          // PBF tensile-instability correction
         d += (li + L[j] + corr) * spikyGrad(r, len);
     })
     d *= uInvRest;
@@ -696,21 +700,11 @@ void LiquidGpu::forget() {
 bool LiquidGpu::supported(std::string* why) {
     auto no = [&](const char* w) { if (why) *why = w; return false; };
     if (const char* e = std::getenv("GB_LIQUID_CPU"); e && *e && *e != '0') return no("GB_LIQUID_CPU is set");
-    if (GraphicsSettings::get().graphicsApi == GraphicsSettings::ApiSafe) return no("the graphics API is in safe mode");
-    GLint major = 0, minor = 0;
-    glGetIntegerv(GL_MAJOR_VERSION, &major);
-    glGetIntegerv(GL_MINOR_VERSION, &minor);
-#ifdef GB_GLES
-    if (major * 10 + minor < 31) return no("needs OpenGL ES 3.1");
-#else
-    if (major * 10 + minor < 43) return no("needs OpenGL 4.3");
-    if (!glDispatchCompute || !glDispatchComputeIndirect || !glMemoryBarrier || !glDrawArraysIndirect)
-        return no("compute shaders not loaded");
-#endif
-    GLint blocks = 0, bindings = 0;
-    glGetIntegerv(GL_MAX_COMPUTE_SHADER_STORAGE_BLOCKS, &blocks);
-    glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &bindings);
-    if (blocks < 8 || bindings < 8) return no("not enough storage buffers");
+    // One place decides what a device can do (DeviceFeatures.h).
+    const GpuCaps& caps = GpuCapsQuery::get();
+    if (caps.safeMode) return no("the graphics API is in safe mode");
+    if (caps.version < (caps.es ? 31 : 43)) return no(caps.es ? "needs OpenGL ES 3.1" : "needs OpenGL 4.3");
+    if (!DeviceFeatures::can(caps, DeviceFeatures::GpuLiquid)) return no("compute shaders or storage buffers missing");
     return true;
 }
 
@@ -1006,6 +1000,7 @@ void LiquidGpu::step(float dt, const glm::vec3& gravity, const std::vector<glm::
             bind(0, m_x[m_cur]); bind(2, m_p[m_pcur]); bind(4, m_p[1 - m_pcur]); bind(5, m_lambda);
             glUniform1f(U(m_prog[DELTA], "uInvRest"), 1.0f / rest);
             glUniform1f(U(m_prog[DELTA], "uWq"), wq);
+            glUniform1f(U(m_prog[DELTA], "uScorr"), Liquid::kTensileCorrection);
             dispatchDrops();
             barrier();
             m_pcur = 1 - m_pcur;

@@ -1,7 +1,13 @@
 #include "../core/FrameProfile.h"
+#include <optional>
 #include "ScriptEngine.h"
 #include "ScriptHistory.h"
 #include "SpatialQueries.h"
+#include "Shapecasts.h"
+#include "Experiments.h"
+#include "Drawings.h"
+#include "LuaRealism.h"
+#include "ServerMemory.h"
 #include "../core/Pad.h"
 #include "../core/Account.h"
 #include "../online/OnlineClient.h"
@@ -2015,8 +2021,7 @@ local storage = __gb_storage
 -- Roblox start), their harmless calls do nothing, and anything else says so clearly.
 local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, ScriptContext = {}, TestService = {},
     Stats = {}, GuiService = {}, HapticService = {}, LocalizationService = {},
-    AnalyticsService = { LogCustomEvent = true, LogEconomyEvent = true, LogProgressionEvent = true },
-    PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {},
+    PolicyService = {}, SocialService = {}, GroupService = {},
     VoiceChatService = {},
     InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
@@ -2042,10 +2047,14 @@ do
     rawset(gs, "SetEmotesMenuOpen", function(_, open) emotesMenu(open and true or false) end)
     rawset(gs, "GetEmotesMenuOpen", function() return emotesMenu() end)
 end
+-- Services added after the prelude (AnalyticsService and ExperimentService: Experiments.cpp).
+local moreServices = {}
+__gb_moreServices = moreServices
 local function findService(name)
     if name == "StarterGui" then return __gb_uiFolder() end
     if storageNames[name] then return storage(name) end
     if services[name] ~= nil then return services[name] end
+    if moreServices[name] ~= nil then return moreServices[name] end
     if quiet[name] then return quietService(name) end
     return nil
 end
@@ -3959,6 +3968,11 @@ void ScriptEngine::start(bool runScripts) {
     }
     --m_depth;
     SpatialQueries::install(L);   // workspace:GetPartsInPart, OverlapParams...
+    Shapecasts::install(L);       // workspace:Spherecast / Blockcast / Shapecast
+    Experiments::install(L);      // AnalyticsService and ExperimentService (A/B tests)
+    Drawings::install(L);         // AssetService: EditableImages, publishing drawings
+    LuaRealism::install(L);       // workspace:FireBullet
+    ServerMemory::install(L, m_runMode != RunMode::Client);   // game.ServerLowMemoryWarning, Stats' memory numbers
     // For Studio's AI tools: an object by its id number (they refer to objects that way).
     lua_register(L, "__gb_byId", [](lua_State* L) -> int {
         uint64_t id = (uint64_t)luaL_checkinteger(L, 1);
@@ -4310,7 +4324,17 @@ void ScriptEngine::resume(lua_State* co, int ref, int nargs, lua_State* from, st
         profName = profNameOf(co, nargs);
         m_profStack.push_back({nowSeconds(), 0.0});
     }
+#ifdef GB_TRACY
+    // Tracy (engine developers' builds): each script's run, by name.
+    std::string devName;
+    if (DevProfiler::connected()) devName = profiling ? profName : profNameOf(co, nargs);
+    std::optional<DevProfiler::Zone> devZone;
+    if (!devName.empty()) devZone.emplace(devName.c_str(), devName.size(), __FILE__, __LINE__, "script");
+#endif
     int status = lua_resume(co, from ? from : m_L, nargs, &nres);
+#ifdef GB_TRACY
+    devZone.reset();
+#endif
     if (profiling && !m_profStack.empty()) {
         const ProfRun run = m_profStack.back();
         m_profStack.pop_back();
@@ -4548,6 +4572,7 @@ void ScriptEngine::update(float dt) {
     if (!m_L) return;
     m_time += dt;
     msgStep();   // MessagingService: messages from the game's other servers
+    if (m_runMode != RunMode::Client) ServerMemory::step(m_L, m_time);   // low on memory? tell the game's scripts
 
     // Keyboard and controller buttons: bound actions (ContextActionService) first, then
     // UserInputService.InputBegan / InputEnded.

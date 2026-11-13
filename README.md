@@ -68,6 +68,15 @@ run `GB_TOUCH_SCREEN=1 GB_UI_SCALE=2 ./build-mobile/GutsAndBoltsPlayer`.
 
 ## Guts and Bolts Studio (the editor)
 
+Studio starts in the **Simple layout**: each ribbon tab shows its everyday buttons
+and keeps the rest behind a **More** button, and only the Toolbox, Explorer,
+Properties and Output are open. Nothing is gone: **VIEW > Advanced** (or the word in
+the bottom right corner) puts every button and panel back on screen. **Search Studio**
+(Ctrl+Shift+P, or the box next to the tabs) finds any tool, window or object in your
+game by name. The **Properties** window works like Roblox Studio's: names on the left,
+values on the right, numbers are boxes you type in, and **Filter Properties** narrows
+the list as you type.
+
 Studio is laid out like Roblox Studio, with the same dark theme and a
 **ribbon** across the top:
 
@@ -579,7 +588,7 @@ What you can use:
   `humanoid.Died`, `Players.PlayerAdded` / `PlayerRemoving`, `player.CharacterAdded` / `CharacterRemoving`
   (fired on every spawn and respawn), each with `:Connect`, `:Once` and `:Wait`
 - **Players:** `game.Players.LocalPlayer.Character`, `Players:GetPlayers()`, `humanoid.Health` / `WalkSpeed` /
-  `JumpPower` / `:TakeDamage(n)`, `character:BreakJoints()`
+  `JumpPower` / `:TakeDamage(n)` or `:TakeDamage(n, raycastResult, projectileVelocity)` for impact-local wounds, `character:BreakJoints()`
 - **Teams:** `player.Team`, `player.TeamColor`, `player.Neutral` (setting one keeps the others right),
   `Teams:GetTeams()`. A **SpawnLocation** has `Neutral`, `TeamColor` and `AllowTeamChangeOnTouch`: players
   spawn on their team's SpawnLocations (or Neutral ones), and touching one with `AllowTeamChangeOnTouch`
@@ -1504,7 +1513,8 @@ Water isn't just a see-through box you can swim in. While the game runs:
   of foam.
 - **Ocean swell.** Give a water part a number attribute called `Waves` (like
   `0.5`) for big rolling waves that lift everything floating on them. They're
-  Gerstner waves: sharp crests and wide troughs, with whitecaps on big ones.
+  made from a wave spectrum with an FFT (thousands of waves added up): sharp
+  crests and wide troughs, with foam where big ones break.
   Floating things and swimmers ride exactly the waves you see.
 - **Clarity.** A number attribute from 0 (murky) to 1 (crystal clear). The water
   is clear where it's shallow and fades to deep blue where it's deep, things

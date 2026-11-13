@@ -33,6 +33,7 @@ struct SavedView {
 struct SavedWorkspace {
     bool seen = false;                  // the layout file had our part
     std::vector<SavedView> views;       // [0] may be the main one (number 1)
+    std::vector<int> panels;            // which panels were open (Editor::Panel order); empty = from before that was kept
 };
 SavedWorkspace g_saved;
 std::function<std::string()> g_writeWorkspace;   // the Editor's views, as lines
@@ -45,6 +46,12 @@ void* wsReadOpen(ImGuiContext*, ImGuiSettingsHandler*, const char* name) {
 }
 
 void wsReadLine(ImGuiContext*, ImGuiSettingsHandler*, void*, const char* line) {
+    if (std::strncmp(line, "Panels=", 7) == 0) {
+        g_saved.panels.clear();
+        std::istringstream in(line + 7);
+        for (int v; in >> v; ) g_saved.panels.push_back(v);
+        return;
+    }
     SavedView v;
     int xray = 0, ortho = 0;
     if (std::sscanf(line, "View=%d %d %d %d %f %f %f %f %f %f", &v.number, &v.shading, &xray, &ortho,
@@ -89,6 +96,9 @@ void Editor::registerWorkspaceSettings() {
     g_writeWorkspace = [this] {
         std::string s = viewLine(*m_viewport);
         for (auto& v : m_moreViews) s += viewLine(*v);
+        s += "Panels=";   // which panels are open, so a closed one stays closed next time
+        for (int i = 0; i < kPanelCount; ++i) s += m_showPanel[i] ? "1 " : "0 ";
+        s += "\n";
         return s;
     };
     ImGuiSettingsHandler h;
@@ -144,6 +154,7 @@ void Editor::renderMoreViews(float dt) {
     // The layout file is saved when something changed (a view style, a camera after a while).
     std::string now = viewLine(*m_viewport);
     for (auto& v : m_moreViews) now += viewLine(*v);
+    for (int i = 0; i < kPanelCount; ++i) now += m_showPanel[i] ? '1' : '0';
     if (now != m_workspaceSaved) {
         m_workspaceSaved = now;
         ImGui::MarkIniSettingsDirty();
@@ -167,7 +178,7 @@ void Editor::quadView() {
 void Editor::resetWorkspace() {
     m_moreViews.clear();
     m_dockNewView.clear();
-    for (int i = 0; i < kPanelCount; ++i) m_showPanel[i] = i != kPanelAnimation;
+    applyLayoutPanels();   // (Simple layout: just the main ones. EditorSimple.cpp)
     m_viewport->shading = SceneRenderer::Shading::Material;
     m_viewport->xray = false;
     m_state.orthographic = false;
@@ -189,6 +200,14 @@ void Editor::applyWorkspaceRequests(unsigned dockspaceId) {
                 applySaved(*v, s, true);
             }
             m_dockNewView.clear();   // (they go back to their own spots, from the layout file)
+            // The panels that were open. A layout file from before panels were kept:
+            // the Simple layout closes the extra ones once (they stay where they were docked).
+            if (g_saved.panels.empty()) applyLayoutPanels();
+            else
+                for (int i = 0; i < kPanelCount && i < (int)g_saved.panels.size(); ++i)
+                    if (i != kPanelAnimation) m_showPanel[i] = g_saved.panels[(size_t)i] != 0;
+        } else {
+            applyLayoutPanels();   // a new computer: this layout's panels
         }
     }
     if (!m_wantQuadView) return;

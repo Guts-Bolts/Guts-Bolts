@@ -6,9 +6,20 @@ import { mountAvatar, avatarPicture, itemPicture, itemCamera } from './avatar3d.
 import { startTranslating, languagePicker } from '../lang/i18n.js';
 import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
+import { mountBanLists, mountGameBans, mountBanNotice } from './banlists.js';
+import { mountGameTesters, mountTesterNote } from './testers.js';
+import { mountGameExperiments } from './experiments.js';
+import { openShareLink, checkShareLinks, addShareBox } from './sharelinks.js';
+import { ratingPill, mountGameRating, mountRatingWhy, mountRatingLimit } from './ratings.js';   // content levels (how intense a game is)
+import { mountLaunchpad, mountLaunchpadShelf, launchpadPill } from './launchpad.js';   // Launchpad creator program
+import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // profile backgrounds
+import { mountAssetVersions } from './versions.js';
+import { artPages } from './art.js';   // the Art portal's pages
+import { pastePages } from './paste.js';   // G&B Paste's pages
+import { academyPages } from './academy.js';   // G&B Academy's pages
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
-import { PRODUCTS, productOf, productById, activeLink } from './products.js';
+import { GROUPS, productOf, productById, activeLink } from './products.js';
 import { placeAds } from './ads.js';
 
 // --- small helpers ------------------------------------------------------------
@@ -197,7 +208,7 @@ function gameIcon(g, size = 48) {
   if (g.icon) return html`<img class="game-icon" src="/icon/${encodeURIComponent(g.id)}?v=${g.icon}" alt="" width="${size}" height="${size}">`;
   return html`<span class="game-icon" style="width:${size}px;height:${size}px;background:${raw(gameColors(g.id))}">${(g.name || '?').slice(0, 1)}</span>`;
 }
-const ACCESS_NAMES = { public: 'Public', friends: 'Friends only', private: 'Private' };
+const ACCESS_NAMES = { public: 'Public', friends: 'Friends only', testers: 'Testers only', private: 'Private' };
 
 // Shrink a picture the visitor picked to w x h (cropping to fit), as JPEG base64.
 function pictureBase64(file, w, h) {
@@ -312,7 +323,7 @@ function gameCard(g) {
     <div class="name">${g.featured ? html`<span title="Featured by staff">&#11088;</span> ` : ''}${g.name}</div>
     <div class="by">by ${g.group ? g.group.name : html`${g.creatorName}${verified(g.creatorVerified)}`}</div>
     <div class="by">${liked ? html`<span class="liked" title="${g.likes} likes, ${g.dislikes} dislikes">&#128077; ${liked}</span> · ` : ''}${n ? html`<b class="playing">${n} playing</b>` : html`${g.plays || 0} visits`}</div>
-    ${(g.genres || []).length ? html`<div class="by small">${g.genres.join(' · ')}</div>` : ''}</a>`;
+    ${(g.genres || []).length || g.rating ? html`<div class="by small">${raw(ratingPill(g))} ${(g.genres || []).join(' · ')}</div>` : ''}</a>`;
 }
 
 // Catalog items in 3D: each one worn by a plain grey mannequin (the drawing is
@@ -696,7 +707,7 @@ const gamesHome = async () => {
     signedIn() ? pageCall('games.mine', { which: 'favorites', limit: 8 }) : Promise.resolve({ ok: false }),
     pageCall('list', { kind: 'game', sort: 'featured', limit: 8 }),
     loadPlaying(),
-    pageCall('list', { kind: 'clothing', auctions: true, limit: 12 }),
+    pageCall('list', { kind: 'clothing', auctions: true, sort: 'ending', limit: 12 }),
     fetchPublicActivity('/api/activity/auctions?limit=6'),
   ]);
   // "Continue playing" and your favourites (only when there's something in them).
@@ -754,8 +765,9 @@ const gamesHome = async () => {
         <input type="hidden" name="sort" value="popular"><button class="btn blue">Search</button></form>
     </div>
     <div class="genre-chips">${GENRES.map((gn) => html`<a class="chip" href="#/games?genre=${encodeURIComponent(gn)}">${gn}</a>`)}</div>
-    ${auctionBroadcastBox}${auctionBox}${featuredBox}${continueBox}${favBox}${recommendedBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games?sort=popular')}${shopBox}`);
+    ${auctionBroadcastBox}${auctionBox}${featuredBox}<div class="box" id="launchpadShelf" hidden></div>${continueBox}${favBox}${recommendedBox}${discoveryBox('New Releases', newest, 'new')}${discoveryBox('Recently Updated', updatedGames, 'updated')}${discoveryBox('Playing Now', playingGames, 'playing')}${gameBox('Best of Guts&Bolts', games, '#/games?sort=popular')}${shopBox}`);
   tickCountdowns();
+  mountLaunchpadShelf($('#launchpadShelf'), call, (g) => gameCard(g).s);   // games staff are helping build (launchpad.js)
 };
 
 // Home (#/): the front door of the whole platform, not just games. Your account bits on
@@ -774,8 +786,15 @@ pages.home = async () => {
       <span class="product-icon" aria-hidden="true">${p.name.slice(0, 1)}</span>
       <span class="product-text"><b>${p.name}</b>${p.status === 'soon' ? html` <span class="soon-tag">Soon</span>` : p.status === 'studio' ? html` <span class="soon-tag">In Studio</span>` : ''}
         <span>${p.blurb}</span></span></a>`;
+  // Products in their groups (products.js GROUPS); groups with nothing built yet are listed as "on the way".
+  const built = GROUPS.filter((g) => g.products.some((id) => productById(id)));
+  const coming = GROUPS.filter((g) => !g.products.some((id) => productById(id)) && g.later.length);
   const productsBox = html`<div class="box products-box"><h2 class="boxhead">Everything on Guts&amp;Bolts</h2>
-      <div class="product-grid">${PRODUCTS.map(productCard)}</div></div>`;
+      <p class="small muted">One account for all of it: your friends, Bolts and Boltworks Club work everywhere.</p>
+      ${built.map((g) => html`<h3 class="product-group">${g.name}${g.later.length ? html` <span class="small muted">· on the way: ${g.later.join(', ')}</span>` : ''}</h3>
+        <div class="product-grid">${g.products.map(productById).filter(Boolean).map(productCard)}</div>`)}
+      ${coming.length ? html`<h3 class="product-group">On the way</h3><ul class="product-later">${coming.map((g) =>
+        html`<li><b>${g.name}</b>: ${g.later.join(', ')}</li>`)}</ul>` : ''}</div>`;
   const latest = upd.ok && upd.updates.length ? upd.updates[0] : null;
   const updateBox = latest ? html`<div class="box latest-update"><h2 class="boxhead">Latest update
       <a href="#/updates" style="float:right">All updates &raquo;</a></h2>
@@ -832,6 +851,12 @@ pages.home = async () => {
 
 // #/soon/<product>: what's coming for a product that isn't open yet (Videos, Live), or
 // that only lives in Studio for now (Fyxa).
+// #/s/<code>: a share link (gutsandbolts.net/s/<code> comes here). Count it, then go to the thing.
+pages.s = async (code) => {
+  const r = await openShareLink(code, call);
+  if (!r.ok) show(html`<h1>Link not found</h1><p class="muted">${r.error}</p>`);
+};
+
 pages.soon = async (id) => {
   const p = productById(id);
   if (!p || p.status === 'open') { location.replace(p ? p.href : '#/'); return; }
@@ -843,6 +868,13 @@ pages.soon = async (id) => {
       <p class="small muted">It's its own part of Guts&amp;Bolts, with its own pages, but the same account, friends and Bolts.
         Follow along on the <a href="#/create/roadmap">roadmap</a>.</p></div>`);
 };
+
+// The Art portal (#/art, #/artpiece/<id>, #/artpost): its pages live in art.js.
+Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
+Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// G&B Academy (#/academy, #/course/<id>, #/lesson/<course>/<lesson>, #/coursewrite): its pages live in academy.js.
+Object.assign(pages, academyPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, richText, me: () => me }));
 
 // My Feed: what friends and people you follow said, and what they've been up to (playing a
 // game, making something, earning a badge).
@@ -1220,6 +1252,7 @@ function browseSort(list, sort) {
       || voteCount(y) - voteCount(x) || (y.sales || 0) - (x.sales || 0),
     popular: (x, y) => (y.sales + y.plays) - (x.sales + x.plays),
     favorited: (x, y) => (y.favorites || 0) - (x.favorites || 0) || (y.sales + y.plays) - (x.sales + x.plays),
+    ending: (x, y) => Number(x.auction?.endsAt || Number.MAX_SAFE_INTEGER) - Number(y.auction?.endsAt || Number.MAX_SAFE_INTEGER),
     new: (x, y) => (y.updated || y.created) - (x.updated || x.created),
     low: (x, y) => (x.price || 0) - (y.price || 0),
     high: (x, y) => (y.price || 0) - (x.price || 0),
@@ -1400,8 +1433,10 @@ pages.library = async (id = '') => {
           ${canDelete ? html`<p><button class="btn small red" data-act="deleteAsset" data-id="${a.id}" data-name="${a.name}">Delete</button></p>` : ''}
         </div>
       </div>
+      ${signedIn() && a.creator === me.id ? html`<div class="box" id="assetVersions"></div>` : ''}
     </div>`);
   loadThumbs();
+  mountAssetVersions($('#assetVersions'), a, call, toast, (f) => gb.fileBase64(f));   // versions.js
   $('.asset-id').addEventListener('focus', (e) => e.target.select());
   if (a.kind === 'decal') {
     assetUrl(a.id).then((f) => {
@@ -1630,6 +1665,8 @@ pages.game = async (id) => {
       <div><h1 class="game-title">${gameIcon(g, 40)} ${g.name}</h1>
         ${g.access && g.access !== 'public' ? html`<p><span class="badge-pill">${ACCESS_NAMES[g.access]}</span></p>` : ''}
         ${g.featured ? html`<p><span class="badge-pill featured-pill">&#11088; Featured</span></p>` : ''}
+        ${g.launchpad ? html`<p><a href="#/create/launchpad">${raw(launchpadPill(g))}</a></p>` : ''}
+        <div id="ratingWhy" hidden></div>
         <p>by ${g.group ? html`<a href="#/group/${g.group.id}">${g.group.name}</a> <span class="muted small">(made by <a href="#/user/${g.creator}">${g.creatorName}</a>)</span>`
           : html`<a href="#/user/${g.creator}">${g.creatorName}</a>${verified(g.creatorVerified)}`}</p>
         ${(g.genres || []).length ? html`<p>${g.genres.map((gn) => html`<a class="chip" href="#/games?genre=${encodeURIComponent(gn)}">${gn}</a> `)}</p>` : ''}
@@ -1648,7 +1685,9 @@ pages.game = async (id) => {
           <button class="btn" data-act="editInStudio" data-id="${g.id}" data-name="${g.name}">Edit in Studio</button>` : ''}
         ${signedIn() && me.staff ? html`<p><button class="btn small ${g.featured ? '' : 'gold'}" data-act="featureGame" data-id="${g.id}" data-on="${g.featured ? '' : '1'}">
           ${g.featured ? 'Stop featuring' : 'Feature this game'}</button> <span class="small muted">(staff)</span></p>` : ''}
-        <p class="small muted">Games run in the Guts&amp;Bolts app (Windows, Mac, Linux and Android).${mine ? '' : html` ${reportLink('game', g.id, g.name)}`}</p></div></div>
+        <p class="small muted">Games run in the Guts&amp;Bolts app (Windows, Mac, Linux and Android).${mine ? '' : html` ${reportLink('game', g.id, g.name)}`}</p>
+        <div id="banNotice"></div></div></div>
+    <div class="box" id="testerNote" hidden></div>
     <h2>Description</h2><p style="white-space:pre-wrap">${g.description || 'No description yet.'}</p>
     ${gameLogBlock(g, lr, mine)}
     ${g.lyreto ? html`<h2>Community</h2>${lyretoCard(g.lyreto, 'the players')}` : ''}
@@ -1671,6 +1710,9 @@ pages.game = async (id) => {
     ${servers.length ? html`<div class="server-grid">${shown.map(card)}</div>${pager}`
       : html`<p class="muted">Nobody's playing right now. Be the first!</p>`}
     ${commentsBlock(g, cr)}`);
+  if (signedIn() && !mine) mountBanNotice($('#banNotice'), g.id, call, toast);   // banned? why, and an appeal box (banlists.js)
+  if (signedIn() && !mine) mountTesterNote($('#testerNote'), g.id, call, toast);   // an early tester's note box (testers.js)
+  mountRatingWhy($('#ratingWhy'), g.id, call);   // its content level and why (ratings.js)
 };
 
 // Comments under a game, newest first, 20 at a time.
@@ -1722,8 +1764,9 @@ pages.catalog = async () => {
   if (!r.ok) { show(html`<h1>Catalog</h1><p class="error">${r.error}</p>`); return; }
   const pick = CATALOG_PICK[cat] || ((a) => a.kind === cat);
   const price = PRICES[q.get('price')];
+  const defaultSort = cat === 'auctions' ? 'ending' : cat === 'favorited' ? 'favorited' : '';
   const list = browseSort(r.assets.filter((a) => pick(a) && creatorMatch(a, q.get('creator')) &&
-    (!price || ((a.price || 0) >= price[0] && (a.price || 0) <= price[1]))), q.get('sort') || (cat === 'favorited' ? 'favorited' : ''));
+    (!price || ((a.price || 0) >= price[0] && (a.price || 0) <= price[1]))), q.get('sort') || defaultSort);
   const priceOf = (a) => auctionOpen(a) ? html`bid ${bolts(a.auction.need)}`
     : a.limited && a.limited.left <= 0 ? (a.limited.lowest ? html`from ${bolts(a.limited.lowest)}` : raw('<span class="muted">Sold out</span>'))
     : a.offsale ? raw('<span class="muted">Off sale</span>') : a.price > 0 ? bolts(a.price) : raw('<span class="free">Free</span>');
@@ -1976,6 +2019,7 @@ pages.item = async (id) => {
     }
   });
   tickCountdowns();
+  if (signedIn() && a.creator === me.id) addShareBox(view, 'item', a.id, call, toast);   // share links (sharelinks.js)
   // The creator's character, small, next to their name.
   call('profile', { id: a.creator }).then((p) => {
     const el = $('#creatorPic');
@@ -2294,9 +2338,19 @@ async function fyxaAssetsPage(head) {
 
 pages.create = async (tab = 'games') => {
   const tabs = [['games', 'My Games'], ['model', 'Models'], ['decal', 'Decals'], ['audio', 'Audio'], ['hat', 'Hats'], ['accessory', 'Accessories'],
-    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['fyxa', 'Fyxa AI'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
+    ['shirt', 'Shirts'], ['tshirt', 'T-Shirts'], ['pants', 'Pants'], ['gear', 'Gear'],  ...(signedIn() && me.official ? [['face', 'Faces']] : []), ...(signedIn() && me.staff ? [['bundle', 'Bundles']] : []), ['plugin', 'Plugins'], ['library', 'Library'], ['stats', 'Stats'], ['bans', 'Ban lists'], ['launchpad', 'Launchpad'], ['fyxa', 'Fyxa AI'], ['learn', 'Learn'], ['roadmap', 'Roadmap']];
   const head = html`<h1>Create</h1><div class="tabs">${tabs.map(([k, l]) => html`<a class="btn ${tab === k ? 'blue' : ''}" href="#/create/${k}">${l}</a>`)}</div>`;
   if (tab === 'fyxa') { await fyxaAssetsPage(head); return; }
+  if (tab === 'bans') {   // banlists.js
+    show(signedIn() ? html`${head}<div class="box" id="banLists"></div>` : html`${head}<div class="box"><p>Sign in to use ban lists.</p></div>`);
+    if (signedIn()) mountBanLists($('#banLists'), call, toast);
+    return;
+  }
+  if (tab === 'launchpad') {   // launchpad.js
+    show(html`${head}<div class="box" id="launchpad"></div>`);
+    mountLaunchpad($('#launchpad'), call, toast, signedIn() ? me : null);
+    return;
+  }
   if (tab === 'learn') { await learnPage(head); return; }
   if (tab === 'library') { await libraryPage(head); return; }
   if (tab === 'stats') { await statsPage(head); return; }
@@ -2489,6 +2543,7 @@ pages.configure = async (id) => {
       <div class="box"><h2 class="boxhead">Who can play</h2>
         ${choice('public', 'Public', 'Everyone can find and play it.')}
         ${choice('friends', 'Friends only', 'Only your friends can see and play it.')}
+        ${choice('testers', 'Testers only', 'Only the early testers you pick (below) can see and play it.')}
         ${choice('private', 'Private', 'Only you can see and play it.')}</div>
       <div class="box"><h2 class="boxhead">Pictures</h2>
         <div class="pics">
@@ -2510,6 +2565,10 @@ pages.configure = async (id) => {
         <span id="configMsg"></span></p>
     </form>
     <div class="box" id="gameWeb"></div>
+    <div class="box" id="gameTesters"></div>
+    <div class="box" id="gameExperiments"></div>
+    <div class="box" id="gameRating"></div>
+    <div class="box" id="gameBans"></div>
     <div class="box" id="screenshots"><h2 class="boxhead">Screenshots</h2>
       <p class="small muted">Up to ${SHOT_MOST} pictures of your game, shown after the thumbnail on its page (people can click them to see them bigger).
         .png, .jpg or .webp, up to ${SHOT_MB} MB each. Pictures from your game in the Player or Studio work best.</p>
@@ -2586,6 +2645,11 @@ pages.configure = async (id) => {
         <p><button class="btn green">Make product</button></p></form></div>`);
   loadThumbs();
   mountGameWeb($('#gameWeb'), g.id, call, toast);   // web requests and secrets (gameweb.js)
+  mountGameBans($('#gameBans'), g.id, call, toast);   // ban lists (banlists.js)
+  mountGameTesters($('#gameTesters'), g.id, call, toast);   // early testers (testers.js)
+  mountGameExperiments($('#gameExperiments'), g.id, call, toast);   // A/B tests (experiments.js)
+  addShareBox(view, 'game', g.id, call, toast);   // share links that count clicks and plays (sharelinks.js)
+  mountGameRating($('#gameRating'), g.id, call, toast);   // content level questions (ratings.js)
   // Show a picked picture straight away.
   view.querySelectorAll('input[data-preview]').forEach((inp) => inp.addEventListener('change', () => {
     const file = inp.files[0];
@@ -2799,8 +2863,10 @@ pages.user = async (id, tab, page, more) => {
     ${(u.pastNames || []).length ? html`<p class="small muted past-names">Past usernames: ${u.pastNames.join(', ')}</p>` : ''}
     <div class="profile">
       <div class="profile-left">
-        <div class="box avatar-box"><div id="profileAvatar">${avatarSvg(u.avatar, 200, worn)}</div>
-          <div class="small muted">Drag to turn</div></div>
+        <div class="box avatar-box${r.background ? ' has-background' : ''}"${r.background ? raw(' style="' + esc(backgroundStyle(r.background)) + '"') : ''}>
+          <div id="profileAvatar">${avatarSvg(u.avatar, 200, worn)}</div>
+          <div class="small muted">Drag to turn</div>
+          ${f === 'self' ? html`<div id="backgroundPicker"></div>` : ''}</div>
         <div class="box"><h2 class="boxhead">Currently Wearing</h2>
           ${worn.length ? html`<div class="wearing">${worn.map((it) => html`<a class="card square" href="#/item/${it.id}" title="${it.name}">
               <div class="pic">${itemIcon(it)}</div><div class="name small">${it.name}</div></a>`)}</div>`
@@ -2859,6 +2925,8 @@ pages.user = async (id, tab, page, more) => {
     </div>`);
   // The 3D avatar (the flat one stays if the browser can't do 3D).
   mountAvatar($('#profileAvatar'), u.avatar, worn, { width: 220 }).catch(() => {});
+  if (f === 'self' && signedIn()) addShareBox(view, 'profile', u.id, call, toast);   // share links to your profile (sharelinks.js)
+  if (f === 'self') mountBackgroundPicker($('#backgroundPicker'), r.background, call, toast);   // backgrounds.js
   for (const p of friends) {
     avatarPicture(p.avatar, p.wearing || [], 60).then((url) => {
       const box = view.querySelector(`[data-friend-avatar="${p.id}"]`);
@@ -2996,6 +3064,7 @@ pages.group = async (id) => {
       <label><input type="checkbox" name="open" ${g.open ? 'checked' : ''}> Anyone can join</label>
       <p><button class="btn blue">Save</button>
       ${owner ? html` <button type="button" class="btn red" data-act="group" data-op="groups.delete" data-id="${g.id}">Delete group</button>` : ''}</p></form>` : ''}`);
+  if (owner) addShareBox(view, 'group', g.id, call, toast);   // share links (sharelinks.js)
 };
 
 let avatarDraft = null;   // the avatar being edited (saved with the Save button)
@@ -3348,6 +3417,9 @@ function reportsBox(rep, closed) {
     if (x.kind === 'group') return html`the group <a href="#/group/${x.target}">${x.name}</a> (owner ${person(x.about)})`;
     if (x.kind === 'comment') return html`a comment by ${person(x.about)} on <a href="#/game/${x.game}">${x.name}</a>`;
     if (x.kind === 'forum') return html`a forum post by ${person(x.about)} in <a href="#/forum/t/${x.thread}">${x.name}</a>`;
+    if (x.kind === 'art') return html`${x.target.includes(':') ? 'a comment' : 'art'} by ${person(x.about)} on <a href="#/artpiece/${x.piece}">${x.name}</a>`;
+    if (x.kind === 'course') return html`the course <a href="#/course/${x.target}">${x.name}</a> by ${person(x.about)}`;
+    if (x.kind === 'paste') return html`the paste <a href="#/pasteview/${x.target}">${x.name}</a> by ${person(x.about)}`;
     const href = isCatalogItem(x.assetKind) ? '#/item/' + x.target : '#/library/' + x.target;
     return html`<a href="${href}">${x.name}</a> (${KINDS[x.assetKind] || 'item'}) by ${person(x.about)}`;
   };
@@ -3708,6 +3780,13 @@ function noteLink(n) {
   if (n.kind === 'party') return '#/chat';
   if (n.kind === 'friend' || n.kind === 'follow') return '#/user/' + n.about;
   if (n.kind === 'trade') return '#/trades';
+  if (n.kind === 'banlist') return '#/create/bans?list=' + n.about;   // banlists.js
+  if (n.kind === 'banappeal') return '#/game/' + n.about;
+  if (n.kind === 'launchpad') return '#/create/launchpad';   // launchpad.js
+  if (n.kind === 'rating') return '#/configure/' + n.about;   // ratings.js
+  if (n.kind === 'testers') return '#/game/' + n.about;   // testers.js
+  if (n.kind === 'art') return '#/artpiece/' + n.about;   // art.js
+  if (n.kind === 'academy') return '#/course/' + n.about;   // academy.js
   if (n.kind === 'group') return '#/group/' + n.about;
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;
@@ -3798,7 +3877,7 @@ pages.forgot = async () => {
 
 // Support: ask staff for help (even when you can't log in). Tickets belong to this browser:
 // staff's answers show up here, and so does a password reset code if staff send one.
-const TICKET_TOPICS = [['password', 'I forgot my password'], ['account', 'Something else about my account'], ['other', 'Something else']];
+const TICKET_TOPICS = [['password', 'I forgot my password'], ['account', 'Something else about my account'], ['underage', 'An account belongs to someone under 18 (parents start here)'], ['other', 'Something else']];
 pages.support = async () => {
   const topic = new URLSearchParams(location.hash.split('?')[1] || '').get('topic') || (signedIn() ? 'account' : 'password');
   const r = await pageCall('support.mine', {});
@@ -3915,6 +3994,9 @@ pages.settings = async () => {
         <p class="small muted">Apps you linked your account to with "Log in with Guts&amp;Bolts" (like Lyreto). They can see your
           username, user number and a picture of your avatar. If you allowed it, they can also use Studio's AI tools while Studio is open.</p>
         <div class="list" id="appsList"><p class="muted small">Loading...</p></div></div>
+      <div class="box" id="ratingLimit"></div>
+      <div class="box" id="fyxaBox"><h2 class="boxhead">Fyxa and your uploads</h2>
+        <p class="small muted">Loading...</p></div>
       <div class="box"><h2 class="boxhead">Authenticator app</h2>
         ${me.authApp ? html`<p><b class="ok">On.</b> Logging in on a new device needs your password <i>and</i> the 6-digit code
             from your authenticator app (Google Authenticator, Authy, 2FAS, Aegis, Microsoft Authenticator...).</p>
@@ -3965,7 +4047,35 @@ pages.settings = async () => {
           : (a.scopes || []).includes('studio.read') ? ' · can look at your Studio game' : ''}</span></span>
         <button class="btn small" data-act="connectRemove" data-id="${a.id}" data-name="${a.name}">Disconnect</button></div>`)}`
       : html`<p class="muted small">You haven't connected any apps.</p>`).s;
+  fyxaSettingsBox();
+  mountRatingLimit($('#ratingLimit'), call, toast);   // the highest content level to show (ratings.js)
 };
+
+// Settings > "Fyxa and your uploads": the AI training switch (on unless you turn it off) and the
+// separate "let Fyxa look things up in my uploads" one (off unless you turn it on). The Terms of
+// Service (section 6) say the same thing.
+async function fyxaSettingsBox() {
+  const box = $('#fyxaBox');
+  if (!box) return;
+  const r = await pageCall('ai.preferences.get', {});
+  if (!$('#fyxaBox')) return;   // moved on to another page
+  const p = r.ok ? r.preferences : null;
+  box.innerHTML = html`<h2 class="boxhead">Fyxa and your uploads</h2>
+    ${!p ? html`<p class="error">${r.error || 'Couldn\'t load this.'}</p>` : html`
+    <p class="small">Fyxa is the Guts&amp;Bolts AI helper. To make it better, public things you make may be used to
+      train it, <b>unless you turn that off here</b>. Only public uploads that passed moderation count, and only after
+      you've said you own them and staff have checked. Private uploads, messages, chat, forum posts and voice are
+      never used. <b>Nothing is being trained yet.</b> See the <a href="#/terms">Terms</a> (section 6).</p>
+    <form class="form" data-form="fyxaPrefs">
+      <input type="hidden" name="noticeVersion" value="${p.currentNoticeVersion || ''}">
+      <p><label><input type="checkbox" name="training"${p.trainingEnabled ? raw(' checked') : ''}> Let my public uploads help train Fyxa</label></p>
+      <p class="small muted">Turning this off stops your uploads being used from now on. It can't take back what an AI has already learned.</p>
+      <p><label><input type="checkbox" name="reference"${p.referenceEnabled ? raw(' checked') : ''}> Let Fyxa look things up in my public uploads when it helps people</label></p>
+      <p class="small muted">This one is off unless you turn it on. To turn it on, tick the box below too.</p>
+      <p><label><input type="checkbox" name="confirm"> I've read what this means (version ${p.currentNoticeVersion || '?'})</label></p>
+      <p><button class="btn green">Save</button></p>
+    </form>`}`.s;
+}
 
 // --- "Log in with Guts&Bolts" ---------------------------------------------------------
 // A partner app (like Lyreto) sent you here to link your account (worker/index.js
@@ -4067,14 +4177,27 @@ pages.terms = async () => {
     <h2>2. Adults only (18+)</h2>
     <p>This is the R-rated, non-kid version of the genre. Games and chat can contain <b>strong language, crude
       humour, cartoon violence and gore, and mature themes</b>, and swearing isn't filtered. You must be <b>18 or
-      older</b> to make an account or play. If you're under 18, please don't use Guts&amp;Bolts.</p>
+      older</b> to make an account, play, use Studio or use this website. If you're under 18, please don't use
+      Guts&amp;Bolts.</p>
     <ul>
-      <li><b>No kids, and especially no one under 13.</b> Guts&amp;Bolts isn't made for children, and we don't knowingly
-        collect personal information from anyone under 13 (or anyone under 18).</li>
-      <li>If we find out an account belongs to someone under 18, we'll close it and delete what's personal in it.</li>
-      <li>If you think someone is under 18, report them, or tell staff on the <a href="#/support">Support</a> page.
-        Parents can ask us there to close their child's account.</li>
-      <li>Ticking the "I'm 18 or older" box when you sign up is a promise. Lying about your age breaks these terms.</li>
+      <li><b>No kids, with no exceptions.</b> Not with a parent's permission, not with a parent watching, and not on a
+        parent's account. Guts&amp;Bolts is <b>not made for children and isn't aimed at them</b>.</li>
+      <li><b>We don't knowingly collect personal information from anyone under 18</b>, and especially not from anyone
+        under 13. If you're under 18, don't sign up, and don't send us anything about yourself.</li>
+      <li>We don't check IDs. Ticking the "I'm 18 or older" box when you sign up is <b>your promise that it's true</b>.
+        Lying about your age breaks these terms, and the account gets closed.</li>
+      <li>If we find out (or have good reason to think) an account belongs to someone under 18, we <b>close it and
+        delete what's personal in it</b> as soon as we can. Bolts and items on it are gone.</li>
+      <li>If you think someone is under 18, report them (pick "Someone under 18"), or tell staff on the
+        <a href="#/support">Support</a> page.</li>
+      <li><b>Parents and guardians:</b> if your child made an account, tell us on the <a href="#/support?topic=underage">Support</a>
+        page (you don't need to log in). Give their username, and we'll close the account and delete what's personal
+        in it. We'll only ask for what we need to find the account. You're responsible for what your children do on
+        your devices, so please use your device's parental controls to keep them off sites like this one.</li>
+      <li>Games can show a <b>content level</b> (Mild, Moderate, Strong or Extreme). It tells adults how intense a game
+        is. It is <b>not an age rating</b>, and a "Mild" game is still only for adults.</li>
+      <li>Making games, items, groups or posts <b>for kids</b>, or trying to get anyone under 18 to play, isn't
+        allowed (section 7).</li>
     </ul>
 
     <h2>3. Your account</h2>
@@ -4132,6 +4255,13 @@ pages.terms = async () => {
         (thumbnails), show it to other players, and run it in games, for as long as it's on Guts&amp;Bolts. If you make
         a model or other item public in the Library, you also let other players use it in their own games.</li>
       <li>You promise you have the right to upload it: you made it yourself, or the person who did said you could.</li>
+      <li><b>Fyxa, our AI helper.</b> Unless you turn it off in <a href="#/settings">Settings</a> ("Fyxa and your
+        uploads"), you also let us use the public things you make to train and improve Fyxa. Only public uploads that
+        passed moderation count, and only once you've told us you own them and staff have checked. We never use private
+        uploads, messages, chat, forum posts or voice for this. Turning it off stops your uploads being used from then
+        on, but it can't take back what an AI has already learned from them. Letting Fyxa look things up in your
+        uploads is a separate choice, and it's off unless you turn it on. <b>Right now Fyxa isn't trained on anyone's
+        uploads</b>; this is so we can start later. If what we do changes, we'll update these terms first.</li>
       <li>Uploads can be checked by staff before anyone else sees them, and staff can turn down or remove anything that
         breaks the rules.</li>
       <li>You can delete what you upload. Copies other people already bought or used in their games may stay.</li>
@@ -4154,6 +4284,8 @@ pages.terms = async () => {
       <li>upload viruses, or games or plugins made to harm people's computers or steal from them;</li>
       <li>upload things you don't have the right to share (other people's art, music, or another platform's assets
         passed off as yours);</li>
+      <li>make games, items, groups or posts aimed at children, or try to get anyone under 18 to join, play or
+        talk to you;</li>
       <li>pretend to be staff or another player.</li>
     </ul>
 
@@ -4197,6 +4329,10 @@ pages.terms = async () => {
       your Bolts history, what you post and send, and an email address if you add one (only used for account emails,
       like codes and resetting your password). We don't sell anything to anyone. Online play goes through our servers,
       not straight to other players. Staff can see what's needed to keep Guts&amp;Bolts safe, like reports.</p>
+    <p>Your public uploads may be used to train Fyxa, our AI helper, unless you turn that off in Settings. Section 6
+      says exactly what counts and what never does. We keep a record of when you change that setting.</p>
+    <p>Guts&amp;Bolts is for adults only. We don't knowingly collect anything from anyone under 18 (or under 13), and
+      we delete it when we find out (section 2).</p>
     <p>The full version, including the ads and cookies, is our <a href="../privacy">Privacy Policy</a>.</p>
 
     <h2>12. No guarantees</h2>
@@ -5100,6 +5236,13 @@ const forms = {
     toast('Message sent!');
     location.hash = '#/messages/sent';
   },
+  async fyxaPrefs(f) {
+    const r = await call('ai.preferences.update', { trainingEnabled: !!f.training.checked, referenceEnabled: !!f.reference.checked,
+      confirm: !!f.confirm.checked, noticeVersion: f.noticeVersion.value });
+    if (!r.ok) { toast(r.error); return; }
+    toast('Saved.');
+    fyxaSettingsBox();
+  },
   async privacy(f) {
     const r = await call('account.privacy', { status: f.status.value, join: f.join.value, messages: f.messages.value, inventory: f.inventory.value });
     if (!r.ok) { toast(r.error); return; }
@@ -5530,7 +5673,7 @@ async function refreshLiveAuctions() {
   auctionRefreshBusy = true;
   try {
     if (path[0] === 'home') {
-      const r = await pageCall('list', { kind: 'clothing', auctions: true, limit: 12 });
+      const r = await pageCall('list', { kind: 'clothing', auctions: true, sort: 'ending', limit: 12 });
       const section = $('#liveAuctions');
       if (!r.ok || !section || (location.hash.replace(/^#\/?/, '').split('?')[0] || 'home') !== 'home') return;
       section.innerHTML = renderAuctionHomeSection(r.assets).s;
@@ -5728,6 +5871,7 @@ async function render() {
   if (banned()) { banPage(); return; }
   try {
     await pages[name](...path.slice(1).map(decodeURIComponent));
+    checkShareLinks(call, signedIn());   // did a share link someone opened lead somewhere? (sharelinks.js)
     if (token === pageToken) placeAds(name, me);   // banner ads on clean pages, never for Boltworks Club (ads.js)
   } catch (err) {
     if (err instanceof Stale || token !== pageToken) return;   // the visitor moved on: the new page draws itself

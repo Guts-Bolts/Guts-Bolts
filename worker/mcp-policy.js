@@ -14,18 +14,18 @@
 export const READ_TOOLS = [
   'get_engine_info', 'get_game_tree', 'find_objects', 'get_object', 'read_script', 'get_output', 'get_errors',
   'diagnose_object', 'analyze_scene_performance', 'analyze_script_dependencies', 'validate_scene', 'find_path',
-  'get_runtime_state', 'screenshot',
+  'get_runtime_state', 'screenshot', 'phone_check',
 ];
 export const WRITE_TOOLS = [
   'insert_object', 'delete_object', 'set_property', 'find_and_change', 'select', 'create_script', 'edit_script',
   'visual_script', 'generate_level', 'run_lua', 'playtest', 'multiplayer_test', 'physics_replay', 'lua_debugger',
   'create_physical_object', 'spawn_explosion', 'bake_navmesh', 'walk_character_to', 'script_history', 'ai_activity',
-  'checkpoint', 'undo', 'redo', 'build', 'terrain', 'create_ui', 'add_game_system', 'set_atmosphere',
+  'checkpoint', 'undo', 'redo', 'build', 'terrain', 'create_ui', 'add_game_system', 'set_atmosphere', 'make_animation',
 ];
 // Never, whatever the token says. publish_game puts a game online as you; compare_scenes opens and
 // saves game files by path on your computer. Names like these are refused too, even if someone adds
 // one to a list above by mistake.
-export const DENIED_TOOLS = ['publish_game', 'compare_scenes'];
+export const DENIED_TOOLS = ['publish_game', 'compare_scenes', 'manage_game'];
 const DENIED_PATTERN = /publish|upload|release|sell|price|purchase|payout|bolts/i;
 
 // MCP methods other than tools/call, and the scope each needs (initialize and ping need just a Studio scope).

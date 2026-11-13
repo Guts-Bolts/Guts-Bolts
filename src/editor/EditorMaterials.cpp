@@ -55,7 +55,8 @@ bool edit(MaterialVariantProps& v) {
         {"ColorMap", &v.colorMap, "The colours (the part's Color tints it: white shows it as it is)."},
         {"NormalMap", &v.normalMap, "Bumps and grooves (a bluish normal map picture)."},
         {"RoughnessMap", &v.roughnessMap, "Where it's rough (white) or shiny (black)."},
-        {"MetalnessMap", &v.metalnessMap, "Where it's metal (white) or not (black)."}};
+        {"MetalnessMap", &v.metalnessMap, "Where it's metal (white) or not (black)."},
+        {"OrmMap", &v.ormMap, "One packed picture instead of the two above: red = occlusion (dark where sky light\ncan't reach, like the gaps between bricks), green = roughness, blue = metalness."}};
     for (const Pic& p : pics) {
         ImGui::PushID(p.label);
         const float button = ImGui::CalcTextSize("Choose...").x + ImGui::GetStyle().FramePadding.x * 2 + 4;

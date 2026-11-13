@@ -1,6 +1,7 @@
 #include "../core/FrameProfile.h"
 #include "../game/LiveProfiler.h"
 #include "PlayerApp.h"
+#include "../renderer/GpuCaps.h"
 #include "../core/TextFilter.h"
 #include "../core/Language.h"
 #include "../core/Pad.h"
@@ -9,6 +10,7 @@
 #include "LaunchLink.h"
 #include "WebKeyboard.h"
 #include "../game/GameGui.h"
+#include "../game/ImagePublish.h"
 #include "../game/EmoteMenu.h"
 #include "../scene/Emotes.h"
 #include "../renderer/Textures.h"
@@ -25,6 +27,8 @@
 #include "../game/SettingsWindow.h"
 #include "../game/UpdateToast.h"
 #include "../renderer/SceneRenderer.h"
+#include "../renderer/Benchmark.h"
+#include "../core/Scalability.h"
 #include "../scene/Physics.h"
 #include "../scene/Serializer.h"
 #include "../net/NetGame.h"
@@ -90,6 +94,28 @@ PlayerApp::PlayerApp(PlayerOptions opts) : m_opts(std::move(opts)) {
     m_window->setFixedTimestep(!m_opts.screenshot.empty());
     m_window->setAfterUi([this] { vrAfterUi(); });
     m_renderer = std::make_unique<SceneRenderer>();
+    {   // The first start on this graphics chip (on Auto): a quick benchmark says where Auto
+        // starts (High, Medium, Low or Very Low), so slow computers don't begin laggy.
+        GraphicsSettings& gs = GraphicsSettings::get();
+        const std::string gpu = GraphicsBenchmark::gpuName();
+        const bool force = std::getenv("GB_BENCHMARK") != nullptr;
+        // (Not in automated tests or Studio's multiplayer test: several players start at
+        // once there, and they should start the same way every time.)
+        const bool testing = !m_opts.screenshot.empty() || !m_opts.testName.empty() || testMode();
+        if (!testing && Scalability::isSoftwareGpu(gpu) && gs.needsBenchmark(gpu) && !force) {
+            // No real graphics chip (drawn by the processor): nothing to measure, it's slow.
+            gs.setBenchmark(gpu, 1000.0f, 1000.0f / 60.0f);
+            gs.save();
+        } else if (!testing && (gs.needsBenchmark(gpu) || force)) {
+            const float ms = GraphicsBenchmark::run(*m_renderer, 1280, 720);
+            if (ms > 0.0f) {
+                gs.setBenchmark(gpu, ms, 1000.0f / 60.0f);
+                gs.save();
+                Log::info("Graphics benchmark on " + gpu + ": " + std::to_string((int)(ms + 0.5f)) + " ms a frame at High, starting at " +
+                          (gs.benchLevel >= 2 ? "High" : gs.benchLevel == 1 ? "Medium" : gs.benchLevel == 0 ? "Low" : "Very Low"));
+            }
+        }
+    }
     m_scene    = std::make_unique<Scene>();
     m_session  = std::make_unique<GameSession>(m_scene.get());
     if (studioTest() && !m_opts.studioInputTrace.empty())
@@ -1880,7 +1906,9 @@ void PlayerApp::drawGame(float dt) {
         if (vrDraw) vrRender(vrEyes);   // (vrAfterUi finishes the headset's picture, once the menus are drawn)
     } else {
         m_view.resize((int)px.x, (int)px.y);
+        m_renderer->temporal = true;    // (the game view: the upscaler and bounce light build on the frames before)
         m_renderer->render(*m_scene, shownCam, m_view, false);
+        m_renderer->temporal = false;
         recordClipFrame();   // (the clip recorder: PlayerClips.cpp)
     }
     if (GameGui::needsBackdrop(*m_scene) && !vr) {   // UIBlur: the world behind the UI, blurred
@@ -1996,6 +2024,7 @@ void PlayerApp::drawGame(float dt) {
     }
     GameGui::draw(dl, pos, max, *m_scene, &m_guiInput);
     GameGui::drawPrompts(dl);
+    ImagePublish::draw();   // "Publish your picture?" (AssetService:PromptPublishImageAsync)
     if (padAim && toWorld) ClickDetectors::drawAim(dl, centre, onClickable);
     {
         std::vector<GameGui::Event> typed;   // a TextBox being typed in
@@ -2055,6 +2084,32 @@ void PlayerApp::drawGame(float dt) {
         dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + 34), IM_COL32(40, 30, 10, (int)(210 * fade)), 17.0f);
         Bolts::drawIcon(dl, ImVec2(x + 20, y + 17), 22.0f);
         dl->AddText(ImVec2(x + 38, y + (34 - ts.y) * 0.5f), IM_COL32(255, 215, 90, (int)(255 * fade)), m_boltsToast.c_str());
+    }
+
+    // Once, on a device that can't run every graphics feature (a Mac, an iPhone, the web
+    // Player): say so, and where to read which ones (Settings > Graphics API).
+    {
+        static double until = -1.0;
+        if (until < 0.0) {
+            until = 0.0;
+            GraphicsSettings& g = GraphicsSettings::get();
+            DeviceFeatures::Feature miss[DeviceFeatures::kFeatures];
+            if (!g.sawDeviceNotice && DeviceFeatures::missing(GpuCapsQuery::get(), miss) > 0) {
+                until = ImGui::GetTime() + 9.0;
+                g.sawDeviceNotice = true;
+                g.save();
+            }
+        }
+        if (ImGui::GetTime() < until) {
+            const char* line = "This device can't run some graphics features. See Settings for which ones.";
+            const float wrap = std::min(size.x - 60.0f, 520.0f);
+            const ImVec2 ts = ImGui::CalcTextSize(line, nullptr, false, wrap);
+            const float w = ts.x + 32, x = pos.x + (size.x - w) * 0.5f, y = pos.y + 58;
+            const float fade = (float)std::min(1.0, until - ImGui::GetTime());
+            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + ts.y + 18), IM_COL32(40, 30, 10, (int)(220 * fade)), 10.0f);
+            dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(x + 16, y + 9),
+                        IM_COL32(255, 200, 110, (int)(255 * fade)), line, nullptr, wrap);
+        }
     }
 
     // Menu button + FPS. (Touch screens get their own buttons instead.)
@@ -2653,6 +2708,22 @@ void PlayerApp::drawPauseMenu() {
         }
         if (gs.graphicsApi != startedApi)
             ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Close and reopen Guts&Bolts to switch.");
+        {   // What this device can't do (DeviceFeatures.h): Macs, iPhones and the web Player
+            // have no compute shaders, so a few features use a simpler version there.
+            DeviceFeatures::Feature miss[DeviceFeatures::kFeatures];
+            const GpuCaps& caps = GpuCapsQuery::get();
+            if (const int n = DeviceFeatures::missing(caps, miss)) {
+                ImGui::PushTextWrapPos(0);
+                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "%s", DeviceFeatures::kNotice);
+                for (int i = 0; i < n; ++i) {
+                    ImGui::BulletText("%s", DeviceFeatures::info(miss[i]).name);
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("%s", DeviceFeatures::info(miss[i]).instead);
+                }
+                ImGui::TextDisabled("%s", DeviceFeatures::reason(caps));
+                ImGui::PopTextWrapPos();
+            }
+        }
         onOff("Show FPS", gs.showFps);
         ImGui::SeparatorText("Voice chat");
         if (Online::online() && Online::isGuest()) {

@@ -32,6 +32,11 @@ public:
     static constexpr float kSpacing = 0.5f;          // how far apart drops sit at rest
     static constexpr float kRadius  = 0.3f;          // a drop's size (for collisions and drawing)
     static constexpr int   kMaxDrops = 14000;       // without the graphics card
+    // PBF tensile-instability correction (Macklin & Müller): deliberately small;
+    // keep the density relaxation and rest-density terms tuned with this value.
+    static constexpr float kTensileCorrection = 0.02f;
+    // How much colour one drop of coloured liquid puts in a pool it runs into (WaterDye).
+    static constexpr float kDropDye = 0.3f;
 
     Liquid();
     ~Liquid();
@@ -83,9 +88,12 @@ public:
 
     // Kinds of liquid (FluidSystem objects; number 0 is plain water). Each drop
     // belongs to one: its colour, how thick it is and how much it sticks together.
-    struct Fluid { uint64_t id = 0; glm::vec3 color{0.12f, 0.42f, 0.62f}; float viscosity = 0.015f, tension = 0.0f; };
+    struct Fluid { uint64_t id = 0; glm::vec3 color{0.12f, 0.42f, 0.62f}; float viscosity = 0.015f, tension = 0.08f; };
     static constexpr int kMaxFluids = 16;
     const std::vector<Fluid>& fluids() const { return m_fluids; }
+    // Liquid blood and oil (workspace.LiquidBlood with Gore on): kinds of their own, thick
+    // and sticky, so they drip, run and pool but never mix into the water. -1 = none.
+    int goreFluid(bool oil) const { return oil ? m_oilFluid : m_bloodFluid; }
     // The most drops there can be right now (workspace.MaxFluidParticles, and what
     // this computer can do). When it's full the oldest drops are recycled.
     size_t capacity() const { return m_cap; }
@@ -130,6 +138,7 @@ private:
     void pushThings(float dt, Scene& scene);
 
     bool m_active = false;
+    int  m_bloodFluid = -1, m_oilFluid = -1;
     float m_ms = 0.0f, m_prof[5] = {};
     float m_scanTime = 0.0f, m_rest = 1.0f;
     std::vector<glm::vec3> m_x, m_v, m_p;          // positions, velocities, predicted positions

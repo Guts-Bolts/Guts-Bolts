@@ -35,6 +35,7 @@ bool takePacket(std::string& bytes);
 void receive(const std::string& speaker, const std::string& bytes, const glm::vec3& pos);
 // Heard in the last moment (for the speaker icon by their name and over their head).
 bool speaking(const std::string& speaker);
+float level(const std::string& speaker);   // how loud they are right now, 0..1 (lip sync)
 void eachSpeaking(const std::function<void(const std::string& name, const glm::vec3& pos)>& fn);
 void forget(const std::string& speaker);   // they left
 void forgetAll();                          // we left the game

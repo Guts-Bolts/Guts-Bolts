@@ -1,6 +1,7 @@
 #pragma once
 #include "SceneNode.h"
 #include "Environment.h"
+#include "Storms.h"
 #include "Player.h"
 #include "Npc.h"
 #include "Water.h"
@@ -120,6 +121,26 @@ struct WorldSettings {
     glm::vec3  bloodColor  = {0.50f, 0.02f, 0.03f};
     float      bloodAmount = 1.0f;          // how much sprays out (0.2 = a little, 3 = buckets)
     float      bloodStay   = 30.0f;         // seconds pools and splats stay before drying up
+    // Blood runs as real liquid too (drips, streams and pools that flow downhill), using
+    // the water simulation with thick, sticky settings of its own. Follows Gore.
+    bool       liquidBlood = false;
+    // Dents from hits on bodies slowly spring back (soft tissue); very big hits tear.
+    bool       softTissue  = true;
+    // Wind for cloth, flags and capes (Roblox's Workspace.GlobalWind), studs / second.
+    glm::vec3  globalWind{0.0f};
+    // The air (Roblox's Workspace.AirDensity, same units as part densities): loose parts
+    // are slowed by it and pushed by the wind. Real-world thickness by default, so only
+    // light, wide parts really feel it. 0 = no air (like before 0.8).
+    float      airDensity = 0.0012f;
+    // Realism (Realism.h): a hurt leg limps and a hurt arm is held; running tires you out
+    // (off to start with: it changes how a game plays); fire spreads to wood and cloth.
+    bool       injuries   = true;
+    bool       stamina    = false;
+    bool       fireSpread = false;
+    // Sound that knows the room (Acoustics.h): muffled behind walls, echoes, Doppler.
+    bool       acoustics  = true;
+    // Things knocking into each other make the sound of what they're made of.
+    bool       impactSounds = true;
     float      spawnForceField = 4.0f;      // seconds of ForceField after spawning (0 = none)
     bool       playerCollisions = true;     // characters bump into each other (off = walk through)
     CollisionGroups collisionGroups;        // PhysicsService's groups and which of them collide
@@ -191,7 +212,12 @@ public:
     SceneNode*     root()        { return m_root.get(); }
     SceneNode*     selected()    { return m_selected; }
     Environment&   environment() { return m_env; }
+    const Environment& environment() const { return m_env; }
+    // Severe weather while it runs (Storms.h): not saved.
+    Storms::State&       storms() { return m_storms; }
+    const Storms::State& storms() const { return m_storms; }
     WorldSettings& world()       { return m_world; }
+    const WorldSettings& world() const { return m_world; }
     GameInfo&      info()        { return m_info; }
     Player*        player()      { return m_player.get(); }
     ParticleSystem& particles()  { return m_particles; }
@@ -302,6 +328,7 @@ private:
     void unselectSubtree(SceneNode* node);
     Environment                m_env;
     WorldSettings              m_world;
+    Storms::State              m_storms;
     GameInfo                   m_info;
     std::vector<RemoteCharacter> m_remotes;
     std::unordered_map<uint64_t, Look> m_looks;

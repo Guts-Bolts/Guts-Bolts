@@ -31,6 +31,7 @@ void setPitch(int handle, float pitch);
 void seek(int handle, double seconds);           // jump to this far into a sound file
 void setPosition(int handle, const glm::vec3& position);
 void setListener(const glm::vec3& position, const glm::vec3& forward);
+glm::vec3 listenerPosition();
 void setMasterVolume(float v);                   // 0..1
 void suspend();                                    // temporarily mute while the app is backgrounded
 void resume();                                     // restore the user's previous master volume
@@ -39,7 +40,23 @@ void resume();                                     // restore the user's previou
 // A sound's own effects run first, then it goes through its group's "bus" (the group's
 // effects, on everything in the group mixed together), then the parent group's, and so on.
 void setEffects(int handle, const std::vector<SoundFx::Settings>& fx);   // in this order
-void setRoute(int handle, uint64_t bus);                                  // 0 = straight out
+void setRoute(int handle, uint64_t bus);
+// How loud a playing sound is right now (RMS of what comes out of it, 0..1; 0 if it
+// isn't playing). The first ask starts listening, so it reads 0 that once.
+// (Sound.PlaybackLoudness is this * 1000; lip sync uses it.)
+float loudness(int handle);
+// Sound that knows the room (Acoustics.h works these out):
+void  setOcclusion(int handle, float amount);   // 0 = clear, 1 = behind thick walls (quieter, muffled)
+float occlusion(int handle);
+void  setVelocity(int handle, const glm::vec3& v);    // how fast it moves: the pitch bends as it goes past (Doppler)
+void  setListenerVelocity(const glm::vec3& v);
+void  setRoom(float decaySeconds, float wet);   // the room's echo on every sound in the world (wet 0 = none)
+float roomWet();
+// Real recorded sounds (assets/sounds/real): "hit_metal" picks one of its takes.
+bool  hasTakes(const std::string& name);
+std::string takeBase(const std::string& name);   // "hit_metal_2" -> "hit_metal"
+std::vector<std::string> realSoundNames();
+float loudnessOf(const float* samples, size_t count);   // the same sum, for tests                                  // 0 = straight out
 // A SoundGroup's bus: `parent` = the group it's inside (0 = none), its effects in order.
 void setBus(uint64_t bus, uint64_t parent, const std::vector<SoundFx::Settings>& fx);
 void keepBuses(const std::set<uint64_t>& used);                           // drop the rest

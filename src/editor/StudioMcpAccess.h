@@ -11,7 +11,8 @@ inline bool appMay(const std::string& tool, bool canChange) {
         "get_engine_info", "get_game_tree", "find_objects", "get_object",
         "read_script", "get_output", "get_errors", "diagnose_object",
         "analyze_scene_performance", "analyze_script_dependencies",
-        "validate_scene", "find_path", "get_runtime_state", "screenshot"
+        "validate_scene", "find_path", "get_runtime_state", "screenshot",
+        "phone_check"
     };
     static const char* writeTools[] = {
         "insert_object", "delete_object", "set_property", "find_and_change",
@@ -20,7 +21,8 @@ inline bool appMay(const std::string& tool, bool canChange) {
         "physics_replay", "lua_debugger", "create_physical_object",
         "spawn_explosion", "bake_navmesh", "walk_character_to",
         "script_history", "ai_activity", "checkpoint", "undo", "redo",
-        "build", "terrain", "create_ui", "add_game_system", "set_atmosphere"
+        "build", "terrain", "create_ui", "add_game_system", "set_atmosphere",
+        "make_animation"
     };
     for (const char* allowed : readTools) if (tool == allowed) return true;
     if (canChange)

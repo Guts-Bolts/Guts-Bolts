@@ -62,6 +62,45 @@ bool Vehicles::isVehicleSeat(const SceneNode* n) {
     const Attribute* a = n->findAttribute("VehicleSeat");
     return a && a->type == Attribute::Bool && a->b;
 }
+// Tyres and springs (Realism) for a wheeled vehicle: the tyres grip sideways, until
+// pushed past what they can hold (then it slides: a drift, with skid marks, Tracks.h),
+// and the suspension soaks up bounces and rocking instead of them going on and on.
+// Seat attributes: Grip (1; 0 = none, 2 = racing tyres) and Suspension (0.5; 0 = none).
+void Vehicles::handling(const SceneNode* seat, const std::vector<SceneNode*>& parts,
+                        const std::vector<SceneNode*>& wheels, float dt) {
+    const float grip = std::clamp(numAttr(seat, "Grip", 1.0f), 0.0f, 5.0f);
+    const float susp = std::clamp(numAttr(seat, "Suspension", 0.5f), 0.0f, 2.0f);
+    if ((grip <= 0.0f && susp <= 0.0f) || parts.empty() || dt <= 0.0f) return;
+    glm::vec3 right = axisOf(seat, 0);
+    right.y = 0.0f;
+    if (glm::length(right) < 1e-3f) return;
+    right = glm::normalize(right);
+    float mass = 0.0f;
+    glm::vec3 vel(0.0f), spin(0.0f), center(0.0f);
+    for (SceneNode* p : parts) {
+        const bool wheel = std::find(wheels.begin(), wheels.end(), p) != wheels.end();
+        const float m = Physics::densityOf(p) * volumeOf(p);
+        mass += m;
+        vel += p->velocity * m;
+        if (!wheel) spin += p->angularVelocity * m;
+        center += glm::vec3(p->worldMatrix()[3]) * m;
+    }
+    if (mass <= 0.0f) return;
+    vel /= mass; spin /= mass; center /= mass;
+    const glm::vec3 up(0, 1, 0);
+    const float vs = glm::dot(vel, right);
+    const float hold = 18.0f * grip;   // how fast sideways the tyres can hold on at
+    const float dvs = grip <= 0.0f ? 0.0f : -vs * std::min(1.0f, (std::abs(vs) < hold ? grip * 4.0f : grip * 0.5f) * dt);
+    const float dvy = vel.y > 0.0f ? -vel.y * std::min(1.0f, susp * 4.0f * dt) : 0.0f;   // (bouncing up, not falling)
+    const glm::vec3 rock = spin - up * glm::dot(spin, up);                                 // rolling and pitching
+    const glm::vec3 dw = -rock * std::min(1.0f, susp * 3.0f * dt);
+    for (SceneNode* p : parts) {
+        const bool wheel = std::find(wheels.begin(), wheels.end(), p) != wheels.end();
+        p->velocity += right * dvs + up * dvy + glm::cross(dw, glm::vec3(p->worldMatrix()[3]) - center);
+        if (!wheel) p->angularVelocity += dw;
+    }
+}
+
 float Vehicles::maxSpeed(const SceneNode* seat)  { return std::max(0.0f, numAttr(seat, "MaxSpeed", kMaxSpeed)); }
 float Vehicles::torque(const SceneNode* seat)    { return std::max(0.0f, numAttr(seat, "Torque", kTorque)); }
 float Vehicles::turnSpeed(const SceneNode* seat) { return std::max(0.0f, numAttr(seat, "TurnSpeed", kTurnSpeed)); }
@@ -127,6 +166,7 @@ void Vehicles::update(Scene& scene, float dt, bool host) {
 
         if (!motors.empty()) {
             // Wheels: roll forward at the throttle's speed; the two sides differ to turn.
+            std::vector<SceneNode*> wheels;
             for (SceneNode* m : motors) {
                 SceneNode* a0 = scene.findById(m->ref0);
                 SceneNode* a1 = scene.findById(m->ref1);
@@ -145,8 +185,10 @@ void Vehicles::update(Scene& scene, float dt, bool host) {
                 if (firstIsWheel) spin = -spin;
                 m->motorSpeed = spin;
                 wheel->sleepTime = 0.0f;
+                wheels.push_back(wheel);
             }
             for (SceneNode* p : parts) p->sleepTime = 0.0f;
+            handling(seat, parts, wheels, dt);
             ++it;
             continue;
         }

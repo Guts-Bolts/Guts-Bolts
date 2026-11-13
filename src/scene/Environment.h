@@ -26,6 +26,10 @@ struct Environment {
     glm::vec3 groundAmbient     = {0.30f, 0.27f, 0.22f};   // light bouncing off the ground
     float     ambientIntensity  = 0.42f;
     float     reflections       = 1.0f;                    // sky reflections on shiny parts
+    // Bouncy light (Lighting.BounceLight): sunlight and lamplight that land on a
+    // coloured surface light up what's near it a little, in that colour (a red
+    // floor gives the wall next to it a red glow). 0 = off, 1 = normal, 2 = strong.
+    float     bounceLight       = 0.0f;
 
     // Procedural sky ----------------------------------------------------------
     bool      showSky    = true;
@@ -44,13 +48,34 @@ struct Environment {
     glm::vec3 fogColor     = {0.66f, 0.77f, 0.90f};
     float     fogDensity   = 0.010f;
     float     fogSunGlow   = 0.6f;      // fog glows when looking toward the sun
+    // Height fog (like Unreal's exponential height fog): fogFalloff > 0 makes the fog
+    // thick down low and thinner going up, so mist fills valleys and lies on water while
+    // towers poke out of it. fogDensity is how thick it is at fogHeight (studs).
+    // fogFalloff 0 = the same thickness everywhere (the old fog).
+    float     fogHeight    = 0.0f;
+    float     fogWisps     = 0.5f;      // volumetric fog: 0 smooth .. 1 very wispy, drifting with the wind
+    float     fogFalloff   = 0.0f;      // 0.02 a soft haze .. 0.1 a low mist that hugs the ground
 
     // Weather (Lighting.Weather / WeatherIntensity) -----------------------------
     // Rain and snow fall around the camera (each computer draws its own), with
     // grey skies and thicker fog; rain makes things wet with puddles, snow settles
     // on tops. See withWeather() and Weather.h.
-    int       weather       = 0;        // kWeatherNames: 0 Clear, 1 Rain, 2 Snow
+    int       weather       = 0;        // kWeatherNames: 0 Clear, 1 Rain, 2 Snow, 3 Storm
     float     weatherAmount = 0.6f;     // 0 a few drops .. 1 a storm
+    // The clouds' shape (kCloudTypeNames): 0 Auto (from the weather), or always one kind.
+    int       cloudType     = 0;
+    // Severe weather (Storms.h). In a Storm or Supercell, downbursts (and under a
+    // supercell, tornadoes) form by themselves unless this is off; a game can always
+    // start its own. The numbers below say what is where right now: the host sets
+    // them, every player follows them.
+    float     quake         = 0.0f;   // an earthquake right now: how hard the ground shakes, 0..1 (Storms.h)
+    bool      severeWeather = true;
+    glm::vec3 stormCenter   = {0.0f, 0.0f, 0.0f};   // the supercell's middle (x, z)
+    float     tornado       = 0.0f;                 // its strength now on the EF scale (0 = none .. 5)
+    glm::vec3 tornadoPos    = {0.0f, 0.0f, 0.0f};   // its foot on the ground
+    glm::vec3 tornadoVel    = {0.0f, 0.0f, 0.0f};   // which way it is heading (studs / second)
+    float     downburst     = 0.0f;                 // 0 none .. 1 the strongest
+    glm::vec3 downburstPos  = {0.0f, 0.0f, 0.0f};   // where the falling air hits the ground
 
     // Camera / post-processing -------------------------------------------------
     float     exposure       = 1.0f;
@@ -61,6 +86,10 @@ struct Environment {
     float     saturation     = 1.1f;
     float     vignette       = 0.25f;
     glm::vec3 tint           = {1.0f, 1.0f, 1.0f};
+    // Realism (camera):
+    float     lightRays      = 0.35f;   // light shafts from the sun through haze and gaps (0 = off)
+    bool      autoExposure   = true;    // eyes adjust: dark places brighten slowly, bright ones dim
+    float     motionBlur     = 0.0f;    // 0 off .. 1 a lot (the camera turning fast smears)
 
     // Unit vector pointing from a surface toward the sun.
     glm::vec3 sunDirection() const {
@@ -73,16 +102,42 @@ struct Environment {
     }
 };
 
-enum class Weather { Clear = 0, Rain = 1, Snow = 2 };
-inline constexpr int kWeatherCount = 3;
-inline const char* const kWeatherNames[kWeatherCount] = {"Clear", "Rain", "Snow"};
+// (Storm: heavy, wind-blown rain under a dark sky, with lightning and thunder.)
+// (Supercell: a Storm whose cloud is one huge rotating thunderstorm; tornadoes form under it.)
+enum class Weather { Clear = 0, Rain = 1, Snow = 2, Storm = 3, Supercell = 4 };
+inline constexpr int kWeatherCount = 5;
+inline const char* const kWeatherNames[kWeatherCount] = {"Clear", "Rain", "Snow", "Storm", "Supercell"};
+inline bool isStorm(int weather) { return weather == (int)Weather::Storm || weather == (int)Weather::Supercell; }
+// Is water falling from the sky? (Rain and storms: things get wet, fires go out.)
+inline bool isRaining(int weather) { return weather == (int)Weather::Rain || isStorm(weather); }
+
+// Cloud shapes, as they are in the real sky (Lighting.CloudType):
+//  Cumulus       fair-weather heaps: flat bottoms, cauliflower tops, blue gaps between
+//  Stratus       a low, flat, grey sheet from edge to edge (drizzle weather)
+//  Cumulonimbus  thunderheads: a dark base, towers many times taller than they are
+//                wide, flattened at the top into an anvil
+//  Supercell     one huge rotating thunderstorm with its anvil, a rain-free base and a
+//                wall cloud hanging under it
+enum class CloudType { Auto = 0, Cumulus = 1, Stratus = 2, Cumulonimbus = 3, Supercell = 4 };
+inline constexpr int kCloudTypeCount = 5;
+inline const char* const kCloudTypeNames[kCloudTypeCount] = {"Auto", "Cumulus", "Stratus", "Cumulonimbus", "Supercell"};
+// The shape the sky really has: the chosen one, or the one that goes with the weather.
+inline int cloudShape(int cloudType, int weather, float cloudCover) {
+    if (cloudType > 0 && cloudType < kCloudTypeCount) return cloudType;
+    if (weather == (int)Weather::Supercell) return (int)CloudType::Supercell;
+    if (weather == (int)Weather::Storm) return (int)CloudType::Cumulonimbus;
+    if (weather == (int)Weather::Rain || weather == (int)Weather::Snow) return (int)CloudType::Stratus;
+    return cloudCover > 0.85f ? (int)CloudType::Stratus : (int)CloudType::Cumulus;
+}
 
 // How the sky, sun and fog look with the weather on top (grey clouds, less sun,
 // thicker fog). The saved Lighting stays as the game maker set it.
 inline Environment withWeather(const Environment& e) {
     if (e.weather <= 0 || e.weather >= kWeatherCount) return e;
     Environment w = e;
-    const float a = glm::clamp(e.weatherAmount, 0.0f, 1.0f);
+    const bool storm = isStorm(e.weather);
+    // (A storm is never a light one: its clouds are as heavy as the hardest rain.)
+    const float a = storm ? 1.0f : glm::clamp(e.weatherAmount, 0.0f, 1.0f);
     const bool snow = e.weather == (int)Weather::Snow;
     const glm::vec3 grey = snow ? glm::vec3(0.78f, 0.80f, 0.84f) : glm::vec3(0.50f, 0.53f, 0.58f);
     const float k = 0.25f + 0.5f * a;   // how much of the sky turns grey
@@ -99,7 +154,14 @@ inline Environment withWeather(const Environment& e) {
     w.fogDensity = (e.fogEnabled ? e.fogDensity : 0.0f) + (snow ? 0.022f : 0.012f) * a;
     w.fogColor   = glm::mix(e.fogColor, grey * bright, 0.5f * a + 0.2f);
     w.fogSunGlow = e.fogSunGlow * (1.0f - 0.7f * a);
+    // Rain and snow leave a low mist lying on the ground (unless the game made its own).
+    if (e.fogFalloff <= 0.0f) { w.fogFalloff = 0.03f * a; w.fogHeight = 0.0f; }
     w.saturation = e.saturation * (1.0f - (snow ? 0.1f : 0.2f) * a);
+    if (storm) {   // darker still: near-black clouds, hardly any sun
+        w.skyZenith *= 0.55f; w.skyHorizon *= 0.6f; w.cloudColor *= 0.55f; w.fogColor *= 0.65f;
+        w.sunIntensity *= 0.5f; w.ambientIntensity = e.ambientIntensity * 0.75f;
+        w.cloudSpeed = glm::max(e.cloudSpeed, 1.0f) * 2.5f;
+    }
     return w;
 }
 
@@ -119,6 +181,7 @@ inline Environment sunset() {
     e.skyGround  = {0.16f, 0.11f, 0.11f};
     e.cloudColor = {1.0f, 0.75f, 0.6f};
     e.fogColor = {0.95f, 0.58f, 0.36f}; e.fogDensity = 0.018f; e.fogSunGlow = 1.0f;
+    e.fogFalloff = 0.035f;   // (evening haze lying low)
     e.bloomIntensity = 0.7f; e.saturation = 1.2f; e.tint = {1.0f, 0.95f, 0.9f};
     return e;
 }
@@ -151,6 +214,7 @@ inline Environment overcast() {
     e.skyGround  = {0.30f, 0.30f, 0.31f};
     e.cloudCover = 0.9f; e.cloudColor = {0.8f, 0.82f, 0.85f};
     e.fogColor = {0.73f, 0.75f, 0.77f}; e.fogDensity = 0.028f; e.fogSunGlow = 0.1f;
+    e.fogFalloff = 0.02f;
     e.saturation = 0.85f; e.contrast = 1.0f;
     return e;
 }
@@ -167,6 +231,7 @@ inline Environment horror() {
     e.skyGround  = {0.03f, 0.01f, 0.01f};
     e.cloudCover = 0.7f; e.cloudColor = {0.35f, 0.12f, 0.1f};
     e.fogColor = {0.18f, 0.04f, 0.04f}; e.fogDensity = 0.045f; e.fogSunGlow = 0.8f;
+    e.fogFalloff = 0.08f;    // (a thick mist round your ankles)
     e.exposure = 1.3f; e.bloomIntensity = 0.9f; e.contrast = 1.2f; e.saturation = 0.8f;
     e.vignette = 0.6f; e.tint = {1.1f, 0.9f, 0.85f};
     return e;

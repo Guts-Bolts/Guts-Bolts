@@ -18,6 +18,7 @@
 #include <imgui.h>
 
 struct GLFWwindow;
+struct GraphicsSettings;
 class Scene;
 class GameSession;
 class ViewportPanel;
@@ -59,6 +60,11 @@ public:
     // person's OK first (EditorAiActivity.cpp).
     AiToolResult runAiToolFrom(const std::string& source, const std::string& name, const nlohmann::json& args);
     void showAiActivity() { m_showAiActivity = true; }
+    // Fyxa's "bypass permissions" mode (turned on in Fyxa settings, off again every time Studio
+    // starts): Fyxa's own calls skip the Allow steps (deleting, save points, game page changes).
+    // Other AI apps and connected apps still ask. Everything still goes in AI Activity.
+    bool fyxaBypass() const { return m_fyxaBypass; }
+    void setFyxaBypass(bool on);
     const std::string& filePath() const { return m_path; }   // the open game's file ("" = never saved)
     bool aiHasChanges() const { return !m_aiBaseline.empty(); }
     static std::vector<std::string> insertKinds();   // what insert_object / Insert Object can make
@@ -283,6 +289,17 @@ private:
     void       registerWorkspaceSettings();
     bool       handleViewKeys();                // Z, Shift+Z, Alt+Z
     void       testWorkspace(const std::string& step);   // --test-mesh "workspace:..." steps
+    // The Simple layout and Search Studio (EditorSimple.cpp).
+    bool       simpleLayout() const;            // fewer buttons and panels (the rest behind More); off = Advanced
+    void       setSimpleLayout(bool simple);
+    void       applyLayoutPanels();             // the panels a fresh workspace shows in this layout
+    void       openSearch();                    // Ctrl+Shift+P: find any tool, window or object by name
+    void       renderSearch();
+    void       testSimple(const std::string& step);   // --test-mesh "simple:..." steps
+    bool        m_searchOpen = false, m_searchFocus = false;
+    std::string m_searchText;
+    int         m_searchPick = 0;
+    bool        m_openRibbonMore = false;       // (tests: open the ribbon's More window)
     std::vector<std::unique_ptr<ViewportPanel>> m_moreViews;
     std::vector<std::pair<int, unsigned>> m_dockNewView;   // a new view (its number) -> the dock to open in
     bool        m_wantQuadView = false;
@@ -401,6 +418,7 @@ private:
     std::string m_accessoryName, m_accessoryDesc, m_accessoryMsg, m_accessoryEditId;
     bool        m_showBundles = false, m_bundleHeadless = false;
     bool        m_bundleAutoUV = true;    // new body parts get clothing UVs (the template layout)
+    bool        m_bundleBend = false;     // arms and legs bend softly at the elbows and knees
     int         m_bundleTryOn = 0;        // the mannequin wears: 0 nothing, 1 shirt template, 2 pants template
     int         m_bundlePrice = 0;
     std::string m_bundleName, m_bundleDesc, m_bundleItems, m_bundleMsg;
@@ -435,18 +453,29 @@ private:
     bool m_learnBaselineReady = false;   // a practice snapshot was taken (a resumed practice takes one first)
     std::set<int> m_learnCompleted;
     bool m_showPerformanceDoctor = false;
+    // Test like a phone (EditorPhoneTest.cpp)
+    bool m_showPhoneTest = false;
+    int  m_phonePick = 0;                              // which device the window shows
+    int  m_phoneTesting = 0;                           // 1 + that device while its playtest runs, else 0
+    std::unique_ptr<GraphicsSettings> m_phoneSaved;    // Studio's own settings, back when the test stops
+    void renderPhoneTest();
+    void startPhoneTest(int profile);
+    void endPhoneTest();
+public:
+    nlohmann::json phoneCheck(int profile) const;      // the budget table (also the phone_check AI tool)
+private:
     bool m_showLuaDebugger = false;
     int m_debugLineInput = 1;
     int m_debugSeenPauses = 0;   // the Lua Debugger's pause count we've already jumped to
     bool m_showSceneValidator = false;
     bool m_showProjectTimeMachine = false;
     // Visual Scripting: the block script being shown and its blocks (EditorBlocks.cpp)
-    bool m_showBlocks = false, m_blocksEdited = false, m_blocksMoving = false, m_blocksPanned = false;
+    bool m_showBlocks = false, m_blocksEdited = false, m_blocksMoving = false;
     uint64_t m_blocksScript = 0;
     nlohmann::json m_blocksGraph;
-    std::string m_blocksWritten, m_blocksLua, m_blocksDragPin;
+    std::string m_blocksWritten, m_blocksLua;
     std::vector<std::string> m_blocksProblems;
-    int m_blocksSelected = 0, m_blocksDragFrom = 0;
+    int m_blocksSelected = 0, m_blocksSelectNext = 0, m_blocksMenuNode = 0;
     ImVec2 m_blocksPan{0, 0}, m_blocksMenuAt{0, 0};
     bool m_showMaterialEditor = false;
     uint64_t    m_materialEditing = 0;    // the MaterialVariant shown in the Material Editor
@@ -520,6 +549,11 @@ private:
     std::map<std::string, std::string> m_aiCheckpoints;
     std::unique_ptr<Physics>           m_aiNav;
     nlohmann::json                     m_aiPublish;   // the publish_game tool's last publish: {state, name, ...}
+    // manage_game (EditorPlatform.cpp): its jobs (number -> {action, state, result/error...}) and the
+    // changes waiting for the person's Allow, oldest first.
+    nlohmann::json                     m_platformJobs = nlohmann::json::object();
+    std::vector<std::string>           m_platformWaiting;
+    int                                m_platformNext = 1;
     // AI Activity (EditorAiActivity.cpp): every AI tool call, and what the AI changed since
     // the person last pressed Keep / Undo all (the game before its first change).
     struct AiLogEntry {
@@ -532,6 +566,8 @@ private:
     bool        m_aiLogLoaded = false;
     std::string m_aiBaseline, m_aiBaselinePath;   // the game before the AI's changes ("" = none)
     bool        m_aiAskFirst = true;              // ask before deleting / restoring
+    bool        m_fyxaBypass = false;             // Fyxa bypass permissions mode (never saved)
+    std::string m_aiSource;                       // who is calling runAiTool right now (runAiToolFrom), "" = the person
     struct AiAsk { std::string source, tool, summary; nlohmann::json args; };
     std::vector<AiAsk>    m_aiAsks;               // waiting for Allow / Don't allow
     std::set<std::string> m_aiAllowed, m_aiRefused;   // tool + args the person answered (used once)
@@ -542,6 +578,9 @@ private:
     bool        aiUndoChanges();                  // false = nothing to undo / playtesting
     nlohmann::json aiChangeReport();
     void        renderAiActivity();
+    AiToolResult runPlatformTool(const nlohmann::json& args);   // EditorPlatform.cpp: the manage_game tool
+    void        sendPlatformJob(const std::string& job, const std::string& op, const nlohmann::json& req);
+    void        renderPlatformApprovals();
     std::vector<std::string> m_undo, m_redo;
     std::string              m_committed;      // last known scene state
     LinkedModels::Tracker    m_links;          // linked models: what each copy held at the last edit

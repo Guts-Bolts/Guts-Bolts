@@ -90,6 +90,8 @@ private:
         std::string messageDay; int messagesToday = 0;
         std::string privacyMessages = "everyone";            // who can send you messages
         bool        dnd = false;                             // Do Not Disturb: calls don't ring (ServerChats.cpp)
+        std::string background;                              // a decal behind their avatar on their profile (ServerBackgrounds.cpp)
+        std::string ratingLimit;                             // the highest content level they want to see, '' = all (ServerRatings.cpp)
         std::string privacyInventory = "everyone";           // who can see what you own (and trade with you)
         std::string blurb;                                   // "About me"
         nlohmann::json posts = nlohmann::json::array();     // "Right now I'm..." {text, at}, newest first
@@ -133,6 +135,11 @@ private:
         // Games: the creator's update notes, {id, title, text, at}, newest first (ServerExtras.cpp).
         nlohmann::json updateLog = nlohmann::json::array();
         std::string updateLogDay; int updateLogToday = 0;
+        // Games: the ban lists it uses (ServerBanLists.cpp; worker/banlists.js a.banLists).
+        std::vector<std::string> banLists;
+        // Games: early testers and their notes, id -> {stars, text, at} (ServerTesters.cpp; worker/testers.js).
+        std::vector<std::string> testers;
+        nlohmann::json testerNotes = nlohmann::json::object();
     };
 
     struct Post { std::string by, text; long long time = 0; };
@@ -274,6 +281,66 @@ private:
     void eventsPlayed(User& me);
     void saveEvents();
     void loadEvents();
+    // ServerBanLists.cpp: creators' ban lists, used across their games (banlists.json).
+    nlohmann::json banListOp(const std::string& name, User& me, const nlohmann::json& args);
+    std::string banMessageFor(const std::string& gameId, const User& me) const;   // "" = not banned
+    const nlohmann::json* banFor(const Asset& a, const User& me, const nlohmann::json** entry) const;
+    std::string banListRole(const nlohmann::json& l, const User& me) const;
+    nlohmann::json banListPerson(const std::string& id) const;
+    // ServerBackgrounds.cpp: a picture behind your avatar on your profile (worker/backgrounds.js).
+    nlohmann::json backgroundOp(User& me, const nlohmann::json& args);
+    nlohmann::json backgroundOf(const User& u) const;
+    // ServerRatings.cpp: content levels from a few questions (worker/ratings.js).
+    nlohmann::json ratingOp(const std::string& name, User& me, const nlohmann::json& args);
+    bool ratingAllowed(const Asset& a, const User& me) const;
+    // ServerArt.cpp: the Art portal (art.json + files/art-<id>), same rules as worker/art.js.
+    nlohmann::json artOp(const std::string& name, User* me, const nlohmann::json& args);
+    bool artCanSee(const nlohmann::json& p, const User* me) const;
+    nlohmann::json artJson(const nlohmann::json& p, const User* me, bool full) const;
+    std::string artReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string artReportName(const std::string& target) const;
+    void saveArt();
+    void loadArt();
+    // ServerPaste.cpp: G&B Paste (pastes.json), same rules as worker/paste.js.
+    nlohmann::json pasteOp(const std::string& name, User* me, const nlohmann::json& args);
+    nlohmann::json* pasteLive(const std::string& id);
+    nlohmann::json pasteJson(const nlohmann::json& p, const User* me, bool full) const;
+    std::string pasteReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string pasteReportName(const std::string& target) const;
+    void savePastes();
+    void loadPastes();
+    // ServerAcademy.cpp: G&B Academy (academy.json), same rules as worker/academy.js.
+    nlohmann::json academyOp(const std::string& name, User* me, const nlohmann::json& args);
+    bool academyCanSee(const nlohmann::json& c, const User* me) const;
+    nlohmann::json academyJson(const nlohmann::json& c, const User* me, bool full) const;
+    std::string academyReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string academyReportName(const std::string& target) const;
+    void saveAcademy();
+    void loadAcademy();
+    // ServerShareLinks.cpp: share links that count clicks, plays and buys (sharelinks.json), like worker/sharelinks.js.
+    nlohmann::json shareOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json shareThing(const std::string& kind, const nlohmann::json& id);
+    bool shareIsDone(const nlohmann::json& t, const std::string& kind, const std::string& what, const User& me) const;
+    nlohmann::json shareJson(const nlohmann::json& l) const;
+    void saveShareLinks();
+    void loadShareLinks();
+    // ServerExperiments.cpp: A/B tests for games (experiments.json), same rules as worker/experiments.js.
+    nlohmann::json experimentsOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json experimentResults(const std::string& game, const nlohmann::json& e) const;
+    void saveExperiments();
+    void loadExperiments();
+    // ServerTesters.cpp: early testers play a game before it's public.
+    nlohmann::json testerOp(const std::string& name, User& me, const nlohmann::json& args);
+    bool isTester(const Asset& a, const User& me) const;
+    nlohmann::json testerPerson(const std::string& id) const;
+    void testersLaunched(const Asset& a, const User& me);
+    std::string noPlayText(const Asset& a) const;
+    nlohmann::json banListSummary(const nlohmann::json& l, const User& me) const;
+    nlohmann::json banListFull(const nlohmann::json& l, const User& me) const;
+    std::string banListMake(const User& me, const std::string& name, std::string& error);
+    std::string banListAdd(nlohmann::json& l, const User& me, const nlohmann::json& args);
+    void saveBanLists();
+    void loadBanLists();
     // The staff action log (stafflog.json): what staff did, newest last. about: who it was done to.
     void staffDid(const User& staff, const std::string& action, const std::string& text, const std::string& about = "");
     nlohmann::json staffLogJson(const std::string& who) const;
@@ -428,6 +495,12 @@ private:
     // The public roadmap (ServerRoadmap.cpp): {items: [{id, title, text, status, version, at}], ideas: [{id, title, text, by, at, votes, status, note}]}.
     nlohmann::json m_roadmap = {{"items", nlohmann::json::array()}, {"ideas", nlohmann::json::array()}};
     nlohmann::json m_events = nlohmann::json::array();   // ServerExtras.cpp
+    nlohmann::json m_banLists = nlohmann::json::object();   // ServerBanLists.cpp: list id -> list
+    nlohmann::json m_art = {{"pieces", nlohmann::json::object()}, {"posts", nlohmann::json::object()}};   // ServerArt.cpp
+    nlohmann::json m_experiments = {{"games", nlohmann::json::object()}, {"data", nlohmann::json::object()}};   // ServerExperiments.cpp
+    nlohmann::json m_shareLinks = {{"links", nlohmann::json::object()}, {"seen", nlohmann::json::object()}};   // ServerShareLinks.cpp
+    nlohmann::json m_pastes = {{"pastes", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerPaste.cpp
+    nlohmann::json m_academy = {{"courses", nlohmann::json::object()}, {"progress", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerAcademy.cpp
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.

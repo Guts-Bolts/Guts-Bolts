@@ -65,6 +65,66 @@ std::string gearProblem(const std::string& data) {
         return "Gear must be a Tool (with a Handle part inside).";
     return "";
 }
+// A body part's bones and weights (see bundleBody). Copies the tidy ones into `part`.
+std::string bundleRig(const std::string& name, const nlohmann::json& p, size_t corners, nlohmann::json& part) {
+    using nlohmann::json;
+    const std::string bad = name + "'s bones look wrong.";
+    auto num = [](const json& x, double lo, double hi) { return x.is_number() && x.get<double>() >= lo && x.get<double>() <= hi; };
+    auto vec3 = [&](const json& a, double lim) {
+        if (!a.is_array() || a.size() != 3) return false;
+        for (const json& x : a) if (!num(x, -lim, lim)) return false;
+        return true;
+    };
+    if (p.contains("bend")) {
+        if (!p["bend"].is_boolean()) return bad;
+        if (p["bend"].get<bool>()) {
+            if (name == "Head" || name == "Torso") return "Only arms and legs can bend in the middle.";
+            part["bend"] = true;
+        }
+    }
+    if (!p.contains("bones")) {
+        if (p.contains("w")) return bad;
+        return "";
+    }
+    const json& bones = p["bones"];
+    if (!bones.is_array() || bones.size() > (size_t)kBodyMostBones) return name + " has too many bones (" + std::to_string(kBodyMostBones) + " at most).";
+    json tidy = json::array();
+    for (size_t i = 0; i < bones.size(); ++i) {
+        const json& b = bones[i];
+        if (!b.is_object() || !b.contains("name") || !b["name"].is_string()) return bad;
+        const std::string bn = b["name"].get<std::string>();
+        if (bn.empty() || bn.size() > 32) return bad;
+        const int parent = b.contains("parent") && b["parent"].is_number_integer() ? b["parent"].get<int>() : -2;
+        if (parent < -1 || parent >= (int)i) return bad;
+        if (!vec3(b.value("pos", json()), 16.0) || !vec3(b.value("rot", json()), 360.0)) return bad;
+        const std::string type = b.value("type", std::string("Normal"));
+        if (type != "Normal" && type != "Jiggle") return "Bones in a bundle can be Normal or Jiggle.";
+        json one = {{"name", bn}, {"parent", parent}, {"pos", b["pos"]}, {"rot", b["rot"]}, {"type", type}};
+        for (const char* k : {"stiffness", "damping"}) {
+            if (!b.contains(k)) continue;
+            if (!num(b[k], 0.0, 1.0)) return bad;
+            one[k] = b[k];
+        }
+        if (b.contains("gravity")) { if (!num(b["gravity"], -200.0, 200.0)) return bad; one["gravity"] = b["gravity"]; }
+        if (b.contains("length"))  { if (!num(b["length"], 0.0, 16.0)) return bad;      one["length"] = b["length"]; }
+        tidy.push_back(std::move(one));
+    }
+    if (tidy.empty()) return "";
+    part["bones"] = std::move(tidy);
+    if (!p.contains("w")) return "";
+    const json& w = p["w"];
+    if (!w.is_array() || w.size() != corners) return bad;
+    for (const json& one : w) {
+        if (!one.is_array() || one.size() % 2 || one.size() > 8) return bad;
+        for (size_t k = 0; k < one.size(); k += 2)
+            if (!one[k].is_number_integer() || one[k].get<long long>() < 0 || one[k].get<long long>() >= (long long)bones.size() ||
+                !num(one[k + 1], 0.0, 1.0))
+                return bad;
+    }
+    part["w"] = w;
+    return "";
+}
+
 std::string bundleBody(const nlohmann::json& body, nlohmann::json& out) {
     using nlohmann::json;
     out = json::object();
@@ -99,6 +159,7 @@ std::string bundleBody(const nlohmann::json& body, nlohmann::json& out) {
                 if (!numbers(uv[i], f[i].size() * 2, -1000.0f, 1000.0f)) return bad;
             part["uv"] = uv;
         }
+        if (std::string problem = bundleRig(name, p, corners, part); !problem.empty()) return problem;
         out[name] = std::move(part);
     }
     return "";

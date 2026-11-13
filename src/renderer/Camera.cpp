@@ -89,7 +89,13 @@ glm::mat4 Camera::projection() const {
         // The near side reaches back behind the camera too, so nothing between it and
         // what it looks at gets cut off (with no perspective, nearer isn't bigger).
         const float h = viewHeight() * 0.5f, w = h * aspect;
-        return glm::ortho(-w, w, -h, h, -500.0f, 1000.0f);
+        glm::mat4 p = glm::ortho(-w, w, -h, h, -500.0f, 1000.0f);
+        p[3][0] += jitter.x;
+        p[3][1] += jitter.y;
+        return p;
     }
-    return glm::perspective(glm::radians(fov), aspect, 0.1f, 1000.0f);
+    glm::mat4 p = glm::perspective(glm::radians(fov), aspect, 0.1f, 1000.0f);
+    p[2][0] -= jitter.x;   // (w = -z for a perspective view: this moves it by jitter on screen)
+    p[2][1] -= jitter.y;
+    return p;
 }

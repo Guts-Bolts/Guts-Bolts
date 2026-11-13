@@ -26,6 +26,15 @@ set(GB_SERVER_SOURCES
     src/server/ServerChats.cpp
     src/server/ServerRoadmap.cpp
     src/server/ServerExtras.cpp
+    src/server/ServerBanLists.cpp
+    src/server/ServerTesters.cpp
+    src/server/ServerExperiments.cpp
+    src/server/ServerShareLinks.cpp
+    src/server/ServerRatings.cpp
+    src/server/ServerBackgrounds.cpp
+    src/server/ServerArt.cpp
+    src/server/ServerPaste.cpp
+    src/server/ServerAcademy.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -124,6 +133,17 @@ FetchContent_Declare(
     SOURCE_SUBDIR  cmake-build-disabled
 )
 FetchContent_MakeAvailable(imguizmo)
+
+# imnodes (MIT): the "blocks joined by lines" board in Studio's Visual Scripting
+# window (src/editor/EditorBlocks.cpp). Studio only, so phones and the web Player
+# never build it. Only downloaded; its own CMakeLists isn't run.
+FetchContent_Declare(
+    imnodes
+    GIT_REPOSITORY https://github.com/Nelarius/imnodes.git
+    GIT_TAG        2d0c280b07b2f62b120034811cc6e41251673961
+    SOURCE_SUBDIR  cmake-build-disabled
+)
+FetchContent_MakeAvailable(imnodes)
 
 # Lua 5.4 — the scripting language used by Script objects. The official repo
 # has no CMake build, so only download it and compile the core library below.
@@ -369,13 +389,33 @@ gb_embed("${CMAKE_SOURCE_DIR}/assets/templates/shirt_template.png" kShirtTemplat
 gb_embed("${CMAKE_SOURCE_DIR}/assets/templates/pants_template.png" kPantsTemplate "${GB_GENERATED}/PantsTemplate.h")
 # The Guts & Bolts logo picture (the Player's banner and loading screen).
 gb_embed("${CMAKE_SOURCE_DIR}/assets/logo/logo.png" kLogoPng "${GB_GENERATED}/LogoPng.h")
-# The UI font for Studio and the Player (Inter Black, a free Helvetica Black lookalike; see assets/fonts/OFL.txt).
-gb_embed("${CMAKE_SOURCE_DIR}/assets/fonts/Inter-Black.otf" kUiFontData "${GB_GENERATED}/UiFont.h")
+# The UI font for Studio and the Player (Inter Medium, free and made for screens; see assets/fonts/OFL.txt).
+gb_embed("${CMAKE_SOURCE_DIR}/assets/fonts/Inter-Medium.otf" kUiFontData "${GB_GENERATED}/UiFont.h")
 # Recorded sound effects (the rest are made in code, see Audio.cpp).
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/jump.wav"    kSoundJump    "${GB_GENERATED}/SoundJump.h")
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/respawn.wav" kSoundRespawn "${GB_GENERATED}/SoundRespawn.h")
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/spawn.wav"   kSoundSpawn   "${GB_GENERATED}/SoundSpawn.h")
 gb_embed("${CMAKE_SOURCE_DIR}/assets/sounds/footsteps.mp3" kSoundFootsteps "${GB_GENERATED}/SoundFootsteps.h")
+# Real recorded sound effects (CC0, see assets/sounds/real/CREDITS.md): one header each,
+# and RealSounds.h lists them all by name ("hit_metal_2" is the 2nd take of "hit_metal").
+file(GLOB GB_REAL_SOUNDS CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/assets/sounds/real/*.ogg")
+list(SORT GB_REAL_SOUNDS)
+set(GB_REAL_SOUND_INCLUDES "")
+set(GB_REAL_SOUND_ROWS "")
+foreach(f ${GB_REAL_SOUNDS})
+    get_filename_component(n "${f}" NAME_WE)
+    string(MAKE_C_IDENTIFIER "${n}" id)
+    gb_embed("${f}" kReal_${id} "${GB_GENERATED}/real_sounds/${n}.h")
+    string(APPEND GB_REAL_SOUND_INCLUDES "#include \"real_sounds/${n}.h\"\n")
+    string(APPEND GB_REAL_SOUND_ROWS "    {\"${n}\", kReal_${id}, kReal_${id}Size},\n")
+endforeach()
+set(GB_REAL_SOUNDS_TEXT "#pragma once\n// Made by CMakeLists.txt from assets/sounds/real. Don't edit.\n#include <cstddef>\n${GB_REAL_SOUND_INCLUDES}struct RealSound { const char* name; const unsigned char* data; std::size_t size; };\ninline const RealSound kRealSounds[] = {\n${GB_REAL_SOUND_ROWS}};\n")
+if(EXISTS "${GB_GENERATED}/RealSounds.h")
+    file(READ "${GB_GENERATED}/RealSounds.h" GB_REAL_OLD)
+endif()
+if(NOT "${GB_REAL_OLD}" STREQUAL "${GB_REAL_SOUNDS_TEXT}")
+    file(WRITE "${GB_GENERATED}/RealSounds.h" "${GB_REAL_SOUNDS_TEXT}")
+endif()
 # The emotes and animation packs that come with Guts&Bolts (tools/make_emotes.py): the
 # engine plays the built-in ones, and both servers put the starter ones in the catalog.
 gb_embed("${CMAKE_SOURCE_DIR}/assets/emotes/emotes.gbemotes" kEmotesData "${GB_GENERATED}/EmotesData.h")
@@ -419,6 +459,8 @@ add_library(gb_engine STATIC
     src/core/CrashHandler.cpp
     src/core/Log.cpp
     src/core/Settings.cpp
+    src/core/Scalability.cpp
+    src/core/DeviceFeatures.cpp
     src/core/KeyBinds.cpp
     src/core/I18n.cpp
     src/core/Pad.cpp
@@ -429,6 +471,7 @@ add_library(gb_engine STATIC
     src/core/SoundFx.cpp
     src/core/Voice.cpp
     src/core/UpdateChecker.cpp
+    src/core/UpdateChannel.cpp
     src/core/Account.cpp
     src/core/TextFilter.cpp
     src/core/Language.cpp
@@ -436,11 +479,18 @@ add_library(gb_engine STATIC
     src/scene/PlayerModel.cpp
     src/renderer/Shader.cpp
     src/renderer/Mesh.cpp
+    src/renderer/MeshLod.cpp
     src/renderer/Textures.cpp
+    src/renderer/EditableImages.cpp
     src/renderer/Camera.cpp
     src/renderer/Framebuffer.cpp
     src/renderer/ShadowMap.cpp
     src/renderer/SceneRenderer.cpp
+    src/renderer/SceneRendererTemporal.cpp
+    src/renderer/SceneRendererFog.cpp
+    src/renderer/Benchmark.cpp
+    src/renderer/GpuCaps.cpp
+    src/renderer/OceanGpu.cpp
     src/renderer/ViewportRender.cpp
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
@@ -453,17 +503,21 @@ add_library(gb_engine STATIC
     src/scene/NavMesh.cpp
     src/scene/Npc.cpp
     src/scene/Water.cpp
+    src/scene/WaterDye.cpp
+    src/scene/OceanWaves.cpp
     src/scene/Terrain.cpp
     src/scene/Liquid.cpp
     src/scene/Flood.cpp
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
     src/scene/Weather.cpp
+    src/scene/Storms.cpp
     src/scene/Vehicles.cpp
     src/scene/IkControls.cpp
     src/scene/LinkedModels.cpp
     src/scene/MaterialGraph.cpp
     src/scene/Animation.cpp
+    src/scene/AnimFromText.cpp
     src/scene/Ragdoll.cpp
     src/scene/Effects.cpp
     src/scene/SoundMix.cpp
@@ -475,6 +529,19 @@ add_library(gb_engine STATIC
     src/scene/EditMesh.cpp
     src/scene/MeshTools.cpp
     src/scene/Skin.cpp
+    src/scene/BundleRig.cpp
+    src/scene/Cloth.cpp
+    src/scene/Gore.cpp
+    src/scene/SoftTissue.cpp
+    src/scene/Shatter.cpp
+    src/scene/Realism.cpp
+    src/scene/Ballistics.cpp
+    src/scene/Acoustics.cpp
+    src/scene/Impacts.cpp
+    src/scene/FireSpread.cpp
+    src/scene/Tracks.cpp
+    src/scene/BounceLight.cpp
+    src/scene/LipSync.cpp
     src/scene/MeshUV.cpp
     src/scene/Csg.cpp
     src/scripting/Luau.cpp
@@ -484,12 +551,18 @@ add_library(gb_engine STATIC
     src/scripting/LuaInstance.cpp
     src/scripting/ScriptRemotes.cpp
     src/scripting/SpatialQueries.cpp
+    src/scripting/Shapecasts.cpp
+    src/scripting/Experiments.cpp
+    src/scripting/Drawings.cpp
+    src/scripting/LuaRealism.cpp
+    src/scripting/ServerMemory.cpp
     src/scripting/ScriptActions.cpp
     src/scripting/ScriptHelp.cpp
     src/scripting/ScriptCheck.cpp
     src/game/GameSession.cpp
     src/game/LiveProfiler.cpp
     src/game/Videos.cpp
+    src/game/ImagePublish.cpp
     src/core/FrameProfile.cpp
     src/game/Hud.cpp
     src/game/EmoteMenu.cpp
@@ -607,6 +680,25 @@ if((GB_VR AND NOT GB_MOBILE AND NOT APPLE) OR (GB_QUEST AND ANDROID))
             target_link_libraries(gb_engine PUBLIC OpenGL::GLX)
         endif()
     endif()
+endif()
+# Tracy (BSD-3): a very detailed profiler for people working on the engine itself
+# (game makers use the Live Profiler instead). OFF by default, so normal builds
+# and players never have it. Turn on with -DGB_TRACY=ON, run Studio or the Player,
+# and open the Tracy viewer on the same computer. See docs/engine/tracy.md.
+option(GB_TRACY "Build with the Tracy profiler (for engine developers)" OFF)
+if(GB_TRACY)
+    # Only records while the viewer is connected, and only lets this computer connect.
+    set(TRACY_ON_DEMAND ON CACHE BOOL "" FORCE)
+    set(TRACY_ONLY_LOCALHOST ON CACHE BOOL "" FORCE)
+    set(TRACY_NO_BROADCAST ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        tracy
+        GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+        GIT_TAG        05cceee0df3b8d7c6fa87e9638af311dbabc63cb   # v0.13.1
+    )
+    FetchContent_MakeAvailable(tracy)
+    target_link_libraries(gb_engine PUBLIC Tracy::TracyClient)
+    target_compile_definitions(gb_engine PUBLIC GB_TRACY)
 endif()
 target_compile_definitions(gb_engine PUBLIC GLM_ENABLE_EXPERIMENTAL)
 if(WIN32)
@@ -822,6 +914,7 @@ set(EDITOR_SOURCES
     src/editor/EditorBulkEdit.cpp
     src/editor/EditorBlender.cpp
     src/editor/EditorWorkspace.cpp
+    src/editor/EditorSimple.cpp
     src/editor/EditorBlocks.cpp
     src/editor/VisualScript.cpp
     src/editor/EditorScriptHistory.cpp
@@ -830,6 +923,8 @@ set(EDITOR_SOURCES
     src/editor/EditorCompare.cpp
     src/editor/SceneDiff.cpp
     src/editor/EditorOnline.cpp
+    src/editor/EditorPlatform.cpp
+    src/editor/EditorPhoneTest.cpp
     src/editor/EditorPluginPublish.cpp
     src/editor/Thumbnailer.cpp
     src/editor/Plugins.cpp
@@ -851,7 +946,10 @@ if(WIN32)
     list(APPEND EDITOR_SOURCES resources/app.rc)
 endif()
 add_executable(GutsAndBolts ${EDITOR_SOURCES})
-target_link_libraries(GutsAndBolts PRIVATE gb_engine gb_models)
+add_library(gb_imnodes STATIC ${imnodes_SOURCE_DIR}/imnodes.cpp)
+target_include_directories(gb_imnodes PUBLIC ${imnodes_SOURCE_DIR})
+target_link_libraries(gb_imnodes PUBLIC gb_imgui)
+target_link_libraries(GutsAndBolts PRIVATE gb_engine gb_models gb_imnodes)
 # Linux desktops may provide Secret Service through libsecret (GNOME Keyring,
 # KWallet's Secret Service compatibility, etc.). Keep it optional for minimal
 # distributions and headless builds; those retain session-only credentials.
@@ -957,6 +1055,76 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerExtrasTests gb_version)
     target_link_libraries(ServerExtrasTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerExtrasTests COMMAND ServerExtrasTests)
+
+    # Creators' ban lists, used across their games (ServerBanLists.cpp).
+    add_executable(ServerBanListsTests tests/ServerBanListsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerBanListsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerBanListsTests gb_version)
+    target_link_libraries(ServerBanListsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerBanListsTests COMMAND ServerBanListsTests)
+    add_executable(ServerAssetVersionsTests tests/ServerAssetVersionsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerAssetVersionsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerAssetVersionsTests gb_version)
+    target_link_libraries(ServerAssetVersionsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerAssetVersionsTests COMMAND ServerAssetVersionsTests)
+
+    # The Art portal: posting, staff check, faves, comments (ServerArt.cpp).
+    add_executable(ServerArtTests tests/ServerArtTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerArtTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerArtTests gb_version)
+    target_link_libraries(ServerArtTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerArtTests COMMAND ServerArtTests)
+
+    # G&B Paste: making, listing, running out, deleting, reporting (ServerPaste.cpp).
+    add_executable(ServerPasteTests tests/ServerPasteTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerPasteTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerPasteTests gb_version)
+    target_link_libraries(ServerPasteTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerPasteTests COMMAND ServerPasteTests)
+
+    # G&B Academy: writing, publishing, lessons, progress, likes, reports (ServerAcademy.cpp).
+    add_executable(ServerAcademyTests tests/ServerAcademyTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerAcademyTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerAcademyTests gb_version)
+    target_link_libraries(ServerAcademyTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerAcademyTests COMMAND ServerAcademyTests)
+
+    # Early testers: a testers-only game, tester notes, going public (ServerTesters.cpp).
+    add_executable(ServerTestersTests tests/ServerTestersTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerTestersTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerTestersTests gb_version)
+    target_link_libraries(ServerTestersTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerTestersTests COMMAND ServerTestersTests)
+    # Experiments (A/B tests): versions, metrics from the game's server, results (ServerExperiments.cpp).
+    add_executable(ServerExperimentsTests tests/ServerExperimentsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerExperimentsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerExperimentsTests gb_version)
+    target_link_libraries(ServerExperimentsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerExperimentsTests COMMAND ServerExperimentsTests)
+    # Share links: clicks, different people, plays, buys and follows (ServerShareLinks.cpp).
+    add_executable(ServerShareLinksTests tests/ServerShareLinksTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerShareLinksTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerShareLinksTests gb_version)
+    target_link_libraries(ServerShareLinksTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerShareLinksTests COMMAND ServerShareLinksTests)
+    # Drawings published from games are free (upload with meta.drawing).
+    add_executable(ServerDrawingsTests tests/ServerDrawingsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerDrawingsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerDrawingsTests gb_version)
+    target_link_libraries(ServerDrawingsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerDrawingsTests COMMAND ServerDrawingsTests)
+    # Age ratings: questions -> rating, history, players' rating limit (ServerRatings.cpp).
+    add_executable(ServerRatingsTests tests/ServerRatingsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerRatingsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerRatingsTests gb_version)
+    target_link_libraries(ServerRatingsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerRatingsTests COMMAND ServerRatingsTests)
+    # Profile backgrounds: a passed decal behind your avatar (ServerBackgrounds.cpp).
+    add_executable(ServerBackgroundsTests tests/ServerBackgroundsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerBackgroundsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerBackgroundsTests gb_version)
+    target_link_libraries(ServerBackgroundsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerBackgroundsTests COMMAND ServerBackgroundsTests)
 
     # Studio Learn progress: account validation, persistence across server restarts and guest denial.
     add_executable(ServerLearnProgressTests tests/ServerLearnProgressTests.cpp ${GB_SERVER_TEST_SOURCES})
@@ -1133,6 +1301,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(UpdaterTests PRIVATE gb_engine)
     add_test(NAME UpdaterTests COMMAND UpdaterTests)
 
+    # The opt-in Nightly update channel: what's offered, and no update loops.
+    add_executable(UpdateChannelTests tests/UpdateChannelTests.cpp)
+    target_link_libraries(UpdateChannelTests PRIVATE gb_engine)
+    add_test(NAME UpdateChannelTests COMMAND UpdateChannelTests)
+
     # Every sample game in games/ loads and runs for a few seconds with no script errors.
     add_executable(SampleGamesTests tests/SampleGamesTests.cpp)
     target_link_libraries(SampleGamesTests PRIVATE gb_engine)
@@ -1143,6 +1316,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(GraphicsQualityTests tests/GraphicsQualityTests.cpp)
     target_link_libraries(GraphicsQualityTests PRIVATE gb_engine)
     add_test(NAME GraphicsQualityTests COMMAND GraphicsQualityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Scalability: quality groups Low..Epic, device caps and the startup benchmark's pick.
+    add_executable(ScalabilityTests tests/ScalabilityTests.cpp)
+    target_link_libraries(ScalabilityTests PRIVATE gb_engine)
+    add_test(NAME ScalabilityTests COMMAND ScalabilityTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Your own keys (Settings > Keys): moving, swapping, AZERTY, saving.
     add_executable(KeyBindsTests tests/KeyBindsTests.cpp)
@@ -1164,6 +1342,34 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(InstancingTests tests/InstancingTests.cpp)
     target_link_libraries(InstancingTests PRIVATE gb_engine)
     add_test(NAME InstancingTests COMMAND InstancingTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Packed material pictures: occlusion, roughness and metalness in one (OrmMap).
+    add_executable(OrmPackTests tests/OrmPackTests.cpp)
+    target_link_libraries(OrmPackTests PRIVATE gb_engine)
+    add_test(NAME OrmPackTests COMMAND OrmPackTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Sun shadow cascades: how many maps, how wide, snapping and taking turns.
+    add_executable(ShadowCascadesTests tests/ShadowCascadesTests.cpp)
+    target_link_libraries(ShadowCascadesTests PRIVATE gb_engine)
+    add_test(NAME ShadowCascadesTests COMMAND ShadowCascadesTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Ambient occlusion (GTAO): the settings for each level and the slice maths.
+    add_executable(GtaoTests tests/GtaoTests.cpp)
+    target_link_libraries(GtaoTests PRIVATE gb_engine)
+    add_test(NAME GtaoTests COMMAND GtaoTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The ocean's waves: spectrum, FFT, bands, and floating on them.
+    add_executable(OceanWavesTests tests/OceanWavesTests.cpp)
+    target_link_libraries(OceanWavesTests PRIVATE gb_engine)
+    add_test(NAME OceanWavesTests COMMAND OceanWavesTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    add_executable(WaterDyeTests tests/WaterDyeTests.cpp)
+    target_link_libraries(WaterDyeTests PRIVATE gb_engine)
+    add_test(NAME WaterDyeTests COMMAND WaterDyeTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
+    add_executable(GroundworkTests tests/GroundworkTests.cpp)
+    target_link_libraries(GroundworkTests PRIVATE gb_engine)
+    add_test(NAME GroundworkTests COMMAND GroundworkTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Only drawing what the camera can see.
     add_executable(FrustumTests tests/FrustumTests.cpp)
@@ -1193,6 +1399,22 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(SpatialQueriesTests tests/SpatialQueriesTests.cpp)
     target_link_libraries(SpatialQueriesTests PRIVATE gb_engine)
     add_test(NAME SpatialQueriesTests COMMAND SpatialQueriesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # workspace:Spherecast / Blockcast / Shapecast with margins, size gradients and overrides.
+    add_executable(ShapecastTests tests/ShapecastTests.cpp)
+    target_link_libraries(ShapecastTests PRIVATE gb_engine)
+    add_test(NAME ShapecastTests COMMAND ShapecastTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    # ExperimentService / AnalyticsService and the version sum the website uses.
+    add_executable(ExperimentsTests tests/ExperimentsTests.cpp)
+    target_link_libraries(ExperimentsTests PRIVATE gb_engine)
+    add_test(NAME ExperimentsTests COMMAND ExperimentsTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    # Drawing in games and publishing drawings (AssetService, Drawings.cpp, ImagePublish.cpp).
+    add_executable(DrawingsTests tests/DrawingsTests.cpp)
+    target_link_libraries(DrawingsTests PRIVATE gb_engine)
+    add_test(NAME DrawingsTests COMMAND DrawingsTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Cutscenes: the camera flies through the shots in order and comes back.
@@ -1302,6 +1524,25 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME ClothingUVTests COMMAND ClothingUVTests)
 
     # Jiggle, LookAt and IK bones, saving them, scripts, and the weight brush.
+    # Bones in bundles, jiggle and cloth, gore upgrades, breaking things, a faster
+    # broadphase, lamp shadows, bouncy light and lip sync.
+    add_executable(RealismTests tests/RealismTests.cpp)
+    target_link_libraries(RealismTests PRIVATE gb_engine)
+    add_test(NAME RealismTests COMMAND RealismTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
+    # game.ServerLowMemoryWarning and Stats' memory numbers (src/scripting/ServerMemory.cpp).
+    add_executable(ServerMemoryTests tests/ServerMemoryTests.cpp)
+    target_link_libraries(ServerMemoryTests PRIVATE gb_engine)
+    add_test(NAME ServerMemoryTests COMMAND ServerMemoryTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene")
+    add_executable(BodiesGoreLightTests tests/BodiesGoreLightTests.cpp)
+    target_link_libraries(BodiesGoreLightTests PRIVATE gb_engine)
+    add_test(NAME BodiesGoreLightTests COMMAND BodiesGoreLightTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    # Shiny parts mirroring the world, height fog, round cylinders that roll, air and wind.
+    add_executable(MirrorsMistRollingTests tests/MirrorsMistRollingTests.cpp)
+    target_link_libraries(MirrorsMistRollingTests PRIVATE gb_engine)
+    add_test(NAME MirrorsMistRollingTests COMMAND MirrorsMistRollingTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     add_executable(BoneRigTests tests/BoneRigTests.cpp)
     target_link_libraries(BoneRigTests PRIVATE gb_engine)
     add_test(NAME BoneRigTests COMMAND BoneRigTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
@@ -1345,5 +1586,17 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(MemoryStoreTests tests/MemoryStoreTests.cpp)
     target_link_libraries(MemoryStoreTests PRIVATE gb_engine)
     add_test(NAME MemoryStoreTests COMMAND MemoryStoreTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Detail levels for far meshes (MeshLod) and thunderstorms (Lighting.Weather = "Storm").
+    add_executable(StormAndDetailTests tests/StormAndDetailTests.cpp)
+    target_link_libraries(StormAndDetailTests PRIVATE gb_engine)
+    add_test(NAME StormAndDetailTests COMMAND StormAndDetailTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Severe weather: supercells, tornadoes, downbursts and the real cloud types (Storms.h).
+    add_executable(SevereWeatherTests tests/SevereWeatherTests.cpp)
+    target_link_libraries(SevereWeatherTests PRIVATE gb_engine)
+    add_test(NAME SevereWeatherTests COMMAND SevereWeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()
