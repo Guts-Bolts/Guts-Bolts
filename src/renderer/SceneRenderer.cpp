@@ -500,8 +500,8 @@ unsigned SceneRenderer::backdrop(int level) const {
     return m_bdUp[std::clamp(level, 0, kBackdropLevels - 1)].color;
 }
 
-void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, ShadowMap& target) {
-    target.bindForWrite();
+void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, ShadowMap& target, bool tile, float extent) {
+    if (!tile) target.bindForWrite();
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_BLEND);
     // Every face goes in (not just the back ones: then a box standing on the ground
@@ -519,7 +519,13 @@ void SceneRenderer::renderShadowPass(Scene& scene, const glm::mat4& lightSpace, 
             if (!p->shown() || p->isViewportFrame()) return;
         if (node->kind != NodeKind::Part || node->transparency > 0.5f) return;
         const glm::mat4 m = node->worldMatrix();
-        if (tooFar(glm::vec3(m[3]), partRadius(m))) return;
+        const float radius = partRadius(m);
+        if (tooFar(glm::vec3(m[3]), radius)) return;
+        if (extent > 0.0f) {   // off to the side of this map: it can't cast into it
+            const glm::vec4 c = lightSpace * glm::vec4(glm::vec3(m[3]), 1.0f);
+            const float r = 1.0f + radius / extent;
+            if (std::abs(c.x) > r || std::abs(c.y) > r) return;
+        }
         m_depth->setMat4("uModel", m);
         Mesh::lod = lodFor(node->mesh.get(), m);   // (the same level the camera sees, so a shadow fits its part)
         node->mesh->draw();
@@ -701,43 +707,51 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     ensureTargets(w, h);
     // The temporal upscaler (High and up): this frame is drawn moved by a fraction of a pixel.
     beginTemporal(camera, target.width(), target.height(), w, h);
+    // The atlas holds 2 x 2 tiles (no bigger than 2048 each: wide maps don't need more).
+    const int cascadeTile = std::min(gs.shadowRes, 2048);
     if (m_shadowRes != gs.shadowRes) {
         m_shadow.init(gs.shadowRes);
-        m_shadowNear.init(gs.shadowRes);
+        m_shadowAtlas.init(cascadeTile * 2);
         m_shadowRes = gs.shadowRes;
+        for (CascadeTile& t : m_cascadeTile) t.drawn = false;
     }
 
-    // --- Shadow map, centred on what the camera looks at and snapped to the
-    //     texel grid so shadows don't shimmer as the camera moves ---
-    const float extent   = std::max(5.0f, env.shadowDistance * 0.5f);
-    const float sunDist  = extent * 2.0f + 30.0f;
-    const float texel    = (2.0f * extent) / (float)m_shadow.size();
-    glm::mat4 lightView0 = glm::lookAt(sunDir * sunDist, glm::vec3(0.0f), glm::vec3(0, 1, 0));
-    glm::vec3 lsCenter   = glm::vec3(lightView0 * glm::vec4(camera.pivot, 1.0f));
-    lsCenter.x = std::floor(lsCenter.x / texel) * texel;
-    lsCenter.y = std::floor(lsCenter.y / texel) * texel;
-    glm::mat4 lightProj  = glm::ortho(lsCenter.x - extent, lsCenter.x + extent,
-                                      lsCenter.y - extent, lsCenter.y + extent,
-                                      -lsCenter.z - sunDist, -lsCenter.z + sunDist);
-    glm::mat4 lightSpace = lightProj * lightView0;
+    // --- Shadow maps, centred on what the camera looks at and snapped to their pixel
+    //     grids so shadows don't shimmer as the camera moves (ShadowCascades.h) ---
+    const float extent = std::max(5.0f, env.shadowDistance * 0.5f);
+    glm::mat4 lightView0(1.0f);
+    float texel = 0.0f, baseDepthRange = 0.0f;
+    glm::mat4 lightSpace = ShadowCascades::lightSpace(sunDir, camera.pivot, extent, m_shadow.size(), extent,
+                                                      lightView0, texel, baseDepthRange);
     bool shadows = env.shadows && gs.shadows && env.sunElevation > -5.0f && shading == Shading::Material;   // (Studio's plain views have none)
     FrameProfile::finishGpu() = []() { glFinish(); };
     if (shadows) { FrameProfile::Scope prof("draw: shadows", true); renderShadowPass(scene, lightSpace, m_shadow); }
     m_lightSpace = lightSpace;
     m_shadowsOn = shadows;
-    // The sharp one: the same, but only ~20 studs round the camera's focus.
-    const float extentNear = std::min(extent, 20.0f);
-    const float texelNear  = (2.0f * extentNear) / (float)m_shadowNear.size();
-    const bool  nearCascade = shadows && gs.shadowQuality > 0 && extentNear < extent * 0.8f;
-    glm::mat4 lightSpaceNear(1.0f);
-    if (nearCascade) {
-        glm::vec3 c = glm::vec3(lightView0 * glm::vec4(camera.pivot, 1.0f));
-        c.x = std::floor(c.x / texelNear) * texelNear;
-        c.y = std::floor(c.y / texelNear) * texelNear;
-        lightSpaceNear = glm::ortho(c.x - extentNear, c.x + extentNear, c.y - extentNear, c.y + extentNear,
-                                    -c.z - sunDist, -c.z + sunDist) * lightView0;
-        FrameProfile::Scope prof("draw: shadows near", true);
-        renderShadowPass(scene, lightSpaceNear, m_shadowNear);
+    // The other maps: sharper ones inside the base, wider ones outside it.
+#ifdef GB_MOBILE
+    const bool phone = true;
+#else
+    const bool phone = false;
+#endif
+    const ShadowCascades::Plan cascades = ShadowCascades::plan(extent, shadows ? ShadowCascades::mapsFor(gs.shadowQuality, phone) : 1);
+    m_cascadeMaps = shadows ? cascades.count : 0;
+    ++m_shadowFrame;
+    for (int i = 0, tile = 0; i < cascades.count; ++i) {
+        if (i == cascades.base) continue;
+        CascadeTile& t = m_cascadeTile[i];
+        // (One-off pictures, like thumbnails, can't lean on the frame before: always redraw.)
+        const bool stale = !temporal || !t.drawn || std::abs(t.extent - cascades.extent[i]) > 1e-3f;
+        if (ShadowCascades::redrawNow(cascades, i, m_shadowFrame, stale)) {
+            glm::mat4 view;
+            t.extent = cascades.extent[i];
+            t.space = ShadowCascades::lightSpace(sunDir, camera.pivot, t.extent, cascadeTile, extent, view, t.texel, t.depthRange);
+            t.drawn = true;
+            FrameProfile::Scope prof("draw: shadow cascades", true);
+            m_shadowAtlas.bindTileForWrite((tile % 2) * cascadeTile, (tile / 2) * cascadeTile, cascadeTile, cascadeTile);
+            renderShadowPass(scene, t.space, m_shadowAtlas, true, t.extent);
+        }
+        ++tile;
     }
 
     // Lamps with Shadows on (4 nearest; 2 on low shadow quality).
@@ -930,15 +944,26 @@ void SceneRenderer::render(Scene& scene, const Camera& camera, Framebuffer& targ
     m_lit->setFloat("uShadowSoftness", env.shadowSoftness);
     m_lit->setFloat("uShadowStrength", env.shadowStrength);
     m_lit->setFloat("uShadowTexelWorld", texel);
-    m_lit->setFloat("uShadowDepthRange", sunDist * 2.0f);
+    m_lit->setFloat("uShadowDepthRange", baseDepthRange);
     m_lit->setMat4("uLightSpace", lightSpace);
     m_shadow.bindForRead(0);
     m_lit->setInt("uShadowMap", 0);
-    m_lit->setBool("uNearCascade", nearCascade);
-    m_lit->setMat4("uLightSpaceNear", lightSpaceNear);
-    m_lit->setFloat("uShadowTexelNear", texelNear);
-    m_shadowNear.bindForRead(6);
-    m_lit->setInt("uShadowMapNear", 6);
+    // Every cascade, smallest first: its matrix, pixel size and depth range, and where
+    // its tile is in the atlas (z < 0 = it's the base map, not a tile).
+    m_shadowAtlas.bindForRead(6);
+    m_lit->setInt("uShadowAtlas", 6);
+    m_lit->setInt("uCascadeCount", cascades.count);
+    for (int i = 0, tile = 0; i < cascades.count; ++i) {
+        char name[32];
+        const bool base = i == cascades.base;
+        std::snprintf(name, sizeof(name), "uCascadeSpace[%d]", i);
+        m_lit->setMat4(name, base ? lightSpace : m_cascadeTile[i].space);
+        std::snprintf(name, sizeof(name), "uCascadeInfo[%d]", i);
+        m_lit->setVec2(name, base ? glm::vec2(texel, baseDepthRange) : glm::vec2(m_cascadeTile[i].texel, m_cascadeTile[i].depthRange));
+        std::snprintf(name, sizeof(name), "uCascadeRect[%d]", i);
+        m_lit->setVec4(name, base ? glm::vec4(0.0f, 0.0f, -1.0f, -1.0f) : ShadowCascades::tileRect(tile));
+        if (!base) ++tile;
+    }
 
     // Collect point / spot lights; keep the ones closest to the camera.
     struct LightItem { glm::vec4 pos, col, dir; float dist; const SceneNode* node; };

@@ -180,11 +180,14 @@ uniform float     uShadowTexelWorld;  // world size of one shadow-map texel
 uniform float     uShadowDepthRange;  // world distance covered by depth 0..1
 uniform mat4      uLightSpace;
 uniform sampler2D uShadowMap;
-// A second, sharper shadow map close to the camera (a "cascade").
-uniform bool      uNearCascade;
-uniform mat4      uLightSpaceNear;
-uniform sampler2D uShadowMapNear;
-uniform float     uShadowTexelNear;
+// Cascades (ShadowCascades.h): up to 4 shadow maps round the camera's focus, smallest
+// (sharpest) first. One is the base map above; the others are tiles of uShadowAtlas.
+#define MAX_CASCADES 4
+uniform int       uCascadeCount;
+uniform mat4      uCascadeSpace[MAX_CASCADES];
+uniform vec2      uCascadeInfo[MAX_CASCADES];   // x: world size of one of its texels, y: world distance its depth 0..1 covers
+uniform vec4      uCascadeRect[MAX_CASCADES];   // its tile in the atlas: corner xy, size zw (z < 0: the base map)
+uniform sampler2D uShadowAtlas;
 
 #define MAX_LIGHTS 32
 uniform int  uLightCount;
@@ -297,7 +300,9 @@ const vec2 POISSON[16] = vec2[](
 // 1 = lit, 0 = in shadow, from one shadow map. Soft shadows get softer the
 // further the shadow is from whatever casts it (contact-hardening, like real
 // sunlight). `edge` says how close to the side of the map the point is (0 middle, 1 edge).
-float shadowFrom(sampler2D map, mat4 lightSpace, float texelWorld, vec3 N, vec3 L, out float edge) {
+// `rect` is the piece of the picture this map lives in (a tile of the atlas; the whole
+// picture is 0, 0, 1, 1): lookups never leave it, so tiles don't bleed into each other.
+float shadowFrom(sampler2D map, mat4 lightSpace, float texelWorld, float depthRange, vec4 rect, vec3 N, vec3 L, out float edge) {
     // Normal offset: move the lookup point off the surface a little (more on surfaces
     // turned away from the sun), so a surface never shadows itself ("acne"). Small, so
     // a box sitting on the ground still shadows the ground right up to its edge.
@@ -310,8 +315,10 @@ float shadowFrom(sampler2D map, mat4 lightSpace, float texelWorld, vec3 N, vec3 
 
     float bias  = 0.00004 + 0.0001 * (1.0 - NoL);
     vec2  texel = 1.0 / vec2(textureSize(map, 0));
+    vec2  lo = rect.xy + texel * 0.5, hi = rect.xy + rect.zw - texel * 0.5;
+    p.xy = rect.xy + p.xy * rect.zw;
     if (uShadowQuality == 0)
-        return texture(map, p.xy).r < p.z - bias ? 0.0 : 1.0;
+        return texture(map, clamp(p.xy, lo, hi)).r < p.z - bias ? 0.0 : 1.0;
 
     float a = hash12(gl_FragCoord.xy) * 6.2831853;
     mat2 rot = mat2(cos(a), sin(a), -sin(a), cos(a));
@@ -321,18 +328,18 @@ float shadowFrom(sampler2D map, mat4 lightSpace, float texelWorld, vec3 N, vec3 
         float search = 3.0 + 8.0 * uShadowSoftness;
         float sum = 0.0; int n = 0;
         for (int i = 0; i < 16; ++i) {
-            float d = texture(map, p.xy + rot * POISSON[i] * search * texel).r;
+            float d = texture(map, clamp(p.xy + rot * POISSON[i] * search * texel, lo, hi)).r;
             if (d < p.z - bias) { sum += d; ++n; }
         }
         if (n == 0) return 1.0;
-        float dist = (p.z - sum / float(n)) * uShadowDepthRange;       // world units
+        float dist = (p.z - sum / float(n)) * depthRange;              // world units
         float penumbra = dist * 0.05 * uShadowSoftness / texelWorld;
         radius = clamp(penumbra, 1.0, 24.0);
     }
 
     float lit = 0.0;
     for (int i = 0; i < 16; ++i) {
-        float d = texture(map, p.xy + rot * POISSON[i] * radius * texel).r;
+        float d = texture(map, clamp(p.xy + rot * POISSON[i] * radius * texel, lo, hi)).r;
         lit += (p.z - bias > d) ? 0.0 : 1.0;
     }
     return lit / 16.0;
@@ -374,15 +381,38 @@ float lampVisibility(int i, vec3 N) {
     return lit / 9.0;
 }
 
+// How close a spot is to the side of cascade i (0 middle, 1 its edge, 2 outside it).
+float cascadeEdge(int i) {
+    vec4 lc = uCascadeSpace[i] * vec4(vWorldPos, 1.0);
+    vec3 p  = lc.xyz / lc.w * 0.5 + 0.5;
+    float edge = max(abs(p.x - 0.5), abs(p.y - 0.5)) * 2.0;
+    return (p.z > 1.0 || p.z < 0.0 || edge > 1.0) ? 2.0 : edge;
+}
+float cascadeShadow(int i, vec3 N, vec3 L, out float edge) {
+    vec4 r = uCascadeRect[i];
+    if (r.z < 0.0) return shadowFrom(uShadowMap, uCascadeSpace[i], uCascadeInfo[i].x, uCascadeInfo[i].y, vec4(0.0, 0.0, 1.0, 1.0), N, L, edge);
+    return shadowFrom(uShadowAtlas, uCascadeSpace[i], uCascadeInfo[i].x, uCascadeInfo[i].y, r, N, L, edge);
+}
+
+// The sun's shadow: from the sharpest cascade this spot is inside, blending into the
+// next one out near its edge (so you never see a line where they meet), and fading out
+// altogether at the edge of the widest.
 float sunVisibility(vec3 N, vec3 L) {
-    float edgeFar, edgeNear;
-    float far = shadowFrom(uShadowMap, uLightSpace, uShadowTexelWorld, N, L, edgeFar);
-    // Fade out towards the edge of the shadow area instead of a hard cut.
-    far = mix(far, 1.0, smoothstep(0.85, 1.0, edgeFar));
-    if (!uNearCascade) return far;
-    float near = shadowFrom(uShadowMapNear, uLightSpaceNear, uShadowTexelNear, N, L, edgeNear);
-    // Close up: the sharp map; blend into the wide one near its edge.
-    return mix(near, far, smoothstep(0.75, 0.95, edgeNear));
+    int pick = -1;
+    for (int i = 0; i < uCascadeCount; ++i) {
+        if (cascadeEdge(i) < 0.93) { pick = i; break; }
+    }
+    if (pick < 0) pick = uCascadeCount - 1;
+    float edge;
+    float lit = cascadeShadow(pick, N, L, edge);
+    if (pick == uCascadeCount - 1)
+        return mix(lit, 1.0, smoothstep(0.85, 1.0, min(edge, 1.0)));
+    float blend = smoothstep(0.75, 0.93, edge);
+    if (blend <= 0.0) return lit;
+    float edgeNext;
+    float next = cascadeShadow(pick + 1, N, L, edgeNext);
+    if (pick + 1 == uCascadeCount - 1) next = mix(next, 1.0, smoothstep(0.85, 1.0, min(edgeNext, 1.0)));
+    return mix(lit, next, blend);
 }
 
 // Cook-Torrance GGX specular + Lambert diffuse.

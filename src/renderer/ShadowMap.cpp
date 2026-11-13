@@ -47,6 +47,15 @@ void ShadowMap::bindForWrite() const {
     glClear(GL_DEPTH_BUFFER_BIT);
 }
 
+void ShadowMap::bindTileForWrite(int x, int y, int width, int height) const {
+    glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
+    glViewport(x, y, width, height);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(x, y, width, height);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_SCISSOR_TEST);
+}
+
 void ShadowMap::bindForRead(int unit) const {
     glActiveTexture(GL_TEXTURE0 + unit);
     glBindTexture(GL_TEXTURE_2D, m_depth);

@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <glm/glm.hpp>
 #include "ShadowMap.h"
+#include "ShadowCascades.h"
 #include "../core/FrameArena.h"
 #include "../scene/Weather.h"
 #include "../scene/BounceLight.h"
@@ -62,7 +63,9 @@ public:
     int frameMemoryGrown() const { return m_frame.timesGrown(); }
 private:
     FrameArena m_frame;
-    void renderShadowPass(Scene& scene, const glm::mat4& lightSpace, ShadowMap& target);
+    // Draws everything that casts a shadow into `target` (already bound by the caller when
+    // `tile` is true). `extent` > 0: parts that can't land in a map that wide are skipped.
+    void renderShadowPass(Scene& scene, const glm::mat4& lightSpace, ShadowMap& target, bool tile = false, float extent = 0.0f);
     // Lamp shadows: the nearest few lights with Shadows on, six sides each, into
     // m_lampShadows. Fills m_lampShadowNodes (slot -> light).
     void renderLampShadows(Scene& scene, const glm::vec3& camPos, int most);
@@ -190,7 +193,17 @@ private:
     std::unordered_map<uint64_t, FlowTex> m_flowTex;   // each water body's flow map, on the graphics card
     Target m_fDepth, m_fTmp, m_fThick, m_fColor, m_sceneCopy;   // liquid: depth, blur scratch, thickness, the scene behind
     unsigned int m_fluidVao = 0, m_fluidVbo = 0;
-    ShadowMap               m_shadow, m_shadowNear;   // wide, and sharp close to the camera
+    ShadowMap               m_shadow;                 // the base map (Lighting.ShadowDistance wide)
+    // The other cascades (ShadowCascades.h): sharper ones inside the base and wider ones
+    // outside it, as tiles of one atlas. A tile keeps its matrix from when it was drawn.
+    ShadowMap               m_shadowAtlas;
+    struct CascadeTile { glm::mat4 space{1.0f}; float extent = 0.0f, texel = 0.0f, depthRange = 0.0f; bool drawn = false; };
+    CascadeTile             m_cascadeTile[ShadowCascades::kMax];   // by place in the plan (the base's entry isn't a tile)
+    int                     m_cascadeMaps = 0;        // how many maps the last frame used (for tests)
+    long                    m_shadowFrame = 0;
+public:
+    int shadowMapsUsed() const { return m_cascadeMaps; }
+private:
     ShadowMap               m_lampShadows;            // 6 x 4 tiles: up to 4 lamps, 6 sides each
     int                     m_lampTile = 0;           // pixels across one tile
     std::vector<const SceneNode*> m_lampShadowNodes;  // which lamp has which slot this frame
