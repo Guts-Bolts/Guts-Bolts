@@ -156,7 +156,8 @@ SceneRenderer::SceneRenderer() {
     m_puff      = std::make_unique<Shader>(puffVert, puffFrag);
     m_sky       = std::make_unique<Shader>(skyVert, skyFrag);
     m_depth     = std::make_unique<Shader>(depthVert, depthFrag);
-    m_ssao      = std::make_unique<Shader>(fullscreenVert, ssaoFrag);
+    m_gtao      = std::make_unique<Shader>(fullscreenVert, gtaoFrag);
+    m_gtaoBlur  = std::make_unique<Shader>(fullscreenVert, gtaoBlurFrag);
     m_bloomPre  = std::make_unique<Shader>(fullscreenVert, bloomPrefilterFrag);
     m_bloomDown = std::make_unique<Shader>(fullscreenVert, bloomDownFrag);
     m_bloomUp   = std::make_unique<Shader>(fullscreenVert, bloomUpFrag);
@@ -203,6 +204,7 @@ SceneRenderer::~SceneRenderer() {
     if (m_ribbonVao) glDeleteVertexArrays(1, &m_ribbonVao);
     destroyTarget(m_hdr);
     destroyTarget(m_ao);
+    destroyTarget(m_aoRaw);
     destroyTarget(m_ldr);
     for (auto& b : m_bloom) destroyTarget(b);
     for (auto& b : m_bdDown) destroyTarget(b);
@@ -439,6 +441,7 @@ void SceneRenderer::ensureTargets(int w, int h) {
     if (m_hdr.w == w && m_hdr.h == h && m_hdr.fbo) return;
     createTarget(m_hdr, w, h, hdrFormat(), true);
     createTarget(m_ao, w, h, GL_R8, false);
+    createTarget(m_aoRaw, w, h, GL_R8, false);
     createTarget(m_ldr, w, h, GL_RGBA8, false);
     int bw = w / 2, bh = h / 2;
     for (auto& b : m_bloom) {
@@ -2658,19 +2661,33 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     { FrameProfile::Scope prof("draw: upscaler", true); upscaled = resolveTemporal(camera); }
     const int sceneW = upscaled ? target.width() : m_hdr.w, sceneH = upscaled ? target.height() : m_hdr.h;
 
-    // --- Ambient occlusion (half resolution). With traced bounce light the lit shader
-    //     already darkened the corners, so this is the cheap version for Low. ---
-    bool useAO = gs.giQuality >= 0 && !m_usedBounce && env.aoIntensity > 0.0f;
+    // --- Ambient occlusion (GTAO, see Gtao.h): dark corners and creases from the depth
+    //     picture, then a small blur that takes its noise out. With traced bounce light
+    //     the lit shader already darkened the big corners, so it only adds the fine ones. ---
+    const Gtao::Level ao = Gtao::levelFor(gs.giQuality, m_usedBounce);
+    bool useAO = ao.slices > 0 && env.aoIntensity > 0.0f;
     if (useAO) {
-        bindTarget(m_ao);
-        m_ssao->bind();
+        FrameProfile::Scope prof("draw: ambient occlusion", true);
+        const glm::mat4 proj = camera.projection(), invProj = glm::inverse(proj);
+        bindTarget(m_aoRaw);
+        m_gtao->bind();
         bindTex(0, m_hdr.depth);
-        m_ssao->setInt("uDepth", 0);
-        glm::mat4 proj = camera.projection();
-        m_ssao->setMat4("uProj", proj);
-        m_ssao->setMat4("uInvProj", glm::inverse(proj));
-        m_ssao->setVec2("uTexel", glm::vec2(1.0f / m_hdr.w, 1.0f / m_hdr.h));
-        m_ssao->setFloat("uRadius", 0.7f);
+        m_gtao->setInt("uDepth", 0);
+        m_gtao->setMat4("uProj", proj);
+        m_gtao->setMat4("uInvProj", invProj);
+        m_gtao->setVec2("uTexel", glm::vec2(1.0f / m_hdr.w, 1.0f / m_hdr.h));
+        m_gtao->setFloat("uRadius", ao.radius);
+        m_gtao->setInt("uSlices", ao.slices);
+        m_gtao->setInt("uSteps", ao.steps);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        bindTarget(m_ao);
+        m_gtaoBlur->bind();
+        bindTex(0, m_aoRaw.color);
+        bindTex(1, m_hdr.depth);
+        m_gtaoBlur->setInt("uAO", 0);
+        m_gtaoBlur->setInt("uDepth", 1);
+        m_gtaoBlur->setMat4("uInvProj", invProj);
+        m_gtaoBlur->setVec2("uTexel", glm::vec2(1.0f / m_aoRaw.w, 1.0f / m_aoRaw.h));
         glDrawArrays(GL_TRIANGLES, 0, 3);
     }
 
@@ -2849,7 +2866,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     m_composite->setBool("uPost", gs.postFx);
     m_composite->setBool("uLumaAlpha", useFxaa);
     m_composite->setFloat("uSharpen", upscaleSharpen());
-    m_composite->setVec2("uAOTexel", glm::vec2(1.0f / m_ao.w, 1.0f / m_ao.h));
+    m_composite->setVec2("uAOTexel", glm::vec2(0.33f / m_ao.w, 0.33f / m_ao.h));   // (already blurred: just a touch)
     m_composite->setFloat("uExposure", env.exposure);
     m_composite->setBool("uAutoExp", autoExp);
     if (autoExp) {
@@ -2858,7 +2875,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
         m_composite->setFloat("uLumKey", kLumKey);
     }
     m_composite->setFloat("uBloomIntensity", bloomIntensity);
-    m_composite->setFloat("uAOIntensity", env.aoIntensity);
+    m_composite->setFloat("uAOIntensity", env.aoIntensity * ao.strength);
     m_composite->setFloat("uContrast", env.contrast);
     m_composite->setFloat("uSaturation", env.saturation);
     m_composite->setFloat("uVignette", env.vignette);

@@ -1310,6 +1310,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(ShadowCascadesTests PRIVATE gb_engine)
     add_test(NAME ShadowCascadesTests COMMAND ShadowCascadesTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # Ambient occlusion (GTAO): the settings for each level and the slice maths.
+    add_executable(GtaoTests tests/GtaoTests.cpp)
+    target_link_libraries(GtaoTests PRIVATE gb_engine)
+    add_test(NAME GtaoTests COMMAND GtaoTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)
     target_link_libraries(GroundworkTests PRIVATE gb_engine)

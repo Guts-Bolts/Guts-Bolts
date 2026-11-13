@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 #include "ShadowMap.h"
 #include "ShadowCascades.h"
+#include "Gtao.h"
 #include "../core/FrameArena.h"
 #include "../scene/Weather.h"
 #include "../scene/BounceLight.h"
@@ -156,7 +157,7 @@ private:
     void buildAxes();
 
     std::unique_ptr<Shader> m_lit, m_grid, m_sky, m_depth;
-    std::unique_ptr<Shader> m_ssao, m_bloomPre, m_bloomDown, m_bloomUp, m_composite, m_fxaa;
+    std::unique_ptr<Shader> m_gtao, m_gtaoBlur, m_bloomPre, m_bloomDown, m_bloomUp, m_composite, m_fxaa;
     std::unique_ptr<Shader> m_water;   // water parts (see Shaders::waterFrag)
     std::unique_ptr<Shader> m_hlMask, m_hl;   // Highlights (see Shaders::highlightFrag)
     Target m_hlTarget;                        // a Highlight's shape on screen
@@ -222,7 +223,7 @@ private:
     }
 
     static constexpr int kBloomLevels = 6;
-    Target m_hdr, m_ao, m_ldr, m_bloom[kBloomLevels];
+    Target m_hdr, m_ao, m_aoRaw, m_ldr, m_bloom[kBloomLevels];
     Target m_bdDown[kBackdropLevels + 1], m_bdUp[kBackdropLevels];   // makeBackdrop()
 
     unsigned int m_gridVao = 0, m_gridVbo = 0;

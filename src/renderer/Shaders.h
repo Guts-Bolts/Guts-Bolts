@@ -1401,20 +1401,27 @@ void main() {
 }
 )";
 
-// Screen-space ambient occlusion from the depth buffer.
-inline const char* ssaoFrag = R"(#version 410 core
+// Ground-truth ambient occlusion from the depth buffer (see Gtao.h for how it works).
+inline const char* gtaoFrag = R"(#version 410 core
 in vec2 vUV;
 uniform sampler2D uDepth;
 uniform mat4  uProj;
 uniform mat4  uInvProj;
-uniform vec2  uTexel;
-uniform float uRadius;
+uniform vec2  uTexel;     // one pixel of uDepth
+uniform float uRadius;    // how far it looks (studs)
+uniform int   uSlices;
+uniform int   uSteps;
 out float FragAO;
-#pragma gb_common
 vec3 viewPos(vec2 uv) {
     float d = texture(uDepth, uv).r;
     vec4 p = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
     return p.xyz / p.w;
+}
+// Noise that repeats every 4 pixels with every value different inside a 4 x 4 block,
+// so the 4 x 4 blur after this pass takes it all out again.
+float noise4(vec2 px, float shift) {
+    vec2 q = mod(floor(px), 4.0);
+    return fract((q.x * 0.25 + q.y * 0.5625) + shift);
 }
 void main() {
     float depth = texture(uDepth, vUV).r;
@@ -1428,32 +1435,88 @@ void main() {
     vec3 dy = abs(u.z) < abs(b.z) ? u : b;
     vec3 N = normalize(cross(dx, dy));
     if (dot(N, -P) < 0.0) N = -N;
+    bool flat_ = uProj[3][3] > 0.5;       // a camera with no perspective (Studio's side views)
+    vec3 V = flat_ ? vec3(0.0, 0.0, 1.0) : normalize(-P);
+    P += N * (0.01 + 0.002 * abs(P.z));   // (lifted a hair off the surface: depth isn't exact)
 
-    float ang = hash12(gl_FragCoord.xy) * 6.2831853;
-    vec3 rnd = vec3(cos(ang), sin(ang), 0.0);
-    vec3 T = normalize(rnd - N * dot(rnd, N));
-    vec3 B = cross(N, T);
-    mat3 TBN = mat3(T, B, N);
+    // The look-radius on screen (in 0..1 of the picture). Too small to see: skip. Very
+    // close to the camera it would cover the whole screen, so it's capped.
+    vec2 rUV = uRadius * 0.5 * vec2(uProj[0][0], uProj[1][1]) / (flat_ ? 1.0 : max(-P.z, 1e-3));
+    float rPx = rUV.y / uTexel.y;
+    if (rPx < 1.5) { FragAO = 1.0; return; }
+    rUV *= min(1.0, 96.0 / rPx);
 
-    float occ = 0.0;
-    const int S = 16;
-    for (int i = 0; i < S; ++i) {
-        float fi = (float(i) + 0.5) / float(S);
-        float th = float(i) * 2.39996;
-        float ph = acos(sqrt(1.0 - fi));
-        vec3 s = vec3(cos(th) * sin(ph), sin(th) * sin(ph), cos(ph));
-        s = normalize(vec3(s.xy, max(s.z, 0.35)));   // no samples lying flat on the surface
-        s *= mix(0.1, 1.0, fi * fi);
-        vec3 sp = P + TBN * s * uRadius;
-        vec4 o = uProj * vec4(sp, 1.0);
-        vec2 suv = o.xy / o.w * 0.5 + 0.5;
-        float sceneZ = viewPos(suv).z;
-        float range = smoothstep(0.0, 1.0, uRadius / max(abs(P.z - sceneZ), 1e-4));
-        // The bias grows with distance: far-away depth values are less precise.
-        float bias = 0.02 + 0.006 * abs(P.z);
-        occ += (sceneZ >= sp.z + bias ? 1.0 : 0.0) * range;
+    // Things further away than the radius fade out (so a far wall doesn't darken this).
+    float fallRange = 0.6 * uRadius, fallMul = -1.0 / fallRange, fallAdd = (uRadius - fallRange) / fallRange + 1.0;
+
+    float nA = noise4(gl_FragCoord.xy, 0.0), nS = noise4(gl_FragCoord.yx, 0.4375);
+    float vis = 0.0;
+    for (int i = 0; i < uSlices; ++i) {
+        float phi = (float(i) + nA) / float(uSlices) * 3.14159265;
+        vec2 om = vec2(cos(phi), sin(phi));
+        vec3 dir = vec3(om, 0.0);
+        vec3 ortho = dir - dot(dir, V) * V;
+        vec3 axis = normalize(cross(dir, V));
+        vec3 pn = N - axis * dot(N, axis);
+        float pnLen = max(length(pn), 1e-4);
+        float cosN = clamp(dot(pn, V) / pnLen, 0.0, 1.0);
+        float n = sign(dot(ortho, pn)) * acos(cosN);
+        // The lowest a horizon can be: lying on the surface itself.
+        float low0 = cos(n + 1.5707963), low1 = cos(n - 1.5707963);
+        float hc0 = low0, hc1 = low1;
+        for (int j = 0; j < uSteps; ++j) {
+            float s = (float(j) + fract(nS + float(i) * 0.618)) / float(uSteps);
+            s = s * s + 0.5 / rPx;   // more reads close in, and never on this pixel itself
+            vec2 off = s * om * rUV;
+            vec3 d0 = viewPos(vUV + off) - P;
+            vec3 d1 = viewPos(vUV - off) - P;
+            float l0 = length(d0), l1 = length(d1);
+            float c0 = mix(low0, dot(d0 / max(l0, 1e-4), V), clamp(l0 * fallMul + fallAdd, 0.0, 1.0));
+            float c1 = mix(low1, dot(d1 / max(l1, 1e-4), V), clamp(l1 * fallMul + fallAdd, 0.0, 1.0));
+            hc0 = max(hc0, c0);
+            hc1 = max(hc1, c1);
+        }
+        float h0 = n + max(-acos(clamp(hc1, -1.0, 1.0)) - n, -1.5707963);
+        float h1 = n + min( acos(clamp(hc0, -1.0, 1.0)) - n,  1.5707963);
+        float sinN = sin(n);
+        float a0 = (cosN + 2.0 * h0 * sinN - cos(2.0 * h0 - n)) * 0.25;
+        float a1 = (cosN + 2.0 * h1 * sinN - cos(2.0 * h1 - n)) * 0.25;
+        vis += pnLen * (a0 + a1);
     }
-    FragAO = clamp(1.0 - occ / float(S), 0.0, 1.0);
+    // (A little deeper than the plain maths says: it only sees what's on screen and
+    // within its radius, so it always lets in a bit too much.)
+    FragAO = pow(clamp(vis / float(uSlices), 0.0, 1.0), 1.8);
+}
+)";
+
+// Smooths the GTAO picture over 4 x 4 pixels (which takes its noise pattern out), but
+// never across an edge: a pixel much nearer or further away doesn't count.
+inline const char* gtaoBlurFrag = R"(#version 410 core
+in vec2 vUV;
+uniform sampler2D uAO;
+uniform sampler2D uDepth;
+uniform mat4  uInvProj;
+uniform vec2  uTexel;     // one pixel of uAO
+out float FragAO;
+float viewZ(vec2 uv) {
+    float d = texture(uDepth, uv).r;
+    vec4 p = uInvProj * vec4(0.0, 0.0, d * 2.0 - 1.0, 1.0);
+    return -p.z / p.w;
+}
+void main() {
+    float z0 = viewZ(vUV);
+    // How far apart counts as "the same surface": more on a floor seen at a low angle,
+    // where the pixel next door is much further away but still the same floor.
+    float tol = 0.02 * z0 + 0.03 + 3.0 * fwidth(z0);
+    float sum = 0.0, wsum = 0.0;
+    for (int y = -2; y <= 1; ++y)
+        for (int x = -2; x <= 1; ++x) {
+            vec2 uv = vUV + vec2(float(x), float(y)) * uTexel;
+            float w = max(0.0, 1.0 - abs(viewZ(uv) - z0) / tol) + 1e-4;
+            sum += texture(uAO, uv).r * w;
+            wsum += w;
+        }
+    FragAO = sum / wsum;
 }
 )";
 
@@ -1762,7 +1825,11 @@ void main() {
         ao += texture(uAO, vUV + uAOTexel * vec2(-1.5,  1.5)).r;
         ao += texture(uAO, vUV + uAOTexel * vec2( 1.5,  1.5)).r;
         ao *= 0.25;
-        c *= mix(1.0, ao, clamp(uAOIntensity, 0.0, 2.0) * 0.85);
+        // Corners lose soft light, but a bright colour bounces some back in (so a white
+        // corner doesn't go as grey as a dark one).
+        vec3 alb = clamp(c / (1.0 + c), 0.0, 0.9);
+        vec3 aoc = max(vec3(ao), ((ao * (2.0404 * alb - 0.3324) + (-4.7951 * alb + 0.6417)) * ao + (2.7552 * alb + 0.6903)) * ao);
+        c *= mix(vec3(1.0), aoc, clamp(uAOIntensity, 0.0, 2.0) * 0.85);
     }
     if (uUseBloom) c += texture(uBloom, vUV).rgb * uBloomIntensity * 0.15;
     c *= uExposure;
