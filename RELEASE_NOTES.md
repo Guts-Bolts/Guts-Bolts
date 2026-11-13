@@ -1,3 +1,55 @@
+# Guts&Bolts 0.8.0: Everything Everywhere All at Once (November 13, 2026)
+
+Guts&Bolts isn't just games any more. There's a new Home, Art, Paste and
+Fyxa AI, the website got a makeover, and the engine took a huge step
+toward photoreal: bounced light, mirrors, mist, long shadows and storms.
+
+## New on the website
+- A new Home that puts every part of Guts&Bolts together, with games in
+  their own Games section, and a softer look with a dark mode switch.
+- Art: post drawings, pixel art, comics and renders, and fave the best.
+- G&B Paste: share code, crash logs and settings with one link.
+- Ban lists: ban someone once and they stay out of all your games.
+- Testers-only games, Launchpad for big projects, content levels on game
+  pages, profile backgrounds, and old versions of sounds, decals, models,
+  plugins and animations you can bring back.
+- Wishlist alerts when a favourite item gets cheaper, and auctions that
+  end soonest show first.
+- Fyxa AI remembers chats you keep, helps staff spot harmful uploads, and
+  you choose which of your creations it may learn from (off switch in
+  Settings).
+- A small banner ad on a few pages helps keep Guts&Bolts free.
+
+## New in games
+- Movement and gravity feel like Roblox: snappy jumps, easy air control.
+- Pick your own keys for walking, jumping, emotes and more, and an
+  optional take-a-break reminder.
+- Real recorded sounds, tired and limping bodies, bullets that drop and
+  ricochet, fire that spreads and footprints in snow.
+- Bundles get real bones, hats and capes wobble, things shatter, gore is
+  meaner and wounds show where you got hit.
+- Round parts roll, and the wind pushes light things about.
+
+## New in Studio
+- Fyxa can make whole games, model and paint hats, make animations from
+  words ("wave twice, then bow") and look after your game page.
+- A calmer Simple layout, Roblox-style Properties and a Search Studio box.
+- Test like a phone: see how your game runs on a cheap phone.
+- The Visual Scripting board got a real node editor.
+
+## Better graphics
+- Low to Epic quality that picks itself, a sharper upscaler and light
+  that bounces off walls.
+- Shiny things mirror the world, and fog can lie low like real mist.
+- Lamps cast shadows, and sun shadows reach about six times further.
+- Packed material pictures, faraway meshes that cost less to draw, and
+  thunderstorms.
+- If your device can't run a feature, Settings tells you which.
+
+## Fixes
+- Team Create invite codes work again, My Feed avatars show their items,
+  water sticks together better, and the app has a new gear icon.
+
 # Guts&Bolts 0.7.9: Harder Better Faster Stronger (November 4, 2026)
 
 Work it, make it, do it, makes us... a lot of new stuff. Chat with your

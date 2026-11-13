@@ -1,5 +1,5 @@
 export default {
-  id: 'eyes-on-the-queue', name: 'Eyes on the Queue', time: 1794270620, tag: 'Website',
+  id: 'eyes-on-the-queue', name: 'Eyes on the Queue', version: '0.8.0', time: 1794270620, tag: 'Website',
   summary: 'An AI safety check flags harmful posts and uploads for staff to review.',
   items: [
     'Posts, profiles, messages, chat and uploads are checked by an AI safety filter',

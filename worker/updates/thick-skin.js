@@ -1,5 +1,5 @@
 export default {
-  id: 'thick-skin', name: 'Thick Skin', time: 1794270740, tag: 'Engine',
+  id: 'thick-skin', name: 'Thick Skin', version: '0.8.0', time: 1794270740, tag: 'Engine',
   summary: 'Water sticks together better, and hits leave wounds where they land.',
   items: [
     'Water drops hold together more like real water',

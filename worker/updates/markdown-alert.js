@@ -1,5 +1,5 @@
 export default {
-  id: 'markdown-alert', name: 'Markdown Alert', time: 1793832343, tag: 'Website',
+  id: 'markdown-alert', name: 'Markdown Alert', version: '0.8.0', time: 1793832343, tag: 'Website',
   summary: 'Items in your favourites now tell you when they get cheaper or come back on sale.',
   items: [
     'When an item you hearted gets a lower price (or turns free), you get a note on the bell saying the old and new price',

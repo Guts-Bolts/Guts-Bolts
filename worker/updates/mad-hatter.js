@@ -1,5 +1,5 @@
 export default {
-  id: 'mad-hatter', name: 'Mad Hatter', time: 1793811435, tag: 'Studio',
+  id: 'mad-hatter', name: 'Mad Hatter', version: '0.8.0', time: 1793811435, tag: 'Studio',
   summary: 'Studio\'s AI can now model a hat from a plain cube, paint a texture for it and put it on the mannequin, ready to upload.',
   items: [
     'New edit_mesh AI tool: the Assistant (and AI apps on your computer) can reshape a part\'s mesh step by step with Modeling mode\'s own tools: start from a cube, cylinder, sphere or torus, then extrude, inset, move, scale, rotate, smooth and subdivide the parts it picks (like "the top" or "the bottom tenth").',

@@ -1,5 +1,5 @@
 export default {
-  id: 'ready-for-liftoff', name: 'Ready for Liftoff', time: 1794436371, tag: 'Website',
+  id: 'ready-for-liftoff', name: 'Ready for Liftoff', version: '0.8.0', time: 1794436371, tag: 'Website',
   summary: 'Launchpad helps creators build big games, every game can show how intense it is, the rules about kids are clearer, profiles get backgrounds, and game servers warn scripts before they run out of memory.',
   items: [
     'Launchpad (Create > Launchpad): apply with a big game. Picked games get a shelf on the Games page, a help thread with staff and more Fyxa steps a day. It\'s free',
