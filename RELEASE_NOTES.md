@@ -2,9 +2,12 @@
 
 Guts&Bolts isn't just games any more. There's a new Home, Art, Paste and
 Fyxa AI, the website got a makeover, and the engine took a huge step
-toward photoreal: bounced light, mirrors, mist, long shadows and storms.
+toward photoreal: bounced light, mirrors, mist, long shadows, a real
+ocean and tornadoes.
 
 ## New on the website
+- G&B Academy: free courses on scripting, building, modeling and more,
+  written by the community.
 - A new Home that puts every part of Guts&Bolts together, with games in
   their own Games section, and a softer look with a dark mode switch.
 - Art: post drawings, pixel art, comics and renders, and fave the best.
@@ -29,6 +32,8 @@ toward photoreal: bounced light, mirrors, mist, long shadows and storms.
 - Bundles get real bones, hats and capes wobble, things shatter, gore is
   meaner and wounds show where you got hit.
 - Round parts roll, and the wind pushes light things about.
+- Real 3D clouds, supercell storms, hail, earthquakes, and tornadoes
+  that throw your loose parts around.
 
 ## New in Studio
 - Fyxa can make whole games, model and paint hats, make animations from
@@ -42,11 +47,14 @@ toward photoreal: bounced light, mirrors, mist, long shadows and storms.
   that bounces off walls.
 - Shiny things mirror the world, and fog can lie low like real mist.
 - Lamps cast shadows, and sun shadows reach about six times further.
+- Truer shading in corners and creases (GTAO) on every quality level.
+- Water with a swell is a real ocean, with breaking foam.
 - Packed material pictures, faraway meshes that cost less to draw, and
   thunderstorms.
 - If your device can't run a feature, Settings tells you which.
 
 ## Fixes
+- Nightly test builds: a switch in the Player to try the newest code early.
 - Team Create invite codes work again, My Feed avatars show their items,
   water sticks together better, and the app has a new gear icon.
 

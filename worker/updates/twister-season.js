@@ -1,5 +1,5 @@
 export default {
-  id: 'twister-season', name: 'Twister Season', time: 1794538921, tag: 'Engine',
+  id: 'twister-season', name: 'Twister Season', version: '0.8.0', time: 1794538921, tag: 'Engine',
   summary: 'Real 3D clouds, supercell storms, downbursts, hail, earthquakes, and tornadoes that throw your loose parts around.',
   items: [
     'Clouds are real 3D shapes now (High graphics and up): you can see their flat bottoms, lumpy tops and dark undersides, and the sun lights them from its side',
