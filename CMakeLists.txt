@@ -485,6 +485,7 @@ add_library(gb_engine STATIC
     src/renderer/SceneRendererFog.cpp
     src/renderer/Benchmark.cpp
     src/renderer/GpuCaps.cpp
+    src/renderer/OceanGpu.cpp
     src/renderer/ViewportRender.cpp
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp

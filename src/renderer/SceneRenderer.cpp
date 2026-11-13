@@ -14,7 +14,8 @@
 #include "../scene/Physics.h"
 #include "../scene/Water.h"
 #include "../scene/Liquid.h"
-#include "../scene/Gerstner.h"
+#include "../scene/OceanWaves.h"
+#include "OceanGpu.h"
 #include "../scene/Skin.h"
 #include "../scene/Cloth.h"
 #include "../scene/BounceLight.h"
@@ -189,6 +190,7 @@ SceneRenderer::~SceneRenderer() {
     Liquid::graphicsContext(-1);
     destroyTemporal();
     destroyFog();
+    m_ocean.reset();
     if (m_gridVbo)  glDeleteBuffers(1, &m_gridVbo);
     if (m_instanceVbo) glDeleteBuffers(1, &m_instanceVbo);
     if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
@@ -1302,7 +1304,7 @@ void buildWaterMesh(const WaterSystem& ws, const WaterSystem::Body& b, std::vect
                     std::vector<uint32_t>& idx) {
     verts.clear();
     idx.clear();
-    // Finer than the ripple grid, so the Gerstner waves (added in the vertex shader)
+    // Finer than the ripple grid, so the ocean waves (added in the vertex shader)
     // stay smooth: about 2 points a stud, at most 180 along a side.
     const glm::vec3 size = b.max - b.min;
     const float cell = std::max({0.5f, size.x / 179.0f, size.z / 179.0f});
@@ -1370,6 +1372,16 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(2.0f, 8.0f);
 
+    // The ocean swell's wave pictures, if any water here has a swell.
+    int oceanBands = 0;
+    for (const WaterItem& it : waters)
+        if (const WaterSystem::Body* wb = waves.find(it.node->id); wb && wb->swell > 0.0f) {
+            FrameProfile::Scope prof("draw: ocean waves", true);
+            if (!m_ocean) m_ocean = std::make_unique<OceanGpu>();
+            oceanBands = m_ocean->prepare(waves.ocean(), gs.waterQuality >= 2);
+            break;
+        }
+
     Shader& w = *m_water;
     w.bind();
     const glm::mat4 view = camera.view(), proj = camera.projection();
@@ -1401,16 +1413,23 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
     w.setFloat("uRenderDist", m_viewDist);
     bindTex(2, m_waterCopy.color); w.setInt("uScene", 2);
     bindTex(3, m_waterCopy.depth); w.setInt("uSceneDepth", 3);
-    // The Gerstner waves (the same numbers the physics uses: scene/Gerstner.h).
-    glm::vec4 wv[Gerstner::kCount];
-    float ph[Gerstner::kCount];
-    for (int i = 0; i < Gerstner::kCount; ++i) {
-        const Gerstner::Wave& g = Gerstner::kWaves[i];
-        wv[i] = glm::vec4(g.dirX, g.dirZ, g.length, g.share);
-        ph[i] = g.phase;
+    // The ocean swell (the same waves the physics floats things on: scene/OceanWaves.h),
+    // as pictures the shader reads.
+    w.setInt("uOcBands", oceanBands);
+    w.setInt("uOcD0", 8);  w.setInt("uOcD1", 9);  w.setInt("uOcD2", 10);
+    w.setInt("uOcS0", 11); w.setInt("uOcS1", 12); w.setInt("uOcS2", 13);
+    if (oceanBands) {
+        for (int b = 0; b < 3; ++b) {
+            const int from = std::min(b, oceanBands - 1);   // (an unused band reads a real picture too)
+            bindTex(8 + b, m_ocean->disp(from));
+            bindTex(11 + b, m_ocean->slope(from));
+        }
+        const float n = (float)m_ocean->size();
+        w.setVec3("uOcLen", glm::vec3(OceanWaves::kBand[0].length, OceanWaves::kBand[1].length, OceanWaves::kBand[2].length));
+        w.setFloat("uOcHalf", 0.5f / n);
+        w.setFloat("uOcFoamBlur", std::log2(n / (float)OceanWaves::kCpuN));
+        w.setVec3("uOcTexel", glm::vec3(OceanWaves::kBand[0].length, OceanWaves::kBand[1].length, OceanWaves::kBand[2].length) / n);
     }
-    w.setVec4Array("uWaves", wv, Gerstner::kCount);
-    w.setFloatArray("uWavePhase", ph, Gerstner::kCount);
 
     std::vector<Vertex> verts;
     std::vector<uint32_t> idx;
@@ -1424,13 +1443,17 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             clarity = std::clamp((float)a->n, 0.0f, 1.0f);
         w.setFloat("uClarity", wb ? wb->clarity : clarity);
         if (wb) {
-            // While playing: the moving surface (ripples from the physics, Gerstner
-            // waves added in the vertex shader).
+            // While playing: the moving surface (ripples from the physics, the ocean
+            // swell added in the vertex shader).
             w.setMat4("uModel", glm::mat4(1.0f));
             w.setMat3("uNormalMat", glm::mat3(1.0f));
             w.setBool("uWaveMesh", true);
             w.setFloat("uWaveAmp", wb->swell);
-            w.setFloat("uSteep", Gerstner::steepness(wb->swell));
+            w.setFloat("uChop", OceanWaves::chop(wb->swell));
+            {   // (how far apart the surface's points are: the same sum as buildWaterMesh)
+                const glm::vec3 size = wb->max - wb->min;
+                w.setFloat("uCell", std::max({0.5f, size.x / 179.0f, size.z / 179.0f}));
+            }
             w.setVec3("uBodyMin", wb->min);
             w.setVec3("uBodyMax", wb->max);
             // The current: a flow map (bent around rocks) if there is one.
@@ -1462,7 +1485,7 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             w.setMat3("uNormalMat", glm::transpose(glm::inverse(glm::mat3(it.model))));
             w.setBool("uWaveMesh", false);
             w.setFloat("uWaveAmp", 0.0f);
-            w.setFloat("uSteep", 0.0f);
+            w.setFloat("uChop", 0.0f);
             w.setBool("uHasFlowMap", false);
             glm::vec2 fl(0.0f);
             if (const Attribute* a = node->findAttribute("Flow"); a && a->type == Attribute::Vector3) fl = glm::vec2(a->v.x, a->v.z);

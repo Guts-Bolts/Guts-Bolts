@@ -29,7 +29,7 @@ const Info& info(Feature f) {
     // `shipped` is turned on by the update that adds the feature.
     static const Info kInfo[kFeatures] = {
         {"Liquid on the graphics card", "Liquid runs on the processor, with fewer drops.", true},
-        {"Ocean waves on the graphics card", "The ocean keeps its simpler rolling waves.", false},
+        {"Ocean waves on the graphics card", "The ocean has the same waves, without the finest ripples.", true},
         {"Thick liquid blood", "Blood stays as stains and splashes.", false},
         {"Graphics card picks what to draw", "The processor picks what to draw (as before).", false},
     };

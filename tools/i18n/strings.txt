@@ -4769,7 +4769,7 @@
 "The moderation queue is unavailable."
 "The moves themselves can't be changed here."
 "The new way it acts is right: remember it instead."
-"The ocean keeps its simpler rolling waves."
+"The ocean has the same waves, without the finest ripples."
 "The original direct TCP host/join mode remains available for local networks."
 "The other version"
 "The owner can do everything."

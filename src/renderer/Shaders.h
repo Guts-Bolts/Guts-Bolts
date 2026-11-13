@@ -2289,7 +2289,8 @@ void main() {
 // Water parts (pools, lakes, rivers, FluidVolumes)
 // ---------------------------------------------------------------------------
 // Drawn after the solid scene, reading a copy of its colour and depth:
-//  * Gerstner waves move the surface (the same ones the physics floats things on).
+//  * The ocean swell moves the surface: waves from an FFT (scene/OceanWaves.h, the same
+//    ones the physics floats things on), read from pictures (renderer/OceanGpu.h).
 //  * How deep the water is at each pixel = the distance from the surface to the
 //    ground behind it, so it fades from crystal clear at the shore to dark blue in
 //    the deep (Beer-Lambert), by its Clarity.
@@ -2305,46 +2306,40 @@ uniform mat4  uView;
 uniform mat4  uProj;
 uniform mat3  uNormalMat;
 uniform bool  uWaveMesh;             // the moving surface (while playing), not a plain box
-uniform float uWaveAmp;              // Gerstner: total height (0 = calm)
-uniform float uSteep;                // how much the water bunches towards the crests
-uniform vec4  uWaves[4];             // direction x, z, length, share of the height
-uniform float uWavePhase[4];
+uniform float uWaveAmp;              // the ocean swell's height (0 = calm)
+uniform float uChop;                 // how much the water bunches towards the crests
+uniform float uCell;                 // how far apart this surface's points are (studs)
+uniform sampler2D uOcD0, uOcD1;      // the two big bands' waves: sideways x, height, sideways z
+uniform vec3  uOcLen;                // each band's square, in studs
+uniform vec3  uOcTexel;              // ...and one of its pixels, in studs
+uniform float uOcHalf;               // half a pixel (the pictures' grid points are pixel middles)
 uniform float uTime;
 uniform vec3  uBodyMin, uBodyMax;
 out vec3  vWorldPos;
 out vec3  vNormal;
 out float vFoam;
-out float vCrest;
+out vec3  vOc;      // where this water sits when calm (x, z) and how far from the pool's sides (0..1)
+out float vWaveH;   // how high the swell lifts it, for a swell of 1
 void main() {
     vec3 w = (uModel * vec4(aPos, 1.0)).xyz;
     vec3 n = normalize(uNormalMat * aNormal);
-    float crest = 0.0;
+    vOc = vec3(w.xz, 0.0);
+    vWaveH = 0.0;
     if (uWaveMesh && uWaveAmp > 0.0 && aUV.y > 0.5) {
         // Near the sides the water only rises and falls (so it can't poke through walls).
         float edge = clamp(min(min(w.x - uBodyMin.x, uBodyMax.x - w.x), min(w.z - uBodyMin.z, uBodyMax.z - w.z)) * 0.5, 0.0, 1.0);
-        float q = uSteep / 4.0;
-        vec3 d = vec3(0.0);
-        vec3 gn = vec3(0.0, 1.0, 0.0);
-        for (int i = 0; i < 4; ++i) {
-            vec2 dir = uWaves[i].xy;
-            float k = 6.2831853 / uWaves[i].z;
-            float A = uWaveAmp * uWaves[i].w;
-            float ph = k * dot(dir, w.xz) - sqrt(9.8 * k) * uTime + uWavePhase[i];
-            float c = cos(ph), s = sin(ph);
-            d.xz += dir * (q / k) * c * edge;
-            d.y  += A * s;
-            gn.x -= dir.x * k * A * c;
-            gn.z -= dir.y * k * A * c;
-            gn.y -= q * s * edge;
-            crest += q * s * edge;
-        }
-        w += d;
-        if (n.y > 0.5) n = normalize(gn + (n - vec3(0.0, 1.0, 0.0)));   // plus the ripples
+        // Waves smaller than the surface's own points would only make it jitter, so each
+        // band is read from a blurrier copy when the points are far apart (a huge sea).
+        float l0 = max(0.0, log2(uCell / uOcTexel.x) + 0.5), l1 = max(0.0, log2(uCell / uOcTexel.y) + 0.5);
+        vec4 d = textureLod(uOcD0, w.xz / uOcLen.x + uOcHalf, l0) + textureLod(uOcD1, w.xz / uOcLen.y + uOcHalf, l1);
+        vOc.z = edge;
+        vWaveH = d.y;
+        w.xz += d.xz * (uWaveAmp * uChop * edge);
+        w.y  += d.y * uWaveAmp;
     }
     vWorldPos = w;
     vNormal = n;
     vFoam = uWaveMesh ? aUV.x : 0.0;
-    vCrest = crest;   // how bunched up the water is here (whitecaps on big, steep waves)
     gl_Position = uProj * uView * vec4(w, 1.0);
 }
 )";
@@ -2353,7 +2348,8 @@ inline const char* waterFrag = R"(#version 410 core
 in vec3  vWorldPos;
 in vec3  vNormal;
 in float vFoam;
-in float vCrest;
+in vec3  vOc;
+in float vWaveH;
 uniform sampler2D uScene;        // the solid scene behind the water
 uniform sampler2D uSceneDepth;   // ... and how far away it is
 uniform mat4  uView;
@@ -2389,6 +2385,16 @@ uniform sampler2D uFlowMap;
 uniform vec3  uFlowGrid;         // cell size, points across x, points across z
 uniform vec2  uFlowBase;
 uniform vec3  uBodyMin, uBodyMax;
+// The ocean swell's pictures (see OceanGpu.h): 2 bands from the processor, or 3 from
+// the graphics card.
+uniform float uWaveAmp;
+uniform float uChop;
+uniform int   uOcBands;
+uniform sampler2D uOcD0, uOcD1, uOcD2;
+uniform sampler2D uOcS0, uOcS1, uOcS2;
+uniform vec3  uOcLen;
+uniform float uOcHalf;
+uniform float uOcFoamBlur;   // how many sizes smaller the pictures are read for foam
 out vec4 FragColor;
 #pragma gb_common
 const float kIor = 1.333;
@@ -2504,8 +2510,32 @@ void main() {
     vec3 toEye = uViewPos - wp;
     float eyeDist = length(toEye);
     vec2 flow = flowHere(wp.xz);
+    // The ocean swell: its slope at this pixel from every band (far away the pictures'
+    // blurrier copies are read, so distant water is calm instead of sparkling), and how
+    // squeezed the water is: where it's nearly folding over, a crest is breaking.
+    float breaking = 0.0;
+    bool swell = uWaveAmp > 0.0 && uOcBands > 0 && N.y > 0.3;
+    if (swell) {
+        vec2 q0 = vOc.xy / uOcLen.x + uOcHalf, q1 = vOc.xy / uOcLen.y + uOcHalf;
+        vec4 s = texture(uOcS0, q0) + texture(uOcS1, q1);
+        // (Tiny ripples don't get steeper just because the swell is huge.)
+        if (uOcBands > 2) s.xy += texture(uOcS2, vOc.xy / uOcLen.z + uOcHalf).xy * min(1.0, 0.6 / uWaveAmp);
+        // (The squeeze comes from the two big bands, read as coarsely as the processor's
+        // grids, so foam sits on the same crests whoever worked the waves out.)
+        vec2 jd = texture(uOcS0, q0, uOcFoamBlur).zw + texture(uOcS1, q1, uOcFoamBlur).zw;
+        float jxz = texture(uOcD0, q0, uOcFoamBlur).a + texture(uOcD1, q1, uOcFoamBlur).a;
+        float c = uWaveAmp * uChop * vOc.z;
+        float jx = 1.0 + c * jd.x, jz = 1.0 + c * jd.y;
+        float squeeze = jx * jz - c * c * jxz * jxz;   // 1 = calm, near 0 = folding over
+        vec2 sl = uWaveAmp * s.xy / max(vec2(jx, jz), vec2(0.35));
+        N = normalize(N + vec3(-sl.x, 0.0, -sl.y));
+        breaking = (1.0 - smoothstep(0.3, 0.62, squeeze)) * smoothstep(0.3, 1.1, uWaveAmp);
+    }
     // Little ripples close up; far away they're smaller than a pixel, so they'd only sparkle.
-    if (N.y > 0.3) N = normalize(N + (detailNormal(wp.xz, flow) - vec3(0.0, 1.0, 0.0)) * clamp(1.0 - eyeDist / 70.0, 0.0, 1.0));
+    // (The graphics card's third band is real ripples, so the made-up ones are only
+    // needed without it, or to show a current.)
+    if (N.y > 0.3 && (!swell || uOcBands < 3 || dot(flow, flow) >= 0.01))
+        N = normalize(N + (detailNormal(wp.xz, flow) - vec3(0.0, 1.0, 0.0)) * clamp(1.0 - eyeDist / 70.0, 0.0, 1.0));
     vec3 V = toEye / eyeDist;
     bool below = dot(N, V) < 0.0;          // looking up at the surface from underwater
     if (below) N = -N;
@@ -2564,11 +2594,18 @@ void main() {
         vec3 spec = sunRad * sun * min(D * G * Fs / (4.0 * max(cosV, 0.05) * max(NoL, 1e-3) + 1e-4) * NoL, 80.0) * 3.14159;
         float fres = f0 + (1.0 - f0) * pow(1.0 - cosV, 5.0);
         col = mix(through, mix(sky, seen, found), fres) + spec;
+        // Sunlight shining through the thin tops of waves when you look towards the sun:
+        // the crests glow in the water's own colour.
+        if (swell) {
+            float towardsSun = pow(max(dot(-V, L), 0.0), 3.0);
+            float thin = smoothstep(0.15, 1.0, vWaveH) * min(uWaveAmp, 1.5);
+            col += deep * sunRad * sun * towardsSun * thin * (1.0 - fres) * 0.7;
+        }
         // Foam: a lacy band where the water meets the shore, on breaking crests and
         // where the surface was churned up.
         float lace = laceAt(wp.xz, flow);
         float foam = (1.0 - smoothstep(0.02, 0.25, path)) * smoothstep(0.4, 0.7, lace);
-        foam = max(foam, smoothstep(0.62, 0.85, vCrest) * smoothstep(0.5, 0.8, lace) * 0.8);
+        foam = max(foam, breaking * smoothstep(0.3, 0.7, lace) * 0.85);
         foam = max(foam, clamp(vFoam, 0.0, 1.0) * smoothstep(0.3, 0.6, lace));
         // White water where the current is squeezed faster past a rock, or turned.
         float baseSpeed = length(uFlowBase);

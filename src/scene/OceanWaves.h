@@ -51,7 +51,7 @@ inline constexpr Band kBand[kBands] = {
     {4.7f, 0.0f, 0.165f},
 };
 
-// Which way the wind blows the waves (x, z; the old Gerstner swell's main direction)
+// Which way the wind blows the waves (x, z)
 // and how long the tallest waves are, in studs.
 inline constexpr float kWindX = 0.958f, kWindZ = 0.287f;
 inline constexpr float kPeakWave = 19.0f;

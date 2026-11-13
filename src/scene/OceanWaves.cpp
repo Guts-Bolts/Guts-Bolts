@@ -28,11 +28,10 @@ void fft2(glm::vec2* g, int n, bool inverse) {
     }
 }
 
-// A grid read between its points, wrapping round (the same way the graphics card
-// reads a repeating texture).
+// A grid read between its points, wrapping round.
 glm::vec4 read(const glm::vec4* g, int n, float u, float v) {
-    u = u * n - 0.5f;
-    v = v * n - 0.5f;
+    u *= n;   // (grid point i is at exactly i / n of the square: the shader reads its pictures the same way)
+    v *= n;
     const float fu = std::floor(u), fv = std::floor(v);
     const float tu = u - fu, tv = v - fv;
     const int m = n - 1;   // (n is a power of two)
