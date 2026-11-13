@@ -1512,4 +1512,10 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(StormAndDetailTests PRIVATE gb_engine)
     add_test(NAME StormAndDetailTests COMMAND StormAndDetailTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Severe weather: supercells, tornadoes, downbursts and the real cloud types (Storms.h).
+    add_executable(SevereWeatherTests tests/SevereWeatherTests.cpp)
+    target_link_libraries(SevereWeatherTests PRIVATE gb_engine)
+    add_test(NAME SevereWeatherTests COMMAND SevereWeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()
