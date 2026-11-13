@@ -1,4 +1,5 @@
 #include "UpdateChecker.h"
+#include "UpdateChannel.h"
 #include "Paths.h"
 #include "Version.h"
 
@@ -68,65 +69,88 @@ const char* platformKey() {
 #endif
 }
 
-// "0.6.10" > "0.6.9" (numbers compared one by one; "-dev" and such ignored).
-int compareVersions(const std::string& a, const std::string& b) {
-    auto parts = [](const std::string& v) {
-        std::vector<long> out;
-        long cur = 0; bool any = false;
-        for (char c : v) {
-            if (c >= '0' && c <= '9') { cur = cur * 10 + (c - '0'); any = true; }
-            else if (c == '.') { out.push_back(cur); cur = 0; any = false; }
-            else break;
-        }
-        if (any || !out.empty()) out.push_back(cur);
-        return out;
-    };
-    std::vector<long> x = parts(a), y = parts(b);
-    for (size_t i = 0; i < std::max(x.size(), y.size()); ++i) {
-        long p = i < x.size() ? x[i] : 0, q = i < y.size() ? y[i] : 0;
-        if (p != q) return p < q ? -1 : 1;
-    }
-    return 0;
-}
-
 std::string g_downloadUrl;   // the newest version of this app for this computer
-std::string g_latestVersion;
+std::string g_latestVersion; // what the status file calls this try ("0.8.0", "nightly-abc1234", "stable-0.8.0")
+Kind        g_kind = Kind::Stable;
+std::string g_targetCommit;  // the nightly we'd update to
+bool        g_runningNightly = false;
 std::string lastTryFailed(const std::string& version);
 
-void check() {
-    std::string mine = GB_VERSION;
-    if (const char* fake = std::getenv("GB_PRETEND_VERSION")) mine = fake;   // for testing the update screen
+std::string fetch(const std::string& path) {
 #ifdef _WIN32
     const char* quiet = " 2>NUL";
 #else
     const char* quiet = " 2>/dev/null";
 #endif
-    std::string text = runCapture("curl -fsSL -m 15 \"" + siteUrl() + "/download/latest.json\"" + quiet);
-    nlohmann::json j = nlohmann::json::parse(text, nullptr, false);
+    return runCapture("curl -fsSL -m 15 \"" + siteUrl() + path + "\"" + quiet);
+}
+
+void check() {
+    UpdateChannel::Mine mine;
+    mine.version = GB_VERSION;
+    if (const char* fake = std::getenv("GB_PRETEND_VERSION")) mine.version = fake;   // for testing the update screen
+    mine.commit = GB_COMMIT;
+    if (const char* fake = std::getenv("GB_PRETEND_COMMIT")) mine.commit = fake;
+    mine.date = GB_COMMIT_DATE;
+    mine.nightlyOn = UpdateChannel::nightlyOn();
+    mine.installedNightly = UpdateChannel::installedNightly();
+
+    const std::string latestText = fetch("/download/latest.json");
+    const UpdateChannel::Build stable = UpdateChannel::parse(latestText, platformKey());
+    UpdateChannel::Build nightly;
+    if (mine.nightlyOn) nightly = UpdateChannel::parse(fetch("/download/nightly.json"), platformKey());
 
     Info result;
-    if (!j.is_object() || !j.contains("version") || !j["version"].is_string()) {
+    const UpdateChannel::Offer offer = UpdateChannel::decide(mine, stable, nightly);
+    const bool runningNightly = UpdateChannel::runningNightly(mine, stable);
+    std::string url, key, target;
+    Kind kind = Kind::Stable;
+    if (!stable.ok && !nightly.ok) {
         result.state = State::Failed;
+    } else if (offer == UpdateChannel::Offer::Stable) {
+        // Exactly the old behaviour: a newer release, which the app may install on launch.
+        nlohmann::json j = nlohmann::json::parse(latestText, nullptr, false);
+        result.state = State::Available;
+        result.plainlyBehind = true;
+        result.behindBy = 1;
+        result.latestMessage = j.is_object() ? j.value("name", std::string("Guts&Bolts ") + stable.version) : "Guts&Bolts " + stable.version;
+        result.offeredVersion = stable.version;
+        key = stable.version;
+        url = stable.file.empty() ? "" : siteUrl() + "/download/" + stable.file;
+    } else if (offer == UpdateChannel::Offer::Nightly) {
+        // A test build: only ever offered (plainlyBehind stays false, so it's never forced).
+        kind = Kind::Nightly;
+        result.state = State::Available;
+        result.buildId = nightly.commit.substr(0, 7);
+        result.buildDate = nightly.date;
+        result.offeredVersion = nightly.version;
+        result.latestMessage = "Test build " + result.buildId + (nightly.date.empty() ? "" : " (" + nightly.date + ")");
+        key = "nightly-" + result.buildId;
+        target = nightly.commit;
+        url = siteUrl() + "/download/nightly/" + nightly.commit + "/" + nightly.file;
+    } else if (offer == UpdateChannel::Offer::BackToStable) {
+        kind = Kind::BackToStable;
+        result.state = State::Available;
+        result.offeredVersion = stable.version;
+        result.latestMessage = "Guts&Bolts " + stable.version + " (stable)";
+        key = "stable-" + stable.version;
+        url = siteUrl() + "/download/" + stable.file;
     } else {
-        const std::string latest = j["version"].get<std::string>();
-        result.compareUrl = siteUrl() + "/app/#/updates";
-        if (compareVersions(mine, latest) < 0) {
-            result.state = State::Available;
-            result.plainlyBehind = true;
-            result.behindBy = 1;
-            result.latestMessage = j.value("name", std::string("Guts&Bolts ") + latest);
-            const std::string file = j.contains("files") && j["files"].is_object() ? j["files"].value(platformKey(), std::string()) : "";
-            result.lastTryFailed = lastTryFailed(latest);
-            std::lock_guard<std::mutex> lock(g_mutex);
-            g_downloadUrl = file.empty() ? "" : siteUrl() + "/download/" + file;
-            g_latestVersion = latest;
-        } else {
-            result.state = State::UpToDate;
-        }
+        result.state = State::UpToDate;
     }
+    result.kind = kind;
+    result.compareUrl = siteUrl() + "/app/#/updates";
+    if (kind == Kind::Nightly && GB_COMMIT != std::string("unknown"))
+        result.compareUrl = std::string("https://github.com/") + GB_REPO + "/compare/" + std::string(GB_COMMIT).substr(0, 12) + "..." + target.substr(0, 12);
+    if (result.state == State::Available) result.lastTryFailed = lastTryFailed(key);
     {
         std::lock_guard<std::mutex> lock(g_mutex);
         g_info = result;
+        g_downloadUrl = result.state == State::Available ? url : "";
+        g_latestVersion = key;
+        g_kind = kind;
+        g_targetCommit = target;
+        g_runningNightly = runningNightly;
     }
     g_running = false;
 }
@@ -165,6 +189,20 @@ bool canUpdate() {
 }
 
 std::string downloadPage() { return siteUrl() + "/#download"; }
+
+const char* buildDate() { return GB_COMMIT_DATE; }
+
+bool nightlyEnabled() { return UpdateChannel::nightlyOn(); }
+
+void setNightly(bool on) {
+    UpdateChannel::setNightlyOn(on);
+    start();   // look again with the new choice
+}
+
+bool runningNightly() {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    return g_runningNightly;
+}
 
 namespace {
 // Text inside '...' quotes: PowerShell writes a ' as '', sh closes and reopens the quote.
@@ -323,9 +361,13 @@ bool launchUpdater(const char* relaunchApp) {
     return false;
 #else
     if (!canUpdate()) return false;
-    std::string url, version;
-    { std::lock_guard<std::mutex> lock(g_mutex); url = g_downloadUrl; version = g_latestVersion; }
+    std::string url, version, target;
+    Kind kind;
+    { std::lock_guard<std::mutex> lock(g_mutex); url = g_downloadUrl; version = g_latestVersion; kind = g_kind; target = g_targetCommit; }
     if (std::getenv("GB_UPDATE_DRYRUN")) { std::printf("UPDATER would download %s for %s\n", url.c_str(), relaunchApp); std::fflush(stdout); return true; }   // tests
+    // Remember which nightly this is, so after the update the app knows it's a test
+    // build (and can offer Stable back when Nightly is turned off).
+    if (kind == Kind::Nightly) UpdateChannel::rememberNightly(target);
 
     ScriptArgs a;
     a.url = url;

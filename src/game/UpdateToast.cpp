@@ -23,6 +23,7 @@ constexpr double kCountdown = 3.0;
 float g_slide = 0.0f;       // 0 = hidden, 1 = fully in
 std::string g_error;
 std::string g_appName;
+std::string g_offerShown;   // which offer the card is about; a different one shows the card again
 
 void openUrlImpl(const std::string& url) {
 #if defined(GB_IOS)
@@ -113,6 +114,16 @@ bool draw(const char* appName, bool canForce) {
         if (canForce) return drawForced(appName, info);
         g_forcedAt = ImGui::GetTime();   // waiting (unsaved work / in a game): restart the countdown when it's safe
     }
+    // Turning Nightly on or off (Settings) can change the offer: show the card again for it.
+    if (info.state == UpdateChecker::State::Available) {
+        const std::string offer = std::to_string((int)info.kind) + info.offeredVersion + info.buildId;
+        if (offer != g_offerShown) { g_offerShown = offer; g_dismissed = false; g_error.clear(); }
+    }
+    const bool nightly = info.kind == UpdateChecker::Kind::Nightly;
+    const bool backToStable = info.kind == UpdateChecker::Kind::BackToStable;
+    // A test-build update that didn't work last time: say why (it's never retried by itself).
+    if ((nightly || backToStable) && g_error.empty() && !info.lastTryFailed.empty())
+        g_error = "The update didn't work last time: " + info.lastTryFailed;
     bool show = info.state == UpdateChecker::State::Available && !g_dismissed;
     float dt = ImGui::GetIO().DeltaTime;
     g_slide = std::clamp(g_slide + (show ? dt : -dt) * 4.0f, 0.0f, 1.0f);
@@ -137,13 +148,23 @@ bool draw(const char* appName, bool canForce) {
                  ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize);
 
     bool quit = false;
-    ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.25f, 1), "Update available");
+    ImGui::TextColored(ImVec4(1.0f, 0.62f, 0.25f, 1), "%s",
+                       nightly ? "Test build available" : backToStable ? "Back to Stable" : "Update available");
     ImGui::SameLine(w - 44);
     if (ImGui::SmallButton("x")) g_dismissed = true;
     ImGui::PushTextWrapPos(w - 16);
-    ImGui::Text("A new version is out (you have %s).", UpdateChecker::currentVersion());
+    if (nightly) {
+        ImGui::Text("A new test build is available (%s, %s). You have %s.", info.buildId.c_str(),
+                    info.buildDate.empty() ? "today" : info.buildDate.c_str(), UpdateChecker::currentVersion());
+        ImGui::TextColored(ImVec4(1.0f, 0.78f, 0.3f, 1), "It may be unstable. Update?");
+    } else if (backToStable) {
+        ImGui::Text("You're on a test build (%s). Go back to the stable version, %s?",
+                    UpdateChecker::currentVersion(), info.offeredVersion.c_str());
+    } else {
+        ImGui::Text("A new version is out (you have %s).", UpdateChecker::currentVersion());
+    }
     ImGui::PopTextWrapPos();
-    if (!info.latestMessage.empty()) {
+    if (!info.latestMessage.empty() && !nightly && !backToStable) {
         ImGui::PushTextWrapPos(w - 16);
         ImGui::TextDisabled("Latest: %s", info.latestMessage.c_str());
         ImGui::PopTextWrapPos();
@@ -160,7 +181,7 @@ bool draw(const char* appName, bool canForce) {
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.6f, 0.25f, 1));
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, 1));
     ImGui::BeginDisabled(!UpdateChecker::canUpdate());
-    if (ImGui::Button("Update now", ImVec2(120, 30))) {
+    if (ImGui::Button(backToStable ? "Switch to Stable" : "Update now", ImVec2(backToStable ? 140.0f : 120.0f, 30))) {
         if (UpdateChecker::launchUpdater(appName)) quit = true;
         else g_error = "Couldn't start the updater.";
     }
@@ -169,8 +190,10 @@ bool draw(const char* appName, bool canForce) {
     if (!UpdateChecker::canUpdate() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("The source folder isn't next to this build - download the new version from GitHub.");
     ImGui::SameLine();
-    if (ImGui::Button("What's new", ImVec2(100, 30))) openUrlImpl(info.compareUrl);
-    ImGui::SameLine();
+    if (!backToStable) {
+        if (ImGui::Button("What's new", ImVec2(100, 30))) openUrlImpl(info.compareUrl);
+        ImGui::SameLine();
+    }
     if (ImGui::Button("Later", ImVec2(80, 30))) g_dismissed = true;
 
     ImGui::End();

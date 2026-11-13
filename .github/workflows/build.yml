@@ -311,6 +311,43 @@ jobs:
           name: macos
           path: GutsAndBolts-macOS.zip
 
+  nightly:
+    name: Publish nightly
+    # The opt-in Nightly channel (Player Settings > Updates): every push to main whose
+    # tests and desktop builds all pass becomes the newest test build. It's uploaded to
+    # its own place on gutsandbolts.net (download/nightly/...), separate from the
+    # releases: it never makes a GitHub release, never changes the normal download or
+    # latest.json, and a failure here can't block a release (the release job doesn't
+    # need this one).
+    if: always() && needs.tests.result == 'success' && needs.linux.result == 'success' && needs.windows.result == 'success' && needs.macos.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [tests, linux, windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # proves to gutsandbolts.net that this is our build (see worker/downloads.js)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          path: dist
+      - name: Gather files
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          test -n "$(find dist/linux -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$(find dist/macos -maxdepth 1 -type f -name '*.zip' -print -quit)"
+          test -d dist/windows
+          cp dist/linux/*.tar.gz out/
+          cp dist/macos/*.zip out/
+          (cd dist && zip -qr ../out/GutsAndBolts-Windows.zip windows)
+          ls -lah out
+      - name: Upload to gutsandbolts.net (nightly)
+        run: |
+          version=$(sed -n 's/^project(GutsAndBolts VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt | head -n 1)
+          tools/ci/publish_nightly.sh out "$version" "$GITHUB_SHA" "$(git log -1 --format=%ct)"
+
   release:
     name: Publish release
     # Never publish a partial release. The test suite and every required desktop/mobile
@@ -413,7 +450,7 @@ jobs:
           for f in os.listdir("out"):
               kind = "quest" if "Quest" in f else "android" if f.endswith(".apk") else "windows" if "Windows" in f else "mac" if "macOS" in f else "linux" if "Linux" in f else None
               if kind: files[kind] = f
-          print(json.dumps({"version": os.environ["TAG"], "name": os.environ.get("NAME", ""),
+          print(json.dumps({"version": os.environ["TAG"], "name": os.environ.get("NAME", ""), "commit": os.environ["GITHUB_SHA"],
                             "notes": open("release_notes_latest.md", encoding="utf-8").read(), "files": files}))
           PY
           curl -fsS --retry 3 -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
