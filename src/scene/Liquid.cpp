@@ -749,6 +749,9 @@ void Liquid::soakIntoPools(Scene& scene) {
                 if (p.y > s - 0.15f) continue;
                 const float speed = glm::length(m_v[i]);
                 water.disturb(glm::vec3(p.x, s, p.z), std::min(0.02f, 0.0015f * speed), 0.7f);
+                // Coloured liquid (blood, oil, paint) clouds the pool it runs into.
+                if (m_kind[i] > 0 && m_kind[i] < m_fluids.size())
+                    water.dye(glm::vec3(p.x, s - 0.05f, p.z), m_fluids[m_kind[i]].color, kDropDye);
                 if (speed > 10.0f && sprays < 3 && rnd() < 0.08f) {
                     scene.particles().waterSpray(glm::vec3(p.x, s, p.z), 3, std::min(8.0f, speed * 0.3f), b.color, 0.2f);
                     ++sprays;
@@ -900,9 +903,14 @@ void Liquid::updateGpu(float dt, Scene& scene) {
     // Drops that fell into pools make ripples (and spray if they hit hard).
     WaterSystem& water = scene.water();
     int sprays = 0;
-    for (const glm::vec4& sp : res.splashes) {
+    for (glm::vec4 sp : res.splashes) {
         const glm::vec3 p(sp);
+        // (w = the drop's speed + 1024 x which kind of liquid it was)
+        const int kind = (int)std::floor(sp.w / 1024.0f);
+        sp.w -= (float)kind * 1024.0f;
         water.disturb(p, std::min(0.02f, 0.0015f * sp.w), 0.7f);
+        if (kind > 0 && kind < (int)m_fluids.size())
+            water.dye(glm::vec3(p.x, p.y - 0.05f, p.z), m_fluids[kind].color, kDropDye);
         if (sp.w > 10.0f && sprays < 3 && rnd() < 0.3f) {
             glm::vec3 color(0.2f, 0.45f, 0.7f);
             for (const WaterSystem::Body& b : water.bodies())

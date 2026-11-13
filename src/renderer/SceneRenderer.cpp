@@ -1455,6 +1455,7 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
     // The ocean swell (the same waves the physics floats things on: scene/OceanWaves.h),
     // as pictures the shader reads.
     w.setInt("uOcBands", oceanBands);
+    w.setBool("uHasDye", false);
     w.setInt("uOcD0", 8);  w.setInt("uOcD1", 9);  w.setInt("uOcD2", 10);
     w.setInt("uOcS0", 11); w.setInt("uOcS1", 12); w.setInt("uOcS2", 13);
     if (oceanBands) {
@@ -1514,6 +1515,35 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
                 w.setInt("uFlowMap", 6);
                 w.setVec3("uFlowGrid", glm::vec3(wb->cell, (float)wb->nx, (float)wb->nz));
             }
+            // Colour hanging in the water (blood, oil): a picture of the pool from above.
+            // Only made once a pool has had colour in it; after that it's kept up to date
+            // (so the last of a cloud fades out, and a clean pool costs nothing).
+            {
+                auto dt = m_dyeTex.find(node->id);
+                const bool had = dt != m_dyeTex.end();
+                const bool has = wb->dye.live || had;
+                w.setBool("uHasDye", has);
+                if (has) {
+                    FlowTex& ft = had ? dt->second : m_dyeTex[node->id];
+                    const bool fresh = !ft.tex;
+                    if (fresh) glGenTextures(1, &ft.tex);
+                    bindTex(7, ft.tex);
+                    if (fresh || ft.version != wb->dye.version) {
+                        // (the grid's own byte list: nothing is allocated here)
+                        const std::vector<uint8_t>& px = WaterDye::pixels(const_cast<WaterDye::Grid&>(wb->dye));
+                        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, wb->dye.nx, wb->dye.nz, 0, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
+                        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+                        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+                        ft.version = wb->dye.version;
+                    }
+                    w.setInt("uDye", 7);
+                    w.setVec3("uDyeGrid", glm::vec3(wb->dye.cell, (float)wb->dye.nx, (float)wb->dye.nz));
+                }
+            }
             auto& mesh = m_waterMeshes[node->id];
             if (!mesh) mesh = std::make_unique<Mesh>();
             buildWaterMesh(waves, *wb, verts, idx);
@@ -1526,6 +1556,7 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             w.setFloat("uWaveAmp", 0.0f);
             w.setFloat("uChop", 0.0f);
             w.setBool("uHasFlowMap", false);
+            w.setBool("uHasDye", false);
             glm::vec2 fl(0.0f);
             if (const Attribute* a = node->findAttribute("Flow"); a && a->type == Attribute::Vector3) fl = glm::vec2(a->v.x, a->v.z);
             w.setVec2("uFlowBase", fl);
@@ -1625,6 +1656,8 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         m_waterMeshes.clear();
         for (auto& [id, ft] : m_flowTex) if (ft.tex) glDeleteTextures(1, &ft.tex);
         m_flowTex.clear();
+        for (auto& [id, ft] : m_dyeTex) if (ft.tex) glDeleteTextures(1, &ft.tex);
+        m_dyeTex.clear();
     }
     struct Item { SceneNode* node; glm::mat4 model; float dist; };
     std::vector<Item> opaque, transparent, shielded, decals;

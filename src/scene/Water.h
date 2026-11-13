@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include "Liquid.h"
 #include "OceanWaves.h"
+#include "WaterDye.h"
 
 class Scene;
 class SceneNode;
@@ -55,6 +56,8 @@ public:
         uint64_t  flowKey = 0;            // what it was worked out from (so it's only redone when that changes)
         int       flowVersion = 0;        // goes up when it changes (the renderer re-uploads it)
         float     transparency = 0.4f;
+        // Colour hanging in the water (blood, oil, coloured liquid poured in): see WaterDye.h.
+        WaterDye::Grid dye;
     };
 
     // Water that's tipped over (a water slide, a sloping river). It isn't part of
@@ -78,6 +81,10 @@ public:
     float surfaceOf(const SceneNode* water, float x, float z) const;
     // Push the surface down (amount > 0) or up around `p`: makes ripples.
     void disturb(const glm::vec3& p, float amount, float radius);
+    // Colour getting into the water at `p` (blood from a wound, a drop of oil): it hangs
+    // there as a cloud that drifts, spreads and thins away. False if `p` isn't in a pool
+    // (above the surface counts as not in it). amount 1 = enough to hide a square stud.
+    bool dye(const glm::vec3& p, const glm::vec3& color, float amount, float radius = 1.2f);
     // A tsunami: one huge wave racing out in a ring from `at` (a big explosion in
     // the water). It rises and falls with the real surface (so it's drawn, things
     // float on it and swimmers ride it), shrinks as it spreads, and sweeps up people

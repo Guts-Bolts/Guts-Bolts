@@ -624,6 +624,16 @@ void GameSession::update(float dt, float cameraYaw, bool acceptInput, float swim
     } else {
         m_scene->particles().setLiquidSink(nullptr);
     }
+    // Blood that gets into a pool hangs there as a cloud.
+    {
+        Scene* scene = m_scene;
+        m_scene->particles().setWaterSink([scene](const glm::vec3& p, const glm::vec3& color, float amount) {
+            WaterSystem& water = scene->water();
+            if (!water.dye(p, color, amount, 0.9f + amount)) return false;
+            water.disturb(p, 0.004f, 0.5f);   // (a tiny ring where it went in)
+            return true;
+        });
+    }
     { FrameProfile::Scope prof("game: particles"); m_scene->particles().update(dt, m_scene->world().fluidGravity(), m_physics); }
     m_scene->particles().follow(*m_scene);   // blood stains move with the bodies they're on
     SoftTissue::update(*m_scene, dt);         // dents spring back out

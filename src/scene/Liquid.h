@@ -35,6 +35,8 @@ public:
     // PBF tensile-instability correction (Macklin & Müller): deliberately small;
     // keep the density relaxation and rest-density terms tuned with this value.
     static constexpr float kTensileCorrection = 0.02f;
+    // How much colour one drop of coloured liquid puts in a pool it runs into (WaterDye).
+    static constexpr float kDropDye = 0.3f;
 
     Liquid();
     ~Liquid();

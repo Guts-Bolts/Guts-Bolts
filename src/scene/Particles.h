@@ -103,6 +103,14 @@ public:
     using LiquidSink = std::function<void(GoreKind, const glm::vec3&, const glm::vec3&)>;
     void setLiquidSink(LiquidSink sink) { m_liquidSink = std::move(sink); }
     int  liquidSent() const { return m_liquidSent; }   // (drops handed to the liquid, for tests)
+    // Blood in the water: a drop of blood or oil that is in a pool (it fell in, or came
+    // out of a wound under the surface) is handed over (where, colour, how much) and, if
+    // the answer is yes, becomes a cloud of colour in the water instead (WaterDye).
+    using WaterSink = std::function<bool(const glm::vec3&, const glm::vec3&, float)>;
+    void setWaterSink(WaterSink sink) { m_waterSink = std::move(sink); }
+    int  waterSent() const { return m_waterSent; }     // (drops that became colour in water, for tests)
+    // How much colour a drop this big puts in the water.
+    static float dyeAmount(float size) { return std::clamp(size * 5.0f, 0.15f, 1.2f); }
     // One character's own blood (Humanoid.BloodColor / BloodAmount): while a Look is
     // alive, everything sprayed uses it, then the game's blood comes back.
     struct Look {
@@ -184,5 +192,7 @@ private:
     float m_splatSound = 0.0f;
     LiquidSink m_liquidSink;
     int   m_liquidSent = 0;
+    WaterSink m_waterSink;
+    int   m_waterSent = 0;
     void  toLiquid(GoreKind kind, const glm::vec3& pos, const glm::vec3& vel);
 };

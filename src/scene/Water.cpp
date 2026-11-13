@@ -72,7 +72,9 @@ void WaterSystem::scan(Scene& scene) {
             b.nz = std::max(2, (int)std::ceil(size.z / b.cell) + 1);
             b.h.assign((size_t)b.nx * b.nz, 0.0f);
             b.v.assign(b.h.size(), 0.0f);
+            WaterDye::resize(b.dye, b.nx, b.nz, b.cell, glm::vec2(box.min.x, box.min.z));
         }
+        b.dye.min = glm::vec2(box.min.x, box.min.z);   // (water that moves takes its colour with it)
         b.swell = 0.0f;
         b.flow = glm::vec3(0.0f);
         if (const Attribute* a = attr(n, "WaveScale", Attribute::Number)) b.swell = std::max(0.0f, (float)a->n) * 0.5f;
@@ -261,6 +263,13 @@ float WaterSystem::surfaceOf(const SceneNode* water, float x, float z) const {
 float WaterSystem::dragAt(const glm::vec3& p) const {
     const Body* b = bodyAt(p);
     return b ? b->drag : 1.0f;
+}
+
+bool WaterSystem::dye(const glm::vec3& p, const glm::vec3& color, float amount, float radius) {
+    Body* b = bodyAt(p);
+    // (a little above the surface still counts: the drop is about to go in)
+    if (!b || p.y > b->max.y + heightAt(*b, p.x, p.z) + swellAt(*b, p.x, p.z) + 0.15f) return false;
+    return WaterDye::add(b->dye, p.x, p.z, color, amount, radius);
 }
 
 bool WaterSystem::at(const glm::vec3& p, float* surface, glm::vec3* flow) const {
@@ -473,6 +482,8 @@ void WaterSystem::update(float dt, Scene& scene) {
 
     // The waves themselves.
     for (Body& b : m_bodies) {
+        // Colour in the water drifts with the current and is stirred by the ripples.
+        WaterDye::step(b.dye, dt, b.flowMap.empty() ? nullptr : b.flowMap.data(), glm::vec2(b.flow.x, b.flow.z), b.v.data());
         if (m_viewDist > 0.0f) {   // out past the render distance: the waves wait
             const glm::vec3 nearest = glm::clamp(m_viewer, b.min, b.max);
             if (glm::length(nearest - m_viewer) > m_viewDist) continue;
