@@ -32,6 +32,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerBackgrounds.cpp
     src/server/ServerArt.cpp
     src/server/ServerPaste.cpp
+    src/server/ServerAcademy.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -1071,6 +1072,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerPasteTests gb_version)
     target_link_libraries(ServerPasteTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerPasteTests COMMAND ServerPasteTests)
+
+    # G&B Academy: writing, publishing, lessons, progress, likes, reports (ServerAcademy.cpp).
+    add_executable(ServerAcademyTests tests/ServerAcademyTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerAcademyTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerAcademyTests gb_version)
+    target_link_libraries(ServerAcademyTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerAcademyTests COMMAND ServerAcademyTests)
 
     # Early testers: a testers-only game, tester notes, going public (ServerTesters.cpp).
     add_executable(ServerTestersTests tests/ServerTestersTests.cpp ${GB_SERVER_TEST_SOURCES})

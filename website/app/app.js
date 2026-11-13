@@ -14,6 +14,7 @@ import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // 
 import { mountAssetVersions } from './versions.js';
 import { artPages } from './art.js';   // the Art portal's pages
 import { pastePages } from './paste.js';   // G&B Paste's pages
+import { academyPages } from './academy.js';   // G&B Academy's pages
 import { setupChat, mountDock, mountChatPage, routeChanged, refresh as refreshChat } from './chatdock.js';
 import { getAuctionBidSummary } from '../auction-data.mjs';
 import { GROUPS, productOf, productById, activeLink } from './products.js';
@@ -864,6 +865,8 @@ pages.soon = async (id) => {
 Object.assign(pages, artPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
 // G&B Paste (#/paste, #/pasteview/<id>, #/pastenew): its pages live in paste.js.
 Object.assign(pages, pastePages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, me: () => me }));
+// G&B Academy (#/academy, #/course/<id>, #/lesson/<course>/<lesson>, #/coursewrite): its pages live in academy.js.
+Object.assign(pages, academyPages({ html, show, call, pageCall, signedIn, toast, ago, needSignIn, reportLink, verified, richText, me: () => me }));
 
 // My Feed: what friends and people you follow said, and what they've been up to (playing a
 // game, making something, earning a badge).
@@ -3401,6 +3404,7 @@ function reportsBox(rep, closed) {
     if (x.kind === 'comment') return html`a comment by ${person(x.about)} on <a href="#/game/${x.game}">${x.name}</a>`;
     if (x.kind === 'forum') return html`a forum post by ${person(x.about)} in <a href="#/forum/t/${x.thread}">${x.name}</a>`;
     if (x.kind === 'art') return html`${x.target.includes(':') ? 'a comment' : 'art'} by ${person(x.about)} on <a href="#/artpiece/${x.piece}">${x.name}</a>`;
+    if (x.kind === 'course') return html`the course <a href="#/course/${x.target}">${x.name}</a> by ${person(x.about)}`;
     if (x.kind === 'paste') return html`the paste <a href="#/pasteview/${x.target}">${x.name}</a> by ${person(x.about)}`;
     const href = isCatalogItem(x.assetKind) ? '#/item/' + x.target : '#/library/' + x.target;
     return html`<a href="${href}">${x.name}</a> (${KINDS[x.assetKind] || 'item'}) by ${person(x.about)}`;
@@ -3768,6 +3772,7 @@ function noteLink(n) {
   if (n.kind === 'rating') return '#/configure/' + n.about;   // ratings.js
   if (n.kind === 'testers') return '#/game/' + n.about;   // testers.js
   if (n.kind === 'art') return '#/artpiece/' + n.about;   // art.js
+  if (n.kind === 'academy') return '#/course/' + n.about;   // academy.js
   if (n.kind === 'group') return '#/group/' + n.about;
   if (n.kind === 'comment' || n.kind === 'featured') return '#/game/' + n.about;
   if (n.kind === 'forum') return '#/forum/t/' + n.about;

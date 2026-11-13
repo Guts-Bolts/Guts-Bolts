@@ -309,6 +309,14 @@ private:
     std::string pasteReportName(const std::string& target) const;
     void savePastes();
     void loadPastes();
+    // ServerAcademy.cpp: G&B Academy (academy.json), same rules as worker/academy.js.
+    nlohmann::json academyOp(const std::string& name, User* me, const nlohmann::json& args);
+    bool academyCanSee(const nlohmann::json& c, const User* me) const;
+    nlohmann::json academyJson(const nlohmann::json& c, const User* me, bool full) const;
+    std::string academyReportTarget(const std::string& id, const User& me, std::string& target, std::string& about, nlohmann::json& copy);
+    std::string academyReportName(const std::string& target) const;
+    void saveAcademy();
+    void loadAcademy();
     // ServerTesters.cpp: early testers play a game before it's public.
     nlohmann::json testerOp(const std::string& name, User& me, const nlohmann::json& args);
     bool isTester(const Asset& a, const User& me) const;
@@ -478,6 +486,7 @@ private:
     nlohmann::json m_banLists = nlohmann::json::object();   // ServerBanLists.cpp: list id -> list
     nlohmann::json m_art = {{"pieces", nlohmann::json::object()}, {"posts", nlohmann::json::object()}};   // ServerArt.cpp
     nlohmann::json m_pastes = {{"pastes", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerPaste.cpp
+    nlohmann::json m_academy = {{"courses", nlohmann::json::object()}, {"progress", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerAcademy.cpp
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}
     std::map<std::string, Session> m_sessions;
     // A server whose host left: its players get a while to move to a new one, which one of them hosts.

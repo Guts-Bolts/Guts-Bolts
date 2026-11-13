@@ -360,6 +360,7 @@
 "About"
 "About me"
 "Above 1: lighter in the middle, below 1: darker"
+"Academy"
 "Acceleration"
 "Accept"
 "Accept (unban)"
