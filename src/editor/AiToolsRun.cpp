@@ -216,7 +216,7 @@ const char* const kLuaProperties[] = {
     "Responsiveness", "RigidityEnabled", "ReactionForceEnabled", "ReactionTorqueEnabled", "ApplyAtCenterOfMass",
     "RelativeTo", "Mode", "AlignType", "PrimaryAxisOnly", "ForceLimitMode", "ForceLimitsEnabled",
     "VelocityConstraintMode", "Location", "AnimationId", "Priority", "Occupant", "Disabled", "PrimaryPart", "BreakForce", "Broken",
-    "MaterialVariant", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "StudsPerTile",
+    "MaterialVariant", "BaseMaterial", "ColorMap", "NormalMap", "RoughnessMap", "MetalnessMap", "OrmMap", "StudsPerTile",
     "Roughness", "Metalness", "Glow", "BoneType", "Target", "ChainLength", "Influence",
 };
 

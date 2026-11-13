@@ -24,6 +24,11 @@ void     forget(const std::string& id);
 // A picture made in the program (rows top first, RGBA): `id` shows it from now on (made
 // again over the old one each call). For previews, like the Material Graph's.
 unsigned put(const std::string& id, const unsigned char* rgba, int width, int height);
+// One packed picture made from up to three grey ones (OrmPack.h): occlusion in red,
+// roughness in green, metalness in blue. Made the first time and kept, like get(). Any
+// id may be "" (none). `has` says which channels really came from a picture. 0 = not
+// there yet (still downloading) or none of them is a picture.
+unsigned orm(const std::string& occlusion, const std::string& roughness, const std::string& metalness, bool has[3]);
 void     clear();   // before the GL context goes away
 
 } // namespace Textures

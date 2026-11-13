@@ -1301,6 +1301,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(InstancingTests PRIVATE gb_engine)
     add_test(NAME InstancingTests COMMAND InstancingTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
+    # Packed material pictures: occlusion, roughness and metalness in one (OrmMap).
+    add_executable(OrmPackTests tests/OrmPackTests.cpp)
+    target_link_libraries(OrmPackTests PRIVATE gb_engine)
+    add_test(NAME OrmPackTests COMMAND OrmPackTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)
     target_link_libraries(GroundworkTests PRIVATE gb_engine)
