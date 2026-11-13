@@ -3,6 +3,7 @@
 #include "Scene.h"
 #include "SceneNode.h"
 #include "Terrain.h"
+#include "Shatter.h"
 
 #include <algorithm>
 #include <cmath>
@@ -80,10 +81,90 @@ void spawnDownburst(Scene& scene, const glm::vec3& ground, float strength, float
     st.publish = 0.0f;
 }
 
+float quakeStrength(float magnitude) {
+    const float x = std::clamp((magnitude - 3.0f) / 5.5f, 0.0f, 1.0f);
+    return x * std::sqrt(x);
+}
+
+void startEarthquake(Scene& scene, float magnitude, float seconds) {
+    State& st = scene.storms();
+    st.quakePeak = quakeStrength(std::clamp(magnitude, 1.0f, 9.5f));
+    st.quakeLife = std::clamp(seconds, 3.0f, 300.0f);
+    st.quakeAge = 0.0f;
+    st.publish = 0.0f;
+    if (st.quakePeak > 0.0f) scene.environment().quake = std::max(scene.environment().quake, 0.02f);
+}
+
+void stopEarthquake(Scene& scene) {
+    State& st = scene.storms();
+    st.quakeLife = st.quakePeak = 0.0f;
+    scene.environment().quake = 0.0f;
+}
+
+glm::vec3 quakeAccel(const State& st) {
+    if (st.quake <= 0.0f) return glm::vec3(0.0f);
+    const float t = st.quakeClock;
+    // A few waves on top of each other, so it never repeats neatly. Mostly sideways.
+    const float x = std::sin(t * 13.2f) + 0.6f * std::sin(t * 23.3f + 1.3f) + 0.4f * std::sin(t * 33.1f + 0.4f);
+    const float z = std::sin(t * 11.7f + 2.1f) + 0.6f * std::sin(t * 20.9f + 0.2f) + 0.4f * std::sin(t * 36.7f + 4.0f);
+    const float y = std::sin(t * 17.9f + 0.7f) * 0.35f;
+    return glm::vec3(x, y, z) * (st.quake * 95.0f);
+}
+
+float cameraShake(const Scene& scene, const glm::vec3& at) {
+    const State& st = scene.storms();
+    float shake = st.quake * 3.2f;
+    if (st.tornado > 0.0f) {
+        const float r = glm::length(glm::vec2(at.x - st.tornadoPos.x, at.z - st.tornadoPos.z));
+        const float core = coreRadius(st.tornado);
+        shake += 0.25f * st.tornado * (1.0f - smooth(core, core * 8.0f, r));
+    }
+    return shake;
+}
+
+float hailAt(const Scene& scene, const glm::vec3& p) {
+    const Environment& e = scene.environment();
+    if (e.weather != (int)Weather::Supercell) return 0.0f;
+    // The hail falls next to the rain-free base, in front of the wall cloud.
+    const glm::vec3 core = e.stormCenter + scene.storms().cellHeading * 140.0f;
+    const float r = glm::length(glm::vec2(p.x - core.x, p.z - core.z));
+    return (1.0f - smooth(220.0f, 420.0f, r)) * (0.35f + 0.65f * std::clamp(e.weatherAmount, 0.0f, 1.0f));
+}
+
+namespace {
+// Things that can break (Breakable) and that the tornado's wind or the earthquake is
+// strong enough to bring down, a few at a time.
+void wreck(Scene& scene, State& st, float tornadoNow, float quakeNow) {
+    struct Target { SceneNode* part; glm::vec3 at; float force; };
+    std::vector<Target> targets;
+    scene.forEach([&](SceneNode* n) {
+        if (targets.size() >= 6 || !n->isPart() || !Shatter::breakable(*n)) return;
+        const glm::vec3 p(n->worldMatrix()[3]);
+        // A tornado: where its wind is faster than the part can take (EF0-1 mostly spare
+        // walls; EF3 and up take nearly everything Breakable in their path).
+        if (tornadoNow > 0.0f) {
+            const float wind = glm::length(tornadoWind(st, p));
+            if (wind > Shatter::breakSpeed(*n) * 1.6f) {
+                const glm::vec3 to = glm::vec3(st.tornadoPos.x - p.x, 0.0f, st.tornadoPos.z - p.z);
+                const float len = glm::length(to);
+                targets.push_back({n, p + (len > 1e-3f ? to / len : glm::vec3(1, 0, 0)) * 0.5f, std::clamp(wind / 120.0f, 0.3f, 1.2f)});
+                return;
+            }
+        }
+        // An earthquake: the stronger, the more comes down each moment.
+        if (quakeNow > 0.4f && rnd(st) < (quakeNow - 0.4f) * 0.25f)
+            targets.push_back({n, p - glm::vec3(0.0f, 0.4f, 0.0f), 0.3f + quakeNow * 0.5f});
+    });
+    for (const Target& t : targets) Shatter::breakPart(scene, t.part, t.at, t.force);
+}
+} // namespace
+
 void clear(Scene& scene) {
     State& st = scene.storms();
     st.tornadoLife = st.downburstLife = 0.0f;
     st.tornadoPeak = st.downburstPeak = 0.0f;
+    st.quakeLife = st.quakePeak = 0.0f;
+    scene.environment().quake = 0.0f;
     Environment& e = scene.environment();
     e.tornado = e.downburst = 0.0f;
     e.tornadoVel = glm::vec3(0.0f);
@@ -171,6 +252,25 @@ void simulate(Scene& scene, float dt) {
                             (1.0f - smooth(st.downburstLife - 6.0f, st.downburstLife, st.downburstAge));
     }
 
+    // The earthquake: a light trembling first, then the heavy shaking, then it dies away.
+    float quakeNow = 0.0f;
+    if (st.quakeLife > 0.0f) {
+        st.quakeAge += dt;
+        if (st.quakeAge >= st.quakeLife) st.quakeLife = 0.0f;
+        else {
+            const float u = st.quakeAge / st.quakeLife;
+            const float first = 0.22f * smooth(0.0f, 0.04f, u);                    // the P wave
+            const float main = smooth(0.15f, 0.3f, u) * (1.0f - smooth(0.45f, 1.0f, u));   // the S wave
+            quakeNow = st.quakePeak * std::max(first * (1.0f - smooth(0.8f, 1.0f, u)), main);
+        }
+    }
+    // What the wind and the shaking break.
+    st.damage -= dt;
+    if (st.damage <= 0.0f && (tornadoNow > 0.5f || quakeNow > 0.4f)) {
+        st.damage = 0.3f;
+        wreck(scene, st, tornadoNow, quakeNow);
+    }
+
     // Tell everyone, a few times a second (rounded, so the Lighting isn't sent every frame).
     st.publish -= dt;
     if (st.publish <= 0.0f) {
@@ -183,6 +283,8 @@ void simulate(Scene& scene, float dt) {
         }
         const float d = std::round(downburstNow * 20.0f) / 20.0f;
         if (d > 0.0f || e.downburst > 0.0f) e.downburst = st.downburstLife > 0.0f ? std::max(d, 0.05f) : 0.0f;
+        const float q = std::round(quakeNow * 50.0f) / 50.0f;
+        if (q > 0.0f || e.quake > 0.0f) e.quake = st.quakeLife > 0.0f ? std::max(q, 0.02f) : 0.0f;
         if (supercell) e.stormCenter = rounded(e.stormCenter + st.cellHeading * 5.0f * 0.2f, 0.25f);
     }
 }
@@ -206,6 +308,9 @@ void follow(Scene& scene, float dt) {
     if (e.downburst > 0.0f) st.downburstPos = e.downburstPos;
     st.downburst += (e.downburst - st.downburst) * k;
     if (e.downburst <= 0.0f && st.downburst < 0.02f) st.downburst = 0.0f;
+    st.quake += (e.quake - st.quake) * k;
+    if (e.quake <= 0.0f && st.quake < 0.01f) st.quake = 0.0f;
+    st.quakeClock += dt;
 }
 
 void snap(Scene& scene) {
@@ -215,11 +320,12 @@ void snap(Scene& scene) {
     st.tornadoPos = e.tornadoPos;
     st.downburst = e.downburst;
     st.downburstPos = e.downburstPos;
+    st.quake = 0.0f;   // (the ground doesn't shake while you build)
 }
 
 bool active(const Scene& scene) {
     const State& st = scene.storms();
-    return st.tornado > 0.0f || st.downburst > 0.0f;
+    return st.tornado > 0.0f || st.downburst > 0.0f || st.quake > 0.0f;
 }
 
 glm::vec3 tornadoWind(const State& st, const glm::vec3& p) {
@@ -293,16 +399,15 @@ float airBoost(const Scene& scene, const glm::vec3& p) {
 
 glm::vec3 characterPush(const Scene& scene, const glm::vec3& p, const glm::vec3& velocity) {
     const State& st = scene.storms();
+    glm::vec3 push = quakeAccel(st);   // (the ground moving under your feet)
     const glm::vec3 wind = tornadoWind(st, p) + downburstWind(st, p);
-    const float speed = glm::length(wind);
-    if (speed < 12.0f) return glm::vec3(0.0f);   // (a breeze doesn't move a person)
+    if (glm::length(wind) < 12.0f) return push;   // (a breeze doesn't move a person)
     // Like the air on parts: the push grows with the square of how much faster the
     // wind is than you. About 60 studs/s shoves you along; over 125 lifts you.
     const glm::vec3 rel = wind - velocity;
     const float rs = glm::length(rel);
-    if (rs < 1e-3f) return glm::vec3(0.0f);
-    const float push = std::min(0.0062f * rs * rs, 260.0f);
-    return rel / rs * push;
+    if (rs < 1e-3f) return push;
+    return push + rel / rs * std::min(0.0062f * rs * rs, 260.0f);
 }
 
 } // namespace Storms

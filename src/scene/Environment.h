@@ -68,6 +68,7 @@ struct Environment {
     // supercell, tornadoes) form by themselves unless this is off; a game can always
     // start its own. The numbers below say what is where right now: the host sets
     // them, every player follows them.
+    float     quake         = 0.0f;   // an earthquake right now: how hard the ground shakes, 0..1 (Storms.h)
     bool      severeWeather = true;
     glm::vec3 stormCenter   = {0.0f, 0.0f, 0.0f};   // the supercell's middle (x, z)
     float     tornado       = 0.0f;                 // its strength now on the EF scale (0 = none .. 5)

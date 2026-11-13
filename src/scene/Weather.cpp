@@ -195,6 +195,7 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
         if (const float len = glm::length(g); len > 38.0f) g *= 38.0f / len;
         wind += g;
     }
+    const float hail = snow ? 0.0f : Storms::hailAt(scene, eye);
     m_streaks.reserve(m_drops.size());
     for (Drop& d : m_drops) {
         glm::vec3 vel(wind.x, -d.speed, wind.y);
@@ -218,7 +219,14 @@ void WeatherSim::update(Scene& scene, const glm::vec3& eye, float dt) {
             continue;
         }
         Streak s;
-        if (snow) {
+        if (!snow && hail > 0.0f && d.seed < hail * 0.45f) {
+            // A hailstone: a short white blur, falling faster than the rain round it.
+            d.pos.y -= d.speed * 0.5f * dt;
+            s.top = d.pos - vel * (1.0f / 110.0f);
+            s.bottom = d.pos;
+            s.width = 0.16f + 0.5f * d.seed;
+            s.alpha = 2.6f;   // (rain is drawn faint: this makes the ice solid white)
+        } else if (snow) {
             s.width = 0.07f + 0.06f * d.seed;
             s.top = d.pos + glm::vec3(0.0f, s.width * 0.5f, 0.0f);
             s.bottom = d.pos - glm::vec3(0.0f, s.width * 0.5f, 0.0f);

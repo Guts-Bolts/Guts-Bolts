@@ -1240,6 +1240,20 @@ void Physics::stepParts(Scene& scene, float dt, std::vector<uint64_t>& fallen) {
                 }
                 b.v -= dir * std::min(push, speed * 0.5f);   // (never more than halves the speed in a step: no flipping back)
             }
+        // An earthquake (Storms.h): the ground is thrown about under everything loose.
+        // Seen from the ground, that is everything being pushed the other way.
+        if (storm && scene.storms().quake > 0.0f) {
+            const glm::vec3 jolt = -Storms::quakeAccel(scene.storms());
+            const bool strong = glm::length(jolt) > g * 0.25f;
+            for (auto& b : bodies) {
+                if (!b.dynamic || glm::length(b.v) > 30.0f) continue;   // (things flying through the air don't feel the ground)
+                if (!b.awake) {
+                    if (!strong) continue;
+                    b.awake = true; b.node->sleepTime = 0.0f;
+                }
+                b.v += jolt * h;
+            }
+        }
         // Force zones: wind, push and pull on whatever loose part is inside one.
         for (const Zone& z : zones)
             for (auto& b : bodies) {

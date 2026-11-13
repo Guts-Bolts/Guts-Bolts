@@ -51,6 +51,11 @@ struct State {
     float     tornadoAge = 0.0f, tornadoLife = 0.0f, tornadoPeak = 0.0f;
     glm::vec3 tornadoAt{0.0f};
     float     downburstAge = 0.0f, downburstLife = 0.0f, downburstPeak = 0.0f;
+    // Earthquake: followed (quake) and the host's plan.
+    float     quake = 0.0f;                // how hard the ground shakes right now, 0..1
+    float     quakeClock = 0.0f;           // (runs the shaking pattern)
+    float     quakeAge = 0.0f, quakeLife = 0.0f, quakePeak = 0.0f;
+    float     damage = 0.0f;               // seconds until the next look for things to break
     float     publish = 0.0f;
     float     clock = 0.0f;
     uint32_t  rng = 0x51ED270Bu;
@@ -69,6 +74,23 @@ void snap(Scene& scene);
 void spawnTornado(Scene& scene, const glm::vec3& foot, float strength, float seconds = 75.0f);
 void spawnDownburst(Scene& scene, const glm::vec3& ground, float strength = 1.0f, float seconds = 22.0f);
 void clear(Scene& scene);   // stop every tornado and downburst now
+
+// ---- Earthquakes ----------------------------------------------------------------
+// The ground doesn't really move here: instead everything loose is pushed the other
+// way, which is the same thing seen from the ground. Like a real one it comes in two
+// parts: a light, fast trembling first (the P wave), then the heavy rolling that does
+// the damage (the S wave), dying away slowly.
+// Magnitude, like the news says it: 4 rattles the shelves, 6 slides furniture and
+// cracks weak walls, 7 knocks people over and brings Breakable things down, 8+ wrecks.
+void  startEarthquake(Scene& scene, float magnitude, float seconds = 20.0f);
+void  stopEarthquake(Scene& scene);
+float quakeStrength(float magnitude);            // 0..1 at its worst
+// How the ground is being thrown about right now (studs / second², mostly sideways).
+glm::vec3 quakeAccel(const State& st);
+// How hard a camera at `at` should shake (earthquake, and the rumble near a tornado).
+float cameraShake(const Scene& scene, const glm::vec3& at);
+// Hail: how much of what falls at `p` is ice (0..1). Under a supercell's core only.
+float hailAt(const Scene& scene, const glm::vec3& p);
 
 // Is anything blowing besides the plain wind? (Cheap: lets physics skip the rest.)
 bool active(const Scene& scene);

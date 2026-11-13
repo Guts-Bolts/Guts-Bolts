@@ -19,6 +19,7 @@ because it's nice. They were cut shorter, made mono and saved as Ogg.
 | `fire_loop` | Fire Crackling | AntumDeluge | https://opengameart.org/content/fire-crackling |
 | `breath_tired` | Breathing Tired | mikeask | https://opengameart.org/content/breathing-tired |
 | `thunder_*` | Rain + Long Thunder | wuxiascrub | https://opengameart.org/content/rain-long-thunder |
+| `quake_rumble` | Earthquake and Open Sesame | mieki256 | https://opengameart.org/content/earthquake-and-open-sesame |
 | `storm_wind` | Wind Whoosh Loop | SketchMan3 | https://opengameart.org/content/wind-whoosh-loop |
 | `whiz_*` | Swishes Sound Pack | artisticdude | https://opengameart.org/content/swishes-sound-pack |
 

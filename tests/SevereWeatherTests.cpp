@@ -205,6 +205,62 @@ int main(int argc, char** argv) {
     step(60 * 7);
     check(scene.environment().downburst == 0.0f, "and blows itself out");
 
+    // ---- Earthquakes -----------------------------------------------------------------
+    check(Storms::quakeStrength(4.0f) < 0.1f && Storms::quakeStrength(6.0f) > 0.3f && Storms::quakeStrength(6.0f) < 0.5f &&
+          Storms::quakeStrength(8.5f) > 0.95f, "magnitude 4 is a rattle, 6 is serious, 8.5 is the worst");
+    check(run(session, R"(
+        for _, n in ipairs({'Loose1','Loose2','Loose3','Loose4','Loose5','Loose6'}) do
+            local old = workspace:FindFirstChild(n) if old then old:Destroy() end
+        end
+        local b = Instance.new('Part')
+        b.Name = 'Crate'
+        b.Size = Vector3.new(3, 3, 3)
+        b.Position = Vector3.new(120, 60.5, 120)
+        b.Parent = workspace
+        local w = Instance.new('Part')
+        w.Name = 'WeakWall'
+        w.Anchored = true
+        w.Size = Vector3.new(12, 10, 1)
+        w.Position = Vector3.new(140, 64, 120)
+        w:SetAttribute('Breakable', true)
+        w.Parent = workspace
+    )", err), "a crate and a Breakable wall: " + err);
+    step(60);
+    const glm::vec3 crate0 = named(scene, "Crate") ? glm::vec3(named(scene, "Crate")->worldMatrix()[3]) : glm::vec3(0.0f);
+    check(run(session, "workspace:StartEarthquake(4, 8)", err), "workspace:StartEarthquake: " + err);
+    step(60 * 4);
+    check(scene.storms().quake > 0.0f && scene.storms().quake < 0.12f, "a magnitude 4 shakes a little");
+    check(Storms::cameraShake(scene, glm::vec3(0.0f)) > 0.0f, "the camera shakes");
+    if (SceneNode* c = named(scene, "Crate"))
+        check(glm::length(glm::vec3(c->worldMatrix()[3]) - crate0) < 0.5f, "but a crate stays where it is");
+    check(named(scene, "WeakWall") != nullptr, "and walls stay up");
+    step(60 * 5);
+    check(scene.environment().quake == 0.0f, "it stops by itself");
+    check(run(session, "workspace:StartEarthquake(8, 16)", err), "a magnitude 8: " + err);
+    step(30);
+    const float early = scene.storms().quake;
+    float worst = 0.0f, furthestCrate = 0.0f;
+    for (int i = 0; i < 60 * 9; ++i) {
+        session.update(1.0f / 60.0f, 0.0f, false);
+        worst = std::max(worst, scene.storms().quake);
+        if (SceneNode* c = named(scene, "Crate")) furthestCrate = std::max(furthestCrate, glm::length(glm::vec3(c->worldMatrix()[3]) - crate0));
+    }
+    check(early > 0.0f && early < worst * 0.4f, "it starts with a light trembling before the heavy shaking");
+    check(worst > 0.7f, "a magnitude 8 shakes hard");
+    check(furthestCrate > 1.0f, "loose things are thrown about (" + std::to_string(furthestCrate) + " studs)");
+    check(named(scene, "WeakWall") == nullptr, "and Breakable walls come down");
+    check(run(session, "assert(workspace.EarthquakeIntensity > 0) workspace:StopEarthquake() assert(workspace.EarthquakeIntensity == 0)", err),
+          "workspace.EarthquakeIntensity and StopEarthquake: " + err);
+    step(60);
+    check(scene.storms().quake == 0.0f && !Storms::active(scene), "the ground is still again");
+
+    // Hail falls under a supercell's core, and only there.
+    {
+        const glm::vec3 core = scene.environment().stormCenter + scene.storms().cellHeading * 140.0f;
+        check(Storms::hailAt(scene, core) > 0.3f, "hail falls under the supercell's core");
+        check(Storms::hailAt(scene, core + glm::vec3(900.0f, 0.0f, 0.0f)) == 0.0f, "not away from it");
+    }
+
     // Left alone, a supercell grows its own tornadoes.
     check(run(session, "game.Lighting.SevereWeather = true", err), "SevereWeather back on: " + err);
     bool formed = false, burst = false;

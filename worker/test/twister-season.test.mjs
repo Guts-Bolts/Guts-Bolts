@@ -10,7 +10,7 @@ test('the update is on the Updates page', () => {
   assert.ok(BUILT_IN_UPDATES.includes(update));
   assert.equal(update.id, 'twister-season');
   const text = [update.name, update.summary, ...update.items].join(' ');
-  for (const word of ['Cumulus', 'Cumulonimbus', 'Supercell', 'Tornadoes', 'Downbursts', 'Lighting:SpawnTornado', 'Lighting.CloudType', 'Low and Medium'])
+  for (const word of ['Cumulus', 'Cumulonimbus', 'Supercell', 'Tornadoes', 'Downbursts', 'Lighting:SpawnTornado', 'Lighting.CloudType', 'Low and Medium', 'Earthquakes', 'Hail'])
     assert.ok(text.includes(word), `mentions ${word}`);
   assert.ok(!/marketplace/i.test(text));
 });

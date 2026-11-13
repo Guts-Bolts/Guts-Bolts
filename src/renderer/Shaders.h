@@ -1083,7 +1083,11 @@ float cloudAt(vec3 p, bool fine) {
     if (fine) {
         // Small lumps eat into the edges (the cauliflower look).
         vec3 f = vec3(q.x, p.y, q.y);
-        float lumps = cn(f / 310.0) * 0.6 + cn(f.zxy / 113.0 + 0.4) * 0.4;
+        // (Each size is turned a different way, and a slow third one varies how much is
+        // eaten, so the repeating block never shows as a grid on a big flat anvil.)
+        vec3 f2 = vec3(f.x * 0.8 - f.z * 0.6, f.y * 1.3, f.x * 0.6 + f.z * 0.8);
+        vec3 f3 = vec3(f.x * 0.53 + f.z * 0.85, f.y, f.z * 0.53 - f.x * 0.85);
+        float lumps = cn(f / 310.0) * 0.45 + cn(f2 / 131.0 + 0.4) * 0.3 + cn(f3 / 787.0 + 0.7) * 0.25;
         d = clamp((d - (1.0 - lumps) * (uCloudShape == 2 ? 0.25 : 0.6)) / 0.5, 0.0, 1.0);
     }
     return d;

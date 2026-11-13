@@ -1497,6 +1497,11 @@ void Player::update(float dt, const glm::vec3& moveIn, bool jumpIn, Physics& phy
             m_velocity.y = std::max(m_velocity.y, 3.0f);
         }
         if (!m_grounded && !m_climbing) m_velocity += stormPush * dt;
+        // A big earthquake takes your feet from under you now and then.
+        const float quake = m_scene->storms().quake;
+        if (quake > 0.55f && m_grounded && !tripped() && glm::length(stormPush) > 60.0f * quake &&
+            std::fmod(m_scene->storms().quakeClock * 7.3f + std::abs(pos.x) * 0.37f, 1.0f) < dt * (quake - 0.45f) * 3.0f)
+            trip(1.2f + quake, glm::vec3(stormPush.z, 0.0f, -stormPush.x) * 0.05f);
     }
     characterMovers(dt);
 

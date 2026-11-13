@@ -616,7 +616,7 @@ double captionClock() {
 std::string builtinCaption(const std::string& id) {
     static const std::pair<const char*, const char*> words[] = {
         {"jump", "Jump"}, {"coin", "Coin"}, {"oof", "Oof!"}, {"explosion", "Explosion"}, {"splat", "Splat"}, {"hit", "Hit"},
-        {"win", "Win!"}, {"boing", "Boing"}, {"spawn", "Spawn"}, {"respawn", "Respawn"}, {"splash", "Splash"}, {"thunder", "Thunder"}, {"storm_wind", "Roaring wind"}};
+        {"win", "Win!"}, {"boing", "Boing"}, {"spawn", "Spawn"}, {"respawn", "Respawn"}, {"splash", "Splash"}, {"thunder", "Thunder"}, {"storm_wind", "Roaring wind"}, {"quake_rumble", "Ground rumbling"}};
     for (const auto& [k, w] : words) if (id == k) return w;
     return "";
 }

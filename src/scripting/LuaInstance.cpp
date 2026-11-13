@@ -2515,6 +2515,19 @@ int inst_index(lua_State* L) {
         if (is(k, "LiquidBlood")) { lua_pushboolean(L, w.liquidBlood); return 1; }
         if (is(k, "SoftTissue"))  { lua_pushboolean(L, w.softTissue); return 1; }
         if (is(k, "GlobalWind"))  { LuaApi::pushVector3(L, w.globalWind); return 1; }
+        if (is(k, "EarthquakeIntensity")) { lua_pushnumber(L, E(L)->scene()->environment().quake); return 1; }
+        // workspace:StartEarthquake(magnitude 1-9.5, seconds = 20), workspace:StopEarthquake()
+        if (is(k, "StartEarthquake")) {
+            lua_pushcfunction(L, [](lua_State* L) -> int {
+                Storms::startEarthquake(*E(L)->scene(), (float)luaL_checknumber(L, 2), (float)luaL_optnumber(L, 3, 20.0));
+                return 0;
+            });
+            return 1;
+        }
+        if (is(k, "StopEarthquake")) {
+            lua_pushcfunction(L, [](lua_State* L) -> int { Storms::stopEarthquake(*E(L)->scene()); return 0; });
+            return 1;
+        }
         if (is(k, "AirDensity"))  { lua_pushnumber(L, w.airDensity); return 1; }
         if (is(k, "Injuries"))    { lua_pushboolean(L, w.injuries); return 1; }
         if (is(k, "Stamina"))     { lua_pushboolean(L, w.stamina); return 1; }

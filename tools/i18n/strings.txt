@@ -2021,6 +2021,7 @@
 "Green-blind (deuteranopia)"
 "Grid"
 "Ground Bounce"
+"Ground rumbling"
 "Group"
 "Group Bolts"
 "Group as Model"
