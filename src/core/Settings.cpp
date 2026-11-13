@@ -74,6 +74,7 @@ void GraphicsSettings::applyLevels(int level) {
 
 void GraphicsSettings::setDevice(const std::string& gpuName, Scalability::Platform platform) {
     m_device = Scalability::profileFor(gpuName, platform);
+    m_softwareGpu = Scalability::isSoftwareGpu(gpuName);
     // A preset picks again with the caps; Custom keeps your own mix (the renderer's
     // values still can't go over the caps: see groupLevel).
     if (quality != Custom) applyPreset(quality);

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdlib>
 #include <string>
 #include "Scalability.h"
 
@@ -111,7 +112,14 @@ struct GraphicsSettings {
     int   volumetricFog() const { int l = groupLevel(Scalability::PostProcess); return l >= 2 ? l - 1 : 0; }
     // Real 3D clouds (cumulus heaps, thunderheads with anvils, the supercell), from High
     // up (0 = the painted flat clouds). High 28 steps a ray, Epic 44, Cinematic 72.
-    int   volumetricClouds() const { int l = groupLevel(Scalability::PostProcess); return l >= 2 ? l - 1 : 0; }
+    // (Never when the processor is doing the drawing, with no real graphics chip: walking
+    // a ray for every pixel of sky is far too slow there. GB_FORCE_3D_CLOUDS=1 for pictures.)
+    int   volumetricClouds() const {
+        static const bool force = std::getenv("GB_FORCE_3D_CLOUDS") != nullptr;
+        if (m_softwareGpu && !force) return 0;
+        int l = groupLevel(Scalability::PostProcess);
+        return l >= 2 ? l - 1 : 0;
+    }
     // Detail levels for meshes (MeshLod.h): far-away meshes are drawn as simpler copies.
     // How soon they swap, from the View distance group: Low 1.6x sooner, Medium 1.3x,
     // High as designed (a grid cell is about 3 pixels), Epic later, Cinematic never.
@@ -162,6 +170,7 @@ private:
     void applyAutoLevel(int level);
     void applyLevels(int level);                    // every group at `level` (no quality change)
     Scalability::DeviceProfile m_device;
+    bool m_softwareGpu = false;   // llvmpipe, SwiftShader...: the processor draws
     int   m_autoStart = 0;                          // where Auto starts (from the benchmark)
     int   m_autoLevel = 0;
     float m_autoClock = 0.0f, m_autoFps = 0.0f;
