@@ -24,6 +24,7 @@ import { installTesters, isTester } from './testers.js';   // early testers: a f
 import { installRatings, ratingAllowed } from './ratings.js';   // content levels from a few questions
 import { installLaunchpad } from './launchpad.js';   // Launchpad: staff help picked creators build big games
 import { installBackgrounds } from './backgrounds.js';   // a picture behind your avatar on your profile
+import { installExperiments, EXPERIMENTS_COSTLY, EXPERIMENTS_GUEST_OK } from './experiments.js';   // A/B tests for creators: versions, custom metrics, results
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
 import { installAcademy, ACADEMY_LOOK_ONLY, ACADEMY_COSTLY } from './academy.js';   // G&B Academy: courses anyone can write
@@ -508,6 +509,7 @@ const kStaffName = 'Guts';
 Object.assign(COSTLY, ART_COSTLY);   // art.js
 Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
 Object.assign(COSTLY, ACADEMY_COSTLY);   // academy.js
+Object.assign(COSTLY, EXPERIMENTS_COSTLY);   // experiments.js
 const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'game.leaderboards', 'gamelog.list', 'events.list']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
@@ -552,6 +554,7 @@ export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.m
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
 for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...ACADEMY_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
 
 // In-game chat translation: each player's app asks for the lines that were said in another
 // language, and Cloudflare's translator (Workers AI, the "AI" binding) turns them into theirs.
@@ -3352,6 +3355,7 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
     if (name.startsWith('banlist.') || name === 'game.banLists' || name === 'game.ban') return this.banListOp(name, me, args);   // banlists.js
     if (name === 'profile.background') return this.backgroundOp(name, me, args);   // backgrounds.js
+    if (name.startsWith('experiments.') || name === 'analytics.log') return this.experimentsOp(name, me, args);   // experiments.js
     if (name.startsWith('launchpad.')) return this.launchpadOp(name, me, args);   // launchpad.js
     if (name === 'game.rating' || name === 'game.rate' || name === 'rating.limit') return this.ratingOp(name, me, args);   // ratings.js
     if (['game.testers', 'game.addTester', 'game.removeTester', 'game.testerNote', 'game.amTester'].includes(name)) return this.testerOp(name, me, args);   // testers.js
@@ -6978,6 +6982,7 @@ installFyxaCloud(GbServerObject);
 installRatings(GbServerObject);
 installLaunchpad(GbServerObject);
 installBackgrounds(GbServerObject);
+installExperiments(GbServerObject);
 installArt(GbServerObject);
 installPaste(GbServerObject);
 installAcademy(GbServerObject);

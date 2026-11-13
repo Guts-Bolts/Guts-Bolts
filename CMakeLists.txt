@@ -28,6 +28,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerExtras.cpp
     src/server/ServerBanLists.cpp
     src/server/ServerTesters.cpp
+    src/server/ServerExperiments.cpp
     src/server/ServerRatings.cpp
     src/server/ServerBackgrounds.cpp
     src/server/ServerArt.cpp
@@ -547,6 +548,8 @@ add_library(gb_engine STATIC
     src/scripting/LuaInstance.cpp
     src/scripting/ScriptRemotes.cpp
     src/scripting/SpatialQueries.cpp
+    src/scripting/Shapecasts.cpp
+    src/scripting/Experiments.cpp
     src/scripting/LuaRealism.cpp
     src/scripting/ServerMemory.cpp
     src/scripting/ScriptActions.cpp
@@ -1087,6 +1090,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerTestersTests gb_version)
     target_link_libraries(ServerTestersTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerTestersTests COMMAND ServerTestersTests)
+    # Experiments (A/B tests): versions, metrics from the game's server, results (ServerExperiments.cpp).
+    add_executable(ServerExperimentsTests tests/ServerExperimentsTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerExperimentsTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerExperimentsTests gb_version)
+    target_link_libraries(ServerExperimentsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerExperimentsTests COMMAND ServerExperimentsTests)
     # Age ratings: questions -> rating, history, players' rating limit (ServerRatings.cpp).
     add_executable(ServerRatingsTests tests/ServerRatingsTests.cpp ${GB_SERVER_TEST_SOURCES})
     target_include_directories(ServerRatingsTests PRIVATE src/ ${GB_GENERATED})
@@ -1370,6 +1379,17 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(SpatialQueriesTests tests/SpatialQueriesTests.cpp)
     target_link_libraries(SpatialQueriesTests PRIVATE gb_engine)
     add_test(NAME SpatialQueriesTests COMMAND SpatialQueriesTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # workspace:Spherecast / Blockcast / Shapecast with margins, size gradients and overrides.
+    add_executable(ShapecastTests tests/ShapecastTests.cpp)
+    target_link_libraries(ShapecastTests PRIVATE gb_engine)
+    add_test(NAME ShapecastTests COMMAND ShapecastTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    # ExperimentService / AnalyticsService and the version sum the website uses.
+    add_executable(ExperimentsTests tests/ExperimentsTests.cpp)
+    target_link_libraries(ExperimentsTests PRIVATE gb_engine)
+    add_test(NAME ExperimentsTests COMMAND ExperimentsTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Cutscenes: the camera flies through the shots in order and comes back.

@@ -91,6 +91,7 @@ const std::vector<Entry>& all() {
          "How a tween moves", true},
         {"RaycastParams.new", "RaycastParams.new() -> RaycastParams", "Settings for workspace:Raycast (FilterDescendantsInstances...)", true},
         {"OverlapParams.new", "OverlapParams.new() -> OverlapParams", "Settings for GetPartsInPart / GetPartBoundsInBox...", true},
+        {"ShapecastParams.new", "ShapecastParams.new() -> RaycastParams", "RaycastParams with Margin and SizeGradient for shapecasts", true},
 
         // --- Services and globals ---
         {"game", "game", "The whole game. game:GetService(\"Players\")", true},
@@ -129,6 +130,12 @@ const std::vector<Entry>& all() {
         {"GetPartBoundsInRadius", "workspace:GetPartBoundsInRadius(position, radius, params?) -> {BasePart}", "Parts near a spot", false},
         {"GetPartBoundsInBox", "workspace:GetPartBoundsInBox(cframe, size, params?) -> {BasePart}", "Parts in a box", false},
         {"GetPartsInPart", "workspace:GetPartsInPart(part, params?) -> {BasePart}", "Parts touching a part", false},
+        {"Spherecast", "workspace:Spherecast(position, radius, direction, params?) -> RaycastResult?",
+         "Slides a ball along; the first thing it bumps into. params.Margin / .SizeGradient", false},
+        {"Blockcast", "workspace:Blockcast(cframe, size, direction, params?) -> RaycastResult?",
+         "Slides a box along; the first thing it bumps into", false},
+        {"Shapecast", "workspace:Shapecast(part, direction, params?, {CFrame, Size}?) -> RaycastResult?",
+         "Slides a part's own shape along (from somewhere else with the overrides)", false},
         {"Create", "TweenService:Create(object, tweenInfo, {Property = goal}) -> Tween", "Smoothly changes properties. Call :Play() on it", false},
         {"Play", "tween:Play() / sound:Play() / track:Play() / CutsceneService:Play(cutscene)", "Starts it (a cutscene waits until it's over)", false},
         {"GetMouse", "player:GetMouse() -> Mouse", "mouse.Hit, mouse.Target, mouse.Button1Down (LocalScripts only)", false},

@@ -8,6 +8,7 @@ import { startLive, listen, stopListening, onLive } from './live.js';
 import { mountGameWeb } from './gameweb.js';
 import { mountBanLists, mountGameBans, mountBanNotice } from './banlists.js';
 import { mountGameTesters, mountTesterNote } from './testers.js';
+import { mountGameExperiments } from './experiments.js';
 import { ratingPill, mountGameRating, mountRatingWhy, mountRatingLimit } from './ratings.js';   // content levels (how intense a game is)
 import { mountLaunchpad, mountLaunchpadShelf, launchpadPill } from './launchpad.js';   // Launchpad creator program
 import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // profile backgrounds
@@ -2557,6 +2558,7 @@ pages.configure = async (id) => {
     </form>
     <div class="box" id="gameWeb"></div>
     <div class="box" id="gameTesters"></div>
+    <div class="box" id="gameExperiments"></div>
     <div class="box" id="gameRating"></div>
     <div class="box" id="gameBans"></div>
     <div class="box" id="screenshots"><h2 class="boxhead">Screenshots</h2>
@@ -2637,6 +2639,7 @@ pages.configure = async (id) => {
   mountGameWeb($('#gameWeb'), g.id, call, toast);   // web requests and secrets (gameweb.js)
   mountGameBans($('#gameBans'), g.id, call, toast);   // ban lists (banlists.js)
   mountGameTesters($('#gameTesters'), g.id, call, toast);   // early testers (testers.js)
+  mountGameExperiments($('#gameExperiments'), g.id, call, toast);   // A/B tests (experiments.js)
   mountGameRating($('#gameRating'), g.id, call, toast);   // content level questions (ratings.js)
   // Show a picked picture straight away.
   view.querySelectorAll('input[data-preview]').forEach((inp) => inp.addEventListener('change', () => {

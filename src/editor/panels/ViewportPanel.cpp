@@ -10,6 +10,7 @@
 #include "../../scene/Scene.h"
 #include "../../scene/SceneNode.h"
 #include "../../scene/Physics.h"
+#include "../../scripting/Shapecasts.h"
 #include "../../scene/EditMesh.h"
 #include "../../game/GameSession.h"
 #include "../../game/ClickDetectors.h"
@@ -573,6 +574,43 @@ void ViewportPanel::drawPhysicsView(const glm::mat4& view, const glm::mat4& proj
             line(glm::vec3(a->worldMatrix()[3]), glm::vec3(b->worldMatrix()[3]),
                  n->breakForce > 0.0f ? IM_COL32(120, 220, 90, 255) : IM_COL32(80, 220, 255, 255), 2.5f);
         });
+    }
+    // Shapecasts from the last few seconds (workspace:Spherecast / Blockcast / Shapecast):
+    // where the shape started (cyan), how far it got (white), and where it hit (red, with
+    // the way the surface faces).
+    {
+        const double t = Shapecasts::now();
+        auto shape = [&](const Shapecasts::Shape& s, ImU32 col) {
+            if (!s.ball) {
+                OBB o = s.box;
+                o.half += glm::vec3(s.margin);
+                box(o, col, 1.4f);
+                return;
+            }
+            const float r = s.radius + s.margin;
+            for (int ring = 0; ring < 3; ++ring) {   // three circles, like a wire ball
+                glm::vec3 prev(0.0f);
+                for (int i = 0; i <= 24; ++i) {
+                    const float a = i * 6.2831853f / 24.0f;
+                    glm::vec3 d = ring == 0 ? glm::vec3(std::cos(a), std::sin(a), 0) : ring == 1 ? glm::vec3(std::cos(a), 0, std::sin(a))
+                                                                                                 : glm::vec3(0, std::cos(a), std::sin(a));
+                    const glm::vec3 p = s.box.center + d * r;
+                    if (i) line(prev, p, col, 1.2f);
+                    prev = p;
+                }
+            }
+        };
+        for (const Shapecasts::Drawn& d : Shapecasts::recent()) {
+            if (t - d.when > 3.0) continue;
+            shape(d.from, IM_COL32(80, 230, 255, 220));
+            shape(d.to, d.hit ? IM_COL32(255, 255, 255, 230) : IM_COL32(170, 170, 170, 160));
+            line(d.from.box.center, d.to.box.center, IM_COL32(80, 230, 255, 160), 1.0f);
+            if (d.hit) {
+                ImVec2 s;
+                if (screen(d.position, s)) dl->AddCircleFilled(s, 4.0f, IM_COL32(255, 60, 60, 255));
+                arrow(d.position, d.position + d.normal * 1.5f, IM_COL32(255, 60, 60, 220));
+            }
+        }
     }
     // What the colours mean.
     const ImVec2 at(imgMin.x + 10, imgMin.y + 34);

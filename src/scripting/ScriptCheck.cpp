@@ -43,7 +43,7 @@ const char* const kServiceNames[] = {"Players", "Workspace", "Lighting", "Replic
     "DataStoreService", "MemoryStoreService", "MarketplaceService", "BadgeService", "CollectionService",
     "PathfindingService", "PhysicsService", "TeleportService", "TextChatService", "TextService", "GuiService",
     "ProximityPromptService", "HapticService", "VRService", "InsertService", "MessagingService", "PolicyService",
-    "SocialService", "LocalizationService", "AvatarEditorService", "GroupService", "AnalyticsService", "ContentProvider"};
+    "SocialService", "LocalizationService", "AvatarEditorService", "GroupService", "AnalyticsService", "ExperimentService", "ContentProvider"};
 const char* const kClassNames[] = {"Part", "WedgePart", "CornerWedgePart", "TrussPart", "SpawnLocation", "Seat",
     "VehicleSeat", "MeshPart", "UnionOperation", "Model", "Folder", "Script", "LocalScript", "ModuleScript",
     "Tool", "Humanoid", "Sound", "SoundGroup", "PointLight", "SpotLight", "SurfaceLight", "Fire", "Smoke",
