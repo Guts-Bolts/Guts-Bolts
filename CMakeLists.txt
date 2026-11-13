@@ -469,6 +469,7 @@ add_library(gb_engine STATIC
     src/core/SoundFx.cpp
     src/core/Voice.cpp
     src/core/UpdateChecker.cpp
+    src/core/UpdateChannel.cpp
     src/core/Account.cpp
     src/core/TextFilter.cpp
     src/core/Language.cpp
@@ -1273,6 +1274,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(UpdaterTests tests/UpdaterTests.cpp)
     target_link_libraries(UpdaterTests PRIVATE gb_engine)
     add_test(NAME UpdaterTests COMMAND UpdaterTests)
+
+    # The opt-in Nightly update channel: what's offered, and no update loops.
+    add_executable(UpdateChannelTests tests/UpdateChannelTests.cpp)
+    target_link_libraries(UpdateChannelTests PRIVATE gb_engine)
+    add_test(NAME UpdateChannelTests COMMAND UpdateChannelTests)
 
     # Every sample game in games/ loads and runs for a few seconds with no script errors.
     add_executable(SampleGamesTests tests/SampleGamesTests.cpp)
