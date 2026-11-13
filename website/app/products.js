@@ -68,6 +68,17 @@ export const PRODUCTS = [
     ],
   },
   {
+    id: 'academy', name: 'Academy', status: 'open', href: '#/academy',
+    blurb: 'Free courses about scripting, building, modeling and making games.',
+    pages: ['academy', 'course', 'lesson', 'coursewrite'],
+    links: [
+      ['Courses', '#/academy', 'academy'],
+      ['Studio Learn', '#/create/learn', 'studio-learn'],
+      ['My courses', '#/academy?mine=1', 'academy-mine'],
+      ['Write a course', '#/coursewrite', 'coursewrite'],
+    ],
+  },
+  {
     id: 'live', name: 'Live', status: 'soon', href: '#/soon/live',
     blurb: 'Go live and hang out in chat: games, art, talk shows, anything allowed.',
     pages: [],
@@ -120,7 +131,7 @@ export const GROUPS = [
   { id: 'creation', name: 'Creation', products: ['art'], later: ['Modeler', 'Image', 'Capture'] },
   { id: 'community', name: 'Community', products: ['communities', 'chat'], later: ['Press'] },
   { id: 'ai', name: 'AI', products: ['fyxa'], later: ['Fyxa Desktop', 'AI Lab'] },
-  { id: 'learning', name: 'Learning', products: [], later: ['Academy'] },
+  { id: 'learning', name: 'Learning', products: ['academy'], later: [] },
   { id: 'development', name: 'Development', products: ['paste'], later: ['Code'] },
   { id: 'commerce', name: 'Commerce', products: [], later: ['Services', 'Storefronts'] },
   { id: 'productivity', name: 'Productivity', products: [], later: ['Drive', 'Projects', 'Boards'] },
@@ -148,6 +159,8 @@ export function activeLink(page, hash) {
   if (page === 'artpiece') return 'art';
   if (page === 'paste') return /[?&]by=me/.test(String(hash || '')) ? 'paste-mine' : 'paste';
   if (page === 'pasteview') return 'paste';
+  if (page === 'academy') return /[?&]mine=/.test(String(hash || '')) ? 'academy-mine' : 'academy';
+  if (page === 'course' || page === 'lesson') return 'academy';
   if (page === 'item') return 'catalog';
   if (page === 'trade') return 'trades';
   if (page === 'forumsearch') return 'forum';
