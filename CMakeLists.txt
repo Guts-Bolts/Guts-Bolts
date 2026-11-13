@@ -485,6 +485,7 @@ add_library(gb_engine STATIC
     src/renderer/SceneRendererFog.cpp
     src/renderer/Benchmark.cpp
     src/renderer/GpuCaps.cpp
+    src/renderer/OceanGpu.cpp
     src/renderer/ViewportRender.cpp
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
@@ -497,6 +498,7 @@ add_library(gb_engine STATIC
     src/scene/NavMesh.cpp
     src/scene/Npc.cpp
     src/scene/Water.cpp
+    src/scene/OceanWaves.cpp
     src/scene/Terrain.cpp
     src/scene/Liquid.cpp
     src/scene/Flood.cpp
@@ -1310,6 +1312,16 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(ShadowCascadesTests tests/ShadowCascadesTests.cpp)
     target_link_libraries(ShadowCascadesTests PRIVATE gb_engine)
     add_test(NAME ShadowCascadesTests COMMAND ShadowCascadesTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Ambient occlusion (GTAO): the settings for each level and the slice maths.
+    add_executable(GtaoTests tests/GtaoTests.cpp)
+    target_link_libraries(GtaoTests PRIVATE gb_engine)
+    add_test(NAME GtaoTests COMMAND GtaoTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The ocean's waves: spectrum, FFT, bands, and floating on them.
+    add_executable(OceanWavesTests tests/OceanWavesTests.cpp)
+    target_link_libraries(OceanWavesTests PRIVATE gb_engine)
+    add_test(NAME OceanWavesTests COMMAND OceanWavesTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)

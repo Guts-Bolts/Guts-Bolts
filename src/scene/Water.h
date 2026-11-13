@@ -5,6 +5,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 #include "Liquid.h"
+#include "OceanWaves.h"
 
 class Scene;
 class SceneNode;
@@ -24,7 +25,7 @@ class SceneNode;
 // units; or "WaveScale", 1 = half a stud), "Flow" (a Vector3: a current that
 // carries things along), "Drag" (how thick it feels: 1 = water, 0 = no push
 // at all, 5 = like mud) and "Clarity" (0 murky .. 1 crystal clear). The swell is
-// made of Gerstner waves (Gerstner.h). A FluidVolume (from scripts) is a water
+// made by an FFT from a wave spectrum (OceanWaves.h). A FluidVolume (from scripts) is a water
 // part with these set.
 //
 // Where the surface moves fast (a splash, a wave slapping a wall) it throws up
@@ -42,7 +43,7 @@ public:
         int       nx = 0, nz = 0;         // grid points across x and z
         float     cell = 1.0f;            // distance between grid points
         std::vector<float> h, v;          // how far each point is above / below the still level, and its speed
-        float     swell = 0.0f;           // how tall the Gerstner waves are ("Waves", or "WaveScale" x 0.5)
+        float     swell = 0.0f;           // how tall the ocean swell is ("Waves", or "WaveScale" x 0.5)
         float     clarity = 0.6f;         // how clear: 1 = crystal, 0 = murky ("Clarity", or from Transparency)
         glm::vec3 flow{0.0f};             // "Flow" attribute
         float     drag = 1.0f;            // "Drag" attribute: how hard it pushes on things moving through it
@@ -110,7 +111,7 @@ public:
 
     const std::vector<Body>& bodies() const { return m_bodies; }
     float surface(const Body& b, float x, float z) const { return b.max.y + heightAt(b, x, z) + swellAt(b, x, z); }
-    // Just the ripples (no swell: the renderer adds the Gerstner waves itself).
+    // Just the ripples (no swell: the renderer adds the ocean waves itself).
     float rippleSurface(const Body& b, float x, float z) const { return b.max.y + heightAt(b, x, z); }
     // The current at a point on the surface (the flow map, bilinear).
     glm::vec3 flowAt(const Body& b, float x, float z) const;
@@ -118,6 +119,8 @@ public:
     float churn(const Body& b, float x, float z) const;
     const Body* find(uint64_t id) const;
     float time() const { return m_time; }
+    // The ocean swell's waves at this moment (what swellAt floats things on, and what's drawn).
+    const OceanWaves::Field& ocean() const { return m_ocean; }
 
     // Real liquid (drops that flow) poured by FluidSource parts.
     Liquid&       liquid()       { return m_liquid; }
@@ -159,6 +162,7 @@ private:
     float m_streamTimer = 0.0f;
 
     std::vector<Body> m_bodies;
+    OceanWaves::Field m_ocean;
     Liquid m_liquid;
     bool  m_active = false;
     float m_time = 0.0f;

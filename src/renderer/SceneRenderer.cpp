@@ -14,7 +14,8 @@
 #include "../scene/Physics.h"
 #include "../scene/Water.h"
 #include "../scene/Liquid.h"
-#include "../scene/Gerstner.h"
+#include "../scene/OceanWaves.h"
+#include "OceanGpu.h"
 #include "../scene/Skin.h"
 #include "../scene/Cloth.h"
 #include "../scene/BounceLight.h"
@@ -159,7 +160,8 @@ SceneRenderer::SceneRenderer() {
     m_puff      = std::make_unique<Shader>(puffVert, puffFrag);
     m_sky       = std::make_unique<Shader>(skyVert, skyFrag);
     m_depth     = std::make_unique<Shader>(depthVert, depthFrag);
-    m_ssao      = std::make_unique<Shader>(fullscreenVert, ssaoFrag);
+    m_gtao      = std::make_unique<Shader>(fullscreenVert, gtaoFrag);
+    m_gtaoBlur  = std::make_unique<Shader>(fullscreenVert, gtaoBlurFrag);
     m_bloomPre  = std::make_unique<Shader>(fullscreenVert, bloomPrefilterFrag);
     m_bloomDown = std::make_unique<Shader>(fullscreenVert, bloomDownFrag);
     m_bloomUp   = std::make_unique<Shader>(fullscreenVert, bloomUpFrag);
@@ -191,6 +193,7 @@ SceneRenderer::~SceneRenderer() {
     Liquid::graphicsContext(-1);
     destroyTemporal();
     destroyFog();
+    m_ocean.reset();
     if (m_gridVbo)  glDeleteBuffers(1, &m_gridVbo);
     if (m_instanceVbo) glDeleteBuffers(1, &m_instanceVbo);
     if (m_overlayVbo) glDeleteBuffers(1, &m_overlayVbo);
@@ -206,6 +209,7 @@ SceneRenderer::~SceneRenderer() {
     if (m_ribbonVao) glDeleteVertexArrays(1, &m_ribbonVao);
     destroyTarget(m_hdr);
     destroyTarget(m_ao);
+    destroyTarget(m_aoRaw);
     destroyTarget(m_ldr);
     for (auto& b : m_bloom) destroyTarget(b);
     for (auto& b : m_bdDown) destroyTarget(b);
@@ -442,6 +446,7 @@ void SceneRenderer::ensureTargets(int w, int h) {
     if (m_hdr.w == w && m_hdr.h == h && m_hdr.fbo) return;
     createTarget(m_hdr, w, h, hdrFormat(), true);
     createTarget(m_ao, w, h, GL_R8, false);
+    createTarget(m_aoRaw, w, h, GL_R8, false);
     createTarget(m_ldr, w, h, GL_RGBA8, false);
     int bw = w / 2, bh = h / 2;
     for (auto& b : m_bloom) {
@@ -1338,7 +1343,7 @@ void buildWaterMesh(const WaterSystem& ws, const WaterSystem::Body& b, std::vect
                     std::vector<uint32_t>& idx) {
     verts.clear();
     idx.clear();
-    // Finer than the ripple grid, so the Gerstner waves (added in the vertex shader)
+    // Finer than the ripple grid, so the ocean waves (added in the vertex shader)
     // stay smooth: about 2 points a stud, at most 180 along a side.
     const glm::vec3 size = b.max - b.min;
     const float cell = std::max({0.5f, size.x / 179.0f, size.z / 179.0f});
@@ -1406,6 +1411,16 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
     glEnable(GL_POLYGON_OFFSET_FILL);
     glPolygonOffset(2.0f, 8.0f);
 
+    // The ocean swell's wave pictures, if any water here has a swell.
+    int oceanBands = 0;
+    for (const WaterItem& it : waters)
+        if (const WaterSystem::Body* wb = waves.find(it.node->id); wb && wb->swell > 0.0f) {
+            FrameProfile::Scope prof("draw: ocean waves", true);
+            if (!m_ocean) m_ocean = std::make_unique<OceanGpu>();
+            oceanBands = m_ocean->prepare(waves.ocean(), gs.waterQuality >= 2);
+            break;
+        }
+
     Shader& w = *m_water;
     w.bind();
     const glm::mat4 view = camera.view(), proj = camera.projection();
@@ -1437,16 +1452,23 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
     w.setFloat("uRenderDist", m_viewDist);
     bindTex(2, m_waterCopy.color); w.setInt("uScene", 2);
     bindTex(3, m_waterCopy.depth); w.setInt("uSceneDepth", 3);
-    // The Gerstner waves (the same numbers the physics uses: scene/Gerstner.h).
-    glm::vec4 wv[Gerstner::kCount];
-    float ph[Gerstner::kCount];
-    for (int i = 0; i < Gerstner::kCount; ++i) {
-        const Gerstner::Wave& g = Gerstner::kWaves[i];
-        wv[i] = glm::vec4(g.dirX, g.dirZ, g.length, g.share);
-        ph[i] = g.phase;
+    // The ocean swell (the same waves the physics floats things on: scene/OceanWaves.h),
+    // as pictures the shader reads.
+    w.setInt("uOcBands", oceanBands);
+    w.setInt("uOcD0", 8);  w.setInt("uOcD1", 9);  w.setInt("uOcD2", 10);
+    w.setInt("uOcS0", 11); w.setInt("uOcS1", 12); w.setInt("uOcS2", 13);
+    if (oceanBands) {
+        for (int b = 0; b < 3; ++b) {
+            const int from = std::min(b, oceanBands - 1);   // (an unused band reads a real picture too)
+            bindTex(8 + b, m_ocean->disp(from));
+            bindTex(11 + b, m_ocean->slope(from));
+        }
+        const float n = (float)m_ocean->size();
+        w.setVec3("uOcLen", glm::vec3(OceanWaves::kBand[0].length, OceanWaves::kBand[1].length, OceanWaves::kBand[2].length));
+        w.setFloat("uOcHalf", 0.5f / n);
+        w.setFloat("uOcFoamBlur", std::log2(n / (float)OceanWaves::kCpuN));
+        w.setVec3("uOcTexel", glm::vec3(OceanWaves::kBand[0].length, OceanWaves::kBand[1].length, OceanWaves::kBand[2].length) / n);
     }
-    w.setVec4Array("uWaves", wv, Gerstner::kCount);
-    w.setFloatArray("uWavePhase", ph, Gerstner::kCount);
 
     std::vector<Vertex> verts;
     std::vector<uint32_t> idx;
@@ -1460,13 +1482,17 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             clarity = std::clamp((float)a->n, 0.0f, 1.0f);
         w.setFloat("uClarity", wb ? wb->clarity : clarity);
         if (wb) {
-            // While playing: the moving surface (ripples from the physics, Gerstner
-            // waves added in the vertex shader).
+            // While playing: the moving surface (ripples from the physics, the ocean
+            // swell added in the vertex shader).
             w.setMat4("uModel", glm::mat4(1.0f));
             w.setMat3("uNormalMat", glm::mat3(1.0f));
             w.setBool("uWaveMesh", true);
             w.setFloat("uWaveAmp", wb->swell);
-            w.setFloat("uSteep", Gerstner::steepness(wb->swell));
+            w.setFloat("uChop", OceanWaves::chop(wb->swell));
+            {   // (how far apart the surface's points are: the same sum as buildWaterMesh)
+                const glm::vec3 size = wb->max - wb->min;
+                w.setFloat("uCell", std::max({0.5f, size.x / 179.0f, size.z / 179.0f}));
+            }
             w.setVec3("uBodyMin", wb->min);
             w.setVec3("uBodyMax", wb->max);
             // The current: a flow map (bent around rocks) if there is one.
@@ -1498,7 +1524,7 @@ void SceneRenderer::drawWater(Scene& scene, const Camera& camera, const std::vec
             w.setMat3("uNormalMat", glm::transpose(glm::inverse(glm::mat3(it.model))));
             w.setBool("uWaveMesh", false);
             w.setFloat("uWaveAmp", 0.0f);
-            w.setFloat("uSteep", 0.0f);
+            w.setFloat("uChop", 0.0f);
             w.setBool("uHasFlowMap", false);
             glm::vec2 fl(0.0f);
             if (const Attribute* a = node->findAttribute("Flow"); a && a->type == Attribute::Vector3) fl = glm::vec2(a->v.x, a->v.z);
@@ -2805,19 +2831,33 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     { FrameProfile::Scope prof("draw: upscaler", true); upscaled = resolveTemporal(camera); }
     const int sceneW = upscaled ? target.width() : m_hdr.w, sceneH = upscaled ? target.height() : m_hdr.h;
 
-    // --- Ambient occlusion (half resolution). With traced bounce light the lit shader
-    //     already darkened the corners, so this is the cheap version for Low. ---
-    bool useAO = gs.giQuality >= 0 && !m_usedBounce && env.aoIntensity > 0.0f;
+    // --- Ambient occlusion (GTAO, see Gtao.h): dark corners and creases from the depth
+    //     picture, then a small blur that takes its noise out. With traced bounce light
+    //     the lit shader already darkened the big corners, so it only adds the fine ones. ---
+    const Gtao::Level ao = Gtao::levelFor(gs.giQuality, m_usedBounce);
+    bool useAO = ao.slices > 0 && env.aoIntensity > 0.0f;
     if (useAO) {
-        bindTarget(m_ao);
-        m_ssao->bind();
+        FrameProfile::Scope prof("draw: ambient occlusion", true);
+        const glm::mat4 proj = camera.projection(), invProj = glm::inverse(proj);
+        bindTarget(m_aoRaw);
+        m_gtao->bind();
         bindTex(0, m_hdr.depth);
-        m_ssao->setInt("uDepth", 0);
-        glm::mat4 proj = camera.projection();
-        m_ssao->setMat4("uProj", proj);
-        m_ssao->setMat4("uInvProj", glm::inverse(proj));
-        m_ssao->setVec2("uTexel", glm::vec2(1.0f / m_hdr.w, 1.0f / m_hdr.h));
-        m_ssao->setFloat("uRadius", 0.7f);
+        m_gtao->setInt("uDepth", 0);
+        m_gtao->setMat4("uProj", proj);
+        m_gtao->setMat4("uInvProj", invProj);
+        m_gtao->setVec2("uTexel", glm::vec2(1.0f / m_hdr.w, 1.0f / m_hdr.h));
+        m_gtao->setFloat("uRadius", ao.radius);
+        m_gtao->setInt("uSlices", ao.slices);
+        m_gtao->setInt("uSteps", ao.steps);
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        bindTarget(m_ao);
+        m_gtaoBlur->bind();
+        bindTex(0, m_aoRaw.color);
+        bindTex(1, m_hdr.depth);
+        m_gtaoBlur->setInt("uAO", 0);
+        m_gtaoBlur->setInt("uDepth", 1);
+        m_gtaoBlur->setMat4("uInvProj", invProj);
+        m_gtaoBlur->setVec2("uTexel", glm::vec2(1.0f / m_aoRaw.w, 1.0f / m_aoRaw.h));
         glDrawArrays(GL_TRIANGLES, 0, 3);
     }
 
@@ -2996,7 +3036,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
     m_composite->setBool("uPost", gs.postFx);
     m_composite->setBool("uLumaAlpha", useFxaa);
     m_composite->setFloat("uSharpen", upscaleSharpen());
-    m_composite->setVec2("uAOTexel", glm::vec2(1.0f / m_ao.w, 1.0f / m_ao.h));
+    m_composite->setVec2("uAOTexel", glm::vec2(0.33f / m_ao.w, 0.33f / m_ao.h));   // (already blurred: just a touch)
     m_composite->setFloat("uExposure", env.exposure);
     m_composite->setBool("uAutoExp", autoExp);
     if (autoExp) {
@@ -3005,7 +3045,7 @@ void SceneRenderer::postProcess(Scene& scene, const Camera& camera, Framebuffer&
         m_composite->setFloat("uLumKey", kLumKey);
     }
     m_composite->setFloat("uBloomIntensity", bloomIntensity);
-    m_composite->setFloat("uAOIntensity", env.aoIntensity);
+    m_composite->setFloat("uAOIntensity", env.aoIntensity * ao.strength);
     m_composite->setFloat("uContrast", env.contrast);
     m_composite->setFloat("uSaturation", env.saturation);
     m_composite->setFloat("uVignette", env.vignette);
