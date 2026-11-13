@@ -121,7 +121,7 @@ export const GROUPS = [
   { id: 'community', name: 'Community', products: ['communities', 'chat'], later: ['Press'] },
   { id: 'ai', name: 'AI', products: ['fyxa'], later: ['Fyxa Desktop', 'AI Lab'] },
   { id: 'learning', name: 'Learning', products: [], later: ['Academy'] },
-  { id: 'development', name: 'Development', products: ['paste'], later: ['Links', 'Code'] },
+  { id: 'development', name: 'Development', products: ['paste'], later: ['Code'] },
   { id: 'commerce', name: 'Commerce', products: [], later: ['Services', 'Storefronts'] },
   { id: 'productivity', name: 'Productivity', products: [], later: ['Drive', 'Projects', 'Boards'] },
 ];
