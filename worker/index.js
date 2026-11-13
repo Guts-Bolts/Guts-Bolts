@@ -180,6 +180,9 @@ async function route(request, env, ctx) {
     // older apps (the server and its pictures); people opening it in a browser get moved.
     if (url.hostname.endsWith('.workers.dev') && !/^\/(api|ws|thumb|icon|shot|wear|decal|artpic|pasteraw|download|avatar)(\/|$)/.test(url.pathname))
       return Response.redirect('https://gutsandbolts.net' + url.pathname + url.search, 301);
+    // Share links (sharelinks.js): gutsandbolts.net/s/<code> opens the website's #/s/<code> page, which counts the click.
+    const share = /^\/s\/([A-Za-z0-9]{4,16})\/?$/.exec(url.pathname);
+    if (share) return Response.redirect(url.origin + '/#/s/' + share[1], 302);
     if (url.pathname.startsWith('/download/')) return handleDownload(request, env, url);
     const ads = handleAds(request, env, url);   // /ads.txt and /ads-config (ads.js)
     if (ads) return ads;

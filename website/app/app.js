@@ -9,6 +9,7 @@ import { mountGameWeb } from './gameweb.js';
 import { mountBanLists, mountGameBans, mountBanNotice } from './banlists.js';
 import { mountGameTesters, mountTesterNote } from './testers.js';
 import { mountGameExperiments } from './experiments.js';
+import { openShareLink, checkShareLinks, addShareBox } from './sharelinks.js';
 import { ratingPill, mountGameRating, mountRatingWhy, mountRatingLimit } from './ratings.js';   // content levels (how intense a game is)
 import { mountLaunchpad, mountLaunchpadShelf, launchpadPill } from './launchpad.js';   // Launchpad creator program
 import { backgroundStyle, mountBackgroundPicker } from './backgrounds.js';   // profile backgrounds
@@ -850,6 +851,12 @@ pages.home = async () => {
 
 // #/soon/<product>: what's coming for a product that isn't open yet (Videos, Live), or
 // that only lives in Studio for now (Fyxa).
+// #/s/<code>: a share link (gutsandbolts.net/s/<code> comes here). Count it, then go to the thing.
+pages.s = async (code) => {
+  const r = await openShareLink(code, call);
+  if (!r.ok) show(html`<h1>Link not found</h1><p class="muted">${r.error}</p>`);
+};
+
 pages.soon = async (id) => {
   const p = productById(id);
   if (!p || p.status === 'open') { location.replace(p ? p.href : '#/'); return; }
@@ -2012,6 +2019,7 @@ pages.item = async (id) => {
     }
   });
   tickCountdowns();
+  if (signedIn() && a.creator === me.id) addShareBox(view, 'item', a.id, call, toast);   // share links (sharelinks.js)
   // The creator's character, small, next to their name.
   call('profile', { id: a.creator }).then((p) => {
     const el = $('#creatorPic');
@@ -2640,6 +2648,7 @@ pages.configure = async (id) => {
   mountGameBans($('#gameBans'), g.id, call, toast);   // ban lists (banlists.js)
   mountGameTesters($('#gameTesters'), g.id, call, toast);   // early testers (testers.js)
   mountGameExperiments($('#gameExperiments'), g.id, call, toast);   // A/B tests (experiments.js)
+  addShareBox(view, 'game', g.id, call, toast);   // share links that count clicks and plays (sharelinks.js)
   mountGameRating($('#gameRating'), g.id, call, toast);   // content level questions (ratings.js)
   // Show a picked picture straight away.
   view.querySelectorAll('input[data-preview]').forEach((inp) => inp.addEventListener('change', () => {
@@ -2916,6 +2925,7 @@ pages.user = async (id, tab, page, more) => {
     </div>`);
   // The 3D avatar (the flat one stays if the browser can't do 3D).
   mountAvatar($('#profileAvatar'), u.avatar, worn, { width: 220 }).catch(() => {});
+  if (f === 'self' && signedIn()) addShareBox(view, 'profile', u.id, call, toast);   // share links to your profile (sharelinks.js)
   if (f === 'self') mountBackgroundPicker($('#backgroundPicker'), r.background, call, toast);   // backgrounds.js
   for (const p of friends) {
     avatarPicture(p.avatar, p.wearing || [], 60).then((url) => {
@@ -3054,6 +3064,7 @@ pages.group = async (id) => {
       <label><input type="checkbox" name="open" ${g.open ? 'checked' : ''}> Anyone can join</label>
       <p><button class="btn blue">Save</button>
       ${owner ? html` <button type="button" class="btn red" data-act="group" data-op="groups.delete" data-id="${g.id}">Delete group</button>` : ''}</p></form>` : ''}`);
+  if (owner) addShareBox(view, 'group', g.id, call, toast);   // share links (sharelinks.js)
 };
 
 let avatarDraft = null;   // the avatar being edited (saved with the Save button)
@@ -5860,6 +5871,7 @@ async function render() {
   if (banned()) { banPage(); return; }
   try {
     await pages[name](...path.slice(1).map(decodeURIComponent));
+    checkShareLinks(call, signedIn());   // did a share link someone opened lead somewhere? (sharelinks.js)
     if (token === pageToken) placeAds(name, me);   // banner ads on clean pages, never for Boltworks Club (ads.js)
   } catch (err) {
     if (err instanceof Stale || token !== pageToken) return;   // the visitor moved on: the new page draws itself

@@ -29,6 +29,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerBanLists.cpp
     src/server/ServerTesters.cpp
     src/server/ServerExperiments.cpp
+    src/server/ServerShareLinks.cpp
     src/server/ServerRatings.cpp
     src/server/ServerBackgrounds.cpp
     src/server/ServerArt.cpp
@@ -1096,6 +1097,12 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     add_dependencies(ServerExperimentsTests gb_version)
     target_link_libraries(ServerExperimentsTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerExperimentsTests COMMAND ServerExperimentsTests)
+    # Share links: clicks, different people, plays, buys and follows (ServerShareLinks.cpp).
+    add_executable(ServerShareLinksTests tests/ServerShareLinksTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerShareLinksTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerShareLinksTests gb_version)
+    target_link_libraries(ServerShareLinksTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerShareLinksTests COMMAND ServerShareLinksTests)
     # Age ratings: questions -> rating, history, players' rating limit (ServerRatings.cpp).
     add_executable(ServerRatingsTests tests/ServerRatingsTests.cpp ${GB_SERVER_TEST_SOURCES})
     target_include_directories(ServerRatingsTests PRIVATE src/ ${GB_GENERATED})

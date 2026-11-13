@@ -317,6 +317,13 @@ private:
     std::string academyReportName(const std::string& target) const;
     void saveAcademy();
     void loadAcademy();
+    // ServerShareLinks.cpp: share links that count clicks, plays and buys (sharelinks.json), like worker/sharelinks.js.
+    nlohmann::json shareOp(const std::string& name, User& me, const nlohmann::json& args);
+    nlohmann::json shareThing(const std::string& kind, const nlohmann::json& id);
+    bool shareIsDone(const nlohmann::json& t, const std::string& kind, const std::string& what, const User& me) const;
+    nlohmann::json shareJson(const nlohmann::json& l) const;
+    void saveShareLinks();
+    void loadShareLinks();
     // ServerExperiments.cpp: A/B tests for games (experiments.json), same rules as worker/experiments.js.
     nlohmann::json experimentsOp(const std::string& name, User& me, const nlohmann::json& args);
     nlohmann::json experimentResults(const std::string& game, const nlohmann::json& e) const;
@@ -491,6 +498,7 @@ private:
     nlohmann::json m_banLists = nlohmann::json::object();   // ServerBanLists.cpp: list id -> list
     nlohmann::json m_art = {{"pieces", nlohmann::json::object()}, {"posts", nlohmann::json::object()}};   // ServerArt.cpp
     nlohmann::json m_experiments = {{"games", nlohmann::json::object()}, {"data", nlohmann::json::object()}};   // ServerExperiments.cpp
+    nlohmann::json m_shareLinks = {{"links", nlohmann::json::object()}, {"seen", nlohmann::json::object()}};   // ServerShareLinks.cpp
     nlohmann::json m_pastes = {{"pastes", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerPaste.cpp
     nlohmann::json m_academy = {{"courses", nlohmann::json::object()}, {"progress", nlohmann::json::object()}, {"made", nlohmann::json::object()}};   // ServerAcademy.cpp
     nlohmann::json m_boltworks = nlohmann::json::array();   // the Boltworks Club early list: {id, username, at}

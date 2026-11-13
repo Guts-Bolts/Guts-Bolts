@@ -160,7 +160,7 @@ json GbServer::checkRequest(const json& req, User*& out) {
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate", "http.request",
                                                     "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove",
-                                                    "experiments.forGame", "analytics.log"};   // (guests can host games too, and read chat)
+                                                    "experiments.forGame", "analytics.log", "share.open"};   // (guests can host games too, and read chat)
     // (A game server machine's own account is never signed up, but staff are let in.)
     if (me.userId == 0 && opName != "hello" && opName != "ping" && opName.rfind("account.", 0) != 0 &&
         !kLookOnly.count(opName) && opName != "support.send" && opName != "support.mine" && !isStaff(me))
@@ -721,6 +721,7 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
     }
     if (name == "profile.background") return backgroundOp(me, args);   // ServerBackgrounds.cpp
     if (name.rfind("experiments.", 0) == 0 || name == "analytics.log") return experimentsOp(name, me, args);   // ServerExperiments.cpp
+    if (name.rfind("share.", 0) == 0) return shareOp(name, me, args);   // ServerShareLinks.cpp
     if (name == "game.rating" || name == "game.rate" || name == "rating.limit") return ratingOp(name, me, args);   // ServerRatings.cpp
     if (name.rfind("art.", 0) == 0) return artOp(name, &me, args);   // ServerArt.cpp
     if (name.rfind("paste.", 0) == 0) return pasteOp(name, &me, args);   // ServerPaste.cpp
@@ -2285,6 +2286,7 @@ void GbServer::load() {
     loadBanLists();
     loadArt();
     loadExperiments();
+    loadShareLinks();
     loadPastes();
     loadAcademy();
     if (std::string text; readFile(m_opts.data / "boltworks.json", text)) {
