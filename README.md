@@ -1513,7 +1513,8 @@ Water isn't just a see-through box you can swim in. While the game runs:
   of foam.
 - **Ocean swell.** Give a water part a number attribute called `Waves` (like
   `0.5`) for big rolling waves that lift everything floating on them. They're
-  Gerstner waves: sharp crests and wide troughs, with whitecaps on big ones.
+  made from a wave spectrum with an FFT (thousands of waves added up): sharp
+  crests and wide troughs, with foam where big ones break.
   Floating things and swimmers ride exactly the waves you see.
 - **Clarity.** A number attribute from 0 (murky) to 1 (crystal clear). The water
   is clear where it's shallow and fades to deep blue where it's deep, things

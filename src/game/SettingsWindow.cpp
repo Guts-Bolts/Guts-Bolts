@@ -222,6 +222,25 @@ void draw(bool* open) {
     ImGui::TextDisabled("Version %s", UpdateChecker::currentVersion());
     ImGui::SameLine();
     if (ImGui::SmallButton("Check now")) UpdateChecker::start();
+    if (*UpdateChecker::buildDate()) ImGui::TextDisabled("Built from code of %s%s", UpdateChecker::buildDate(),
+                                                        UpdateChecker::runningNightly() ? " (test build)" : "");
+#if !defined(GB_MOBILE) && !defined(__EMSCRIPTEN__)
+    {   // Nightly test builds: the newest code from main, only when asked (UpdateChannel.h).
+        static int nightly = -1;   // read the file once, not every frame
+        if (nightly < 0) nightly = UpdateChecker::nightlyEnabled() ? 1 : 0;
+        bool on = nightly == 1;
+        if (ImGui::Checkbox("Nightly test builds", &on)) { nightly = on ? 1 : 0; UpdateChecker::setNightly(on); }
+        help("Get the newest test build every time new code is added, instead of waiting for the next release. "
+             "You're always asked before one is installed.");
+        ImGui::PushTextWrapPos(0);
+        if (on)
+            ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f),
+                               "Test builds may be unstable: things can break, and games saved in them might not open in older versions.");
+        else if (UpdateChecker::runningNightly())
+            ImGui::TextDisabled("You're on a test build. You'll be asked if you want to go back to the stable version.");
+        ImGui::PopTextWrapPos();
+    }
+#endif
     switch (UpdateChecker::info().state) {
         case UpdateChecker::State::Checking:  ImGui::TextDisabled("Checking..."); break;
         case UpdateChecker::State::UpToDate:  ImGui::TextColored(ImVec4(0.4f, 0.85f, 0.45f, 1), "You're up to date!"); break;

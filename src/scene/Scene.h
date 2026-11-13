@@ -1,6 +1,7 @@
 #pragma once
 #include "SceneNode.h"
 #include "Environment.h"
+#include "Storms.h"
 #include "Player.h"
 #include "Npc.h"
 #include "Water.h"
@@ -211,7 +212,12 @@ public:
     SceneNode*     root()        { return m_root.get(); }
     SceneNode*     selected()    { return m_selected; }
     Environment&   environment() { return m_env; }
+    const Environment& environment() const { return m_env; }
+    // Severe weather while it runs (Storms.h): not saved.
+    Storms::State&       storms() { return m_storms; }
+    const Storms::State& storms() const { return m_storms; }
     WorldSettings& world()       { return m_world; }
+    const WorldSettings& world() const { return m_world; }
     GameInfo&      info()        { return m_info; }
     Player*        player()      { return m_player.get(); }
     ParticleSystem& particles()  { return m_particles; }
@@ -322,6 +328,7 @@ private:
     void unselectSubtree(SceneNode* node);
     Environment                m_env;
     WorldSettings              m_world;
+    Storms::State              m_storms;
     GameInfo                   m_info;
     std::vector<RemoteCharacter> m_remotes;
     std::unordered_map<uint64_t, Look> m_looks;

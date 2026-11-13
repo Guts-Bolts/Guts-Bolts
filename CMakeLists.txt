@@ -32,6 +32,7 @@ set(GB_SERVER_SOURCES
     src/server/ServerBackgrounds.cpp
     src/server/ServerArt.cpp
     src/server/ServerPaste.cpp
+    src/server/ServerAcademy.cpp
     src/server/ServerConnect.cpp
     src/server/ServerFriends.cpp
     src/server/ServerSocial.cpp
@@ -468,6 +469,7 @@ add_library(gb_engine STATIC
     src/core/SoundFx.cpp
     src/core/Voice.cpp
     src/core/UpdateChecker.cpp
+    src/core/UpdateChannel.cpp
     src/core/Account.cpp
     src/core/TextFilter.cpp
     src/core/Language.cpp
@@ -485,6 +487,7 @@ add_library(gb_engine STATIC
     src/renderer/SceneRendererFog.cpp
     src/renderer/Benchmark.cpp
     src/renderer/GpuCaps.cpp
+    src/renderer/OceanGpu.cpp
     src/renderer/ViewportRender.cpp
     src/scene/SceneNode.cpp
     src/scene/Scene.cpp
@@ -497,12 +500,14 @@ add_library(gb_engine STATIC
     src/scene/NavMesh.cpp
     src/scene/Npc.cpp
     src/scene/Water.cpp
+    src/scene/OceanWaves.cpp
     src/scene/Terrain.cpp
     src/scene/Liquid.cpp
     src/scene/Flood.cpp
     src/scene/RigidBodies.cpp
     src/scene/Particles.cpp
     src/scene/Weather.cpp
+    src/scene/Storms.cpp
     src/scene/Vehicles.cpp
     src/scene/IkControls.cpp
     src/scene/LinkedModels.cpp
@@ -1069,6 +1074,13 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING AND NOT WIN32 AND NOT GB_MOBILE)
     target_link_libraries(ServerPasteTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
     add_test(NAME ServerPasteTests COMMAND ServerPasteTests)
 
+    # G&B Academy: writing, publishing, lessons, progress, likes, reports (ServerAcademy.cpp).
+    add_executable(ServerAcademyTests tests/ServerAcademyTests.cpp ${GB_SERVER_TEST_SOURCES})
+    target_include_directories(ServerAcademyTests PRIVATE src/ ${GB_GENERATED})
+    add_dependencies(ServerAcademyTests gb_version)
+    target_link_libraries(ServerAcademyTests PRIVATE nlohmann_json::nlohmann_json monocypher Threads::Threads)
+    add_test(NAME ServerAcademyTests COMMAND ServerAcademyTests)
+
     # Early testers: a testers-only game, tester notes, going public (ServerTesters.cpp).
     add_executable(ServerTestersTests tests/ServerTestersTests.cpp ${GB_SERVER_TEST_SOURCES})
     target_include_directories(ServerTestersTests PRIVATE src/ ${GB_GENERATED})
@@ -1263,6 +1275,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     target_link_libraries(UpdaterTests PRIVATE gb_engine)
     add_test(NAME UpdaterTests COMMAND UpdaterTests)
 
+    # The opt-in Nightly update channel: what's offered, and no update loops.
+    add_executable(UpdateChannelTests tests/UpdateChannelTests.cpp)
+    target_link_libraries(UpdateChannelTests PRIVATE gb_engine)
+    add_test(NAME UpdateChannelTests COMMAND UpdateChannelTests)
+
     # Every sample game in games/ loads and runs for a few seconds with no script errors.
     add_executable(SampleGamesTests tests/SampleGamesTests.cpp)
     target_link_libraries(SampleGamesTests PRIVATE gb_engine)
@@ -1309,6 +1326,16 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(ShadowCascadesTests tests/ShadowCascadesTests.cpp)
     target_link_libraries(ShadowCascadesTests PRIVATE gb_engine)
     add_test(NAME ShadowCascadesTests COMMAND ShadowCascadesTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Ambient occlusion (GTAO): the settings for each level and the slice maths.
+    add_executable(GtaoTests tests/GtaoTests.cpp)
+    target_link_libraries(GtaoTests PRIVATE gb_engine)
+    add_test(NAME GtaoTests COMMAND GtaoTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # The ocean's waves: spectrum, FFT, bands, and floating on them.
+    add_executable(OceanWavesTests tests/OceanWavesTests.cpp)
+    target_link_libraries(OceanWavesTests PRIVATE gb_engine)
+    add_test(NAME OceanWavesTests COMMAND OceanWavesTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)
@@ -1520,5 +1547,11 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(StormAndDetailTests tests/StormAndDetailTests.cpp)
     target_link_libraries(StormAndDetailTests PRIVATE gb_engine)
     add_test(NAME StormAndDetailTests COMMAND StormAndDetailTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
+             WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+
+    # Severe weather: supercells, tornadoes, downbursts and the real cloud types (Storms.h).
+    add_executable(SevereWeatherTests tests/SevereWeatherTests.cpp)
+    target_link_libraries(SevereWeatherTests PRIVATE gb_engine)
+    add_test(NAME SevereWeatherTests COMMAND SevereWeatherTests "${CMAKE_SOURCE_DIR}/games/Obby of Doom.gbscene"
              WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 endif()

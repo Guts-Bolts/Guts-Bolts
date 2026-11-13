@@ -1118,7 +1118,7 @@ AiToolResult Editor::runGameAiTool(const std::string& name, const json& args) {
         json now;
         for (const Log::Entry& e : got) {
             if (e.level == Log::Level::Error)
-                return fail("LUA_ERROR", "Couldn't change Lighting: " + e.text, "Check the values (weather: Clear, Rain, Snow or Storm).");
+                return fail("LUA_ERROR", "Couldn't change Lighting: " + e.text, "Check the values (weather: Clear, Rain, Snow, Storm or Supercell).");
             if (e.text.rfind("\1ATMO", 0) == 0) {
                 std::vector<std::string> f;
                 std::stringstream ss(e.text.substr(5));

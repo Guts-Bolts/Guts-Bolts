@@ -3,7 +3,6 @@
 #include "SceneNode.h"
 #include "Physics.h"
 #include "Player.h"
-#include "Gerstner.h"
 #include "../core/Audio.h"
 
 #include <algorithm>
@@ -46,6 +45,7 @@ bool WaterSystem::insideTilted(const SceneNode* water, const glm::vec3& p) {
 void WaterSystem::begin(Scene& scene) {
     end();
     m_active = true;
+    m_ocean.update(0.0f);
     scan(scene);
     scanSources(scene);
     m_liquid.begin(scene);
@@ -248,8 +248,8 @@ float WaterSystem::churn(const Body& b, float x, float z) const {
 
 float WaterSystem::swellAt(const Body& b, float x, float z) const {
     if (b.swell <= 0.0f) return 0.0f;
-    // Gerstner waves (the same ones the water is drawn with).
-    return Gerstner::heightAt(x, z, m_time, b.swell, edgeFade(b, x, z));
+    // The ocean's waves (the same ones the water is drawn with).
+    return m_ocean.heightAt(x, z, b.swell, edgeFade(b, x, z));
 }
 
 float WaterSystem::surfaceOf(const SceneNode* water, float x, float z) const {
@@ -438,6 +438,9 @@ void WaterSystem::touching(Scene& scene, uint64_t id, const glm::vec3& p, float 
 void WaterSystem::update(float dt, Scene& scene) {
     if (!m_active) return;
     m_time += dt;
+    // The ocean swell at this moment (only worked out when some water has one).
+    for (const Body& b : m_bodies)
+        if (b.swell > 0.0f) { m_ocean.update(m_time); break; }
     m_splashSound -= dt;
     m_wetSpots.erase(std::remove_if(m_wetSpots.begin(), m_wetSpots.end(),
                                     [&](const WetSpot& s) { return wetness(s) <= 0.0f; }), m_wetSpots.end());
