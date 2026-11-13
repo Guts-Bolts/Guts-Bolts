@@ -1,3 +1,4 @@
+#include "EditableImages.h"
 #include "Textures.h"
 #include "GL.h"
 #include "../core/Log.h"
@@ -182,6 +183,7 @@ void load(const std::string& id, Entry& e) {
 
 unsigned get(const std::string& id) {
     if (id.empty()) return 0;
+    if (id.rfind("editable://", 0) == 0) return EditableImages::texture(id);   // drawn by the game (EditableImages.h)
     Entry& e = cache()[id];
     if (!e.tex && !e.broken && now() >= e.retryAt) load(id, e);
     return e.tex;

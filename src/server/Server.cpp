@@ -1193,10 +1193,22 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
                        (unsigned char)data[2] == 0xFF;
             if (!png && !jpg) return fail("Decals must be .png or .jpg pictures.");
             meta["ext"] = png ? "png" : "jpg";
+            // A picture a player drew in a game (AssetService:PromptPublishImageAsync): free to publish,
+            // and it remembers which game it came from. (worker/server.js has the same.)
+            if (meta.value("drawing", json()) == json(true)) {
+                std::string from = meta.contains("game") && meta["game"].is_string() ? meta["game"].get<std::string>() : "";
+                bool good = !from.empty() && from.size() <= 80;
+                for (char c : from)
+                    if (!std::isalnum((unsigned char)c) && c != '_' && c != '-') good = false;
+                json kept = {{"ext", meta["ext"]}, {"drawing", true}};
+                if (good) kept["game"] = from;
+                meta = kept;
+            } else meta.erase("drawing");
         }
         if (kind == "game" && !json::accept(data)) return fail("That isn't a Guts&Bolts game file.");
         if (kind == "plugin" && data.empty()) return fail("That plugin is empty.");
-        const long long fee = verified ? 0 : Online::uploadFee(kind);
+        const bool drawing = kind == "decal" && meta.value("drawing", false) == true;
+        const long long fee = verified || drawing ? 0 : Online::uploadFee(kind);
         if (fee > 0 && balance(me) < fee)
             return fail("Uploading costs " + std::to_string(fee) + " Bolts, and you have " + std::to_string(balance(me)) +
                         ". (It's free for Verified creators.)");

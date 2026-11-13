@@ -4187,6 +4187,14 @@ export class GbServerObject extends DurableObject {
         const jpg = data.length > 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
         if (!png && !jpg) return fail('Decals must be .png or .jpg pictures.');
         meta.ext = png ? 'png' : 'jpg';
+        // A picture a player drew in a game (AssetService:PromptPublishImageAsync): free to publish,
+        // and it remembers which game it came from. (src/server has the same.)
+        if (meta.drawing === true) {
+          const from = typeof meta.game === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(meta.game) ? meta.game : '';
+          for (const k of Object.keys(meta)) if (k !== 'ext') delete meta[k];
+          meta.drawing = true;
+          if (from) meta.game = from;
+        } else delete meta.drawing;
       }
       if (kind === 'game' && !isJson(data)) return fail('That isn\'t a Guts&Bolts game file.');
       if (kind === 'plugin' && !data.length) return fail('That plugin is empty.');
@@ -4271,7 +4279,7 @@ export class GbServerObject extends DurableObject {
         meta.image = true;
         meta.ext = 'png';
       }
-      const fee = verified ? 0 : FEE[kind];
+      const fee = verified || (kind === 'decal' && meta.drawing === true) ? 0 : FEE[kind];
       if (fee > 0 && this.balance(me) < fee)
         return fail('Uploading costs ' + fee + ' Bolts, and you have ' + this.balance(me) + '. (It\'s free for Verified creators.)');
       const assetNo = this.nextAssetNum++;

@@ -5,6 +5,7 @@
 #include "SpatialQueries.h"
 #include "Shapecasts.h"
 #include "Experiments.h"
+#include "Drawings.h"
 #include "LuaRealism.h"
 #include "ServerMemory.h"
 #include "../core/Pad.h"
@@ -2020,7 +2021,7 @@ local storage = __gb_storage
 -- Roblox start), their harmless calls do nothing, and anything else says so clearly.
 local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, ScriptContext = {}, TestService = {},
     Stats = {}, GuiService = {}, HapticService = {}, LocalizationService = {},
-    PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {},
+    PolicyService = {}, SocialService = {}, GroupService = {},
     VoiceChatService = {},
     InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
@@ -3969,6 +3970,7 @@ void ScriptEngine::start(bool runScripts) {
     SpatialQueries::install(L);   // workspace:GetPartsInPart, OverlapParams...
     Shapecasts::install(L);       // workspace:Spherecast / Blockcast / Shapecast
     Experiments::install(L);      // AnalyticsService and ExperimentService (A/B tests)
+    Drawings::install(L);         // AssetService: EditableImages, publishing drawings
     LuaRealism::install(L);       // workspace:FireBullet
     ServerMemory::install(L, m_runMode != RunMode::Client);   // game.ServerLowMemoryWarning, Stats' memory numbers
     // For Studio's AI tools: an object by its id number (they refer to objects that way).

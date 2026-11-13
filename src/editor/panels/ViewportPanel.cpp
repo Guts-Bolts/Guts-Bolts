@@ -3,6 +3,7 @@
 #include "../../core/Settings.h"
 #include "../../core/KeyBinds.h"
 #include "../../game/GameGui.h"
+#include "../../game/ImagePublish.h"
 #include <stb_image_write.h>   // (its code is in renderer/Textures.cpp)
 #include <string>
 #include <vector>
@@ -1006,6 +1007,7 @@ void ViewportPanel::render(float dt) {
             Hud::drawNameTags(dl, imgPos, imgMax, *m_scene, proj * view, m_camera.position());
             GameGui::draw(dl, imgPos, imgMax, *m_scene, &m_guiInput);
             GameGui::drawPrompts(dl);
+            ImagePublish::draw();
             {
                 std::vector<GameGui::Event> typed;   // a TextBox being typed in
                 GameGui::textInput(*m_scene, typed);
