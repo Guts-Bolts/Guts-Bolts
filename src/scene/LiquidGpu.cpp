@@ -20,7 +20,7 @@ namespace {
 //   [4..7]   draw command for the renderer (count, 1, 0, 0)
 //   [8]      how many drops fell into pools this frame
 //   [16..22] lowest x y z, highest x y z (sortable float bits), fastest (x1000)
-//   [32..]   splashes: x y z speed (float bits), kMaxSplashes of them
+//   [32..]   splashes: x y z, speed + 1024 x kind of liquid (float bits), kMaxSplashes of them
 //   [288..]  probes: count, vx vy vz (x256), top (sortable float bits)
 //   [640..]  drops per grid cell (table + 1 for "dead"), then where each cell
 //            starts in the sorted list, then per-block sums for the prefix sum
@@ -264,7 +264,9 @@ void main() {
         if (s < 64u) {
             uint o = 32u + s * 4u;
             g[o] = floatBitsToUint(x.x); g[o + 1u] = floatBitsToUint(hi.y);
-            g[o + 2u] = floatBitsToUint(x.z); g[o + 3u] = floatBitsToUint(length(v));
+            g[o + 2u] = floatBitsToUint(x.z);
+            // (the speed, and which kind of liquid: coloured ones cloud the pool)
+            g[o + 3u] = floatBitsToUint(min(length(v), 1000.0) + 1024.0 * floor(X[i].w / 4096.0));
         }
     }
     if (dead) { K[i] = uvec2(uT, 0u); return; }

@@ -2547,6 +2547,11 @@ uniform sampler2D uFlowMap;
 uniform vec3  uFlowGrid;         // cell size, points across x, points across z
 uniform vec2  uFlowBase;
 uniform vec3  uBodyMin, uBodyMax;
+// Colour hanging in the water (blood, oil: see WaterDye.h): a picture of the pool from
+// above, the colour and how much of it (kept as a square root, 4 = the most).
+uniform bool  uHasDye;
+uniform sampler2D uDye;
+uniform vec3  uDyeGrid;          // cell size, points across x, points across z
 // The ocean swell's pictures (see OceanGpu.h): 2 bands from the processor, or 3 from
 // the graphics card.
 uniform float uWaveAmp;
@@ -2665,6 +2670,17 @@ float caustics(vec2 x, float t) {
     }
     return c / 3.0;
 }
+// The colour in the water above (x, z): its colour and how much.
+vec4 dyeAt(vec2 xz) {
+    vec2 uv = ((xz - uBodyMin.xz) / uDyeGrid.x + 0.5) / uDyeGrid.yz;
+    vec4 d = texture(uDye, uv);
+    return vec4(clamp(d.rgb, 0.02, 1.0), d.a * d.a * 4.0);
+}
+// How much of each colour of light gets through that cloud.
+vec3 dyeKeep(vec4 dye) {
+    return exp(-dye.a * 1.5 * (0.35 - log(dye.rgb)));
+}
+
 void main() {
     vec2 uv = gl_FragCoord.xy * uTexel;
     vec3 wp = vWorldPos;
@@ -2734,6 +2750,16 @@ void main() {
         vec3 sigma = mix(0.35, 0.012, uClarity) * (0.4 + -log(tint));
         vec3 keep = exp(-min(rpath, 200.0) * sigma);
         vec3 through = behind * keep + inscatter * (1.0 - keep);
+        // A cloud of blood (or oil) in the water: it soaks up the light coming through it
+        // (Beer-Lambert again, with the cloud's own colour: blood lets red through and
+        // eats green and blue) and glows faintly in its own colour where it's thick.
+        if (uHasDye) {
+            vec4 dye = dyeAt(wp.xz + T.xz * min(rpath, 1.5) * 0.5);
+            if (dye.a > 0.002) {
+                vec3 dk = mix(vec3(1.0), dyeKeep(dye), smoothstep(0.0, 0.4, rpath));   // (a film of water holds little)
+                through = through * dk + lin(dye.rgb) * (uAmbient * 1.8 + sunRad * 0.7 * sun) * (1.0 - dk);
+            }
+        }
         // Reflections: the scene where we can find it, the sky everywhere else.
         vec3 R = reflect(-V, N);
         vec3 sky = lin(skyGradient(R, uZenith, uHorizon, uGround)) * uSkyBrightness;
@@ -2786,6 +2812,7 @@ void main() {
         if (dot(T, T) < 1e-4) col = inscatter;
         else {
             vec3 above = texture(uScene, toScreen(wp + T * 6.0)).rgb;
+            if (uHasDye) { vec4 dye = dyeAt(wp.xz); if (dye.a > 0.002) above *= dyeKeep(dye); }
             col = mix(above, inscatter, fres);
         }
     }

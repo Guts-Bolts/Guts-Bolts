@@ -193,6 +193,7 @@ private:
     Target m_waterCopy;   // water parts: the solid scene behind them (colour and depth)
     struct FlowTex { unsigned tex = 0; int version = -1; };
     std::unordered_map<uint64_t, FlowTex> m_flowTex;   // each water body's flow map, on the graphics card
+    std::unordered_map<uint64_t, FlowTex> m_dyeTex;    // ... and the colour hanging in it (WaterDye)
     Target m_fDepth, m_fTmp, m_fThick, m_fColor, m_sceneCopy;   // liquid: depth, blur scratch, thickness, the scene behind
     unsigned int m_fluidVao = 0, m_fluidVbo = 0;
     ShadowMap               m_shadow;                 // the base map (Lighting.ShadowDistance wide)

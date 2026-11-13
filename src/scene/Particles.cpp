@@ -827,6 +827,13 @@ void ParticleSystem::update(float dt, float gravity, const Physics& physics) {
         if (p.kind == Particle::Fire || p.kind == Particle::Smoke || p.kind == Particle::Spark) continue;
         if (p.kind == Particle::Chunk || p.kind == Particle::Bolt) { stepGib(p, dt, gravity, physics, born); if (p.pos.y < -200.0f) p.life = 0.0f; continue; }
 
+        // Blood (or oil) in water doesn't land anywhere: it becomes a cloud in the water.
+        if (p.kind == Particle::Drop && p.wet && m_waterSink && m_waterSink(p.pos, p.color, dyeAmount(p.size.x))) {
+            p.life = 0.0f;
+            ++m_waterSent;
+            continue;
+        }
+
         // Hitting something solid.
         glm::vec3 h = p.size * 0.5f;
         AABB box{p.pos - h, p.pos + h};

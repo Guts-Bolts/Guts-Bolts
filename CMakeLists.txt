@@ -503,6 +503,7 @@ add_library(gb_engine STATIC
     src/scene/NavMesh.cpp
     src/scene/Npc.cpp
     src/scene/Water.cpp
+    src/scene/WaterDye.cpp
     src/scene/OceanWaves.cpp
     src/scene/Terrain.cpp
     src/scene/Liquid.cpp
@@ -1361,6 +1362,9 @@ if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
     add_executable(OceanWavesTests tests/OceanWavesTests.cpp)
     target_link_libraries(OceanWavesTests PRIVATE gb_engine)
     add_test(NAME OceanWavesTests COMMAND OceanWavesTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+    add_executable(WaterDyeTests tests/WaterDyeTests.cpp)
+    target_link_libraries(WaterDyeTests PRIVATE gb_engine)
+    add_test(NAME WaterDyeTests COMMAND WaterDyeTests WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
 
     # Groundwork: frame memory (no asking the system mid-frame) and what each device can do.
     add_executable(GroundworkTests tests/GroundworkTests.cpp)
