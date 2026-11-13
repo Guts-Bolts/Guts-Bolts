@@ -1,4 +1,5 @@
 export default {
-  id: 'unreal-graphics-shadows', title: 'Unreal-style graphics: sharper, steadier shadows', status: 'planned', version: '', pr: 0, time: 1794358701,
-  text: 'More shadow cascades, and shadow tiles that are only redrawn when something in them moved (the idea behind Unreal\'s virtual shadow maps), so shadows stay sharp far away without costing more.',
+  id: 'unreal-graphics-shadows', title: 'Unreal-style graphics: sharper, steadier shadows', status: 'done', version: '', pr: 0, time: 1794358701,
+  text: 'Four sun shadow maps in one shared picture instead of two: sharp close up, and shadows that reach about six times further. '
+    + 'The widest maps take turns being redrawn, so it does not cost much more. Redrawing a map only when something in it moved is still an idea for later.',
 };
