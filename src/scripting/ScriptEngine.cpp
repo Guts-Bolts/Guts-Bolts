@@ -3,6 +3,9 @@
 #include "ScriptEngine.h"
 #include "ScriptHistory.h"
 #include "SpatialQueries.h"
+#include "Shapecasts.h"
+#include "Experiments.h"
+#include "Drawings.h"
 #include "LuaRealism.h"
 #include "ServerMemory.h"
 #include "../core/Pad.h"
@@ -2018,8 +2021,7 @@ local storage = __gb_storage
 -- Roblox start), their harmless calls do nothing, and anything else says so clearly.
 local quiet = { ContentProvider = { PreloadAsync = true }, LogService = {}, ScriptContext = {}, TestService = {},
     Stats = {}, GuiService = {}, HapticService = {}, LocalizationService = {},
-    AnalyticsService = { LogCustomEvent = true, LogEconomyEvent = true, LogProgressionEvent = true },
-    PolicyService = {}, SocialService = {}, GroupService = {}, AssetService = {},
+    PolicyService = {}, SocialService = {}, GroupService = {},
     VoiceChatService = {},
     InsertService = {},
     ChangeHistoryService = { SetWaypoint = true }, Selection = {},
@@ -2045,10 +2047,14 @@ do
     rawset(gs, "SetEmotesMenuOpen", function(_, open) emotesMenu(open and true or false) end)
     rawset(gs, "GetEmotesMenuOpen", function() return emotesMenu() end)
 end
+-- Services added after the prelude (AnalyticsService and ExperimentService: Experiments.cpp).
+local moreServices = {}
+__gb_moreServices = moreServices
 local function findService(name)
     if name == "StarterGui" then return __gb_uiFolder() end
     if storageNames[name] then return storage(name) end
     if services[name] ~= nil then return services[name] end
+    if moreServices[name] ~= nil then return moreServices[name] end
     if quiet[name] then return quietService(name) end
     return nil
 end
@@ -3962,6 +3968,9 @@ void ScriptEngine::start(bool runScripts) {
     }
     --m_depth;
     SpatialQueries::install(L);   // workspace:GetPartsInPart, OverlapParams...
+    Shapecasts::install(L);       // workspace:Spherecast / Blockcast / Shapecast
+    Experiments::install(L);      // AnalyticsService and ExperimentService (A/B tests)
+    Drawings::install(L);         // AssetService: EditableImages, publishing drawings
     LuaRealism::install(L);       // workspace:FireBullet
     ServerMemory::install(L, m_runMode != RunMode::Client);   // game.ServerLowMemoryWarning, Stats' memory numbers
     // For Studio's AI tools: an object by its id number (they refer to objects that way).

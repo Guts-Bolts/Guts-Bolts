@@ -24,6 +24,8 @@ import { installTesters, isTester } from './testers.js';   // early testers: a f
 import { installRatings, ratingAllowed } from './ratings.js';   // content levels from a few questions
 import { installLaunchpad } from './launchpad.js';   // Launchpad: staff help picked creators build big games
 import { installBackgrounds } from './backgrounds.js';   // a picture behind your avatar on your profile
+import { installExperiments, EXPERIMENTS_COSTLY, EXPERIMENTS_GUEST_OK } from './experiments.js';   // A/B tests for creators: versions, custom metrics, results
+import { installShareLinks, SHARE_COSTLY, SHARE_GUEST_OK } from './sharelinks.js';   // share links that count clicks, plays and buys
 import { installArt, ART_LOOK_ONLY, ART_COSTLY } from './art.js';   // the Art portal: its own product on the site
 import { installPaste, PASTE_LOOK_ONLY, PASTE_COSTLY } from './paste.js';   // G&B Paste: share code and logs
 import { installAcademy, ACADEMY_LOOK_ONLY, ACADEMY_COSTLY } from './academy.js';   // G&B Academy: courses anyone can write
@@ -508,6 +510,8 @@ const kStaffName = 'Guts';
 Object.assign(COSTLY, ART_COSTLY);   // art.js
 Object.assign(COSTLY, PASTE_COSTLY);   // paste.js
 Object.assign(COSTLY, ACADEMY_COSTLY);   // academy.js
+Object.assign(COSTLY, EXPERIMENTS_COSTLY);   // experiments.js
+Object.assign(COSTLY, SHARE_COSTLY);   // sharelinks.js
 const LOOK_ONLY = new Set(['forum.boards', 'forum.list', 'forum.thread', 'forum.search', 'pass.list', 'pass.owned', 'list', 'asset.info', 'item.copies', 'profile', 'profile.inventory', 'people.list', 'users.search', 'groups.list', 'groups.get', 'servers.list', 'stats', 'thumb.get', 'icon.get', 'updates.list', 'comments.list', 'shots.get', 'roadmap.get', 'game.leaderboards', 'gamelog.list', 'events.list']);
 const UPDATE_TAGS = ['Engine', 'Studio', 'Website', 'Player', 'Server', 'Fix'];
 // Email codes (adding an email, forgot password, two-step login).
@@ -552,6 +556,8 @@ export const GUEST_OK = new Set([...LOOK_ONLY, 'get', 'support.send', 'support.m
   'msg.publish', 'msg.poll', 'chat.translate', 'http.request',
   'mem.get', 'mem.set', 'mem.remove', 'mem.range', 'mem.qadd', 'mem.qread', 'mem.qremove']);
 for (const op of [...ART_LOOK_ONLY, ...PASTE_LOOK_ONLY, ...ACADEMY_LOOK_ONLY]) GUEST_OK.add(op);   // guests can look at art (art.js)   // (product.*, msg.* and mem.*: guests can host games too; guests can't chat, but can read it)
+for (const op of EXPERIMENTS_GUEST_OK) GUEST_OK.add(op);   // experiments.js (guests host games too)
+for (const op of SHARE_GUEST_OK) GUEST_OK.add(op);   // sharelinks.js (anyone can open a link)
 
 // In-game chat translation: each player's app asks for the lines that were said in another
 // language, and Cloudflare's translator (Workers AI, the "AI" binding) turns them into theirs.
@@ -3352,6 +3358,8 @@ export class GbServerObject extends DurableObject {
     if (name.startsWith('friends.') || name.startsWith('follow.')) return this.friendOp(name, me, args);
     if (name.startsWith('banlist.') || name === 'game.banLists' || name === 'game.ban') return this.banListOp(name, me, args);   // banlists.js
     if (name === 'profile.background') return this.backgroundOp(name, me, args);   // backgrounds.js
+    if (name.startsWith('experiments.') || name === 'analytics.log') return this.experimentsOp(name, me, args);   // experiments.js
+    if (name.startsWith('share.')) return this.shareOp(name, me, args);   // sharelinks.js
     if (name.startsWith('launchpad.')) return this.launchpadOp(name, me, args);   // launchpad.js
     if (name === 'game.rating' || name === 'game.rate' || name === 'rating.limit') return this.ratingOp(name, me, args);   // ratings.js
     if (['game.testers', 'game.addTester', 'game.removeTester', 'game.testerNote', 'game.amTester'].includes(name)) return this.testerOp(name, me, args);   // testers.js
@@ -4179,6 +4187,14 @@ export class GbServerObject extends DurableObject {
         const jpg = data.length > 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
         if (!png && !jpg) return fail('Decals must be .png or .jpg pictures.');
         meta.ext = png ? 'png' : 'jpg';
+        // A picture a player drew in a game (AssetService:PromptPublishImageAsync): free to publish,
+        // and it remembers which game it came from. (src/server has the same.)
+        if (meta.drawing === true) {
+          const from = typeof meta.game === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(meta.game) ? meta.game : '';
+          for (const k of Object.keys(meta)) if (k !== 'ext') delete meta[k];
+          meta.drawing = true;
+          if (from) meta.game = from;
+        } else delete meta.drawing;
       }
       if (kind === 'game' && !isJson(data)) return fail('That isn\'t a Guts&Bolts game file.');
       if (kind === 'plugin' && !data.length) return fail('That plugin is empty.');
@@ -4263,7 +4279,7 @@ export class GbServerObject extends DurableObject {
         meta.image = true;
         meta.ext = 'png';
       }
-      const fee = verified ? 0 : FEE[kind];
+      const fee = verified || (kind === 'decal' && meta.drawing === true) ? 0 : FEE[kind];
       if (fee > 0 && this.balance(me) < fee)
         return fail('Uploading costs ' + fee + ' Bolts, and you have ' + this.balance(me) + '. (It\'s free for Verified creators.)');
       const assetNo = this.nextAssetNum++;
@@ -6978,6 +6994,8 @@ installFyxaCloud(GbServerObject);
 installRatings(GbServerObject);
 installLaunchpad(GbServerObject);
 installBackgrounds(GbServerObject);
+installExperiments(GbServerObject);
+installShareLinks(GbServerObject);
 installArt(GbServerObject);
 installPaste(GbServerObject);
 installAcademy(GbServerObject);

@@ -10,6 +10,7 @@
 #include "LaunchLink.h"
 #include "WebKeyboard.h"
 #include "../game/GameGui.h"
+#include "../game/ImagePublish.h"
 #include "../game/EmoteMenu.h"
 #include "../scene/Emotes.h"
 #include "../renderer/Textures.h"
@@ -2023,6 +2024,7 @@ void PlayerApp::drawGame(float dt) {
     }
     GameGui::draw(dl, pos, max, *m_scene, &m_guiInput);
     GameGui::drawPrompts(dl);
+    ImagePublish::draw();   // "Publish your picture?" (AssetService:PromptPublishImageAsync)
     if (padAim && toWorld) ClickDetectors::drawAim(dl, centre, onClickable);
     {
         std::vector<GameGui::Event> typed;   // a TextBox being typed in

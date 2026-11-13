@@ -51,6 +51,11 @@ constexpr Rule kCostly[] = {
     {"paste.make", 60, 180, 3600},   // ServerPaste.cpp (worker/paste.js PASTE_COSTLY)
     {"academy.save", 60, 180, 3600},   // ServerAcademy.cpp (worker/academy.js ACADEMY_COSTLY)
     {"academy.like", 240, 720, 600},
+    {"experiments.create", 20, 60, 3600},   // ServerExperiments.cpp (worker/experiments.js EXPERIMENTS_COSTLY)
+    {"analytics.log", 1200, 2400, 600},
+    {"share.create", 30, 90, 3600},   // ServerShareLinks.cpp (worker/sharelinks.js SHARE_COSTLY)
+    {"share.open", 120, 240, 600},
+    {"share.done", 120, 360, 600},
     {"forum.reply", 30, 90, 600},
     {"chat.translate", 400, 1200, 600},
     {"groups.create", 5, 15, 3600},

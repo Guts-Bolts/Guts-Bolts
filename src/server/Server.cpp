@@ -159,7 +159,8 @@ json GbServer::checkRequest(const json& req, User*& out) {
                                                     "art.list", "art.get", "art.picture", "paste.list", "paste.get", "academy.list", "academy.get", "academy.lesson",
                                                     "get", "servers.play", "servers.private", "relay.host", "relay.join", "product.pending", "product.grant",
                                                     "msg.publish", "msg.poll", "chat.translate", "http.request",
-                                                    "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove"};   // (guests can host games too, and read chat)
+                                                    "mem.get", "mem.set", "mem.remove", "mem.range", "mem.qadd", "mem.qread", "mem.qremove",
+                                                    "experiments.forGame", "analytics.log", "share.open"};   // (guests can host games too, and read chat)
     // (A game server machine's own account is never signed up, but staff are let in.)
     if (me.userId == 0 && opName != "hello" && opName != "ping" && opName.rfind("account.", 0) != 0 &&
         !kLookOnly.count(opName) && opName != "support.send" && opName != "support.mine" && !isStaff(me))
@@ -719,6 +720,8 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
         return fail("Launchpad is only on the main Guts&Bolts website.");
     }
     if (name == "profile.background") return backgroundOp(me, args);   // ServerBackgrounds.cpp
+    if (name.rfind("experiments.", 0) == 0 || name == "analytics.log") return experimentsOp(name, me, args);   // ServerExperiments.cpp
+    if (name.rfind("share.", 0) == 0) return shareOp(name, me, args);   // ServerShareLinks.cpp
     if (name == "game.rating" || name == "game.rate" || name == "rating.limit") return ratingOp(name, me, args);   // ServerRatings.cpp
     if (name.rfind("art.", 0) == 0) return artOp(name, &me, args);   // ServerArt.cpp
     if (name.rfind("paste.", 0) == 0) return pasteOp(name, &me, args);   // ServerPaste.cpp
@@ -1190,10 +1193,22 @@ json GbServer::op(const std::string& name, User& me, const json& args) {
                        (unsigned char)data[2] == 0xFF;
             if (!png && !jpg) return fail("Decals must be .png or .jpg pictures.");
             meta["ext"] = png ? "png" : "jpg";
+            // A picture a player drew in a game (AssetService:PromptPublishImageAsync): free to publish,
+            // and it remembers which game it came from. (worker/server.js has the same.)
+            if (meta.value("drawing", json()) == json(true)) {
+                std::string from = meta.contains("game") && meta["game"].is_string() ? meta["game"].get<std::string>() : "";
+                bool good = !from.empty() && from.size() <= 80;
+                for (char c : from)
+                    if (!std::isalnum((unsigned char)c) && c != '_' && c != '-') good = false;
+                json kept = {{"ext", meta["ext"]}, {"drawing", true}};
+                if (good) kept["game"] = from;
+                meta = kept;
+            } else meta.erase("drawing");
         }
         if (kind == "game" && !json::accept(data)) return fail("That isn't a Guts&Bolts game file.");
         if (kind == "plugin" && data.empty()) return fail("That plugin is empty.");
-        const long long fee = verified ? 0 : Online::uploadFee(kind);
+        const bool drawing = kind == "decal" && meta.value("drawing", false) == true;
+        const long long fee = verified || drawing ? 0 : Online::uploadFee(kind);
         if (fee > 0 && balance(me) < fee)
             return fail("Uploading costs " + std::to_string(fee) + " Bolts, and you have " + std::to_string(balance(me)) +
                         ". (It's free for Verified creators.)");
@@ -2282,6 +2297,8 @@ void GbServer::load() {
     loadEvents();
     loadBanLists();
     loadArt();
+    loadExperiments();
+    loadShareLinks();
     loadPastes();
     loadAcademy();
     if (std::string text; readFile(m_opts.data / "boltworks.json", text)) {
