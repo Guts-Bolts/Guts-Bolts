@@ -6,6 +6,7 @@
 #include "ShadowMap.h"
 #include "ShadowCascades.h"
 #include "Gtao.h"
+#include "GpuCulling.h"
 #include "../core/FrameArena.h"
 #include "../scene/Weather.h"
 #include "../scene/BounceLight.h"
@@ -83,6 +84,12 @@ private:
 public:
     // How many groups of copies were drawn in one go last frame (Instancing.h; for tests).
     int lastCopyGroups() const { return m_lastCopies; }
+    // How many parts the graphics card picked from and drew last frame, and how many
+    // indirect draws that took (GpuCulling.h; 0 on devices that draw the old way).
+    int  lastGpuParts() const { return m_lastGpuParts; }
+    int  lastGpuDraws() const { return m_lastGpuDraws; }
+    // Is the graphics card picking what to draw ("on"), or why not.
+    const char* gpuCullingState() { return m_gpuCull.ready() ? "on" : m_gpuCull.why(); }
     // How many triangles the last frame drew (shadows and all). Detail levels (MeshLod.h)
     // bring it down; GB_NO_LODS=1 turns them off to compare.
     long lastTriangles() const { return m_lastTriangles; }
@@ -241,6 +248,9 @@ private:
     float        m_lodBias = 1.0f;            // from the graphics level: > 1 simpler sooner
     bool         m_lodOrtho = false;          // orthographic: size doesn't change with distance
     int          m_lastCopies = 0;    // how many groups of copies the last frame drew in one go
+    GpuCuller         m_gpuCull;      // the graphics card picks what to draw (GpuCulling.h)
+    GpuCulling::Plan  m_gpuPlan;      // (this frame's, kept: no new memory)
+    int               m_lastGpuParts = 0, m_lastGpuDraws = 0;
     std::unique_ptr<Shader> m_overlay;
     unsigned int m_overlayVao = 0, m_overlayVbo = 0;
     // Explosions' smoke and fire (Blast.h), and their shockwaves.

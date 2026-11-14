@@ -31,6 +31,7 @@
 #include "Frustum.h"
 #include "../core/Jobs.h"
 #include "Instancing.h"
+#include "GpuCulling.h"
 #include <cstddef>
 #include <functional>
 #include <cstring>
@@ -1674,7 +1675,11 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
     // 1. Walk the tree once (so hidden models hide everything inside them, and
     //    everything inside a character with a ForceField gets the glowing shell),
     //    writing down every part and decal that might be drawn.
-    struct Seen { SceneNode* node; glm::mat4 model; float dist; uint8_t ff, kind, keep; };   // kind 0 part, 1 decal
+    struct Seen { SceneNode* node; glm::mat4 model; float dist; uint8_t ff, kind, keep; };   // kind 0 part, 1 decal; keep 2 = for the graphics card
+    // Plain solid copies can be left for the graphics card to pick (GpuCulling.h), on
+    // computers that can. Not in X-ray or wireframe, where everything is see-through.
+    static const bool noCopies = std::getenv("GB_NO_INSTANCING") != nullptr;
+    const bool gpuPicks = !noCopies && !xray && shading != Shading::Wireframe && m_gpuCull.ready();
     static std::vector<Seen> seen;
     static std::vector<std::pair<SceneNode*, bool>> stack;
     seen.clear();
@@ -1706,6 +1711,12 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
                 continue;
             }
             e.model = e.node->worldMatrix();
+            if (gpuPicks && !e.ff && e.node->mesh->lodPixels().size() <= (size_t)GpuCulling::kMaxLods &&
+                1.0f - e.node->shownTransparency() >= 0.999f && e.node->material != Material::Glass &&
+                Instancing::canCopy(*e.node, e.model, Player::isWater(e.node))) {
+                e.keep = 2;   // (the graphics card checks it)
+                continue;
+            }
             const float r = partRadius(e.model);
             const glm::vec3 at(e.model[3]);
             if (tooFar(at, r)) continue;   // past the render distance
@@ -1715,9 +1726,20 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         }
     }, 256);
     // 3. Into the lists, in the same order as before (so drawing doesn't change).
+    static std::vector<Item> forGpu;
+    static IdMap<int> copiesOf;   // mesh -> how many parts use it
+    forGpu.clear();
+    copiesOf.clear();
     for (const Seen& e : seen) {
         if (!e.keep) continue;
         SceneNode* node = e.node;
+        if (e.keep == 2) {
+            const uint64_t key = (uint64_t)(uintptr_t)node->mesh.get();
+            const int* had = copiesOf.find(key);
+            copiesOf.set(key, had ? *had + 1 : 1);
+            forGpu.push_back({node, e.model, 0.0f});
+            continue;
+        }
         if (e.kind == 1) { decals.push_back({node, e.model, 0.0f}); continue; }
         if (e.ff && !node->internal && node->shownTransparency() < 0.99f) shielded.push_back({node, e.model, 0.0f});
         float alpha = 1.0f - node->shownTransparency();
@@ -1725,6 +1747,19 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         if (Player::isWater(node)) { waters.push_back({node, e.model}); continue; }   // drawn on their own (drawWater)
         bool see = alpha < 0.999f || node->material == Material::Glass;
         (see ? transparent : opaque).push_back({node, e.model, e.dist});
+    }
+    // A mesh only a few parts use isn't worth its own draws on the graphics card: those
+    // are checked here and drawn the old way.
+    if (!forGpu.empty()) {
+        size_t kept = 0;
+        for (const Item& it : forGpu) {
+            if (*copiesOf.find((uint64_t)(uintptr_t)it.node->mesh.get()) >= Instancing::kMinCopies) { forGpu[kept++] = it; continue; }
+            const float r = partRadius(it.model);
+            const glm::vec3 at(it.model[3]);
+            if (tooFar(at, r) || !view.sees(at, r * 1.5f + 1.0f)) continue;
+            opaque.push_back({it.node, it.model, glm::length(at - camPos)});
+        }
+        forGpu.resize(kept);
     }
     // X-ray (Studio): everything is drawn see-through, with the see-through things.
     const bool xrayOn = xray || shading == Shading::Wireframe;
@@ -1897,7 +1932,7 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         if (groups.size() > 4096) groups.clear();
         for (auto& [key, list] : groups) list.clear();
         single.clear();
-        static const bool off = std::getenv("GB_NO_INSTANCING") != nullptr;   // (to compare, or if a graphics card mis-draws it)
+        const bool off = noCopies;   // (GB_NO_INSTANCING: to compare, or if a graphics card mis-draws it)
         for (const Item& it : items) {
             if (!off && Instancing::canCopy(*it.node, it.model, Player::isWater(it.node))) groups[{it.node->mesh.get(), lodFor(it.node->mesh.get(), it.model)}].push_back(&it);
             else single.push_back(&it);
@@ -1933,7 +1968,41 @@ void SceneRenderer::drawGeometry(Scene& scene, const Camera& camera, bool editin
         m_lastCopies = batches;
     };
 
+    // The graphics card's share: its list is brought up to date (only what changed is
+    // sent), then it checks every part for this camera and draws the ones that pass.
+    m_lastGpuParts = (int)forGpu.size();
+    m_lastGpuDraws = 0;
+    if (!forGpu.empty()) {
+        FrameProfile::Scope prof("draw: graphics card picks", true);
+        static std::vector<GpuCulling::Candidate> parts;
+        parts.clear();
+        for (const Item& it : forGpu) {
+            const SceneNode* n = it.node;
+            GpuCulling::Candidate c{n->mesh.get(), {}};
+            c.inst.draw = {it.model, glm::vec4(n->color, 1.0f - n->shownTransparency()),
+                           glm::vec4((float)materialShaderId(n->material), n->selected ? 1.0f : 0.0f, wetPart(n), 0.0f)};
+            c.inst.sphere = glm::vec4(glm::vec3(it.model[3]), partRadius(it.model));
+            parts.push_back(c);
+        }
+        GpuCulling::plan(parts, m_gpuPlan);
+        GpuCulling::View v;
+        for (int i = 0; i < 5; ++i) v.planes[i] = view.planes[i];
+        v.frustumOn = view.on;
+        v.viewPos = m_viewPos;
+        v.viewDist = m_viewDist;
+        v.pixelsPerStud = m_lodPixelsPerStud;
+        v.bias = m_lodBias;
+        v.ortho = m_lodOrtho;
+        m_gpuCull.cull(m_gpuPlan, v);
+        m_lit->bind();
+    }
     glDisable(GL_BLEND);
+    if (!forGpu.empty()) {
+        m_lit->setBool("uInstanced", true);
+        m_lastGpuDraws = m_gpuCull.draw(m_gpuPlan);
+        m_lit->setBool("uInstanced", false);
+        Mesh::trianglesDrawn += m_gpuCull.lastTriangles();   // (counted a frame late)
+    }
     // Wireframe (Studio): only the edges, the back ones too.
     if (shading == Shading::Wireframe) { wireframe(true); glDisable(GL_CULL_FACE); }
     drawCopies(opaque, wetPart, draw);   // parts that share a mesh, in one go each (Instancing.h)
